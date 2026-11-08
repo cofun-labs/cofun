@@ -251,10 +251,10 @@ export function createApp({ now = () => new Date() }: AppOptions = {}) {
         headers: { 'content-type': 'text/event-stream', 'cache-control': 'no-cache' },
       })
     }
-    const reply = out as { usage?: Record<string, unknown>; choices?: { finish_reason?: unknown }[] }
-    usage.promptTokens = tokenCount(reply.usage?.prompt_tokens)
-    usage.completionTokens = tokenCount(reply.usage?.completion_tokens)
-    usage.finishReason = finishReason(reply.choices?.[0]?.finish_reason)
+    const reply = out as { usage?: Record<string, unknown>; choices?: { finish_reason?: unknown }[] } | null
+    usage.promptTokens = tokenCount(reply?.usage?.prompt_tokens)
+    usage.completionTokens = tokenCount(reply?.usage?.completion_tokens)
+    usage.finishReason = finishReason(reply?.choices?.[0]?.finish_reason)
     record('ok')
     return c.json(out as Record<string, unknown>)
   }

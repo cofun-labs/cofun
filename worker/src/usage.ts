@@ -90,12 +90,14 @@ export function meterStream(
     if (!line.startsWith('data:')) return
     const data = line.slice(5).trim()
     if (!data || data === '[DONE]') return
-    let event: { usage?: Record<string, unknown>; choices?: { finish_reason?: unknown }[] }
+    let parsed: unknown
     try {
-      event = JSON.parse(data)
+      parsed = JSON.parse(data)
     } catch {
       return
     }
+    if (!parsed || typeof parsed !== 'object') return
+    const event = parsed as { usage?: Record<string, unknown>; choices?: { finish_reason?: unknown }[] }
     // OpenAI sends usage once, in the last chunk. Workers AI also adds per-chunk counts and a
     // zeroed chunk before its final totals, so keep the largest count seen.
     if (event.usage) {

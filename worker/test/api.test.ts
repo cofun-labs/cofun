@@ -441,6 +441,23 @@ describe('usage records', () => {
     expect(records()[0]).toMatchObject({ finishReason: 'other', promptTokens: 0, completionTokens: 0 })
   })
 
+  it('non-object events in the stream are passed through and skipped', async () => {
+    const sse = 'data: null\n\ndata: 3\n\ndata: {"choices":[{"delta":{"content":"a"}}]}\n\ndata: [DONE]\n\n'
+    ai.rawSse = sse
+    expect(await (await chat(token, { messages: hi, stream: true })).text()).toBe(sse)
+    expect(records().map((r) => r.outcome)).toEqual(['ok'])
+  })
+
+  it('a non-streamed reply without usage is still recorded', async () => {
+    env.AI = {
+      async run() {
+        return null
+      },
+    }
+    expect((await chat(token)).status).toBe(200)
+    expect(records()[0]).toMatchObject({ outcome: 'ok', promptTokens: 0, completionTokens: 0, finishReason: '' })
+  })
+
   it('a failing usage dataset does not fail the request', async () => {
     env.USAGE = {
       writeDataPoint() {
