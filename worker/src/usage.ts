@@ -129,10 +129,13 @@ export function meterStream(
       try {
         result = await reader.read()
       } catch (err) {
+        // Once the client has cancelled, the stream is closed and must not be touched.
+        if (finished) return
         finish(sawError ? 'provider_error' : 'stream_error')
         controller.error(err)
         return
       }
+      if (finished) return
       if (result.done) {
         scan(partial + decoder.decode())
         finish(sawError ? 'provider_error' : sawDone ? 'ok' : 'incomplete')

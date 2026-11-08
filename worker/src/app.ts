@@ -78,6 +78,9 @@ export function createApp({ now = () => new Date() }: AppOptions = {}) {
   app.get('/', (c) => c.redirect('/login'))
   app.get('/login', (c) => {
     if (!c.env.CLERK_PUBLISHABLE_KEY) throw new HttpError(503, 'not_configured', 'CLERK_PUBLISHABLE_KEY is not set')
+    // This page holds the Clerk session the extension syncs from, so no other site may frame it.
+    c.header('content-security-policy', "frame-ancestors 'none'")
+    c.header('x-frame-options', 'DENY')
     return c.html(loginPage(c.env.CLERK_PUBLISHABLE_KEY))
   })
 
