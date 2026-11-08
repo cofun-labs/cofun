@@ -1,4 +1,13 @@
 {
+  "name": "notion-copilot-extension",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite build --watch --mode development",
+    "build": "vite build",
+    "typecheck": "tsc --noEmit"
+  },
   "dependencies": {
     "@clerk/chrome-extension": "^3.1.105",
     "react": "^19.3.0",
@@ -12,14 +21,5 @@
     "@vitejs/plugin-react": "^6.2.1",
     "typescript": "^7.0.2",
     "vite": "^8.3.6"
-  },
-  "name": "notion-copilot-extension",
-  "version": "0.1.0",
-  "type": "module",
-  "scripts": {
-    "dev": "vite build --watch --mode development",
-    "build": "vite build",
-    "typecheck": "tsc --noEmit"
-  },
-  "private": true
+  }
 }

@@ -1,0 +1,107 @@
+# notion-copilot
+
+Copilot for Notion: a Chrome extension that opens an AI side panel next to Notion pages, backed by a Cloudflare Worker.
+
+**Before starting work, read [README.md](README.md)** for the architecture, auth flow, and setup. This file covers the development workflow and coding conventions.
+
+## Workflow
+
+**Always use `pnpm`** (never `npm` or `yarn`). **Always use the `gh` CLI** for GitHub operations: issues, labels, pull requests, checks, comments, and reviews.
+
+**All changes are issue-driven and follow the BDD workflow (see [docs/bdd.md](docs/bdd.md)):**
+
+1. **Create an Issue first.** Add a priority label (`P0`, `P1`, or `P2`) and describe:
+   - Goal: the problem being solved or the feature being added
+   - Approach: how it will be implemented
+   - This checklist, which must be complete before merge:
+
+     ```markdown
+     ## Checklist
+
+     - [ ] Use cases and tests updated
+     - [ ] CI passes
+     - [ ] Sub-agent review submitted on PR
+     - [ ] All PR comments resolved
+     ```
+
+2. **Update use cases before writing code.** In `docs/use-cases/{domain}/`:
+   - Delete obsolete use cases, create new ones, or merge/split them. Reuse a UC ID only if its core intent is unchanged.
+   - Add, remove, or change rules (business invariants).
+   - Delete scenarios that no longer apply and add scenarios for new behavior. Reuse a scenario ID only for wording changes; new logic gets a new ID.
+   - Mark each scenario with priority (P0/P1/P2), strategy (`api-test` or `ai-e2e`), and status (❌ not implemented, ✅ implemented and tested).
+
+3. **Implement with tests.** Keep tests in sync with use cases:
+   - Remove tests for deleted scenarios, add tests for new ones, rename tests when scenario IDs change.
+   - P0 scenarios must be tested before merge; P1 should be; P2 can wait.
+   - `api-test` scenarios are vitest integration tests in `worker/test/`. `ai-e2e` scenarios are verified by an agent driving a real browser.
+   - Test names start with the scenario ID:
+     ```typescript
+     it('[UC-CHAT-001-S01] signed-in user gets a streamed reply', async () => {
+     ```
+
+4. **Run pre-PR checks.** Run `pnpm check`, then review `git diff --stat origin/main...` and `git diff origin/main... -- docs/use-cases`. Confirm the diff matches the Issue and no BDD updates are missing.
+
+5. **Open a PR.** Branch `issue-{ID}` from `origin/main`, commit, push, and open a PR whose body contains `Closes #{ID}`.
+
+6. **Wait for checks.** If a check fails, fix it, push to the same branch, and wait again until all checks pass.
+
+7. **Review the PR.** Once CI passes, **always spawn a sub-agent** for an independent review (it must not carry the implementation context). The sub-agent:
+   - Reads the Issue and PR descriptions
+   - Verifies every requirement in the Issue is implemented
+   - Verifies the diff matches the BDD scenarios and every `api-test` scenario has a test
+   - Confirms there are no unrelated changes
+   - Judges whether the approach is correct and reasonable
+   - Submits the review with `gh pr review --comment` (GitHub blocks approving your own PR)
+
+8. **Handle PR comments.** Fix every blocking comment or answer it with a clear reason no change is needed. Non-blocking suggestions can be fixed now or turned into a follow-up Issue. Push fixes to the same branch and reply to each comment with the fix commit, the verification, or the follow-up Issue.
+
+9. **Merge.** Check that every Issue checklist item is done, then run `gh pr merge --squash --delete-branch`. `Closes #ID` closes the Issue.
+
+10. **Wait for the deploy.** Merging to `main` triggers Cloudflare Workers Builds, which runs the worker tests and deploys the worker. The work is done only when that deploy succeeds; if it fails, fix it right away.
+
+**Trivial changes** (typos, dependency bumps, config tweaks) may skip the BDD steps but still go through a branch and PR.
+
+### Git rules
+
+- **Never push to `main`.** Every change goes through a branch and PR. A Claude Code hook in `.claude/settings.json` blocks pushes to `main`.
+- **Never rewrite published history** (`git commit --amend`, `git rebase`) on pushed branches. Add new commits instead.
+- **Never force-push** unless explicitly asked.
+- Use [Conventional Commits](https://www.conventionalcommits.org/) for commits and PR titles: `feat:`, `fix:`, `docs:`, `chore:`, `refactor:`, `test:`.
+
+## Language
+
+**Everything is in English:** code, comments, docs, commit messages, issues, PRs, and API error messages.
+
+## Public repository
+
+This is an open-source repository. **Never commit account identifiers or secrets**: Cloudflare account IDs, API tokens, Clerk secret keys, or the extension's private signing key (`extension/keys/`, git-ignored). Values that are public by design are fine: the Clerk publishable key, the Clerk JWT public key, the extension's public key and ID, and domain names.
+
+## Architecture
+
+- `extension/`: Chrome MV3 side panel. Vite + React + TypeScript. Clerk sign-in through Sync Host. `vite.config.ts` generates `manifest.json` from `.env`.
+- `worker/`: Cloudflare Worker with Hono. Serves `/login`, verifies Clerk session JWTs locally, and proxies OpenAI-compatible `/v1/chat/completions` to Workers AI through AI Gateway.
+- Notion page reading and editing (planned) will call Notion's own internal endpoints from the page (`/api/v3/loadPageChunk`, `/api/v3/saveTransactionsFanout`). Do not use `chrome.debugger`: it shows a permanent "debugging this browser" banner.
+
+## Testing
+
+- Backend tests are REST integration tests: they call the Hono app over HTTP and assert on status codes and JSON bodies.
+- **No mocking.** Do not use `vi.mock()` or spies. Replace external dependencies with fake objects that implement the same interface, and inject them through `env`:
+  - `FakeAiBinding` (`worker/test/fakes.ts`) stands in for the Workers AI binding.
+  - `FakeClerk` (`worker/test/clerk.ts`) signs real RS256 session tokens with a local key pair, which the worker verifies like real Clerk tokens.
+- `worker/test/extension.test.ts` runs the extension's own `src/llm.ts` against the worker so client and server cannot drift.
+
+## Commands
+
+```bash
+pnpm install
+pnpm check        # lint, format check, typecheck, extension build, worker tests
+pnpm format:fix   # format all files
+pnpm test         # worker tests only
+pnpm build        # build the extension into extension/dist
+```
+
+## Key decisions
+
+- **No backward compatibility.** Pick the cleanest solution; delete old code instead of deprecating it.
+- **TypeScript everywhere.**
+- **The worker fixes the model.** Clients cannot choose another model.

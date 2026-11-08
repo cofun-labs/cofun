@@ -3,7 +3,8 @@ import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from 
 import { streamChat, type ChatMessage } from '../llm'
 
 const API_URL = import.meta.env.VITE_API_URL as string
-const SYSTEM_PROMPT = 'You are Copilot, an AI assistant that helps the user read and edit their Notion pages. Be concise.'
+const SYSTEM_PROMPT =
+  'You are Copilot, an AI assistant that helps the user read and edit their Notion pages. Be concise.'
 
 type Shown = ChatMessage & { error?: boolean }
 

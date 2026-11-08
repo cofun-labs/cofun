@@ -1,0 +1,10 @@
+packages:
+  - extension
+  - worker
+
+# Dependencies allowed to run install scripts.
+allowBuilds:
+  esbuild: true
+  lefthook: true
+  sharp: true
+  workerd: true

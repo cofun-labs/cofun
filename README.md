@@ -1,113 +1,138 @@
 # notion-copilot
 
-**Copilot for Notion**：一个 Chrome 扩展，在 Notion 页面旁边打开一个 AI 助手侧边栏，帮你读取和修改当前页面。
+**Copilot for Notion**: a Chrome extension that opens an AI side panel next to your Notion pages to help you read and edit them.
 
 ```
-┌───────────── Chrome ─────────────┐
-│ Notion 页面 │ 侧边栏 (React)      │──Bearer <Clerk 会话 JWT>──▶ Worker ──▶ AI Gateway ──▶ Workers AI
-│             │  对话                │                           (验证 JWT)
-├─────────────┴────────────────────┤      ▲ 读取会话 cookie (Sync Host)
-│ 登录标签页 notion-copilot.kitfun.cc/login │──────┘  这个页面也由 Worker 提供
-└──────────────────────────────────┘
+┌────────────────── Chrome ──────────────────┐
+│ Notion page │ Side panel (React)            │──Bearer <Clerk session JWT>──▶ Worker ──▶ AI Gateway ──▶ Workers AI
+│             │  chat                         │                                (verifies JWT)
+├─────────────┴───────────────────────────────┤      ▲ reads the session cookie (Clerk Sync Host)
+│ Sign-in tab: notion-copilot.kitfun.cc/login │──────┘  this page is served by the same worker
+└─────────────────────────────────────────────┘
 ```
 
-## 当前状态
+## Status
 
-- [x] 在 Notion 标签页上点工具栏图标打开侧边栏
-- [x] Clerk 登录：在网页上登录（支持 Google），会话自动同步到扩展
-- [x] 对话，流式返回
-- [ ] 读取当前 Notion 页面
-- [ ] 修改 Notion 页面
+- [x] Side panel opens from the toolbar icon on Notion tabs
+- [x] Sign in on a web page (Google supported); the session syncs into the extension
+- [x] Chat with streamed replies
+- [ ] Read the current Notion page
+- [ ] Edit the current Notion page
 
-## 技术选型
+## Tech choices
 
-| 部分 | 选型 | 原因 |
+| Area | Choice | Why |
 |---|---|---|
-| 扩展形态 | Chrome MV3 + [Side Panel API](https://developer.chrome.com/docs/extensions/reference/api/sidePanel) | 侧边栏和页面并排显示，不遮挡 Notion；只在 Notion 标签页上启用 |
-| 扩展构建 | Vite + React + TypeScript | Clerk 的扩展 SDK 基于 React；Vite 配置少，不引入 Plasmo 这类扩展框架 |
-| 登录 | [Clerk](https://clerk.com) (`@clerk/chrome-extension`) + [Sync Host](https://clerk.com/docs/references/chrome-extension/sync-host) | 现成的登录 UI 和会话管理；后端只需用公钥验证 JWT。Google 等第三方登录需要跳转回来，Chrome 侧边栏不支持，所以改在普通网页上登录，再同步到扩展 |
-| 后端 | Cloudflare Worker + Hono | 模型密钥只放在服务端；Worker 用 AI binding 调模型，不需要 API token |
-| 模型 | Workers AI（经 AI Gateway） | 无需第三方 API key；Gateway 提供日志、缓存、按用户统计 |
-| 接口格式 | OpenAI 兼容的 `/v1/chat/completions` | 流式格式通用，以后换模型或换后端时扩展不用改 |
-| 读写 Notion（计划） | 在页面里调用 Notion 自己的内部接口：`/api/v3/loadPageChunk` 读、`/api/v3/saveTransactionsFanout` 写 | 已在真实页面验证可读写，并且刷新后改动仍在。不需要 Notion 官方 integration token，也不需要 `chrome.debugger`（它会一直显示「正在调试」的提示条）。缺点是这些不是公开接口，Notion 改版后可能要跟着改 |
+| Extension | Chrome MV3 + [Side Panel API](https://developer.chrome.com/docs/extensions/reference/api/sidePanel) | Sits next to the page without covering Notion; enabled only on Notion tabs |
+| Extension build | Vite + React + TypeScript | Clerk's extension SDK is React-based; Vite needs little config and no extension framework |
+| Sign-in | [Clerk](https://clerk.com) (`@clerk/chrome-extension`) with [Sync Host](https://clerk.com/docs/references/chrome-extension/sync-host) | Ready-made sign-in UI and sessions; the backend only verifies JWTs with a public key. Social logins need a redirect, which Chrome side panels don't support, so users sign in on a normal web page and the session syncs into the extension |
+| Backend | Cloudflare Workers + Hono | Model access stays server-side; the AI binding needs no API token |
+| Model | Workers AI through AI Gateway | No third-party API keys; the gateway adds logs, caching, and per-user analytics |
+| API shape | OpenAI-compatible `/v1/chat/completions` | A common streaming format, so the extension doesn't change if the model or backend does |
+| Deploy | Cloudflare Workers Builds (Git integration) | Cloudflare pulls the repo and deploys on merge to `main`; no Cloudflare credentials stored on GitHub |
+| Notion read/write (planned) | Notion's own internal endpoints, called from the page: `/api/v3/loadPageChunk` to read, `/api/v3/saveTransactionsFanout` to write | Verified to read and write a real page, with edits persisting after reload. Needs no Notion integration token and no `chrome.debugger` (which shows a permanent "debugging this browser" banner). The trade-off: these are not public APIs and may change |
 
-### 认证流程
+### Auth flow
 
-1. 用户在侧边栏点「登录」，扩展在新标签页打开 `https://notion-copilot.kitfun.cc/login`（由 Worker 提供，页面里是 Clerk 的登录组件）。
-2. 登录后，Clerk 的会话 cookie 写在这个域名下。扩展配置了 `syncHost`，通过 `cookies` 权限读到它，和这个会话保持同步。Clerk 不会自动刷新已打开的侧边栏，所以扩展监听这些 cookie，一变化就重新加载侧边栏。
-3. 每次请求前，扩展用 `getToken()` 取一个短时效的会话 JWT，放在 `Authorization: Bearer` 里发给 Worker。
-4. Worker 用 Clerk 的 JWT 公钥在本地验证签名、有效期，并检查 `azp` 是否在允许的 origin 列表里（扩展的 `chrome-extension://<id>` 和登录页域名），不需要访问 Clerk 的网络接口。
-5. 请求经 AI Gateway 发往 Workers AI，并在 metadata 里带上 Clerk user id，用于按用户统计。
+1. The user clicks "Sign in" in the side panel. The extension opens `https://notion-copilot.kitfun.cc/login` in a new tab; the worker serves this page with Clerk's sign-in UI.
+2. After sign-in, Clerk's session cookie lives on that domain. The extension is configured with `syncHost` and uses the `cookies` permission to read that session. Clerk doesn't refresh an already-open side panel, so the extension watches those cookies and reloads the panel when they change.
+3. Before each request, the extension gets a short-lived session JWT with `getToken()` and sends it as `Authorization: Bearer`.
+4. The worker verifies the JWT locally with Clerk's JWT public key (signature, expiry) and checks that its `azp` is an allowed origin (the extension's `chrome-extension://<id>` and the sign-in page). No network call to Clerk is needed.
+5. The request goes through AI Gateway to Workers AI, tagged with the Clerk user id for per-user analytics.
 
-扩展 ID 用 manifest 里的 `key` 固定下来，这样 Clerk 和 Worker 才能信任它。
+The extension ID is pinned with the manifest `key`, so Clerk and the worker can trust it.
 
-## 目录
+## Layout
 
 ```
-extension/                Chrome 扩展
-  vite.config.ts          构建配置；manifest.json 在这里根据 .env 生成
+extension/                Chrome extension
+  vite.config.ts          build config; generates manifest.json from .env
   sidepanel.html
-  src/background.ts       点击图标打开侧边栏，只在 Notion 标签页上启用
-  src/llm.ts              调用 Worker 的流式对话接口
-  src/sidepanel/          React 界面（main.tsx 负责登录，Chat.tsx 是对话）
+  src/background.ts       opens the side panel from the toolbar icon; enabled only on Notion tabs
+  src/llm.ts              streaming chat client for the worker
+  src/sidepanel/          React UI (main.tsx: sign-in, Chat.tsx: chat)
 worker/                   Cloudflare Worker
-  src/app.ts              Hono 应用：Clerk JWT 验证 + /v1/chat/completions
-  src/login.ts            登录页（Clerk Sync Host）
-  test/                   REST 集成测试（真实签名的 JWT，假的 AI binding）
+  src/app.ts              Hono app: Clerk JWT verification + /v1/chat/completions
+  src/login.ts            sign-in page (Clerk Sync Host)
+  test/                   REST integration tests (real signed JWTs, fake AI binding)
+docs/
+  bdd.md                  how use cases and scenarios are written
+  use-cases/              use cases by domain; tests reference their scenario IDs
+AGENTS.md                 development workflow and conventions (CLAUDE.md links here)
 ```
 
-## 开发
+## Development
+
+Requires Node.js 24 and pnpm.
+
+```bash
+pnpm install
+pnpm check        # lint, format check, typecheck, extension build, worker tests
+```
+
+A lefthook pre-commit hook runs `pnpm check`. GitHub Actions runs it on every pull request.
+
+See [AGENTS.md](AGENTS.md) for the issue → PR → review → merge workflow.
 
 ### Worker
 
+Merging to `main` deploys the worker through Cloudflare Workers Builds. To deploy by hand:
+
 ```bash
 cd worker
-npm install
-npm test            # 集成测试
-npx wrangler login  # 登录到部署 Worker 的 Cloudflare 账号
-# 账号下有多个 Cloudflare account 时，用环境变量指定（不要写进仓库）
-CLOUDFLARE_ACCOUNT_ID=<account id> npm run deploy
+npx wrangler login
+# If your Cloudflare login has several accounts, pick one with an env var (don't commit it)
+CLOUDFLARE_ACCOUNT_ID=<account id> pnpm run deploy
 ```
 
-Worker 绑定在自定义域名 `notion-copilot.kitfun.cc`（见 `wrangler.jsonc` 的 `routes`），这个域名所在的 zone 必须属于部署用的 Cloudflare 账号。
+The worker runs on the custom domain `notion-copilot.kitfun.cc` (see `routes` in `wrangler.jsonc`). The domain's zone must belong to the deploying Cloudflare account.
 
-`wrangler.jsonc` 里的配置项：
+Variables in `wrangler.jsonc`:
 
-| 变量 | 说明 |
+| Variable | Description |
 |---|---|
-| `AI_GATEWAY_ID` | AI Gateway 的 id；留空则直接调用 Workers AI |
-| `MODEL` | 客户端唯一可用的模型 |
-| `CLERK_JWT_KEY` | Clerk JWT 公钥（PEM）。公开信息，也可以从 `https://<frontend-api>/.well-known/jwks.json` 获取 |
-| `CLERK_PUBLISHABLE_KEY` | Clerk publishable key，登录页用 |
-| `CLERK_AUTHORIZED_PARTIES` | 允许调用的 origin，逗号分隔：`chrome-extension://<扩展 ID>` 和登录页域名 |
+| `CLERK_PUBLISHABLE_KEY` | Clerk publishable key, used by the sign-in page |
+| `AI_GATEWAY_ID` | AI Gateway id; leave empty to call Workers AI directly |
+| `MODEL` | The only model clients can use |
+| `CLERK_AUTHORIZED_PARTIES` | Allowed origins, comma-separated: `chrome-extension://<extension id>` and the sign-in page |
+| `CLERK_JWT_KEY` | Clerk JWT public key (PEM). Public; also available at `https://<frontend-api>/.well-known/jwks.json` |
 
-### 扩展
+#### Workers Builds settings
+
+In the Cloudflare dashboard: Workers & Pages → `notion-copilot` → Settings → Builds → connect `kitfun/notion-copilot`.
+
+| Setting | Value |
+|---|---|
+| Root directory | `worker` |
+| Build command | `pnpm install --frozen-lockfile && pnpm test` |
+| Deploy command | `npx wrangler deploy` |
+| Production branch | `main` |
+
+### Extension
 
 ```bash
-cd extension
-npm install
-npm run build       # 输出到 dist/
+pnpm build        # outputs extension/dist
 ```
 
-在 `chrome://extensions` 打开开发者模式，点「加载已解压的扩展程序」，选择 `extension/dist`。
+In `chrome://extensions`, turn on Developer mode, click "Load unpacked", and pick `extension/dist`.
 
-`.env` 里是公开的构建配置。要连接你自己的部署，在 `.env.local` 里覆盖：
+`extension/.env` holds the public build config. To point at your own deployment, override values in `extension/.env.local`:
 
-| 变量 | 说明 |
+| Variable | Description |
 |---|---|
 | `VITE_CLERK_PUBLISHABLE_KEY` | Clerk publishable key |
-| `VITE_CLERK_SYNC_HOST` | 登录页所在的网址（Worker 的域名） |
-| `VITE_API_URL` | Worker 地址，包含 `/v1` |
-| `CRX_PUBLIC_KEY` | 扩展签名公钥，用来固定扩展 ID |
+| `VITE_CLERK_SYNC_HOST` | URL of the sign-in page (the worker's domain) |
+| `VITE_API_URL` | Worker base URL, including `/v1` |
+| `CRX_PUBLIC_KEY` | Extension signing public key; pins the extension ID |
 
-生成你自己的扩展密钥和扩展 ID：
+Generate your own signing key and extension ID:
 
 ```bash
-mkdir -p keys
-openssl genrsa -out keys/crx-private.pem 2048
-openssl rsa -in keys/crx-private.pem -pubout -outform DER > keys/pub.der
-base64 -i keys/pub.der | tr -d '\n'                              # 填到 CRX_PUBLIC_KEY
-shasum -a 256 keys/pub.der | cut -c1-32 | tr '0-9a-f' 'a-p'      # 扩展 ID
+mkdir -p extension/keys
+openssl genrsa -out extension/keys/crx-private.pem 2048
+openssl rsa -in extension/keys/crx-private.pem -pubout -outform DER > extension/keys/pub.der
+base64 -i extension/keys/pub.der | tr -d '\n'                          # CRX_PUBLIC_KEY
+shasum -a 256 extension/keys/pub.der | cut -c1-32 | tr '0-9a-f' 'a-p'  # extension ID
 ```
 
-Clerk Dashboard 里需要打开 **Native applications** 页面上的 Native API，Chrome 扩展才能登录。
+In the Clerk dashboard, enable the Native API (Native applications page) so the Chrome extension can sign in.
