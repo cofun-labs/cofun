@@ -17,6 +17,16 @@ async function updatePanel(tabId: number, url?: string) {
   await chrome.sidePanel.setOptions({ tabId, path: 'sidepanel.html', enabled: isNotion(url) })
 }
 
+// Off by default, so tabs we haven't seen yet don't get the panel. Tabs that
+// were already open when the extension started get their state set here.
+async function init() {
+  await chrome.sidePanel.setOptions({ enabled: false })
+  for (const tab of await chrome.tabs.query({})) {
+    if (tab.id !== undefined) await updatePanel(tab.id, tab.url)
+  }
+}
+init().catch((err) => console.error(err))
+
 chrome.tabs.onUpdated.addListener((tabId, info, tab) => {
   if (info.url || info.status === 'complete') updatePanel(tabId, tab.url)
 })
