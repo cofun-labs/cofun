@@ -13,29 +13,41 @@ const PANEL_URL = chrome.runtime.getURL('sidepanel.html')
 // panel when the sign-in page signs in or out. Only react to a change in
 // signed-in state: other session cookies are rewritten on every token refresh,
 // and reloading then would wipe the conversation.
-// __client_uat is "0" (or missing) when signed out and a timestamp when signed in.
-// Clerk sets it on the parent domain; query by URL so those cookies are included.
-const syncDomain = new URL(SYNC_HOST).hostname
-const isUatCookie = (c: chrome.cookies.Cookie) =>
-  /^__client_uat(_[A-Za-z0-9-]{8})?$/.test(c.name) &&
-  (syncDomain === c.domain.replace(/^\./, '') ||
-    syncDomain.endsWith(c.domain.startsWith('.') ? c.domain : `.${c.domain}`))
-const uatSignedIn = (c: chrome.cookies.Cookie | undefined) => !!c && c.value !== '' && c.value !== '0'
+//
+// Clerk's __client_uat_<suffix> cookie is "0" when signed out and a timestamp
+// when signed in. It lives on the sign-in page's parent domain, which other
+// Clerk apps may share, so watch only the name suffixed for this publishable
+// key, and read it by URL so parent-domain cookies are included.
+async function uatCookieName(): Promise<string> {
+  // Same as Clerk's getCookieSuffix: first 8 chars of base64url(SHA-1(publishable key)).
+  const digest = await crypto.subtle.digest('SHA-1', new TextEncoder().encode(PUBLISHABLE_KEY))
+  const suffix = btoa(String.fromCharCode(...new Uint8Array(digest)))
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .slice(0, 8)
+  return `__client_uat_${suffix}`
+}
 
-let signedIn: boolean | undefined
-chrome.cookies.getAll({ url: SYNC_HOST }).then((cookies) => {
-  signedIn = cookies.filter(isUatCookie).some(uatSignedIn)
-})
-let reloadTimer: number | undefined
-chrome.cookies.onChanged.addListener(({ cookie }) => {
-  if (!isUatCookie(cookie)) return
-  clearTimeout(reloadTimer)
-  reloadTimer = window.setTimeout(async () => {
-    const now = (await chrome.cookies.getAll({ url: SYNC_HOST })).filter(isUatCookie).some(uatSignedIn)
-    if (signedIn !== undefined && now !== signedIn) location.reload()
-    signedIn = now
-  }, 500)
-})
+async function readSignedIn(name: string): Promise<boolean> {
+  const cookie = (await chrome.cookies.getAll({ url: SYNC_HOST, name }))[0]
+  return !!cookie && cookie.value !== '' && cookie.value !== '0'
+}
+
+uatCookieName()
+  .then(async (name) => {
+    let signedIn = await readSignedIn(name)
+    let reloadTimer: number | undefined
+    chrome.cookies.onChanged.addListener(({ cookie }) => {
+      if (cookie.name !== name) return
+      clearTimeout(reloadTimer)
+      reloadTimer = window.setTimeout(async () => {
+        const now = await readSignedIn(name)
+        if (now !== signedIn) location.reload()
+        signedIn = now
+      }, 500)
+    })
+  })
+  .catch(console.error)
 
 function openSignIn() {
   chrome.tabs.create({ url: `${SYNC_HOST}/login` })

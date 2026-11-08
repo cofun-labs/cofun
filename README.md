@@ -124,6 +124,7 @@ In `chrome://extensions`, turn on Developer mode, click "Load unpacked", and pic
 | `VITE_CLERK_SYNC_HOST` | URL of the sign-in page (the worker's domain) |
 | `VITE_API_URL` | Worker base URL, including `/v1` |
 | `CRX_PUBLIC_KEY` | Extension signing public key; pins the extension ID |
+| `CLERK_COOKIE_DOMAIN` | Optional. The registrable domain Clerk sets its cookies on, e.g. `example.co.uk`. Defaults to the last two labels of the sign-in page's host |
 
 Generate your own signing key and extension ID:
 

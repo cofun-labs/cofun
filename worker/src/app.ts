@@ -140,7 +140,9 @@ export function createApp() {
     const inputs: Record<string, unknown> = {
       messages: messages.map((m: { role: string; content: string }) => ({ role: m.role, content: m.content })),
     }
-    if (max_tokens !== undefined) inputs.max_tokens = max_tokens
+    // Without an explicit limit, models fall back to their own default, which can be
+    // small enough to cut replies short.
+    inputs.max_tokens = max_tokens ?? MAX_TOKENS
     if (stream === true) inputs.stream = true
     const options = c.env.AI_GATEWAY_ID
       ? { gateway: { id: c.env.AI_GATEWAY_ID, metadata: { app: 'notion-copilot', user: c.get('userId') } } }

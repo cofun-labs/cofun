@@ -8,9 +8,19 @@ function clerkFrontendApi(publishableKey: string): string | undefined {
   return Buffer.from(encoded, 'base64').toString('utf8').replace(/\$$/, '')
 }
 
-/** The domain one level up, e.g. notion-copilot.kitfun.cc -> kitfun.cc. Assumes a two-label site such as example.com. */
-function parentDomain(hostname: string): string {
-  return hostname.split('.').slice(-2).join('.')
+/**
+ * Host permission covering the domain Clerk sets __client_uat on: the sign-in
+ * page's registrable domain (e.g. notion-copilot.kitfun.cc -> *.kitfun.cc).
+ * The last two labels are a guess that fits hosts like example.com; set
+ * CLERK_COOKIE_DOMAIN for suffixes such as example.co.uk. IPs and single-label
+ * hosts (localhost) get a permission for the host itself.
+ */
+function clerkCookiePermission(syncHost: string, cookieDomain?: string): string {
+  const { protocol, hostname } = new URL(syncHost)
+  const labels = hostname.split('.')
+  if (cookieDomain) return `${protocol}//*.${cookieDomain.replace(/^\./, '')}/*`
+  if (labels.length < 2 || /^[\d.]+$/.test(hostname) || hostname.includes(':')) return `${protocol}//${hostname}/*`
+  return `${protocol}//*.${labels.slice(-2).join('.')}/*`
 }
 
 /** Writes manifest.json into the build, filled from env. */
@@ -35,7 +45,7 @@ function manifest(env: Record<string, string>): Plugin {
           // Clerk sets __client_uat on the parent domain (e.g. .kitfun.cc). The side
           // panel watches it to notice sign-in and sign-out, and Chrome only reports
           // cookies whose domain the extension has host permission for.
-          `https://*.${parentDomain(new URL(env.VITE_CLERK_SYNC_HOST).hostname)}/*`,
+          clerkCookiePermission(env.VITE_CLERK_SYNC_HOST, env.CLERK_COOKIE_DOMAIN),
         ],
         background: { service_worker: 'background.js', type: 'module' },
         // No side_panel.default_path: without it, a tab has no panel unless background.ts

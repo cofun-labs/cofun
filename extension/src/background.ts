@@ -29,9 +29,10 @@ async function updatePanel(tabId: number, url?: string) {
 // were already open when the extension started get their state set here.
 async function init() {
   await chrome.sidePanel.setOptions({ enabled: false })
-  for (const tab of await chrome.tabs.query({})) {
-    if (tab.id !== undefined) await updatePanel(tab.id, tab.url).catch(ignoreClosedTab)
-  }
+  const tabs = await chrome.tabs.query({})
+  await Promise.all(
+    tabs.map((tab) => (tab.id === undefined ? undefined : updatePanel(tab.id, tab.url).catch(ignoreClosedTab))),
+  )
 }
 
 // Chrome forgets side panel options whenever the extension unloads (disable,

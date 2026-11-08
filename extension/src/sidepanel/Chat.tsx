@@ -6,12 +6,26 @@ const API_URL = import.meta.env.VITE_API_URL as string
 const SYSTEM_PROMPT =
   'You are Copilot, an AI assistant that helps the user read and edit their Notion pages. Be concise.'
 
-type Shown = ChatMessage & { error?: boolean }
+// error and stopped are display state only; they never go to the model.
+type Shown = ChatMessage & { error?: boolean; stopped?: boolean }
 
 // Stay well under the worker's limits (200 messages, 200k characters) by
 // sending only the most recent part of a long conversation.
 const MAX_HISTORY_MESSAGES = 100
 const MAX_HISTORY_CHARS = 150_000
+
+/** The conversation to send: failed or empty replies are dropped together with the question that led to them. */
+function toHistory(shown: Shown[]): ChatMessage[] {
+  const out: ChatMessage[] = []
+  for (const m of shown) {
+    if (m.role === 'assistant' && (m.error || !m.content)) {
+      if (out.at(-1)?.role === 'user') out.pop()
+      continue
+    }
+    out.push({ role: m.role, content: m.content })
+  }
+  return out
+}
 
 function recent(history: ChatMessage[]): ChatMessage[] {
   const out: ChatMessage[] = []
@@ -21,6 +35,8 @@ function recent(history: ChatMessage[]): ChatMessage[] {
     if (chars > MAX_HISTORY_CHARS) break
     out.unshift(history[i])
   }
+  // Start at a user message so the model never sees a reply without its question.
+  while (out.length > 1 && out[0].role !== 'user') out.shift()
   // Always send the newest message; if it alone is too long, the server says so.
   return out.length ? out : history.slice(-1)
 }
@@ -42,7 +58,7 @@ export function Chat() {
     const text = input.trim()
     if (!text || controller) return
 
-    const history = messages.filter((m) => !m.error).map(({ role, content }) => ({ role, content }))
+    const history = toHistory(messages)
     const user: ChatMessage = { role: 'user', content: text }
     const id = chatId.current
     setInput('')
@@ -62,7 +78,7 @@ export function Chat() {
       )
     } catch (err) {
       if ((err as Error).name === 'AbortError') {
-        updateLast((m) => ({ ...m, content: m.content + ' [stopped]' }))
+        updateLast((m) => ({ ...m, stopped: true }))
       } else {
         updateLast((m) => ({ ...m, content: (err as Error).message, error: true }))
       }
@@ -102,7 +118,8 @@ export function Chat() {
         {messages.length === 0 && <div className="empty">Ask anything to get started.</div>}
         {messages.map((m, i) => (
           <div key={i} className={`msg ${m.role}${m.error ? ' error' : ''}`}>
-            {m.content || (m.role === 'assistant' ? '…' : '')}
+            {m.content || (m.role === 'assistant' && !m.stopped ? '…' : '')}
+            {m.stopped && ' [stopped]'}
           </div>
         ))}
       </main>
