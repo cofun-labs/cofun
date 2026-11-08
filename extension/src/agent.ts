@@ -196,6 +196,8 @@ export class CopilotAgent {
   private async getAgent(): Promise<Agent> {
     if (this.agent) return this.agent
     const model = (this.model ??= await this.loadModel())
+    // Another question (after a New chat) may have set up the agent while this one waited.
+    if (this.agent) return this.agent
     // The tool definitions go with every request and count toward the worker's size limit.
     const toolChars = JSON.stringify(
       this.config.tools.map((t) => ({ name: t.name, description: t.description, parameters: t.parameters })),

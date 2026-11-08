@@ -352,6 +352,26 @@ describe('extension agent against the worker', () => {
     void first
   })
 
+  it('a question set up after a New chat keeps its agent when an older lookup finishes later', async () => {
+    let release!: () => void
+    const gate = new Promise<void>((r) => (release = r))
+    let calls = 0
+    const agent = makeAgent({
+      getToken: async () => {
+        // Only the first question's lookup is slow.
+        if (calls++ === 0) await gate
+        return token
+      },
+    })
+    const a = agent.ask('A', () => {})
+    void agent.reset()
+    expect((await ask(agent, 'B')).result).toEqual({ status: 'done' })
+    release()
+    expect(await a).toEqual({ status: 'stopped' })
+    await ask(agent, 'C')
+    expect(sentMessages(1).map((m) => m.content)).toEqual(['You are Notion Copilot.', 'B', '你好 来自 worker ', 'C'])
+  })
+
   it('a model change after a tool ran is reported, not retried', async () => {
     const { tool, runs } = pageTool()
     const changing: ToolSpec = {

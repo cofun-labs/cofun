@@ -14,7 +14,16 @@ type ShownTool = { id: string; name: string; status: 'running' | 'done' | 'faile
 // The agent keeps the conversation it sends to the model; this is only what the panel shows.
 type Shown =
   | { role: 'user'; content: string }
-  | { role: 'assistant'; content: string; tools: ShownTool[]; error?: boolean; stopped?: boolean; note?: string }
+  | {
+      role: 'assistant'
+      content: string
+      tools: ShownTool[]
+      /** How many tools had run when text last arrived, to separate text from different steps. */
+      textAfterTools?: number
+      error?: boolean
+      stopped?: boolean
+      note?: string
+    }
 
 const TOOL_MARK: Record<ShownTool['status'], string> = { running: '⋯', done: '✓', failed: '✗', skipped: '–' }
 
@@ -60,7 +69,12 @@ export function Chat() {
       })
 
     const onUpdate = (u: AgentUpdate) => {
-      if (u.type === 'text') updateReply((m) => ({ ...m, content: m.content + u.delta }))
+      if (u.type === 'text')
+        updateReply((m) => {
+          // Text written after a tool ran starts a new paragraph, apart from any text before the tool.
+          const gap = m.content && m.tools.length > (m.textAfterTools ?? 0) ? '\n\n' : ''
+          return { ...m, content: m.content + gap + u.delta, textAfterTools: m.tools.length }
+        })
       else if (u.type === 'tool_start')
         updateReply((m) => ({ ...m, tools: [...m.tools, { id: u.id, name: u.name, status: 'running' }] }))
       else
