@@ -126,7 +126,7 @@ Every chat request that passes auth leaves one data point in the `notion_copilot
 |---|---|
 | `index1` | Clerk user id |
 | `blob1` | model |
-| `blob2` | outcome: `ok`, `incomplete` (stream ended early), `cancelled`, `stream_error`, or the error code returned (`rate_limited`, `provider_error`, `quota_unavailable`, `bad_request`, …) |
+| `blob2` | outcome: `ok`, `incomplete` (stream ended early), `cancelled`, `stream_error`, or the error code returned (`rate_limited`, `provider_error`, `quota_unavailable`, `bad_request`, …). A stream whose model reports an error is `provider_error` |
 | `blob3` | finish reason: `stop`, `length`, `content_filter`, `tool_calls`, `other`, or empty |
 | `blob4` | `stream` or `sync` |
 | `double1` … `double5` | messages, input characters, prompt tokens, completion tokens, duration in ms (until the request was refused, the reply was sent, or a stream ended; for streams it includes the time the client spends reading) |

@@ -48,7 +48,7 @@ class HttpError extends Error {
 }
 
 const MAX_MESSAGES = 200
-const MAX_TOKENS = 4096
+const MAX_TOKENS = 16_384
 const MAX_CONTENT_CHARS = 200_000
 const ROLES = new Set(['system', 'user', 'assistant'])
 
@@ -220,13 +220,15 @@ export function createApp({ now = () => new Date() }: AppOptions = {}) {
       // Ask for token usage in the final chunk, so streamed replies can be metered too.
       inputs.stream_options = { include_usage: true }
     }
-    // collectLog: false keeps prompts and replies out of the gateway logs; its analytics
-    // (requests, tokens, cost, metadata) still work.
+    // collectLog: false keeps prompts and replies out of the gateway logs, and skipCache: true
+    // keeps them out of its cache even if caching is turned on in the dashboard. The gateway's
+    // analytics (requests, tokens, cost, metadata) still work.
     const options = c.env.AI_GATEWAY_ID
       ? {
           gateway: {
             id: c.env.AI_GATEWAY_ID,
             collectLog: false,
+            skipCache: true,
             metadata: { app: 'notion-copilot', user: c.get('userId') },
           },
         }
@@ -255,8 +257,10 @@ export function createApp({ now = () => new Date() }: AppOptions = {}) {
     usage.promptTokens = tokenCount(reply?.usage?.prompt_tokens)
     usage.completionTokens = tokenCount(reply?.usage?.completion_tokens)
     usage.finishReason = finishReason(reply?.choices?.[0]?.finish_reason)
+    // Build the response first: if that throws, the request is recorded once, as internal.
+    const res = c.json(out as Record<string, unknown>)
     record('ok')
-    return c.json(out as Record<string, unknown>)
+    return res
   }
 
   return app
