@@ -10,15 +10,28 @@ const SYNC_HOST = import.meta.env.VITE_CLERK_SYNC_HOST as string
 const PANEL_URL = chrome.runtime.getURL('sidepanel.html')
 
 // Clerk doesn't fully sync auth state into an open side panel, so reload the
-// panel when the sign-in page's session cookies change.
-const SESSION_COOKIES = new Set(['__client', '__client_uat', '__session', '__clerk_db_jwt'])
+// panel when the sign-in page signs in or out. Only react to a change in
+// signed-in state: other session cookies are rewritten on every token refresh,
+// and reloading then would wipe the conversation.
+// __client_uat is "0" (or missing) when signed out and a timestamp when signed in.
 const syncDomain = new URL(SYNC_HOST).hostname
+const isUatCookie = (c: chrome.cookies.Cookie) =>
+  /^__client_uat(_[A-Za-z0-9-]{8})?$/.test(c.name) && syncDomain.endsWith(c.domain.replace(/^\./, ''))
+const uatSignedIn = (c: chrome.cookies.Cookie | undefined) => !!c && c.value !== '' && c.value !== '0'
+
+let signedIn: boolean | undefined
+chrome.cookies.getAll({ domain: syncDomain }).then((cookies) => {
+  signedIn = cookies.filter(isUatCookie).some(uatSignedIn)
+})
 let reloadTimer: number | undefined
 chrome.cookies.onChanged.addListener(({ cookie }) => {
-  const name = cookie.name.replace(/_[A-Za-z0-9-]{8}$/, '') // Clerk may suffix cookie names
-  if (!SESSION_COOKIES.has(name) || !syncDomain.endsWith(cookie.domain.replace(/^\./, ''))) return
+  if (!isUatCookie(cookie)) return
   clearTimeout(reloadTimer)
-  reloadTimer = window.setTimeout(() => location.reload(), 500)
+  reloadTimer = window.setTimeout(async () => {
+    const now = (await chrome.cookies.getAll({ domain: syncDomain })).filter(isUatCookie).some(uatSignedIn)
+    if (signedIn !== undefined && now !== signedIn) location.reload()
+    signedIn = now
+  }, 500)
 })
 
 function openSignIn() {
