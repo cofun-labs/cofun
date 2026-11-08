@@ -20,7 +20,11 @@ export interface UsageRecord {
   completionTokens: number
   /** `stop`, `length`, `content_filter`, `tool_calls`, `other`, or empty when unknown. */
   finishReason: string
-  latencyMs: number
+  /**
+   * From the start of the request until it was refused, the reply was sent, or a stream ended.
+   * For streams this includes the time the client takes to read the reply, or waited before cancelling.
+   */
+  durationMs: number
 }
 
 const FINISH_REASONS = new Set(['stop', 'length', 'content_filter', 'tool_calls'])
@@ -42,7 +46,7 @@ export function tokenCount(value: unknown): number {
  * - index1: user id
  * - blob1: model, blob2: outcome, blob3: finish reason, blob4: `stream` or `sync`
  * - double1: messages, double2: input characters, double3: prompt tokens,
- *   double4: completion tokens, double5: latency in ms
+ *   double4: completion tokens, double5: duration in ms
  *
  * Analytics Engine adds the timestamp itself.
  */
@@ -51,7 +55,7 @@ export function recordUsage(dataset: UsageDataset, r: UsageRecord): void {
     dataset.writeDataPoint({
       indexes: [r.userId],
       blobs: [r.model, r.outcome, r.finishReason, r.stream ? 'stream' : 'sync'],
-      doubles: [r.messages, r.inputChars, r.promptTokens, r.completionTokens, r.latencyMs],
+      doubles: [r.messages, r.inputChars, r.promptTokens, r.completionTokens, r.durationMs],
     })
   } catch (err) {
     // A lost usage record must never fail the user's request.

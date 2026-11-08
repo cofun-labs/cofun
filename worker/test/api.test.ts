@@ -293,8 +293,19 @@ describe('UC-CHAT-001 daily quota', () => {
 function usageRecord(point: FakeUsageDataset['points'][number]) {
   const [userId] = point.indexes ?? []
   const [model, outcome, finishReason, mode] = point.blobs ?? []
-  const [messages, inputChars, promptTokens, completionTokens, latencyMs] = point.doubles ?? []
-  return { userId, model, outcome, finishReason, mode, messages, inputChars, promptTokens, completionTokens, latencyMs }
+  const [messages, inputChars, promptTokens, completionTokens, durationMs] = point.doubles ?? []
+  return {
+    userId,
+    model,
+    outcome,
+    finishReason,
+    mode,
+    messages,
+    inputChars,
+    promptTokens,
+    completionTokens,
+    durationMs,
+  }
 }
 const records = () => usage.points.map(usageRecord)
 
@@ -319,10 +330,10 @@ describe("UC-CHAT-002 Keep a record of each user's chat usage", () => {
         inputChars: 13,
         promptTokens: FAKE_USAGE.prompt_tokens,
         completionTokens: FAKE_USAGE.completion_tokens,
-        latencyMs: expect.any(Number),
+        durationMs: expect.any(Number),
       },
     ])
-    expect(records()[0].latencyMs).toBeGreaterThanOrEqual(0)
+    expect(records()[0].durationMs).toBeGreaterThanOrEqual(0)
     expect(ai.calls[0].inputs.stream_options).toEqual({ include_usage: true })
   })
 

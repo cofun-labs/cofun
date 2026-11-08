@@ -129,11 +129,11 @@ export function createApp({ now = () => new Date() }: AppOptions = {}) {
       promptTokens: 0,
       completionTokens: 0,
       finishReason: '',
-      latencyMs: 0,
+      durationMs: 0,
     }
     const record = (outcome: string) => {
       usage.outcome = outcome
-      usage.latencyMs = Date.now() - started
+      usage.durationMs = Date.now() - started
       recordUsage(c.env.USAGE, usage)
     }
     try {
