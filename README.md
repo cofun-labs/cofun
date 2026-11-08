@@ -38,7 +38,8 @@
 2. After sign-in, Clerk's session cookie lives on that domain. The extension is configured with `syncHost` and uses the `cookies` permission to read that session. Clerk doesn't refresh an already-open side panel, so the extension watches those cookies and reloads the panel when they change.
 3. Before each request, the extension gets a short-lived session JWT with `getToken()` and sends it as `Authorization: Bearer`.
 4. The worker verifies the JWT locally with Clerk's JWT public key (signature, expiry). If the token has an `azp` (the web origin that requested it), it must be an allowed origin, which stops other websites from using a session they obtained in the browser. Tokens the extension gets through Clerk's Native API carry no `azp`. No network call to Clerk is needed.
-5. The request goes through AI Gateway to Workers AI, tagged with the Clerk user id for per-user analytics.
+5. The worker counts the request against the user's daily quota (a Durable Object per user, reset at 00:00 UTC) and refuses it once the quota is used up.
+6. The request goes through AI Gateway to Workers AI, tagged with the Clerk user id for per-user analytics.
 
 The extension ID is pinned with the manifest `key`, so Clerk and the worker can trust it.
 
@@ -53,6 +54,7 @@ extension/                Chrome extension
   src/sidepanel/          React UI (main.tsx: sign-in, Chat.tsx: chat)
 worker/                   Cloudflare Worker
   src/app.ts              Hono app: Clerk JWT verification + /v1/chat/completions
+  src/quota.ts            per-user daily request quota (UserQuota Durable Object in src/index.ts)
   src/login.ts            sign-in page (Clerk Sync Host)
   test/                   REST integration tests (real signed JWTs, fake AI binding)
 docs/
@@ -94,6 +96,7 @@ Variables in `wrangler.jsonc`:
 | `CLERK_PUBLISHABLE_KEY` | Clerk publishable key, used by the sign-in page |
 | `AI_GATEWAY_ID` | AI Gateway id; leave empty to call Workers AI directly |
 | `MODEL` | The only model clients can use |
+| `DAILY_REQUEST_LIMIT` | Chat requests each user may make per UTC day; counted in the `UserQuota` Durable Object (one per user) |
 | `CLERK_AUTHORIZED_PARTIES` | Allowed origins, comma-separated: `chrome-extension://<extension id>` and the sign-in page |
 | `CLERK_JWT_KEY` | Clerk JWT public key (PEM). Public; also available at `https://<frontend-api>/.well-known/jwks.json` |
 

@@ -3,6 +3,7 @@ import { Hono, type Context } from 'hono'
 import { cors } from 'hono/cors'
 import type { ContentfulStatusCode } from 'hono/utils/http-status'
 import { loginPage } from './login'
+import type { QuotaNamespace } from './quota'
 
 /** The slice of the Workers AI binding this worker uses. */
 export interface AiBinding {
@@ -19,6 +20,15 @@ export interface Env {
   CLERK_JWT_KEY?: string
   /** Comma-separated origins allowed to call, e.g. chrome-extension://<id>. Checked against the token's azp claim. */
   CLERK_AUTHORIZED_PARTIES?: string
+  /** Per-user daily request counters (Durable Object namespace). */
+  QUOTA: QuotaNamespace
+  /** Chat requests each user may make per UTC day. */
+  DAILY_REQUEST_LIMIT?: string | number
+}
+
+export interface AppOptions {
+  /** Clock used for the daily quota. Tests pass their own to move between days. */
+  now?: () => Date
 }
 
 type Vars = { userId: string }
@@ -47,7 +57,7 @@ async function readJson(c: Ctx): Promise<Record<string, unknown>> {
   throw new HttpError(400, 'bad_request', 'body must be a JSON object')
 }
 
-export function createApp() {
+export function createApp({ now = () => new Date() }: AppOptions = {}) {
   const app = new Hono<{ Bindings: Env; Variables: Vars }>()
 
   // The extension calls from a chrome-extension:// origin. Auth is a bearer token, not cookies.
@@ -134,6 +144,19 @@ export function createApp() {
       throw new HttpError(400, 'bad_request', 'stream must be a boolean')
     if (body.model !== undefined && body.model !== c.env.MODEL) {
       throw new HttpError(400, 'bad_request', `unsupported model; use ${c.env.MODEL} or omit it`)
+    }
+
+    // Count the request only once it is valid, and before the model is called.
+    const rawLimit = String(c.env.DAILY_REQUEST_LIMIT ?? '').trim()
+    if (!/^\d+$/.test(rawLimit)) throw new HttpError(503, 'not_configured', 'DAILY_REQUEST_LIMIT is not set')
+    const limit = Number(rawLimit)
+    const today = now().toISOString().slice(0, 10)
+    if (!(await c.env.QUOTA.getByName(c.get('userId')).consume(today, limit))) {
+      throw new HttpError(
+        429,
+        'rate_limited',
+        `You have used all ${limit} requests for today. The quota resets at 00:00 UTC.`,
+      )
     }
 
     // Pass only the fields the model needs; drop anything else a client added.

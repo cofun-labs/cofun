@@ -1,11 +1,12 @@
 import { beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import { createApp, type Env } from '../src/app'
 import { FakeClerk } from './clerk'
-import { FakeAiBinding } from './fakes'
+import { FakeAiBinding, FakeQuotaNamespace } from './fakes'
 
 const MODEL = '@cf/test/model'
 const EXT = 'chrome-extension://abcdefghijklmnopabcdefghijklmnop'
-const app = createApp()
+let clock = new Date('2026-11-08T12:00:00Z')
+const app = createApp({ now: () => clock })
 
 let clerk: FakeClerk
 let otherClerk: FakeClerk
@@ -20,8 +21,11 @@ beforeAll(async () => {
 
 beforeEach(async () => {
   ai = new FakeAiBinding()
+  clock = new Date('2026-11-08T12:00:00Z')
   env = {
     AI: ai,
+    QUOTA: new FakeQuotaNamespace(),
+    DAILY_REQUEST_LIMIT: '100',
     MODEL,
     AI_GATEWAY_ID: 'gw-test',
     CLERK_JWT_KEY: clerk.publicKeyPem,
@@ -196,5 +200,55 @@ describe('worker API', () => {
     const { error } = await json(res)
     expect(error.code).toBe('provider_error')
     expect(error.message).not.toContain('capacity')
+  })
+})
+
+describe('UC-CHAT-001 daily quota', () => {
+  beforeEach(() => {
+    env.DAILY_REQUEST_LIMIT = '2'
+  })
+
+  it("[UC-CHAT-001-S04] a user over today's quota is refused and the model is not called", async () => {
+    expect((await chat(token)).status).toBe(200)
+    expect((await chat(token)).status).toBe(200)
+    const res = await chat(token)
+    expect(res.status).toBe(429)
+    const { error } = await json(res)
+    expect(error.code).toBe('rate_limited')
+    expect(error.message).toContain('00:00 UTC')
+    expect(ai.calls).toHaveLength(2)
+  })
+
+  it('[UC-CHAT-001-S05] the quota resets at 00:00 UTC', async () => {
+    clock = new Date('2026-11-08T23:59:59Z')
+    await chat(token)
+    await chat(token)
+    expect((await chat(token)).status).toBe(429)
+    clock = new Date('2026-11-09T00:00:00Z')
+    expect((await chat(token)).status).toBe(200)
+  })
+
+  it('each user has their own quota', async () => {
+    await chat(token)
+    await chat(token)
+    expect((await chat(token)).status).toBe(429)
+    const bob = await clerk.sessionToken({ userId: 'user_bob', azp: EXT })
+    expect((await chat(bob)).status).toBe(200)
+  })
+
+  it('rejected requests do not use up the quota', async () => {
+    await chat(undefined)
+    await chat(token, { messages: [] })
+    await chat(token, { messages: hi, model: 'other' })
+    expect((await chat(token)).status).toBe(200)
+    expect((await chat(token)).status).toBe(200)
+  })
+
+  it('chat is off without a valid daily limit', async () => {
+    for (const bad of [undefined, '', 'abc', '-1']) {
+      env.DAILY_REQUEST_LIMIT = bad
+      expect((await chat(token)).status).toBe(503)
+    }
+    expect(ai.calls).toHaveLength(0)
   })
 })
