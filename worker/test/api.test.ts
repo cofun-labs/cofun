@@ -520,3 +520,284 @@ describe('usage records', () => {
     expect((await chat(token)).status).toBe(200)
   })
 })
+
+const pageTool = {
+  type: 'function',
+  function: {
+    name: 'get_current_page',
+    description: 'Returns the title and URL of the Notion page open in the current tab.',
+    parameters: { type: 'object', properties: {}, required: [] },
+  },
+}
+const searchTool = {
+  type: 'function',
+  function: {
+    name: 'search_pages',
+    description: 'Searches Notion pages by keyword.',
+    parameters: { type: 'object', properties: { query: { type: 'string' } }, required: ['query'] },
+  },
+}
+const tools = [pageTool, searchTool]
+const askPage = [{ role: 'user', content: 'Which Notion page am I on?' }]
+/** The conversation after the extension ran get_current_page. */
+const withToolResult = (result: string) => [
+  ...askPage,
+  {
+    role: 'assistant',
+    content: null,
+    tool_calls: [{ id: 'call_1', type: 'function', function: { name: 'get_current_page', arguments: '{}' } }],
+  },
+  { role: 'tool', tool_call_id: 'call_1', content: result },
+]
+
+/** Reads a streamed reply back the way an OpenAI client does: text, tool calls by index, and the finish reason. */
+async function readStream(res: Response) {
+  let text = ''
+  let finishReason: string | undefined
+  const calls: { id?: string; name?: string; arguments: string }[] = []
+  for (const event of (await res.text()).split('\n\n')) {
+    if (!event.startsWith('data: ') || event === 'data: [DONE]') continue
+    const choice = JSON.parse(event.slice(6)).choices?.[0]
+    if (!choice) continue
+    text += choice.delta?.content ?? ''
+    for (const d of choice.delta?.tool_calls ?? []) {
+      const call = (calls[d.index] ??= { arguments: '' })
+      if (d.id) call.id = d.id
+      if (d.function?.name) call.name = d.function.name
+      call.arguments += d.function?.arguments ?? ''
+    }
+    if (choice.finish_reason) finishReason = choice.finish_reason
+  }
+  return { text, calls, finishReason }
+}
+
+describe('UC-AGENT-001 Ask the AI something that needs a tool', () => {
+  it('[UC-AGENT-001-S01] the streamed reply asks the extension to run tools, with their arguments', async () => {
+    ai = env.AI = new FakeAiBinding("I'll check.")
+    ai.toolCalls = [
+      { name: 'get_current_page', arguments: '{}' },
+      { name: 'search_pages', arguments: '{"query": "quarterly planning"}' },
+    ]
+    const res = await chat(token, { messages: askPage, tools, stream: true })
+    expect(res.status).toBe(200)
+    const reply = await readStream(res)
+    expect(reply.finishReason).toBe('tool_calls')
+    expect(reply.calls).toEqual([
+      { id: 'chatcmpl-tool-0', name: 'get_current_page', arguments: '{}' },
+      { id: 'chatcmpl-tool-1', name: 'search_pages', arguments: '{"query": "quarterly planning"}' },
+    ])
+    expect(JSON.parse(reply.calls[1].arguments)).toEqual({ query: 'quarterly planning' })
+    // The model was offered the extension's tools.
+    expect(ai.calls[0].inputs.tools).toEqual(tools)
+  })
+
+  it('[UC-AGENT-001-S01] the non-streamed reply asks the extension to run a tool', async () => {
+    ai.toolCalls = [{ name: 'get_current_page', arguments: '{}' }]
+    const res = await chat(token, { messages: askPage, tools })
+    expect(res.status).toBe(200)
+    const { choices } = await json(res)
+    expect(choices[0].finish_reason).toBe('tool_calls')
+    expect(choices[0].message.tool_calls).toEqual([
+      { id: 'chatcmpl-tool-0', type: 'function', function: { name: 'get_current_page', arguments: '{}' } },
+    ])
+  })
+
+  it('[UC-AGENT-001-S02] the AI answers from the tool result the extension sends back', async () => {
+    ai = env.AI = new FakeAiBinding('You are on Q4 Roadmap')
+    const result = JSON.stringify({ title: 'Q4 Roadmap', url: 'https://www.notion.so/Q4-Roadmap-abc123' })
+    const res = await chat(token, { messages: withToolResult(result), tools, stream: true })
+    expect(res.status).toBe(200)
+    expect((await readStream(res)).text).toBe('You are on Q4 Roadmap ')
+    // The model got the whole exchange: the question, its own tool call, and the result.
+    expect(ai.calls[0].inputs.messages).toEqual([
+      ...askPage,
+      {
+        role: 'assistant',
+        content: '',
+        tool_calls: [{ id: 'call_1', type: 'function', function: { name: 'get_current_page', arguments: '{}' } }],
+      },
+      { role: 'tool', tool_call_id: 'call_1', content: result },
+    ])
+  })
+
+  it('[UC-AGENT-001-S03] nothing in tool definitions, calls, or results is kept', async () => {
+    const SECRET = 'okapi-91c2-confidential'
+    ai = env.AI = new FakeAiBinding(`checking ${SECRET}-preamble`)
+    ai.toolCalls = [{ name: 'search_pages', arguments: JSON.stringify({ query: `${SECRET}-arguments` }) }]
+    const secretTools = [
+      {
+        type: 'function',
+        function: {
+          name: 'search_pages',
+          description: `${SECRET}-description`,
+          parameters: { type: 'object', properties: { [`${SECRET}-param`]: { type: 'string' } } },
+        },
+      },
+    ]
+    const messages = [
+      { role: 'user', content: `find ${SECRET}-user` },
+      {
+        role: 'assistant',
+        content: `${SECRET}-assistant`,
+        tool_calls: [
+          { id: `${SECRET}-id`, type: 'function', function: { name: 'search_pages', arguments: `"${SECRET}-args"` } },
+        ],
+      },
+      { role: 'tool', tool_call_id: `${SECRET}-id`, content: `${SECRET}-result` },
+    ]
+    await (await chat(token, { messages, tools: secretTools, stream: true })).text()
+    await chat(token, { messages, tools: secretTools })
+    expect(records()).toHaveLength(2)
+    expect(records().map((r) => r.finishReason)).toEqual(['tool_calls', 'tool_calls'])
+    expect(JSON.stringify(usage.points)).not.toContain(SECRET)
+    expect(
+      ai.calls.every((call) => {
+        const gateway = call.options?.gateway as { collectLog?: boolean; skipCache?: boolean } | undefined
+        return gateway?.collectLog === false && gateway.skipCache === true
+      }),
+    ).toBe(true)
+  })
+})
+
+describe('tool calling', () => {
+  it('a streamed tool call leaves a record with its totals and finish reason', async () => {
+    ai.toolCalls = [{ name: 'get_current_page', arguments: '{}' }]
+    await (await chat(token, { messages: askPage, tools, stream: true })).text()
+    expect(records()).toEqual([
+      expect.objectContaining({
+        outcome: 'ok',
+        finishReason: 'tool_calls',
+        promptTokens: FAKE_USAGE.prompt_tokens,
+        completionTokens: FAKE_USAGE.completion_tokens,
+      }),
+    ])
+  })
+
+  it('tool definitions and tool calls count toward the size limit and the record', async () => {
+    await chat(token, { messages: withToolResult('{"title":"x"}'), tools: [pageTool] })
+    const { inputChars } = records()[0]
+    const toolCalls = [{ id: 'call_1', type: 'function', function: { name: 'get_current_page', arguments: '{}' } }]
+    expect(inputChars).toBe(
+      askPage[0].content.length + JSON.stringify(toolCalls).length + 13 + JSON.stringify([pageTool]).length,
+    )
+
+    const big = 'x'.repeat(200_001)
+    const tooBig = [
+      { messages: askPage, tools: [{ type: 'function', function: { name: 'f', description: big } }] },
+      {
+        messages: [
+          ...askPage,
+          {
+            role: 'assistant',
+            content: null,
+            tool_calls: [{ id: 'c', type: 'function', function: { name: 'f', arguments: big } }],
+          },
+        ],
+      },
+      { messages: [...withToolResult(big)] },
+    ]
+    for (const body of tooBig) expect((await chat(token, body)).status).toBe(400)
+    expect(ai.calls).toHaveLength(1)
+  })
+
+  it('passes only the tool fields the model needs', async () => {
+    await chat(token, {
+      messages: [
+        ...askPage,
+        {
+          role: 'assistant',
+          tool_calls: [
+            { id: 'call_1', type: 'function', function: { name: 'get_current_page', arguments: '{}', x: 1 }, x: 1 },
+          ],
+          refusal: null,
+        },
+        { role: 'tool', tool_call_id: 'call_1', content: '{}', name: 'get_current_page' },
+      ],
+      tools: [{ ...pageTool, function: { ...pageTool.function, strict: true }, extra: 1 }],
+      tool_choice: { type: 'function', function: { name: 'get_current_page', x: 1 } },
+      parallel_tool_calls: false,
+    })
+    expect(ai.calls[0].inputs).toEqual({
+      messages: [
+        ...askPage,
+        {
+          role: 'assistant',
+          content: '',
+          tool_calls: [{ id: 'call_1', type: 'function', function: { name: 'get_current_page', arguments: '{}' } }],
+        },
+        { role: 'tool', tool_call_id: 'call_1', content: '{}' },
+      ],
+      tools: [pageTool],
+      tool_choice: { type: 'function', function: { name: 'get_current_page' } },
+      max_tokens: 16_384,
+    })
+  })
+
+  it('tools without a description or parameters are allowed', async () => {
+    const bare = [{ type: 'function', function: { name: 'ping' } }]
+    expect((await chat(token, { messages: askPage, tools: bare })).status).toBe(200)
+    expect(ai.calls[0].inputs.tools).toEqual(bare)
+  })
+
+  it('every tool_choice mode is passed to the model', async () => {
+    for (const tool_choice of ['auto', 'none', 'required']) {
+      expect((await chat(token, { messages: askPage, tools, tool_choice })).status).toBe(200)
+    }
+    expect(ai.calls.map((c) => c.inputs.tool_choice)).toEqual(['auto', 'none', 'required'])
+  })
+
+  it('invalid tools are rejected without calling the model', async () => {
+    const fn = (f: Record<string, unknown>) => [{ type: 'function', function: f }]
+    const bad: unknown[] = [
+      'get_current_page',
+      [],
+      Array.from({ length: 65 }, (_, i) => ({ type: 'function', function: { name: `t${i}` } })),
+      [{ type: 'code_interpreter' }],
+      [{ type: 'function' }],
+      fn({ name: 'has space' }),
+      fn({ name: 'x'.repeat(65) }),
+      fn({ name: 1 }),
+      fn({ name: 'f', description: 1 }),
+      fn({ name: 'f', parameters: 'object' }),
+      fn({ name: 'f', parameters: [] }),
+      [pageTool, pageTool],
+    ]
+    for (const t of bad) expect((await chat(token, { messages: askPage, tools: t })).status).toBe(400)
+    expect(ai.calls).toHaveLength(0)
+  })
+
+  it('invalid tool_choice is rejected without calling the model', async () => {
+    const bad = [
+      { tool_choice: 'auto' },
+      { tools, tool_choice: 'any' },
+      { tools, tool_choice: { type: 'function', function: { name: 'unknown' } } },
+      { tools, tool_choice: { type: 'function' } },
+      { tools, tool_choice: { function: { name: 'get_current_page' } } },
+    ]
+    for (const body of bad) expect((await chat(token, { messages: askPage, ...body })).status).toBe(400)
+    expect(ai.calls).toHaveLength(0)
+  })
+
+  it('invalid tool calls and tool results are rejected without calling the model', async () => {
+    const call = { id: 'call_1', type: 'function', function: { name: 'get_current_page', arguments: '{}' } }
+    const assistant = (m: Record<string, unknown>) => [...askPage, { role: 'assistant', ...m }]
+    const bad: unknown[][] = [
+      assistant({}),
+      assistant({ content: 1, tool_calls: [call] }),
+      assistant({ tool_calls: [] }),
+      assistant({ tool_calls: {} }),
+      assistant({ tool_calls: Array.from({ length: 33 }, (_, i) => ({ ...call, id: `c${i}` })) }),
+      assistant({ tool_calls: [{ ...call, id: '' }] }),
+      assistant({ tool_calls: [{ ...call, id: 'x'.repeat(257) }] }),
+      assistant({ tool_calls: [{ ...call, type: 'other' }] }),
+      assistant({ tool_calls: [{ ...call, function: { name: 'get_current_page', arguments: {} } }] }),
+      assistant({ tool_calls: [{ ...call, function: { name: 'bad name', arguments: '{}' } }] }),
+      [...askPage, { role: 'tool', content: '{}' }],
+      [...askPage, { role: 'tool', tool_call_id: 'call_1', content: { title: 'x' } }],
+      [...askPage, { role: 'developer', content: 'x' }],
+      [...askPage, null],
+    ]
+    for (const messages of bad) expect((await chat(token, { messages })).status).toBe(400)
+    expect(ai.calls).toHaveLength(0)
+  })
+})
