@@ -2,7 +2,7 @@
 # Apply the repository's GitHub settings from the files in this repo.
 #
 # Run by a repository admin with the gh CLI signed in:
-#   scripts/github-settings.sh [owner/repo]
+#   scripts/sync-github-settings.sh [owner/repo]
 #
 # Idempotent: it reads the current settings, changes only what differs,
 # and prints what it changed.
