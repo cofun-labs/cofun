@@ -1,17 +1,24 @@
 import type { AiBinding } from '../src/app'
 import { consume, type QuotaCounter, type QuotaNamespace, type QuotaStorage } from '../src/quota'
+import type { UsageDataset } from '../src/usage'
 
 type Call = { model: string; inputs: Record<string, unknown>; options?: Record<string, unknown> }
+
+/** Token counts the fake model reports for every reply. */
+export const FAKE_USAGE = { prompt_tokens: 12, completion_tokens: 5, total_tokens: 17 }
 
 /**
  * Stands in for the Workers AI binding (env.AI) with the same `run` signature,
  * replying in the OpenAI chat-completion shape that current models use.
+ * Streams arrive in small byte slices, so lines and characters split across chunks.
  */
 export class FakeAiBinding implements AiBinding {
   calls: Call[] = []
   failWith?: Error
   /** When set, a streamed call returns this raw SSE text instead of the reply. */
   rawSse?: string
+  /** When set, a streamed call fails with this error after sending the first slice. */
+  streamFailWith?: Error
 
   constructor(private reply = 'Hello from Workers AI') {}
 
@@ -24,15 +31,33 @@ export class FakeAiBinding implements AiBinding {
         object: 'chat.completion',
         model,
         choices: [{ index: 0, message: { role: 'assistant', content: this.reply }, finish_reason: 'stop' }],
+        usage: FAKE_USAGE,
       }
     }
 
     if (this.rawSse !== undefined) return new Response(this.rawSse).body
 
-    const lines = this.reply.split(' ').map((w) => ({ choices: [{ index: 0, delta: { content: w + ' ' } }] }))
-    const sse = lines.map((l) => `data: ${JSON.stringify(l)}\n\n`).join('') + 'data: [DONE]\n\n'
-    return new Response(sse).body
+    const events: unknown[] = this.reply
+      .split(' ')
+      .map((w) => ({ choices: [{ index: 0, delta: { content: w + ' ' } }] }))
+    events.push({ choices: [{ index: 0, delta: {}, finish_reason: 'stop' }] })
+    // Like OpenAI, usage comes in a last chunk with no choices, only when asked for.
+    const streamOptions = inputs.stream_options as { include_usage?: boolean } | undefined
+    if (streamOptions?.include_usage) events.push({ choices: [], usage: FAKE_USAGE })
+    const sse = events.map((e) => `data: ${JSON.stringify(e)}\n\n`).join('') + 'data: [DONE]\n\n'
+    return sliced(new TextEncoder().encode(sse), this.streamFailWith)
   }
+}
+
+function sliced(bytes: Uint8Array, failWith?: Error, size = 16): ReadableStream<Uint8Array> {
+  let offset = 0
+  return new ReadableStream({
+    pull(controller) {
+      if (failWith && offset > 0) return controller.error(failWith)
+      if (offset >= bytes.length) return controller.close()
+      controller.enqueue(bytes.slice(offset, (offset += size)))
+    },
+  })
 }
 
 /** In-memory storage with the same get/put shape as Durable Object storage. */
@@ -64,5 +89,16 @@ export class FakeQuotaNamespace implements QuotaNamespace {
         return consume(storage, day, limit)
       },
     }
+  }
+}
+
+type DataPoint = Parameters<UsageDataset['writeDataPoint']>[0]
+
+/** Stands in for the Analytics Engine dataset (env.USAGE): keeps every data point written. */
+export class FakeUsageDataset implements UsageDataset {
+  points: DataPoint[] = []
+
+  writeDataPoint(point: DataPoint): void {
+    this.points.push(structuredClone(point))
   }
 }

@@ -21,6 +21,10 @@
   "durable_objects": { "bindings": [{ "name": "QUOTA", "class_name": "UserQuota" }] },
   "migrations": [{ "tag": "v1", "new_sqlite_classes": ["UserQuota"] }],
 
+  // Per-request usage records (sizes, token counts, outcome; never message content).
+  // Workers Analytics Engine keeps them for 90 days. The dataset is created on first write.
+  "analytics_engine_datasets": [{ "binding": "USAGE", "dataset": "notion_copilot_usage" }],
+
   "vars": {
     // Clerk publishable key, for the sign-in page. Public.
     "CLERK_PUBLISHABLE_KEY": "pk_test_c2F2aW5nLXlldGktOTUxOS5jbGVyay5hY2NvdW50cy5kZXYk",

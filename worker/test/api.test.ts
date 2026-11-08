@@ -1,7 +1,7 @@
 import { beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import { createApp, type Env } from '../src/app'
 import { FakeClerk } from './clerk'
-import { FakeAiBinding, FakeQuotaNamespace } from './fakes'
+import { FAKE_USAGE, FakeAiBinding, FakeQuotaNamespace, FakeUsageDataset } from './fakes'
 
 const MODEL = '@cf/test/model'
 const EXT = 'chrome-extension://abcdefghijklmnopabcdefghijklmnop'
@@ -12,6 +12,7 @@ let clerk: FakeClerk
 let otherClerk: FakeClerk
 let ai: FakeAiBinding
 let quota: FakeQuotaNamespace
+let usage: FakeUsageDataset
 let env: Env
 let token: string
 
@@ -26,6 +27,7 @@ beforeEach(async () => {
   env = {
     AI: ai,
     QUOTA: (quota = new FakeQuotaNamespace()),
+    USAGE: (usage = new FakeUsageDataset()),
     DAILY_REQUEST_LIMIT: '100',
     MODEL,
     AI_GATEWAY_ID: 'gw-test',
@@ -77,7 +79,7 @@ describe('UC-CHAT-001 Ask the AI from the side panel', () => {
     const text = (await res.text())
       .split('\n\n')
       .filter((l) => l.startsWith('data: ') && l !== 'data: [DONE]')
-      .map((l) => JSON.parse(l.slice(6)).choices[0].delta.content)
+      .map((l) => JSON.parse(l.slice(6)).choices[0]?.delta.content ?? '')
       .join('')
     expect(text).toBe('Hello from Workers AI ')
   })
@@ -164,7 +166,9 @@ describe('worker API', () => {
     expect(ai.calls[0]).toEqual({
       model: MODEL,
       inputs: { messages: hi, max_tokens: 50 },
-      options: { gateway: { id: 'gw-test', metadata: { app: 'notion-copilot', user: 'user_alice' } } },
+      options: {
+        gateway: { id: 'gw-test', collectLog: false, metadata: { app: 'notion-copilot', user: 'user_alice' } },
+      },
     })
   })
 
@@ -282,5 +286,165 @@ describe('UC-CHAT-001 daily quota', () => {
       expect((await chat(token)).status).toBe(503)
     }
     expect(ai.calls).toHaveLength(0)
+  })
+})
+
+/** Reads a usage data point back into named fields, following the layout in src/usage.ts. */
+function usageRecord(point: FakeUsageDataset['points'][number]) {
+  const [userId] = point.indexes ?? []
+  const [model, outcome, finishReason, mode] = point.blobs ?? []
+  const [messages, inputChars, promptTokens, completionTokens, latencyMs] = point.doubles ?? []
+  return { userId, model, outcome, finishReason, mode, messages, inputChars, promptTokens, completionTokens, latencyMs }
+}
+const records = () => usage.points.map(usageRecord)
+
+describe("UC-CHAT-002 Keep a record of each user's chat usage", () => {
+  const two = [
+    { role: 'system', content: 'be brief' },
+    { role: 'user', content: 'hello' },
+  ]
+
+  it('[UC-CHAT-002-S01] a streamed reply leaves a record with its token counts', async () => {
+    const res = await chat(token, { messages: two, stream: true })
+    expect(res.status).toBe(200)
+    await res.text()
+    expect(records()).toEqual([
+      {
+        userId: 'user_alice',
+        model: MODEL,
+        outcome: 'ok',
+        finishReason: 'stop',
+        mode: 'stream',
+        messages: 2,
+        inputChars: 13,
+        promptTokens: FAKE_USAGE.prompt_tokens,
+        completionTokens: FAKE_USAGE.completion_tokens,
+        latencyMs: expect.any(Number),
+      },
+    ])
+    expect(records()[0].latencyMs).toBeGreaterThanOrEqual(0)
+    expect(ai.calls[0].inputs.stream_options).toEqual({ include_usage: true })
+  })
+
+  it('[UC-CHAT-002-S01] a non-streamed reply leaves a record with its token counts', async () => {
+    expect((await chat(token, { messages: two })).status).toBe(200)
+    expect(records()).toEqual([
+      expect.objectContaining({
+        userId: 'user_alice',
+        outcome: 'ok',
+        finishReason: 'stop',
+        mode: 'sync',
+        messages: 2,
+        inputChars: 13,
+        promptTokens: FAKE_USAGE.prompt_tokens,
+        completionTokens: FAKE_USAGE.completion_tokens,
+      }),
+    ])
+  })
+
+  it('[UC-CHAT-002-S02] refused and failed requests leave a record of how they ended', async () => {
+    env.DAILY_REQUEST_LIMIT = '1'
+    await chat(token, { messages: [] })
+    await chat(token)
+    await chat(token)
+    env.DAILY_REQUEST_LIMIT = '100'
+    ai.failWith = new Error('capacity')
+    await chat(token)
+    ai.failWith = undefined
+    quota.failWith = new Error('Durable Object reset')
+    await chat(token)
+    expect(records().map((r) => r.outcome)).toEqual([
+      'bad_request',
+      'ok',
+      'rate_limited',
+      'provider_error',
+      'quota_unavailable',
+    ])
+    expect(records().every((r) => r.userId === 'user_alice')).toBe(true)
+  })
+
+  it('[UC-CHAT-002-S02] a stream that breaks off leaves a record of how it ended', async () => {
+    ai.streamFailWith = new Error('connection reset')
+    const res = await chat(token, { messages: hi, stream: true })
+    await expect(res.text()).rejects.toThrow('connection reset')
+    expect(records().map((r) => r.outcome)).toEqual(['stream_error'])
+  })
+
+  it('[UC-CHAT-002-S03] nothing users wrote or the AI replied is kept', async () => {
+    const SECRET = 'zebra-7f3a-confidential'
+    ai = env.AI = new FakeAiBinding(`reply ${SECRET}-reply`)
+    const messages = [
+      { role: 'system', content: `system ${SECRET}-system` },
+      { role: 'user', content: `page ${SECRET}-user` },
+      { role: 'assistant', content: `earlier ${SECRET}-assistant` },
+    ]
+    await (await chat(token, { messages, stream: true })).text()
+    await chat(token, { messages })
+    await chat(token, { messages, model: `${SECRET}-model` })
+    expect(records()).toHaveLength(3)
+    expect(JSON.stringify(usage.points)).not.toContain(SECRET)
+    // The gateway is told not to keep prompts and replies in its logs.
+    expect(ai.calls.every((call) => (call.options?.gateway as any).collectLog === false)).toBe(true)
+  })
+})
+
+// Standalone tests for usage records.
+describe('usage records', () => {
+  it('requests that fail auth leave no record', async () => {
+    await chat(undefined)
+    await chat('not-a-jwt')
+    expect(usage.points).toHaveLength(0)
+  })
+
+  it('a stream the client cancels is recorded as cancelled', async () => {
+    const res = await chat(token, { messages: hi, stream: true })
+    const reader = res.body!.getReader()
+    await reader.read()
+    await reader.cancel()
+    expect(records().map((r) => r.outcome)).toEqual(['cancelled'])
+  })
+
+  it('the stream reaches the client unchanged', async () => {
+    const sse = 'data: {"choices":[{"delta":{"content":"a"}}]}\n\ndata: [DONE]\n\n'
+    ai.rawSse = sse
+    expect(await (await chat(token, { messages: hi, stream: true })).text()).toBe(sse)
+    expect(records()[0]).toMatchObject({ outcome: 'ok', promptTokens: 0, completionTokens: 0, finishReason: '' })
+  })
+
+  it('reads the totals from a Workers AI stream with per-chunk usage', async () => {
+    // Shape recorded from the production model: per-chunk usage, a zeroed chunk, then the totals.
+    const usageOf = (p: number, c: number) => ({ prompt_tokens: p, completion_tokens: c, total_tokens: p + c })
+    ai.rawSse = [
+      { choices: [{ index: 0, delta: { content: 'Hi' }, finish_reason: null }], usage: usageOf(0, 2) },
+      { choices: [{ index: 0, delta: { content: '!' }, finish_reason: 'length' }], usage: usageOf(0, 4) },
+      { choices: [], usage: usageOf(0, 0) },
+      { response: '', usage: usageOf(36, 30) },
+    ]
+      .map((e) => `data: ${JSON.stringify(e)}\n\n`)
+      .join('')
+      .concat('data: [DONE]\n\n')
+    await (await chat(token, { messages: hi, stream: true })).text()
+    expect(records()[0]).toMatchObject({
+      outcome: 'ok',
+      finishReason: 'length',
+      promptTokens: 36,
+      completionTokens: 30,
+    })
+  })
+
+  it('unknown finish reasons and malformed token counts are not copied into records', async () => {
+    ai.rawSse =
+      'data: {"choices":[{"delta":{},"finish_reason":"free text"}],"usage":{"prompt_tokens":"9","completion_tokens":-1}}\n\n'
+    await (await chat(token, { messages: hi, stream: true })).text()
+    expect(records()[0]).toMatchObject({ finishReason: 'other', promptTokens: 0, completionTokens: 0 })
+  })
+
+  it('a failing usage dataset does not fail the request', async () => {
+    env.USAGE = {
+      writeDataPoint() {
+        throw new Error('dataset unavailable')
+      },
+    }
+    expect((await chat(token)).status).toBe(200)
   })
 })
