@@ -8,9 +8,9 @@ Copilot for Notion: a Chrome extension that opens an AI side panel next to Notio
 
 **Always use `pnpm`** (never `npm` or `yarn`). **Always use the `gh` CLI** for GitHub operations: issues, labels, pull requests, checks, comments, and reviews.
 
-**All changes are issue-driven and follow the BDD workflow (see [docs/bdd.md](docs/bdd.md)):**
+**All changes follow the BDD workflow (see [docs/bdd.md](docs/bdd.md)) and are usually issue-driven:**
 
-1. **Create an Issue first.** Add a priority label (`P0`, `P1`, or `P2`) and describe:
+1. **Create an Issue first**, unless the user explicitly asks you to open a PR directly; then skip the Issue and put its Goal, Approach, and Checklist in the PR body instead. Add a priority label (`P0`, `P1`, or `P2`) and describe:
    - Goal: the problem being solved or the feature being added
    - Approach: how it will be implemented
    - This checklist, which must be complete before merge:
@@ -38,15 +38,15 @@ Copilot for Notion: a Chrome extension that opens an AI side panel next to Notio
      ```
    - Implementation details worth guarding (status codes, CORS, config errors, regressions) get standalone tests without a scenario ID.
 
-4. **Run pre-PR checks.** Run `pnpm check`, then review `git diff --stat origin/main...` and `git diff origin/main... -- docs/use-cases`. Confirm the diff matches the Issue and no BDD updates are missing.
+4. **Run pre-PR checks.** Run `pnpm check`, then review `git diff --stat origin/main...` and `git diff origin/main... -- docs/use-cases`. Confirm the diff matches the Issue (or the PR body, when there is no Issue) and no BDD updates are missing.
 
-5. **Open a PR.** Branch `issue-{ID}` from `origin/main`, commit, push, and open a PR whose body contains `Closes #{ID}`.
+5. **Open a PR.** Branch `issue-{ID}` from `origin/main` (or a short descriptive name when there is no Issue), commit, push, and open a PR. If there is an Issue, the PR body contains `Closes #{ID}`.
 
 6. **Wait for checks.** If a check fails, fix it, push to the same branch, and wait again until all checks pass.
 
 7. **Review the PR.** Once CI passes, **always spawn a sub-agent** for an independent review (it must not carry the implementation context). The sub-agent:
-   - Reads the Issue and PR descriptions
-   - Verifies every requirement in the Issue is implemented
+   - Reads the Issue (if any) and PR descriptions
+   - Verifies every requirement in the Issue or PR body is implemented
    - Verifies the diff matches the BDD scenarios, every `api-test` scenario has a test, and no implementation details were written into use cases
    - Confirms there are no unrelated changes
    - Judges whether the approach is correct and reasonable
@@ -54,7 +54,7 @@ Copilot for Notion: a Chrome extension that opens an AI side panel next to Notio
 
 8. **Handle PR comments.** Fix every blocking comment or answer it with a clear reason no change is needed. Non-blocking suggestions can be fixed now or turned into a follow-up Issue. Push fixes to the same branch and reply to each comment with the fix commit, the verification, or the follow-up Issue. Then resolve each review thread: GitHub blocks merging until every thread is resolved. `gh` has no command for it, so use `gh api graphql` with the `resolveReviewThread` mutation, or the web UI.
 
-9. **Hand off for merge.** Check that every Issue checklist item is done, then tell the user the PR is ready to merge. **Never merge a PR on your own**, and never enable auto-merge. Only when the user explicitly asks, run `gh pr merge {PR}`. `main` uses a merge queue: this adds the PR to the queue, which runs CI again on top of the latest `main` and squash-merges it if CI passes. Wait until the PR shows as merged; if the queue removes it, fix the failure and tell the user before queueing it again. GitHub deletes the branch, and `Closes #ID` closes the Issue.
+9. **Hand off for merge.** Check that every checklist item in the Issue or PR body is done, then tell the user the PR is ready to merge. **Never merge a PR on your own**, and never enable auto-merge. Only when the user explicitly asks, run `gh pr merge {PR}`. `main` uses a merge queue: this adds the PR to the queue, which runs CI again on top of the latest `main` and squash-merges it if CI passes. Wait until the PR shows as merged; if the queue removes it, fix the failure and tell the user before queueing it again. GitHub deletes the branch, and `Closes #ID` closes the Issue, if there is one.
 
 10. **Wait for the deploy.** Once the queue merges the PR, the push to `main` triggers Cloudflare Workers Builds, which runs the worker tests and deploys the worker. The work is done only when that deploy succeeds; if it fails, fix it right away.
 
