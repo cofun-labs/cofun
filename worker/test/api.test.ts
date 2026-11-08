@@ -780,6 +780,9 @@ describe('tool calling', () => {
     ]
     for (const messages of bad) expect((await chat(token, { messages })).status).toBe(400)
     expect(ai.calls).toHaveLength(0)
+    // The client's id is not echoed back.
+    const stray = { ...result, tool_call_id: 'stray-<id>' }
+    expect((await json(await chat(token, { messages: [question, stray] }))).error.message).not.toContain('stray')
     // Results for several calls may come in any order.
     expect((await chat(token, { messages: [question, twoCalls, result2, result, later] })).status).toBe(200)
   })

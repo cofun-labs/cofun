@@ -204,7 +204,7 @@ function parseModelInputs(body: Record<string, unknown>): { inputs: ModelInputs;
     if (m.role === 'tool') {
       const id = m.tool_call_id as string
       if (!pending.delete(id)) {
-        throw badRequest(`tool message ${id} does not answer a call from the assistant message before it`)
+        throw badRequest('each tool message must answer a call from the assistant message before it')
       }
       chars += id.length
       continue
