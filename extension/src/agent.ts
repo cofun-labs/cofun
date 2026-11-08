@@ -53,7 +53,8 @@ export class CopilotAgent {
   private readonly maxSteps: number
   /** Bumped by stop() and reset(), so a question still waiting to start knows it was cancelled. */
   private epoch = 0
-  private running = false
+  /** The question this agent is answering; reset() clears it, since the next one gets a new pi agent. */
+  private running?: object
 
   constructor(private readonly config: AgentConfig) {
     this.maxSteps = config.maxSteps ?? DEFAULT_MAX_STEPS
@@ -67,40 +68,51 @@ export class CopilotAgent {
   async ask(text: string, onUpdate: (update: AgentUpdate) => void): Promise<AskResult> {
     // One question at a time: an overlapping run would roll back the other's messages.
     if (this.running) return { status: 'error', message: 'Already answering a question.' }
-    this.running = true
+    const question = {}
+    this.running = question
     try {
       return await this.askWithRetry(text, onUpdate)
     } finally {
-      this.running = false
+      if (this.running === question) this.running = undefined
     }
   }
 
   private async askWithRetry(text: string, onUpdate: (update: AgentUpdate) => void): Promise<AskResult> {
     const epoch = this.epoch
-    const result = await this.askOnce(text, onUpdate, epoch)
+    const { result, ranTools } = await this.askOnce(text, onUpdate, epoch)
     // The worker's model changed since this panel looked it up (a deploy). The worker refuses the
-    // request before using any quota, so look the model up again and retry once.
-    if (result.status === 'error' && result.message.startsWith('unsupported model') && epoch === this.epoch) {
+    // request before using any quota, so look the model up again and retry once, but only if no tool
+    // ran yet: a retry runs the whole question again.
+    if (
+      result.status === 'error' &&
+      result.message.startsWith('unsupported model') &&
+      !ranTools &&
+      epoch === this.epoch
+    ) {
       try {
         this.model = await this.loadModel()
       } catch (err) {
         return { status: 'error', message: (err as Error).message }
       }
       if (this.agent) this.agent.state.model = this.model
-      return this.askOnce(text, onUpdate, epoch)
+      return (await this.askOnce(text, onUpdate, epoch)).result
     }
     return result
   }
 
-  private async askOnce(text: string, onUpdate: (update: AgentUpdate) => void, epoch: number): Promise<AskResult> {
+  private async askOnce(
+    text: string,
+    onUpdate: (update: AgentUpdate) => void,
+    epoch: number,
+  ): Promise<{ result: AskResult; ranTools: boolean }> {
     let agent: Agent
     try {
       agent = await this.getAgent()
     } catch (err) {
-      return { status: 'error', message: (err as Error).message }
+      return { result: { status: 'error', message: (err as Error).message }, ranTools: false }
     }
     // Stopped, or a new chat started, while the agent was being set up.
-    if (epoch !== this.epoch) return { status: 'stopped' }
+    if (epoch !== this.epoch) return { result: { status: 'stopped' }, ranTools: false }
 
     const before = agent.state.messages.length
     let steps = 0
@@ -109,6 +121,7 @@ export class CopilotAgent {
     let stopped = false
     // The model gave its final answer; a Stop after this point is too late to drop it.
     let answered = false
+    let ranTools = false
     const refused = new Set<string>()
 
     // On the last step, refuse the tools the model asks for instead of running them: the question
@@ -123,8 +136,16 @@ export class CopilotAgent {
         terminate: true,
       }
     }
+    // The model gets no more turns once the steps are used up. beforeToolCall above only sees calls
+    // that pi could prepare; unknown tools and invalid arguments get error results without it.
+    agent.finishTurn = async ({ toolResults }) => {
+      if (steps < this.maxSteps || toolResults.length === 0) return
+      hitLimit = true
+      return { action: 'end' }
+    }
     const unsubscribe = agent.subscribe((event: AgentEvent) => {
       if (event.type === 'turn_start') steps++
+      if (event.type === 'tool_execution_start') ranTools = true
       const update = toUpdate(event)
       if (update?.type === 'tool_end' && refused.has(update.id)) onUpdate({ ...update, skipped: true })
       else if (update) onUpdate(update)
@@ -132,7 +153,8 @@ export class CopilotAgent {
         const m = event.message as AssistantMessage
         if (m.stopReason === 'error') failure = errorText(m.errorMessage)
         if (m.stopReason === 'aborted') stopped = true
-        if (m.stopReason === 'stop' || m.stopReason === 'length') answered = true
+        const final = !m.content.some((block) => block.type === 'toolCall')
+        if (final && (m.stopReason === 'stop' || m.stopReason === 'length')) answered = true
       }
     })
 
@@ -144,6 +166,7 @@ export class CopilotAgent {
     } finally {
       unsubscribe()
       agent.beforeToolCall = undefined
+      agent.finishTurn = undefined
     }
 
     // Also stopped when the abort landed after a model reply that asked for tools, e.g. while a tool
@@ -151,9 +174,10 @@ export class CopilotAgent {
     stopped ||= epoch !== this.epoch && !answered
     if (failure || stopped) {
       agent.state.messages = agent.state.messages.slice(0, before)
-      return stopped ? { status: 'stopped' } : { status: 'error', message: failure! }
+      const result: AskResult = stopped ? { status: 'stopped' } : { status: 'error', message: failure! }
+      return { result, ranTools }
     }
-    return hitLimit ? { status: 'step_limit', steps } : { status: 'done' }
+    return { result: hitLimit ? { status: 'step_limit', steps } : { status: 'done' }, ranTools }
   }
 
   /** Stops the current model call and any running tool. */
@@ -168,6 +192,7 @@ export class CopilotAgent {
     const agent = this.agent
     this.agent = undefined
     this.model = undefined
+    this.running = undefined
     if (!agent) return
     agent.abort()
     await agent.waitForIdle()
@@ -284,7 +309,8 @@ function toAgentTool(spec: ToolSpec): AgentTool {
     parameters: spec.parameters,
     execute: async (_id, params, signal) => {
       const result = await spec.run(params as Record<string, unknown>, signal)
-      const text = typeof result === 'string' ? result : JSON.stringify(result)
+      // JSON.stringify(undefined) is undefined; tool results must be strings.
+      const text = typeof result === 'string' ? result : (JSON.stringify(result) ?? '')
       return { content: [{ type: 'text', text }], details: undefined }
     },
   }

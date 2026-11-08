@@ -1,6 +1,6 @@
 // Runs the extension's real agent (extension/src/agent.ts) against the worker,
 // so the two sides can't drift apart.
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { CopilotAgent, type AgentUpdate, type ToolSpec } from '../../extension/src/agent'
 import { getCurrentPage } from '../../extension/src/tools'
 import { createApp, type Env } from '../src/app'
@@ -155,6 +155,32 @@ describe('extension agent against the worker', () => {
     expect(sentMessages(3).at(-2)).toMatchObject({ role: 'tool', content: expect.stringContaining('limit of 3 steps') })
   })
 
+  it('calls pi cannot run (unknown tool, invalid arguments) still stop at the step limit', async () => {
+    for (const calls of [
+      [{ name: 'no_such_tool', arguments: '{}' }],
+      [{ name: 'get_current_page', arguments: '{"x":1}' }],
+      [
+        { name: 'get_current_page', arguments: '{}' },
+        { name: 'no_such_tool', arguments: '{}' },
+      ],
+    ]) {
+      ai = env.AI = new FakeAiBinding('你好 来自 worker')
+      ai.toolCalls = calls
+      const agent = makeAgent({ maxSteps: 3 })
+      expect((await ask(agent, 'Which page am I on?')).result).toEqual({ status: 'step_limit', steps: 3 })
+      expect(ai.calls).toHaveLength(3)
+      ai.toolCalls = undefined
+      expect((await ask(agent, 'Thanks')).result).toEqual({ status: 'done' })
+    }
+  })
+
+  it('a tool that returns nothing still gives the model a result', async () => {
+    const quiet: ToolSpec = { ...pageTool().tool, run: async () => undefined }
+    ai.script = [{ toolCalls: [{ name: 'get_current_page', arguments: '{}' }] }, { reply: 'Done' }]
+    expect((await ask(makeAgent({ tools: [quiet] }), 'Which page am I on?')).result).toEqual({ status: 'done' })
+    expect(sentMessages(1).at(-1)).toMatchObject({ role: 'tool', content: expect.any(String) })
+  })
+
   it('several tool calls on the last step are all refused, and the next question still works', async () => {
     const { tool, runs } = pageTool()
     ai.toolCalls = [
@@ -298,6 +324,34 @@ describe('extension agent against the worker', () => {
       '你好 来自 worker ',
       'second',
     ])
+  })
+
+  it('new chat works at once even if the old question has a tool that never finishes', async () => {
+    const stuck: ToolSpec = { ...pageTool().tool, run: () => new Promise(() => {}) }
+    const agent = makeAgent({ tools: [stuck] })
+    ai.script = [{ toolCalls: [{ name: 'get_current_page', arguments: '{}' }] }]
+    const first = agent.ask('Which page am I on?', () => {})
+    await vi.waitFor(() => expect(ai.calls).toHaveLength(1))
+    void agent.reset()
+    expect((await ask(agent, 'hi')).result).toEqual({ status: 'done' })
+    expect(sentMessages(1).map((m) => m.role)).toEqual(['system', 'user'])
+    void first
+  })
+
+  it('a model change after a tool ran is reported, not retried', async () => {
+    const { tool, runs } = pageTool()
+    const changing: ToolSpec = {
+      ...tool,
+      run: async (args) => {
+        env.MODEL = '@cf/test/next-model'
+        return tool.run(args)
+      },
+    }
+    ai.script = [{ toolCalls: [{ name: 'get_current_page', arguments: '{}' }] }, { reply: 'Q4 Roadmap' }]
+    const { result } = await ask(makeAgent({ tools: [changing] }), 'Which page am I on?')
+    expect(result).toMatchObject({ status: 'error', message: expect.stringContaining('unsupported model') })
+    // The tool ran once; running the question again would run it again.
+    expect(runs).toHaveLength(1)
   })
 
   it('asks to sign in when there is no session', async () => {

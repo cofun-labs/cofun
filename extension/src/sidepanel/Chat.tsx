@@ -79,8 +79,8 @@ export function Chat() {
       else if (result.status === 'step_limit')
         updateReply((m) => ({ ...m, note: `Stopped after ${result.steps} steps. Ask again to continue.` }))
     } finally {
-      // After "New chat" too: the old question has settled, so the agent is free again.
-      setBusy(false)
+      // "New chat" already unlocked the composer for the new conversation.
+      if (chatId.current === id) setBusy(false)
     }
   }
 
@@ -104,6 +104,7 @@ export function Chat() {
           onClick={() => {
             chatId.current++
             void agent.reset()
+            setBusy(false)
             setMessages([])
           }}
         >
