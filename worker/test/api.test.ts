@@ -458,6 +458,15 @@ describe('usage records', () => {
     expect(records()[0]).toMatchObject({ outcome: 'ok', promptTokens: 0, completionTokens: 0, finishReason: '' })
   })
 
+  it('a streamed request refused before the model is called is recorded as streamed', async () => {
+    await chat(token, { messages: [], stream: true })
+    await chat(token, { messages: hi, max_tokens: 100_000, stream: true })
+    expect(records().map((r) => [r.outcome, r.mode])).toEqual([
+      ['bad_request', 'stream'],
+      ['bad_request', 'stream'],
+    ])
+  })
+
   it('a failing usage dataset does not fail the request', async () => {
     env.USAGE = {
       writeDataPoint() {

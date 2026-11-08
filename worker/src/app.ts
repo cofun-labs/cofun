@@ -151,6 +151,7 @@ export function createApp({ now = () => new Date() }: AppOptions = {}) {
   async function chatCompletion(c: Ctx, usage: UsageRecord, record: (outcome: string) => void): Promise<Response> {
     const body = await readJson(c)
     const { messages, stream } = body
+    usage.stream = stream === true
     const max_tokens = body.max_tokens ?? undefined // null means not set
     if (!Array.isArray(messages) || messages.length === 0) {
       throw new HttpError(400, 'bad_request', 'messages must be a non-empty array')
@@ -179,7 +180,6 @@ export function createApp({ now = () => new Date() }: AppOptions = {}) {
     }
     if (stream !== undefined && typeof stream !== 'boolean')
       throw new HttpError(400, 'bad_request', 'stream must be a boolean')
-    usage.stream = stream === true
     if (body.model !== undefined && body.model !== c.env.MODEL) {
       throw new HttpError(400, 'bad_request', `unsupported model; use ${c.env.MODEL} or omit it`)
     }
