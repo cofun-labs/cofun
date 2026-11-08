@@ -138,7 +138,7 @@ SELECT index1 AS user, toStartOfDay(timestamp) AS day,
        sum(_sample_interval) AS requests,
        sum(_sample_interval * double3) AS prompt_tokens,
        sum(_sample_interval * double4) AS completion_tokens,
-       sumIf(_sample_interval, blob2 != 'ok') AS failed
+       sumIf(_sample_interval, blob2 != 'ok' AND blob2 != 'cancelled') AS failed
 FROM notion_copilot_usage
 WHERE timestamp > NOW() - INTERVAL '7' DAY
 GROUP BY user, day

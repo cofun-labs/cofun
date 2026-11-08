@@ -28,9 +28,11 @@ async function uatCookieName(): Promise<string> {
   return `__client_uat_${suffix}`
 }
 
+// Reading by URL can return both a host-only and a parent-domain cookie with this name, in no
+// fixed order. A stale "0" left on one of them must not hide a live session on the other.
 async function readSignedIn(name: string): Promise<boolean> {
-  const cookie = (await chrome.cookies.getAll({ url: SYNC_HOST, name }))[0]
-  return !!cookie && cookie.value !== '' && cookie.value !== '0'
+  const cookies = await chrome.cookies.getAll({ url: SYNC_HOST, name })
+  return cookies.some((cookie) => cookie.value !== '' && cookie.value !== '0')
 }
 
 uatCookieName()
