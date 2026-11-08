@@ -13,6 +13,12 @@ export interface FakeToolCall {
   arguments: string
 }
 
+/** One scripted model reply: text, tool calls, or text followed by tool calls. */
+export interface FakeTurn {
+  reply?: string
+  toolCalls?: FakeToolCall[]
+}
+
 /**
  * Stands in for the Workers AI binding (env.AI) with the same `run` signature,
  * replying in the OpenAI chat-completion shape that current models use.
@@ -27,6 +33,11 @@ export class FakeAiBinding implements AiBinding {
   streamFailWith?: Error
   /** When set, the model writes the reply as a preamble and then asks the client to run these tools. */
   toolCalls?: FakeToolCall[]
+  /**
+   * Replies for the next calls, one per call, used before `reply` and `toolCalls`:
+   * a turn with tool calls asks the client to run them, one without answers with its text.
+   */
+  script: FakeTurn[] = []
   private nextToolCallId = 0
 
   constructor(private reply = 'Hello from Workers AI') {}
@@ -35,22 +46,23 @@ export class FakeAiBinding implements AiBinding {
     this.calls.push({ model, inputs, options })
     if (this.failWith) throw this.failWith
 
-    if (this.toolCalls) return this.toolCallReply(model, this.toolCalls, inputs)
+    const turn = this.script.shift()
+    const reply = turn ? (turn.reply ?? '') : this.reply
+    const toolCalls = turn ? turn.toolCalls : this.toolCalls
+    if (toolCalls) return this.toolCallReply(model, toolCalls, inputs, reply)
 
     if (!inputs.stream) {
       return {
         object: 'chat.completion',
         model,
-        choices: [{ index: 0, message: { role: 'assistant', content: this.reply }, finish_reason: 'stop' }],
+        choices: [{ index: 0, message: { role: 'assistant', content: reply }, finish_reason: 'stop' }],
         usage: FAKE_USAGE,
       }
     }
 
     if (this.rawSse !== undefined) return new Response(this.rawSse).body
 
-    const events: unknown[] = this.reply
-      .split(' ')
-      .map((w) => ({ choices: [{ index: 0, delta: { content: w + ' ' } }] }))
+    const events: unknown[] = reply.split(' ').map((w) => ({ choices: [{ index: 0, delta: { content: w + ' ' } }] }))
     events.push({ choices: [{ index: 0, delta: {}, finish_reason: 'stop' }] })
     // Like OpenAI, usage comes in a last chunk with no choices, only when asked for.
     const streamOptions = inputs.stream_options as { include_usage?: boolean } | undefined
@@ -63,7 +75,7 @@ export class FakeAiBinding implements AiBinding {
    * Streamed, each call's name comes first and its arguments follow in pieces, and usage arrives the
    * Workers AI way: per-chunk counts, a zeroed chunk, then a `response` chunk with the totals.
    */
-  private toolCallReply(model: string, toolCalls: FakeToolCall[], inputs: Record<string, unknown>) {
+  private toolCallReply(model: string, toolCalls: FakeToolCall[], inputs: Record<string, unknown>, reply: string) {
     // Like the real model's random ids, these don't repeat across replies.
     const ids = toolCalls.map(() => `chatcmpl-tool-${this.nextToolCallId++}`)
     if (!inputs.stream) {
@@ -75,7 +87,7 @@ export class FakeAiBinding implements AiBinding {
             index: 0,
             message: {
               role: 'assistant',
-              content: this.reply,
+              content: reply,
               tool_calls: toolCalls.map((t, i) => ({
                 id: ids[i],
                 type: 'function',
@@ -102,7 +114,7 @@ export class FakeAiBinding implements AiBinding {
           total_tokens: FAKE_USAGE.prompt_tokens,
         },
       },
-      ...this.reply.split(' ').map((w) => chunk({ content: w + ' ' })),
+      ...(reply ? reply.split(' ').map((w) => chunk({ content: w + ' ' })) : []),
     ]
     // Short arguments (`{}`) come with the name; longer ones follow it in pieces, and the last piece
     // carries the finish reason. After short arguments the finish reason comes in a chunk of its own.

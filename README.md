@@ -16,6 +16,7 @@
 - [x] Side panel opens from the toolbar icon on Notion tabs
 - [x] Sign in on a web page (Google supported); the session syncs into the extension
 - [x] Chat with streamed replies
+- [x] Basic agent: the model calls tools that run in the extension (first tool: the current page's title and URL)
 - [ ] Read the current Notion page
 - [ ] Edit the current Notion page
 
@@ -29,6 +30,7 @@
 | Backend | Cloudflare Workers + Hono | Model access stays server-side; the AI binding needs no API token |
 | Model | Workers AI through AI Gateway | No third-party API keys; the gateway adds logs, caching, and per-user analytics |
 | API shape | OpenAI-compatible `/v1/chat/completions` | A common streaming format, so the extension doesn't change if the model or backend does |
+| Agent runtime | [`@earendil-works/pi-agent-core`](https://www.npmjs.com/package/@earendil-works/pi-agent-core), wrapped in `extension/src/agent.ts` | Tool loop, events, abort, and tool hooks in a small package; it runs in the side panel because tools act on the browser. Only `agent.ts` imports it, so it can be replaced |
 | Deploy | Cloudflare Workers Builds (Git integration) | Cloudflare pulls the repo and deploys on merge to `main`; no Cloudflare credentials stored on GitHub |
 | Notion read/write (planned) | Notion's own internal endpoints, called from the page: `/api/v3/loadPageChunk` to read, `/api/v3/saveTransactionsFanout` to write | Verified to read and write a real page, with edits persisting after reload. Needs no Notion integration token and no `chrome.debugger` (which shows a permanent "debugging this browser" banner). The trade-off: these are not public APIs and may change |
 
@@ -51,7 +53,8 @@ extension/                Chrome extension
   vite.config.ts          build config; generates manifest.json from .env
   sidepanel.html
   src/background.ts       opens the side panel from the toolbar icon; enabled only on Notion tabs
-  src/llm.ts              streaming chat client for the worker
+  src/agent.ts            agent loop (pi) against the worker; the only module that imports pi
+  src/tools.ts            tools the agent runs in the extension
   src/sidepanel/          React UI (main.tsx: sign-in, Chat.tsx: chat)
 worker/                   Cloudflare Worker
   src/app.ts              Hono app: Clerk JWT verification + /v1/chat/completions

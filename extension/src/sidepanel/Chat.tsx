@@ -1,54 +1,39 @@
 import { useAuth } from '@clerk/chrome-extension'
 import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from 'react'
-import { streamChat, type ChatMessage } from '../llm'
+import { CopilotAgent, type AgentUpdate } from '../agent'
+import { TOOLS } from '../tools'
 
 const API_URL = import.meta.env.VITE_API_URL as string
 const SYSTEM_PROMPT =
-  'You are Copilot, an AI assistant that helps the user read and edit their Notion pages. Be concise.'
+  'You are Copilot, an AI assistant that helps the user read and edit their Notion pages. ' +
+  'Use the tools when you need to know about the page or the browser. Be concise.'
 
-// error and stopped are display state only; they never go to the model.
-type Shown = ChatMessage & { error?: boolean; stopped?: boolean }
+/** A tool the agent ran for this reply. A placeholder until the proper display lands. */
+type ShownTool = { id: string; name: string; status: 'running' | 'done' | 'failed' }
 
-// Stay well under the worker's limits (200 messages, 200k characters) by
-// sending only the most recent part of a long conversation.
-const MAX_HISTORY_MESSAGES = 100
-const MAX_HISTORY_CHARS = 150_000
-
-/** The conversation to send: failed or empty replies are dropped together with the question that led to them. */
-function toHistory(shown: Shown[]): ChatMessage[] {
-  const out: ChatMessage[] = []
-  for (const m of shown) {
-    if (m.role === 'assistant' && (m.error || !m.content)) {
-      if (out.at(-1)?.role === 'user') out.pop()
-      continue
-    }
-    out.push({ role: m.role, content: m.content })
-  }
-  return out
-}
-
-function recent(history: ChatMessage[]): ChatMessage[] {
-  const out: ChatMessage[] = []
-  let chars = 0
-  for (let i = history.length - 1; i >= 0 && out.length < MAX_HISTORY_MESSAGES; i--) {
-    chars += history[i].content.length
-    if (chars > MAX_HISTORY_CHARS) break
-    out.unshift(history[i])
-  }
-  // Start at a user message so the model never sees a reply without its question.
-  while (out.length > 1 && out[0].role !== 'user') out.shift()
-  // Always send the newest message; if it alone is too long, the server says so.
-  return out.length ? out : history.slice(-1)
-}
+// The agent keeps the conversation it sends to the model; this is only what the panel shows.
+type Shown =
+  | { role: 'user'; content: string }
+  | { role: 'assistant'; content: string; tools: ShownTool[]; error?: boolean; stopped?: boolean; note?: string }
 
 export function Chat() {
   const { getToken } = useAuth()
   const [messages, setMessages] = useState<Shown[]>([])
   const [input, setInput] = useState('')
-  const [controller, setController] = useState<AbortController | null>(null)
+  const [busy, setBusy] = useState(false)
   const listRef = useRef<HTMLElement>(null)
-  // Bumped by "New chat" so a reply still streaming for the old chat is dropped.
+  // Bumped by "New chat" so updates still arriving for the old chat are dropped.
   const chatId = useRef(0)
+  const tokenRef = useRef(getToken)
+  tokenRef.current = getToken
+  const agentRef = useRef<CopilotAgent | null>(null)
+  agentRef.current ??= new CopilotAgent({
+    apiUrl: API_URL,
+    getToken: () => tokenRef.current(),
+    systemPrompt: SYSTEM_PROMPT,
+    tools: TOOLS,
+  })
+  const agent = agentRef.current
 
   useEffect(() => {
     listRef.current?.scrollTo({ top: listRef.current.scrollHeight })
@@ -56,40 +41,45 @@ export function Chat() {
 
   async function send() {
     const text = input.trim()
-    if (!text || controller) return
+    if (!text || busy) return
 
-    const history = toHistory(messages)
-    const user: ChatMessage = { role: 'user', content: text }
     const id = chatId.current
     setInput('')
-    setMessages([...messages, user, { role: 'assistant', content: '' }])
+    setBusy(true)
+    setMessages((ms) => [...ms, { role: 'user', content: text }, { role: 'assistant', content: '', tools: [] }])
+    const updateReply = (fn: (m: Extract<Shown, { role: 'assistant' }>) => Shown) =>
+      setMessages((ms) => {
+        const last = ms.at(-1)
+        if (chatId.current !== id || last?.role !== 'assistant') return ms
+        return [...ms.slice(0, -1), fn(last)]
+      })
 
-    const ctrl = new AbortController()
-    setController(ctrl)
-    const updateLast = (fn: (m: Shown) => Shown) =>
-      setMessages((ms) => (chatId.current !== id || ms.length === 0 ? ms : [...ms.slice(0, -1), fn(ms[ms.length - 1])]))
+    const onUpdate = (u: AgentUpdate) => {
+      if (u.type === 'text') updateReply((m) => ({ ...m, content: m.content + u.delta }))
+      else if (u.type === 'tool_start')
+        updateReply((m) => ({ ...m, tools: [...m.tools, { id: u.id, name: u.name, status: 'running' }] }))
+      else
+        updateReply((m) => ({
+          ...m,
+          tools: m.tools.map((t) => (t.id === u.id ? { ...t, status: u.isError ? 'failed' : 'done' } : t)),
+        }))
+    }
 
     try {
-      await streamChat(
-        { apiUrl: API_URL, getToken: () => getToken() },
-        [{ role: 'system', content: SYSTEM_PROMPT }, ...recent([...history, user])],
-        (delta) => updateLast((m) => ({ ...m, content: m.content + delta })),
-        ctrl.signal,
-      )
-    } catch (err) {
-      if ((err as Error).name === 'AbortError') {
-        updateLast((m) => ({ ...m, stopped: true }))
-      } else {
-        updateLast((m) => ({ ...m, content: (err as Error).message, error: true }))
-      }
+      const result = await agent.ask(text, onUpdate)
+      if (result.status === 'stopped') updateReply((m) => ({ ...m, stopped: true }))
+      else if (result.status === 'error') updateReply((m) => ({ ...m, content: result.message, error: true }))
+      else if (result.status === 'step_limit')
+        updateReply((m) => ({ ...m, note: `Stopped after ${result.steps} steps. Ask again to continue.` }))
     } finally {
-      setController(null)
+      // After "New chat" too: the old question has settled, so the agent is free again.
+      setBusy(false)
     }
   }
 
   function onSubmit(e: FormEvent) {
     e.preventDefault()
-    if (controller) controller.abort()
+    if (busy) agent.stop()
     else send()
   }
 
@@ -106,7 +96,7 @@ export function Chat() {
         <button
           onClick={() => {
             chatId.current++
-            controller?.abort()
+            void agent.reset()
             setMessages([])
           }}
         >
@@ -116,12 +106,24 @@ export function Chat() {
 
       <main id="messages" ref={listRef}>
         {messages.length === 0 && <div className="empty">Ask anything to get started.</div>}
-        {messages.map((m, i) => (
-          <div key={i} className={`msg ${m.role}${m.error ? ' error' : ''}`}>
-            {m.content || (m.role === 'assistant' && !m.stopped ? '…' : '')}
-            {m.stopped && ' [stopped]'}
-          </div>
-        ))}
+        {messages.map((m, i) =>
+          m.role === 'user' ? (
+            <div key={i} className="msg user">
+              {m.content}
+            </div>
+          ) : (
+            <div key={i} className={`msg assistant${m.error ? ' error' : ''}`}>
+              {m.tools.map((t) => (
+                <div key={t.id} className={`tool ${t.status}`}>
+                  {t.status === 'running' ? '⋯' : t.status === 'done' ? '✓' : '✗'} {t.name}
+                </div>
+              ))}
+              {m.content || (!m.stopped && !m.note && !m.tools.length ? '…' : '')}
+              {m.stopped && ' [stopped]'}
+              {m.note && <div className="note">{m.note}</div>}
+            </div>
+          ),
+        )}
       </main>
 
       <form id="composer" onSubmit={onSubmit}>
@@ -133,7 +135,7 @@ export function Chat() {
           placeholder="Ask something… (Enter to send, Shift+Enter for newline)"
         />
         <button className="primary" type="submit">
-          {controller ? 'Stop' : 'Send'}
+          {busy ? 'Stop' : 'Send'}
         </button>
       </form>
     </>

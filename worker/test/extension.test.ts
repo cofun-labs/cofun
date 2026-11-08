@@ -1,163 +1,233 @@
-// Runs the extension's real client code (extension/src/llm.ts) against the worker,
+// Runs the extension's real agent (extension/src/agent.ts) against the worker,
 // so the two sides can't drift apart.
-import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
-import { streamChat } from '../../extension/src/llm'
-import { createApp, type AiBinding, type Env } from '../src/app'
+import { beforeAll, beforeEach, describe, expect, it } from 'vitest'
+import { CopilotAgent, type AgentUpdate, type ToolSpec } from '../../extension/src/agent'
+import { createApp, type Env } from '../src/app'
 import { FakeClerk } from './clerk'
 import { FakeAiBinding, FakeQuotaNamespace, FakeUsageDataset } from './fakes'
 
 const EXT = 'chrome-extension://abcdefghijklmnopabcdefghijklmnop'
+const MODEL = '@cf/test/model'
 const app = createApp()
 let clerk: FakeClerk
 let env: Env
 let ai: FakeAiBinding
-let usage: FakeUsageDataset
+let token: string
 
 beforeAll(async () => {
   clerk = await FakeClerk.create()
+  // The extension calls fetch(); route it into the worker app.
+  globalThis.fetch = ((input: RequestInfo | URL, init?: RequestInit) =>
+    app.request(new Request(input, init), undefined, env)) as typeof fetch
+})
+
+beforeEach(async () => {
   env = {
     AI: (ai = new FakeAiBinding('你好 来自 worker')),
     QUOTA: new FakeQuotaNamespace(),
-    USAGE: (usage = new FakeUsageDataset()),
+    USAGE: new FakeUsageDataset(),
     DAILY_REQUEST_LIMIT: '100',
-    MODEL: '@cf/test/model',
+    MODEL,
     CLERK_JWT_KEY: clerk.publicKeyPem,
     CLERK_AUTHORIZED_PARTIES: EXT,
   }
-  // The extension calls fetch(); route it into the worker app.
-  globalThis.fetch = ((url: string, init?: RequestInit) =>
-    app.request(new URL(url).pathname, init, env)) as typeof fetch
+  token = await clerk.sessionToken({ userId: 'user_alice', azp: EXT })
 })
 
-afterEach(() => {
-  ai.rawSse = undefined
-})
+/** A stand-in for get_current_page: same name and arguments, a fixed page instead of the browser tab. */
+function pageTool(page = { title: 'Q4 Roadmap', url: 'https://www.notion.so/Q4-Roadmap-abc123' }) {
+  const runs: unknown[] = []
+  const tool: ToolSpec = {
+    name: 'get_current_page',
+    description: 'Returns the title and URL of the Notion page open in the current browser tab.',
+    parameters: { type: 'object', properties: {}, additionalProperties: false },
+    run: async (args) => {
+      runs.push(args)
+      return page
+    },
+  }
+  return { tool, runs }
+}
 
-const config = (getToken: () => Promise<string | null>) => ({ apiUrl: 'https://nk.example.dev/v1/', getToken })
-const hi = [{ role: 'user' as const, content: 'hi' }]
+function makeAgent(
+  options: {
+    tools?: ToolSpec[]
+    maxSteps?: number
+    history?: { messages: number; chars: number }
+    getToken?: () => Promise<string | null>
+  } = {},
+) {
+  return new CopilotAgent({
+    apiUrl: 'https://nk.example.dev/v1/',
+    getToken: options.getToken ?? (async () => token),
+    systemPrompt: 'You are Copilot.',
+    tools: options.tools ?? [pageTool().tool],
+    maxSteps: options.maxSteps,
+    history: options.history,
+  })
+}
 
-describe('extension client against the worker', () => {
-  it('[UC-CHAT-001-S01] extension client streams the reply', async () => {
-    const token = await clerk.sessionToken({ userId: 'user_alice', azp: EXT })
-    const deltas: string[] = []
-    const full = await streamChat(
-      config(async () => token),
-      hi,
-      (d) => deltas.push(d),
-    )
-    expect(full).toBe('你好 来自 worker ')
-    expect(deltas).toHaveLength(3)
+/** Asks one question and collects what the side panel would show. */
+async function ask(agent: CopilotAgent, text: string) {
+  const updates: AgentUpdate[] = []
+  const result = await agent.ask(text, (u) => updates.push(u))
+  const reply = updates.map((u) => (u.type === 'text' ? u.delta : '')).join('')
+  return { result, updates, reply }
+}
+
+const sentMessages = (call: number) => ai.calls[call].inputs.messages as Record<string, unknown>[]
+
+describe('extension agent against the worker', () => {
+  it('[UC-CHAT-001-S01] a plain question gets a streamed answer', async () => {
+    const { result, updates, reply } = await ask(makeAgent(), 'hi')
+    expect(result).toEqual({ status: 'done' })
+    expect(reply).toBe('你好 来自 worker ')
+    expect(updates.filter((u) => u.type === 'text').length).toBeGreaterThan(1)
+    // The agent names the server's model and offers its tools; the worker accepts the request as is.
+    expect(ai.calls).toHaveLength(1)
+    expect(ai.calls[0].inputs.tools).toEqual([
+      expect.objectContaining({ type: 'function', function: expect.objectContaining({ name: 'get_current_page' }) }),
+    ])
+    expect(sentMessages(0)).toEqual([
+      { role: 'system', content: 'You are Copilot.' },
+      { role: 'user', content: 'hi' },
+    ])
   })
 
-  it('extension asks to sign in when there is no session', async () => {
-    await expect(
-      streamChat(
-        config(async () => null),
-        hi,
-        () => {},
-      ),
-    ).rejects.toThrow('Please sign in first.')
-  })
+  it('[UC-AGENT-001-S04] a tool the model asks for runs in the extension and the answer uses its result', async () => {
+    const { tool, runs } = pageTool()
+    ai.script = [{ toolCalls: [{ name: 'get_current_page', arguments: '{}' }] }, { reply: 'You are on Q4 Roadmap' }]
+    const { result, updates, reply } = await ask(makeAgent({ tools: [tool] }), 'Which page am I on?')
 
-  it('extension shows the server reason for a rejected session', async () => {
-    await expect(
-      streamChat(
-        config(async () => 'not-a-jwt'),
-        hi,
-        () => {},
-      ),
-    ).rejects.toThrow('invalid or expired session')
-  })
-
-  it('[UC-CHAT-001-S04] extension shows when the daily quota resets', async () => {
-    const token = await clerk.sessionToken({ userId: 'user_carol', azp: EXT })
-    env.DAILY_REQUEST_LIMIT = '1'
-    try {
-      await streamChat(
-        config(async () => token),
-        hi,
-        () => {},
-      )
-      await expect(
-        streamChat(
-          config(async () => token),
-          hi,
-          () => {},
-        ),
-      ).rejects.toThrow('The quota resets at 00:00 UTC.')
-    } finally {
-      env.DAILY_REQUEST_LIMIT = '100'
-    }
-  })
-
-  it('extension reads the last event when the stream ends without a newline', async () => {
-    const token = await clerk.sessionToken({ userId: 'user_alice', azp: EXT })
-    const chunk = (t: string) => `data: ${JSON.stringify({ choices: [{ delta: { content: t } }] })}`
-    ai.rawSse = `${chunk('a')}\n\n${chunk('b')}`
-    expect(
-      await streamChat(
-        config(async () => token),
-        hi,
-        () => {},
-      ),
-    ).toBe('ab')
-  })
-
-  it('extension surfaces an error event in the stream', async () => {
-    const token = await clerk.sessionToken({ userId: 'user_alice', azp: EXT })
-    ai.rawSse = `data: ${JSON.stringify({ error: { message: 'model overloaded' } })}\n\n`
-    await expect(
-      streamChat(
-        config(async () => token),
-        hi,
-        () => {},
-      ),
-    ).rejects.toThrow('model overloaded')
-  })
-
-  it('a stream error the extension stops at is recorded as provider_error', async () => {
-    const token = await clerk.sessionToken({ userId: 'user_alice', azp: EXT })
-    // The model reports an error and keeps the stream open, so only the client's cancel ends it.
-    const openStream: AiBinding = {
-      async run() {
-        const event = `data: ${JSON.stringify({ error: { message: 'model overloaded' } })}\n\n`
-        return new ReadableStream({
-          start(controller) {
-            controller.enqueue(new TextEncoder().encode(event))
-          },
-        })
+    expect(result).toEqual({ status: 'done' })
+    expect(runs).toEqual([{}])
+    expect(updates.filter((u) => u.type !== 'text')).toEqual([
+      { type: 'tool_start', id: 'chatcmpl-tool-0', name: 'get_current_page', args: {} },
+      { type: 'tool_end', id: 'chatcmpl-tool-0', name: 'get_current_page', isError: false },
+    ])
+    expect(reply).toBe('You are on Q4 Roadmap ')
+    // The second model call got the tool's result right after the call.
+    expect(sentMessages(1).slice(-2)).toEqual([
+      {
+        role: 'assistant',
+        content: '',
+        tool_calls: [
+          { id: 'chatcmpl-tool-0', type: 'function', function: { name: 'get_current_page', arguments: '{}' } },
+        ],
       },
-    }
-    env.AI = openStream
-    usage.points = []
-    try {
-      await expect(
-        streamChat(
-          config(async () => token),
-          hi,
-          () => {},
-        ),
-      ).rejects.toThrow('model overloaded')
-    } finally {
-      env.AI = ai
-    }
-    // The client's cancel reaches the worker's stream a few microtasks after streamChat rejects.
-    await vi.waitFor(() => expect(usage.points.map((p) => p.blobs?.[1])).toEqual(['provider_error']))
+      {
+        role: 'tool',
+        tool_call_id: 'chatcmpl-tool-0',
+        content: JSON.stringify({ title: 'Q4 Roadmap', url: 'https://www.notion.so/Q4-Roadmap-abc123' }),
+      },
+    ])
   })
 
-  it('extension rejects a successful response that is not a stream', async () => {
-    const realFetch = globalThis.fetch
-    globalThis.fetch = (async () => Response.json({ ok: true })) as typeof fetch
-    try {
-      await expect(
-        streamChat(
-          config(async () => 'token'),
-          hi,
-          () => {},
-        ),
-      ).rejects.toThrow('Unexpected response')
-    } finally {
-      globalThis.fetch = realFetch
+  it('[UC-AGENT-001-S05] a model that keeps calling tools is stopped at the step limit', async () => {
+    const { tool, runs } = pageTool()
+    ai.toolCalls = [{ name: 'get_current_page', arguments: '{}' }]
+    const agent = makeAgent({ tools: [tool], maxSteps: 3 })
+    const { result } = await ask(agent, 'Which page am I on?')
+    expect(result).toEqual({ status: 'step_limit', steps: 3 })
+    expect(ai.calls).toHaveLength(3)
+    expect(runs).toHaveLength(3)
+
+    // The conversation stays usable: the next question is answered.
+    ai.toolCalls = undefined
+    expect((await ask(agent, 'Thanks')).result).toEqual({ status: 'done' })
+  })
+
+  it('the conversation carries over to the next question', async () => {
+    const agent = makeAgent()
+    await ask(agent, 'first')
+    await ask(agent, 'second')
+    expect(sentMessages(1).map((m) => [m.role, m.content])).toEqual([
+      ['system', 'You are Copilot.'],
+      ['user', 'first'],
+      ['assistant', '你好 来自 worker '],
+      ['user', 'second'],
+    ])
+  })
+
+  it('a long conversation sends only its newest part, starting at a question', async () => {
+    const agent = makeAgent({ history: { messages: 3, chars: 100_000 } })
+    await ask(agent, 'first')
+    await ask(agent, 'second')
+    await ask(agent, 'third')
+    expect(sentMessages(2).map((m) => [m.role, m.content])).toEqual([
+      ['system', 'You are Copilot.'],
+      ['user', 'second'],
+      ['assistant', '你好 来自 worker '],
+      ['user', 'third'],
+    ])
+  })
+
+  it('trimming never separates tool results from their call', async () => {
+    const agent = makeAgent({ history: { messages: 3, chars: 100_000 } })
+    ai.script = [{ toolCalls: [{ name: 'get_current_page', arguments: '{}' }] }, { reply: 'Q4 Roadmap' }]
+    await ask(agent, 'Which page am I on?')
+    // Last 3 would be [assistant tool call, tool result, assistant]; the cut moves to the next question.
+    await ask(agent, 'thanks')
+    expect(sentMessages(2).map((m) => m.role)).toEqual(['system', 'user'])
+  })
+
+  it('a tool that fails is reported to the model, which still answers', async () => {
+    const failing: ToolSpec = { ...pageTool().tool, run: async () => Promise.reject(new Error('No page is open.')) }
+    ai.script = [{ toolCalls: [{ name: 'get_current_page', arguments: '{}' }] }, { reply: 'Open a page first' }]
+    const { result, updates, reply } = await ask(makeAgent({ tools: [failing] }), 'Which page am I on?')
+    expect(result).toEqual({ status: 'done' })
+    expect(updates).toContainEqual({ type: 'tool_end', id: 'chatcmpl-tool-0', name: 'get_current_page', isError: true })
+    expect(sentMessages(1).at(-1)).toMatchObject({ role: 'tool', content: expect.stringContaining('No page is open.') })
+    expect(reply).toBe('Open a page first ')
+  })
+
+  it('[UC-AGENT-001-S07] stopping during a tool ends the question and drops it from the conversation', async () => {
+    let agent: CopilotAgent
+    const slow: ToolSpec = {
+      ...pageTool().tool,
+      run: (_args, signal) =>
+        new Promise((_resolve, reject) => {
+          signal?.addEventListener('abort', () => reject(new Error('aborted')))
+          agent.stop()
+        }),
     }
+    agent = makeAgent({ tools: [slow] })
+    ai.script = [{ toolCalls: [{ name: 'get_current_page', arguments: '{}' }] }]
+    expect((await ask(agent, 'Which page am I on?')).result).toEqual({ status: 'stopped' })
+
+    await ask(agent, 'hi')
+    expect(sentMessages(1).map((m) => m.role)).toEqual(['system', 'user'])
+  })
+
+  it('asks to sign in when there is no session', async () => {
+    const { result } = await ask(makeAgent({ getToken: async () => null }), 'hi')
+    expect(result).toEqual({ status: 'error', message: 'Please sign in first.' })
+    expect(ai.calls).toHaveLength(0)
+  })
+
+  it('shows the server reason for a rejected session', async () => {
+    const { result } = await ask(makeAgent({ getToken: async () => 'not-a-jwt' }), 'hi')
+    expect(result).toEqual({ status: 'error', message: 'invalid or expired session' })
+  })
+
+  it('[UC-CHAT-001-S04] shows when the daily quota resets, and drops the refused question', async () => {
+    env.DAILY_REQUEST_LIMIT = '1'
+    const agent = makeAgent()
+    expect((await ask(agent, 'first')).result).toEqual({ status: 'done' })
+    const { result } = await ask(agent, 'second')
+    expect(result).toMatchObject({
+      status: 'error',
+      message: expect.stringContaining('The quota resets at 00:00 UTC.'),
+    })
+
+    env.DAILY_REQUEST_LIMIT = '100'
+    await ask(agent, 'third')
+    expect(sentMessages(1).map((m) => m.content)).toEqual(['You are Copilot.', 'first', '你好 来自 worker ', 'third'])
+  })
+
+  it('surfaces an error event in the stream', async () => {
+    ai.rawSse = `data: ${JSON.stringify({ error: { message: 'model overloaded' } })}\n\n`
+    const { result } = await ask(makeAgent(), 'hi')
+    expect(result).toMatchObject({ status: 'error', message: expect.stringContaining('model overloaded') })
   })
 })

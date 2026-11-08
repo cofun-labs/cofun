@@ -125,6 +125,14 @@ textarea {
 .msg.error {
   color: var(--error);
 }
+.tool,
+.note {
+  color: var(--muted);
+  font-size: 0.9em;
+}
+.tool.failed {
+  color: var(--error);
+}
 .empty {
   color: var(--muted);
   text-align: center;
