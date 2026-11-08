@@ -53,8 +53,8 @@ A guard or rejection branch should not rank above its use case's success path un
 
 ## Status
 
-- `pending`: not yet verified by its strategy. New and semantically changed scenarios start here.
-- `verified`: `api-test` has a passing test named with the ID; `ai-e2e` has a recorded passing run.
+- 🚧 Not yet verified by its strategy. New and semantically changed scenarios start here.
+- ✅ Verified: `api-test` has a passing test named with the ID; `ai-e2e` has a recorded passing run.
 
 ## File format
 
@@ -77,7 +77,7 @@ Key constraint:
 
 | ID | Priority | Status | Scenario |
 | --- | --- | --- | --- |
-| UC-CHAT-001-S01 | P0 | verified | Given a signed-in user; when they ask the AI something; then the reply streams back piece by piece. |
+| UC-CHAT-001-S01 | P0 | ✅ | Given a signed-in user; when they ask the AI something; then the reply streams back piece by piece. |
 
 ### ai-e2e
 

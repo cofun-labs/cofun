@@ -14,12 +14,12 @@ Key constraint:
 
 | ID | Priority | Status | Scenario |
 | --- | --- | --- | --- |
-| UC-AUTH-001-S01 | P0 | verified | Given no valid session (missing, forged, or expired); when a client asks the AI something; then the request is refused and the model is not called. |
-| UC-AUTH-001-S02 | P1 | verified | Given a session a website other than this product obtained for the user in the browser; when that site uses it to ask the AI; then the request is refused. |
+| UC-AUTH-001-S01 | P0 | ✅ | Given no valid session (missing, forged, or expired); when a client asks the AI something; then the request is refused and the model is not called. |
+| UC-AUTH-001-S02 | P1 | ✅ | Given a session a website other than this product obtained for the user in the browser; when that site uses it to ask the AI; then the request is refused. |
 
 ### ai-e2e
 
 | ID | Priority | Status | Scenario |
 | --- | --- | --- | --- |
-| UC-AUTH-001-S03 | P0 | verified | Given the side panel asks the user to sign in; when they sign in with Google on the page it opens; then the open side panel shows the chat. |
-| UC-AUTH-001-S04 | P1 | verified | Given a signed-in user; when they sign out from the side panel; then the side panel asks them to sign in again. |
+| UC-AUTH-001-S03 | P0 | ✅ | Given the side panel asks the user to sign in; when they sign in with Google on the page it opens; then the open side panel shows the chat. |
+| UC-AUTH-001-S04 | P1 | ✅ | Given a signed-in user; when they sign out from the side panel; then the side panel asks them to sign in again. |

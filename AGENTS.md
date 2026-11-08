@@ -27,7 +27,7 @@ Copilot for Notion: a Chrome extension that opens an AI side panel next to Notio
 2. **Update use cases before writing code**, only when the product behavior contract changes (see [docs/bdd.md](docs/bdd.md) for what belongs in a use case). In `docs/use-cases/{domain}/`:
    - Reuse an existing use case or scenario when it already expresses the contract. Bug fixes and refactors usually change no use case.
    - Edit the Behavior, add or remove scenarios, or merge/split use cases. Reuse a scenario ID only for wording changes; changed behavior gets a new ID.
-   - Give each scenario a priority (P0/P1/P2), put it under its strategy (`api-test` or `ai-e2e`), and set its status (`pending` until verified, then `verified`).
+   - Give each scenario a priority (P0/P1/P2), put it under its strategy (`api-test` or `ai-e2e`), and set its status (🚧 until verified, then ✅).
 
 3. **Implement with tests.** Keep tests in sync with use cases:
    - Remove tests for deleted scenarios, add tests for new ones, rename tests when scenario IDs change.
