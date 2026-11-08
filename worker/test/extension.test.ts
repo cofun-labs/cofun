@@ -1,6 +1,6 @@
 // Runs the extension's real agent (extension/src/agent.ts) against the worker,
 // so the two sides can't drift apart.
-import { beforeAll, beforeEach, describe, expect, it } from 'vitest'
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import { CopilotAgent, type AgentUpdate, type ToolSpec } from '../../extension/src/agent'
 import { getCurrentPage } from '../../extension/src/tools'
 import { createApp, type Env } from '../src/app'
@@ -15,11 +15,18 @@ let env: Env
 let ai: FakeAiBinding
 let token: string
 
+const realFetch = globalThis.fetch
+
 beforeAll(async () => {
   clerk = await FakeClerk.create()
   // The extension calls fetch(); route it into the worker app.
   globalThis.fetch = ((input: RequestInfo | URL, init?: RequestInit) =>
     app.request(new Request(input, init), undefined, env)) as typeof fetch
+})
+
+afterAll(() => {
+  globalThis.fetch = realFetch
+  delete (globalThis as { chrome?: unknown }).chrome
 })
 
 beforeEach(async () => {
@@ -186,6 +193,36 @@ describe('extension agent against the worker', () => {
       ['user', 'second'],
       ['assistant', '你好 来自 worker '],
       ['user', 'third'],
+    ])
+  })
+
+  it('the system prompt and tool definitions count toward the history budget', async () => {
+    // 60 characters would hold the earlier exchange on its own, but not with the prompt and tools.
+    const agent = makeAgent({ history: { messages: 100, chars: 60 } })
+    await ask(agent, 'first')
+    await ask(agent, 'second')
+    expect(sentMessages(1).map((m) => m.role)).toEqual(['system', 'user'])
+  })
+
+  it('a second question while one is running is refused, and the first is unharmed', async () => {
+    let release!: () => void
+    const gate = new Promise<void>((r) => (release = r))
+    const agent = makeAgent({
+      getToken: async () => {
+        await gate
+        return token
+      },
+    })
+    const first = ask(agent, 'first')
+    expect((await ask(agent, 'second')).result).toEqual({ status: 'error', message: 'Already answering a question.' })
+    release()
+    expect((await first).result).toEqual({ status: 'done' })
+    await ask(agent, 'third')
+    expect(sentMessages(1).map((m) => m.content)).toEqual([
+      'You are Notion Copilot.',
+      'first',
+      '你好 来自 worker ',
+      'third',
     ])
   })
 

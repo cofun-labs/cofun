@@ -41,6 +41,9 @@ export function Chat() {
     listRef.current?.scrollTo({ top: listRef.current.scrollHeight })
   }, [messages])
 
+  // The panel unmounts on sign-out; don't leave a question running tools in the background.
+  useEffect(() => () => agentRef.current?.stop(), [])
+
   async function send() {
     const text = input.trim()
     if (!text || busy) return

@@ -53,6 +53,7 @@ export class CopilotAgent {
   private readonly maxSteps: number
   /** Bumped by stop() and reset(), so a question still waiting to start knows it was cancelled. */
   private epoch = 0
+  private running = false
 
   constructor(private readonly config: AgentConfig) {
     this.maxSteps = config.maxSteps ?? DEFAULT_MAX_STEPS
@@ -64,6 +65,17 @@ export class CopilotAgent {
    * dropped from it, so the model never sees a half-finished exchange.
    */
   async ask(text: string, onUpdate: (update: AgentUpdate) => void): Promise<AskResult> {
+    // One question at a time: an overlapping run would roll back the other's messages.
+    if (this.running) return { status: 'error', message: 'Already answering a question.' }
+    this.running = true
+    try {
+      return await this.askWithRetry(text, onUpdate)
+    } finally {
+      this.running = false
+    }
+  }
+
+  private async askWithRetry(text: string, onUpdate: (update: AgentUpdate) => void): Promise<AskResult> {
     const epoch = this.epoch
     const result = await this.askOnce(text, onUpdate, epoch)
     // The worker's model changed since this panel looked it up (a deploy). The worker refuses the
@@ -164,6 +176,10 @@ export class CopilotAgent {
   private async getAgent(): Promise<Agent> {
     if (this.agent) return this.agent
     const model = (this.model ??= await this.loadModel())
+    // The tool definitions go with every request and count toward the worker's size limit.
+    const toolChars = JSON.stringify(
+      this.config.tools.map((t) => ({ name: t.name, description: t.description, parameters: t.parameters })),
+    ).length
     this.agent = new Agent({
       initialState: {
         systemPrompt: this.config.systemPrompt,
@@ -181,7 +197,7 @@ export class CopilotAgent {
       identity: { attribution: null },
       // Notion tools will change pages; run them one at a time, in the order the model asked.
       toolExecution: 'sequential',
-      transformContext: async (messages) => recent(messages, this.config.history ?? DEFAULT_HISTORY),
+      transformContext: async (messages) => recent(messages, this.config.history ?? DEFAULT_HISTORY, toolChars),
     })
     return this.agent
   }
@@ -221,15 +237,20 @@ export class CopilotAgent {
 
 /**
  * The leading system messages plus the newest part of the conversation that fits the limits.
+ * The character budget also pays for the system prompt and the tool definitions (`overhead`).
  * It starts at a user message, so a reply or tool result is never sent without what led to it.
  * The newest question is always kept; if it alone is too long, the worker says so.
  */
-function recent(messages: AgentMessage[], limits: { messages: number; chars: number }): AgentMessage[] {
+function recent(
+  messages: AgentMessage[],
+  limits: { messages: number; chars: number },
+  overhead: number,
+): AgentMessage[] {
   let head = 0
   while (head < messages.length && messages[head].role === 'system') head++
   const rest = messages.slice(head)
   let start = rest.length
-  let chars = 0
+  let chars = overhead + messages.slice(0, head).reduce((n, m) => n + size(m), 0)
   for (let i = rest.length - 1; i >= 0 && rest.length - i <= limits.messages; i--) {
     chars += size(rest[i])
     if (chars > limits.chars) break
