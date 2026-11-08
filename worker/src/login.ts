@@ -52,8 +52,14 @@ export function loginPage(publishableKey: string): string {
       signInUrl: location.pathname,
       signUpUrl: location.pathname,
     })
+    // Clerk calls listeners on every resource change, including mid-flow steps
+    // like the Protect check. Remounting SignIn on each call restarts the flow,
+    // so only mount or unmount when the signed-in state actually changes.
+    let shown = null
     const render = () => {
       const signedIn = !!window.Clerk.user
+      if (signedIn === shown) return
+      shown = signedIn
       document.getElementById('signed-in').style.display = signedIn ? 'flex' : 'none'
       const box = document.getElementById('sign-in')
       if (signedIn) window.Clerk.unmountSignIn(box)
