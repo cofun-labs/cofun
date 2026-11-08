@@ -167,7 +167,12 @@ describe('worker API', () => {
       model: MODEL,
       inputs: { messages: hi, max_tokens: 50 },
       options: {
-        gateway: { id: 'gw-test', collectLog: false, metadata: { app: 'notion-copilot', user: 'user_alice' } },
+        gateway: {
+          id: 'gw-test',
+          collectLog: false,
+          skipCache: true,
+          metadata: { app: 'notion-copilot', user: 'user_alice' },
+        },
       },
     })
   })
@@ -176,6 +181,19 @@ describe('worker API', () => {
     env.AI_GATEWAY_ID = ''
     await chat(token)
     expect(ai.calls[0].options).toBeUndefined()
+  })
+
+  it('a body over 1 MB is refused without calling the model', async () => {
+    const res = await chat(token, { messages: [{ role: 'user', content: 'x'.repeat(1_000_000) }] })
+    expect(res.status).toBe(413)
+    expect((await json(res)).error.code).toBe('payload_too_large')
+    expect(ai.calls).toHaveLength(0)
+    expect(records().map((r) => r.outcome)).toEqual(['payload_too_large'])
+  })
+
+  it('the body limit leaves room for the full character limit in any script', async () => {
+    // 200,000 three-byte characters: about 600 KB of UTF-8.
+    expect((await chat(token, { messages: [{ role: 'user', content: '字'.repeat(200_000) }] })).status).toBe(200)
   })
 
   it('invalid bodies are rejected without calling the model', async () => {
@@ -401,15 +419,34 @@ describe("UC-CHAT-002 Keep a record of each user's chat usage", () => {
     await chat(token, { messages, model: `${SECRET}-model` })
     expect(records()).toHaveLength(3)
     expect(JSON.stringify(usage.points)).not.toContain(SECRET)
-    // The gateway is told not to keep prompts and replies in its logs.
+    // The gateway is told not to keep prompts and replies in its logs or its cache.
     expect(
-      ai.calls.every((call) => (call.options?.gateway as { collectLog?: boolean } | undefined)?.collectLog === false),
+      ai.calls.every((call) => {
+        const gateway = call.options?.gateway as { collectLog?: boolean; skipCache?: boolean } | undefined
+        return gateway?.collectLog === false && gateway.skipCache === true
+      }),
     ).toBe(true)
   })
 })
 
 // Standalone tests for usage records.
 describe('usage records', () => {
+  it('a stream that carries a model error is recorded as provider_error', async () => {
+    ai.rawSse = 'data: {"error":{"message":"model overloaded"}}\n\ndata: [DONE]\n\n'
+    await (await chat(token, { messages: hi, stream: true })).text()
+    expect(records().map((r) => r.outcome)).toEqual(['provider_error'])
+  })
+
+  it('a reply that cannot be sent is recorded once', async () => {
+    env.AI = {
+      async run() {
+        return { usage: { prompt_tokens: 1n } }
+      },
+    }
+    expect((await chat(token)).status).toBe(500)
+    expect(records().map((r) => r.outcome)).toEqual(['internal'])
+  })
+
   it('requests that fail auth leave no record', async () => {
     await chat(undefined)
     await chat('not-a-jwt')

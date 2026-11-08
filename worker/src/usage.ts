@@ -73,7 +73,8 @@ interface StreamSummary {
 /**
  * Passes an OpenAI-style SSE stream through unchanged, chunk by chunk, while reading the token
  * usage and finish reason from it. Calls `done` once, when the stream ends, fails, or is cancelled.
- * A stream that ends without `data: [DONE]` was cut short and is reported as `incomplete`.
+ * A stream that ends without `data: [DONE]` was cut short and is reported as `incomplete`; one
+ * that carried an error event is reported as `provider_error`, like a failed non-streamed call.
  * Only the current incomplete line is held back for parsing; the reply itself is never buffered.
  */
 export function meterStream(
@@ -86,6 +87,7 @@ export function meterStream(
   let partial = ''
   let finished = false
   let sawDone = false
+  let sawError = false
   const finish = (outcome: string) => {
     if (finished) return
     finished = true
@@ -104,7 +106,13 @@ export function meterStream(
       return
     }
     if (!parsed || typeof parsed !== 'object') return
-    const event = parsed as { usage?: Record<string, unknown>; choices?: { finish_reason?: unknown }[] }
+    const event = parsed as {
+      error?: unknown
+      usage?: Record<string, unknown>
+      choices?: { finish_reason?: unknown }[]
+    }
+    // The model can report a failure inside the stream; the extension shows it as an error.
+    if (event.error) sawError = true
     // OpenAI sends usage once, in the last chunk. Workers AI also adds per-chunk counts and a
     // zeroed chunk before its final totals, so keep the largest count seen.
     if (event.usage) {
@@ -127,7 +135,7 @@ export function meterStream(
       }
       if (result.done) {
         scan(partial + decoder.decode())
-        finish(sawDone ? 'ok' : 'incomplete')
+        finish(sawError ? 'provider_error' : sawDone ? 'ok' : 'incomplete')
         controller.close()
         return
       }

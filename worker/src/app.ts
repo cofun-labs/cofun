@@ -50,13 +50,41 @@ class HttpError extends Error {
 const MAX_MESSAGES = 200
 const MAX_TOKENS = 4096
 const MAX_CONTENT_CHARS = 200_000
+// Room for MAX_CONTENT_CHARS of any script (up to 3 UTF-8 bytes each) plus JSON overhead.
+const MAX_BODY_BYTES = 1_000_000
 const ROLES = new Set(['system', 'user', 'assistant'])
 
+/**
+ * Reads the body as a JSON object, refusing it once it passes MAX_BODY_BYTES, so an oversized
+ * body is never buffered or parsed in full. Hono's bodyLimit middleware would refuse before the
+ * handler runs, which would leave the request without a usage record.
+ */
 async function readJson(c: Ctx): Promise<Record<string, unknown>> {
+  const tooLarge = () => new HttpError(413, 'payload_too_large', `request body exceeds ${MAX_BODY_BYTES} bytes`)
+  if (Number(c.req.header('content-length')) > MAX_BODY_BYTES) throw tooLarge()
+  let text = ''
+  if (c.req.raw.body) {
+    // Content-Length can be missing (chunked uploads), so count the bytes as they arrive.
+    const reader = c.req.raw.body.getReader()
+    const decoder = new TextDecoder()
+    let size = 0
+    for (;;) {
+      const { done, value } = await reader.read()
+      if (done) break
+      size += value.byteLength
+      if (size > MAX_BODY_BYTES) {
+        await reader.cancel()
+        throw tooLarge()
+      }
+      text += decoder.decode(value, { stream: true })
+    }
+    text += decoder.decode()
+  }
+  let body: unknown
   try {
-    const body = await c.req.json()
-    if (body && typeof body === 'object' && !Array.isArray(body)) return body
+    body = JSON.parse(text)
   } catch {}
+  if (body && typeof body === 'object' && !Array.isArray(body)) return body as Record<string, unknown>
   throw new HttpError(400, 'bad_request', 'body must be a JSON object')
 }
 
@@ -220,13 +248,15 @@ export function createApp({ now = () => new Date() }: AppOptions = {}) {
       // Ask for token usage in the final chunk, so streamed replies can be metered too.
       inputs.stream_options = { include_usage: true }
     }
-    // collectLog: false keeps prompts and replies out of the gateway logs; its analytics
-    // (requests, tokens, cost, metadata) still work.
+    // collectLog: false keeps prompts and replies out of the gateway logs, and skipCache: true
+    // keeps them out of its cache even if caching is turned on in the dashboard. The gateway's
+    // analytics (requests, tokens, cost, metadata) still work.
     const options = c.env.AI_GATEWAY_ID
       ? {
           gateway: {
             id: c.env.AI_GATEWAY_ID,
             collectLog: false,
+            skipCache: true,
             metadata: { app: 'notion-copilot', user: c.get('userId') },
           },
         }
@@ -255,8 +285,10 @@ export function createApp({ now = () => new Date() }: AppOptions = {}) {
     usage.promptTokens = tokenCount(reply?.usage?.prompt_tokens)
     usage.completionTokens = tokenCount(reply?.usage?.completion_tokens)
     usage.finishReason = finishReason(reply?.choices?.[0]?.finish_reason)
+    // Build the response first: if that throws, the request is recorded once, as internal.
+    const res = c.json(out as Record<string, unknown>)
     record('ok')
-    return c.json(out as Record<string, unknown>)
+    return res
   }
 
   return app
