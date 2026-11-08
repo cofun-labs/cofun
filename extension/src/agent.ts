@@ -32,7 +32,8 @@ export interface ToolSpec {
 export type AgentUpdate =
   | { type: 'text'; delta: string }
   | { type: 'tool_start'; id: string; name: string; args: unknown }
-  | { type: 'tool_end'; id: string; name: string; isError: boolean }
+  /** `skipped`: refused without running, because the question reached its step limit. */
+  | { type: 'tool_end'; id: string; name: string; isError: boolean; skipped?: boolean }
 
 export type AskResult =
   | { status: 'done' }
@@ -50,6 +51,8 @@ export class CopilotAgent {
   private agent?: Agent
   private model?: Model<'openai-completions'>
   private readonly maxSteps: number
+  /** Bumped by stop() and reset(), so a question still waiting to start knows it was cancelled. */
+  private epoch = 0
 
   constructor(private readonly config: AgentConfig) {
     this.maxSteps = config.maxSteps ?? DEFAULT_MAX_STEPS
@@ -61,31 +64,40 @@ export class CopilotAgent {
    * dropped from it, so the model never sees a half-finished exchange.
    */
   async ask(text: string, onUpdate: (update: AgentUpdate) => void): Promise<AskResult> {
+    const epoch = this.epoch
     let agent: Agent
     try {
       agent = await this.getAgent()
     } catch (err) {
       return { status: 'error', message: (err as Error).message }
     }
+    // Stopped, or a new chat started, while the agent was being set up.
+    if (epoch !== this.epoch) return { status: 'stopped' }
+
     const before = agent.state.messages.length
     let steps = 0
     let hitLimit = false
     let failure: string | undefined
     let stopped = false
+    const refused = new Set<string>()
 
-    agent.finishTurn = async ({ message }) => {
-      steps++
-      const m = message as AssistantMessage
-      if (m.stopReason === 'error' || m.stopReason === 'aborted') return
-      // The model wants another round of tools, but the question already used its steps.
-      if (m.stopReason === 'toolUse' && steps >= this.maxSteps) {
-        hitLimit = true
-        return { action: 'end' }
+    // On the last step, refuse the tools the model asks for instead of running them: the question
+    // ends here, so the model would never see their results, and a tool could change a page.
+    agent.beforeToolCall = async ({ toolCall }) => {
+      if (steps < this.maxSteps) return
+      hitLimit = true
+      refused.add(toolCall.id)
+      return {
+        block: true,
+        reason: `Not run: this question reached its limit of ${this.maxSteps} steps.`,
+        terminate: true,
       }
     }
     const unsubscribe = agent.subscribe((event: AgentEvent) => {
+      if (event.type === 'turn_start') steps++
       const update = toUpdate(event)
-      if (update) onUpdate(update)
+      if (update?.type === 'tool_end' && refused.has(update.id)) onUpdate({ ...update, skipped: true })
+      else if (update) onUpdate(update)
       if (event.type === 'message_end' && event.message.role === 'assistant') {
         const m = event.message as AssistantMessage
         if (m.stopReason === 'error') failure = errorText(m.errorMessage)
@@ -100,7 +112,7 @@ export class CopilotAgent {
       failure ??= errorText((err as Error).message)
     } finally {
       unsubscribe()
-      agent.finishTurn = undefined
+      agent.beforeToolCall = undefined
     }
 
     if (failure || stopped) {
@@ -112,11 +124,13 @@ export class CopilotAgent {
 
   /** Stops the current model call and any running tool. */
   stop(): void {
+    this.epoch++
     this.agent?.abort()
   }
 
   /** Starts a new conversation, once a question still running has stopped. */
   async reset(): Promise<void> {
+    this.epoch++
     if (!this.agent) return
     this.agent.abort()
     await this.agent.waitForIdle()

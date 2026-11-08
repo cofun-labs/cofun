@@ -21,7 +21,7 @@ Key constraints:
 | UC-AGENT-001-S02 | P0 | ✅ | Given the result of a tool the extension ran; when it is sent back with the conversation; then the AI answers using it. |
 | UC-AGENT-001-S03 | P0 | ✅ | Given a signed-in user who uses tools; when they ask the AI; then nothing in the tool definitions, tool requests, or tool results is kept by the service. |
 | UC-AGENT-001-S04 | P0 | ✅ | Given a question that needs a tool; when the user asks it in the side panel; then the tool runs in the extension and the answer uses its result. |
-| UC-AGENT-001-S05 | P1 | ✅ | Given a model that keeps calling tools; when the question reaches its step limit; then the agent stops and tells the user, and the next question still works. |
+| UC-AGENT-001-S05 | P1 | ✅ | Given a model that keeps calling tools; when the question reaches its step limit; then the agent stops without running more tools and tells the user, and the next question still works. |
 | UC-AGENT-001-S07 | P1 | ✅ | Given the agent working on a question; when the user stops it; then the model call and any running tool stop, and the stopped question is left out of the conversation. |
 
 ### ai-e2e

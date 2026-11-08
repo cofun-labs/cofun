@@ -9,12 +9,14 @@ const SYSTEM_PROMPT =
   'Use the tools when you need to know about the page or the browser. Be concise.'
 
 /** A tool the agent ran for this reply. A placeholder until the proper display lands. */
-type ShownTool = { id: string; name: string; status: 'running' | 'done' | 'failed' }
+type ShownTool = { id: string; name: string; status: 'running' | 'done' | 'failed' | 'skipped' }
 
 // The agent keeps the conversation it sends to the model; this is only what the panel shows.
 type Shown =
   | { role: 'user'; content: string }
   | { role: 'assistant'; content: string; tools: ShownTool[]; error?: boolean; stopped?: boolean; note?: string }
+
+const TOOL_MARK: Record<ShownTool['status'], string> = { running: '⋯', done: '✓', failed: '✗', skipped: '–' }
 
 export function Chat() {
   const { getToken } = useAuth()
@@ -61,7 +63,9 @@ export function Chat() {
       else
         updateReply((m) => ({
           ...m,
-          tools: m.tools.map((t) => (t.id === u.id ? { ...t, status: u.isError ? 'failed' : 'done' } : t)),
+          tools: m.tools.map((t) =>
+            t.id === u.id ? { ...t, status: u.skipped ? 'skipped' : u.isError ? 'failed' : 'done' } : t,
+          ),
         }))
     }
 
@@ -115,7 +119,7 @@ export function Chat() {
             <div key={i} className={`msg assistant${m.error ? ' error' : ''}`}>
               {m.tools.map((t) => (
                 <div key={t.id} className={`tool ${t.status}`}>
-                  {t.status === 'running' ? '⋯' : t.status === 'done' ? '✓' : '✗'} {t.name}
+                  {TOOL_MARK[t.status]} {t.name}
                 </div>
               ))}
               {m.content || (!m.stopped && !m.note && !m.tools.length ? '…' : '')}

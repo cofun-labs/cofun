@@ -2,6 +2,7 @@
 // so the two sides can't drift apart.
 import { beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import { CopilotAgent, type AgentUpdate, type ToolSpec } from '../../extension/src/agent'
+import { getCurrentPage } from '../../extension/src/tools'
 import { createApp, type Env } from '../src/app'
 import { FakeClerk } from './clerk'
 import { FakeAiBinding, FakeQuotaNamespace, FakeUsageDataset } from './fakes'
@@ -127,14 +128,21 @@ describe('extension agent against the worker', () => {
     const { tool, runs } = pageTool()
     ai.toolCalls = [{ name: 'get_current_page', arguments: '{}' }]
     const agent = makeAgent({ tools: [tool], maxSteps: 3 })
-    const { result } = await ask(agent, 'Which page am I on?')
+    const { result, updates } = await ask(agent, 'Which page am I on?')
     expect(result).toEqual({ status: 'step_limit', steps: 3 })
     expect(ai.calls).toHaveLength(3)
-    expect(runs).toHaveLength(3)
+    // The last step's tool is refused, not run: the model would never see its result.
+    expect(runs).toHaveLength(2)
+    expect(updates.filter((u) => u.type === 'tool_end').map((u) => 'skipped' in u && u.skipped)).toEqual([
+      false,
+      false,
+      true,
+    ])
 
-    // The conversation stays usable: the next question is answered.
+    // The conversation stays usable: the next question is answered, with the refused call answered too.
     ai.toolCalls = undefined
     expect((await ask(agent, 'Thanks')).result).toEqual({ status: 'done' })
+    expect(sentMessages(3).at(-2)).toMatchObject({ role: 'tool', content: expect.stringContaining('limit of 3 steps') })
   })
 
   it('the conversation carries over to the next question', async () => {
@@ -199,6 +207,26 @@ describe('extension agent against the worker', () => {
     expect(sentMessages(1).map((m) => m.role)).toEqual(['system', 'user'])
   })
 
+  it('stop and new chat work while the agent is still being set up', async () => {
+    for (const cancel of ['stop', 'reset'] as const) {
+      let release!: () => void
+      const gate = new Promise<void>((r) => (release = r))
+      const agent = makeAgent({
+        getToken: async () => {
+          await gate
+          return token
+        },
+      })
+      const pending = agent.ask('hi', () => {})
+      if (cancel === 'stop') agent.stop()
+      else void agent.reset()
+      release()
+      expect(await pending).toEqual({ status: 'stopped' })
+    }
+    // No model call was made, and nothing was left in either conversation.
+    expect(ai.calls).toHaveLength(0)
+  })
+
   it('asks to sign in when there is no session', async () => {
     const { result } = await ask(makeAgent({ getToken: async () => null }), 'hi')
     expect(result).toEqual({ status: 'error', message: 'Please sign in first.' })
@@ -229,5 +257,34 @@ describe('extension agent against the worker', () => {
     ai.rawSse = `data: ${JSON.stringify({ error: { message: 'model overloaded' } })}\n\n`
     const { result } = await ask(makeAgent(), 'hi')
     expect(result).toMatchObject({ status: 'error', message: expect.stringContaining('model overloaded') })
+  })
+})
+
+describe('get_current_page', () => {
+  /** A stand-in for the chrome.tabs API with one active tab. */
+  function withActiveTab(tab: { url?: string; title?: string } | undefined) {
+    ;(globalThis as { chrome?: unknown }).chrome = { tabs: { query: async () => (tab ? [tab] : []) } }
+  }
+
+  it('returns the Notion page in the current window', async () => {
+    withActiveTab({ url: 'https://www.notion.so/Q4-Roadmap-abc123', title: 'Q4 Roadmap' })
+    expect(await getCurrentPage.run({})).toEqual({
+      title: 'Q4 Roadmap',
+      url: 'https://www.notion.so/Q4-Roadmap-abc123',
+    })
+    withActiveTab({ url: 'https://app.notion.com/p/abc', title: 'Notes | Notion' })
+    expect(await getCurrentPage.run({})).toEqual({ title: 'Notes', url: 'https://app.notion.com/p/abc' })
+  })
+
+  it('never reports a page on another site', async () => {
+    for (const tab of [
+      { url: 'https://mail.example.com/inbox?token=secret', title: 'Inbox' },
+      { url: 'https://www.notion.so.evil.example/x', title: 'x' },
+      { title: 'no url' },
+      undefined,
+    ]) {
+      withActiveTab(tab)
+      await expect(getCurrentPage.run({})).rejects.toThrow('No Notion page is open in this window.')
+    }
   })
 })
