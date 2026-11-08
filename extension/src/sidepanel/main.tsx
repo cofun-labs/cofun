@@ -14,6 +14,7 @@ const PANEL_URL = chrome.runtime.getURL('sidepanel.html')
 // signed-in state: other session cookies are rewritten on every token refresh,
 // and reloading then would wipe the conversation.
 // __client_uat is "0" (or missing) when signed out and a timestamp when signed in.
+// Clerk sets it on the parent domain; query by URL so those cookies are included.
 const syncDomain = new URL(SYNC_HOST).hostname
 const isUatCookie = (c: chrome.cookies.Cookie) =>
   /^__client_uat(_[A-Za-z0-9-]{8})?$/.test(c.name) &&
@@ -22,7 +23,7 @@ const isUatCookie = (c: chrome.cookies.Cookie) =>
 const uatSignedIn = (c: chrome.cookies.Cookie | undefined) => !!c && c.value !== '' && c.value !== '0'
 
 let signedIn: boolean | undefined
-chrome.cookies.getAll({ domain: syncDomain }).then((cookies) => {
+chrome.cookies.getAll({ url: SYNC_HOST }).then((cookies) => {
   signedIn = cookies.filter(isUatCookie).some(uatSignedIn)
 })
 let reloadTimer: number | undefined
@@ -30,7 +31,7 @@ chrome.cookies.onChanged.addListener(({ cookie }) => {
   if (!isUatCookie(cookie)) return
   clearTimeout(reloadTimer)
   reloadTimer = window.setTimeout(async () => {
-    const now = (await chrome.cookies.getAll({ domain: syncDomain })).filter(isUatCookie).some(uatSignedIn)
+    const now = (await chrome.cookies.getAll({ url: SYNC_HOST })).filter(isUatCookie).some(uatSignedIn)
     if (signedIn !== undefined && now !== signedIn) location.reload()
     signedIn = now
   }, 500)

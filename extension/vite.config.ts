@@ -8,6 +8,11 @@ function clerkFrontendApi(publishableKey: string): string | undefined {
   return Buffer.from(encoded, 'base64').toString('utf8').replace(/\$$/, '')
 }
 
+/** The domain one level up, e.g. notion-copilot.kitfun.cc -> kitfun.cc. Assumes a two-label site such as example.com. */
+function parentDomain(hostname: string): string {
+  return hostname.split('.').slice(-2).join('.')
+}
+
 /** Writes manifest.json into the build, filled from env. */
 function manifest(env: Record<string, string>): Plugin {
   return {
@@ -27,9 +32,14 @@ function manifest(env: Record<string, string>): Plugin {
           ...(clerkHost ? [`https://${clerkHost}/*`] : []),
           // Sign-in page; the cookies permission reads its Clerk session (Sync Host).
           `${new URL(env.VITE_CLERK_SYNC_HOST).origin}/*`,
+          // Clerk sets __client_uat on the parent domain (e.g. .kitfun.cc). The side
+          // panel watches it to notice sign-in and sign-out, and Chrome only reports
+          // cookies whose domain the extension has host permission for.
+          `https://*.${parentDomain(new URL(env.VITE_CLERK_SYNC_HOST).hostname)}/*`,
         ],
         background: { service_worker: 'background.js', type: 'module' },
-        side_panel: { default_path: 'sidepanel.html' },
+        // No side_panel.default_path: without it, a tab has no panel unless background.ts
+        // sets one, so the panel stays off on other sites even before background.ts runs.
         action: { default_title: 'Open Copilot for Notion' },
       }
       this.emitFile({ type: 'asset', fileName: 'manifest.json', source: JSON.stringify(json, null, 2) })

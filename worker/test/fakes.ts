@@ -9,6 +9,8 @@ type Call = { model: string; inputs: Record<string, unknown>; options?: Record<s
 export class FakeAiBinding implements AiBinding {
   calls: Call[] = []
   failWith?: Error
+  /** When set, a streamed call returns this raw SSE text instead of the reply. */
+  rawSse?: string
 
   constructor(private reply = 'Hello from Workers AI') {}
 
@@ -23,6 +25,8 @@ export class FakeAiBinding implements AiBinding {
         choices: [{ index: 0, message: { role: 'assistant', content: this.reply }, finish_reason: 'stop' }],
       }
     }
+
+    if (this.rawSse !== undefined) return new Response(this.rawSse).body
 
     const lines = this.reply.split(' ').map((w) => ({ choices: [{ index: 0, delta: { content: w + ' ' } }] }))
     const sse = lines.map((l) => `data: ${JSON.stringify(l)}\n\n`).join('') + 'data: [DONE]\n\n'

@@ -105,7 +105,8 @@ export function createApp() {
   // OpenAI-compatible chat completions. The model is fixed by the server.
   app.post('/v1/chat/completions', async (c) => {
     const body = await readJson(c)
-    const { messages, stream, max_tokens } = body
+    const { messages, stream } = body
+    const max_tokens = body.max_tokens ?? undefined // null means not set
     if (!Array.isArray(messages) || messages.length === 0) {
       throw new HttpError(400, 'bad_request', 'messages must be a non-empty array')
     }
@@ -135,7 +136,10 @@ export function createApp() {
       throw new HttpError(400, 'bad_request', `unsupported model; use ${c.env.MODEL} or omit it`)
     }
 
-    const inputs: Record<string, unknown> = { messages }
+    // Pass only the fields the model needs; drop anything else a client added.
+    const inputs: Record<string, unknown> = {
+      messages: messages.map((m: { role: string; content: string }) => ({ role: m.role, content: m.content })),
+    }
     if (max_tokens !== undefined) inputs.max_tokens = max_tokens
     if (stream === true) inputs.stream = true
     const options = c.env.AI_GATEWAY_ID

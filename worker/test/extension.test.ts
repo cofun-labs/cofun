@@ -1,6 +1,6 @@
 // Runs the extension's real client code (extension/src/llm.ts) against the worker,
 // so the two sides can't drift apart.
-import { beforeAll, describe, expect, it } from 'vitest'
+import { afterEach, beforeAll, describe, expect, it } from 'vitest'
 import { streamChat } from '../../extension/src/llm'
 import { createApp, type Env } from '../src/app'
 import { FakeClerk } from './clerk'
@@ -10,11 +10,12 @@ const EXT = 'chrome-extension://abcdefghijklmnopabcdefghijklmnop'
 const app = createApp()
 let clerk: FakeClerk
 let env: Env
+let ai: FakeAiBinding
 
 beforeAll(async () => {
   clerk = await FakeClerk.create()
   env = {
-    AI: new FakeAiBinding('你好 来自 worker'),
+    AI: (ai = new FakeAiBinding('你好 来自 worker')),
     MODEL: '@cf/test/model',
     CLERK_JWT_KEY: clerk.publicKeyPem,
     CLERK_AUTHORIZED_PARTIES: EXT,
@@ -22,6 +23,10 @@ beforeAll(async () => {
   // The extension calls fetch(); route it into the worker app.
   globalThis.fetch = ((url: string, init?: RequestInit) =>
     app.request(new URL(url).pathname, init, env)) as typeof fetch
+})
+
+afterEach(() => {
+  ai.rawSse = undefined
 })
 
 const config = (getToken: () => Promise<string | null>) => ({ apiUrl: 'https://nk.example.dev/v1/', getToken })
@@ -58,5 +63,46 @@ describe('extension client against the worker', () => {
         () => {},
       ),
     ).rejects.toThrow('invalid or expired session')
+  })
+
+  it('extension reads the last event when the stream ends without a newline', async () => {
+    const token = await clerk.sessionToken({ userId: 'user_alice', azp: EXT })
+    const chunk = (t: string) => `data: ${JSON.stringify({ choices: [{ delta: { content: t } }] })}`
+    ai.rawSse = `${chunk('a')}\n\n${chunk('b')}`
+    expect(
+      await streamChat(
+        config(async () => token),
+        hi,
+        () => {},
+      ),
+    ).toBe('ab')
+  })
+
+  it('extension surfaces an error event in the stream', async () => {
+    const token = await clerk.sessionToken({ userId: 'user_alice', azp: EXT })
+    ai.rawSse = `data: ${JSON.stringify({ error: { message: 'model overloaded' } })}\n\n`
+    await expect(
+      streamChat(
+        config(async () => token),
+        hi,
+        () => {},
+      ),
+    ).rejects.toThrow('model overloaded')
+  })
+
+  it('extension rejects a successful response that is not a stream', async () => {
+    const realFetch = globalThis.fetch
+    globalThis.fetch = (async () => Response.json({ ok: true })) as typeof fetch
+    try {
+      await expect(
+        streamChat(
+          config(async () => 'token'),
+          hi,
+          () => {},
+        ),
+      ).rejects.toThrow('Unexpected response')
+    } finally {
+      globalThis.fetch = realFetch
+    }
   })
 })

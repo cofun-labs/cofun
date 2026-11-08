@@ -180,6 +180,11 @@ describe('worker API', () => {
     expect(ai.calls).toHaveLength(0)
   })
 
+  it('passes only role and content to the model, and treats null max_tokens as unset', async () => {
+    await chat(token, { messages: [{ role: 'user', content: 'hi', name: 'x', extra: 1 }], max_tokens: null })
+    expect(ai.calls[0].inputs).toEqual({ messages: [{ role: 'user', content: 'hi' }] })
+  })
+
   it('naming the server model is allowed', async () => {
     expect((await chat(token, { messages: hi, model: MODEL })).status).toBe(200)
   })

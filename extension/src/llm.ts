@@ -69,14 +69,20 @@ export async function streamChat(
 
   const reader = res.body.pipeThrough(new TextDecoderStream()).getReader()
   let buffer = ''
-  while (true) {
-    const { done, value } = await reader.read()
-    if (done) break
-    buffer += value
-    const lines = buffer.split('\n')
-    buffer = lines.pop() ?? ''
-    lines.forEach(handle)
+  try {
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+      buffer += value
+      const lines = buffer.split('\n')
+      buffer = lines.pop() ?? ''
+      lines.forEach(handle)
+    }
+    handle(buffer) // The stream may end without a trailing newline.
+    return full
+  } catch (err) {
+    // Stop reading so the server stops generating.
+    await reader.cancel().catch(() => {})
+    throw err
   }
-  handle(buffer) // The stream may end without a trailing newline.
-  return full
 }

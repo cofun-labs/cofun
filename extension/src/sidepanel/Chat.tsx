@@ -8,12 +8,31 @@ const SYSTEM_PROMPT =
 
 type Shown = ChatMessage & { error?: boolean }
 
+// Stay well under the worker's limits (200 messages, 200k characters) by
+// sending only the most recent part of a long conversation.
+const MAX_HISTORY_MESSAGES = 100
+const MAX_HISTORY_CHARS = 150_000
+
+function recent(history: ChatMessage[]): ChatMessage[] {
+  const out: ChatMessage[] = []
+  let chars = 0
+  for (let i = history.length - 1; i >= 0 && out.length < MAX_HISTORY_MESSAGES; i--) {
+    chars += history[i].content.length
+    if (chars > MAX_HISTORY_CHARS) break
+    out.unshift(history[i])
+  }
+  // Always send the newest message; if it alone is too long, the server says so.
+  return out.length ? out : history.slice(-1)
+}
+
 export function Chat() {
   const { getToken } = useAuth()
   const [messages, setMessages] = useState<Shown[]>([])
   const [input, setInput] = useState('')
   const [controller, setController] = useState<AbortController | null>(null)
   const listRef = useRef<HTMLElement>(null)
+  // Bumped by "New chat" so a reply still streaming for the old chat is dropped.
+  const chatId = useRef(0)
 
   useEffect(() => {
     listRef.current?.scrollTo({ top: listRef.current.scrollHeight })
@@ -23,19 +42,21 @@ export function Chat() {
     const text = input.trim()
     if (!text || controller) return
 
-    const history = messages.filter((m) => !m.error)
+    const history = messages.filter((m) => !m.error).map(({ role, content }) => ({ role, content }))
     const user: ChatMessage = { role: 'user', content: text }
+    const id = chatId.current
     setInput('')
     setMessages([...messages, user, { role: 'assistant', content: '' }])
 
     const ctrl = new AbortController()
     setController(ctrl)
-    const updateLast = (fn: (m: Shown) => Shown) => setMessages((ms) => [...ms.slice(0, -1), fn(ms[ms.length - 1])])
+    const updateLast = (fn: (m: Shown) => Shown) =>
+      setMessages((ms) => (chatId.current !== id || ms.length === 0 ? ms : [...ms.slice(0, -1), fn(ms[ms.length - 1])]))
 
     try {
       await streamChat(
         { apiUrl: API_URL, getToken: () => getToken() },
-        [{ role: 'system', content: SYSTEM_PROMPT }, ...history, user],
+        [{ role: 'system', content: SYSTEM_PROMPT }, ...recent([...history, user])],
         (delta) => updateLast((m) => ({ ...m, content: m.content + delta })),
         ctrl.signal,
       )
@@ -68,6 +89,7 @@ export function Chat() {
       <div className="toolbar">
         <button
           onClick={() => {
+            chatId.current++
             controller?.abort()
             setMessages([])
           }}
