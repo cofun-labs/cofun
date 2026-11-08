@@ -2,10 +2,9 @@
 // so the two sides can't drift apart.
 import { afterEach, beforeAll, describe, expect, it } from 'vitest'
 import { streamChat } from '../../extension/src/llm'
-import { createApp, type Env } from '../src/app'
+import { createApp, type AiBinding, type Env } from '../src/app'
 import { FakeClerk } from './clerk'
 import { FakeAiBinding, FakeQuotaNamespace, FakeUsageDataset } from './fakes'
-import type { AiBinding } from '../src/app'
 
 const EXT = 'chrome-extension://abcdefghijklmnopabcdefghijklmnop'
 const app = createApp()
