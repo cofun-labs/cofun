@@ -37,7 +37,7 @@
 1. The user clicks "Sign in" in the side panel. The extension opens `https://notion-copilot.kitfun.cc/login` in a new tab; the worker serves this page with Clerk's sign-in UI.
 2. After sign-in, Clerk's session cookie lives on that domain. The extension is configured with `syncHost` and uses the `cookies` permission to read that session. Clerk doesn't refresh an already-open side panel, so the extension watches those cookies and reloads the panel when they change.
 3. Before each request, the extension gets a short-lived session JWT with `getToken()` and sends it as `Authorization: Bearer`.
-4. The worker verifies the JWT locally with Clerk's JWT public key (signature, expiry) and checks that its `azp` is an allowed origin (the extension's `chrome-extension://<id>` and the sign-in page). No network call to Clerk is needed.
+4. The worker verifies the JWT locally with Clerk's JWT public key (signature, expiry). If the token has an `azp` (the web origin that requested it), it must be an allowed origin, which stops other websites from using a session they obtained in the browser. Tokens the extension gets through Clerk's Native API carry no `azp`. No network call to Clerk is needed.
 5. The request goes through AI Gateway to Workers AI, tagged with the Clerk user id for per-user analytics.
 
 The extension ID is pinned with the manifest `key`, so Clerk and the worker can trust it.
