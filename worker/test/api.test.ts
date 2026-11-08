@@ -183,19 +183,6 @@ describe('worker API', () => {
     expect(ai.calls[0].options).toBeUndefined()
   })
 
-  it('a body over 1 MB is refused without calling the model', async () => {
-    const res = await chat(token, { messages: [{ role: 'user', content: 'x'.repeat(1_000_000) }] })
-    expect(res.status).toBe(413)
-    expect((await json(res)).error.code).toBe('payload_too_large')
-    expect(ai.calls).toHaveLength(0)
-    expect(records().map((r) => r.outcome)).toEqual(['payload_too_large'])
-  })
-
-  it('the body limit leaves room for the full character limit in any script', async () => {
-    // 200,000 three-byte characters: about 600 KB of UTF-8.
-    expect((await chat(token, { messages: [{ role: 'user', content: '字'.repeat(200_000) }] })).status).toBe(200)
-  })
-
   it('invalid bodies are rejected without calling the model', async () => {
     expect((await chat(token, { messages: [] })).status).toBe(400)
     expect((await chat(token, [1])).status).toBe(400)
@@ -209,7 +196,7 @@ describe('worker API', () => {
 
   it('passes only role and content to the model, and defaults max_tokens when unset', async () => {
     await chat(token, { messages: [{ role: 'user', content: 'hi', name: 'x', extra: 1 }], max_tokens: null })
-    expect(ai.calls[0].inputs).toEqual({ messages: [{ role: 'user', content: 'hi' }], max_tokens: 4096 })
+    expect(ai.calls[0].inputs).toEqual({ messages: [{ role: 'user', content: 'hi' }], max_tokens: 16_384 })
   })
 
   it('naming the server model is allowed', async () => {

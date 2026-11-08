@@ -5,19 +5,21 @@ import { streamChat } from '../../extension/src/llm'
 import { createApp, type Env } from '../src/app'
 import { FakeClerk } from './clerk'
 import { FakeAiBinding, FakeQuotaNamespace, FakeUsageDataset } from './fakes'
+import type { AiBinding } from '../src/app'
 
 const EXT = 'chrome-extension://abcdefghijklmnopabcdefghijklmnop'
 const app = createApp()
 let clerk: FakeClerk
 let env: Env
 let ai: FakeAiBinding
+let usage: FakeUsageDataset
 
 beforeAll(async () => {
   clerk = await FakeClerk.create()
   env = {
     AI: (ai = new FakeAiBinding('你好 来自 worker')),
     QUOTA: new FakeQuotaNamespace(),
-    USAGE: new FakeUsageDataset(),
+    USAGE: (usage = new FakeUsageDataset()),
     DAILY_REQUEST_LIMIT: '100',
     MODEL: '@cf/test/model',
     CLERK_JWT_KEY: clerk.publicKeyPem,
@@ -112,6 +114,35 @@ describe('extension client against the worker', () => {
         () => {},
       ),
     ).rejects.toThrow('model overloaded')
+  })
+
+  it('a stream error the extension stops at is recorded as provider_error', async () => {
+    const token = await clerk.sessionToken({ userId: 'user_alice', azp: EXT })
+    // The model reports an error and keeps the stream open, so only the client's cancel ends it.
+    const openStream: AiBinding = {
+      async run() {
+        const event = `data: ${JSON.stringify({ error: { message: 'model overloaded' } })}\n\n`
+        return new ReadableStream({
+          start(controller) {
+            controller.enqueue(new TextEncoder().encode(event))
+          },
+        })
+      },
+    }
+    env.AI = openStream
+    usage.points = []
+    try {
+      await expect(
+        streamChat(
+          config(async () => token),
+          hi,
+          () => {},
+        ),
+      ).rejects.toThrow('model overloaded')
+    } finally {
+      env.AI = ai
+    }
+    expect(usage.points.map((p) => p.blobs?.[1])).toEqual(['provider_error'])
   })
 
   it('extension rejects a successful response that is not a stream', async () => {

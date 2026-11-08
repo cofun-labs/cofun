@@ -129,7 +129,7 @@ export function meterStream(
       try {
         result = await reader.read()
       } catch (err) {
-        finish('stream_error')
+        finish(sawError ? 'provider_error' : 'stream_error')
         controller.error(err)
         return
       }
@@ -145,7 +145,8 @@ export function meterStream(
       controller.enqueue(result.value)
     },
     async cancel(reason) {
-      finish('cancelled')
+      // A client that reads an error event stops reading at once, so the error decides the outcome.
+      finish(sawError ? 'provider_error' : 'cancelled')
       await reader.cancel(reason)
     },
   })

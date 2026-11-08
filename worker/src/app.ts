@@ -48,43 +48,15 @@ class HttpError extends Error {
 }
 
 const MAX_MESSAGES = 200
-const MAX_TOKENS = 4096
+const MAX_TOKENS = 16_384
 const MAX_CONTENT_CHARS = 200_000
-// Room for MAX_CONTENT_CHARS of any script (up to 3 UTF-8 bytes each) plus JSON overhead.
-const MAX_BODY_BYTES = 1_000_000
 const ROLES = new Set(['system', 'user', 'assistant'])
 
-/**
- * Reads the body as a JSON object, refusing it once it passes MAX_BODY_BYTES, so an oversized
- * body is never buffered or parsed in full. Hono's bodyLimit middleware would refuse before the
- * handler runs, which would leave the request without a usage record.
- */
 async function readJson(c: Ctx): Promise<Record<string, unknown>> {
-  const tooLarge = () => new HttpError(413, 'payload_too_large', `request body exceeds ${MAX_BODY_BYTES} bytes`)
-  if (Number(c.req.header('content-length')) > MAX_BODY_BYTES) throw tooLarge()
-  let text = ''
-  if (c.req.raw.body) {
-    // Content-Length can be missing (chunked uploads), so count the bytes as they arrive.
-    const reader = c.req.raw.body.getReader()
-    const decoder = new TextDecoder()
-    let size = 0
-    for (;;) {
-      const { done, value } = await reader.read()
-      if (done) break
-      size += value.byteLength
-      if (size > MAX_BODY_BYTES) {
-        await reader.cancel()
-        throw tooLarge()
-      }
-      text += decoder.decode(value, { stream: true })
-    }
-    text += decoder.decode()
-  }
-  let body: unknown
   try {
-    body = JSON.parse(text)
+    const body = await c.req.json()
+    if (body && typeof body === 'object' && !Array.isArray(body)) return body
   } catch {}
-  if (body && typeof body === 'object' && !Array.isArray(body)) return body as Record<string, unknown>
   throw new HttpError(400, 'bad_request', 'body must be a JSON object')
 }
 
