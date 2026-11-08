@@ -13,7 +13,7 @@
     "typescript": "^7.0.2",
     "vite": "^8.3.6"
   },
-  "name": "notion-kit-extension",
+  "name": "notion-copilot-extension",
   "version": "0.1.0",
   "type": "module",
   "scripts": {

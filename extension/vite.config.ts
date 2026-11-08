@@ -11,12 +11,12 @@ function clerkFrontendApi(publishableKey: string): string | undefined {
 /** Writes manifest.json into the build, filled from env. */
 function manifest(env: Record<string, string>): Plugin {
   return {
-    name: 'notion-kit-manifest',
+    name: 'notion-copilot-manifest',
     generateBundle() {
       const clerkHost = clerkFrontendApi(env.VITE_CLERK_PUBLISHABLE_KEY ?? '')
       const json = {
         manifest_version: 3,
-        name: 'Notion Kit',
+        name: 'Copilot for Notion',
         version: process.env.npm_package_version ?? '0.1.0',
         description: 'A side panel AI helper for Notion pages.',
         ...(env.CRX_PUBLIC_KEY ? { key: env.CRX_PUBLIC_KEY } : {}),
@@ -30,7 +30,7 @@ function manifest(env: Record<string, string>): Plugin {
         ],
         background: { service_worker: 'background.js', type: 'module' },
         side_panel: { default_path: 'sidepanel.html' },
-        action: { default_title: 'Open Notion Kit' },
+        action: { default_title: 'Open Copilot for Notion' },
       }
       this.emitFile({ type: 'asset', fileName: 'manifest.json', source: JSON.stringify(json, null, 2) })
     },

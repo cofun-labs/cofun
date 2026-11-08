@@ -35,7 +35,7 @@ function App() {
       signUpFallbackRedirectUrl={PANEL_URL}
     >
       <header>
-        <span className="title">Notion Kit</span>
+        <span className="title">Copilot for Notion</span>
         <Show when="signed-in">
           <UserButton />
         </Show>
@@ -43,7 +43,7 @@ function App() {
 
       <Show when="signed-out">
         <div className="signed-out">
-          <p>Sign in to use Notion Kit.</p>
+          <p>Sign in to use Copilot for Notion.</p>
           <button className="primary" onClick={openSignIn}>
             Sign in
           </button>

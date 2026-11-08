@@ -25,7 +25,7 @@ beforeEach(async () => {
     MODEL,
     AI_GATEWAY_ID: 'gw-test',
     CLERK_JWT_KEY: clerk.publicKeyPem,
-    CLERK_AUTHORIZED_PARTIES: `${EXT}, https://notion-kit.example`,
+    CLERK_AUTHORIZED_PARTIES: `${EXT}, https://notion-copilot.example`,
   }
   token = await clerk.sessionToken({ userId: 'user_alice', azp: EXT })
 })
@@ -74,7 +74,7 @@ describe('Clerk session auth', () => {
   })
 
   it('accepts any allowed origin from the list', async () => {
-    const web = await clerk.sessionToken({ userId: 'user_alice', azp: 'https://notion-kit.example' })
+    const web = await clerk.sessionToken({ userId: 'user_alice', azp: 'https://notion-copilot.example' })
     expect((await chat(web)).status).toBe(200)
   })
 
@@ -127,7 +127,7 @@ describe('POST /v1/chat/completions', () => {
     expect(ai.calls[0]).toEqual({
       model: MODEL,
       inputs: { messages: hi, max_tokens: 50 },
-      options: { gateway: { id: 'gw-test', metadata: { app: 'notion-kit', user: 'user_alice' } } },
+      options: { gateway: { id: 'gw-test', metadata: { app: 'notion-copilot', user: 'user_alice' } } },
     })
   })
 

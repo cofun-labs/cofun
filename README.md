@@ -1,13 +1,13 @@
-# Notion Kit
+# notion-copilot
 
-一个 Chrome 扩展：在 Notion 页面旁边打开侧边栏，用 AI 读取和修改当前页面。
+**Copilot for Notion**：一个 Chrome 扩展，在 Notion 页面旁边打开一个 AI 助手侧边栏，帮你读取和修改当前页面。
 
 ```
 ┌───────────── Chrome ─────────────┐
 │ Notion 页面 │ 侧边栏 (React)      │──Bearer <Clerk 会话 JWT>──▶ Worker ──▶ AI Gateway ──▶ Workers AI
 │             │  对话                │                           (验证 JWT)
 ├─────────────┴────────────────────┤      ▲ 读取会话 cookie (Sync Host)
-│ 登录标签页 notion-kit.kitfun.cc/login │──────┘  这个页面也由 Worker 提供
+│ 登录标签页 notion-copilot.kitfun.cc/login │──────┘  这个页面也由 Worker 提供
 └──────────────────────────────────┘
 ```
 
@@ -33,7 +33,7 @@
 
 ### 认证流程
 
-1. 用户在侧边栏点「登录」，扩展在新标签页打开 `https://notion-kit.kitfun.cc/login`（由 Worker 提供，页面里是 Clerk 的登录组件）。
+1. 用户在侧边栏点「登录」，扩展在新标签页打开 `https://notion-copilot.kitfun.cc/login`（由 Worker 提供，页面里是 Clerk 的登录组件）。
 2. 登录后，Clerk 的会话 cookie 写在这个域名下。扩展配置了 `syncHost`，通过 `cookies` 权限读到它，和这个会话保持同步。Clerk 不会自动刷新已打开的侧边栏，所以扩展监听这些 cookie，一变化就重新加载侧边栏。
 3. 每次请求前，扩展用 `getToken()` 取一个短时效的会话 JWT，放在 `Authorization: Bearer` 里发给 Worker。
 4. Worker 用 Clerk 的 JWT 公钥在本地验证签名、有效期，并检查 `azp` 是否在允许的 origin 列表里（扩展的 `chrome-extension://<id>` 和登录页域名），不需要访问 Clerk 的网络接口。
@@ -69,7 +69,7 @@ npx wrangler login  # 登录到部署 Worker 的 Cloudflare 账号
 CLOUDFLARE_ACCOUNT_ID=<account id> npm run deploy
 ```
 
-Worker 绑定在自定义域名 `notion-kit.kitfun.cc`（见 `wrangler.jsonc` 的 `routes`），这个域名所在的 zone 必须属于部署用的 Cloudflare 账号。
+Worker 绑定在自定义域名 `notion-copilot.kitfun.cc`（见 `wrangler.jsonc` 的 `routes`），这个域名所在的 zone 必须属于部署用的 Cloudflare 账号。
 
 `wrangler.jsonc` 里的配置项：
 

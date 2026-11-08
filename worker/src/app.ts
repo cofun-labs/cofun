@@ -109,7 +109,7 @@ export function createApp() {
     if (typeof max_tokens === 'number') inputs.max_tokens = max_tokens
     if (stream) inputs.stream = true
     const options = c.env.AI_GATEWAY_ID
-      ? { gateway: { id: c.env.AI_GATEWAY_ID, metadata: { app: 'notion-kit', user: c.get('userId') } } }
+      ? { gateway: { id: c.env.AI_GATEWAY_ID, metadata: { app: 'notion-copilot', user: c.get('userId') } } }
       : undefined
 
     let out: unknown

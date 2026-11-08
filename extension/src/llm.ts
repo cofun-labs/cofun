@@ -1,4 +1,4 @@
-// Talks to the Notion Kit worker's OpenAI-compatible API.
+// Talks to the notion-copilot worker's OpenAI-compatible API.
 
 export type ChatMessage = { role: 'system' | 'user' | 'assistant'; content: string }
 
