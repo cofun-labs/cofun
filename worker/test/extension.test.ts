@@ -62,13 +62,14 @@ function makeAgent(
     tools?: ToolSpec[]
     maxSteps?: number
     history?: { messages: number; chars: number }
+    systemPrompt?: string
     getToken?: () => Promise<string | null>
   } = {},
 ) {
   return new CopilotAgent({
     apiUrl: 'https://nk.example.dev/v1/',
     getToken: options.getToken ?? (async () => token),
-    systemPrompt: 'You are Notion Copilot.',
+    systemPrompt: options.systemPrompt ?? 'You are Notion Copilot.',
     tools: options.tools ?? [pageTool().tool],
     maxSteps: options.maxSteps,
     history: options.history,
@@ -223,11 +224,24 @@ describe('extension agent against the worker', () => {
   })
 
   it('the system prompt and tool definitions count toward the history budget', async () => {
-    // 60 characters would hold the earlier exchange on its own, but not with the prompt and tools.
-    const agent = makeAgent({ history: { messages: 100, chars: 60 } })
+    const { tool } = pageTool()
+    const toolChars = JSON.stringify([
+      { name: tool.name, description: tool.description, parameters: tool.parameters },
+    ]).length
+    // The earlier exchange ("first", its reply, "second") is about 24 characters and fits in 40.
+    const budget = (systemPrompt: string) =>
+      makeAgent({ systemPrompt, history: { messages: 100, chars: toolChars + 40 } })
+
+    let agent = budget('Short.')
     await ask(agent, 'first')
     await ask(agent, 'second')
-    expect(sentMessages(1).map((m) => m.role)).toEqual(['system', 'user'])
+    expect(sentMessages(1).map((m) => m.role)).toEqual(['system', 'user', 'assistant', 'user'])
+
+    // A long system prompt uses up the room, so only the newest question is sent.
+    agent = budget('x'.repeat(100))
+    await ask(agent, 'first')
+    await ask(agent, 'second')
+    expect(sentMessages(3).map((m) => m.role)).toEqual(['system', 'user'])
   })
 
   it('a second question while one is running is refused, and the first is unharmed', async () => {

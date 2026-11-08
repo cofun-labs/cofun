@@ -79,16 +79,11 @@ export class CopilotAgent {
 
   private async askWithRetry(text: string, onUpdate: (update: AgentUpdate) => void): Promise<AskResult> {
     const epoch = this.epoch
-    const { result, ranTools } = await this.askOnce(text, onUpdate, epoch)
+    const { result, ranTools, code } = await this.askOnce(text, onUpdate, epoch)
     // The worker's model changed since this panel looked it up (a deploy). The worker refuses the
     // request before using any quota, so look the model up again and retry once, but only if no tool
     // ran yet: a retry runs the whole question again.
-    if (
-      result.status === 'error' &&
-      result.message.startsWith('unsupported model') &&
-      !ranTools &&
-      epoch === this.epoch
-    ) {
+    if (code === 'unsupported_model' && !ranTools && epoch === this.epoch) {
       try {
         this.model = await this.loadModel()
       } catch (err) {
@@ -104,7 +99,7 @@ export class CopilotAgent {
     text: string,
     onUpdate: (update: AgentUpdate) => void,
     epoch: number,
-  ): Promise<{ result: AskResult; ranTools: boolean }> {
+  ): Promise<{ result: AskResult; ranTools: boolean; code?: string }> {
     let agent: Agent
     try {
       agent = await this.getAgent()
@@ -117,7 +112,7 @@ export class CopilotAgent {
     const before = agent.state.messages.length
     let steps = 0
     let hitLimit = false
-    let failure: string | undefined
+    let failure: Failure | undefined
     let stopped = false
     // The model gave its final answer; a Stop after this point is too late to drop it.
     let answered = false
@@ -151,7 +146,7 @@ export class CopilotAgent {
       else if (update) onUpdate(update)
       if (event.type === 'message_end' && event.message.role === 'assistant') {
         const m = event.message as AssistantMessage
-        if (m.stopReason === 'error') failure = errorText(m.errorMessage)
+        if (m.stopReason === 'error') failure = parseError(m.errorMessage)
         if (m.stopReason === 'aborted') stopped = true
         const final = !m.content.some((block) => block.type === 'toolCall')
         if (final && (m.stopReason === 'stop' || m.stopReason === 'length')) answered = true
@@ -162,7 +157,7 @@ export class CopilotAgent {
       // String content: the worker accepts only text, and pi would otherwise send content parts.
       await agent.prompt({ role: 'user', content: text, timestamp: Date.now() })
     } catch (err) {
-      failure ??= errorText((err as Error).message)
+      failure ??= parseError((err as Error).message)
     } finally {
       unsubscribe()
       agent.beforeToolCall = undefined
@@ -174,8 +169,8 @@ export class CopilotAgent {
     stopped ||= epoch !== this.epoch && !answered
     if (failure || stopped) {
       agent.state.messages = agent.state.messages.slice(0, before)
-      const result: AskResult = stopped ? { status: 'stopped' } : { status: 'error', message: failure! }
-      return { result, ranTools }
+      const result: AskResult = stopped ? { status: 'stopped' } : { status: 'error', message: failure!.text }
+      return { result, ranTools, code: stopped ? undefined : failure?.code }
     }
     return { result: hitLimit ? { status: 'step_limit', steps } : { status: 'done' }, ranTools }
   }
@@ -332,17 +327,29 @@ function toUpdate(event: AgentEvent): AgentUpdate | undefined {
 }
 
 /**
- * The worker's own error message when there is one. The SDK reports HTTP errors as
- * `<status>: <body>` or `<status> <message>`, and the worker's body is `{ error: { message } }`
- * (sometimes already unwrapped to `{ message }`).
+ * The worker's own error message and code when there are any. The SDK reports HTTP errors as
+ * `<status>: <body>` or `<status> <message>`, and the worker's body is `{ error: { code, message } }`
+ * (sometimes already unwrapped to `{ code, message }`).
  */
-function errorText(message: string | undefined): string {
-  if (!message) return 'The model failed.'
+function parseError(message: string | undefined): Failure {
+  if (!message) return { text: 'The model failed.' }
   const rest = message.replace(/^\d{3}:?\s+/, '')
   try {
-    const body = JSON.parse(rest) as { message?: unknown; error?: { message?: unknown } }
-    const inner = body.error?.message ?? body.message
-    if (typeof inner === 'string' && inner) return inner
+    const body = JSON.parse(rest) as {
+      code?: unknown
+      message?: unknown
+      error?: { code?: unknown; message?: unknown }
+    }
+    const inner = body.error ?? body
+    if (typeof inner.message === 'string' && inner.message) {
+      return { text: inner.message, code: typeof inner.code === 'string' ? inner.code : undefined }
+    }
   } catch {}
-  return rest
+  return { text: rest }
+}
+
+interface Failure {
+  text: string
+  /** The worker's error code, e.g. `unsupported_model`. */
+  code?: string
 }
