@@ -13,7 +13,7 @@
 
 ### UC-PANEL-001-S01: Toolbar icon opens the side panel on a Notion tab
 
-- Priority: P0 · Strategy: ai-e2e · Status: ❌
+- Priority: P0 · Strategy: ai-e2e · Status: ✅
 - **Given** a Notion page is open in the active tab
 - **When** the user clicks the extension's toolbar icon
 - **Then** the side panel opens next to the page
