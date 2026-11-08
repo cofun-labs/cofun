@@ -58,6 +58,9 @@ worker/                   Cloudflare Worker
 docs/
   bdd.md                  how use cases and scenarios are written
   use-cases/              use cases by domain; tests reference their scenario IDs
+.github/rulesets/         GitHub branch rulesets (export format)
+scripts/
+  github-settings.sh      applies the rulesets and repository options with gh
 AGENTS.md                 development workflow and conventions (CLAUDE.md links here)
 ```
 
@@ -73,6 +76,18 @@ pnpm check        # lint, format check, typecheck, extension build, worker tests
 A lefthook pre-commit hook runs `pnpm check`. GitHub Actions runs it on every pull request.
 
 See [AGENTS.md](AGENTS.md) for the issue → PR → review → merge workflow.
+
+### GitHub settings
+
+The `main` branch ruleset (no deletion or force push, squash-merged PRs only, CI must pass) is kept in [`.github/rulesets/main.json`](.github/rulesets/main.json). [`scripts/github-settings.sh`](scripts/github-settings.sh) applies it along with the repository options: delete head branches on merge, secret scanning with push protection, and Dependabot security updates.
+
+A repository admin runs it from their machine with `gh` signed in; it is not run in CI, so no admin token is stored on GitHub. It changes only what differs and prints what it changed:
+
+```bash
+scripts/github-settings.sh
+```
+
+If you change a setting in the GitHub dashboard, copy it back into these files.
 
 ### Worker
 
