@@ -9,6 +9,11 @@
   "routes": [{ "pattern": "notion-copilot.kitfun.cc", "custom_domain": true }],
   "workers_dev": false,
 
+  // Workers Logs: keep console output and per-request invocation logs in the dashboard.
+  "observability": {
+    "logs": { "enabled": true, "invocation_logs": true },
+  },
+
   // Workers AI: models run on Cloudflare, no external API keys.
   "ai": { "binding": "AI" },
 
