@@ -774,15 +774,38 @@ describe('tool calling', () => {
       [question, call, later, result],
       [question, twoCalls, result],
       [question, twoCalls, result, later, result2],
-      // Ids are unique and each call gets one result.
+      // Ids are unique within a message and each call gets one result.
       [question, { ...call, tool_calls: [pageCall, pageCall] }, result],
-      [question, call, result, call, result],
       [question, call, result, result],
     ]
     for (const messages of bad) expect((await chat(token, { messages })).status).toBe(400)
     expect(ai.calls).toHaveLength(0)
     // Results for several calls may come in any order.
     expect((await chat(token, { messages: [question, twoCalls, result2, result, later] })).status).toBe(200)
+  })
+
+  it('an agent can run several tool rounds, even if ids repeat across rounds', async () => {
+    ai.toolCalls = [{ name: 'get_current_page', arguments: '{}' }]
+    const messages: unknown[] = [...askPage]
+    for (let round = 0; round < 2; round++) {
+      const res = await chat(token, { messages, tools, stream: true })
+      expect(res.status).toBe(200)
+      const reply = await readStream(res)
+      const toolCalls = reply.calls.map((c) => ({
+        id: c.id,
+        type: 'function',
+        function: { name: c.name, arguments: c.arguments },
+      }))
+      messages.push({ role: 'assistant', content: reply.text, tool_calls: toolCalls })
+      messages.push({ role: 'tool', tool_call_id: toolCalls[0].id, content: '{"title":"Q4 Roadmap"}' })
+    }
+    ai.toolCalls = undefined
+    expect((await chat(token, { messages, tools })).status).toBe(200)
+    expect(ai.calls).toHaveLength(3)
+
+    // Clients or other models may number ids per reply; results pair with the calls right before them.
+    const [question, call, result] = withToolResult('{}')
+    expect((await chat(token, { messages: [question, call, result, call, result] })).status).toBe(200)
   })
 
   it('tool_choice with a malformed name is refused without echoing it', async () => {

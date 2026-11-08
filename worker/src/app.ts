@@ -194,9 +194,8 @@ function parseModelInputs(body: Record<string, unknown>): { inputs: ModelInputs;
   }
 
   // As OpenAI requires, an assistant message with tool calls is followed right away by one result per
-  // call (in any order), before any other message. Ids are unique across the conversation, so the model
-  // can pair each result with its call.
-  const callIds = new Set<string>()
+  // call (in any order), before any other message. Ids only need to be unique within one assistant
+  // message: results are paired with the calls right before them.
   let pending = new Set<string>()
   const unanswered = () => badRequest('each tool call needs its result right after the assistant message')
   let chars = 0
@@ -213,11 +212,8 @@ function parseModelInputs(body: Record<string, unknown>): { inputs: ModelInputs;
     if (pending.size) throw unanswered()
     const toolCalls = m.tool_calls as { id: string }[] | undefined
     if (toolCalls) {
-      for (const call of toolCalls) {
-        if (callIds.has(call.id)) throw badRequest(`tool call id ${call.id} is used twice`)
-        callIds.add(call.id)
-      }
       pending = new Set(toolCalls.map((call) => call.id))
+      if (pending.size !== toolCalls.length) throw badRequest('tool call ids in one message must be unique')
       chars += JSON.stringify(toolCalls).length
     }
   }

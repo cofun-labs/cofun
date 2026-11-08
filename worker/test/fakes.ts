@@ -27,6 +27,7 @@ export class FakeAiBinding implements AiBinding {
   streamFailWith?: Error
   /** When set, the model writes the reply as a preamble and then asks the client to run these tools. */
   toolCalls?: FakeToolCall[]
+  private nextToolCallId = 0
 
   constructor(private reply = 'Hello from Workers AI') {}
 
@@ -63,7 +64,8 @@ export class FakeAiBinding implements AiBinding {
    * Workers AI way: per-chunk counts, a zeroed chunk, then a `response` chunk with the totals.
    */
   private toolCallReply(model: string, toolCalls: FakeToolCall[], inputs: Record<string, unknown>) {
-    const ids = toolCalls.map((_, i) => `chatcmpl-tool-${i}`)
+    // Like the real model's random ids, these don't repeat across replies.
+    const ids = toolCalls.map(() => `chatcmpl-tool-${this.nextToolCallId++}`)
     if (!inputs.stream) {
       return {
         object: 'chat.completion',
