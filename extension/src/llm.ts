@@ -42,32 +42,41 @@ export async function streamChat(
     body: JSON.stringify({ messages, stream: true }),
   })
   if (!res.ok || !res.body) throw await errorFrom(res)
+  if (!res.headers.get('content-type')?.includes('text/event-stream')) {
+    throw new Error(`Unexpected response from the server: ${(await res.text()).slice(0, 300)}`)
+  }
+
+  let full = ''
+  const handle = (line: string) => {
+    if (!line.startsWith('data:')) return
+    const data = line.slice(5).trim()
+    if (!data || data === '[DONE]') return
+    let event: { error?: { message?: string } | string; choices?: { delta?: { content?: unknown } }[] }
+    try {
+      event = JSON.parse(data)
+    } catch {
+      return // Not JSON; skip it.
+    }
+    if (event.error) {
+      throw new Error(typeof event.error === 'string' ? event.error : (event.error.message ?? 'The model failed.'))
+    }
+    const delta = event.choices?.[0]?.delta?.content
+    if (typeof delta === 'string' && delta) {
+      full += delta
+      onDelta(delta)
+    }
+  }
 
   const reader = res.body.pipeThrough(new TextDecoderStream()).getReader()
   let buffer = ''
-  let full = ''
-
   while (true) {
     const { done, value } = await reader.read()
     if (done) break
     buffer += value
-
     const lines = buffer.split('\n')
     buffer = lines.pop() ?? ''
-    for (const line of lines) {
-      if (!line.startsWith('data:')) continue
-      const data = line.slice(5).trim()
-      if (!data || data === '[DONE]') continue
-      try {
-        const delta: unknown = JSON.parse(data).choices?.[0]?.delta?.content
-        if (typeof delta === 'string' && delta) {
-          full += delta
-          onDelta(delta)
-        }
-      } catch {
-        // Ignore partial or non-JSON lines.
-      }
-    }
+    lines.forEach(handle)
   }
+  handle(buffer) // The stream may end without a trailing newline.
   return full
 }

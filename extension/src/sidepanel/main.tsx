@@ -16,7 +16,9 @@ const PANEL_URL = chrome.runtime.getURL('sidepanel.html')
 // __client_uat is "0" (or missing) when signed out and a timestamp when signed in.
 const syncDomain = new URL(SYNC_HOST).hostname
 const isUatCookie = (c: chrome.cookies.Cookie) =>
-  /^__client_uat(_[A-Za-z0-9-]{8})?$/.test(c.name) && syncDomain.endsWith(c.domain.replace(/^\./, ''))
+  /^__client_uat(_[A-Za-z0-9-]{8})?$/.test(c.name) &&
+  (syncDomain === c.domain.replace(/^\./, '') ||
+    syncDomain.endsWith(c.domain.startsWith('.') ? c.domain : `.${c.domain}`))
 const uatSignedIn = (c: chrome.cookies.Cookie | undefined) => !!c && c.value !== '' && c.value !== '0'
 
 let signedIn: boolean | undefined
