@@ -4,9 +4,11 @@ import { CopilotAgent, type AgentUpdate } from '../agent'
 import { TOOLS } from '../tools'
 
 const API_URL = import.meta.env.VITE_API_URL as string
+// Promise only what the tools can do; widen this when page reading and editing tools land.
 const SYSTEM_PROMPT =
-  'You are Notion Copilot, an AI assistant that helps the user read and edit their Notion pages. ' +
-  'Use the tools when you need to know about the page or the browser. Be concise.'
+  "You are Notion Copilot, an AI assistant that works next to the user's Notion pages. " +
+  'Your tools can tell you which Notion page is open (its title and URL); you cannot read or change page content yet. ' +
+  'Use the tools when you need to know about the page. Be concise.'
 
 /** A tool the agent ran for this reply. A placeholder until the proper display lands. */
 type ShownTool = { id: string; name: string; status: 'running' | 'done' | 'failed' | 'skipped' }
