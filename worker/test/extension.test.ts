@@ -1,6 +1,6 @@
 // Runs the extension's real client code (extension/src/llm.ts) against the worker,
 // so the two sides can't drift apart.
-import { afterEach, beforeAll, describe, expect, it } from 'vitest'
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import { streamChat } from '../../extension/src/llm'
 import { createApp, type AiBinding, type Env } from '../src/app'
 import { FakeClerk } from './clerk'
@@ -141,7 +141,8 @@ describe('extension client against the worker', () => {
     } finally {
       env.AI = ai
     }
-    expect(usage.points.map((p) => p.blobs?.[1])).toEqual(['provider_error'])
+    // The client's cancel reaches the worker's stream a few microtasks after streamChat rejects.
+    await vi.waitFor(() => expect(usage.points.map((p) => p.blobs?.[1])).toEqual(['provider_error']))
   })
 
   it('extension rejects a successful response that is not a stream', async () => {
