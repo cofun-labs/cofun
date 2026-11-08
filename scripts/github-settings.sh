@@ -32,7 +32,7 @@ def project($d):
 
 for file in .github/rulesets/*.json; do
   name="$(jq -r .name "$file")"
-  id="$(gh api "$api/rulesets" --jq ".[] | select(.name == \"$name\") | .id")"
+  id="$(gh api "$api/rulesets?includes_parents=false" --jq ".[] | select(.name == \"$name\") | .id")"
 
   if [ -z "$id" ]; then
     gh api -X POST "$api/rulesets" --input "$file" >/dev/null
