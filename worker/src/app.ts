@@ -194,18 +194,25 @@ function parseModelInputs(body: Record<string, unknown>): { inputs: ModelInputs;
   }
 
   // A tool result must answer a call the assistant made earlier in the conversation, as OpenAI requires.
+  // Ids must be unique, and each call gets at most one result, so the model can pair them up.
   const callIds = new Set<string>()
+  const answered = new Set<string>()
   let chars = 0
   for (const m of inputs.messages) {
     chars += (m.content as string).length
     const toolCalls = m.tool_calls as { id: string }[] | undefined
     if (toolCalls) {
-      for (const call of toolCalls) callIds.add(call.id)
+      for (const call of toolCalls) {
+        if (callIds.has(call.id)) throw badRequest(`tool call id ${call.id} is used twice`)
+        callIds.add(call.id)
+      }
       chars += JSON.stringify(toolCalls).length
     }
     if (m.role === 'tool') {
       const id = m.tool_call_id as string
       if (!callIds.has(id)) throw badRequest('each tool message must answer an earlier assistant tool call')
+      if (answered.has(id)) throw badRequest(`tool call ${id} has more than one result`)
+      answered.add(id)
       chars += id.length
     }
   }

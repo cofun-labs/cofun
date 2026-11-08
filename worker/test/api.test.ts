@@ -760,10 +760,15 @@ describe('tool calling', () => {
 
   it('a tool result must answer an earlier tool call', async () => {
     const [question, call, result] = withToolResult('{}')
+    const pageCall = { id: 'call_1', type: 'function', function: { name: 'get_current_page', arguments: '{}' } }
     const bad = [
       [question, result],
       [question, { ...result, tool_call_id: 'call_2' }],
       [question, result, call],
+      // Ids must be unique and each call gets one result.
+      [question, { ...call, tool_calls: [pageCall, pageCall] }, result],
+      [question, call, result, call, result],
+      [question, call, result, result],
     ]
     for (const messages of bad) expect((await chat(token, { messages })).status).toBe(400)
     expect(ai.calls).toHaveLength(0)
