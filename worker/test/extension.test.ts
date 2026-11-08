@@ -382,10 +382,15 @@ describe('extension agent against the worker', () => {
       },
     }
     ai.script = [{ toolCalls: [{ name: 'get_current_page', arguments: '{}' }] }, { reply: 'Q4 Roadmap' }]
-    const { result } = await ask(makeAgent({ tools: [changing] }), 'Which page am I on?')
-    expect(result).toMatchObject({ status: 'error', message: expect.stringContaining('unsupported model') })
+    const agent = makeAgent({ tools: [changing] })
+    const { result } = await ask(agent, 'Which page am I on?')
+    expect(result).toEqual({ status: 'error', message: 'Copilot was just updated. Please ask again.' })
     // The tool ran once; running the question again would run it again.
     expect(runs).toHaveLength(1)
+    // The new model was looked up, so asking again works straight away.
+    ai.script = []
+    expect((await ask(agent, 'Thanks')).result).toEqual({ status: 'done' })
+    expect(ai.calls.at(-1)!.model).toBe('@cf/test/next-model')
   })
 
   it('asks to sign in when there is no session', async () => {
