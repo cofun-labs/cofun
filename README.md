@@ -59,8 +59,9 @@ docs/
   bdd.md                  how use cases and scenarios are written
   use-cases/              use cases by domain; tests reference their scenario IDs
 .github/rulesets/         GitHub branch rulesets (export format)
+.github/dependabot.yml    weekly dependency updates
 scripts/
-  github-settings.sh      applies the rulesets and repository options with gh
+  sync-github-settings.sh applies the rulesets and repository options with gh
 AGENTS.md                 development workflow and conventions (CLAUDE.md links here)
 ```
 
@@ -79,12 +80,12 @@ See [AGENTS.md](AGENTS.md) for the issue → PR → review → merge workflow.
 
 ### GitHub settings
 
-The `main` branch ruleset (no deletion or force push, squash-merged PRs only, CI must pass) is kept in [`.github/rulesets/main.json`](.github/rulesets/main.json). [`scripts/github-settings.sh`](scripts/github-settings.sh) applies it along with the repository options: delete head branches on merge, secret scanning with push protection, and Dependabot security updates.
+The `main` branch ruleset is kept in [`.github/rulesets/main.json`](.github/rulesets/main.json): no deletion or force push, changes only through PRs with CI passing and every review thread resolved, merged by a merge queue that runs CI again on top of the latest `main` before it squash-merges. [`scripts/sync-github-settings.sh`](scripts/sync-github-settings.sh) applies it along with the repository options: squash merge only (the PR title and body become the commit message), delete head branches on merge, secret scanning with push protection, and Dependabot alerts and security updates. Weekly Dependabot version updates are configured in [`.github/dependabot.yml`](.github/dependabot.yml).
 
 A repository admin runs it from their machine with `gh` signed in; it is not run in CI, so no admin token is stored on GitHub. It changes only what differs and prints what it changed:
 
 ```bash
-scripts/github-settings.sh
+scripts/sync-github-settings.sh
 ```
 
 If you change a setting in the GitHub dashboard, copy it back into these files.

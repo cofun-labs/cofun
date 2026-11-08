@@ -2,7 +2,7 @@
 # Apply the repository's GitHub settings from the files in this repo.
 #
 # Run by a repository admin with the gh CLI signed in:
-#   scripts/github-settings.sh [owner/repo]
+#   scripts/sync-github-settings.sh [owner/repo]
 #
 # Idempotent: it reads the current settings, changes only what differs,
 # and prints what it changed.
@@ -40,8 +40,10 @@ for file in .github/rulesets/*.json; do
     continue
   fi
 
-  live="$(gh api "$api/rulesets/$id" | jq -S --slurpfile d "$file" "$project"' project($d[0])')"
-  want="$(jq -S . "$file")"
+  # Sort rules by type so the order GitHub returns them in doesn't matter.
+  want="$(jq -S '.rules |= sort_by(.type)' "$file")"
+  live="$(gh api "$api/rulesets/$id" |
+    jq -S --argjson d "$want" "$project"' .rules |= sort_by(.type) | project($d)')"
   if [ "$live" = "$want" ]; then
     unchanged "ruleset '$name'"
   else
@@ -55,11 +57,28 @@ done
 
 repo_json="$(gh api "$api")"
 
-if [ "$(jq -r .delete_branch_on_merge <<<"$repo_json")" = "true" ]; then
-  unchanged "delete head branches on merge"
+# Squash merge only, with the PR title and body as the commit message, and
+# delete head branches once merged.
+want_options='{
+  "allow_squash_merge": true,
+  "allow_merge_commit": false,
+  "allow_rebase_merge": false,
+  "squash_merge_commit_title": "PR_TITLE",
+  "squash_merge_commit_message": "PR_BODY",
+  "delete_branch_on_merge": true
+}'
+options_diff="$(jq -n --argjson live "$repo_json" --argjson want "$want_options" \
+  '$want | with_entries(select($live[.key] != .value))')"
+# GitHub accepts the squash commit title and message only as a pair.
+if jq -e 'has("squash_merge_commit_title") or has("squash_merge_commit_message")' <<<"$options_diff" >/dev/null; then
+  options_diff="$(jq --argjson want "$want_options" \
+    '. + {squash_merge_commit_title: $want.squash_merge_commit_title, squash_merge_commit_message: $want.squash_merge_commit_message}' <<<"$options_diff")"
+fi
+if [ "$options_diff" = "{}" ]; then
+  unchanged "merge options"
 else
-  gh api -X PATCH "$api" -F delete_branch_on_merge=true >/dev/null
-  changed "delete head branches on merge (enabled)"
+  gh api -X PATCH "$api" --input - <<<"$options_diff" >/dev/null
+  jq -r 'to_entries[] | "changed:   \(.key) = \(.value)"' <<<"$options_diff"
 fi
 
 for feature in secret_scanning secret_scanning_push_protection; do
