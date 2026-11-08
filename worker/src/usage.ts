@@ -12,7 +12,7 @@ export interface UsageRecord {
   userId: string
   model: string
   stream: boolean
-  /** `ok`, `cancelled`, `stream_error`, or the error code returned to the client. */
+  /** `ok`, `incomplete`, `cancelled`, `stream_error`, or the error code returned to the client. */
   outcome: string
   messages: number
   inputChars: number
@@ -69,6 +69,7 @@ interface StreamSummary {
 /**
  * Passes an OpenAI-style SSE stream through unchanged, chunk by chunk, while reading the token
  * usage and finish reason from it. Calls `done` once, when the stream ends, fails, or is cancelled.
+ * A stream that ends without `data: [DONE]` was cut short and is reported as `incomplete`.
  * Only the current incomplete line is held back for parsing; the reply itself is never buffered.
  */
 export function meterStream(
@@ -80,6 +81,7 @@ export function meterStream(
   const summary: StreamSummary = { promptTokens: 0, completionTokens: 0, finishReason: '' }
   let partial = ''
   let finished = false
+  let sawDone = false
   const finish = (outcome: string) => {
     if (finished) return
     finished = true
@@ -89,6 +91,7 @@ export function meterStream(
   const scan = (line: string) => {
     if (!line.startsWith('data:')) return
     const data = line.slice(5).trim()
+    if (data === '[DONE]') sawDone = true
     if (!data || data === '[DONE]') return
     let parsed: unknown
     try {
@@ -120,7 +123,7 @@ export function meterStream(
       }
       if (result.done) {
         scan(partial + decoder.decode())
-        finish('ok')
+        finish(sawDone ? 'ok' : 'incomplete')
         controller.close()
         return
       }

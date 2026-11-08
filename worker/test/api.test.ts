@@ -436,7 +436,7 @@ describe('usage records', () => {
 
   it('unknown finish reasons and malformed token counts are not copied into records', async () => {
     ai.rawSse =
-      'data: {"choices":[{"delta":{},"finish_reason":"free text"}],"usage":{"prompt_tokens":"9","completion_tokens":-1}}\n\n'
+      'data: {"choices":[{"delta":{},"finish_reason":"free text"}],"usage":{"prompt_tokens":"9","completion_tokens":-1}}\n\ndata: [DONE]\n\n'
     await (await chat(token, { messages: hi, stream: true })).text()
     expect(records()[0]).toMatchObject({ finishReason: 'other', promptTokens: 0, completionTokens: 0 })
   })
@@ -465,6 +465,13 @@ describe('usage records', () => {
       ['bad_request', 'stream'],
       ['bad_request', 'stream'],
     ])
+  })
+
+  it('[UC-CHAT-002-S02] a stream that ends early without an error is recorded as incomplete', async () => {
+    const sse = 'data: {"choices":[{"delta":{"content":"a"}}]}\n\n'
+    ai.rawSse = sse
+    expect(await (await chat(token, { messages: hi, stream: true })).text()).toBe(sse)
+    expect(records().map((r) => r.outcome)).toEqual(['incomplete'])
   })
 
   it('a failing usage dataset does not fail the request', async () => {
