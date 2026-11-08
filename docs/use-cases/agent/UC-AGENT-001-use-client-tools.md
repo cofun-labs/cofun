@@ -28,4 +28,4 @@ Key constraints:
 
 | ID | Priority | Status | Scenario |
 | --- | --- | --- | --- |
-| UC-AGENT-001-S06 | P0 | 🚧 | Given the side panel open on a Notion page; when the user asks which page they are on; then the agent looks it up and answers with the page's title. |
+| UC-AGENT-001-S06 | P0 | ✅ | Given the side panel open on a Notion page; when the user asks which page they are on; then the agent looks it up and answers with the page's title. |
