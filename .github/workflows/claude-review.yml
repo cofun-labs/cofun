@@ -22,7 +22,7 @@ jobs:
       - name: Run Claude Code Review
         uses: anthropics/claude-code-action@v1
         with:
-          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           # Temporary (#20): print Claude's full output to debug failing runs. Logs are public; turn off once fixed.
           show_full_output: true
           prompt: |
