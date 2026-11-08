@@ -1,0 +1,92 @@
+import { ClerkProvider, Show, UserButton } from '@clerk/chrome-extension'
+import { StrictMode } from 'react'
+import { createRoot } from 'react-dom/client'
+import { Chat } from './Chat'
+import './style.css'
+
+const PUBLISHABLE_KEY = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY as string
+// Web page where users sign in. Its Clerk session is synced into the extension.
+const SYNC_HOST = import.meta.env.VITE_CLERK_SYNC_HOST as string
+const PANEL_URL = chrome.runtime.getURL('sidepanel.html')
+
+// Clerk doesn't fully sync auth state into an open side panel, so reload the
+// panel when the sign-in page signs in or out. Only react to a change in
+// signed-in state: other session cookies are rewritten on every token refresh,
+// and reloading then would wipe the conversation.
+//
+// Clerk's __client_uat_<suffix> cookie is "0" when signed out and a timestamp
+// when signed in. It lives on the sign-in page's parent domain, which other
+// Clerk apps may share, so watch only the name suffixed for this publishable
+// key, and read it by URL so parent-domain cookies are included.
+async function uatCookieName(): Promise<string> {
+  // Same as Clerk's getCookieSuffix: first 8 chars of base64url(SHA-1(publishable key)).
+  const digest = await crypto.subtle.digest('SHA-1', new TextEncoder().encode(PUBLISHABLE_KEY))
+  const suffix = btoa(String.fromCharCode(...new Uint8Array(digest)))
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .slice(0, 8)
+  return `__client_uat_${suffix}`
+}
+
+async function readSignedIn(name: string): Promise<boolean> {
+  const cookie = (await chrome.cookies.getAll({ url: SYNC_HOST, name }))[0]
+  return !!cookie && cookie.value !== '' && cookie.value !== '0'
+}
+
+uatCookieName()
+  .then(async (name) => {
+    let signedIn = await readSignedIn(name)
+    let reloadTimer: number | undefined
+    chrome.cookies.onChanged.addListener(({ cookie }) => {
+      if (cookie.name !== name) return
+      clearTimeout(reloadTimer)
+      reloadTimer = window.setTimeout(async () => {
+        const now = await readSignedIn(name)
+        if (now !== signedIn) location.reload()
+        signedIn = now
+      }, 500)
+    })
+  })
+  .catch(console.error)
+
+function openSignIn() {
+  chrome.tabs.create({ url: `${SYNC_HOST}/login` })
+}
+
+function App() {
+  return (
+    <ClerkProvider
+      publishableKey={PUBLISHABLE_KEY}
+      syncHost={SYNC_HOST}
+      afterSignOutUrl={PANEL_URL}
+      signInFallbackRedirectUrl={PANEL_URL}
+      signUpFallbackRedirectUrl={PANEL_URL}
+    >
+      <header>
+        <span className="title">Copilot for Notion</span>
+        <Show when="signed-in">
+          <UserButton />
+        </Show>
+      </header>
+
+      <Show when="signed-out">
+        <div className="signed-out">
+          <p>Sign in to use Copilot for Notion.</p>
+          <button className="primary" onClick={openSignIn}>
+            Sign in
+          </button>
+        </div>
+      </Show>
+
+      <Show when="signed-in">
+        <Chat />
+      </Show>
+    </ClerkProvider>
+  )
+}
+
+createRoot(document.getElementById('root')!).render(
+  <StrictMode>
+    <App />
+  </StrictMode>,
+)

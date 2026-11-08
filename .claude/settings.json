@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "jq -r '.tool_input.command' | grep -qE 'git push.*(\\s(main$|main\\s)|:main)' && echo '{\"systemMessage\": \"Push to main blocked. Use a feature branch + PR instead.\", \"continue\": false, \"stopReason\": \"Direct push to main is not allowed per project policy.\"}'",
+            "if": "Bash(git push *)"
+          }
+        ]
+      }
+    ]
+  }
+}
