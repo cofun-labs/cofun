@@ -384,7 +384,9 @@ describe("UC-CHAT-002 Keep a record of each user's chat usage", () => {
     expect(records()).toHaveLength(3)
     expect(JSON.stringify(usage.points)).not.toContain(SECRET)
     // The gateway is told not to keep prompts and replies in its logs.
-    expect(ai.calls.every((call) => (call.options?.gateway as any).collectLog === false)).toBe(true)
+    expect(
+      ai.calls.every((call) => (call.options?.gateway as { collectLog?: boolean } | undefined)?.collectLog === false),
+    ).toBe(true)
   })
 })
 
