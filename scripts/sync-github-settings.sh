@@ -40,8 +40,10 @@ for file in .github/rulesets/*.json; do
     continue
   fi
 
-  live="$(gh api "$api/rulesets/$id" | jq -S --slurpfile d "$file" "$project"' project($d[0])')"
-  want="$(jq -S . "$file")"
+  # Sort rules by type so the order GitHub returns them in doesn't matter.
+  want="$(jq -S '.rules |= sort_by(.type)' "$file")"
+  live="$(gh api "$api/rulesets/$id" |
+    jq -S --argjson d "$want" "$project"' .rules |= sort_by(.type) | project($d)')"
   if [ "$live" = "$want" ]; then
     unchanged "ruleset '$name'"
   else
@@ -67,6 +69,11 @@ want_options='{
 }'
 options_diff="$(jq -n --argjson live "$repo_json" --argjson want "$want_options" \
   '$want | with_entries(select($live[.key] != .value))')"
+# GitHub accepts the squash commit title and message only as a pair.
+if jq -e 'has("squash_merge_commit_title") or has("squash_merge_commit_message")' <<<"$options_diff" >/dev/null; then
+  options_diff="$(jq --argjson want "$want_options" \
+    '. + {squash_merge_commit_title: $want.squash_merge_commit_title, squash_merge_commit_message: $want.squash_merge_commit_message}' <<<"$options_diff")"
+fi
 if [ "$options_diff" = "{}" ]; then
   unchanged "merge options"
 else

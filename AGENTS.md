@@ -52,7 +52,7 @@ Copilot for Notion: a Chrome extension that opens an AI side panel next to Notio
    - Judges whether the approach is correct and reasonable
    - Submits the review with `gh pr review --comment` (GitHub blocks approving your own PR)
 
-8. **Handle PR comments.** Fix every blocking comment or answer it with a clear reason no change is needed. Non-blocking suggestions can be fixed now or turned into a follow-up Issue. Push fixes to the same branch and reply to each comment with the fix commit, the verification, or the follow-up Issue.
+8. **Handle PR comments.** Fix every blocking comment or answer it with a clear reason no change is needed. Non-blocking suggestions can be fixed now or turned into a follow-up Issue. Push fixes to the same branch and reply to each comment with the fix commit, the verification, or the follow-up Issue. Then resolve each review thread: GitHub blocks merging until every thread is resolved. `gh` has no command for it, so use `gh api graphql` with the `resolveReviewThread` mutation, or the web UI.
 
 9. **Merge.** Check that every Issue checklist item is done, then run `gh pr merge {PR}`. `main` uses a merge queue: this adds the PR to the queue, which runs CI again on top of the latest `main` and squash-merges it if CI passes. Wait until the PR shows as merged; if the queue removes it, fix the failure and queue it again. GitHub deletes the branch, and `Closes #ID` closes the Issue.
 
