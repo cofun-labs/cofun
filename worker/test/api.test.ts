@@ -114,6 +114,13 @@ describe('worker API', () => {
     expect((await json(res)).error.code).toBe('not_configured')
   })
 
+  it('API is off without allowed origins', async () => {
+    env.CLERK_AUTHORIZED_PARTIES = ''
+    const res = await chat(token)
+    expect(res.status).toBe(503)
+    expect((await json(res)).error.code).toBe('not_configured')
+  })
+
   it('extension origin passes CORS preflight', async () => {
     const res = await app.request(
       '/v1/chat/completions',
@@ -165,6 +172,11 @@ describe('worker API', () => {
   it('invalid bodies are rejected without calling the model', async () => {
     expect((await chat(token, { messages: [] })).status).toBe(400)
     expect((await chat(token, [1])).status).toBe(400)
+    expect((await chat(token, { messages: [{ role: 'tool', content: 'x' }] })).status).toBe(400)
+    expect((await chat(token, { messages: [{ role: 'user', content: 1 }] })).status).toBe(400)
+    expect((await chat(token, { messages: [{ role: 'user', content: 'x'.repeat(200_001) }] })).status).toBe(400)
+    expect((await chat(token, { messages: hi, max_tokens: 100_000 })).status).toBe(400)
+    expect((await chat(token, { messages: hi, stream: 'false' })).status).toBe(400)
     expect(ai.calls).toHaveLength(0)
   })
 
@@ -176,6 +188,8 @@ describe('worker API', () => {
     ai.failWith = new Error('capacity')
     const res = await chat(token)
     expect(res.status).toBe(502)
-    expect((await json(res)).error).toEqual({ code: 'provider_error', message: 'capacity' })
+    const { error } = await json(res)
+    expect(error.code).toBe('provider_error')
+    expect(error.message).not.toContain('capacity')
   })
 })

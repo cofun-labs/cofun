@@ -35,6 +35,9 @@ class HttpError extends Error {
 }
 
 const MAX_MESSAGES = 200
+const MAX_TOKENS = 4096
+const MAX_CONTENT_CHARS = 200_000
+const ROLES = new Set(['system', 'user', 'assistant'])
 
 async function readJson(c: Ctx): Promise<Record<string, unknown>> {
   try {
@@ -79,6 +82,7 @@ export function createApp() {
       .split(',')
       .map((s) => s.trim())
       .filter(Boolean)
+    if (!authorizedParties.length) throw new HttpError(503, 'not_configured', 'CLERK_AUTHORIZED_PARTIES is not set')
     let claims: Awaited<ReturnType<typeof verifyToken>>
     try {
       claims = await verifyToken(token, { jwtKey })
@@ -89,7 +93,7 @@ export function createApp() {
     // gets through Clerk's Native API have no origin, so they carry no azp.
     // A token with an azp must come from an allowed origin.
     const azp = typeof claims.azp === 'string' ? claims.azp : undefined
-    if (azp && authorizedParties.length && !authorizedParties.includes(azp)) {
+    if (azp && !authorizedParties.includes(azp)) {
       throw new HttpError(401, 'unauthorized', 'invalid or expired session')
     }
     c.set('userId', claims.sub)
@@ -106,13 +110,34 @@ export function createApp() {
       throw new HttpError(400, 'bad_request', 'messages must be a non-empty array')
     }
     if (messages.length > MAX_MESSAGES) throw new HttpError(400, 'bad_request', `at most ${MAX_MESSAGES} messages`)
+    let chars = 0
+    for (const m of messages) {
+      if (!m || typeof m !== 'object' || !ROLES.has(m.role) || typeof m.content !== 'string') {
+        throw new HttpError(
+          400,
+          'bad_request',
+          'each message needs a role (system, user, assistant) and string content',
+        )
+      }
+      chars += m.content.length
+    }
+    if (chars > MAX_CONTENT_CHARS)
+      throw new HttpError(400, 'bad_request', `messages exceed ${MAX_CONTENT_CHARS} characters`)
+    if (
+      max_tokens !== undefined &&
+      !(Number.isInteger(max_tokens) && (max_tokens as number) > 0 && (max_tokens as number) <= MAX_TOKENS)
+    ) {
+      throw new HttpError(400, 'bad_request', `max_tokens must be an integer from 1 to ${MAX_TOKENS}`)
+    }
+    if (stream !== undefined && typeof stream !== 'boolean')
+      throw new HttpError(400, 'bad_request', 'stream must be a boolean')
     if (body.model !== undefined && body.model !== c.env.MODEL) {
       throw new HttpError(400, 'bad_request', `unsupported model; use ${c.env.MODEL} or omit it`)
     }
 
     const inputs: Record<string, unknown> = { messages }
-    if (typeof max_tokens === 'number') inputs.max_tokens = max_tokens
-    if (stream) inputs.stream = true
+    if (max_tokens !== undefined) inputs.max_tokens = max_tokens
+    if (stream === true) inputs.stream = true
     const options = c.env.AI_GATEWAY_ID
       ? { gateway: { id: c.env.AI_GATEWAY_ID, metadata: { app: 'notion-copilot', user: c.get('userId') } } }
       : undefined
@@ -121,10 +146,12 @@ export function createApp() {
     try {
       out = await c.env.AI.run(c.env.MODEL, inputs, options)
     } catch (err) {
-      throw new HttpError(502, 'provider_error', err instanceof Error ? err.message : String(err))
+      // Details go to Workers Logs, not to the client.
+      console.error('model call failed', err)
+      throw new HttpError(502, 'provider_error', 'the model is unavailable, try again later')
     }
 
-    if (stream) {
+    if (stream === true) {
       // Workers AI already streams OpenAI-style SSE; pass it through.
       return new Response(out as ReadableStream, {
         headers: { 'content-type': 'text/event-stream', 'cache-control': 'no-cache' },
