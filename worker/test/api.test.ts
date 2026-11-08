@@ -78,6 +78,13 @@ describe('UC-AUTH-002 API access requires a valid session', () => {
     expect((await chat(web)).status).toBe(200)
   })
 
+  it('[UC-AUTH-002-S10] token without an origin (Native API) is accepted', async () => {
+    const native = await clerk.sessionToken({ userId: 'user_alice' })
+    const res = await app.request('/v1/me', { headers: { authorization: `Bearer ${native}` } }, env)
+    expect(res.status).toBe(200)
+    expect((await json(res)).userId).toBe('user_alice')
+  })
+
   it('[UC-AUTH-002-S05] API is off without the JWT key', async () => {
     env.CLERK_JWT_KEY = undefined
     const res = await chat(token)

@@ -6,7 +6,7 @@
 ## Rules
 
 - R1: Every `/v1/*` request carries a Clerk session token as `Authorization: Bearer <token>`.
-- R2: The worker verifies the token locally with the Clerk JWT public key: signature, expiry, and that the token's authorized party (`azp`) is one of the allowed origins.
+- R2: The worker verifies the token locally with the Clerk JWT public key: signature and expiry. If the token has an authorized party (`azp`), it must be one of the allowed origins. Tokens the extension gets through Clerk's Native API have no `azp`, because the request has no origin.
 - R3: A rejected request never reaches the model.
 - R4: Browsers may call the API from any origin (CORS `*`), because auth uses bearer tokens, not cookies.
 
@@ -71,3 +71,10 @@
 - **Given** the worker rejects the extension's token
 - **When** the extension sends a chat message
 - **Then** the error shown is the server's message ("invalid or expired session")
+
+### UC-AUTH-002-S10: Token without an origin is accepted
+
+- Priority: P0 · Strategy: api-test · Status: ✅
+- **Given** a valid token with no `azp`, as Clerk issues to the extension through its Native API
+- **When** a client uses it
+- **Then** the request succeeds as that user

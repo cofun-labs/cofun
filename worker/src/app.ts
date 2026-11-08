@@ -79,15 +79,20 @@ export function createApp() {
       .split(',')
       .map((s) => s.trim())
       .filter(Boolean)
+    let claims: Awaited<ReturnType<typeof verifyToken>>
     try {
-      const claims = await verifyToken(token, {
-        jwtKey,
-        authorizedParties: authorizedParties.length ? authorizedParties : undefined,
-      })
-      c.set('userId', claims.sub)
+      claims = await verifyToken(token, { jwtKey })
     } catch {
       throw new HttpError(401, 'unauthorized', 'invalid or expired session')
     }
+    // Clerk sets azp to the origin that requested the token. Tokens the extension
+    // gets through Clerk's Native API have no origin, so they carry no azp.
+    // A token with an azp must come from an allowed origin.
+    const azp = typeof claims.azp === 'string' ? claims.azp : undefined
+    if (azp && authorizedParties.length && !authorizedParties.includes(azp)) {
+      throw new HttpError(401, 'unauthorized', 'invalid or expired session')
+    }
+    c.set('userId', claims.sub)
     await next()
   })
 
