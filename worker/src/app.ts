@@ -146,9 +146,12 @@ export function createApp({ now = () => new Date() }: AppOptions = {}) {
       throw new HttpError(400, 'bad_request', `unsupported model; use ${c.env.MODEL} or omit it`)
     }
 
-    // Count the request only once it is valid, and before the model is called.
+    // Count the request once it is valid, before the model is called. A failed model call
+    // still counts: the quota caps attempts, so retry loops can't get around it.
     const rawLimit = String(c.env.DAILY_REQUEST_LIMIT ?? '').trim()
-    if (!/^\d+$/.test(rawLimit)) throw new HttpError(503, 'not_configured', 'DAILY_REQUEST_LIMIT is not set')
+    if (!/^\d+$/.test(rawLimit)) {
+      throw new HttpError(503, 'not_configured', 'DAILY_REQUEST_LIMIT must be a non-negative integer')
+    }
     const limit = Number(rawLimit)
     const today = now().toISOString().slice(0, 10)
     if (!(await c.env.QUOTA.getByName(c.get('userId')).consume(today, limit))) {
