@@ -2,8 +2,10 @@ packages:
   - extension
   - worker
 
-# Dependencies allowed to run install scripts.
+# Install scripts: true runs them, false skips them (pnpm fails on unlisted ones).
 allowBuilds:
+  browser-tabs-lock: false
+  core-js: false
   esbuild: true
   lefthook: true
   sharp: true
