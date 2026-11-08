@@ -15,7 +15,8 @@ permissions: {}
 
 jobs:
   claude:
-    # Only people with write access can summon Claude: this is a public repo, and the job can push.
+    # Public repo and the job can push: only the owner, org members, and collaborators can summon Claude.
+    # claude-code-action also rejects actors without write access.
     if: |
       (
         (github.event_name == 'issue_comment' && contains(github.event.comment.body, '@claude')) ||
