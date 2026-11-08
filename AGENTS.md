@@ -62,7 +62,8 @@ Copilot for Notion: a Chrome extension that opens an AI side panel next to Notio
 
 ### Git rules
 
-- **Never push to `main`.** Every change goes through a branch and PR. A Claude Code hook in `.claude/settings.json` blocks pushes to `main`.
+- **Never push to `main`.** Every change goes through a branch and PR. The `main` ruleset (`.github/rulesets/main.json`) makes GitHub reject direct pushes to `main` from everyone.
+- **GitHub settings are code.** The `main` ruleset lives in `.github/rulesets/main.json` and repository options in `scripts/github-settings.sh`. Change them through a PR; a repository admin then runs `scripts/github-settings.sh`. If you change a setting in the GitHub dashboard, copy it back into these files.
 - **Never rewrite published history** (`git commit --amend`, `git rebase`) on pushed branches. Add new commits instead.
 - **Never force-push** unless explicitly asked.
 - Use [Conventional Commits](https://www.conventionalcommits.org/) for commits and PR titles: `feat:`, `fix:`, `docs:`, `chore:`, `refactor:`, `test:`.
