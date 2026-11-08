@@ -4,7 +4,7 @@ import { afterEach, beforeAll, describe, expect, it } from 'vitest'
 import { streamChat } from '../../extension/src/llm'
 import { createApp, type Env } from '../src/app'
 import { FakeClerk } from './clerk'
-import { FakeAiBinding } from './fakes'
+import { FakeAiBinding, FakeQuotaNamespace } from './fakes'
 
 const EXT = 'chrome-extension://abcdefghijklmnopabcdefghijklmnop'
 const app = createApp()
@@ -16,6 +16,8 @@ beforeAll(async () => {
   clerk = await FakeClerk.create()
   env = {
     AI: (ai = new FakeAiBinding('你好 来自 worker')),
+    QUOTA: new FakeQuotaNamespace(),
+    DAILY_REQUEST_LIMIT: '100',
     MODEL: '@cf/test/model',
     CLERK_JWT_KEY: clerk.publicKeyPem,
     CLERK_AUTHORIZED_PARTIES: EXT,
@@ -63,6 +65,27 @@ describe('extension client against the worker', () => {
         () => {},
       ),
     ).rejects.toThrow('invalid or expired session')
+  })
+
+  it('[UC-CHAT-001-S04] extension shows when the daily quota resets', async () => {
+    const token = await clerk.sessionToken({ userId: 'user_carol', azp: EXT })
+    env.DAILY_REQUEST_LIMIT = '1'
+    try {
+      await streamChat(
+        config(async () => token),
+        hi,
+        () => {},
+      )
+      await expect(
+        streamChat(
+          config(async () => token),
+          hi,
+          () => {},
+        ),
+      ).rejects.toThrow('The quota resets at 00:00 UTC.')
+    } finally {
+      env.DAILY_REQUEST_LIMIT = '100'
+    }
   })
 
   it('extension reads the last event when the stream ends without a newline', async () => {

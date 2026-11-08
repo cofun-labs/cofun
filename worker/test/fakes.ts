@@ -1,4 +1,5 @@
 import type { AiBinding } from '../src/app'
+import { consume, type QuotaCounter, type QuotaNamespace, type QuotaStorage } from '../src/quota'
 
 type Call = { model: string; inputs: Record<string, unknown>; options?: Record<string, unknown> }
 
@@ -31,5 +32,37 @@ export class FakeAiBinding implements AiBinding {
     const lines = this.reply.split(' ').map((w) => ({ choices: [{ index: 0, delta: { content: w + ' ' } }] }))
     const sse = lines.map((l) => `data: ${JSON.stringify(l)}\n\n`).join('') + 'data: [DONE]\n\n'
     return new Response(sse).body
+  }
+}
+
+/** In-memory storage with the same get/put shape as Durable Object storage. */
+class MemoryStorage implements QuotaStorage {
+  private data = new Map<string, unknown>()
+  async get<T>(key: string) {
+    return this.data.get(key) as T | undefined
+  }
+  async put<T>(key: string, value: T) {
+    this.data.set(key, structuredClone(value))
+  }
+}
+
+/**
+ * Stands in for the UserQuota Durable Object namespace (env.QUOTA): one counter per name,
+ * running the worker's real counting logic over in-memory storage.
+ */
+export class FakeQuotaNamespace implements QuotaNamespace {
+  private storages = new Map<string, MemoryStorage>()
+  /** When set, every counter call fails with this error, like an unavailable Durable Object. */
+  failWith?: Error
+
+  getByName(name: string): QuotaCounter {
+    let storage = this.storages.get(name)
+    if (!storage) this.storages.set(name, (storage = new MemoryStorage()))
+    return {
+      consume: async (day, limit) => {
+        if (this.failWith) throw this.failWith
+        return consume(storage, day, limit)
+      },
+    }
   }
 }
