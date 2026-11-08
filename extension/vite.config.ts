@@ -25,6 +25,8 @@ function manifest(env: Record<string, string>): Plugin {
           'https://www.notion.so/*',
           'https://app.notion.com/*',
           ...(clerkHost ? [`https://${clerkHost}/*`] : []),
+          // Sign-in page; the cookies permission reads its Clerk session (Sync Host).
+          `${new URL(env.VITE_CLERK_SYNC_HOST).origin}/*`,
         ],
         background: { service_worker: 'background.js', type: 'module' },
         side_panel: { default_path: 'sidepanel.html' },
@@ -37,7 +39,7 @@ function manifest(env: Record<string, string>): Plugin {
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '')
-  for (const name of ['VITE_CLERK_PUBLISHABLE_KEY', 'VITE_API_URL']) {
+  for (const name of ['VITE_CLERK_PUBLISHABLE_KEY', 'VITE_CLERK_SYNC_HOST', 'VITE_API_URL']) {
     if (!env[name]) throw new Error(`${name} is not set. Put it in .env.local.`)
   }
 

@@ -5,16 +5,22 @@
   "compatibility_date": "2026-11-01",
   "compatibility_flags": ["nodejs_compat"],
 
+  // Serves the API and the sign-in page (Clerk Sync Host). The zone must be on the deploying account.
+  "routes": [{ "pattern": "notion-kit.kitfun.cc", "custom_domain": true }],
+  "workers_dev": false,
+
   // Workers AI: models run on Cloudflare, no external API keys.
   "ai": { "binding": "AI" },
 
   "vars": {
+    // Clerk publishable key, for the sign-in page. Public.
+    "CLERK_PUBLISHABLE_KEY": "pk_test_c2F2aW5nLXlldGktOTUxOS5jbGVyay5hY2NvdW50cy5kZXYk",
     // AI Gateway id (dashboard: AI > AI Gateway). Empty = call Workers AI directly.
     "AI_GATEWAY_ID": "kitfun-ai",
     // The only model clients can use.
     "MODEL": "@cf/deepseek-ai/deepseek-v4.1-flash-1017",
     // Origins allowed to call (the token's azp claim). Comma-separated.
-    "CLERK_AUTHORIZED_PARTIES": "chrome-extension://fafkdcopddmegenpemnmjbnolhlbbfpf",
+    "CLERK_AUTHORIZED_PARTIES": "chrome-extension://fafkdcopddmegenpemnmjbnolhlbbfpf,https://notion-kit.kitfun.cc",
     // Clerk JWT public key (PEM). Public; also served at https://<frontend-api>/.well-known/jwks.json
     "CLERK_JWT_KEY": "-----BEGIN PUBLIC KEY-----\nMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAsLZwSCtPrYWWDu2H4iuf\nvhTJozTiacKiCvb82l3U6FPM8t2bLLNwkRuGHgAoJIYhNT5k1h+ytthVaG5ETGkt\nAKO9bqy1YhRk963j81IOwDA0fanVLKkXoGU1a5aQOwSWHwzTYaLMACb9r5MH8lVL\nHZ8ky/XwaPzHwXu5Ox7egX1fCjR9hwLrvMvFpc/0jjEvMisByUthKlbtEhGayvIO\nznkPst08XXm20f+6clp9GgdyPY1vw70+Et7tOHeVzeyByWaE9htMQvM74NsZCUsM\nr4K2d/x8wQTWmjU3zGzrLInx2CkFeiWyzZ3IwvRUCsnqVxFx2WwG3+ME7l2IfGx/\naQIDAQAB\n-----END PUBLIC KEY-----\n"
   }

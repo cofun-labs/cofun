@@ -2,6 +2,7 @@ import { verifyToken } from '@clerk/backend'
 import { Hono, type Context } from 'hono'
 import { cors } from 'hono/cors'
 import type { ContentfulStatusCode } from 'hono/utils/http-status'
+import { loginPage } from './login'
 
 /** The slice of the Workers AI binding this worker uses. */
 export interface AiBinding {
@@ -12,6 +13,8 @@ export interface Env {
   AI: AiBinding
   MODEL: string
   AI_GATEWAY_ID?: string
+  /** Clerk publishable key, used by the sign-in page. */
+  CLERK_PUBLISHABLE_KEY?: string
   /** Clerk JWT public key (PEM), from Clerk Dashboard > API keys. Verifies session tokens without a network call. */
   CLERK_JWT_KEY?: string
   /** Comma-separated origins allowed to call, e.g. chrome-extension://<id>. Checked against the token's azp claim. */
@@ -54,6 +57,13 @@ export function createApp() {
   })
 
   app.get('/health', (c) => c.json({ ok: true }))
+
+  // Sign-in page for the extension (Clerk Sync Host).
+  app.get('/', (c) => c.redirect('/login'))
+  app.get('/login', (c) => {
+    if (!c.env.CLERK_PUBLISHABLE_KEY) throw new HttpError(503, 'not_configured', 'CLERK_PUBLISHABLE_KEY is not set')
+    return c.html(loginPage(c.env.CLERK_PUBLISHABLE_KEY))
+  })
 
   // ---- Clerk session auth for /v1/* ----
 

@@ -96,6 +96,29 @@ describe('Clerk session auth', () => {
   })
 })
 
+describe('GET /login', () => {
+  it('serves the Clerk sign-in page for this instance', async () => {
+    env.CLERK_PUBLISHABLE_KEY = 'pk_test_ZXhhbXBsZS5jbGVyay5hY2NvdW50cy5kZXYk' // example.clerk.accounts.dev
+    const res = await req('GET', '/login')
+    expect(res.status).toBe(200)
+    expect(res.headers.get('content-type')).toMatch(/text\/html/)
+    const html = await res.text()
+    expect(html).toContain('data-clerk-publishable-key="pk_test_ZXhhbXBsZS5jbGVyay5hY2NvdW50cy5kZXYk"')
+    expect(html).toContain('src="https://example.clerk.accounts.dev/npm/@clerk/clerk-js@6/dist/clerk.browser.js"')
+    expect(html).toContain('src="https://example.clerk.accounts.dev/npm/@clerk/ui@1/dist/ui.browser.js"')
+  })
+
+  it('redirects / to /login', async () => {
+    const res = await req('GET', '/')
+    expect(res.status).toBe(302)
+    expect(res.headers.get('location')).toBe('/login')
+  })
+
+  it('is off when CLERK_PUBLISHABLE_KEY is not set', async () => {
+    expect((await req('GET', '/login')).status).toBe(503)
+  })
+})
+
 describe('POST /v1/chat/completions', () => {
   it('returns a completion via the gateway, tagged with the user', async () => {
     const res = await chat(token, { messages: hi, max_tokens: 50 })
