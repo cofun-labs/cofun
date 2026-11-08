@@ -55,11 +55,23 @@ done
 
 repo_json="$(gh api "$api")"
 
-if [ "$(jq -r .delete_branch_on_merge <<<"$repo_json")" = "true" ]; then
-  unchanged "delete head branches on merge"
+# Squash merge only, with the PR title and body as the commit message, and
+# delete head branches once merged.
+want_options='{
+  "allow_squash_merge": true,
+  "allow_merge_commit": false,
+  "allow_rebase_merge": false,
+  "squash_merge_commit_title": "PR_TITLE",
+  "squash_merge_commit_message": "PR_BODY",
+  "delete_branch_on_merge": true
+}'
+options_diff="$(jq -n --argjson live "$repo_json" --argjson want "$want_options" \
+  '$want | with_entries(select($live[.key] != .value))')"
+if [ "$options_diff" = "{}" ]; then
+  unchanged "merge options"
 else
-  gh api -X PATCH "$api" -F delete_branch_on_merge=true >/dev/null
-  changed "delete head branches on merge (enabled)"
+  gh api -X PATCH "$api" --input - <<<"$options_diff" >/dev/null
+  jq -r 'to_entries[] | "changed:   \(.key) = \(.value)"' <<<"$options_diff"
 fi
 
 for feature in secret_scanning secret_scanning_push_protection; do

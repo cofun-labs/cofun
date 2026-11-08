@@ -54,9 +54,9 @@ Copilot for Notion: a Chrome extension that opens an AI side panel next to Notio
 
 8. **Handle PR comments.** Fix every blocking comment or answer it with a clear reason no change is needed. Non-blocking suggestions can be fixed now or turned into a follow-up Issue. Push fixes to the same branch and reply to each comment with the fix commit, the verification, or the follow-up Issue.
 
-9. **Merge.** Check that every Issue checklist item is done, then run `gh pr merge --squash --delete-branch`. `Closes #ID` closes the Issue.
+9. **Merge.** Check that every Issue checklist item is done, then run `gh pr merge {PR}`. `main` uses a merge queue: this adds the PR to the queue, which runs CI again on top of the latest `main` and squash-merges it if CI passes. Wait until the PR shows as merged; if the queue removes it, fix the failure and queue it again. GitHub deletes the branch, and `Closes #ID` closes the Issue.
 
-10. **Wait for the deploy.** Merging to `main` triggers Cloudflare Workers Builds, which runs the worker tests and deploys the worker. The work is done only when that deploy succeeds; if it fails, fix it right away.
+10. **Wait for the deploy.** Once the queue merges the PR, the push to `main` triggers Cloudflare Workers Builds, which runs the worker tests and deploys the worker. The work is done only when that deploy succeeds; if it fails, fix it right away.
 
 **Trivial changes** (typos, dependency bumps, config tweaks) may skip the BDD steps but still go through a branch and PR.
 
