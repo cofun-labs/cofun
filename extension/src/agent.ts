@@ -65,6 +65,22 @@ export class CopilotAgent {
    */
   async ask(text: string, onUpdate: (update: AgentUpdate) => void): Promise<AskResult> {
     const epoch = this.epoch
+    const result = await this.askOnce(text, onUpdate, epoch)
+    // The worker's model changed since this panel looked it up (a deploy). The worker refuses the
+    // request before using any quota, so look the model up again and retry once.
+    if (result.status === 'error' && result.message.startsWith('unsupported model') && epoch === this.epoch) {
+      try {
+        this.model = await this.loadModel()
+      } catch (err) {
+        return { status: 'error', message: (err as Error).message }
+      }
+      if (this.agent) this.agent.state.model = this.model
+      return this.askOnce(text, onUpdate, epoch)
+    }
+    return result
+  }
+
+  private async askOnce(text: string, onUpdate: (update: AgentUpdate) => void, epoch: number): Promise<AskResult> {
     let agent: Agent
     try {
       agent = await this.getAgent()
@@ -79,6 +95,8 @@ export class CopilotAgent {
     let hitLimit = false
     let failure: string | undefined
     let stopped = false
+    // The model gave its final answer; a Stop after this point is too late to drop it.
+    let answered = false
     const refused = new Set<string>()
 
     // On the last step, refuse the tools the model asks for instead of running them: the question
@@ -102,6 +120,7 @@ export class CopilotAgent {
         const m = event.message as AssistantMessage
         if (m.stopReason === 'error') failure = errorText(m.errorMessage)
         if (m.stopReason === 'aborted') stopped = true
+        if (m.stopReason === 'stop' || m.stopReason === 'length') answered = true
       }
     })
 
@@ -115,8 +134,9 @@ export class CopilotAgent {
       agent.beforeToolCall = undefined
     }
 
-    // Also stopped when the abort landed after the last model reply, e.g. while a tool finished.
-    stopped ||= epoch !== this.epoch
+    // Also stopped when the abort landed after a model reply that asked for tools, e.g. while a tool
+    // finished. A stop after the final answer keeps it: the user has already read it.
+    stopped ||= epoch !== this.epoch && !answered
     if (failure || stopped) {
       agent.state.messages = agent.state.messages.slice(0, before)
       return stopped ? { status: 'stopped' } : { status: 'error', message: failure! }
@@ -130,13 +150,15 @@ export class CopilotAgent {
     this.agent?.abort()
   }
 
-  /** Starts a new conversation, once a question still running has stopped. */
+  /** Starts a new conversation, once a question still running has stopped. It looks up the model again. */
   async reset(): Promise<void> {
     this.epoch++
-    if (!this.agent) return
-    this.agent.abort()
-    await this.agent.waitForIdle()
-    this.agent.reset()
+    const agent = this.agent
+    this.agent = undefined
+    this.model = undefined
+    if (!agent) return
+    agent.abort()
+    await agent.waitForIdle()
   }
 
   private async getAgent(): Promise<Agent> {

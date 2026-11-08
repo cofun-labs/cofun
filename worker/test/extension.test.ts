@@ -138,6 +138,9 @@ describe('extension agent against the worker', () => {
       false,
       true,
     ])
+    // The panel gets a start for the refused call too, so it can mark that call as skipped.
+    const refusedId = updates.filter((u) => u.type === 'tool_end').at(-1)!.id
+    expect(updates).toContainEqual(expect.objectContaining({ type: 'tool_start', id: refusedId }))
 
     // The conversation stays usable: the next question is answered, with the refused call answered too.
     ai.toolCalls = undefined
@@ -241,6 +244,23 @@ describe('extension agent against the worker', () => {
     }
     // No model call was made, and nothing was left in either conversation.
     expect(ai.calls).toHaveLength(0)
+  })
+
+  it('a panel left open across a model change looks the model up again', async () => {
+    const agent = makeAgent()
+    expect((await ask(agent, 'first')).result).toEqual({ status: 'done' })
+    env.MODEL = '@cf/test/next-model'
+    // The worker refuses the old model name before the model or the quota is used; the agent retries once.
+    const { result, reply } = await ask(agent, 'second')
+    expect(result).toEqual({ status: 'done' })
+    expect(reply).toBe('你好 来自 worker ')
+    expect(ai.calls.map((c) => c.model)).toEqual([MODEL, '@cf/test/next-model'])
+    expect(sentMessages(1).map((m) => m.content)).toEqual([
+      'You are Notion Copilot.',
+      'first',
+      '你好 来自 worker ',
+      'second',
+    ])
   })
 
   it('asks to sign in when there is no session', async () => {
