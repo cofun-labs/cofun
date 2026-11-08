@@ -677,8 +677,13 @@ describe('tool calling', () => {
     await chat(token, { messages: withToolResult('{"title":"x"}'), tools: [pageTool] })
     const { inputChars } = records()[0]
     const toolCalls = [{ id: 'call_1', type: 'function', function: { name: 'get_current_page', arguments: '{}' } }]
+    const result = '{"title":"x"}'
     expect(inputChars).toBe(
-      askPage[0].content.length + JSON.stringify(toolCalls).length + 13 + JSON.stringify([pageTool]).length,
+      askPage[0].content.length +
+        JSON.stringify(toolCalls).length +
+        'call_1'.length +
+        result.length +
+        JSON.stringify([pageTool]).length,
     )
 
     const big = 'x'.repeat(200_001)
@@ -739,11 +744,43 @@ describe('tool calling', () => {
     expect(ai.calls[0].inputs.tools).toEqual(bare)
   })
 
-  it('every tool_choice mode is passed to the model', async () => {
-    for (const tool_choice of ['auto', 'none', 'required']) {
+  it('tool_choice auto and required are passed to the model', async () => {
+    for (const tool_choice of ['auto', 'required']) {
       expect((await chat(token, { messages: askPage, tools, tool_choice })).status).toBe(200)
     }
-    expect(ai.calls.map((c) => c.inputs.tool_choice)).toEqual(['auto', 'none', 'required'])
+    expect(ai.calls.map((c) => c.inputs.tool_choice)).toEqual(['auto', 'required'])
+  })
+
+  it('tool_choice none is refused, since the model does not honor it', async () => {
+    const res = await chat(token, { messages: askPage, tools, tool_choice: 'none' })
+    expect(res.status).toBe(400)
+    expect((await json(res)).error.message).toContain('leave out tools')
+    expect(ai.calls).toHaveLength(0)
+  })
+
+  it('a tool result must answer an earlier tool call', async () => {
+    const [question, call, result] = withToolResult('{}')
+    const bad = [
+      [question, result],
+      [question, { ...result, tool_call_id: 'call_2' }],
+      [question, result, call],
+    ]
+    for (const messages of bad) expect((await chat(token, { messages })).status).toBe(400)
+    expect(ai.calls).toHaveLength(0)
+    // A result may come later in the conversation than right after its call.
+    const later = [question, call, { role: 'user', content: 'go on' }, result]
+    expect((await chat(token, { messages: later })).status).toBe(200)
+  })
+
+  it('deeply nested tool parameters are refused, not a server error', async () => {
+    // Built as text: parsing this much nesting works, serializing it again does not.
+    const depth = 20_000
+    const parameters = '{"a":'.repeat(depth) + '{}' + '}'.repeat(depth)
+    const body = `{"messages":${JSON.stringify(askPage)},"tools":[{"type":"function","function":{"name":"deep","parameters":${parameters}}}]}`
+    const headers = { 'content-type': 'application/json', authorization: `Bearer ${token}` }
+    const res = await app.request('/v1/chat/completions', { method: 'POST', headers, body }, env)
+    expect(res.status).toBe(400)
+    expect(ai.calls).toHaveLength(0)
   })
 
   it('invalid tools are rejected without calling the model', async () => {

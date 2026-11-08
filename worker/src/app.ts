@@ -55,7 +55,9 @@ const MAX_TOOL_CALLS = 32
 const MAX_ID_CHARS = 256
 /** OpenAI's rule for function names. */
 const TOOL_NAME = /^[a-zA-Z0-9_-]{1,64}$/
-const TOOL_CHOICES = new Set(['auto', 'none', 'required'])
+// `none` is left out on purpose: the model ignores it and writes fake tool calls into the reply text.
+// Clients that want no tool calls leave out `tools`.
+const TOOL_CHOICES = new Set(['auto', 'required'])
 
 async function readJson(c: Ctx): Promise<Record<string, unknown>> {
   try {
@@ -152,7 +154,7 @@ function parseTools(value: unknown): Record<string, unknown>[] {
       throw badRequest('tool descriptions must be strings')
     }
     if (fn.parameters !== undefined && !isObject(fn.parameters)) {
-      throw badRequest('tool parameters must be a JSON Schema object')
+      throw badRequest('tool parameters must be an object')
     }
     const out: Record<string, unknown> = { name: fn.name }
     if (fn.description !== undefined) out.description = fn.description
@@ -163,11 +165,12 @@ function parseTools(value: unknown): Record<string, unknown>[] {
 
 function parseToolChoice(value: unknown, tools: Record<string, unknown>[] | undefined): unknown {
   if (!tools) throw badRequest('tool_choice needs tools')
+  if (value === 'none') throw badRequest('tool_choice none is not supported; leave out tools instead')
   if (typeof value === 'string' && TOOL_CHOICES.has(value)) return value
   const name =
     isObject(value) && value.type === 'function' && isObject(value.function) ? value.function.name : undefined
   if (typeof name !== 'string') {
-    throw badRequest('tool_choice must be auto, none, required, or {"type":"function","function":{"name":...}}')
+    throw badRequest('tool_choice must be auto, required, or {"type":"function","function":{"name":...}}')
   }
   if (!tools.some((t) => (t.function as { name: string }).name === name)) {
     throw badRequest(`tool_choice names an unknown tool: ${name}`)
@@ -177,7 +180,8 @@ function parseToolChoice(value: unknown, tools: Record<string, unknown>[] | unde
 
 /**
  * Validates the conversation and tools, and returns only what the model needs.
- * `chars` counts message text, tool calls, and tool definitions, so tools can't get around the size limit.
+ * `chars` counts message text, tool calls and results, and tool definitions, so tools can't get around
+ * the size limit.
  */
 function parseModelInputs(body: Record<string, unknown>): { inputs: ModelInputs; chars: number } {
   const { messages } = body
@@ -189,12 +193,30 @@ function parseModelInputs(body: Record<string, unknown>): { inputs: ModelInputs;
     inputs.tool_choice = parseToolChoice(body.tool_choice, inputs.tools)
   }
 
+  // A tool result must answer a call the assistant made earlier in the conversation, as OpenAI requires.
+  const callIds = new Set<string>()
   let chars = 0
   for (const m of inputs.messages) {
     chars += (m.content as string).length
-    if (m.tool_calls) chars += JSON.stringify(m.tool_calls).length
+    const toolCalls = m.tool_calls as { id: string }[] | undefined
+    if (toolCalls) {
+      for (const call of toolCalls) callIds.add(call.id)
+      chars += JSON.stringify(toolCalls).length
+    }
+    if (m.role === 'tool') {
+      const id = m.tool_call_id as string
+      if (!callIds.has(id)) throw badRequest('each tool message must answer an earlier assistant tool call')
+      chars += id.length
+    }
   }
-  if (inputs.tools) chars += JSON.stringify(inputs.tools).length
+  if (inputs.tools) {
+    try {
+      chars += JSON.stringify(inputs.tools).length
+    } catch {
+      // Parameters nested deeper than the engine can serialize.
+      throw badRequest('tool parameters are nested too deeply')
+    }
+  }
   return { inputs, chars }
 }
 
@@ -298,7 +320,7 @@ export function createApp({ now = () => new Date() }: AppOptions = {}) {
     usage.messages = modelInputs.messages.length
     usage.inputChars = chars
     if (chars > MAX_CONTENT_CHARS)
-      throw new HttpError(400, 'bad_request', `messages exceed ${MAX_CONTENT_CHARS} characters`)
+      throw new HttpError(400, 'bad_request', `messages and tools exceed ${MAX_CONTENT_CHARS} characters`)
     if (
       max_tokens !== undefined &&
       !(Number.isInteger(max_tokens) && (max_tokens as number) > 0 && (max_tokens as number) <= MAX_TOKENS)

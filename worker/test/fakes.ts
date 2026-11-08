@@ -102,13 +102,25 @@ export class FakeAiBinding implements AiBinding {
       },
       ...this.reply.split(' ').map((w) => chunk({ content: w + ' ' })),
     ]
+    // Short arguments (`{}`) come with the name; longer ones follow it in pieces, and the last piece
+    // carries the finish reason. After short arguments the finish reason comes in a chunk of its own.
+    let finishedOnPiece = false
     toolCalls.forEach((t, index) => {
-      events.push(chunk({ tool_calls: [{ id: ids[index], type: 'function', index, function: { name: t.name } }] }))
+      const head = { id: ids[index], type: 'function', index, function: { name: t.name } }
+      finishedOnPiece = false
+      if (t.arguments.length <= 2) {
+        events.push(chunk({ tool_calls: [{ ...head, function: { ...head.function, arguments: t.arguments } }] }))
+        return
+      }
+      events.push(chunk({ tool_calls: [head] }))
       for (let i = 0; i < t.arguments.length; i += 8) {
-        events.push(chunk({ tool_calls: [{ index, function: { arguments: t.arguments.slice(i, i + 8) } }] }))
+        const last = i + 8 >= t.arguments.length && index === toolCalls.length - 1
+        const piece = { tool_calls: [{ index, function: { arguments: t.arguments.slice(i, i + 8) } }] }
+        events.push(chunk(piece, last ? 'tool_calls' : null))
+        finishedOnPiece ||= last
       }
     })
-    events.push(chunk({}, 'tool_calls'))
+    if (!finishedOnPiece) events.push(chunk({}, 'tool_calls'))
     const streamOptions = inputs.stream_options as { include_usage?: boolean } | undefined
     if (streamOptions?.include_usage) {
       events.push({ choices: [], usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 } })
