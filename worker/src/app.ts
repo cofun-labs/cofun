@@ -53,6 +53,7 @@ const MAX_CONTENT_CHARS = 200_000
 const MAX_TOOLS = 64
 const MAX_TOOL_CALLS = 32
 const MAX_ID_CHARS = 256
+const MAX_SCHEMA_DEPTH = 64
 /** OpenAI's rule for function names. */
 const TOOL_NAME = /^[a-zA-Z0-9_-]{1,64}$/
 // `none` is left out on purpose: the model ignores it and writes fake tool calls into the reply text.
@@ -71,6 +72,13 @@ const badRequest = (message: string) => new HttpError(400, 'bad_request', messag
 
 function isObject(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === 'object' && !Array.isArray(value)
+}
+
+/** Whether a JSON value nests objects or arrays more than `max` levels deep. Stops at `max`, so it can't overflow. */
+function nestedDeeperThan(value: unknown, max: number): boolean {
+  if (!value || typeof value !== 'object') return false
+  if (max === 0) return true
+  return Object.values(value).some((child) => nestedDeeperThan(child, max - 1))
 }
 
 const isId = (value: unknown): value is string =>
@@ -156,6 +164,10 @@ function parseTools(value: unknown): Record<string, unknown>[] {
     if (fn.parameters !== undefined && !isObject(fn.parameters)) {
       throw badRequest('tool parameters must be an object')
     }
+    // Bounded, so serializing the request (here and in the AI binding) can never run out of stack.
+    if (nestedDeeperThan(fn.parameters, MAX_SCHEMA_DEPTH)) {
+      throw badRequest(`tool parameters are nested more than ${MAX_SCHEMA_DEPTH} levels deep`)
+    }
     const out: Record<string, unknown> = { name: fn.name }
     if (fn.description !== undefined) out.description = fn.description
     if (fn.parameters !== undefined) out.parameters = fn.parameters
@@ -218,14 +230,7 @@ function parseModelInputs(body: Record<string, unknown>): { inputs: ModelInputs;
     }
   }
   if (pending.size) throw unanswered()
-  if (inputs.tools) {
-    try {
-      chars += JSON.stringify(inputs.tools).length
-    } catch {
-      // Parameters nested deeper than the engine can serialize.
-      throw badRequest('tool parameters are nested too deeply')
-    }
-  }
+  if (inputs.tools) chars += JSON.stringify(inputs.tools).length
   return { inputs, chars }
 }
 

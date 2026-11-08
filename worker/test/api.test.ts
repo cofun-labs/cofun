@@ -827,6 +827,15 @@ describe('tool calling', () => {
     const res = await app.request('/v1/chat/completions', { method: 'POST', headers, body }, env)
     expect(res.status).toBe(400)
     expect(ai.calls).toHaveLength(0)
+
+    // Up to 64 levels is fine; one more is refused.
+    const nested = (levels: number) => {
+      let p: Record<string, unknown> = {}
+      for (let i = 1; i < levels; i++) p = { a: p }
+      return [{ type: 'function', function: { name: 'nested', parameters: p } }]
+    }
+    expect((await chat(token, { messages: askPage, tools: nested(64) })).status).toBe(200)
+    expect((await chat(token, { messages: askPage, tools: nested(65) })).status).toBe(400)
   })
 
   it('invalid tools are rejected without calling the model', async () => {
