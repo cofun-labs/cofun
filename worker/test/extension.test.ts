@@ -4,7 +4,7 @@ import { afterEach, beforeAll, describe, expect, it } from 'vitest'
 import { streamChat } from '../../extension/src/llm'
 import { createApp, type Env } from '../src/app'
 import { FakeClerk } from './clerk'
-import { FakeAiBinding, FakeQuotaNamespace } from './fakes'
+import { FakeAiBinding, FakeQuotaNamespace, FakeUsageDataset } from './fakes'
 
 const EXT = 'chrome-extension://abcdefghijklmnopabcdefghijklmnop'
 const app = createApp()
@@ -17,6 +17,7 @@ beforeAll(async () => {
   env = {
     AI: (ai = new FakeAiBinding('你好 来自 worker')),
     QUOTA: new FakeQuotaNamespace(),
+    USAGE: new FakeUsageDataset(),
     DAILY_REQUEST_LIMIT: '100',
     MODEL: '@cf/test/model',
     CLERK_JWT_KEY: clerk.publicKeyPem,

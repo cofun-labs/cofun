@@ -4,6 +4,7 @@ import { cors } from 'hono/cors'
 import type { ContentfulStatusCode } from 'hono/utils/http-status'
 import { loginPage } from './login'
 import type { QuotaNamespace } from './quota'
+import { finishReason, meterStream, recordUsage, tokenCount, type UsageDataset, type UsageRecord } from './usage'
 
 /** The slice of the Workers AI binding this worker uses. */
 export interface AiBinding {
@@ -24,6 +25,8 @@ export interface Env {
   QUOTA: QuotaNamespace
   /** Chat requests each user may make per UTC day. */
   DAILY_REQUEST_LIMIT?: string | number
+  /** Per-request usage records (Workers Analytics Engine dataset). Never holds message content. */
+  USAGE: UsageDataset
 }
 
 export interface AppOptions {
@@ -113,9 +116,42 @@ export function createApp({ now = () => new Date() }: AppOptions = {}) {
   app.get('/v1/me', (c) => c.json({ userId: c.get('userId'), model: c.env.MODEL }))
 
   // OpenAI-compatible chat completions. The model is fixed by the server.
+  // Every request that passed auth leaves one usage record, however it ends.
   app.post('/v1/chat/completions', async (c) => {
+    const started = Date.now()
+    const usage: UsageRecord = {
+      userId: c.get('userId'),
+      model: c.env.MODEL,
+      stream: false,
+      outcome: '',
+      messages: 0,
+      inputChars: 0,
+      promptTokens: 0,
+      completionTokens: 0,
+      finishReason: '',
+      durationMs: 0,
+    }
+    const record = (outcome: string) => {
+      usage.outcome = outcome
+      usage.durationMs = Date.now() - started
+      recordUsage(c.env.USAGE, usage)
+    }
+    try {
+      return await chatCompletion(c, usage, record)
+    } catch (err) {
+      record(err instanceof HttpError ? err.code : 'internal')
+      throw err
+    }
+  })
+
+  /**
+   * Fills `usage` with sizes and token counts only, and calls `record` once the reply is complete.
+   * Throws HttpError for refusals; the caller records those.
+   */
+  async function chatCompletion(c: Ctx, usage: UsageRecord, record: (outcome: string) => void): Promise<Response> {
     const body = await readJson(c)
     const { messages, stream } = body
+    usage.stream = stream === true
     const max_tokens = body.max_tokens ?? undefined // null means not set
     if (!Array.isArray(messages) || messages.length === 0) {
       throw new HttpError(400, 'bad_request', 'messages must be a non-empty array')
@@ -132,6 +168,8 @@ export function createApp({ now = () => new Date() }: AppOptions = {}) {
       }
       chars += m.content.length
     }
+    usage.messages = messages.length
+    usage.inputChars = chars
     if (chars > MAX_CONTENT_CHARS)
       throw new HttpError(400, 'bad_request', `messages exceed ${MAX_CONTENT_CHARS} characters`)
     if (
@@ -177,9 +215,21 @@ export function createApp({ now = () => new Date() }: AppOptions = {}) {
     // Without an explicit limit, models fall back to their own default, which can be
     // small enough to cut replies short.
     inputs.max_tokens = max_tokens ?? MAX_TOKENS
-    if (stream === true) inputs.stream = true
+    if (stream === true) {
+      inputs.stream = true
+      // Ask for token usage in the final chunk, so streamed replies can be metered too.
+      inputs.stream_options = { include_usage: true }
+    }
+    // collectLog: false keeps prompts and replies out of the gateway logs; its analytics
+    // (requests, tokens, cost, metadata) still work.
     const options = c.env.AI_GATEWAY_ID
-      ? { gateway: { id: c.env.AI_GATEWAY_ID, metadata: { app: 'notion-copilot', user: c.get('userId') } } }
+      ? {
+          gateway: {
+            id: c.env.AI_GATEWAY_ID,
+            collectLog: false,
+            metadata: { app: 'notion-copilot', user: c.get('userId') },
+          },
+        }
       : undefined
 
     let out: unknown
@@ -192,13 +242,22 @@ export function createApp({ now = () => new Date() }: AppOptions = {}) {
     }
 
     if (stream === true) {
-      // Workers AI already streams OpenAI-style SSE; pass it through.
-      return new Response(out as ReadableStream, {
+      // Workers AI already streams OpenAI-style SSE; pass it through, reading usage on the way.
+      const metered = meterStream(out as ReadableStream<Uint8Array>, (outcome, summary) => {
+        Object.assign(usage, summary)
+        record(outcome)
+      })
+      return new Response(metered, {
         headers: { 'content-type': 'text/event-stream', 'cache-control': 'no-cache' },
       })
     }
+    const reply = out as { usage?: Record<string, unknown>; choices?: { finish_reason?: unknown }[] } | null
+    usage.promptTokens = tokenCount(reply?.usage?.prompt_tokens)
+    usage.completionTokens = tokenCount(reply?.usage?.completion_tokens)
+    usage.finishReason = finishReason(reply?.choices?.[0]?.finish_reason)
+    record('ok')
     return c.json(out as Record<string, unknown>)
-  })
+  }
 
   return app
 }

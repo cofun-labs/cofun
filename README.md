@@ -39,7 +39,8 @@
 3. Before each request, the extension gets a short-lived session JWT with `getToken()` and sends it as `Authorization: Bearer`.
 4. The worker verifies the JWT locally with Clerk's JWT public key (signature, expiry). If the token has an `azp` (the web origin that requested it), it must be an allowed origin, which stops other websites from using a session they obtained in the browser. Tokens the extension gets through Clerk's Native API carry no `azp`. No network call to Clerk is needed.
 5. The worker counts the request against the user's daily quota (a Durable Object per user, reset at 00:00 UTC) and refuses it once the quota is used up.
-6. The request goes through AI Gateway to Workers AI, tagged with the Clerk user id for per-user analytics.
+6. The request goes through AI Gateway to Workers AI, tagged with the Clerk user id for per-user analytics. Gateway log collection is off (`collectLog: false`), so the gateway keeps request analytics but not prompts or replies.
+7. The worker writes one usage record for the request (see [Usage records](#usage-records)).
 
 The extension ID is pinned with the manifest `key`, so Clerk and the worker can trust it.
 
@@ -55,6 +56,7 @@ extension/                Chrome extension
 worker/                   Cloudflare Worker
   src/app.ts              Hono app: Clerk JWT verification + /v1/chat/completions
   src/quota.ts            per-user daily request quota (UserQuota Durable Object in src/index.ts)
+  src/usage.ts            per-request usage records (Workers Analytics Engine), no message content
   src/login.ts            sign-in page (Clerk Sync Host)
   test/                   REST integration tests (real signed JWTs, fake AI binding)
 docs/
@@ -115,6 +117,33 @@ Variables in `wrangler.jsonc`:
 | `DAILY_REQUEST_LIMIT` | Chat requests each user may make per UTC day; counted in the `UserQuota` Durable Object (one per user) |
 | `CLERK_AUTHORIZED_PARTIES` | Allowed origins, comma-separated: `chrome-extension://<extension id>` and the sign-in page |
 | `CLERK_JWT_KEY` | Clerk JWT public key (PEM). Public; also available at `https://<frontend-api>/.well-known/jwks.json` |
+
+#### Usage records
+
+Every chat request that passes auth leaves one data point in the `notion_copilot_usage` Analytics Engine dataset (binding `USAGE`), written when the reply ends, is refused, or fails. Records hold sizes, token counts, and the outcome, never message or reply text. Analytics Engine deletes them after 90 days.
+
+| Column | Value |
+|---|---|
+| `index1` | Clerk user id |
+| `blob1` | model |
+| `blob2` | outcome: `ok`, `incomplete` (stream ended early), `cancelled`, `stream_error`, or the error code returned (`rate_limited`, `provider_error`, `quota_unavailable`, `bad_request`, …) |
+| `blob3` | finish reason: `stop`, `length`, `content_filter`, `tool_calls`, `other`, or empty |
+| `blob4` | `stream` or `sync` |
+| `double1` … `double5` | messages, input characters, prompt tokens, completion tokens, duration in ms (until the request was refused, the reply was sent, or a stream ended; for streams it includes the time the client spends reading) |
+
+Query them with the [SQL API](https://developers.cloudflare.com/analytics/analytics-engine/sql-api/), for example requests and tokens per user per day:
+
+```sql
+SELECT index1 AS user, toStartOfDay(timestamp) AS day,
+       sum(_sample_interval) AS requests,
+       sum(_sample_interval * double3) AS prompt_tokens,
+       sum(_sample_interval * double4) AS completion_tokens,
+       sumIf(_sample_interval, blob2 != 'ok') AS failed
+FROM notion_copilot_usage
+WHERE timestamp > NOW() - INTERVAL '7' DAY
+GROUP BY user, day
+ORDER BY day DESC, requests DESC
+```
 
 #### Workers Builds settings
 
