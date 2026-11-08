@@ -169,7 +169,7 @@ function parseToolChoice(value: unknown, tools: Record<string, unknown>[] | unde
   if (typeof value === 'string' && TOOL_CHOICES.has(value)) return value
   const name =
     isObject(value) && value.type === 'function' && isObject(value.function) ? value.function.name : undefined
-  if (typeof name !== 'string') {
+  if (typeof name !== 'string' || !TOOL_NAME.test(name)) {
     throw badRequest('tool_choice must be auto, required, or {"type":"function","function":{"name":...}}')
   }
   if (!tools.some((t) => (t.function as { name: string }).name === name)) {
@@ -193,29 +193,35 @@ function parseModelInputs(body: Record<string, unknown>): { inputs: ModelInputs;
     inputs.tool_choice = parseToolChoice(body.tool_choice, inputs.tools)
   }
 
-  // A tool result must answer a call the assistant made earlier in the conversation, as OpenAI requires.
-  // Ids must be unique, and each call gets at most one result, so the model can pair them up.
+  // As OpenAI requires, an assistant message with tool calls is followed right away by one result per
+  // call (in any order), before any other message. Ids are unique across the conversation, so the model
+  // can pair each result with its call.
   const callIds = new Set<string>()
-  const answered = new Set<string>()
+  let pending = new Set<string>()
+  const unanswered = () => badRequest('each tool call needs its result right after the assistant message')
   let chars = 0
   for (const m of inputs.messages) {
     chars += (m.content as string).length
+    if (m.role === 'tool') {
+      const id = m.tool_call_id as string
+      if (!pending.delete(id)) {
+        throw badRequest(`tool message ${id} does not answer a call from the assistant message before it`)
+      }
+      chars += id.length
+      continue
+    }
+    if (pending.size) throw unanswered()
     const toolCalls = m.tool_calls as { id: string }[] | undefined
     if (toolCalls) {
       for (const call of toolCalls) {
         if (callIds.has(call.id)) throw badRequest(`tool call id ${call.id} is used twice`)
         callIds.add(call.id)
       }
+      pending = new Set(toolCalls.map((call) => call.id))
       chars += JSON.stringify(toolCalls).length
     }
-    if (m.role === 'tool') {
-      const id = m.tool_call_id as string
-      if (!callIds.has(id)) throw badRequest('each tool message must answer an earlier assistant tool call')
-      if (answered.has(id)) throw badRequest(`tool call ${id} has more than one result`)
-      answered.add(id)
-      chars += id.length
-    }
   }
+  if (pending.size) throw unanswered()
   if (inputs.tools) {
     try {
       chars += JSON.stringify(inputs.tools).length

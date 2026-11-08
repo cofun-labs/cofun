@@ -697,6 +697,7 @@ describe('tool calling', () => {
             content: null,
             tool_calls: [{ id: 'c', type: 'function', function: { name: 'f', arguments: big } }],
           },
+          { role: 'tool', tool_call_id: 'c', content: '{}' },
         ],
       },
       { messages: [...withToolResult(big)] },
@@ -758,23 +759,37 @@ describe('tool calling', () => {
     expect(ai.calls).toHaveLength(0)
   })
 
-  it('a tool result must answer an earlier tool call', async () => {
+  it('each tool call gets one result right after it', async () => {
     const [question, call, result] = withToolResult('{}')
     const pageCall = { id: 'call_1', type: 'function', function: { name: 'get_current_page', arguments: '{}' } }
+    const searchCall = { id: 'call_2', type: 'function', function: { name: 'search_pages', arguments: '{}' } }
+    const twoCalls = { role: 'assistant', content: '', tool_calls: [pageCall, searchCall] }
+    const result2 = { role: 'tool', tool_call_id: 'call_2', content: '[]' }
+    const later = { role: 'user', content: 'go on' }
     const bad = [
       [question, result],
       [question, { ...result, tool_call_id: 'call_2' }],
       [question, result, call],
-      // Ids must be unique and each call gets one result.
+      [question, call],
+      [question, call, later, result],
+      [question, twoCalls, result],
+      [question, twoCalls, result, later, result2],
+      // Ids are unique and each call gets one result.
       [question, { ...call, tool_calls: [pageCall, pageCall] }, result],
       [question, call, result, call, result],
       [question, call, result, result],
     ]
     for (const messages of bad) expect((await chat(token, { messages })).status).toBe(400)
     expect(ai.calls).toHaveLength(0)
-    // A result may come later in the conversation than right after its call.
-    const later = [question, call, { role: 'user', content: 'go on' }, result]
-    expect((await chat(token, { messages: later })).status).toBe(200)
+    // Results for several calls may come in any order.
+    expect((await chat(token, { messages: [question, twoCalls, result2, result, later] })).status).toBe(200)
+  })
+
+  it('tool_choice with a malformed name is refused without echoing it', async () => {
+    const name = 'x'.repeat(1000)
+    const res = await chat(token, { messages: askPage, tools, tool_choice: { type: 'function', function: { name } } })
+    expect(res.status).toBe(400)
+    expect((await json(res)).error.message).not.toContain(name)
   })
 
   it('deeply nested tool parameters are refused, not a server error', async () => {
