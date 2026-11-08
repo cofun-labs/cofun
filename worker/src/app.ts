@@ -153,8 +153,16 @@ export function createApp({ now = () => new Date() }: AppOptions = {}) {
       throw new HttpError(503, 'not_configured', 'DAILY_REQUEST_LIMIT must be a non-negative integer')
     }
     const limit = Number(rawLimit)
+    if (limit === 0) throw new HttpError(503, 'chat_disabled', 'Chat is turned off for now. Try again later.')
     const today = now().toISOString().slice(0, 10)
-    if (!(await c.env.QUOTA.getByName(c.get('userId')).consume(today, limit))) {
+    let allowed: boolean
+    try {
+      allowed = await c.env.QUOTA.getByName(c.get('userId')).consume(today, limit)
+    } catch (err) {
+      console.error('quota check failed', err)
+      throw new HttpError(503, 'quota_unavailable', 'Usage tracking is unavailable, try again in a moment.')
+    }
+    if (!allowed) {
       throw new HttpError(
         429,
         'rate_limited',

@@ -69,8 +69,13 @@ describe('extension client against the worker', () => {
 
   it('[UC-CHAT-001-S04] extension shows when the daily quota resets', async () => {
     const token = await clerk.sessionToken({ userId: 'user_carol', azp: EXT })
-    env.DAILY_REQUEST_LIMIT = '0'
+    env.DAILY_REQUEST_LIMIT = '1'
     try {
+      await streamChat(
+        config(async () => token),
+        hi,
+        () => {},
+      )
       await expect(
         streamChat(
           config(async () => token),

@@ -52,10 +52,17 @@ class MemoryStorage implements QuotaStorage {
  */
 export class FakeQuotaNamespace implements QuotaNamespace {
   private storages = new Map<string, MemoryStorage>()
+  /** When set, every counter call fails with this error, like an unavailable Durable Object. */
+  failWith?: Error
 
   getByName(name: string): QuotaCounter {
     let storage = this.storages.get(name)
     if (!storage) this.storages.set(name, (storage = new MemoryStorage()))
-    return { consume: (day, limit) => consume(storage, day, limit) }
+    return {
+      consume: async (day, limit) => {
+        if (this.failWith) throw this.failWith
+        return consume(storage, day, limit)
+      },
+    }
   }
 }

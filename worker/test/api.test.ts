@@ -11,6 +11,7 @@ const app = createApp({ now: () => clock })
 let clerk: FakeClerk
 let otherClerk: FakeClerk
 let ai: FakeAiBinding
+let quota: FakeQuotaNamespace
 let env: Env
 let token: string
 
@@ -24,7 +25,7 @@ beforeEach(async () => {
   clock = new Date('2026-11-08T12:00:00Z')
   env = {
     AI: ai,
-    QUOTA: new FakeQuotaNamespace(),
+    QUOTA: (quota = new FakeQuotaNamespace()),
     DAILY_REQUEST_LIMIT: '100',
     MODEL,
     AI_GATEWAY_ID: 'gw-test',
@@ -242,6 +243,37 @@ describe('UC-CHAT-001 daily quota', () => {
     await chat(token, { messages: hi, model: 'other' })
     expect((await chat(token)).status).toBe(200)
     expect((await chat(token)).status).toBe(200)
+  })
+
+  it('a request stamped with an earlier day does not reset the quota', async () => {
+    clock = new Date('2026-11-09T00:00:01Z')
+    await chat(token)
+    await chat(token)
+    // Another instance whose clock still reads the previous day.
+    clock = new Date('2026-11-08T23:59:59Z')
+    expect((await chat(token)).status).toBe(429)
+    clock = new Date('2026-11-09T00:00:02Z')
+    expect((await chat(token)).status).toBe(429)
+  })
+
+  it('an unavailable quota counter refuses the request without calling the model', async () => {
+    quota.failWith = new Error('Durable Object reset because its code was updated')
+    const res = await chat(token)
+    expect(res.status).toBe(503)
+    const { error } = await json(res)
+    expect(error.code).toBe('quota_unavailable')
+    expect(error.message).not.toContain('Durable Object')
+    expect(ai.calls).toHaveLength(0)
+  })
+
+  it('a limit of 0 turns chat off without promising a reset', async () => {
+    env.DAILY_REQUEST_LIMIT = '0'
+    const res = await chat(token)
+    expect(res.status).toBe(503)
+    const { error } = await json(res)
+    expect(error.code).toBe('chat_disabled')
+    expect(error.message).not.toContain('00:00 UTC')
+    expect(ai.calls).toHaveLength(0)
   })
 
   it('chat is off without a valid daily limit', async () => {

@@ -23,8 +23,11 @@ type Usage = { day: string; count: number }
  */
 export async function consume(storage: QuotaStorage, day: string, limit: number): Promise<boolean> {
   const usage = await storage.get<Usage>('usage')
-  const count = usage?.day === day ? usage.count : 0
+  // Worker instances' clocks can differ slightly around midnight. Never move back to an
+  // earlier day, or alternating instances would reset the count again and again.
+  const current = usage && usage.day > day ? usage.day : day
+  const count = usage?.day === current ? usage.count : 0
   if (count >= limit) return false
-  await storage.put<Usage>('usage', { day, count: count + 1 })
+  await storage.put<Usage>('usage', { day: current, count: count + 1 })
   return true
 }
