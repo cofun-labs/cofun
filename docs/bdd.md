@@ -1,82 +1,92 @@
 # BDD Workflow Specification
 
-Every behavior change starts as a use case update. Use cases describe what the product does in user-visible terms; tests prove each scenario.
+Use cases record the **product behavior contract**: what users and clients can rely on, independent of the UI, libraries, or code. Tests prove it. Use cases are not a catalog of every behavior, test, or bug.
 
-## Core concepts
+## What goes into a use case
 
-| Term | Meaning |
+Before adding or changing a scenario, ask two questions:
+
+1. **Implementation swap:** if the UI, framework, or internals were replaced, would the product owner still need to review this sentence? If not, it is not a scenario.
+2. **Gap:** does an existing behavior or scenario already express it? If so, reuse it.
+
+Never write into a use case:
+
+- HTTP status codes, API fields, error codes, headers, CORS, endpoints, functions, libraries, config.
+- Bug reproduction steps or fix history.
+- UI layout, wording, loading or error presentation.
+- Retries, timeouts, caching, races, and other implementation risks.
+- Combinations of every parameter, role, or input.
+
+These can still be worth testing. Write them as **standalone tests**: same integration-test style, but without a scenario ID in the name.
+
+## Structure
+
+| Part | Contents |
 |---|---|
-| **Use case (UC)** | One user goal, e.g. "chat from the side panel". One file per use case. |
-| **Rule** | A business invariant that must always hold for the use case. |
-| **Scenario** | One concrete Given/When/Then example of the use case. |
+| **Use case** | One user goal, e.g. "ask the AI from the side panel". One file per goal. Split by goal, not by UI area, endpoint, or mechanism. |
+| **Behavior** | Who needs it, what they get, and the few boundaries needed to understand it. Not a list of rules. |
+| **Key constraint** | Optional. Only a prohibition or invariant that holds across several scenarios and changes what the capability is. Each needs at least one scenario. |
+| **Scenario** | One representative example, as one line: `Given …; when …; then …`. Only branches with their own product meaning: the main success path, rejections that matter, and real boundaries. |
 
-## Given/When/Then quality
+A scenario earns its place only if deleting it would let an implementation pass the remaining scenarios while breaking the product contract.
 
-- **Given** states the starting conditions that matter, nothing more.
-- **When** is a single action by the user or a client.
-- **Then** states observable outcomes: HTTP status and body, what the user sees, what is (or is not) called.
-- Use domain words ("signed-in user", "session token"), not implementation details ("the `verifyToken` call").
-- One behavior per scenario. Split a scenario when its Then covers unrelated outcomes.
+## Strategy
 
-## Rules
-
-Rules are short, testable statements that hold across all scenarios of a use case, e.g. "The model is chosen by the server; clients cannot pick another one." Every rule should be covered by at least one scenario.
-
-## Execution strategy
-
-| Strategy | When | How |
+| Strategy | Use for | Verified by |
 |---|---|---|
-| `api-test` | Behavior observable through the worker's HTTP API, or the extension's client code | vitest integration tests in `worker/test/` |
-| `ai-e2e` | Behavior that needs a real browser: the side panel UI, Clerk sign-in, Notion pages | An agent drives Chrome with the extension loaded and checks the result |
+| `api-test` | Anything observable through the worker's HTTP API or the extension's client code | A vitest integration test in `worker/test/` whose name starts with the scenario ID |
+| `ai-e2e` | Paths that need a real browser: the side panel, Clerk sign-in, Notion pages | An agent drives Chrome with the extension loaded; the PR description or a comment records the run |
 
-Prefer `api-test` whenever the behavior can be observed without a browser.
+Pick the cheapest strategy that observes the result directly. `ai-e2e` is not a place to park scenarios that could be `api-test`.
 
 ## Priority
 
-| Priority | Meaning | Test requirement |
+Priority is how much a scenario protects the product, not a schedule.
+
+| Priority | Meaning | Before merge |
 |---|---|---|
-| P0 | Core behavior; breaking it breaks the product | Must be tested before merge |
-| P1 | Important behavior | Should be tested before merge |
-| P2 | Edge cases and nice-to-haves | Can be deferred |
+| P0 | Success path of a core capability, or a branch whose violation can't be undone (data or access crosses a trust boundary) | Must be verified |
+| P1 | Important branch of one use case: alternative paths, main rejections, recoverable failures | Should be verified |
+| P2 | Rare, narrow, easy to recover | Can wait |
+
+A guard or rejection branch should not rank above its use case's success path unless it independently meets P0.
 
 ## Status
 
-- ❌ Not implemented, or implemented but not yet verified by its strategy
-- ✅ Implemented and verified (`api-test`: a passing test exists; `ai-e2e`: verified in a real browser)
+- `pending`: not yet verified by its strategy. New and semantically changed scenarios start here.
+- `verified`: `api-test` has a passing test named with the ID; `ai-e2e` has a recorded passing run.
 
-## File specification
+## File format
 
-Use cases live in `docs/use-cases/{domain}/UC-{DOMAIN}-{NNN}-{slug}.md`:
+`docs/use-cases/{domain}/UC-{DOMAIN}-{NNN}-{slug}.md`:
 
 ```markdown
-# UC-CHAT-001: Chat from the side panel
+# UC-CHAT-001: Ask the AI from the side panel
 
-**Actor:** Signed-in user
-**Goal:** Ask the AI something and read the reply in the side panel.
+## Behavior
 
-## Rules
+A signed-in user asks the AI something in the side panel and reads the reply as it streams in.
 
-- R1: ...
+Key constraint:
+
+- The server chooses the model. Clients cannot use another one.
 
 ## Scenarios
 
-### UC-CHAT-001-S01: Signed-in user gets a streamed reply
+### api-test
 
-- Priority: P0 · Strategy: api-test · Status: ✅
-- **Given** ...
-- **When** ...
-- **Then** ...
+| ID | Priority | Status | Scenario |
+| --- | --- | --- | --- |
+| UC-CHAT-001-S01 | P0 | verified | Given a signed-in user; when they ask the AI something; then the reply streams back piece by piece. |
+
+### ai-e2e
+
+(none)
 ```
 
-### ID naming
+## IDs
 
-- Use case: `UC-{DOMAIN}-{NNN}`, e.g. `UC-AUTH-001`. Domains: `AUTH`, `CHAT`, `PANEL`.
-- Scenario: `{UC ID}-S{NN}`, e.g. `UC-AUTH-001-S03`.
-- IDs are never renumbered. Deleted IDs are not reused.
-- A scenario keeps its ID only for wording changes. New or changed logic gets a new ID.
-- Tests start with the scenario ID: `it('[UC-AUTH-002-S01] request without a session is rejected', ...)`. One test may cover one scenario; one scenario may need several tests.
-
-## Non-goals
-
-- Use cases do not describe implementation (file names, functions, libraries).
-- Do not write scenarios for third-party behavior (Clerk's own sign-in UI, Notion's editor), only for how this product uses them.
+- Use case: `UC-{DOMAIN}-{NNN}`. Domains: `AUTH`, `CHAT`, `PANEL`.
+- Scenario: `{UC ID}-S{NN}`.
+- Once merged, IDs are never renumbered and deleted IDs are not reused. A scenario keeps its ID only for wording changes; changed behavior gets a new ID.
+- Test names start with the ID: `it('[UC-CHAT-001-S01] signed-in user gets a streamed reply', ...)`. Several tests may cover one scenario.

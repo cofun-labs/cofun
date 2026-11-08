@@ -24,20 +24,19 @@ Copilot for Notion: a Chrome extension that opens an AI side panel next to Notio
      - [ ] All PR comments resolved
      ```
 
-2. **Update use cases before writing code.** In `docs/use-cases/{domain}/`:
-   - Delete obsolete use cases, create new ones, or merge/split them. Reuse a UC ID only if its core intent is unchanged.
-   - Add, remove, or change rules (business invariants).
-   - Delete scenarios that no longer apply and add scenarios for new behavior. Reuse a scenario ID only for wording changes; new logic gets a new ID.
-   - Mark each scenario with priority (P0/P1/P2), strategy (`api-test` or `ai-e2e`), and status (❌ not implemented, ✅ implemented and tested).
+2. **Update use cases before writing code**, only when the product behavior contract changes (see [docs/bdd.md](docs/bdd.md) for what belongs in a use case). In `docs/use-cases/{domain}/`:
+   - Reuse an existing use case or scenario when it already expresses the contract. Bug fixes and refactors usually change no use case.
+   - Edit the Behavior, add or remove scenarios, or merge/split use cases. Reuse a scenario ID only for wording changes; changed behavior gets a new ID.
+   - Give each scenario a priority (P0/P1/P2), put it under its strategy (`api-test` or `ai-e2e`), and set its status (`pending` until verified, then `verified`).
 
 3. **Implement with tests.** Keep tests in sync with use cases:
    - Remove tests for deleted scenarios, add tests for new ones, rename tests when scenario IDs change.
-   - P0 scenarios must be tested before merge; P1 should be; P2 can wait.
-   - `api-test` scenarios are vitest integration tests in `worker/test/`. `ai-e2e` scenarios are verified by an agent driving a real browser.
-   - Test names start with the scenario ID:
+   - P0 scenarios must be verified before merge; P1 should be; P2 can wait.
+   - `api-test` scenarios are vitest integration tests in `worker/test/`, named with the scenario ID. `ai-e2e` scenarios are verified by an agent driving a real browser, and the run is recorded in the PR.
      ```typescript
      it('[UC-CHAT-001-S01] signed-in user gets a streamed reply', async () => {
      ```
+   - Implementation details worth guarding (status codes, CORS, config errors, regressions) get standalone tests without a scenario ID.
 
 4. **Run pre-PR checks.** Run `pnpm check`, then review `git diff --stat origin/main...` and `git diff origin/main... -- docs/use-cases`. Confirm the diff matches the Issue and no BDD updates are missing.
 
@@ -48,7 +47,7 @@ Copilot for Notion: a Chrome extension that opens an AI side panel next to Notio
 7. **Review the PR.** Once CI passes, **always spawn a sub-agent** for an independent review (it must not carry the implementation context). The sub-agent:
    - Reads the Issue and PR descriptions
    - Verifies every requirement in the Issue is implemented
-   - Verifies the diff matches the BDD scenarios and every `api-test` scenario has a test
+   - Verifies the diff matches the BDD scenarios, every `api-test` scenario has a test, and no implementation details were written into use cases
    - Confirms there are no unrelated changes
    - Judges whether the approach is correct and reasonable
    - Submits the review with `gh pr review --comment` (GitHub blocks approving your own PR)

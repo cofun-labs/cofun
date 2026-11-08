@@ -28,7 +28,7 @@ const config = (getToken: () => Promise<string | null>) => ({ apiUrl: 'https://n
 const hi = [{ role: 'user' as const, content: 'hi' }]
 
 describe('extension client against the worker', () => {
-  it('[UC-CHAT-001-S03] extension client streams the reply', async () => {
+  it('[UC-CHAT-001-S01] extension client streams the reply', async () => {
     const token = await clerk.sessionToken({ userId: 'user_alice', azp: EXT })
     const deltas: string[] = []
     const full = await streamChat(
@@ -40,7 +40,7 @@ describe('extension client against the worker', () => {
     expect(deltas).toHaveLength(3)
   })
 
-  it('[UC-AUTH-002-S08] extension asks to sign in when there is no session', async () => {
+  it('extension asks to sign in when there is no session', async () => {
     await expect(
       streamChat(
         config(async () => null),
@@ -50,7 +50,7 @@ describe('extension client against the worker', () => {
     ).rejects.toThrow('Please sign in first.')
   })
 
-  it('[UC-AUTH-002-S09] extension shows the server reason for a rejected session', async () => {
+  it('extension shows the server reason for a rejected session', async () => {
     await expect(
       streamChat(
         config(async () => 'not-a-jwt'),

@@ -1,46 +1,25 @@
-# UC-AUTH-001: Sign in through the web sign-in page
+# UC-AUTH-001: Sign in to use Copilot
 
-**Actor:** Notion user with the extension installed
-**Goal:** Sign in once on a normal web page (including with Google) and be signed in inside the side panel.
+## Behavior
 
-## Rules
+A Notion user signs in once on the web sign-in page, including with Google, and is then signed in inside the side panel without reopening it. Signing out from the side panel signs them out. Sign-in happens on a web page because Chrome side panels can't complete social-login redirects.
 
-- R1: Sign-in happens on the worker's `/login` page, not inside the side panel. Social logins need a redirect, which Chrome side panels do not support.
-- R2: The extension never stores credentials. It reads the Clerk session from the sign-in page's domain (Clerk Sync Host).
-- R3: An open side panel reflects sign-in and sign-out without the user reopening it.
+Key constraint:
+
+- Only signed-in users of this product can use the AI. A request without a valid session never reaches the model.
 
 ## Scenarios
 
-### UC-AUTH-001-S01: Sign-in page shows Clerk's sign-in UI
+### api-test
 
-- Priority: P0 · Strategy: api-test · Status: ✅
-- **Given** the worker is configured with a Clerk publishable key
-- **When** a browser requests `GET /login`
-- **Then** the response is an HTML page that loads Clerk's JS and UI bundles from that instance's Frontend API, with the publishable key
+| ID | Priority | Status | Scenario |
+| --- | --- | --- | --- |
+| UC-AUTH-001-S01 | P0 | verified | Given no valid session (missing, forged, or expired); when a client asks the AI something; then the request is refused and the model is not called. |
+| UC-AUTH-001-S02 | P1 | verified | Given a session issued to a site that is not this product; when it is used to ask the AI; then the request is refused. |
 
-### UC-AUTH-001-S02: Root URL goes to the sign-in page
+### ai-e2e
 
-- Priority: P2 · Strategy: api-test · Status: ✅
-- **When** a browser requests `GET /`
-- **Then** it is redirected to `/login`
-
-### UC-AUTH-001-S03: Sign-in page is off without a publishable key
-
-- Priority: P1 · Strategy: api-test · Status: ✅
-- **Given** the worker has no Clerk publishable key
-- **When** a browser requests `GET /login`
-- **Then** the response is `503` with error code `not_configured`
-
-### UC-AUTH-001-S04: Signing in on the web page signs in the side panel
-
-- Priority: P0 · Strategy: ai-e2e · Status: ✅
-- **Given** the extension is loaded, a Notion tab is open, and the side panel shows "Sign in"
-- **When** the user clicks "Sign in", completes Google sign-in on the page that opens, and returns to the Notion tab
-- **Then** the side panel shows the chat view and the user button, without being reopened
-
-### UC-AUTH-001-S05: Signing out signs out the side panel
-
-- Priority: P1 · Strategy: ai-e2e · Status: ✅
-- **Given** the user is signed in and the side panel shows the chat view
-- **When** the user signs out from the side panel's user button
-- **Then** the side panel shows "Sign in" again
+| ID | Priority | Status | Scenario |
+| --- | --- | --- | --- |
+| UC-AUTH-001-S03 | P0 | verified | Given the side panel asks the user to sign in; when they sign in with Google on the page it opens; then the open side panel shows the chat. |
+| UC-AUTH-001-S04 | P1 | verified | Given a signed-in user; when they sign out from the side panel; then the side panel asks them to sign in again. |
