@@ -61,7 +61,7 @@ function makeAgent(
   return new CopilotAgent({
     apiUrl: 'https://nk.example.dev/v1/',
     getToken: options.getToken ?? (async () => token),
-    systemPrompt: 'You are Copilot.',
+    systemPrompt: 'You are Notion Copilot.',
     tools: options.tools ?? [pageTool().tool],
     maxSteps: options.maxSteps,
     history: options.history,
@@ -90,7 +90,7 @@ describe('extension agent against the worker', () => {
       expect.objectContaining({ type: 'function', function: expect.objectContaining({ name: 'get_current_page' }) }),
     ])
     expect(sentMessages(0)).toEqual([
-      { role: 'system', content: 'You are Copilot.' },
+      { role: 'system', content: 'You are Notion Copilot.' },
       { role: 'user', content: 'hi' },
     ])
   })
@@ -145,12 +145,28 @@ describe('extension agent against the worker', () => {
     expect(sentMessages(3).at(-2)).toMatchObject({ role: 'tool', content: expect.stringContaining('limit of 3 steps') })
   })
 
+  it('several tool calls on the last step are all refused, and the next question still works', async () => {
+    const { tool, runs } = pageTool()
+    ai.toolCalls = [
+      { name: 'get_current_page', arguments: '{}' },
+      { name: 'get_current_page', arguments: '{}' },
+    ]
+    const agent = makeAgent({ tools: [tool], maxSteps: 1 })
+    expect((await ask(agent, 'Which page am I on?')).result).toEqual({ status: 'step_limit', steps: 1 })
+    expect(runs).toHaveLength(0)
+
+    ai.toolCalls = undefined
+    expect((await ask(agent, 'Thanks')).result).toEqual({ status: 'done' })
+    // Both calls have a result in the conversation, so the worker accepted it.
+    expect(sentMessages(1).filter((m) => m.role === 'tool')).toHaveLength(2)
+  })
+
   it('the conversation carries over to the next question', async () => {
     const agent = makeAgent()
     await ask(agent, 'first')
     await ask(agent, 'second')
     expect(sentMessages(1).map((m) => [m.role, m.content])).toEqual([
-      ['system', 'You are Copilot.'],
+      ['system', 'You are Notion Copilot.'],
       ['user', 'first'],
       ['assistant', '你好 来自 worker '],
       ['user', 'second'],
@@ -163,7 +179,7 @@ describe('extension agent against the worker', () => {
     await ask(agent, 'second')
     await ask(agent, 'third')
     expect(sentMessages(2).map((m) => [m.role, m.content])).toEqual([
-      ['system', 'You are Copilot.'],
+      ['system', 'You are Notion Copilot.'],
       ['user', 'second'],
       ['assistant', '你好 来自 worker '],
       ['user', 'third'],
@@ -233,6 +249,15 @@ describe('extension agent against the worker', () => {
     expect(ai.calls).toHaveLength(0)
   })
 
+  it('asks to sign in when the session is lost after the first question', async () => {
+    let current: string | null = token
+    const agent = makeAgent({ getToken: async () => current })
+    expect((await ask(agent, 'first')).result).toEqual({ status: 'done' })
+    current = null
+    expect((await ask(agent, 'second')).result).toEqual({ status: 'error', message: 'Please sign in first.' })
+    expect(ai.calls).toHaveLength(1)
+  })
+
   it('shows the server reason for a rejected session', async () => {
     const { result } = await ask(makeAgent({ getToken: async () => 'not-a-jwt' }), 'hi')
     expect(result).toEqual({ status: 'error', message: 'invalid or expired session' })
@@ -250,7 +275,12 @@ describe('extension agent against the worker', () => {
 
     env.DAILY_REQUEST_LIMIT = '100'
     await ask(agent, 'third')
-    expect(sentMessages(1).map((m) => m.content)).toEqual(['You are Copilot.', 'first', '你好 来自 worker ', 'third'])
+    expect(sentMessages(1).map((m) => m.content)).toEqual([
+      'You are Notion Copilot.',
+      'first',
+      '你好 来自 worker ',
+      'third',
+    ])
   })
 
   it('surfaces an error event in the stream', async () => {

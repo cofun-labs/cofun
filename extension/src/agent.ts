@@ -115,6 +115,8 @@ export class CopilotAgent {
       agent.beforeToolCall = undefined
     }
 
+    // Also stopped when the abort landed after the last model reply, e.g. while a tool finished.
+    stopped ||= epoch !== this.epoch
     if (failure || stopped) {
       agent.state.messages = agent.state.messages.slice(0, before)
       return stopped ? { status: 'stopped' } : { status: 'error', message: failure! }
@@ -148,7 +150,11 @@ export class CopilotAgent {
       },
       streamFn: (m, context, options) => streamSimple(m as Model<'openai-completions'>, context, options),
       // A fresh Clerk token for every model request; they expire within minutes.
-      getApiKey: async () => (await this.config.getToken()) ?? undefined,
+      getApiKey: async () => {
+        const token = await this.config.getToken()
+        if (!token) throw new Error(SIGN_IN)
+        return token
+      },
       // No provider attribution headers; the worker is our own.
       identity: { attribution: null },
       // Notion tools will change pages; run them one at a time, in the order the model asked.

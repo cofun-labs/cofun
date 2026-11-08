@@ -5,7 +5,7 @@ import { TOOLS } from '../tools'
 
 const API_URL = import.meta.env.VITE_API_URL as string
 const SYSTEM_PROMPT =
-  'You are Copilot, an AI assistant that helps the user read and edit their Notion pages. ' +
+  'You are Notion Copilot, an AI assistant that helps the user read and edit their Notion pages. ' +
   'Use the tools when you need to know about the page or the browser. Be concise.'
 
 /** A tool the agent ran for this reply. A placeholder until the proper display lands. */
