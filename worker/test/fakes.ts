@@ -7,6 +7,12 @@ type Call = { model: string; inputs: Record<string, unknown>; options?: Record<s
 /** Token counts the fake model reports for every reply. */
 export const FAKE_USAGE = { prompt_tokens: 12, completion_tokens: 5, total_tokens: 17 }
 
+/** A tool call the fake model makes: which tool, and its arguments as a JSON string. */
+export interface FakeToolCall {
+  name: string
+  arguments: string
+}
+
 /**
  * Stands in for the Workers AI binding (env.AI) with the same `run` signature,
  * replying in the OpenAI chat-completion shape that current models use.
@@ -19,12 +25,17 @@ export class FakeAiBinding implements AiBinding {
   rawSse?: string
   /** When set, a streamed call fails with this error after sending the first slice. */
   streamFailWith?: Error
+  /** When set, the model writes the reply as a preamble and then asks the client to run these tools. */
+  toolCalls?: FakeToolCall[]
+  private nextToolCallId = 0
 
   constructor(private reply = 'Hello from Workers AI') {}
 
   async run(model: string, inputs: Record<string, unknown>, options?: Record<string, unknown>): Promise<unknown> {
     this.calls.push({ model, inputs, options })
     if (this.failWith) throw this.failWith
+
+    if (this.toolCalls) return this.toolCallReply(model, this.toolCalls, inputs)
 
     if (!inputs.stream) {
       return {
@@ -44,10 +55,84 @@ export class FakeAiBinding implements AiBinding {
     // Like OpenAI, usage comes in a last chunk with no choices, only when asked for.
     const streamOptions = inputs.stream_options as { include_usage?: boolean } | undefined
     if (streamOptions?.include_usage) events.push({ choices: [], usage: FAKE_USAGE })
-    const sse = events.map((e) => `data: ${JSON.stringify(e)}\n\n`).join('') + 'data: [DONE]\n\n'
-    return sliced(new TextEncoder().encode(sse), this.streamFailWith)
+    return sliced(new TextEncoder().encode(toSse(events)), this.streamFailWith)
+  }
+
+  /**
+   * A reply that asks the client to run tools, in the shapes the real model returns (recorded in #35).
+   * Streamed, each call's name comes first and its arguments follow in pieces, and usage arrives the
+   * Workers AI way: per-chunk counts, a zeroed chunk, then a `response` chunk with the totals.
+   */
+  private toolCallReply(model: string, toolCalls: FakeToolCall[], inputs: Record<string, unknown>) {
+    // Like the real model's random ids, these don't repeat across replies.
+    const ids = toolCalls.map(() => `chatcmpl-tool-${this.nextToolCallId++}`)
+    if (!inputs.stream) {
+      return {
+        object: 'chat.completion',
+        model,
+        choices: [
+          {
+            index: 0,
+            message: {
+              role: 'assistant',
+              content: this.reply,
+              tool_calls: toolCalls.map((t, i) => ({
+                id: ids[i],
+                type: 'function',
+                function: { name: t.name, arguments: t.arguments },
+              })),
+            },
+            finish_reason: 'tool_calls',
+          },
+        ],
+        usage: FAKE_USAGE,
+      }
+    }
+
+    const chunk = (delta: Record<string, unknown>, finish_reason: string | null = null) => ({
+      choices: [{ index: 0, delta, finish_reason }],
+      usage: { prompt_tokens: 0, completion_tokens: 1, total_tokens: 1 },
+    })
+    const events: unknown[] = [
+      {
+        choices: [{ index: 0, delta: { role: 'assistant', content: '' }, finish_reason: null }],
+        usage: {
+          prompt_tokens: FAKE_USAGE.prompt_tokens,
+          completion_tokens: 0,
+          total_tokens: FAKE_USAGE.prompt_tokens,
+        },
+      },
+      ...this.reply.split(' ').map((w) => chunk({ content: w + ' ' })),
+    ]
+    // Short arguments (`{}`) come with the name; longer ones follow it in pieces, and the last piece
+    // carries the finish reason. After short arguments the finish reason comes in a chunk of its own.
+    let finishedOnPiece = false
+    toolCalls.forEach((t, index) => {
+      const head = { id: ids[index], type: 'function', index, function: { name: t.name } }
+      finishedOnPiece = false
+      if (t.arguments.length <= 2) {
+        events.push(chunk({ tool_calls: [{ ...head, function: { ...head.function, arguments: t.arguments } }] }))
+        return
+      }
+      events.push(chunk({ tool_calls: [head] }))
+      for (let i = 0; i < t.arguments.length; i += 8) {
+        const last = i + 8 >= t.arguments.length && index === toolCalls.length - 1
+        const piece = { tool_calls: [{ index, function: { arguments: t.arguments.slice(i, i + 8) } }] }
+        events.push(chunk(piece, last ? 'tool_calls' : null))
+        finishedOnPiece ||= last
+      }
+    })
+    if (!finishedOnPiece) events.push(chunk({}, 'tool_calls'))
+    const streamOptions = inputs.stream_options as { include_usage?: boolean } | undefined
+    if (streamOptions?.include_usage) {
+      events.push({ choices: [], usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 } })
+      events.push({ response: '', usage: FAKE_USAGE })
+    }
+    return sliced(new TextEncoder().encode(toSse(events)), this.streamFailWith)
   }
 }
+
+const toSse = (events: unknown[]) => events.map((e) => `data: ${JSON.stringify(e)}\n\n`).join('') + 'data: [DONE]\n\n'
 
 function sliced(bytes: Uint8Array, failWith?: Error, size = 16): ReadableStream<Uint8Array> {
   let offset = 0
