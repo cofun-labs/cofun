@@ -61,7 +61,7 @@
 
 ### UC-CHAT-001-S08: User chats in the side panel
 
-- Priority: P0 · Strategy: ai-e2e · Status: ❌
+- Priority: P0 · Strategy: ai-e2e · Status: ✅
 - **Given** a signed-in user with the side panel open on a Notion tab
 - **When** the user types a message and presses Enter
 - **Then** the message appears, followed by the AI reply streaming in

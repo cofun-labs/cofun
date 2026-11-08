@@ -33,14 +33,14 @@
 
 ### UC-AUTH-001-S04: Signing in on the web page signs in the side panel
 
-- Priority: P0 · Strategy: ai-e2e · Status: ❌
+- Priority: P0 · Strategy: ai-e2e · Status: ✅
 - **Given** the extension is loaded, a Notion tab is open, and the side panel shows "Sign in"
 - **When** the user clicks "Sign in", completes Google sign-in on the page that opens, and returns to the Notion tab
 - **Then** the side panel shows the chat view and the user button, without being reopened
 
 ### UC-AUTH-001-S05: Signing out signs out the side panel
 
-- Priority: P1 · Strategy: ai-e2e · Status: ❌
+- Priority: P1 · Strategy: ai-e2e · Status: ✅
 - **Given** the user is signed in and the side panel shows the chat view
 - **When** the user signs out from the side panel's user button
 - **Then** the side panel shows "Sign in" again
