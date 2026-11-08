@@ -44,13 +44,25 @@ export function loginPage(publishableKey: string): string {
 <script>
   window.addEventListener('load', start)
   async function start() {
-    await window.Clerk.load({ ui: { ClerkUI: window.__internal_ClerkUICtor } })
+    // Keep the whole flow on this page. Without signInUrl/signUpUrl, Clerk sends
+    // steps it can't finish here (OAuth sign-up continuation, Protect checks) to
+    // its hosted Account Portal, which can't redirect back to this domain.
+    await window.Clerk.load({
+      ui: { ClerkUI: window.__internal_ClerkUICtor },
+      signInUrl: location.pathname,
+      signUpUrl: location.pathname,
+    })
     const render = () => {
       const signedIn = !!window.Clerk.user
       document.getElementById('signed-in').style.display = signedIn ? 'flex' : 'none'
       const box = document.getElementById('sign-in')
       if (signedIn) window.Clerk.unmountSignIn(box)
-      else window.Clerk.mountSignIn(box, { forceRedirectUrl: location.href, signUpForceRedirectUrl: location.href })
+      else window.Clerk.mountSignIn(box, {
+          routing: 'hash',
+          withSignUp: true,
+          fallbackRedirectUrl: location.pathname,
+          signUpFallbackRedirectUrl: location.pathname,
+        })
     }
     window.Clerk.addListener(render)
     render()
