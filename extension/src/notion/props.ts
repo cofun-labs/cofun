@@ -44,6 +44,14 @@ export function oneLine(text: string): string {
   return text.replace(/\s+/g, ' ').trim()
 }
 
+/**
+ * Text as Notion stores it, from text the model may have copied out of query_database or
+ * read_page: the backslashes their Markdown puts before marks are dropped.
+ */
+export function plainText(text: string): string {
+  return text.replace(/\\([\\`*~[\]^|<_])/g, '$1')
+}
+
 /** The schema entry for a property name (any case), as [key, def]. */
 export function schemaEntry(schema: Schema, name: string): [string, PropertyDef] {
   const want = name.trim().toLowerCase()
@@ -73,13 +81,13 @@ export function propertyValue(def: PropertyDef, input: PropertyInput): unknown[]
   switch (type) {
     case 'title':
       if (typeof text !== 'string') throw new PropertyError(`${name} must be text.`)
-      return [[oneLine(text)]]
+      return [[oneLine(plainText(text))]]
     case 'text':
     case 'url':
     case 'email':
     case 'phone_number':
       if (typeof text !== 'string' && typeof text !== 'number') throw new PropertyError(`${name} must be text.`)
-      return [[String(text)]]
+      return [[typeof text === 'string' ? plainText(text) : String(text)]]
     case 'number': {
       const n = typeof text === 'number' ? text : typeof text === 'string' ? Number(text) : Number.NaN
       if (!Number.isFinite(n)) throw new PropertyError(`${name} must be a number, not “${String(input)}”.`)
@@ -93,8 +101,9 @@ export function propertyValue(def: PropertyDef, input: PropertyInput): unknown[]
     }
     case 'select':
     case 'status': {
-      if (typeof text !== 'string') throw new PropertyError(`${name} takes one option.`)
-      return [[option(def, text)]]
+      // An option named 1 may come as the number 1.
+      if (typeof text !== 'string' && typeof text !== 'number') throw new PropertyError(`${name} takes one option.`)
+      return [[option(def, String(text))]]
     }
     case 'multi_select': {
       const list = Array.isArray(text) ? text : typeof text === 'string' ? text.split(',') : []

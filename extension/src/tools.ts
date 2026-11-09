@@ -24,7 +24,15 @@ import {
   planNewPage,
 } from './notion/edit'
 import { MarkdownError, parseMarkdown, type NewBlock } from './notion/blocks'
-import { PropertyError, oneLine, propertyValue, schemaEntry, shownInput, type PropertyInput } from './notion/props'
+import {
+  PropertyError,
+  oneLine,
+  plainText,
+  propertyValue,
+  schemaEntry,
+  shownInput,
+  type PropertyInput,
+} from './notion/props'
 import { PAGE_TYPES, hexId, pageToMarkdown, rowValues, splitSections, type Schema } from './notion/markdown'
 import { activeNotionTab, selectionIn, type NotionTab } from './notion/tab'
 import { pageChildren, pageTree, runsText, treeLines } from './notion/tree'
@@ -744,7 +752,7 @@ function remember(read: PageRead) {
 
 /** A page title on one line, as Notion keeps it, so it can't break up the approval's lines. */
 function titleArg(value: unknown): string {
-  return typeof value === 'string' ? value.replace(/\s+/g, ' ').trim() : ''
+  return typeof value === 'string' ? oneLine(plainText(value)) : ''
 }
 
 /** `properties` as tools take it: values by property name. */

@@ -227,6 +227,23 @@ describe('update_pages details', () => {
     expect(props(ws, 1)!['f:f' as never]).toEqual([['Needs [review]']])
   })
 
+  it('stores text copied from query_database as plain text, and takes numbers for options', async () => {
+    const ws = workspace()
+    ws.collections.get(COLLECTION)!.schema = {
+      ...SCHEMA,
+      'h:h': { name: 'Priority', type: 'select', options: [{ value: '1' }, { value: '2' }] },
+    }
+    open(ws)
+    await update([
+      { page: hex(row(1)), title: 'Fix \\[urgent\\] \\_now\\_', properties: { Notes: 'a \\* b', Priority: 1 } },
+    ])
+    expect(props(ws, 1)).toMatchObject({
+      title: [['Fix [urgent] _now_']],
+      'g:g': [['a * b']],
+      'h:h': [['1']],
+    })
+  })
+
   it('takes one emoji as an icon, flags and keycaps included, and nothing else', async () => {
     const ws = workspace()
     open(ws)
