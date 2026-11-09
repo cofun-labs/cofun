@@ -14,7 +14,7 @@ import {
   previewEdits,
   type PageRead,
 } from './notion/edit'
-import { PAGE_TYPES, hexId, pageToMarkdown, splitIntoParts } from './notion/markdown'
+import { PAGE_TYPES, hexId, pageToMarkdown, splitSections } from './notion/markdown'
 import { activeNotionTab, type NotionTab } from './notion/tab'
 
 /**
@@ -77,7 +77,7 @@ export const readPage: ToolSpec = {
       throw new Error('That id is a block inside a page, not a page. Read the page it is on instead.')
     }
     const md = pageToMarkdown(loaded)
-    const parts = splitIntoParts(md.sections, PART_CHARS)
+    const { parts, members } = splitSections(md.sections, PART_CHARS)
     if (part > parts.length) {
       throw new Error(`This page has ${parts.length} part${parts.length === 1 ? '' : 's'}; there is no part ${part}.`)
     }
@@ -102,7 +102,9 @@ export const readPage: ToolSpec = {
     const body = parts[part - 1] || (md.kind === 'page' ? '(This page is empty.)' : '')
     // What edit_page checks edits against: only the blocks this read showed, as they were. Part 1
     // starts a new read; later parts add to it.
-    const seen = pageRead(loaded, md, parts[part - 1])
+    // The blocks this part drew, as the renderer reports them: never inferred from page text.
+    const drawn = new Set(members[part - 1].flatMap((section) => md.drawn[section]))
+    const seen = pageRead(loaded, md, (b) => drawn.has(b))
     remember(part === 1 ? seen : mergeReads(pageReads.get(loaded.page.id), seen))
     return [...header, '', ...properties, ...(body ? [body] : [])].join('\n')
   },

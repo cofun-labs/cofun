@@ -18,8 +18,8 @@ export interface PageMarkdown {
   refs: Map<string, string>
   /** Each block's own Markdown (without children or reference), by block id. */
   lines: Map<string, string>
-  /** Each block's own lines exactly as shown, reference included, by block id. */
-  shown: Map<string, string>
+  /** The ids of the blocks each section draws, by section: what reading that section shows. */
+  drawn: string[][]
 }
 
 /** Ids as the Markdown shows them: 32 hex digits, no dashes. */
@@ -65,6 +65,7 @@ export function pageToMarkdown({ page, recordMap }: LoadedPage): PageMarkdown {
   // References are assigned over every block shown, so they are unique within the page.
   const shown = isDatabase ? [] : ctx.descendants(page)
   ctx.refs = blockRefs(shown)
+  ctx.topLevel = true
   const sections = isDatabase ? [] : ctx.children(page, 0).map((lines) => lines.join('\n'))
   return {
     title: title || 'Untitled',
@@ -73,14 +74,19 @@ export function pageToMarkdown({ page, recordMap }: LoadedPage): PageMarkdown {
     kind: isDatabase ? 'database' : 'page',
     refs: ctx.refs,
     lines: ctx.lines,
-    shown: ctx.shown,
+    drawn: ctx.sectionIds,
   }
 }
 
 class Context {
   refs = new Map<string, string>()
   lines = new Map<string, string>()
-  shown = new Map<string, string>()
+  /** Ids drawn by each top-level section, in order. */
+  sectionIds: string[][] = []
+  /** Whether children() is drawing the page's top level, where each block starts a section. */
+  topLevel = false
+  /** Where blocks drawn now are recorded: the current section's ids. */
+  private drawn: string[] | undefined
 
   constructor(
     private readonly recordMap: RecordMap,
@@ -111,7 +117,19 @@ class Context {
         out.push(...this.children(block, depth))
         continue
       }
+      // Blocks drawn while drawing a top-level block belong to its section.
+      const top = this.topLevel
+      const outer = this.drawn
+      const section: string[] = []
+      if (top) this.drawn = section
+      this.topLevel = false
       const lines = block ? this.block(block, depth, number) : [`${indent(depth)}[block not loaded]${this.ref(id)}`]
+      this.topLevel = top
+      if (lines.length) this.drawn?.push(id)
+      if (top) {
+        this.drawn = outer
+        if (lines.length) this.sectionIds.push(section)
+      }
       if (lines.length) {
         out.push(lines)
         // The block's own Markdown: its lines up to the one carrying its reference, without its
@@ -125,7 +143,6 @@ class Context {
           .map((l) => (l.trim() === ref ? '' : l.endsWith(` ${ref}`) ? l.slice(0, -ref.length - 1) : l))
         while (own.length > 1 && !own.at(-1)!.trim()) own.pop()
         this.lines.set(id, own.join('\n'))
-        this.shown.set(id, lines.slice(0, end < 0 ? 1 : end + 1).join('\n'))
       }
     }
     return out
@@ -218,19 +235,7 @@ class Context {
   private quoted(block: Block, pad: string, label: string, text: string, ref: string): string[] {
     // Every line of a quote is marked as quoted, so its line breaks stay real lines.
     const own = withRef('', label, text, ref, 'lines')
-    const before = new Set(this.shown.keys())
     const children = this.children(block, 0).flat()
-    // Blocks inside are drawn with the quote's prefix too; keep what was shown exactly that way.
-    for (const [id, lines] of this.shown) {
-      if (!before.has(id))
-        this.shown.set(
-          id,
-          lines
-            .split('\n')
-            .map((l) => `${pad}> ${l}`)
-            .join('\n'),
-        )
-    }
     return [...own, ...children].map((l) => `${pad}> ${l}`)
   }
 
@@ -417,43 +422,49 @@ function formatDate(arg: unknown): string {
 
 /**
  * Groups sections into parts of at most `max` characters, breaking only between sections, unless
- * one section alone is longer: then it is broken between lines.
+ * one section alone is longer: then it is broken between lines (and a line longer than `max`, into
+ * pieces). `members` lists the sections each part shows, whole or in part.
  */
-export function splitIntoParts(sections: string[], max: number): string[] {
+export function splitSections(sections: string[], max: number): { parts: string[]; members: number[][] } {
   const parts: string[] = []
+  const members: number[][] = []
   let current = ''
   let started = false
+  let inPart: number[] = []
   const push = () => {
-    if (started) parts.push(current)
+    if (started) {
+      parts.push(current)
+      members.push(inPart)
+    }
     current = ''
     started = false
+    inPart = []
   }
-  for (const section of sections) {
-    const joined = started ? `${current}\n${section}` : section
-    if (joined.length <= max) {
-      current = joined
-      started = true
-      continue
-    }
+  const add = (text: string, section: number) => {
+    current = started ? `${current}\n${text}` : text
+    started = true
+    if (inPart.at(-1) !== section) inPart.push(section)
+  }
+  sections.forEach((section, n) => {
+    if ((started ? current.length + 1 : 0) + section.length <= max) return add(section, n)
     push()
-    if (section.length <= max) {
-      current = section
-      started = true
-      continue
-    }
+    if (section.length <= max) return add(section, n)
     for (const whole of section.split('\n')) {
-      // A single line longer than a part is cut into pieces of the part's size.
       for (let at = 0; at < Math.max(whole.length, 1); at += max) {
         const line = whole.slice(at, at + max)
         if (started && current.length + 1 + line.length > max) push()
-        // `started`, not `current`: a blank line that starts a part is still a line.
-        current = started ? `${current}\n${line}` : line
-        started = true
+        // A blank line that starts a part is still a line.
+        add(line, n)
       }
     }
-  }
+  })
   push()
-  return parts.length ? parts : ['']
+  return parts.length ? { parts, members } : { parts: [''], members: [[]] }
+}
+
+/** The text of each part, as `splitSections` groups them. */
+export function splitIntoParts(sections: string[], max: number): string[] {
+  return splitSections(sections, max).parts
 }
 
 /** Escapes characters that inline Markdown would read as formatting, links, or references. */

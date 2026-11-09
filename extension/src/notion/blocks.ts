@@ -120,6 +120,16 @@ export function parseMarkdown(markdown: string): NewBlock[] {
         ended = TRAILING_REF.test(lines[i + 1])
         quoted.push(lines[++i].trim().replace(TRAILING_REF, '').replace(/^>\s?/, ''))
       }
+      // read_page draws blocks nested in a quote with the quote's prefix; those can't be written yet.
+      const nested = quoted.some((l, n) =>
+        /^(?:[-*+]\s|\d+[.)]\s|#{1,3}\s|▸|`{3})/.test(n ? l : l.replace(/^\[![^\]]+\]\s?/, '')),
+      )
+      if (nested) {
+        throw new MarkdownError(
+          "Blocks nested inside a quote or callout (lists, headings, toggles, code) can't be written yet; " +
+            'write them after it instead.',
+        )
+      }
       const callout = /^\[!([^\]]+)\]\s?(.*)$/.exec(quoted[0])
       if (callout) {
         // Only an emoji is an icon; `[!NOTE]` and other labels leave the callout's icon as it is.

@@ -22,17 +22,10 @@ export interface PageRead {
   nested: Map<string, string[]>
 }
 
-/** The blocks of `md` the agent saw: those whose reference `shown` contains, or those `include` picks. */
-export function pageRead(loaded: LoadedPage, md: PageMarkdown, include: string | ((id: string) => boolean)): PageRead {
+/** The blocks of `md` the agent saw: those `include` picks, such as the blocks a part drew. */
+export function pageRead(loaded: LoadedPage, md: PageMarkdown, include: (id: string) => boolean): PageRead {
   const blocks = (loaded.recordMap.block ?? {}) as Record<string, Block>
-  // A block was seen if the shown text holds its lines exactly as read_page drew them, reference
-  // included: text that merely mentions a reference doesn't count.
-  const text = typeof include === 'string' ? `\n${include}\n` : undefined
-  const seen = (id: string) => {
-    if (text === undefined) return (include as (id: string) => boolean)(id)
-    const lines = md.shown.get(id)
-    return !!lines && text.includes(`\n${lines}\n`)
-  }
+  const seen = include
   const refs = new Map([...md.refs].filter(([id]) => seen(id)))
   const versions = new Map<string, number>()
   const nested = new Map<string, string[]>()
@@ -243,8 +236,11 @@ export function planEdit(
   const ref = (id: string) => `^${read.refs.get(id) ?? hexId(id)}`
   const check = (id: string, what = ref(id)) => {
     const block = blocks[id]
-    if (!block || block.alive === false)
+    // Shown as "[block not loaded]": reading again shows the same, so don't ask for that.
+    if (!block && !read.versions.has(id)) throw new EditError(`${what} wasn't loaded, so it can't be edited.`)
+    if (!block || block.alive === false) {
       throw new EditError(`${what} was deleted since you read the page. ${READ_AGAIN}`)
+    }
     if (!read.versions.has(id)) throw new EditError(`${what} wasn't shown to you when you read the page. ${READ_AGAIN}`)
     if (block.version !== read.versions.get(id)) {
       throw new EditError(`${what} was changed since you read the page. ${READ_AGAIN}`)
@@ -389,8 +385,12 @@ export function planEdit(
       if (Object.keys(values).length) {
         ops.push(op.setProperties(target.id, values))
       }
-      if (only.type === 'callout' && only.icon && only.icon !== target.format?.page_icon) {
-        ops.push(op.setFormat(target.id, { page_icon: only.icon }))
+      const icon = only.type === 'callout' && only.icon && only.icon !== target.format?.page_icon
+      if (icon) ops.push(op.setFormat(target.id, { page_icon: only.icon }))
+      if (!Object.keys(values).length && !icon) {
+        // The same content: nothing to write, and the block stays as the agent read it.
+        summary.push(`${ref(e.target)} already had that content; nothing changed.`)
+        continue
       }
       changed.add(target.id)
       const lost = values.title && hasUnwritableMarks(target.properties?.title)

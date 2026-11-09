@@ -901,3 +901,51 @@ describe('round 10', () => {
     ])
   })
 })
+
+describe('round 11', () => {
+  it('does not count a block as seen because a code block on the page draws its line', async () => {
+    const n = 300
+    const blocks = Array.from({ length: n }, (_, i) => block(i + 1, 'text', `P${i} ${'u'.repeat(60)}`))
+    const last = n.toString(16).padStart(8, '0')
+    // A code block in part 1 holds the exact line the last block (in part 2) is drawn as.
+    blocks[0] = block(1, 'code', undefined, {
+      properties: { title: [[`P${n - 1} ${'u'.repeat(60)} ^${last}`]], language: [['Plain Text']] },
+    })
+    const ws = workspace(
+      blocks.map((_, i) => i + 1),
+      blocks,
+    )
+    open(ws)
+    expect(await read()).toContain(`P${n - 1} ${'u'.repeat(60)} ^${last}`)
+    await expect(edit([{ action: 'delete', block: `^${last}` }])).rejects.toThrow(
+      'is not a block of the page as you last read it',
+    )
+  })
+
+  it('writes nothing for a replacement with the same content', async () => {
+    const ws = workspace([1], [block(1, 'text', 'Intro')])
+    open(ws)
+    const shown = body(await read())
+    const result = await edit([{ action: 'replace', block: '^00000001', markdown: shown }])
+    expect(result).toContain('^00000001 already had that content; nothing changed.')
+    expect(ws.records.get(id(1))!.version).toBe(1)
+    // Still as read, so it can be edited right away.
+    await edit([{ action: 'replace', block: '^00000001', markdown: 'Intro, edited' }])
+  })
+
+  it('says a block that was not loaded cannot be edited, without asking to read again', async () => {
+    const ws = workspace([1, 9], [block(1, 'text', 'Intro')])
+    open(ws)
+    expect(body(await read())).toContain('[block not loaded] ^00000009')
+    await expect(edit([{ action: 'delete', block: '^00000009' }])).rejects.toThrow(
+      "^00000009 wasn't loaded, so it can't be edited.",
+    )
+  })
+
+  it('refuses blocks nested inside a quote or callout instead of turning them into its text', () => {
+    expect(() => parseMarkdown('> [!💡] Box\n> - item')).toThrow('Blocks nested inside a quote or callout')
+    expect(parseMarkdown('> line one\n> line two')).toEqual([
+      { type: 'quote', title: [['line one\nline two']], children: [] },
+    ])
+  })
+})

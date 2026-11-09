@@ -136,7 +136,13 @@ export function Chat({ userId }: { userId: string }) {
         // Normally the call is already shown as running. If not, show it now: the agent must never
         // wait on a prompt nobody can see. Show the arguments the tool will run with.
         // What the call would change, in words, when the tool can say.
-        const preview = TOOLS.find((t) => t.name === call.name)?.preview?.(call.args as Record<string, unknown>)
+        let preview: string | undefined
+        try {
+          preview = TOOLS.find((t) => t.name === call.name)?.preview?.(call.args as Record<string, unknown>)
+        } catch (err) {
+          // A broken preview must not break the prompt: the arguments are still shown.
+          console.error('Could not preview the tool call', err)
+        }
         updateReply((m) => {
           const j = newestOpenCall(m.parts, call.id)
           const parts = [...m.parts]
