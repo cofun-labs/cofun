@@ -1,7 +1,9 @@
 import { useAuth } from '@clerk/chrome-extension'
 import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from 'react'
-import { CopilotAgent, type AgentUpdate, type ConfirmTool } from '../agent'
-import { TOOLS } from '../tools'
+import { CopilotAgent, type AgentUpdate, type ConfirmTool, type HistoryMessage } from '../agent'
+import { SessionStore, titleFor, type Session } from '../sessions'
+import { currentNotionPage, TOOLS } from '../tools'
+import { Sessions } from './Sessions'
 import { ToolCall, type ShownTool } from './ToolCall'
 
 const API_URL = import.meta.env.VITE_API_URL as string
@@ -26,8 +28,17 @@ type Shown =
       note?: string
     }
 
-export function Chat() {
+/** The open session; saved once its first question is answered. */
+interface Current {
+  id: string
+  createdAt: number
+  page: Promise<Session['page']>
+}
+
+/** The chat of one signed-in user; mount a new one for another user. */
+export function Chat({ userId }: { userId: string }) {
   const { getToken } = useAuth()
+  const [store] = useState(() => new SessionStore(userId))
   const [messages, setMessages] = useState<Shown[]>([])
   const [input, setInput] = useState('')
   const [busy, setBusy] = useState(false)
@@ -36,8 +47,16 @@ export function Chat() {
   const listRef = useRef<HTMLElement>(null)
   // Answers for tool calls waiting for the user's OK, by call id.
   const pending = useRef(new Map<string, (allow: boolean) => void>())
-  // Bumped by "New chat" so updates still arriving for the old chat are dropped.
+  const [view, setView] = useState<'chat' | 'sessions'>('chat')
+  // Opening the panel starts a new session; it gets an id when its first question is sent.
+  const [current, setCurrent] = useState<Current>()
+  const [saved, setSaved] = useState(0)
+  // Bumped when another session opens, so updates still arriving for the old one are dropped.
   const chatId = useRef(0)
+  // Bumped by every open() and by sending: a session still loading when either happens is not opened.
+  const opening = useRef(0)
+  // Sessions deleted in this panel; a save still waiting to write must not bring one back.
+  const deleted = useRef(new Set<string>())
   const tokenRef = useRef(getToken)
   tokenRef.current = getToken
   const agentRef = useRef<CopilotAgent | null>(null)
@@ -49,9 +68,10 @@ export function Chat() {
   })
   const agent = agentRef.current
 
+  // Also on returning from the list: a hidden chat can't scroll while a reply streams in.
   useEffect(() => {
-    listRef.current?.scrollTo({ top: listRef.current.scrollHeight })
-  }, [messages])
+    if (view === 'chat') listRef.current?.scrollTo({ top: listRef.current.scrollHeight })
+  }, [messages, view])
 
   // The panel unmounts on sign-out; don't leave a question running tools in the background.
   useEffect(() => () => agentRef.current?.stop(), [])
@@ -61,6 +81,13 @@ export function Chat() {
     if (!text || busy) return
 
     const id = chatId.current
+    opening.current++
+    const session = current ?? {
+      id: crypto.randomUUID(),
+      createdAt: Date.now(),
+      page: currentNotionPage().catch(() => undefined),
+    }
+    if (!current) setCurrent(session)
     setInput('')
     setBusy(true)
     setStopping(false)
@@ -146,6 +173,7 @@ export function Chat() {
         })
     }
 
+    const before = agent.history().length
     try {
       const result = await agent.ask(text, onUpdate, confirm)
       if (result.status === 'stopped') {
@@ -158,9 +186,67 @@ export function Chat() {
       // A question can end without the panel answering, e.g. on unmount.
       // Only this question's own answers: after a New chat, the next question may reuse an id.
       for (const [callId, answer] of asked) if (pending.current.get(callId) === answer) pending.current.delete(callId)
-      // "New chat" already unlocked the composer for the new conversation.
-      if (chatId.current === id) setBusy(false)
+      // Another session that opened meanwhile already unlocked the composer, and the agent holds
+      // that session now.
+      if (chatId.current === id) {
+        setBusy(false)
+        // A question that failed or was stopped leaves the conversation as it was; don't move the
+        // session to the top of the list for it.
+        const messages = agent.history()
+        if (messages.length !== before) void save(session, messages)
+      }
     }
+  }
+
+  async function save(session: Current, messages: HistoryMessage[]) {
+    try {
+      const { id, createdAt } = session
+      const page = await session.page
+      if (deleted.current.has(id)) return
+      await store.save({
+        id,
+        createdAt,
+        page,
+        title: titleFor(messages),
+        updatedAt: Date.now(),
+        messages,
+      })
+      setSaved((n) => n + 1)
+    } catch (err) {
+      console.error('Could not save the session', err)
+    }
+  }
+
+  /** Switches to a new session, or to a saved one; a reply still coming in is stopped. */
+  function switchTo(session?: Session) {
+    chatId.current++
+    declineAll()
+    void agent.reset(session?.messages)
+    setBusy(false)
+    setStopping(false)
+    setMessages(session ? toShown(session.messages) : [])
+    setCurrent(session && { id: session.id, createdAt: session.createdAt, page: Promise.resolve(session.page) })
+    setView('chat')
+  }
+
+  /** Opens a saved session; false if it no longer exists. */
+  async function open(id: string): Promise<boolean> {
+    // The open session is already on screen, maybe with a reply still coming in.
+    if (id === current?.id) {
+      setView('chat')
+      return true
+    }
+    // Stop the reply now, not once the session has loaded: it must not finish in the meantime.
+    declineAll()
+    agent.stop()
+    const chat = chatId.current
+    const token = ++opening.current
+    const session = await store.get(id)
+    // The user started a new chat, opened another session, or asked something meanwhile; that wins.
+    if (chatId.current !== chat || opening.current !== token) return true
+    if (!session) return false
+    switchTo(session)
+    return true
   }
 
   function onSubmit(e: FormEvent) {
@@ -172,7 +258,7 @@ export function Chat() {
     } else send()
   }
 
-  /** Stop or a new chat answers every open question with no. */
+  /** Stop, or switching to a new or saved session, answers every open question with no. */
   function declineAll() {
     for (const answer of [...pending.current.values()]) answer(false)
   }
@@ -187,20 +273,29 @@ export function Chat() {
   return (
     <>
       <div className="toolbar">
-        <button
-          onClick={() => {
-            chatId.current++
-            declineAll()
-            void agent.reset()
-            setBusy(false)
-            setMessages([])
-          }}
-        >
-          New chat
+        <button onClick={() => setView(view === 'chat' ? 'sessions' : 'chat')}>
+          {view === 'chat' ? 'Sessions' : 'Back'}
         </button>
+        <button onClick={() => switchTo()}>New chat</button>
       </div>
 
-      <main id="messages" ref={listRef}>
+      {view === 'sessions' && (
+        <Sessions
+          store={store}
+          currentId={current?.id}
+          saved={saved}
+          onOpen={open}
+          onDeleted={(id) => {
+            deleted.current.add(id)
+            // The open session is being deleted: stop its reply, so it isn't saved back.
+            if (id !== current?.id) return
+            switchTo()
+            setView('sessions')
+          }}
+        />
+      )}
+
+      <main id="messages" ref={listRef} hidden={view !== 'chat'}>
         {messages.length === 0 && <div className="empty">Ask anything to get started.</div>}
         {messages.map((m, i) =>
           m.role === 'user' ? (
@@ -237,7 +332,7 @@ export function Chat() {
         )}
       </main>
 
-      <form id="composer" onSubmit={onSubmit}>
+      <form id="composer" onSubmit={onSubmit} hidden={view !== 'chat'}>
         <textarea
           rows={3}
           value={input}
@@ -251,6 +346,37 @@ export function Chat() {
       </form>
     </>
   )
+}
+
+/** A saved conversation as the panel shows it: each question, then everything the agent did for it. */
+function toShown(history: HistoryMessage[]): Shown[] {
+  const shown: Shown[] = []
+  for (const m of history) {
+    if (m.role === 'user') {
+      shown.push({ role: 'user', content: m.text })
+      continue
+    }
+    let reply = shown.at(-1)
+    if (reply?.role !== 'assistant') shown.push((reply = { role: 'assistant', parts: [] }))
+    if (m.role === 'assistant') {
+      for (const p of m.parts)
+        reply.parts.push(
+          p.type === 'text'
+            ? { type: 'text', text: p.text }
+            : { type: 'tool', tool: { id: p.id, name: p.name, args: p.args, status: 'running', result: '' } },
+        )
+    } else {
+      // Like a live reply: the result belongs to the newest call with its id that has none yet.
+      const part = reply.parts[newestOpenCall(reply.parts, m.id)]
+      if (part?.type === 'tool') part.tool = { ...part.tool, status: m.status, result: m.result }
+    }
+  }
+  // A call saved without its result is not running any more.
+  for (const m of shown)
+    if (m.role === 'assistant')
+      for (const p of m.parts)
+        if (p.type === 'tool' && p.tool.status === 'running') p.tool = { ...p.tool, status: 'stopped' }
+  return shown
 }
 
 /** The model is working with nothing to show yet: before its first words, or after its tools finished. */

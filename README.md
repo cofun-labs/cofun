@@ -17,6 +17,7 @@
 - [x] Sign in on a web page (Google supported); the session syncs into the extension
 - [x] Chat with streamed replies
 - [x] Basic agent: the model calls tools that run in the extension (first tool: the current page's title and URL)
+- [x] Sessions: start, list, search, filter by page, delete, and resume past conversations, kept on the device
 - [ ] Read the current Notion page
 - [ ] Edit the current Notion page
 
@@ -46,6 +47,10 @@
 
 The extension ID is pinned with the manifest `key`, so Clerk and the worker can trust it.
 
+### Sessions
+
+Conversations are saved in the extension's IndexedDB, one database per Clerk user (`notion-copilot-sessions-<userId>`), and never sent to the worker beyond what the model needs for the current question. They stay after sign-out so the user can pick up again, and they are not encrypted: keeping accounts apart only means one account's panel never shows another's sessions. Anyone with access to the Chrome profile can read them, tool results included (for example in DevTools).
+
 ## Layout
 
 ```
@@ -55,6 +60,7 @@ extension/                Chrome extension
   src/background.ts       opens the side panel from the toolbar icon; enabled only on Notion tabs
   src/agent.ts            agent loop (pi) against the worker; the only module that imports pi
   src/tools.ts            tools the agent runs in the extension
+  src/sessions.ts         saved sessions (IndexedDB, per user)
   src/sidepanel/          React UI (main.tsx: sign-in, Chat.tsx: chat)
 worker/                   Cloudflare Worker
   src/app.ts              Hono app: Clerk JWT verification + /v1/chat/completions

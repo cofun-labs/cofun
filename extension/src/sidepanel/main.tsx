@@ -1,4 +1,4 @@
-import { ClerkProvider, Show, UserButton } from '@clerk/chrome-extension'
+import { ClerkProvider, Show, useAuth, UserButton } from '@clerk/chrome-extension'
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { Chat } from './Chat'
@@ -55,6 +55,12 @@ function openSignIn() {
   chrome.tabs.create({ url: `${SYNC_HOST}/login` })
 }
 
+// Each account gets its own chat and sessions; keyed so a change of account starts over.
+function SignedInChat() {
+  const { userId } = useAuth()
+  return userId ? <Chat key={userId} userId={userId} /> : null
+}
+
 function App() {
   return (
     <ClerkProvider
@@ -81,7 +87,7 @@ function App() {
       </Show>
 
       <Show when="signed-in">
-        <Chat />
+        <SignedInChat />
       </Show>
     </ClerkProvider>
   )

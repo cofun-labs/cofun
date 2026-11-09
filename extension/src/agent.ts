@@ -2,7 +2,7 @@
 // sends the results back until the model answers. This is the only module that imports the agent
 // runtime (pi); the rest of the extension uses the types below.
 import { Agent, type AgentEvent, type AgentMessage, type AgentTool } from '@earendil-works/pi-agent-core'
-import type { AssistantMessage, Model } from '@earendil-works/pi-ai'
+import type { AssistantMessage, Model, ToolCall } from '@earendil-works/pi-ai'
 import { streamSimple } from '@earendil-works/pi-ai/api/openai-completions'
 
 export interface AgentConfig {
@@ -54,6 +54,22 @@ export type AgentUpdate =
   /** `result`: what the model got back, the error message when the tool failed. */
   | { type: 'tool_end'; id: string; name: string; status: ToolStatus; result: string }
 
+/**
+ * The conversation as the agent keeps it, in a form of our own, so saved sessions don't depend on
+ * the agent runtime. A reply is an assistant message followed by the results of the tools it called;
+ * a question may take several such steps before the final answer.
+ */
+export type HistoryMessage =
+  | { role: 'user'; text: string }
+  | { role: 'assistant'; parts: AssistantPart[] }
+  /** The result of one tool call. `id` matches the call in the assistant message before it. */
+  | { role: 'tool'; id: string; name: string; status: ToolStatus; result: string }
+
+/** What the model wrote, in order: text and the tools it asked to run. */
+export type AssistantPart =
+  | { type: 'text'; text: string }
+  | { type: 'tool_call'; id: string; name: string; args: Record<string, unknown> }
+
 export type AskResult =
   | { status: 'done' }
   | { status: 'stopped' }
@@ -80,6 +96,10 @@ export class CopilotAgent {
   private epoch = 0
   /** The question this agent is answering; reset() clears it, since the next one gets a new pi agent. */
   private running?: object
+  /** The conversation to start from, used when the next pi agent is set up. */
+  private initial: HistoryMessage[] = []
+  /** How each tool call ended, by its result message; pi itself only knows whether it failed. */
+  private readonly statuses = new WeakMap<AgentMessage, ToolStatus>()
 
   constructor(private readonly config: AgentConfig) {
     this.maxSteps = config.maxSteps ?? DEFAULT_MAX_STEPS
@@ -154,6 +174,8 @@ export class CopilotAgent {
     let ranTools = false
     const refused = new Set<string>()
     const declined = new Set<string>()
+    // How the latest call with each id ended, kept with its result message when that arrives.
+    const ended = new Map<string, ToolStatus>()
 
     // On the last step, refuse the tools the model asks for instead of running them: the question
     // ends here, so the model would never see their results, and a tool could change a page.
@@ -192,8 +214,13 @@ export class CopilotAgent {
         // A tool cut short by Stop reports an error; it did not fail on its own. A tool that
         // finished anyway keeps its result: what it did happened.
         else if (update.status === 'failed' && epoch !== this.epoch) update.status = 'stopped'
+        ended.set(update.id, update.status)
       }
       if (update) onUpdate(update)
+      if (event.type === 'message_end' && event.message.role === 'toolResult') {
+        const status = ended.get(event.message.toolCallId)
+        if (status) this.statuses.set(event.message, status)
+      }
       if (event.type === 'message_end' && event.message.role === 'assistant') {
         const m = event.message as AssistantMessage
         if (m.stopReason === 'error') failure = parseError(m.errorMessage)
@@ -231,16 +258,94 @@ export class CopilotAgent {
     this.agent?.abort()
   }
 
-  /** Starts a new conversation, once a question still running has stopped. It looks up the model again. */
-  async reset(): Promise<void> {
+  /**
+   * Starts another conversation: a new one, or `history` to continue a saved one. A question still
+   * running is stopped first. It looks up the model again.
+   */
+  async reset(history: HistoryMessage[] = []): Promise<void> {
     this.epoch++
     const agent = this.agent
     this.agent = undefined
     this.model = undefined
     this.running = undefined
+    this.initial = history
     if (!agent) return
     agent.abort()
     await agent.waitForIdle()
+  }
+
+  /**
+   * The conversation so far, to save and later continue with reset(). Questions that failed or were
+   * stopped are not part of it. Read it between questions: while one runs, it is still changing.
+   */
+  history(): HistoryMessage[] {
+    if (!this.agent) return this.initial
+    return this.agent.state.messages.flatMap((m) => this.toHistory(m))
+  }
+
+  private toHistory(message: AgentMessage): HistoryMessage[] {
+    switch (message.role) {
+      case 'user':
+        return [{ role: 'user', text: textOf(message.content) }]
+      case 'assistant':
+        return [
+          {
+            role: 'assistant',
+            parts: message.content.flatMap((block): AssistantPart[] => {
+              if (block.type === 'text') return [{ type: 'text', text: block.text }]
+              if (block.type === 'toolCall')
+                return [{ type: 'tool_call', id: block.id, name: block.name, args: block.arguments }]
+              return []
+            }),
+          },
+        ]
+      case 'toolResult':
+        return [
+          {
+            role: 'tool',
+            id: message.toolCallId,
+            name: message.toolName,
+            status: this.statuses.get(message) ?? (message.isError ? 'failed' : 'done'),
+            result: textOf(message.content),
+          },
+        ]
+      default:
+        return []
+    }
+  }
+
+  private fromHistory(history: HistoryMessage[], model: Model<'openai-completions'>): AgentMessage[] {
+    const timestamp = Date.now()
+    return history.map((m): AgentMessage => {
+      if (m.role === 'user') return { role: 'user', content: m.text, timestamp }
+      if (m.role === 'assistant') {
+        const content: AssistantMessage['content'] = m.parts.map((p) =>
+          p.type === 'text'
+            ? { type: 'text', text: p.text }
+            : { type: 'toolCall', id: p.id, name: p.name, arguments: p.args as ToolCall['arguments'] },
+        )
+        return {
+          role: 'assistant',
+          content,
+          api: model.api,
+          provider: model.provider,
+          model: model.id,
+          usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: ZERO_COST },
+          stopReason: content.some((c) => c.type === 'toolCall') ? 'toolUse' : 'stop',
+          timestamp,
+        }
+      }
+      const result: AgentMessage = {
+        role: 'toolResult',
+        toolCallId: m.id,
+        toolName: m.name,
+        content: [{ type: 'text', text: m.result }],
+        isError: m.status !== 'done',
+        timestamp,
+      }
+      this.statuses.set(result, m.status)
+      return result
+    })
   }
 
   private async getAgent(): Promise<Agent> {
@@ -257,6 +362,7 @@ export class CopilotAgent {
         systemPrompt: this.config.systemPrompt,
         model,
         tools: this.config.tools.map(toAgentTool),
+        messages: this.fromHistory(this.initial, model),
       },
       streamFn: (m, context, options) => streamSimple(m as Model<'openai-completions'>, context, options),
       // A fresh Clerk token for every model request; they expire within minutes.
@@ -404,6 +510,14 @@ function toUpdate(event: AgentEvent): AgentUpdate | undefined {
     default:
       return undefined
   }
+}
+
+const ZERO_COST = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }
+
+/** The text of a message's content: a string, or text blocks among others. */
+function textOf(content: string | { type: string; text?: string }[]): string {
+  if (typeof content === 'string') return content
+  return content.map((block) => (block.type === 'text' ? (block.text ?? '') : '')).join('\n')
 }
 
 /** The text a tool result gave the model. */
