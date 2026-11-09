@@ -35,6 +35,7 @@ export type NotionEndpoint =
   | 'syncRecordValuesMain'
   | 'saveTransactionsFanout'
   | 'search'
+  | 'queryCollection'
   | 'getSpaces'
 
 /** What one request to Notion returned. `error` is set when no HTTP response came back. */
@@ -190,6 +191,44 @@ export class NotionClient {
     if (requested.some((p) => !recordMap[p.table]?.[p.id])) throw missingRecord(signedIn)
     if (requested.some((p) => recordMap[p.table]![p.id].alive === false)) throw new NotionError('no_access', IN_TRASH)
     return recordMap
+  }
+
+  /**
+   * The rows of a database, at most `limit` of them, through one of its views. The view's own
+   * filters and sorts are not applied: every row comes back, in Notion's default order. Notion only
+   * returns rows the signed-in account can open.
+   */
+  async queryCollection(
+    collectionId: string,
+    viewId: string,
+    spaceId: string,
+    limit: number,
+  ): Promise<{ rowIds: string[]; hasMore: boolean; recordMap: RecordMap }> {
+    const space = notionId(spaceId)
+    const { json } = await this.request<{
+      result?: { reducerResults?: { collection_group_results?: { blockIds?: unknown; hasMore?: unknown } } }
+      recordMap?: unknown
+    }>(
+      'queryCollection',
+      {
+        source: { type: 'collection', id: notionId(collectionId), spaceId: space },
+        collectionView: { id: notionId(viewId), spaceId: space },
+        loader: {
+          type: 'reducer',
+          reducers: { collection_group_results: { type: 'results', limit } },
+          sort: [],
+          searchQuery: '',
+          // The user's own zone, as the tool's `Today:` uses.
+          userTimeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+        },
+      },
+      space,
+    )
+    const group = json.result?.reducerResults?.collection_group_results
+    const rowIds = Array.isArray(group?.blockIds)
+      ? group.blockIds.filter((id): id is string => typeof id === 'string')
+      : []
+    return { rowIds, hasMore: group?.hasMore === true, recordMap: normalizeRecordMap(json.recordMap) }
   }
 
   /** Like getRecords, but records that are missing, out of reach, or in the trash are just left out. */

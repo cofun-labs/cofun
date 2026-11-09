@@ -21,6 +21,7 @@
 - [x] Read Notion pages as Markdown: the open page or another one, in parts when long
 - [x] Search the workspace for pages, then read what it finds
 - [x] List the workspace's pages like the sidebar, or the pages under a page
+- [x] Read database rows as a table, filtered and sorted by their values
 - [x] Edit Notion pages: insert, replace, and delete content by block, after the user approves each change
 - [x] Create pages with content, after the user approves
 - [x] Work on what the user selected in the page
