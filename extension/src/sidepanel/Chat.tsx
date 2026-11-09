@@ -224,6 +224,9 @@ export function Chat({ userId }: { userId: string }) {
   async function open(id: string) {
     // The open session is already on screen, maybe with a reply still coming in.
     if (id === current?.id) return setView('chat')
+    // Stop the reply now, not once the session has loaded: it must not finish in the meantime.
+    declineAll()
+    agent.stop()
     const session = await store.get(id).catch((err: Error) => console.error('Could not open the session', err))
     if (session) switchTo(session)
   }

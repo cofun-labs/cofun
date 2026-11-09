@@ -6,7 +6,7 @@ Each conversation in the side panel is a session. A signed-in user can start a n
 
 Reopening a session shows the whole conversation, including the tools the agent used and what they returned, and the next question continues it: the AI has the earlier conversation as context, as if the session had never been closed. Switching to another session while a reply is still coming stops that reply first, so it never lands in the wrong session.
 
-Sessions are kept on the user's device and do not follow them to other devices. The service never stores them; it only sees the conversation the AI needs to answer the current question (see UC-AGENT-001 and UC-CHAT-002).
+Sessions are kept on the user's device and do not follow them to other devices. They stay there after the user signs out, so they can pick up again after signing back in. The service never stores them; it only sees the conversation the AI needs to answer the current question (see UC-AGENT-001 and UC-CHAT-002).
 
 Key constraints:
 
