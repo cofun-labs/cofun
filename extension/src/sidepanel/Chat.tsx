@@ -277,7 +277,7 @@ export function Chat({ userId }: { userId: string }) {
           saved={saved}
           onOpen={open}
           onDeleted={(id) => {
-            // The open session is gone; don't save it again under the same id.
+            // The open session is being deleted: stop its reply, so it isn't saved back.
             if (id !== current?.id) return
             switchTo()
             setView('sessions')

@@ -15,6 +15,7 @@ export function Sessions({
   saved: number
   /** Resolves false when the session no longer exists. */
   onOpen: (id: string) => Promise<boolean>
+  /** Called before the session is deleted. */
   onDeleted: (id: string) => void
 }) {
   const [sessions, setSessions] = useState<SessionInfo[] | null>(null)
@@ -41,8 +42,9 @@ export function Sessions({
     if (confirming !== id) return setConfirming(id)
     setConfirming(undefined)
     try {
-      await store.delete(id)
+      // First, so a reply still coming in for the open session stops and can't save it back.
       onDeleted(id)
+      await store.delete(id)
       await load()
     } catch (err) {
       setError(`Could not delete the session: ${(err as Error).message}`)

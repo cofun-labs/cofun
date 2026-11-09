@@ -76,6 +76,10 @@ export class SessionStore {
           db.close()
           this.db = undefined
         }
+        // Closed by the browser (e.g. site data cleared): reopen on next use instead of failing.
+        db.onclose = () => {
+          this.db = undefined
+        }
         resolve(db)
       }
       req.onerror = () => reject(req.error)
