@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { filterSessions, sessionPages, type SessionInfo, type SessionStore } from '../sessions'
 
 /** The list of saved sessions: search, filter by page, open, and delete. */
@@ -25,12 +25,18 @@ export function Sessions({
   // Deleting takes a second click on the same row, so a stray click loses nothing.
   const [confirming, setConfirming] = useState<string>()
 
+  // Loads can overlap (a save lands during a delete); only the newest one may update the list.
+  const loads = useRef(0)
+
   async function load() {
+    const n = ++loads.current
     try {
-      setSessions(await store.list())
+      const list = await store.list()
+      if (n !== loads.current) return
+      setSessions(list)
       setError(undefined)
     } catch (err) {
-      setError(`Could not load sessions: ${(err as Error).message}`)
+      if (n === loads.current) setError(`Could not load sessions: ${(err as Error).message}`)
     }
   }
 

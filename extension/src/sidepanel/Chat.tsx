@@ -64,9 +64,10 @@ export function Chat({ userId }: { userId: string }) {
   })
   const agent = agentRef.current
 
+  // Also on returning from the list: a hidden chat can't scroll while a reply streams in.
   useEffect(() => {
-    listRef.current?.scrollTo({ top: listRef.current.scrollHeight })
-  }, [messages])
+    if (view === 'chat') listRef.current?.scrollTo({ top: listRef.current.scrollHeight })
+  }, [messages, view])
 
   // The panel unmounts on sign-out; don't leave a question running tools in the background.
   useEffect(() => () => agentRef.current?.stop(), [])
