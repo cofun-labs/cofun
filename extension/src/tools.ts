@@ -203,7 +203,6 @@ export const searchPages: ToolSpec = {
     const names = await databaseNames(
       tab,
       found.results.map((r) => found.recordMap.block?.[r.id]),
-      spaceId,
     )
     const lines = found.results.map((r, n) => {
       const block = found.recordMap.block?.[r.id] as
@@ -249,8 +248,8 @@ function highlightTag(results: { highlight?: Record<string, unknown> }[]): strin
         counts.set(m[1], (counts.get(m[1]) ?? 0) + 1)
     }
   }
-  const random = (name: string) => Number(/^[A-Za-z0-9]{8}$/.test(name))
-  const ranked = [...counts].sort(([a, n], [b, m]) => random(b) - random(a) || m - n)
+  // Only Notion's shape counts: without one, no tag is removed at all.
+  const ranked = [...counts].filter(([name]) => /^[A-Za-z0-9]{8}$/.test(name)).sort(([, n], [, m]) => m - n)
   return ranked[0]?.[0]
 }
 
@@ -277,11 +276,7 @@ async function workspaceOf(tab: NotionTab): Promise<string> {
 }
 
 /** Names of the databases among `blocks`, by block id; databases that can't be looked up are left out. */
-async function databaseNames(
-  tab: NotionTab,
-  blocks: (NotionRecord | undefined)[],
-  spaceId: string,
-): Promise<Map<string, string>> {
+async function databaseNames(tab: NotionTab, blocks: (NotionRecord | undefined)[]): Promise<Map<string, string>> {
   const databases = blocks.filter(
     (b): b is NotionRecord => !!b && (b.type === 'collection_view_page' || b.type === 'collection_view'),
   )
@@ -291,14 +286,17 @@ async function databaseNames(
   const ids = [...new Set(databases.map(collectionOf).filter((id): id is string => !!id))]
   const names = new Map<string, string>()
   if (!ids.length) return names
-  try {
-    const records = await tab.client.getRecords(ids.map((id) => ({ table: 'collection' as const, id, spaceId })))
-    for (const b of databases) {
-      const name = runsText(records.collection?.[collectionOf(b) ?? '']?.name)
-      if (name) names.set(b.id, name)
-    }
-  } catch {
-    // Without them, databases are listed by the title Notion highlighted, or as untitled.
+  // One lookup per database, so one that can't be opened (say, a linked view of another
+  // workspace's database) leaves only its own name out.
+  const found = await Promise.allSettled(
+    ids.map((id) =>
+      tab.client.getRecords([{ table: 'collection', id }]).then((r) => [id, r.collection?.[id]] as const),
+    ),
+  )
+  const byCollection = new Map(found.flatMap((f) => (f.status === 'fulfilled' ? [f.value] : [])))
+  for (const b of databases) {
+    const name = runsText(byCollection.get(collectionOf(b) ?? '')?.name)
+    if (name) names.set(b.id, name)
   }
   return names
 }

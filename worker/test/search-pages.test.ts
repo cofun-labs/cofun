@@ -120,7 +120,7 @@ describe('UC-NOTION-004 find and read other pages', () => {
 describe('search_pages results', () => {
   it('removes only the highlight tag, keeping other <…> text', async () => {
     open().respond('search', 200, {
-      results: [{ id: FOUND, highlight: { title: 'Use <q1W2>Array</q1W2><string>', text: 'a <b> c' } }],
+      results: [{ id: FOUND, highlight: { title: 'Use <q1W2e3R4>Array</q1W2e3R4><string>', text: 'a <b> c' } }],
       total: 1,
       recordMap: { __version__: 3 },
     })
@@ -218,5 +218,54 @@ describe('search_pages, more results', () => {
     await expect(search({ query: 'x' })).rejects.toThrow(
       'The open page is in the trash. Open another page of the workspace to search it.',
     )
+  })
+})
+
+describe('search_pages, partial lookups', () => {
+  it('names the databases it can, when another one cannot be looked up', async () => {
+    const here = 'f4f4f4f4-0000-4000-8000-000000000001'
+    const A = 'c1c1c1c1-0000-4000-8000-000000000001'
+    const B = 'c1c1c1c1-0000-4000-8000-000000000002'
+    const dbA = 'f4f4f4f4-0000-4000-8000-00000000000a'
+    const dbB = 'f4f4f4f4-0000-4000-8000-00000000000b'
+    new FakeNotionTab(`https://app.notion.com/${hex(here)}`)
+      .respond('syncRecordValuesMain', 200, {
+        recordMap: { __version__: 3, block: { [here]: wrapped({ id: here, type: 'page' }) } },
+      })
+      .respond('search', 200, {
+        results: [{ id: dbA }, { id: dbB }],
+        total: 2,
+        recordMap: {
+          __version__: 3,
+          block: {
+            [dbA]: wrapped({ id: dbA, type: 'collection_view_page', collection_id: A }),
+            [dbB]: wrapped({ id: dbB, type: 'collection_view', format: { collection_pointer: { id: B } } }),
+          },
+        },
+      })
+      .respond('syncRecordValuesMain', 200, {
+        recordMap: { __version__: 3, collection: { [A]: wrapped({ id: A, name: [['Roadmap']] }) } },
+      })
+      // The other database's source is out of reach: Notion answers with nothing.
+      .respond('syncRecordValuesMain', 200, { recordMap: { __version__: 3 } })
+      .install()
+    const result = await search({ query: 'x' })
+    expect(result).toContain(`1. 🗃 Roadmap ^${hex(dbA)}`)
+    expect(result).toContain(`2. 🗃 Untitled database ^${hex(dbB)}`)
+  })
+
+  it("removes no tag when the response has none in Notion's shape", async () => {
+    const here = 'f5f5f5f5-0000-4000-8000-000000000001'
+    new FakeNotionTab(`https://app.notion.com/${hex(here)}`)
+      .respond('syncRecordValuesMain', 200, {
+        recordMap: { __version__: 3, block: { [here]: wrapped({ id: here, type: 'page' }) } },
+      })
+      .respond('search', 200, {
+        results: [{ id: FOUND, highlight: { title: 'Use <b>bold</b> here' } }],
+        total: 1,
+        recordMap: { __version__: 3 },
+      })
+      .install()
+    expect(await search({ query: 'bold' })).toContain(`1. 📄 Use <b>bold</b> here ^${hex(FOUND)}`)
   })
 })
