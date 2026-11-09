@@ -104,18 +104,29 @@ export class SessionStore {
 /** A session's title: its first question, on one line and cut to a readable length. */
 export function titleFor(messages: HistoryMessage[]): string {
   const first = messages.find((m) => m.role === 'user')
-  const line = (first?.text ?? '').replace(/\s+/g, ' ').trim()
-  return line.length > TITLE_LENGTH ? `${line.slice(0, TITLE_LENGTH - 1)}…` : line
+  // By characters, not UTF-16 units, so an emoji is never cut in half.
+  const chars = Array.from((first?.text ?? '').replace(/\s+/g, ' ').trim())
+  return chars.length > TITLE_LENGTH ? `${chars.slice(0, TITLE_LENGTH - 1).join('')}…` : chars.join('')
 }
 
-/** Identifies a Notion page by its URL without the query or fragment, which change as the user browses. */
+/**
+ * Identifies a Notion page by its id, so a renamed page, the other Notion host, or a page opened in
+ * side peek (`?p=<id>`) still counts as the same page. Falls back to the URL without its query.
+ */
 export function pageKey(url: string): string {
   try {
     const u = new URL(url)
-    return `${u.origin}${u.pathname}`
+    const id = notionId(u.searchParams.get('p') ?? '') ?? notionId(u.pathname.split('/').at(-1) ?? '')
+    return id ?? `${u.origin}${u.pathname}`
   } catch {
     return url
   }
+}
+
+/** The 32-hex page id at the end of `text`, with or without dashes. */
+function notionId(text: string): string | undefined {
+  const hex = text.replace(/-/g, '').match(/[0-9a-f]{32}$/i)?.[0]
+  return hex?.toLowerCase()
 }
 
 /** The pages sessions started on, once each, with the newest title seen for each. */

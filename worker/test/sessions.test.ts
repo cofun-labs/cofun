@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it } from 'vitest'
 import type { HistoryMessage } from '../../extension/src/agent'
 import {
   filterSessions,
+  pageKey,
   sessionPages,
   SessionStore,
   titleFor,
@@ -102,10 +103,31 @@ describe('saved sessions', () => {
     expect(await store.list()).toEqual([])
   })
 
+  it('a page is the same page after a rename, on the other Notion host, and in side peek', () => {
+    const id = '41233b11f78380158c48f4e72c4b0430'
+    const keys = [
+      `https://www.notion.so/team/To-Do-List-${id}`,
+      `https://www.notion.so/team/Tasks-${id}?pvs=4`,
+      `https://app.notion.com/p/To-Do-List-${id}`,
+      `https://www.notion.so/team/${id}`,
+      `https://www.notion.so/team/Projects-1111aaaa2222bbbb3333cccc4444dddd?p=${id}&pm=s`,
+      `https://app.notion.com/p/41233b11-f783-8015-8c48-f4e72c4b0430`,
+    ].map(pageKey)
+    expect(new Set(keys)).toEqual(new Set([id]))
+    // The database a page peeks from is another page.
+    expect(pageKey('https://www.notion.so/team/Projects-1111aaaa2222bbbb3333cccc4444dddd')).not.toBe(id)
+    // A URL without a page id falls back to the URL without its query.
+    expect(pageKey('https://www.notion.so/team?pvs=4')).toBe('https://www.notion.so/team')
+  })
+
   it('a title is the first question on one line, cut to a readable length', () => {
     expect(titleFor([{ role: 'user', text: '  Line one\n\nline two ' }])).toBe('Line one line two')
     const long = titleFor([{ role: 'user', text: 'x'.repeat(300) }])
     expect(long).toHaveLength(100)
     expect(long.endsWith('…')).toBe(true)
+    // An emoji where the cut falls stays whole.
+    const emoji = titleFor([{ role: 'user', text: 'x'.repeat(98) + '🦩'.repeat(5) }])
+    expect(Array.from(emoji)).toHaveLength(100)
+    expect(emoji).toBe('x'.repeat(98) + '🦩…')
   })
 })
