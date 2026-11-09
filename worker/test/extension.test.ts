@@ -584,6 +584,7 @@ describe('extension agent against the worker', () => {
 
     await ask(agent, 'hi')
     expect(sentMessages(1).map((m) => m.role)).toEqual(['system', 'user', 'assistant', 'tool', 'user'])
+    expect(sentMessages(1)[3]).toEqual({ role: 'tool', tool_call_id: 'chatcmpl-tool-0', content: 'Operation aborted' })
   })
 
   it('a new chat while the user is asked counts as no', async () => {
