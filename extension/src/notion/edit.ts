@@ -241,7 +241,9 @@ export function planEdit(
     if (!block || block.alive === false) {
       throw new EditError(`${what} was deleted since you read the page. ${READ_AGAIN}`)
     }
-    if (!read.versions.has(id)) throw new EditError(`${what} wasn't shown to you when you read the page. ${READ_AGAIN}`)
+    if (!read.versions.has(id)) {
+      throw new EditError(`${what} wasn't shown to you: read the part of the page it is in, then redo the edit.`)
+    }
     if (block.version !== read.versions.get(id)) {
       throw new EditError(`${what} was changed since you read the page. ${READ_AGAIN}`)
     }

@@ -949,3 +949,24 @@ describe('round 11', () => {
     ])
   })
 })
+
+describe('round 12', () => {
+  it('[UC-NOTION-002-S02] refuses to delete a long block before every part of it was read', async () => {
+    const n = 300
+    const items = Array.from({ length: n }, (_, i) =>
+      block(i + 2, 'bulleted_list', `Item ${i} ${'t'.repeat(60)}`, {}, id(1)),
+    )
+    const ws = workspace([1], [block(1, 'toggle', 'Big', { content: items.map((_, i) => id(i + 2)) }), ...items])
+    open(ws)
+    const parts = Number(/Part 1 of (\d+)/.exec(await read())![1])
+    expect(parts).toBeGreaterThan(1)
+    // Every part but the last read: some of the toggle's items are still unseen.
+    for (let part = 2; part < parts; part++) await read({ part })
+    await expect(edit([{ action: 'delete', block: '^00000001' }])).rejects.toThrow(
+      "wasn't shown to you: read the part of the page it is in",
+    )
+    await read({ part: parts })
+    await edit([{ action: 'delete', block: '^00000001' }])
+    expect(ws.records.get(id(1))).toMatchObject({ alive: false })
+  })
+})

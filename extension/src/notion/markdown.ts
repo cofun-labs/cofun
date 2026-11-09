@@ -18,8 +18,8 @@ export interface PageMarkdown {
   refs: Map<string, string>
   /** Each block's own Markdown (without children or reference), by block id. */
   lines: Map<string, string>
-  /** The ids of the blocks each section draws, by section: what reading that section shows. */
-  drawn: string[][]
+  /** For each section, the id of the block each of its lines belongs to. */
+  owners: string[][]
 }
 
 /** Ids as the Markdown shows them: 32 hex digits, no dashes. */
@@ -74,19 +74,19 @@ export function pageToMarkdown({ page, recordMap }: LoadedPage): PageMarkdown {
     kind: isDatabase ? 'database' : 'page',
     refs: ctx.refs,
     lines: ctx.lines,
-    drawn: ctx.sectionIds,
+    owners: ctx.sectionOwners,
   }
 }
 
 class Context {
   refs = new Map<string, string>()
   lines = new Map<string, string>()
-  /** Ids drawn by each top-level section, in order. */
-  sectionIds: string[][] = []
+  /** For each top-level section, the id of the block each of its lines belongs to. */
+  sectionOwners: string[][] = []
   /** Whether children() is drawing the page's top level, where each block starts a section. */
   topLevel = false
-  /** Where blocks drawn now are recorded: the current section's ids. */
-  private drawn: string[] | undefined
+  /** Line owners of the blocks drawn inside each block being drawn. */
+  private ownerFrames: string[][] = []
 
   constructor(
     private readonly recordMap: RecordMap,
@@ -117,25 +117,25 @@ class Context {
         out.push(...this.children(block, depth))
         continue
       }
-      // Blocks drawn while drawing a top-level block belong to its section.
+      // Which block each line belongs to: the lines blocks nested in this one draw are collected
+      // while it is drawn.
       const top = this.topLevel
-      const outer = this.drawn
-      const section: string[] = []
-      if (top) this.drawn = section
       this.topLevel = false
+      this.ownerFrames.push([])
       const lines = block ? this.block(block, depth, number) : [`${indent(depth)}[block not loaded]${this.ref(id)}`]
+      const nestedOwners = this.ownerFrames.pop()!
       this.topLevel = top
-      if (lines.length) this.drawn?.push(id)
-      if (top) {
-        this.drawn = outer
-        if (lines.length) this.sectionIds.push(section)
-      }
       if (lines.length) {
         out.push(lines)
         // The block's own Markdown: its lines up to the one carrying its reference, without its
         // children, its reference, or the indentation of its depth.
         const ref = this.ref(id).trim()
         const end = lines.findIndex((l) => l.endsWith(` ${ref}`) || l.trim() === ref)
+        const owners = [...Array<string>(end < 0 ? 1 : end + 1).fill(id), ...nestedOwners]
+        while (owners.length < lines.length) owners.push(id)
+        owners.length = lines.length
+        this.ownerFrames.at(-1)?.push(...owners)
+        if (top) this.sectionOwners.push(owners)
         const pad = indent(depth)
         const own = lines
           .slice(0, end < 0 ? 1 : end + 1)
@@ -425,12 +425,16 @@ function formatDate(arg: unknown): string {
  * one section alone is longer: then it is broken between lines (and a line longer than `max`, into
  * pieces). `members` lists the sections each part shows, whole or in part.
  */
-export function splitSections(sections: string[], max: number): { parts: string[]; members: number[][] } {
+export function splitSections(
+  sections: string[],
+  max: number,
+): { parts: string[]; members: { section: number; from: number; to: number }[][] } {
+  type Member = { section: number; from: number; to: number }
   const parts: string[] = []
-  const members: number[][] = []
+  const members: Member[][] = []
   let current = ''
   let started = false
-  let inPart: number[] = []
+  let inPart: Member[] = []
   const push = () => {
     if (started) {
       parts.push(current)
@@ -440,23 +444,27 @@ export function splitSections(sections: string[], max: number): { parts: string[
     started = false
     inPart = []
   }
-  const add = (text: string, section: number) => {
+  /** Adds lines `from`..`to` (exclusive) of section `section`. */
+  const add = (text: string, section: number, from: number, to: number) => {
     current = started ? `${current}\n${text}` : text
     started = true
-    if (inPart.at(-1) !== section) inPart.push(section)
+    const last = inPart.at(-1)
+    if (last && last.section === section && last.to >= from) last.to = Math.max(last.to, to)
+    else inPart.push({ section, from, to })
   }
   sections.forEach((section, n) => {
-    if ((started ? current.length + 1 : 0) + section.length <= max) return add(section, n)
+    const count = section.split('\n').length
+    if ((started ? current.length + 1 : 0) + section.length <= max) return add(section, n, 0, count)
     push()
-    if (section.length <= max) return add(section, n)
-    for (const whole of section.split('\n')) {
+    if (section.length <= max) return add(section, n, 0, count)
+    section.split('\n').forEach((whole, i) => {
       for (let at = 0; at < Math.max(whole.length, 1); at += max) {
         const line = whole.slice(at, at + max)
         if (started && current.length + 1 + line.length > max) push()
         // A blank line that starts a part is still a line.
-        add(line, n)
+        add(line, n, i, i + 1)
       }
-    }
+    })
   })
   push()
   return parts.length ? { parts, members } : { parts: [''], members: [[]] }

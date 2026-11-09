@@ -103,7 +103,7 @@ export const readPage: ToolSpec = {
     // What edit_page checks edits against: only the blocks this read showed, as they were. Part 1
     // starts a new read; later parts add to it.
     // The blocks this part drew, as the renderer reports them: never inferred from page text.
-    const drawn = new Set(members[part - 1].flatMap((section) => md.drawn[section]))
+    const drawn = new Set(members[part - 1].flatMap(({ section, from, to }) => md.owners[section].slice(from, to)))
     const seen = pageRead(loaded, md, (b) => drawn.has(b))
     remember(part === 1 ? seen : mergeReads(pageReads.get(loaded.page.id), seen))
     return [...header, '', ...properties, ...(body ? [body] : [])].join('\n')
