@@ -206,6 +206,27 @@ describe('extension agent against the worker', () => {
     ])
   })
 
+  it('a question stopped while the open page is read is never sent', async () => {
+    let release!: () => void
+    const reading = new Promise<void>((r) => (release = r))
+    let read!: () => void
+    const started = new Promise<void>((r) => (read = r))
+    const agent = makeAgent({
+      context: async () => {
+        read()
+        await reading
+        return '[No Notion page is open in the current tab.]'
+      },
+    })
+    const question = agent.ask('hi', () => {})
+    await started
+    agent.stop()
+    release()
+    expect(await question).toEqual({ status: 'stopped' })
+    expect(ai.calls).toHaveLength(0)
+    expect(agent.history()).toEqual([])
+  })
+
   it('asks the question without a note when reading the open page fails', async () => {
     const agent = makeAgent({
       context: async () => {
