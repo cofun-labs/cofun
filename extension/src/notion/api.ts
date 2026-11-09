@@ -30,7 +30,7 @@ export const OUTCOME_UNKNOWN =
   'Notion did not answer, so the change may or may not have been saved. Read the page again before retrying.'
 
 /** The endpoints under /api/v3/ the client uses. */
-export type NotionEndpoint = 'loadPageChunk' | 'syncRecordValuesMain' | 'saveTransactionsFanout'
+export type NotionEndpoint = 'loadPageChunk' | 'syncRecordValuesMain' | 'saveTransactionsFanout' | 'queryCollection'
 
 /** What one request to Notion returned. `error` is set when no HTTP response came back. */
 export interface NotionResponse {
@@ -144,6 +144,42 @@ export class NotionClient {
     if (requested.some((p) => !recordMap[p.table]?.[p.id])) throw missingRecord(signedIn)
     if (requested.some((p) => recordMap[p.table]![p.id].alive === false)) throw new NotionError('no_access', IN_TRASH)
     return recordMap
+  }
+
+  /**
+   * The rows of a database, in the order of one of its views, at most `limit` of them. Notion only
+   * returns rows the signed-in account can open.
+   */
+  async queryCollection(
+    collectionId: string,
+    viewId: string,
+    spaceId: string,
+    limit: number,
+  ): Promise<{ rowIds: string[]; hasMore: boolean; recordMap: RecordMap }> {
+    const space = notionId(spaceId)
+    const { json } = await this.request<{
+      result?: { reducerResults?: { collection_group_results?: { blockIds?: unknown; hasMore?: unknown } } }
+      recordMap?: unknown
+    }>(
+      'queryCollection',
+      {
+        source: { type: 'collection', id: notionId(collectionId), spaceId: space },
+        collectionView: { id: notionId(viewId), spaceId: space },
+        loader: {
+          type: 'reducer',
+          reducers: { collection_group_results: { type: 'results', limit } },
+          sort: [],
+          searchQuery: '',
+          userTimeZone: 'UTC',
+        },
+      },
+      space,
+    )
+    const group = json.result?.reducerResults?.collection_group_results
+    const rowIds = Array.isArray(group?.blockIds)
+      ? group.blockIds.filter((id): id is string => typeof id === 'string')
+      : []
+    return { rowIds, hasMore: group?.hasMore === true, recordMap: normalizeRecordMap(json.recordMap) }
   }
 
   /** Applies operations in one transaction: Notion applies all of them or none. */

@@ -66,6 +66,25 @@ export function pageToMarkdown({ page, recordMap }: LoadedPage): PageMarkdown {
   }
 }
 
+/** A database's property definitions, by property id (the title's is `title`). */
+export type Schema = Record<string, { name?: string; type?: string }>
+
+/** Each property of a database row as text: the title first, then the rest in the schema's order. */
+export function rowValues(
+  recordMap: RecordMap,
+  row: Block,
+  schema: Schema,
+): { name: string; type: string; value: string }[] {
+  const ctx = new Context(recordMap, (recordMap.block ?? {}) as Record<string, Block>)
+  const isTitle = ([key, s]: [string, { type?: string }]) => key === 'title' || s.type === 'title'
+  const entries = Object.entries(schema)
+  return [...entries.filter(isTitle), ...entries.filter((e) => !isTitle(e))].map(([key, s]) => ({
+    name: s.name ?? key,
+    type: s.type ?? 'text',
+    value: isTitle([key, s]) ? ctx.rich(row.properties?.title) : ctx.property(row, key, s.type),
+  }))
+}
+
 class Context {
   refs = new Map<string, string>()
 
@@ -232,7 +251,7 @@ class Context {
     return out
   }
 
-  private property(page: Block, key: string, type: string | undefined): string {
+  property(page: Block, key: string, type: string | undefined): string {
     switch (type) {
       // Notion keeps these on the row itself, not in its properties.
       case 'created_time':
