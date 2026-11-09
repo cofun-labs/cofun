@@ -228,7 +228,8 @@ export class NotionClient {
       space,
     )
     const results = (json.results ?? []).filter((r) => typeof r?.id === 'string')
-    return { results, total: json.total ?? results.length, recordMap: normalizeRecordMap(json.recordMap) }
+    const total = typeof json.total === 'number' && Number.isFinite(json.total) ? json.total : results.length
+    return { results, total: Math.max(total, results.length), recordMap: normalizeRecordMap(json.recordMap) }
   }
 
   /** `spaceId`, when known, goes along as `x-notion-space-id`. */
