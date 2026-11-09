@@ -269,3 +269,26 @@ describe('search_pages, partial lookups', () => {
     expect(await search({ query: 'bold' })).toContain(`1. 📄 Use <b>bold</b> here ^${hex(FOUND)}`)
   })
 })
+
+describe('search_pages, tags and trash', () => {
+  it('strips a highlight tag that starts with a digit, and leaves out trashed pages', async () => {
+    const here = 'f6f6f6f6-0000-4000-8000-000000000001'
+    const gone = 'f6f6f6f6-0000-4000-8000-000000000002'
+    new FakeNotionTab(`https://app.notion.com/${hex(here)}`)
+      .respond('syncRecordValuesMain', 200, {
+        recordMap: { __version__: 3, block: { [here]: wrapped({ id: here, type: 'page' }) } },
+      })
+      .respond('search', 200, {
+        results: [
+          { id: FOUND, highlight: { title: 'Launch <3kQ9aZpx>plan</3kQ9aZpx>' } },
+          { id: gone, highlight: { title: 'Old <3kQ9aZpx>plan</3kQ9aZpx>' } },
+        ],
+        total: 2,
+        recordMap: { __version__: 3, block: { [gone]: wrapped({ id: gone, type: 'page', alive: false }) } },
+      })
+      .install()
+    const result = await search({ query: 'plan' })
+    expect(result).toContain(`1. 📄 Launch plan ^${hex(FOUND)}`)
+    expect(result).not.toContain(hex(gone))
+  })
+})

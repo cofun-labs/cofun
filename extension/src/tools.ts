@@ -4,7 +4,17 @@
 import type { ToolSpec } from './agent'
 import { IN_TRASH, NotionError, mergeRecordMaps, type LoadedPage, type NotionRecord } from './notion/api'
 import { isNotion, pageIdFromUrl, toUuid } from './notion/hosts'
-import { PAGE_TYPES, hexId, pageToMarkdown, splitIntoParts } from './notion/markdown'
+import {
+  EditError,
+  forget,
+  mergeReads,
+  parseEdits,
+  pageRead,
+  planEdit,
+  previewEdits,
+  type PageRead,
+} from './notion/edit'
+import { PAGE_TYPES, hexId, pageToMarkdown, splitSections } from './notion/markdown'
 import { activeNotionTab, type NotionTab } from './notion/tab'
 
 /**
@@ -67,7 +77,7 @@ export const readPage: ToolSpec = {
       throw new Error('That id is a block inside a page, not a page. Read the page it is on instead.')
     }
     const md = pageToMarkdown(loaded)
-    const parts = splitIntoParts(md.sections, PART_CHARS)
+    const { parts, members } = splitSections(md.sections, PART_CHARS)
     if (part > parts.length) {
       throw new Error(`This page has ${parts.length} part${parts.length === 1 ? '' : 's'}; there is no part ${part}.`)
     }
@@ -90,6 +100,12 @@ export const readPage: ToolSpec = {
     ]
     const properties = part === 1 && md.properties.length ? ['---', ...md.properties, '---'] : []
     const body = parts[part - 1] || (md.kind === 'page' ? '(This page is empty.)' : '')
+    // What edit_page checks edits against: only the blocks this read showed, as they were. Part 1
+    // starts a new read; later parts add to it.
+    // The blocks this part drew, as the renderer reports them: never inferred from page text.
+    const drawn = new Set(members[part - 1].flatMap(({ section, from, to }) => md.owners[section].slice(from, to)))
+    const seen = pageRead(loaded, md, (b) => drawn.has(b))
+    remember(part === 1 ? seen : mergeReads(pageReads.get(loaded.page.id), seen))
     return [...header, '', ...properties, ...(body ? [body] : [])].join('\n')
   },
 }
@@ -99,7 +115,11 @@ export const readPage: ToolSpec = {
  * slug ending in its id (`Title-<id>`), or a reference to a page (`^<id>`).
  */
 function pageArg(text: string): string | undefined {
-  let value = text.trim().replace(/^\^/, '')
+  // `/<id>` is how read_page shows links to pages.
+  let value = text
+    .trim()
+    .replace(/^\^/, '')
+    .replace(/^\/(?=[0-9a-f]{32}\b)/i, '')
   if (/^((www\.)?notion\.so|app\.notion\.com)\//i.test(value)) value = `https://${value}`
   // notion.so redirects to www.notion.so, the host Notion's pages live on.
   value = value.replace(/^https:\/\/notion\.so\//i, 'https://www.notion.so/')
@@ -158,6 +178,137 @@ async function loadWithDatabase(tab: NotionTab, id: string): Promise<Loaded> {
   }
 }
 
+/** The last read of each page, by page id: what edit_page checks edits against. */
+const pageReads = new Map<string, PageRead>()
+
+/** Forgets what the agent read, for a new or another conversation, which must read pages itself. */
+export function forgetReads(): void {
+  pageReads.clear()
+  recentReads.clear()
+}
+
+const EDIT_ITEM = {
+  type: 'object',
+  properties: {
+    action: { type: 'string', enum: ['insert', 'replace', 'delete'] },
+    block: {
+      type: 'string',
+      description:
+        'Reference of the block, as read_page shows it (e.g. ^1a2b3c4d). For insert: the block to insert after.',
+    },
+    position: {
+      type: 'string',
+      enum: ['after', 'start', 'end'],
+      description: 'For insert: after `block` (the default when `block` is given), or at the start or end of the page.',
+    },
+    markdown: { type: 'string', description: 'For insert and replace: the new content, as Markdown.' },
+  },
+  required: ['action'],
+  additionalProperties: false,
+}
+
+export const editPage: ToolSpec = {
+  name: 'edit_page',
+  description:
+    'Changes a Notion page you have read with read_page: insert Markdown after a block or at the start or end of the ' +
+    'page, replace a block with Markdown, or delete a block. Blocks are named by the references read_page shows. ' +
+    'All edits in one call are applied together, or none are. Supported Markdown: paragraphs, # headings, - lists, ' +
+    '1. lists, - [ ] to-dos, ▸ toggles, > quotes, > [!💡] callouts, ``` code, ---, $$equations$$, **bold**, *italic*, ' +
+    '~~strike~~, `code`, [links](url), and [page](<page id>) mentions; a backslash keeps a character literal. ' +
+    'Indent by two spaces to nest under lists, to-dos, toggles, and paragraphs; quotes and callouts hold text only. ' +
+    "Child pages, databases, files, and tables can't be written. If the page changed since you read it, the edit is " +
+    'refused: read it again and redo the edit.',
+  parameters: {
+    type: 'object',
+    properties: {
+      page: { type: 'string', description: 'Id of the page to edit, as read_page shows it after "Page:".' },
+      edits: { type: 'array', items: EDIT_ITEM, minItems: 1 },
+    },
+    required: ['page', 'edits'],
+    additionalProperties: false,
+  },
+  needsConfirmation: true,
+  preview: (args) => {
+    const given = givenPage(args)
+    if (!given) return undefined
+    return previewEdits(args.edits, pageReads.get(pageArg(given) ?? ''), given)
+  },
+  run: async (args, signal) => {
+    // The page is named in the call, so what the user approves is the page that gets changed.
+    const given = givenPage(args)
+    if (!given) throw new EditError('Give `page`: the id read_page shows after "Page:".')
+    const id = pageArg(given)
+    if (!id) throw new Error(`Not a Notion page URL or id: ${given}`)
+    const tab = await activeNotionTab()
+    const read = pageReads.get(id)
+    if (!read) throw new EditError('Read the page with read_page first, then edit it using the references it shows.')
+    const edits = parseEdits(args.edits, read)
+
+    const loaded = await tab.client.loadPage(id)
+    if (loaded.page.type !== 'page') {
+      throw new EditError(
+        PAGE_TYPES.has(loaded.page.type)
+          ? "That is a database; edit_page can't change it."
+          : 'That id is a block inside a page, not a page.',
+      )
+    }
+    const plan = planEdit(loaded, read, edits)
+    // The last point where nothing has been sent: a Stop pressed while the page loaded wins.
+    // Every edit was a no-op: there is nothing to send, and the page stays as read.
+    if (!plan.operations.length) return plan.summary.join('\n')
+    signal?.throwIfAborted()
+    try {
+      await tab.client.submitTransaction(loaded.spaceId, plan.operations, 'Notion Copilot: edit_page')
+    } catch (err) {
+      // The edit may have been saved: a retry from the same read could apply it twice, so the
+      // page must be read again first, which also shows whether it landed.
+      if (err instanceof NotionError && err.code === 'outcome_unknown') {
+        pageReads.delete(id)
+        for (const key of recentReads.keys()) if (key.endsWith(`:${id}`)) recentReads.delete(key)
+      }
+      throw err
+    }
+
+    // The page changed: forget cached parts. What the agent saw stays as it was, except for what
+    // this edit changed, so a block the user changed meanwhile is still refused.
+    for (const key of recentReads.keys()) if (key.endsWith(`:${id}`)) recentReads.delete(key)
+    // Blocks it changed or deleted need a new read before they are edited again.
+    let next = forget(read, [...plan.deleted, ...plan.changed.filter((b) => b !== id)])
+    let newRefs = ''
+    try {
+      const after = await tab.client.loadPage(id)
+      // Only the blocks this edit created: anyone may have changed the others since it was saved,
+      // so blocks it changed are left for the next read_page to show.
+      const ours = new Set(plan.createdAll)
+      next = mergeReads(
+        next,
+        pageRead(after, pageToMarkdown(after), (b) => ours.has(b)),
+      )
+      const refs = plan.created.map((c) => next.refs.get(c)).filter(Boolean)
+      if (refs.length) newRefs = `New blocks: ${refs.map((r) => `^${r}`).join(', ')}.`
+    } catch {
+      // The edit is saved; blocks it changed will be refused until the page is read again.
+    }
+    remember(next)
+    return [...plan.summary, newRefs, 'Read the page again to see the result.'].filter(Boolean).join('\n')
+  },
+}
+
+/** The page argument, if given; null and blank mean not given. */
+function givenPage(args: Record<string, unknown>): string | undefined {
+  return typeof args.page === 'string' && args.page.trim() ? args.page : undefined
+}
+
+/** How many pages' reads are kept; the oldest go first. */
+const READS_KEPT = 20
+
+/** Keeps a read, as the most recent one. */
+function remember(read: PageRead) {
+  pageReads.delete(read.pageId)
+  pageReads.set(read.pageId, read)
+  if (pageReads.size > READS_KEPT) pageReads.delete(pageReads.keys().next().value!)
+}
+
 export const SEARCH_DEFAULT = 10
 export const SEARCH_MAX = 20
 
@@ -195,6 +346,8 @@ export const searchPages: ToolSpec = {
     const spaceId = await workspaceOf(tab)
 
     const found = await tab.client.search(spaceId, query, limit)
+    // A page in the trash can't be read, so it isn't offered.
+    found.results = found.results.filter((r) => found.recordMap.block?.[r.id]?.alive !== false)
     if (!found.results.length) return `No pages found for "${query}".`
     const origin = new URL(tab.url).origin
     const tag = highlightTag(found.results)
@@ -244,8 +397,7 @@ function highlightTag(results: { highlight?: Record<string, unknown> }[]): strin
   for (const r of results) {
     for (const text of Object.values(r.highlight ?? {})) {
       if (typeof text !== 'string') continue
-      for (const m of text.matchAll(/<([A-Za-z][A-Za-z0-9]*)>[^<]*<\/\1>/g))
-        counts.set(m[1], (counts.get(m[1]) ?? 0) + 1)
+      for (const m of text.matchAll(/<([A-Za-z0-9]+)>[^<]*<\/\1>/g)) counts.set(m[1], (counts.get(m[1]) ?? 0) + 1)
     }
   }
   // Only Notion's shape counts: without one, no tag is removed at all.
@@ -314,4 +466,4 @@ function clip(text: string, max: number): string {
   return text.length > max ? `${text.slice(0, max - 1)}…` : text
 }
 
-export const TOOLS: ToolSpec[] = [getCurrentPage, readPage, searchPages]
+export const TOOLS: ToolSpec[] = [getCurrentPage, readPage, editPage, searchPages]

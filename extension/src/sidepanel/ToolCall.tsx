@@ -10,6 +10,8 @@ export interface ShownTool {
   status: 'running' | 'confirm' | ToolStatus
   /** What the model got back, or the error. Empty while running. */
   result: string
+  /** What the call would change, in words, shown while the user is asked. */
+  preview?: string
 }
 
 const MARK: Record<ShownTool['status'], string> = {
@@ -56,6 +58,12 @@ export const ToolCall = memo(function ToolCall({
           {input && <span className="tool-input"> {input}</span>}
         </summary>
         <div className="tool-body">
+          {tool.preview && (
+            <>
+              <div className="tool-label">Changes</div>
+              <pre>{tool.preview}</pre>
+            </>
+          )}
           <div className="tool-label">Arguments</div>
           <pre>{pretty(tool.args)}</pre>
           {/* Nothing has run yet while the user is asked. */}
