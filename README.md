@@ -19,6 +19,7 @@
 - [x] Basic agent: the model calls tools that run in the extension (first tool: the current page's title and URL)
 - [x] Sessions: start, list, search, filter by page, delete, and resume past conversations, kept on the device
 - [x] Read Notion pages as Markdown: the open page or another one, in parts when long
+- [x] Read database rows as a table, filtered and sorted by their values
 - [ ] Edit the current Notion page
 
 ## Tech choices

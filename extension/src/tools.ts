@@ -248,7 +248,8 @@ export const queryDatabase: ToolSpec = {
     const from = (part - 1) * QUERY_PART + 1
     const header = [
       `Database: ${name} ^${hexId(id)}`,
-      `Today: ${new Date().toISOString().slice(0, 10)}`,
+      // The user's own date, not UTC's, so "overdue" means what they'd say.
+      `Today: ${localDate(new Date())}`,
       `Properties: ${rowValuesHeader(schema)}`,
       `${filters.length ? 'Matching rows' : 'Rows'}: ${rows.length}` +
         (rows.length ? ` (showing ${from}–${from + shown.length - 1})` : '') +
@@ -355,6 +356,12 @@ function compareValues(a: string, b: string): number {
   // Empty values go last.
   if (!a || !b) return a ? -1 : b ? 1 : 0
   return a.localeCompare(b)
+}
+
+/** A date as YYYY-MM-DD in the browser's time zone. */
+export function localDate(d: Date): string {
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
 }
 
 function runsText(value: unknown): string {
