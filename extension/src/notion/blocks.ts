@@ -41,7 +41,7 @@ export const TEXT_TYPES = new Set([
 ])
 
 /** A block reference at the end of a line (` ^1a2b3c4d` or a full id), as read_page writes them. */
-const TRAILING_REF = /\s*\^[0-9a-f]{8}(?:[0-9a-f]{24})?\s*$/i
+const TRAILING_REF = /\s+\^[0-9a-f]{8}(?:[0-9a-f]{24})?\s*$/i
 const REF_LINE = /^\s*\^[0-9a-f]{8}(?:[0-9a-f]{24})?\s*$/i
 /** Lines read_page writes for content that can't be written back, and nothing else (not a `[file](url)` link). */
 const PLACEHOLDER =

@@ -108,9 +108,17 @@ class Context {
       const lines = block ? this.block(block, depth, number) : [`${indent(depth)}[block not loaded]${this.ref(id)}`]
       if (lines.length) {
         out.push(lines)
-        const ref = this.ref(id)
-        const own = lines.find((l) => l.endsWith(ref)) ?? lines[0]
-        this.lines.set(id, own.slice(0, own.length - (own.endsWith(ref) ? ref.length : 0)).trim())
+        // The block's own Markdown: its lines up to the one carrying its reference, without its
+        // children, its reference, or the indentation of its depth.
+        const ref = this.ref(id).trim()
+        const end = lines.findIndex((l) => l.endsWith(` ${ref}`) || l.trim() === ref)
+        const pad = indent(depth)
+        const own = lines
+          .slice(0, end < 0 ? 1 : end + 1)
+          .map((l) => (l.startsWith(pad) ? l.slice(pad.length) : l.trimStart()))
+          .map((l) => (l.trim() === ref ? '' : l.endsWith(` ${ref}`) ? l.slice(0, -ref.length - 1) : l))
+        while (own.length > 1 && !own.at(-1)!.trim()) own.pop()
+        this.lines.set(id, own.join('\n'))
       }
     }
     return out

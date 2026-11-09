@@ -2,7 +2,7 @@
 // transactions the way Notion does, so each test checks the page as it is after the edit.
 import { afterEach, describe, expect, it } from 'vitest'
 import { inline, parseMarkdown } from '../../extension/src/notion/blocks'
-import { editPage, readPage } from '../../extension/src/tools'
+import { editPage, forgetReads, readPage } from '../../extension/src/tools'
 import { FakeNotionTab, FakeWorkspace, PAGE, PAGE_URL, SPACE, USER, restoreGlobals } from './notion-tab'
 
 afterEach(restoreGlobals)
@@ -458,7 +458,8 @@ describe('edit_page safety', () => {
     const result = await edit([{ action: 'replace', block: '^00000001', markdown: line.replace('- [ ]', '- [x]') }])
     expect(result).not.toContain('plain text')
     expect(ws.records.get(id(1))!.properties).toEqual({ title, checked: [['Yes']] })
-    // Changing the text says what was lost.
+    // Changing the text says what was lost. The block changed, so it is read again first.
+    await read()
     expect(await edit([{ action: 'replace', block: '^00000001', markdown: '- [x] Call later' }])).toContain(
       'are now plain text',
     )
@@ -536,5 +537,71 @@ describe('edit_page safety', () => {
     )
     const code = [...ws.records.values()].find((r) => r.type === 'code')!
     expect(code.properties).toEqual({ title: [['x()']], language: [['TypeScript']] })
+  })
+})
+
+describe('edit_page safety, round 2', () => {
+  it('refuses to delete a block whose nested blocks did not load', async () => {
+    const ws = workspace([1], [block(1, 'toggle', 'T', { content: [id(2), id(9)] }), block(2, 'text', 'A', {}, id(1))])
+    // id(9) is named under the toggle but not in the workspace, as on a page that didn't load in full.
+    open(ws)
+    await read()
+    await expect(edit([{ action: 'delete', block: '^00000001' }])).rejects.toThrow(
+      "has nested blocks that weren't loaded, so it can't be deleted.",
+    )
+    expect(ws.transactions).toEqual([])
+  })
+
+  it('[UC-NOTION-002-S05] a new conversation must read the page again before editing it', async () => {
+    const ws = workspace([1], [block(1, 'text', 'Intro')])
+    open(ws)
+    await read()
+    forgetReads()
+    await expect(edit([{ action: 'delete', block: '^00000001' }])).rejects.toThrow('Read the page with read_page first')
+  })
+
+  it('asks for a new read before changing a block an edit changed', async () => {
+    const ws = workspace([1], [block(1, 'text', 'Intro')])
+    open(ws)
+    await read()
+    await edit([{ action: 'replace', block: '^00000001', markdown: 'Intro, edited' }])
+    await expect(edit([{ action: 'replace', block: '^00000001', markdown: 'Again' }])).rejects.toThrow(
+      'is not a block of the page as you last read it',
+    )
+    await read()
+    await edit([{ action: 'replace', block: '^00000001', markdown: 'Again' }])
+    expect(withoutRefs(body(await read()))).toBe('Again')
+  })
+
+  it('previews multi-line quotes and code by their own text, and keeps an unchanged quote as it is', async () => {
+    const quote = [['line one\nline '], ['two', [['h', 'red']]]]
+    const ws = workspace(
+      [1, 2],
+      [
+        block(1, 'quote', undefined, { properties: { title: quote } }),
+        block(2, 'code', undefined, { properties: { title: [['print(1)']], language: [['Python']] } }),
+      ],
+    )
+    open(ws)
+    const shown = body(await read())
+    expect(
+      editPage.preview!({
+        page: hex(PAGE),
+        edits: [
+          { action: 'delete', block: '^00000001' },
+          { action: 'delete', block: '^00000002' },
+        ],
+      }),
+    ).toContain(
+      ['Delete ^00000001 “> line one ⏎ > line two”', '', 'Delete ^00000002 “```python ⏎ print(1) ⏎ ```”'].join('\n'),
+    )
+    // Writing the quote back as shown changes nothing, so its color stays.
+    const lines = shown.split('\n')
+    await edit([{ action: 'replace', block: '^00000001', markdown: lines.slice(0, 2).join('\n') }])
+    expect(ws.records.get(id(1))!.properties).toEqual({ title: quote })
+  })
+
+  it('keeps text that ends in a caret and hex digits', () => {
+    expect(parseMarkdown('2^deadbeef')).toEqual([{ type: 'text', title: [['2^deadbeef']], children: [] }])
   })
 })

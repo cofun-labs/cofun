@@ -2,7 +2,7 @@ import { useAuth } from '@clerk/chrome-extension'
 import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from 'react'
 import { CopilotAgent, type AgentUpdate, type ConfirmTool, type HistoryMessage } from '../agent'
 import { SessionStore, titleFor, type Session } from '../sessions'
-import { currentNotionPage, TOOLS } from '../tools'
+import { currentNotionPage, forgetReads, TOOLS } from '../tools'
 import { Sessions } from './Sessions'
 import { ToolCall, type ShownTool } from './ToolCall'
 
@@ -238,6 +238,8 @@ export function Chat({ userId }: { userId: string }) {
   function switchTo(session?: Session) {
     chatId.current++
     declineAll()
+    // Another conversation: the agent must read pages again before it edits them.
+    forgetReads()
     void agent.reset(session?.messages)
     setBusy(false)
     setStopping(false)

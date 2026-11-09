@@ -25,8 +25,13 @@ export interface PageRead {
 /** The blocks of `md` the agent saw: those whose reference `shown` contains, or those `include` picks. */
 export function pageRead(loaded: LoadedPage, md: PageMarkdown, include: string | ((id: string) => boolean)): PageRead {
   const blocks = (loaded.recordMap.block ?? {}) as Record<string, Block>
+  // The references the shown text carries, found in one pass.
+  const shown =
+    typeof include === 'string'
+      ? new Set([...include.matchAll(/\^([0-9a-f]{32}|[0-9a-f]{8})(?![0-9a-f])/g)].map((m) => m[1]))
+      : undefined
   const seen = (id: string, ref: string) =>
-    typeof include === 'string' ? new RegExp(`\\^(?:${ref}|${hexId(id)})(?![0-9a-f])`).test(include) : include(id)
+    shown ? shown.has(ref) || shown.has(hexId(id)) : (include as (id: string) => boolean)(id)
   const refs = new Map([...md.refs].filter(([id, ref]) => seen(id, ref)))
   const versions = new Map<string, number>()
   const nested = new Map<string, string[]>()
@@ -98,6 +103,15 @@ function descendants(blocks: Record<string, Block>, id: string): string[] {
   }
   if (blocks[id] && !PAGE_TYPES.has(blocks[id].type)) visit(id)
   return out
+}
+
+/** Whether any block under `id` is named by its parent but missing from what was loaded. */
+function hasUnloaded(blocks: Record<string, Block>, id: string): boolean {
+  const block = blocks[id]
+  if (!block || PAGE_TYPES.has(block.type)) return false
+  return (block.content ?? []).some(
+    (child) => !blocks[child] || (blocks[child].alive !== false && hasUnloaded(blocks, child)),
+  )
 }
 
 /** The edit can't be made as asked; nothing was written. The message says why, for the model. */
@@ -231,6 +245,10 @@ export function planEdit(
     if (!id) continue
     check(id)
     if (e.action !== 'delete') continue
+    // A page that didn't load in full may hide blocks under the target: don't delete what wasn't seen.
+    if (hasUnloaded(blocks, e.target)) {
+      throw new EditError(`${ref(e.target)} has nested blocks that weren't loaded, so it can't be deleted.`)
+    }
     for (const d of descendants(blocks, e.target)) {
       if (PAGE_TYPES.has(blocks[d].type)) {
         throw new EditError(`${ref(e.target)} has a child page or database nested under it, so it can't be deleted.`)
@@ -467,7 +485,7 @@ export function previewEdits(raw: unknown, read: PageRead | undefined, page: str
     const ref = typeof block === 'string' ? block.trim().replace(/^\^/, '').toLowerCase() : ''
     const id = read?.ids.get(ref)
     const line = id ? read!.lines.get(id) : undefined
-    return line ? `^${ref} “${clip(line)}”` : `^${ref}`
+    return line ? `^${ref} “${clip(line.replace(/\n/g, ' ⏎ '))}”` : `^${ref}`
   }
   const nested = (block: unknown) => {
     const ref = typeof block === 'string' ? block.trim().replace(/^\^/, '').toLowerCase() : ''

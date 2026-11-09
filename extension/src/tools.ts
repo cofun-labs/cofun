@@ -175,6 +175,12 @@ async function loadWithDatabase(tab: NotionTab, id: string): Promise<Loaded> {
 /** The last read of each page, by page id: what edit_page checks edits against. */
 const pageReads = new Map<string, PageRead>()
 
+/** Forgets what the agent read, for a new or another conversation, which must read pages itself. */
+export function forgetReads(): void {
+  pageReads.clear()
+  recentReads.clear()
+}
+
 const EDIT_ITEM = {
   type: 'object',
   properties: {
@@ -245,16 +251,14 @@ export const editPage: ToolSpec = {
     // The page changed: forget cached parts. What the agent saw stays as it was, except for what
     // this edit changed, so a block the user changed meanwhile is still refused.
     for (const key of recentReads.keys()) if (key.endsWith(`:${id}`)) recentReads.delete(key)
-    let next = forget(read, plan.deleted)
+    // Blocks it changed or deleted need a new read before they are edited again.
+    let next = forget(read, [...plan.deleted, ...plan.changed.filter((b) => b !== id)])
     let newRefs = ''
     try {
       const after = await tab.client.loadPage(id)
-      // Blocks this edit created, and blocks it changed that were as the agent read them before it.
-      const before = (loaded.recordMap.block ?? {}) as Record<string, { version: number }>
-      const ours = new Set([
-        ...plan.createdAll,
-        ...plan.changed.filter((b) => before[b] && before[b].version === read.versions.get(b)),
-      ])
+      // Only the blocks this edit created: anyone may have changed the others since it was saved,
+      // so blocks it changed are left for the next read_page to show.
+      const ours = new Set(plan.createdAll)
       next = mergeReads(
         next,
         pageRead(after, pageToMarkdown(after), (b) => ours.has(b)),
