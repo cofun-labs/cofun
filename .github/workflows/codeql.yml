@@ -1,8 +1,9 @@
 name: CodeQL
 
+# Not run in the merge queue: the queue does not wait for these checks, and
+# the main ruleset blocks merges on the PR's code scanning results.
 on:
   pull_request:
-  merge_group:
   push:
     branches:
       - main
