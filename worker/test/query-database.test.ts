@@ -118,6 +118,10 @@ describe('UC-NOTION-006 read a database', () => {
       `| Fix login \\| Safari | In progress | @2026-11-07 | @Fixture User | 5 | No | ^${hex(row(2))} |`,
     ])
 
+    // Against the text as Notion shows it, not as escaped for Markdown.
+    database()
+    const piped = await query({ filter: [{ property: 'Task', op: 'is', value: 'fix login | safari' }] })
+    expect(tableRows(piped).map((l) => l.split(' | ')[0])).toEqual(['| Fix login \\| Safari'])
     database()
     const empty = await query({ filter: [{ property: 'Due', op: 'is_empty' }] })
     expect(tableRows(empty).map((l) => l.split(' | ')[0])).toEqual(['| Plan retro'])

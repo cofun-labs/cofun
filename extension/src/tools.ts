@@ -381,10 +381,12 @@ function rowValuesHeader(schema: Schema): string {
  */
 function cell(values: { name: string; value: string }[], property: string): string {
   const raw = values.find((v) => v.name === property)?.value ?? ''
+  // The value as the user reads it: links as their text, no mention marks, Markdown marks and
+  // escapes undone, so filters compare against what Notion shows.
   return raw
-    .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
+    .replace(/\[((?:\\.|[^\]\\])*)\]\([^)]*\)/g, '$1')
     .replace(/(^|[\s,(])@/g, '$1')
-    .replace(/\*\*|~~|`/g, '')
+    .replace(/\\(.)|\*\*|~~|`/g, (_, escaped: string | undefined) => escaped ?? '')
     .trim()
 }
 
