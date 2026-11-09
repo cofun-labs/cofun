@@ -360,7 +360,8 @@ describe('extension agent against the worker', () => {
     expect(sent[5]).toMatchObject({
       role: 'tool',
       tool_call_id: 'chatcmpl-tool-1',
-      content: expect.stringContaining('may have partly happened'),
+      // The tool's own error follows, in case it failed on its own.
+      content: expect.stringMatching(/may have partly happened.*\n.*aborted/s),
     })
   })
 
@@ -574,7 +575,7 @@ describe('extension agent against the worker', () => {
     expect(runs).toEqual([{}])
   })
 
-  it('stopping while the user is asked counts as no, ends the question, and keeps the call as stopped', async () => {
+  it('[UC-AGENT-001-S12] stopping while the user is asked counts as no, ends the question, and keeps the call as stopped', async () => {
     const { tool, runs } = renameTool()
     const agent = makeAgent({ tools: [tool] })
     ai.script = [{ toolCalls: [RENAME_CALL] }]

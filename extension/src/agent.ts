@@ -185,7 +185,9 @@ export class CopilotAgent {
     const declined = new Set<string>()
     // How the latest call with each id ended, kept with its result message when that arrives.
     const ended = new Map<string, { status: ToolStatus; result: string }>()
-    // Calls allowed to run, so a Stop may have cut them short; the others never started.
+    // Calls allowed to run, so a Stop may have cut them short; the others never started. A Stop
+    // between the OK and the run counts as started: for a tool that edits pages, "may have partly
+    // happened" is the safe thing to tell the model.
     const started = new Set<string>()
 
     // On the last step, refuse the tools the model asks for instead of running them: the question
@@ -231,8 +233,9 @@ export class CopilotAgent {
         // finished anyway keeps its result: what it did happened.
         else if (update.status === 'failed' && epoch !== this.epoch) {
           update.status = 'stopped'
-          // Instead of pi's own abort error, tell the model whether the tool could have done anything.
-          update.result = started.has(update.id) ? STOPPED_DURING : STOPPED_BEFORE
+          // Tell the model whether the tool could have done anything. One that ran keeps its own
+          // error too: it may have failed on its own just as Stop landed.
+          update.result = started.has(update.id) ? `${STOPPED_DURING}\n${update.result}` : STOPPED_BEFORE
         }
         started.delete(update.id)
         ended.set(update.id, { status: update.status, result: update.result })
