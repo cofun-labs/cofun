@@ -123,13 +123,13 @@ export function Chat() {
           return { ...m, parts: [...m.parts, { type: 'text', text: u.delta }] }
         })
       else if (u.type === 'tool_start')
-        updateReply((m) => ({
-          ...m,
-          parts: [
-            ...m.parts,
-            { type: 'tool', tool: { id: u.id, name: u.name, args: u.args, status: 'running', result: '' } },
-          ],
-        }))
+        updateReply((m) => {
+          // A prompt shown before the start event already stands for this call; don't show it twice.
+          const j = newestOpenCall(m.parts, u.id)
+          if (j >= 0 && (m.parts[j] as Extract<Part, { type: 'tool' }>).tool.status === 'confirm') return m
+          const tool: ShownTool = { id: u.id, name: u.name, args: u.args, status: 'running', result: '' }
+          return { ...m, parts: [...m.parts, { type: 'tool', tool }] }
+        })
       else
         updateReply((m) => {
           const j = newestOpenCall(m.parts, u.id)
