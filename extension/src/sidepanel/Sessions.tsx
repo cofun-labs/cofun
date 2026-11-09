@@ -48,14 +48,16 @@ export function Sessions({
   }
 
   const pages = sessions ? sessionPages(sessions) : []
-  const shown = sessions ? filterSessions(sessions, { query, page }) : []
+  // Deleting the last session on the chosen page removes that choice; show every page again.
+  const activePage = pages.some((p) => p.key === page) ? page : ''
+  const shown = sessions ? filterSessions(sessions, { query, page: activePage }) : []
 
   return (
     <main id="sessions">
       <div className="session-filters">
         <input type="search" placeholder="Search sessions" value={query} onChange={(e) => setQuery(e.target.value)} />
         {pages.length > 0 && (
-          <select value={page} onChange={(e) => setPage(e.target.value)} aria-label="Notion page">
+          <select value={activePage} onChange={(e) => setPage(e.target.value)} aria-label="Notion page">
             <option value="">All pages</option>
             {pages.map((p) => (
               <option key={p.key} value={p.key}>
