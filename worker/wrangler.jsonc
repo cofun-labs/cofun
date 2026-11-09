@@ -32,8 +32,9 @@
     "AI_GATEWAY_ID": "kitfun-ai",
     // The only model clients can use.
     "MODEL": "@cf/deepseek-ai/deepseek-v4.1-flash-1017",
-    // Chat requests each user may make per UTC day.
-    "DAILY_REQUEST_LIMIT": "100",
+    // Chat requests each user may make per UTC day. Raised for now while access is invite-only;
+    // to be tuned later.
+    "DAILY_REQUEST_LIMIT": "10000",
     // Origins allowed to call (the token's azp claim). Comma-separated.
     "CLERK_AUTHORIZED_PARTIES": "chrome-extension://fafkdcopddmegenpemnmjbnolhlbbfpf,https://notion-copilot.kitfun.cc",
     // Clerk JWT public key (PEM). Public; also served at https://<frontend-api>/.well-known/jwks.json
