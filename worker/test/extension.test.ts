@@ -395,12 +395,13 @@ describe('extension agent against the worker', () => {
     expect(reply).toBe('Renamed to Q4 Plan ')
   })
 
-  it('a tool that needs confirmation is declined when nobody can be asked', async () => {
+  it('a tool that needs confirmation does not run when nobody can be asked', async () => {
     const { tool, runs } = renameTool()
     ai.script = [{ toolCalls: [RENAME_CALL] }, { reply: 'I could not do that' }]
     const { result, updates } = await ask(makeAgent({ tools: [tool] }), 'Rename this page to Q4 Plan')
     expect(runs).toEqual([])
-    expect(toolStatuses(updates)).toEqual(['declined'])
+    // Not shown as declined: the user never said no.
+    expect(toolStatuses(updates)).toEqual(['failed'])
     // The model is not told that the user said no: nobody was asked.
     expect(sentMessages(1).at(-1)).toMatchObject({
       role: 'tool',
@@ -412,10 +413,11 @@ describe('extension agent against the worker', () => {
   it('a prompt that fails is not reported to the model as the user declining', async () => {
     const { tool, runs } = renameTool()
     ai.script = [{ toolCalls: [RENAME_CALL] }, { reply: 'I could not do that' }]
-    const { result } = await ask(makeAgent({ tools: [tool] }), 'Rename this page to Q4 Plan', () =>
+    const { result, updates } = await ask(makeAgent({ tools: [tool] }), 'Rename this page to Q4 Plan', () =>
       Promise.reject(new Error('panel closed')),
     )
     expect(runs).toEqual([])
+    expect(toolStatuses(updates)).toEqual(['failed'])
     expect(sentMessages(1).at(-1)).toMatchObject({
       role: 'tool',
       content: expect.stringContaining('could not be asked'),

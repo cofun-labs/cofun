@@ -170,8 +170,9 @@ export class CopilotAgent {
       if (!this.confirmed.has(toolCall.name)) return
       const answer = await askUser(confirm, { id: toolCall.id, name: toolCall.name, args }, signal)
       if (answer === 'allow' && epoch === this.epoch) return
-      // Stopped while waiting: the question ends, and the call shows as stopped, not declined.
-      if (epoch === this.epoch) declined.add(toolCall.id)
+      // Only a no from the user shows as declined. Stopped while waiting shows as stopped, and a
+      // prompt that could not be shown as failed, with the reason.
+      if (answer === 'deny' && epoch === this.epoch) declined.add(toolCall.id)
       return { block: true, reason: answer === 'deny' ? DECLINED : UNASKED }
     }
     // The model gets no more turns once the steps are used up. beforeToolCall above only sees calls
