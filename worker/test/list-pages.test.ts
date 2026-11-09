@@ -1,7 +1,7 @@
 // The list_pages tool (extension/src/tools.ts) against a fake Notion tab that answers in the
 // shapes Notion's getSpaces and syncRecordValuesMain return.
 import { afterEach, describe, expect, it } from 'vitest'
-import { LIST_LIMIT, listPages } from '../../extension/src/tools'
+import { LIST_LIMIT, SECTION_LIMIT, listPages } from '../../extension/src/tools'
 import { FakeNotionTab, PAGE, PAGE_URL, SPACE, USER, restoreGlobals } from './notion-tab'
 
 afterEach(restoreGlobals)
@@ -61,18 +61,16 @@ describe('UC-NOTION-005 browse the workspace', () => {
     const tab = new FakeNotionTab(PAGE_URL)
       .respond('syncRecordValuesMain', 200, OPEN_PAGE)
       .respond('getSpaces', 200, getSpaces)
+      // One lookup per section, plus the database's name.
       .respond(
         'syncRecordValuesMain',
         200,
-        records([
-          page(1, 'Notes', [id(9)]),
-          { id: id(2), type: 'collection_view_page', collection_id: COLLECTION },
-          page(3, 'Shared plan'),
-          page(4, 'Eng handbook'),
-          page(5, 'Company home'),
-        ]),
+        records([page(1, 'Notes', [id(9)]), { id: id(2), type: 'collection_view_page', collection_id: COLLECTION }]),
       )
       .respond('syncRecordValuesMain', 200, records([], [{ id: COLLECTION, name: [['Tasks']] }]))
+      .respond('syncRecordValuesMain', 200, records([page(3, 'Shared plan')]))
+      .respond('syncRecordValuesMain', 200, records([page(5, 'Company home')]))
+      .respond('syncRecordValuesMain', 200, records([page(4, 'Eng handbook')]))
       .install()
 
     expect(await run()).toBe(
@@ -83,7 +81,7 @@ describe('UC-NOTION-005 browse the workspace', () => {
         `- 📄 Notes ^${hex(id(1))}`,
         `- 🗃 Tasks ^${hex(id(2))}`,
         '',
-        'Shared with you',
+        'Shared',
         `- 📄 Shared plan ^${hex(id(3))}`,
         '',
         'Workspace',
@@ -140,6 +138,37 @@ describe('UC-NOTION-005 browse the workspace', () => {
     expect(result).toContain(
       `Only the first ${LIST_LIMIT} pages are listed. List a page by its id to see more under it.`,
     )
+  })
+})
+
+describe('list_pages sections', () => {
+  it('[UC-NOTION-005-S03] gives each top-level section its own limit, so a long one hides no other', async () => {
+    const many = Array.from({ length: SECTION_LIMIT + 10 }, (_, i) => id(200 + i))
+    const getSpaces = {
+      [USER]: {
+        __version__: 3,
+        space: { [SPACE]: wrapped({ id: SPACE, name: 'Fixture workspace' }) },
+        space_view: {
+          'b0b0b0b0-0000-4000-8000-000000000001': wrapped({
+            id: 'b0b0b0b0-0000-4000-8000-000000000001',
+            space_id: SPACE,
+            private_pages: many,
+            // A shared page that is also private is listed under Private only.
+            shared_pages_manual_sort: [id(3), many[0]],
+          }),
+        },
+      },
+    }
+    new FakeNotionTab(PAGE_URL)
+      .respond('syncRecordValuesMain', 200, OPEN_PAGE)
+      .respond('getSpaces', 200, getSpaces)
+      .respond('syncRecordValuesMain', 200, records(many.map((m, i) => ({ ...page(0, `Private ${i}`), id: m }))))
+      .respond('syncRecordValuesMain', 200, records([page(3, 'Shared plan')]))
+      .install()
+    const result = await run()
+    expect(result).toContain(`(Only the first ${SECTION_LIMIT} entries of this section are listed.)`)
+    // The shared section is still there, and a page already listed isn't listed twice.
+    expect(result.split('Shared\n')[1]).toBe(`- 📄 Shared plan ^${hex(id(3))}`)
   })
 })
 

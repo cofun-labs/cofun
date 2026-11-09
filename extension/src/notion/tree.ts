@@ -41,9 +41,17 @@ export async function pageTree(
       parents.map((n) => n.id),
       records,
     )
+    // Every child of this level at once, so database names cost one request per level.
+    const all = await nodesFor(
+      client,
+      parents.flatMap((p) => childIds.get(p.id) ?? []),
+      records,
+    )
+    const byId = new Map(all.map((n) => [n.id, n]))
     const next: TreeNode[] = []
     for (const parent of parents) {
-      parent.children = take(await nodesFor(client, childIds.get(parent.id) ?? [], records))
+      const kids = (childIds.get(parent.id) ?? []).map((id) => byId.get(id)).filter((n): n is TreeNode => !!n)
+      parent.children = take(kids.map((n) => ({ ...n, children: [] })))
       next.push(...parent.children)
     }
     level = next

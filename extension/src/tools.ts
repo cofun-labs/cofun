@@ -162,12 +162,14 @@ async function loadWithDatabase(tab: NotionTab, id: string): Promise<Loaded> {
 export const LIST_MAX_DEPTH = 3
 /** How many pages one list shows, so a large workspace still fits the conversation. */
 export const LIST_LIMIT = 100
+/** How many pages each top-level section shows. */
+export const SECTION_LIMIT = 50
 
 export const listPages: ToolSpec = {
   name: 'list_pages',
   description:
     "Lists pages and databases as Notion's sidebar shows them: without `page`, the top level of the open page's " +
-    'workspace (private pages, pages shared with the user, workspace pages, teamspaces); with `page`, the pages ' +
+    'workspace (private and shared pages); with `page`, the pages ' +
     'and databases under it. Titles and ids only, no content: read a page with read_page. `depth` also lists the ' +
     'pages under those, up to 3 levels.',
   parameters: {
@@ -224,27 +226,30 @@ export const listPages: ToolSpec = {
     const spaceId = (opened.block?.[tab.pageId] as { space_id?: string } | undefined)?.space_id
     if (!spaceId) throw new Error('Could not tell which workspace the open page is in.')
     const space = await tab.client.getSpace(spaceId)
+    // A page can be in more than one list (a shared page often stays in the owner's private
+    // pages, where the sidebar shows it); it is listed in the first. Teamspaces are listed when the
+    // workspace's records name them; workspaces that load them another way don't show them yet.
     const sections: [string, string[]][] = [
       ['Private', space.privatePages],
-      ['Shared with you', space.sharedPages],
+      ['Shared', space.sharedPages],
       ['Workspace', space.workspacePages],
       ...space.teams.map((t): [string, string[]] => [`Teamspace: ${t.name}`, t.pages]),
     ]
-    // One tree over every section, so the limit counts them all.
-    const { nodes, truncated } = await pageTree(
-      tab.client,
-      sections.flatMap(([, ids]) => ids),
-      depth,
-      LIST_LIMIT,
-    )
-    const byId = new Map(nodes.map((n) => [n.id, n]))
+    // Each section has its own share of the limit, so a long one can't hide the others.
+    const seen = new Set<string>()
     const out = [`Pages in the workspace “${space.name}”:`]
-    for (const [label, ids] of sections) {
-      const shown = ids.map((id) => byId.get(id)).filter((n) => !!n)
-      if (shown.length) out.push('', label, ...treeLines(shown))
+    let any = false
+    for (const [label, all] of sections) {
+      const ids = all.filter((id) => !seen.has(id) && seen.add(id))
+      if (!ids.length) continue
+      const { nodes, truncated } = await pageTree(tab.client, ids, depth, SECTION_LIMIT)
+      if (!nodes.length) continue
+      any = true
+      out.push('', label, ...treeLines(nodes))
+      if (truncated) out.push(`(Only the first ${SECTION_LIMIT} entries of this section are listed.)`)
     }
-    if (out.length === 1) out.push('', '(no pages)')
-    return [...out, ...cutOff(truncated)].join('\n')
+    if (!any) out.push('', '(no pages)')
+    return out.join('\n')
   },
 }
 
