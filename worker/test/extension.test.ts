@@ -321,8 +321,9 @@ describe('extension agent against the worker', () => {
     expect(reply).toBe('Open a page first ')
   })
 
-  it('[UC-AGENT-001-S07] stopping during a tool ends the question and drops it from the conversation', async () => {
+  it('[UC-AGENT-001-S12] stopping during a tool keeps the tools used so far, and drops what had not started', async () => {
     let agent: CopilotAgent
+    const { tool: rename, runs } = renameTool()
     const slow: ToolSpec = {
       ...pageTool().tool,
       run: (_args, signal) =>
@@ -331,15 +332,143 @@ describe('extension agent against the worker', () => {
           agent.stop()
         }),
     }
-    agent = makeAgent({ tools: [slow] })
-    ai.script = [{ toolCalls: [{ name: 'get_current_page', arguments: '{}' }] }]
-    const stopped = await ask(agent, 'Which page am I on?')
+    agent = makeAgent({ tools: [rename, slow] })
+    // Step 1 renames the page. Step 2 reads it, and would rename it again, but Stop comes first.
+    ai.script = [
+      { toolCalls: [RENAME_CALL] },
+      { toolCalls: [{ name: 'get_current_page', arguments: '{}' }, RENAME_CALL] },
+    ]
+    const stopped = await ask(agent, 'Rename this page to Q4 Plan', async () => true)
     expect(stopped.result).toEqual({ status: 'stopped' })
-    // The tool shows as stopped, not as a failure of its own.
-    expect(stopped.updates.flatMap((u) => (u.type === 'tool_end' ? [u.status] : []))).toEqual(['stopped'])
+    expect(runs).toHaveLength(1)
+    // The tool cut short shows as stopped, not as a failure of its own; the last call never started.
+    expect(toolStatuses(stopped.updates)).toEqual(['done', 'stopped'])
+    expect(agent.history().flatMap((m) => (m.role === 'tool' ? [[m.name, m.status]] : []))).toEqual([
+      ['rename_page', 'done'],
+      ['get_current_page', 'stopped'],
+    ])
 
+    // The next question carries both steps, each call answered right after it; the worker accepts it.
+    expect((await ask(agent, 'What is it called now?')).result).toEqual({ status: 'done' })
+    const sent = sentMessages(2)
+    expect(sent.map((m) => m.role)).toEqual(['system', 'user', 'assistant', 'tool', 'assistant', 'tool', 'user'])
+    expect(sent[3]).toMatchObject({ role: 'tool', tool_call_id: 'chatcmpl-tool-0', content: 'Renamed.' })
+    expect(sent[4]).toMatchObject({
+      tool_calls: [{ id: 'chatcmpl-tool-1', function: { name: 'get_current_page' } }],
+    })
+    expect(sent[5]).toMatchObject({ role: 'tool', tool_call_id: 'chatcmpl-tool-1' })
+  })
+
+  it('[UC-AGENT-001-S13] a question that fails after a tool ran keeps the tool for the next question', async () => {
+    const { tool, runs } = renameTool()
+    const failing: ToolSpec = {
+      ...tool,
+      run: async (args) => {
+        // The model fails on the request that sends the result back.
+        ai.failWith = new Error('capacity')
+        return tool.run(args)
+      },
+    }
+    const agent = makeAgent({ tools: [failing] })
+    ai.script = [{ toolCalls: [RENAME_CALL] }]
+    const failed = await ask(agent, 'Rename this page to Q4 Plan', async () => true)
+    expect(failed.result).toMatchObject({ status: 'error' })
+    expect(runs).toEqual([{ title: 'Q4 Plan' }])
+
+    ai.failWith = undefined
+    expect((await ask(agent, 'Did it work?')).result).toEqual({ status: 'done' })
+    expect(sentMessages(2)).toEqual([
+      { role: 'system', content: 'You are Notion Copilot.' },
+      { role: 'user', content: 'Rename this page to Q4 Plan' },
+      {
+        role: 'assistant',
+        content: '',
+        tool_calls: [
+          {
+            id: 'chatcmpl-tool-0',
+            type: 'function',
+            function: { name: 'rename_page', arguments: '{"title":"Q4 Plan"}' },
+          },
+        ],
+      },
+      { role: 'tool', tool_call_id: 'chatcmpl-tool-0', content: 'Renamed.' },
+      { role: 'user', content: 'Did it work?' },
+    ])
+  })
+
+  it('[UC-AGENT-001-S14] a question stopped or failed before any tool ran is left out', async () => {
+    // Fails on the first model request.
+    ai.failWith = new Error('capacity')
+    const agent = makeAgent()
+    expect((await ask(agent, 'first')).result).toMatchObject({ status: 'error' })
+    ai.failWith = undefined
+
+    // Stopped right before the first model request: the token for it is the second one asked for.
+    let tokens = 0
+    const stopping = makeAgent({
+      getToken: async () => {
+        if (++tokens === 2) stopping.stop()
+        return token
+      },
+    })
+    expect((await ask(stopping, 'second')).result).toEqual({ status: 'stopped' })
+
+    for (const a of [agent, stopping]) {
+      expect(a.history()).toEqual([])
+      await ask(a, 'hi')
+      expect(ai.calls.at(-1)!.inputs.messages).toEqual([
+        { role: 'system', content: 'You are Notion Copilot.' },
+        { role: 'user', content: 'hi' },
+      ])
+    }
+  })
+
+  it('a stopped question keeps its tool calls when the session is saved and reopened', async () => {
+    let agent: CopilotAgent
+    const stubborn: ToolSpec = {
+      ...pageTool().tool,
+      run: async () => {
+        agent.stop()
+        return { title: 'Q4 Roadmap' }
+      },
+    }
+    agent = makeAgent({ tools: [stubborn] })
+    ai.script = [{ toolCalls: [{ name: 'get_current_page', arguments: '{}' }] }]
+    expect((await ask(agent, 'Which page am I on?')).result).toEqual({ status: 'stopped' })
+    const saved = structuredClone(agent.history())
+    expect(saved).toEqual<HistoryMessage[]>([
+      { role: 'user', text: 'Which page am I on?' },
+      { role: 'assistant', parts: [{ type: 'tool_call', id: 'chatcmpl-tool-0', name: 'get_current_page', args: {} }] },
+      {
+        role: 'tool',
+        id: 'chatcmpl-tool-0',
+        name: 'get_current_page',
+        status: 'done',
+        result: '{"title":"Q4 Roadmap"}',
+      },
+    ])
+
+    const resumed = makeAgent()
+    await resumed.reset(saved)
+    expect((await ask(resumed, 'And now?')).result).toEqual({ status: 'done' })
+    expect(sentMessages(1).map((m) => m.role)).toEqual(['system', 'user', 'assistant', 'tool', 'user'])
+  })
+
+  it('a declined call is kept when the question then fails, so the model is not asked to retry it', async () => {
+    const { tool, runs } = renameTool()
+    const agent = makeAgent({ tools: [tool] })
+    ai.script = [{ toolCalls: [RENAME_CALL] }]
+    const failed = await ask(agent, 'Rename this page to Q4 Plan', async () => {
+      ai.failWith = new Error('capacity')
+      return false
+    })
+    expect(failed.result).toMatchObject({ status: 'error' })
+    expect(runs).toEqual([])
+    expect(agent.history().at(-1)).toMatchObject({ role: 'tool', status: 'declined' })
+
+    ai.failWith = undefined
     await ask(agent, 'hi')
-    expect(sentMessages(1).map((m) => m.role)).toEqual(['system', 'user'])
+    expect(sentMessages(2).at(-2)).toMatchObject({ role: 'tool', content: expect.stringContaining('declined') })
   })
 
   it('a tool that finishes despite Stop still shows as done', async () => {
@@ -438,7 +567,7 @@ describe('extension agent against the worker', () => {
     expect(runs).toEqual([{}])
   })
 
-  it('stopping while the user is asked counts as no, ends the question, and drops it', async () => {
+  it('stopping while the user is asked counts as no, ends the question, and keeps the call as stopped', async () => {
     const { tool, runs } = renameTool()
     const agent = makeAgent({ tools: [tool] })
     ai.script = [{ toolCalls: [RENAME_CALL] }]
@@ -450,9 +579,10 @@ describe('extension agent against the worker', () => {
     expect(result).toEqual({ status: 'stopped' })
     expect(runs).toEqual([])
     expect(toolStatuses(updates)).toEqual(['stopped'])
+    expect(agent.history().at(-1)).toMatchObject({ role: 'tool', status: 'stopped' })
 
     await ask(agent, 'hi')
-    expect(sentMessages(1).map((m) => m.role)).toEqual(['system', 'user'])
+    expect(sentMessages(1).map((m) => m.role)).toEqual(['system', 'user', 'assistant', 'tool', 'user'])
   })
 
   it('a new chat while the user is asked counts as no', async () => {

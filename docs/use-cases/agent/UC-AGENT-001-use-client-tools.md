@@ -6,6 +6,8 @@ A signed-in user asks the AI something it can only answer with information or ac
 
 Each question gets a bounded number of steps, so a model that keeps calling tools cannot run on forever, and the user can stop the agent at any time.
 
+A question that fails or is stopped leaves no half-finished exchange behind, but what the agent already did stays: each tool it used, and how that ended (its result, a failure, the user declining it, or the user stopping it), remains part of the conversation, so the AI knows about it in the next question. The unfinished reply, and tools it had not started yet, are left out.
+
 The user can always see what the agent did: each tool it used, with what input, and whether it worked, in the order it happened within the reply.
 
 Key constraints:
@@ -25,9 +27,11 @@ Key constraints:
 | UC-AGENT-001-S03 | P0 | ✅ | Given a signed-in user who uses tools; when they ask the AI; then nothing in the tool definitions, tool requests, or tool results is kept by the service. |
 | UC-AGENT-001-S04 | P0 | ✅ | Given a question that needs a tool; when the user asks it in the side panel; then the tool runs in the extension and the answer uses its result. |
 | UC-AGENT-001-S05 | P1 | ✅ | Given a model that keeps calling tools; when the question reaches its step limit; then the agent stops without running more tools and tells the user, and the next question still works. |
-| UC-AGENT-001-S07 | P1 | ✅ | Given the agent working on a question; when the user stops it; then the model call and any running tool stop, and the stopped question is left out of the conversation. |
 | UC-AGENT-001-S09 | P0 | ✅ | Given a tool that needs confirmation; when the user declines it; then it does not run, and the agent continues without it. |
 | UC-AGENT-001-S10 | P0 | ✅ | Given a tool that needs confirmation; when the user agrees; then it runs and the answer uses its result. |
+| UC-AGENT-001-S12 | P1 | ✅ | Given the agent working on a question; when the user stops it; then the model call and any running tool stop, and the conversation keeps the tools the agent used so far and how each ended, but not the unfinished reply or tools it had not started. |
+| UC-AGENT-001-S13 | P1 | ✅ | Given a question that fails after the agent used a tool; when the user asks the next question; then the AI is given that tool's request and result. |
+| UC-AGENT-001-S14 | P1 | ✅ | Given a question that is stopped or fails before the agent used any tool; when the user asks the next question; then the failed question is left out of the conversation. |
 
 ### ai-e2e
 

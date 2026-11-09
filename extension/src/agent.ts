@@ -2,7 +2,7 @@
 // sends the results back until the model answers. This is the only module that imports the agent
 // runtime (pi); the rest of the extension uses the types below.
 import { Agent, type AgentEvent, type AgentMessage, type AgentTool } from '@earendil-works/pi-agent-core'
-import type { AssistantMessage, Model, ToolCall } from '@earendil-works/pi-ai'
+import type { AssistantMessage, Model, ToolCall, ToolResultMessage } from '@earendil-works/pi-ai'
 import { streamSimple } from '@earendil-works/pi-ai/api/openai-completions'
 
 export interface AgentConfig {
@@ -108,8 +108,9 @@ export class CopilotAgent {
 
   /**
    * Asks one question and resolves once the agent answered, stopped, hit the step limit, or failed.
-   * The conversation carries over to the next question. A question that fails or is stopped is
-   * dropped from it, so the model never sees a half-finished exchange.
+   * The conversation carries over to the next question. A question that fails or is stopped keeps
+   * only the tools it used and how they ended, so the model learns what already happened (a tool may
+   * have changed a page) but never sees a half-finished reply. If it used no tool, it is dropped.
    *
    * `confirm` is asked before each run of a tool that needs confirmation. Without it, such tools
    * are declined.
@@ -132,10 +133,11 @@ export class CopilotAgent {
     confirm?: ConfirmTool,
   ): Promise<AskResult> {
     const epoch = this.epoch
-    const { result, ranTools, code } = await this.askOnce(text, onUpdate, epoch, confirm)
+    const { result, kept, code } = await this.askOnce(text, onUpdate, epoch, confirm)
     // The worker's model changed since this panel looked it up (a deploy). The worker refuses the
-    // request before using any quota, so look the model up again. Retry once if no tool ran yet; a
-    // retry runs the whole question again, so after a tool ran, ask the user to repeat it instead.
+    // request before using any quota, so look the model up again. Retry once if the question left
+    // nothing behind; a retry runs the whole question again, so after it used a tool (which is now
+    // in the conversation), ask the user to repeat it instead.
     if (code === 'unsupported_model' && epoch === this.epoch) {
       try {
         this.model = await this.loadModel()
@@ -143,7 +145,7 @@ export class CopilotAgent {
         return { status: 'error', message: (err as Error).message }
       }
       if (this.agent) this.agent.state.model = this.model
-      if (ranTools) return { status: 'error', message: 'Copilot was just updated. Please ask again.' }
+      if (kept) return { status: 'error', message: 'Copilot was just updated. Please ask again.' }
       return (await this.askOnce(text, onUpdate, epoch, confirm)).result
     }
     return result
@@ -154,15 +156,15 @@ export class CopilotAgent {
     onUpdate: (update: AgentUpdate) => void,
     epoch: number,
     confirm?: ConfirmTool,
-  ): Promise<{ result: AskResult; ranTools: boolean; code?: string }> {
+  ): Promise<{ result: AskResult; kept: boolean; code?: string }> {
     let agent: Agent
     try {
       agent = await this.getAgent()
     } catch (err) {
-      return { result: { status: 'error', message: (err as Error).message }, ranTools: false }
+      return { result: { status: 'error', message: (err as Error).message }, kept: false }
     }
     // Stopped, or a new chat started, while the agent was being set up.
-    if (epoch !== this.epoch) return { result: { status: 'stopped' }, ranTools: false }
+    if (epoch !== this.epoch) return { result: { status: 'stopped' }, kept: false }
 
     const before = agent.state.messages.length
     let steps = 0
@@ -171,7 +173,6 @@ export class CopilotAgent {
     let stopped = false
     // The model gave its final answer; a Stop after this point is too late to drop it.
     let answered = false
-    let ranTools = false
     const refused = new Set<string>()
     const declined = new Set<string>()
     // How the latest call with each id ended, kept with its result message when that arrives.
@@ -206,7 +207,6 @@ export class CopilotAgent {
     }
     const unsubscribe = agent.subscribe((event: AgentEvent) => {
       if (event.type === 'turn_start') steps++
-      if (event.type === 'tool_execution_start') ranTools = true
       const update = toUpdate(event)
       if (update?.type === 'tool_end') {
         if (refused.has(update.id)) update.status = 'skipped'
@@ -245,11 +245,12 @@ export class CopilotAgent {
     // finished. A stop after the final answer keeps it: the user has already read it.
     stopped ||= epoch !== this.epoch && !answered
     if (failure || stopped) {
-      agent.state.messages = agent.state.messages.slice(0, before)
+      const kept = usedTools(agent.state.messages.slice(before))
+      agent.state.messages = [...agent.state.messages.slice(0, before), ...kept]
       const result: AskResult = stopped ? { status: 'stopped' } : { status: 'error', message: failure!.text }
-      return { result, ranTools, code: stopped ? undefined : failure?.code }
+      return { result, kept: kept.length > 0, code: stopped ? undefined : failure?.code }
     }
-    return { result: hitLimit ? { status: 'step_limit', steps } : { status: 'done' }, ranTools }
+    return { result: hitLimit ? { status: 'step_limit', steps } : { status: 'done' }, kept: true }
   }
 
   /** Stops the current model call and any running tool. */
@@ -275,8 +276,9 @@ export class CopilotAgent {
   }
 
   /**
-   * The conversation so far, to save and later continue with reset(). Questions that failed or were
-   * stopped are not part of it. Read it between questions: while one runs, it is still changing.
+   * The conversation so far, to save and later continue with reset(). Of a question that failed or
+   * was stopped, only the tools it used are part of it. Read it between questions: while one runs, it
+   * is still changing.
    */
   history(): HistoryMessage[] {
     if (!this.agent) return this.initial
@@ -411,6 +413,31 @@ export class CopilotAgent {
       },
     }
   }
+}
+
+/**
+ * What stays of a question that failed or was stopped (`tail`: its messages, starting with the
+ * question): the question and each step's tool calls that ended, with their results, so every call
+ * kept is still answered right after its message. A step's calls without a result are left out:
+ * after a Stop, pi skips the calls that come after the one running. The reply that failed or was cut
+ * off is left out with everything after it. Empty when the question used no tool.
+ */
+function usedTools(tail: AgentMessage[]): AgentMessage[] {
+  const [question, ...rest] = tail
+  const kept: AgentMessage[] = []
+  for (let i = 0; i < rest.length;) {
+    const reply = rest[i]
+    if (reply.role !== 'assistant' || reply.stopReason === 'error' || reply.stopReason === 'aborted') break
+    let next = i + 1
+    while (next < rest.length && rest[next].role === 'toolResult') next++
+    const results = rest.slice(i + 1, next) as ToolResultMessage[]
+    const answered = new Set(results.map((r) => r.toolCallId))
+    const content = reply.content.filter((block) => block.type !== 'toolCall' || answered.has(block.id))
+    if (!content.some((block) => block.type === 'toolCall')) break
+    kept.push({ ...reply, content }, ...results)
+    i = next
+  }
+  return kept.length ? [question, ...kept] : []
 }
 
 /**
