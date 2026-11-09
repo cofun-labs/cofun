@@ -13,7 +13,9 @@ import {
   planEdit,
   previewEdits,
   type PageRead,
+  planNewPage,
 } from './notion/edit'
+import { MarkdownError, parseMarkdown, type NewBlock } from './notion/blocks'
 import { PAGE_TYPES, hexId, pageToMarkdown, splitSections } from './notion/markdown'
 import { activeNotionTab, selectionIn, type NotionTab } from './notion/tab'
 import { pageChildren, pageTree, runsText, treeLines } from './notion/tree'
@@ -430,6 +432,104 @@ function remember(read: PageRead) {
   if (pageReads.size > READS_KEPT) pageReads.delete(pageReads.keys().next().value!)
 }
 
+/** A page title on one line, as Notion keeps it, so it can't break up the approval's lines. */
+function titleArg(value: unknown): string {
+  return typeof value === 'string' ? value.replace(/\s+/g, ' ').trim() : ''
+}
+
+export const createPage: ToolSpec = {
+  name: 'create_page',
+  description:
+    'Creates a Notion page with a title and Markdown content (the same Markdown as edit_page), at the end of a parent ' +
+    "page given by `parent` (the open page's URL from get_current_page, or another page). Returns the new page's id " +
+    'and URL. The user is asked to ' +
+    "approve it. Pages can't be created inside databases with this tool.",
+  parameters: {
+    type: 'object',
+    properties: {
+      title: { type: 'string', description: "The new page's title." },
+      markdown: { type: 'string', description: "The page's content, as Markdown. Leave out for an empty page." },
+      parent: { type: 'string', description: 'URL or id of the page to create it in.' },
+    },
+    required: ['title', 'parent'],
+    additionalProperties: false,
+  },
+  needsConfirmation: true,
+  preview: (args) => {
+    const title = titleArg(args.title)
+    // The page exactly as `run` will resolve it, so the user approves where the page goes.
+    const given = typeof args.parent === 'string' ? args.parent.trim() : ''
+    const id = given ? pageArg(given) : undefined
+    // By title when the agent has read it, so the user can tell which page it is.
+    const known = id ? pageReads.get(id)?.title : undefined
+    const parent = id ? `${known ? `${known} ` : ''}^${hexId(id)}` : given || '(none given)'
+    const markdown = typeof args.markdown === 'string' && args.markdown.trim() ? args.markdown : '(empty)'
+    // Each part on a line of its own, so text in the title can't read as where the page goes.
+    return [
+      'Create a page',
+      `Title: ${title}`,
+      `At the end of: ${parent}`,
+      'Content:',
+      ...markdown.split('\n').map((l) => `    ${l}`),
+    ].join('\n')
+  },
+  run: async (args, signal) => {
+    const title = titleArg(args.title)
+    if (!title) throw new Error('`title` must not be empty.')
+    const given = typeof args.parent === 'string' ? args.parent.trim() : ''
+    if (!given) throw new Error('`parent` is required: the URL or id of the page to create it in.')
+    const parentId = pageArg(given)
+    if (!parentId) throw new Error(`Not a Notion page URL or id: ${given}`)
+    const tab = await activeNotionTab()
+    let blocks: NewBlock[] = []
+    if (typeof args.markdown === 'string' && args.markdown.trim()) {
+      try {
+        blocks = parseMarkdown(args.markdown)
+      } catch (err) {
+        if (err instanceof MarkdownError) throw new EditError(err.message)
+        throw err
+      }
+    }
+    const parent = (await tab.client.getRecords([{ table: 'block', id: parentId }])).block![parentId]
+    if (parent.type !== 'page') {
+      throw new EditError(
+        PAGE_TYPES.has(String(parent.type))
+          ? "That is a database; create_page can't add rows to it."
+          : 'That id is a block inside a page, not a page.',
+      )
+    }
+    const spaceId = parent.space_id
+    if (typeof spaceId !== 'string' || !spaceId)
+      throw new NotionError('notion_error', 'Notion returned the page without its workspace.')
+    const { operations, pageId } = planNewPage(parentId, spaceId, title, blocks)
+    signal?.throwIfAborted()
+    // The parent's list changes: cached parts of it would hide the new page, and after an unknown
+    // outcome the agent must see whether it was created before it tries again.
+    try {
+      await tab.client.submitTransaction(spaceId, operations, 'Notion Copilot: create_page')
+    } catch (err) {
+      // A retry would create a second page if this one was saved: the agent must look first.
+      if (err instanceof NotionError && err.code === 'outcome_unknown') {
+        pageReads.delete(parentId)
+        throw new NotionError(
+          'outcome_unknown',
+          `Notion did not answer, so the page may or may not have been created. Read ^${hexId(parentId)} and ` +
+            `check for “${title}” before trying again.`,
+          { cause: err },
+        )
+      }
+      throw err
+    } finally {
+      for (const key of recentReads.keys()) if (key.endsWith(`:${parentId}`)) recentReads.delete(key)
+    }
+    const hex = hexId(pageId)
+    return [
+      `Created the page “${title}” ^${hex} at the end of ^${hexId(parentId)}.`,
+      `URL: ${new URL(tab.url).origin}/${hex}`,
+    ].join('\n')
+  },
+}
+
 export const getSelection: ToolSpec = {
   name: 'get_selection',
   description:
@@ -651,4 +751,4 @@ function clip(text: string, max: number): string {
   return text.length > max ? `${text.slice(0, max - 1)}…` : text
 }
 
-export const TOOLS: ToolSpec[] = [getCurrentPage, readPage, editPage, searchPages, getSelection, listPages]
+export const TOOLS: ToolSpec[] = [getCurrentPage, readPage, editPage, createPage, searchPages, getSelection, listPages]

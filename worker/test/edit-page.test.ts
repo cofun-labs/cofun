@@ -259,6 +259,19 @@ describe('edit_page details', () => {
     expect(withoutRefs(body(await read()))).toBe(['A', 'B', 'C', 'D', 'E'].join('\n'))
   })
 
+  it('lets the agent edit a nested block it just inserted, without reading again', async () => {
+    const ws = workspace([1], [block(1, 'text', 'A')])
+    open(ws)
+    await read()
+    const result = (await edit([{ action: 'insert', block: '^00000001', markdown: '- parent\n  - child' }])) as string
+    // The child's reference, as the next read would show it.
+    const parentRef = /New blocks: \^([0-9a-f]+)\./.exec(result)![1]
+    const parent = ws.content(PAGE).find((b) => b.id.replace(/-/g, '').endsWith(parentRef))!
+    const child = ws.content(parent.id)[0]
+    await edit([{ action: 'replace', block: `^${child.id.replace(/-/g, '').slice(-8)}`, markdown: '- child, edited' }])
+    expect(withoutRefs(body(await read()))).toBe(['A', '- parent', '  - child, edited'].join('\n'))
+  })
+
   it('replaces a block with several blocks, or with another kind, in its place', async () => {
     const ws = workspace([1, 2, 3], [block(1, 'text', 'A'), block(2, 'text', 'notes'), block(3, 'text', 'Z')])
     open(ws)
