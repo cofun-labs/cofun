@@ -195,6 +195,26 @@ describe('list_pages arguments', () => {
 })
 
 describe('list_pages at the limit', () => {
+  it('looks into only as many parents as there is room left for', async () => {
+    const kids = Array.from({ length: LIST_LIMIT - 2 }, (_, i) => id(300 + i))
+    const root = page(10, 'Nearly full', kids)
+    const tab = new FakeNotionTab(PAGE_URL)
+      .respond('syncRecordValuesMain', 200, records([root]))
+      .respond(
+        'syncRecordValuesMain',
+        200,
+        records(kids.map((k, i) => ({ ...page(0, `Child ${i}`, [id(1000 + i)]), id: k }))),
+      )
+      .respond('syncRecordValuesMain', 200, records([page(1000, 'Grandchild 0'), page(1001, 'Grandchild 1')]))
+      .install()
+    const result = await run({ page: hex(id(10)), depth: 2 })
+    // Only the first two children's blocks were asked for.
+    const asked = (tab.sent.at(-1)!.body as { requests: { pointer: { id: string } }[] }).requests
+    expect(asked.map((r) => r.pointer.id)).toEqual([id(1000), id(1001)])
+    expect(result.split('\n').filter((l) => l.trimStart().startsWith('- '))).toHaveLength(LIST_LIMIT)
+    expect(result).toContain(`Only the first ${LIST_LIMIT} pages are listed`)
+  })
+
   it('[UC-NOTION-005-S03] says the list was cut off when it fills up before the asked depth', async () => {
     const kids = Array.from({ length: LIST_LIMIT }, (_, i) => id(300 + i))
     const root = page(10, 'Exactly full', kids)

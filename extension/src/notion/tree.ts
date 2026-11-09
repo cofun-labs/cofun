@@ -37,8 +37,12 @@ export async function pageTree(
   // A level is expanded only while there is room for more entries.
   let d = 1
   for (; d < depth && level.length && !truncated && count < limit; d++) {
-    // Children of pages only: a database's rows aren't sidebar pages.
-    const parents = level.filter((n) => !n.database)
+    // Children of pages only: a database's rows aren't sidebar pages. Children are listed in their
+    // parents' order, so only as many parents are looked into as there is room left for entries;
+    // the list says it may be cut off when others could have pages under them.
+    const pages = level.filter((n) => !n.database)
+    const parents = pages.slice(0, limit - count)
+    if (pages.slice(parents.length).some((n) => contentOf(records, n.id).length)) truncated = true
     const childIds = await pageChildren(
       client,
       parents.map((n) => n.id),
