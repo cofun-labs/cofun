@@ -30,4 +30,4 @@ Key constraints:
 
 | ID | Priority | Status | Scenario |
 | --- | --- | --- | --- |
-| UC-NOTION-001-S07 | P0 | 🚧 | Given the side panel open on a Notion page; when the user asks for a summary; then the agent reads the page and the summary matches its content. |
+| UC-NOTION-001-S07 | P0 | ✅ | Given the side panel open on a Notion page; when the user asks for a summary; then the agent reads the page and the summary matches its content. |
