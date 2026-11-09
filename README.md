@@ -20,6 +20,7 @@
 - [x] Sessions: start, list, search, filter by page, delete, and resume past conversations, kept on the device
 - [x] Read Notion pages as Markdown: the open page or another one, in parts when long
 - [x] Edit Notion pages: insert, replace, and delete content by block, after the user approves each change
+- [x] Work on what the user selected in the page
 
 ## Tech choices
 

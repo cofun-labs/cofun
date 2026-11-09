@@ -15,7 +15,7 @@ import {
   type PageRead,
 } from './notion/edit'
 import { PAGE_TYPES, hexId, pageToMarkdown, splitSections } from './notion/markdown'
-import { activeNotionTab, type NotionTab } from './notion/tab'
+import { activeNotionTab, selectionIn, type NotionTab } from './notion/tab'
 
 /**
  * The title and URL of the Notion page open in the side panel's window, if one is.
@@ -309,4 +309,40 @@ function remember(read: PageRead) {
   if (pageReads.size > READS_KEPT) pageReads.delete(pageReads.keys().next().value!)
 }
 
-export const TOOLS: ToolSpec[] = [getCurrentPage, readPage, editPage]
+export const getSelection: ToolSpec = {
+  name: 'get_selection',
+  description:
+    'Returns what the user has selected in the open Notion page: the selected text, and each selected block as ' +
+    'Markdown with its reference, ready for edit_page (no read_page needed for those blocks). Use it when the user ' +
+    'says "this", "the selection", or "the highlighted text". Nothing selected is a normal answer.',
+  parameters: { type: 'object', properties: {}, additionalProperties: false },
+  run: async () => {
+    const tab = await activeNotionTab()
+    if (!tab.pageId) throw new Error('The Notion tab does not show a page.')
+    const selection = await selectionIn(tab.tabId)
+    if (!selection?.blockIds.length) return 'Nothing is selected in the Notion page.'
+    const loaded = await tab.client.loadPage(tab.pageId)
+    const md = pageToMarkdown(loaded)
+    const ids = selection.blockIds.map((id) => toUuid(id)).filter((id): id is string => !!id && md.refs.has(id))
+    if (!ids.length) return 'Nothing is selected in the Notion page.'
+    // The selected blocks count as read, so edit_page can change them by these references.
+    const chosen = new Set(ids)
+    remember(
+      mergeReads(
+        pageReads.get(loaded.page.id),
+        pageRead(loaded, md, (b) => chosen.has(b)),
+      ),
+    )
+    const pageHex = hexId(loaded.page.id)
+    return [
+      `Selection on the page “${md.title}” ^${pageHex}:`,
+      '',
+      `Selected text: “${selection.text.length > 2000 ? `${selection.text.slice(0, 1999)}…` : selection.text}”`,
+      '',
+      `Selected block${ids.length === 1 ? '' : 's'}:`,
+      ...ids.map((b) => `${md.lines.get(b) ?? ''} ^${md.refs.get(b)}`),
+    ].join('\n')
+  },
+}
+
+export const TOOLS: ToolSpec[] = [getCurrentPage, readPage, editPage, getSelection]

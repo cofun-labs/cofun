@@ -111,3 +111,60 @@ export async function notionRequest(
     return { status: 0, json: null, signedIn: !!userId, error: err instanceof Error ? err.message : String(err) }
   }
 }
+
+/** What the user has selected in the Notion page: the selected text and the blocks it covers. */
+export interface PageSelection {
+  text: string
+  /** Block ids, in page order. */
+  blockIds: string[]
+}
+
+/** Reads the selection in the Notion tab: text selected with the mouse, or blocks selected as blocks. */
+export async function selectionIn(tabId: number): Promise<PageSelection | undefined> {
+  try {
+    const [frame] = await chrome.scripting.executeScript({
+      target: { tabId },
+      world: 'ISOLATED',
+      func: readSelection,
+      args: [],
+    })
+    return frame?.result ?? undefined
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    throw new NotionError('notion_error', `Could not read the selection in the Notion tab: ${message}`, { cause: err })
+  }
+}
+
+/**
+ * Runs in the Notion tab: the selection inside the page's content (not the sidebar). Chrome
+ * serializes this function on its own, so it must not use anything from outside its body.
+ */
+export function readSelection(): PageSelection | null {
+  const root = document.querySelector('.notion-page-content')
+  if (!root) return null
+  const blocks = [...root.querySelectorAll('[data-block-id]')]
+  const idOf = (el: Element) => el.getAttribute('data-block-id') ?? ''
+  // Blocks selected as blocks (Esc, or dragging across them) carry a highlight inside them.
+  const haloed = [...root.querySelectorAll('.notion-selectable-halo')]
+    .map((h) => h.closest('[data-block-id]'))
+    .filter((b): b is Element => !!b && root.contains(b))
+  if (haloed.length) {
+    const ids = blocks.filter((b) => haloed.includes(b)).map(idOf)
+    return {
+      text: blocks
+        .filter((b) => haloed.includes(b))
+        .map((b) => b.textContent ?? '')
+        .join('\n'),
+      blockIds: ids,
+    }
+  }
+  const selection = document.getSelection()
+  if (!selection || selection.rangeCount === 0 || selection.isCollapsed) return null
+  const range = selection.getRangeAt(0)
+  if (!root.contains(range.commonAncestorContainer)) return null
+  // The innermost blocks the range touches; a block that holds a touched block isn't itself selected.
+  const touched = blocks.filter((b) => range.intersectsNode(b))
+  const innermost = touched.filter((b) => !touched.some((other) => other !== b && b.contains(other)))
+  if (!innermost.length) return null
+  return { text: selection.toString(), blockIds: innermost.map(idOf) }
+}
