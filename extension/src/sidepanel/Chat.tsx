@@ -1,6 +1,6 @@
 import { useAuth } from '@clerk/chrome-extension'
 import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from 'react'
-import { CopilotAgent, type AgentUpdate } from '../agent'
+import { CopilotAgent, type AgentUpdate, type ConfirmTool } from '../agent'
 import { TOOLS } from '../tools'
 import { ToolCall, type ShownTool } from './ToolCall'
 
@@ -34,6 +34,8 @@ export function Chat() {
   // Stop was pressed; the question is still winding down, so nothing is pending any more.
   const [stopping, setStopping] = useState(false)
   const listRef = useRef<HTMLElement>(null)
+  // Answers for tool calls waiting for the user's OK, by call id.
+  const pending = useRef(new Map<string, (allow: boolean) => void>())
   // Bumped by "New chat" so updates still arriving for the old chat are dropped.
   const chatId = useRef(0)
   const tokenRef = useRef(getToken)
@@ -73,6 +75,28 @@ export function Chat() {
     const updateTools = (fn: (t: ShownTool) => ShownTool) =>
       updateReply((m) => ({ ...m, parts: m.parts.map((p) => (p.type === 'tool' ? { ...p, tool: fn(p.tool) } : p)) }))
 
+    const setToolStatus = (toolId: string, status: ShownTool['status']) =>
+      updateReply((m) => {
+        const j = newestOpenCall(m.parts, toolId)
+        if (j < 0) return m
+        const part = m.parts[j] as Extract<Part, { type: 'tool' }>
+        const parts = [...m.parts]
+        parts[j] = { ...part, tool: { ...part.tool, status } }
+        return { ...m, parts }
+      })
+
+    const confirm: ConfirmTool = (call) =>
+      new Promise((resolve) => {
+        if (chatId.current !== id) return resolve(false)
+        pending.current.set(call.id, (allow) => {
+          pending.current.delete(call.id)
+          // Running again until the agent reports how the call ended (done, or declined).
+          setToolStatus(call.id, 'running')
+          resolve(allow)
+        })
+        setToolStatus(call.id, 'confirm')
+      })
+
     const onUpdate = (u: AgentUpdate) => {
       if (u.type === 'text')
         updateReply((m) => {
@@ -91,10 +115,7 @@ export function Chat() {
         }))
       else
         updateReply((m) => {
-          // Ids are unique only within one model reply; a later step may reuse one, so finish the
-          // newest running call with this id.
-          let j = m.parts.length - 1
-          while (j >= 0 && !isRunningCall(m.parts[j], u.id)) j--
+          const j = newestOpenCall(m.parts, u.id)
           if (j < 0) return m
           const part = m.parts[j] as Extract<Part, { type: 'tool' }>
           const parts = [...m.parts]
@@ -104,9 +125,9 @@ export function Chat() {
     }
 
     try {
-      const result = await agent.ask(text, onUpdate)
+      const result = await agent.ask(text, onUpdate, confirm)
       if (result.status === 'stopped') {
-        updateTools((t) => (t.status === 'running' ? { ...t, status: 'stopped' } : t))
+        updateTools((t) => (t.status === 'running' || t.status === 'confirm' ? { ...t, status: 'stopped' } : t))
         updateReply((m) => ({ ...m, stopped: true }))
       } else if (result.status === 'error') updateReply((m) => ({ ...m, error: result.message }))
       else if (result.status === 'step_limit')
@@ -121,8 +142,14 @@ export function Chat() {
     e.preventDefault()
     if (busy) {
       setStopping(true)
+      declineAll()
       agent.stop()
     } else send()
+  }
+
+  /** Stop or a new chat answers every open question with no. */
+  function declineAll() {
+    for (const answer of [...pending.current.values()]) answer(false)
   }
 
   function onKeyDown(e: KeyboardEvent<HTMLTextAreaElement>) {
@@ -138,6 +165,7 @@ export function Chat() {
         <button
           onClick={() => {
             chatId.current++
+            declineAll()
             void agent.reset()
             setBusy(false)
             setMessages([])
@@ -166,7 +194,11 @@ export function Chat() {
                   )
                 ) : (
                   // Parts are only appended, so the index is a stable key; tool ids may repeat.
-                  <ToolCall key={j} tool={p.tool} />
+                  <ToolCall
+                    key={j}
+                    tool={p.tool}
+                    onAnswer={p.tool.status === 'confirm' ? pending.current.get(p.tool.id) : undefined}
+                  />
                 ),
               )}
               {m.error && <div className="error">{m.error}</div>}
@@ -202,9 +234,20 @@ function waitingForModel(parts: Part[]): boolean {
   let k = parts.length - 1
   while (k >= 0 && parts[k].type === 'text' && !(parts[k] as { text: string }).text.trim()) k--
   const last = parts[k]
-  return !last || (last.type === 'tool' && last.tool.status !== 'running')
+  // A running tool shows its own mark, and one waiting for the user shows its prompt.
+  return !last || (last.type === 'tool' && last.tool.status !== 'running' && last.tool.status !== 'confirm')
 }
 
-function isRunningCall(part: Part, id: string): boolean {
-  return part.type === 'tool' && part.tool.id === id && part.tool.status === 'running'
+/**
+ * The index of the newest call with this id that has not ended, or -1. Ids are unique only within
+ * one model reply, so a later step may reuse one.
+ */
+function newestOpenCall(parts: Part[], id: string): number {
+  let j = parts.length - 1
+  while (j >= 0) {
+    const p = parts[j]
+    if (p.type === 'tool' && p.tool.id === id && (p.tool.status === 'running' || p.tool.status === 'confirm')) break
+    j--
+  }
+  return j
 }

@@ -6,25 +6,30 @@ export interface ShownTool {
   id: string
   name: string
   args: unknown
-  status: 'running' | ToolStatus
+  /** `confirm`: waiting for the user to allow or deny it. */
+  status: 'running' | 'confirm' | ToolStatus
   /** What the model got back, or the error. Empty while running. */
   result: string
 }
 
 const MARK: Record<ShownTool['status'], string> = {
   running: '⋯',
+  confirm: '?',
   done: '✓',
   failed: '✗',
   skipped: '–',
   stopped: '■',
+  declined: '⊘',
 }
 
 const LABEL: Record<ShownTool['status'], string> = {
   running: 'Running',
+  confirm: 'Waiting for your OK',
   done: 'Done',
   failed: 'Failed',
   skipped: 'Not run: step limit reached',
   stopped: 'Stopped',
+  declined: 'Declined',
 }
 
 /**
@@ -32,24 +37,51 @@ const LABEL: Record<ShownTool['status'], string> = {
  * Memoized: text streaming into the reply leaves finished calls unchanged, so they skip re-rendering
  * (and re-formatting their JSON).
  */
-export const ToolCall = memo(function ToolCall({ tool }: { tool: ShownTool }) {
+export const ToolCall = memo(function ToolCall({
+  tool,
+  onAnswer,
+}: {
+  tool: ShownTool
+  /** Set while the call waits for the user's OK; called with their answer. */
+  onAnswer?: (allow: boolean) => void
+}) {
   const input = summarize(tool.args)
+  const asking = tool.status === 'confirm' && onAnswer
   return (
-    <details className={`tool ${tool.status}`}>
-      <summary title={LABEL[tool.status]}>
-        <span className="tool-mark">{MARK[tool.status]}</span> <span className="tool-name">{tool.name}</span>
-        {input && <span className="tool-input"> {input}</span>}
-      </summary>
-      <div className="tool-body">
-        <div className="tool-label">Arguments</div>
-        <pre>{pretty(tool.args)}</pre>
-        {/* A stopped tool that ended at all ended with an error, e.g. the abort. */}
-        <div className="tool-label">
-          {tool.status === 'failed' || (tool.status === 'stopped' && tool.result) ? 'Error' : 'Result'}
+    <>
+      {/* Open while asking, so the user sees exactly what the tool would do. */}
+      <details className={`tool ${tool.status}`} open={tool.status === 'confirm'}>
+        <summary title={LABEL[tool.status]}>
+          <span className="tool-mark">{MARK[tool.status]}</span> <span className="tool-name">{tool.name}</span>
+          {input && <span className="tool-input"> {input}</span>}
+        </summary>
+        <div className="tool-body">
+          <div className="tool-label">Arguments</div>
+          <pre>{pretty(tool.args)}</pre>
+          {/* Nothing has run yet while the user is asked. */}
+          {tool.status !== 'confirm' && (
+            <>
+              {/* A stopped tool that ended at all ended with an error, e.g. the abort. */}
+              <div className="tool-label">
+                {tool.status === 'failed' || (tool.status === 'stopped' && tool.result) ? 'Error' : 'Result'}
+              </div>
+              <pre>{tool.status === 'running' ? '…' : pretty(tool.result) || LABEL[tool.status]}</pre>
+            </>
+          )}
         </div>
-        <pre>{tool.status === 'running' ? '…' : pretty(tool.result) || LABEL[tool.status]}</pre>
-      </div>
-    </details>
+      </details>
+      {asking && (
+        <div className="tool-confirm" role="group" aria-label={`Allow ${tool.name} to run?`}>
+          <span>
+            Allow <span className="tool-name">{tool.name}</span> to run?
+          </span>
+          <button className="primary" onClick={() => onAnswer(true)}>
+            Allow
+          </button>
+          <button onClick={() => onAnswer(false)}>Deny</button>
+        </div>
+      )}
+    </>
   )
 })
 

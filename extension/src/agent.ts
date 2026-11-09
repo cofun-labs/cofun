@@ -26,13 +26,26 @@ export interface ToolSpec {
   parameters: object
   /** Runs the tool. Throw to report a failure to the model. */
   run: (args: Record<string, unknown>, signal?: AbortSignal) => Promise<unknown>
+  /** The tool changes the user's data, so the user must agree each time before it runs. */
+  needsConfirmation?: boolean
 }
+
+/** A tool call waiting for the user's OK. */
+export interface ToolCallRequest {
+  id: string
+  name: string
+  args: unknown
+}
+
+/** Asks the user whether a tool may run; resolves true to run it. */
+export type ConfirmTool = (call: ToolCallRequest) => Promise<boolean>
 
 /**
  * How a tool call ended. `skipped`: refused without running, because the question reached its step
- * limit. `stopped`: the user stopped the question while the tool ran.
+ * limit. `stopped`: the user stopped the question while the tool ran or waited for their OK.
+ * `declined`: the user did not let it run.
  */
-export type ToolStatus = 'done' | 'failed' | 'skipped' | 'stopped'
+export type ToolStatus = 'done' | 'failed' | 'skipped' | 'stopped' | 'declined'
 
 /** What the side panel shows while the agent works on a question. */
 export type AgentUpdate =
@@ -52,11 +65,15 @@ export const DEFAULT_MAX_STEPS = 10
 const DEFAULT_HISTORY = { messages: 100, chars: 150_000 }
 
 const SIGN_IN = 'Please sign in first.'
+// What the model gets back for a call the user declined; it should not just try again.
+const DECLINED = 'Not run: the user declined this action. Do not retry it; ask the user how to proceed instead.'
 
 export class CopilotAgent {
   private agent?: Agent
   private model?: Model<'openai-completions'>
   private readonly maxSteps: number
+  /** Names of the tools that need the user's OK before each run. */
+  private readonly confirmed: Set<string>
   /** Bumped by stop() and reset(), so a question still waiting to start knows it was cancelled. */
   private epoch = 0
   /** The question this agent is answering; reset() clears it, since the next one gets a new pi agent. */
@@ -64,28 +81,36 @@ export class CopilotAgent {
 
   constructor(private readonly config: AgentConfig) {
     this.maxSteps = config.maxSteps ?? DEFAULT_MAX_STEPS
+    this.confirmed = new Set(config.tools.filter((t) => t.needsConfirmation).map((t) => t.name))
   }
 
   /**
    * Asks one question and resolves once the agent answered, stopped, hit the step limit, or failed.
    * The conversation carries over to the next question. A question that fails or is stopped is
    * dropped from it, so the model never sees a half-finished exchange.
+   *
+   * `confirm` is asked before each run of a tool that needs confirmation. Without it, such tools
+   * are declined.
    */
-  async ask(text: string, onUpdate: (update: AgentUpdate) => void): Promise<AskResult> {
+  async ask(text: string, onUpdate: (update: AgentUpdate) => void, confirm?: ConfirmTool): Promise<AskResult> {
     // One question at a time: an overlapping run would roll back the other's messages.
     if (this.running) return { status: 'error', message: 'Already answering a question.' }
     const question = {}
     this.running = question
     try {
-      return await this.askWithRetry(text, onUpdate)
+      return await this.askWithRetry(text, onUpdate, confirm)
     } finally {
       if (this.running === question) this.running = undefined
     }
   }
 
-  private async askWithRetry(text: string, onUpdate: (update: AgentUpdate) => void): Promise<AskResult> {
+  private async askWithRetry(
+    text: string,
+    onUpdate: (update: AgentUpdate) => void,
+    confirm?: ConfirmTool,
+  ): Promise<AskResult> {
     const epoch = this.epoch
-    const { result, ranTools, code } = await this.askOnce(text, onUpdate, epoch)
+    const { result, ranTools, code } = await this.askOnce(text, onUpdate, epoch, confirm)
     // The worker's model changed since this panel looked it up (a deploy). The worker refuses the
     // request before using any quota, so look the model up again. Retry once if no tool ran yet; a
     // retry runs the whole question again, so after a tool ran, ask the user to repeat it instead.
@@ -97,7 +122,7 @@ export class CopilotAgent {
       }
       if (this.agent) this.agent.state.model = this.model
       if (ranTools) return { status: 'error', message: 'Copilot was just updated. Please ask again.' }
-      return (await this.askOnce(text, onUpdate, epoch)).result
+      return (await this.askOnce(text, onUpdate, epoch, confirm)).result
     }
     return result
   }
@@ -106,6 +131,7 @@ export class CopilotAgent {
     text: string,
     onUpdate: (update: AgentUpdate) => void,
     epoch: number,
+    confirm?: ConfirmTool,
   ): Promise<{ result: AskResult; ranTools: boolean; code?: string }> {
     let agent: Agent
     try {
@@ -125,18 +151,26 @@ export class CopilotAgent {
     let answered = false
     let ranTools = false
     const refused = new Set<string>()
+    const declined = new Set<string>()
 
     // On the last step, refuse the tools the model asks for instead of running them: the question
     // ends here, so the model would never see their results, and a tool could change a page.
-    agent.beforeToolCall = async ({ toolCall }) => {
-      if (steps < this.maxSteps) return
-      hitLimit = true
-      refused.add(toolCall.id)
-      return {
-        block: true,
-        reason: `Not run: this question reached its limit of ${this.maxSteps} steps.`,
-        terminate: true,
+    agent.beforeToolCall = async ({ toolCall, args }, signal) => {
+      if (steps >= this.maxSteps) {
+        hitLimit = true
+        refused.add(toolCall.id)
+        return {
+          block: true,
+          reason: `Not run: this question reached its limit of ${this.maxSteps} steps.`,
+          terminate: true,
+        }
       }
+      if (!this.confirmed.has(toolCall.name)) return
+      const allowed = await askUser(confirm, { id: toolCall.id, name: toolCall.name, args }, signal)
+      if (allowed && epoch === this.epoch) return
+      // Stopped while waiting: the question ends, and the call shows as stopped, not declined.
+      if (epoch === this.epoch) declined.add(toolCall.id)
+      return { block: true, reason: DECLINED }
     }
     // The model gets no more turns once the steps are used up. beforeToolCall above only sees calls
     // that pi could prepare; unknown tools and invalid arguments get error results without it.
@@ -151,6 +185,7 @@ export class CopilotAgent {
       const update = toUpdate(event)
       if (update?.type === 'tool_end') {
         if (refused.has(update.id)) update.status = 'skipped'
+        else if (declined.has(update.id)) update.status = 'declined'
         // A tool cut short by Stop reports an error; it did not fail on its own. A tool that
         // finished anyway keeps its result: what it did happened.
         else if (update.status === 'failed' && epoch !== this.epoch) update.status = 'stopped'
@@ -308,6 +343,18 @@ function size(message: AgentMessage): number {
     else if (block.type === 'toolCall') n += block.name.length + JSON.stringify(block.arguments).length
   }
   return n
+}
+
+/** The user's answer, or no once the question is stopped while waiting for it. */
+function askUser(confirm: ConfirmTool | undefined, call: ToolCallRequest, signal?: AbortSignal): Promise<boolean> {
+  if (!confirm || signal?.aborted) return Promise.resolve(false)
+  return new Promise((resolve) => {
+    const onAbort = () => resolve(false)
+    signal?.addEventListener('abort', onAbort, { once: true })
+    confirm(call)
+      .then(resolve, () => resolve(false))
+      .finally(() => signal?.removeEventListener('abort', onAbort))
+  })
 }
 
 function toAgentTool(spec: ToolSpec): AgentTool {
