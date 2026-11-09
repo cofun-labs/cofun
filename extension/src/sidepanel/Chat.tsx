@@ -13,6 +13,7 @@ const SYSTEM_PROMPT =
   'Your tools can tell you which Notion page is open, read Notion pages as Markdown, and edit their content. ' +
   'Before editing a page, read it, then make the change with edit_page using the block references it shows; ' +
   'the user is asked to approve each edit. Change only what the user asked for. ' +
+  'To make a new page, use create_page. ' +
   'When the user asks about "this page" or its content, read the open page first and answer from what it says. ' +
   'Read child pages or other pages only when the question needs them. Be concise.'
 

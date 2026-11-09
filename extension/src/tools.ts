@@ -13,7 +13,9 @@ import {
   planEdit,
   previewEdits,
   type PageRead,
+  planNewPage,
 } from './notion/edit'
+import { MarkdownError, parseMarkdown, type NewBlock } from './notion/blocks'
 import { PAGE_TYPES, hexId, pageToMarkdown, splitSections } from './notion/markdown'
 import { activeNotionTab, type NotionTab } from './notion/tab'
 
@@ -309,4 +311,67 @@ function remember(read: PageRead) {
   if (pageReads.size > READS_KEPT) pageReads.delete(pageReads.keys().next().value!)
 }
 
-export const TOOLS: ToolSpec[] = [getCurrentPage, readPage, editPage]
+export const createPage: ToolSpec = {
+  name: 'create_page',
+  description:
+    'Creates a Notion page with a title and Markdown content (the same Markdown as edit_page), at the end of a parent ' +
+    "page: the open page unless `parent` names another. Returns the new page's id and URL. The user is asked to " +
+    "approve it. Pages can't be created inside databases with this tool.",
+  parameters: {
+    type: 'object',
+    properties: {
+      title: { type: 'string', description: "The new page's title." },
+      markdown: { type: 'string', description: "The page's content, as Markdown. Leave out for an empty page." },
+      parent: { type: 'string', description: 'URL or id of the page to create it in. Leave out for the open page.' },
+    },
+    required: ['title'],
+    additionalProperties: false,
+  },
+  needsConfirmation: true,
+  preview: (args) => {
+    const title = typeof args.title === 'string' ? args.title.trim() : ''
+    const parent =
+      typeof args.parent === 'string' && args.parent.trim() ? `the page ${args.parent.trim()}` : 'the open page'
+    const markdown = typeof args.markdown === 'string' && args.markdown.trim() ? args.markdown : '(empty)'
+    return [
+      `Create the page “${title}” at the end of ${parent}, with:`,
+      ...markdown.split('\n').map((l) => `    ${l}`),
+    ].join('\n')
+  },
+  run: async (args, signal) => {
+    const title = typeof args.title === 'string' ? args.title.trim() : ''
+    if (!title) throw new Error('`title` must not be empty.')
+    const given = typeof args.parent === 'string' && args.parent.trim() ? args.parent : undefined
+    const tab = await activeNotionTab()
+    const parentId = given ? pageArg(given) : tab.pageId
+    if (given && !parentId) throw new Error(`Not a Notion page URL or id: ${given}`)
+    if (!parentId) throw new Error('The Notion tab does not show a page. Give `parent`.')
+    let blocks: NewBlock[] = []
+    if (typeof args.markdown === 'string' && args.markdown.trim()) {
+      try {
+        blocks = parseMarkdown(args.markdown)
+      } catch (err) {
+        if (err instanceof MarkdownError) throw new EditError(err.message)
+        throw err
+      }
+    }
+    const parent = (await tab.client.getRecords([{ table: 'block', id: parentId }])).block![parentId]
+    if (parent.type !== 'page') {
+      throw new EditError(
+        PAGE_TYPES.has(String(parent.type))
+          ? "That is a database; create_page can't add rows to it."
+          : 'That id is a block inside a page, not a page.',
+      )
+    }
+    const { operations, pageId } = planNewPage(parentId, String(parent.space_id), title, blocks)
+    signal?.throwIfAborted()
+    await tab.client.submitTransaction(String(parent.space_id), operations, 'Notion Copilot: create_page')
+    const hex = hexId(pageId)
+    return [
+      `Created the page “${title}” ^${hex} at the end of ^${hexId(parentId)}.`,
+      `URL: ${new URL(tab.url).origin}/${hex}`,
+    ].join('\n')
+  },
+}
+
+export const TOOLS: ToolSpec[] = [getCurrentPage, readPage, editPage, createPage]

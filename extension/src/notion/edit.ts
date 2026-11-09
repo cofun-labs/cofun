@@ -573,3 +573,34 @@ export function previewEdits(raw: unknown, read: PageRead | undefined, page: str
 function clip(text: string, max = 80): string {
   return text.length > max ? `${text.slice(0, max - 1)}…` : text
 }
+
+/** The operations creating a page at the end of `parentId`, titled `title`, holding `blocks`. */
+export function planNewPage(
+  parentId: string,
+  spaceId: string,
+  title: string,
+  blocks: NewBlock[],
+  { now = Date.now(), newId = () => crypto.randomUUID() } = {},
+): { operations: Operation[]; pageId: string } {
+  const op = blockOps(spaceId, now)
+  const operations: Operation[] = []
+  const create = (nb: NewBlock, parent: string): string => {
+    const id = newId()
+    operations.push(
+      op.create(id, nb.type, parent, {
+        ...(nb.type === 'divider' ? {} : { properties: properties(nb) }),
+        ...(nb.icon ? { format: { page_icon: nb.icon } } : {}),
+      }),
+    )
+    let prev: string | undefined
+    for (const child of nb.children) {
+      const childId = create(child, id)
+      operations.push(op.listAfter(id, childId, prev))
+      prev = childId
+    }
+    return id
+  }
+  const pageId = create({ type: 'page', title: [[title]], children: blocks }, parentId)
+  operations.push(op.listAfter(parentId, pageId), op.touch(parentId))
+  return { operations, pageId }
+}
