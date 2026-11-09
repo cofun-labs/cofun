@@ -19,7 +19,7 @@
 - [x] Basic agent: the model calls tools that run in the extension (first tool: the current page's title and URL)
 - [x] Sessions: start, list, search, filter by page, delete, and resume past conversations, kept on the device
 - [x] Read Notion pages as Markdown: the open page or another one, in parts when long
-- [ ] Edit the current Notion page
+- [x] Edit Notion pages: insert, replace, and delete content by block, after the user approves each change
 
 ## Tech choices
 
@@ -64,6 +64,8 @@ extension/                Chrome extension
   src/notion/hosts.ts     Notion hosts, and the page id in a Notion URL
   src/notion/api.ts       Notion's internal API: endpoints, request shapes, record maps, errors
   src/notion/markdown.ts  Notion pages as Markdown for the model, with a reference on each block
+  src/notion/blocks.ts    Markdown from the model back into Notion blocks
+  src/notion/edit.ts      checks edits against the page as the agent read it, and plans the transaction
   src/notion/tab.ts       runs Notion requests in the user's Notion tab (chrome.scripting)
   src/sidepanel/          React UI (main.tsx: sign-in, Chat.tsx: chat)
 worker/                   Cloudflare Worker

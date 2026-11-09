@@ -54,6 +54,9 @@ export class FakeNotionTab {
   networkDown = false
   /** Makes Notion answer with a redirect, as it might to a sign-in page. */
   redirects = false
+  /** Answers requests no queued response is left for, like Notion would. */
+  workspace?: FakeWorkspace
+
   /** Signals the page's requests were sent with, to check each has a timeout. */
   signals: (AbortSignal | null | undefined)[] = []
 
@@ -119,7 +122,9 @@ export class FakeNotionTab {
     this.signals.push(init.signal)
     this.sent.push({ url, headers: init.headers as Record<string, string>, body: JSON.parse(init.body as string) })
     const endpoint = url.split('/api/v3/')[1]
-    const next = this.responses[endpoint]?.shift()
+    const queued = this.responses[endpoint]?.shift()
+    const served = queued ?? this.workspace?.answer(endpoint, JSON.parse(init.body as string))
+    const next = served && 'json' in served ? { status: served.status, text: JSON.stringify(served.json) } : served
     if (!next) throw new Error(`Unexpected request to ${url}`)
     if (this.redirects) {
       // A browser following a 307 sends the same body again, to wherever the redirect points.
@@ -144,4 +149,163 @@ export async function notionError(promise: Promise<unknown>): Promise<NotionErro
   )
   expect(err).toBeInstanceOf(NotionError)
   return err as NotionError
+}
+
+type NotionRecordLike = Record<string, unknown> & { id: string; version: number }
+
+/**
+ * A Notion workspace in memory: holds records, applies transactions the way Notion does (each
+ * changed record gets a new version), and answers reads in Notion's response shapes.
+ */
+export class FakeWorkspace {
+  records = new Map<string, NotionRecordLike>()
+  /** Transactions applied, in order. */
+  transactions: { operations: { pointer: { id: string }; path: string[]; command: string; args: unknown }[] }[] = []
+  /** Makes the next transaction fail with Notion's validation error, applying nothing. */
+  reject = false
+  /** Makes the next transaction apply, then answer with a server error, as a lost answer would. */
+  failAfterApply = false
+
+  constructor(
+    blocks: Record<string, unknown>[],
+    readonly spaceId: string,
+  ) {
+    for (const b of blocks)
+      this.records.set(
+        b.id as string,
+        { version: 1, alive: true, space_id: spaceId, ...b } as unknown as NotionRecordLike,
+      )
+  }
+
+  /** A user editing the page in Notion: changes a record's fields, and its version. */
+  edit(id: string, fields: Record<string, unknown>): void {
+    const r = this.records.get(id)!
+    this.records.set(id, { ...r, ...fields, version: r.version + 1 })
+  }
+
+  /** The blocks under `id`, in order, alive or not as Notion keeps them. */
+  content(id: string): NotionRecordLike[] {
+    return ((this.records.get(id)?.content as string[]) ?? []).map((c) => this.records.get(c)!).filter(Boolean)
+  }
+
+  answer(endpoint: string, body: Record<string, unknown>): { status: number; json: unknown } | undefined {
+    const wrap = (r: NotionRecordLike) => ({
+      spaceId: this.spaceId,
+      value: { role: 'editor', value: structuredClone(r) },
+    })
+    if (endpoint === 'loadPageChunk') {
+      const pageId = (body.page as { id: string }).id
+      if (!this.records.has(pageId))
+        return { status: 200, json: { cursor: { stack: [] }, recordMap: { __version__: 3 } } }
+      const block: Record<string, unknown> = {}
+      const visit = (id: string) => {
+        const r = this.records.get(id)
+        if (!r || block[id]) return
+        block[id] = wrap(r)
+        for (const c of (r.content as string[]) ?? []) visit(c)
+      }
+      visit(pageId)
+      return { status: 200, json: { cursor: { stack: [] }, recordMap: { __version__: 3, block } } }
+    }
+    if (endpoint === 'syncRecordValuesMain') {
+      const block: Record<string, unknown> = {}
+      for (const { pointer } of body.requests as { pointer: { id: string } }[]) {
+        const r = this.records.get(pointer.id)
+        if (r) block[pointer.id] = wrap(r)
+      }
+      return { status: 200, json: { recordMap: { __version__: 3, block } } }
+    }
+    if (endpoint === 'saveTransactionsFanout') {
+      if (this.reject) {
+        this.reject = false
+        return { status: 400, json: { isNotionError: true, name: 'ValidationError', debugMessage: 'Invalid input.' } }
+      }
+      for (const tx of body.transactions as FakeWorkspace['transactions']) {
+        // All or nothing, like Notion: apply to a copy, and keep it only if every operation applies.
+        const next = new Map([...this.records].map(([k, v]) => [k, structuredClone(v)]))
+        const touched = new Set<string>()
+        try {
+          for (const op of tx.operations) {
+            applyOperation(next, op)
+            touched.add(op.pointer.id)
+          }
+        } catch (err) {
+          // Notion refuses the whole transaction.
+          return {
+            status: 400,
+            json: { isNotionError: true, name: 'ValidationError', debugMessage: (err as Error).message },
+          }
+        }
+        for (const id of touched) {
+          const before = this.records.get(id)
+          next.get(id)!.version = (before?.version ?? 0) + 1
+        }
+        this.records = next
+        this.transactions.push(tx)
+      }
+      if (this.failAfterApply) {
+        this.failAfterApply = false
+        return { status: 502, json: { isNotionError: true, name: 'BadGateway', debugMessage: 'Bad gateway.' } }
+      }
+      return { status: 200, json: {} }
+    }
+    return undefined
+  }
+}
+
+function applyOperation(
+  records: Map<string, NotionRecordLike>,
+  op: { pointer: { id: string }; path: string[]; command: string; args: unknown },
+): void {
+  const id = op.pointer.id
+  const args = op.args as Record<string, unknown>
+  if (op.command === 'set' && op.path.length === 0) {
+    if (records.has(id)) throw new Error(`Record ${id} already exists`)
+    records.set(id, structuredClone(args) as NotionRecordLike)
+    return
+  }
+  const record = records.get(id)
+  if (!record) throw new Error(`No record ${id} for ${op.command}`)
+  // Notion's own rule: property values change only through updateBlockPropertyValue.
+  if ((op.command === 'set' || op.command === 'update') && op.path[0] === 'properties') {
+    throw new Error('Block property value updates must use high-level property operations.')
+  }
+  if (op.command === 'update' && op.path.length === 0 && 'properties' in args) {
+    throw new Error('Block property value updates must use high-level property operations.')
+  }
+  const at = (path: string[]) =>
+    path.reduce<Record<string, unknown>>((o, k) => (o[k] ??= {}) as Record<string, unknown>, record)
+  switch (op.command) {
+    case 'update':
+      Object.assign(at(op.path), structuredClone(args))
+      return
+    case 'updateBlockPropertyValue': {
+      const primitive = args.primitiveOp as { command: string; args: Record<string, unknown> }
+      if (primitive.command !== 'update') throw new Error(`Unexpected primitive op ${primitive.command}`)
+      Object.assign(at(op.path), structuredClone(primitive.args))
+      return
+    }
+    case 'listAfter':
+    case 'listBefore':
+    case 'listRemove': {
+      const list = ((record[op.path[0]] as string[] | undefined) ?? []).filter((x) => x !== args.id)
+      // A block goes only into the list of the block it names as its parent.
+      if (op.command !== 'listRemove' && records.get(args.id as string)?.parent_id !== id) {
+        throw new Error(`${String(args.id)} does not have ${id} as its parent`)
+      }
+      if (op.command === 'listAfter') {
+        const i = args.after ? list.indexOf(args.after as string) : list.length - 1
+        if (args.after && i < 0) throw new Error(`listAfter: ${String(args.after)} not in list`)
+        list.splice(i + 1, 0, args.id as string)
+      } else if (op.command === 'listBefore') {
+        const i = args.before ? list.indexOf(args.before as string) : 0
+        if (args.before && i < 0) throw new Error(`listBefore: ${String(args.before)} not in list`)
+        list.splice(i, 0, args.id as string)
+      }
+      record[op.path[0]] = list
+      return
+    }
+    default:
+      throw new Error(`Unexpected command ${op.command}`)
+  }
 }
