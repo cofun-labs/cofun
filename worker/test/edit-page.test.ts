@@ -856,3 +856,26 @@ describe('round 7', () => {
     expect(ws.records.get(id(1))!.properties).toEqual({ title: [['Write <br> for\nbreaks']] })
   })
 })
+
+describe('round 8', () => {
+  it('round-trips paragraphs that start like placeholder lines', async () => {
+    const ws = workspace([1], [block(1, 'text', '📄 Meeting notes')])
+    open(ws)
+    const shown = body(await read())
+    expect(shown).toBe('\\📄 Meeting notes ^00000001')
+    await edit([{ action: 'replace', block: '^00000001', markdown: shown.replace('Meeting', 'Weekly') }])
+    expect(ws.records.get(id(1))).toMatchObject({ type: 'text', properties: { title: [['📄 Weekly notes']] } })
+  })
+
+  it('refuses to delete a block and one nested under it in the same call', async () => {
+    const ws = workspace([1], [block(1, 'toggle', 'T', { content: [id(2)] }), block(2, 'text', 'Inside', {}, id(1))])
+    open(ws)
+    await read()
+    await expect(
+      edit([
+        { action: 'delete', block: '^00000001' },
+        { action: 'delete', block: '^00000002' },
+      ]),
+    ).rejects.toThrow('^00000002 is inside a block this call deletes.')
+  })
+})

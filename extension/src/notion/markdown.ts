@@ -54,7 +54,7 @@ export const PAGE_TYPES = new Set(['page', 'collection_view_page', 'collection_v
 const LAYOUT_TYPES = new Set(['column_list', 'column'])
 const MEDIA_TYPES = new Set(['image', 'video', 'audio', 'pdf', 'file'])
 /** Paragraph text that Markdown would read as another kind of block. */
-const LOOKS_LIKE_BLOCK = /^(?:#{1,3}\s|[-*+]\s|\d+[.)]\s|>|▸|`{3}|\$\$|\||\\|(?:-{3,}|\*{3,}|_{3,})$)/
+const LOOKS_LIKE_BLOCK = /^(?:#{1,3}\s|[-*+]\s|\d+[.)]\s|>|▸|`{3}|\$\$|\||\\|📄 |🗃 |↗ |(?:-{3,}|\*{3,}|_{3,})$)/
 
 export function pageToMarkdown({ page, recordMap }: LoadedPage): PageMarkdown {
   const blocks = (recordMap.block ?? {}) as Record<string, Block>

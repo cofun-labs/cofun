@@ -27,10 +27,11 @@ export function pageRead(loaded: LoadedPage, md: PageMarkdown, include: string |
   const blocks = (loaded.recordMap.block ?? {}) as Record<string, Block>
   // A block was seen if the shown text holds its lines exactly as read_page drew them, reference
   // included: text that merely mentions a reference doesn't count.
+  const text = typeof include === 'string' ? `\n${include}\n` : undefined
   const seen = (id: string) => {
-    if (typeof include !== 'string') return include(id)
+    if (text === undefined) return (include as (id: string) => boolean)(id)
     const lines = md.shown.get(id)
-    return !!lines && `\n${include}\n`.includes(`\n${lines}\n`)
+    return !!lines && text.includes(`\n${lines}\n`)
   }
   const refs = new Map([...md.refs].filter(([id]) => seen(id)))
   const versions = new Map<string, number>()
@@ -271,9 +272,11 @@ export function planEdit(
     }
     deleted.add(e.target)
   }
+  // Blocks nested under a block this call deletes: nothing else in the call may touch them.
+  const nestedUnderDeletes = new Set(edits.flatMap((e) => (e.action === 'delete' ? descendants(blocks, e.target) : [])))
   for (const e of edits) {
-    const id = e.action === 'insert' ? e.anchor : e.action === 'replace' ? e.target : undefined
-    if (id && deleted.has(id)) throw new EditError(`${ref(id)} is inside a block this call deletes.`)
+    const id = e.action === 'insert' ? e.anchor : e.target
+    if (id && nestedUnderDeletes.has(id)) throw new EditError(`${ref(id)} is inside a block this call deletes.`)
   }
 
   const ops: Operation[] = []
