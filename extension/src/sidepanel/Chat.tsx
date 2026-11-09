@@ -221,14 +221,23 @@ export function Chat({ userId }: { userId: string }) {
     setView('chat')
   }
 
-  async function open(id: string) {
+  /** Opens a saved session; false if it no longer exists. */
+  async function open(id: string): Promise<boolean> {
     // The open session is already on screen, maybe with a reply still coming in.
-    if (id === current?.id) return setView('chat')
+    if (id === current?.id) {
+      setView('chat')
+      return true
+    }
     // Stop the reply now, not once the session has loaded: it must not finish in the meantime.
     declineAll()
     agent.stop()
-    const session = await store.get(id).catch((err: Error) => console.error('Could not open the session', err))
-    if (session) switchTo(session)
+    const opening = chatId.current
+    const session = await store.get(id)
+    // The user started a new chat or opened another session meanwhile; that choice wins.
+    if (chatId.current !== opening) return true
+    if (!session) return false
+    switchTo(session)
+    return true
   }
 
   function onSubmit(e: FormEvent) {
@@ -266,7 +275,7 @@ export function Chat({ userId }: { userId: string }) {
           store={store}
           currentId={current?.id}
           saved={saved}
-          onOpen={(id) => void open(id)}
+          onOpen={open}
           onDeleted={(id) => {
             // The open session is gone; don't save it again under the same id.
             if (id !== current?.id) return
@@ -352,6 +361,11 @@ function toShown(history: HistoryMessage[]): Shown[] {
       if (part?.type === 'tool') part.tool = { ...part.tool, status: m.status, result: m.result }
     }
   }
+  // A call saved without its result is not running any more.
+  for (const m of shown)
+    if (m.role === 'assistant')
+      for (const p of m.parts)
+        if (p.type === 'tool' && p.tool.status === 'running') p.tool = { ...p.tool, status: 'stopped' }
   return shown
 }
 

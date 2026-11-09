@@ -13,7 +13,8 @@ export function Sessions({
   currentId?: string
   /** Changes whenever a session is saved, so the list stays current while it is open. */
   saved: number
-  onOpen: (id: string) => void
+  /** Resolves false when the session no longer exists. */
+  onOpen: (id: string) => Promise<boolean>
   onDeleted: (id: string) => void
 }) {
   const [sessions, setSessions] = useState<SessionInfo[] | null>(null)
@@ -26,6 +27,7 @@ export function Sessions({
   async function load() {
     try {
       setSessions(await store.list())
+      setError(undefined)
     } catch (err) {
       setError(`Could not load sessions: ${(err as Error).message}`)
     }
@@ -44,6 +46,16 @@ export function Sessions({
       await load()
     } catch (err) {
       setError(`Could not delete the session: ${(err as Error).message}`)
+    }
+  }
+
+  async function openSession(id: string) {
+    try {
+      if (await onOpen(id)) return
+      await load()
+      setError('This session no longer exists.')
+    } catch (err) {
+      setError(`Could not open the session: ${(err as Error).message}`)
     }
   }
 
@@ -74,7 +86,7 @@ export function Sessions({
       <ul className="session-list">
         {shown.map((s) => (
           <li key={s.id} className={s.id === currentId ? 'current' : undefined}>
-            <button className="session-open" onClick={() => onOpen(s.id)}>
+            <button className="session-open" onClick={() => void openSession(s.id)}>
               <span className="session-title">{s.title || 'Untitled'}</span>
               <span className="session-meta">
                 {s.page && <>{s.page.title || 'Untitled page'} · </>}
