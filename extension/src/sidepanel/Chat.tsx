@@ -1,7 +1,7 @@
 import { useAuth } from '@clerk/chrome-extension'
 import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from 'react'
 import { CopilotAgent, type AgentUpdate, type HistoryMessage } from '../agent'
-import { getSession, saveSession, titleFor, type Session } from '../sessions'
+import { SessionStore, titleFor, type Session } from '../sessions'
 import { currentNotionPage, TOOLS } from '../tools'
 import { Sessions } from './Sessions'
 import { ToolCall, type ShownTool } from './ToolCall'
@@ -35,8 +35,10 @@ interface Current {
   page: Promise<Session['page']>
 }
 
-export function Chat() {
+/** The chat of one signed-in user; mount a new one for another user. */
+export function Chat({ userId }: { userId: string }) {
   const { getToken } = useAuth()
+  const [store] = useState(() => new SessionStore(userId))
   const [messages, setMessages] = useState<Shown[]>([])
   const [input, setInput] = useState('')
   const [busy, setBusy] = useState(false)
@@ -147,7 +149,7 @@ export function Chat() {
   async function save(session: Current, messages: HistoryMessage[]) {
     try {
       const { id, createdAt } = session
-      await saveSession({
+      await store.save({
         id,
         createdAt,
         page: await session.page,
@@ -175,7 +177,7 @@ export function Chat() {
   async function open(id: string) {
     // The open session is already on screen, maybe with a reply still coming in.
     if (id === current?.id) return setView('chat')
-    const session = await getSession(id).catch((err: Error) => console.error('Could not open the session', err))
+    const session = await store.get(id).catch((err: Error) => console.error('Could not open the session', err))
     if (session) switchTo(session)
   }
 
@@ -205,6 +207,7 @@ export function Chat() {
 
       {view === 'sessions' && (
         <Sessions
+          store={store}
           currentId={current?.id}
           saved={saved}
           onOpen={(id) => void open(id)}

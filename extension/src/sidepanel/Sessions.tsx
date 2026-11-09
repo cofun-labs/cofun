@@ -1,13 +1,15 @@
 import { useEffect, useState } from 'react'
-import { deleteSession, filterSessions, listSessions, sessionPages, type SessionInfo } from '../sessions'
+import { filterSessions, sessionPages, type SessionInfo, type SessionStore } from '../sessions'
 
 /** The list of saved sessions: search, filter by page, open, and delete. */
 export function Sessions({
+  store,
   currentId,
   saved,
   onOpen,
   onDeleted,
 }: {
+  store: SessionStore
   currentId?: string
   /** Changes whenever a session is saved, so the list stays current while it is open. */
   saved: number
@@ -23,7 +25,7 @@ export function Sessions({
 
   async function load() {
     try {
-      setSessions(await listSessions())
+      setSessions(await store.list())
     } catch (err) {
       setError(`Could not load sessions: ${(err as Error).message}`)
     }
@@ -37,7 +39,7 @@ export function Sessions({
     if (confirming !== id) return setConfirming(id)
     setConfirming(undefined)
     try {
-      await deleteSession(id)
+      await store.delete(id)
       onDeleted(id)
       await load()
     } catch (err) {

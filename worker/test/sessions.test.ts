@@ -3,12 +3,9 @@ import 'fake-indexeddb/auto'
 import { beforeEach, describe, expect, it } from 'vitest'
 import type { HistoryMessage } from '../../extension/src/agent'
 import {
-  deleteSession,
   filterSessions,
-  getSession,
-  listSessions,
-  saveSession,
   sessionPages,
+  SessionStore,
   titleFor,
   type Session,
   type SessionInfo,
@@ -31,36 +28,40 @@ function session(id: string, question: string, updatedAt: number, page?: Session
   return { id, title: titleFor(messages), page, createdAt: updatedAt - 1000, updatedAt, messages }
 }
 
-beforeEach(async () => {
-  for (const s of await listSessions()) await deleteSession(s.id)
+let store: SessionStore
+let n = 0
+
+beforeEach(() => {
+  // A fresh account per test, so tests start with no sessions.
+  store = new SessionStore(`user_${n++}`)
 })
 
 describe('saved sessions', () => {
   it('[UC-SESSION-001-S03] lists sessions most recently used first, titled with their first question', async () => {
-    await saveSession(session('a', 'Summarize this page', 1000, ROADMAP))
-    await saveSession(session('b', 'What changed last week?', 3000, NOTES))
-    await saveSession(session('c', 'Draft an agenda', 2000))
+    await store.save(session('a', 'Summarize this page', 1000, ROADMAP))
+    await store.save(session('b', 'What changed last week?', 3000, NOTES))
+    await store.save(session('c', 'Draft an agenda', 2000))
 
-    const list = await listSessions()
+    const list = await store.list()
     expect(list.map((s) => [s.title, s.page?.title])).toEqual([
       ['What changed last week?', 'Meeting notes'],
       ['Draft an agenda', undefined],
       ['Summarize this page', 'Q4 Roadmap'],
     ])
     // A session saved again after another question moves to the top and keeps its whole conversation.
-    const a = (await getSession('a'))!
+    const a = (await store.get('a'))!
     const messages: HistoryMessage[] = [...a.messages, { role: 'user', text: 'Thanks' }]
-    await saveSession({ ...a, messages, updatedAt: 4000 })
+    await store.save({ ...a, messages, updatedAt: 4000 })
     const { messages: _, ...info } = a
-    expect((await listSessions())[0]).toEqual({ ...info, updatedAt: 4000 })
-    expect(await getSession('a')).toEqual({ ...a, messages, updatedAt: 4000 })
+    expect((await store.list())[0]).toEqual({ ...info, updatedAt: 4000 })
+    expect(await store.get('a')).toEqual({ ...a, messages, updatedAt: 4000 })
   })
 
   it('[UC-SESSION-001-S04] search by title and filter by the page a session started on', async () => {
-    await saveSession(session('a', 'Summarize this page', 1000, ROADMAP))
-    await saveSession(session('b', 'Summarize the decisions', 2000, NOTES))
-    await saveSession(session('c', 'Draft an agenda', 3000, { ...NOTES, url: `${NOTES.url}?pvs=4#block` }))
-    const all = await listSessions()
+    await store.save(session('a', 'Summarize this page', 1000, ROADMAP))
+    await store.save(session('b', 'Summarize the decisions', 2000, NOTES))
+    await store.save(session('c', 'Draft an agenda', 3000, { ...NOTES, url: `${NOTES.url}?pvs=4#block` }))
+    const all = await store.list()
     const ids = (sessions: SessionInfo[]) => sessions.map((s) => s.id)
 
     expect(ids(filterSessions(all, { query: 'SUMMARIZE' }))).toEqual(['b', 'a'])
@@ -74,12 +75,23 @@ describe('saved sessions', () => {
   })
 
   it('[UC-SESSION-001-S05] a deleted session is no longer listed and cannot be reopened', async () => {
-    await saveSession(session('a', 'Summarize this page', 1000, ROADMAP))
-    await saveSession(session('b', 'Draft an agenda', 2000))
-    await deleteSession('a')
-    expect((await listSessions()).map((s) => s.id)).toEqual(['b'])
-    expect(await getSession('a')).toBeUndefined()
-    expect((await getSession('b'))?.title).toBe('Draft an agenda')
+    await store.save(session('a', 'Summarize this page', 1000, ROADMAP))
+    await store.save(session('b', 'Draft an agenda', 2000))
+    await store.delete('a')
+    expect((await store.list()).map((s) => s.id)).toEqual(['b'])
+    expect(await store.get('a')).toBeUndefined()
+    expect((await store.get('b'))?.title).toBe('Draft an agenda')
+  })
+
+  it("[UC-SESSION-001-S09] another account on the same browser sees none of the first account's sessions", async () => {
+    const alice = new SessionStore('user_alice_s09')
+    const bob = new SessionStore('user_bob_s09')
+    await alice.save(session('a', 'Summarize this page', 1000, ROADMAP))
+    expect(await bob.list()).toEqual([])
+    expect(await bob.get('a')).toBeUndefined()
+    // Deleting under one account leaves the other's sessions alone.
+    await bob.delete('a')
+    expect((await alice.list()).map((s) => s.id)).toEqual(['a'])
   })
 
   it('a title is the first question on one line, cut to a readable length', () => {

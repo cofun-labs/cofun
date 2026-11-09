@@ -8,9 +8,10 @@ Reopening a session shows the whole conversation, including the tools the agent 
 
 Sessions are kept on the user's device and do not follow them to other devices. The service never stores them; it only sees the conversation the AI needs to answer the current question (see UC-AGENT-001 and UC-CHAT-002).
 
-Key constraint:
+Key constraints:
 
 - A session's context stays in that session. A new or different session never sends another session's conversation to the AI.
+- Sessions belong to the account that made them. Another account signed in on the same browser cannot see or reopen them.
 
 ## Scenarios
 
@@ -23,6 +24,7 @@ Key constraint:
 | UC-SESSION-001-S03 | P1 | ✅ | Given several saved sessions; when the user opens the session list; then it shows them most recently used first, each titled with its first question and with the Notion page it started on. |
 | UC-SESSION-001-S04 | P1 | ✅ | Given sessions with different titles started on different Notion pages; when the user searches by title or picks a page; then only the sessions that match are listed. |
 | UC-SESSION-001-S05 | P1 | ✅ | Given a saved session; when the user deletes it; then it is no longer listed and cannot be reopened. |
+| UC-SESSION-001-S09 | P0 | ✅ | Given sessions saved by one account; when another account signs in on the same browser; then it sees none of them and cannot reopen them. |
 
 ### ai-e2e
 
