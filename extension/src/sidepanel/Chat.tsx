@@ -53,6 +53,8 @@ export function Chat({ userId }: { userId: string }) {
   const [saved, setSaved] = useState(0)
   // Bumped when another session opens, so updates still arriving for the old one are dropped.
   const chatId = useRef(0)
+  // Bumped by every open() and by sending: a session still loading when either happens is not opened.
+  const opening = useRef(0)
   const tokenRef = useRef(getToken)
   tokenRef.current = getToken
   const agentRef = useRef<CopilotAgent | null>(null)
@@ -77,6 +79,7 @@ export function Chat({ userId }: { userId: string }) {
     if (!text || busy) return
 
     const id = chatId.current
+    opening.current++
     const session = current ?? {
       id: crypto.randomUUID(),
       createdAt: Date.now(),
@@ -232,10 +235,11 @@ export function Chat({ userId }: { userId: string }) {
     // Stop the reply now, not once the session has loaded: it must not finish in the meantime.
     declineAll()
     agent.stop()
-    const opening = chatId.current
+    const chat = chatId.current
+    const token = ++opening.current
     const session = await store.get(id)
-    // The user started a new chat or opened another session meanwhile; that choice wins.
-    if (chatId.current !== opening) return true
+    // The user started a new chat, opened another session, or asked something meanwhile; that wins.
+    if (chatId.current !== chat || opening.current !== token) return true
     if (!session) return false
     switchTo(session)
     return true
