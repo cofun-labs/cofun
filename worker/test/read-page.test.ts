@@ -119,7 +119,7 @@ describe('UC-NOTION-001 read a page', () => {
         format: { table_block_column_order: ['c1', 'c2'], table_block_column_header: true },
       }),
       ...block(id(18), 'table_row', undefined, { properties: { c1: [['Name']], c2: [['Owner']] } }, id(17)),
-      ...block(id(19), 'table_row', undefined, { properties: { c1: [['Read']], c2: [['A|B']] } }, id(17)),
+      ...block(id(19), 'table_row', undefined, { properties: { c1: [['Read']], c2: [['A|B\\C']] } }, id(17)),
       ...block(id(20), 'equation', 'e=mc^2'),
       ...block(id(21), 'bookmark', undefined, {
         properties: { title: [['Example']], link: [['https://example.com']] },
@@ -157,7 +157,7 @@ describe('UC-NOTION-001 read a page', () => {
         '--- ^00000010',
         '| Name | Owner |',
         '| --- | --- |',
-        '| Read | A\\|B |',
+        '| Read | A\\|B\\\\C |',
         '^00000011',
         '$$e=mc^2$$ ^00000014',
         '[Example](https://example.com) ^00000015',

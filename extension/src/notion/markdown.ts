@@ -184,7 +184,9 @@ class Context {
     const columns = (block.format?.table_block_column_order as string[] | undefined) ?? []
     const rows = (block.content ?? []).map((id) => this.blocks[id]).filter((r) => r && r.alive !== false)
     if (!columns.length || !rows.length) return [`${pad}[empty table]`]
-    const cells = rows.map((row) => columns.map((c) => this.rich(row.properties?.[c]).replace(/\|/g, '\\|')))
+    // A cell can't hold a raw `|`; backslashes are escaped first so the escaping can be undone.
+    const cell = (text: string) => text.replace(/\\/g, '\\\\').replace(/\|/g, '\\|')
+    const cells = rows.map((row) => columns.map((c) => cell(this.rich(row.properties?.[c]))))
     // Markdown tables need a header row; Notion's first row is one when the table says so, and is
     // shown as one either way.
     const [head, ...body] = cells
