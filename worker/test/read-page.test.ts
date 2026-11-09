@@ -153,7 +153,8 @@ describe('UC-NOTION-001 read a page', () => {
         '```typescript',
         'const a = 1',
         'console.log(a)',
-        '``` ^0000000f',
+        '```',
+        '^0000000f',
         '--- ^00000010',
         '| Name | Owner |',
         '| --- | --- |',
@@ -202,7 +203,8 @@ describe('UC-NOTION-001 read a page', () => {
     const ids = Array.from({ length: count }, (_, i) => id(i + 1))
     const blocks = Object.assign({}, ...ids.map((b, i) => block(b, 'text', `Paragraph ${i + 1} ${'x'.repeat(60)}`)))
     const page = chunk(ids, { block: blocks })
-    openPage(page, page, page, page, page)
+    // The page is loaded once: later parts come from the same read, so they fit together.
+    const tab = openPage(page)
 
     const first = await read()
     const parts = Number(/^Part 1 of (\d+)\. Read part 2 for more\.$/m.exec(first)?.[1])
@@ -220,6 +222,8 @@ describe('UC-NOTION-001 read a page', () => {
     const lines = texts.join('\n').split('\n')
     expect(lines).toHaveLength(count)
     expect(lines.map((l) => Number(/^Paragraph (\d+) /.exec(l)?.[1]))).toEqual(ids.map((_, i) => i + 1))
+
+    expect(tab.sent.filter((r) => r.url.endsWith('/loadPageChunk'))).toHaveLength(1)
 
     await expect(read({ part: parts + 1 })).rejects.toThrow(
       `This page has ${parts} parts; there is no part ${parts + 1}.`,
@@ -394,5 +398,106 @@ describe('parts', () => {
     expect(splitIntoParts(['aaaa', 'bbbb', 'cc'], 10)).toEqual(['aaaa\nbbbb', 'cc'])
     expect(splitIntoParts(['x', 'l1\nl2\nl3\nl4'], 5)).toEqual(['x', 'l1\nl2', 'l3\nl4'])
     expect(splitIntoParts([], 10)).toEqual([''])
+    // A line longer than a part is cut, so no part is longer than the limit.
+    expect(splitIntoParts(['x'.repeat(12)], 5)).toEqual(['xxxxx', 'xxxxx', 'xx'])
+  })
+})
+
+describe('converter details', () => {
+  it('fences code with more backticks than the code has, and puts the reference after the fence', async () => {
+    openPage(
+      chunk([id(1)], {
+        block: block(id(1), 'code', undefined, { properties: { title: [['a\n```\nb']], language: [['Plain Text']] } }),
+      }),
+    )
+    expect(body(await read())).toBe(['````', 'a', '```', 'b', '````', '^00000001'].join('\n'))
+  })
+
+  it('keeps table rows on one line each, and marks rows that were not loaded', async () => {
+    openPage(
+      chunk([id(1)], {
+        block: {
+          ...block(id(1), 'table', undefined, {
+            content: [id(2), id(3), id(4)],
+            format: { table_block_column_order: ['c1', 'c2'] },
+          }),
+          ...block(id(2), 'table_row', undefined, { properties: { c1: [['Step']], c2: [['Notes']] } }, id(1)),
+          ...block(id(3), 'table_row', undefined, { properties: { c1: [['One']], c2: [['line 1\nline 2']] } }, id(1)),
+        },
+      }),
+    )
+    expect(body(await read())).toBe(
+      ['| Step | Notes |', '| --- | --- |', '| One | line 1<br>line 2 |', '| [row not loaded] |  |', '^00000001'].join(
+        '\n',
+      ),
+    )
+  })
+
+  it('shows computed properties as such, and times and people the row keeps itself', async () => {
+    const collection = {
+      [COLLECTION]: wrapped({
+        id: COLLECTION,
+        name: [['Tasks']],
+        schema: {
+          title: { name: 'Name', type: 'title' },
+          'a:a': { name: 'Score', type: 'formula' },
+          'b:b': { name: 'Total', type: 'rollup' },
+          'c:c': { name: 'Created', type: 'created_time' },
+          'd:d': { name: 'Edited by', type: 'last_edited_by' },
+        },
+      }),
+    }
+    openPage(
+      chunk(
+        [],
+        { block: {}, collection },
+        {
+          parent_id: COLLECTION,
+          parent_table: 'collection',
+          created_time: Date.UTC(2026, 10, 9, 8, 30),
+          last_edited_by_id: USER,
+        },
+      ),
+    )
+    expect(
+      body(await read())
+        .split('\n')
+        .slice(0, 6),
+    ).toEqual([
+      '---',
+      'Score: [formula, not shown]',
+      'Total: [rollup, not shown]',
+      'Created: 2026-11-09 08:30 UTC',
+      'Edited by: @Fixture User',
+      '---',
+    ])
+  })
+
+  it('still reads a database row whose database the account cannot open, without its properties', async () => {
+    openPage(
+      chunk(
+        [id(1)],
+        { block: block(id(1), 'text', 'Row body') },
+        { parent_id: COLLECTION, parent_table: 'collection' },
+      ),
+    ).respond('syncRecordValuesMain', 200, fixture('empty-record-map'))
+    const result = await read()
+    expect(result).toContain(
+      "This is a database row, but its database can't be opened, so its properties are not shown.",
+    )
+    expect(body(result)).toBe('Row body ^00000001')
+  })
+
+  it('names a linked database view after the database it shows', async () => {
+    openPage(
+      chunk([id(1)], {
+        block: block(id(1), 'collection_view', undefined, {
+          view_ids: [],
+          format: { collection_pointer: { id: COLLECTION, table: 'collection', spaceId: SPACE } },
+        }),
+        collection: { [COLLECTION]: wrapped({ id: COLLECTION, name: [['Tasks']] }) },
+      }),
+    )
+    expect(body(await read())).toBe(`🗃 Tasks (database) ^${hex(id(1))}`)
   })
 })

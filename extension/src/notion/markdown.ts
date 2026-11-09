@@ -140,10 +140,15 @@ class Context {
       case 'code': {
         const language = this.plain(block.properties?.language).toLowerCase()
         const code = this.plain(block.properties?.title)
+        // The fence is longer than any run of backticks in the code, so the code can't close it.
+        const longest = Math.max(0, ...(code.match(/`+/g) ?? []).map((run) => run.length))
+        const fence = '`'.repeat(Math.max(3, longest + 1))
         return [
-          `${pad}\`\`\`${language === 'plain text' ? '' : language}`,
+          `${pad}${fence}${language === 'plain text' ? '' : language}`,
           ...code.split('\n').map((l) => `${pad}${l}`),
-          `${pad}\`\`\`${ref}`,
+          `${pad}${fence}`,
+          // On its own line: text after a closing fence would stop it from closing the block.
+          `${pad}${ref.trim()}`,
           ...children(),
         ]
       }
@@ -182,11 +187,16 @@ class Context {
 
   private table(block: Block, pad: string): string[] {
     const columns = (block.format?.table_block_column_order as string[] | undefined) ?? []
-    const rows = (block.content ?? []).map((id) => this.blocks[id]).filter((r) => r && r.alive !== false)
+    const rows = (block.content ?? []).map((id) => this.blocks[id]).filter((r) => r?.alive !== false)
     if (!columns.length || !rows.length) return [`${pad}[empty table]`]
-    // A cell can't hold a raw `|`; backslashes are escaped first so the escaping can be undone.
-    const cell = (text: string) => text.replace(/\\/g, '\\\\').replace(/\|/g, '\\|')
-    const cells = rows.map((row) => columns.map((c) => cell(this.rich(row.properties?.[c]))))
+    // A cell can't hold a raw `|` or a line break; backslashes are escaped first so the escaping
+    // can be undone.
+    const cell = (text: string) => text.replace(/\\/g, '\\\\').replace(/\|/g, '\\|').replace(/\n/g, '<br>')
+    const cells = rows.map((row) =>
+      row
+        ? columns.map((c) => cell(this.rich(row.properties?.[c])))
+        : ['[row not loaded]', ...columns.slice(1).map(() => '')],
+    )
     // Markdown tables need a header row; Notion's first row is one when the table says so, and is
     // shown as one either way.
     const [head, ...body] = cells
@@ -197,7 +207,10 @@ class Context {
     ]
   }
 
-  /** A database row's properties, in the database's order, skipping empty ones and the title. */
+  /**
+   * A database row's properties, in the database's order, skipping empty ones and the title.
+   * Without its database (the user may see the row but not the database), there are none to show.
+   */
   properties(page: Block): string[] {
     if (page.parent_table !== 'collection' || !page.parent_id) return []
     const collection = this.recordMap.collection?.[page.parent_id]
@@ -205,16 +218,40 @@ class Context {
     const out: string[] = []
     for (const [key, { name, type }] of Object.entries(schema)) {
       if (key === 'title' || type === 'title') continue
-      const value = page.properties?.[key]
-      if (value === undefined) continue
-      const shown = type === 'checkbox' ? (this.plain(value) === 'Yes' ? 'Yes' : 'No') : this.rich(value)
+      const shown = this.property(page, key, type)
       if (shown) out.push(`${name ?? key}: ${shown}`)
     }
     return out
   }
 
+  private property(page: Block, key: string, type: string | undefined): string {
+    switch (type) {
+      // Notion keeps these on the row itself, not in its properties.
+      case 'created_time':
+      case 'last_edited_time': {
+        const time = page[type]
+        return typeof time === 'number' ? new Date(time).toISOString().slice(0, 16).replace('T', ' ') + ' UTC' : ''
+      }
+      case 'created_by':
+      case 'last_edited_by': {
+        const user = page[`${type}_id`]
+        return typeof user === 'string' ? `@${this.userName(user)}` : ''
+      }
+      // Computed by Notion when it shows the database; the row doesn't store them.
+      case 'formula':
+      case 'rollup':
+        return `[${type}, not shown]`
+      case 'checkbox':
+        return page.properties?.[key] === undefined ? '' : this.plain(page.properties[key]) === 'Yes' ? 'Yes' : 'No'
+      default:
+        return this.rich(page.properties?.[key])
+    }
+  }
+
   databaseName(block: Block): string {
-    const id = block.collection_id as string | undefined
+    // Linked views name their database in the format instead.
+    const pointer = block.format?.collection_pointer as { id?: string } | undefined
+    const id = (block.collection_id as string | undefined) ?? pointer?.id
     const collection = id ? this.recordMap.collection?.[id] : undefined
     return this.plain(collection?.name) || 'Untitled database'
   }
@@ -275,7 +312,7 @@ class Context {
     return out
   }
 
-  private userName(id: string): string {
+  userName(id: string): string {
     const user = this.recordMap.notion_user?.[id] as (NotionRecord & { name?: string }) | undefined
     return user?.name || 'someone'
   }
@@ -332,9 +369,13 @@ export function splitIntoParts(sections: string[], max: number): string[] {
       current = section
       continue
     }
-    for (const line of section.split('\n')) {
-      if (current && current.length + 1 + line.length > max) push()
-      current = current ? `${current}\n${line}` : line
+    for (const whole of section.split('\n')) {
+      // A single line longer than a part is cut into pieces of the part's size.
+      for (let at = 0; at < Math.max(whole.length, 1); at += max) {
+        const line = whole.slice(at, at + max)
+        if (current && current.length + 1 + line.length > max) push()
+        current = current ? `${current}\n${line}` : line
+      }
     }
   }
   push()

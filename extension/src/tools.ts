@@ -2,7 +2,7 @@
 // The worker's tests import this file too, and their tsconfig has no chrome types.
 /// <reference types="chrome" />
 import type { ToolSpec } from './agent'
-import { mergeRecordMaps, type LoadedPage } from './notion/api'
+import { NotionError, mergeRecordMaps, type LoadedPage } from './notion/api'
 import { isNotion, pageIdFromUrl, toUuid } from './notion/hosts'
 import { hexId, pageToMarkdown, splitIntoParts } from './notion/markdown'
 import { activeNotionTab, type NotionTab } from './notion/tab'
@@ -60,7 +60,7 @@ export const readPage: ToolSpec = {
     const part = args.part === undefined ? 1 : Number(args.part)
     if (!Number.isInteger(part) || part < 1) throw new Error('`part` must be a whole number from 1.')
 
-    const loaded = await loadWithDatabase(tab, id)
+    const { loaded, databaseMissing } = await loadForPart(tab, id, part)
     const md = pageToMarkdown(loaded)
     const parts = splitIntoParts(md.sections, PART_CHARS)
     if (part > parts.length) {
@@ -76,6 +76,9 @@ export const readPage: ToolSpec = {
         : []),
       ...(md.kind === 'database' ? ['This page is a database. Reading its rows is not supported yet.'] : []),
       ...(loaded.complete ? [] : ['The page is too long to load in full; only its beginning is shown.']),
+      ...(databaseMissing
+        ? ["This is a database row, but its database can't be opened, so its properties are not shown."]
+        : []),
     ]
     const properties = part === 1 && md.properties.length ? ['---', ...md.properties, '---'] : []
     const body = parts[part - 1] || (md.kind === 'page' ? '(This page is empty.)' : '')
@@ -90,15 +93,42 @@ function pageArg(text: string): string | undefined {
   return toUuid(value)
 }
 
+interface Loaded {
+  loaded: LoadedPage
+  databaseMissing: boolean
+}
+
+/** How long the parts after the first come from the page as it was when part 1 was read. */
+const PARTS_REUSE_MS = 5 * 60_000
+let lastRead: { key: string; at: number; result: Loaded } | undefined
+
+/**
+ * Part 1 always reads the page fresh. Later parts reuse that read for a while, so reading a long
+ * page part by part loads it once, and the parts fit together even if the page changes meanwhile.
+ */
+async function loadForPart(tab: NotionTab, id: string, part: number): Promise<Loaded> {
+  const key = `${tab.tabId}:${id}`
+  if (part > 1 && lastRead?.key === key && Date.now() - lastRead.at < PARTS_REUSE_MS) return lastRead.result
+  const result = await loadWithDatabase(tab, id)
+  lastRead = { key, at: Date.now(), result }
+  return result
+}
+
 /** Loads a page, and for a database row also its database, which names the row's properties. */
-async function loadWithDatabase(tab: NotionTab, id: string): Promise<LoadedPage> {
+async function loadWithDatabase(tab: NotionTab, id: string): Promise<Loaded> {
   const loaded = await tab.client.loadPage(id)
   const { page, spaceId, recordMap } = loaded
-  if (page.parent_table === 'collection' && page.parent_id && !recordMap.collection?.[page.parent_id]) {
-    const records = await tab.client.getRecords([{ table: 'collection', id: page.parent_id, spaceId }])
-    mergeRecordMaps(recordMap, records)
+  if (page.parent_table !== 'collection' || !page.parent_id || recordMap.collection?.[page.parent_id]) {
+    return { loaded, databaseMissing: false }
   }
-  return loaded
+  try {
+    mergeRecordMaps(recordMap, await tab.client.getRecords([{ table: 'collection', id: page.parent_id, spaceId }]))
+    return { loaded, databaseMissing: false }
+  } catch (err) {
+    // A row can be shared with someone who can't open its database; the row itself still reads.
+    if (err instanceof NotionError && err.code === 'no_access') return { loaded, databaseMissing: true }
+    throw err
+  }
 }
 
 export const TOOLS: ToolSpec[] = [getCurrentPage, readPage]
