@@ -130,13 +130,16 @@ export function parseMarkdown(markdown: string): NewBlock[] {
             'write them after it instead.',
         )
       }
+      // A leading backslash keeps a line that looks like a list or heading as text.
+      const unlead = (l: string) => (l.startsWith('\\') ? l.slice(1) : l)
       const callout = /^\[!([^\]]+)\]\s?(.*)$/.exec(quoted[0])
       if (callout) {
         // Only an emoji is an icon; `[!NOTE]` and other labels leave the callout's icon as it is.
         const icon = /^\p{Extended_Pictographic}/u.test(callout[1]) ? callout[1] : undefined
-        add(indent, { type: 'callout', title: inline([callout[2], ...quoted.slice(1)].join('\n')), icon, children: [] })
+        const text = [callout[2], ...quoted.slice(1)].map(unlead).join('\n')
+        add(indent, { type: 'callout', title: inline(text), icon, children: [] })
       } else {
-        add(indent, { type: 'quote', title: inline(quoted.join('\n')), children: [] })
+        add(indent, { type: 'quote', title: inline(quoted.map(unlead).join('\n')), children: [] })
       }
       continue
     }

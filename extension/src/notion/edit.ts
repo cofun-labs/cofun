@@ -354,6 +354,10 @@ export function planEdit(
 
   for (const e of edits) {
     if (e.action === 'insert') {
+      // The end of a page that didn't load in full is past blocks nobody was shown.
+      if (e.position === 'end' && !loaded.complete) {
+        throw new EditError("The page didn't load in full, so its end isn't known. Insert after a block instead.")
+      }
       const parent = e.anchor ? parentOf(e.anchor) : page
       const key = e.anchor ?? e.position
       const ids = insert(e.blocks, parent, { after: e.anchor, start: e.position === 'start', key })

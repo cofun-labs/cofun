@@ -234,7 +234,12 @@ class Context {
   /** A quote or callout: every line, its children's too, stays inside the blockquote. */
   private quoted(block: Block, pad: string, label: string, text: string, ref: string): string[] {
     // Every line of a quote is marked as quoted, so its line breaks stay real lines.
-    const own = withRef('', label, text, ref, 'lines')
+    // As for paragraphs: a line that would read as a list, heading, or code starts with a backslash.
+    const escaped = text
+      .split('\n')
+      .map((l) => (LOOKS_LIKE_BLOCK.test(l) ? `\\${l}` : l))
+      .join('\n')
+    const own = withRef('', label, escaped, ref, 'lines')
     const children = this.children(block, 0).flat()
     return [...own, ...children].map((l) => `${pad}> ${l}`)
   }

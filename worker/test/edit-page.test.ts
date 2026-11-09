@@ -970,3 +970,51 @@ describe('round 12', () => {
     expect(ws.records.get(id(1))).toMatchObject({ alive: false })
   })
 })
+
+describe('round 13', () => {
+  it('sends nothing when the user stopped the question before the edit was sent', async () => {
+    const ws = workspace([1], [block(1, 'text', 'Intro')])
+    open(ws)
+    await read()
+    const stop = new AbortController()
+    stop.abort()
+    await expect(
+      editPage.run({ page: hex(PAGE), edits: [{ action: 'insert', position: 'end', markdown: 'x' }] }, stop.signal),
+    ).rejects.toThrow()
+    expect(ws.transactions).toEqual([])
+  })
+
+  it('round-trips quotes and callouts whose text starts like a list', async () => {
+    const ws = workspace(
+      [1, 2],
+      [block(1, 'quote', '- not a list'), block(2, 'callout', '2024. A good year', { format: { page_icon: '💡' } })],
+    )
+    open(ws)
+    const shown = body(await read())
+    expect(shown).toBe(['> \\- not a list ^00000001', '> [!💡] \\2024. A good year ^00000002'].join('\n'))
+    const lines = shown.split('\n')
+    await edit([
+      { action: 'replace', block: '^00000001', markdown: lines[0].replace('list', 'list at all') },
+      { action: 'replace', block: '^00000002', markdown: lines[1] },
+    ])
+    expect(ws.records.get(id(1))!.properties).toEqual({ title: [['- not a list at all']] })
+    expect(ws.records.get(id(2))!.properties).toEqual({ title: [['2024. A good year']] })
+  })
+
+  it('refuses to insert at the end of a page that did not load in full', async () => {
+    const ws = workspace([1], [block(1, 'text', 'Intro')])
+    const tab = open(ws)
+    // Notion reports more chunks than the client loads: the page is incomplete.
+    await read()
+    const loadPage = tab.workspace!.answer.bind(tab.workspace)
+    tab.workspace!.answer = (endpoint, body) => {
+      const res = loadPage(endpoint, body)
+      if (endpoint === 'loadPageChunk' && res)
+        (res.json as { cursor: unknown }).cursor = { stack: [[{ table: 'block', id: PAGE }]] }
+      return res
+    }
+    await expect(edit([{ action: 'insert', position: 'end', markdown: 'x' }])).rejects.toThrow(
+      "The page didn't load in full, so its end isn't known.",
+    )
+  })
+})

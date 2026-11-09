@@ -233,7 +233,7 @@ export const editPage: ToolSpec = {
     if (!given) return undefined
     return previewEdits(args.edits, pageReads.get(pageArg(given) ?? ''), given)
   },
-  run: async (args) => {
+  run: async (args, signal) => {
     // The page is named in the call, so what the user approves is the page that gets changed.
     const given = givenPage(args)
     if (!given) throw new EditError('Give `page`: the id read_page shows after "Page:".')
@@ -253,6 +253,8 @@ export const editPage: ToolSpec = {
       )
     }
     const plan = planEdit(loaded, read, edits)
+    // The last point where nothing has been sent: a Stop pressed while the page loaded wins.
+    signal?.throwIfAborted()
     try {
       await tab.client.submitTransaction(loaded.spaceId, plan.operations, 'Notion Copilot: edit_page')
     } catch (err) {
