@@ -273,5 +273,6 @@ export function notionLanguage(language: string): string {
 
 /** read_page's <br> for a line break inside a block; an escaped \\<br> is the literal text. */
 function breaks(text: string): string {
-  return text.replace(/(?<!\\)<br\s*\/?>/gi, '\n')
+  // Escaped only behind an odd number of backslashes: `\\<br>` is a backslash, then a line break.
+  return text.replace(/(?<!(?:^|[^\\])(?:\\\\)*\\)<br\s*\/?>/gi, '\n')
 }

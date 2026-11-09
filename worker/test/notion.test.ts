@@ -110,6 +110,15 @@ describe('requests', () => {
     expect(write.code).toBe('notion_error')
   })
 
+  it('report a tab that left Notion as no Notion tab, not missing site access', async () => {
+    const tab = pageTab()
+    const { client } = await activeNotionTab()
+    tab.pageUrl = 'https://mail.example.com/'
+    tab.injectionError = 'Cannot access contents of url "https://mail.example.com/".'
+    const err = await notionError(client.loadPage(PAGE))
+    expect([err.code, err.unanswered]).toEqual(['no_notion_tab', false])
+  })
+
   it('treat other failures that mention permission as possibly sent', async () => {
     const tab = pageTab()
     const { client } = await activeNotionTab()

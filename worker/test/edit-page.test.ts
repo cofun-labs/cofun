@@ -879,3 +879,14 @@ describe('round 8', () => {
     ).rejects.toThrow('^00000002 is inside a block this call deletes.')
   })
 })
+
+describe('round 9', () => {
+  it('keeps a line break after a backslash', async () => {
+    const ws = workspace([1], [block(1, 'text', 'a\\\nb')])
+    open(ws)
+    const shown = body(await read())
+    expect(shown).toBe('a\\\\<br>b ^00000001')
+    await edit([{ action: 'replace', block: '^00000001', markdown: shown.replace('b ^', 'c ^') }])
+    expect(ws.records.get(id(1))!.properties).toEqual({ title: [['a\\\nc']] })
+  })
+})
