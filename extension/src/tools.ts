@@ -27,6 +27,7 @@ import { MarkdownError, parseMarkdown, type NewBlock } from './notion/blocks'
 import { PropertyError, oneLine, propertyValue, schemaEntry, shownInput, type PropertyInput } from './notion/props'
 import { PAGE_TYPES, hexId, pageToMarkdown, rowValues, splitSections, type Schema } from './notion/markdown'
 import { activeNotionTab, selectionIn, type NotionTab } from './notion/tab'
+import { pageChildren, pageTree, runsText, treeLines } from './notion/tree'
 
 /**
  * The title and URL of the Notion page open in the side panel's window, if one is.
@@ -486,6 +487,126 @@ function day(value: string): string {
 export function localDate(d: Date): string {
   const pad = (n: number) => String(n).padStart(2, '0')
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+}
+
+export const LIST_MAX_DEPTH = 3
+/** How many pages one list shows, so a large workspace still fits the conversation. */
+export const LIST_LIMIT = 100
+/** How many pages each top-level section shows. */
+export const SECTION_LIMIT = 50
+
+export const listPages: ToolSpec = {
+  name: 'list_pages',
+  description:
+    "Lists pages and databases as Notion's sidebar shows them: without `page`, the top level of the open page's " +
+    "workspace (private and shared pages, and the workspace's own pages and teamspaces where its records list " +
+    'them); with `page`, the pages ' +
+    'and databases under it. Titles and ids only, no content: read a page with read_page. `depth` also lists the ' +
+    'pages under those, up to 3 levels.',
+  parameters: {
+    type: 'object',
+    properties: {
+      page: {
+        type: 'string',
+        description: 'URL or id of a page to list the pages under. Leave out for the top level.',
+      },
+      depth: {
+        type: 'integer',
+        minimum: 1,
+        maximum: LIST_MAX_DEPTH,
+        description: 'How many levels to list. Defaults to 1.',
+      },
+    },
+    additionalProperties: false,
+  },
+  run: async (args) => {
+    const given = typeof args.page === 'string' && args.page.trim() ? args.page : undefined
+    const rootId = given ? pageArg(given) : undefined
+    if (given && !rootId) throw new Error(`Not a Notion page URL or id: ${given}`)
+    const depth = args.depth === undefined || args.depth === null || args.depth === '' ? 1 : Number(args.depth)
+    if (!Number.isInteger(depth) || depth < 1 || depth > LIST_MAX_DEPTH) {
+      throw new Error(`\`depth\` must be a whole number from 1 to ${LIST_MAX_DEPTH}.`)
+    }
+    const tab = await activeNotionTab()
+    const cutOff = (truncated: boolean) =>
+      truncated
+        ? [
+            `Not every page may be listed: a list shows at most ${LIST_LIMIT} pages, and pages under the ` +
+              'last ones shown may be left out. To see what is under a listed page, list it by its id.',
+          ]
+        : []
+
+    if (rootId) {
+      const records = await tab.client.getRecords([{ table: 'block', id: rootId }])
+      const root = records.block![rootId]
+      if (root.type !== 'page') {
+        throw new Error(
+          PAGE_TYPES.has(String(root.type))
+            ? 'That is a database; its rows are not pages to list.'
+            : 'That id is a block inside a page, not a page.',
+        )
+      }
+      const children = (await pageChildren(tab.client, [rootId], records)).get(rootId) ?? []
+      const { nodes, truncated } = await pageTree(tab.client, children, depth, LIST_LIMIT, records)
+      const title = runsText((root.properties as { title?: unknown } | undefined)?.title) || 'Untitled'
+      return [
+        `Pages under “${title}” ^${hexId(rootId)}:`,
+        '',
+        ...(treeLines(nodes).length ? treeLines(nodes) : ['(no pages)']),
+        ...cutOff(truncated),
+      ].join('\n')
+    }
+
+    if (!tab.pageId) throw new Error('Open a page of the workspace to list it.')
+    const opened = await tab.client.getRecords([{ table: 'block', id: tab.pageId }])
+    const spaceId = (opened.block?.[tab.pageId] as { space_id?: string } | undefined)?.space_id
+    if (!spaceId) throw new Error('Could not tell which workspace the open page is in.')
+    const space = await tab.client.getSpace(spaceId)
+    // A page can be in more than one list (a shared page often stays in the owner's private
+    // pages, where the sidebar shows it); it is listed in the first. Teamspaces are listed when the
+    // workspace's records name them; workspaces that load them another way don't show them yet.
+    const sections: [string, string[]][] = [
+      ['Private', space.privatePages],
+      ['Shared', space.sharedPages],
+      ['Workspace', space.workspacePages],
+      ...space.teams.map((t): [string, string[]] => [`Teamspace: ${t.name}`, t.pages]),
+    ]
+    // Each section has its own share of the limit, so a long one can't hide the others, and all of
+    // them together stay within the overall limit.
+    const seen = new Set<string>()
+    const out = [`Pages in the workspace “${space.name}”:`]
+    const skipped: string[] = []
+    let any = false
+    let left = LIST_LIMIT
+    for (const [label, all] of sections) {
+      const ids = all.filter((id) => !seen.has(id))
+      if (!ids.length) continue
+      if (left <= 0) {
+        skipped.push(label)
+        continue
+      }
+      const limit = Math.min(SECTION_LIMIT, left)
+      const { nodes, truncated } = await pageTree(tab.client, ids, depth, limit)
+      if (!nodes.length) continue
+      any = true
+      left -= countNodes(nodes)
+      out.push('', label, ...treeLines(nodes))
+      // Only pages actually listed count as listed, so one cut from this section can show in a later one.
+      for (const id of nodeIds(nodes)) seen.add(id)
+      if (truncated) out.push('(This section was cut off: not every page in it is listed.)')
+    }
+    if (skipped.length) out.push('', `Not listed, to keep the list short: ${skipped.join(', ')}.`)
+    if (!any) out.push('', '(no pages)')
+    return out.join('\n')
+  },
+}
+
+function nodeIds(nodes: { id: string; children: unknown[] }[]): string[] {
+  return nodes.flatMap((n) => [n.id, ...nodeIds(n.children as { id: string; children: unknown[] }[])])
+}
+
+function countNodes(nodes: { children: unknown[] }[]): number {
+  return nodes.reduce((n, node) => n + 1 + countNodes(node.children as { children: unknown[] }[]), 0)
 }
 
 /** The last read of each page, by page id: what edit_page checks edits against. */
@@ -1142,10 +1263,6 @@ function withoutTag(text: string | undefined, tag: string | undefined): string {
   return out.replace(/\s+/g, ' ').trim()
 }
 
-function runsText(value: unknown): string {
-  return Array.isArray(value) ? value.map((r) => (Array.isArray(r) ? String(r[0]) : '')).join('') : ''
-}
-
 function clip(text: string, max: number): string {
   return text.length > max ? `${text.slice(0, max - 1)}…` : text
 }
@@ -1159,4 +1276,5 @@ export const TOOLS: ToolSpec[] = [
   getSelection,
   queryDatabase,
   updatePages,
+  listPages,
 ]

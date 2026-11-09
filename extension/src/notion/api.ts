@@ -36,6 +36,7 @@ export type NotionEndpoint =
   | 'saveTransactionsFanout'
   | 'search'
   | 'queryCollection'
+  | 'getSpaces'
 
 /** What one request to Notion returned. `error` is set when no HTTP response came back. */
 export interface NotionResponse {
@@ -55,7 +56,16 @@ export type NotionTransport = (
   options: { spaceId?: string },
 ) => Promise<NotionResponse>
 
-export type Table = 'block' | 'collection' | 'collection_view' | 'discussion' | 'comment' | 'notion_user' | 'space'
+export type Table =
+  | 'block'
+  | 'collection'
+  | 'collection_view'
+  | 'discussion'
+  | 'comment'
+  | 'notion_user'
+  | 'space'
+  | 'space_view'
+  | 'team'
 
 /** One record, unwrapped from Notion's `{ spaceId, value: { role, value } }`. */
 export interface NotionRecord {
@@ -96,6 +106,15 @@ export interface Operation {
   args: unknown
 }
 
+/** A workspace's sidebar: page ids by section. */
+export interface WorkspaceTree {
+  name: string
+  privatePages: string[]
+  sharedPages: string[]
+  workspacePages: string[]
+  teams: { name: string; pages: string[] }[]
+}
+
 /** One search hit as Notion returns it. Highlights mark matched words with a random tag per response. */
 export interface RawSearchResult {
   id: string
@@ -121,6 +140,10 @@ export interface LoadedPage {
 }
 
 const CHUNK_LIMIT = 100
+/** Records asked for in one syncRecordValuesMain request at most. */
+const RECORDS_BATCH = 100
+/** Record lookups sent at once at most. */
+const RECORDS_PARALLEL = 4
 
 export class NotionClient {
   constructor(private readonly send: NotionTransport) {}
@@ -206,6 +229,65 @@ export class NotionClient {
       ? group.blockIds.filter((id): id is string => typeof id === 'string')
       : []
     return { rowIds, hasMore: group?.hasMore === true, recordMap: normalizeRecordMap(json.recordMap) }
+  }
+
+  /** Like getRecords, but records that are missing, out of reach, or in the trash are just left out. */
+  async findRecords(pointers: Pointer[]): Promise<RecordMap> {
+    if (!pointers.length) return {}
+    // Large lists go in batches, so no single request grows without bound.
+    if (pointers.length > RECORDS_BATCH) {
+      const batches: Pointer[][] = []
+      for (let at = 0; at < pointers.length; at += RECORDS_BATCH) batches.push(pointers.slice(at, at + RECORDS_BATCH))
+      // A few batches at a time, so a long list doesn't flood the user's tab with requests.
+      const out: RecordMap = {}
+      for (let at = 0; at < batches.length; at += RECORDS_PARALLEL) {
+        const maps = await Promise.all(batches.slice(at, at + RECORDS_PARALLEL).map((b) => this.findRecords(b)))
+        for (const map of maps) mergeRecordMaps(out, map)
+      }
+      return out
+    }
+    const requested = pointers.map((p) => ({
+      ...p,
+      id: notionId(p.id),
+      spaceId: p.spaceId ? notionId(p.spaceId) : undefined,
+    }))
+    const spaces = new Set(requested.flatMap((p) => (p.spaceId ? [p.spaceId] : [])))
+    const { json } = await this.request<{ recordMap?: unknown }>(
+      'syncRecordValuesMain',
+      { requests: requested.map((pointer) => ({ pointer, version: -1 })) },
+      spaces.size === 1 ? [...spaces][0] : undefined,
+    )
+    const recordMap = normalizeRecordMap(json.recordMap)
+    for (const records of Object.values(recordMap)) {
+      for (const [id, record] of Object.entries(records ?? {})) if (record.alive === false) delete records![id]
+    }
+    return recordMap
+  }
+
+  /**
+   * How a workspace is organized in the sidebar for the signed-in user: its name, their private
+   * pages, pages shared with them, the workspace's own top-level pages, and its teamspaces.
+   */
+  async getSpace(spaceId: string): Promise<WorkspaceTree> {
+    const space = notionId(spaceId)
+    const { json } = await this.request<Record<string, unknown>>('getSpaces', {}, space)
+    // One record map per signed-in user; the one holding this workspace is the tab's.
+    const maps = Object.values(json).map(normalizeRecordMap)
+    const map = maps.find((m) => m.space?.[space])
+    if (!map) throw new NotionError('no_access', NO_ACCESS)
+    const ids = (value: unknown) =>
+      Array.isArray(value) ? value.filter((v): v is string => typeof v === 'string') : []
+    const view = Object.values(map.space_view ?? {}).find((v) => v.space_id === space)
+    const teams = Object.values(map.team ?? {})
+      .filter((t) => t.space_id === space && t.alive !== false)
+      .map((t) => ({ name: typeof t.name === 'string' ? t.name : 'Teamspace', pages: ids(t.pages) }))
+    return {
+      name: typeof map.space![space].name === 'string' ? (map.space![space].name as string) : 'Workspace',
+      privatePages: ids(view?.private_pages),
+      sharedPages: ids(view?.shared_pages_manual_sort),
+      workspacePages: ids(map.space![space].pages),
+      teams,
+    }
   }
 
   /** Applies operations in one transaction: Notion applies all of them or none. */
