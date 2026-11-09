@@ -86,7 +86,18 @@ export function Chat() {
             { type: 'tool', tool: { id: u.id, name: u.name, args: u.args, status: 'running', result: '' } },
           ],
         }))
-      else updateTools((t) => (t.id === u.id ? { ...t, status: u.status, result: u.result } : t))
+      else
+        updateReply((m) => {
+          // Ids are unique only within one model reply; a later step may reuse one, so finish the
+          // newest running call with this id.
+          let j = m.parts.length - 1
+          while (j >= 0 && !isRunningCall(m.parts[j], u.id)) j--
+          if (j < 0) return m
+          const part = m.parts[j] as Extract<Part, { type: 'tool' }>
+          const parts = [...m.parts]
+          parts[j] = { ...part, tool: { ...part.tool, status: u.status, result: u.result } }
+          return { ...m, parts }
+        })
     }
 
     try {
@@ -149,7 +160,8 @@ export function Chat() {
                     </div>
                   )
                 ) : (
-                  <ToolCall key={p.tool.id} tool={p.tool} />
+                  // Parts are only appended, so the index is a stable key; tool ids may repeat.
+                  <ToolCall key={j} tool={p.tool} />
                 ),
               )}
               {m.error && <div className="error">{m.error}</div>}
@@ -179,6 +191,13 @@ export function Chat() {
 
 /** The model is working with nothing to show yet: before its first words, or after its tools finished. */
 function waitingForModel(parts: Part[]): boolean {
-  const last = parts.at(-1)
+  // Blank text is not shown, so it does not count as something on screen.
+  let k = parts.length - 1
+  while (k >= 0 && parts[k].type === 'text' && !(parts[k] as { text: string }).text.trim()) k--
+  const last = parts[k]
   return !last || (last.type === 'tool' && last.tool.status !== 'running')
+}
+
+function isRunningCall(part: Part, id: string): boolean {
+  return part.type === 'tool' && part.tool.id === id && part.tool.status === 'running'
 }
