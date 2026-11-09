@@ -239,6 +239,17 @@ describe('update_pages details', () => {
     await expect(update([{ page: hex(row(3)), icon: '📝 notes' }])).rejects.toThrow('`icon` must be an emoji.')
   })
 
+  it('keeps the old title in approvals when Notion refuses the rename', async () => {
+    const ws = workspace()
+    open(ws)
+    await readPage.run({ page: hex(PAGE) })
+    ws.reject = true
+    await expect(update([{ page: hex(PAGE), title: 'Renamed page' }])).rejects.toThrow()
+    expect(createPage.preview!({ title: 'T', parent: hex(PAGE) })?.split('\n')[2]).toBe(
+      `At the end of: Fixture page ^${hex(PAGE)}`,
+    )
+  })
+
   it('shows a renamed page by its new title in later approvals', async () => {
     const ws = workspace()
     open(ws)

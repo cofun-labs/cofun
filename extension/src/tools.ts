@@ -987,16 +987,20 @@ export const updatePages: ToolSpec = {
     try {
       // Setting values again does no harm, so after a lost answer the agent may simply retry.
       await tab.client.submitTransaction(spaceId, operations, 'Notion Copilot: update_pages')
+    } catch (err) {
+      // Whether a rename landed is unknown: the page's read, and the title it shows, go too.
+      if (err instanceof NotionError && err.code === 'outcome_unknown') for (const id of ids) pageReads.delete(id)
+      throw err
     } finally {
-      for (const u of updates) {
-        // A read's title shows in later approvals; keep it current.
-        const read = pageReads.get(u.id)
-        if (read && u.title !== undefined) read.title = u.title
-      }
       for (const id of ids) {
         seenRows.delete(id)
         for (const key of recentReads.keys()) if (key.endsWith(`:${id}`)) recentReads.delete(key)
       }
+    }
+    // A read's title shows in later approvals; keep it current.
+    for (const u of updates) {
+      const read = pageReads.get(u.id)
+      if (read && u.title !== undefined) read.title = u.title
     }
     return [`Changed ${updates.length} page${updates.length === 1 ? '' : 's'}:`, ...summary].join('\n')
   },
