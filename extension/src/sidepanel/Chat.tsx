@@ -31,6 +31,8 @@ export function Chat() {
   const [messages, setMessages] = useState<Shown[]>([])
   const [input, setInput] = useState('')
   const [busy, setBusy] = useState(false)
+  // Stop was pressed; the question is still winding down, so nothing is pending any more.
+  const [stopping, setStopping] = useState(false)
   const listRef = useRef<HTMLElement>(null)
   // Bumped by "New chat" so updates still arriving for the old chat are dropped.
   const chatId = useRef(0)
@@ -59,6 +61,7 @@ export function Chat() {
     const id = chatId.current
     setInput('')
     setBusy(true)
+    setStopping(false)
     setMessages((ms) => [...ms, { role: 'user', content: text }, { role: 'assistant', parts: [] }])
     const updateReply = (fn: (m: Extract<Shown, { role: 'assistant' }>) => Shown) =>
       setMessages((ms) => {
@@ -116,8 +119,10 @@ export function Chat() {
 
   function onSubmit(e: FormEvent) {
     e.preventDefault()
-    if (busy) agent.stop()
-    else send()
+    if (busy) {
+      setStopping(true)
+      agent.stop()
+    } else send()
   }
 
   function onKeyDown(e: KeyboardEvent<HTMLTextAreaElement>) {
@@ -165,7 +170,9 @@ export function Chat() {
                 ),
               )}
               {m.error && <div className="error">{m.error}</div>}
-              {busy && i === messages.length - 1 && waitingForModel(m.parts) && <div className="note">…</div>}
+              {busy && !stopping && i === messages.length - 1 && waitingForModel(m.parts) && (
+                <div className="note">…</div>
+              )}
               {m.stopped && <div className="note">Stopped</div>}
               {m.note && <div className="note">{m.note}</div>}
             </div>
