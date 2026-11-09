@@ -94,6 +94,8 @@ function idsFor(refs: Map<string, string>): Map<string, string> {
 }
 
 const DRAWN_WITH_PARENT = new Set(['table_row', 'column_list', 'column'])
+/** The original of a synced block; its copies on other pages show its content. */
+const SYNCED_ORIGINAL = 'transclusion_container'
 
 /** The alive blocks under `id`, at any depth, not looking inside child pages. */
 function descendants(blocks: Record<string, Block>, id: string): string[] {
@@ -265,6 +267,9 @@ export function planEdit(
       if (PAGE_TYPES.has(blocks[d].type)) {
         throw new EditError(`${ref(e.target)} has a child page or database nested under it, so it can't be deleted.`)
       }
+      if (blocks[d].type === SYNCED_ORIGINAL) {
+        throw new EditError(`${ref(e.target)} has a synced block nested under it, so it can't be deleted.`)
+      }
       check(d, `${ref(d)}, nested under ${ref(e.target)},`)
       deleted.add(d)
     }
@@ -369,6 +374,12 @@ export function planEdit(
     const target = blocks[e.target]
     if (PAGE_TYPES.has(target.type)) {
       throw new EditError(`${ref(e.target)} is a child page or database; edit_page can't change or delete it.`)
+    }
+    if (target.type === SYNCED_ORIGINAL) {
+      // Deleting the original of a synced block removes it from every page that shows a copy.
+      throw new EditError(
+        `${ref(e.target)} is a synced block shown on other pages too; edit_page can't change or delete it.`,
+      )
     }
     if (e.action === 'delete') {
       const nested = descendants(blocks, e.target).length

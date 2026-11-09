@@ -1029,3 +1029,24 @@ describe('round 14', () => {
     expect(ws.records.get(id(1))).toMatchObject({ type: 'text', properties: { title: [['  - not a list either']] } })
   })
 })
+
+describe('round 15', () => {
+  it('refuses to delete a synced block, or a block holding one', async () => {
+    const ws = workspace(
+      [1, 2],
+      [
+        block(1, 'transclusion_container', undefined, { content: [id(3)] }),
+        block(3, 'text', 'Synced text', {}, id(1)),
+        block(2, 'toggle', 'T', { content: [id(4)] }),
+        block(4, 'transclusion_container', undefined, {}, id(2)),
+      ],
+    )
+    open(ws)
+    await read()
+    await expect(edit([{ action: 'delete', block: '^00000001' }])).rejects.toThrow(
+      'is a synced block shown on other pages too',
+    )
+    await expect(edit([{ action: 'delete', block: '^00000002' }])).rejects.toThrow('has a synced block nested under it')
+    expect(ws.transactions).toEqual([])
+  })
+})
