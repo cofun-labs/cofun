@@ -67,6 +67,8 @@ const DEFAULT_HISTORY = { messages: 100, chars: 150_000 }
 const SIGN_IN = 'Please sign in first.'
 // What the model gets back for a call the user declined; it should not just try again.
 const DECLINED = 'Not run: the user declined this action. Do not retry it; ask the user how to proceed instead.'
+// The same when there was nobody to ask: the model must not claim the user said no.
+const UNASKED = "Not run: this action needs the user's confirmation, and they could not be asked."
 
 export class CopilotAgent {
   private agent?: Agent
@@ -170,7 +172,7 @@ export class CopilotAgent {
       if (allowed && epoch === this.epoch) return
       // Stopped while waiting: the question ends, and the call shows as stopped, not declined.
       if (epoch === this.epoch) declined.add(toolCall.id)
-      return { block: true, reason: DECLINED }
+      return { block: true, reason: confirm ? DECLINED : UNASKED }
     }
     // The model gets no more turns once the steps are used up. beforeToolCall above only sees calls
     // that pi could prepare; unknown tools and invalid arguments get error results without it.

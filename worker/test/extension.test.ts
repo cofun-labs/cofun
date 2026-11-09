@@ -401,6 +401,11 @@ describe('extension agent against the worker', () => {
     const { result, updates } = await ask(makeAgent({ tools: [tool] }), 'Rename this page to Q4 Plan')
     expect(runs).toEqual([])
     expect(toolStatuses(updates)).toEqual(['declined'])
+    // The model is not told that the user said no: nobody was asked.
+    expect(sentMessages(1).at(-1)).toMatchObject({
+      role: 'tool',
+      content: expect.stringContaining('could not be asked'),
+    })
     expect(result).toEqual({ status: 'done' })
   })
 
@@ -418,8 +423,7 @@ describe('extension agent against the worker', () => {
 
   it('stopping while the user is asked counts as no, ends the question, and drops it', async () => {
     const { tool, runs } = renameTool()
-    let agent: CopilotAgent
-    agent = makeAgent({ tools: [tool] })
+    const agent = makeAgent({ tools: [tool] })
     ai.script = [{ toolCalls: [RENAME_CALL] }]
     // The user never answers; they press Stop instead.
     const { result, updates } = await ask(agent, 'Rename this page to Q4 Plan', () => {

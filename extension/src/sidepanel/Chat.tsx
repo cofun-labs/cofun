@@ -85,16 +85,33 @@ export function Chat() {
         return { ...m, parts }
       })
 
+    // Calls this question asked about, so their answers can be dropped when it ends.
+    const asked = new Map<string, (allow: boolean) => void>()
     const confirm: ConfirmTool = (call) =>
       new Promise((resolve) => {
         if (chatId.current !== id) return resolve(false)
-        pending.current.set(call.id, (allow) => {
+        const answer = (allow: boolean) => {
           pending.current.delete(call.id)
           // Running again until the agent reports how the call ended (done, or declined).
           setToolStatus(call.id, 'running')
           resolve(allow)
+        }
+        asked.set(call.id, answer)
+        pending.current.set(call.id, answer)
+        // Normally the call is already shown as running. If not, show it now: the agent must never
+        // wait on a prompt nobody can see.
+        updateReply((m) => {
+          const j = newestOpenCall(m.parts, call.id)
+          const parts = [...m.parts]
+          const tool: ShownTool = { id: call.id, name: call.name, args: call.args, status: 'confirm', result: '' }
+          if (j < 0) parts.push({ type: 'tool', tool })
+          else
+            parts[j] = {
+              type: 'tool',
+              tool: { ...(parts[j] as Extract<Part, { type: 'tool' }>).tool, status: 'confirm' },
+            }
+          return { ...m, parts }
         })
-        setToolStatus(call.id, 'confirm')
       })
 
     const onUpdate = (u: AgentUpdate) => {
@@ -133,6 +150,9 @@ export function Chat() {
       else if (result.status === 'step_limit')
         updateReply((m) => ({ ...m, note: `Stopped after ${result.steps} steps. Ask again to continue.` }))
     } finally {
+      // A question can end without the panel answering, e.g. on unmount.
+      // Only this question's own answers: after a New chat, the next question may reuse an id.
+      for (const [callId, answer] of asked) if (pending.current.get(callId) === answer) pending.current.delete(callId)
       // "New chat" already unlocked the composer for the new conversation.
       if (chatId.current === id) setBusy(false)
     }
