@@ -30,7 +30,7 @@ const SEARCH = {
       highlight: {
         title: 'Launch <gzkNfoUU>plan</gzkNfoUU>',
         text: 'We will ship the <gzkNfoUU>beta</gzkNfoUU> on Friday.',
-        pathText: 'Fixture workspace / Projects',
+        pathText: 'Fixture workspace / Projects / Launch <gzkNfoUU>plan</gzkNfoUU>',
       },
     },
     { id: DATABASE, score: 3.1, highlight: { pathText: 'Fixture workspace' } },
@@ -114,6 +114,24 @@ describe('UC-NOTION-004 find and read other pages', () => {
     const page = (await readPage.run({ page: `^${ref}` })) as string
     expect(page.split('\n')[0]).toBe(`Page: Launch plan ^${hex(FOUND)}`)
     expect(page).toContain('Ship on Friday. ^000000aa')
+  })
+})
+
+describe('search_pages results', () => {
+  it('removes only the highlight tag, keeping other <…> text', async () => {
+    open().respond('search', 200, {
+      results: [{ id: FOUND, highlight: { title: 'Use <q1W2>Array</q1W2><string>', text: 'a <b> c' } }],
+      total: 1,
+      recordMap: { __version__: 3 },
+    })
+    const result = await search({ query: 'array' })
+    expect(result).toContain(`1. 📄 Use Array<string> ^${hex(FOUND)}`)
+    expect(result).toContain('Match: “a <b> c”')
+  })
+
+  it('reports a failed search as a Notion error', async () => {
+    open().respond('search', 500, { isNotionError: true, name: 'InternalServerError', debugMessage: 'Boom.' })
+    await expect(search({ query: 'x' })).rejects.toThrow('Notion returned an error (500 InternalServerError): Boom.')
   })
 })
 

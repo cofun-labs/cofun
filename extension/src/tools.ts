@@ -199,6 +199,8 @@ export const searchPages: ToolSpec = {
     const found = await tab.client.search(spaceId, query, limit)
     if (!found.results.length) return `No pages found for "${query}".`
     const origin = new URL(tab.url).origin
+    const tag = highlightTag(found.results)
+    const plain = (text: string | undefined) => withoutTag(text, tag)
     const lines = found.results.map((r, n) => {
       const block = found.recordMap.block?.[r.id] as
         | { type?: string; properties?: { title?: unknown }; last_edited_time?: number }
@@ -206,9 +208,10 @@ export const searchPages: ToolSpec = {
       const database = block?.type === 'collection_view_page' || block?.type === 'collection_view'
       const title =
         plain(r.highlight?.title) || runsText(block?.properties?.title) || (database ? 'Untitled database' : 'Untitled')
-      // The path ends with the page itself; a top-level page's path is only its own title.
-      const path = plain(r.highlight?.pathText)
-      const where = path === title ? '' : path
+      // The path may end with the page itself (a top-level page's is only its own title).
+      const path = plain(r.highlight?.pathText).split(' / ')
+      if (path.at(-1) === title) path.pop()
+      const where = path.join(' / ')
       const text = plain(r.highlight?.text)
       const edited =
         typeof block?.last_edited_time === 'number' ? new Date(block.last_edited_time).toISOString().slice(0, 10) : ''
@@ -226,12 +229,23 @@ export const searchPages: ToolSpec = {
   },
 }
 
-/** Search highlights mark matched words with tags (a random name per response); keep the words. */
-function plain(text: string | undefined): string {
-  return (text ?? '')
-    .replace(/<\/?[A-Za-z][A-Za-z0-9]*>/g, '')
-    .replace(/\s+/g, ' ')
-    .trim()
+/**
+ * The tag a search response marks matched words with: a random name per response, such as
+ * `<gzkNfoUU>word</gzkNfoUU>`. Only that tag is removed, so other `<…>` text stays as written.
+ */
+function highlightTag(results: { highlight?: Record<string, string | undefined> }[]): string | undefined {
+  for (const r of results) {
+    for (const text of Object.values(r.highlight ?? {})) {
+      const m = text && /<([A-Za-z][A-Za-z0-9]*)>[^<]*<\/\1>/.exec(text)
+      if (m) return m[1]
+    }
+  }
+  return undefined
+}
+
+function withoutTag(text: string | undefined, tag: string | undefined): string {
+  const out = tag ? (text ?? '').split(`<${tag}>`).join('').split(`</${tag}>`).join('') : (text ?? '')
+  return out.replace(/\s+/g, ' ').trim()
 }
 
 function runsText(value: unknown): string {
