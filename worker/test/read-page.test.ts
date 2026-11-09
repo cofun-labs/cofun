@@ -588,7 +588,7 @@ describe('more converter and argument details', () => {
     )
   })
 
-  it('shows links to Notion pages as page ids, which read_page opens', async () => {
+  it('shows links to Notion pages as /<page id>, which read_page opens', async () => {
     const target = '3a3a3a3a-0000-4000-8000-000000000031'
     openPage(
       chunk([id(1)], {
@@ -600,6 +600,6 @@ describe('more converter and argument details', () => {
         ]),
       }),
     )
-    expect(body(await read())).toBe(`See [plan](${hex(target)}) and [site](https://example.com/x) ^00000001`)
+    expect(body(await read())).toBe(`See [plan](/${hex(target)}) and [site](https://example.com/x) ^00000001`)
   })
 })

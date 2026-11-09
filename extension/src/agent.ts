@@ -28,6 +28,8 @@ export interface ToolSpec {
   run: (args: Record<string, unknown>, signal?: AbortSignal) => Promise<unknown>
   /** The tool changes the user's data, so the user must agree each time before it runs. */
   needsConfirmation?: boolean
+  /** What a call would do, in words, for the user to read before agreeing. */
+  preview?: (args: Record<string, unknown>) => string | undefined
 }
 
 /** A tool call waiting for the user's OK. */

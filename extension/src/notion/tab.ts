@@ -22,6 +22,9 @@ export async function activeNotionTab(): Promise<NotionTab> {
   return { tabId: tab.id, url: tab.url, pageId: pageIdFromUrl(tab.url), client: new NotionClient(tabTransport(tab.id)) }
 }
 
+export const NO_SITE_ACCESS =
+  "Notion Copilot is not allowed to access this Notion site. Allow it in the extension's site access settings and try again"
+
 /** How long one Notion request may take before it fails, so a stalled request can't hang a tool. */
 const REQUEST_TIMEOUT_MS = 30_000
 
@@ -39,13 +42,16 @@ export function tabTransport(tabId: number): NotionTransport {
       })
       result = frame?.result
     } catch (err) {
-      // The tab closed or left Notion; anything else (say, a missing permission) is passed on.
-      // Either way the request may have been in flight.
+      const message = err instanceof Error ? err.message : String(err)
+      // Chrome refused to run the script at all: nothing was sent.
+      const refused = /Cannot access contents of|Missing host permission|Cannot access a chrome/i.test(message)
+      // The tab closed, navigated, or left Notion: say so, and that the request may have been in
+      // flight unless Chrome refused to run it.
       const tab = await chrome.tabs.get(tabId).catch(() => undefined)
       if (!tab || !isNotion(tab.url)) {
-        throw new NotionError('no_notion_tab', NO_NOTION_TAB, { cause: err, unanswered: true })
+        throw new NotionError('no_notion_tab', NO_NOTION_TAB, { cause: err, unanswered: !refused })
       }
-      const message = err instanceof Error ? err.message : String(err)
+      if (refused) throw new NotionError('notion_error', `${NO_SITE_ACCESS} (${message})`, { cause: err })
       throw new NotionError('notion_error', `Could not run in the Notion tab: ${message}`, {
         cause: err,
         unanswered: true,
