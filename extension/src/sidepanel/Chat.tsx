@@ -2,6 +2,7 @@ import { useAuth } from '@clerk/chrome-extension'
 import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from 'react'
 import { CopilotAgent, type AgentUpdate } from '../agent'
 import { TOOLS } from '../tools'
+import { ToolCall, type ShownTool } from './ToolCall'
 
 const API_URL = import.meta.env.VITE_API_URL as string
 // Promise only what the tools can do; widen this when page reading and editing tools land.
@@ -10,30 +11,28 @@ const SYSTEM_PROMPT =
   'Your tools can tell you which Notion page is open (its title and URL); you cannot read or change page content yet. ' +
   'Use the tools when you need to know about the page. Be concise.'
 
-/** A tool the agent ran for this reply. A placeholder until the proper display lands. */
-type ShownTool = { id: string; name: string; status: 'running' | 'done' | 'failed' | 'skipped' }
+/** A reply in the order it happened: text the model wrote and the tools it ran in between. */
+type Part = { type: 'text'; text: string } | { type: 'tool'; tool: ShownTool }
 
 // The agent keeps the conversation it sends to the model; this is only what the panel shows.
 type Shown =
   | { role: 'user'; content: string }
   | {
       role: 'assistant'
-      content: string
-      tools: ShownTool[]
-      /** How many tools had run when text last arrived, to separate text from different steps. */
-      textAfterTools?: number
-      error?: boolean
+      parts: Part[]
+      /** Why the question failed; shown below what the agent already did. */
+      error?: string
       stopped?: boolean
       note?: string
     }
-
-const TOOL_MARK: Record<ShownTool['status'], string> = { running: '⋯', done: '✓', failed: '✗', skipped: '–' }
 
 export function Chat() {
   const { getToken } = useAuth()
   const [messages, setMessages] = useState<Shown[]>([])
   const [input, setInput] = useState('')
   const [busy, setBusy] = useState(false)
+  // Stop was pressed; the question is still winding down, so nothing is pending any more.
+  const [stopping, setStopping] = useState(false)
   const listRef = useRef<HTMLElement>(null)
   // Bumped by "New chat" so updates still arriving for the old chat are dropped.
   const chatId = useRef(0)
@@ -62,7 +61,8 @@ export function Chat() {
     const id = chatId.current
     setInput('')
     setBusy(true)
-    setMessages((ms) => [...ms, { role: 'user', content: text }, { role: 'assistant', content: '', tools: [] }])
+    setStopping(false)
+    setMessages((ms) => [...ms, { role: 'user', content: text }, { role: 'assistant', parts: [] }])
     const updateReply = (fn: (m: Extract<Shown, { role: 'assistant' }>) => Shown) =>
       setMessages((ms) => {
         const last = ms.at(-1)
@@ -70,28 +70,45 @@ export function Chat() {
         return [...ms.slice(0, -1), fn(last)]
       })
 
+    const updateTools = (fn: (t: ShownTool) => ShownTool) =>
+      updateReply((m) => ({ ...m, parts: m.parts.map((p) => (p.type === 'tool' ? { ...p, tool: fn(p.tool) } : p)) }))
+
     const onUpdate = (u: AgentUpdate) => {
       if (u.type === 'text')
         updateReply((m) => {
-          // Text written after a tool ran starts a new paragraph, apart from any text before the tool.
-          const gap = m.content && m.tools.length > (m.textAfterTools ?? 0) ? '\n\n' : ''
-          return { ...m, content: m.content + gap + u.delta, textAfterTools: m.tools.length }
+          const last = m.parts.at(-1)
+          if (last?.type === 'text')
+            return { ...m, parts: [...m.parts.slice(0, -1), { ...last, text: last.text + u.delta }] }
+          return { ...m, parts: [...m.parts, { type: 'text', text: u.delta }] }
         })
       else if (u.type === 'tool_start')
-        updateReply((m) => ({ ...m, tools: [...m.tools, { id: u.id, name: u.name, status: 'running' }] }))
-      else
         updateReply((m) => ({
           ...m,
-          tools: m.tools.map((t) =>
-            t.id === u.id ? { ...t, status: u.skipped ? 'skipped' : u.isError ? 'failed' : 'done' } : t,
-          ),
+          parts: [
+            ...m.parts,
+            { type: 'tool', tool: { id: u.id, name: u.name, args: u.args, status: 'running', result: '' } },
+          ],
         }))
+      else
+        updateReply((m) => {
+          // Ids are unique only within one model reply; a later step may reuse one, so finish the
+          // newest running call with this id.
+          let j = m.parts.length - 1
+          while (j >= 0 && !isRunningCall(m.parts[j], u.id)) j--
+          if (j < 0) return m
+          const part = m.parts[j] as Extract<Part, { type: 'tool' }>
+          const parts = [...m.parts]
+          parts[j] = { ...part, tool: { ...part.tool, status: u.status, result: u.result } }
+          return { ...m, parts }
+        })
     }
 
     try {
       const result = await agent.ask(text, onUpdate)
-      if (result.status === 'stopped') updateReply((m) => ({ ...m, stopped: true }))
-      else if (result.status === 'error') updateReply((m) => ({ ...m, content: result.message, error: true }))
+      if (result.status === 'stopped') {
+        updateTools((t) => (t.status === 'running' ? { ...t, status: 'stopped' } : t))
+        updateReply((m) => ({ ...m, stopped: true }))
+      } else if (result.status === 'error') updateReply((m) => ({ ...m, error: result.message }))
       else if (result.status === 'step_limit')
         updateReply((m) => ({ ...m, note: `Stopped after ${result.steps} steps. Ask again to continue.` }))
     } finally {
@@ -102,8 +119,10 @@ export function Chat() {
 
   function onSubmit(e: FormEvent) {
     e.preventDefault()
-    if (busy) agent.stop()
-    else send()
+    if (busy) {
+      setStopping(true)
+      agent.stop()
+    } else send()
   }
 
   function onKeyDown(e: KeyboardEvent<HTMLTextAreaElement>) {
@@ -136,14 +155,25 @@ export function Chat() {
               {m.content}
             </div>
           ) : (
-            <div key={i} className={`msg assistant${m.error ? ' error' : ''}`}>
-              {m.tools.map((t) => (
-                <div key={t.id} className={`tool ${t.status}`}>
-                  {TOOL_MARK[t.status]} {t.name}
-                </div>
-              ))}
-              {m.content || (!m.stopped && !m.note && !m.tools.length ? '…' : '')}
-              {m.stopped && ' [stopped]'}
+            <div key={i} className="msg assistant">
+              {m.parts.map((p, j) =>
+                // Models often send blank lines around a tool call; they would show as empty rows.
+                p.type === 'text' ? (
+                  p.text.trim() && (
+                    <div key={j} className="text">
+                      {p.text.trim()}
+                    </div>
+                  )
+                ) : (
+                  // Parts are only appended, so the index is a stable key; tool ids may repeat.
+                  <ToolCall key={j} tool={p.tool} />
+                ),
+              )}
+              {m.error && <div className="error">{m.error}</div>}
+              {busy && !stopping && i === messages.length - 1 && waitingForModel(m.parts) && (
+                <div className="note">…</div>
+              )}
+              {m.stopped && <div className="note">Stopped</div>}
               {m.note && <div className="note">{m.note}</div>}
             </div>
           ),
@@ -164,4 +194,17 @@ export function Chat() {
       </form>
     </>
   )
+}
+
+/** The model is working with nothing to show yet: before its first words, or after its tools finished. */
+function waitingForModel(parts: Part[]): boolean {
+  // Blank text is not shown, so it does not count as something on screen.
+  let k = parts.length - 1
+  while (k >= 0 && parts[k].type === 'text' && !(parts[k] as { text: string }).text.trim()) k--
+  const last = parts[k]
+  return !last || (last.type === 'tool' && last.tool.status !== 'running')
+}
+
+function isRunningCall(part: Part, id: string): boolean {
+  return part.type === 'tool' && part.tool.id === id && part.tool.status === 'running'
 }

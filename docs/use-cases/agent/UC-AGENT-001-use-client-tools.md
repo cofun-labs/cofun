@@ -6,6 +6,8 @@ A signed-in user asks the AI something it can only answer with information or ac
 
 Each question gets a bounded number of steps, so a model that keeps calling tools cannot run on forever, and the user can stop the agent at any time.
 
+The user can always see what the agent did: each tool it used, with what input, and whether it worked, in the order it happened within the reply.
+
 Key constraints:
 
 - Tools run in the extension, never on the server. The server only carries the AI's request to run a tool and the result back.
@@ -29,3 +31,4 @@ Key constraints:
 | ID | Priority | Status | Scenario |
 | --- | --- | --- | --- |
 | UC-AGENT-001-S06 | P0 | ✅ | Given the side panel open on a Notion page; when the user asks which page they are on; then the agent looks it up and answers with the page's title. |
+| UC-AGENT-001-S08 | P1 | ✅ | Given the agent used a tool to answer; when the user looks at the reply; then it shows which tool ran, with what input, whether it worked, and, on request, what it returned. |
