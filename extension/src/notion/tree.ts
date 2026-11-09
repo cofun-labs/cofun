@@ -1,6 +1,6 @@
 // Listing pages as Notion's sidebar shows them: titles and ids, level by level, without content.
 import type { NotionClient, NotionRecord, RecordMap } from './api'
-import { hexId } from './markdown'
+import { PAGE_TYPES, hexId } from './markdown'
 
 export interface TreeNode {
   id: string
@@ -9,8 +9,6 @@ export interface TreeNode {
   children: TreeNode[]
 }
 
-/** Blocks that are pages in the sidebar. */
-const PAGE_TYPES = new Set(['page', 'collection_view_page', 'collection_view'])
 /** Blocks that only lay out their children: pages inside them count as the page's own. */
 const LAYOUT_TYPES = new Set(['column_list', 'column'])
 

@@ -131,7 +131,17 @@ describe('UC-NOTION-005 browse the workspace', () => {
     const root = page(10, 'Big', many)
     new FakeNotionTab(PAGE_URL)
       .respond('syncRecordValuesMain', 200, records([root]))
-      .respond('syncRecordValuesMain', 200, records(many.map((m, i) => ({ ...page(0, `Page ${i}`), id: m }))))
+      // The children are looked up 100 at a time.
+      .respond(
+        'syncRecordValuesMain',
+        200,
+        records(many.slice(0, 100).map((m, i) => ({ ...page(0, `Page ${i}`), id: m }))),
+      )
+      .respond(
+        'syncRecordValuesMain',
+        200,
+        records(many.slice(100).map((m, i) => ({ ...page(0, `Page ${100 + i}`), id: m }))),
+      )
       .install()
     const result = await run({ page: hex(id(10)) })
     expect(result.split('\n').filter((l) => l.startsWith('- '))).toHaveLength(LIST_LIMIT)

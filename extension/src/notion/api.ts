@@ -119,6 +119,8 @@ export interface LoadedPage {
 }
 
 const CHUNK_LIMIT = 100
+/** Records asked for in one syncRecordValuesMain request at most. */
+const RECORDS_BATCH = 100
 
 export class NotionClient {
   constructor(private readonly send: NotionTransport) {}
@@ -167,6 +169,14 @@ export class NotionClient {
   /** Like getRecords, but records that are missing, out of reach, or in the trash are just left out. */
   async findRecords(pointers: Pointer[]): Promise<RecordMap> {
     if (!pointers.length) return {}
+    // Large lists go in batches, so no single request grows without bound.
+    if (pointers.length > RECORDS_BATCH) {
+      const out: RecordMap = {}
+      for (let at = 0; at < pointers.length; at += RECORDS_BATCH) {
+        mergeRecordMaps(out, await this.findRecords(pointers.slice(at, at + RECORDS_BATCH)))
+      }
+      return out
+    }
     const requested = pointers.map((p) => ({
       ...p,
       id: notionId(p.id),
