@@ -99,7 +99,7 @@ export function Chat() {
         asked.set(call.id, answer)
         pending.current.set(call.id, answer)
         // Normally the call is already shown as running. If not, show it now: the agent must never
-        // wait on a prompt nobody can see.
+        // wait on a prompt nobody can see. Show the arguments the tool will run with.
         updateReply((m) => {
           const j = newestOpenCall(m.parts, call.id)
           const parts = [...m.parts]
@@ -108,7 +108,7 @@ export function Chat() {
           else
             parts[j] = {
               type: 'tool',
-              tool: { ...(parts[j] as Extract<Part, { type: 'tool' }>).tool, status: 'confirm' },
+              tool: { ...(parts[j] as Extract<Part, { type: 'tool' }>).tool, args: call.args, status: 'confirm' },
             }
           return { ...m, parts }
         })

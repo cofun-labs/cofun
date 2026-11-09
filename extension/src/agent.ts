@@ -168,11 +168,11 @@ export class CopilotAgent {
         }
       }
       if (!this.confirmed.has(toolCall.name)) return
-      const allowed = await askUser(confirm, { id: toolCall.id, name: toolCall.name, args }, signal)
-      if (allowed && epoch === this.epoch) return
+      const answer = await askUser(confirm, { id: toolCall.id, name: toolCall.name, args }, signal)
+      if (answer === 'allow' && epoch === this.epoch) return
       // Stopped while waiting: the question ends, and the call shows as stopped, not declined.
       if (epoch === this.epoch) declined.add(toolCall.id)
-      return { block: true, reason: confirm ? DECLINED : UNASKED }
+      return { block: true, reason: answer === 'deny' ? DECLINED : UNASKED }
     }
     // The model gets no more turns once the steps are used up. beforeToolCall above only sees calls
     // that pi could prepare; unknown tools and invalid arguments get error results without it.
@@ -347,14 +347,24 @@ function size(message: AgentMessage): number {
   return n
 }
 
-/** The user's answer, or no once the question is stopped while waiting for it. */
-function askUser(confirm: ConfirmTool | undefined, call: ToolCallRequest, signal?: AbortSignal): Promise<boolean> {
-  if (!confirm || signal?.aborted) return Promise.resolve(false)
+/**
+ * The user's answer. `unasked` when there was no way to ask (no callback, or it failed) or the
+ * question was stopped while waiting: the tool must not run, but the user did not say no.
+ */
+function askUser(
+  confirm: ConfirmTool | undefined,
+  call: ToolCallRequest,
+  signal?: AbortSignal,
+): Promise<'allow' | 'deny' | 'unasked'> {
+  if (!confirm || signal?.aborted) return Promise.resolve('unasked')
   return new Promise((resolve) => {
-    const onAbort = () => resolve(false)
+    const onAbort = () => resolve('unasked')
     signal?.addEventListener('abort', onAbort, { once: true })
     confirm(call)
-      .then(resolve, () => resolve(false))
+      .then(
+        (allow) => resolve(allow ? 'allow' : 'deny'),
+        () => resolve('unasked'),
+      )
       .finally(() => signal?.removeEventListener('abort', onAbort))
   })
 }

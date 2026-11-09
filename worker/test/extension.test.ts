@@ -409,6 +409,20 @@ describe('extension agent against the worker', () => {
     expect(result).toEqual({ status: 'done' })
   })
 
+  it('a prompt that fails is not reported to the model as the user declining', async () => {
+    const { tool, runs } = renameTool()
+    ai.script = [{ toolCalls: [RENAME_CALL] }, { reply: 'I could not do that' }]
+    const { result } = await ask(makeAgent({ tools: [tool] }), 'Rename this page to Q4 Plan', () =>
+      Promise.reject(new Error('panel closed')),
+    )
+    expect(runs).toEqual([])
+    expect(sentMessages(1).at(-1)).toMatchObject({
+      role: 'tool',
+      content: expect.stringContaining('could not be asked'),
+    })
+    expect(result).toEqual({ status: 'done' })
+  })
+
   it('tools that change nothing run without asking', async () => {
     const { tool, runs } = pageTool()
     ai.script = [{ toolCalls: [{ name: 'get_current_page', arguments: '{}' }] }, { reply: 'You are on Q4 Roadmap' }]
