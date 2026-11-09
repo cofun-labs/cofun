@@ -579,7 +579,8 @@ describe('extension agent against the worker', () => {
     expect(result).toEqual({ status: 'stopped' })
     expect(runs).toEqual([])
     expect(toolStatuses(updates)).toEqual(['stopped'])
-    expect(agent.history().at(-1)).toMatchObject({ role: 'tool', status: 'stopped' })
+    // pi reports the abort itself; the model is not told the user could not be asked.
+    expect(agent.history().at(-1)).toMatchObject({ role: 'tool', status: 'stopped', result: 'Operation aborted' })
 
     await ask(agent, 'hi')
     expect(sentMessages(1).map((m) => m.role)).toEqual(['system', 'user', 'assistant', 'tool', 'user'])

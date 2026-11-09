@@ -151,6 +151,7 @@ export class CopilotAgent {
     return result
   }
 
+  /** `kept`: the question is part of the conversation now, answered or not. */
   private async askOnce(
     text: string,
     onUpdate: (update: AgentUpdate) => void,
@@ -423,7 +424,10 @@ export class CopilotAgent {
  * off is left out with everything after it. Empty when the question used no tool.
  */
 function usedTools(tail: AgentMessage[]): AgentMessage[] {
-  const [question, ...rest] = tail
+  // The question, with anything pi put before it.
+  const start = tail.findIndex((m) => m.role === 'user') + 1
+  const question = tail.slice(0, start)
+  const rest = tail.slice(start)
   const kept: AgentMessage[] = []
   for (let i = 0; i < rest.length;) {
     const reply = rest[i]
@@ -437,7 +441,7 @@ function usedTools(tail: AgentMessage[]): AgentMessage[] {
     kept.push({ ...reply, content }, ...results)
     i = next
   }
-  return kept.length ? [question, ...kept] : []
+  return kept.length ? [...question, ...kept] : []
 }
 
 /**
