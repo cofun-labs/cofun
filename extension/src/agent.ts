@@ -28,12 +28,18 @@ export interface ToolSpec {
   run: (args: Record<string, unknown>, signal?: AbortSignal) => Promise<unknown>
 }
 
+/**
+ * How a tool call ended. `skipped`: refused without running, because the question reached its step
+ * limit. `stopped`: the user stopped the question while the tool ran.
+ */
+export type ToolStatus = 'done' | 'failed' | 'skipped' | 'stopped'
+
 /** What the side panel shows while the agent works on a question. */
 export type AgentUpdate =
   | { type: 'text'; delta: string }
   | { type: 'tool_start'; id: string; name: string; args: unknown }
-  /** `skipped`: refused without running, because the question reached its step limit. */
-  | { type: 'tool_end'; id: string; name: string; isError: boolean; skipped?: boolean }
+  /** `result`: what the model got back, the error message when the tool failed. */
+  | { type: 'tool_end'; id: string; name: string; status: ToolStatus; result: string }
 
 export type AskResult =
   | { status: 'done' }
@@ -143,8 +149,12 @@ export class CopilotAgent {
       if (event.type === 'turn_start') steps++
       if (event.type === 'tool_execution_start') ranTools = true
       const update = toUpdate(event)
-      if (update?.type === 'tool_end' && refused.has(update.id)) onUpdate({ ...update, skipped: true })
-      else if (update) onUpdate(update)
+      if (update?.type === 'tool_end') {
+        if (refused.has(update.id)) update.status = 'skipped'
+        // A tool cut short by Stop reports an error; it did not fail on its own.
+        else if (epoch !== this.epoch) update.status = 'stopped'
+      }
+      if (update) onUpdate(update)
       if (event.type === 'message_end' && event.message.role === 'assistant') {
         const m = event.message as AssistantMessage
         if (m.stopReason === 'error') failure = parseError(m.errorMessage)
@@ -323,10 +333,21 @@ function toUpdate(event: AgentEvent): AgentUpdate | undefined {
     case 'tool_execution_start':
       return { type: 'tool_start', id: event.toolCallId, name: event.toolName, args: event.args }
     case 'tool_execution_end':
-      return { type: 'tool_end', id: event.toolCallId, name: event.toolName, isError: event.isError }
+      return {
+        type: 'tool_end',
+        id: event.toolCallId,
+        name: event.toolName,
+        status: event.isError ? 'failed' : 'done',
+        result: resultText(event.result),
+      }
     default:
       return undefined
   }
+}
+
+/** The text a tool result gave the model. */
+function resultText(result: { content?: { type: string; text?: string }[] } | undefined): string {
+  return (result?.content ?? []).map((block) => (block.type === 'text' ? (block.text ?? '') : '')).join('\n')
 }
 
 /**

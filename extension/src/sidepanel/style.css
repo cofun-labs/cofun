@@ -121,6 +121,9 @@ textarea {
 }
 .msg.assistant {
   align-self: stretch;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
 }
 .msg.error {
   color: var(--error);
@@ -130,8 +133,34 @@ textarea {
   color: var(--muted);
   font-size: 0.9em;
 }
-.tool.failed {
+.tool summary {
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tool-name {
+  font-family: ui-monospace, monospace;
+}
+.tool.failed .tool-mark,
+.tool.failed .tool-name {
   color: var(--error);
+}
+.tool-body {
+  margin: 4px 0 0 1.2em;
+}
+.tool-label {
+  margin-top: 4px;
+}
+.tool pre {
+  margin: 2px 0 0;
+  padding: 4px 6px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  max-height: 12em;
+  overflow: auto;
+  white-space: pre-wrap;
+  font-size: 0.95em;
 }
 .empty {
   color: var(--muted);

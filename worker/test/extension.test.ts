@@ -84,6 +84,8 @@ async function ask(agent: CopilotAgent, text: string) {
   return { result, updates, reply }
 }
 
+const PAGE_JSON = JSON.stringify({ title: 'Q4 Roadmap', url: 'https://www.notion.so/Q4-Roadmap-abc123' })
+
 const sentMessages = (call: number) => ai.calls[call].inputs.messages as Record<string, unknown>[]
 
 describe('extension agent against the worker', () => {
@@ -112,7 +114,7 @@ describe('extension agent against the worker', () => {
     expect(runs).toEqual([{}])
     expect(updates.filter((u) => u.type !== 'text')).toEqual([
       { type: 'tool_start', id: 'chatcmpl-tool-0', name: 'get_current_page', args: {} },
-      { type: 'tool_end', id: 'chatcmpl-tool-0', name: 'get_current_page', isError: false },
+      { type: 'tool_end', id: 'chatcmpl-tool-0', name: 'get_current_page', status: 'done', result: PAGE_JSON },
     ])
     expect(reply).toBe('You are on Q4 Roadmap ')
     // The second model call got the tool's result right after the call.
@@ -141,11 +143,7 @@ describe('extension agent against the worker', () => {
     expect(ai.calls).toHaveLength(3)
     // The last step's tool is refused, not run: the model would never see its result.
     expect(runs).toHaveLength(2)
-    expect(updates.filter((u) => u.type === 'tool_end').map((u) => 'skipped' in u && u.skipped)).toEqual([
-      false,
-      false,
-      true,
-    ])
+    expect(updates.flatMap((u) => (u.type === 'tool_end' ? [u.status] : []))).toEqual(['done', 'done', 'skipped'])
     // The panel gets a start for the refused call too, so it can mark that call as skipped.
     const refusedId = updates.filter((u) => u.type === 'tool_end').at(-1)!.id
     expect(updates).toContainEqual(expect.objectContaining({ type: 'tool_start', id: refusedId }))
@@ -280,7 +278,14 @@ describe('extension agent against the worker', () => {
     ai.script = [{ toolCalls: [{ name: 'get_current_page', arguments: '{}' }] }, { reply: 'Open a page first' }]
     const { result, updates, reply } = await ask(makeAgent({ tools: [failing] }), 'Which page am I on?')
     expect(result).toEqual({ status: 'done' })
-    expect(updates).toContainEqual({ type: 'tool_end', id: 'chatcmpl-tool-0', name: 'get_current_page', isError: true })
+    // The panel shows the same error the model got.
+    expect(updates).toContainEqual({
+      type: 'tool_end',
+      id: 'chatcmpl-tool-0',
+      name: 'get_current_page',
+      status: 'failed',
+      result: expect.stringContaining('No page is open.'),
+    })
     expect(sentMessages(1).at(-1)).toMatchObject({ role: 'tool', content: expect.stringContaining('No page is open.') })
     expect(reply).toBe('Open a page first ')
   })
@@ -297,7 +302,10 @@ describe('extension agent against the worker', () => {
     }
     agent = makeAgent({ tools: [slow] })
     ai.script = [{ toolCalls: [{ name: 'get_current_page', arguments: '{}' }] }]
-    expect((await ask(agent, 'Which page am I on?')).result).toEqual({ status: 'stopped' })
+    const stopped = await ask(agent, 'Which page am I on?')
+    expect(stopped.result).toEqual({ status: 'stopped' })
+    // The tool shows as stopped, not as a failure of its own.
+    expect(stopped.updates.flatMap((u) => (u.type === 'tool_end' ? [u.status] : []))).toEqual(['stopped'])
 
     await ask(agent, 'hi')
     expect(sentMessages(1).map((m) => m.role)).toEqual(['system', 'user'])
