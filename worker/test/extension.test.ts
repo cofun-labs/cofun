@@ -16,7 +16,8 @@ import { FakeAiBinding, FakeQuotaNamespace, FakeUsageDataset } from './fakes'
 
 const EXT = 'chrome-extension://abcdefghijklmnopabcdefghijklmnop'
 const MODEL = '@cf/test/model'
-const app = createApp()
+let clock = new Date('2026-11-08T12:00:00Z')
+const app = createApp({ now: () => clock })
 let clerk: FakeClerk
 let env: Env
 let ai: FakeAiBinding
@@ -37,6 +38,7 @@ afterAll(() => {
 })
 
 beforeEach(async () => {
+  clock = new Date('2026-11-08T12:00:00Z')
   env = {
     AI: (ai = new FakeAiBinding('你好 来自 worker')),
     QUOTA: new FakeQuotaNamespace(),
@@ -824,6 +826,70 @@ describe('extension agent against the worker', () => {
       'first',
       '你好 来自 worker ',
       'third',
+    ])
+  })
+
+  it('[UC-CHAT-001-S06] a question answered with one tool uses two requests from the quota', async () => {
+    env.DAILY_REQUEST_LIMIT = '3'
+    const { tool, runs } = pageTool()
+    const agent = makeAgent({ tools: [tool] })
+    ai.script = [{ toolCalls: [{ name: 'get_current_page', arguments: '{}' }] }]
+    expect((await ask(agent, 'Which page am I on?')).result).toEqual({ status: 'done' })
+    expect(runs).toHaveLength(1)
+    expect(ai.calls).toHaveLength(2)
+
+    // Exactly two counted: one request is left for a plain question, and then none.
+    expect((await ask(agent, 'hi')).result).toEqual({ status: 'done' })
+    expect(ai.calls).toHaveLength(3)
+    const { result } = await ask(agent, 'again')
+    expect(result).toMatchObject({
+      status: 'error',
+      message: expect.stringContaining('The quota resets at 00:00 UTC.'),
+    })
+    expect(ai.calls).toHaveLength(3)
+  })
+
+  /** Asks a question whose tool round trip runs into a quota of one request. */
+  async function askIntoQuota() {
+    env.DAILY_REQUEST_LIMIT = '1'
+    const { tool, runs } = pageTool()
+    const agent = makeAgent({ tools: [tool] })
+    ai.script = [{ toolCalls: [{ name: 'get_current_page', arguments: '{}' }] }]
+    const { result } = await ask(agent, 'Which page am I on?')
+    return { agent, runs, result }
+  }
+
+  it('[UC-CHAT-001-S07] a quota that runs out after a tool ran ends the question with the reset message', async () => {
+    const { runs, result } = await askIntoQuota()
+    expect(result).toMatchObject({
+      status: 'error',
+      message: expect.stringContaining('The quota resets at 00:00 UTC.'),
+    })
+    expect(runs).toHaveLength(1)
+    // The request that would have sent the result back was refused before the model.
+    expect(ai.calls).toHaveLength(1)
+  })
+
+  it('keeps a tool used before the quota ran out for the next question', async () => {
+    // UC-AGENT-001-S13 covers a model failure; this guards the same rule when the quota refuses the request.
+    const { agent, runs } = await askIntoQuota()
+    // The next day the quota allows it again.
+    clock = new Date('2026-11-09T00:00:00Z')
+    expect((await ask(agent, 'And now?')).result).toEqual({ status: 'done' })
+    // The kept tool is part of the conversation; it does not run again.
+    expect(runs).toHaveLength(1)
+    expect(sentMessages(1)).toEqual([
+      { role: 'system', content: 'You are Notion Copilot.' },
+      { role: 'user', content: 'Which page am I on?' },
+      {
+        role: 'assistant',
+        content: '',
+        tool_calls: [
+          { id: 'chatcmpl-tool-0', type: 'function', function: { name: 'get_current_page', arguments: '{}' } },
+        ],
+      },
+      { role: 'tool', tool_call_id: 'chatcmpl-tool-0', content: PAGE_JSON },
+      { role: 'user', content: 'And now?' },
     ])
   })
 
