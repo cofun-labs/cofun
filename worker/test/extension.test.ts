@@ -849,12 +849,18 @@ describe('extension agent against the worker', () => {
     expect(ai.calls).toHaveLength(3)
   })
 
-  it('[UC-CHAT-001-S07] a quota that runs out mid-question ends it and keeps the tool it used', async () => {
+  /** Asks a question whose tool round trip runs into a quota of one request. */
+  async function askIntoQuota() {
     env.DAILY_REQUEST_LIMIT = '1'
     const { tool, runs } = pageTool()
     const agent = makeAgent({ tools: [tool] })
     ai.script = [{ toolCalls: [{ name: 'get_current_page', arguments: '{}' }] }]
     const { result } = await ask(agent, 'Which page am I on?')
+    return { agent, runs, result }
+  }
+
+  it('[UC-CHAT-001-S07] a quota that runs out after a tool ran ends the question with the reset message', async () => {
+    const { runs, result } = await askIntoQuota()
     expect(result).toMatchObject({
       status: 'error',
       message: expect.stringContaining('The quota resets at 00:00 UTC.'),
@@ -862,8 +868,11 @@ describe('extension agent against the worker', () => {
     expect(runs).toHaveLength(1)
     // The request that would have sent the result back was refused before the model.
     expect(ai.calls).toHaveLength(1)
+  })
 
-    // Keeping the tool is UC-AGENT-001-S13's contract; this guards it on the quota-refusal path too.
+  it('keeps a tool used before the quota ran out for the next question', async () => {
+    // UC-AGENT-001-S13 covers a model failure; this guards the same rule when the quota refuses the request.
+    const { agent, runs } = await askIntoQuota()
     // The next day the quota allows it again.
     clock = new Date('2026-11-09T00:00:00Z')
     expect((await ask(agent, 'And now?')).result).toEqual({ status: 'done' })
