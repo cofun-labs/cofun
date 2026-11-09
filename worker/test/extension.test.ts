@@ -459,13 +459,18 @@ describe('extension agent against the worker', () => {
     const agent = makeAgent({ tools: [tool] })
     ai.script = [{ toolCalls: [RENAME_CALL] }]
     let reset: Promise<void> | undefined
-    const { result } = await ask(agent, 'Rename this page to Q4 Plan', () => {
+    const { result, updates } = await ask(agent, 'Rename this page to Q4 Plan', () => {
       reset = agent.reset()
       return new Promise<boolean>(() => {})
     })
     await reset
     expect(result).toEqual({ status: 'stopped' })
     expect(runs).toEqual([])
+    expect(toolStatuses(updates)).toEqual(['stopped'])
+
+    // The new chat starts empty: nothing of the unanswered question carries over.
+    await ask(agent, 'hi')
+    expect(sentMessages(1).map((m) => m.role)).toEqual(['system', 'user'])
   })
 
   it('stop and new chat work while the agent is still being set up', async () => {
