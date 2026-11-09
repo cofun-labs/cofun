@@ -53,6 +53,10 @@ class FakeNotionTab {
   /** Makes executeScript fail with this message while the tab is still open on Notion. */
   injectionError?: string
   networkDown = false
+  /** Makes the page's fetch follow a redirect, as it would to a sign-in page. */
+  redirected = false
+  /** Signals the page's requests were sent with, to check each has a timeout. */
+  signals: (AbortSignal | null | undefined)[] = []
 
   constructor(
     readonly url: string | undefined,
@@ -106,11 +110,13 @@ class FakeNotionTab {
 
   private async fetch(url: string, init: RequestInit): Promise<Response> {
     if (this.networkDown) throw new TypeError('Failed to fetch')
+    this.signals.push(init.signal)
     this.sent.push({ url, headers: init.headers as Record<string, string>, body: JSON.parse(init.body as string) })
     const endpoint = url.split('/api/v3/')[1]
     const next = this.responses[endpoint]?.shift()
     if (!next) throw new Error(`Unexpected request to ${url}`)
-    return new Response(next.text, { status: next.status })
+    const res = new Response(next.text, { status: next.status })
+    return this.redirected ? Object.defineProperty(res, 'redirected', { value: true }) : res
   }
 }
 
@@ -233,6 +239,20 @@ describe('requests', () => {
     expect(tab.sent.map((r) => r.headers['x-notion-space-id'])).toEqual([undefined, SPACE, undefined, other, SPACE])
   })
 
+  it('give up on a stalled request instead of hanging', async () => {
+    const tab = pageTab()
+    await (await activeNotionTab()).client.loadPage(PAGE)
+    expect(tab.signals).toHaveLength(2)
+    for (const signal of tab.signals) expect(signal).toBeInstanceOf(AbortSignal)
+  })
+
+  it('treat a redirected request as a failure', async () => {
+    const tab = pageTab()
+    tab.redirected = true
+    const err = await notionError((await activeNotionTab()).client.loadPage(PAGE))
+    expect([err.code, err.message]).toEqual(['notion_error', 'Could not reach Notion: Notion redirected the request.'])
+  })
+
   it('report a network failure as a Notion error', async () => {
     const tab = pageTab()
     tab.networkDown = true
@@ -346,6 +366,12 @@ describe('Notion errors', () => {
     expect((await failWith(415, fixture('error-unsupported-media-type'))).message).toBe(
       'Notion returned an error (415 UnsupportedMediaTypeError): Incorrect content type.',
     )
+  })
+
+  it('treats a success that is not a JSON object as a Notion error', async () => {
+    new FakeNotionTab(PAGE_URL).respondText('saveTransactionsFanout', 200, '<html>Sign in</html>').install()
+    const err = await notionError((await activeNotionTab()).client.submitTransaction(SPACE, [], 'edit'))
+    expect([err.code, err.message]).toEqual(['notion_error', 'Notion returned an unexpected response (200).'])
   })
 
   it('handles errors that are not JSON', async () => {

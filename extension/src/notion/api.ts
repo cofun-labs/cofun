@@ -170,8 +170,13 @@ export class NotionClient {
 /** The JSON of a successful response, or a NotionError explaining the failure. */
 export function checkResponse(res: NotionResponse): Record<string, unknown> {
   if (res.error !== undefined) throw new NotionError('notion_error', `Could not reach Notion: ${res.error}`)
-  const json = (res.json && typeof res.json === 'object' ? res.json : {}) as Record<string, unknown>
-  if (res.status >= 200 && res.status < 300) return json
+  const isObject = !!res.json && typeof res.json === 'object' && !Array.isArray(res.json)
+  const json = (isObject ? res.json : {}) as Record<string, unknown>
+  if (res.status >= 200 && res.status < 300) {
+    // Every endpoint answers with a JSON object; anything else (say, an HTML page) is not a success.
+    if (!isObject) throw new NotionError('notion_error', `Notion returned an unexpected response (${res.status}).`)
+    return json
+  }
   if (res.status === 401 || json.name === 'UnauthorizedError') throw new NotionError('signed_out', SIGNED_OUT)
   if (res.status === 403) throw new NotionError('no_access', NO_ACCESS)
   const name = typeof json.name === 'string' ? ` ${json.name}` : ''

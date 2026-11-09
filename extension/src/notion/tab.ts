@@ -22,6 +22,9 @@ export async function activeNotionTab(): Promise<NotionTab> {
   return { tabId: tab.id, url: tab.url, pageId: pageIdFromUrl(tab.url), client: new NotionClient(tabTransport(tab.id)) }
 }
 
+/** How long one Notion request may take before it fails, so a stalled request can't hang a tool. */
+const REQUEST_TIMEOUT_MS = 30_000
+
 /** Sends requests through `chrome.scripting` in the given tab. */
 export function tabTransport(tabId: number): NotionTransport {
   return async (endpoint, body, { spaceId }) => {
@@ -32,7 +35,7 @@ export function tabTransport(tabId: number): NotionTransport {
         target: { tabId },
         world: 'ISOLATED',
         func: notionRequest,
-        args: [endpoint, body, spaceId ?? null, NOTION_HOSTS],
+        args: [endpoint, body, spaceId ?? null, NOTION_HOSTS, REQUEST_TIMEOUT_MS],
       })
       result = frame?.result
     } catch (err) {
@@ -56,6 +59,7 @@ export async function notionRequest(
   body: unknown,
   spaceId: string | null,
   hosts: string[],
+  timeoutMs: number,
 ): Promise<NotionResponse | { notOnNotion: true }> {
   // The tab may have navigated since the side panel looked at it.
   if (!hosts.includes(location.hostname)) return { notOnNotion: true }
@@ -70,7 +74,15 @@ export async function notionRequest(
     // Picks the tab's user when several Notion accounts are signed in.
     if (userId) headers['x-notion-active-user-header'] = userId
     if (spaceId) headers['x-notion-space-id'] = spaceId
-    const res = await fetch(`/api/v3/${endpoint}`, { method: 'POST', headers, body: JSON.stringify(body) })
+    const res = await fetch(`/api/v3/${endpoint}`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(timeoutMs),
+    })
+    // Notion's API never redirects; a redirect lands on a page (sign-in, interstitial), not an answer.
+    if (res.redirected)
+      return { status: res.status, json: null, signedIn: !!userId, error: 'Notion redirected the request.' }
     const text = await res.text()
     let json: unknown = null
     try {
