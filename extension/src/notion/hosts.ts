@@ -17,7 +17,7 @@ export function isNotion(url?: string): boolean {
 export function pageIdFromUrl(url: string): string | undefined {
   try {
     const u = new URL(url)
-    const hex = notionId(u.searchParams.get('p') ?? '') ?? notionId(u.pathname.split('/').at(-1) ?? '')
+    const hex = trailingId(u.searchParams.get('p') ?? '') ?? trailingId(u.pathname.split('/').at(-1) ?? '')
     return hex && dashed(hex)
   } catch {
     return undefined
@@ -35,7 +35,7 @@ function dashed(hex: string): string {
 }
 
 /** The 32-hex id at the end of `text`, with or without dashes. */
-function notionId(text: string): string | undefined {
+function trailingId(text: string): string | undefined {
   const hex = text.replace(/-/g, '').match(/[0-9a-f]{32}$/i)?.[0]
   return hex?.toLowerCase()
 }
