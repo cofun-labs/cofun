@@ -46,6 +46,7 @@ export function Chat() {
   const [view, setView] = useState<'chat' | 'sessions'>('chat')
   // Opening the panel starts a new session; it gets an id when its first question is sent.
   const [current, setCurrent] = useState<Current>()
+  const [saved, setSaved] = useState(0)
   // Bumped when another session opens, so updates still arriving for the old one are dropped.
   const chatId = useRef(0)
   const tokenRef = useRef(getToken)
@@ -121,6 +122,7 @@ export function Chat() {
         })
     }
 
+    const before = agent.history().length
     try {
       const result = await agent.ask(text, onUpdate)
       if (result.status === 'stopped') {
@@ -134,14 +136,15 @@ export function Chat() {
       // that session now.
       if (chatId.current === id) {
         setBusy(false)
-        save(session, agent.history())
+        // A question that failed or was stopped leaves the conversation as it was; don't move the
+        // session to the top of the list for it.
+        const messages = agent.history()
+        if (messages.length !== before) void save(session, messages)
       }
     }
   }
 
   async function save(session: Current, messages: HistoryMessage[]) {
-    // A first question that failed leaves nothing worth keeping.
-    if (messages.length === 0) return
     try {
       const { id, createdAt } = session
       await saveSession({
@@ -152,6 +155,7 @@ export function Chat() {
         updatedAt: Date.now(),
         messages,
       })
+      setSaved((n) => n + 1)
     } catch (err) {
       console.error('Could not save the session', err)
     }
@@ -169,6 +173,8 @@ export function Chat() {
   }
 
   async function open(id: string) {
+    // The open session is already on screen, maybe with a reply still coming in.
+    if (id === current?.id) return setView('chat')
     const session = await getSession(id).catch((err: Error) => console.error('Could not open the session', err))
     if (session) switchTo(session)
   }
@@ -200,10 +206,13 @@ export function Chat() {
       {view === 'sessions' && (
         <Sessions
           currentId={current?.id}
+          saved={saved}
           onOpen={(id) => void open(id)}
           onDeleted={(id) => {
             // The open session is gone; don't save it again under the same id.
-            if (id === current?.id) switchTo()
+            if (id !== current?.id) return
+            switchTo()
+            setView('sessions')
           }}
         />
       )}

@@ -11,6 +11,7 @@ import {
   sessionPages,
   titleFor,
   type Session,
+  type SessionInfo,
 } from '../../extension/src/sessions'
 
 const ROADMAP = { title: 'Q4 Roadmap', url: 'https://www.notion.so/team/Q4-Roadmap-abc123' }
@@ -46,12 +47,13 @@ describe('saved sessions', () => {
       ['Draft an agenda', undefined],
       ['Summarize this page', 'Q4 Roadmap'],
     ])
-    // A session saved again after another question moves to the top, with its whole conversation.
-    const a = list[2]
+    // A session saved again after another question moves to the top and keeps its whole conversation.
+    const a = (await getSession('a'))!
     const messages: HistoryMessage[] = [...a.messages, { role: 'user', text: 'Thanks' }]
     await saveSession({ ...a, messages, updatedAt: 4000 })
-    const [top] = await listSessions()
-    expect(top).toEqual({ ...a, messages, updatedAt: 4000 })
+    const { messages: _, ...info } = a
+    expect((await listSessions())[0]).toEqual({ ...info, updatedAt: 4000 })
+    expect(await getSession('a')).toEqual({ ...a, messages, updatedAt: 4000 })
   })
 
   it('[UC-SESSION-001-S04] search by title and filter by the page a session started on', async () => {
@@ -59,7 +61,7 @@ describe('saved sessions', () => {
     await saveSession(session('b', 'Summarize the decisions', 2000, NOTES))
     await saveSession(session('c', 'Draft an agenda', 3000, { ...NOTES, url: `${NOTES.url}?pvs=4#block` }))
     const all = await listSessions()
-    const ids = (sessions: Session[]) => sessions.map((s) => s.id)
+    const ids = (sessions: SessionInfo[]) => sessions.map((s) => s.id)
 
     expect(ids(filterSessions(all, { query: 'SUMMARIZE' }))).toEqual(['b', 'a'])
     // The same page with another query string or fragment counts as one page.

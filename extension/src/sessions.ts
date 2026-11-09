@@ -1,7 +1,8 @@
 // Saved sessions, kept on this device in IndexedDB. They never go to the worker.
 import type { HistoryMessage } from './agent'
 
-export interface Session {
+/** What the session list shows; the conversation itself is loaded only when a session opens. */
+export interface SessionInfo {
   id: string
   /** The session's first question, for now. */
   title: string
@@ -9,11 +10,16 @@ export interface Session {
   page?: { title: string; url: string }
   createdAt: number
   updatedAt: number
+}
+
+export interface Session extends SessionInfo {
   messages: HistoryMessage[]
 }
 
 const DB_NAME = 'notion-copilot'
-const STORE = 'sessions'
+// Two stores, so the list never loads conversations: they grow with every tool result.
+const INFO = 'sessions'
+const MESSAGES = 'messages'
 const TITLE_LENGTH = 100
 
 let db: Promise<IDBDatabase> | undefined
@@ -21,7 +27,10 @@ let db: Promise<IDBDatabase> | undefined
 function open(): Promise<IDBDatabase> {
   db ??= new Promise<IDBDatabase>((resolve, reject) => {
     const req = indexedDB.open(DB_NAME, 1)
-    req.onupgradeneeded = () => req.result.createObjectStore(STORE, { keyPath: 'id' })
+    req.onupgradeneeded = () => {
+      req.result.createObjectStore(INFO, { keyPath: 'id' })
+      req.result.createObjectStore(MESSAGES, { keyPath: 'id' })
+    }
     req.onsuccess = () => resolve(req.result)
     req.onerror = () => reject(req.error)
   }).catch((err) => {
@@ -32,31 +41,50 @@ function open(): Promise<IDBDatabase> {
   return db
 }
 
-async function run<T>(mode: IDBTransactionMode, fn: (store: IDBObjectStore) => IDBRequest<T>): Promise<T> {
-  const tx = (await open()).transaction(STORE, mode)
-  const req = fn(tx.objectStore(STORE))
+/** Runs one transaction over both stores; resolves with `fn`'s result once it has committed. */
+async function run<T>(
+  mode: IDBTransactionMode,
+  fn: (info: IDBObjectStore, messages: IDBObjectStore) => () => T,
+): Promise<T> {
+  const tx = (await open()).transaction([INFO, MESSAGES], mode)
+  const result = fn(tx.objectStore(INFO), tx.objectStore(MESSAGES))
   return new Promise<T>((resolve, reject) => {
-    tx.oncomplete = () => resolve(req.result)
+    tx.oncomplete = () => resolve(result())
     tx.onerror = () => reject(tx.error)
     tx.onabort = () => reject(tx.error)
   })
 }
 
-export async function saveSession(session: Session): Promise<void> {
-  await run('readwrite', (s) => s.put(session))
+export async function saveSession({ messages, ...info }: Session): Promise<void> {
+  await run('readwrite', (infos, all) => {
+    infos.put(info)
+    all.put({ id: info.id, messages })
+    return () => undefined
+  })
 }
 
 export async function getSession(id: string): Promise<Session | undefined> {
-  return run('readonly', (s) => s.get(id) as IDBRequest<Session | undefined>)
+  return run('readonly', (infos, all) => {
+    const info = infos.get(id) as IDBRequest<SessionInfo | undefined>
+    const stored = all.get(id) as IDBRequest<{ messages: HistoryMessage[] } | undefined>
+    return () => info.result && { ...info.result, messages: stored.result?.messages ?? [] }
+  })
 }
 
 export async function deleteSession(id: string): Promise<void> {
-  await run('readwrite', (s) => s.delete(id))
+  await run('readwrite', (infos, all) => {
+    infos.delete(id)
+    all.delete(id)
+    return () => undefined
+  })
 }
 
 /** All saved sessions, most recently used first. */
-export async function listSessions(): Promise<Session[]> {
-  const all = await run('readonly', (s) => s.getAll() as IDBRequest<Session[]>)
+export async function listSessions(): Promise<SessionInfo[]> {
+  const all = await run('readonly', (infos) => {
+    const req = infos.getAll() as IDBRequest<SessionInfo[]>
+    return () => req.result
+  })
   return all.sort((a, b) => b.updatedAt - a.updatedAt)
 }
 
@@ -78,14 +106,14 @@ export function pageKey(url: string): string {
 }
 
 /** The pages sessions started on, once each, with the newest title seen for each. */
-export function sessionPages(sessions: Session[]): { key: string; title: string }[] {
+export function sessionPages(sessions: SessionInfo[]): { key: string; title: string }[] {
   const pages = new Map<string, string>()
   for (const s of sessions) if (s.page && !pages.has(pageKey(s.page.url))) pages.set(pageKey(s.page.url), s.page.title)
   return [...pages].map(([key, title]) => ({ key, title }))
 }
 
 /** Sessions whose title contains `query` (ignoring case) and, if `page` is set, that started on that page. */
-export function filterSessions(sessions: Session[], filter: { query?: string; page?: string }): Session[] {
+export function filterSessions<T extends SessionInfo>(sessions: T[], filter: { query?: string; page?: string }): T[] {
   const query = filter.query?.trim().toLowerCase()
   return sessions.filter(
     (s) =>

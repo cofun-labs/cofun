@@ -1,17 +1,20 @@
 import { useEffect, useState } from 'react'
-import { deleteSession, filterSessions, listSessions, sessionPages, type Session } from '../sessions'
+import { deleteSession, filterSessions, listSessions, sessionPages, type SessionInfo } from '../sessions'
 
 /** The list of saved sessions: search, filter by page, open, and delete. */
 export function Sessions({
   currentId,
+  saved,
   onOpen,
   onDeleted,
 }: {
   currentId?: string
+  /** Changes whenever a session is saved, so the list stays current while it is open. */
+  saved: number
   onOpen: (id: string) => void
   onDeleted: (id: string) => void
 }) {
-  const [sessions, setSessions] = useState<Session[] | null>(null)
+  const [sessions, setSessions] = useState<SessionInfo[] | null>(null)
   const [error, setError] = useState<string>()
   const [query, setQuery] = useState('')
   const [page, setPage] = useState('')
@@ -28,7 +31,7 @@ export function Sessions({
 
   useEffect(() => {
     void load()
-  }, [])
+  }, [saved])
 
   async function remove(id: string) {
     if (confirming !== id) return setConfirming(id)
