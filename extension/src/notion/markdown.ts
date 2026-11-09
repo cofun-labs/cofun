@@ -240,7 +240,8 @@ class Context {
     if (!columns.length || !rows.length) return [`${pad}[empty table]`]
     // A cell can't hold a raw `|` or a line break; backslashes are escaped first so the escaping
     // can be undone.
-    const cell = (text: string) => text.replace(/\|/g, '\\|').replace(/\n/g, '<br>')
+    // Text is already escaped (pipes included), so a cell only needs its line breaks kept on one line.
+    const cell = (text: string) => text.replace(/\n/g, '<br>')
     const cells = rows.map((row) =>
       row
         ? columns.map((c) => cell(this.rich(row.properties?.[c])))
@@ -451,5 +452,5 @@ export function splitIntoParts(sections: string[], max: number): string[] {
 
 /** Escapes characters that inline Markdown would read as formatting, links, or references. */
 export function escapeMarkdown(text: string): string {
-  return text.replace(/[\\`*~[\]^]/g, '\\$&').replace(/(?<!\w)_|_(?!\w)/g, '\\_')
+  return text.replace(/[\\`*~[\]^|]/g, '\\$&').replace(/(?<!\w)_|_(?!\w)/g, '\\_')
 }

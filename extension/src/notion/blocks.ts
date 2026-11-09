@@ -175,7 +175,10 @@ export function inline(text: string, marks: Mark[] = []): RichText {
       run: (m) => {
         // A link to a 32-hex id is a link to a Notion page, as read_page shows mentions.
         const page = /^[0-9a-f]{32}$/i.test(m[2]) ? dashed(m[2].toLowerCase()) : undefined
-        return page ? [['‣', [...marks, ['p', page]]]] : inline(m[1], [...marks, ['a', m[2]]])
+        if (page) return [['‣', [...marks, ['p', page]]]]
+        // Only web, mail, and Notion page links; anything else (javascript:, data:, …) stays text.
+        if (!/^(?:https?:|mailto:|\/)/i.test(m[2])) return [marks.length ? [m[0], marks] : [m[0]]]
+        return inline(m[1], [...marks, ['a', m[2]]])
       },
     },
     { re: /\*\*\*(.+?)\*\*\*/, run: (m) => inline(m[1], [...marks, ['b'], ['i']]) },

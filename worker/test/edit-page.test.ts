@@ -781,3 +781,16 @@ describe('merging reads', () => {
     expect(merged.ids.get(hex(older))).toBe(older)
   })
 })
+
+describe('links written by edit_page', () => {
+  it('writes only web, mail, and Notion page links as links', () => {
+    expect(
+      inline('[a](https://x.example) [b](mailto:a@x.example) [c](javascript:alert(1)) [d](data:text/html,x)'),
+    ).toEqual([
+      ['a', [['a', 'https://x.example']]],
+      [' '],
+      ['b', [['a', 'mailto:a@x.example']]],
+      [' [c](javascript:alert(1)) [d](data:text/html,x)'],
+    ])
+  })
+})
