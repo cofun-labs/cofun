@@ -410,6 +410,22 @@ describe('submitting a transaction', () => {
     expect(body.transactions[0].id).not.toBe(body.requestId)
   })
 
+  it('sends record ids in Notion’s form and names the workspace on each pointer', async () => {
+    const tab = new FakeNotionTab(PAGE_URL).respond('saveTransactionsFanout', 200, {}).install()
+    const op: Operation = { ...rename, pointer: { table: 'block', id: PAGE.replace(/-/g, '').toUpperCase() } }
+    await (await activeNotionTab()).client.submitTransaction(SPACE, [op], 'rename page')
+    const body = tab.sent[0].body as { transactions: { operations: Operation[] }[] }
+    expect(body.transactions[0].operations).toEqual([rename])
+  })
+
+  it('refuses an operation on an id that is not a Notion id, without asking Notion', async () => {
+    const tab = new FakeNotionTab(PAGE_URL).install()
+    const op: Operation = { ...rename, pointer: { table: 'block', id: 'Q4 Roadmap' } }
+    const err = await notionError((await activeNotionTab()).client.submitTransaction(SPACE, [op], 'rename page'))
+    expect([err.code, err.message]).toEqual(['notion_error', 'Not a Notion id: Q4 Roadmap'])
+    expect(tab.sent).toEqual([])
+  })
+
   it('reports a rejected transaction with Notion’s explanation', async () => {
     new FakeNotionTab(PAGE_URL)
       .respond('saveTransactionsFanout', 400, {

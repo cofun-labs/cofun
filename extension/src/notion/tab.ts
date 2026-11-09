@@ -59,11 +59,16 @@ export async function notionRequest(
 ): Promise<NotionResponse | { notOnNotion: true }> {
   // The tab may have navigated since the side panel looked at it.
   if (!hosts.includes(location.hostname)) return { notOnNotion: true }
-  const userId = /(?:^|;\s*)notion_user_id=([^;]+)/.exec(document.cookie)?.[1]
+  let userId = /(?:^|;\s*)notion_user_id=([^;]+)/.exec(document.cookie)?.[1]
+  try {
+    if (userId) userId = decodeURIComponent(userId)
+  } catch {
+    // A malformed cookie: use it as it is.
+  }
   try {
     const headers: Record<string, string> = { 'content-type': 'application/json' }
     // Picks the tab's user when several Notion accounts are signed in.
-    if (userId) headers['x-notion-active-user-header'] = decodeURIComponent(userId)
+    if (userId) headers['x-notion-active-user-header'] = userId
     if (spaceId) headers['x-notion-space-id'] = spaceId
     const res = await fetch(`/api/v3/${endpoint}`, { method: 'POST', headers, body: JSON.stringify(body) })
     const text = await res.text()

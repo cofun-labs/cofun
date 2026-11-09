@@ -141,11 +141,16 @@ export class NotionClient {
     if (operations.some((op) => op.path.includes('crdt_data') || hasCrdtData(op.args))) {
       throw new NotionError('notion_error', 'Operations must not write crdt_data.')
     }
+    // Records are keyed by dashed, lowercase ids; Notion's own client also names the space on each pointer.
+    const ops = operations.map((op) => ({
+      ...op,
+      pointer: { ...op.pointer, id: notionId(op.pointer.id), spaceId: op.pointer.spaceId ?? spaceId },
+    }))
     await this.request(
       'saveTransactionsFanout',
       {
         requestId: crypto.randomUUID(),
-        transactions: [{ id: crypto.randomUUID(), spaceId, debug: { userAction }, operations }],
+        transactions: [{ id: crypto.randomUUID(), spaceId, debug: { userAction }, operations: ops }],
       },
       spaceId,
     )
