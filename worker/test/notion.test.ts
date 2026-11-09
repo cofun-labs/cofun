@@ -1,0 +1,404 @@
+// The extension's Notion API client (extension/src/notion/), against a fake Notion tab that serves
+// sanitized fixtures of Notion's responses.
+import { readFileSync } from 'node:fs'
+import { afterEach, describe, expect, it } from 'vitest'
+import { NotionError, normalizeRecordMap, type Operation } from '../../extension/src/notion/api'
+import { pageIdFromUrl } from '../../extension/src/notion/hosts'
+import { activeNotionTab } from '../../extension/src/notion/tab'
+
+const SPACE = '5a5a5a5a-0000-4000-8000-000000000001'
+const USER = '0e0e0e0e-0000-4000-8000-000000000002'
+const PAGE = '1a1a1a1a-0000-4000-8000-000000000010'
+const BLOCKS = [
+  '1b1b1b1b-0000-4000-8000-000000000011',
+  '1b1b1b1b-0000-4000-8000-000000000012',
+  '1b1b1b1b-0000-4000-8000-000000000013',
+]
+const PAGE_URL = `https://app.notion.com/p/Fixture-page-${PAGE.replace(/-/g, '')}`
+
+function fixture(name: string): unknown {
+  return JSON.parse(readFileSync(new URL(`./fixtures/notion/${name}.json`, import.meta.url), 'utf8'))
+}
+
+interface SentRequest {
+  url: string
+  headers: Record<string, string>
+  body: Record<string, unknown>
+}
+
+const globals = globalThis as Record<string, unknown>
+const saved = { chrome: globals.chrome, fetch: globals.fetch, location: globals.location, document: globals.document }
+
+afterEach(() => {
+  for (const [key, value] of Object.entries(saved)) {
+    if (value === undefined) delete globals[key]
+    else globals[key] = value
+  }
+})
+
+/**
+ * A browser window with one active tab, standing in for the chrome.tabs and chrome.scripting APIs.
+ * executeScript runs the injected function the way Chrome does: rebuilt from its source, so it can
+ * only use its own body, with JSON-cloned arguments, in a page that has the tab's location, cookies,
+ * and fetch. The page's fetch answers with queued Notion responses.
+ */
+class FakeNotionTab {
+  sent: SentRequest[] = []
+  injections: { tabId: number; world?: string }[] = []
+  /** Responses per endpoint, in order. */
+  responses: Record<string, { status: number; text: string }[]> = {}
+  /** Where the page is when the script runs; defaults to the tab's URL. */
+  pageUrl?: string
+  closed = false
+  networkDown = false
+
+  constructor(
+    readonly url: string | undefined,
+    readonly cookie = `notion_browser_id=b; notion_user_id=${USER}; notion_users=%5B%22${USER}%22%5D`,
+  ) {}
+
+  respond(endpoint: string, status: number, json: unknown): this {
+    return this.respondText(endpoint, status, JSON.stringify(json))
+  }
+
+  respondText(endpoint: string, status: number, text: string): this {
+    ;(this.responses[endpoint] ??= []).push({ status, text })
+    return this
+  }
+
+  install(): this {
+    globals.chrome = {
+      tabs: { query: async () => (this.url === undefined ? [] : [{ id: 7, url: this.url, title: 'Fixture page' }]) },
+      scripting: {
+        executeScript: async ({
+          target,
+          world,
+          func,
+          args,
+        }: {
+          target: { tabId: number }
+          world?: string
+          func: Function
+          args: unknown[]
+        }) => {
+          if (this.closed) throw new Error(`No tab with id: ${target.tabId}.`)
+          this.injections.push({ tabId: target.tabId, world })
+          const location = new URL(this.pageUrl ?? this.url!)
+          globals.location = location
+          globals.document = { cookie: this.cookie }
+          globals.fetch = (input: string, init: RequestInit) => this.fetch(new URL(input, location).href, init)
+          const rebuilt = new Function(`return (${func.toString()})`)() as Function
+          return [{ frameId: 0, result: await rebuilt(...structuredClone(args)) }]
+        },
+      },
+    }
+    return this
+  }
+
+  private async fetch(url: string, init: RequestInit): Promise<Response> {
+    if (this.networkDown) throw new TypeError('Failed to fetch')
+    this.sent.push({ url, headers: init.headers as Record<string, string>, body: JSON.parse(init.body as string) })
+    const endpoint = url.split('/api/v3/')[1]
+    const next = this.responses[endpoint]?.shift()
+    if (!next) throw new Error(`Unexpected request to ${url}`)
+    return new Response(next.text, { status: next.status })
+  }
+}
+
+function pageTab(url = PAGE_URL, cookie?: string) {
+  return new FakeNotionTab(url, cookie)
+    .respond('loadPageChunk', 200, fixture('load-page-chunk-0'))
+    .respond('loadPageChunk', 200, fixture('load-page-chunk-1'))
+    .install()
+}
+
+async function notionError(promise: Promise<unknown>): Promise<NotionError> {
+  const err = await promise.then(
+    () => undefined,
+    (e: unknown) => e,
+  )
+  expect(err).toBeInstanceOf(NotionError)
+  return err as NotionError
+}
+
+describe('the open page', () => {
+  it('reads the page id from Notion URLs', () => {
+    const hex = PAGE.replace(/-/g, '')
+    expect(pageIdFromUrl(`https://www.notion.so/team/Fixture-page-${hex}`)).toBe(PAGE)
+    expect(pageIdFromUrl(`https://app.notion.com/p/${hex}`)).toBe(PAGE)
+    expect(pageIdFromUrl(`https://www.notion.so/${PAGE}`)).toBe(PAGE)
+    expect(pageIdFromUrl(`https://www.notion.so/Cafe-${hex}?v=${'f'.repeat(32)}#${'e'.repeat(32)}`)).toBe(PAGE)
+    // A page open in side peek is the one the user is looking at.
+    expect(pageIdFromUrl(`https://www.notion.so/team/Board-${'a'.repeat(32)}?p=${hex}&pm=s`)).toBe(PAGE)
+    expect(pageIdFromUrl('https://www.notion.so/')).toBeUndefined()
+    expect(pageIdFromUrl('https://app.notion.com/team/home')).toBeUndefined()
+    expect(pageIdFromUrl('not a url')).toBeUndefined()
+  })
+
+  it('finds the Notion tab of the window and the page it shows', async () => {
+    new FakeNotionTab(PAGE_URL).install()
+    const tab = await activeNotionTab()
+    expect([tab.tabId, tab.url, tab.pageId]).toEqual([7, PAGE_URL, PAGE])
+
+    new FakeNotionTab('https://www.notion.so/').install()
+    expect((await activeNotionTab()).pageId).toBeUndefined()
+  })
+
+  it('reports no Notion tab for other sites, and never calls them', async () => {
+    for (const url of ['https://mail.example.com/inbox', 'https://www.notion.so.evil.example/x', undefined]) {
+      const tab = new FakeNotionTab(url).install()
+      const err = await notionError(activeNotionTab())
+      expect([err.code, err.message]).toEqual(['no_notion_tab', 'No Notion page is open in this window.'])
+      expect(tab.injections).toEqual([])
+    }
+  })
+})
+
+describe('requests', () => {
+  it('run in the Notion tab, out of reach of the page, as the tab’s signed-in user', async () => {
+    const tab = pageTab()
+    const { client } = await activeNotionTab()
+    await client.loadPage(PAGE)
+
+    expect(tab.injections).toEqual([
+      { tabId: 7, world: 'ISOLATED' },
+      { tabId: 7, world: 'ISOLATED' },
+    ])
+    // The tab's own origin: the Notion session belongs to that host only.
+    expect(tab.sent.map((r) => r.url)).toEqual([
+      'https://app.notion.com/api/v3/loadPageChunk',
+      'https://app.notion.com/api/v3/loadPageChunk',
+    ])
+    expect(tab.sent[0].headers).toEqual({ 'content-type': 'application/json', 'x-notion-active-user-header': USER })
+    // Once the workspace is known, it goes with every request.
+    expect(tab.sent[1].headers).toEqual({
+      'content-type': 'application/json',
+      'x-notion-active-user-header': USER,
+      'x-notion-space-id': SPACE,
+    })
+  })
+
+  it('go to www.notion.so from a www.notion.so tab', async () => {
+    const tab = pageTab(`https://www.notion.so/team/Fixture-page-${PAGE.replace(/-/g, '')}`)
+    await (await activeNotionTab()).client.loadPage(PAGE)
+    expect(tab.sent[0].url).toBe('https://www.notion.so/api/v3/loadPageChunk')
+  })
+
+  it('stop when the tab left Notion after it was picked', async () => {
+    const tab = pageTab()
+    const { client } = await activeNotionTab()
+    tab.pageUrl = 'https://mail.example.com/inbox'
+    expect((await notionError(client.loadPage(PAGE))).code).toBe('no_notion_tab')
+    expect(tab.sent).toEqual([])
+  })
+
+  it('report no Notion tab when the tab is gone', async () => {
+    const tab = pageTab()
+    const { client } = await activeNotionTab()
+    tab.closed = true
+    expect((await notionError(client.loadPage(PAGE))).code).toBe('no_notion_tab')
+  })
+
+  it('report a network failure as a Notion error', async () => {
+    const tab = pageTab()
+    tab.networkDown = true
+    const err = await notionError((await activeNotionTab()).client.loadPage(PAGE))
+    expect([err.code, err.message]).toEqual(['notion_error', 'Could not reach Notion: Failed to fetch'])
+  })
+})
+
+describe('loading a page', () => {
+  it('follows the cursor until the page is complete and unwraps every record once', async () => {
+    const tab = pageTab()
+    const loaded = await (await activeNotionTab()).client.loadPage(PAGE)
+
+    expect(tab.sent.map((r) => r.body)).toEqual([
+      { page: { id: PAGE }, limit: 100, cursor: { stack: [] }, chunkNumber: 0, verticalColumns: false },
+      {
+        page: { id: PAGE },
+        limit: 100,
+        cursor: { stack: [[{ table: 'block', id: PAGE, index: 2 }]] },
+        chunkNumber: 1,
+        verticalColumns: false,
+      },
+    ])
+    expect(loaded.complete).toBe(true)
+    expect(loaded.spaceId).toBe(SPACE)
+    expect(loaded.page).toMatchObject({
+      id: PAGE,
+      type: 'page',
+      content: BLOCKS,
+      properties: { title: [['Fixture page']] },
+    })
+    // The page repeats in both chunks; it is kept once, with the blocks of both chunks.
+    expect(Object.keys(loaded.recordMap.block!).sort()).toEqual([PAGE, ...BLOCKS].sort())
+    expect(loaded.recordMap.block![BLOCKS[0]]).toMatchObject({
+      type: 'text',
+      properties: { title: [['Hello '], ['bold', [['b']]]] },
+    })
+    expect(Object.keys(loaded.recordMap)).toEqual(['block', 'notion_user', 'space', 'discussion', 'comment'])
+    expect(loaded.recordMap.comment).toMatchObject({
+      'c1c1c1c1-0000-4000-8000-000000000030': { text: [['Looks good']] },
+    })
+  })
+
+  it('stops after the chunk limit and says the page is incomplete', async () => {
+    pageTab()
+    const loaded = await (await activeNotionTab()).client.loadPage(PAGE, { maxChunks: 1 })
+    expect(loaded.complete).toBe(false)
+    expect(Object.keys(loaded.recordMap.block!)).toHaveLength(3)
+  })
+
+  it('treats a page missing from the response as no access', async () => {
+    new FakeNotionTab(PAGE_URL).respond('loadPageChunk', 200, fixture('empty-record-map')).install()
+    const err = await notionError((await activeNotionTab()).client.loadPage(PAGE))
+    expect([err.code, err.message]).toEqual([
+      'no_access',
+      "The Notion page doesn't exist, or the signed-in Notion account has no access to it.",
+    ])
+  })
+
+  it('treats a page missing from the response as signed out when no Notion user is signed in', async () => {
+    const tab = new FakeNotionTab(PAGE_URL, 'notion_browser_id=b')
+      .respond('loadPageChunk', 200, fixture('empty-record-map'))
+      .install()
+    const err = await notionError((await activeNotionTab()).client.loadPage(PAGE))
+    expect([err.code, err.message]).toEqual([
+      'signed_out',
+      'Not signed in to Notion in this tab. Sign in to Notion and try again.',
+    ])
+    expect(tab.sent[0].headers).toEqual({ 'content-type': 'application/json' })
+  })
+})
+
+describe('Notion errors', () => {
+  async function failWith(status: number, json: unknown): Promise<NotionError> {
+    new FakeNotionTab(PAGE_URL).respond('loadPageChunk', status, json).install()
+    return notionError((await activeNotionTab()).client.loadPage(PAGE))
+  }
+
+  it('maps an authentication error to signed out', async () => {
+    expect((await failWith(401, fixture('error-unauthorized'))).code).toBe('signed_out')
+  })
+
+  it('maps a permission error to no access', async () => {
+    expect((await failWith(403, {})).code).toBe('no_access')
+  })
+
+  it('passes on Notion’s explanation of other errors', async () => {
+    const err = await failWith(400, fixture('error-validation'))
+    expect([err.code, err.message]).toEqual([
+      'notion_error',
+      'Notion returned an error (400 ValidationError): Invalid input.',
+    ])
+    expect((await failWith(415, fixture('error-unsupported-media-type'))).message).toBe(
+      'Notion returned an error (415 UnsupportedMediaTypeError): Incorrect content type.',
+    )
+  })
+
+  it('handles errors that are not JSON', async () => {
+    new FakeNotionTab(PAGE_URL).respondText('loadPageChunk', 502, '<html>Bad gateway</html>').install()
+    const err = await notionError((await activeNotionTab()).client.loadPage(PAGE))
+    expect([err.code, err.message]).toEqual(['notion_error', 'Notion returned an error (502): no details'])
+  })
+})
+
+describe('loading records', () => {
+  it('asks for the latest version of each record', async () => {
+    const tab = new FakeNotionTab(PAGE_URL)
+      .respond('syncRecordValuesMain', 200, fixture('sync-record-values'))
+      .install()
+    const records = await (
+      await activeNotionTab()
+    ).client.getRecords([{ table: 'block', id: BLOCKS[0], spaceId: SPACE }])
+    expect(tab.sent[0].body).toEqual({
+      requests: [{ pointer: { table: 'block', id: BLOCKS[0], spaceId: SPACE }, version: -1 }],
+    })
+    expect(records.block![BLOCKS[0]]).toMatchObject({ id: BLOCKS[0], version: 8, type: 'text' })
+  })
+
+  it('treats a record missing from the response as no access', async () => {
+    new FakeNotionTab(PAGE_URL).respond('syncRecordValuesMain', 200, fixture('sync-record-values')).install()
+    const err = await notionError(
+      (await activeNotionTab()).client.getRecords([
+        { table: 'block', id: BLOCKS[0] },
+        { table: 'block', id: BLOCKS[1] },
+      ]),
+    )
+    expect(err.code).toBe('no_access')
+  })
+})
+
+describe('submitting a transaction', () => {
+  const rename: Operation = {
+    pointer: { table: 'block', id: PAGE, spaceId: SPACE },
+    path: ['properties'],
+    command: 'updateBlockPropertyValue',
+    args: { primitiveOp: { command: 'update', args: { title: [['Renamed']] } } },
+  }
+
+  it('sends the operations as one transaction in the page’s workspace', async () => {
+    const tab = new FakeNotionTab(PAGE_URL).respond('saveTransactionsFanout', 200, {}).install()
+    await (await activeNotionTab()).client.submitTransaction(SPACE, [rename], 'rename page')
+
+    expect(tab.sent[0].url).toBe('https://app.notion.com/api/v3/saveTransactionsFanout')
+    expect(tab.sent[0].headers['x-notion-space-id']).toBe(SPACE)
+    const body = tab.sent[0].body as { requestId: string; transactions: { id: string }[] }
+    expect(body).toEqual({
+      requestId: expect.stringMatching(/^[0-9a-f-]{36}$/),
+      transactions: [
+        {
+          id: expect.stringMatching(/^[0-9a-f-]{36}$/),
+          spaceId: SPACE,
+          debug: { userAction: 'rename page' },
+          operations: [rename],
+        },
+      ],
+    })
+    expect(body.transactions[0].id).not.toBe(body.requestId)
+  })
+
+  it('reports a rejected transaction with Notion’s explanation', async () => {
+    new FakeNotionTab(PAGE_URL)
+      .respond('saveTransactionsFanout', 400, {
+        ...(fixture('error-validation') as object),
+        debugMessage: 'Block property value updates must use high-level property operations.',
+      })
+      .install()
+    const err = await notionError((await activeNotionTab()).client.submitTransaction(SPACE, [rename], 'rename page'))
+    expect(err.message).toBe(
+      'Notion returned an error (400 ValidationError): Block property value updates must use high-level property operations.',
+    )
+  })
+
+  it('never writes CRDT data', async () => {
+    const tab = new FakeNotionTab(PAGE_URL).install()
+    const { client } = await activeNotionTab()
+    const pointer = { table: 'block' as const, id: BLOCKS[0] }
+    for (const op of [
+      { pointer, path: ['crdt_data', 'title'], command: 'update', args: {} },
+      { pointer, path: [], command: 'update', args: { crdt_data: {} } },
+    ] satisfies Operation[]) {
+      await expect(client.submitTransaction(SPACE, [op], 'edit')).rejects.toThrow(
+        'Operations must not write crdt_data.',
+      )
+    }
+    expect(tab.sent).toEqual([])
+  })
+})
+
+describe('record maps', () => {
+  it('unwrap both the current and the older record shape and drop entries without a record', () => {
+    const record = { id: 'b1', version: 1, type: 'text' }
+    expect(
+      normalizeRecordMap({
+        __version__: 3,
+        block: {
+          b1: { spaceId: SPACE, value: { role: 'editor', value: record } },
+          b2: { role: 'reader', value: { ...record, id: 'b2' } },
+          b3: { spaceId: SPACE, value: { role: 'none' } },
+        },
+      }),
+    ).toEqual({ block: { b1: record, b2: { ...record, id: 'b2' } } })
+  })
+})

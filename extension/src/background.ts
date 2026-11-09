@@ -1,4 +1,4 @@
-import { isNotion } from './notion'
+import { isNotion } from './notion/hosts'
 
 // Clicking the toolbar icon opens the side panel.
 chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch((err) => console.error(err))

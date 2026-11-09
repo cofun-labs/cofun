@@ -1,0 +1,126 @@
+{
+  "cursor": {
+    "stack": [
+      [
+        {
+          "table": "block",
+          "id": "1a1a1a1a-0000-4000-8000-000000000010",
+          "index": 2
+        }
+      ]
+    ]
+  },
+  "recordMap": {
+    "__version__": 3,
+    "block": {
+      "1a1a1a1a-0000-4000-8000-000000000010": {
+        "spaceId": "5a5a5a5a-0000-4000-8000-000000000001",
+        "value": {
+          "role": "editor",
+          "value": {
+            "id": "1a1a1a1a-0000-4000-8000-000000000010",
+            "version": 12,
+            "type": "page",
+            "properties": {
+              "title": [["Fixture page"]]
+            },
+            "content": [
+              "1b1b1b1b-0000-4000-8000-000000000011",
+              "1b1b1b1b-0000-4000-8000-000000000012",
+              "1b1b1b1b-0000-4000-8000-000000000013"
+            ],
+            "format": {
+              "page_icon": "📄"
+            },
+            "parent_id": "5a5a5a5a-0000-4000-8000-000000000001",
+            "parent_table": "space",
+            "alive": true,
+            "created_time": 1762646400000,
+            "last_edited_time": 1762646400000,
+            "space_id": "5a5a5a5a-0000-4000-8000-000000000001",
+            "discussions": ["d1d1d1d1-0000-4000-8000-000000000020"]
+          }
+        }
+      },
+      "1b1b1b1b-0000-4000-8000-000000000011": {
+        "spaceId": "5a5a5a5a-0000-4000-8000-000000000001",
+        "value": {
+          "role": "editor",
+          "value": {
+            "id": "1b1b1b1b-0000-4000-8000-000000000011",
+            "version": 8,
+            "type": "text",
+            "properties": {
+              "title": [["Hello "], ["bold", [["b"]]]]
+            },
+            "parent_id": "1a1a1a1a-0000-4000-8000-000000000010",
+            "parent_table": "block",
+            "alive": true,
+            "created_time": 1762646400000,
+            "last_edited_time": 1762646400000,
+            "space_id": "5a5a5a5a-0000-4000-8000-000000000001",
+            "crdt_format_version": 1,
+            "crdt_data": {
+              "title": {
+                "r": "<crdt>"
+              }
+            }
+          }
+        }
+      },
+      "1b1b1b1b-0000-4000-8000-000000000012": {
+        "spaceId": "5a5a5a5a-0000-4000-8000-000000000001",
+        "value": {
+          "role": "editor",
+          "value": {
+            "id": "1b1b1b1b-0000-4000-8000-000000000012",
+            "version": 3,
+            "type": "to_do",
+            "properties": {
+              "title": [["Ship it"]],
+              "checked": [["No"]]
+            },
+            "parent_id": "1a1a1a1a-0000-4000-8000-000000000010",
+            "parent_table": "block",
+            "alive": true,
+            "created_time": 1762646400000,
+            "last_edited_time": 1762646400000,
+            "space_id": "5a5a5a5a-0000-4000-8000-000000000001",
+            "crdt_format_version": 1,
+            "crdt_data": {
+              "title": {
+                "r": "<crdt>"
+              }
+            }
+          }
+        }
+      }
+    },
+    "notion_user": {
+      "0e0e0e0e-0000-4000-8000-000000000002": {
+        "spaceId": "5a5a5a5a-0000-4000-8000-000000000001",
+        "value": {
+          "role": "reader",
+          "value": {
+            "id": "0e0e0e0e-0000-4000-8000-000000000002",
+            "version": 4,
+            "name": "Fixture User"
+          }
+        }
+      }
+    },
+    "space": {
+      "5a5a5a5a-0000-4000-8000-000000000001": {
+        "spaceId": "5a5a5a5a-0000-4000-8000-000000000001",
+        "value": {
+          "role": "editor",
+          "value": {
+            "id": "5a5a5a5a-0000-4000-8000-000000000001",
+            "version": 30,
+            "name": "Fixture workspace"
+          }
+        }
+      }
+    }
+  }
+}

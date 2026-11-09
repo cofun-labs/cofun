@@ -35,7 +35,8 @@ function manifest(env: Record<string, string>): Plugin {
         version: process.env.npm_package_version ?? '0.1.0',
         description: 'A side panel AI helper for Notion pages.',
         ...(env.CRX_PUBLIC_KEY ? { key: env.CRX_PUBLIC_KEY } : {}),
-        permissions: ['sidePanel', 'storage', 'tabs', 'cookies'],
+        // scripting: Notion calls run in the user's Notion tab (src/notion/tab.ts).
+        permissions: ['sidePanel', 'storage', 'tabs', 'cookies', 'scripting'],
         host_permissions: [
           'https://www.notion.so/*',
           'https://app.notion.com/*',

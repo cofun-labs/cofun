@@ -1,5 +1,6 @@
 // Saved sessions, kept on this device in IndexedDB. They never go to the worker.
 import type { HistoryMessage } from './agent'
+import { pageIdFromUrl } from './notion/hosts'
 
 /** What the session list shows; the conversation itself is loaded only when a session opens. */
 export interface SessionInfo {
@@ -126,19 +127,14 @@ export function titleFor(messages: HistoryMessage[]): string {
  * side peek (`?p=<id>`) still counts as the same page. Falls back to the URL without its query.
  */
 export function pageKey(url: string): string {
+  const id = pageIdFromUrl(url)
+  if (id) return id.replace(/-/g, '')
   try {
     const u = new URL(url)
-    const id = notionId(u.searchParams.get('p') ?? '') ?? notionId(u.pathname.split('/').at(-1) ?? '')
-    return id ?? `${u.origin}${u.pathname}`
+    return `${u.origin}${u.pathname}`
   } catch {
     return url
   }
-}
-
-/** The 32-hex page id at the end of `text`, with or without dashes. */
-function notionId(text: string): string | undefined {
-  const hex = text.replace(/-/g, '').match(/[0-9a-f]{32}$/i)?.[0]
-  return hex?.toLowerCase()
 }
 
 /** The pages sessions started on, once each, with the newest title seen for each. */

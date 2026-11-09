@@ -33,7 +33,7 @@
 | API shape | OpenAI-compatible `/v1/chat/completions` | A common streaming format, so the extension doesn't change if the model or backend does |
 | Agent runtime | [`@earendil-works/pi-agent-core`](https://www.npmjs.com/package/@earendil-works/pi-agent-core), wrapped in `extension/src/agent.ts` | Tool loop, events, abort, and tool hooks in a small package; it runs in the side panel because tools act on the browser. Only `agent.ts` imports it, so it can be replaced |
 | Deploy | Cloudflare Workers Builds (Git integration) | Cloudflare pulls the repo and deploys on merge to `main`; no Cloudflare credentials stored on GitHub |
-| Notion read/write (planned) | Notion's own internal endpoints, called from the page: `/api/v3/loadPageChunk` to read, `/api/v3/saveTransactionsFanout` to write | Verified to read and write a real page, with edits persisting after reload. Needs no Notion integration token and no `chrome.debugger` (which shows a permanent "debugging this browser" banner). The trade-off: these are not public APIs and may change |
+| Notion read/write | Notion's own internal endpoints (`/api/v3/loadPageChunk` to read, `/api/v3/saveTransactionsFanout` to write), called from inside the user's Notion tab with `chrome.scripting` | Verified to read and write a real page, with edits persisting after reload. Requests are same-origin and carry the tab's own Notion session (sessions are per host: `app.notion.com` and `www.notion.so` don't share one), so no Notion integration token is needed. They run in an isolated world, out of the page's reach. No `chrome.debugger` (which shows a permanent "debugging this browser" banner). The trade-off: these are not public APIs and may change |
 
 ### Auth flow
 
@@ -61,13 +61,17 @@ extension/                Chrome extension
   src/agent.ts            agent loop (pi) against the worker; the only module that imports pi
   src/tools.ts            tools the agent runs in the extension
   src/sessions.ts         saved sessions (IndexedDB, per user)
+  src/notion/hosts.ts     Notion hosts, and the page id in a Notion URL
+  src/notion/api.ts       Notion's internal API: endpoints, request shapes, record maps, errors
+  src/notion/tab.ts       runs Notion requests in the user's Notion tab (chrome.scripting)
   src/sidepanel/          React UI (main.tsx: sign-in, Chat.tsx: chat)
 worker/                   Cloudflare Worker
   src/app.ts              Hono app: Clerk JWT verification + /v1/chat/completions
   src/quota.ts            per-user daily request quota (UserQuota Durable Object in src/index.ts)
   src/usage.ts            per-request usage records (Workers Analytics Engine), no message content
   src/login.ts            sign-in page (Clerk Sync Host)
-  test/                   REST integration tests (real signed JWTs, fake AI binding)
+  test/                   REST integration tests (real signed JWTs, fake AI binding), and tests of
+                          the extension's client code (fake Notion tab with sanitized fixtures)
 docs/
   bdd.md                  how use cases and scenarios are written
   use-cases/              use cases by domain; tests reference their scenario IDs
