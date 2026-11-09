@@ -2,7 +2,7 @@
 // The worker's tests import this file too, and their tsconfig has no chrome types.
 /// <reference types="chrome" />
 import type { ToolSpec } from './agent'
-import { NotionError, mergeRecordMaps, type LoadedPage } from './notion/api'
+import { IN_TRASH, NotionError, mergeRecordMaps, type LoadedPage, type NotionRecord } from './notion/api'
 import { isNotion, pageIdFromUrl, toUuid } from './notion/hosts'
 import { PAGE_TYPES, hexId, pageToMarkdown, splitIntoParts } from './notion/markdown'
 import { activeNotionTab, type NotionTab } from './notion/tab'
@@ -191,27 +191,32 @@ export const searchPages: ToolSpec = {
     }
     const tab = await activeNotionTab()
     if (!tab.pageId) throw new Error('Open a page of the workspace to search it.')
-    // The workspace to search is the open page's.
-    const opened = await tab.client.getRecords([{ table: 'block', id: tab.pageId }])
-    const spaceId = (opened.block?.[tab.pageId] as { space_id?: string } | undefined)?.space_id
-    if (!spaceId) throw new Error('Could not tell which workspace the open page is in.')
+    // The workspace to search is the open page's; it is looked up once per page.
+    const spaceId = await workspaceOf(tab)
 
     const found = await tab.client.search(spaceId, query, limit)
     if (!found.results.length) return `No pages found for "${query}".`
     const origin = new URL(tab.url).origin
     const tag = highlightTag(found.results)
-    const plain = (text: string | undefined) => withoutTag(text, tag)
+    const plain = (text: unknown) => withoutTag(typeof text === 'string' ? text : undefined, tag)
+    // A database's name is on its collection, which search doesn't return.
+    const names = await databaseNames(
+      tab,
+      found.results.map((r) => found.recordMap.block?.[r.id]),
+      spaceId,
+    )
     const lines = found.results.map((r, n) => {
       const block = found.recordMap.block?.[r.id] as
         | { type?: string; properties?: { title?: unknown }; last_edited_time?: number }
         | undefined
       const database = block?.type === 'collection_view_page' || block?.type === 'collection_view'
       const title =
-        plain(r.highlight?.title) || runsText(block?.properties?.title) || (database ? 'Untitled database' : 'Untitled')
+        plain(r.highlight?.title) ||
+        (database ? names.get(r.id) : runsText(block?.properties?.title)) ||
+        (database ? 'Untitled database' : 'Untitled')
       // The path may end with the page itself (a top-level page's is only its own title).
-      const path = plain(r.highlight?.pathText).split(' / ')
-      if (path.at(-1) === title) path.pop()
-      const where = path.join(' / ')
+      const path = plain(r.highlight?.pathText)
+      const where = path === title ? '' : path.endsWith(` / ${title}`) ? path.slice(0, -title.length - 3) : path
       const text = plain(r.highlight?.text)
       const edited =
         typeof block?.last_edited_time === 'number' ? new Date(block.last_edited_time).toISOString().slice(0, 10) : ''
@@ -233,14 +238,69 @@ export const searchPages: ToolSpec = {
  * The tag a search response marks matched words with: a random name per response, such as
  * `<gzkNfoUU>word</gzkNfoUU>`. Only that tag is removed, so other `<…>` text stays as written.
  */
-function highlightTag(results: { highlight?: Record<string, string | undefined> }[]): string | undefined {
+function highlightTag(results: { highlight?: Record<string, unknown> }[]): string | undefined {
+  // The name used most often across every highlight, preferring Notion's random 8-character
+  // shape, so literal markup in page text (say `<b>bold</b>`) isn't taken for it.
+  const counts = new Map<string, number>()
   for (const r of results) {
     for (const text of Object.values(r.highlight ?? {})) {
-      const m = text && /<([A-Za-z][A-Za-z0-9]*)>[^<]*<\/\1>/.exec(text)
-      if (m) return m[1]
+      if (typeof text !== 'string') continue
+      for (const m of text.matchAll(/<([A-Za-z][A-Za-z0-9]*)>[^<]*<\/\1>/g))
+        counts.set(m[1], (counts.get(m[1]) ?? 0) + 1)
     }
   }
-  return undefined
+  const random = (name: string) => Number(/^[A-Za-z0-9]{8}$/.test(name))
+  const ranked = [...counts].sort(([a, n], [b, m]) => random(b) - random(a) || m - n)
+  return ranked[0]?.[0]
+}
+
+/** Workspace ids of pages, so searching from the same page doesn't look it up again. */
+const pageWorkspaces = new Map<string, string>()
+
+async function workspaceOf(tab: NotionTab): Promise<string> {
+  const pageId = tab.pageId!
+  const known = pageWorkspaces.get(pageId)
+  if (known) return known
+  let spaceId: string | undefined
+  try {
+    const opened = await tab.client.getRecords([{ table: 'block', id: pageId }])
+    spaceId = (opened.block?.[pageId] as { space_id?: string } | undefined)?.space_id
+  } catch (err) {
+    if (err instanceof NotionError && err.message === IN_TRASH) {
+      throw new Error('The open page is in the trash. Open another page of the workspace to search it.')
+    }
+    throw err
+  }
+  if (!spaceId) throw new Error('Could not tell which workspace the open page is in.')
+  pageWorkspaces.set(pageId, spaceId)
+  return spaceId
+}
+
+/** Names of the databases among `blocks`, by block id; databases that can't be looked up are left out. */
+async function databaseNames(
+  tab: NotionTab,
+  blocks: (NotionRecord | undefined)[],
+  spaceId: string,
+): Promise<Map<string, string>> {
+  const databases = blocks.filter(
+    (b): b is NotionRecord => !!b && (b.type === 'collection_view_page' || b.type === 'collection_view'),
+  )
+  const collectionOf = (b: NotionRecord) =>
+    (b.collection_id as string | undefined) ??
+    (b.format as { collection_pointer?: { id?: string } } | undefined)?.collection_pointer?.id
+  const ids = [...new Set(databases.map(collectionOf).filter((id): id is string => !!id))]
+  const names = new Map<string, string>()
+  if (!ids.length) return names
+  try {
+    const records = await tab.client.getRecords(ids.map((id) => ({ table: 'collection' as const, id, spaceId })))
+    for (const b of databases) {
+      const name = runsText(records.collection?.[collectionOf(b) ?? '']?.name)
+      if (name) names.set(b.id, name)
+    }
+  } catch {
+    // Without them, databases are listed by the title Notion highlighted, or as untitled.
+  }
+  return names
 }
 
 function withoutTag(text: string | undefined, tag: string | undefined): string {

@@ -160,3 +160,63 @@ describe('search_pages arguments', () => {
     await expect(search({ query: 'x' })).rejects.toThrow('Open a page of the workspace to search it.')
   })
 })
+
+describe('search_pages, more results', () => {
+  it("names databases from their collection, and picks Notion's tag over literal markup", async () => {
+    const COLLECTION = 'c0c0c0c0-0000-4000-8000-000000000009'
+    // Another open page, so its workspace is looked up afresh (it is remembered per page).
+    const here = 'f3f3f3f3-0000-4000-8000-000000000001'
+    new FakeNotionTab(`https://app.notion.com/${hex(here)}`)
+      .respond('syncRecordValuesMain', 200, {
+        recordMap: { __version__: 3, block: { [here]: wrapped({ id: here, type: 'page' }) } },
+      })
+      .install()
+      .respond('search', 200, {
+        results: [
+          {
+            id: FOUND,
+            highlight: {
+              title: 'Use <b>bold</b> here',
+              text: 'a <Zx81Qa7p>beta</Zx81Qa7p> b <Zx81Qa7p>plan</Zx81Qa7p>',
+            },
+          },
+          {
+            id: DATABASE,
+            highlight: { text: 'the <Zx81Qa7p>beta</Zx81Qa7p> board', pathText: 'Fixture workspace / Q3 / Q4 plan' },
+          },
+        ],
+        total: 2,
+        recordMap: {
+          __version__: 3,
+          block: {
+            [FOUND]: wrapped({ id: FOUND, type: 'page', properties: { title: [['Use <b>bold</b> here']] } }),
+            [DATABASE]: wrapped({ id: DATABASE, type: 'collection_view_page', collection_id: COLLECTION }),
+          },
+        },
+      })
+      .respond('syncRecordValuesMain', 200, {
+        recordMap: {
+          __version__: 3,
+          collection: { [COLLECTION]: wrapped({ id: COLLECTION, name: [['Q3 / Q4 plan']] }) },
+        },
+      })
+    const result = await search({ query: 'beta' })
+    expect(result).toContain(`1. 📄 Use <b>bold</b> here ^${hex(FOUND)}`)
+    expect(result).toContain('Match: “a beta b plan”')
+    expect(result).toContain(`2. 🗃 Q3 / Q4 plan ^${hex(DATABASE)}`)
+    // The database's own name is cut from the end of its path, slashes and all.
+    expect(result).toContain('In: Fixture workspace\n')
+  })
+
+  it('says so when the open page is in the trash', async () => {
+    const trashed = 'f2f2f2f2-0000-4000-8000-000000000001'
+    new FakeNotionTab(`https://app.notion.com/${hex(trashed)}`)
+      .respond('syncRecordValuesMain', 200, {
+        recordMap: { __version__: 3, block: { [trashed]: wrapped({ id: trashed, type: 'page', alive: false }) } },
+      })
+      .install()
+    await expect(search({ query: 'x' })).rejects.toThrow(
+      'The open page is in the trash. Open another page of the workspace to search it.',
+    )
+  })
+})
