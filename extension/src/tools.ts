@@ -158,4 +158,88 @@ async function loadWithDatabase(tab: NotionTab, id: string): Promise<Loaded> {
   }
 }
 
-export const TOOLS: ToolSpec[] = [getCurrentPage, readPage]
+export const SEARCH_DEFAULT = 10
+export const SEARCH_MAX = 20
+
+export const searchPages: ToolSpec = {
+  name: 'search_pages',
+  description:
+    "Searches the Notion workspace of the open page for pages by title and content, as Notion's search does. " +
+    'Returns each page with its id, where it is, when it was last edited, and the matching text. Read a page it ' +
+    'finds with read_page and its id.',
+  parameters: {
+    type: 'object',
+    properties: {
+      query: { type: 'string', description: 'Words to search for.' },
+      limit: {
+        type: 'integer',
+        minimum: 1,
+        maximum: SEARCH_MAX,
+        description: `How many pages to return, up to ${SEARCH_MAX}. Defaults to ${SEARCH_DEFAULT}.`,
+      },
+    },
+    required: ['query'],
+    additionalProperties: false,
+  },
+  run: async (args) => {
+    const query = typeof args.query === 'string' ? args.query.trim() : ''
+    if (!query) throw new Error('`query` must be some words to search for.')
+    const limit =
+      args.limit === undefined || args.limit === null || args.limit === '' ? SEARCH_DEFAULT : Number(args.limit)
+    if (!Number.isInteger(limit) || limit < 1 || limit > SEARCH_MAX) {
+      throw new Error(`\`limit\` must be a whole number from 1 to ${SEARCH_MAX}.`)
+    }
+    const tab = await activeNotionTab()
+    if (!tab.pageId) throw new Error('Open a page of the workspace to search it.')
+    // The workspace to search is the open page's.
+    const opened = await tab.client.getRecords([{ table: 'block', id: tab.pageId }])
+    const spaceId = (opened.block?.[tab.pageId] as { space_id?: string } | undefined)?.space_id
+    if (!spaceId) throw new Error('Could not tell which workspace the open page is in.')
+
+    const found = await tab.client.search(spaceId, query, limit)
+    if (!found.results.length) return `No pages found for "${query}".`
+    const origin = new URL(tab.url).origin
+    const lines = found.results.map((r, n) => {
+      const block = found.recordMap.block?.[r.id] as
+        | { type?: string; properties?: { title?: unknown }; last_edited_time?: number }
+        | undefined
+      const database = block?.type === 'collection_view_page' || block?.type === 'collection_view'
+      const title =
+        plain(r.highlight?.title) || runsText(block?.properties?.title) || (database ? 'Untitled database' : 'Untitled')
+      // The path ends with the page itself; a top-level page's path is only its own title.
+      const path = plain(r.highlight?.pathText)
+      const where = path === title ? '' : path
+      const text = plain(r.highlight?.text)
+      const edited =
+        typeof block?.last_edited_time === 'number' ? new Date(block.last_edited_time).toISOString().slice(0, 10) : ''
+      return [
+        `${n + 1}. ${database ? '🗃' : '📄'} ${title} ^${hexId(r.id)}`,
+        ...(where ? [`   In: ${where}`] : []),
+        ...(edited ? [`   Edited: ${edited}`] : []),
+        ...(text ? [`   Match: “${clip(text, 200)}”`] : []),
+        `   URL: ${origin}/${hexId(r.id)}`,
+      ].join('\n')
+    })
+    const shown = found.results.length
+    const more = found.total > shown ? ` (${found.total} in all; showing ${shown})` : ''
+    return [`Pages found for "${query}"${more}:`, '', ...lines].join('\n')
+  },
+}
+
+/** Search highlights mark matched words with tags (a random name per response); keep the words. */
+function plain(text: string | undefined): string {
+  return (text ?? '')
+    .replace(/<\/?[A-Za-z][A-Za-z0-9]*>/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+function runsText(value: unknown): string {
+  return Array.isArray(value) ? value.map((r) => (Array.isArray(r) ? String(r[0]) : '')).join('') : ''
+}
+
+function clip(text: string, max: number): string {
+  return text.length > max ? `${text.slice(0, max - 1)}…` : text
+}
+
+export const TOOLS: ToolSpec[] = [getCurrentPage, readPage, searchPages]

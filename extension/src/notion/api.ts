@@ -30,7 +30,7 @@ export const OUTCOME_UNKNOWN =
   'Notion did not answer, so the change may or may not have been saved. Read the page again before retrying.'
 
 /** The endpoints under /api/v3/ the client uses. */
-export type NotionEndpoint = 'loadPageChunk' | 'syncRecordValuesMain' | 'saveTransactionsFanout'
+export type NotionEndpoint = 'loadPageChunk' | 'syncRecordValuesMain' | 'saveTransactionsFanout' | 'search'
 
 /** What one request to Notion returned. `error` is set when no HTTP response came back. */
 export interface NotionResponse {
@@ -89,6 +89,21 @@ export interface Operation {
   path: string[]
   command: 'set' | 'update' | 'listAfter' | 'listBefore' | 'listRemove' | 'removeChild' | 'updateBlockPropertyValue'
   args: unknown
+}
+
+/** One search hit as Notion returns it. Highlights mark matched words with a random tag per response. */
+export interface RawSearchResult {
+  id: string
+  score?: number
+  highlight?: { title?: string; text?: string; pathText?: string }
+  highlightBlockId?: string
+}
+
+export interface SearchResults {
+  results: RawSearchResult[]
+  total: number
+  /** The pages found, and their workspace. */
+  recordMap: RecordMap
 }
 
 /** A page and everything loadPageChunk returns with it (descendants, databases, comments). */
@@ -179,6 +194,41 @@ export class NotionClient {
       }
       throw err
     }
+  }
+
+  /**
+   * Searches a workspace's pages by title and content, as Notion's quick find does. Notion only
+   * returns what the signed-in account can open.
+   */
+  async search(spaceId: string, query: string, limit: number): Promise<SearchResults> {
+    const space = notionId(spaceId)
+    const { json } = await this.request<{ results?: RawSearchResult[]; total?: number; recordMap?: unknown }>(
+      'search',
+      {
+        type: 'BlocksInSpace',
+        query,
+        spaceId: space,
+        limit,
+        source: 'quick_find',
+        sort: { field: 'relevance' },
+        filters: {
+          isDeletedOnly: false,
+          excludeTemplates: false,
+          navigableBlockContentOnly: false,
+          requireEditPermissions: false,
+          includePublicPagesWithoutExplicitAccess: false,
+          ancestors: [],
+          createdBy: [],
+          editedBy: [],
+          lastEditedTime: {},
+          createdTime: {},
+          inTeams: [],
+        },
+      },
+      space,
+    )
+    const results = (json.results ?? []).filter((r) => typeof r?.id === 'string')
+    return { results, total: json.total ?? results.length, recordMap: normalizeRecordMap(json.recordMap) }
   }
 
   /** `spaceId`, when known, goes along as `x-notion-space-id`. */
