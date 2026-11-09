@@ -2,6 +2,7 @@ name: Workflow Lint
 
 on:
   pull_request:
+  # Only required checks need to run in the merge queue: here, actionlint.
   merge_group:
   push:
     branches:
@@ -28,9 +29,11 @@ jobs:
       - name: Run actionlint
         uses: raven-actions/actionlint@3d39aea434753780c3b3d4a1a31c854b4dbf49d7 # v2.2.0
 
-  # Findings go to code scanning; the main ruleset blocks merges on them.
+  # Findings go to code scanning; the main ruleset blocks merges on the PR's
+  # results. Skipped in the merge queue, which only waits for required checks.
   zizmor:
     name: zizmor
+    if: github.event_name != 'merge_group'
     runs-on: ubuntu-latest
     permissions:
       contents: read
