@@ -1,7 +1,14 @@
 // Runs the extension's real agent (extension/src/agent.ts) against the worker,
 // so the two sides can't drift apart.
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
-import { CopilotAgent, type AgentUpdate, type HistoryMessage, type ToolSpec } from '../../extension/src/agent'
+import {
+  CopilotAgent,
+  type AgentUpdate,
+  type ConfirmTool,
+  type HistoryMessage,
+  type ToolCallRequest,
+  type ToolSpec,
+} from '../../extension/src/agent'
 import { getCurrentPage } from '../../extension/src/tools'
 import { createApp, type Env } from '../src/app'
 import { FakeClerk } from './clerk'
@@ -77,12 +84,36 @@ function makeAgent(
 }
 
 /** Asks one question and collects what the side panel would show. */
-async function ask(agent: CopilotAgent, text: string) {
+async function ask(agent: CopilotAgent, text: string, confirm?: ConfirmTool) {
   const updates: AgentUpdate[] = []
-  const result = await agent.ask(text, (u) => updates.push(u))
+  const result = await agent.ask(text, (u) => updates.push(u), confirm)
   const reply = updates.map((u) => (u.type === 'text' ? u.delta : '')).join('')
   return { result, updates, reply }
 }
+
+/** A tool that changes data, so it needs the user's OK; records each run. */
+function renameTool() {
+  const runs: unknown[] = []
+  const tool: ToolSpec = {
+    name: 'rename_page',
+    description: 'Renames the open Notion page.',
+    parameters: {
+      type: 'object',
+      properties: { title: { type: 'string' } },
+      required: ['title'],
+      additionalProperties: false,
+    },
+    needsConfirmation: true,
+    run: async (args) => {
+      runs.push(args)
+      return 'Renamed.'
+    },
+  }
+  return { tool, runs }
+}
+
+const RENAME_CALL = { name: 'rename_page', arguments: '{"title":"Q4 Plan"}' }
+const toolStatuses = (updates: AgentUpdate[]) => updates.flatMap((u) => (u.type === 'tool_end' ? [u.status] : []))
 
 const PAGE_JSON = JSON.stringify({ title: 'Q4 Roadmap', url: 'https://www.notion.so/Q4-Roadmap-abc123' })
 
@@ -325,6 +356,122 @@ describe('extension agent against the worker', () => {
     const { result, updates } = await ask(agent, 'Which page am I on?')
     expect(result).toEqual({ status: 'stopped' })
     expect(updates.flatMap((u) => (u.type === 'tool_end' ? [u.status] : []))).toEqual(['done'])
+  })
+
+  it('[UC-AGENT-001-S09] a tool the user declines does not run, and the agent continues without it', async () => {
+    const { tool, runs } = renameTool()
+    ai.script = [{ toolCalls: [RENAME_CALL] }, { reply: 'OK, I left the title as it is' }]
+    const asked: ToolCallRequest[] = []
+    const { result, updates, reply } = await ask(
+      makeAgent({ tools: [tool] }),
+      'Rename this page to Q4 Plan',
+      async (call) => {
+        asked.push(call)
+        return false
+      },
+    )
+
+    expect(asked).toEqual([{ id: 'chatcmpl-tool-0', name: 'rename_page', args: { title: 'Q4 Plan' } }])
+    expect(runs).toEqual([])
+    expect(toolStatuses(updates)).toEqual(['declined'])
+    // The model is told the user said no, and answers without the tool.
+    expect(sentMessages(1).at(-1)).toMatchObject({ role: 'tool', content: expect.stringContaining('declined') })
+    expect(result).toEqual({ status: 'done' })
+    expect(reply).toBe('OK, I left the title as it is ')
+  })
+
+  it('[UC-AGENT-001-S10] a tool the user agrees to runs, and the answer uses its result', async () => {
+    const { tool, runs } = renameTool()
+    ai.script = [{ toolCalls: [RENAME_CALL] }, { reply: 'Renamed to Q4 Plan' }]
+    const { result, updates, reply } = await ask(
+      makeAgent({ tools: [tool] }),
+      'Rename this page to Q4 Plan',
+      async () => true,
+    )
+
+    expect(runs).toEqual([{ title: 'Q4 Plan' }])
+    expect(toolStatuses(updates)).toEqual(['done'])
+    expect(sentMessages(1).at(-1)).toMatchObject({ role: 'tool', content: 'Renamed.' })
+    expect(result).toEqual({ status: 'done' })
+    expect(reply).toBe('Renamed to Q4 Plan ')
+  })
+
+  it('a tool that needs confirmation does not run when nobody can be asked', async () => {
+    const { tool, runs } = renameTool()
+    ai.script = [{ toolCalls: [RENAME_CALL] }, { reply: 'I could not do that' }]
+    const { result, updates } = await ask(makeAgent({ tools: [tool] }), 'Rename this page to Q4 Plan')
+    expect(runs).toEqual([])
+    // Not shown as declined: the user never said no.
+    expect(toolStatuses(updates)).toEqual(['failed'])
+    // The model is not told that the user said no: nobody was asked.
+    expect(sentMessages(1).at(-1)).toMatchObject({
+      role: 'tool',
+      content: expect.stringContaining('could not be asked'),
+    })
+    expect(result).toEqual({ status: 'done' })
+  })
+
+  it('a prompt that fails is not reported to the model as the user declining', async () => {
+    const { tool, runs } = renameTool()
+    ai.script = [{ toolCalls: [RENAME_CALL] }, { reply: 'I could not do that' }]
+    const { result, updates } = await ask(makeAgent({ tools: [tool] }), 'Rename this page to Q4 Plan', () =>
+      Promise.reject(new Error('panel closed')),
+    )
+    expect(runs).toEqual([])
+    expect(toolStatuses(updates)).toEqual(['failed'])
+    expect(sentMessages(1).at(-1)).toMatchObject({
+      role: 'tool',
+      content: expect.stringContaining('could not be asked'),
+    })
+    expect(result).toEqual({ status: 'done' })
+  })
+
+  it('tools that change nothing run without asking', async () => {
+    const { tool, runs } = pageTool()
+    ai.script = [{ toolCalls: [{ name: 'get_current_page', arguments: '{}' }] }, { reply: 'You are on Q4 Roadmap' }]
+    let asked = 0
+    await ask(makeAgent({ tools: [tool] }), 'Which page am I on?', async () => {
+      asked++
+      return true
+    })
+    expect(asked).toBe(0)
+    expect(runs).toEqual([{}])
+  })
+
+  it('stopping while the user is asked counts as no, ends the question, and drops it', async () => {
+    const { tool, runs } = renameTool()
+    const agent = makeAgent({ tools: [tool] })
+    ai.script = [{ toolCalls: [RENAME_CALL] }]
+    // The user never answers; they press Stop instead.
+    const { result, updates } = await ask(agent, 'Rename this page to Q4 Plan', () => {
+      agent.stop()
+      return new Promise<boolean>(() => {})
+    })
+    expect(result).toEqual({ status: 'stopped' })
+    expect(runs).toEqual([])
+    expect(toolStatuses(updates)).toEqual(['stopped'])
+
+    await ask(agent, 'hi')
+    expect(sentMessages(1).map((m) => m.role)).toEqual(['system', 'user'])
+  })
+
+  it('a new chat while the user is asked counts as no', async () => {
+    const { tool, runs } = renameTool()
+    const agent = makeAgent({ tools: [tool] })
+    ai.script = [{ toolCalls: [RENAME_CALL] }]
+    let reset: Promise<void> | undefined
+    const { result, updates } = await ask(agent, 'Rename this page to Q4 Plan', () => {
+      reset = agent.reset()
+      return new Promise<boolean>(() => {})
+    })
+    await reset
+    expect(result).toEqual({ status: 'stopped' })
+    expect(runs).toEqual([])
+    expect(toolStatuses(updates)).toEqual(['stopped'])
+
+    // The new chat starts empty: nothing of the unanswered question carries over.
+    await ask(agent, 'hi')
+    expect(sentMessages(1).map((m) => m.role)).toEqual(['system', 'user'])
   })
 
   it('stop and new chat work while the agent is still being set up', async () => {

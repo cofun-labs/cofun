@@ -11,6 +11,7 @@ The user can always see what the agent did: each tool it used, with what input, 
 Key constraints:
 
 - Tools run in the extension, never on the server. The server only carries the AI's request to run a tool and the result back.
+- A tool that changes the user's data never runs without the user's confirmation. The user is asked each time. If they decline, the tool does not run and the agent goes on without it; if they stop the agent while it waits, the tool does not run and the question ends.
 - Tool definitions, tool requests, and tool results are part of the conversation: the same size limits, quota, and usage records apply, and none of their content is kept by the service.
 
 ## Scenarios
@@ -25,6 +26,8 @@ Key constraints:
 | UC-AGENT-001-S04 | P0 | ✅ | Given a question that needs a tool; when the user asks it in the side panel; then the tool runs in the extension and the answer uses its result. |
 | UC-AGENT-001-S05 | P1 | ✅ | Given a model that keeps calling tools; when the question reaches its step limit; then the agent stops without running more tools and tells the user, and the next question still works. |
 | UC-AGENT-001-S07 | P1 | ✅ | Given the agent working on a question; when the user stops it; then the model call and any running tool stop, and the stopped question is left out of the conversation. |
+| UC-AGENT-001-S09 | P0 | ✅ | Given a tool that needs confirmation; when the user declines it; then it does not run, and the agent continues without it. |
+| UC-AGENT-001-S10 | P0 | ✅ | Given a tool that needs confirmation; when the user agrees; then it runs and the answer uses its result. |
 
 ### ai-e2e
 
@@ -32,3 +35,4 @@ Key constraints:
 | --- | --- | --- | --- |
 | UC-AGENT-001-S06 | P0 | ✅ | Given the side panel open on a Notion page; when the user asks which page they are on; then the agent looks it up and answers with the page's title. |
 | UC-AGENT-001-S08 | P1 | ✅ | Given the agent used a tool to answer; when the user looks at the reply; then it shows which tool ran, with what input, whether it worked, and, on request, what it returned. |
+| UC-AGENT-001-S11 | P1 | ✅ | Given a tool that needs confirmation; when the agent wants to use it; then the side panel asks the user first, showing what the tool will do, and the tool runs only after they agree. |

@@ -1,6 +1,6 @@
 import { useAuth } from '@clerk/chrome-extension'
 import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from 'react'
-import { CopilotAgent, type AgentUpdate, type HistoryMessage } from '../agent'
+import { CopilotAgent, type AgentUpdate, type ConfirmTool, type HistoryMessage } from '../agent'
 import { SessionStore, titleFor, type Session } from '../sessions'
 import { currentNotionPage, TOOLS } from '../tools'
 import { Sessions } from './Sessions'
@@ -45,6 +45,8 @@ export function Chat({ userId }: { userId: string }) {
   // Stop was pressed; the question is still winding down, so nothing is pending any more.
   const [stopping, setStopping] = useState(false)
   const listRef = useRef<HTMLElement>(null)
+  // Answers for tool calls waiting for the user's OK, by call id.
+  const pending = useRef(new Map<string, (allow: boolean) => void>())
   const [view, setView] = useState<'chat' | 'sessions'>('chat')
   // Opening the panel starts a new session; it gets an id when its first question is sent.
   const [current, setCurrent] = useState<Current>()
@@ -94,6 +96,50 @@ export function Chat({ userId }: { userId: string }) {
     const updateTools = (fn: (t: ShownTool) => ShownTool) =>
       updateReply((m) => ({ ...m, parts: m.parts.map((p) => (p.type === 'tool' ? { ...p, tool: fn(p.tool) } : p)) }))
 
+    const setToolStatus = (toolId: string, status: ShownTool['status']) =>
+      updateReply((m) => {
+        const j = newestOpenCall(m.parts, toolId)
+        if (j < 0) return m
+        const part = m.parts[j] as Extract<Part, { type: 'tool' }>
+        const parts = [...m.parts]
+        parts[j] = { ...part, tool: { ...part.tool, status } }
+        return { ...m, parts }
+      })
+
+    // Calls this question asked about, so their answers can be dropped when it ends.
+    const asked = new Map<string, (allow: boolean) => void>()
+    const confirm: ConfirmTool = (call) =>
+      new Promise((resolve) => {
+        if (chatId.current !== id) return resolve(false)
+        // One answer per prompt: a double click, or Stop racing a click, must not touch a later
+        // prompt that reuses this id.
+        let answered = false
+        const answer = (allow: boolean) => {
+          if (answered) return
+          answered = true
+          pending.current.delete(call.id)
+          // Running again until the agent reports how the call ended (done, or declined).
+          setToolStatus(call.id, 'running')
+          resolve(allow)
+        }
+        asked.set(call.id, answer)
+        pending.current.set(call.id, answer)
+        // Normally the call is already shown as running. If not, show it now: the agent must never
+        // wait on a prompt nobody can see. Show the arguments the tool will run with.
+        updateReply((m) => {
+          const j = newestOpenCall(m.parts, call.id)
+          const parts = [...m.parts]
+          const tool: ShownTool = { id: call.id, name: call.name, args: call.args, status: 'confirm', result: '' }
+          if (j < 0) parts.push({ type: 'tool', tool })
+          else
+            parts[j] = {
+              type: 'tool',
+              tool: { ...(parts[j] as Extract<Part, { type: 'tool' }>).tool, args: call.args, status: 'confirm' },
+            }
+          return { ...m, parts }
+        })
+      })
+
     const onUpdate = (u: AgentUpdate) => {
       if (u.type === 'text')
         updateReply((m) => {
@@ -103,19 +149,16 @@ export function Chat({ userId }: { userId: string }) {
           return { ...m, parts: [...m.parts, { type: 'text', text: u.delta }] }
         })
       else if (u.type === 'tool_start')
-        updateReply((m) => ({
-          ...m,
-          parts: [
-            ...m.parts,
-            { type: 'tool', tool: { id: u.id, name: u.name, args: u.args, status: 'running', result: '' } },
-          ],
-        }))
+        updateReply((m) => {
+          // A prompt shown before the start event already stands for this call; don't show it twice.
+          const j = newestOpenCall(m.parts, u.id)
+          if (j >= 0 && (m.parts[j] as Extract<Part, { type: 'tool' }>).tool.status === 'confirm') return m
+          const tool: ShownTool = { id: u.id, name: u.name, args: u.args, status: 'running', result: '' }
+          return { ...m, parts: [...m.parts, { type: 'tool', tool }] }
+        })
       else
         updateReply((m) => {
-          // Ids are unique only within one model reply; a later step may reuse one, so finish the
-          // newest running call with this id.
-          let j = m.parts.length - 1
-          while (j >= 0 && !isRunningCall(m.parts[j], u.id)) j--
+          const j = newestOpenCall(m.parts, u.id)
           if (j < 0) return m
           const part = m.parts[j] as Extract<Part, { type: 'tool' }>
           const parts = [...m.parts]
@@ -126,14 +169,17 @@ export function Chat({ userId }: { userId: string }) {
 
     const before = agent.history().length
     try {
-      const result = await agent.ask(text, onUpdate)
+      const result = await agent.ask(text, onUpdate, confirm)
       if (result.status === 'stopped') {
-        updateTools((t) => (t.status === 'running' ? { ...t, status: 'stopped' } : t))
+        updateTools((t) => (t.status === 'running' || t.status === 'confirm' ? { ...t, status: 'stopped' } : t))
         updateReply((m) => ({ ...m, stopped: true }))
       } else if (result.status === 'error') updateReply((m) => ({ ...m, error: result.message }))
       else if (result.status === 'step_limit')
         updateReply((m) => ({ ...m, note: `Stopped after ${result.steps} steps. Ask again to continue.` }))
     } finally {
+      // A question can end without the panel answering, e.g. on unmount.
+      // Only this question's own answers: after a New chat, the next question may reuse an id.
+      for (const [callId, answer] of asked) if (pending.current.get(callId) === answer) pending.current.delete(callId)
       // Another session that opened meanwhile already unlocked the composer, and the agent holds
       // that session now.
       if (chatId.current === id) {
@@ -166,6 +212,7 @@ export function Chat({ userId }: { userId: string }) {
   /** Switches to a new session, or to a saved one; a reply still coming in is stopped. */
   function switchTo(session?: Session) {
     chatId.current++
+    declineAll()
     void agent.reset(session?.messages)
     setBusy(false)
     setStopping(false)
@@ -185,8 +232,14 @@ export function Chat({ userId }: { userId: string }) {
     e.preventDefault()
     if (busy) {
       setStopping(true)
+      declineAll()
       agent.stop()
     } else send()
+  }
+
+  /** Stop, or switching to a new or saved session, answers every open question with no. */
+  function declineAll() {
+    for (const answer of [...pending.current.values()]) answer(false)
   }
 
   function onKeyDown(e: KeyboardEvent<HTMLTextAreaElement>) {
@@ -239,7 +292,11 @@ export function Chat({ userId }: { userId: string }) {
                   )
                 ) : (
                   // Parts are only appended, so the index is a stable key; tool ids may repeat.
-                  <ToolCall key={j} tool={p.tool} />
+                  <ToolCall
+                    key={j}
+                    tool={p.tool}
+                    onAnswer={p.tool.status === 'confirm' ? pending.current.get(p.tool.id) : undefined}
+                  />
                 ),
               )}
               {m.error && <div className="error">{m.error}</div>}
@@ -288,7 +345,7 @@ function toShown(history: HistoryMessage[]): Shown[] {
         )
     } else {
       // Like a live reply: the result belongs to the newest call with its id that has none yet.
-      const part = reply.parts.findLast((p) => isRunningCall(p, m.id))
+      const part = reply.parts[newestOpenCall(reply.parts, m.id)]
       if (part?.type === 'tool') part.tool = { ...part.tool, status: m.status, result: m.result }
     }
   }
@@ -301,9 +358,20 @@ function waitingForModel(parts: Part[]): boolean {
   let k = parts.length - 1
   while (k >= 0 && parts[k].type === 'text' && !(parts[k] as { text: string }).text.trim()) k--
   const last = parts[k]
-  return !last || (last.type === 'tool' && last.tool.status !== 'running')
+  // A running tool shows its own mark, and one waiting for the user shows its prompt.
+  return !last || (last.type === 'tool' && last.tool.status !== 'running' && last.tool.status !== 'confirm')
 }
 
-function isRunningCall(part: Part, id: string): boolean {
-  return part.type === 'tool' && part.tool.id === id && part.tool.status === 'running'
+/**
+ * The index of the newest call with this id that has not ended, or -1. Ids are unique only within
+ * one model reply, so a later step may reuse one.
+ */
+function newestOpenCall(parts: Part[], id: string): number {
+  let j = parts.length - 1
+  while (j >= 0) {
+    const p = parts[j]
+    if (p.type === 'tool' && p.tool.id === id && (p.tool.status === 'running' || p.tool.status === 'confirm')) break
+    j--
+  }
+  return j
 }

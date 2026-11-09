@@ -150,6 +150,18 @@ textarea {
 .tool.failed .tool-name {
   color: var(--error);
 }
+.tool-confirm {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+.tool-confirm > span {
+  flex: 1;
+}
 .tool-body {
   margin: 4px 0 0 1.2em;
 }
