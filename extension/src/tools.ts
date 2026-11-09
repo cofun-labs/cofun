@@ -315,23 +315,26 @@ export const createPage: ToolSpec = {
   name: 'create_page',
   description:
     'Creates a Notion page with a title and Markdown content (the same Markdown as edit_page), at the end of a parent ' +
-    "page: the open page unless `parent` names another. Returns the new page's id and URL. The user is asked to " +
+    "page given by `parent` (the open page's URL from get_current_page, or another page). Returns the new page's id " +
+    'and URL. The user is asked to ' +
     "approve it. Pages can't be created inside databases with this tool.",
   parameters: {
     type: 'object',
     properties: {
       title: { type: 'string', description: "The new page's title." },
       markdown: { type: 'string', description: "The page's content, as Markdown. Leave out for an empty page." },
-      parent: { type: 'string', description: 'URL or id of the page to create it in. Leave out for the open page.' },
+      parent: { type: 'string', description: 'URL or id of the page to create it in.' },
     },
-    required: ['title'],
+    required: ['title', 'parent'],
     additionalProperties: false,
   },
   needsConfirmation: true,
   preview: (args) => {
     const title = typeof args.title === 'string' ? args.title.trim() : ''
-    const parent =
-      typeof args.parent === 'string' && args.parent.trim() ? `the page ${args.parent.trim()}` : 'the open page'
+    // The page exactly as `run` will resolve it, so the user approves where the page goes.
+    const given = typeof args.parent === 'string' ? args.parent.trim() : ''
+    const id = given ? pageArg(given) : undefined
+    const parent = id ? `the page ^${hexId(id)}` : `the page ${given || '(none given)'}`
     const markdown = typeof args.markdown === 'string' && args.markdown.trim() ? args.markdown : '(empty)'
     return [
       `Create the page “${title}” at the end of ${parent}, with:`,
@@ -341,11 +344,11 @@ export const createPage: ToolSpec = {
   run: async (args, signal) => {
     const title = typeof args.title === 'string' ? args.title.trim() : ''
     if (!title) throw new Error('`title` must not be empty.')
-    const given = typeof args.parent === 'string' && args.parent.trim() ? args.parent : undefined
+    const given = typeof args.parent === 'string' ? args.parent.trim() : ''
+    if (!given) throw new Error('`parent` is required: the URL or id of the page to create it in.')
+    const parentId = pageArg(given)
+    if (!parentId) throw new Error(`Not a Notion page URL or id: ${given}`)
     const tab = await activeNotionTab()
-    const parentId = given ? pageArg(given) : tab.pageId
-    if (given && !parentId) throw new Error(`Not a Notion page URL or id: ${given}`)
-    if (!parentId) throw new Error('The Notion tab does not show a page. Give `parent`.')
     let blocks: NewBlock[] = []
     if (typeof args.markdown === 'string' && args.markdown.trim()) {
       try {
@@ -365,7 +368,13 @@ export const createPage: ToolSpec = {
     }
     const { operations, pageId } = planNewPage(parentId, String(parent.space_id), title, blocks)
     signal?.throwIfAborted()
-    await tab.client.submitTransaction(String(parent.space_id), operations, 'Notion Copilot: create_page')
+    // The parent's list changes: cached parts of it would hide the new page, and after an unknown
+    // outcome the agent must see whether it was created before it tries again.
+    try {
+      await tab.client.submitTransaction(String(parent.space_id), operations, 'Notion Copilot: create_page')
+    } finally {
+      for (const key of recentReads.keys()) if (key.endsWith(`:${parentId}`)) recentReads.delete(key)
+    }
     const hex = hexId(pageId)
     return [
       `Created the page “${title}” ^${hex} at the end of ^${hexId(parentId)}.`,

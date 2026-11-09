@@ -334,23 +334,9 @@ export function planEdit(
     return ids
   }
 
-  /** The operations creating a block and its children; each record exists before a list names it. */
   const create = (nb: NewBlock, parentId: string): string => {
-    const id = newId()
+    const id = createBlock(op, ops, nb, parentId, newId)
     createdAll.push(id)
-    ops.push(
-      op.create(id, nb.type, parentId, {
-        ...(nb.type === 'divider' ? {} : { properties: properties(nb) }),
-        ...(nb.icon ? { format: { page_icon: nb.icon } } : {}),
-      }),
-    )
-    // Children go inside it, in order, the same way top-level blocks go into the page.
-    let prev: string | undefined
-    for (const child of nb.children) {
-      const childId = create(child, id)
-      ops.push(op.listAfter(id, childId, prev))
-      prev = childId
-    }
     return id
   }
 
@@ -584,23 +570,35 @@ export function planNewPage(
 ): { operations: Operation[]; pageId: string } {
   const op = blockOps(spaceId, now)
   const operations: Operation[] = []
-  const create = (nb: NewBlock, parent: string): string => {
-    const id = newId()
-    operations.push(
-      op.create(id, nb.type, parent, {
-        ...(nb.type === 'divider' ? {} : { properties: properties(nb) }),
-        ...(nb.icon ? { format: { page_icon: nb.icon } } : {}),
-      }),
-    )
-    let prev: string | undefined
-    for (const child of nb.children) {
-      const childId = create(child, id)
-      operations.push(op.listAfter(id, childId, prev))
-      prev = childId
-    }
-    return id
-  }
-  const pageId = create({ type: 'page', title: [[title]], children: blocks }, parentId)
+  const pageId = createBlock(op, operations, { type: 'page', title: [[title]], children: blocks }, parentId, newId)
   operations.push(op.listAfter(parentId, pageId), op.touch(parentId))
   return { operations, pageId }
+}
+
+/**
+ * Adds the operations creating a block and its children to `ops`, and returns its id. Each record
+ * exists before a list names it; the caller puts the block itself in its parent's list.
+ */
+function createBlock(
+  op: ReturnType<typeof blockOps>,
+  ops: Operation[],
+  nb: NewBlock,
+  parentId: string,
+  newId: () => string,
+): string {
+  const id = newId()
+  ops.push(
+    op.create(id, nb.type, parentId, {
+      ...(nb.type === 'divider' ? {} : { properties: properties(nb) }),
+      ...(nb.icon ? { format: { page_icon: nb.icon } } : {}),
+    }),
+  )
+  // Children go inside it, in order, the same way top-level blocks go into the page.
+  let prev: string | undefined
+  for (const child of nb.children) {
+    const childId = createBlock(op, ops, child, id, newId)
+    ops.push(op.listAfter(id, childId, prev))
+    prev = childId
+  }
+  return id
 }

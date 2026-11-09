@@ -10,14 +10,15 @@ const hex = (s: string) => s.replace(/-/g, '')
 const OTHER = '7c7c7c7c-0000-4000-8000-000000000001'
 const intro = '7c7c7c7c-0000-4000-8000-000000000002'
 
-function workspace() {
+function workspace(more: Record<string, unknown>[] = []) {
   return new FakeWorkspace(
     [
+      ...more,
       {
         id: PAGE,
         type: 'page',
         properties: { title: [['Fixture page']] },
-        content: [intro],
+        content: [intro, ...more.map((b) => b.id as string)],
         parent_id: SPACE,
         parent_table: 'space',
       },
@@ -53,6 +54,7 @@ describe('UC-NOTION-007 create a page', () => {
     open(ws)
     const result = await create({
       title: 'Launch notes',
+      parent: PAGE_URL,
       markdown: '# Plan\n- Ship beta\n  - Fix Safari\n- [ ] Write post',
     })
     const created = /\^([0-9a-f]{32})/.exec(result)![1]
@@ -93,16 +95,38 @@ describe('UC-NOTION-007 create a page', () => {
 describe('create_page details', () => {
   it('needs the user’s OK and previews the page', () => {
     expect(createPage.needsConfirmation).toBe(true)
-    expect(createPage.preview!({ title: 'Launch notes', markdown: '# Plan\n- Ship' })).toBe(
-      ['Create the page “Launch notes” at the end of the open page, with:', '    # Plan', '    - Ship'].join('\n'),
+    expect(createPage.preview!({ title: 'Launch notes', parent: PAGE_URL, markdown: '# Plan\n- Ship' })).toBe(
+      [`Create the page “Launch notes” at the end of the page ^${hex(PAGE)}, with:`, '    # Plan', '    - Ship'].join(
+        '\n',
+      ),
     )
+  })
+
+  it('shows the new page in a long parent the agent read in parts just before', async () => {
+    // Enough text for several parts.
+    const long = Array.from({ length: 40 }, (_, n) => ({
+      id: `7c7c7c7c-0000-4000-8000-0000000001${n.toString().padStart(2, '0')}`,
+      type: 'text',
+      properties: { title: [['x'.repeat(900)]] },
+      parent_id: PAGE,
+      parent_table: 'block',
+    }))
+    open(workspace(long))
+    const first = (await readPage.run({ page: hex(PAGE) })) as string
+    const parts = Number(/^Part 1 of (\d+)/m.exec(first)![1])
+    expect(await readPage.run({ page: hex(PAGE), part: parts })).not.toContain('Fresh page')
+    await create({ title: 'Fresh page', parent: hex(PAGE) })
+    expect(await readPage.run({ page: hex(PAGE), part: parts })).toContain('Fresh page')
   })
 
   it('refuses an empty title and Markdown it can’t write, before asking Notion anything', async () => {
     const ws = workspace()
     const tab = open(ws)
-    await expect(create({ title: '  ' })).rejects.toThrow('`title` must not be empty.')
-    await expect(create({ title: 'T', markdown: '| a | b |' })).rejects.toThrow("Tables can't be written yet.")
+    await expect(create({ title: '  ', parent: PAGE_URL })).rejects.toThrow('`title` must not be empty.')
+    await expect(create({ title: 'T' })).rejects.toThrow('`parent` is required')
+    await expect(create({ title: 'T', parent: PAGE_URL, markdown: '| a | b |' })).rejects.toThrow(
+      "Tables can't be written yet.",
+    )
     expect(tab.sent).toEqual([])
   })
 })
