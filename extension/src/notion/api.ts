@@ -147,7 +147,8 @@ export class NotionClient {
   }
 
   /**
-   * The rows of a database, in the order of one of its views, at most `limit` of them. Notion only
+   * The rows of a database, at most `limit` of them, through one of its views. The view's own
+   * filters and sorts are not applied: every row comes back, in Notion's default order. Notion only
    * returns rows the signed-in account can open.
    */
   async queryCollection(

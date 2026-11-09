@@ -232,3 +232,15 @@ describe('query_database arguments', () => {
     await expect(query()).rejects.toThrow('The open page is not a database. Give `database`.')
   })
 })
+
+describe('query_database dates and headers', () => {
+  it('compares dates with a time by their day', async () => {
+    const rows = TASKS.map(rowRecord)
+    ;(rows[0].properties as Record<string, unknown>)['b:b'] = [
+      ['‣', [['d', { type: 'datetime', start_date: '2026-11-07', start_time: '10:00' }]]],
+    ]
+    database(rows)
+    const result = await query({ filter: [{ property: 'Due', op: 'after', value: '2026-11-07' }] })
+    expect(tableRows(result).map((l) => l.split(' | ')[0].slice(2))).toEqual(['Ship beta'])
+  })
+})

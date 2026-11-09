@@ -262,7 +262,7 @@ export const queryDatabase: ToolSpec = {
     ]
     if (!shown.length) return [...header, '', '(no rows)'].join('\n')
     const table = [
-      `| ${[...columns, 'Row'].join(' | ')} |`,
+      `| ${[...columns.map(escape), 'Row'].join(' | ')} |`,
       `|${[...columns, 'Row'].map(() => ' --- ').join('|')}|`,
       ...shown.map((r) => `| ${[...r.values.map((v) => escape(v.value)), `^${hexId(r.id)}`].join(' | ')} |`),
     ]
@@ -376,20 +376,24 @@ function matches(values: { name: string; value: string }[], f: Filter): boolean 
       return v === ''
     case 'is_not_empty':
       return v !== ''
+    // Dates may carry a time or a range; compare the day they start on.
     case 'before':
-      return v !== '' && v < want
+      return v !== '' && day(v) < day(want)
     case 'after':
-      return v !== '' && v > want
+      return v !== '' && day(v) > day(want)
   }
 }
 
 /** Compares two values in the asked direction (`sign`); empty values go last either way. */
 function compareValues(a: string, b: string, sign: 1 | -1): number {
   if (!a || !b) return a ? -1 : b ? 1 : 0
-  const na = Number(a)
-  const nb = Number(b)
-  const order = Number.isFinite(na) && Number.isFinite(nb) ? na - nb : a.localeCompare(b)
-  return order * sign
+  // Numbers within text compare as numbers, the same way for every pair.
+  return a.localeCompare(b, undefined, { numeric: true }) * sign
+}
+
+/** A value's leading YYYY-MM-DD when it starts with one, else the value. */
+function day(value: string): string {
+  return /^\d{4}-\d{2}-\d{2}/.test(value) ? value.slice(0, 10) : value
 }
 
 /** A date as YYYY-MM-DD in the browser's time zone. */
