@@ -1,6 +1,6 @@
 // Listing pages as Notion's sidebar shows them: titles and ids, level by level, without content.
-import type { NotionClient, NotionRecord, RecordMap } from './api'
-import { PAGE_TYPES, hexId } from './markdown'
+import { mergeRecordMaps, type NotionClient, type NotionRecord, type RecordMap } from './api'
+import { LAYOUT_TYPES, PAGE_TYPES, hexId } from './markdown'
 
 export interface TreeNode {
   id: string
@@ -10,7 +10,6 @@ export interface TreeNode {
 }
 
 /** Blocks that only lay out their children: pages inside them count as the page's own. */
-const LAYOUT_TYPES = new Set(['column_list', 'column'])
 
 /**
  * Builds the tree under `roots` (page ids, in order), `depth` levels deep, with at most `limit`
@@ -26,9 +25,15 @@ export async function pageTree(
 ): Promise<{ nodes: TreeNode[]; truncated: boolean }> {
   let count = 0
   let truncated = false
-  const unknown = roots.filter((id) => !records.block?.[id])
-  if (unknown.length) merge(records, await client.findRecords(unknown.map((id) => ({ table: 'block', id }))))
-  const top = await nodesFor(client, roots, records)
+  // Roots are looked up a limit's worth at a time, until enough of them turn out to be pages.
+  const top: TreeNode[] = []
+  for (let at = 0; at < roots.length && top.length <= limit; at += limit) {
+    const slice = roots.slice(at, at + limit)
+    const unknown = slice.filter((id) => !records.block?.[id])
+    if (unknown.length)
+      mergeRecordMaps(records, await client.findRecords(unknown.map((id) => ({ table: 'block', id }))))
+    top.push(...(await nodesFor(client, slice, records)))
+  }
   const nodes = take(top)
   let level = nodes
   // A level is expanded only while there is room for more entries.
@@ -73,7 +78,7 @@ async function nodesFor(client: NotionClient, ids: string[], records: RecordMap)
   // Databases are named by their collection.
   const collections = pages.map((b) => collectionId(b)).filter((id): id is string => !!id && !records.collection?.[id])
   if (collections.length)
-    merge(records, await client.findRecords(collections.map((id) => ({ table: 'collection', id }))))
+    mergeRecordMaps(records, await client.findRecords(collections.map((id) => ({ table: 'collection', id }))))
   return pages.map((b) => {
     const database = b.type !== 'page'
     const collection = database ? records.collection?.[collectionId(b) ?? ''] : undefined
@@ -93,7 +98,8 @@ export async function pageChildren(
   let pending = new Map(parents.map((p) => [p, contentOf(records, p)]))
   for (let hop = 0; hop < 3 && pending.size; hop++) {
     const missing = [...new Set([...pending.values()].flat())].filter((id) => !records.block?.[id])
-    if (missing.length) merge(records, await client.findRecords(missing.map((id) => ({ table: 'block', id }))))
+    if (missing.length)
+      mergeRecordMaps(records, await client.findRecords(missing.map((id) => ({ table: 'block', id }))))
     const again = new Map<string, string[]>()
     for (const [parent, ids] of pending) {
       const flat: string[] = []
@@ -122,11 +128,6 @@ function contentOf(records: RecordMap, id: string): string[] {
 function collectionId(block: NotionRecord): string | undefined {
   const pointer = (block.format as { collection_pointer?: { id?: string } } | undefined)?.collection_pointer
   return (block.collection_id as string | undefined) ?? pointer?.id
-}
-
-function merge(into: RecordMap, from: RecordMap) {
-  for (const [table, recs] of Object.entries(from))
-    Object.assign(((into as Record<string, object>)[table] ??= {}), recs)
 }
 
 export function runsText(value: unknown): string {

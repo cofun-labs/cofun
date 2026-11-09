@@ -150,7 +150,7 @@ describe('UC-NOTION-005 browse the workspace', () => {
 })
 
 describe('list_pages sections', () => {
-  it('[UC-NOTION-005-S03] gives each top-level section its own limit, so a long one hides no other', async () => {
+  it('gives each top-level section its own limit, so a long one hides no other', async () => {
     const many = Array.from({ length: SECTION_LIMIT + 10 }, (_, i) => id(200 + i))
     const getSpaces = {
       [USER]: {

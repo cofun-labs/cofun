@@ -121,6 +121,8 @@ export interface LoadedPage {
 const CHUNK_LIMIT = 100
 /** Records asked for in one syncRecordValuesMain request at most. */
 const RECORDS_BATCH = 100
+/** Record lookups sent at once at most. */
+const RECORDS_PARALLEL = 4
 
 export class NotionClient {
   constructor(private readonly send: NotionTransport) {}
@@ -173,8 +175,12 @@ export class NotionClient {
     if (pointers.length > RECORDS_BATCH) {
       const batches: Pointer[][] = []
       for (let at = 0; at < pointers.length; at += RECORDS_BATCH) batches.push(pointers.slice(at, at + RECORDS_BATCH))
+      // A few batches at a time, so a long list doesn't flood the user's tab with requests.
       const out: RecordMap = {}
-      for (const map of await Promise.all(batches.map((b) => this.findRecords(b)))) mergeRecordMaps(out, map)
+      for (let at = 0; at < batches.length; at += RECORDS_PARALLEL) {
+        const maps = await Promise.all(batches.slice(at, at + RECORDS_PARALLEL).map((b) => this.findRecords(b)))
+        for (const map of maps) mergeRecordMaps(out, map)
+      }
       return out
     }
     const requested = pointers.map((p) => ({
