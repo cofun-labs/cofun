@@ -28,4 +28,4 @@ Key constraints:
 
 | ID | Priority | Status | Scenario |
 | --- | --- | --- | --- |
-| UC-NOTION-002-S10 | P0 | 🚧 | Given the side panel open on a Notion page; when the user asks to put a summary at the top; then the summary is at the top without the user being asked, the reply shows what changed, and the summary is still there after a reload. |
+| UC-NOTION-002-S10 | P0 | ✅ | Given the side panel open on a Notion page; when the user asks to put a summary at the top; then the summary is at the top without the user being asked, the reply shows what changed, and the summary is still there after a reload. |

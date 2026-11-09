@@ -18,4 +18,4 @@ A signed-in user asks the AI to make a new Notion page: draft a document from th
 
 | ID | Priority | Status | Scenario |
 | --- | --- | --- | --- |
-| UC-NOTION-007-S07 | P0 | 🚧 | Given the side panel open on a Notion page; when the user asks to turn a section into its own child page; then the new page appears under the open page with that content, without the user being asked. |
+| UC-NOTION-007-S07 | P0 | ✅ | Given the side panel open on a Notion page; when the user asks to turn a section into its own child page; then the new page appears under the open page with that content, without the user being asked. |
