@@ -53,8 +53,12 @@ export async function currentNotionPage(): Promise<{ title: string; url: string 
 export async function openPageNote(): Promise<string> {
   const page = await currentNotionPage()
   if (!page) return '[No Notion page is open in the current tab.]'
-  return `[The Notion page open in the current tab: ${JSON.stringify(page.title)}, ${page.url}]`
+  // The page's author picks its title: keep it short, and without brackets that could fake a note.
+  const title = clip(page.title.replace(/[[\]]/g, ''), TITLE_CHARS)
+  return `[The Notion page open in the current tab: ${JSON.stringify(title)}, ${page.url}]`
 }
+
+const TITLE_CHARS = 200
 
 /** How much of a page one read returns, so a long page doesn't fill the conversation. */
 export const PART_CHARS = 12_000

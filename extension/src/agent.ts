@@ -107,6 +107,8 @@ export class CopilotAgent {
   private readonly confirmed: Set<string>
   /** Bumped by stop() and reset(), so a question still waiting to start knows it was cancelled. */
   private epoch = 0
+  /** Aborted with each epoch bump, so waits that pi doesn't cut short end too. */
+  private cancel = new AbortController()
   /** The question this agent is answering; reset() clears it, since the next one gets a new pi agent. */
   private running?: object
   /** The conversation to start from, used when the next pi agent is set up. */
@@ -293,10 +295,19 @@ export class CopilotAgent {
     return { result: hitLimit ? { status: 'step_limit', steps } : { status: 'done' }, kept: true }
   }
 
-  /** A context that fails to load must not block the question; it goes without one. */
+  /**
+   * A context that fails to load must not block the question; it goes without one. Stop ends the
+   * wait even if the context never comes.
+   */
   private async readContext(): Promise<string | undefined> {
+    if (!this.config.context) return undefined
+    const { signal } = this.cancel
+    if (signal.aborted) return undefined
     try {
-      return await this.config.context?.()
+      return await Promise.race([
+        this.config.context(),
+        new Promise<undefined>((resolve) => signal.addEventListener('abort', () => resolve(undefined), { once: true })),
+      ])
     } catch (err) {
       console.error('Could not read the context for the question', err)
       return undefined
@@ -306,6 +317,8 @@ export class CopilotAgent {
   /** Stops the current model call and any running tool. */
   stop(): void {
     this.epoch++
+    this.cancel.abort()
+    this.cancel = new AbortController()
     this.agent?.abort()
   }
 
@@ -315,6 +328,8 @@ export class CopilotAgent {
    */
   async reset(history: HistoryMessage[] = []): Promise<void> {
     this.epoch++
+    this.cancel.abort()
+    this.cancel = new AbortController()
     const agent = this.agent
     this.agent = undefined
     this.model = undefined
