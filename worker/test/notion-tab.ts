@@ -54,6 +54,9 @@ export class FakeNotionTab {
   networkDown = false
   /** Makes Notion answer with a redirect, as it might to a sign-in page. */
   redirects = false
+  /** The page's DOM, for scripts that read it (the selection); only what they use. */
+  dom?: object
+
   /** Answers requests no queued response is left for, like Notion would. */
   workspace?: FakeWorkspace
 
@@ -103,7 +106,7 @@ export class FakeNotionTab {
           // agent calling the worker) keeps its own fetch.
           const outside = { fetch: globals.fetch, location: globals.location, document: globals.document }
           globals.location = location
-          globals.document = { cookie: this.cookie }
+          globals.document = Object.assign(this.dom ?? {}, { cookie: this.cookie })
           globals.fetch = (input: string, init: RequestInit) => this.fetch(new URL(input, location).href, init)
           try {
             const rebuilt = new Function(`return (${func.toString()})`)() as Function
