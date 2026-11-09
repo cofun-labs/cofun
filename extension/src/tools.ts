@@ -16,7 +16,7 @@ import {
   planNewPage,
 } from './notion/edit'
 import { MarkdownError, parseMarkdown, type NewBlock } from './notion/blocks'
-import { PAGE_TYPES, hexId, pageToMarkdown, splitSections } from './notion/markdown'
+import { PAGE_TYPES, hexId, pageToMarkdown, rowValues, splitSections, type Schema } from './notion/markdown'
 import { activeNotionTab, selectionIn, type NotionTab } from './notion/tab'
 
 /**
@@ -91,7 +91,7 @@ export const readPage: ToolSpec = {
       ...(parts.length > 1
         ? [`Part ${part} of ${parts.length}${part < parts.length ? `. Read part ${part + 1} for more.` : '.'}`]
         : []),
-      ...(md.kind === 'database' ? ['This page is a database. Reading its rows is not supported yet.'] : []),
+      ...(md.kind === 'database' ? ['This page is a database: read its rows with query_database.'] : []),
       ...(loaded.complete ? [] : ['The page is too long to load in full; only its beginning is shown.']),
       ...(reloaded
         ? ['This part comes from a new read of the page; parts you have from an earlier read may not match it.']
@@ -178,6 +178,281 @@ async function loadWithDatabase(tab: NotionTab, id: string): Promise<Loaded> {
     if (err instanceof NotionError && err.code === 'no_access') return { loaded, databaseMissing: true }
     throw err
   }
+}
+
+/** How many rows one query loads, and how many one result shows. */
+export const QUERY_LOAD = 500
+export const QUERY_PART = 50
+const FILTER_OPS = ['is', 'is_not', 'contains', 'not_contains', 'is_empty', 'is_not_empty', 'before', 'after'] as const
+type FilterOp = (typeof FILTER_OPS)[number]
+
+export const queryDatabase: ToolSpec = {
+  name: 'query_database',
+  description:
+    "Reads the rows of a Notion database as a table: its properties (name and type) and each row's values, " +
+    "with the row's id (read a row with read_page). Give the database by id or URL, or leave it out when the " +
+    'open page is a database. `filter` keeps rows whose shown values match every condition (text, ' +
+    'case-insensitive; people and linked pages by name; dates as YYYY-MM-DD; checkboxes as Yes/No); `sort` ' +
+    "orders them. Formulas and rollups can't be used. Long results come in " +
+    'parts; ask for the next with `part`.',
+  parameters: {
+    type: 'object',
+    properties: {
+      database: { type: 'string', description: 'Id or URL of the database. Leave out for the open page.' },
+      filter: {
+        type: 'array',
+        items: {
+          type: 'object',
+          properties: {
+            property: { type: 'string', description: 'Property name, as the result lists it.' },
+            op: { type: 'string', enum: [...FILTER_OPS] },
+            value: { type: 'string', description: 'What to compare with; not needed for is_empty and is_not_empty.' },
+          },
+          required: ['property', 'op'],
+          additionalProperties: false,
+        },
+      },
+      sort: {
+        type: 'object',
+        properties: {
+          property: { type: 'string' },
+          direction: { type: 'string', enum: ['ascending', 'descending'] },
+        },
+        required: ['property'],
+        additionalProperties: false,
+      },
+      part: { type: 'integer', minimum: 1, description: 'Which part of a long result, starting at 1.' },
+    },
+    additionalProperties: false,
+  },
+  run: async (args) => {
+    const given = typeof args.database === 'string' && args.database.trim() ? args.database : undefined
+    const part = args.part === undefined || args.part === null || args.part === '' ? 1 : Number(args.part)
+    if (!Number.isInteger(part) || part < 1) throw new Error('`part` must be a whole number from 1.')
+    const tab = await activeNotionTab()
+    const id = given ? pageArg(given) : tab.pageId
+    if (given && !id) throw new Error(`Not a Notion database URL or id: ${given}`)
+    if (!id) throw new Error('Give `database`: the open tab does not show a page.')
+
+    const records = await tab.client.getRecords([{ table: 'block', id }])
+    const block = records.block![id]
+    if (block.type !== 'collection_view_page' && block.type !== 'collection_view') {
+      throw new Error(given ? 'That is not a database.' : 'The open page is not a database. Give `database`.')
+    }
+    const collectionId =
+      (block.collection_id as string | undefined) ??
+      (block.format as { collection_pointer?: { id?: string } } | undefined)?.collection_pointer?.id
+    // The view the user is looking at (`?v=` in the URL) when it is one of this database's.
+    const views = Array.isArray(block.view_ids) ? (block.view_ids as string[]) : []
+    const viewInUrl = urlView(given ?? tab.url)
+    const viewId = views.find((v) => toUuid(v) === viewInUrl) ?? views[0]
+    if (!collectionId || !viewId) throw new Error("This database's rows can't be read: it has no data source or view.")
+    // A linked view's database may live in another workspace; its pointer says which.
+    const pointer = (block.format as { collection_pointer?: { spaceId?: string } } | undefined)?.collection_pointer
+    const spaceId = String(block.collection_id ? block.space_id : (pointer?.spaceId ?? block.space_id))
+    const collection = (await tab.client.getRecords([{ table: 'collection', id: collectionId, spaceId }])).collection![
+      collectionId
+    ]
+    const schema = (collection.schema ?? {}) as Schema
+    const name = runsText(collection.name) || 'Untitled database'
+
+    const filters = parseFilters(args.filter, schema)
+    const sort = parseSort(args.sort, schema)
+    const { rowIds, hasMore, recordMap } = await tab.client.queryCollection(collectionId, viewId, spaceId, QUERY_LOAD)
+    let rows = rowIds
+      .map((r) => recordMap.block?.[r])
+      .filter((r): r is NonNullable<typeof r> => !!r && r.alive !== false)
+      .map((r) => ({ id: r.id, values: rowValues(recordMap, r as never, schema) }))
+    rows = rows.filter((r) => filters.every((f) => matches(r.values, f)))
+    if (sort) {
+      // Decided once for the column: numbers by value, anything else as text.
+      const numbers = numeric(rows, sort.property)
+      rows.sort((a, b) =>
+        compareValues(cell(a.values, sort.property), cell(b.values, sort.property), sort.sign, numbers),
+      )
+    }
+
+    const parts = Math.max(1, Math.ceil(rows.length / QUERY_PART))
+    if (part > parts)
+      throw new Error(`This result has ${parts} part${parts === 1 ? '' : 's'}; there is no part ${part}.`)
+    const shown = rows.slice((part - 1) * QUERY_PART, part * QUERY_PART)
+    const columns = rows[0]?.values.map((v) => v.name) ?? Object.values(schema).map((s) => s.name ?? '')
+    // Titles come escaped as Markdown already; escape only the pipes that aren't.
+    const escape = (text: string) => text.replace(/(?<!\\)((?:\\\\)*)\|/g, '$1\\|').replace(/\n/g, ' ')
+    const from = (part - 1) * QUERY_PART + 1
+    const header = [
+      `Database: ${name} ^${hexId(id)}`,
+      // The user's own date, not UTC's, so "overdue" means what they'd say.
+      `Today: ${localDate(new Date())}`,
+      `Properties: ${rowValuesHeader(schema)}`,
+      `${filters.length ? 'Matching rows' : 'Rows'}: ${rows.length}` +
+        (rows.length ? ` (showing ${from}–${from + shown.length - 1})` : '') +
+        (part < parts ? `. Read part ${part + 1} for more.` : '.'),
+      ...(hasMore ? [`Only the first ${QUERY_LOAD} rows of the database were read; filters apply to those.`] : []),
+    ]
+    if (!shown.length) return [...header, '', '(no rows)'].join('\n')
+    const table = [
+      `| ${[...columns.map(escape), 'Row'].join(' | ')} |`,
+      `|${[...columns, 'Row'].map(() => ' --- ').join('|')}|`,
+      ...shown.map((r) => `| ${[...r.values.map((v) => escape(v.value)), `^${hexId(r.id)}`].join(' | ')} |`),
+    ]
+    return [...header, '', ...table].join('\n')
+  },
+}
+
+interface Filter {
+  property: string
+  op: FilterOp
+  value: string
+}
+
+function parseFilters(raw: unknown, schema: Schema): Filter[] {
+  if (raw === undefined || raw === null) return []
+  if (!Array.isArray(raw)) throw new Error('`filter` must be a list of conditions.')
+  return raw.map((f, n) => {
+    const { property, op, value } = (f ?? {}) as Record<string, unknown>
+    const where = `Filter ${n + 1}`
+    if (typeof property !== 'string' || !propertyNamed(schema, property)) {
+      throw new Error(
+        `${where}: no property named "${String(property)}". The properties are: ${rowValuesHeader(schema)}.`,
+      )
+    }
+    refuseComputed(schema, property, where)
+    if (!FILTER_OPS.includes(op as FilterOp))
+      throw new Error(`${where}: \`op\` must be one of ${FILTER_OPS.join(', ')}.`)
+    const needsValue = op !== 'is_empty' && op !== 'is_not_empty'
+    if (needsValue && (typeof value !== 'string' || !value.trim())) throw new Error(`${where} needs \`value\`.`)
+    return {
+      property: propertyNamed(schema, property)!,
+      op: op as FilterOp,
+      value: needsValue ? String(value).trim() : '',
+    }
+  })
+}
+
+function parseSort(raw: unknown, schema: Schema): { property: string; sign: 1 | -1 } | undefined {
+  if (raw === undefined || raw === null) return undefined
+  const { property, direction } = (raw ?? {}) as Record<string, unknown>
+  if (typeof property !== 'string' || !propertyNamed(schema, property)) {
+    throw new Error(
+      `\`sort\`: no property named "${String(property)}". The properties are: ${rowValuesHeader(schema)}.`,
+    )
+  }
+  refuseComputed(schema, property, '`sort`')
+  return { property: propertyNamed(schema, property)!, sign: direction === 'descending' ? -1 : 1 }
+}
+
+/** The schema's name for a property (its key when it has none), matched case-insensitively. */
+function propertyNamed(schema: Schema, name: string): string | undefined {
+  const want = name.trim().toLowerCase()
+  const found = Object.entries(schema).find(([key, s]) => (s.name ?? key).toLowerCase() === want)
+  return found ? (found[1].name ?? found[0]) : undefined
+}
+
+/** Formulas and rollups are computed by Notion when it shows a database; this tool can't read them. */
+function refuseComputed(schema: Schema, name: string, where: string) {
+  const want = name.trim().toLowerCase()
+  const type = Object.entries(schema).find(([key, s]) => (s.name ?? key).toLowerCase() === want)?.[1].type
+  if (type === 'formula' || type === 'rollup') {
+    throw new Error(
+      `${where}: "${name}" is a ${type}, which Notion computes and this tool can't read, so it can't be used.`,
+    )
+  }
+}
+
+/** The view a Notion database URL names with `?v=`. */
+function urlView(url: string): string | undefined {
+  try {
+    return toUuid(new URL(url).searchParams.get('v') ?? '')
+  } catch {
+    return undefined
+  }
+}
+
+function rowValuesHeader(schema: Schema): string {
+  const entries = Object.entries(schema)
+  const isTitle = ([key, s]: [string, { type?: string }]) => key === 'title' || s.type === 'title'
+  return [...entries.filter(isTitle), ...entries.filter((e) => !isTitle(e))]
+    .map(([key, s]) => `${s.name ?? key} (${s.type ?? 'text'})`)
+    .join(', ')
+}
+
+/**
+ * A row's value for a property, as compared: plain text, with mentions as names (`@Ann` → `Ann`,
+ * `[Spec](…)` → `Spec`, `@2026-11-12` → `2026-11-12`) and no Markdown marks.
+ */
+function cell(values: { name: string; value: string }[], property: string): string {
+  const raw = values.find((v) => v.name === property)?.value ?? ''
+  // The value as the user reads it: links as their text, no mention marks, Markdown marks and
+  // escapes undone, so filters compare against what Notion shows.
+  return raw
+    .replace(/\[((?:\\.|[^\]\\])*)\]\([^)]*\)/g, '$1')
+    .replace(/(^|[\s,(])@/g, '$1')
+    .replace(/\\(.)|\*\*|~~|`/g, (_, escaped: string | undefined) => escaped ?? '')
+    .trim()
+}
+
+function matches(values: { name: string; value: string }[], f: Filter): boolean {
+  const v = cell(values, f.property).toLowerCase()
+  const want = f.value.toLowerCase()
+  // A bare date asks about a day: a cell with a time or a range matches by the day it starts on.
+  const same = () => (/^\d{4}-\d{2}-\d{2}$/.test(want) ? day(v) === want : v === want)
+  // Numbers compare as numbers, dates by the day they start on, other text as text.
+  const order = () => {
+    const [a, b] = [Number(v), Number(want)]
+    return Number.isFinite(a) && Number.isFinite(b)
+      ? Math.sign(a - b)
+      : day(v) < day(want)
+        ? -1
+        : day(v) > day(want)
+          ? 1
+          : 0
+  }
+  switch (f.op) {
+    case 'is':
+      return same()
+    case 'is_not':
+      return !same()
+    case 'contains':
+      return v.includes(want)
+    case 'not_contains':
+      return !v.includes(want)
+    case 'is_empty':
+      return v === ''
+    case 'is_not_empty':
+      return v !== ''
+    case 'before':
+      return v !== '' && order() < 0
+    case 'after':
+      return v !== '' && order() > 0
+  }
+}
+
+/**
+ * Compares two values in the asked direction (`sign`); empty values go last either way. A column of
+ * numbers compares by value (negatives and decimals included); anything else as text.
+ */
+function compareValues(a: string, b: string, sign: 1 | -1, numbers: boolean): number {
+  if (!a || !b) return a ? -1 : b ? 1 : 0
+  const order = numbers ? Number(a) - Number(b) : a.localeCompare(b, undefined, { numeric: true })
+  return order * sign
+}
+
+/** Whether every non-empty value of a property, across the rows, is a number. */
+function numeric(rows: { values: { name: string; value: string }[] }[], property: string): boolean {
+  const values = rows.map((r) => cell(r.values, property)).filter((v) => v !== '')
+  return values.length > 0 && values.every((v) => Number.isFinite(Number(v)))
+}
+
+/** A value's leading YYYY-MM-DD when it starts with one, else the value. */
+function day(value: string): string {
+  return /^\d{4}-\d{2}-\d{2}/.test(value) ? value.slice(0, 10) : value
+}
+
+/** A date as YYYY-MM-DD in the browser's time zone. */
+export function localDate(d: Date): string {
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
 }
 
 /** The last read of each page, by page id: what edit_page checks edits against. */
@@ -634,4 +909,12 @@ function clip(text: string, max: number): string {
   return text.length > max ? `${text.slice(0, max - 1)}…` : text
 }
 
-export const TOOLS: ToolSpec[] = [getCurrentPage, readPage, editPage, createPage, searchPages, getSelection]
+export const TOOLS: ToolSpec[] = [
+  getCurrentPage,
+  readPage,
+  editPage,
+  createPage,
+  searchPages,
+  getSelection,
+  queryDatabase,
+]
