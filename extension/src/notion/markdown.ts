@@ -14,6 +14,12 @@ export interface PageMarkdown {
   sections: string[]
   /** What kind of page this is when it has no content of its own (a database). */
   kind: 'page' | 'database'
+  /** The reference shown for each block, by block id. */
+  refs: Map<string, string>
+  /** Each block's own Markdown (without children or reference), by block id. */
+  lines: Map<string, string>
+  /** For each section, the id of the block each of its lines belongs to. */
+  owners: string[][]
 }
 
 /** Ids as the Markdown shows them: 32 hex digits, no dashes. */
@@ -47,6 +53,8 @@ export const PAGE_TYPES = new Set(['page', 'collection_view_page', 'collection_v
 /** Blocks that only lay out their children; their children are shown in their place. */
 export const LAYOUT_TYPES = new Set(['column_list', 'column'])
 const MEDIA_TYPES = new Set(['image', 'video', 'audio', 'pdf', 'file'])
+/** Paragraph text that Markdown would read as another kind of block, or whose leading spaces it would drop. */
+const LOOKS_LIKE_BLOCK = /^(?:\s|#{1,3}\s|[-*+]\s|\d+[.)]\s|>|▸|`{3}|\$\$|\||\\|📄 |🗃 |↗ |(?:-{3,}|\*{3,}|_{3,})$)/
 
 export function pageToMarkdown({ page, recordMap }: LoadedPage): PageMarkdown {
   const blocks = (recordMap.block ?? {}) as Record<string, Block>
@@ -57,17 +65,28 @@ export function pageToMarkdown({ page, recordMap }: LoadedPage): PageMarkdown {
   // References are assigned over every block shown, so they are unique within the page.
   const shown = isDatabase ? [] : ctx.descendants(page)
   ctx.refs = blockRefs(shown)
+  ctx.topLevel = true
   const sections = isDatabase ? [] : ctx.children(page, 0).map((lines) => lines.join('\n'))
   return {
     title: title || 'Untitled',
     properties: ctx.properties(page),
     sections,
     kind: isDatabase ? 'database' : 'page',
+    refs: ctx.refs,
+    lines: ctx.lines,
+    owners: ctx.sectionOwners,
   }
 }
 
 class Context {
   refs = new Map<string, string>()
+  lines = new Map<string, string>()
+  /** For each top-level section, the id of the block each of its lines belongs to. */
+  sectionOwners: string[][] = []
+  /** Whether children() is drawing the page's top level, where each block starts a section. */
+  topLevel = false
+  /** Line owners of the blocks drawn inside each block being drawn. */
+  private ownerFrames: string[][] = []
 
   constructor(
     private readonly recordMap: RecordMap,
@@ -98,8 +117,33 @@ class Context {
         out.push(...this.children(block, depth))
         continue
       }
+      // Which block each line belongs to: the lines blocks nested in this one draw are collected
+      // while it is drawn.
+      const top = this.topLevel
+      this.topLevel = false
+      this.ownerFrames.push([])
       const lines = block ? this.block(block, depth, number) : [`${indent(depth)}[block not loaded]${this.ref(id)}`]
-      if (lines.length) out.push(lines)
+      const nestedOwners = this.ownerFrames.pop()!
+      this.topLevel = top
+      if (lines.length) {
+        out.push(lines)
+        // The block's own Markdown: its lines up to the one carrying its reference, without its
+        // children, its reference, or the indentation of its depth.
+        const ref = this.ref(id).trim()
+        const end = lines.findIndex((l) => l.endsWith(` ${ref}`) || l.trim() === ref)
+        const owners = [...Array<string>(end < 0 ? 1 : end + 1).fill(id), ...nestedOwners]
+        while (owners.length < lines.length) owners.push(id)
+        owners.length = lines.length
+        this.ownerFrames.at(-1)?.push(...owners)
+        if (top) this.sectionOwners.push(owners)
+        const pad = indent(depth)
+        const own = lines
+          .slice(0, end < 0 ? 1 : end + 1)
+          .map((l) => (l.startsWith(pad) ? l.slice(pad.length) : l.trimStart()))
+          .map((l) => (l.trim() === ref ? '' : l.endsWith(` ${ref}`) ? l.slice(0, -ref.length - 1) : l))
+        while (own.length > 1 && !own.at(-1)!.trim()) own.pop()
+        this.lines.set(id, own.join('\n'))
+      }
     }
     return out
   }
@@ -115,7 +159,8 @@ class Context {
       case 'text':
         // Empty paragraphs are only spacing.
         if (!text && !block.content?.length) return []
-        return line('')
+        // Text that would read as a list, heading, quote, or code starts with a backslash.
+        return line(LOOKS_LIKE_BLOCK.test(text) ? '\\' : '')
       case 'header':
         return line('# ')
       case 'sub_header':
@@ -188,7 +233,13 @@ class Context {
 
   /** A quote or callout: every line, its children's too, stays inside the blockquote. */
   private quoted(block: Block, pad: string, label: string, text: string, ref: string): string[] {
-    const own = withRef('', label, text, ref)
+    // Every line of a quote is marked as quoted, so its line breaks stay real lines.
+    // As for paragraphs: a line that would read as a list, heading, or code starts with a backslash.
+    const escaped = text
+      .split('\n')
+      .map((l) => (LOOKS_LIKE_BLOCK.test(l) ? `\\${l}` : l))
+      .join('\n')
+    const own = withRef('', label, escaped, ref, 'lines')
     const children = this.children(block, 0).flat()
     return [...own, ...children].map((l) => `${pad}> ${l}`)
   }
@@ -199,10 +250,11 @@ class Context {
     if (!columns.length || !rows.length) return [`${pad}[empty table]`]
     // A cell can't hold a raw `|` or a line break; backslashes are escaped first so the escaping
     // can be undone.
-    const cell = (text: string) => text.replace(/\\/g, '\\\\').replace(/\|/g, '\\|').replace(/\n/g, '<br>')
+    // Text is already escaped (pipes included), so a cell only needs its line breaks kept on one line.
+    const cell = (text: string) => text.replace(/\n/g, '<br>')
     const cells = rows.map((row) =>
       row
-        ? columns.map((c) => cell(this.rich(row.properties?.[c])))
+        ? columns.map((c) => cell(this.rich(row.properties?.[c], { table: true })))
         : ['[row not loaded]', ...columns.slice(1).map(() => '')],
     )
     // Markdown tables need a header row; Notion's first row is one when the table says so, and is
@@ -287,14 +339,21 @@ class Context {
   }
 
   /** Rich text as Markdown, with mentions resolved to names. */
-  rich(value: unknown): string {
+  /** In a table, every `|` is escaped, code and equations too, so it can't split a cell. */
+  rich(value: unknown, { table = false } = {}): string {
     return runs(value)
-      .map(([text, marks = []]) => this.run(text, marks))
+      .map(([text, marks = []]) => {
+        const out = this.run(text, marks)
+        const raw = marks.some(([m]) => m === 'c' || m === 'e')
+        return table && raw ? out.split('|').join('\\|') : out
+      })
       .join('')
   }
 
   private run(text: string, marks: [string, unknown?][]): string {
-    let out = text
+    const code = marks.some(([m]) => m === 'c')
+    // Characters Markdown would read as formatting stay literal behind a backslash.
+    let out = code ? text : escapeMarkdown(text)
     let link: string | undefined
     for (const [mark, arg] of marks) {
       switch (mark) {
@@ -307,13 +366,14 @@ class Context {
         case 'e':
           return `$${String(arg)}$`
         case 'a': {
-          // Notion links to its own pages by path (`/<id>`, `/Title-<id>`); show those as page ids,
-          // which read_page opens.
+          // Notion links to its own pages by path (`/Title-<id>`); show those as `/<id>` (keeping any
+          // `#block`), which read_page opens and which stays a link, unlike a mention's `(<id>)`.
           const href = String(arg)
+          const [path, hash] = href.split('#')
           const page = href.startsWith('/')
-            ? /[0-9a-f]{32}$/i.exec(href.split(/[?#]/)[0].replace(/-/g, ''))?.[0]
+            ? /[0-9a-f]{32}$/i.exec(path.split('?')[0].replace(/-/g, ''))?.[0]
             : undefined
-          link = page ? page.toLowerCase() : href
+          link = page ? `/${page.toLowerCase()}${hash ? `#${hash}` : ''}` : href
           break
         }
       }
@@ -342,9 +402,12 @@ function indent(depth: number): string {
 }
 
 /** A block's lines: the prefix and text, continuation lines indented under it, the reference last. */
-function withRef(pad: string, prefix: string, text: string, ref: string): string[] {
+function withRef(pad: string, prefix: string, text: string, ref: string, breaks: 'br' | 'lines' = 'br'): string[] {
+  // A line break inside a block stays inside its one line, so it can't be read as another block.
+  if (breaks === 'br') return [`${pad}${prefix}${text.replace(/\n/g, '<br>')}${ref}`]
+  // Each line is already marked as quoted, so later lines aren't indented under the label.
   const [first, ...rest] = text.split('\n')
-  const lines = [`${pad}${prefix}${first}`, ...rest.map((l) => `${pad}${' '.repeat(prefix.length)}${l}`)]
+  const lines = [`${pad}${prefix}${first}`, ...rest.map((l) => `${pad}${l}`)]
   lines[lines.length - 1] += ref
   return lines
 }
@@ -364,41 +427,60 @@ function formatDate(arg: unknown): string {
 
 /**
  * Groups sections into parts of at most `max` characters, breaking only between sections, unless
- * one section alone is longer: then it is broken between lines.
+ * one section alone is longer: then it is broken between lines (and a line longer than `max`, into
+ * pieces). `members` lists the sections each part shows, whole or in part.
  */
-export function splitIntoParts(sections: string[], max: number): string[] {
+export function splitSections(
+  sections: string[],
+  max: number,
+): { parts: string[]; members: { section: number; from: number; to: number }[][] } {
+  type Member = { section: number; from: number; to: number }
   const parts: string[] = []
+  const members: Member[][] = []
   let current = ''
   let started = false
+  let inPart: Member[] = []
   const push = () => {
-    if (started) parts.push(current)
+    if (started) {
+      parts.push(current)
+      members.push(inPart)
+    }
     current = ''
     started = false
+    inPart = []
   }
-  for (const section of sections) {
-    const joined = started ? `${current}\n${section}` : section
-    if (joined.length <= max) {
-      current = joined
-      started = true
-      continue
-    }
+  /** Adds lines `from`..`to` (exclusive) of section `section`. */
+  const add = (text: string, section: number, from: number, to: number) => {
+    current = started ? `${current}\n${text}` : text
+    started = true
+    const last = inPart.at(-1)
+    if (last && last.section === section && last.to >= from) last.to = Math.max(last.to, to)
+    else inPart.push({ section, from, to })
+  }
+  sections.forEach((section, n) => {
+    const count = section.split('\n').length
+    if ((started ? current.length + 1 : 0) + section.length <= max) return add(section, n, 0, count)
     push()
-    if (section.length <= max) {
-      current = section
-      started = true
-      continue
-    }
-    for (const whole of section.split('\n')) {
-      // A single line longer than a part is cut into pieces of the part's size.
+    if (section.length <= max) return add(section, n, 0, count)
+    section.split('\n').forEach((whole, i) => {
       for (let at = 0; at < Math.max(whole.length, 1); at += max) {
         const line = whole.slice(at, at + max)
         if (started && current.length + 1 + line.length > max) push()
-        // `started`, not `current`: a blank line that starts a part is still a line.
-        current = started ? `${current}\n${line}` : line
-        started = true
+        // A blank line that starts a part is still a line.
+        add(line, n, i, i + 1)
       }
-    }
-  }
+    })
+  })
   push()
-  return parts.length ? parts : ['']
+  return parts.length ? { parts, members } : { parts: [''], members: [[]] }
+}
+
+/** The text of each part, as `splitSections` groups them. */
+export function splitIntoParts(sections: string[], max: number): string[] {
+  return splitSections(sections, max).parts
+}
+
+/** Escapes characters that inline Markdown would read as formatting, links, or references. */
+export function escapeMarkdown(text: string): string {
+  return text.replace(/[\\`*~[\]^|<]/g, '\\$&').replace(/(?<!\w)_|_(?!\w)/g, '\\_')
 }
