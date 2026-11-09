@@ -1,3 +1,4 @@
+import { memo } from 'react'
 import type { ToolStatus } from '../agent'
 
 /** A tool call as the panel shows it. */
@@ -26,8 +27,12 @@ const LABEL: Record<ShownTool['status'], string> = {
   stopped: 'Stopped',
 }
 
-/** One tool call: collapsed to its name and input, expandable to the full arguments and result. */
-export function ToolCall({ tool }: { tool: ShownTool }) {
+/**
+ * One tool call: collapsed to its name and input, expandable to the full arguments and result.
+ * Memoized: text streaming into the reply leaves finished calls unchanged, so they skip re-rendering
+ * (and re-formatting their JSON).
+ */
+export const ToolCall = memo(function ToolCall({ tool }: { tool: ShownTool }) {
   const input = summarize(tool.args)
   return (
     <details className={`tool ${tool.status}`}>
@@ -46,7 +51,7 @@ export function ToolCall({ tool }: { tool: ShownTool }) {
       </div>
     </details>
   )
-}
+})
 
 /** A one-line description of the arguments, e.g. `query: "roadmap", limit: 5`. Empty for none. */
 function summarize(args: unknown, max = 60): string {
