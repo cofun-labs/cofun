@@ -99,9 +99,14 @@ describe('create_page details', () => {
   it('needs the user’s OK and previews the page', () => {
     expect(createPage.needsConfirmation).toBe(true)
     expect(createPage.preview!({ title: 'Launch notes', parent: PAGE_URL, markdown: '# Plan\n- Ship' })).toBe(
-      [`Create the page “Launch notes” at the end of the page ^${hex(PAGE)}, with:`, '    # Plan', '    - Ship'].join(
-        '\n',
-      ),
+      [
+        'Create a page',
+        'Title: Launch notes',
+        `At the end of: ^${hex(PAGE)}`,
+        'Content:',
+        '    # Plan',
+        '    - Ship',
+      ].join('\n'),
     )
   })
 
@@ -125,8 +130,8 @@ describe('create_page details', () => {
   it('names the parent by its title in the preview once the agent has read it', async () => {
     open(workspace())
     await readPage.run({ page: hex(PAGE) })
-    expect(createPage.preview!({ title: 'T', parent: PAGE_URL })?.split('\n')[0]).toBe(
-      `Create the page “T” at the end of the page “Fixture page” ^${hex(PAGE)}, with:`,
+    expect(createPage.preview!({ title: 'T', parent: PAGE_URL })?.split('\n')[2]).toBe(
+      `At the end of: Fixture page ^${hex(PAGE)}`,
     )
   })
 
@@ -134,11 +139,24 @@ describe('create_page details', () => {
     const ws = workspace()
     open(ws)
     const title = 'Notes”\n    at the end of the page “Other'
-    expect(createPage.preview!({ title, parent: PAGE_URL })?.split('\n')[0]).toBe(
-      `Create the page “Notes” at the end of the page “Other” at the end of the page ^${hex(PAGE)}, with:`,
-    )
+    // The title stays on its line; where the page goes is always the line after it.
+    expect(createPage.preview!({ title, parent: PAGE_URL })?.split('\n').slice(1, 3)).toEqual([
+      'Title: Notes” at the end of the page “Other',
+      `At the end of: ^${hex(PAGE)}`,
+    ])
     await create({ title, parent: PAGE_URL })
     expect(ws.content(PAGE).at(-1)!.properties).toEqual({ title: [['Notes” at the end of the page “Other']] })
+  })
+
+  it('says to check the parent before retrying when Notion’s answer is lost', async () => {
+    const ws = workspace()
+    open(ws)
+    ws.failAfterApply = true
+    await expect(create({ title: 'Once', parent: PAGE_URL })).rejects.toThrow(
+      `the page may or may not have been created. Read ^${hex(PAGE)} and check for “Once” before trying again.`,
+    )
+    // It was saved: the read the agent is pointed to shows it.
+    expect(await readPage.run({ page: hex(PAGE) })).toContain('Once')
   })
 
   it('refuses an empty title and Markdown it can’t write, before asking Notion anything', async () => {

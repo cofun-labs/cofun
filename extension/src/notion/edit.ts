@@ -335,9 +335,7 @@ export function planEdit(
   }
 
   const create = (nb: NewBlock, parentId: string): string => {
-    const id = createBlock(op, ops, nb, parentId, newId)
-    createdAll.push(id)
-    return id
+    return createBlock(op, ops, nb, parentId, newId, (id) => createdAll.push(id))
   }
 
   const remove = (id: string) => {
@@ -576,8 +574,9 @@ export function planNewPage(
 }
 
 /**
- * Adds the operations creating a block and its children to `ops`, and returns its id. Each record
- * exists before a list names it; the caller puts the block itself in its parent's list.
+ * Adds the operations creating a block and its children to `ops`, and returns its id; `onCreate`
+ * hears every id created, nested ones too. Each record exists before a list names it; the caller
+ * puts the block itself in its parent's list.
  */
 function createBlock(
   op: ReturnType<typeof blockOps>,
@@ -585,8 +584,10 @@ function createBlock(
   nb: NewBlock,
   parentId: string,
   newId: () => string,
+  onCreate?: (id: string) => void,
 ): string {
   const id = newId()
+  onCreate?.(id)
   ops.push(
     op.create(id, nb.type, parentId, {
       ...(nb.type === 'divider' ? {} : { properties: properties(nb) }),
@@ -596,7 +597,7 @@ function createBlock(
   // Children go inside it, in order, the same way top-level blocks go into the page.
   let prev: string | undefined
   for (const child of nb.children) {
-    const childId = createBlock(op, ops, child, id, newId)
+    const childId = createBlock(op, ops, child, id, newId, onCreate)
     ops.push(op.listAfter(id, childId, prev))
     prev = childId
   }

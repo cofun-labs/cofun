@@ -341,10 +341,14 @@ export const createPage: ToolSpec = {
     const id = given ? pageArg(given) : undefined
     // By title when the agent has read it, so the user can tell which page it is.
     const known = id ? pageReads.get(id)?.title : undefined
-    const parent = id ? `the page ${known ? `“${known}” ` : ''}^${hexId(id)}` : `the page ${given || '(none given)'}`
+    const parent = id ? `${known ? `${known} ` : ''}^${hexId(id)}` : given || '(none given)'
     const markdown = typeof args.markdown === 'string' && args.markdown.trim() ? args.markdown : '(empty)'
+    // Each part on a line of its own, so text in the title can't read as where the page goes.
     return [
-      `Create the page “${title}” at the end of ${parent}, with:`,
+      'Create a page',
+      `Title: ${title}`,
+      `At the end of: ${parent}`,
+      'Content:',
       ...markdown.split('\n').map((l) => `    ${l}`),
     ].join('\n')
   },
@@ -382,6 +386,18 @@ export const createPage: ToolSpec = {
     // outcome the agent must see whether it was created before it tries again.
     try {
       await tab.client.submitTransaction(spaceId, operations, 'Notion Copilot: create_page')
+    } catch (err) {
+      // A retry would create a second page if this one was saved: the agent must look first.
+      if (err instanceof NotionError && err.code === 'outcome_unknown') {
+        pageReads.delete(parentId)
+        throw new NotionError(
+          'outcome_unknown',
+          `Notion did not answer, so the page may or may not have been created. Read ^${hexId(parentId)} and ` +
+            `check for “${title}” before trying again.`,
+          { cause: err },
+        )
+      }
+      throw err
     } finally {
       for (const key of recentReads.keys()) if (key.endsWith(`:${parentId}`)) recentReads.delete(key)
     }
