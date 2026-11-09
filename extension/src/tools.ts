@@ -334,7 +334,9 @@ export const createPage: ToolSpec = {
     // The page exactly as `run` will resolve it, so the user approves where the page goes.
     const given = typeof args.parent === 'string' ? args.parent.trim() : ''
     const id = given ? pageArg(given) : undefined
-    const parent = id ? `the page ^${hexId(id)}` : `the page ${given || '(none given)'}`
+    // By title when the agent has read it, so the user can tell which page it is.
+    const known = id ? pageReads.get(id)?.title : undefined
+    const parent = id ? `the page ${known ? `“${known}” ` : ''}^${hexId(id)}` : `the page ${given || '(none given)'}`
     const markdown = typeof args.markdown === 'string' && args.markdown.trim() ? args.markdown : '(empty)'
     return [
       `Create the page “${title}” at the end of ${parent}, with:`,

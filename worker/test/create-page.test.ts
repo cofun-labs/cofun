@@ -1,10 +1,13 @@
 // The create_page tool (extension/src/tools.ts) against a fake Notion workspace that applies
 // transactions the way Notion does.
 import { afterEach, describe, expect, it } from 'vitest'
-import { createPage, readPage } from '../../extension/src/tools'
+import { createPage, forgetReads, readPage } from '../../extension/src/tools'
 import { FakeNotionTab, FakeWorkspace, PAGE, PAGE_URL, SPACE, restoreGlobals } from './notion-tab'
 
-afterEach(restoreGlobals)
+afterEach(() => {
+  restoreGlobals()
+  forgetReads()
+})
 
 const hex = (s: string) => s.replace(/-/g, '')
 const OTHER = '7c7c7c7c-0000-4000-8000-000000000001'
@@ -117,6 +120,14 @@ describe('create_page details', () => {
     expect(await readPage.run({ page: hex(PAGE), part: parts })).not.toContain('Fresh page')
     await create({ title: 'Fresh page', parent: hex(PAGE) })
     expect(await readPage.run({ page: hex(PAGE), part: parts })).toContain('Fresh page')
+  })
+
+  it('names the parent by its title in the preview once the agent has read it', async () => {
+    open(workspace())
+    await readPage.run({ page: hex(PAGE) })
+    expect(createPage.preview!({ title: 'T', parent: PAGE_URL })?.split('\n')[0]).toBe(
+      `Create the page “T” at the end of the page “Fixture page” ^${hex(PAGE)}, with:`,
+    )
   })
 
   it('refuses an empty title and Markdown it can’t write, before asking Notion anything', async () => {
