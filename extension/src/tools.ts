@@ -336,8 +336,23 @@ export const getSelection: ToolSpec = {
       ? "aren't on the open page"
       : "aren't on the open page, or are past the part of it that could be loaded"
     if (!ids.length) return `The selected blocks ${beyond}. Read the page instead, or ask the user to select again.`
-    // The selected blocks count as read, so edit_page can change them by these references.
-    const chosen = new Set(ids)
+    // A block of several lines (a table, code) gets its reference on a line of its own.
+    const lineOf = (b: string) => {
+      const own = md.lines.get(b)!
+      return `${own}${own.includes('\n') ? '\n' : ' '}^${md.refs.get(b)}`
+    }
+    // At most a part's worth, like read_page; at least one block.
+    const lines: string[] = []
+    let size = 0
+    for (const b of ids) {
+      const line = lineOf(b)
+      if (lines.length && size + line.length > PART_CHARS) break
+      lines.push(line)
+      size += line.length + 1
+    }
+    const more = ids.length - lines.length
+    // The blocks shown count as read, so edit_page can change them by these references.
+    const chosen = new Set(ids.slice(0, lines.length))
     remember(
       mergeReads(
         pageReads.get(loaded.page.id),
@@ -355,11 +370,8 @@ export const getSelection: ToolSpec = {
             '',
           ]),
       `Selected block${ids.length === 1 ? '' : 's'}:`,
-      // A block of several lines (a table, code) gets its reference on a line of its own.
-      ...ids.map((b) => {
-        const own = md.lines.get(b)!
-        return `${own}${own.includes('\n') ? '\n' : ' '}^${md.refs.get(b)}`
-      }),
+      ...lines,
+      ...(more ? ['', `${more} more selected block${more === 1 ? '' : 's'}: read the page for them.`] : []),
       ...(missed ? ['', `Only part of the selection is shown: the other selected blocks ${beyond}.`] : []),
     ].join('\n')
   },

@@ -1,7 +1,7 @@
 // The get_selection tool (extension/src/tools.ts): the selection read from the Notion tab's page,
 // against a small fake DOM with the parts the in-tab script uses, and the page from a fake workspace.
 import { afterEach, describe, expect, it } from 'vitest'
-import { editPage, forgetReads, getSelection } from '../../extension/src/tools'
+import { PART_CHARS, editPage, forgetReads, getSelection } from '../../extension/src/tools'
 import { FakeNotionTab, FakeWorkspace, PAGE, PAGE_URL, SPACE, restoreGlobals } from './notion-tab'
 
 afterEach(() => {
@@ -310,6 +310,23 @@ describe('UC-NOTION-003 work on the selection', () => {
       '',
       "Only part of the selection is shown: the other selected blocks aren't on the open page.",
     ])
+  })
+
+  it('[UC-NOTION-003-S01] shows at most a part of a large selection, and only that much counts as read', async () => {
+    const big = Array.from({ length: 30 }, (_, n) => new FakeElement(id(100 + n), `${n} ${'y'.repeat(900)}`))
+    setup((els) => ({ from: [els[0], 0], to: [big.at(-1)!, 3] }), {
+      blocks: big.map((_, n) => block(100 + n, 'text', `${n} ${'y'.repeat(900)}`)),
+      els: big,
+      content: big.map((_, n) => id(100 + n)),
+    })
+    const result = await run()
+    expect(result.length).toBeLessThan(PART_CHARS + 2500)
+    const more = Number(/^(\d+) more selected blocks: read the page for them\.$/m.exec(result)![1])
+    expect(more).toBeGreaterThan(0)
+    // The last selected block wasn't shown, so it can't be edited by this read.
+    await expect(
+      editPage.run({ page: hex(PAGE), edits: [{ action: 'delete', block: `^${hex(id(129)).slice(-8)}` }] }),
+    ).rejects.toThrow('is not a block of the page as you last read it')
   })
 
   it('[UC-NOTION-003-S02] says when nothing is selected', async () => {
