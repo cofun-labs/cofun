@@ -22,4 +22,4 @@ Key constraint:
 
 | ID | Priority | Status | Scenario |
 | --- | --- | --- | --- |
-| UC-NOTION-007-S04 | P0 | 🚧 | Given the side panel open on a Notion page; when the user asks to turn a section into its own child page and approves; then the new page appears under the open page with that content. |
+| UC-NOTION-007-S04 | P0 | ✅ | Given the side panel open on a Notion page; when the user asks to turn a section into its own child page and approves; then the new page appears under the open page with that content. |
