@@ -120,6 +120,18 @@ describe('saved sessions', () => {
     expect(pageKey('https://www.notion.so/team?pvs=4')).toBe('https://www.notion.so/team')
   })
 
+  it('an open store does not block a schema upgrade', async () => {
+    const store = new SessionStore('user_upgrade')
+    await store.save(session('a', 'Summarize this page', 1000))
+    const upgrade = await new Promise<IDBDatabase>((resolve, reject) => {
+      const req = indexedDB.open('notion-copilot-sessions-user_upgrade', 2)
+      req.onblocked = () => reject(new Error('blocked'))
+      req.onsuccess = () => resolve(req.result)
+    })
+    expect(upgrade.version).toBe(2)
+    upgrade.close()
+  })
+
   it('a title is the first question on one line, cut to a readable length', () => {
     expect(titleFor([{ role: 'user', text: '  Line one\n\nline two ' }])).toBe('Line one line two')
     const long = titleFor([{ role: 'user', text: 'x'.repeat(300) }])

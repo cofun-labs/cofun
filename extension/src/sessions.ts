@@ -69,7 +69,15 @@ export class SessionStore {
         req.result.createObjectStore(INFO, { keyPath: 'id' })
         req.result.createObjectStore(MESSAGES, { keyPath: 'id' })
       }
-      req.onsuccess = () => resolve(req.result)
+      req.onsuccess = () => {
+        const db = req.result
+        // Let a newer schema (another panel, or a later version) upgrade the database; reopen on next use.
+        db.onversionchange = () => {
+          db.close()
+          this.db = undefined
+        }
+        resolve(db)
+      }
       req.onerror = () => reject(req.error)
     }).catch((err) => {
       // Let the next call try again instead of failing forever.
