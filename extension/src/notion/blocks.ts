@@ -40,6 +40,18 @@ export const TEXT_TYPES = new Set([
   'divider',
 ])
 
+const LEAF_NAMES: Record<string, string> = {
+  header: 'heading',
+  sub_header: 'heading',
+  sub_sub_header: 'heading',
+  code: 'code block',
+  divider: 'divider',
+  equation: 'equation',
+  quote: 'quote',
+  callout: 'callout',
+}
+const LEAF_TYPES = new Set(Object.keys(LEAF_NAMES))
+
 /** A block reference at the end of a line (` ^1a2b3c4d` or a full id), as read_page writes them. */
 const TRAILING_REF = /\s+\^[0-9a-f]{8}(?:[0-9a-f]{24})?\s*$/i
 const REF_LINE = /^\s*\^[0-9a-f]{8}(?:[0-9a-f]{24})?\s*$/i
@@ -54,7 +66,12 @@ export function parseMarkdown(markdown: string): NewBlock[] {
   const stack: { indent: number; block: NewBlock }[] = []
   const add = (indent: number, block: NewBlock) => {
     while (stack.length && stack.at(-1)!.indent >= indent) stack.pop()
-    ;(stack.at(-1)?.block.children ?? root).push(block)
+    const parent = stack.at(-1)?.block
+    // Notion doesn't show blocks nested under these, so they'd be written but hidden.
+    if (parent && LEAF_TYPES.has(parent.type)) {
+      throw new MarkdownError(`Lines can't be nested under a ${LEAF_NAMES[parent.type]}; un-indent them.`)
+    }
+    ;(parent?.children ?? root).push(block)
     stack.push({ indent, block })
   }
 
@@ -150,6 +167,8 @@ type Mark = [string, unknown?]
 /** Inline Markdown (bold, italic, strikethrough, code, links, links to pages) as rich text. */
 export function inline(text: string, marks: Mark[] = []): RichText {
   const patterns: { re: RegExp; run: (m: RegExpExecArray) => RichText }[] = [
+    // A backslash keeps the next character literal, as read_page escapes them.
+    { re: /\\([\\`*_~[\]^|#>])/, run: (m) => [marks.length ? [m[1], marks] : [m[1]]] },
     { re: /`([^`]+)`/, run: (m) => [[m[1], [...marks, ['c']]]] },
     {
       re: /\[([^\]]+)\]\(([^)\s]+)\)/,
@@ -159,6 +178,7 @@ export function inline(text: string, marks: Mark[] = []): RichText {
         return page ? [['‣', [...marks, ['p', page]]]] : inline(m[1], [...marks, ['a', m[2]]])
       },
     },
+    { re: /\*\*\*(.+?)\*\*\*/, run: (m) => inline(m[1], [...marks, ['b'], ['i']]) },
     { re: /\*\*(.+?)\*\*/, run: (m) => inline(m[1], [...marks, ['b']]) },
     { re: /~~(.+?)~~/, run: (m) => inline(m[1], [...marks, ['s']]) },
     { re: /(?<![*\w])\*(?![\s*])(.+?)(?<![\s*])\*(?![*\w])/, run: (m) => inline(m[1], [...marks, ['i']]) },

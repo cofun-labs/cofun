@@ -240,7 +240,7 @@ class Context {
     if (!columns.length || !rows.length) return [`${pad}[empty table]`]
     // A cell can't hold a raw `|` or a line break; backslashes are escaped first so the escaping
     // can be undone.
-    const cell = (text: string) => text.replace(/\\/g, '\\\\').replace(/\|/g, '\\|').replace(/\n/g, '<br>')
+    const cell = (text: string) => text.replace(/\|/g, '\\|').replace(/\n/g, '<br>')
     const cells = rows.map((row) =>
       row
         ? columns.map((c) => cell(this.rich(row.properties?.[c])))
@@ -335,7 +335,9 @@ class Context {
   }
 
   private run(text: string, marks: [string, unknown?][]): string {
-    let out = text
+    const code = marks.some(([m]) => m === 'c')
+    // Characters Markdown would read as formatting stay literal behind a backslash.
+    let out = code ? text : escapeMarkdown(text)
     let link: string | undefined
     for (const [mark, arg] of marks) {
       switch (mark) {
@@ -348,13 +350,14 @@ class Context {
         case 'e':
           return `$${String(arg)}$`
         case 'a': {
-          // Notion links to its own pages by path (`/<id>`, `/Title-<id>`); show those as page ids,
-          // which read_page opens.
+          // Notion links to its own pages by path (`/Title-<id>`); show those as `/<id>` (keeping any
+          // `#block`), which read_page opens and which stays a link, unlike a mention's `(<id>)`.
           const href = String(arg)
+          const [path, hash] = href.split('#')
           const page = href.startsWith('/')
-            ? /[0-9a-f]{32}$/i.exec(href.split(/[?#]/)[0].replace(/-/g, ''))?.[0]
+            ? /[0-9a-f]{32}$/i.exec(path.split('?')[0].replace(/-/g, ''))?.[0]
             : undefined
-          link = page ? page.toLowerCase() : href
+          link = page ? `/${page.toLowerCase()}${hash ? `#${hash}` : ''}` : href
           break
         }
       }
@@ -444,4 +447,9 @@ export function splitIntoParts(sections: string[], max: number): string[] {
   }
   push()
   return parts.length ? parts : ['']
+}
+
+/** Escapes characters that inline Markdown would read as formatting, links, or references. */
+export function escapeMarkdown(text: string): string {
+  return text.replace(/[\\`*~[\]^]/g, '\\$&').replace(/(?<!\w)_|_(?!\w)/g, '\\_')
 }

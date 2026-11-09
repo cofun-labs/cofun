@@ -113,7 +113,11 @@ export const readPage: ToolSpec = {
  * slug ending in its id (`Title-<id>`), or a reference to a page (`^<id>`).
  */
 function pageArg(text: string): string | undefined {
-  let value = text.trim().replace(/^\^/, '')
+  // `/<id>` is how read_page shows links to pages.
+  let value = text
+    .trim()
+    .replace(/^\^/, '')
+    .replace(/^\/(?=[0-9a-f]{32}\b)/i, '')
   if (/^((www\.)?notion\.so|app\.notion\.com)\//i.test(value)) value = `https://${value}`
   // notion.so redirects to www.notion.so, the host Notion's pages live on.
   value = value.replace(/^https:\/\/notion\.so\//i, 'https://www.notion.so/')
@@ -208,7 +212,8 @@ export const editPage: ToolSpec = {
     'page, replace a block with Markdown, or delete a block. Blocks are named by the references read_page shows. ' +
     'All edits in one call are applied together, or none are. Supported Markdown: paragraphs, # headings, - lists, ' +
     '1. lists, - [ ] to-dos, ▸ toggles, > quotes, > [!💡] callouts, ``` code, ---, $$equations$$, **bold**, *italic*, ' +
-    '~~strike~~, `code`, [links](url), and [page](<page id>) links. Indent by two spaces to nest. ' +
+    '~~strike~~, `code`, [links](url), and [page](<page id>) mentions; a backslash keeps a character literal. ' +
+    'Indent by two spaces to nest under lists, to-dos, toggles, and paragraphs; quotes and callouts hold text only. ' +
     "Child pages, databases, files, and tables can't be written. If the page changed since you read it, the edit is " +
     'refused: read it again and redo the edit.',
   parameters: {

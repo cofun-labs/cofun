@@ -2,6 +2,7 @@
 // transactions the way Notion does, so each test checks the page as it is after the edit.
 import { afterEach, describe, expect, it } from 'vitest'
 import { inline, parseMarkdown } from '../../extension/src/notion/blocks'
+import { mergeReads, type PageRead } from '../../extension/src/notion/edit'
 import { editPage, forgetReads, readPage } from '../../extension/src/tools'
 import { FakeNotionTab, FakeWorkspace, PAGE, PAGE_URL, SPACE, USER, restoreGlobals } from './notion-tab'
 
@@ -711,5 +712,72 @@ describe('edit_page safety, round 4', () => {
     ])
     expect(ws.transactions[0].operations.filter((o) => o.command === 'set')).toEqual([])
     expect(ws.records.get(id(1))).toMatchObject({ type: 'text', properties: { title: [['1. not a list']] } })
+  })
+})
+
+describe('edit_page round trips, round 5', () => {
+  it('round-trips literal Markdown characters, bold italic, and links to pages', async () => {
+    const target = '3a3a3a3a-0000-4000-8000-000000000031'
+    const title = [
+      ['2*3 = 6, a_b, _x_, [ ] box, ~~no~~, x^deadbeef '],
+      ['both', [['b'], ['i']]],
+      [' see '],
+      ['the spec', [['a', `/Spec-${hex(target)}#abc`]]],
+    ]
+    const ws = workspace([1], [block(1, 'bulleted_list', undefined, { properties: { title } })])
+    open(ws)
+    const shown = body(await read())
+    expect(shown).toBe(
+      `- 2\\*3 = 6, a_b, \\_x\\_, \\[ \\] box, \\~\\~no\\~\\~, x\\^deadbeef ***both*** see [the spec](/${hex(target)}#abc) ^00000001`,
+    )
+    // Writing it back as shown changes nothing; a one-word change keeps everything else.
+    await edit([{ action: 'replace', block: '^00000001', markdown: shown }])
+    expect(ws.transactions[0].operations.filter((o) => o.command === 'updateBlockPropertyValue')).toEqual([])
+    await read()
+    await edit([{ action: 'replace', block: '^00000001', markdown: shown.replace(' see ', ' read ') }])
+    expect(ws.records.get(id(1))!.properties).toEqual({
+      title: [
+        ['2*3 = 6, a_b, _x_, [ ] box, ~~no~~, x^deadbeef '],
+        ['both', [['b'], ['i']]],
+        [' read '],
+        ['the spec', [['a', `/${hex(target)}#abc`]]],
+      ],
+    })
+  })
+
+  it('refuses lines nested under a heading, code block, or callout', async () => {
+    const ws = workspace([1], [block(1, 'text', 'Intro')])
+    open(ws)
+    await read()
+    await expect(edit([{ action: 'insert', position: 'end', markdown: '## Title\n  - hidden' }])).rejects.toThrow(
+      "Lines can't be nested under a heading; un-indent them.",
+    )
+    expect(ws.transactions).toEqual([])
+  })
+
+  it('opens a page by the /<id> a link shows', async () => {
+    const ws = workspace([1], [block(1, 'text', 'Hi')])
+    const tab = open(ws)
+    await read({ page: `/${hex(PAGE)}` })
+    expect(tab.sent.at(-1)!.body).toMatchObject({ page: { id: PAGE } })
+  })
+})
+
+describe('merging reads', () => {
+  it('gives a colliding short reference to the block read last', () => {
+    const older = 'aaaaaaaa-0000-4000-8000-000012345678'
+    const later = 'bbbbbbbb-0000-4000-8000-000012345678'
+    const one = (blockId: string): PageRead => ({
+      pageId: PAGE,
+      title: 'Fixture page',
+      ids: new Map([['12345678', blockId]]),
+      refs: new Map([[blockId, '12345678']]),
+      versions: new Map([[blockId, 1]]),
+      lines: new Map([[blockId, 'x']]),
+      nested: new Map(),
+    })
+    const merged = mergeReads(one(older), one(later))
+    expect(merged.ids.get('12345678')).toBe(later)
+    expect(merged.ids.get(hex(older))).toBe(older)
   })
 })

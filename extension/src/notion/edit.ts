@@ -62,9 +62,11 @@ export function mergeReads(base: PageRead | undefined, later: PageRead): PageRea
   if (!base || base.pageId !== later.pageId) return later
   const refs = new Map(base.refs)
   for (const [id, ref] of later.refs) {
-    // A short reference already naming another block: use the full id instead.
+    // The latest read keeps the short reference it just showed; an older block that had it
+    // falls back to its full id.
     const taken = base.ids.get(ref)
-    refs.set(id, taken && taken !== id ? hexId(id) : ref)
+    if (taken && taken !== id) refs.set(taken, hexId(taken))
+    refs.set(id, ref)
   }
   return {
     pageId: base.pageId,
