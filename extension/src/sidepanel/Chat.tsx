@@ -55,6 +55,8 @@ export function Chat({ userId }: { userId: string }) {
   const chatId = useRef(0)
   // Bumped by every open() and by sending: a session still loading when either happens is not opened.
   const opening = useRef(0)
+  // Sessions deleted in this panel; a save still waiting to write must not bring one back.
+  const deleted = useRef(new Set<string>())
   const tokenRef = useRef(getToken)
   tokenRef.current = getToken
   const agentRef = useRef<CopilotAgent | null>(null)
@@ -199,10 +201,12 @@ export function Chat({ userId }: { userId: string }) {
   async function save(session: Current, messages: HistoryMessage[]) {
     try {
       const { id, createdAt } = session
+      const page = await session.page
+      if (deleted.current.has(id)) return
       await store.save({
         id,
         createdAt,
-        page: await session.page,
+        page,
         title: titleFor(messages),
         updatedAt: Date.now(),
         messages,
@@ -282,6 +286,7 @@ export function Chat({ userId }: { userId: string }) {
           saved={saved}
           onOpen={open}
           onDeleted={(id) => {
+            deleted.current.add(id)
             // The open session is being deleted: stop its reply, so it isn't saved back.
             if (id !== current?.id) return
             switchTo()
