@@ -67,7 +67,8 @@ export function parseMarkdown(markdown: string): NewBlock[] {
   const add = (indent: number, block: NewBlock) => {
     while (stack.length && stack.at(-1)!.indent >= indent) stack.pop()
     const parent = stack.at(-1)?.block
-    // Notion doesn't show blocks nested under these, so they'd be written but hidden.
+    // Notion hides blocks nested under headings, code, dividers, and equations; quotes and callouts
+    // show them, but their nested blocks can't be written back yet. Refuse rather than misplace them.
     if (parent && LEAF_TYPES.has(parent.type)) {
       throw new MarkdownError(`Lines can't be nested under a ${LEAF_NAMES[parent.type]}; un-indent them.`)
     }
@@ -121,7 +122,8 @@ export function parseMarkdown(markdown: string): NewBlock[] {
       }
       const callout = /^\[!([^\]]+)\]\s?(.*)$/.exec(quoted[0])
       if (callout) {
-        const icon = callout[1] === 'callout' ? undefined : callout[1]
+        // Only an emoji is an icon; `[!NOTE]` and other labels leave the callout's icon as it is.
+        const icon = /^\p{Extended_Pictographic}/u.test(callout[1]) ? callout[1] : undefined
         add(indent, { type: 'callout', title: inline([callout[2], ...quoted.slice(1)].join('\n')), icon, children: [] })
       } else {
         add(indent, { type: 'quote', title: inline(quoted.join('\n')), children: [] })
@@ -170,7 +172,8 @@ export function inline(text: string, marks: Mark[] = []): RichText {
     { re: /\\([\\`*_~[\]^|#><])/, run: (m) => [marks.length ? [m[1], marks] : [m[1]]] },
     { re: /`([^`]+)`/, run: (m) => [[m[1], [...marks, ['c']]]] },
     {
-      re: /\[([^\]]+)\]\(([^)\s]+)\)/,
+      // A URL may hold one level of parentheses, as in …/wiki/Foo_(bar).
+      re: /\[((?:\\.|[^\]\\])+)\]\(((?:[^()\s]|\([^()\s]*\))+)\)/,
       run: (m) => {
         // A link to a 32-hex id is a link to a Notion page, as read_page shows mentions.
         const page = /^[0-9a-f]{32}$/i.test(m[2]) ? dashed(m[2].toLowerCase()) : undefined

@@ -890,3 +890,14 @@ describe('round 9', () => {
     expect(ws.records.get(id(1))!.properties).toEqual({ title: [['a\\\nc']] })
   })
 })
+
+describe('round 10', () => {
+  it('writes only emoji as callout icons, and links with parentheses whole', () => {
+    expect(parseMarkdown('> [!NOTE] Heads up')).toEqual([{ type: 'callout', title: [['Heads up']], children: [] }])
+    expect(inline('[Foo](https://en.wikipedia.org/wiki/Foo_(bar)) and [a \\] b](https://x.example)')).toEqual([
+      ['Foo', [['a', 'https://en.wikipedia.org/wiki/Foo_(bar)']]],
+      [' and '],
+      ['a ] b', [['a', 'https://x.example']]],
+    ])
+  })
+})
