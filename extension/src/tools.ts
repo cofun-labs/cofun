@@ -2,7 +2,15 @@
 // The worker's tests import this file too, and their tsconfig has no chrome types.
 /// <reference types="chrome" />
 import type { ToolSpec } from './agent'
-import { IN_TRASH, NotionError, mergeRecordMaps, type LoadedPage, type NotionRecord } from './notion/api'
+import {
+  IN_TRASH,
+  NotionError,
+  blockOps,
+  mergeRecordMaps,
+  type LoadedPage,
+  type NotionRecord,
+  type Operation,
+} from './notion/api'
 import { isNotion, pageIdFromUrl, toUuid } from './notion/hosts'
 import {
   EditError,
@@ -16,6 +24,7 @@ import {
   planNewPage,
 } from './notion/edit'
 import { MarkdownError, parseMarkdown, type NewBlock } from './notion/blocks'
+import { PropertyError, oneLine, propertyValue, schemaEntry, shownInput, type PropertyInput } from './notion/props'
 import { PAGE_TYPES, hexId, pageToMarkdown, rowValues, splitSections, type Schema } from './notion/markdown'
 import { activeNotionTab, selectionIn, type NotionTab } from './notion/tab'
 
@@ -186,6 +195,39 @@ export const QUERY_PART = 50
 const FILTER_OPS = ['is', 'is_not', 'contains', 'not_contains', 'is_empty', 'is_not_empty', 'before', 'after'] as const
 type FilterOp = (typeof FILTER_OPS)[number]
 
+/** A database's data source: its collection, the workspace it lives in, its schema, and its views. */
+async function resolveDatabase(client: NotionTab['client'], block: NotionRecord) {
+  const pointer = (block.format as { collection_pointer?: { id?: string; spaceId?: string } } | undefined)
+    ?.collection_pointer
+  const collectionId = (block.collection_id as string | undefined) ?? pointer?.id
+  if (!collectionId) throw new Error('This database has no data source.')
+  // A linked view's database may live in another workspace; its pointer says which.
+  const spaceId = String(block.collection_id ? block.space_id : (pointer?.spaceId ?? block.space_id))
+  const collection = (await client.getRecords([{ table: 'collection', id: collectionId, spaceId }])).collection![
+    collectionId
+  ]
+  return {
+    collectionId,
+    spaceId,
+    schema: (collection.schema ?? {}) as Schema,
+    name: runsText(collection.name) || 'Untitled database',
+    views: Array.isArray(block.view_ids) ? (block.view_ids as string[]) : [],
+  }
+}
+
+/** How many rows and databases the agent saw are remembered, for approvals; the oldest go first. */
+const SEEN_KEPT = 500
+/** The rows query_database showed, by row id: their title and values as shown. */
+const seenRows = new Map<string, { title: string; values: { name: string; value: string }[] }>()
+/** The databases query_database read, by block id: their names. */
+const seenDatabases = new Map<string, string>()
+
+function keep<T>(map: Map<string, T>, key: string, value: T) {
+  map.delete(key)
+  map.set(key, value)
+  if (map.size > SEEN_KEPT) map.delete(map.keys().next().value!)
+}
+
 export const queryDatabase: ToolSpec = {
   name: 'query_database',
   description:
@@ -234,27 +276,16 @@ export const queryDatabase: ToolSpec = {
     if (given && !id) throw new Error(`Not a Notion database URL or id: ${given}`)
     if (!id) throw new Error('Give `database`: the open tab does not show a page.')
 
-    const records = await tab.client.getRecords([{ table: 'block', id }])
-    const block = records.block![id]
+    const block = (await tab.client.getRecords([{ table: 'block', id }])).block![id]
     if (block.type !== 'collection_view_page' && block.type !== 'collection_view') {
       throw new Error(given ? 'That is not a database.' : 'The open page is not a database. Give `database`.')
     }
-    const collectionId =
-      (block.collection_id as string | undefined) ??
-      (block.format as { collection_pointer?: { id?: string } } | undefined)?.collection_pointer?.id
+    const { collectionId, spaceId, schema, name, views } = await resolveDatabase(tab.client, block)
     // The view the user is looking at (`?v=` in the URL) when it is one of this database's.
-    const views = Array.isArray(block.view_ids) ? (block.view_ids as string[]) : []
     const viewInUrl = urlView(given ?? tab.url)
     const viewId = views.find((v) => toUuid(v) === viewInUrl) ?? views[0]
-    if (!collectionId || !viewId) throw new Error("This database's rows can't be read: it has no data source or view.")
-    // A linked view's database may live in another workspace; its pointer says which.
-    const pointer = (block.format as { collection_pointer?: { spaceId?: string } } | undefined)?.collection_pointer
-    const spaceId = String(block.collection_id ? block.space_id : (pointer?.spaceId ?? block.space_id))
-    const collection = (await tab.client.getRecords([{ table: 'collection', id: collectionId, spaceId }])).collection![
-      collectionId
-    ]
-    const schema = (collection.schema ?? {}) as Schema
-    const name = runsText(collection.name) || 'Untitled database'
+    if (!viewId) throw new Error("This database's rows can't be read: it has no view.")
+    keep(seenDatabases, id, name)
 
     const filters = parseFilters(args.filter, schema)
     const sort = parseSort(args.sort, schema)
@@ -290,6 +321,8 @@ export const queryDatabase: ToolSpec = {
         (part < parts ? `. Read part ${part + 1} for more.` : '.'),
       ...(hasMore ? [`Only the first ${QUERY_LOAD} rows of the database were read; filters apply to those.`] : []),
     ]
+    // What the agent saw of each row, so an approval to change one can show its old values.
+    for (const r of shown) keep(seenRows, r.id, { title: r.values[0]?.value ?? '', values: r.values })
     if (!shown.length) return [...header, '', '(no rows)'].join('\n')
     const table = [
       `| ${[...columns.map(escape), 'Row'].join(' | ')} |`,
@@ -462,6 +495,8 @@ const pageReads = new Map<string, PageRead>()
 export function forgetReads(): void {
   pageReads.clear()
   recentReads.clear()
+  seenRows.clear()
+  seenDatabases.clear()
 }
 
 const EDIT_ITEM = {
@@ -591,19 +626,37 @@ function titleArg(value: unknown): string {
   return typeof value === 'string' ? value.replace(/\s+/g, ' ').trim() : ''
 }
 
+/** `properties` as tools take it: values by property name. */
+const PROPERTIES_ARG = {
+  type: 'object',
+  description:
+    'Database properties by name: text, a number, Yes/No for checkboxes, an option name (a list for ' +
+    'multi-select), or a date as YYYY-MM-DD (a range as "YYYY-MM-DD → YYYY-MM-DD"). Empty clears a value.',
+  additionalProperties: {
+    anyOf: [
+      { type: 'string' },
+      { type: 'number' },
+      { type: 'boolean' },
+      { type: 'array', items: { type: 'string' } },
+      { type: 'null' },
+    ],
+  },
+}
+
 export const createPage: ToolSpec = {
   name: 'create_page',
   description:
-    'Creates a Notion page with a title and Markdown content (the same Markdown as edit_page), at the end of a parent ' +
-    "page given by `parent` (the open page's URL from get_current_page, or another page). Returns the new page's id " +
-    'and URL. The user is asked to ' +
-    "approve it. Pages can't be created inside databases with this tool.",
+    'Creates a Notion page with a title and Markdown content (the same Markdown as edit_page). `parent` is a page ' +
+    "(the open page's URL from get_current_page, or another page), and the new page goes at its end; or a " +
+    'database, and the new page is a row of it, with `properties` set by name (values as query_database shows ' +
+    "them; options must exist). Returns the new page's id and URL. The user is asked to approve it.",
   parameters: {
     type: 'object',
     properties: {
       title: { type: 'string', description: "The new page's title." },
       markdown: { type: 'string', description: "The page's content, as Markdown. Leave out for an empty page." },
-      parent: { type: 'string', description: 'URL or id of the page to create it in.' },
+      parent: { type: 'string', description: 'URL or id of the page or database to create it in.' },
+      properties: PROPERTIES_ARG,
     },
     required: ['title', 'parent'],
     additionalProperties: false,
@@ -614,15 +667,18 @@ export const createPage: ToolSpec = {
     // The page exactly as `run` will resolve it, so the user approves where the page goes.
     const given = typeof args.parent === 'string' ? args.parent.trim() : ''
     const id = given ? pageArg(given) : undefined
-    // By title when the agent has read it, so the user can tell which page it is.
-    const known = id ? pageReads.get(id)?.title : undefined
-    const parent = id ? `${known ? `${known} ` : ''}^${hexId(id)}` : given || '(none given)'
+    // By name when the agent has read it, so the user can tell which page or database it is.
+    const database = id ? seenDatabases.get(id) : undefined
+    const known = id ? (database ?? pageReads.get(id)?.title) : undefined
+    const parent = id ? `${known ? `${oneLine(known)} ` : ''}^${hexId(id)}` : given || '(none given)'
     const markdown = typeof args.markdown === 'string' && args.markdown.trim() ? args.markdown : '(empty)'
+    const props = propertiesArg(args.properties)
     // Each part on a line of its own, so text in the title can't read as where the page goes.
     return [
-      'Create a page',
+      database || props.length ? 'Add a row to a database' : 'Create a page',
       `Title: ${title}`,
-      `At the end of: ${parent}`,
+      database || props.length ? `In: ${parent}` : `At the end of: ${parent}`,
+      ...(props.length ? ['Properties:', ...props.map(([name, v]) => `    ${oneLine(name)}: ${shownInput(v)}`)] : []),
       'Content:',
       ...markdown.split('\n').map((l) => `    ${l}`),
     ].join('\n')
@@ -631,9 +687,10 @@ export const createPage: ToolSpec = {
     const title = titleArg(args.title)
     if (!title) throw new Error('`title` must not be empty.')
     const given = typeof args.parent === 'string' ? args.parent.trim() : ''
-    if (!given) throw new Error('`parent` is required: the URL or id of the page to create it in.')
+    if (!given) throw new Error('`parent` is required: the URL or id of the page or database to create it in.')
     const parentId = pageArg(given)
     if (!parentId) throw new Error(`Not a Notion page URL or id: ${given}`)
+    const props = propertiesArg(args.properties)
     const tab = await activeNotionTab()
     let blocks: NewBlock[] = []
     if (typeof args.markdown === 'string' && args.markdown.trim()) {
@@ -645,17 +702,24 @@ export const createPage: ToolSpec = {
       }
     }
     const parent = (await tab.client.getRecords([{ table: 'block', id: parentId }])).block![parentId]
-    if (parent.type !== 'page') {
-      throw new EditError(
-        PAGE_TYPES.has(String(parent.type))
-          ? "That is a database; create_page can't add rows to it."
-          : 'That id is a block inside a page, not a page.',
-      )
+    let target: { id: string; table: 'block' | 'collection' }
+    let spaceId: unknown = parent.space_id
+    let properties: Record<string, unknown> = {}
+    if (parent.type === 'collection_view_page' || parent.type === 'collection_view') {
+      // A row goes in the database's data source, in the workspace that holds it.
+      const db = await resolveDatabase(tab.client, parent)
+      target = { id: db.collectionId, table: 'collection' }
+      spaceId = db.spaceId
+      properties = toProperties(db.schema, props)
+    } else if (parent.type === 'page') {
+      if (props.length) throw new EditError('`properties` are only for rows: that parent is a page, not a database.')
+      target = { id: parentId, table: 'block' }
+    } else {
+      throw new EditError('That id is a block inside a page, not a page or a database.')
     }
-    const spaceId = parent.space_id
     if (typeof spaceId !== 'string' || !spaceId)
       throw new NotionError('notion_error', 'Notion returned the page without its workspace.')
-    const { operations, pageId } = planNewPage(parentId, spaceId, title, blocks)
+    const { operations, pageId } = planNewPage(target, spaceId, title, blocks, { properties })
     signal?.throwIfAborted()
     // The parent's list changes: cached parts of it would hide the new page, and after an unknown
     // outcome the agent must see whether it was created before it tries again.
@@ -667,8 +731,9 @@ export const createPage: ToolSpec = {
         pageReads.delete(parentId)
         throw new NotionError(
           'outcome_unknown',
-          `Notion did not answer, so the page may or may not have been created. Read ^${hexId(parentId)} and ` +
-            `check for “${title}” before trying again.`,
+          `Notion did not answer, so the page may or may not have been created. ` +
+            `${target.table === 'collection' ? 'Query' : 'Read'} ^${hexId(parentId)} and check for “${title}” ` +
+            'before trying again.',
           { cause: err },
         )
       }
@@ -678,10 +743,186 @@ export const createPage: ToolSpec = {
     }
     const hex = hexId(pageId)
     return [
-      `Created the page “${title}” ^${hex} at the end of ^${hexId(parentId)}.`,
+      target.table === 'collection'
+        ? `Added the row “${title}” ^${hex} to the database ^${hexId(parentId)}.`
+        : `Created the page “${title}” ^${hex} at the end of ^${hexId(parentId)}.`,
       `URL: ${new URL(tab.url).origin}/${hex}`,
     ].join('\n')
   },
+}
+
+/** How many pages one update_pages call changes at most, so one approval stays readable. */
+export const UPDATE_MAX = 50
+
+export const updatePages: ToolSpec = {
+  name: 'update_pages',
+  description:
+    "Changes pages' titles, icons (an emoji), or database properties (for rows, by name, values as " +
+    'query_database shows them; options must exist; empty clears a value), several pages in one call: "mark ' +
+    'these five tasks done" is one call. Get row ids from query_database. The user is asked to approve the ' +
+    'changes; nothing is written if any value is refused.',
+  parameters: {
+    type: 'object',
+    properties: {
+      pages: {
+        type: 'array',
+        minItems: 1,
+        maxItems: UPDATE_MAX,
+        items: {
+          type: 'object',
+          properties: {
+            page: { type: 'string', description: 'Id or URL of the page or row.' },
+            title: { type: 'string', description: 'A new title.' },
+            icon: { type: 'string', description: 'A new icon: one emoji.' },
+            properties: PROPERTIES_ARG,
+          },
+          required: ['page'],
+          additionalProperties: false,
+        },
+      },
+    },
+    required: ['pages'],
+    additionalProperties: false,
+  },
+  needsConfirmation: true,
+  preview: (args) => {
+    const updates = Array.isArray(args.pages) ? (args.pages as Record<string, unknown>[]) : []
+    const lines = [`Change ${updates.length} page${updates.length === 1 ? '' : 's'}`]
+    for (const u of updates) {
+      const given = typeof u?.page === 'string' ? u.page.trim() : ''
+      const id = given ? pageArg(given) : undefined
+      const seen = id ? seenRows.get(id) : undefined
+      const known = seen?.title ?? (id ? pageReads.get(id)?.title : undefined)
+      lines.push(id ? `${known ? `${oneLine(known)} ` : ''}^${hexId(id)}` : oneLine(given) || '(no page given)')
+      // The old value when the agent saw it, so the user sees what changes.
+      const was = (name: string) => {
+        const old = seen?.values.find((v) => v.name.toLowerCase() === name.trim().toLowerCase())?.value
+        return old === undefined ? '' : ` (was ${old ? oneLine(old) : 'empty'})`
+      }
+      if (typeof u?.title === 'string')
+        lines.push(`    Title: ${titleArg(u.title)}${seen ? ` (was ${oneLine(seen.title)})` : ''}`)
+      if (typeof u?.icon === 'string') lines.push(`    Icon: ${oneLine(u.icon)}`)
+      let props: [string, PropertyInput][] = []
+      try {
+        props = propertiesArg(u?.properties)
+      } catch {
+        lines.push('    (properties that will be refused)')
+      }
+      for (const [name, v] of props) lines.push(`    ${oneLine(name)}: ${shownInput(v)}${was(name)}`)
+    }
+    return lines.join('\n')
+  },
+  run: async (args, signal) => {
+    const updates = parseUpdates(args.pages)
+    const tab = await activeNotionTab()
+    const ids = updates.map((u) => u.id)
+    const blocks = (await tab.client.getRecords(ids.map((id) => ({ table: 'block', id })))).block!
+    for (const u of updates) {
+      const block = blocks[u.id]
+      if (PAGE_TYPES.has(String(block.type)) && block.type !== 'page')
+        throw new EditError(`^${hexId(u.id)} is a database; its name can't be changed with update_pages.`)
+      if (block.type !== 'page') throw new EditError(`^${hexId(u.id)} is a block inside a page, not a page.`)
+      if (u.props.length && block.parent_table !== 'collection')
+        throw new EditError(
+          `^${hexId(u.id)} isn't a database row, so it has no properties; only its title and icon can change.`,
+        )
+    }
+    const spaces = new Set(updates.map((u) => String(blocks[u.id].space_id)))
+    if (spaces.size > 1)
+      throw new EditError('These pages are in different workspaces: change each workspace’s pages in its own call.')
+    const spaceId = [...spaces][0]
+    // Each row's database, for its schema.
+    const collectionIds = [...new Set(updates.filter((u) => u.props.length).map((u) => String(blocks[u.id].parent_id)))]
+    const collections = collectionIds.length
+      ? (await tab.client.getRecords(collectionIds.map((id) => ({ table: 'collection', id, spaceId })))).collection!
+      : {}
+    const op = blockOps(spaceId, Date.now())
+    const operations: Operation[] = []
+    const summary: string[] = []
+    for (const u of updates) {
+      const block = blocks[u.id]
+      const values: Record<string, unknown[]> = u.props.length
+        ? toProperties((collections[String(block.parent_id)]?.schema ?? {}) as Schema, u.props)
+        : {}
+      if (u.title !== undefined) values.title = [[u.title]]
+      if (Object.keys(values).length) operations.push(op.setProperties(u.id, values))
+      if (u.icon !== undefined) operations.push(op.setFormat(u.id, { page_icon: u.icon }))
+      operations.push(op.touch(u.id))
+      const changed = [
+        ...(u.title !== undefined ? ['title'] : []),
+        ...(u.icon !== undefined ? ['icon'] : []),
+        ...u.props.map(([n]) => oneLine(n)),
+      ]
+      summary.push(`^${hexId(u.id)}: ${changed.join(', ')}`)
+    }
+    signal?.throwIfAborted()
+    try {
+      // Setting values again does no harm, so after a lost answer the agent may simply retry.
+      await tab.client.submitTransaction(spaceId, operations, 'Notion Copilot: update_pages')
+    } finally {
+      for (const id of ids) {
+        seenRows.delete(id)
+        for (const key of recentReads.keys()) if (key.endsWith(`:${id}`)) recentReads.delete(key)
+      }
+    }
+    return [`Changed ${updates.length} page${updates.length === 1 ? '' : 's'}:`, ...summary].join('\n')
+  },
+}
+
+/** update_pages' `pages`, checked before anything is asked of Notion. */
+function parseUpdates(value: unknown) {
+  if (!Array.isArray(value) || !value.length) throw new EditError('`pages` must be a list with at least one page.')
+  if (value.length > UPDATE_MAX) throw new EditError(`At most ${UPDATE_MAX} pages can change in one call.`)
+  const seen = new Set<string>()
+  return value.map((raw: unknown, i) => {
+    const u = (raw ?? {}) as Record<string, unknown>
+    const id = typeof u.page === 'string' ? pageArg(u.page) : undefined
+    if (!id) throw new EditError(`Page ${i + 1} needs \`page\`: the id or URL of a page or row.`)
+    if (seen.has(id)) throw new EditError(`^${hexId(id)} is given twice; put all its changes in one entry.`)
+    seen.add(id)
+    const title = u.title === undefined ? undefined : titleArg(u.title)
+    if (title === '') throw new EditError(`Page ${i + 1}: \`title\` must not be empty.`)
+    const icon = u.icon === undefined ? undefined : typeof u.icon === 'string' ? u.icon.trim() : ''
+    if (icon !== undefined && !/^\p{Extended_Pictographic}/u.test(icon))
+      throw new EditError(`Page ${i + 1}: \`icon\` must be an emoji.`)
+    const props = propertiesArg(u.properties)
+    if (title === undefined && icon === undefined && !props.length)
+      throw new EditError(`Page ${i + 1} changes nothing: give \`title\`, \`icon\`, or \`properties\`.`)
+    return { id, title, icon, props }
+  })
+}
+
+/** The `properties` argument as [name, value] pairs; anything else is refused. */
+function propertiesArg(value: unknown): [string, PropertyInput][] {
+  if (value === undefined || value === null) return []
+  if (typeof value !== 'object' || Array.isArray(value))
+    throw new EditError('`properties` must be an object of values by name.')
+  return Object.entries(value as Record<string, unknown>).map(([name, v]) => {
+    const ok =
+      v === null ||
+      ['string', 'number', 'boolean'].includes(typeof v) ||
+      (Array.isArray(v) && v.every((x) => typeof x === 'string'))
+    if (!ok) throw new EditError(`The value for “${oneLine(name)}” must be text, a number, Yes/No, or a list.`)
+    return [name, v as PropertyInput]
+  })
+}
+
+/** Property values as Notion stores them, by schema key; the title is given as `title` instead. */
+function toProperties(schema: Schema, props: [string, PropertyInput][]): Record<string, unknown[]> {
+  const out: Record<string, unknown[]> = {}
+  for (const [name, input] of props) {
+    const [key, def] = schemaEntry(schema, name)
+    if (key === 'title' || def.type === 'title')
+      throw new EditError(`Give the title as \`title\`, not as “${oneLine(name)}”.`)
+    if (key in out) throw new EditError(`“${oneLine(name)}” is given twice.`)
+    try {
+      out[key] = propertyValue(def, input)
+    } catch (err) {
+      if (err instanceof PropertyError) throw new EditError(err.message)
+      throw err
+    }
+  }
+  return out
 }
 
 export const getSelection: ToolSpec = {
@@ -917,4 +1158,5 @@ export const TOOLS: ToolSpec[] = [
   searchPages,
   getSelection,
   queryDatabase,
+  updatePages,
 ]
