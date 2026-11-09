@@ -281,3 +281,73 @@ function notionId(id: string): string {
   if (!uuid) throw new NotionError('notion_error', `Not a Notion id: ${id}`)
   return uuid
 }
+
+/**
+ * Builders for the operations a transaction is made of, so Notion's wire format for writes lives
+ * here with the rest of the API. All act on blocks in one workspace.
+ */
+export function blockOps(spaceId: string, now: number) {
+  const pointer = (id: string): Pointer => ({ table: 'block', id, spaceId })
+  return {
+    /** A new block under `parentId`; it still has to be listed in its parent's content. */
+    create(
+      id: string,
+      type: string,
+      parentId: string,
+      fields: { properties?: object; format?: object } = {},
+    ): Operation {
+      return {
+        pointer: pointer(id),
+        path: [],
+        command: 'set',
+        args: {
+          id,
+          type,
+          version: 1,
+          alive: true,
+          parent_id: parentId,
+          parent_table: 'block',
+          space_id: spaceId,
+          created_time: now,
+          last_edited_time: now,
+          ...fields,
+        },
+      }
+    },
+    /** Lists `id` in `parentId`'s content after `after`, or at the end without it. */
+    listAfter(parentId: string, id: string, after?: string): Operation {
+      return {
+        pointer: pointer(parentId),
+        path: ['content'],
+        command: 'listAfter',
+        args: after ? { after, id } : { id },
+      }
+    },
+    listBefore(parentId: string, id: string, before: string): Operation {
+      return { pointer: pointer(parentId), path: ['content'], command: 'listBefore', args: { before, id } }
+    },
+    /** Deletes a block the way Notion does: marked not alive, and taken out of its parent's list. */
+    remove(parentId: string, id: string): Operation[] {
+      return [
+        { pointer: pointer(id), path: [], command: 'update', args: { alive: false, last_edited_time: now } },
+        { pointer: pointer(parentId), path: ['content'], command: 'listRemove', args: { id } },
+      ]
+    },
+    /** Changes property values, text included; the only way Notion accepts for existing blocks. */
+    setProperties(id: string, values: object): Operation {
+      return {
+        pointer: pointer(id),
+        path: ['properties'],
+        command: 'updateBlockPropertyValue',
+        args: { primitiveOp: { command: 'update', args: values } },
+      }
+    },
+    setFormat(id: string, format: object): Operation {
+      return { pointer: pointer(id), path: ['format'], command: 'update', args: format }
+    },
+    /** Marks a block as edited now; Notion doesn't do it itself. */
+    touch(id: string): Operation {
+      return { pointer: pointer(id), path: [], command: 'update', args: { last_edited_time: now } }
+    },
+  }
+}

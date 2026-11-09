@@ -1,6 +1,6 @@
 // Planning an edit_page call: checking the edits against the page as the agent read it and as it
 // is now, and turning them into one Notion transaction. Nothing here talks to Notion.
-import type { Block, LoadedPage, Operation } from './api'
+import { blockOps, type Block, type LoadedPage, type Operation } from './api'
 import { MarkdownError, TEXT_TYPES, notionLanguage, parseMarkdown, type NewBlock, type RichText } from './blocks'
 import { PAGE_TYPES, hexId, type PageMarkdown } from './markdown'
 
@@ -284,7 +284,7 @@ export function planEdit(
   const createdAll: string[] = []
   const summary: string[] = []
   const changed = new Set<string>([page.id])
-  const pointer = (id: string) => ({ table: 'block' as const, id, spaceId })
+  const op = blockOps(spaceId, now)
   /** Where the next block inserted at each place goes: after the last one inserted there. */
   const tails = new Map<string, string>()
 
@@ -310,18 +310,13 @@ export function planEdit(
       const prev = tails.get(place.key) ?? place.after
       const children = list(parent)
       if (prev) {
-        ops.push({ pointer: pointer(parent.id), path: ['content'], command: 'listAfter', args: { after: prev, id } })
+        ops.push(op.listAfter(parent.id, id, prev))
         children.splice(children.indexOf(prev) + 1, 0, id)
       } else if (place.start && children.length) {
-        ops.push({
-          pointer: pointer(parent.id),
-          path: ['content'],
-          command: 'listBefore',
-          args: { before: children[0], id },
-        })
+        ops.push(op.listBefore(parent.id, id, children[0]))
         children.unshift(id)
       } else {
-        ops.push({ pointer: pointer(parent.id), path: ['content'], command: 'listAfter', args: { id } })
+        ops.push(op.listAfter(parent.id, id))
         children.push(id)
       }
       tails.set(place.key, id)
@@ -335,34 +330,17 @@ export function planEdit(
   const create = (nb: NewBlock, parentId: string): string => {
     const id = newId()
     createdAll.push(id)
-    ops.push({
-      pointer: pointer(id),
-      path: [],
-      command: 'set',
-      args: {
-        id,
-        type: nb.type,
-        version: 1,
-        alive: true,
-        parent_id: parentId,
-        parent_table: 'block',
-        space_id: spaceId,
-        created_time: now,
-        last_edited_time: now,
+    ops.push(
+      op.create(id, nb.type, parentId, {
         ...(nb.type === 'divider' ? {} : { properties: properties(nb) }),
         ...(nb.icon ? { format: { page_icon: nb.icon } } : {}),
-      },
-    })
+      }),
+    )
     // Children go inside it, in order, the same way top-level blocks go into the page.
     let prev: string | undefined
     for (const child of nb.children) {
       const childId = create(child, id)
-      ops.push({
-        pointer: pointer(id),
-        path: ['content'],
-        command: 'listAfter',
-        args: prev ? { after: prev, id: childId } : { id: childId },
-      })
+      ops.push(op.listAfter(id, childId, prev))
       prev = childId
     }
     return id
@@ -370,8 +348,7 @@ export function planEdit(
 
   const remove = (id: string) => {
     const parent = parentOf(id)
-    ops.push({ pointer: pointer(id), path: [], command: 'update', args: { alive: false, last_edited_time: now } })
-    ops.push({ pointer: pointer(parent.id), path: ['content'], command: 'listRemove', args: { id } })
+    ops.push(...op.remove(parent.id, id))
     const children = list(parent)
     if (children.includes(id)) children.splice(children.indexOf(id), 1)
     changed.add(parent.id)
@@ -410,15 +387,10 @@ export function planEdit(
       // only the fields that differ, so text the agent didn't change keeps what can't be written.
       const values = changedProperties(target, only, read.lines.get(target.id))
       if (Object.keys(values).length) {
-        ops.push({
-          pointer: pointer(target.id),
-          path: ['properties'],
-          command: 'updateBlockPropertyValue',
-          args: { primitiveOp: { command: 'update', args: values } },
-        })
+        ops.push(op.setProperties(target.id, values))
       }
       if (only.type === 'callout' && only.icon && only.icon !== target.format?.page_icon) {
-        ops.push({ pointer: pointer(target.id), path: ['format'], command: 'update', args: { page_icon: only.icon } })
+        ops.push(op.setFormat(target.id, { page_icon: only.icon }))
       }
       changed.add(target.id)
       const lost = values.title && hasUnwritableMarks(target.properties?.title)
@@ -451,7 +423,7 @@ export function planEdit(
 
   for (const id of changed) {
     if (deleted.has(id) || blocks[id]?.alive === false) continue
-    ops.push({ pointer: pointer(id), path: [], command: 'update', args: { last_edited_time: now } })
+    ops.push(op.touch(id))
   }
   return {
     operations: ops,
