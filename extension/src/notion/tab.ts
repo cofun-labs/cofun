@@ -158,15 +158,22 @@ export function readSelection(): PageSelection | null {
   const range = selection.getRangeAt(0)
   const root = roots.find((r) => r.contains(range.commonAncestorContainer))
   if (!root) return null
+  // Whether the range selects some characters of `node`. A range that only starts at its end or
+  // ends at its start (a triple-click, or a drag to the end of a line) doesn't select it.
+  const covers = (node: Node): boolean => {
+    const part = document.createRange()
+    part.selectNodeContents(node)
+    // 0 is Range.START_TO_START and 2 is Range.END_TO_END.
+    if (range.compareBoundaryPoints(0, part) > 0) part.setStart(range.startContainer, range.startOffset)
+    if (range.compareBoundaryPoints(2, part) < 0) part.setEnd(range.endContainer, range.endOffset)
+    return !part.collapsed && part.toString().length > 0
+  }
   const blocks = [...root.querySelectorAll('[data-block-id]')]
-  const touched = blocks.filter((b) => range.intersectsNode(b))
+  const touched = blocks.filter(covers)
   // Whether the range covers some of the block's own content, not only the blocks nested in it.
   const ownTouched = (el: Element): boolean =>
     [...el.children].some(
-      (c) =>
-        !c.getAttribute('data-block-id') &&
-        range.intersectsNode(c) &&
-        (!c.querySelector('[data-block-id]') || ownTouched(c)),
+      (c) => !c.getAttribute('data-block-id') && covers(c) && (!c.querySelector('[data-block-id]') || ownTouched(c)),
     )
   const chosen = touched.filter((b) => !touched.some((other) => other !== b && b.contains(other)) || ownTouched(b))
   if (!chosen.length) return null
