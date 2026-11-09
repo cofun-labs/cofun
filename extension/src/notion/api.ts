@@ -132,6 +132,7 @@ export class NotionClient {
 
   /** Loads specific records of any table. Every requested record must come back. */
   async getRecords(pointers: Pointer[]): Promise<RecordMap> {
+    if (pointers.length === 0) return {}
     const requested = pointers.map((p) => ({ ...p, id: notionId(p.id) }))
     const spaces = new Set(requested.flatMap((p) => (p.spaceId ? [p.spaceId] : [])))
     const { json, signedIn } = await this.request<{ recordMap?: unknown }>(
@@ -206,7 +207,10 @@ export function checkResponse(res: NotionResponse): Record<string, unknown> {
   if (res.status === 403) throw new NotionError('no_access', NO_ACCESS)
   const name = typeof json.name === 'string' ? ` ${json.name}` : ''
   const detail = json.debugMessage ?? json.message ?? 'no details'
-  throw new NotionError('notion_error', `Notion returned an error (${res.status}${name}): ${String(detail)}`)
+  // A 5xx (often a gateway timeout) can come after Notion already applied the request.
+  throw new NotionError('notion_error', `Notion returned an error (${res.status}${name}): ${String(detail)}`, {
+    unanswered: res.status >= 500,
+  })
 }
 
 /**

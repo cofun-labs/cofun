@@ -72,6 +72,7 @@ export async function notionRequest(
 ): Promise<NotionResponse | { notOnNotion: true }> {
   // The tab may have navigated since the side panel looked at it.
   if (!hosts.includes(location.hostname)) return { notOnNotion: true }
+  // notion_user_id is not HttpOnly (checked in the #64 spike); Notion's own client reads it too.
   let userId = /(?:^|;\s*)notion_user_id=([^;]+)/.exec(document.cookie)?.[1]
   try {
     if (userId) userId = decodeURIComponent(userId)

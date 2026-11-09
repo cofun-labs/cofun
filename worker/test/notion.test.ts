@@ -414,6 +414,12 @@ describe('loading records', () => {
     expect(records.block![BLOCKS[0]]).toMatchObject({ id: BLOCKS[0], version: 8, type: 'text' })
   })
 
+  it('asks Notion nothing for no records', async () => {
+    const tab = new FakeNotionTab(PAGE_URL).install()
+    expect(await (await activeNotionTab()).client.getRecords([])).toEqual({})
+    expect(tab.sent).toEqual([])
+  })
+
   it('names the workspace when only some pointers do', async () => {
     const tab = new FakeNotionTab(PAGE_URL)
       .respond('syncRecordValuesMain', 200, fixture('sync-record-values'))
@@ -519,6 +525,18 @@ describe('submitting a transaction', () => {
         'Notion did not answer, so the change may or may not have been saved. Read the page again before retrying.',
       ])
     }
+  })
+
+  it('says the outcome is unknown when Notion answers a change with a server error', async () => {
+    new FakeNotionTab(PAGE_URL).respondText('saveTransactionsFanout', 504, '<html>Gateway timeout</html>').install()
+    const err = await notionError((await activeNotionTab()).client.submitTransaction(SPACE, [rename], 'rename page'))
+    expect(err.code).toBe('outcome_unknown')
+  })
+
+  it('reports a server error on a read as a Notion error', async () => {
+    new FakeNotionTab(PAGE_URL).respondText('loadPageChunk', 503, 'busy').install()
+    const err = await notionError((await activeNotionTab()).client.loadPage(PAGE))
+    expect([err.code, err.message]).toEqual(['notion_error', 'Notion returned an error (503): no details'])
   })
 
   it('says nothing was saved when the tab left Notion before the change was sent', async () => {
