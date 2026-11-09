@@ -356,7 +356,12 @@ describe('extension agent against the worker', () => {
     expect(sent[4]).toMatchObject({
       tool_calls: [{ id: 'chatcmpl-tool-1', function: { name: 'get_current_page' } }],
     })
-    expect(sent[5]).toMatchObject({ role: 'tool', tool_call_id: 'chatcmpl-tool-1' })
+    // The model is told the tool was cut short and may have done part of its work.
+    expect(sent[5]).toMatchObject({
+      role: 'tool',
+      tool_call_id: 'chatcmpl-tool-1',
+      content: expect.stringContaining('may have partly happened'),
+    })
   })
 
   it('[UC-AGENT-001-S13] a question that fails after a tool ran keeps the tool for the next question', async () => {
@@ -403,14 +408,16 @@ describe('extension agent against the worker', () => {
     expect((await ask(agent, 'first')).result).toMatchObject({ status: 'error' })
     ai.failWith = undefined
 
-    // Stopped right before the first model request: the token for it is the second one asked for.
-    let tokens = 0
-    const stopping = makeAgent({
-      getToken: async () => {
-        if (++tokens === 2) stopping.stop()
-        return token
-      },
-    })
+    // Stopped while its first model request is under way.
+    let stopNext = true
+    env.AI = ai = new (class extends FakeAiBinding {
+      override async run(model: string, inputs: Record<string, unknown>, options?: Record<string, unknown>) {
+        if (stopNext) stopping.stop()
+        stopNext = false
+        return super.run(model, inputs, options)
+      }
+    })('你好 来自 worker')
+    const stopping = makeAgent()
     expect((await ask(stopping, 'second')).result).toEqual({ status: 'stopped' })
 
     for (const a of [agent, stopping]) {
@@ -579,12 +586,13 @@ describe('extension agent against the worker', () => {
     expect(result).toEqual({ status: 'stopped' })
     expect(runs).toEqual([])
     expect(toolStatuses(updates)).toEqual(['stopped'])
-    // pi reports the abort itself; the model is not told the user could not be asked.
-    expect(agent.history().at(-1)).toMatchObject({ role: 'tool', status: 'stopped', result: 'Operation aborted' })
+    // The model is told the call never started, not that the user could not be asked.
+    const notRun = 'Not run: the user stopped the question before this action started.'
+    expect(agent.history().at(-1)).toMatchObject({ role: 'tool', status: 'stopped', result: notRun })
 
     await ask(agent, 'hi')
     expect(sentMessages(1).map((m) => m.role)).toEqual(['system', 'user', 'assistant', 'tool', 'user'])
-    expect(sentMessages(1)[3]).toEqual({ role: 'tool', tool_call_id: 'chatcmpl-tool-0', content: 'Operation aborted' })
+    expect(sentMessages(1)[3]).toEqual({ role: 'tool', tool_call_id: 'chatcmpl-tool-0', content: notRun })
   })
 
   it('a new chat while the user is asked counts as no', async () => {

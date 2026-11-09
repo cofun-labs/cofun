@@ -85,6 +85,11 @@ const SIGN_IN = 'Please sign in first.'
 const DECLINED = 'Not run: the user declined this action. Do not retry it; ask the user how to proceed instead.'
 // The same when there was nobody to ask: the model must not claim the user said no.
 const UNASKED = "Not run: this action needs the user's confirmation, and they could not be asked."
+// What the model gets back for a call the user stopped: whether it may have done something matters
+// for a tool that changes a page.
+const STOPPED_BEFORE = 'Not run: the user stopped the question before this action started.'
+const STOPPED_DURING =
+  'Stopped by the user while this action was running; it may have partly happened. Check before trying it again.'
 
 export class CopilotAgent {
   private agent?: Agent
@@ -145,6 +150,8 @@ export class CopilotAgent {
         return { status: 'error', message: (err as Error).message }
       }
       if (this.agent) this.agent.state.model = this.model
+      // The question stays in the conversation with the tools it used, so asking again shows it
+      // twice; that is intended, the model must still learn what those tools did.
       if (kept) return { status: 'error', message: 'Copilot was just updated. Please ask again.' }
       return (await this.askOnce(text, onUpdate, epoch, confirm)).result
     }
@@ -177,7 +184,9 @@ export class CopilotAgent {
     const refused = new Set<string>()
     const declined = new Set<string>()
     // How the latest call with each id ended, kept with its result message when that arrives.
-    const ended = new Map<string, ToolStatus>()
+    const ended = new Map<string, { status: ToolStatus; result: string }>()
+    // Calls allowed to run, so a Stop may have cut them short; the others never started.
+    const started = new Set<string>()
 
     // On the last step, refuse the tools the model asks for instead of running them: the question
     // ends here, so the model would never see their results, and a tool could change a page.
@@ -191,9 +200,15 @@ export class CopilotAgent {
           terminate: true,
         }
       }
-      if (!this.confirmed.has(toolCall.name)) return
+      if (!this.confirmed.has(toolCall.name)) {
+        started.add(toolCall.id)
+        return
+      }
       const answer = await askUser(confirm, { id: toolCall.id, name: toolCall.name, args }, signal)
-      if (answer === 'allow' && epoch === this.epoch) return
+      if (answer === 'allow' && epoch === this.epoch) {
+        started.add(toolCall.id)
+        return
+      }
       // Only a no from the user shows as declined. Stopped while waiting shows as stopped, and a
       // prompt that could not be shown as failed, with the reason.
       if (answer === 'deny' && epoch === this.epoch) declined.add(toolCall.id)
@@ -214,13 +229,20 @@ export class CopilotAgent {
         else if (declined.has(update.id)) update.status = 'declined'
         // A tool cut short by Stop reports an error; it did not fail on its own. A tool that
         // finished anyway keeps its result: what it did happened.
-        else if (update.status === 'failed' && epoch !== this.epoch) update.status = 'stopped'
-        ended.set(update.id, update.status)
+        else if (update.status === 'failed' && epoch !== this.epoch) {
+          update.status = 'stopped'
+          // Instead of pi's own abort error, tell the model whether the tool could have done anything.
+          update.result = started.has(update.id) ? STOPPED_DURING : STOPPED_BEFORE
+        }
+        started.delete(update.id)
+        ended.set(update.id, { status: update.status, result: update.result })
       }
       if (update) onUpdate(update)
       if (event.type === 'message_end' && event.message.role === 'toolResult') {
-        const status = ended.get(event.message.toolCallId)
-        if (status) this.statuses.set(event.message, status)
+        const end = ended.get(event.message.toolCallId)
+        if (end) this.statuses.set(event.message, end.status)
+        // pi keeps this same message in the conversation, so the model gets the text the panel shows.
+        if (end?.status === 'stopped') event.message.content = [{ type: 'text', text: end.result }]
       }
       if (event.type === 'message_end' && event.message.role === 'assistant') {
         const m = event.message as AssistantMessage
