@@ -6,6 +6,7 @@ import { NotionError, mergeRecordMaps, type LoadedPage } from './notion/api'
 import { isNotion, pageIdFromUrl, toUuid } from './notion/hosts'
 import { PAGE_TYPES, hexId, pageToMarkdown, splitIntoParts } from './notion/markdown'
 import { activeNotionTab, type NotionTab } from './notion/tab'
+import { pageChildren, pageTree, treeLines } from './notion/tree'
 
 /**
  * The title and URL of the Notion page open in the side panel's window, if one is.
@@ -158,4 +159,97 @@ async function loadWithDatabase(tab: NotionTab, id: string): Promise<Loaded> {
   }
 }
 
-export const TOOLS: ToolSpec[] = [getCurrentPage, readPage]
+export const LIST_MAX_DEPTH = 3
+/** How many pages one list shows, so a large workspace still fits the conversation. */
+export const LIST_LIMIT = 100
+
+export const listPages: ToolSpec = {
+  name: 'list_pages',
+  description:
+    "Lists pages and databases as Notion's sidebar shows them: without `page`, the top level of the open page's " +
+    'workspace (private pages, pages shared with the user, workspace pages, teamspaces); with `page`, the pages ' +
+    'and databases under it. Titles and ids only, no content: read a page with read_page. `depth` also lists the ' +
+    'pages under those, up to 3 levels.',
+  parameters: {
+    type: 'object',
+    properties: {
+      page: {
+        type: 'string',
+        description: 'URL or id of a page to list the pages under. Leave out for the top level.',
+      },
+      depth: {
+        type: 'integer',
+        minimum: 1,
+        maximum: LIST_MAX_DEPTH,
+        description: 'How many levels to list. Defaults to 1.',
+      },
+    },
+    additionalProperties: false,
+  },
+  run: async (args) => {
+    const given = typeof args.page === 'string' && args.page.trim() ? args.page : undefined
+    const rootId = given ? pageArg(given) : undefined
+    if (given && !rootId) throw new Error(`Not a Notion page URL or id: ${given}`)
+    const depth = args.depth === undefined || args.depth === null || args.depth === '' ? 1 : Number(args.depth)
+    if (!Number.isInteger(depth) || depth < 1 || depth > LIST_MAX_DEPTH) {
+      throw new Error(`\`depth\` must be a whole number from 1 to ${LIST_MAX_DEPTH}.`)
+    }
+    const tab = await activeNotionTab()
+    const cutOff = (truncated: boolean) =>
+      truncated ? [`Only the first ${LIST_LIMIT} pages are listed. List a page by its id to see more under it.`] : []
+
+    if (rootId) {
+      const records = await tab.client.getRecords([{ table: 'block', id: rootId }])
+      const root = records.block![rootId]
+      if (root.type !== 'page') {
+        throw new Error(
+          PAGE_TYPES.has(String(root.type))
+            ? 'That is a database; its rows are not pages to list.'
+            : 'That id is a block inside a page, not a page.',
+        )
+      }
+      const children = (await pageChildren(tab.client, [rootId], records)).get(rootId) ?? []
+      const { nodes, truncated } = await pageTree(tab.client, children, depth, LIST_LIMIT, records)
+      const title = runsText((root.properties as { title?: unknown } | undefined)?.title) || 'Untitled'
+      return [
+        `Pages under “${title}” ^${hexId(rootId)}:`,
+        '',
+        ...(treeLines(nodes).length ? treeLines(nodes) : ['(no pages)']),
+        ...cutOff(truncated),
+      ].join('\n')
+    }
+
+    if (!tab.pageId) throw new Error('Open a page of the workspace to list it.')
+    const opened = await tab.client.getRecords([{ table: 'block', id: tab.pageId }])
+    const spaceId = (opened.block?.[tab.pageId] as { space_id?: string } | undefined)?.space_id
+    if (!spaceId) throw new Error('Could not tell which workspace the open page is in.')
+    const space = await tab.client.getSpace(spaceId)
+    const sections: [string, string[]][] = [
+      ['Private', space.privatePages],
+      ['Shared with you', space.sharedPages],
+      ['Workspace', space.workspacePages],
+      ...space.teams.map((t): [string, string[]] => [`Teamspace: ${t.name}`, t.pages]),
+    ]
+    // One tree over every section, so the limit counts them all.
+    const { nodes, truncated } = await pageTree(
+      tab.client,
+      sections.flatMap(([, ids]) => ids),
+      depth,
+      LIST_LIMIT,
+    )
+    const byId = new Map(nodes.map((n) => [n.id, n]))
+    const out = [`Pages in the workspace “${space.name}”:`]
+    for (const [label, ids] of sections) {
+      const shown = ids.map((id) => byId.get(id)).filter((n) => !!n)
+      if (shown.length) out.push('', label, ...treeLines(shown))
+    }
+    if (out.length === 1) out.push('', '(no pages)')
+    return [...out, ...cutOff(truncated)].join('\n')
+  },
+}
+
+function runsText(value: unknown): string {
+  return Array.isArray(value) ? value.map((r) => (Array.isArray(r) ? String(r[0]) : '')).join('') : ''
+}
+
+export const TOOLS: ToolSpec[] = [getCurrentPage, readPage, listPages]
