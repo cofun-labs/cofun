@@ -20,6 +20,8 @@ export interface PageRead {
   lines: Map<string, string>
   /** The blocks nested under each block, at any depth, as the page was read. */
   nested: Map<string, string[]>
+  /** Blocks whose text has formatting edit_page can't write back (mentions, colors, …). */
+  lossy?: Set<string>
 }
 
 /** The blocks of `md` the agent saw: those `include` picks, such as the blocks a part drew. */
@@ -48,6 +50,7 @@ export function pageRead(loaded: LoadedPage, md: PageMarkdown, include: (id: str
     versions,
     lines: new Map([...md.lines].filter(([id]) => refs.has(id))),
     nested,
+    lossy: new Set([...refs.keys()].filter((id) => hasUnwritableMarks(blocks[id]?.properties?.title))),
   }
 }
 
@@ -70,6 +73,7 @@ export function mergeReads(base: PageRead | undefined, later: PageRead): PageRea
     versions: new Map([...base.versions, ...later.versions]),
     lines: new Map([...base.lines, ...later.lines]),
     nested: new Map([...base.nested, ...later.nested]),
+    lossy: new Set([...[...(base.lossy ?? [])].filter((id) => !later.refs.has(id)), ...(later.lossy ?? [])]),
   }
 }
 
@@ -85,6 +89,7 @@ export function forget(read: PageRead, ids: Iterable<string>): PageRead {
     versions: keep(read.versions),
     lines: keep(read.lines),
     nested: keep(read.nested),
+    lossy: new Set([...(read.lossy ?? [])].filter((id) => !gone.has(id))),
   }
 }
 
@@ -351,6 +356,12 @@ export function planEdit(
 
   const remove = (id: string) => {
     const parent = parentOf(id)
+    // Notion's editor removes a column once it is empty; these operations can't, so don't empty one.
+    if (parent.type === 'column' && list(parent).filter((c) => c !== id).length === 0) {
+      throw new EditError(
+        `${ref(id)} is the last block in its column; edit_page can't remove columns. Replace it instead.`,
+      )
+    }
     ops.push(...op.remove(parent.id, id))
     const children = list(parent)
     if (children.includes(id)) children.splice(children.indexOf(id), 1)
@@ -536,8 +547,17 @@ export function previewEdits(raw: unknown, read: PageRead | undefined, page: str
               : `after ${shown(e.block)}`
         return `Insert ${where}:\n${body(e.markdown)}`
       }
-      case 'replace':
-        return `Replace ${shown(e.block)} with:\n${body(e.markdown)}`
+      case 'replace': {
+        const ref = typeof e.block === 'string' ? e.block.trim().replace(/^\^/, '').toLowerCase() : ''
+        const id = read?.ids.get(ref)
+        const lossy = id && read!.lossy?.has(id)
+        return (
+          `Replace ${shown(e.block)} with:\n${body(e.markdown)}` +
+          (lossy
+            ? '\n    (If its text changes, its mentions, dates, colors, and similar formatting become plain text.)'
+            : '')
+        )
+      }
       case 'delete':
         return `Delete ${shown(e.block)}${nested(e.block)}`
       default:

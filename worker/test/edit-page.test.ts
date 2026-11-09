@@ -1050,3 +1050,38 @@ describe('round 15', () => {
     expect(ws.transactions).toEqual([])
   })
 })
+
+describe('round 16', () => {
+  it('warns in the preview that rewriting a block with mentions makes them plain text', async () => {
+    const ws = workspace(
+      [1],
+      [block(1, 'text', undefined, { properties: { title: [['Ask '], ['‣', [['u', USER]]]] } })],
+    )
+    open(ws)
+    await read()
+    expect(
+      editPage.preview!({ page: hex(PAGE), edits: [{ action: 'replace', block: '^00000001', markdown: 'Ask them' }] }),
+    ).toContain('If its text changes, its mentions, dates, colors, and similar formatting become plain text.')
+  })
+
+  it('refuses to empty a column', async () => {
+    const ws = workspace(
+      [1],
+      [
+        block(1, 'column_list', undefined, { content: [id(2), id(3)] }),
+        block(2, 'column', undefined, { content: [id(4)] }, id(1)),
+        block(3, 'column', undefined, { content: [id(5)] }, id(1)),
+        block(4, 'text', 'Left', {}, id(2)),
+        block(5, 'text', 'Right', {}, id(3)),
+      ],
+    )
+    open(ws)
+    await read()
+    await expect(edit([{ action: 'delete', block: '^00000004' }])).rejects.toThrow(
+      "^00000004 is the last block in its column; edit_page can't remove columns.",
+    )
+    // Replacing it keeps the column filled.
+    await edit([{ action: 'replace', block: '^00000004', markdown: '- Left, as a list' }])
+    expect(withoutRefs(body(await read()))).toBe(['- Left, as a list', 'Right'].join('\n'))
+  })
+})
