@@ -7,10 +7,12 @@ import { Sessions } from './Sessions'
 import { ToolCall, type ShownTool } from './ToolCall'
 
 const API_URL = import.meta.env.VITE_API_URL as string
-// Promise only what the tools can do; widen this when page editing tools land.
+// Promise only what the tools can do.
 const SYSTEM_PROMPT =
   "You are Notion Copilot, an AI assistant that works next to the user's Notion pages. " +
-  'Your tools can tell you which Notion page is open and read Notion pages as Markdown; you cannot change pages yet. ' +
+  'Your tools can tell you which Notion page is open, read Notion pages as Markdown, and edit their content. ' +
+  'Before editing a page, read it, then make the change with edit_page using the block references it shows; ' +
+  'the user is asked to approve each edit. Change only what the user asked for. ' +
   'When the user asks about "this page" or its content, read the open page first and answer from what it says. ' +
   'Read child pages or other pages only when the question needs them. Be concise.'
 
@@ -133,15 +135,29 @@ export function Chat({ userId }: { userId: string }) {
         pending.current.set(call.id, answer)
         // Normally the call is already shown as running. If not, show it now: the agent must never
         // wait on a prompt nobody can see. Show the arguments the tool will run with.
+        // What the call would change, in words, when the tool can say.
+        const preview = TOOLS.find((t) => t.name === call.name)?.preview?.(call.args as Record<string, unknown>)
         updateReply((m) => {
           const j = newestOpenCall(m.parts, call.id)
           const parts = [...m.parts]
-          const tool: ShownTool = { id: call.id, name: call.name, args: call.args, status: 'confirm', result: '' }
+          const tool: ShownTool = {
+            id: call.id,
+            name: call.name,
+            args: call.args,
+            status: 'confirm',
+            result: '',
+            preview,
+          }
           if (j < 0) parts.push({ type: 'tool', tool })
           else
             parts[j] = {
               type: 'tool',
-              tool: { ...(parts[j] as Extract<Part, { type: 'tool' }>).tool, args: call.args, status: 'confirm' },
+              tool: {
+                ...(parts[j] as Extract<Part, { type: 'tool' }>).tool,
+                args: call.args,
+                status: 'confirm',
+                preview,
+              },
             }
           return { ...m, parts }
         })

@@ -14,6 +14,10 @@ export interface PageMarkdown {
   sections: string[]
   /** What kind of page this is when it has no content of its own (a database). */
   kind: 'page' | 'database'
+  /** The reference shown for each block, by block id. */
+  refs: Map<string, string>
+  /** The first line each block shows as, without its reference, by block id. */
+  lines: Map<string, string>
 }
 
 /** Ids as the Markdown shows them: 32 hex digits, no dashes. */
@@ -63,11 +67,14 @@ export function pageToMarkdown({ page, recordMap }: LoadedPage): PageMarkdown {
     properties: ctx.properties(page),
     sections,
     kind: isDatabase ? 'database' : 'page',
+    refs: ctx.refs,
+    lines: ctx.lines,
   }
 }
 
 class Context {
   refs = new Map<string, string>()
+  lines = new Map<string, string>()
 
   constructor(
     private readonly recordMap: RecordMap,
@@ -99,7 +106,12 @@ class Context {
         continue
       }
       const lines = block ? this.block(block, depth, number) : [`${indent(depth)}[block not loaded]${this.ref(id)}`]
-      if (lines.length) out.push(lines)
+      if (lines.length) {
+        out.push(lines)
+        const ref = this.ref(id)
+        const own = lines.find((l) => l.endsWith(ref)) ?? lines[0]
+        this.lines.set(id, own.slice(0, own.length - (own.endsWith(ref) ? ref.length : 0)).trim())
+      }
     }
     return out
   }

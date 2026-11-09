@@ -97,14 +97,27 @@ describe('requests', () => {
     expect((await notionError(client.loadPage(PAGE))).code).toBe('no_notion_tab')
   })
 
-  it('report other failures to run in the tab as Notion errors, with the reason', async () => {
+  it('ask for site access when Chrome refuses to run in the tab, and say nothing was sent', async () => {
     const tab = pageTab()
     const { client } = await activeNotionTab()
     tab.injectionError = 'Cannot access contents of the page. Extension manifest must request permission.'
     const err = await notionError(client.loadPage(PAGE))
+    expect(err.code).toBe('notion_error')
+    expect(err.message).toMatch(/^Notion Copilot is not allowed to access this Notion site\./)
+    expect(err.unanswered).toBe(false)
+    // A change that was never sent is not an unknown outcome.
+    const write = await notionError(client.submitTransaction(SPACE, [], 'test'))
+    expect(write.code).toBe('notion_error')
+  })
+
+  it('report other failures to run in the tab as Notion errors, with the reason', async () => {
+    const tab = pageTab()
+    const { client } = await activeNotionTab()
+    tab.injectionError = 'Frame with ID 0 was removed.'
+    const err = await notionError(client.loadPage(PAGE))
     expect([err.code, err.message]).toEqual([
       'notion_error',
-      'Could not run in the Notion tab: Cannot access contents of the page. Extension manifest must request permission.',
+      'Could not run in the Notion tab: Frame with ID 0 was removed.',
     ])
   })
 

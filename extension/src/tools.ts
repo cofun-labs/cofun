@@ -4,6 +4,7 @@
 import type { ToolSpec } from './agent'
 import { NotionError, mergeRecordMaps, type LoadedPage } from './notion/api'
 import { isNotion, pageIdFromUrl, toUuid } from './notion/hosts'
+import { EditError, parseEdits, pageRead, planEdit, previewEdits, type PageRead } from './notion/edit'
 import { PAGE_TYPES, hexId, pageToMarkdown, splitIntoParts } from './notion/markdown'
 import { activeNotionTab, type NotionTab } from './notion/tab'
 
@@ -67,6 +68,8 @@ export const readPage: ToolSpec = {
       throw new Error('That id is a block inside a page, not a page. Read the page it is on instead.')
     }
     const md = pageToMarkdown(loaded)
+    // What edit_page checks an edit against: the references and versions the agent was shown.
+    remember(pageRead(loaded, md))
     const parts = splitIntoParts(md.sections, PART_CHARS)
     if (part > parts.length) {
       throw new Error(`This page has ${parts.length} part${parts.length === 1 ? '' : 's'}; there is no part ${part}.`)
@@ -158,4 +161,96 @@ async function loadWithDatabase(tab: NotionTab, id: string): Promise<Loaded> {
   }
 }
 
-export const TOOLS: ToolSpec[] = [getCurrentPage, readPage]
+/** The last read of each page, by page id: what edit_page checks edits against. */
+const pageReads = new Map<string, PageRead>()
+
+const EDIT_ITEM = {
+  type: 'object',
+  properties: {
+    action: { type: 'string', enum: ['insert', 'replace', 'delete'] },
+    block: {
+      type: 'string',
+      description:
+        'Reference of the block, as read_page shows it (e.g. ^1a2b3c4d). For insert: the block to insert after.',
+    },
+    position: {
+      type: 'string',
+      enum: ['after', 'start', 'end'],
+      description: 'For insert: after `block` (the default when `block` is given), or at the start or end of the page.',
+    },
+    markdown: { type: 'string', description: 'For insert and replace: the new content, as Markdown.' },
+  },
+  required: ['action'],
+  additionalProperties: false,
+}
+
+export const editPage: ToolSpec = {
+  name: 'edit_page',
+  description:
+    'Changes a Notion page you have read with read_page: insert Markdown after a block or at the start or end of the ' +
+    'page, replace a block with Markdown, or delete a block. Blocks are named by the references read_page shows. ' +
+    'All edits in one call are applied together, or none are. Supported Markdown: paragraphs, # headings, - lists, ' +
+    '1. lists, - [ ] to-dos, ▸ toggles, > quotes, > [!💡] callouts, ``` code, ---, $$equations$$, **bold**, *italic*, ' +
+    '~~strike~~, `code`, [links](url), and [page](<page id>) links. Indent by two spaces to nest. ' +
+    "Child pages, databases, files, and tables can't be written. If the page changed since you read it, the edit is " +
+    'refused: read it again and redo the edit.',
+  parameters: {
+    type: 'object',
+    properties: {
+      page: { type: 'string', description: 'URL or id of the page. Leave out for the open page.' },
+      edits: { type: 'array', items: EDIT_ITEM, minItems: 1 },
+    },
+    required: ['edits'],
+    additionalProperties: false,
+  },
+  needsConfirmation: true,
+  preview: (args) => {
+    // Without a page, the call is about the page read last, which is almost always the open one.
+    const given = givenPage(args)
+    const read = given ? pageReads.get(pageArg(given) ?? '') : [...pageReads.values()].at(-1)
+    return previewEdits(args.edits, read)
+  },
+  run: async (args) => {
+    const tab = await activeNotionTab()
+    const given = givenPage(args)
+    const id = given ? pageArg(given) : tab.pageId
+    if (given && !id) throw new Error(`Not a Notion page URL or id: ${given}`)
+    if (!id) throw new Error('The Notion tab does not show a page. Open a page, or give its URL or id.')
+    const read = pageReads.get(id)
+    if (!read) throw new EditError('Read the page with read_page first, then edit it using the references it shows.')
+    const edits = parseEdits(args.edits, read)
+
+    const loaded = await tab.client.loadPage(id)
+    if (!PAGE_TYPES.has(loaded.page.type)) throw new EditError('That id is a block inside a page, not a page.')
+    const plan = planEdit(loaded, read, edits)
+    await tab.client.submitTransaction(loaded.spaceId, plan.operations, 'Notion Copilot: edit_page')
+
+    // The page changed: forget cached parts, and take a fresh read so further edits check against it.
+    for (const key of recentReads.keys()) if (key.endsWith(`:${id}`)) recentReads.delete(key)
+    pageReads.delete(id)
+    let newRefs = ''
+    try {
+      const after = await tab.client.loadPage(id)
+      const md = pageToMarkdown(after)
+      remember(pageRead(after, md))
+      const refs = plan.created.map((c) => md.refs.get(c)).filter(Boolean)
+      if (refs.length) newRefs = `New blocks: ${refs.map((r) => `^${r}`).join(', ')}.`
+    } catch {
+      // The edit is saved; without a fresh read, the next edit asks for one.
+    }
+    return [...plan.summary, newRefs, 'Read the page again to see the result.'].filter(Boolean).join('\n')
+  },
+}
+
+/** The page argument, if given; null and blank mean not given. */
+function givenPage(args: Record<string, unknown>): string | undefined {
+  return typeof args.page === 'string' && args.page.trim() ? args.page : undefined
+}
+
+/** Keeps a read, as the most recent one. */
+function remember(read: PageRead) {
+  pageReads.delete(read.pageId)
+  pageReads.set(read.pageId, read)
+}
+
+export const TOOLS: ToolSpec[] = [getCurrentPage, readPage, editPage]

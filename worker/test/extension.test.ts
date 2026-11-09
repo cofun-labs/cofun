@@ -9,11 +9,11 @@ import {
   type ToolCallRequest,
   type ToolSpec,
 } from '../../extension/src/agent'
-import { getCurrentPage, readPage } from '../../extension/src/tools'
+import { editPage, getCurrentPage, readPage } from '../../extension/src/tools'
 import { createApp, type Env } from '../src/app'
 import { FakeClerk } from './clerk'
 import { FakeAiBinding, FakeQuotaNamespace, FakeUsageDataset } from './fakes'
-import { FakeNotionTab, PAGE_URL, fixture } from './notion-tab'
+import { FakeNotionTab, FakeWorkspace, PAGE, PAGE_URL, SPACE, fixture } from './notion-tab'
 
 const EXT = 'chrome-extension://abcdefghijklmnopabcdefghijklmnop'
 const MODEL = '@cf/test/model'
@@ -191,6 +191,69 @@ describe('extension agent against the worker', () => {
         '# Next steps ^00000013',
       ].join('\n'),
     })
+  })
+
+  /** The fixture page in a workspace that applies edits, with one paragraph. */
+  function editablePage() {
+    const intro = 'e1e1e1e1-0000-4000-8000-000000000001'
+    const ws = new FakeWorkspace(
+      [
+        {
+          id: PAGE,
+          type: 'page',
+          properties: { title: [['Fixture page']] },
+          content: [intro],
+          parent_id: SPACE,
+          parent_table: 'space',
+        },
+        { id: intro, type: 'text', properties: { title: [['Intro']] }, parent_id: PAGE, parent_table: 'block' },
+      ],
+      SPACE,
+    )
+    const tab = new FakeNotionTab(PAGE_URL)
+    tab.workspace = ws
+    tab.install()
+    const editCall = {
+      name: 'edit_page',
+      arguments: JSON.stringify({ edits: [{ action: 'insert', position: 'start', markdown: 'Summary: hi' }] }),
+    }
+    ai.script = [
+      { toolCalls: [{ name: 'read_page', arguments: '{}' }] },
+      { toolCalls: [editCall] },
+      { reply: 'Added the summary.' },
+    ]
+    return ws
+  }
+
+  it('[UC-NOTION-002-S01] the agent reads the page, asks, and edits it once the user agrees', async () => {
+    const ws = editablePage()
+    const asked: ToolCallRequest[] = []
+    const { result, updates } = await ask(
+      makeAgent({ tools: [readPage, editPage] }),
+      'Put a summary at the top',
+      async (call) => {
+        asked.push(call)
+        return true
+      },
+    )
+    expect(result).toEqual({ status: 'done' })
+    expect(asked.map((c) => c.name)).toEqual(['edit_page'])
+    expect(toolStatuses(updates)).toEqual(['done', 'done'])
+    const [first] = ws.content(PAGE)
+    expect(first.properties).toEqual({ title: [['Summary: hi']] })
+  })
+
+  it('[UC-NOTION-002-S03] a declined edit leaves the page unchanged', async () => {
+    const ws = editablePage()
+    const { result, updates } = await ask(
+      makeAgent({ tools: [readPage, editPage] }),
+      'Put a summary at the top',
+      async () => false,
+    )
+    expect(result).toEqual({ status: 'done' })
+    expect(toolStatuses(updates)).toEqual(['done', 'declined'])
+    expect(ws.transactions).toEqual([])
+    expect(ws.content(PAGE).map((b) => b.properties)).toEqual([{ title: [['Intro']] }])
   })
 
   it('[UC-AGENT-001-S05] a model that keeps calling tools is stopped at the step limit', async () => {

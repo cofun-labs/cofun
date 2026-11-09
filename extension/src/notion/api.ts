@@ -133,7 +133,11 @@ export class NotionClient {
   /** Loads specific records of any table. Every requested record must come back. */
   async getRecords(pointers: Pointer[]): Promise<RecordMap> {
     if (pointers.length === 0) return {}
-    const requested = pointers.map((p) => ({ ...p, id: notionId(p.id), spaceId: p.spaceId && notionId(p.spaceId) }))
+    const requested = pointers.map((p) => ({
+      ...p,
+      id: notionId(p.id),
+      spaceId: p.spaceId ? notionId(p.spaceId) : undefined,
+    }))
     const spaces = new Set(requested.flatMap((p) => (p.spaceId ? [p.spaceId] : [])))
     const { json, signedIn } = await this.request<{ recordMap?: unknown }>(
       'syncRecordValuesMain',
