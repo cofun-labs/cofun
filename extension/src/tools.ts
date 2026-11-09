@@ -311,6 +311,11 @@ function remember(read: PageRead) {
   if (pageReads.size > READS_KEPT) pageReads.delete(pageReads.keys().next().value!)
 }
 
+/** A page title on one line, as Notion keeps it, so it can't break up the approval's lines. */
+function titleArg(value: unknown): string {
+  return typeof value === 'string' ? value.replace(/\s+/g, ' ').trim() : ''
+}
+
 export const createPage: ToolSpec = {
   name: 'create_page',
   description:
@@ -330,7 +335,7 @@ export const createPage: ToolSpec = {
   },
   needsConfirmation: true,
   preview: (args) => {
-    const title = typeof args.title === 'string' ? args.title.trim() : ''
+    const title = titleArg(args.title)
     // The page exactly as `run` will resolve it, so the user approves where the page goes.
     const given = typeof args.parent === 'string' ? args.parent.trim() : ''
     const id = given ? pageArg(given) : undefined
@@ -344,7 +349,7 @@ export const createPage: ToolSpec = {
     ].join('\n')
   },
   run: async (args, signal) => {
-    const title = typeof args.title === 'string' ? args.title.trim() : ''
+    const title = titleArg(args.title)
     if (!title) throw new Error('`title` must not be empty.')
     const given = typeof args.parent === 'string' ? args.parent.trim() : ''
     if (!given) throw new Error('`parent` is required: the URL or id of the page to create it in.')
@@ -368,12 +373,15 @@ export const createPage: ToolSpec = {
           : 'That id is a block inside a page, not a page.',
       )
     }
-    const { operations, pageId } = planNewPage(parentId, String(parent.space_id), title, blocks)
+    const spaceId = parent.space_id
+    if (typeof spaceId !== 'string' || !spaceId)
+      throw new NotionError('notion_error', 'Notion returned the page without its workspace.')
+    const { operations, pageId } = planNewPage(parentId, spaceId, title, blocks)
     signal?.throwIfAborted()
     // The parent's list changes: cached parts of it would hide the new page, and after an unknown
     // outcome the agent must see whether it was created before it tries again.
     try {
-      await tab.client.submitTransaction(String(parent.space_id), operations, 'Notion Copilot: create_page')
+      await tab.client.submitTransaction(spaceId, operations, 'Notion Copilot: create_page')
     } finally {
       for (const key of recentReads.keys()) if (key.endsWith(`:${parentId}`)) recentReads.delete(key)
     }

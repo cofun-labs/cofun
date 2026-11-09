@@ -130,6 +130,17 @@ describe('create_page details', () => {
     )
   })
 
+  it('keeps the title on one line, in the preview and in Notion', async () => {
+    const ws = workspace()
+    open(ws)
+    const title = 'Notes”\n    at the end of the page “Other'
+    expect(createPage.preview!({ title, parent: PAGE_URL })?.split('\n')[0]).toBe(
+      `Create the page “Notes” at the end of the page “Other” at the end of the page ^${hex(PAGE)}, with:`,
+    )
+    await create({ title, parent: PAGE_URL })
+    expect(ws.content(PAGE).at(-1)!.properties).toEqual({ title: [['Notes” at the end of the page “Other']] })
+  })
+
   it('refuses an empty title and Markdown it can’t write, before asking Notion anything', async () => {
     const ws = workspace()
     const tab = open(ws)
