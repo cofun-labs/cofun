@@ -843,7 +843,6 @@ describe('extension agent against the worker', () => {
       message: expect.stringContaining('The quota resets at 00:00 UTC.'),
     })
     expect(ai.calls).toHaveLength(2)
-    env.DAILY_REQUEST_LIMIT = '100'
   })
 
   it('[UC-CHAT-001-S07] a quota that runs out mid-question ends it and keeps the tool it used', async () => {
