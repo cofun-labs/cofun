@@ -135,7 +135,9 @@ export function propertyValue(def: PropertyDef, input: PropertyInput): unknown[]
 
 /** The option of a select, status, or multi-select property named `value` (any case). */
 function option(def: PropertyDef, value: string): string {
-  const found = (def.options ?? []).find((o) => (o.value ?? '').toLowerCase() === value.trim().toLowerCase())
+  // As query_database shows it, or with its Markdown escapes undone.
+  const wanted = [value.trim(), value.trim().replace(/\\(.)/g, '$1')].map((v) => v.toLowerCase())
+  const found = (def.options ?? []).find((o) => wanted.includes((o.value ?? '').toLowerCase()))
   if (!found?.value) {
     const names = (def.options ?? []).map((o) => o.value).filter(Boolean)
     throw new PropertyError(
@@ -155,6 +157,6 @@ function real(date: string): boolean {
 /** A value from the model as the preview shows it. */
 export function shownInput(input: PropertyInput): string {
   if (input === null || input === '') return '(empty)'
-  if (Array.isArray(input)) return input.length ? input.join(', ') : '(empty)'
+  if (Array.isArray(input)) return input.length ? input.map((v) => oneLine(String(v))).join(', ') : '(empty)'
   return oneLine(String(input))
 }

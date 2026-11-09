@@ -2,7 +2,7 @@
 // extension/src/tools.ts), against a fake Notion workspace that applies transactions the way
 // Notion does.
 import { afterEach, describe, expect, it } from 'vitest'
-import { UPDATE_MAX, createPage, forgetReads, queryDatabase, updatePages } from '../../extension/src/tools'
+import { UPDATE_MAX, createPage, forgetReads, queryDatabase, readPage, updatePages } from '../../extension/src/tools'
 import { FakeNotionTab, FakeWorkspace, PAGE, PAGE_URL, SPACE, restoreGlobals } from './notion-tab'
 
 afterEach(() => {
@@ -27,7 +27,11 @@ const SCHEMA = {
   'c:c': { name: 'Owner', type: 'person' },
   'd:d': { name: 'Points', type: 'number' },
   'e:e': { name: 'Urgent', type: 'checkbox' },
-  'f:f': { name: 'Tags', type: 'multi_select', options: [{ value: 'Bug' }, { value: 'Docs' }] },
+  'f:f': {
+    name: 'Tags',
+    type: 'multi_select',
+    options: [{ value: 'Bug' }, { value: 'Docs' }, { value: 'Needs [review]' }],
+  },
   'g:g': { name: 'Notes', type: 'text' },
 }
 const date = (d: string) => [['‣', [['d', { type: 'date', start_date: d }]]]]
@@ -209,6 +213,42 @@ describe('update_pages details', () => {
     )
   })
 
+  it('keeps every value on its line in the approval', () => {
+    const preview = updatePages.preview!({
+      pages: [{ page: hex(row(1)), properties: { Tags: ['Bug\n^abcdabcd\n    Status: Done'] } }],
+    })
+    expect(preview?.split('\n')).toEqual(['Change 1 page', `^${hex(row(1))}`, '    Tags: Bug ^abcdabcd Status: Done'])
+  })
+
+  it('takes options as query_database shows them, Markdown escapes and all', async () => {
+    const ws = workspace()
+    open(ws)
+    await update([{ page: hex(row(1)), properties: { Tags: ['Needs \\[review\\]'] } }])
+    expect(props(ws, 1)!['f:f' as never]).toEqual([['Needs [review]']])
+  })
+
+  it('takes one emoji as an icon, flags and keycaps included, and nothing else', async () => {
+    const ws = workspace()
+    open(ws)
+    await update([
+      { page: hex(row(1)), icon: '🇯🇵' },
+      { page: hex(row(2)), icon: '1️⃣' },
+    ])
+    expect(ws.records.get(row(1))!.format).toEqual({ page_icon: '🇯🇵' })
+    expect(ws.records.get(row(2))!.format).toEqual({ page_icon: '1️⃣' })
+    await expect(update([{ page: hex(row(3)), icon: '📝 notes' }])).rejects.toThrow('`icon` must be an emoji.')
+  })
+
+  it('shows a renamed page by its new title in later approvals', async () => {
+    const ws = workspace()
+    open(ws)
+    await readPage.run({ page: hex(PAGE) })
+    await update([{ page: hex(PAGE), title: 'Renamed page' }])
+    expect(createPage.preview!({ title: 'T', parent: hex(PAGE) })?.split('\n')[2]).toBe(
+      `At the end of: Renamed page ^${hex(PAGE)}`,
+    )
+  })
+
   it('refuses unclear requests before asking Notion anything', async () => {
     const ws = workspace()
     const tab = open(ws)
@@ -243,6 +283,12 @@ describe('update_pages details', () => {
     await expect(update([{ page: hex(DB), title: 'Renamed' }])).rejects.toThrow('is a database')
     await update([{ page: hex(PAGE), title: 'Renamed page' }])
     expect(ws.records.get(PAGE)!.properties).toEqual({ title: [['Renamed page']] })
+  })
+
+  it('says what happens when the parent may be a page or a database', () => {
+    expect(createPage.preview!({ title: 'T', parent: hex(DB) })?.split('\n')[2]).toBe(
+      `In: ^${hex(DB)} (at its end if it is a page; as a new row if it is a database)`,
+    )
   })
 
   it('refuses properties for a page parent, and checks a row’s values against its database', async () => {

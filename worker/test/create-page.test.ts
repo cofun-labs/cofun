@@ -99,7 +99,7 @@ describe('create_page details', () => {
       [
         'Create a page',
         'Title: Launch notes',
-        `At the end of: ^${hex(PAGE)}`,
+        `In: ^${hex(PAGE)} (at its end if it is a page; as a new row if it is a database)`,
         'Content:',
         '    # Plan',
         '    - Ship',
@@ -139,7 +139,7 @@ describe('create_page details', () => {
     // The title stays on its line; where the page goes is always the line after it.
     expect(createPage.preview!({ title, parent: PAGE_URL })?.split('\n').slice(1, 3)).toEqual([
       'Title: Notes” at the end of the page “Other',
-      `At the end of: ^${hex(PAGE)}`,
+      `In: ^${hex(PAGE)} (at its end if it is a page; as a new row if it is a database)`,
     ])
     await create({ title, parent: PAGE_URL })
     expect(ws.content(PAGE).at(-1)!.properties).toEqual({ title: [['Notes” at the end of the page “Other']] })

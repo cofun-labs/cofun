@@ -795,10 +795,17 @@ export const createPage: ToolSpec = {
     const markdown = typeof args.markdown === 'string' && args.markdown.trim() ? args.markdown : '(empty)'
     const props = propertiesArg(args.properties)
     // Each part on a line of its own, so text in the title can't read as where the page goes.
+    // Whether the parent is a page or a database decides what happens; say it only when known.
+    const row = !!database || props.length > 0
+    const page = !row && !!id && pageReads.has(id)
     return [
-      database || props.length ? 'Add a row to a database' : 'Create a page',
+      row ? 'Add a row to a database' : 'Create a page',
       `Title: ${title}`,
-      database || props.length ? `In: ${parent}` : `At the end of: ${parent}`,
+      row
+        ? `In: ${parent}`
+        : page
+          ? `At the end of: ${parent}`
+          : `In: ${parent} (at its end if it is a page; as a new row if it is a database)`,
       ...(props.length ? ['Properties:', ...props.map(([name, v]) => `    ${oneLine(name)}: ${shownInput(v)}`)] : []),
       'Content:',
       ...markdown.split('\n').map((l) => `    ${l}`),
@@ -981,6 +988,11 @@ export const updatePages: ToolSpec = {
       // Setting values again does no harm, so after a lost answer the agent may simply retry.
       await tab.client.submitTransaction(spaceId, operations, 'Notion Copilot: update_pages')
     } finally {
+      for (const u of updates) {
+        // A read's title shows in later approvals; keep it current.
+        const read = pageReads.get(u.id)
+        if (read && u.title !== undefined) read.title = u.title
+      }
       for (const id of ids) {
         seenRows.delete(id)
         for (const key of recentReads.keys()) if (key.endsWith(`:${id}`)) recentReads.delete(key)
@@ -988,6 +1000,12 @@ export const updatePages: ToolSpec = {
     }
     return [`Changed ${updates.length} page${updates.length === 1 ? '' : 's'}:`, ...summary].join('\n')
   },
+}
+
+/** Whether `text` is exactly one emoji (flags and keycaps included), as Notion takes for an icon. */
+function isEmoji(text: string): boolean {
+  const graphemes = [...new Intl.Segmenter(undefined, { granularity: 'grapheme' }).segment(text)]
+  return graphemes.length === 1 && /\p{Extended_Pictographic}|\p{Regional_Indicator}|\u20E3/u.test(text)
 }
 
 /** update_pages' `pages`, checked before anything is asked of Notion. */
@@ -1004,8 +1022,7 @@ function parseUpdates(value: unknown) {
     const title = u.title === undefined ? undefined : titleArg(u.title)
     if (title === '') throw new EditError(`Page ${i + 1}: \`title\` must not be empty.`)
     const icon = u.icon === undefined ? undefined : typeof u.icon === 'string' ? u.icon.trim() : ''
-    if (icon !== undefined && !/^\p{Extended_Pictographic}/u.test(icon))
-      throw new EditError(`Page ${i + 1}: \`icon\` must be an emoji.`)
+    if (icon !== undefined && !isEmoji(icon)) throw new EditError(`Page ${i + 1}: \`icon\` must be an emoji.`)
     const props = propertiesArg(u.properties)
     if (title === undefined && icon === undefined && !props.length)
       throw new EditError(`Page ${i + 1} changes nothing: give \`title\`, \`icon\`, or \`properties\`.`)
