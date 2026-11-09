@@ -653,3 +653,63 @@ describe('edit_page safety, round 3', () => {
     expect(ws.records.get(id(2))!.properties).toEqual({ title: [['Inside']], checked: [['Yes']] })
   })
 })
+
+describe('edit_page safety, round 4', () => {
+  it('keeps the order when the first block is replaced and something is inserted at the start', async () => {
+    const ws = workspace([1, 2], [block(1, 'text', 'Old first'), block(2, 'text', 'Second')])
+    open(ws)
+    await read()
+    await edit([
+      { action: 'replace', block: '^00000001', markdown: '- New first' },
+      { action: 'insert', position: 'start', markdown: 'Top' },
+    ])
+    expect(withoutRefs(body(await read()))).toBe(['Top', '- New first', 'Second'].join('\n'))
+  })
+
+  it('refuses to replace a block as another kind when nested blocks did not load', async () => {
+    const ws = workspace([1], [block(1, 'text', 'Parent', { content: [id(9)] })])
+    open(ws)
+    await read()
+    await expect(edit([{ action: 'replace', block: '^00000001', markdown: '- Parent' }])).rejects.toThrow(
+      '^00000001 has nested blocks.',
+    )
+    expect(ws.transactions).toEqual([])
+  })
+
+  it('says when a replacement as another kind turns mentions into plain text', async () => {
+    const ws = workspace(
+      [1],
+      [block(1, 'text', undefined, { properties: { title: [['Call '], ['‣', [['u', USER]]]] } })],
+    )
+    open(ws)
+    await read()
+    expect(await edit([{ action: 'replace', block: '^00000001', markdown: '- [ ] Call @Fixture User' }])).toContain(
+      'are now plain text',
+    )
+  })
+
+  it('does not merge a quote’s nested blocks into its text when written back as shown', async () => {
+    const ws = workspace([1], [block(1, 'quote', 'Quote', { content: [id(2)] }), block(2, 'text', 'Inside', {}, id(1))])
+    open(ws)
+    const shown = body(await read())
+    expect(shown).toBe(['> Quote ^00000001', '> Inside ^00000002'].join('\n'))
+    // The whole quote with its nested line can't become one block, and the quote stays as it was.
+    await expect(edit([{ action: 'replace', block: '^00000001', markdown: shown }])).rejects.toThrow(
+      'has nested blocks',
+    )
+    expect(ws.records.get(id(1))!.properties).toEqual({ title: [['Quote']] })
+  })
+
+  it('round-trips paragraphs that look like lists or headings', async () => {
+    const ws = workspace([1, 2], [block(1, 'text', '1. not a list'), block(2, 'text', '# not a heading')])
+    open(ws)
+    const shown = body(await read())
+    expect(shown).toBe(['\\1. not a list ^00000001', '\\# not a heading ^00000002'].join('\n'))
+    await edit([
+      { action: 'replace', block: '^00000001', markdown: shown.split('\n')[0] },
+      { action: 'replace', block: '^00000002', markdown: shown.split('\n')[1] },
+    ])
+    expect(ws.transactions[0].operations.filter((o) => o.command === 'set')).toEqual([])
+    expect(ws.records.get(id(1))).toMatchObject({ type: 'text', properties: { title: [['1. not a list']] } })
+  })
+})

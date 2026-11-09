@@ -287,10 +287,13 @@ export function planEdit(
     if (!parent) throw new EditError(`${ref(id)} is not inside a block that can hold new content.`)
     return parent
   }
-  /** Blocks this plan already took out of their lists, so later edits don't anchor on them. */
-  const removed = new Set<string>()
-  const aliveChildren = (block: Block) =>
-    (block.content ?? []).filter((id) => blocks[id] && blocks[id].alive !== false && !removed.has(id))
+  const aliveChildren = (block: Block) => (block.content ?? []).filter((id) => blocks[id] && blocks[id].alive !== false)
+  /** Each parent's list of children as this plan's operations leave it, so anchors are always current. */
+  const lists = new Map<string, string[]>()
+  const list = (parent: Block) => {
+    if (!lists.has(parent.id)) lists.set(parent.id, aliveChildren(parent))
+    return lists.get(parent.id)!
+  }
 
   /** Creates `newBlocks` in `parent`, after `after` (or at the start or end). Returns the new top-level ids. */
   const insert = (newBlocks: NewBlock[], parent: Block, place: { after?: string; start?: boolean; key: string }) => {
@@ -298,17 +301,21 @@ export function planEdit(
     for (const nb of newBlocks) {
       const id = create(nb, parent.id)
       const prev = tails.get(place.key) ?? place.after
+      const children = list(parent)
       if (prev) {
         ops.push({ pointer: pointer(parent.id), path: ['content'], command: 'listAfter', args: { after: prev, id } })
-      } else if (place.start && aliveChildren(parent).length) {
+        children.splice(children.indexOf(prev) + 1, 0, id)
+      } else if (place.start && children.length) {
         ops.push({
           pointer: pointer(parent.id),
           path: ['content'],
           command: 'listBefore',
-          args: { before: aliveChildren(parent)[0], id },
+          args: { before: children[0], id },
         })
+        children.unshift(id)
       } else {
         ops.push({ pointer: pointer(parent.id), path: ['content'], command: 'listAfter', args: { id } })
+        children.push(id)
       }
       tails.set(place.key, id)
       ids.push(id)
@@ -358,7 +365,8 @@ export function planEdit(
     const parent = parentOf(id)
     ops.push({ pointer: pointer(id), path: [], command: 'update', args: { alive: false, last_edited_time: now } })
     ops.push({ pointer: pointer(parent.id), path: ['content'], command: 'listRemove', args: { id } })
-    removed.add(id)
+    const children = list(parent)
+    if (children.includes(id)) children.splice(children.indexOf(id), 1)
     changed.add(parent.id)
   }
 
@@ -415,7 +423,8 @@ export function planEdit(
       )
       continue
     }
-    if (aliveChildren(target).length) {
+    // Anything nested, loaded or not, would go with the old block.
+    if ((target.content ?? []).some((c) => !blocks[c] || blocks[c].alive !== false)) {
       throw new EditError(
         `${ref(e.target)} has nested blocks. Replace it with one block of the same kind and no nested lines, ` +
           'and change the nested blocks by their own references.',
@@ -425,7 +434,12 @@ export function planEdit(
     remove(e.target)
     created.push(...ids)
     deleted.add(e.target)
-    summary.push(`Replaced ${ref(e.target)} with ${ids.length} new block${ids.length === 1 ? '' : 's'}.`)
+    summary.push(
+      `Replaced ${ref(e.target)} with ${ids.length} new block${ids.length === 1 ? '' : 's'}.` +
+        (hasUnwritableMarks(target.properties?.title)
+          ? ' Mentions of people or dates, colors, and similar formatting in its old text are now plain text.'
+          : ''),
+    )
   }
 
   for (const id of changed) {
@@ -455,7 +469,12 @@ function changedProperties(target: Block, nb: NewBlock, shownLine: string | unde
   }
   if (nb.type !== 'divider') {
     // The same Markdown as read_page showed means the same text: keep the stored text as it is.
-    const before = shownLine ? parseMarkdown(shownLine)[0] : undefined
+    let before: NewBlock | undefined
+    try {
+      before = shownLine ? parseMarkdown(shownLine)[0] : undefined
+    } catch {
+      // Not Markdown that can be written back: treat the text as changed.
+    }
     if (!before || JSON.stringify(before.title) !== JSON.stringify(nb.title)) out.title = nb.title
   }
   if (nb.type === 'to_do') {

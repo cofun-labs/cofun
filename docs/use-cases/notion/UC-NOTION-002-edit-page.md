@@ -4,7 +4,7 @@
 
 A signed-in user asks the AI to change a Notion page: rewrite a paragraph, put a summary at the top, turn notes into a to-do list, check off tasks, remove a section. The AI reads the page first (UC-NOTION-001), then proposes the change in terms of the pieces it saw: new content after one of them or at the start or end of the page, a piece replaced with new content, or a piece deleted. One request can make several such changes.
 
-The user sees what will change, piece by piece with the new text, and approves it. Only then is the page changed, all at once or not at all. Rewriting a piece as the same kind of content keeps what is nested under it.
+The user sees what will change, piece by piece with the new text, and approves it. Only then is the page changed, all at once or not at all. Rewriting a piece as the same kind of content keeps what is nested under it. Deleting a piece deletes what is nested under it too, so a piece with a child page or database under it, or with nested content the AI wasn't shown, is not deleted.
 
 Key constraints:
 

@@ -91,7 +91,15 @@ export function parseMarkdown(markdown: string): NewBlock[] {
     if (line.startsWith('>')) {
       // A quote or callout runs over the following `>` lines at the same indentation.
       const quoted = [line.replace(/^>\s?/, '')]
-      while (i + 1 < lines.length && lines[i + 1].trim().startsWith('>') && leading(lines[i + 1]) === indent) {
+      // …but a line that carries a block reference ends it: the next `>` line is another block.
+      let ended = TRAILING_REF.test(raw)
+      while (
+        !ended &&
+        i + 1 < lines.length &&
+        lines[i + 1].trim().startsWith('>') &&
+        leading(lines[i + 1]) === indent
+      ) {
+        ended = TRAILING_REF.test(lines[i + 1])
         quoted.push(lines[++i].trim().replace(TRAILING_REF, '').replace(/^>\s?/, ''))
       }
       const callout = /^\[!([^\]]+)\]\s?(.*)$/.exec(quoted[0])
@@ -114,6 +122,9 @@ function leading(line: string): number {
 }
 
 function lineBlock(line: string): NewBlock {
+  // A backslash keeps text that looks like a list, heading, or quote as a paragraph.
+  if (line.startsWith('\\'))
+    return { type: 'text', title: inline(line.slice(1).replace(/<br\s*\/?>/gi, '\n')), children: [] }
   const block = (type: string, text: string, extra: Partial<NewBlock> = {}): NewBlock => ({
     type,
     // read_page shows line breaks inside a block as <br>.
