@@ -12,6 +12,11 @@ export interface AgentConfig {
   getToken: () => Promise<string | null>
   systemPrompt: string
   tools: ToolSpec[]
+  /**
+   * Read before each question and sent to the model ahead of it, e.g. which page is open. It is saved
+   * with the question but is not part of what the user typed.
+   */
+  context?: () => Promise<string | undefined>
   /** Model calls allowed per question. */
   maxSteps?: number
   /** How much of a long conversation to send. Defaults stay well under the worker's limits. */
@@ -62,7 +67,8 @@ export type AgentUpdate =
  * a question may take several such steps before the final answer.
  */
 export type HistoryMessage =
-  | { role: 'user'; text: string }
+  /** `context`: what the model was told with the question, besides what the user typed. */
+  | { role: 'user'; text: string; context?: string }
   | { role: 'assistant'; parts: AssistantPart[] }
   /** The result of one tool call. `id` matches the call in the assistant message before it. */
   | { role: 'tool'; id: string; name: string; status: ToolStatus; result: string }
@@ -107,6 +113,8 @@ export class CopilotAgent {
   private initial: HistoryMessage[] = []
   /** How each tool call ended, by its result message; pi itself only knows whether it failed. */
   private readonly statuses = new WeakMap<AgentMessage, ToolStatus>()
+  /** What the model is told with each question, by its user message; see AgentConfig.context. */
+  private readonly contexts = new WeakMap<AgentMessage, string>()
 
   constructor(private readonly config: AgentConfig) {
     this.maxSteps = config.maxSteps ?? DEFAULT_MAX_STEPS
@@ -174,6 +182,8 @@ export class CopilotAgent {
       return { result: { status: 'error', message: (err as Error).message }, kept: false }
     }
     // Stopped, or a new chat started, while the agent was being set up.
+    if (epoch !== this.epoch) return { result: { status: 'stopped' }, kept: false }
+    const context = await this.readContext()
     if (epoch !== this.epoch) return { result: { status: 'stopped' }, kept: false }
 
     const before = agent.state.messages.length
@@ -260,7 +270,9 @@ export class CopilotAgent {
 
     try {
       // String content: the worker accepts only text, and pi would otherwise send content parts.
-      await agent.prompt({ role: 'user', content: text, timestamp: Date.now() })
+      const question: AgentMessage = { role: 'user', content: text, timestamp: Date.now() }
+      if (context) this.contexts.set(question, context)
+      await agent.prompt(question)
     } catch (err) {
       failure ??= parseError((err as Error).message)
     } finally {
@@ -279,6 +291,16 @@ export class CopilotAgent {
       return { result, kept: kept.length > 0, code: stopped ? undefined : failure?.code }
     }
     return { result: hitLimit ? { status: 'step_limit', steps } : { status: 'done' }, kept: true }
+  }
+
+  /** A context that fails to load must not block the question; it goes without one. */
+  private async readContext(): Promise<string | undefined> {
+    try {
+      return await this.config.context?.()
+    } catch (err) {
+      console.error('Could not read the context for the question', err)
+      return undefined
+    }
   }
 
   /** Stops the current model call and any running tool. */
@@ -315,8 +337,10 @@ export class CopilotAgent {
 
   private toHistory(message: AgentMessage): HistoryMessage[] {
     switch (message.role) {
-      case 'user':
-        return [{ role: 'user', text: textOf(message.content) }]
+      case 'user': {
+        const context = this.contexts.get(message)
+        return [{ role: 'user', text: textOf(message.content), ...(context && { context }) }]
+      }
       case 'assistant':
         return [
           {
@@ -347,7 +371,11 @@ export class CopilotAgent {
   private fromHistory(history: HistoryMessage[], model: Model<'openai-completions'>): AgentMessage[] {
     const timestamp = Date.now()
     return history.map((m): AgentMessage => {
-      if (m.role === 'user') return { role: 'user', content: m.text, timestamp }
+      if (m.role === 'user') {
+        const question: AgentMessage = { role: 'user', content: m.text, timestamp }
+        if (m.context) this.contexts.set(question, m.context)
+        return question
+      }
       if (m.role === 'assistant') {
         const content: AssistantMessage['content'] = m.parts.map((p) =>
           p.type === 'text'
@@ -405,9 +433,21 @@ export class CopilotAgent {
       identity: { attribution: null },
       // Notion tools will change pages; run them one at a time, in the order the model asked.
       toolExecution: 'sequential',
-      transformContext: async (messages) => recent(messages, this.config.history ?? DEFAULT_HISTORY, toolChars),
+      transformContext: async (messages) =>
+        recent(
+          messages.map((m) => this.withContext(m)),
+          this.config.history ?? DEFAULT_HISTORY,
+          toolChars,
+        ),
     })
     return this.agent
+  }
+
+  /** The question as the model gets it: its context first, then what the user typed. */
+  private withContext(message: AgentMessage): AgentMessage {
+    const context = this.contexts.get(message)
+    if (!context || message.role !== 'user') return message
+    return { ...message, content: `${context}\n\n${textOf(message.content)}` }
   }
 
   /** The worker fixes the model; ask it which one, so requests name it. */
