@@ -490,6 +490,24 @@ describe('submitting a transaction', () => {
     expect(body.transactions[0].operations).toEqual([rename])
   })
 
+  it('sends workspace ids in Notion’s form and refuses a bad one before sending', async () => {
+    const tab = new FakeNotionTab(PAGE_URL).respond('saveTransactionsFanout', 200, {}).install()
+    const { client } = await activeNotionTab()
+    const op: Operation = { ...rename, pointer: { table: 'block', id: PAGE, spaceId: SPACE.toUpperCase() } }
+    await client.submitTransaction(SPACE.replace(/-/g, ''), [op], 'rename page')
+    const body = tab.sent[0].body as { transactions: { spaceId: string; operations: Operation[] }[] }
+    expect(body.transactions[0].spaceId).toBe(SPACE)
+    expect(body.transactions[0].operations).toEqual([rename])
+    expect(tab.sent[0].headers['x-notion-space-id']).toBe(SPACE)
+
+    const err = await notionError(client.submitTransaction('space\nX-Evil: 1', [rename], 'rename page'))
+    expect(err.code).toBe('notion_error')
+    await expect(client.getRecords([{ table: 'block', id: PAGE, spaceId: 'not a space' }])).rejects.toThrow(
+      'Not a Notion id: not a space',
+    )
+    expect(tab.sent).toHaveLength(1)
+  })
+
   it('refuses an operation on an id that is not a Notion id, without asking Notion', async () => {
     const tab = new FakeNotionTab(PAGE_URL).install()
     const op: Operation = { ...rename, pointer: { table: 'block', id: 'Q4 Roadmap' } }

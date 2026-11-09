@@ -133,7 +133,7 @@ export class NotionClient {
   /** Loads specific records of any table. Every requested record must come back. */
   async getRecords(pointers: Pointer[]): Promise<RecordMap> {
     if (pointers.length === 0) return {}
-    const requested = pointers.map((p) => ({ ...p, id: notionId(p.id) }))
+    const requested = pointers.map((p) => ({ ...p, id: notionId(p.id), spaceId: p.spaceId && notionId(p.spaceId) }))
     const spaces = new Set(requested.flatMap((p) => (p.spaceId ? [p.spaceId] : [])))
     const { json, signedIn } = await this.request<{ recordMap?: unknown }>(
       'syncRecordValuesMain',
@@ -147,7 +147,8 @@ export class NotionClient {
   }
 
   /** Applies operations in one transaction: Notion applies all of them or none. */
-  async submitTransaction(spaceId: string, operations: Operation[], userAction: string): Promise<void> {
+  async submitTransaction(space: string, operations: Operation[], userAction: string): Promise<void> {
+    const spaceId = notionId(space)
     // Text lives in CRDT form too; the server keeps it in sync with `properties`. Writing it
     // directly would corrupt the block.
     if (operations.some((op) => op.path.includes('crdt_data') || hasCrdtData(op.args))) {
@@ -156,7 +157,11 @@ export class NotionClient {
     // Records are keyed by dashed, lowercase ids; Notion's own client also names the space on each pointer.
     const ops = operations.map((op) => ({
       ...op,
-      pointer: { ...op.pointer, id: notionId(op.pointer.id), spaceId: op.pointer.spaceId ?? spaceId },
+      pointer: {
+        ...op.pointer,
+        id: notionId(op.pointer.id),
+        spaceId: op.pointer.spaceId ? notionId(op.pointer.spaceId) : spaceId,
+      },
     }))
     try {
       await this.request(
