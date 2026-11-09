@@ -344,7 +344,8 @@ export function createApp({ now = () => new Date() }: AppOptions = {}) {
     if (stream !== undefined && typeof stream !== 'boolean')
       throw new HttpError(400, 'bad_request', 'stream must be a boolean')
     if (body.model !== undefined && body.model !== c.env.MODEL) {
-      throw new HttpError(400, 'bad_request', `unsupported model; use ${c.env.MODEL} or omit it`)
+      // A distinct code lets a client that cached the old model name notice and look it up again.
+      throw new HttpError(400, 'unsupported_model', `unsupported model; use ${c.env.MODEL} or omit it`)
     }
 
     // Count the request once it is valid, before the model is called. A failed model call

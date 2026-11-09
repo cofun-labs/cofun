@@ -85,7 +85,9 @@ describe('UC-CHAT-001 Ask the AI from the side panel', () => {
   })
 
   it('[UC-CHAT-001-S02] asking for another model is refused', async () => {
-    expect((await chat(token, { messages: hi, model: 'openai/gpt-5' })).status).toBe(400)
+    const res = await chat(token, { messages: hi, model: 'openai/gpt-5' })
+    expect(res.status).toBe(400)
+    expect((await json(res)).error.code).toBe('unsupported_model')
     expect(ai.calls).toHaveLength(0)
   })
 })

@@ -78,7 +78,7 @@ This is an open-source repository. **Never commit account identifiers or secrets
 
 ## Architecture
 
-- `extension/`: Chrome MV3 side panel. Vite + React + TypeScript. Clerk sign-in through Sync Host. `vite.config.ts` generates `manifest.json` from `.env`.
+- `extension/`: Chrome MV3 side panel. Vite + React + TypeScript. Clerk sign-in through Sync Host. `vite.config.ts` generates `manifest.json` from `.env`. The agent loop runs in the side panel on `@earendil-works/pi-agent-core`; only `src/agent.ts` imports pi, and tools live in `src/tools.ts`.
 - `worker/`: Cloudflare Worker with Hono. Serves `/login`, verifies Clerk session JWTs locally, and proxies OpenAI-compatible `/v1/chat/completions` to Workers AI through AI Gateway.
 - Notion page reading and editing (planned) will call Notion's own internal endpoints from the page (`/api/v3/loadPageChunk`, `/api/v3/saveTransactionsFanout`). Do not use `chrome.debugger`: it shows a permanent "debugging this browser" banner.
 
@@ -88,7 +88,7 @@ This is an open-source repository. **Never commit account identifiers or secrets
 - **No mocking.** Do not use `vi.mock()` or spies. Replace external dependencies with fake objects that implement the same interface, and inject them through `env`:
   - `FakeAiBinding` (`worker/test/fakes.ts`) stands in for the Workers AI binding.
   - `FakeClerk` (`worker/test/clerk.ts`) signs real RS256 session tokens with a local key pair, which the worker verifies like real Clerk tokens.
-- `worker/test/extension.test.ts` runs the extension's own `src/llm.ts` against the worker so client and server cannot drift.
+- `worker/test/extension.test.ts` runs the extension's own agent (`src/agent.ts`) against the worker so client and server cannot drift.
 
 ## Commands
 

@@ -1,16 +1,7 @@
+import { isNotion } from './notion'
+
 // Clicking the toolbar icon opens the side panel.
 chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch((err) => console.error(err))
-
-const NOTION_HOSTS = ['www.notion.so', 'app.notion.com']
-
-function isNotion(url?: string): boolean {
-  if (!url) return false
-  try {
-    return NOTION_HOSTS.includes(new URL(url).hostname)
-  } catch {
-    return false
-  }
-}
 
 // A tab can close between an event and our call; that's not an error.
 function ignoreClosedTab(err: unknown) {
