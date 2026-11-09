@@ -51,7 +51,7 @@ export function blockRefs(ids: string[]): Map<string, string> {
 /** Blocks that are pages of their own: shown as links, never expanded into the page. */
 export const PAGE_TYPES = new Set(['page', 'collection_view_page', 'collection_view'])
 /** Blocks that only lay out their children; their children are shown in their place. */
-const LAYOUT_TYPES = new Set(['column_list', 'column'])
+export const LAYOUT_TYPES = new Set(['column_list', 'column'])
 const MEDIA_TYPES = new Set(['image', 'video', 'audio', 'pdf', 'file'])
 /** Paragraph text that Markdown would read as another kind of block, or whose leading spaces it would drop. */
 const LOOKS_LIKE_BLOCK = /^(?:\s|#{1,3}\s|[-*+]\s|\d+[.)]\s|>|▸|`{3}|\$\$|\||\\|📄 |🗃 |↗ |(?:-{3,}|\*{3,}|_{3,})$)/
