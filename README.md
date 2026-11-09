@@ -22,6 +22,7 @@
 - [x] Search the workspace for pages, then read what it finds
 - [x] List the workspace's pages like the sidebar, or the pages under a page
 - [x] Edit Notion pages: insert, replace, and delete content by block, after the user approves each change
+- [x] Work on what the user selected in the page
 
 ## Tech choices
 

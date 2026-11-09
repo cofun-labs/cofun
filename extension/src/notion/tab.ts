@@ -111,3 +111,71 @@ export async function notionRequest(
     return { status: 0, json: null, signedIn: !!userId, error: err instanceof Error ? err.message : String(err) }
   }
 }
+
+/** What the user has selected in the Notion page: the selected text and the blocks it covers. */
+export interface PageSelection {
+  /** The text selected with the mouse; none when blocks are selected as blocks. */
+  text?: string
+  blockIds: string[]
+}
+
+/** Reads the selection in the Notion tab: text selected with the mouse, or blocks selected as blocks. */
+export async function selectionIn(tabId: number): Promise<PageSelection | undefined> {
+  try {
+    const [frame] = await chrome.scripting.executeScript({
+      target: { tabId },
+      world: 'ISOLATED',
+      func: readSelection,
+      args: [],
+    })
+    return frame?.result ?? undefined
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    throw new NotionError('notion_error', `Could not read the selection in the Notion tab: ${message}`, { cause: err })
+  }
+}
+
+/**
+ * Runs in the Notion tab: the selection inside the page's content (not the sidebar). Chrome
+ * serializes this function on its own, so it must not use anything from outside its body.
+ */
+export function readSelection(): PageSelection | null {
+  // The main page and a side peek each have their own content.
+  const roots = [...document.querySelectorAll('.notion-page-content')]
+  const idOf = (el: Element) => el.getAttribute('data-block-id') ?? ''
+  // Blocks selected as blocks (Esc, or dragging across them) carry a highlight inside them.
+  for (const root of roots) {
+    const haloed = [...root.querySelectorAll('.notion-selectable-halo')]
+      .map((h) => h.closest('[data-block-id]'))
+      .filter((b): b is Element => !!b && root.contains(b))
+    if (haloed.length)
+      return {
+        blockIds: [...root.querySelectorAll('[data-block-id]')].filter((b) => haloed.includes(b)).map(idOf),
+      }
+  }
+  const selection = document.getSelection()
+  if (!selection || selection.rangeCount === 0 || selection.isCollapsed) return null
+  const range = selection.getRangeAt(0)
+  const root = roots.find((r) => r.contains(range.commonAncestorContainer))
+  if (!root) return null
+  // Whether the range selects some characters of `node`. A range that only starts at its end or
+  // ends at its start (a triple-click, or a drag to the end of a line) doesn't select it.
+  const covers = (node: Node): boolean => {
+    const part = document.createRange()
+    part.selectNodeContents(node)
+    // 0 is Range.START_TO_START and 2 is Range.END_TO_END.
+    if (range.compareBoundaryPoints(0, part) > 0) part.setStart(range.startContainer, range.startOffset)
+    if (range.compareBoundaryPoints(2, part) < 0) part.setEnd(range.endContainer, range.endOffset)
+    return !part.collapsed && part.toString().length > 0
+  }
+  const blocks = [...root.querySelectorAll('[data-block-id]')]
+  const touched = blocks.filter(covers)
+  // Whether the range covers some of the block's own content, not only the blocks nested in it.
+  const ownTouched = (el: Element): boolean =>
+    [...el.children].some(
+      (c) => !c.getAttribute('data-block-id') && covers(c) && (!c.querySelector('[data-block-id]') || ownTouched(c)),
+    )
+  const chosen = touched.filter((b) => !touched.some((other) => other !== b && b.contains(other)) || ownTouched(b))
+  if (!chosen.length) return null
+  return { text: selection.toString(), blockIds: chosen.map(idOf) }
+}

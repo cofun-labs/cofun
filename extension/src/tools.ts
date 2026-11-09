@@ -15,7 +15,7 @@ import {
   type PageRead,
 } from './notion/edit'
 import { PAGE_TYPES, hexId, pageToMarkdown, splitSections } from './notion/markdown'
-import { activeNotionTab, type NotionTab } from './notion/tab'
+import { activeNotionTab, selectionIn, type NotionTab } from './notion/tab'
 import { pageChildren, pageTree, runsText, treeLines } from './notion/tree'
 
 /**
@@ -430,6 +430,74 @@ function remember(read: PageRead) {
   if (pageReads.size > READS_KEPT) pageReads.delete(pageReads.keys().next().value!)
 }
 
+export const getSelection: ToolSpec = {
+  name: 'get_selection',
+  description:
+    'Returns what the user has selected in the open Notion page: the selected text, and each selected block as ' +
+    'Markdown with its reference, ready for edit_page (no read_page needed for those blocks). Use it when the user ' +
+    'says "this", "the selection", or "the highlighted text". Nothing selected is a normal answer.',
+  parameters: { type: 'object', properties: {}, additionalProperties: false },
+  run: async () => {
+    const tab = await activeNotionTab()
+    if (!tab.pageId) throw new Error('The Notion tab does not show a page.')
+    const selection = await selectionIn(tab.tabId)
+    if (!selection?.blockIds.length) return 'Nothing is selected in the Notion page.'
+    const loaded = await tab.client.loadPage(tab.pageId)
+    const md = pageToMarkdown(loaded)
+    // Blocks drawn without a line of their own (table rows, columns) stand for the nearest block
+    // that has one, so only blocks whose content is shown count as read.
+    const shown = (raw: string): string | undefined => {
+      for (let b = toUuid(raw); b && md.refs.has(b); b = loaded.recordMap.block?.[b]?.parent_id)
+        if (md.lines.has(b)) return b
+      return undefined
+    }
+    const ids = [...new Set(selection.blockIds.map(shown).filter((b): b is string => !!b))]
+    const missed = selection.blockIds.some((b) => !shown(b))
+    const beyond = loaded.complete
+      ? "aren't on the open page"
+      : "aren't on the open page, or are past the part of it that could be loaded"
+    if (!ids.length) return `The selected blocks ${beyond}. Read the page instead, or ask the user to select again.`
+    // A block of several lines (a table, code) gets its reference on a line of its own.
+    const lineOf = (b: string) => {
+      const own = md.lines.get(b)!
+      return `${own}${own.includes('\n') ? '\n' : ' '}^${md.refs.get(b)}`
+    }
+    // At most a part's worth, like read_page; at least one block.
+    const lines: string[] = []
+    let size = 0
+    for (const b of ids) {
+      const line = lineOf(b)
+      if (lines.length && size + line.length > PART_CHARS) break
+      lines.push(line)
+      size += line.length + 1
+    }
+    const more = ids.length - lines.length
+    // The blocks shown count as read, so edit_page can change them by these references.
+    const chosen = new Set(ids.slice(0, lines.length))
+    remember(
+      mergeReads(
+        pageReads.get(loaded.page.id),
+        pageRead(loaded, md, (b) => chosen.has(b)),
+      ),
+    )
+    const pageHex = hexId(loaded.page.id)
+    return [
+      `Selection on the page “${md.title}” ^${pageHex}:`,
+      '',
+      ...(selection.text === undefined
+        ? []
+        : [
+            `Selected text: “${selection.text.length > 2000 ? `${selection.text.slice(0, 1999)}…` : selection.text}”`,
+            '',
+          ]),
+      `Selected block${ids.length === 1 ? '' : 's'}:`,
+      ...lines,
+      ...(more ? ['', `${more} more selected block${more === 1 ? '' : 's'}: read the page for them.`] : []),
+      ...(missed ? ['', `Only part of the selection is shown: the other selected blocks ${beyond}.`] : []),
+    ].join('\n')
+  },
+}
+
 export const SEARCH_DEFAULT = 10
 export const SEARCH_MAX = 20
 
@@ -583,4 +651,4 @@ function clip(text: string, max: number): string {
   return text.length > max ? `${text.slice(0, max - 1)}…` : text
 }
 
-export const TOOLS: ToolSpec[] = [getCurrentPage, readPage, editPage, searchPages, listPages]
+export const TOOLS: ToolSpec[] = [getCurrentPage, readPage, editPage, searchPages, getSelection, listPages]
