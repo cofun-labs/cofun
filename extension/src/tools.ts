@@ -79,7 +79,7 @@ export const readPage: ToolSpec = {
       ...(parts.length > 1
         ? [`Part ${part} of ${parts.length}${part < parts.length ? `. Read part ${part + 1} for more.` : '.'}`]
         : []),
-      ...(md.kind === 'database' ? ['This page is a database. Reading its rows is not supported yet.'] : []),
+      ...(md.kind === 'database' ? ['This page is a database: read its rows with query_database.'] : []),
       ...(loaded.complete ? [] : ['The page is too long to load in full; only its beginning is shown.']),
       ...(reloaded
         ? ['This part comes from a new read of the page; parts you have from an earlier read may not match it.']
@@ -170,7 +170,8 @@ export const queryDatabase: ToolSpec = {
     "Reads the rows of a Notion database as a table: its properties (name and type) and each row's values, " +
     "with the row's id (read a row with read_page). Give the database by id or URL, or leave it out when the " +
     'open page is a database. `filter` keeps rows whose shown values match every condition (text, ' +
-    'case-insensitive; dates as YYYY-MM-DD; checkboxes as Yes/No); `sort` orders them. Long results come in ' +
+    'case-insensitive; people and linked pages by name; dates as YYYY-MM-DD; checkboxes as Yes/No); `sort` ' +
+    "orders them. Formulas and rollups can't be used. Long results come in " +
     'parts; ask for the next with `part`.',
   parameters: {
     type: 'object',
@@ -219,7 +220,10 @@ export const queryDatabase: ToolSpec = {
     const collectionId =
       (block.collection_id as string | undefined) ??
       (block.format as { collection_pointer?: { id?: string } } | undefined)?.collection_pointer?.id
-    const viewId = Array.isArray(block.view_ids) ? (block.view_ids[0] as string | undefined) : undefined
+    // The view the user is looking at (`?v=` in the URL) when it is one of this database's.
+    const views = Array.isArray(block.view_ids) ? (block.view_ids as string[]) : []
+    const viewInUrl = urlView(given ?? tab.url)
+    const viewId = views.find((v) => toUuid(v) === viewInUrl) ?? views[0]
     if (!collectionId || !viewId) throw new Error("This database's rows can't be read: it has no data source or view.")
     const spaceId = String(block.space_id)
     const collection = (await tab.client.getRecords([{ table: 'collection', id: collectionId, spaceId }])).collection![
@@ -237,7 +241,7 @@ export const queryDatabase: ToolSpec = {
       .map((r) => ({ id: r.id, values: rowValues(recordMap, r as never, schema) }))
     rows = rows.filter((r) => filters.every((f) => matches(r.values, f)))
     if (sort)
-      rows.sort((a, b) => compareValues(cell(a.values, sort.property), cell(b.values, sort.property)) * sort.sign)
+      rows.sort((a, b) => compareValues(cell(a.values, sort.property), cell(b.values, sort.property), sort.sign))
 
     const parts = Math.max(1, Math.ceil(rows.length / QUERY_PART))
     if (part > parts)
@@ -283,6 +287,7 @@ function parseFilters(raw: unknown, schema: Schema): Filter[] {
         `${where}: no property named "${String(property)}". The properties are: ${rowValuesHeader(schema)}.`,
       )
     }
+    refuseComputed(schema, property, where)
     if (!FILTER_OPS.includes(op as FilterOp))
       throw new Error(`${where}: \`op\` must be one of ${FILTER_OPS.join(', ')}.`)
     const needsValue = op !== 'is_empty' && op !== 'is_not_empty'
@@ -303,13 +308,35 @@ function parseSort(raw: unknown, schema: Schema): { property: string; sign: 1 | 
       `\`sort\`: no property named "${String(property)}". The properties are: ${rowValuesHeader(schema)}.`,
     )
   }
+  refuseComputed(schema, property, '`sort`')
   return { property: propertyNamed(schema, property)!, sign: direction === 'descending' ? -1 : 1 }
 }
 
-/** The schema's name for a property, matched case-insensitively. */
+/** The schema's name for a property (its key when it has none), matched case-insensitively. */
 function propertyNamed(schema: Schema, name: string): string | undefined {
   const want = name.trim().toLowerCase()
-  return Object.entries(schema).find(([key, s]) => (s.name ?? key).toLowerCase() === want)?.[1].name ?? undefined
+  const found = Object.entries(schema).find(([key, s]) => (s.name ?? key).toLowerCase() === want)
+  return found ? (found[1].name ?? found[0]) : undefined
+}
+
+/** Formulas and rollups are computed by Notion when it shows a database; this tool can't read them. */
+function refuseComputed(schema: Schema, name: string, where: string) {
+  const want = name.trim().toLowerCase()
+  const type = Object.entries(schema).find(([key, s]) => (s.name ?? key).toLowerCase() === want)?.[1].type
+  if (type === 'formula' || type === 'rollup') {
+    throw new Error(
+      `${where}: "${name}" is a ${type}, which Notion computes and this tool can't read, so it can't be used.`,
+    )
+  }
+}
+
+/** The view a Notion database URL names with `?v=`. */
+function urlView(url: string): string | undefined {
+  try {
+    return toUuid(new URL(url).searchParams.get('v') ?? '')
+  } catch {
+    return undefined
+  }
 }
 
 function rowValuesHeader(schema: Schema): string {
@@ -320,10 +347,17 @@ function rowValuesHeader(schema: Schema): string {
     .join(', ')
 }
 
-/** A row's value for a property, as compared: plain text, a date without its leading @. */
+/**
+ * A row's value for a property, as compared: plain text, with mentions as names (`@Ann` → `Ann`,
+ * `[Spec](…)` → `Spec`, `@2026-11-12` → `2026-11-12`) and no Markdown marks.
+ */
 function cell(values: { name: string; value: string }[], property: string): string {
   const raw = values.find((v) => v.name === property)?.value ?? ''
-  return raw.replace(/^@(?=\d{4}-\d{2}-\d{2})/, '').trim()
+  return raw
+    .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
+    .replace(/(^|[\s,(])@/g, '$1')
+    .replace(/\*\*|~~|`/g, '')
+    .trim()
 }
 
 function matches(values: { name: string; value: string }[], f: Filter): boolean {
@@ -349,13 +383,13 @@ function matches(values: { name: string; value: string }[], f: Filter): boolean 
   }
 }
 
-function compareValues(a: string, b: string): number {
+/** Compares two values in the asked direction (`sign`); empty values go last either way. */
+function compareValues(a: string, b: string, sign: 1 | -1): number {
+  if (!a || !b) return a ? -1 : b ? 1 : 0
   const na = Number(a)
   const nb = Number(b)
-  if (a !== '' && b !== '' && Number.isFinite(na) && Number.isFinite(nb)) return na - nb
-  // Empty values go last.
-  if (!a || !b) return a ? -1 : b ? 1 : 0
-  return a.localeCompare(b)
+  const order = Number.isFinite(na) && Number.isFinite(nb) ? na - nb : a.localeCompare(b)
+  return order * sign
 }
 
 /** A date as YYYY-MM-DD in the browser's time zone. */

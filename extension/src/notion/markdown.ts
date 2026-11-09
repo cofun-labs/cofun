@@ -269,7 +269,8 @@ class Context {
       case 'rollup':
         return `[${type}, not shown]`
       case 'checkbox':
-        return page.properties?.[key] === undefined ? '' : this.plain(page.properties[key]) === 'Yes' ? 'Yes' : 'No'
+        // A checkbox never ticked has no value stored; Notion shows it unticked.
+        return this.plain(page.properties?.[key]) === 'Yes' ? 'Yes' : 'No'
       default:
         return this.rich(page.properties?.[key])
     }

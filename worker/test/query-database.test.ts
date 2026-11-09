@@ -123,6 +123,24 @@ describe('UC-NOTION-006 read a database', () => {
     expect(tableRows(empty).map((l) => l.split(' | ')[0])).toEqual(['| Plan retro'])
   })
 
+  it('[UC-NOTION-006-S02] orders the rows, empty values last in either direction', async () => {
+    const titles = (result: string) => tableRows(result).map((l) => l.split(' | ')[0].slice(2))
+    database()
+    expect(titles(await query({ sort: { property: 'Due', direction: 'descending' } }))).toEqual([
+      'Ship beta',
+      'Fix login \\| Safari',
+      'Write docs',
+      'Plan retro',
+    ])
+    database()
+    expect(titles(await query({ sort: { property: 'Points' } }))).toEqual([
+      'Plan retro',
+      'Write docs',
+      'Fix login \\| Safari',
+      'Ship beta',
+    ])
+  })
+
   it('[UC-NOTION-006-S03] reads many rows part by part, and says when there are more than it read', async () => {
     const many = Array.from({ length: QUERY_PART + 10 }, (_, i) =>
       rowRecord({ ...TASKS[0], n: 100 + i, task: `Task ${i}` }),
@@ -134,6 +152,58 @@ describe('UC-NOTION-006 read a database', () => {
     expect(tableRows(first)).toHaveLength(QUERY_PART)
     database(many, true)
     expect(tableRows(await query({ part: 2 }))).toHaveLength(10)
+  })
+})
+
+describe('query_database values', () => {
+  it('compares people by name, and shows a checkbox never ticked as No', async () => {
+    const rows = TASKS.map(rowRecord)
+    delete (rows[3].properties as Record<string, unknown>)['e:e']
+    database(rows)
+    const result = await query({
+      filter: [
+        { property: 'Owner', op: 'is', value: 'fixture user' },
+        { property: 'Done', op: 'is', value: 'No' },
+      ],
+    })
+    expect(tableRows(result)).toHaveLength(3)
+  })
+
+  it('refuses to filter or sort by a formula, which it cannot read', async () => {
+    const tab = new FakeNotionTab(`https://app.notion.com/${hex(DB)}`)
+      .respond(
+        'syncRecordValuesMain',
+        200,
+        sync('block', [{ id: DB, type: 'collection_view_page', collection_id: COLLECTION, view_ids: [VIEW] }]),
+      )
+      .respond(
+        'syncRecordValuesMain',
+        200,
+        sync('collection', [
+          { id: COLLECTION, name: [['Tasks']], schema: { ...SCHEMA, 'f:f': { name: 'Score', type: 'formula' } } },
+        ]),
+      )
+      .install()
+    await expect(query({ filter: [{ property: 'Score', op: 'is_empty' }] })).rejects.toThrow('"Score" is a formula')
+    expect(tab.sent.map((r) => r.url.split('/api/v3/')[1])).not.toContain('queryCollection')
+  })
+
+  it('reads the view the URL names', async () => {
+    const other = 'e0e0e0e0-0000-4000-8000-000000000002'
+    const tab = new FakeNotionTab(`https://app.notion.com/${hex(DB)}?v=${hex(other)}`)
+      .respond(
+        'syncRecordValuesMain',
+        200,
+        sync('block', [{ id: DB, type: 'collection_view_page', collection_id: COLLECTION, view_ids: [VIEW, other] }]),
+      )
+      .respond('syncRecordValuesMain', 200, sync('collection', [{ id: COLLECTION, name: [['Tasks']], schema: SCHEMA }]))
+      .respond('queryCollection', 200, {
+        result: { reducerResults: { collection_group_results: { blockIds: [] } } },
+        recordMap: {},
+      })
+      .install()
+    await query()
+    expect(tab.sent.at(-1)!.body).toMatchObject({ collectionView: { id: other } })
   })
 })
 

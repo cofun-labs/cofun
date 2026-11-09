@@ -385,7 +385,7 @@ describe('read_page arguments', () => {
     expect(result.split('\n').slice(0, 3)).toEqual([
       `Page: Tasks ^${PAGE_HEX}`,
       `URL: https://app.notion.com/${PAGE_HEX}`,
-      'This page is a database. Reading its rows is not supported yet.',
+      'This page is a database: read its rows with query_database.',
     ])
   })
 })
