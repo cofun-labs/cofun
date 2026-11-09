@@ -178,7 +178,9 @@ export function parseEdits(raw: unknown, read: PageRead): Edit[] {
     }
     switch (e.action) {
       case 'insert': {
-        const position = e.position ?? (e.block === undefined || e.block === null || e.block === '' ? 'end' : 'after')
+        // null and '' mean "not given", as models often fill optional fields.
+        const given = (v: unknown) => v !== undefined && v !== null && v !== ''
+        const position = given(e.position) ? e.position : given(e.block) ? 'after' : 'end'
         if (position !== 'after' && position !== 'start' && position !== 'end') {
           throw new EditError(`${where}: \`position\` must be "after", "start", or "end".`)
         }

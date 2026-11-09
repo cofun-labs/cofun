@@ -251,7 +251,17 @@ export const editPage: ToolSpec = {
       )
     }
     const plan = planEdit(loaded, read, edits)
-    await tab.client.submitTransaction(loaded.spaceId, plan.operations, 'Notion Copilot: edit_page')
+    try {
+      await tab.client.submitTransaction(loaded.spaceId, plan.operations, 'Notion Copilot: edit_page')
+    } catch (err) {
+      // The edit may have been saved: a retry from the same read could apply it twice, so the
+      // page must be read again first, which also shows whether it landed.
+      if (err instanceof NotionError && err.code === 'outcome_unknown') {
+        pageReads.delete(id)
+        for (const key of recentReads.keys()) if (key.endsWith(`:${id}`)) recentReads.delete(key)
+      }
+      throw err
+    }
 
     // The page changed: forget cached parts. What the agent saw stays as it was, except for what
     // this edit changed, so a block the user changed meanwhile is still refused.

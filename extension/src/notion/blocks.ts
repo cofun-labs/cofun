@@ -140,12 +140,11 @@ function leading(line: string): number {
 
 function lineBlock(line: string): NewBlock {
   // A backslash keeps text that looks like a list, heading, or quote as a paragraph.
-  if (line.startsWith('\\'))
-    return { type: 'text', title: inline(line.slice(1).replace(/<br\s*\/?>/gi, '\n')), children: [] }
+  if (line.startsWith('\\')) return { type: 'text', title: inline(breaks(line.slice(1))), children: [] }
   const block = (type: string, text: string, extra: Partial<NewBlock> = {}): NewBlock => ({
     type,
     // read_page shows line breaks inside a block as <br>.
-    title: inline(text.replace(/<br\s*\/?>/gi, '\n')),
+    title: inline(breaks(text)),
     children: [],
     ...extra,
   })
@@ -168,7 +167,7 @@ type Mark = [string, unknown?]
 export function inline(text: string, marks: Mark[] = []): RichText {
   const patterns: { re: RegExp; run: (m: RegExpExecArray) => RichText }[] = [
     // A backslash keeps the next character literal, as read_page escapes them.
-    { re: /\\([\\`*_~[\]^|#>])/, run: (m) => [marks.length ? [m[1], marks] : [m[1]]] },
+    { re: /\\([\\`*_~[\]^|#><])/, run: (m) => [marks.length ? [m[1], marks] : [m[1]]] },
     { re: /`([^`]+)`/, run: (m) => [[m[1], [...marks, ['c']]]] },
     {
       re: /\[([^\]]+)\]\(([^)\s]+)\)/,
@@ -270,4 +269,9 @@ const ALIASES: Record<string, string> = {
 export function notionLanguage(language: string): string {
   const key = language.trim().toLowerCase()
   return LANGUAGES[key] ?? ALIASES[key] ?? language.trim()
+}
+
+/** read_page's <br> for a line break inside a block; an escaped \\<br> is the literal text. */
+function breaks(text: string): string {
+  return text.replace(/(?<!\\)<br\s*\/?>/gi, '\n')
 }

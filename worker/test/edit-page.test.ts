@@ -822,3 +822,37 @@ describe('round 6', () => {
     expect(inline('[x](//evil.example)')).toEqual([['[x](//evil.example)']])
   })
 })
+
+describe('round 7', () => {
+  it('asks for a new read after an edit whose outcome is unknown, so a retry can’t apply it twice', async () => {
+    const ws = workspace([1], [block(1, 'text', 'Intro')])
+    open(ws)
+    await read()
+    ws.failAfterApply = true
+    await expect(edit([{ action: 'insert', block: '^00000001', markdown: 'Once' }])).rejects.toThrow(
+      'may or may not have been saved',
+    )
+    await expect(edit([{ action: 'insert', block: '^00000001', markdown: 'Once' }])).rejects.toThrow(
+      'Read the page with read_page first',
+    )
+    // Reading shows the edit landed, once.
+    expect(withoutRefs(body(await read()))).toBe(['Intro', 'Once'].join('\n'))
+  })
+
+  it('treats an empty position as not given', async () => {
+    const ws = workspace([1, 2], [block(1, 'text', 'A'), block(2, 'text', 'C')])
+    open(ws)
+    await read()
+    await edit([{ action: 'insert', block: '^00000001', position: '', markdown: 'B' }])
+    expect(withoutRefs(body(await read()))).toBe(['A', 'B', 'C'].join('\n'))
+  })
+
+  it('keeps literal <br> text apart from line breaks', async () => {
+    const ws = workspace([1], [block(1, 'text', 'Use <br> for\nbreaks')])
+    open(ws)
+    const shown = body(await read())
+    expect(shown).toBe('Use \\<br> for<br>breaks ^00000001')
+    await edit([{ action: 'replace', block: '^00000001', markdown: shown.replace('Use', 'Write') }])
+    expect(ws.records.get(id(1))!.properties).toEqual({ title: [['Write <br> for\nbreaks']] })
+  })
+})

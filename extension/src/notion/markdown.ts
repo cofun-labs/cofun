@@ -458,5 +458,5 @@ export function splitIntoParts(sections: string[], max: number): string[] {
 
 /** Escapes characters that inline Markdown would read as formatting, links, or references. */
 export function escapeMarkdown(text: string): string {
-  return text.replace(/[\\`*~[\]^|]/g, '\\$&').replace(/(?<!\w)_|_(?!\w)/g, '\\_')
+  return text.replace(/[\\`*~[\]^|<]/g, '\\$&').replace(/(?<!\w)_|_(?!\w)/g, '\\_')
 }

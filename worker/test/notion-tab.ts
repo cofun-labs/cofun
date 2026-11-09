@@ -163,6 +163,8 @@ export class FakeWorkspace {
   transactions: { operations: { pointer: { id: string }; path: string[]; command: string; args: unknown }[] }[] = []
   /** Makes the next transaction fail with Notion's validation error, applying nothing. */
   reject = false
+  /** Makes the next transaction apply, then answer with a server error, as a lost answer would. */
+  failAfterApply = false
 
   constructor(
     blocks: Record<string, unknown>[],
@@ -240,6 +242,10 @@ export class FakeWorkspace {
         }
         this.records = next
         this.transactions.push(tx)
+      }
+      if (this.failAfterApply) {
+        this.failAfterApply = false
+        return { status: 502, json: { isNotionError: true, name: 'BadGateway', debugMessage: 'Bad gateway.' } }
       }
       return { status: 200, json: {} }
     }
