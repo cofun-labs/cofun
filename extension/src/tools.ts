@@ -60,7 +60,10 @@ export const readPage: ToolSpec = {
     const part = args.part === undefined ? 1 : Number(args.part)
     if (!Number.isInteger(part) || part < 1) throw new Error('`part` must be a whole number from 1.')
 
-    const { loaded, databaseMissing } = await loadForPart(tab, id, part)
+    const { loaded, databaseMissing, reloaded } = await loadForPart(tab, id, part)
+    if (!PAGE_RECORDS.has(loaded.page.type)) {
+      throw new Error('That id is a block inside a page, not a page. Read the page it is on instead.')
+    }
     const md = pageToMarkdown(loaded)
     const parts = splitIntoParts(md.sections, PART_CHARS)
     if (part > parts.length) {
@@ -76,6 +79,7 @@ export const readPage: ToolSpec = {
         : []),
       ...(md.kind === 'database' ? ['This page is a database. Reading its rows is not supported yet.'] : []),
       ...(loaded.complete ? [] : ['The page is too long to load in full; only its beginning is shown.']),
+      ...(reloaded ? ['The page was read again for this part; earlier parts may be out of date.'] : []),
       ...(databaseMissing
         ? ["This is a database row, but its database can't be opened, so its properties are not shown."]
         : []),
@@ -86,21 +90,33 @@ export const readPage: ToolSpec = {
   },
 }
 
-/** A page id from what the model gave: a Notion URL, an id, or a block reference to a page (`^<id>`). */
+/**
+ * A page id from what the model gave: a Notion URL (with or without `https://`), an id, a page
+ * slug ending in its id (`Title-<id>`), or a reference to a page (`^<id>`).
+ */
 function pageArg(text: string): string | undefined {
-  const value = text.trim().replace(/^\^/, '')
-  if (/^https?:\/\//i.test(value)) return isNotion(value) ? pageIdFromUrl(value) : undefined
-  return toUuid(value)
+  let value = text.trim().replace(/^\^/, '')
+  if (/^(www\.notion\.so|app\.notion\.com)\//i.test(value)) value = `https://${value}`
+  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(value)) return isNotion(value) ? pageIdFromUrl(value) : undefined
+  if (value.includes('/')) return undefined
+  return toUuid(value) ?? toUuid(/[0-9a-f]{32}$/i.exec(value.replace(/-/g, ''))?.[0] ?? '')
 }
+
+/** Records read_page shows as pages; any other block is a piece of some page. */
+const PAGE_RECORDS = new Set(['page', 'collection_view_page', 'collection_view'])
 
 interface Loaded {
   loaded: LoadedPage
   databaseMissing: boolean
+  /** A later part was read from a fresh load, not from the read of part 1. */
+  reloaded?: boolean
 }
 
 /** How long the parts after the first come from the page as it was when part 1 was read. */
 const PARTS_REUSE_MS = 5 * 60_000
-let lastRead: { key: string; at: number; result: Loaded } | undefined
+/** Pages whose part 1 was read last, so reading two long pages in turn keeps both. */
+const PARTS_PAGES = 5
+const recentReads = new Map<string, { at: number; result: Loaded }>()
 
 /**
  * Part 1 always reads the page fresh. Later parts reuse that read for a while, so reading a long
@@ -108,10 +124,14 @@ let lastRead: { key: string; at: number; result: Loaded } | undefined
  */
 async function loadForPart(tab: NotionTab, id: string, part: number): Promise<Loaded> {
   const key = `${tab.tabId}:${id}`
-  if (part > 1 && lastRead?.key === key && Date.now() - lastRead.at < PARTS_REUSE_MS) return lastRead.result
+  const recent = recentReads.get(key)
+  if (part > 1 && recent && Date.now() - recent.at < PARTS_REUSE_MS) return recent.result
   const result = await loadWithDatabase(tab, id)
-  lastRead = { key, at: Date.now(), result }
-  return result
+  recentReads.delete(key)
+  recentReads.set(key, { at: Date.now(), result })
+  if (recentReads.size > PARTS_PAGES) recentReads.delete(recentReads.keys().next().value!)
+  // A later part read fresh may not fit with the earlier parts the model has.
+  return part > 1 ? { ...result, reloaded: true } : result
 }
 
 /** Loads a page, and for a database row also its database, which names the row's properties. */

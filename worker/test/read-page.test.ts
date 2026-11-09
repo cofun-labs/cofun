@@ -501,3 +501,59 @@ describe('converter details', () => {
     expect(body(await read())).toBe(`🗃 Tasks (database) ^${hex(id(1))}`)
   })
 })
+
+describe('more converter and argument details', () => {
+  it('keeps the lines and children of quotes and callouts inside the blockquote', async () => {
+    openPage(
+      chunk([id(1), id(2)], {
+        block: {
+          ...block(id(1), 'quote', 'Line one\nLine two'),
+          ...block(id(2), 'callout', 'Note', { format: { page_icon: 'notion://custom_emoji/abc' }, content: [id(3)] }),
+          ...block(id(3), 'bulleted_list', 'Inside', {}, id(2)),
+        },
+      }),
+    )
+    expect(body(await read())).toBe(
+      ['> Line one', '> Line two ^00000001', '> [!callout] Note ^00000002', '> - Inside ^00000003'].join('\n'),
+    )
+  })
+
+  it('refuses an id of a block that is not a page', async () => {
+    openPage({
+      cursor: { stack: [] },
+      recordMap: { __version__: 3, block: { ...block(PAGE, 'text', 'Just a paragraph', {}, id(9)) } },
+    })
+    await expect(read()).rejects.toThrow('That id is a block inside a page, not a page.')
+  })
+
+  it('accepts Notion links without https:// and page slugs ending in the id', async () => {
+    const page = chunk([])
+    const tab = openPage(page, page)
+    await read({ page: `notion.so/x`.replace('notion.so', 'www.notion.so') + `/Fixture-page-${PAGE_HEX}` })
+    await read({ page: `Fixture-page-${PAGE_HEX}` })
+    expect(tab.sent.map((r) => (r.body.page as { id: string }).id)).toEqual([PAGE, PAGE])
+  })
+
+  it('keeps several long pages for their later parts, and says when a later part had to be read again', async () => {
+    const long = (pageId: string) => {
+      const ids = Array.from({ length: 300 }, (_, i) => id(i + 1))
+      const blocks = Object.assign({}, ...ids.map((b, i) => block(b, 'text', `P${i} ${'y'.repeat(60)}`, {}, pageId)))
+      blocks[pageId] = wrapped({ id: pageId, type: 'page', properties: { title: [['Long']] }, content: ids })
+      return { cursor: { stack: [] }, recordMap: { __version__: 3, block: blocks } }
+    }
+    const a = '2a2a2a2a-0000-4000-8000-000000000021'
+    const b = '2a2a2a2a-0000-4000-8000-000000000022'
+    const c = '2a2a2a2a-0000-4000-8000-000000000023'
+    const tab = openPage(long(a), long(b), long(c))
+    await read({ page: a })
+    await read({ page: b })
+    // Part 2 of each comes from its first read, though another page was read in between.
+    expect(await read({ page: a, part: 2 })).not.toContain('read again')
+    expect(await read({ page: b, part: 2 })).not.toContain('read again')
+    expect(tab.sent).toHaveLength(2)
+    // A later part with no earlier read is read fresh, and says so.
+    expect(await read({ page: c, part: 2 })).toContain(
+      'The page was read again for this part; earlier parts may be out of date.',
+    )
+  })
+})

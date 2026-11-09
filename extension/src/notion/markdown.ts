@@ -131,11 +131,12 @@ class Context {
       case 'toggle':
         return line('▸ ')
       case 'quote':
-        return line('> ')
+        return this.quoted(block, pad, '', text, ref)
       case 'callout': {
+        // Only an emoji is a label; uploaded and custom icons are URLs.
         const icon = block.format?.page_icon
-        const label = typeof icon === 'string' && !icon.startsWith('http') && !icon.startsWith('/') ? icon : 'callout'
-        return line(`> [!${label}] `)
+        const label = typeof icon === 'string' && !/[/:]/.test(icon) ? icon : 'callout'
+        return this.quoted(block, pad, `[!${label}] `, text, ref)
       }
       case 'code': {
         const language = this.plain(block.properties?.language).toLowerCase()
@@ -185,6 +186,13 @@ class Context {
     }
   }
 
+  /** A quote or callout: every line, its children's too, stays inside the blockquote. */
+  private quoted(block: Block, pad: string, label: string, text: string, ref: string): string[] {
+    const own = withRef('', label, text, ref)
+    const children = this.children(block, 0).flat()
+    return [...own, ...children].map((l) => `${pad}> ${l}`)
+  }
+
   private table(block: Block, pad: string): string[] {
     const columns = (block.format?.table_block_column_order as string[] | undefined) ?? []
     const rows = (block.content ?? []).map((id) => this.blocks[id]).filter((r) => r?.alive !== false)
@@ -208,7 +216,7 @@ class Context {
   }
 
   /**
-   * A database row's properties, in the database's order, skipping empty ones and the title.
+   * A database row's properties, in the order of the database's schema, skipping empty ones and the title.
    * Without its database (the user may see the row but not the database), there are none to show.
    */
   properties(page: Block): string[] {
