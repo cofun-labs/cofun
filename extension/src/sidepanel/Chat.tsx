@@ -12,8 +12,8 @@ const SYSTEM_PROMPT =
   "You are Notion Copilot, an AI assistant that works next to the user's Notion pages. " +
   'Your tools can tell you which Notion page is open, search the workspace for pages, list the pages of the workspace or ' +
   'under a page, read Notion pages as Markdown, read database rows as a table, and edit page content. ' +
-  'Before editing a page, read it, then make the change with edit_page using the block references it shows; ' +
-  'the user is asked to approve each edit. Change only what the user asked for. ' +
+  'Before editing a page, read it, then make the change with edit_page using the block references it shows. ' +
+  'Changes are made right away, without asking the user first, so change only what the user asked for. ' +
   'To make a new page or add a database row, use create_page; to change titles, icons, or properties, use ' +
   'update_pages, with row ids from query_database. ' +
   'When the user says "this", "the selection", or "the highlighted text", call get_selection to see what they ' +
@@ -21,6 +21,17 @@ const SYSTEM_PROMPT =
   'When the user asks about "this page" or its content, read the open page first and answer from what it says. ' +
   'When the answer is likely on another page, search for it, read what you find, and say which page you used. ' +
   'Read child pages or other pages only when the question needs them. Be concise.'
+
+/** What a call changes, in words, when its tool can say: shown on the call's card. */
+function previewOf(name: string, args: unknown): string | undefined {
+  try {
+    return TOOLS.find((t) => t.name === name)?.preview?.((args ?? {}) as Record<string, unknown>)
+  } catch (err) {
+    // A broken preview must not break the card or the prompt: the arguments are still shown.
+    console.error('Could not preview the tool call', err)
+    return undefined
+  }
+}
 
 /** A reply in the order it happened: text the model wrote and the tools it ran in between. */
 type Part = { type: 'text'; text: string } | { type: 'tool'; tool: ShownTool }
@@ -141,14 +152,7 @@ export function Chat({ userId }: { userId: string }) {
         pending.current.set(call.id, answer)
         // Normally the call is already shown as running. If not, show it now: the agent must never
         // wait on a prompt nobody can see. Show the arguments the tool will run with.
-        // What the call would change, in words, when the tool can say.
-        let preview: string | undefined
-        try {
-          preview = TOOLS.find((t) => t.name === call.name)?.preview?.(call.args as Record<string, unknown>)
-        } catch (err) {
-          // A broken preview must not break the prompt: the arguments are still shown.
-          console.error('Could not preview the tool call', err)
-        }
+        const preview = previewOf(call.name, call.args)
         updateReply((m) => {
           const j = newestOpenCall(m.parts, call.id)
           const parts = [...m.parts]
@@ -183,15 +187,18 @@ export function Chat({ userId }: { userId: string }) {
             return { ...m, parts: [...m.parts.slice(0, -1), { ...last, text: last.text + u.delta }] }
           return { ...m, parts: [...m.parts, { type: 'text', text: u.delta }] }
         })
-      else if (u.type === 'tool_start')
+      else if (u.type === 'tool_start') {
+        // Now, before the tool runs: the preview reads what the agent saw, which the run may update.
+        // React may run the updater below later.
+        const preview = previewOf(u.name, u.args)
         updateReply((m) => {
           // A prompt shown before the start event already stands for this call; don't show it twice.
           const j = newestOpenCall(m.parts, u.id)
           if (j >= 0 && (m.parts[j] as Extract<Part, { type: 'tool' }>).tool.status === 'confirm') return m
-          const tool: ShownTool = { id: u.id, name: u.name, args: u.args, status: 'running', result: '' }
+          const tool: ShownTool = { id: u.id, name: u.name, args: u.args, status: 'running', result: '', preview }
           return { ...m, parts: [...m.parts, { type: 'tool', tool }] }
         })
-      else
+      } else
         updateReply((m) => {
           const j = newestOpenCall(m.parts, u.id)
           if (j < 0) return m

@@ -49,7 +49,7 @@ const body = (result: string) => result.slice(result.indexOf('\n\n') + 2)
 const withoutRefs = (text: string) => text.replace(/ \^[0-9a-f]{8,32}$/gm, '')
 
 describe('UC-NOTION-002 edit a page', () => {
-  it('[UC-NOTION-002-S01] inserts, replaces, and deletes in one edit, and changes nothing else', async () => {
+  it('[UC-NOTION-002-S09] inserts, replaces, and deletes in one edit, and changes nothing else', async () => {
     const ws = workspace(
       [1, 2, 3, 4],
       [
@@ -87,7 +87,7 @@ describe('UC-NOTION-002 edit a page', () => {
     expect(ws.records.get(id(3))).toMatchObject({ alive: false })
   })
 
-  it('[UC-NOTION-002-S01] a round trip, replacing each block with what read_page showed, changes nothing', async () => {
+  it('[UC-NOTION-002-S09] a round trip, replacing each block with what read_page showed, changes nothing', async () => {
     const ws = workspace(
       [1, 2, 3, 4, 5, 6],
       [
@@ -203,8 +203,8 @@ describe('UC-NOTION-002 edit a page', () => {
 })
 
 describe('edit_page details', () => {
-  it('needs the user’s OK, and previews each change with the text it replaces', async () => {
-    expect(editPage.needsConfirmation).toBe(true)
+  it('runs without asking, and previews each change with the text it replaces', async () => {
+    expect(editPage.needsConfirmation).toBeUndefined()
     const ws = workspace([1, 2], [block(1, 'text', 'Intro'), block(2, 'text', 'Old note')])
     open(ws)
     await read()
@@ -232,6 +232,8 @@ describe('edit_page details', () => {
         '',
         'Insert at the start of the page:',
         '    # Top',
+        '',
+        "What was replaced or deleted can be brought back from the page's history in Notion.",
       ].join('\n'),
     )
   })

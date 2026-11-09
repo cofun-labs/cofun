@@ -94,7 +94,7 @@ async function ask(agent: CopilotAgent, text: string, confirm?: ConfirmTool) {
   return { result, updates, reply }
 }
 
-/** A tool that changes data, so it needs the user's OK; records each run. */
+/** A stand-in for a tool that needs the user's OK each time, like moving a page to the trash; records each run. */
 function renameTool() {
   const runs: unknown[] = []
   const tool: ToolSpec = {
@@ -228,7 +228,7 @@ describe('extension agent against the worker', () => {
     return ws
   }
 
-  it('[UC-NOTION-002-S01] the agent reads the page, asks, and edits it once the user agrees', async () => {
+  it('[UC-NOTION-002-S09] the agent reads the page and edits it without asking the user', async () => {
     const ws = editablePage()
     const asked: ToolCallRequest[] = []
     const { result, updates } = await ask(
@@ -236,27 +236,14 @@ describe('extension agent against the worker', () => {
       'Put a summary at the top',
       async (call) => {
         asked.push(call)
-        return true
+        return false
       },
     )
     expect(result).toEqual({ status: 'done' })
-    expect(asked.map((c) => c.name)).toEqual(['edit_page'])
+    expect(asked).toEqual([])
     expect(toolStatuses(updates)).toEqual(['done', 'done'])
     const [first] = ws.content(PAGE)
     expect(first.properties).toEqual({ title: [['Summary: hi']] })
-  })
-
-  it('[UC-NOTION-002-S03] a declined edit leaves the page unchanged', async () => {
-    const ws = editablePage()
-    const { result, updates } = await ask(
-      makeAgent({ tools: [readPage, editPage] }),
-      'Put a summary at the top',
-      async () => false,
-    )
-    expect(result).toEqual({ status: 'done' })
-    expect(toolStatuses(updates)).toEqual(['done', 'declined'])
-    expect(ws.transactions).toEqual([])
-    expect(ws.content(PAGE).map((b) => b.properties)).toEqual([{ title: [['Intro']] }])
   })
 
   it('[UC-AGENT-001-S05] a model that keeps calling tools is stopped at the step limit', async () => {

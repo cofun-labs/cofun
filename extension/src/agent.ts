@@ -26,9 +26,12 @@ export interface ToolSpec {
   parameters: object
   /** Runs the tool. Throw to report a failure to the model. */
   run: (args: Record<string, unknown>, signal?: AbortSignal) => Promise<unknown>
-  /** The tool changes the user's data, so the user must agree each time before it runs. */
+  /** The tool does what is hard to undo, such as deleting a page, so the user must agree each time before it runs. */
   needsConfirmation?: boolean
-  /** What a call would do, in words, for the user to read before agreeing. */
+  /**
+   * What a call does, in words, from the state before it runs: shown on the call's card, and to the
+   * user before agreeing when the tool needs confirmation.
+   */
   preview?: (args: Record<string, unknown>) => string | undefined
 }
 

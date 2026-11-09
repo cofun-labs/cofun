@@ -52,7 +52,7 @@ function open(ws: FakeWorkspace) {
 const create = async (args: Record<string, unknown>) => (await createPage.run(args)) as string
 
 describe('UC-NOTION-007 create a page', () => {
-  it('[UC-NOTION-007-S01] creates a page with its content at the end of the open page', async () => {
+  it('[UC-NOTION-007-S06] creates a page with its content at the end of the open page', async () => {
     const ws = workspace()
     open(ws)
     const result = await create({
@@ -93,8 +93,8 @@ describe('UC-NOTION-007 create a page', () => {
 })
 
 describe('create_page details', () => {
-  it('needs the user’s OK and previews the page', () => {
-    expect(createPage.needsConfirmation).toBe(true)
+  it('runs without asking, and previews the page', () => {
+    expect(createPage.needsConfirmation).toBeUndefined()
     expect(createPage.preview!({ title: 'Launch notes', parent: PAGE_URL, markdown: '# Plan\n- Ship' })).toBe(
       [
         'Create a page',

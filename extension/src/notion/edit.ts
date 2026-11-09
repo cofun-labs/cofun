@@ -500,7 +500,7 @@ function properties(nb: NewBlock): Record<string, unknown> {
   }
 }
 
-/** What an edit_page call would change, for the user to read before agreeing. */
+/** What an edit_page call changes, for the user to read on its card. */
 export function previewEdits(raw: unknown, read: PageRead | undefined, page: string): string | undefined {
   if (!Array.isArray(raw)) return undefined
   const shown = (block: unknown) => {
@@ -551,7 +551,16 @@ export function previewEdits(raw: unknown, read: PageRead | undefined, page: str
         return `Unknown edit: ${JSON.stringify(value)}`
     }
   })
-  return [`On the page “${read?.title ?? page}”:`, ...changes].join('\n\n')
+  // Nobody is asked first, so say where removed text can be found again.
+  const removes = raw.some((value) => {
+    const action = (value as EditArgs | null)?.action
+    return action === 'replace' || action === 'delete'
+  })
+  return [
+    `On the page “${read?.title ?? page}”:`,
+    ...changes,
+    ...(removes ? ["What was replaced or deleted can be brought back from the page's history in Notion."] : []),
+  ].join('\n\n')
 }
 
 function clip(text: string, max = 80): string {
