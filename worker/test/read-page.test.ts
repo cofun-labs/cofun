@@ -353,6 +353,12 @@ describe('read_page arguments', () => {
     expect(tab.sent).toEqual([])
   })
 
+  it('treats an empty page or a null part as not given', async () => {
+    const page = chunk([id(1)], { block: block(id(1), 'text', 'Hi') })
+    openPage(page)
+    expect(body(await read({ page: ' ', part: null }))).toBe('Hi ^00000001')
+  })
+
   it('asks for a page when the Notion tab shows none', async () => {
     new FakeNotionTab('https://www.notion.so/').install()
     await expect(read()).rejects.toThrow('The Notion tab does not show a page.')
@@ -560,11 +566,13 @@ describe('more converter and argument details', () => {
     await read({ page: a })
     await read({ page: b })
     // Part 2 of each comes from its first read, though another page was read in between.
-    expect(await read({ page: a, part: 2 })).not.toContain('read again')
-    expect(await read({ page: b, part: 2 })).not.toContain('read again')
+    expect(await read({ page: a, part: 2 })).not.toContain('new read')
+    expect(await read({ page: b, part: 2 })).not.toContain('new read')
     expect(tab.sent.filter((r) => r.url.endsWith('/loadPageChunk'))).toHaveLength(2)
-    // With no earlier read at all, there is nothing to be out of date.
-    expect(await read({ page: c, part: 2 })).not.toContain('read again')
+    // A later part read fresh says so: the model may hold parts of another read.
+    expect(await read({ page: c, part: 2 })).toContain(
+      'This part comes from a new read of the page; parts you have from an earlier read may not match it.',
+    )
   })
 
   it('[UC-NOTION-001-S06] checks the account in the tab can still open the page before giving a later part', async () => {

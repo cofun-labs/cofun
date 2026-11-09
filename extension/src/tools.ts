@@ -48,16 +48,18 @@ export const readPage: ToolSpec = {
     additionalProperties: false,
   },
   run: async (args) => {
+    // Models often fill optional arguments with null or an empty string; those mean "not given".
+    const pageText = typeof args.page === 'string' && args.page.trim() ? args.page : undefined
     const tab = await activeNotionTab()
-    const id = args.page === undefined ? tab.pageId : pageArg(String(args.page))
+    const id = pageText === undefined ? tab.pageId : pageArg(pageText)
     if (!id) {
       throw new Error(
-        args.page === undefined
+        pageText === undefined
           ? 'The Notion tab does not show a page. Open a page, or give its URL or id.'
-          : `Not a Notion page URL or id: ${String(args.page)}`,
+          : `Not a Notion page URL or id: ${pageText}`,
       )
     }
-    const part = args.part === undefined ? 1 : Number(args.part)
+    const part = args.part === undefined || args.part === null || args.part === '' ? 1 : Number(args.part)
     if (!Number.isInteger(part) || part < 1) throw new Error('`part` must be a whole number from 1.')
 
     const { loaded, databaseMissing, reloaded } = await loadForPart(tab, id, part)
@@ -79,7 +81,9 @@ export const readPage: ToolSpec = {
         : []),
       ...(md.kind === 'database' ? ['This page is a database. Reading its rows is not supported yet.'] : []),
       ...(loaded.complete ? [] : ['The page is too long to load in full; only its beginning is shown.']),
-      ...(reloaded ? ['The page was read again for this part; earlier parts may be out of date.'] : []),
+      ...(reloaded
+        ? ['This part comes from a new read of the page; parts you have from an earlier read may not match it.']
+        : []),
       ...(databaseMissing
         ? ["This is a database row, but its database can't be opened, so its properties are not shown."]
         : []),
@@ -133,8 +137,8 @@ async function loadForPart(tab: NotionTab, id: string, part: number): Promise<Lo
   recentReads.delete(key)
   recentReads.set(key, { at: Date.now(), result })
   if (recentReads.size > PARTS_PAGES) recentReads.delete(recentReads.keys().next().value!)
-  // A later part read fresh may not fit with the earlier parts the model got from an older read.
-  return part > 1 && recent ? { ...result, reloaded: true } : result
+  // A later part read fresh may not fit with earlier parts the model got from another read.
+  return part > 1 ? { ...result, reloaded: true } : result
 }
 
 /** Loads a page, and for a database row also its database, which names the row's properties. */
