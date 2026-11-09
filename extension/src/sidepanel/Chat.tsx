@@ -20,7 +20,7 @@ type Shown =
   | {
       role: 'assistant'
       parts: Part[]
-      /** Shown instead of the parts when the question failed. */
+      /** Why the question failed; shown below what the agent already did. */
       error?: string
       stopped?: boolean
       note?: string
@@ -139,17 +139,17 @@ export function Chat() {
               {m.content}
             </div>
           ) : (
-            <div key={i} className={`msg assistant${m.error ? ' error' : ''}`}>
-              {m.error ??
-                m.parts.map((p, j) =>
-                  p.type === 'text' ? (
-                    <div key={j} className="text">
-                      {p.text}
-                    </div>
-                  ) : (
-                    <ToolCall key={p.tool.id} tool={p.tool} />
-                  ),
-                )}
+            <div key={i} className="msg assistant">
+              {m.parts.map((p, j) =>
+                p.type === 'text' ? (
+                  <div key={j} className="text">
+                    {p.text}
+                  </div>
+                ) : (
+                  <ToolCall key={p.tool.id} tool={p.tool} />
+                ),
+              )}
+              {m.error && <div className="error">{m.error}</div>}
               {busy && i === messages.length - 1 && waitingForModel(m.parts) && <div className="note">…</div>}
               {m.stopped && ' [stopped]'}
               {m.note && <div className="note">{m.note}</div>}

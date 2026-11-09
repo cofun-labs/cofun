@@ -125,7 +125,7 @@ textarea {
   flex-direction: column;
   gap: 6px;
 }
-.msg.error {
+.msg .error {
   color: var(--error);
 }
 .tool,

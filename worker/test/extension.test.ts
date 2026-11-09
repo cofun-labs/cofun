@@ -311,6 +311,22 @@ describe('extension agent against the worker', () => {
     expect(sentMessages(1).map((m) => m.role)).toEqual(['system', 'user'])
   })
 
+  it('a tool that finishes despite Stop still shows as done', async () => {
+    let agent: CopilotAgent
+    const stubborn: ToolSpec = {
+      ...pageTool().tool,
+      run: async () => {
+        agent.stop()
+        return { title: 'Q4 Roadmap' }
+      },
+    }
+    agent = makeAgent({ tools: [stubborn] })
+    ai.script = [{ toolCalls: [{ name: 'get_current_page', arguments: '{}' }] }]
+    const { result, updates } = await ask(agent, 'Which page am I on?')
+    expect(result).toEqual({ status: 'stopped' })
+    expect(updates.flatMap((u) => (u.type === 'tool_end' ? [u.status] : []))).toEqual(['done'])
+  })
+
   it('stop and new chat work while the agent is still being set up', async () => {
     for (const cancel of ['stop', 'reset'] as const) {
       let release!: () => void

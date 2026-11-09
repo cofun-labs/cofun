@@ -151,8 +151,9 @@ export class CopilotAgent {
       const update = toUpdate(event)
       if (update?.type === 'tool_end') {
         if (refused.has(update.id)) update.status = 'skipped'
-        // A tool cut short by Stop reports an error; it did not fail on its own.
-        else if (epoch !== this.epoch) update.status = 'stopped'
+        // A tool cut short by Stop reports an error; it did not fail on its own. A tool that
+        // finished anyway keeps its result: what it did happened.
+        else if (update.status === 'failed' && epoch !== this.epoch) update.status = 'stopped'
       }
       if (update) onUpdate(update)
       if (event.type === 'message_end' && event.message.role === 'assistant') {
