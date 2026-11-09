@@ -94,6 +94,14 @@ describe('saved sessions', () => {
     expect((await alice.list()).map((s) => s.id)).toEqual(['a'])
   })
 
+  it('a session that cannot be stored leaves nothing half-written', async () => {
+    const bad = session('a', 'Summarize this page', 1000)
+    // Functions can't be stored, so the conversation's write fails after the details' write ran.
+    const messages = [{ role: 'user', text: 'x', extra: () => {} }] as unknown as HistoryMessage[]
+    await expect(store.save({ ...bad, messages })).rejects.toThrow()
+    expect(await store.list()).toEqual([])
+  })
+
   it('a title is the first question on one line, cut to a readable length', () => {
     expect(titleFor([{ role: 'user', text: '  Line one\n\nline two ' }])).toBe('Line one line two')
     const long = titleFor([{ role: 'user', text: 'x'.repeat(300) }])

@@ -85,7 +85,14 @@ export class SessionStore {
     fn: (info: IDBObjectStore, messages: IDBObjectStore) => () => T,
   ): Promise<T> {
     const tx = (await this.open()).transaction([INFO, MESSAGES], mode)
-    const result = fn(tx.objectStore(INFO), tx.objectStore(MESSAGES))
+    let result: () => T
+    try {
+      result = fn(tx.objectStore(INFO), tx.objectStore(MESSAGES))
+    } catch (err) {
+      // A write that throws (e.g. data that can't be cloned) must not leave the other one committed.
+      tx.abort()
+      throw err
+    }
     return new Promise<T>((resolve, reject) => {
       tx.oncomplete = () => resolve(result())
       tx.onerror = () => reject(tx.error)
