@@ -61,6 +61,11 @@ function chunk(children: string[], records: Records = {}, page: Fields = {}) {
   }
 }
 
+/** Notion's answer when a later part checks the page can still be opened: the page record. */
+function stillOpen(page: { recordMap: { block: Record<string, unknown> } }, pageId = PAGE) {
+  return { recordMap: { __version__: 3, block: { [pageId]: page.recordMap.block[pageId] } } }
+}
+
 function openPage(...pages: unknown[]): FakeNotionTab {
   const tab = new FakeNotionTab(PAGE_URL)
   for (const page of pages) tab.respond('loadPageChunk', 200, page)
@@ -205,6 +210,7 @@ describe('UC-NOTION-001 read a page', () => {
     const page = chunk(ids, { block: blocks })
     // The page is loaded once: later parts come from the same read, so they fit together.
     const tab = openPage(page)
+    for (let i = 0; i < 10; i++) tab.respond('syncRecordValuesMain', 200, stillOpen(page))
 
     const first = await read()
     const parts = Number(/^Part 1 of (\d+)\. Read part 2 for more\.$/m.exec(first)?.[1])
@@ -400,6 +406,8 @@ describe('parts', () => {
     expect(splitIntoParts([], 10)).toEqual([''])
     // A line longer than a part is cut, so no part is longer than the limit.
     expect(splitIntoParts(['x'.repeat(12)], 5)).toEqual(['xxxxx', 'xxxxx', 'xx'])
+    // A blank line that starts a part is kept.
+    expect(splitIntoParts(['abc\n\nde'], 3)).toEqual(['abc', '\nde'])
   })
 })
 
@@ -536,7 +544,7 @@ describe('more converter and argument details', () => {
     expect(tab.sent.map((r) => (r.body.page as { id: string }).id)).toEqual([PAGE, PAGE, PAGE, PAGE])
   })
 
-  it('keeps several long pages for their later parts, and warns only when an earlier read went stale', async () => {
+  it('keeps several long pages for their later parts', async () => {
     const long = (pageId: string) => {
       const ids = Array.from({ length: 300 }, (_, i) => id(i + 1))
       const blocks = Object.assign({}, ...ids.map((b, i) => block(b, 'text', `P${i} ${'y'.repeat(60)}`, {}, pageId)))
@@ -547,14 +555,43 @@ describe('more converter and argument details', () => {
     const b = '2a2a2a2a-0000-4000-8000-000000000022'
     const c = '2a2a2a2a-0000-4000-8000-000000000023'
     const tab = openPage(long(a), long(b), long(c))
+      .respond('syncRecordValuesMain', 200, stillOpen(long(a), a))
+      .respond('syncRecordValuesMain', 200, stillOpen(long(b), b))
     await read({ page: a })
     await read({ page: b })
     // Part 2 of each comes from its first read, though another page was read in between.
     expect(await read({ page: a, part: 2 })).not.toContain('read again')
     expect(await read({ page: b, part: 2 })).not.toContain('read again')
-    expect(tab.sent).toHaveLength(2)
-    // A later part with no earlier read is read fresh, and says so.
+    expect(tab.sent.filter((r) => r.url.endsWith('/loadPageChunk'))).toHaveLength(2)
     // With no earlier read at all, there is nothing to be out of date.
     expect(await read({ page: c, part: 2 })).not.toContain('read again')
+  })
+
+  it('[UC-NOTION-001-S06] checks the account in the tab can still open the page before giving a later part', async () => {
+    const ids = Array.from({ length: 300 }, (_, i) => id(i + 1))
+    const page = chunk(ids, {
+      block: Object.assign({}, ...ids.map((b, i) => block(b, 'text', `P${i} ${'z'.repeat(60)}`))),
+    })
+    // Between the parts, the tab switched to a Notion account that can't open the page.
+    openPage(page).respond('syncRecordValuesMain', 200, fixture('empty-record-map'))
+    await read({ page: PAGE })
+    await expect(read({ page: PAGE, part: 2 })).rejects.toThrow(
+      "The Notion page doesn't exist, or the signed-in Notion account has no access to it.",
+    )
+  })
+
+  it('shows links to Notion pages as page ids, which read_page opens', async () => {
+    const target = '3a3a3a3a-0000-4000-8000-000000000031'
+    openPage(
+      chunk([id(1)], {
+        block: block(id(1), 'text', [
+          ['See '],
+          ['plan', [['a', `/Plan-${hex(target)}?pvs=4`]]],
+          [' and '],
+          ['site', [['a', 'https://example.com/x']]],
+        ]),
+      }),
+    )
+    expect(body(await read())).toBe(`See [plan](${hex(target)}) and [site](https://example.com/x) ^00000001`)
   })
 })

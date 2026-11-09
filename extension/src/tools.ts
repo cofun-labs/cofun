@@ -4,7 +4,7 @@
 import type { ToolSpec } from './agent'
 import { NotionError, mergeRecordMaps, type LoadedPage } from './notion/api'
 import { isNotion, pageIdFromUrl, toUuid } from './notion/hosts'
-import { hexId, pageToMarkdown, splitIntoParts } from './notion/markdown'
+import { PAGE_TYPES, hexId, pageToMarkdown, splitIntoParts } from './notion/markdown'
 import { activeNotionTab, type NotionTab } from './notion/tab'
 
 /**
@@ -61,7 +61,7 @@ export const readPage: ToolSpec = {
     if (!Number.isInteger(part) || part < 1) throw new Error('`part` must be a whole number from 1.')
 
     const { loaded, databaseMissing, reloaded } = await loadForPart(tab, id, part)
-    if (!PAGE_RECORDS.has(loaded.page.type)) {
+    if (!PAGE_TYPES.has(loaded.page.type)) {
       throw new Error('That id is a block inside a page, not a page. Read the page it is on instead.')
     }
     const md = pageToMarkdown(loaded)
@@ -104,9 +104,6 @@ function pageArg(text: string): string | undefined {
   return toUuid(value) ?? toUuid(/[0-9a-f]{32}$/i.exec(value.replace(/-/g, ''))?.[0] ?? '')
 }
 
-/** Records read_page shows as pages; any other block is a piece of some page. */
-const PAGE_RECORDS = new Set(['page', 'collection_view_page', 'collection_view'])
-
 interface Loaded {
   loaded: LoadedPage
   databaseMissing: boolean
@@ -127,7 +124,11 @@ const recentReads = new Map<string, { at: number; result: Loaded }>()
 async function loadForPart(tab: NotionTab, id: string, part: number): Promise<Loaded> {
   const key = `${tab.tabId}:${id}`
   const recent = recentReads.get(key)
-  if (part > 1 && recent && Date.now() - recent.at < PARTS_REUSE_MS) return recent.result
+  if (part > 1 && recent && Date.now() - recent.at < PARTS_REUSE_MS) {
+    // The account in the tab may have changed since: check it can still open the page.
+    await tab.client.getRecords([{ table: 'block', id, spaceId: recent.result.loaded.spaceId }])
+    return recent.result
+  }
   const result = await loadWithDatabase(tab, id)
   recentReads.delete(key)
   recentReads.set(key, { at: Date.now(), result })

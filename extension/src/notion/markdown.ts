@@ -43,7 +43,7 @@ export function blockRefs(ids: string[]): Map<string, string> {
 }
 
 /** Blocks that are pages of their own: shown as links, never expanded into the page. */
-const PAGE_TYPES = new Set(['page', 'collection_view_page', 'collection_view'])
+export const PAGE_TYPES = new Set(['page', 'collection_view_page', 'collection_view'])
 /** Blocks that only lay out their children; their children are shown in their place. */
 const LAYOUT_TYPES = new Set(['column_list', 'column'])
 const MEDIA_TYPES = new Set(['image', 'video', 'audio', 'pdf', 'file'])
@@ -306,9 +306,16 @@ class Context {
           return `@${formatDate(arg)}`
         case 'e':
           return `$${String(arg)}$`
-        case 'a':
-          link = String(arg)
+        case 'a': {
+          // Notion links to its own pages by path (`/<id>`, `/Title-<id>`); show those as page ids,
+          // which read_page opens.
+          const href = String(arg)
+          const page = href.startsWith('/')
+            ? /[0-9a-f]{32}$/i.exec(href.split(/[?#]/)[0].replace(/-/g, ''))?.[0]
+            : undefined
+          link = page ? page.toLowerCase() : href
           break
+        }
       }
     }
     const has = (m: string) => marks.some(([mark]) => mark === m)
@@ -362,27 +369,33 @@ function formatDate(arg: unknown): string {
 export function splitIntoParts(sections: string[], max: number): string[] {
   const parts: string[] = []
   let current = ''
+  let started = false
   const push = () => {
-    if (current) parts.push(current)
+    if (started) parts.push(current)
     current = ''
+    started = false
   }
   for (const section of sections) {
-    const joined = current ? `${current}\n${section}` : section
+    const joined = started ? `${current}\n${section}` : section
     if (joined.length <= max) {
       current = joined
+      started = true
       continue
     }
     push()
     if (section.length <= max) {
       current = section
+      started = true
       continue
     }
     for (const whole of section.split('\n')) {
       // A single line longer than a part is cut into pieces of the part's size.
       for (let at = 0; at < Math.max(whole.length, 1); at += max) {
         const line = whole.slice(at, at + max)
-        if (current && current.length + 1 + line.length > max) push()
-        current = current ? `${current}\n${line}` : line
+        if (started && current.length + 1 + line.length > max) push()
+        // `started`, not `current`: a blank line that starts a part is still a line.
+        current = started ? `${current}\n${line}` : line
+        started = true
       }
     }
   }
