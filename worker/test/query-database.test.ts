@@ -246,10 +246,23 @@ describe('query_database dates and headers', () => {
     database(rows)
     const result = await query({ filter: [{ property: 'Due', op: 'after', value: '2026-11-07' }] })
     expect(tableRows(result).map((l) => l.split(' | ')[0].slice(2))).toEqual(['Ship beta'])
+    // A bare date is a day: the row with a time on that day matches too.
+    database(rows)
+    const onDay = await query({ filter: [{ property: 'Due', op: 'is', value: '2026-11-07' }] })
+    expect(tableRows(onDay).map((l) => l.split(' | ')[0].slice(2))).toEqual(['Write docs', 'Fix login \\| Safari'])
   })
 })
 
 describe('query_database numbers and linked views', () => {
+  it('compares numbers by value in before and after', async () => {
+    database()
+    const result = await query({ filter: [{ property: 'Points', op: 'before', value: '5' }] })
+    expect(tableRows(result).map((l) => l.split(' | ')[0].slice(2))).toEqual(['Write docs', 'Plan retro'])
+    database()
+    const over = await query({ filter: [{ property: 'Points', op: 'after', value: '10' }] })
+    expect(tableRows(over)).toEqual([])
+  })
+
   it('sorts negative and decimal numbers by value', async () => {
     const values = ['-5', '-10', '1.5', '1.25']
     database(TASKS.map((t, i) => rowRecord({ ...t, points: values[i] })))

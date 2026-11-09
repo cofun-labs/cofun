@@ -393,11 +393,24 @@ function cell(values: { name: string; value: string }[], property: string): stri
 function matches(values: { name: string; value: string }[], f: Filter): boolean {
   const v = cell(values, f.property).toLowerCase()
   const want = f.value.toLowerCase()
+  // A bare date asks about a day: a cell with a time or a range matches by the day it starts on.
+  const same = () => (/^\d{4}-\d{2}-\d{2}$/.test(want) ? day(v) === want : v === want)
+  // Numbers compare as numbers, dates by the day they start on, other text as text.
+  const order = () => {
+    const [a, b] = [Number(v), Number(want)]
+    return Number.isFinite(a) && Number.isFinite(b)
+      ? Math.sign(a - b)
+      : day(v) < day(want)
+        ? -1
+        : day(v) > day(want)
+          ? 1
+          : 0
+  }
   switch (f.op) {
     case 'is':
-      return v === want
+      return same()
     case 'is_not':
-      return v !== want
+      return !same()
     case 'contains':
       return v.includes(want)
     case 'not_contains':
@@ -406,11 +419,10 @@ function matches(values: { name: string; value: string }[], f: Filter): boolean 
       return v === ''
     case 'is_not_empty':
       return v !== ''
-    // Dates may carry a time or a range; compare the day they start on.
     case 'before':
-      return v !== '' && day(v) < day(want)
+      return v !== '' && order() < 0
     case 'after':
-      return v !== '' && day(v) > day(want)
+      return v !== '' && order() > 0
   }
 }
 
