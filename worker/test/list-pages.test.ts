@@ -145,7 +145,7 @@ describe('UC-NOTION-005 browse the workspace', () => {
       .install()
     const result = await run({ page: hex(id(10)) })
     expect(result.split('\n').filter((l) => l.startsWith('- '))).toHaveLength(LIST_LIMIT)
-    expect(result).toContain(`Only the first ${LIST_LIMIT} pages are listed; the rest can't be listed yet.`)
+    expect(result).toContain('Not every page may be listed')
   })
 })
 
@@ -212,7 +212,7 @@ describe('list_pages at the limit', () => {
     const asked = (tab.sent.at(-1)!.body as { requests: { pointer: { id: string } }[] }).requests
     expect(asked.map((r) => r.pointer.id)).toEqual([id(1000), id(1001)])
     expect(result.split('\n').filter((l) => l.trimStart().startsWith('- '))).toHaveLength(LIST_LIMIT)
-    expect(result).toContain(`Only the first ${LIST_LIMIT} pages are listed`)
+    expect(result).toContain('Not every page may be listed')
   })
 
   it('[UC-NOTION-005-S03] says the list was cut off when it fills up before the asked depth', async () => {
@@ -228,6 +228,6 @@ describe('list_pages at the limit', () => {
       .install()
     const result = await run({ page: hex(id(10)), depth: 2 })
     expect(result.split('\n').filter((l) => l.startsWith('- '))).toHaveLength(LIST_LIMIT)
-    expect(result).toContain(`Only the first ${LIST_LIMIT} pages are listed`)
+    expect(result).toContain('Not every page may be listed')
   })
 })

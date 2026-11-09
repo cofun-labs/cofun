@@ -498,8 +498,8 @@ export const listPages: ToolSpec = {
     const cutOff = (truncated: boolean) =>
       truncated
         ? [
-            `Only the first ${LIST_LIMIT} pages are listed; the rest can't be listed yet. ` +
-              'To see what is under a listed page, list it by its id.',
+            `Not every page may be listed: a list shows at most ${LIST_LIMIT} pages, and pages under the ` +
+              'last ones shown may be left out. To see what is under a listed page, list it by its id.',
           ]
         : []
 
