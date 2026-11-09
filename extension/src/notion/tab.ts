@@ -44,7 +44,7 @@ export function tabTransport(tabId: number): NotionTransport {
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
       // Chrome refused to run the script at all (no site access): nothing was sent.
-      if (/cannot access|permission/i.test(message)) {
+      if (/Cannot access contents of|Missing host permission|Cannot access a chrome/i.test(message)) {
         throw new NotionError('notion_error', `${NO_SITE_ACCESS} (${message})`, { cause: err })
       }
       // The tab closed, navigated, or left Notion while the script ran: the request may have been in flight.

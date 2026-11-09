@@ -495,6 +495,25 @@ describe('edit_page safety', () => {
     expect(ws.transactions).toEqual([])
   })
 
+  it('inserts at the start after deleting the first block in the same call', async () => {
+    const ws = workspace([1, 2], [block(1, 'text', 'First'), block(2, 'text', 'Second')])
+    open(ws)
+    await read()
+    await edit([
+      { action: 'delete', block: '^00000001' },
+      { action: 'insert', position: 'start', markdown: 'New first' },
+    ])
+    expect(withoutRefs(body(await read()))).toBe(['New first', 'Second'].join('\n'))
+  })
+
+  it('keeps a code block’s language when a rewrite gives none', async () => {
+    const ws = workspace([1], [block(1, 'code', undefined, { properties: { title: [['a()']], language: [['Rust']] } })])
+    open(ws)
+    await read()
+    await edit([{ action: 'replace', block: '^00000001', markdown: '```\nb()\n```' }])
+    expect(ws.records.get(id(1))!.properties).toEqual({ title: [['b()']], language: [['Rust']] })
+  })
+
   it('needs the page named in the call', async () => {
     await expect(editPage.run({ edits: [{ action: 'insert', markdown: 'x' }] })).rejects.toThrow('Give `page`')
     expect(editPage.preview!({ edits: [] })).toBeUndefined()

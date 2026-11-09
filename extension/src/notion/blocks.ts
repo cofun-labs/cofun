@@ -76,7 +76,8 @@ export function parseMarkdown(markdown: string): NewBlock[] {
       if (j === lines.length) throw new MarkdownError('A code block is missing its closing fence.')
       i = j
       const language = fence[2].trim()
-      add(indent, { type: 'code', title: [[code.join('\n')]], language: language || 'plain text', children: [] })
+      // No language on the fence means none given: a rewrite keeps the block's own.
+      add(indent, { type: 'code', title: [[code.join('\n')]], ...(language ? { language } : {}), children: [] })
       continue
     }
     if (PLACEHOLDER.test(line)) {

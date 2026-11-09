@@ -260,7 +260,10 @@ export function planEdit(
     if (!parent) throw new EditError(`${ref(id)} is not inside a block that can hold new content.`)
     return parent
   }
-  const aliveChildren = (block: Block) => (block.content ?? []).filter((id) => blocks[id] && blocks[id].alive !== false)
+  /** Blocks this plan already took out of their lists, so later edits don't anchor on them. */
+  const removed = new Set<string>()
+  const aliveChildren = (block: Block) =>
+    (block.content ?? []).filter((id) => blocks[id] && blocks[id].alive !== false && !removed.has(id))
 
   /** Creates `newBlocks` in `parent`, after `after` (or at the start or end). Returns the new top-level ids. */
   const insert = (newBlocks: NewBlock[], parent: Block, place: { after?: string; start?: boolean; key: string }) => {
@@ -328,6 +331,7 @@ export function planEdit(
     const parent = parentOf(id)
     ops.push({ pointer: pointer(id), path: [], command: 'update', args: { alive: false, last_edited_time: now } })
     ops.push({ pointer: pointer(parent.id), path: ['content'], command: 'listRemove', args: { id } })
+    removed.add(id)
     changed.add(parent.id)
   }
 

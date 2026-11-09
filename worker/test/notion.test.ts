@@ -110,6 +110,13 @@ describe('requests', () => {
     expect(write.code).toBe('notion_error')
   })
 
+  it('treat other failures that mention permission as possibly sent', async () => {
+    const tab = pageTab()
+    const { client } = await activeNotionTab()
+    tab.injectionError = 'Frame was removed while checking permission.'
+    expect((await notionError(client.loadPage(PAGE))).unanswered).toBe(true)
+  })
+
   it('report other failures to run in the tab as Notion errors, with the reason', async () => {
     const tab = pageTab()
     const { client } = await activeNotionTab()
