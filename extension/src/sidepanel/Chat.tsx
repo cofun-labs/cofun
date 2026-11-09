@@ -90,7 +90,12 @@ export function Chat() {
     const confirm: ConfirmTool = (call) =>
       new Promise((resolve) => {
         if (chatId.current !== id) return resolve(false)
+        // One answer per prompt: a double click, or Stop racing a click, must not touch a later
+        // prompt that reuses this id.
+        let answered = false
         const answer = (allow: boolean) => {
+          if (answered) return
+          answered = true
           pending.current.delete(call.id)
           // Running again until the agent reports how the call ended (done, or declined).
           setToolStatus(call.id, 'running')
