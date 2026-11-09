@@ -96,7 +96,9 @@ export const readPage: ToolSpec = {
  */
 function pageArg(text: string): string | undefined {
   let value = text.trim().replace(/^\^/, '')
-  if (/^(www\.notion\.so|app\.notion\.com)\//i.test(value)) value = `https://${value}`
+  if (/^((www\.)?notion\.so|app\.notion\.com)\//i.test(value)) value = `https://${value}`
+  // notion.so redirects to www.notion.so, the host Notion's pages live on.
+  value = value.replace(/^https:\/\/notion\.so\//i, 'https://www.notion.so/')
   if (/^[a-z][a-z0-9+.-]*:\/\//i.test(value)) return isNotion(value) ? pageIdFromUrl(value) : undefined
   if (value.includes('/')) return undefined
   return toUuid(value) ?? toUuid(/[0-9a-f]{32}$/i.exec(value.replace(/-/g, ''))?.[0] ?? '')
@@ -130,8 +132,8 @@ async function loadForPart(tab: NotionTab, id: string, part: number): Promise<Lo
   recentReads.delete(key)
   recentReads.set(key, { at: Date.now(), result })
   if (recentReads.size > PARTS_PAGES) recentReads.delete(recentReads.keys().next().value!)
-  // A later part read fresh may not fit with the earlier parts the model has.
-  return part > 1 ? { ...result, reloaded: true } : result
+  // A later part read fresh may not fit with the earlier parts the model got from an older read.
+  return part > 1 && recent ? { ...result, reloaded: true } : result
 }
 
 /** Loads a page, and for a database row also its database, which names the row's properties. */

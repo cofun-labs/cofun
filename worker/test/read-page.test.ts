@@ -528,13 +528,15 @@ describe('more converter and argument details', () => {
 
   it('accepts Notion links without https:// and page slugs ending in the id', async () => {
     const page = chunk([])
-    const tab = openPage(page, page)
+    const tab = openPage(page, page, page, page)
     await read({ page: `notion.so/x`.replace('notion.so', 'www.notion.so') + `/Fixture-page-${PAGE_HEX}` })
     await read({ page: `Fixture-page-${PAGE_HEX}` })
-    expect(tab.sent.map((r) => (r.body.page as { id: string }).id)).toEqual([PAGE, PAGE])
+    await read({ page: `notion.so/Fixture-page-${PAGE_HEX}` })
+    await read({ page: `https://notion.so/Fixture-page-${PAGE_HEX}` })
+    expect(tab.sent.map((r) => (r.body.page as { id: string }).id)).toEqual([PAGE, PAGE, PAGE, PAGE])
   })
 
-  it('keeps several long pages for their later parts, and says when a later part had to be read again', async () => {
+  it('keeps several long pages for their later parts, and warns only when an earlier read went stale', async () => {
     const long = (pageId: string) => {
       const ids = Array.from({ length: 300 }, (_, i) => id(i + 1))
       const blocks = Object.assign({}, ...ids.map((b, i) => block(b, 'text', `P${i} ${'y'.repeat(60)}`, {}, pageId)))
@@ -552,8 +554,7 @@ describe('more converter and argument details', () => {
     expect(await read({ page: b, part: 2 })).not.toContain('read again')
     expect(tab.sent).toHaveLength(2)
     // A later part with no earlier read is read fresh, and says so.
-    expect(await read({ page: c, part: 2 })).toContain(
-      'The page was read again for this part; earlier parts may be out of date.',
-    )
+    // With no earlier read at all, there is nothing to be out of date.
+    expect(await read({ page: c, part: 2 })).not.toContain('read again')
   })
 })
