@@ -2,7 +2,7 @@
 // The worker's tests import this file too, and their tsconfig has no chrome types.
 /// <reference types="chrome" />
 import type { ToolSpec } from './agent'
-import { isNotion } from './notion'
+import { isNotion } from './notion/hosts'
 
 /**
  * The title and URL of the Notion page open in the side panel's window, if one is.

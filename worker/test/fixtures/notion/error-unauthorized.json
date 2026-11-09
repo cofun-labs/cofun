@@ -1,0 +1,7 @@
+{
+  "isNotionError": true,
+  "errorId": "e0000000-0000-4000-8000-000000000001",
+  "name": "UnauthorizedError",
+  "debugMessage": "Must be authenticated.",
+  "message": "Something went wrong. (401)"
+}
