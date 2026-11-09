@@ -18,10 +18,20 @@ export function pageIdFromUrl(url: string): string | undefined {
   try {
     const u = new URL(url)
     const hex = notionId(u.searchParams.get('p') ?? '') ?? notionId(u.pathname.split('/').at(-1) ?? '')
-    return hex && `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`
+    return hex && dashed(hex)
   } catch {
     return undefined
   }
+}
+
+/** A Notion id in the form Notion's API keys records by (dashed, lowercase), or undefined if `id` isn't one. */
+export function toUuid(id: string): string | undefined {
+  const hex = id.replace(/-/g, '')
+  return /^[0-9a-f]{32}$/i.test(hex) ? dashed(hex.toLowerCase()) : undefined
+}
+
+function dashed(hex: string): string {
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`
 }
 
 /** The 32-hex id at the end of `text`, with or without dashes. */

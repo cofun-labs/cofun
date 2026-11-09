@@ -50,6 +50,8 @@ class FakeNotionTab {
   /** Where the page is when the script runs; defaults to the tab's URL. */
   pageUrl?: string
   closed = false
+  /** Makes executeScript fail with this message while the tab is still open on Notion. */
+  injectionError?: string
   networkDown = false
 
   constructor(
@@ -68,7 +70,13 @@ class FakeNotionTab {
 
   install(): this {
     globals.chrome = {
-      tabs: { query: async () => (this.url === undefined ? [] : [{ id: 7, url: this.url, title: 'Fixture page' }]) },
+      tabs: {
+        query: async () => (this.url === undefined ? [] : [{ id: 7, url: this.url, title: 'Fixture page' }]),
+        get: async (tabId: number) => {
+          if (this.closed) throw new Error(`No tab with id: ${tabId}.`)
+          return { id: tabId, url: this.pageUrl ?? this.url }
+        },
+      },
       scripting: {
         executeScript: async ({
           target,
@@ -82,6 +90,7 @@ class FakeNotionTab {
           args: unknown[]
         }) => {
           if (this.closed) throw new Error(`No tab with id: ${target.tabId}.`)
+          if (this.injectionError) throw new Error(this.injectionError)
           this.injections.push({ tabId: target.tabId, world })
           const location = new URL(this.pageUrl ?? this.url!)
           globals.location = location
@@ -199,6 +208,31 @@ describe('requests', () => {
     expect((await notionError(client.loadPage(PAGE))).code).toBe('no_notion_tab')
   })
 
+  it('report other failures to run in the tab as Notion errors, with the reason', async () => {
+    const tab = pageTab()
+    const { client } = await activeNotionTab()
+    tab.injectionError = 'Cannot access contents of the page. Extension manifest must request permission.'
+    const err = await notionError(client.loadPage(PAGE))
+    expect([err.code, err.message]).toEqual([
+      'notion_error',
+      'Could not run in the Notion tab: Cannot access contents of the page. Extension manifest must request permission.',
+    ])
+  })
+
+  it('send the workspace of the request, not of an earlier one', async () => {
+    const other = '5b5b5b5b-0000-4000-8000-000000000009'
+    const tab = pageTab()
+      .respond('syncRecordValuesMain', 200, fixture('sync-record-values'))
+      .respond('saveTransactionsFanout', 200, {})
+      .respond('syncRecordValuesMain', 200, fixture('sync-record-values'))
+    const { client } = await activeNotionTab()
+    await client.loadPage(PAGE)
+    await client.getRecords([{ table: 'block', id: BLOCKS[0] }])
+    await client.submitTransaction(other, [], 'edit')
+    await client.getRecords([{ table: 'block', id: BLOCKS[0], spaceId: SPACE }])
+    expect(tab.sent.map((r) => r.headers['x-notion-space-id'])).toEqual([undefined, SPACE, undefined, other, SPACE])
+  })
+
   it('report a network failure as a Notion error', async () => {
     const tab = pageTab()
     tab.networkDown = true
@@ -247,6 +281,24 @@ describe('loading a page', () => {
     const loaded = await (await activeNotionTab()).client.loadPage(PAGE, { maxChunks: 1 })
     expect(loaded.complete).toBe(false)
     expect(Object.keys(loaded.recordMap.block!)).toHaveLength(3)
+    pageTab()
+    expect((await (await activeNotionTab()).client.loadPage(PAGE, { maxChunks: 0 })).complete).toBe(false)
+  })
+
+  it('accepts page ids without dashes or in uppercase', async () => {
+    for (const id of [PAGE.replace(/-/g, ''), PAGE.toUpperCase()]) {
+      const tab = pageTab()
+      const loaded = await (await activeNotionTab()).client.loadPage(id)
+      expect(loaded.page.id).toBe(PAGE)
+      expect(tab.sent[0].body.page).toEqual({ id: PAGE })
+    }
+  })
+
+  it('refuses an id that is not a Notion id, without asking Notion', async () => {
+    const tab = pageTab()
+    const err = await notionError((await activeNotionTab()).client.loadPage('Q4 Roadmap'))
+    expect([err.code, err.message]).toEqual(['notion_error', 'Not a Notion id: Q4 Roadmap'])
+    expect(tab.sent).toEqual([])
   })
 
   it('treats a page missing from the response as no access', async () => {
@@ -377,11 +429,12 @@ describe('submitting a transaction', () => {
     const pointer = { table: 'block' as const, id: BLOCKS[0] }
     for (const op of [
       { pointer, path: ['crdt_data', 'title'], command: 'update', args: {} },
+      { pointer, path: ['properties', 'crdt_data'], command: 'update', args: {} },
       { pointer, path: [], command: 'update', args: { crdt_data: {} } },
+      { pointer, path: [], command: 'set', args: { id: BLOCKS[0], format: { crdt_data: {} } } },
     ] satisfies Operation[]) {
-      await expect(client.submitTransaction(SPACE, [op], 'edit')).rejects.toThrow(
-        'Operations must not write crdt_data.',
-      )
+      const err = await notionError(client.submitTransaction(SPACE, [op], 'edit'))
+      expect([err.code, err.message]).toEqual(['notion_error', 'Operations must not write crdt_data.'])
     }
     expect(tab.sent).toEqual([])
   })

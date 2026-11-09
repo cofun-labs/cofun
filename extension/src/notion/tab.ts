@@ -35,9 +35,12 @@ export function tabTransport(tabId: number): NotionTransport {
         args: [endpoint, body, spaceId ?? null, NOTION_HOSTS],
       })
       result = frame?.result
-    } catch {
-      // The tab closed, left Notion, or is still loading.
-      throw new NotionError('no_notion_tab', NO_NOTION_TAB)
+    } catch (err) {
+      // The tab closed or left Notion; anything else (say, a missing permission) is passed on.
+      const tab = await chrome.tabs.get(tabId).catch(() => undefined)
+      if (!tab || !isNotion(tab.url)) throw new NotionError('no_notion_tab', NO_NOTION_TAB, { cause: err })
+      const message = err instanceof Error ? err.message : String(err)
+      throw new NotionError('notion_error', `Could not run in the Notion tab: ${message}`, { cause: err })
     }
     if (!result || 'notOnNotion' in result) throw new NotionError('no_notion_tab', NO_NOTION_TAB)
     return result

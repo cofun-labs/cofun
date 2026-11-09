@@ -2,6 +2,7 @@
 // endpoints and request shapes. Tools call the typed methods of NotionClient, never fetch.
 // The shapes come from the #64 spike (verified against Notion's web client, 2026-11).
 // The worker's tests import this file too, so it uses no chrome APIs (see tab.ts for those).
+import { toUuid } from './hosts'
 
 /** Why a Notion call failed, for the model and the user. */
 export type NotionErrorCode = 'no_notion_tab' | 'signed_out' | 'no_access' | 'notion_error'
@@ -10,8 +11,9 @@ export class NotionError extends Error {
   constructor(
     readonly code: NotionErrorCode,
     message: string,
+    options?: { cause?: unknown },
   ) {
-    super(message)
+    super(message, options)
     this.name = 'NotionError'
   }
 }
@@ -92,41 +94,43 @@ export interface LoadedPage {
 const CHUNK_LIMIT = 100
 
 export class NotionClient {
-  /** The workspace of the last page loaded, sent as `x-notion-space-id`. */
-  private spaceId?: string
-
   constructor(private readonly send: NotionTransport) {}
 
   /** Loads a page with its content, following loadPageChunk's cursor until the page is complete. */
-  async loadPage(pageId: string, { maxChunks = 50 } = {}): Promise<LoadedPage> {
+  async loadPage(id: string, { maxChunks = 50 } = {}): Promise<LoadedPage> {
+    const pageId = notionId(id)
     const recordMap: RecordMap = {}
     let cursor: unknown = { stack: [] }
-    let complete = false
-    let page: Block | undefined
+    let spaceId: string | undefined
     // Chunks overlap (the page and some parents repeat); merging de-duplicates them by id.
-    for (let chunkNumber = 0; chunkNumber < maxChunks && !complete; chunkNumber++) {
+    for (let chunkNumber = 0; chunkNumber < Math.max(1, maxChunks); chunkNumber++) {
       const { json, signedIn } = await this.request<{ cursor?: { stack?: unknown[] }; recordMap?: unknown }>(
         'loadPageChunk',
         { page: { id: pageId }, limit: CHUNK_LIMIT, cursor, chunkNumber, verticalColumns: false },
+        spaceId,
       )
       mergeRecordMaps(recordMap, normalizeRecordMap(json.recordMap))
-      page = recordMap.block?.[pageId] as Block | undefined
+      const page = recordMap.block?.[pageId] as Block | undefined
       if (!page) throw missingRecord(signedIn)
       if (!page.space_id) throw new NotionError('notion_error', 'Notion returned the page without its workspace.')
-      this.spaceId = page.space_id
-      complete = !json.cursor?.stack?.length
+      spaceId = page.space_id
+      if (!json.cursor?.stack?.length) return { page, spaceId, recordMap, complete: true }
       cursor = json.cursor
     }
-    return { page: page!, spaceId: page!.space_id!, recordMap, complete }
+    return { page: recordMap.block![pageId] as Block, spaceId: spaceId!, recordMap, complete: false }
   }
 
   /** Loads specific records of any table. Every requested record must come back. */
   async getRecords(pointers: Pointer[]): Promise<RecordMap> {
-    const { json, signedIn } = await this.request<{ recordMap?: unknown }>('syncRecordValuesMain', {
-      requests: pointers.map((pointer) => ({ pointer, version: -1 })),
-    })
+    const requested = pointers.map((p) => ({ ...p, id: notionId(p.id) }))
+    const spaces = new Set(requested.map((p) => p.spaceId))
+    const { json, signedIn } = await this.request<{ recordMap?: unknown }>(
+      'syncRecordValuesMain',
+      { requests: requested.map((pointer) => ({ pointer, version: -1 })) },
+      spaces.size === 1 ? [...spaces][0] : undefined,
+    )
     const recordMap = normalizeRecordMap(json.recordMap)
-    if (pointers.some((p) => !recordMap[p.table]?.[p.id])) throw missingRecord(signedIn)
+    if (requested.some((p) => !recordMap[p.table]?.[p.id])) throw missingRecord(signedIn)
     return recordMap
   }
 
@@ -134,8 +138,8 @@ export class NotionClient {
   async submitTransaction(spaceId: string, operations: Operation[], userAction: string): Promise<void> {
     // Text lives in CRDT form too; the server keeps it in sync with `properties`. Writing it
     // directly would corrupt the block.
-    if (operations.some((op) => op.path[0] === 'crdt_data' || hasCrdtData(op.args))) {
-      throw new Error('Operations must not write crdt_data.')
+    if (operations.some((op) => op.path.includes('crdt_data') || hasCrdtData(op.args))) {
+      throw new NotionError('notion_error', 'Operations must not write crdt_data.')
     }
     await this.request(
       'saveTransactionsFanout',
@@ -147,10 +151,11 @@ export class NotionClient {
     )
   }
 
+  /** `spaceId`, when known, goes along as `x-notion-space-id`. */
   private async request<T>(
     endpoint: NotionEndpoint,
     body: unknown,
-    spaceId = this.spaceId,
+    spaceId?: string,
   ): Promise<{ json: T; signedIn: boolean }> {
     const res = await this.send(endpoint, body, { spaceId })
     return { json: checkResponse(res) as T, signedIn: res.signedIn }
@@ -216,6 +221,15 @@ export function mergeRecordMaps(target: RecordMap, source: RecordMap): RecordMap
   return target
 }
 
-function hasCrdtData(args: unknown): boolean {
-  return !!args && typeof args === 'object' && 'crdt_data' in args
+/** Whether `value` has a `crdt_data` key at any depth. */
+function hasCrdtData(value: unknown): boolean {
+  if (!value || typeof value !== 'object') return false
+  return Object.entries(value).some(([key, v]) => key === 'crdt_data' || hasCrdtData(v))
+}
+
+/** A record id as Notion keys records by; ids from URLs or the model may be undashed or uppercase. */
+function notionId(id: string): string {
+  const uuid = toUuid(id)
+  if (!uuid) throw new NotionError('notion_error', `Not a Notion id: ${id}`)
+  return uuid
 }
