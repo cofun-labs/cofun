@@ -470,7 +470,7 @@ export function blockOps(spaceId: string, now: number) {
       id: string,
       type: string,
       parentId: string,
-      fields: { properties?: object; format?: object } = {},
+      fields: { properties?: object; format?: object; parent_table?: 'block' | 'collection' } = {},
     ): Operation {
       return {
         pointer: pointer(id),

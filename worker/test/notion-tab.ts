@@ -168,6 +168,8 @@ export class FakeWorkspace {
   reject = false
   /** Makes the next transaction apply, then answer with a server error, as a lost answer would. */
   failAfterApply = false
+  /** Databases' data sources (their schemas), by collection id. */
+  collections = new Map<string, NotionRecordLike>()
 
   constructor(
     blocks: Record<string, unknown>[],
@@ -212,11 +214,20 @@ export class FakeWorkspace {
     }
     if (endpoint === 'syncRecordValuesMain') {
       const block: Record<string, unknown> = {}
-      for (const { pointer } of body.requests as { pointer: { id: string } }[]) {
+      const collection: Record<string, unknown> = {}
+      for (const { pointer } of body.requests as { pointer: { id: string; table: string } }[]) {
+        if (pointer.table === 'collection') {
+          const c = this.collections.get(pointer.id)
+          if (c) collection[pointer.id] = wrap(c)
+          continue
+        }
         const r = this.records.get(pointer.id)
         if (r) block[pointer.id] = wrap(r)
       }
-      return { status: 200, json: { recordMap: { __version__: 3, block } } }
+      return {
+        status: 200,
+        json: { recordMap: { __version__: 3, block, ...(Object.keys(collection).length ? { collection } : {}) } },
+      }
     }
     if (endpoint === 'saveTransactionsFanout') {
       if (this.reject) {

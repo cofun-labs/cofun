@@ -82,14 +82,11 @@ describe('UC-NOTION-007 create a page', () => {
     expect(ws.content(PAGE).map((b) => b.type)).toEqual(['text'])
   })
 
-  it('[UC-NOTION-007-S03] refuses to create a page inside a database or a block', async () => {
+  it('[UC-NOTION-007-S05] refuses to create a page inside a piece of a page', async () => {
     const ws = workspace()
     open(ws)
-    await expect(create({ title: 'Row', parent: 'db0db0db000040008000000000000009' })).rejects.toThrow(
-      "That is a database; create_page can't add rows to it.",
-    )
     await expect(create({ title: 'x', parent: hex(intro) })).rejects.toThrow(
-      'That id is a block inside a page, not a page.',
+      'That id is a block inside a page, not a page or a database.',
     )
     expect(ws.transactions).toEqual([])
   })
@@ -102,7 +99,7 @@ describe('create_page details', () => {
       [
         'Create a page',
         'Title: Launch notes',
-        `At the end of: ^${hex(PAGE)}`,
+        `In: ^${hex(PAGE)} (at its end if it is a page; as a new row if it is a database)`,
         'Content:',
         '    # Plan',
         '    - Ship',
@@ -142,7 +139,7 @@ describe('create_page details', () => {
     // The title stays on its line; where the page goes is always the line after it.
     expect(createPage.preview!({ title, parent: PAGE_URL })?.split('\n').slice(1, 3)).toEqual([
       'Title: Notes” at the end of the page “Other',
-      `At the end of: ^${hex(PAGE)}`,
+      `In: ^${hex(PAGE)} (at its end if it is a page; as a new row if it is a database)`,
     ])
     await create({ title, parent: PAGE_URL })
     expect(ws.content(PAGE).at(-1)!.properties).toEqual({ title: [['Notes” at the end of the page “Other']] })

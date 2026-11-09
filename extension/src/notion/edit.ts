@@ -560,16 +560,29 @@ function clip(text: string, max = 80): string {
 
 /** The operations creating a page at the end of `parentId`, titled `title`, holding `blocks`. */
 export function planNewPage(
-  parentId: string,
+  parent: { id: string; table: 'block' | 'collection' },
   spaceId: string,
   title: string,
   blocks: NewBlock[],
-  { now = Date.now(), newId = () => crypto.randomUUID() } = {},
+  { now = Date.now(), newId = () => crypto.randomUUID(), properties = {} as Record<string, unknown> } = {},
 ): { operations: Operation[]; pageId: string } {
   const op = blockOps(spaceId, now)
   const operations: Operation[] = []
-  const pageId = createBlock(op, operations, { type: 'page', title: [[title]], children: blocks }, parentId, newId)
-  operations.push(op.listAfter(parentId, pageId), op.touch(parentId))
+  const pageId = newId()
+  // A database row's parent is the database's collection, which lists its rows itself.
+  operations.push(
+    op.create(pageId, 'page', parent.id, {
+      properties: { ...properties, title: [[title]] },
+      ...(parent.table === 'collection' ? { parent_table: 'collection' as const } : {}),
+    }),
+  )
+  let prev: string | undefined
+  for (const child of blocks) {
+    const childId = createBlock(op, operations, child, pageId, newId)
+    operations.push(op.listAfter(pageId, childId, prev))
+    prev = childId
+  }
+  if (parent.table === 'block') operations.push(op.listAfter(parent.id, pageId), op.touch(parent.id))
   return { operations, pageId }
 }
 
