@@ -1018,3 +1018,14 @@ describe('round 13', () => {
     )
   })
 })
+
+describe('round 14', () => {
+  it('round-trips paragraphs that start with spaces', async () => {
+    const ws = workspace([1], [block(1, 'text', '  - not a list')])
+    open(ws)
+    const shown = body(await read())
+    expect(shown).toBe('\\  - not a list ^00000001')
+    await edit([{ action: 'replace', block: '^00000001', markdown: shown.replace('list', 'list either') }])
+    expect(ws.records.get(id(1))).toMatchObject({ type: 'text', properties: { title: [['  - not a list either']] } })
+  })
+})
