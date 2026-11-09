@@ -43,9 +43,9 @@ export const TEXT_TYPES = new Set([
 /** A block reference at the end of a line (` ^1a2b3c4d` or a full id), as read_page writes them. */
 const TRAILING_REF = /\s*\^[0-9a-f]{8}(?:[0-9a-f]{24})?\s*$/i
 const REF_LINE = /^\s*\^[0-9a-f]{8}(?:[0-9a-f]{24})?\s*$/i
-/** Lines read_page writes for content that can't be written back. */
+/** Lines read_page writes for content that can't be written back, and nothing else (not a `[file](url)` link). */
 const PLACEHOLDER =
-  /^(?:📄|🗃|↗ |\[(?:unsupported block|image|video|audio|pdf|file|embed|block not loaded|empty table|link to a page)\b)/
+  /^(?:📄 |🗃 |↗ |\[(?:unsupported block: [^\]]+|(?:image|video|audio|pdf|file)(?::[^\]]*)?|embed: [^\]]*|block not loaded|empty table|link to a page)\]$)/
 
 export function parseMarkdown(markdown: string): NewBlock[] {
   const lines = markdown.replace(/\r\n?/g, '\n').split('\n')
@@ -115,7 +115,8 @@ function leading(line: string): number {
 function lineBlock(line: string): NewBlock {
   const block = (type: string, text: string, extra: Partial<NewBlock> = {}): NewBlock => ({
     type,
-    title: inline(text),
+    // read_page shows line breaks inside a block as <br>.
+    title: inline(text.replace(/<br\s*\/?>/gi, '\n')),
     children: [],
     ...extra,
   })
@@ -184,4 +185,54 @@ function push(out: RichText, text: string, marks: Mark[]) {
 
 function dashed(hex: string): string {
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`
+}
+
+/** Notion's names for the languages people write most; others are kept as given. */
+const LANGUAGES: Record<string, string> = Object.fromEntries(
+  [
+    'Bash',
+    'C',
+    'C#',
+    'C++',
+    'CSS',
+    'Dart',
+    'Docker',
+    'Go',
+    'GraphQL',
+    'HTML',
+    'Java',
+    'JavaScript',
+    'JSON',
+    'Kotlin',
+    'Markdown',
+    'Mermaid',
+    'PHP',
+    'Plain Text',
+    'PowerShell',
+    'Python',
+    'Ruby',
+    'Rust',
+    'Scala',
+    'Shell',
+    'SQL',
+    'Swift',
+    'TypeScript',
+    'XML',
+    'YAML',
+  ].map((name) => [name.toLowerCase(), name]),
+)
+const ALIASES: Record<string, string> = {
+  js: 'JavaScript',
+  ts: 'TypeScript',
+  py: 'Python',
+  sh: 'Shell',
+  yml: 'YAML',
+  md: 'Markdown',
+  '': 'Plain Text',
+}
+
+/** A code fence's language as Notion names it (`typescript` → `TypeScript`). */
+export function notionLanguage(language: string): string {
+  const key = language.trim().toLowerCase()
+  return LANGUAGES[key] ?? ALIASES[key] ?? language.trim()
 }

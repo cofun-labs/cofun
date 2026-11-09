@@ -215,7 +215,10 @@ describe('extension agent against the worker', () => {
     tab.install()
     const editCall = {
       name: 'edit_page',
-      arguments: JSON.stringify({ edits: [{ action: 'insert', position: 'start', markdown: 'Summary: hi' }] }),
+      arguments: JSON.stringify({
+        page: PAGE.replace(/-/g, ''),
+        edits: [{ action: 'insert', position: 'start', markdown: 'Summary: hi' }],
+      }),
     }
     ai.script = [
       { toolCalls: [{ name: 'read_page', arguments: '{}' }] },

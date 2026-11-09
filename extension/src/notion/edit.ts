@@ -1,36 +1,103 @@
 // Planning an edit_page call: checking the edits against the page as the agent read it and as it
 // is now, and turning them into one Notion transaction. Nothing here talks to Notion.
 import type { Block, LoadedPage, Operation } from './api'
-import { MarkdownError, TEXT_TYPES, parseMarkdown, type NewBlock } from './blocks'
-import { PAGE_TYPES, type PageMarkdown } from './markdown'
+import { MarkdownError, TEXT_TYPES, notionLanguage, parseMarkdown, type NewBlock, type RichText } from './blocks'
+import { PAGE_TYPES, hexId, type PageMarkdown } from './markdown'
 
-/** What the agent saw when it last read a page: the references it was shown, and each block's version. */
+/**
+ * What the agent saw of a page: the references it was shown, and the version of each block it saw.
+ * Only blocks the agent was actually shown are here, so an edit can't overwrite one it never saw.
+ */
 export interface PageRead {
   pageId: string
-  /** Block id by the reference read_page showed for it. */
+  title: string
+  /** Block id by the reference read_page showed for it (and by full id). */
   ids: Map<string, string>
   /** Reference by block id. */
   refs: Map<string, string>
   versions: Map<string, number>
   /** The line each block showed as, for previews. */
   lines: Map<string, string>
+  /** The blocks nested under each block, at any depth, as the page was read. */
+  nested: Map<string, string[]>
 }
 
-export function pageRead(loaded: LoadedPage, md: PageMarkdown): PageRead {
+/** The blocks of `md` the agent saw: those whose reference `shown` contains, or those `include` picks. */
+export function pageRead(loaded: LoadedPage, md: PageMarkdown, include: string | ((id: string) => boolean)): PageRead {
   const blocks = (loaded.recordMap.block ?? {}) as Record<string, Block>
+  const seen = (id: string, ref: string) =>
+    typeof include === 'string' ? new RegExp(`\\^(?:${ref}|${hexId(id)})(?![0-9a-f])`).test(include) : include(id)
+  const refs = new Map([...md.refs].filter(([id, ref]) => seen(id, ref)))
   const versions = new Map<string, number>()
-  for (const id of [loaded.page.id, ...md.refs.keys()]) {
-    const block = blocks[id]
-    if (block) versions.set(id, block.version)
+  const nested = new Map<string, string[]>()
+  for (const id of [loaded.page.id, ...refs.keys()]) {
+    if (blocks[id]) versions.set(id, blocks[id].version)
   }
+  for (const id of refs.keys()) nested.set(id, descendants(blocks, id))
   return {
     pageId: loaded.page.id,
-    // Short references, and full ids, which read_page shows for child pages and databases.
-    ids: new Map([...md.refs].flatMap(([id, ref]) => [[ref, id] as const, [id.replace(/-/g, ''), id] as const])),
-    refs: md.refs,
+    title: md.title,
+    ids: idsFor(refs),
+    refs,
     versions,
-    lines: md.lines,
+    lines: new Map([...md.lines].filter(([id]) => refs.has(id))),
+    nested,
   }
+}
+
+/** Adds what the agent saw later to what it saw before; later versions win. */
+export function mergeReads(base: PageRead | undefined, later: PageRead): PageRead {
+  if (!base || base.pageId !== later.pageId) return later
+  const refs = new Map(base.refs)
+  for (const [id, ref] of later.refs) {
+    // A short reference already naming another block: use the full id instead.
+    const taken = base.ids.get(ref)
+    refs.set(id, taken && taken !== id ? hexId(id) : ref)
+  }
+  return {
+    pageId: base.pageId,
+    title: later.title,
+    ids: idsFor(refs),
+    refs,
+    versions: new Map([...base.versions, ...later.versions]),
+    lines: new Map([...base.lines, ...later.lines]),
+    nested: new Map([...base.nested, ...later.nested]),
+  }
+}
+
+/** Removes blocks that no longer exist from a read. */
+export function forget(read: PageRead, ids: Iterable<string>): PageRead {
+  const gone = new Set(ids)
+  const keep = <V>(m: Map<string, V>) => new Map([...m].filter(([id]) => !gone.has(id)))
+  const refs = keep(read.refs)
+  return {
+    ...read,
+    refs,
+    ids: idsFor(refs),
+    versions: keep(read.versions),
+    lines: keep(read.lines),
+    nested: keep(read.nested),
+  }
+}
+
+function idsFor(refs: Map<string, string>): Map<string, string> {
+  // Short references, and full ids, which read_page shows for child pages and databases.
+  return new Map([...refs].flatMap(([id, ref]) => [[ref, id] as const, [hexId(id), id] as const]))
+}
+
+/** The alive blocks under `id`, at any depth, not looking inside child pages. */
+function descendants(blocks: Record<string, Block>, id: string): string[] {
+  const out: string[] = []
+  const visit = (parent: string) => {
+    for (const child of blocks[parent]?.content ?? []) {
+      const block = blocks[child]
+      if (!block || block.alive === false) continue
+      out.push(child)
+      if (!PAGE_TYPES.has(block.type)) visit(child)
+    }
+  }
+  if (blocks[id] && !PAGE_TYPES.has(blocks[id].type)) visit(id)
+  return out
 }
 
 /** The edit can't be made as asked; nothing was written. The message says why, for the model. */
@@ -76,8 +143,9 @@ export function parseEdits(raw: unknown, read: PageRead): Edit[] {
       }
     }
     const block = () => {
-      if (typeof e.block !== 'string' || !e.block.trim())
+      if (typeof e.block !== 'string' || !e.block.trim()) {
         throw new EditError(`${where} needs \`block\`, a reference such as ^1a2b3c4d.`)
+      }
       const ref = e.block.trim().replace(/^\^/, '').toLowerCase()
       const id = read.ids.get(ref)
       if (!id) throw new EditError(`${where}: ^${ref} is not a block of the page as you last read it. ${READ_AGAIN}`)
@@ -119,9 +187,18 @@ export interface Plan {
   operations: Operation[]
   /** Ids of the top-level blocks created, in order. */
   created: string[]
+  /** Every block created, nested ones too. */
+  createdAll: string[]
+  /** Blocks deleted, with what was nested under them. */
+  deleted: string[]
+  /** Blocks whose content or fields this edit changed (not counting created or deleted ones). */
+  changed: string[]
   /** What the edit does, one line per edit, for the result. */
   summary: string[]
 }
+
+/** Rich text marks edit_page writes back; others (mentions of people and dates, colors, …) it can't. */
+const WRITABLE_MARKS = new Set(['b', 'i', 's', 'c', 'a', 'p'])
 
 /**
  * Turns edits into operations on the page as it is now (`loaded`), refusing them if a block they
@@ -135,24 +212,44 @@ export function planEdit(
 ): Plan {
   const blocks = (loaded.recordMap.block ?? {}) as Record<string, Block>
   const { page, spaceId } = loaded
-  const ref = (id: string) => `^${read.refs.get(id) ?? id.replace(/-/g, '')}`
+  const ref = (id: string) => `^${read.refs.get(id) ?? hexId(id)}`
+  const check = (id: string, what = ref(id)) => {
+    const block = blocks[id]
+    if (!block || block.alive === false)
+      throw new EditError(`${what} was deleted since you read the page. ${READ_AGAIN}`)
+    if (!read.versions.has(id)) throw new EditError(`${what} wasn't shown to you when you read the page. ${READ_AGAIN}`)
+    if (block.version !== read.versions.get(id)) {
+      throw new EditError(`${what} was changed since you read the page. ${READ_AGAIN}`)
+    }
+  }
 
-  // Every block an edit points at must be as the agent read it.
+  // Every block an edit points at must be as the agent read it, and so must everything a delete
+  // removes with it.
+  const deleted = new Set<string>()
   for (const e of edits) {
     const id = e.action === 'insert' ? e.anchor : e.target
     if (!id) continue
-    const block = blocks[id]
-    if (!block || block.alive === false)
-      throw new EditError(`${ref(id)} was deleted since you read the page. ${READ_AGAIN}`)
-    if (block.version !== read.versions.get(id)) {
-      throw new EditError(`${ref(id)} was changed since you read the page. ${READ_AGAIN}`)
+    check(id)
+    if (e.action !== 'delete') continue
+    for (const d of descendants(blocks, e.target)) {
+      if (PAGE_TYPES.has(blocks[d].type)) {
+        throw new EditError(`${ref(e.target)} has a child page or database nested under it, so it can't be deleted.`)
+      }
+      check(d, `${ref(d)}, nested under ${ref(e.target)},`)
+      deleted.add(d)
     }
+    deleted.add(e.target)
+  }
+  for (const e of edits) {
+    const id = e.action === 'insert' ? e.anchor : e.action === 'replace' ? e.target : undefined
+    if (id && deleted.has(id)) throw new EditError(`${ref(id)} is inside a block this call deletes.`)
   }
 
   const ops: Operation[] = []
   const created: string[] = []
+  const createdAll: string[] = []
   const summary: string[] = []
-  const edited = new Set<string>([page.id])
+  const changed = new Set<string>([page.id])
   const pointer = (id: string) => ({ table: 'block' as const, id, spaceId })
   /** Where the next block inserted at each place goes: after the last one inserted there. */
   const tails = new Map<string, string>()
@@ -186,14 +283,15 @@ export function planEdit(
       tails.set(place.key, id)
       ids.push(id)
     }
-    edited.add(parent.id)
+    changed.add(parent.id)
     return ids
   }
 
+  /** The operations creating a block and its children; each record exists before a list names it. */
   const create = (nb: NewBlock, parentId: string): string => {
     const id = newId()
-    const childIds = nb.children.map((child) => create(child, id))
-    ops.unshift({
+    createdAll.push(id)
+    ops.push({
       pointer: pointer(id),
       path: [],
       command: 'set',
@@ -209,9 +307,20 @@ export function planEdit(
         last_edited_time: now,
         ...(nb.type === 'divider' ? {} : { properties: properties(nb) }),
         ...(nb.icon ? { format: { page_icon: nb.icon } } : {}),
-        ...(childIds.length ? { content: childIds } : {}),
       },
     })
+    // Children go inside it, in order, the same way top-level blocks go into the page.
+    let prev: string | undefined
+    for (const child of nb.children) {
+      const childId = create(child, id)
+      ops.push({
+        pointer: pointer(id),
+        path: ['content'],
+        command: 'listAfter',
+        args: prev ? { after: prev, id: childId } : { id: childId },
+      })
+      prev = childId
+    }
     return id
   }
 
@@ -219,7 +328,7 @@ export function planEdit(
     const parent = parentOf(id)
     ops.push({ pointer: pointer(id), path: [], command: 'update', args: { alive: false, last_edited_time: now } })
     ops.push({ pointer: pointer(parent.id), path: ['content'], command: 'listRemove', args: { id } })
-    edited.add(parent.id)
+    changed.add(parent.id)
   }
 
   for (const e of edits) {
@@ -237,8 +346,11 @@ export function planEdit(
       throw new EditError(`${ref(e.target)} is a child page or database; edit_page can't change or delete it.`)
     }
     if (e.action === 'delete') {
+      const nested = descendants(blocks, e.target).length
       remove(e.target)
-      summary.push(`Deleted ${ref(e.target)}.`)
+      summary.push(
+        `Deleted ${ref(e.target)}${nested ? ` and the ${nested} block${nested === 1 ? '' : 's'} nested under it` : ''}.`,
+      )
       continue
     }
     if (!TEXT_TYPES.has(target.type)) {
@@ -248,20 +360,28 @@ export function planEdit(
     }
     const [only] = e.blocks
     if (e.blocks.length === 1 && only.type === target.type && !only.children.length) {
-      // The same kind of block: change it in place, keeping its id, children, and comments.
-      if (only.type !== 'divider') {
+      // The same kind of block: change it in place, keeping its id, children, and comments, and
+      // only the fields that differ, so text the agent didn't change keeps what can't be written.
+      const values = changedProperties(target, only, read.lines.get(target.id))
+      if (Object.keys(values).length) {
         ops.push({
           pointer: pointer(target.id),
           path: ['properties'],
           command: 'updateBlockPropertyValue',
-          args: { primitiveOp: { command: 'update', args: properties(only) } },
+          args: { primitiveOp: { command: 'update', args: values } },
         })
       }
       if (only.type === 'callout' && only.icon && only.icon !== target.format?.page_icon) {
         ops.push({ pointer: pointer(target.id), path: ['format'], command: 'update', args: { page_icon: only.icon } })
       }
-      edited.add(target.id)
-      summary.push(`Replaced the text of ${ref(e.target)}.`)
+      changed.add(target.id)
+      const lost = values.title && hasUnwritableMarks(target.properties?.title)
+      summary.push(
+        `Replaced the text of ${ref(e.target)}.` +
+          (lost
+            ? ' Mentions of people or dates, colors, and similar formatting in its old text are now plain text.'
+            : ''),
+      )
       continue
     }
     if (aliveChildren(target).length) {
@@ -273,33 +393,83 @@ export function planEdit(
     const ids = insert(e.blocks, parentOf(e.target), { after: e.target, key: e.target })
     remove(e.target)
     created.push(...ids)
+    deleted.add(e.target)
     summary.push(`Replaced ${ref(e.target)} with ${ids.length} new block${ids.length === 1 ? '' : 's'}.`)
   }
 
-  for (const id of edited) {
-    if (blocks[id]?.alive === false) continue
+  for (const id of changed) {
+    if (deleted.has(id) || blocks[id]?.alive === false) continue
     ops.push({ pointer: pointer(id), path: [], command: 'update', args: { last_edited_time: now } })
   }
-  return { operations: ops, created, summary }
+  return {
+    operations: ops,
+    created,
+    createdAll,
+    deleted: [...deleted],
+    changed: [...changed].filter((id) => !deleted.has(id)),
+    summary,
+  }
 }
 
-/** A block's property values as Notion stores them. */
+/** The property values of a rewritten block that differ from the block as it is. */
+function changedProperties(target: Block, nb: NewBlock, shownLine: string | undefined): Record<string, unknown> {
+  const out: Record<string, unknown> = {}
+  if (nb.type === 'code') {
+    const code = runsText(target.properties?.title)
+    if (code !== runsText(nb.title)) out.title = nb.title
+    const language = runsText(target.properties?.language)
+    if (nb.language && nb.language.toLowerCase() !== language.toLowerCase())
+      out.language = [[notionLanguage(nb.language)]]
+    return out
+  }
+  if (nb.type !== 'divider') {
+    // The same Markdown as read_page showed means the same text: keep the stored text as it is.
+    const before = shownLine ? parseMarkdown(shownLine)[0] : undefined
+    if (!before || JSON.stringify(before.title) !== JSON.stringify(nb.title)) out.title = nb.title
+  }
+  if (nb.type === 'to_do') {
+    const checked = runsText(target.properties?.checked) === 'Yes'
+    if (checked !== !!nb.checked) out.checked = [[nb.checked ? 'Yes' : 'No']]
+  }
+  return out
+}
+
+function runsText(value: unknown): string {
+  return Array.isArray(value) ? value.map((r) => (Array.isArray(r) ? String(r[0]) : '')).join('') : ''
+}
+
+function hasUnwritableMarks(value: unknown): boolean {
+  return (
+    Array.isArray(value) &&
+    value.some(
+      (r) => Array.isArray(r) && Array.isArray(r[1]) && r[1].some((m: unknown[]) => !WRITABLE_MARKS.has(String(m[0]))),
+    )
+  )
+}
+
+/** A block's property values as Notion stores them, for a new block. */
 function properties(nb: NewBlock): Record<string, unknown> {
   return {
-    title: nb.title,
+    title: nb.title as RichText,
     ...(nb.type === 'to_do' ? { checked: [[nb.checked ? 'Yes' : 'No']] } : {}),
-    ...(nb.type === 'code' ? { language: [[nb.language ?? 'plain text']] } : {}),
+    ...(nb.type === 'code' ? { language: [[notionLanguage(nb.language ?? 'plain text')]] } : {}),
   }
 }
 
 /** What an edit_page call would change, for the user to read before agreeing. */
-export function previewEdits(raw: unknown, read: PageRead | undefined): string | undefined {
+export function previewEdits(raw: unknown, read: PageRead | undefined, page: string): string | undefined {
   if (!Array.isArray(raw)) return undefined
   const shown = (block: unknown) => {
     const ref = typeof block === 'string' ? block.trim().replace(/^\^/, '').toLowerCase() : ''
     const id = read?.ids.get(ref)
     const line = id ? read!.lines.get(id) : undefined
     return line ? `^${ref} “${clip(line)}”` : `^${ref}`
+  }
+  const nested = (block: unknown) => {
+    const ref = typeof block === 'string' ? block.trim().replace(/^\^/, '').toLowerCase() : ''
+    const id = read?.ids.get(ref)
+    const n = id ? (read!.nested.get(id)?.length ?? 0) : 0
+    return n ? ` and the ${n} block${n === 1 ? '' : 's'} nested under it` : ''
   }
   const body = (markdown: unknown) =>
     typeof markdown === 'string'
@@ -308,28 +478,27 @@ export function previewEdits(raw: unknown, read: PageRead | undefined): string |
           .map((l) => `    ${l}`)
           .join('\n')
       : '    (nothing)'
-  return raw
-    .map((value) => {
-      const e = (value ?? {}) as EditArgs
-      switch (e.action) {
-        case 'insert': {
-          const where =
-            e.position === 'start'
-              ? 'at the start of the page'
-              : !e.block || e.position === 'end'
-                ? 'at the end of the page'
-                : `after ${shown(e.block)}`
-          return `Insert ${where}:\n${body(e.markdown)}`
-        }
-        case 'replace':
-          return `Replace ${shown(e.block)} with:\n${body(e.markdown)}`
-        case 'delete':
-          return `Delete ${shown(e.block)}`
-        default:
-          return `Unknown edit: ${JSON.stringify(value)}`
+  const changes = raw.map((value) => {
+    const e = (value ?? {}) as EditArgs
+    switch (e.action) {
+      case 'insert': {
+        const where =
+          e.position === 'start'
+            ? 'at the start of the page'
+            : !e.block || e.position === 'end'
+              ? 'at the end of the page'
+              : `after ${shown(e.block)}`
+        return `Insert ${where}:\n${body(e.markdown)}`
       }
-    })
-    .join('\n\n')
+      case 'replace':
+        return `Replace ${shown(e.block)} with:\n${body(e.markdown)}`
+      case 'delete':
+        return `Delete ${shown(e.block)}${nested(e.block)}`
+      default:
+        return `Unknown edit: ${JSON.stringify(value)}`
+    }
+  })
+  return [`On the page “${read?.title ?? page}”:`, ...changes].join('\n\n')
 }
 
 function clip(text: string, max = 80): string {

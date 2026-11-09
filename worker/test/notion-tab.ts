@@ -222,9 +222,17 @@ export class FakeWorkspace {
         // All or nothing, like Notion: apply to a copy, and keep it only if every operation applies.
         const next = new Map([...this.records].map(([k, v]) => [k, structuredClone(v)]))
         const touched = new Set<string>()
-        for (const op of tx.operations) {
-          applyOperation(next, op)
-          touched.add(op.pointer.id)
+        try {
+          for (const op of tx.operations) {
+            applyOperation(next, op)
+            touched.add(op.pointer.id)
+          }
+        } catch (err) {
+          // Notion refuses the whole transaction.
+          return {
+            status: 400,
+            json: { isNotionError: true, name: 'ValidationError', debugMessage: (err as Error).message },
+          }
         }
         for (const id of touched) {
           const before = this.records.get(id)
@@ -246,11 +254,19 @@ function applyOperation(
   const id = op.pointer.id
   const args = op.args as Record<string, unknown>
   if (op.command === 'set' && op.path.length === 0) {
+    if (records.has(id)) throw new Error(`Record ${id} already exists`)
     records.set(id, structuredClone(args) as NotionRecordLike)
     return
   }
   const record = records.get(id)
   if (!record) throw new Error(`No record ${id} for ${op.command}`)
+  // Notion's own rule: property values change only through updateBlockPropertyValue.
+  if ((op.command === 'set' || op.command === 'update') && op.path[0] === 'properties') {
+    throw new Error('Block property value updates must use high-level property operations.')
+  }
+  if (op.command === 'update' && op.path.length === 0 && 'properties' in args) {
+    throw new Error('Block property value updates must use high-level property operations.')
+  }
   const at = (path: string[]) =>
     path.reduce<Record<string, unknown>>((o, k) => (o[k] ??= {}) as Record<string, unknown>, record)
   switch (op.command) {
@@ -267,6 +283,10 @@ function applyOperation(
     case 'listBefore':
     case 'listRemove': {
       const list = ((record[op.path[0]] as string[] | undefined) ?? []).filter((x) => x !== args.id)
+      // A block goes only into the list of the block it names as its parent.
+      if (op.command !== 'listRemove' && records.get(args.id as string)?.parent_id !== id) {
+        throw new Error(`${String(args.id)} does not have ${id} as its parent`)
+      }
       if (op.command === 'listAfter') {
         const i = args.after ? list.indexOf(args.after as string) : list.length - 1
         if (args.after && i < 0) throw new Error(`listAfter: ${String(args.after)} not in list`)

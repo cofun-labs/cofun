@@ -200,7 +200,8 @@ class Context {
 
   /** A quote or callout: every line, its children's too, stays inside the blockquote. */
   private quoted(block: Block, pad: string, label: string, text: string, ref: string): string[] {
-    const own = withRef('', label, text, ref)
+    // Every line of a quote is marked as quoted, so its line breaks stay real lines.
+    const own = withRef('', label, text, ref, 'lines')
     const children = this.children(block, 0).flat()
     return [...own, ...children].map((l) => `${pad}> ${l}`)
   }
@@ -354,7 +355,9 @@ function indent(depth: number): string {
 }
 
 /** A block's lines: the prefix and text, continuation lines indented under it, the reference last. */
-function withRef(pad: string, prefix: string, text: string, ref: string): string[] {
+function withRef(pad: string, prefix: string, text: string, ref: string, breaks: 'br' | 'lines' = 'br'): string[] {
+  // A line break inside a block stays inside its one line, so it can't be read as another block.
+  if (breaks === 'br') return [`${pad}${prefix}${text.replace(/\n/g, '<br>')}${ref}`]
   const [first, ...rest] = text.split('\n')
   const lines = [`${pad}${prefix}${first}`, ...rest.map((l) => `${pad}${' '.repeat(prefix.length)}${l}`)]
   lines[lines.length - 1] += ref
