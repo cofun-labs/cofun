@@ -31,7 +31,7 @@ Key constraints:
 | UC-AGENT-001-S10 | P0 | ✅ | Given a tool that needs confirmation; when the user agrees; then it runs and the answer uses its result. |
 | UC-AGENT-001-S12 | P1 | ✅ | Given the agent working on a question; when the user stops it; then the model call and any running tool stop, and the conversation keeps the tools the agent used so far and how each ended, including one stopped while it waited for the user's confirmation, but not the unfinished reply or tools it had not reached yet. |
 | UC-AGENT-001-S13 | P1 | ✅ | Given a question that fails after the agent used a tool; when the user asks the next question; then the AI is given that tool's request and result. |
-| UC-AGENT-001-S14 | P1 | ✅ | Given a question that is stopped or fails before the agent used any tool; when the user asks the next question; then the failed question is left out of the conversation. |
+| UC-AGENT-001-S14 | P1 | ✅ | Given a question that is stopped or fails before the agent used any tool; when the user asks the next question; then that question is left out of the conversation. |
 
 ### ai-e2e
 

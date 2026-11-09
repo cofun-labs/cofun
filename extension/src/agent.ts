@@ -150,9 +150,9 @@ export class CopilotAgent {
         return { status: 'error', message: (err as Error).message }
       }
       if (this.agent) this.agent.state.model = this.model
-      // The question stays in the conversation with the tools it used, so asking again shows it
-      // twice; that is intended, the model must still learn what those tools did.
-      if (kept) return { status: 'error', message: 'Copilot was just updated. Please ask again.' }
+      // The question stays in the conversation with the tools it used, so the model can pick up
+      // where it left off; asking the same question again could run those tools twice.
+      if (kept) return { status: 'error', message: 'Copilot was just updated. Ask it to continue.' }
       return (await this.askOnce(text, onUpdate, epoch, confirm)).result
     }
     return result
