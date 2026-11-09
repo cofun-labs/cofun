@@ -141,17 +141,20 @@ export function Chat() {
           ) : (
             <div key={i} className="msg assistant">
               {m.parts.map((p, j) =>
+                // Models often send blank lines around a tool call; they would show as empty rows.
                 p.type === 'text' ? (
-                  <div key={j} className="text">
-                    {p.text}
-                  </div>
+                  p.text.trim() && (
+                    <div key={j} className="text">
+                      {p.text.trim()}
+                    </div>
+                  )
                 ) : (
                   <ToolCall key={p.tool.id} tool={p.tool} />
                 ),
               )}
               {m.error && <div className="error">{m.error}</div>}
               {busy && i === messages.length - 1 && waitingForModel(m.parts) && <div className="note">…</div>}
-              {m.stopped && ' [stopped]'}
+              {m.stopped && <div className="note">Stopped</div>}
               {m.note && <div className="note">{m.note}</div>}
             </div>
           ),

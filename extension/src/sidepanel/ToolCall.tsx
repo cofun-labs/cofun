@@ -46,7 +46,7 @@ export function ToolCall({ tool }: { tool: ShownTool }) {
 }
 
 /** A one-line description of the arguments, e.g. `query: "roadmap", limit: 5`. Empty for none. */
-export function summarize(args: unknown, max = 60): string {
+function summarize(args: unknown, max = 60): string {
   let line: string
   if (args && typeof args === 'object' && !Array.isArray(args)) {
     line = Object.entries(args)
