@@ -190,8 +190,8 @@ export function Chat({ userId }: { userId: string }) {
       // that session now.
       if (chatId.current === id) {
         setBusy(false)
-        // A question that failed or was stopped leaves the conversation as it was; don't move the
-        // session to the top of the list for it.
+        // A question that failed or was stopped before using a tool leaves the conversation as it
+        // was; don't move the session to the top of the list for it. One that used tools keeps them.
         const messages = agent.history()
         if (messages.length !== before) void save(session, messages)
       }
