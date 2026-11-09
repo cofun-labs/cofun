@@ -174,7 +174,7 @@ describe('list_pages sections', () => {
       .respond('syncRecordValuesMain', 200, records([page(3, 'Shared plan')]))
       .install()
     const result = await run()
-    expect(result).toContain(`(Only the first ${SECTION_LIMIT} entries of this section are listed.)`)
+    expect(result).toContain('(This section was cut off: not every page in it is listed.)')
     // The shared section is still there, and a page already listed isn't listed twice.
     expect(result.split('Shared\n')[1]).toBe(`- 📄 Shared plan ^${hex(id(3))}`)
   })
@@ -191,5 +191,23 @@ describe('list_pages arguments', () => {
   it('says a page with nothing under it has no pages', async () => {
     new FakeNotionTab(PAGE_URL).respond('syncRecordValuesMain', 200, records([page(10, 'Empty')])).install()
     expect(await run({ page: hex(id(10)) })).toBe(`Pages under “Empty” ^${hex(id(10))}:\n\n(no pages)`)
+  })
+})
+
+describe('list_pages at the limit', () => {
+  it('[UC-NOTION-005-S03] says the list was cut off when it fills up before the asked depth', async () => {
+    const kids = Array.from({ length: LIST_LIMIT }, (_, i) => id(300 + i))
+    const root = page(10, 'Exactly full', kids)
+    new FakeNotionTab(PAGE_URL)
+      .respond('syncRecordValuesMain', 200, records([root]))
+      .respond(
+        'syncRecordValuesMain',
+        200,
+        records(kids.slice(0, 100).map((k, i) => ({ ...page(0, `Child ${i}`, [id(900)]), id: k }))),
+      )
+      .install()
+    const result = await run({ page: hex(id(10)), depth: 2 })
+    expect(result.split('\n').filter((l) => l.startsWith('- '))).toHaveLength(LIST_LIMIT)
+    expect(result).toContain(`Only the first ${LIST_LIMIT} pages are listed`)
   })
 })

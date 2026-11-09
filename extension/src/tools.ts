@@ -249,7 +249,7 @@ export const listPages: ToolSpec = {
     let any = false
     let left = LIST_LIMIT
     for (const [label, all] of sections) {
-      const ids = all.filter((id) => !seen.has(id) && seen.add(id))
+      const ids = all.filter((id) => !seen.has(id))
       if (!ids.length) continue
       if (left <= 0) {
         skipped.push(label)
@@ -261,12 +261,18 @@ export const listPages: ToolSpec = {
       any = true
       left -= countNodes(nodes)
       out.push('', label, ...treeLines(nodes))
-      if (truncated) out.push(`(Only the first ${limit} entries of this section are listed.)`)
+      // Only pages actually listed count as listed, so one cut from this section can show in a later one.
+      for (const id of nodeIds(nodes)) seen.add(id)
+      if (truncated) out.push('(This section was cut off: not every page in it is listed.)')
     }
     if (skipped.length) out.push('', `Not listed, to keep the list short: ${skipped.join(', ')}.`)
     if (!any) out.push('', '(no pages)')
     return out.join('\n')
   },
+}
+
+function nodeIds(nodes: { id: string; children: unknown[] }[]): string[] {
+  return nodes.flatMap((n) => [n.id, ...nodeIds(n.children as { id: string; children: unknown[] }[])])
 }
 
 function countNodes(nodes: { children: unknown[] }[]): number {

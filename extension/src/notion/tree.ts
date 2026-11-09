@@ -9,8 +9,6 @@ export interface TreeNode {
   children: TreeNode[]
 }
 
-/** Blocks that only lay out their children: pages inside them count as the page's own. */
-
 /**
  * Builds the tree under `roots` (page ids, in order), `depth` levels deep, with at most `limit`
  * entries. Each level costs one request (plus one per layout level, and one for database names).
@@ -37,7 +35,8 @@ export async function pageTree(
   const nodes = take(top)
   let level = nodes
   // A level is expanded only while there is room for more entries.
-  for (let d = 1; d < depth && level.length && !truncated && count < limit; d++) {
+  let d = 1
+  for (; d < depth && level.length && !truncated && count < limit; d++) {
     // Children of pages only: a database's rows aren't sidebar pages.
     const parents = level.filter((n) => !n.database)
     const childIds = await pageChildren(
@@ -60,6 +59,9 @@ export async function pageTree(
     }
     level = next
   }
+  // Full before the asked depth: pages on the last level shown may have pages under them that
+  // weren't listed, so the list is cut off.
+  if (!truncated && d < depth && level.some((n) => !n.database && contentOf(records, n.id).length)) truncated = true
   return { nodes, truncated }
 
   function take(list: TreeNode[]): TreeNode[] {
