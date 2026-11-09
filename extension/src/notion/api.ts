@@ -171,7 +171,8 @@ export class NotionClient {
           reducers: { collection_group_results: { type: 'results', limit } },
           sort: [],
           searchQuery: '',
-          userTimeZone: 'UTC',
+          // The user's own zone, as the tool's `Today:` uses.
+          userTimeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
         },
       },
       space,

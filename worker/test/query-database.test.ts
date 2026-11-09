@@ -244,3 +244,37 @@ describe('query_database dates and headers', () => {
     expect(tableRows(result).map((l) => l.split(' | ')[0].slice(2))).toEqual(['Ship beta'])
   })
 })
+
+describe('query_database numbers and linked views', () => {
+  it('sorts negative and decimal numbers by value', async () => {
+    const values = ['-5', '-10', '1.5', '1.25']
+    database(TASKS.map((t, i) => rowRecord({ ...t, points: values[i] })))
+    const result = await query({ sort: { property: 'Points' } })
+    expect(tableRows(result).map((l) => l.split(' | ')[4])).toEqual(['-10', '-5', '1.25', '1.5'])
+  })
+
+  it('reads a linked view in the workspace its database lives in', async () => {
+    const OTHER = '5b5b5b5b-0000-4000-8000-000000000002'
+    const tab = new FakeNotionTab(`https://app.notion.com/${hex(DB)}`)
+      .respond(
+        'syncRecordValuesMain',
+        200,
+        sync('block', [
+          {
+            id: DB,
+            type: 'collection_view',
+            view_ids: [VIEW],
+            format: { collection_pointer: { id: COLLECTION, spaceId: OTHER } },
+          },
+        ]),
+      )
+      .respond('syncRecordValuesMain', 200, sync('collection', [{ id: COLLECTION, name: [['Tasks']], schema: SCHEMA }]))
+      .respond('queryCollection', 200, {
+        result: { reducerResults: { collection_group_results: { blockIds: [] } } },
+        recordMap: {},
+      })
+      .install()
+    await query()
+    expect(tab.sent.at(-1)!.body).toMatchObject({ source: { id: COLLECTION, spaceId: OTHER } })
+  })
+})

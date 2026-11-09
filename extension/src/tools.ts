@@ -225,7 +225,9 @@ export const queryDatabase: ToolSpec = {
     const viewInUrl = urlView(given ?? tab.url)
     const viewId = views.find((v) => toUuid(v) === viewInUrl) ?? views[0]
     if (!collectionId || !viewId) throw new Error("This database's rows can't be read: it has no data source or view.")
-    const spaceId = String(block.space_id)
+    // A linked view's database may live in another workspace; its pointer says which.
+    const pointer = (block.format as { collection_pointer?: { spaceId?: string } } | undefined)?.collection_pointer
+    const spaceId = String(block.collection_id ? block.space_id : (pointer?.spaceId ?? block.space_id))
     const collection = (await tab.client.getRecords([{ table: 'collection', id: collectionId, spaceId }])).collection![
       collectionId
     ]
@@ -240,8 +242,13 @@ export const queryDatabase: ToolSpec = {
       .filter((r): r is NonNullable<typeof r> => !!r && r.alive !== false)
       .map((r) => ({ id: r.id, values: rowValues(recordMap, r as never, schema) }))
     rows = rows.filter((r) => filters.every((f) => matches(r.values, f)))
-    if (sort)
-      rows.sort((a, b) => compareValues(cell(a.values, sort.property), cell(b.values, sort.property), sort.sign))
+    if (sort) {
+      // Decided once for the column: numbers by value, anything else as text.
+      const numbers = numeric(rows, sort.property)
+      rows.sort((a, b) =>
+        compareValues(cell(a.values, sort.property), cell(b.values, sort.property), sort.sign, numbers),
+      )
+    }
 
     const parts = Math.max(1, Math.ceil(rows.length / QUERY_PART))
     if (part > parts)
@@ -384,11 +391,20 @@ function matches(values: { name: string; value: string }[], f: Filter): boolean 
   }
 }
 
-/** Compares two values in the asked direction (`sign`); empty values go last either way. */
-function compareValues(a: string, b: string, sign: 1 | -1): number {
+/**
+ * Compares two values in the asked direction (`sign`); empty values go last either way. A column of
+ * numbers compares by value (negatives and decimals included); anything else as text.
+ */
+function compareValues(a: string, b: string, sign: 1 | -1, numbers: boolean): number {
   if (!a || !b) return a ? -1 : b ? 1 : 0
-  // Numbers within text compare as numbers, the same way for every pair.
-  return a.localeCompare(b, undefined, { numeric: true }) * sign
+  const order = numbers ? Number(a) - Number(b) : a.localeCompare(b, undefined, { numeric: true })
+  return order * sign
+}
+
+/** Whether every non-empty value of a property, across the rows, is a number. */
+function numeric(rows: { values: { name: string; value: string }[] }[], property: string): boolean {
+  const values = rows.map((r) => cell(r.values, property)).filter((v) => v !== '')
+  return values.length > 0 && values.every((v) => Number.isFinite(Number(v)))
 }
 
 /** A value's leading YYYY-MM-DD when it starts with one, else the value. */
