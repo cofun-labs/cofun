@@ -18,7 +18,7 @@
 - [x] Chat with streamed replies
 - [x] Basic agent: the model calls tools that run in the extension (first tool: the current page's title and URL)
 - [x] Sessions: start, list, search, filter by page, delete, and resume past conversations, kept on the device
-- [ ] Read the current Notion page
+- [x] Read Notion pages as Markdown: the open page or another one, in parts when long
 - [ ] Edit the current Notion page
 
 ## Tech choices
@@ -49,7 +49,7 @@ The extension ID is pinned with the manifest `key`, so Clerk and the worker can 
 
 ### Sessions
 
-Conversations are saved in the extension's IndexedDB, one database per Clerk user (`notion-copilot-sessions-<userId>`), and never sent to the worker beyond what the model needs for the current question. They stay after sign-out so the user can pick up again, and they are not encrypted: keeping accounts apart only means one account's panel never shows another's sessions. Anyone with access to the Chrome profile can read them, tool results included (for example in DevTools).
+Conversations are saved in the extension's IndexedDB, one database per Clerk user (`notion-copilot-sessions-<userId>`), and never sent to the worker beyond what the model needs for the current question. They stay after sign-out so the user can pick up again, and they are not encrypted: keeping accounts apart only means one account's panel never shows another's sessions. Anyone with access to the Chrome profile can read them, tool results included, such as the content of Notion pages the agent read (for example in DevTools).
 
 ## Layout
 
@@ -63,6 +63,7 @@ extension/                Chrome extension
   src/sessions.ts         saved sessions (IndexedDB, per user)
   src/notion/hosts.ts     Notion hosts, and the page id in a Notion URL
   src/notion/api.ts       Notion's internal API: endpoints, request shapes, record maps, errors
+  src/notion/markdown.ts  Notion pages as Markdown for the model, with a reference on each block
   src/notion/tab.ts       runs Notion requests in the user's Notion tab (chrome.scripting)
   src/sidepanel/          React UI (main.tsx: sign-in, Chat.tsx: chat)
 worker/                   Cloudflare Worker
