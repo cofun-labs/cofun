@@ -31,7 +31,8 @@ export async function pageTree(
   const top = await nodesFor(client, roots, records)
   const nodes = take(top)
   let level = nodes
-  for (let d = 1; d < depth && level.length && !truncated; d++) {
+  // A level is expanded only while there is room for more entries.
+  for (let d = 1; d < depth && level.length && !truncated && count < limit; d++) {
     // Children of pages only: a database's rows aren't sidebar pages.
     const parents = level.filter((n) => !n.database)
     const childIds = await pageChildren(
@@ -128,7 +129,7 @@ function merge(into: RecordMap, from: RecordMap) {
     Object.assign(((into as Record<string, object>)[table] ??= {}), recs)
 }
 
-function runsText(value: unknown): string {
+export function runsText(value: unknown): string {
   return Array.isArray(value) ? value.map((r) => (Array.isArray(r) ? String(r[0]) : '')).join('') : ''
 }
 

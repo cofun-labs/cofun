@@ -171,10 +171,10 @@ export class NotionClient {
     if (!pointers.length) return {}
     // Large lists go in batches, so no single request grows without bound.
     if (pointers.length > RECORDS_BATCH) {
+      const batches: Pointer[][] = []
+      for (let at = 0; at < pointers.length; at += RECORDS_BATCH) batches.push(pointers.slice(at, at + RECORDS_BATCH))
       const out: RecordMap = {}
-      for (let at = 0; at < pointers.length; at += RECORDS_BATCH) {
-        mergeRecordMaps(out, await this.findRecords(pointers.slice(at, at + RECORDS_BATCH)))
-      }
+      for (const map of await Promise.all(batches.map((b) => this.findRecords(b)))) mergeRecordMaps(out, map)
       return out
     }
     const requested = pointers.map((p) => ({

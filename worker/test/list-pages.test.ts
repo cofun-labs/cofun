@@ -145,9 +145,7 @@ describe('UC-NOTION-005 browse the workspace', () => {
       .install()
     const result = await run({ page: hex(id(10)) })
     expect(result.split('\n').filter((l) => l.startsWith('- '))).toHaveLength(LIST_LIMIT)
-    expect(result).toContain(
-      `Only the first ${LIST_LIMIT} pages are listed. List a page by its id to see more under it.`,
-    )
+    expect(result).toContain(`Only the first ${LIST_LIMIT} pages are listed; the rest can't be listed yet.`)
   })
 })
 

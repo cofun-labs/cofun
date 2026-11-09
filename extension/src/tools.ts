@@ -6,7 +6,7 @@ import { NotionError, mergeRecordMaps, type LoadedPage } from './notion/api'
 import { isNotion, pageIdFromUrl, toUuid } from './notion/hosts'
 import { PAGE_TYPES, hexId, pageToMarkdown, splitIntoParts } from './notion/markdown'
 import { activeNotionTab, type NotionTab } from './notion/tab'
-import { pageChildren, pageTree, treeLines } from './notion/tree'
+import { pageChildren, pageTree, runsText, treeLines } from './notion/tree'
 
 /**
  * The title and URL of the Notion page open in the side panel's window, if one is.
@@ -169,7 +169,8 @@ export const listPages: ToolSpec = {
   name: 'list_pages',
   description:
     "Lists pages and databases as Notion's sidebar shows them: without `page`, the top level of the open page's " +
-    'workspace (private and shared pages); with `page`, the pages ' +
+    "workspace (private and shared pages, and the workspace's own pages and teamspaces where its records list " +
+    'them); with `page`, the pages ' +
     'and databases under it. Titles and ids only, no content: read a page with read_page. `depth` also lists the ' +
     'pages under those, up to 3 levels.',
   parameters: {
@@ -198,7 +199,12 @@ export const listPages: ToolSpec = {
     }
     const tab = await activeNotionTab()
     const cutOff = (truncated: boolean) =>
-      truncated ? [`Only the first ${LIST_LIMIT} pages are listed. List a page by its id to see more under it.`] : []
+      truncated
+        ? [
+            `Only the first ${LIST_LIMIT} pages are listed; the rest can't be listed yet. ` +
+              'To see what is under a listed page, list it by its id.',
+          ]
+        : []
 
     if (rootId) {
       const records = await tab.client.getRecords([{ table: 'block', id: rootId }])
@@ -235,26 +241,36 @@ export const listPages: ToolSpec = {
       ['Workspace', space.workspacePages],
       ...space.teams.map((t): [string, string[]] => [`Teamspace: ${t.name}`, t.pages]),
     ]
-    // Each section has its own share of the limit, so a long one can't hide the others.
+    // Each section has its own share of the limit, so a long one can't hide the others, and all of
+    // them together stay within the overall limit.
     const seen = new Set<string>()
     const out = [`Pages in the workspace “${space.name}”:`]
+    const skipped: string[] = []
     let any = false
+    let left = LIST_LIMIT
     for (const [label, all] of sections) {
       const ids = all.filter((id) => !seen.has(id) && seen.add(id))
       if (!ids.length) continue
-      const { nodes, truncated } = await pageTree(tab.client, ids, depth, SECTION_LIMIT)
+      if (left <= 0) {
+        skipped.push(label)
+        continue
+      }
+      const limit = Math.min(SECTION_LIMIT, left)
+      const { nodes, truncated } = await pageTree(tab.client, ids, depth, limit)
       if (!nodes.length) continue
       any = true
+      left -= countNodes(nodes)
       out.push('', label, ...treeLines(nodes))
-      if (truncated) out.push(`(Only the first ${SECTION_LIMIT} entries of this section are listed.)`)
+      if (truncated) out.push(`(Only the first ${limit} entries of this section are listed.)`)
     }
+    if (skipped.length) out.push('', `Not listed, to keep the list short: ${skipped.join(', ')}.`)
     if (!any) out.push('', '(no pages)')
     return out.join('\n')
   },
 }
 
-function runsText(value: unknown): string {
-  return Array.isArray(value) ? value.map((r) => (Array.isArray(r) ? String(r[0]) : '')).join('') : ''
+function countNodes(nodes: { children: unknown[] }[]): number {
+  return nodes.reduce((n, node) => n + 1 + countNodes(node.children as { children: unknown[] }[]), 0)
 }
 
 export const TOOLS: ToolSpec[] = [getCurrentPage, readPage, listPages]
