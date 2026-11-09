@@ -14,6 +14,8 @@ const SYSTEM_PROMPT =
   'Markdown, and edit their content. ' +
   'Before editing a page, read it, then make the change with edit_page using the block references it shows; ' +
   'the user is asked to approve each edit. Change only what the user asked for. ' +
+  'When the user says "this", "the selection", or "the highlighted text", call get_selection to see what they ' +
+  'selected, and change only those blocks. ' +
   'When the user asks about "this page" or its content, read the open page first and answer from what it says. ' +
   'When the answer is likely on another page, search for it, read what you find, and say which page you used. ' +
   'Read child pages or other pages only when the question needs them. Be concise.'
