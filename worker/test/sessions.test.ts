@@ -12,8 +12,9 @@ import {
   type SessionInfo,
 } from '../../extension/src/sessions'
 
-const ROADMAP = { title: 'Q4 Roadmap', url: 'https://www.notion.so/team/Q4-Roadmap-abc123' }
-const NOTES = { title: 'Meeting notes', url: 'https://www.notion.so/team/Meeting-notes-def456' }
+const ROADMAP = { title: 'Q4 Roadmap', url: 'https://www.notion.so/team/Q4-Roadmap-0a1b2c3d4e5f60718293a4b5c6d7e8f9' }
+const NOTES_ID = '1111aaaa2222bbbb3333cccc4444dddd'
+const NOTES = { title: 'Meeting notes', url: `https://www.notion.so/team/Meeting-notes-${NOTES_ID}` }
 
 function conversation(question: string): HistoryMessage[] {
   return [
@@ -61,15 +62,22 @@ describe('saved sessions', () => {
   it('[UC-SESSION-001-S04] search by title and filter by the page a session started on', async () => {
     await store.save(session('a', 'Summarize this page', 1000, ROADMAP))
     await store.save(session('b', 'Summarize the decisions', 2000, NOTES))
-    await store.save(session('c', 'Draft an agenda', 3000, { ...NOTES, url: `${NOTES.url}?pvs=4#block` }))
+    // The same page opened in side peek from a database, on the other Notion host.
+    await store.save(
+      session('c', 'Draft an agenda', 3000, {
+        ...NOTES,
+        url: `https://app.notion.com/p/Projects-9999eeee8888ffff7777aaaa6666bbbb?p=${NOTES_ID}&pm=s`,
+      }),
+    )
     const all = await store.list()
     const ids = (sessions: SessionInfo[]) => sessions.map((s) => s.id)
 
     expect(ids(filterSessions(all, { query: 'SUMMARIZE' }))).toEqual(['b', 'a'])
-    // The same page with another query string or fragment counts as one page.
+    // The page in side peek on the other host counts as the same page.
     const pages = sessionPages(all)
     expect(pages.map((p) => p.title)).toEqual(['Meeting notes', 'Q4 Roadmap'])
     const notes = pages[0].key
+    expect(notes).toBe(NOTES_ID)
     expect(ids(filterSessions(all, { page: notes }))).toEqual(['c', 'b'])
     expect(ids(filterSessions(all, { query: 'summarize', page: notes }))).toEqual(['b'])
     expect(ids(filterSessions(all, { query: '  ' }))).toEqual(['c', 'b', 'a'])
