@@ -323,8 +323,19 @@ export const getSelection: ToolSpec = {
     if (!selection?.blockIds.length) return 'Nothing is selected in the Notion page.'
     const loaded = await tab.client.loadPage(tab.pageId)
     const md = pageToMarkdown(loaded)
-    const ids = selection.blockIds.map((id) => toUuid(id)).filter((id): id is string => !!id && md.refs.has(id))
-    if (!ids.length) return 'Nothing is selected in the Notion page.'
+    // Blocks drawn without a line of their own (table rows, columns) stand for the nearest block
+    // that has one, so only blocks whose content is shown count as read.
+    const shown = (raw: string): string | undefined => {
+      for (let b = toUuid(raw); b && md.refs.has(b); b = loaded.recordMap.block?.[b]?.parent_id)
+        if (md.lines.has(b)) return b
+      return undefined
+    }
+    const ids = [...new Set(selection.blockIds.map(shown).filter((b): b is string => !!b))]
+    const missed = selection.blockIds.some((b) => !shown(b))
+    const beyond = loaded.complete
+      ? "aren't on the open page"
+      : "aren't on the open page, or are past the part of it that could be loaded"
+    if (!ids.length) return `The selected blocks ${beyond}. Read the page instead, or ask the user to select again.`
     // The selected blocks count as read, so edit_page can change them by these references.
     const chosen = new Set(ids)
     remember(
@@ -337,10 +348,19 @@ export const getSelection: ToolSpec = {
     return [
       `Selection on the page “${md.title}” ^${pageHex}:`,
       '',
-      `Selected text: “${selection.text.length > 2000 ? `${selection.text.slice(0, 1999)}…` : selection.text}”`,
-      '',
+      ...(selection.text === undefined
+        ? []
+        : [
+            `Selected text: “${selection.text.length > 2000 ? `${selection.text.slice(0, 1999)}…` : selection.text}”`,
+            '',
+          ]),
       `Selected block${ids.length === 1 ? '' : 's'}:`,
-      ...ids.map((b) => `${md.lines.get(b) ?? ''} ^${md.refs.get(b)}`),
+      // A block of several lines (a table, code) gets its reference on a line of its own.
+      ...ids.map((b) => {
+        const own = md.lines.get(b)!
+        return `${own}${own.includes('\n') ? '\n' : ' '}^${md.refs.get(b)}`
+      }),
+      ...(missed ? ['', `Only part of the selection is shown: the other selected blocks ${beyond}.`] : []),
     ].join('\n')
   },
 }

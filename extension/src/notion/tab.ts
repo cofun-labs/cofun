@@ -114,8 +114,8 @@ export async function notionRequest(
 
 /** What the user has selected in the Notion page: the selected text and the blocks it covers. */
 export interface PageSelection {
-  text: string
-  /** Block ids, in page order. */
+  /** The text selected with the mouse; none when blocks are selected as blocks. */
+  text?: string
   blockIds: string[]
 }
 
@@ -140,31 +140,35 @@ export async function selectionIn(tabId: number): Promise<PageSelection | undefi
  * serializes this function on its own, so it must not use anything from outside its body.
  */
 export function readSelection(): PageSelection | null {
-  const root = document.querySelector('.notion-page-content')
-  if (!root) return null
-  const blocks = [...root.querySelectorAll('[data-block-id]')]
+  // The main page and a side peek each have their own content.
+  const roots = [...document.querySelectorAll('.notion-page-content')]
   const idOf = (el: Element) => el.getAttribute('data-block-id') ?? ''
   // Blocks selected as blocks (Esc, or dragging across them) carry a highlight inside them.
-  const haloed = [...root.querySelectorAll('.notion-selectable-halo')]
-    .map((h) => h.closest('[data-block-id]'))
-    .filter((b): b is Element => !!b && root.contains(b))
-  if (haloed.length) {
-    const ids = blocks.filter((b) => haloed.includes(b)).map(idOf)
-    return {
-      text: blocks
-        .filter((b) => haloed.includes(b))
-        .map((b) => b.textContent ?? '')
-        .join('\n'),
-      blockIds: ids,
-    }
+  for (const root of roots) {
+    const haloed = [...root.querySelectorAll('.notion-selectable-halo')]
+      .map((h) => h.closest('[data-block-id]'))
+      .filter((b): b is Element => !!b && root.contains(b))
+    if (haloed.length)
+      return {
+        blockIds: [...root.querySelectorAll('[data-block-id]')].filter((b) => haloed.includes(b)).map(idOf),
+      }
   }
   const selection = document.getSelection()
   if (!selection || selection.rangeCount === 0 || selection.isCollapsed) return null
   const range = selection.getRangeAt(0)
-  if (!root.contains(range.commonAncestorContainer)) return null
-  // The innermost blocks the range touches; a block that holds a touched block isn't itself selected.
+  const root = roots.find((r) => r.contains(range.commonAncestorContainer))
+  if (!root) return null
+  const blocks = [...root.querySelectorAll('[data-block-id]')]
   const touched = blocks.filter((b) => range.intersectsNode(b))
-  const innermost = touched.filter((b) => !touched.some((other) => other !== b && b.contains(other)))
-  if (!innermost.length) return null
-  return { text: selection.toString(), blockIds: innermost.map(idOf) }
+  // Whether the range covers some of the block's own content, not only the blocks nested in it.
+  const ownTouched = (el: Element): boolean =>
+    [...el.children].some(
+      (c) =>
+        !c.getAttribute('data-block-id') &&
+        range.intersectsNode(c) &&
+        (!c.querySelector('[data-block-id]') || ownTouched(c)),
+    )
+  const chosen = touched.filter((b) => !touched.some((other) => other !== b && b.contains(other)) || ownTouched(b))
+  if (!chosen.length) return null
+  return { text: selection.toString(), blockIds: chosen.map(idOf) }
 }

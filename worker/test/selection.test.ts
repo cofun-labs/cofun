@@ -19,8 +19,14 @@ class FakeElement {
   halo = false
   constructor(
     readonly blockId: string | undefined,
-    readonly text = '',
-  ) {}
+    public text = '',
+  ) {
+    // A block's text is in an element of its own; nested blocks sit next to it.
+    if (blockId && text) {
+      this.add(new FakeElement(undefined, text))
+      this.text = ''
+    }
+  }
   add(...kids: FakeElement[]) {
     for (const k of kids) {
       k.parent = this
@@ -46,7 +52,10 @@ class FakeElement {
   all(): FakeElement[] {
     return this.children.flatMap((c) => [c, ...c.all()])
   }
-  querySelectorAll(selector: string) {
+  querySelector(selector: string) {
+    return this.querySelectorAll(selector)[0] ?? null
+  }
+  querySelectorAll(selector: string): unknown[] {
     if (selector === '[data-block-id]') return this.all().filter((e) => e.blockId)
     // A selected block holds a halo element; its closest block is the block itself.
     if (selector === '.notion-selectable-halo')
@@ -57,10 +66,13 @@ class FakeElement {
   }
 }
 
-/** A page whose content holds `blocks`; `selected` (text selection) or `haloed` (block selection). */
-function dom(root: FakeElement, selection?: { blocks: FakeElement[]; text: string }) {
+/**
+ * Pages whose content are `roots` (the main page, then a side peek) and a text selection that
+ * covers the `touched` elements: whole blocks, or only a block's own text element.
+ */
+function dom(roots: FakeElement[], selection?: { touched: FakeElement[]; text: string; root?: FakeElement }) {
   return {
-    querySelector: (s: string) => (s === '.notion-page-content' ? root : null),
+    querySelectorAll: (s: string) => (s === '.notion-page-content' ? roots : []),
     getSelection: () =>
       selection
         ? {
@@ -68,8 +80,8 @@ function dom(root: FakeElement, selection?: { blocks: FakeElement[]; text: strin
             isCollapsed: false,
             toString: () => selection.text,
             getRangeAt: () => ({
-              commonAncestorContainer: root,
-              intersectsNode: (el: FakeElement) => selection.blocks.some((b) => el.contains(b)),
+              commonAncestorContainer: selection.root ?? roots[0],
+              intersectsNode: (el: FakeElement) => selection.touched.some((t) => el.contains(t) || t.contains(el)),
             }),
           }
         : { rangeCount: 0, isCollapsed: true },
@@ -81,7 +93,12 @@ function block(n: number, type: string, text: string, extra: Record<string, unkn
 }
 
 function setup(
-  selection: (els: FakeElement[], root: FakeElement) => { blocks: FakeElement[]; text: string } | undefined,
+  selection: (
+    els: FakeElement[],
+    root: FakeElement,
+    peek: FakeElement,
+  ) => { touched: FakeElement[]; text: string; root?: FakeElement } | undefined,
+  more: { blocks?: Record<string, unknown>[]; els?: FakeElement[]; content?: string[] } = {},
 ) {
   const ws = new FakeWorkspace(
     [
@@ -89,13 +106,14 @@ function setup(
         id: PAGE,
         type: 'page',
         properties: { title: [['Fixture page']] },
-        content: [id(1), id(2), id(3)],
+        content: [id(1), id(2), id(3), ...(more.content ?? [])],
         parent_id: SPACE,
         parent_table: 'space',
       },
       block(1, 'text', 'First paragraph.'),
       block(2, 'text', 'Second paragraph.'),
       block(3, 'to_do', 'A task', { properties: { title: [['A task']], checked: [['No']] } }),
+      ...(more.blocks ?? []),
     ],
     SPACE,
   )
@@ -103,11 +121,13 @@ function setup(
     new FakeElement(id(1), 'First paragraph.'),
     new FakeElement(id(2), 'Second paragraph.'),
     new FakeElement(id(3), 'A task'),
+    ...(more.els ?? []),
   ]
   const root = new FakeElement(undefined).add(...els)
+  const peek = new FakeElement(undefined).add(new FakeElement(id(90), 'In the peek'))
   const tab = new FakeNotionTab(PAGE_URL)
   tab.workspace = ws
-  tab.dom = dom(root, selection(els, root))
+  tab.dom = dom([root, peek], selection(els, root, peek))
   tab.install()
   return { ws, els }
 }
@@ -116,7 +136,7 @@ const run = async () => (await getSelection.run({})) as string
 
 describe('UC-NOTION-003 work on the selection', () => {
   it('[UC-NOTION-003-S01] gets the selected text and the blocks it covers, across two blocks', async () => {
-    setup((els) => ({ blocks: [els[0], els[1]], text: 'paragraph.\nSecond' }))
+    setup((els) => ({ touched: [els[0], els[1]], text: 'paragraph.\nSecond' }))
     expect(await run()).toBe(
       [
         `Selection on the page “Fixture page” ^${hex(PAGE)}:`,
@@ -135,7 +155,71 @@ describe('UC-NOTION-003 work on the selection', () => {
       els[2].halo = true
       return undefined
     })
-    expect((await run()).split('\n').slice(-2)).toEqual(['Selected block:', '- [ ] A task ^00000003'])
+    expect(await run()).toBe(
+      [`Selection on the page “Fixture page” ^${hex(PAGE)}:`, '', 'Selected block:', '- [ ] A task ^00000003'].join(
+        '\n',
+      ),
+    )
+  })
+
+  it('[UC-NOTION-003-S01] keeps a block whose own text is selected along with a block nested in it', async () => {
+    const child = new FakeElement(id(5), 'Inside the toggle')
+    const toggle = new FakeElement(id(4), 'A toggle').add(child)
+    setup((els) => ({ touched: [toggle.children[0], child], text: 'toggle\nInside' }), {
+      blocks: [block(4, 'toggle', 'A toggle', { content: [id(5)] }), block(5, 'text', 'Inside the toggle', {}, id(4))],
+      els: [toggle],
+      content: [id(4)],
+    })
+    expect((await run()).split('\n').slice(-3)).toEqual([
+      'Selected blocks:',
+      '▸ A toggle ^00000004',
+      'Inside the toggle ^00000005',
+    ])
+    // Selecting only inside the nested block leaves its parent out.
+    restoreGlobals()
+    forgetReads()
+    setup(() => ({ touched: [child.children[0]], text: 'Inside' }), {
+      blocks: [block(4, 'toggle', 'A toggle', { content: [id(5)] }), block(5, 'text', 'Inside the toggle', {}, id(4))],
+      els: [toggle],
+      content: [id(4)],
+    })
+    expect((await run()).split('\n').slice(-2)).toEqual(['Selected block:', 'Inside the toggle ^00000005'])
+  })
+
+  it('[UC-NOTION-003-S01] stands for a table row by its table, which is what the agent sees', async () => {
+    const row = new FakeElement(id(7), 'cell')
+    const table = new FakeElement(id(6)).add(row)
+    const { ws } = setup(() => ({ touched: [row], text: 'cell' }), {
+      blocks: [
+        block(6, 'table', '', { content: [id(7)], format: { table_block_column_order: ['c1'] } }),
+        { ...block(7, 'table_row', '', {}, id(6)), properties: { c1: [['cell']] } },
+      ],
+      els: [table],
+      content: [id(6)],
+    })
+    const result = await run()
+    expect(result.split('\n').slice(-4)).toEqual(['Selected block:', '| cell |', '| --- |', '^00000006'])
+    // The row itself wasn't shown, so it can't be edited by this read.
+    await expect(editPage.run({ page: hex(PAGE), edits: [{ action: 'delete', block: '^00000007' }] })).rejects.toThrow(
+      'is not a block of the page as you last read it',
+    )
+    expect(ws.transactions).toEqual([])
+  })
+
+  it('[UC-NOTION-003-S01] says when the selected blocks aren’t on the open page, or only some are', async () => {
+    // A selection in a side peek of another page, while the open page is this one.
+    setup((_, __, peek) => ({ touched: [peek.children[0]], text: 'In the peek', root: peek }))
+    expect(await run()).toBe(
+      "The selected blocks aren't on the open page. Read the page instead, or ask the user to select again.",
+    )
+    restoreGlobals()
+    const stray = new FakeElement(id(99), 'Not on the page')
+    setup((els) => ({ touched: [els[2], stray], text: 'A task\nNot on the page' }), { els: [stray] })
+    expect((await run()).split('\n').slice(-3)).toEqual([
+      '- [ ] A task ^00000003',
+      '',
+      "Only part of the selection is shown: the other selected blocks aren't on the open page.",
+    ])
   })
 
   it('[UC-NOTION-003-S02] says when nothing is selected', async () => {
@@ -144,7 +228,7 @@ describe('UC-NOTION-003 work on the selection', () => {
   })
 
   it('[UC-NOTION-003-S03] lets the agent change exactly the selected block, without reading the whole page', async () => {
-    const { ws } = setup((els) => ({ blocks: [els[1]], text: 'Second paragraph.' }))
+    const { ws } = setup((els) => ({ touched: [els[1]], text: 'Second paragraph.' }))
     await run()
     await editPage.run({
       page: hex(PAGE),
