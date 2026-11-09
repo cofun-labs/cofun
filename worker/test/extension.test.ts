@@ -827,6 +827,56 @@ describe('extension agent against the worker', () => {
     ])
   })
 
+  it('[UC-CHAT-001-S06] a question answered with one tool uses two requests from the quota', async () => {
+    env.DAILY_REQUEST_LIMIT = '2'
+    const { tool, runs } = pageTool()
+    const agent = makeAgent({ tools: [tool] })
+    ai.script = [{ toolCalls: [{ name: 'get_current_page', arguments: '{}' }] }]
+    expect((await ask(agent, 'Which page am I on?')).result).toEqual({ status: 'done' })
+    expect(runs).toHaveLength(1)
+    expect(ai.calls).toHaveLength(2)
+
+    // Both model calls counted: the quota of two is now used up.
+    const { result } = await ask(agent, 'hi')
+    expect(result).toMatchObject({
+      status: 'error',
+      message: expect.stringContaining('The quota resets at 00:00 UTC.'),
+    })
+    expect(ai.calls).toHaveLength(2)
+    env.DAILY_REQUEST_LIMIT = '100'
+  })
+
+  it('[UC-CHAT-001-S07] a quota that runs out mid-question ends it and keeps the tool it used', async () => {
+    env.DAILY_REQUEST_LIMIT = '1'
+    const { tool, runs } = pageTool()
+    const agent = makeAgent({ tools: [tool] })
+    ai.script = [{ toolCalls: [{ name: 'get_current_page', arguments: '{}' }] }]
+    const { result } = await ask(agent, 'Which page am I on?')
+    expect(result).toMatchObject({
+      status: 'error',
+      message: expect.stringContaining('The quota resets at 00:00 UTC.'),
+    })
+    expect(runs).toHaveLength(1)
+    // The request that would have sent the result back was refused before the model.
+    expect(ai.calls).toHaveLength(1)
+
+    env.DAILY_REQUEST_LIMIT = '100'
+    expect((await ask(agent, 'And now?')).result).toEqual({ status: 'done' })
+    expect(sentMessages(1)).toEqual([
+      { role: 'system', content: 'You are Notion Copilot.' },
+      { role: 'user', content: 'Which page am I on?' },
+      {
+        role: 'assistant',
+        content: '',
+        tool_calls: [
+          { id: 'chatcmpl-tool-0', type: 'function', function: { name: 'get_current_page', arguments: '{}' } },
+        ],
+      },
+      { role: 'tool', tool_call_id: 'chatcmpl-tool-0', content: PAGE_JSON },
+      { role: 'user', content: 'And now?' },
+    ])
+  })
+
   it('surfaces an error event in the stream', async () => {
     ai.rawSse = `data: ${JSON.stringify({ error: { message: 'model overloaded' } })}\n\n`
     const { result } = await ask(makeAgent(), 'hi')
