@@ -794,3 +794,31 @@ describe('links written by edit_page', () => {
     ])
   })
 })
+
+describe('round 6', () => {
+  it('round-trips a multi-line callout as shown, without adding spaces', async () => {
+    const ws = workspace([1], [block(1, 'callout', 'one\ntwo', { format: { page_icon: '💡' } })])
+    open(ws)
+    const shown = body(await read())
+    expect(shown).toBe(['> [!💡] one', '> two ^00000001'].join('\n'))
+    await edit([{ action: 'replace', block: '^00000001', markdown: shown.replace('two', 'three') }])
+    expect(ws.records.get(id(1))!.properties).toEqual({ title: [['one\nthree']] })
+  })
+
+  it('keeps pipes in table cells escaped, code and equations included', async () => {
+    const ws = workspace(
+      [1],
+      [
+        block(1, 'table', undefined, { content: [id(2), id(3)], format: { table_block_column_order: ['a', 'b'] } }),
+        block(2, 'table_row', undefined, { properties: { a: [['A']], b: [['B']] } }, id(1)),
+        block(3, 'table_row', undefined, { properties: { a: [['a|b', [['c']]]], b: [['‣', [['e', '|x|']]]] } }, id(1)),
+      ],
+    )
+    open(ws)
+    expect(body(await read()).split('\n')[2]).toBe('| `a\\|b` | $\\|x\\|$ |')
+  })
+
+  it('does not write protocol-relative links', () => {
+    expect(inline('[x](//evil.example)')).toEqual([['[x](//evil.example)']])
+  })
+})

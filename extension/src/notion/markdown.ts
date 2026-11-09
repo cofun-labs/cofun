@@ -244,7 +244,7 @@ class Context {
     const cell = (text: string) => text.replace(/\n/g, '<br>')
     const cells = rows.map((row) =>
       row
-        ? columns.map((c) => cell(this.rich(row.properties?.[c])))
+        ? columns.map((c) => cell(this.rich(row.properties?.[c], { table: true })))
         : ['[row not loaded]', ...columns.slice(1).map(() => '')],
     )
     // Markdown tables need a header row; Notion's first row is one when the table says so, and is
@@ -329,9 +329,14 @@ class Context {
   }
 
   /** Rich text as Markdown, with mentions resolved to names. */
-  rich(value: unknown): string {
+  /** In a table, every `|` is escaped, code and equations too, so it can't split a cell. */
+  rich(value: unknown, { table = false } = {}): string {
     return runs(value)
-      .map(([text, marks = []]) => this.run(text, marks))
+      .map(([text, marks = []]) => {
+        const out = this.run(text, marks)
+        const raw = marks.some(([m]) => m === 'c' || m === 'e')
+        return table && raw ? out.split('|').join('\\|') : out
+      })
       .join('')
   }
 
@@ -390,8 +395,9 @@ function indent(depth: number): string {
 function withRef(pad: string, prefix: string, text: string, ref: string, breaks: 'br' | 'lines' = 'br'): string[] {
   // A line break inside a block stays inside its one line, so it can't be read as another block.
   if (breaks === 'br') return [`${pad}${prefix}${text.replace(/\n/g, '<br>')}${ref}`]
+  // Each line is already marked as quoted, so later lines aren't indented under the label.
   const [first, ...rest] = text.split('\n')
-  const lines = [`${pad}${prefix}${first}`, ...rest.map((l) => `${pad}${' '.repeat(prefix.length)}${l}`)]
+  const lines = [`${pad}${prefix}${first}`, ...rest.map((l) => `${pad}${l}`)]
   lines[lines.length - 1] += ref
   return lines
 }
