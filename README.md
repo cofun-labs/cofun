@@ -22,6 +22,7 @@
 - [x] Search the workspace for pages, then read what it finds
 - [x] Read database rows as a table, filtered and sorted by their values
 - [x] Edit Notion pages: insert, replace, and delete content by block, after the user approves each change
+- [x] Work on what the user selected in the page
 
 ## Tech choices
 
