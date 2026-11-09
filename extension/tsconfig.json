@@ -1,9 +1,9 @@
 {
   "compilerOptions": {
-    "target": "es2022",
+    "target": "es2023",
     "module": "esnext",
     "moduleResolution": "bundler",
-    "lib": ["es2022", "dom", "dom.iterable"],
+    "lib": ["es2023", "dom", "dom.iterable"],
     "jsx": "react-jsx",
     "types": ["chrome", "vite/client", "node"],
     "strict": true,
