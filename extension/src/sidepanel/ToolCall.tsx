@@ -38,7 +38,10 @@ export function ToolCall({ tool }: { tool: ShownTool }) {
       <div className="tool-body">
         <div className="tool-label">Arguments</div>
         <pre>{pretty(tool.args)}</pre>
-        <div className="tool-label">{tool.status === 'failed' ? 'Error' : 'Result'}</div>
+        {/* A stopped tool that ended at all ended with an error, e.g. the abort. */}
+        <div className="tool-label">
+          {tool.status === 'failed' || (tool.status === 'stopped' && tool.result) ? 'Error' : 'Result'}
+        </div>
         <pre>{tool.status === 'running' ? '…' : pretty(tool.result) || LABEL[tool.status]}</pre>
       </div>
     </details>
