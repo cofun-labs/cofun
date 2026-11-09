@@ -605,3 +605,51 @@ describe('edit_page safety, round 2', () => {
     expect(parseMarkdown('2^deadbeef')).toEqual([{ type: 'text', title: [['2^deadbeef']], children: [] }])
   })
 })
+
+describe('edit_page safety, round 3', () => {
+  it('deletes a table with its rows', async () => {
+    const ws = workspace(
+      [1, 2],
+      [
+        block(1, 'table', undefined, { content: [id(3)], format: { table_block_column_order: ['c'] } }),
+        block(3, 'table_row', undefined, { properties: { c: [['cell']] } }, id(1)),
+        block(2, 'text', 'After'),
+      ],
+    )
+    open(ws)
+    await read()
+    await edit([{ action: 'delete', block: '^00000001' }])
+    expect(withoutRefs(body(await read()))).toBe('After')
+  })
+
+  it('does not count a block as seen because page text mentions its reference', async () => {
+    const n = 300
+    const blocks = Array.from({ length: n }, (_, i) => block(i + 1, 'text', `P${i} ${'v'.repeat(60)}`))
+    // The first paragraph's text names the reference of the last one, which is only in part 2.
+    const last = n.toString(16).padStart(8, '0')
+    blocks[0] = block(1, 'text', `See ^${last} for more`)
+    const ws = workspace(
+      blocks.map((_, i) => i + 1),
+      blocks,
+    )
+    open(ws)
+    await read()
+    await expect(edit([{ action: 'delete', block: `^${last}` }])).rejects.toThrow(
+      'is not a block of the page as you last read it',
+    )
+  })
+
+  it('edits a to-do inside a callout', async () => {
+    const ws = workspace(
+      [1],
+      [
+        block(1, 'callout', 'Box', { content: [id(2)], format: { page_icon: '💡' } }),
+        block(2, 'to_do', undefined, { properties: { title: [['Inside']], checked: [['No']] } }, id(1)),
+      ],
+    )
+    open(ws)
+    expect(body(await read())).toBe(['> [!💡] Box ^00000001', '> - [ ] Inside ^00000002'].join('\n'))
+    await edit([{ action: 'replace', block: '^00000002', markdown: '- [x] Inside' }])
+    expect(ws.records.get(id(2))!.properties).toEqual({ title: [['Inside']], checked: [['Yes']] })
+  })
+})

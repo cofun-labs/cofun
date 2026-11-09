@@ -278,10 +278,14 @@ function givenPage(args: Record<string, unknown>): string | undefined {
   return typeof args.page === 'string' && args.page.trim() ? args.page : undefined
 }
 
+/** How many pages' reads are kept; the oldest go first. */
+const READS_KEPT = 20
+
 /** Keeps a read, as the most recent one. */
 function remember(read: PageRead) {
   pageReads.delete(read.pageId)
   pageReads.set(read.pageId, read)
+  if (pageReads.size > READS_KEPT) pageReads.delete(pageReads.keys().next().value!)
 }
 
 export const TOOLS: ToolSpec[] = [getCurrentPage, readPage, editPage]

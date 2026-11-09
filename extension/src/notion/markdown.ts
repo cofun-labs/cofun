@@ -16,8 +16,10 @@ export interface PageMarkdown {
   kind: 'page' | 'database'
   /** The reference shown for each block, by block id. */
   refs: Map<string, string>
-  /** The first line each block shows as, without its reference, by block id. */
+  /** Each block's own Markdown (without children or reference), by block id. */
   lines: Map<string, string>
+  /** Each block's own lines exactly as shown, reference included, by block id. */
+  shown: Map<string, string>
 }
 
 /** Ids as the Markdown shows them: 32 hex digits, no dashes. */
@@ -69,12 +71,14 @@ export function pageToMarkdown({ page, recordMap }: LoadedPage): PageMarkdown {
     kind: isDatabase ? 'database' : 'page',
     refs: ctx.refs,
     lines: ctx.lines,
+    shown: ctx.shown,
   }
 }
 
 class Context {
   refs = new Map<string, string>()
   lines = new Map<string, string>()
+  shown = new Map<string, string>()
 
   constructor(
     private readonly recordMap: RecordMap,
@@ -119,6 +123,7 @@ class Context {
           .map((l) => (l.trim() === ref ? '' : l.endsWith(` ${ref}`) ? l.slice(0, -ref.length - 1) : l))
         while (own.length > 1 && !own.at(-1)!.trim()) own.pop()
         this.lines.set(id, own.join('\n'))
+        this.shown.set(id, lines.slice(0, end < 0 ? 1 : end + 1).join('\n'))
       }
     }
     return out
@@ -210,7 +215,19 @@ class Context {
   private quoted(block: Block, pad: string, label: string, text: string, ref: string): string[] {
     // Every line of a quote is marked as quoted, so its line breaks stay real lines.
     const own = withRef('', label, text, ref, 'lines')
+    const before = new Set(this.shown.keys())
     const children = this.children(block, 0).flat()
+    // Blocks inside are drawn with the quote's prefix too; keep what was shown exactly that way.
+    for (const [id, lines] of this.shown) {
+      if (!before.has(id))
+        this.shown.set(
+          id,
+          lines
+            .split('\n')
+            .map((l) => `${pad}> ${l}`)
+            .join('\n'),
+        )
+    }
     return [...own, ...children].map((l) => `${pad}> ${l}`)
   }
 

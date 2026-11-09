@@ -25,18 +25,25 @@ export interface PageRead {
 /** The blocks of `md` the agent saw: those whose reference `shown` contains, or those `include` picks. */
 export function pageRead(loaded: LoadedPage, md: PageMarkdown, include: string | ((id: string) => boolean)): PageRead {
   const blocks = (loaded.recordMap.block ?? {}) as Record<string, Block>
-  // The references the shown text carries, found in one pass.
-  const shown =
-    typeof include === 'string'
-      ? new Set([...include.matchAll(/\^([0-9a-f]{32}|[0-9a-f]{8})(?![0-9a-f])/g)].map((m) => m[1]))
-      : undefined
-  const seen = (id: string, ref: string) =>
-    shown ? shown.has(ref) || shown.has(hexId(id)) : (include as (id: string) => boolean)(id)
-  const refs = new Map([...md.refs].filter(([id, ref]) => seen(id, ref)))
+  // A block was seen if the shown text holds its lines exactly as read_page drew them, reference
+  // included: text that merely mentions a reference doesn't count.
+  const seen = (id: string) => {
+    if (typeof include !== 'string') return include(id)
+    const lines = md.shown.get(id)
+    return !!lines && `\n${include}\n`.includes(`\n${lines}\n`)
+  }
+  const refs = new Map([...md.refs].filter(([id]) => seen(id)))
   const versions = new Map<string, number>()
   const nested = new Map<string, string[]>()
   for (const id of [loaded.page.id, ...refs.keys()]) {
     if (blocks[id]) versions.set(id, blocks[id].version)
+  }
+  // Table rows and layout columns are drawn as part of the block around them, without references
+  // of their own; they were seen with it.
+  for (const id of refs.keys()) {
+    for (const d of descendants(blocks, id)) {
+      if (DRAWN_WITH_PARENT.has(blocks[d].type)) versions.set(d, blocks[d].version)
+    }
   }
   for (const id of refs.keys()) nested.set(id, descendants(blocks, id))
   return {
@@ -89,6 +96,8 @@ function idsFor(refs: Map<string, string>): Map<string, string> {
   // Short references, and full ids, which read_page shows for child pages and databases.
   return new Map([...refs].flatMap(([id, ref]) => [[ref, id] as const, [hexId(id), id] as const]))
 }
+
+const DRAWN_WITH_PARENT = new Set(['table_row', 'column_list', 'column'])
 
 /** The alive blocks under `id`, at any depth, not looking inside child pages. */
 function descendants(blocks: Record<string, Block>, id: string): string[] {
