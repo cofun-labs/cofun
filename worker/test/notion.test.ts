@@ -321,6 +321,14 @@ describe('loading a page', () => {
     expect(tab.sent).toEqual([])
   })
 
+  it('treats a page in the trash as unavailable', async () => {
+    const chunk = fixture('load-page-chunk-0') as { recordMap: { block: Record<string, { value: { value: object } }> } }
+    chunk.recordMap.block[PAGE].value.value = { ...chunk.recordMap.block[PAGE].value.value, alive: false }
+    new FakeNotionTab(PAGE_URL).respond('loadPageChunk', 200, chunk).install()
+    const err = await notionError((await activeNotionTab()).client.loadPage(PAGE))
+    expect([err.code, err.message]).toEqual(['no_access', 'The Notion page or block is in the trash.'])
+  })
+
   it('treats a page missing from the response as no access', async () => {
     new FakeNotionTab(PAGE_URL).respond('loadPageChunk', 200, fixture('empty-record-map')).install()
     const err = await notionError((await activeNotionTab()).client.loadPage(PAGE))
@@ -395,6 +403,14 @@ describe('loading records', () => {
     expect(records.block![BLOCKS[0]]).toMatchObject({ id: BLOCKS[0], version: 8, type: 'text' })
   })
 
+  it('treats a record in the trash as unavailable', async () => {
+    const sync = fixture('sync-record-values') as { recordMap: { block: Record<string, { value: { value: object } }> } }
+    sync.recordMap.block[BLOCKS[0]].value.value = { ...sync.recordMap.block[BLOCKS[0]].value.value, alive: false }
+    new FakeNotionTab(PAGE_URL).respond('syncRecordValuesMain', 200, sync).install()
+    const err = await notionError((await activeNotionTab()).client.getRecords([{ table: 'block', id: BLOCKS[0] }]))
+    expect([err.code, err.message]).toEqual(['no_access', 'The Notion page or block is in the trash.'])
+  })
+
   it('treats a record missing from the response as no access', async () => {
     new FakeNotionTab(PAGE_URL).respond('syncRecordValuesMain', 200, fixture('sync-record-values')).install()
     const err = await notionError(
@@ -463,6 +479,29 @@ describe('submitting a transaction', () => {
     expect(err.message).toBe(
       'Notion returned an error (400 ValidationError): Block property value updates must use high-level property operations.',
     )
+  })
+
+  it('says the outcome is unknown when Notion did not answer, so the change is not retried blindly', async () => {
+    for (const fail of [
+      (tab: FakeNotionTab) => (tab.networkDown = true),
+      (tab: FakeNotionTab) => (tab.closed = true),
+    ]) {
+      const tab = new FakeNotionTab(PAGE_URL).respond('saveTransactionsFanout', 200, {}).install()
+      const { client } = await activeNotionTab()
+      fail(tab)
+      const err = await notionError(client.submitTransaction(SPACE, [rename], 'rename page'))
+      expect([err.code, err.message]).toEqual([
+        'outcome_unknown',
+        'Notion did not answer, so the change may or may not have been saved. Read the page again before retrying.',
+      ])
+    }
+  })
+
+  it('says nothing was saved when the tab left Notion before the change was sent', async () => {
+    const tab = new FakeNotionTab(PAGE_URL).install()
+    const { client } = await activeNotionTab()
+    tab.pageUrl = 'https://mail.example.com/inbox'
+    expect((await notionError(client.submitTransaction(SPACE, [rename], 'rename page'))).code).toBe('no_notion_tab')
   })
 
   it('never writes CRDT data', async () => {

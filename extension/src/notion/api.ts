@@ -5,22 +5,29 @@
 import { toUuid } from './hosts'
 
 /** Why a Notion call failed, for the model and the user. */
-export type NotionErrorCode = 'no_notion_tab' | 'signed_out' | 'no_access' | 'notion_error'
+export type NotionErrorCode = 'no_notion_tab' | 'signed_out' | 'no_access' | 'notion_error' | 'outcome_unknown'
 
 export class NotionError extends Error {
+  /** The request may have reached Notion, but no answer came back (timeout, tab closed mid-request). */
+  readonly unanswered: boolean
+
   constructor(
     readonly code: NotionErrorCode,
     message: string,
-    options?: { cause?: unknown },
+    options?: { cause?: unknown; unanswered?: boolean },
   ) {
     super(message, options)
     this.name = 'NotionError'
+    this.unanswered = options?.unanswered ?? false
   }
 }
 
 export const NO_NOTION_TAB = 'No Notion page is open in this window.'
 export const SIGNED_OUT = 'Not signed in to Notion in this tab. Sign in to Notion and try again.'
 export const NO_ACCESS = "The Notion page doesn't exist, or the signed-in Notion account has no access to it."
+export const IN_TRASH = 'The Notion page or block is in the trash.'
+export const OUTCOME_UNKNOWN =
+  'Notion did not answer, so the change may or may not have been saved. Read the page again before retrying.'
 
 /** The endpoints under /api/v3/ the client uses. */
 export type NotionEndpoint = 'loadPageChunk' | 'syncRecordValuesMain' | 'saveTransactionsFanout'
@@ -112,6 +119,7 @@ export class NotionClient {
       mergeRecordMaps(recordMap, normalizeRecordMap(json.recordMap))
       const page = recordMap.block?.[pageId] as Block | undefined
       if (!page) throw missingRecord(signedIn)
+      if (page.alive === false) throw new NotionError('no_access', IN_TRASH)
       if (!page.space_id) throw new NotionError('notion_error', 'Notion returned the page without its workspace.')
       spaceId = page.space_id
       if (!json.cursor?.stack?.length) return { page, spaceId, recordMap, complete: true }
@@ -131,6 +139,7 @@ export class NotionClient {
     )
     const recordMap = normalizeRecordMap(json.recordMap)
     if (requested.some((p) => !recordMap[p.table]?.[p.id])) throw missingRecord(signedIn)
+    if (requested.some((p) => recordMap[p.table]![p.id].alive === false)) throw new NotionError('no_access', IN_TRASH)
     return recordMap
   }
 
@@ -146,14 +155,22 @@ export class NotionClient {
       ...op,
       pointer: { ...op.pointer, id: notionId(op.pointer.id), spaceId: op.pointer.spaceId ?? spaceId },
     }))
-    await this.request(
-      'saveTransactionsFanout',
-      {
-        requestId: crypto.randomUUID(),
-        transactions: [{ id: crypto.randomUUID(), spaceId, debug: { userAction }, operations: ops }],
-      },
-      spaceId,
-    )
+    try {
+      await this.request(
+        'saveTransactionsFanout',
+        {
+          requestId: crypto.randomUUID(),
+          transactions: [{ id: crypto.randomUUID(), spaceId, debug: { userAction }, operations: ops }],
+        },
+        spaceId,
+      )
+    } catch (err) {
+      // Notion may have applied it; a blind retry could apply it twice (say, a duplicated block).
+      if (err instanceof NotionError && err.unanswered) {
+        throw new NotionError('outcome_unknown', OUTCOME_UNKNOWN, { cause: err })
+      }
+      throw err
+    }
   }
 
   /** `spaceId`, when known, goes along as `x-notion-space-id`. */
@@ -169,7 +186,9 @@ export class NotionClient {
 
 /** The JSON of a successful response, or a NotionError explaining the failure. */
 export function checkResponse(res: NotionResponse): Record<string, unknown> {
-  if (res.error !== undefined) throw new NotionError('notion_error', `Could not reach Notion: ${res.error}`)
+  if (res.error !== undefined) {
+    throw new NotionError('notion_error', `Could not reach Notion: ${res.error}`, { unanswered: true })
+  }
   const isObject = !!res.json && typeof res.json === 'object' && !Array.isArray(res.json)
   const json = (isObject ? res.json : {}) as Record<string, unknown>
   if (res.status >= 200 && res.status < 300) {

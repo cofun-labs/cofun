@@ -40,12 +40,21 @@ export function tabTransport(tabId: number): NotionTransport {
       result = frame?.result
     } catch (err) {
       // The tab closed or left Notion; anything else (say, a missing permission) is passed on.
+      // Either way the request may have been in flight.
       const tab = await chrome.tabs.get(tabId).catch(() => undefined)
-      if (!tab || !isNotion(tab.url)) throw new NotionError('no_notion_tab', NO_NOTION_TAB, { cause: err })
+      if (!tab || !isNotion(tab.url)) {
+        throw new NotionError('no_notion_tab', NO_NOTION_TAB, { cause: err, unanswered: true })
+      }
       const message = err instanceof Error ? err.message : String(err)
-      throw new NotionError('notion_error', `Could not run in the Notion tab: ${message}`, { cause: err })
+      throw new NotionError('notion_error', `Could not run in the Notion tab: ${message}`, {
+        cause: err,
+        unanswered: true,
+      })
     }
-    if (!result || 'notOnNotion' in result) throw new NotionError('no_notion_tab', NO_NOTION_TAB)
+    // No result: the tab reloaded or navigated while the request was in flight.
+    if (!result) throw new NotionError('no_notion_tab', NO_NOTION_TAB, { unanswered: true })
+    // The tab was no longer on Notion, so nothing was sent.
+    if ('notOnNotion' in result) throw new NotionError('no_notion_tab', NO_NOTION_TAB)
     return result
   }
 }
