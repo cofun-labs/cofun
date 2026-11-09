@@ -53,8 +53,8 @@ class FakeNotionTab {
   /** Makes executeScript fail with this message while the tab is still open on Notion. */
   injectionError?: string
   networkDown = false
-  /** Makes the page's fetch follow a redirect, as it would to a sign-in page. */
-  redirected = false
+  /** Makes Notion answer with a redirect, as it might to a sign-in page. */
+  redirects = false
   /** Signals the page's requests were sent with, to check each has a timeout. */
   signals: (AbortSignal | null | undefined)[] = []
 
@@ -115,8 +115,12 @@ class FakeNotionTab {
     const endpoint = url.split('/api/v3/')[1]
     const next = this.responses[endpoint]?.shift()
     if (!next) throw new Error(`Unexpected request to ${url}`)
-    const res = new Response(next.text, { status: next.status })
-    return this.redirected ? Object.defineProperty(res, 'redirected', { value: true }) : res
+    if (this.redirects) {
+      // A browser following a 307 sends the same body again, to wherever the redirect points.
+      if (init.redirect !== 'manual') this.sent.push({ ...this.sent.at(-1)!, url: 'https://app.notion.com/login' })
+      return Object.defineProperties(new Response(null), { type: { value: 'opaqueredirect' }, status: { value: 0 } })
+    }
+    return new Response(next.text, { status: next.status })
   }
 }
 
@@ -246,11 +250,18 @@ describe('requests', () => {
     for (const signal of tab.signals) expect(signal).toBeInstanceOf(AbortSignal)
   })
 
-  it('treat a redirected request as a failure', async () => {
-    const tab = pageTab()
-    tab.redirected = true
-    const err = await notionError((await activeNotionTab()).client.loadPage(PAGE))
-    expect([err.code, err.message]).toEqual(['notion_error', 'Could not reach Notion: Notion redirected the request.'])
+  it('do not follow a redirect, and report it', async () => {
+    const tab = new FakeNotionTab(PAGE_URL).respond('saveTransactionsFanout', 200, {}).install()
+    tab.redirects = true
+    const op: Operation = { pointer: { table: 'block', id: PAGE }, path: [], command: 'update', args: {} }
+    const err = await notionError((await activeNotionTab()).client.submitTransaction(SPACE, [op], 'edit'))
+    // Notion answered, so the change was not saved: not an unknown outcome.
+    expect([err.code, err.message]).toEqual(['notion_error', 'Notion redirected the request instead of answering it.'])
+    expect(tab.sent.map((r) => r.url)).toEqual(['https://app.notion.com/api/v3/saveTransactionsFanout'])
+
+    const signedOut = new FakeNotionTab(PAGE_URL, 'notion_browser_id=b').respond('loadPageChunk', 200, {}).install()
+    signedOut.redirects = true
+    expect((await notionError((await activeNotionTab()).client.loadPage(PAGE))).code).toBe('signed_out')
   })
 
   it('report a network failure as a Notion error', async () => {
@@ -401,6 +412,19 @@ describe('loading records', () => {
       requests: [{ pointer: { table: 'block', id: BLOCKS[0], spaceId: SPACE }, version: -1 }],
     })
     expect(records.block![BLOCKS[0]]).toMatchObject({ id: BLOCKS[0], version: 8, type: 'text' })
+  })
+
+  it('names the workspace when only some pointers do', async () => {
+    const tab = new FakeNotionTab(PAGE_URL)
+      .respond('syncRecordValuesMain', 200, fixture('sync-record-values'))
+      .install()
+    await (
+      await activeNotionTab()
+    ).client.getRecords([
+      { table: 'block', id: BLOCKS[0], spaceId: SPACE },
+      { table: 'block', id: BLOCKS[0] },
+    ])
+    expect(tab.sent[0].headers['x-notion-space-id']).toBe(SPACE)
   })
 
   it('treats a record in the trash as unavailable', async () => {

@@ -39,6 +39,8 @@ export interface NotionResponse {
   /** Whether the tab has a signed-in Notion user (the `notion_user_id` cookie). */
   signedIn: boolean
   error?: string
+  /** Notion answered with a redirect (likely to a sign-in page), which was not followed. */
+  redirected?: boolean
 }
 
 /** Sends one request to Notion as the user of a Notion tab (see tab.ts). */
@@ -131,7 +133,7 @@ export class NotionClient {
   /** Loads specific records of any table. Every requested record must come back. */
   async getRecords(pointers: Pointer[]): Promise<RecordMap> {
     const requested = pointers.map((p) => ({ ...p, id: notionId(p.id) }))
-    const spaces = new Set(requested.map((p) => p.spaceId))
+    const spaces = new Set(requested.flatMap((p) => (p.spaceId ? [p.spaceId] : [])))
     const { json, signedIn } = await this.request<{ recordMap?: unknown }>(
       'syncRecordValuesMain',
       { requests: requested.map((pointer) => ({ pointer, version: -1 })) },
@@ -188,6 +190,10 @@ export class NotionClient {
 export function checkResponse(res: NotionResponse): Record<string, unknown> {
   if (res.error !== undefined) {
     throw new NotionError('notion_error', `Could not reach Notion: ${res.error}`, { unanswered: true })
+  }
+  if (res.redirected) {
+    if (!res.signedIn) throw new NotionError('signed_out', SIGNED_OUT)
+    throw new NotionError('notion_error', 'Notion redirected the request instead of answering it.')
   }
   const isObject = !!res.json && typeof res.json === 'object' && !Array.isArray(res.json)
   const json = (isObject ? res.json : {}) as Record<string, unknown>

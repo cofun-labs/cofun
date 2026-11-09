@@ -88,10 +88,10 @@ export async function notionRequest(
       headers,
       body: JSON.stringify(body),
       signal: AbortSignal.timeout(timeoutMs),
+      // Notion's API never redirects; following one would send the body (a write, say) elsewhere.
+      redirect: 'manual',
     })
-    // Notion's API never redirects; a redirect lands on a page (sign-in, interstitial), not an answer.
-    if (res.redirected)
-      return { status: res.status, json: null, signedIn: !!userId, error: 'Notion redirected the request.' }
+    if (res.type === 'opaqueredirect') return { status: res.status, json: null, signedIn: !!userId, redirected: true }
     const text = await res.text()
     let json: unknown = null
     try {
