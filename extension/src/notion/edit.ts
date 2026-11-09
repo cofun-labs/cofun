@@ -449,9 +449,12 @@ export function planEdit(
     )
   }
 
-  for (const id of changed) {
-    if (deleted.has(id) || blocks[id]?.alive === false) continue
-    ops.push(op.touch(id))
+  // Nothing to change (every edit was a no-op): no write at all, not even a touch.
+  if (ops.length) {
+    for (const id of changed) {
+      if (deleted.has(id) || blocks[id]?.alive === false) continue
+      ops.push(op.touch(id))
+    }
   }
   return {
     operations: ops,

@@ -254,6 +254,8 @@ export const editPage: ToolSpec = {
     }
     const plan = planEdit(loaded, read, edits)
     // The last point where nothing has been sent: a Stop pressed while the page loaded wins.
+    // Every edit was a no-op: there is nothing to send, and the page stays as read.
+    if (!plan.operations.length) return plan.summary.join('\n')
     signal?.throwIfAborted()
     try {
       await tab.client.submitTransaction(loaded.spaceId, plan.operations, 'Notion Copilot: edit_page')

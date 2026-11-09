@@ -710,7 +710,8 @@ describe('edit_page safety, round 4', () => {
       { action: 'replace', block: '^00000001', markdown: shown.split('\n')[0] },
       { action: 'replace', block: '^00000002', markdown: shown.split('\n')[1] },
     ])
-    expect(ws.transactions[0].operations.filter((o) => o.command === 'set')).toEqual([])
+    // Written back as shown: nothing to send.
+    expect(ws.transactions).toEqual([])
     expect(ws.records.get(id(1))).toMatchObject({ type: 'text', properties: { title: [['1. not a list']] } })
   })
 })
@@ -732,7 +733,7 @@ describe('edit_page round trips, round 5', () => {
     )
     // Writing it back as shown changes nothing; a one-word change keeps everything else.
     await edit([{ action: 'replace', block: '^00000001', markdown: shown }])
-    expect(ws.transactions[0].operations.filter((o) => o.command === 'updateBlockPropertyValue')).toEqual([])
+    expect(ws.transactions).toEqual([])
     await read()
     await edit([{ action: 'replace', block: '^00000001', markdown: shown.replace(' see ', ' read ') }])
     expect(ws.records.get(id(1))!.properties).toEqual({
@@ -929,6 +930,8 @@ describe('round 11', () => {
     const result = await edit([{ action: 'replace', block: '^00000001', markdown: shown }])
     expect(result).toContain('^00000001 already had that content; nothing changed.')
     expect(ws.records.get(id(1))!.version).toBe(1)
+    // Nothing was sent at all: not even the page's edit time.
+    expect(ws.transactions).toEqual([])
     // Still as read, so it can be edited right away.
     await edit([{ action: 'replace', block: '^00000001', markdown: 'Intro, edited' }])
   })
