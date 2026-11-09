@@ -1,7 +1,7 @@
 // Runs the extension's real agent (extension/src/agent.ts) against the worker,
 // so the two sides can't drift apart.
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
-import { CopilotAgent, type AgentUpdate, type ToolSpec } from '../../extension/src/agent'
+import { CopilotAgent, type AgentUpdate, type HistoryMessage, type ToolSpec } from '../../extension/src/agent'
 import { getCurrentPage } from '../../extension/src/tools'
 import { createApp, type Env } from '../src/app'
 import { FakeClerk } from './clerk'
@@ -415,6 +415,88 @@ describe('extension agent against the worker', () => {
     ai.script = []
     expect((await ask(agent, 'Thanks')).result).toEqual({ status: 'done' })
     expect(ai.calls.at(-1)!.model).toBe('@cf/test/next-model')
+  })
+
+  it('[UC-SESSION-001-S01] a reopened session sends its earlier conversation, tool calls included', async () => {
+    ai.script = [{ toolCalls: [{ name: 'get_current_page', arguments: '{}' }] }, { reply: 'You are on Q4 Roadmap' }]
+    const first = makeAgent()
+    await ask(first, 'Which page am I on?')
+    // What the panel saves; stored sessions go through structured cloning, so keep only plain data.
+    const saved = structuredClone(first.history())
+    expect(saved).toEqual<HistoryMessage[]>([
+      { role: 'user', text: 'Which page am I on?' },
+      {
+        role: 'assistant',
+        parts: [{ type: 'tool_call', id: 'chatcmpl-tool-0', name: 'get_current_page', args: {} }],
+      },
+      { role: 'tool', id: 'chatcmpl-tool-0', name: 'get_current_page', status: 'done', result: PAGE_JSON },
+      { role: 'assistant', parts: [{ type: 'text', text: 'You are on Q4 Roadmap ' }] },
+    ])
+
+    // Another panel, later: the session is reopened and continued.
+    const resumed = makeAgent()
+    await resumed.reset(saved)
+    expect(resumed.history()).toEqual(saved)
+    const { result } = await ask(resumed, 'And its URL?')
+    expect(result).toEqual({ status: 'done' })
+    expect(sentMessages(2)).toEqual([
+      { role: 'system', content: 'You are Notion Copilot.' },
+      { role: 'user', content: 'Which page am I on?' },
+      {
+        role: 'assistant',
+        content: '',
+        tool_calls: [
+          { id: 'chatcmpl-tool-0', type: 'function', function: { name: 'get_current_page', arguments: '{}' } },
+        ],
+      },
+      { role: 'tool', tool_call_id: 'chatcmpl-tool-0', content: PAGE_JSON },
+      { role: 'assistant', content: 'You are on Q4 Roadmap ' },
+      { role: 'user', content: 'And its URL?' },
+    ])
+    expect(resumed.history()).toEqual([
+      ...saved,
+      { role: 'user', text: 'And its URL?' },
+      { role: 'assistant', parts: [{ type: 'text', text: '你好 来自 worker ' }] },
+    ])
+  })
+
+  it('[UC-SESSION-001-S02] a new or other session sends nothing from earlier sessions', async () => {
+    const agent = makeAgent()
+    await ask(agent, 'secret plans')
+    const earlier = agent.history()
+
+    await agent.reset()
+    expect(agent.history()).toEqual([])
+    await ask(agent, 'hi')
+    expect(sentMessages(1).map((m) => m.content)).toEqual(['You are Notion Copilot.', 'hi'])
+
+    // Switching from one saved session to another leaves the first one behind.
+    await agent.reset(earlier)
+    await agent.reset([
+      { role: 'user', text: 'other' },
+      { role: 'assistant', parts: [{ type: 'text', text: 'ok' }] },
+    ])
+    await ask(agent, 'more')
+    expect(sentMessages(2).map((m) => m.content)).toEqual(['You are Notion Copilot.', 'other', 'ok', 'more'])
+  })
+
+  it('a saved session keeps how each tool call ended', async () => {
+    ai.toolCalls = [
+      { name: 'get_current_page', arguments: '{}' },
+      { name: 'no_such_tool', arguments: '{}' },
+    ]
+    const first = makeAgent({ maxSteps: 2 })
+    await ask(first, 'Which page am I on?')
+    const statuses = (history: HistoryMessage[]) => history.flatMap((m) => (m.role === 'tool' ? [m.status] : []))
+    // Step 1: one call runs and the unknown tool fails. Step 2 hits the step limit: the known tool is
+    // refused, and the unknown one fails again.
+    expect(statuses(first.history())).toEqual(['done', 'failed', 'skipped', 'failed'])
+
+    ai.toolCalls = undefined
+    const resumed = makeAgent()
+    await resumed.reset(structuredClone(first.history()))
+    await ask(resumed, 'Thanks')
+    expect(statuses(resumed.history())).toEqual(['done', 'failed', 'skipped', 'failed'])
   })
 
   it('asks to sign in when there is no session', async () => {

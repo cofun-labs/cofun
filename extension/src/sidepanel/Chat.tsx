@@ -1,7 +1,9 @@
 import { useAuth } from '@clerk/chrome-extension'
 import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from 'react'
-import { CopilotAgent, type AgentUpdate } from '../agent'
-import { TOOLS } from '../tools'
+import { CopilotAgent, type AgentUpdate, type HistoryMessage } from '../agent'
+import { getSession, saveSession, titleFor, type Session } from '../sessions'
+import { currentNotionPage, TOOLS } from '../tools'
+import { Sessions } from './Sessions'
 import { ToolCall, type ShownTool } from './ToolCall'
 
 const API_URL = import.meta.env.VITE_API_URL as string
@@ -26,6 +28,13 @@ type Shown =
       note?: string
     }
 
+/** The open session; saved once its first question is answered. */
+interface Current {
+  id: string
+  createdAt: number
+  page: Promise<Session['page']>
+}
+
 export function Chat() {
   const { getToken } = useAuth()
   const [messages, setMessages] = useState<Shown[]>([])
@@ -34,7 +43,10 @@ export function Chat() {
   // Stop was pressed; the question is still winding down, so nothing is pending any more.
   const [stopping, setStopping] = useState(false)
   const listRef = useRef<HTMLElement>(null)
-  // Bumped by "New chat" so updates still arriving for the old chat are dropped.
+  const [view, setView] = useState<'chat' | 'sessions'>('chat')
+  // Opening the panel starts a new session; it gets an id when its first question is sent.
+  const [current, setCurrent] = useState<Current>()
+  // Bumped when another session opens, so updates still arriving for the old one are dropped.
   const chatId = useRef(0)
   const tokenRef = useRef(getToken)
   tokenRef.current = getToken
@@ -59,6 +71,12 @@ export function Chat() {
     if (!text || busy) return
 
     const id = chatId.current
+    const session = current ?? {
+      id: crypto.randomUUID(),
+      createdAt: Date.now(),
+      page: currentNotionPage().catch(() => undefined),
+    }
+    if (!current) setCurrent(session)
     setInput('')
     setBusy(true)
     setStopping(false)
@@ -112,9 +130,47 @@ export function Chat() {
       else if (result.status === 'step_limit')
         updateReply((m) => ({ ...m, note: `Stopped after ${result.steps} steps. Ask again to continue.` }))
     } finally {
-      // "New chat" already unlocked the composer for the new conversation.
-      if (chatId.current === id) setBusy(false)
+      // Another session that opened meanwhile already unlocked the composer, and the agent holds
+      // that session now.
+      if (chatId.current === id) {
+        setBusy(false)
+        save(session, agent.history())
+      }
     }
+  }
+
+  async function save(session: Current, messages: HistoryMessage[]) {
+    // A first question that failed leaves nothing worth keeping.
+    if (messages.length === 0) return
+    try {
+      const { id, createdAt } = session
+      await saveSession({
+        id,
+        createdAt,
+        page: await session.page,
+        title: titleFor(messages),
+        updatedAt: Date.now(),
+        messages,
+      })
+    } catch (err) {
+      console.error('Could not save the session', err)
+    }
+  }
+
+  /** Switches to a new session, or to a saved one; a reply still coming in is stopped. */
+  function switchTo(session?: Session) {
+    chatId.current++
+    void agent.reset(session?.messages)
+    setBusy(false)
+    setStopping(false)
+    setMessages(session ? toShown(session.messages) : [])
+    setCurrent(session && { id: session.id, createdAt: session.createdAt, page: Promise.resolve(session.page) })
+    setView('chat')
+  }
+
+  async function open(id: string) {
+    const session = await getSession(id).catch((err: Error) => console.error('Could not open the session', err))
+    if (session) switchTo(session)
   }
 
   function onSubmit(e: FormEvent) {
@@ -135,19 +191,24 @@ export function Chat() {
   return (
     <>
       <div className="toolbar">
-        <button
-          onClick={() => {
-            chatId.current++
-            void agent.reset()
-            setBusy(false)
-            setMessages([])
-          }}
-        >
-          New chat
+        <button onClick={() => setView(view === 'chat' ? 'sessions' : 'chat')}>
+          {view === 'chat' ? 'Sessions' : 'Back'}
         </button>
+        <button onClick={() => switchTo()}>New chat</button>
       </div>
 
-      <main id="messages" ref={listRef}>
+      {view === 'sessions' && (
+        <Sessions
+          currentId={current?.id}
+          onOpen={(id) => void open(id)}
+          onDeleted={(id) => {
+            // The open session is gone; don't save it again under the same id.
+            if (id === current?.id) switchTo()
+          }}
+        />
+      )}
+
+      <main id="messages" ref={listRef} hidden={view !== 'chat'}>
         {messages.length === 0 && <div className="empty">Ask anything to get started.</div>}
         {messages.map((m, i) =>
           m.role === 'user' ? (
@@ -180,7 +241,7 @@ export function Chat() {
         )}
       </main>
 
-      <form id="composer" onSubmit={onSubmit}>
+      <form id="composer" onSubmit={onSubmit} hidden={view !== 'chat'}>
         <textarea
           rows={3}
           value={input}
@@ -194,6 +255,32 @@ export function Chat() {
       </form>
     </>
   )
+}
+
+/** A saved conversation as the panel shows it: each question, then everything the agent did for it. */
+function toShown(history: HistoryMessage[]): Shown[] {
+  const shown: Shown[] = []
+  for (const m of history) {
+    if (m.role === 'user') {
+      shown.push({ role: 'user', content: m.text })
+      continue
+    }
+    let reply = shown.at(-1)
+    if (reply?.role !== 'assistant') shown.push((reply = { role: 'assistant', parts: [] }))
+    if (m.role === 'assistant') {
+      for (const p of m.parts)
+        reply.parts.push(
+          p.type === 'text'
+            ? { type: 'text', text: p.text }
+            : { type: 'tool', tool: { id: p.id, name: p.name, args: p.args, status: 'running', result: '' } },
+        )
+    } else {
+      // Like a live reply: the result belongs to the newest call with its id that has none yet.
+      const part = reply.parts.findLast((p) => isRunningCall(p, m.id))
+      if (part?.type === 'tool') part.tool = { ...part.tool, status: m.status, result: m.result }
+    }
+  }
+  return shown
 }
 
 /** The model is working with nothing to show yet: before its first words, or after its tools finished. */
