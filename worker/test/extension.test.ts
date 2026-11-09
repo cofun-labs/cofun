@@ -16,7 +16,8 @@ import { FakeAiBinding, FakeQuotaNamespace, FakeUsageDataset } from './fakes'
 
 const EXT = 'chrome-extension://abcdefghijklmnopabcdefghijklmnop'
 const MODEL = '@cf/test/model'
-const app = createApp()
+let clock = new Date('2026-11-08T12:00:00Z')
+const app = createApp({ now: () => clock })
 let clerk: FakeClerk
 let env: Env
 let ai: FakeAiBinding
@@ -37,6 +38,7 @@ afterAll(() => {
 })
 
 beforeEach(async () => {
+  clock = new Date('2026-11-08T12:00:00Z')
   env = {
     AI: (ai = new FakeAiBinding('你好 来自 worker')),
     QUOTA: new FakeQuotaNamespace(),
@@ -859,8 +861,11 @@ describe('extension agent against the worker', () => {
     // The request that would have sent the result back was refused before the model.
     expect(ai.calls).toHaveLength(1)
 
-    env.DAILY_REQUEST_LIMIT = '100'
+    // The next day the quota allows it again.
+    clock = new Date('2026-11-09T00:00:00Z')
     expect((await ask(agent, 'And now?')).result).toEqual({ status: 'done' })
+    // The kept tool is part of the conversation; it does not run again.
+    expect(runs).toHaveLength(1)
     expect(sentMessages(1)).toEqual([
       { role: 'system', content: 'You are Notion Copilot.' },
       { role: 'user', content: 'Which page am I on?' },
