@@ -9,10 +9,11 @@ import {
   type ToolCallRequest,
   type ToolSpec,
 } from '../../extension/src/agent'
-import { getCurrentPage } from '../../extension/src/tools'
+import { getCurrentPage, readPage } from '../../extension/src/tools'
 import { createApp, type Env } from '../src/app'
 import { FakeClerk } from './clerk'
 import { FakeAiBinding, FakeQuotaNamespace, FakeUsageDataset } from './fakes'
+import { FakeNotionTab, PAGE_URL, fixture } from './notion-tab'
 
 const EXT = 'chrome-extension://abcdefghijklmnopabcdefghijklmnop'
 const MODEL = '@cf/test/model'
@@ -165,6 +166,31 @@ describe('extension agent against the worker', () => {
         content: JSON.stringify({ title: 'Q4 Roadmap', url: 'https://www.notion.so/Q4-Roadmap-abc123' }),
       },
     ])
+  })
+
+  it('[UC-NOTION-001-S01] the agent reads the open Notion page and answers from it', async () => {
+    new FakeNotionTab(PAGE_URL)
+      .respond('loadPageChunk', 200, fixture('load-page-chunk-0'))
+      .respond('loadPageChunk', 200, fixture('load-page-chunk-1'))
+      .install()
+    ai.script = [{ toolCalls: [{ name: 'read_page', arguments: '{}' }] }, { reply: 'It says to ship it.' }]
+    const { result, reply } = await ask(makeAgent({ tools: [readPage] }), 'Summarize this page')
+
+    expect(result).toEqual({ status: 'done' })
+    expect(reply).toBe('It says to ship it. ')
+    // The model got the page as Markdown, right after its call.
+    expect(sentMessages(1).at(-1)).toEqual({
+      role: 'tool',
+      tool_call_id: 'chatcmpl-tool-0',
+      content: [
+        'Page: Fixture page ^1a1a1a1a000040008000000000000010',
+        'URL: https://app.notion.com/1a1a1a1a000040008000000000000010',
+        '',
+        'Hello **bold** ^00000011',
+        '- [ ] Ship it ^00000012',
+        '# Next steps ^00000013',
+      ].join('\n'),
+    })
   })
 
   it('[UC-AGENT-001-S05] a model that keeps calling tools is stopped at the step limit', async () => {
