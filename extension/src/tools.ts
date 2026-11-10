@@ -20,6 +20,7 @@ import {
   forget,
   mergeReads,
   parseEdits,
+  keepDates,
   pageRead,
   planEdit,
   previewEdits,
@@ -41,11 +42,15 @@ import { findPeople, peopleIn } from './notion/people'
 import { COMMENT_CHARS, clip, loadThreads, quote, threadCount, threadLines } from './notion/comments'
 import {
   PropertyError,
+  losesUnnamedPeople,
   oneLine,
   plainText,
   propertyValue,
+  richValue,
+  sameMarkdown,
   schemaEntry,
   shownInput,
+  shownMarkdown,
   storedText,
   type PropertyDef,
   type PropertyInput,
@@ -154,7 +159,7 @@ export const readPage: ToolSpec = {
     const pageHex = hexId(loaded.page.id)
     const threads = threadCount(loaded, md)
     const header = [
-      `Page: ${md.title} ^${pageHex}`,
+      `Page: ${md.titleMarkdown} ^${pageHex}`,
       `URL: ${pageLink(tab.url, pageHex)}`,
       ...(parts.length > 1
         ? [`Part ${part} of ${parts.length}${part < parts.length ? `. Read part ${part + 1} for more.` : '.'}`]
@@ -1091,6 +1096,22 @@ function titleArg(value: unknown): string {
 /** Text arguments drop Markdown escapes (see plainText), so the model must double a backslash. */
 const BACKSLASH = 'Markdown escapes are undone: write a backslash itself as \\\\.'
 
+/** Page titles and text properties are inline Markdown (see richValue). */
+const INLINE_MARKDOWN =
+  'inline Markdown as query_database and read_page show text (bold, links, `[Title](page id)`, `@[Name]`, ' +
+  '`@2026-11-20`): put a backslash before a character that must stay literal, and write a backslash itself as \\\\'
+
+/** A page's new title, from the Markdown the model gives: on one line, as rich text and as previews show it. */
+function pageTitle(value: unknown): { rich: RichText; shown: string } {
+  const markdown = typeof value === 'string' ? oneLine(value) : ''
+  try {
+    return { rich: richValue(markdown), shown: shownMarkdown(markdown) }
+  } catch (err) {
+    if (err instanceof PropertyError) throw new EditError(err.message)
+    throw err
+  }
+}
+
 /** `properties` as tools take it: values by property name. */
 const PROPERTIES_ARG = {
   type: 'object',
@@ -1098,7 +1119,7 @@ const PROPERTIES_ARG = {
     'Database properties by name: text, a number, Yes/No for checkboxes, an option name (a list for ' +
     'multi-select), or a date as YYYY-MM-DD (a range as "YYYY-MM-DD → YYYY-MM-DD"). Empty clears a value. ' +
     'The title goes in `title`, not here. Setting a date replaces any time or reminder it had. ' +
-    BACKSLASH,
+    `A text property is ${INLINE_MARKDOWN}. In other values, Markdown escapes are undone.`,
   additionalProperties: {
     anyOf: [
       { type: 'string' },
@@ -1121,7 +1142,7 @@ export const createPage: ToolSpec = {
   parameters: {
     type: 'object',
     properties: {
-      title: { type: 'string', description: `The new page's title. ${BACKSLASH}` },
+      title: { type: 'string', description: `The new page's title, on one line: ${INLINE_MARKDOWN}.` },
       markdown: { type: 'string', description: "The page's content, as Markdown. Leave out for an empty page." },
       parent: { type: 'string', description: 'URL or id of the page or database to create it in.' },
       properties: PROPERTIES_ARG,
@@ -1130,7 +1151,7 @@ export const createPage: ToolSpec = {
     additionalProperties: false,
   },
   preview: (args) => {
-    const title = titleArg(args.title)
+    const title = typeof args.title === 'string' ? shownMarkdown(args.title) : ''
     // The page exactly as `run` will resolve it, so the user sees where the page went.
     const given = typeof args.parent === 'string' ? args.parent.trim() : ''
     const id = given ? pageArg(given) : undefined
@@ -1158,8 +1179,8 @@ export const createPage: ToolSpec = {
     ].join('\n')
   },
   run: async (args, signal) => {
-    const title = titleArg(args.title)
-    if (!title) throw new Error('`title` must not be empty.')
+    const { rich, shown: title } = pageTitle(args.title)
+    if (!rich.length) throw new Error('`title` must not be empty.')
     const given = typeof args.parent === 'string' ? args.parent.trim() : ''
     if (!given) throw new Error('`parent` is required: the URL or id of the page or database to create it in.')
     const parentId = pageArg(given)
@@ -1178,7 +1199,7 @@ export const createPage: ToolSpec = {
     const parent = (await tab.client.getRecords([{ table: 'block', id: parentId }])).block![parentId]
     let target: { id: string; table: 'block' | 'collection' }
     let spaceId: unknown = parent.space_id
-    let properties: Record<string, unknown> = {}
+    let properties: Record<string, RichText> = {}
     if (parent.type === 'collection_view_page' || parent.type === 'collection_view') {
       // A row goes in the database's data source, in the workspace that holds it.
       const db = await resolveDatabase(tab.client, parent)
@@ -1193,9 +1214,14 @@ export const createPage: ToolSpec = {
     }
     if (typeof spaceId !== 'string' || !spaceId)
       throw new NotionError('notion_error', 'Notion returned the page without its workspace.')
-    const [people] = await findPeople(tab.client, spaceId, [{ names: personNames(blockTitles(blocks)) }])
+    // People the title, the properties, and the content mention, matched before anything is written.
+    const written = [...blockTitles(blocks), rich, ...Object.values(properties)]
+    const [people] = await findPeople(tab.client, spaceId, [{ names: personNames(written) }])
     blocks = blocksWithPeople(blocks, people)
-    const { operations, pageId } = planNewPage(target, spaceId, title, blocks, tab.client.userId, { properties })
+    properties = Object.fromEntries(Object.entries(properties).map(([key, v]) => [key, withPeople(v, people)]))
+    const { operations, pageId } = planNewPage(target, spaceId, withPeople(rich, people), blocks, tab.client.userId, {
+      properties,
+    })
     signal?.throwIfAborted()
     // The parent's list changes: cached parts of it would hide the new page, and after an unknown
     // outcome the agent must see whether it was created before it tries again.
@@ -1249,7 +1275,7 @@ export const updatePages: ToolSpec = {
           type: 'object',
           properties: {
             page: { type: 'string', description: 'Id or URL of the page or row.' },
-            title: { type: 'string', description: `A new title. ${BACKSLASH}` },
+            title: { type: 'string', description: `A new title, on one line: ${INLINE_MARKDOWN}.` },
             icon: { type: 'string', description: 'A new icon: one emoji.' },
             properties: PROPERTIES_ARG,
           },
@@ -1271,8 +1297,11 @@ export const updatePages: ToolSpec = {
       const known = seen ? shownText(seen.title) : id ? pageReads.get(id)?.title : undefined
       lines.push(id ? `${known ? `${oneLine(known)} ` : ''}^${hexId(id)}` : oneLine(given) || '(no page given)')
       if (typeof u?.title === 'string') {
-        const title = titleArg(u.title)
-        lines.push(`    Title: ${title}${seen ? change(oneLine(shownText(seen.title)), title) : ''}`)
+        const title = shownMarkdown(u.title)
+        const old = seen
+          ? change(shownMarkdown(seen.title, { cell: false }), title, sameMarkdown(seen.title, oneLine(u.title)))
+          : ''
+        lines.push(`    Title: ${title}${old}`)
       }
       if (typeof u?.icon === 'string') lines.push(`    Icon: ${oneLine(u.icon)}`)
       let props: [string, PropertyInput][] = []
@@ -1309,15 +1338,59 @@ export const updatePages: ToolSpec = {
     const collections = collectionIds.length
       ? (await tab.client.getRecords(collectionIds.map((id) => ({ table: 'collection', id, spaceId })))).collection!
       : {}
+    const changes = updates.map((u) => {
+      const block = blocks[u.id] as Block
+      const schema = (collections[String(block.parent_id)]?.schema ?? {}) as Schema
+      const values = u.props.length ? toProperties(schema, u.props) : {}
+      if (u.title !== undefined) values.title = u.title.rich
+      // The text and title being set: what the page stores for them now is looked at below.
+      const texts = Object.keys(values).filter((key) => key === 'title' || schema[key]?.type === 'text')
+      // A person shown as @someone can't be written back: the text would replace the mention.
+      const unnamed = texts.find((key) => losesUnnamedPeople(values[key], block.properties?.[key]))
+      if (unnamed)
+        throw new EditError(
+          `^${hexId(u.id)}: ${unnamed === 'title' ? 'the title' : (schema[unnamed]?.name ?? unnamed)} mentions a ` +
+            'person whose name could not be read, shown as @someone. Writing @someone back would replace that ' +
+            'mention with text: leave this value as it is, or name the person as @[Name]. Nothing was written.',
+        )
+      return { values, texts, names: personNames(Object.values(values)), block }
+    })
+    // People the new values mention, matched before anything is written. A name the old value
+    // already mentions is that same person, so a value written back as read keeps its mentions.
+    const mentioning = changes.filter((c) => c.names.length)
+    const users = [
+      ...new Set(mentioning.flatMap((c) => c.texts.flatMap((key) => mentioned(c.block.properties?.[key])))),
+    ]
+    let named: RecordMap = {}
+    try {
+      named = await tab.client.findRecords(users.map((id) => ({ table: 'notion_user' as const, id })))
+    } catch (err) {
+      // As in loadMentioned: only names, so a person out of reach is looked up among the members.
+      if (!(err instanceof NotionError && (err.code === 'no_access' || err.code === 'in_trash'))) throw err
+    }
+    const found = await findPeople(
+      tab.client,
+      spaceId,
+      changes.map((c) => ({
+        names: c.names,
+        known: peopleIn(
+          c.texts.flatMap((key) => (c.block.properties?.[key] as unknown[] | undefined) ?? []),
+          named.notion_user,
+        ),
+      })),
+    )
     const op = blockOps(spaceId, Date.now(), tab.client.userId)
     const operations: Operation[] = []
     const summary: string[] = []
-    for (const u of updates) {
-      const block = blocks[u.id]
-      const values: Record<string, unknown[]> = u.props.length
-        ? toProperties((collections[String(block.parent_id)]?.schema ?? {}) as Schema, u.props)
-        : {}
-      if (u.title !== undefined) values.title = [[u.title]]
+    updates.forEach((u, n) => {
+      const { texts, block } = changes[n]
+      const values = Object.fromEntries(
+        Object.entries(changes[n].values).map(([key, value]) => {
+          const rich = withPeople(value, found[n])
+          // A date mention keeps what the old text stored with it, which query_database doesn't show.
+          return [key, texts.includes(key) ? keepDates(rich, [block.properties?.[key]]) : rich]
+        }),
+      )
       if (Object.keys(values).length) operations.push(op.setProperties(u.id, values))
       if (u.icon !== undefined) operations.push(op.setFormat(u.id, { page_icon: u.icon }))
       operations.push(op.touch(u.id))
@@ -1327,7 +1400,7 @@ export const updatePages: ToolSpec = {
         ...u.props.map(([n]) => oneLine(n)),
       ]
       summary.push(`^${hexId(u.id)}: ${changed.join(', ')}`)
-    }
+    })
     signal?.throwIfAborted()
     try {
       // Setting values again does no harm, so after a lost answer the agent may simply retry.
@@ -1345,15 +1418,29 @@ export const updatePages: ToolSpec = {
     // A read's title shows in later previews; keep it current.
     for (const u of updates) {
       const read = pageReads.get(u.id)
-      if (read && u.title !== undefined) read.title = u.title
+      if (read && u.title !== undefined) read.title = u.title.shown
     }
     return [`Changed ${updates.length} page${updates.length === 1 ? '' : 's'}:`, ...summary].join('\n')
   },
 }
 
-/** How a value differs from the old one the agent saw, for the preview. */
-function change(old: string, now: string): string {
-  return old === now ? ' (unchanged)' : ` (was ${old || 'empty'})`
+/**
+ * How a value differs from the old one the agent saw, for the preview. Text that reads the same may
+ * still differ in what is stored (`same`): its formatting, links, or mentions.
+ */
+function change(old: string, now: string, same = old === now): string {
+  if (same) return ' (unchanged)'
+  return old === now ? ' (same text; its formatting changes)' : ` (was ${old || 'empty'})`
+}
+
+/** The ids of the people rich text mentions. */
+function mentioned(value: unknown): string[] {
+  const runs = (Array.isArray(value) ? value : []) as [string, [string, unknown?][]?][]
+  return runs.flatMap((run) =>
+    (Array.isArray(run?.[1]) ? run[1] : []).flatMap(([mark, id]) =>
+      mark === 'u' && typeof id === 'string' ? [id] : [],
+    ),
+  )
 }
 
 /**
@@ -1364,12 +1451,16 @@ function previewValue(seen: SeenRow | undefined, name: string, input: PropertyIn
   if (!seen) return shownInput(input)
   let def: PropertyDef
   let now: string
+  let markdown: string | undefined
   try {
     let key: string
     ;[key, def] = schemaEntry(seen.schema, name)
     // `run` refuses the title among the properties.
     if (key === 'title' || def.type === 'title') return shownInput(input)
-    now = storedText(def, propertyValue(def, input))
+    const value = propertyValue(def, input)
+    // Text is Markdown: shown as the user reads it, and compared as it is stored.
+    markdown = def.type === 'text' && typeof input === 'string' && value.length ? input.trim() : undefined
+    now = markdown === undefined ? storedText(def, value) : shownMarkdown(markdown)
   } catch (err) {
     if (err instanceof PropertyError) return shownInput(input)
     throw err
@@ -1377,6 +1468,7 @@ function previewValue(seen: SeenRow | undefined, name: string, input: PropertyIn
   const property = (def.name ?? name).trim().toLowerCase()
   const old = seen.values.find((v) => v.name.toLowerCase() === property)?.value
   if (old === undefined) return now || '(empty)'
+  if (markdown !== undefined) return now + change(shownMarkdown(old, { cell: false }), now, sameMarkdown(old, markdown))
   // As storedText shows it: plain text, without query_database's Markdown marks, links, or the @
   // before a date; options without spaces.
   let was = oneLine(shownText(old))
@@ -1404,8 +1496,8 @@ function parseUpdates(value: unknown) {
     if (!id) throw new EditError(`Page ${i + 1} needs \`page\`: the id or URL of a page or row.`)
     if (seen.has(id)) throw new EditError(`^${hexId(id)} is given twice; put all its changes in one entry.`)
     seen.add(id)
-    const title = u.title === undefined ? undefined : titleArg(u.title)
-    if (title === '') throw new EditError(`Page ${i + 1}: \`title\` must not be empty.`)
+    const title = u.title === undefined ? undefined : pageTitle(u.title)
+    if (title && !title.rich.length) throw new EditError(`Page ${i + 1}: \`title\` must not be empty.`)
     const icon = u.icon === undefined ? undefined : typeof u.icon === 'string' ? u.icon.trim() : ''
     if (icon !== undefined && !isEmoji(icon)) throw new EditError(`Page ${i + 1}: \`icon\` must be an emoji.`)
     const props = propertiesArg(u.properties)
@@ -1431,8 +1523,8 @@ function propertiesArg(value: unknown): [string, PropertyInput][] {
 }
 
 /** Property values as Notion stores them, by schema key; the title is given as `title` instead. */
-function toProperties(schema: Schema, props: [string, PropertyInput][]): Record<string, unknown[]> {
-  const out: Record<string, unknown[]> = {}
+function toProperties(schema: Schema, props: [string, PropertyInput][]): Record<string, RichText> {
+  const out: Record<string, RichText> = {}
   for (const [name, input] of props) {
     const [key, def] = schemaEntry(schema, name)
     if (key === 'title' || def.type === 'title')
