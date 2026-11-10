@@ -230,6 +230,8 @@ export class CopilotAgent {
       }
       // From the arguments the tool runs with, and before it runs: the run may change what the preview reads.
       const preview = await previewCall(this.tools.get(toolCall.name), args, signal)
+      // Stopped while the preview looked things up: the tool must not start.
+      if (signal?.aborted || epoch !== this.epoch) return { block: true, reason: STOPPED_BEFORE }
       onUpdate({ type: 'tool_ready', id: toolCall.id, args, preview })
       if (!this.confirmed.has(toolCall.name)) {
         started.add(toolCall.id)

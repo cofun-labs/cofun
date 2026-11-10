@@ -761,6 +761,23 @@ describe('extension agent against the worker', () => {
     expect(runs).toEqual([])
   })
 
+  it('a tool that runs without asking does not start when Stop lands during its preview', async () => {
+    let agent: CopilotAgent
+    const { tool, runs } = pageTool()
+    const slow: ToolSpec = {
+      ...tool,
+      preview: async () => {
+        agent.stop()
+        return 'Looks up the page'
+      },
+    }
+    agent = makeAgent({ tools: [slow] })
+    ai.script = [{ toolCalls: [{ name: 'lookup_page', arguments: '{}' }] }]
+    const { result } = await ask(agent, 'Which page am I on?')
+    expect(result).toEqual({ status: 'stopped' })
+    expect(runs).toEqual([])
+  })
+
   it('a broken preview does not stop the call', async () => {
     const { tool, runs } = pageTool()
     ai.script = [{ toolCalls: [{ name: 'lookup_page', arguments: '{}' }] }, { reply: 'Done' }]
