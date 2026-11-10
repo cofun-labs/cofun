@@ -1219,7 +1219,7 @@ export const movePage: ToolSpec = {
         'Notion Copilot: move_page',
       )
     } finally {
-      forgetPages([destId, ...parents])
+      forgetPages([destId, ...parents, ...ids])
     }
     return [
       `Moved ${moving.length} page${moving.length === 1 ? '' : 's'} to the end of ^${hexId(destId)}: ${moving.map((id) => `^${hexId(id)}`).join(', ')}.`,
