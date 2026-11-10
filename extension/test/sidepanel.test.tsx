@@ -29,8 +29,11 @@ async function ask(user: UserEvent, question: string) {
 /** The question has ended: the composer offers Send again. */
 const answered = () => screen.findByRole('button', { name: 'Send' })
 
-/** A model reply that stops partway until `resume` is called. */
-function pausedReply(browser: FakeBrowser, reply: string, after: number) {
+/**
+ * A model reply that stops partway until `resume` is called. The fake model streams each word as an
+ * event of about 60 bytes, so it stops after the first two words.
+ */
+function pausedReply(browser: FakeBrowser, reply: string, after = 150) {
   let resume!: () => void
   browser.ai.pause = { after, until: new Promise<void>((resolve) => (resume = resolve)) }
   browser.ai.script.push({ reply })
@@ -68,7 +71,7 @@ describe('asking the AI', () => {
   it('[UC-CHAT-001-S03] the sent message appears and the reply streams in below it', async () => {
     const { browser, user } = await openPanel()
     // The model has written its first words and is still writing.
-    const resume = pausedReply(browser, 'The roadmap has three milestones', 150)
+    const resume = pausedReply(browser, 'The roadmap has three milestones')
 
     await user.type(composer(), 'What is on the roadmap?{Enter}')
 
@@ -307,7 +310,7 @@ describe('sessions', () => {
 
     vi.setSystemTime(new Date(START.getTime() + 60_000))
     await user.click(screen.getByRole('button', { name: 'New chat' }))
-    const resume = pausedReply(browser, 'Alice owns the launch', 150)
+    const resume = pausedReply(browser, 'Alice owns the launch')
     await ask(user, 'Who owns the launch?')
     await screen.findByText(/^Alice owns/)
 
