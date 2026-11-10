@@ -2,6 +2,7 @@
 // shape Notion's loadPageChunk returns them (see fixtures/notion/ for recorded examples).
 import { afterEach, describe, expect, it } from 'vitest'
 import { NESTED_MAX } from '../../extension/src/notion/api'
+import { inline } from '../../extension/src/notion/blocks'
 import { blockRefs, codeSpan, splitIntoParts } from '../../extension/src/notion/markdown'
 import { PART_CHARS, editPage, readPage } from '../../extension/src/tools'
 import { FakeNotionTab, PAGE, PAGE_URL, SPACE, USER, fixture, restoreGlobals } from './notion-tab'
@@ -792,6 +793,29 @@ describe('faithful details', () => {
       }),
     )
     expect(body(await read())).toBe('See [https://example.com/a\\_(b)](https://example.com/a_(b)) ^00000001')
+  })
+
+  it('escapes a mentioned page’s title, so the mention stays one link that writes back to that page', async () => {
+    const wip = '3b3b3b3b-0000-4000-8000-000000000041'
+    const temp = '3b3b3b3b-0000-4000-8000-000000000042'
+    const piped = '3b3b3b3b-0000-4000-8000-000000000043'
+    const mentions = [wip, temp, piped].flatMap((p, i) => [...(i ? [[' and ']] : []), ['‣', [['p', p]]]])
+    openPage(
+      chunk([id(1)], {
+        block: {
+          ...block(id(1), 'text', mentions),
+          ...block(wip, 'page', '[WIP] Plan'),
+          ...block(temp, 'page', 'C:\\temp'),
+          ...block(piped, 'page', 'A | B'),
+        },
+      }),
+    )
+    const line = body(await read())
+    expect(line).toBe(
+      `[\\[WIP\\] Plan](${hex(wip)}) and [C:\\\\temp](${hex(temp)}) and [A \\| B](${hex(piped)}) ^00000001`,
+    )
+    // edit_page and create_page read it back as mentions of the same pages.
+    expect(inline(line.replace(/ \^00000001$/, ''))).toEqual(mentions)
   })
 
   it('leaves people and pages it cannot load unnamed', async () => {

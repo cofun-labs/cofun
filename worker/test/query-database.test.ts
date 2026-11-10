@@ -385,6 +385,21 @@ describe('query_database options, numbers, and code', () => {
     expect(cells(line)).toBe(cells(result.split('\n').find((l) => l.startsWith('| Task |'))!))
   })
 
+  it('compares a mentioned page by its title, brackets and backslashes included', async () => {
+    // Rows 2 and 4 mention rows 1 and 3, whose titles hold `]` and `\`.
+    const rows = tagged([], [[], [['‣', [['p', row(1)]]]], [], [['‣', [['p', row(3)]]]]])
+    rows[0].properties.title = [['[WIP] Plan']]
+    rows[2].properties.title = [['C:\\temp']]
+    database(rows, false, TAGGED)
+    expect(titles(await query({ filter: [{ property: 'Notes', op: 'is', value: '[WIP] Plan' }] }))).toEqual([
+      'Fix login \\| Safari',
+    ])
+    database(rows, false, TAGGED)
+    expect(titles(await query({ filter: [{ property: 'Notes', op: 'is', value: 'C:\\temp' }] }))).toEqual([
+      'Plan retro',
+    ])
+  })
+
   it('keeps a person with a pipe in the name in one cell', async () => {
     const rows = TASKS.map((t) => ({ ...rowRecord(t), created_by_id: USER }))
     database(rows, false, { ...SCHEMA, 'i:i': { name: 'Creator', type: 'created_by' } }, [], 'Ana\\ | Ops')
