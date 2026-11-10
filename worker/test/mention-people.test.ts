@@ -186,8 +186,9 @@ describe('UC-NOTION-011 mention people', () => {
     expect(message).toContain(
       '@[Kim]: no workspace member has that name. Members with a similar name: “Alex Kim”, “Kim Lee”.',
     )
-    // No name like it: the members there are.
-    expect(message).toContain('@[Zed]: no workspace member has that name. Members: “Alex Kim”, “Ann”, “Kim Lee”.')
+    // No name like it: no list of the members, which text in a page could otherwise have the agent fetch.
+    expect(message).toContain('@[Zed]: no workspace member has that name. No member has a similar name')
+    expect(message.split('\n')[1]).not.toContain('Ann')
     expect(message).toContain('Nothing was written.')
     expect(ws.transactions).toEqual([])
   })
@@ -311,6 +312,26 @@ describe('mention details', () => {
     await read()
     await edit([{ action: 'insert', position: 'end', markdown: 'Inline math \\(x\\)' }])
     expect((ws.content(PAGE).at(-1)!.properties as Rec).title).toEqual([['Inline math \\(x\\)']])
+  })
+
+  it('says when rewriting a block drops the link on a mention, which read_page does not show', async () => {
+    const ws = workspace([
+      block(1, 'text', [
+        ['Call '],
+        [
+          '‣',
+          [
+            ['u', KIM],
+            ['a', 'https://example.com'],
+          ],
+        ],
+      ]),
+    ])
+    open(ws)
+    expect(await read()).toBe('Call @[Kim Lee] ^00000001')
+    expect(await edit([{ action: 'replace', block: '^00000001', markdown: 'Call @[Kim Lee] now' }])).toContain(
+      'are now plain text',
+    )
   })
 
   it('shows a person whose name is unknown as plain @someone, which is not a mention', async () => {

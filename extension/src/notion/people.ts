@@ -72,7 +72,10 @@ export async function findPeople(
   return out
 }
 
-/** Members whose name is like `name`, or else the members there are, for the agent to pick from. */
+/**
+ * Members whose name is like `name`, for the agent to pick from. Never the whole list: a refusal
+ * mustn't let text in a page have the agent list the workspace's people.
+ */
 function candidates(name: string, people: { name: string }[]): string {
   const wanted = key(name)
   const words = wanted.split(' ').filter((w) => w.length > 1)
@@ -86,6 +89,5 @@ function candidates(name: string, people: { name: string }[]): string {
     return shown.join(', ') + (names.length > LISTED ? `, and ${names.length - LISTED} more` : '')
   }
   if (like.length) return `Members with a similar name: ${list(like)}.`
-  if (people.length) return `Members: ${list(people)}.`
-  return 'The workspace has no members that can be mentioned.'
+  return 'No member has a similar name: check the name with the user.'
 }
