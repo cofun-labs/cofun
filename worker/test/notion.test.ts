@@ -6,6 +6,8 @@ import {
   NotionError,
   RATE_LIMITED,
   normalizeRecordMap,
+  type NotionResponse,
+  type NotionTransport,
   type Operation,
   type Wait,
 } from '../../extension/src/notion/api'
@@ -662,6 +664,24 @@ describe('when Notion is limiting requests', () => {
     await expect(loading).rejects.toMatchObject({ name: 'AbortError' })
     expect(Date.now() - started).toBeLessThan(1_000)
     expect(tab.sent).toHaveLength(1)
+  })
+
+  it('does not back off again for a request answered after the client gave up', async () => {
+    // A slow request is still out when another one runs out of tries; then Notion refuses it too.
+    const limited: NotionResponse = { status: 429, json: {}, signedIn: true }
+    let answerSlow = (_: NotionResponse) => {}
+    const sent: string[] = []
+    const send: NotionTransport = (endpoint) => {
+      sent.push(endpoint)
+      if (endpoint === 'syncRecordValuesMain') return new Promise((resolve) => (answerSlow = resolve))
+      return Promise.resolve(limited)
+    }
+    const notion = new NotionClient(send, { wait: async () => {} })
+    const slow = notionError(notion.getRecords([{ table: 'block', id: PAGE }]))
+    expect((await notionError(notion.loadPage(PAGE))).code).toBe('rate_limited')
+    answerSlow(limited)
+    expect((await slow).code).toBe('rate_limited')
+    expect(sent.filter((e) => e === 'syncRecordValuesMain')).toHaveLength(1)
   })
 
   it('backs off once for a burst Notion refuses together, and the others send after it is answered', async () => {

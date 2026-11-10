@@ -425,6 +425,8 @@ export class NotionClient {
       this.signal?.throwIfAborted()
       const res = await this.send(endpoint, body, { spaceId })
       if (!slowDown(endpoint, res)) return { json: checkResponse(res) as T, signedIn: res.signedIn }
+      // A request still in flight when the client gave up doesn't start over.
+      if (this.gaveUp) throw new NotionError('rate_limited', RATE_LIMITED)
       // Another request is backing off already: hold until Notion answers it, then send again.
       if (this.backingOff) continue
       this.backingOff = true
@@ -483,7 +485,12 @@ function retryDelay(retryAfter: string | undefined, retry: number): number {
   const backoff = BACKOFF_MS * 2 ** retry
   const value = retryAfter?.trim()
   if (!value) return backoff
-  const asked = /^\d+$/.test(value) ? Number(value) * 1_000 : Date.parse(value) - Date.now()
+  // Seconds, or an HTTP date (it names the day and month); Date.parse alone would also read, say, "1.5".
+  const asked = /^\d+$/.test(value)
+    ? Number(value) * 1_000
+    : /[a-z]/i.test(value)
+      ? Date.parse(value) - Date.now()
+      : NaN
   return Number.isNaN(asked) ? backoff : Math.max(asked, backoff)
 }
 
