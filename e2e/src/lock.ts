@@ -2,12 +2,15 @@
 // canary-lock.sh, so sessions using either can share the browser: `mkdir` is the lock, an `owner`
 // file inside says who holds it ("<owner> | <purpose> | since <time>"), and a lock not refreshed for
 // 30 minutes counts as abandoned.
-import { mkdir, readFile, rename, rm, stat, utimes, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, rm, stat, utimes, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 
 export const LOCK_DIR = join(homedir(), '.cache', 'notion-copilot', 'canary.lock')
 export const STALE_MS = 30 * 60_000
+
+/** How old a takeover guard must be to count as left behind by a session that died taking over. */
+const GUARD_STALE_MS = 60_000
 
 export type Acquired =
   /** Taken now; `tookOver` names the holder of the stale lock it replaced. */
@@ -57,21 +60,38 @@ export class CanaryLock {
   }
 
   /**
-   * Moves a stale lock out of the way and returns its holder. The rename is atomic, so of several
-   * sessions taking over the same stale lock, one moves it and the others find it gone and race for
-   * mkdir instead.
+   * Removes a stale lock and returns its holder; undefined when another session got there first.
+   * Only one session takes over at a time, behind a guard directory, and checks again behind it
+   * that the lock is still the stale one: without that, a session that saw it stale could remove
+   * the fresh lock another session had just taken, and both would hold it.
    */
-  private async takeOver(): Promise<string | undefined> {
-    const moved = `${this.dir}.stale-${process.pid}-${Date.now()}`
+  private async takeOver(again = true): Promise<string | undefined> {
+    const guard = `${this.dir}.takeover`
     try {
-      await rename(this.dir, moved)
+      await mkdir(guard)
     } catch (err) {
-      if ((err as NodeJS.ErrnoException).code === 'ENOENT') return undefined
-      throw err
+      if ((err as NodeJS.ErrnoException).code !== 'EEXIST') throw err
+      // A guard left by a session that died while taking over is cleared, and the takeover tried once more.
+      const since = await stat(guard).then(
+        (s) => s.mtime.getTime(),
+        () => undefined,
+      )
+      if (!again || since === undefined || this.now().getTime() - since <= GUARD_STALE_MS) return undefined
+      await rm(guard, { recursive: true, force: true })
+      return this.takeOver(false)
     }
-    const holder = (await readFile(join(moved, 'owner'), 'utf8').catch(() => '')).trim() || '(unknown holder)'
-    await rm(moved, { recursive: true, force: true })
-    return holder
+    try {
+      const modified = await stat(this.dir).then(
+        (s) => s.mtime.getTime(),
+        () => undefined,
+      )
+      if (modified === undefined || !this.isStale(modified)) return undefined
+      const holder = (await readFile(join(this.dir, 'owner'), 'utf8').catch(() => '')).trim() || '(unknown holder)'
+      await rm(this.dir, { recursive: true, force: true })
+      return holder
+    } finally {
+      await rm(guard, { recursive: true, force: true })
+    }
   }
 
   private isStale(modified: number): boolean {
