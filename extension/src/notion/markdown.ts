@@ -340,7 +340,8 @@ class Context {
       case 'created_by':
       case 'last_edited_by': {
         const user = page[`${type}_id`]
-        return typeof user === 'string' ? `@${this.userName(user)}` : ''
+        const name = typeof user === 'string' ? this.userName(user) : undefined
+        return name === undefined ? '' : `@${table ? name.replace(/\|/g, '\\|') : name}`
       }
       // Computed by Notion when it shows the database; the row doesn't store them.
       case 'formula':

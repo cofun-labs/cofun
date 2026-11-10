@@ -51,12 +51,16 @@ function rowRecord(t: (typeof TASKS)[number]) {
   }
 }
 
-/** A database whose view lists `rows`, and `unsent` ids whose records the response leaves out. */
+/**
+ * A database whose view lists `rows`, and `unsent` ids whose records the response leaves out; the
+ * rows' person is named `userName`.
+ */
 function database(
   rows = TASKS.map(rowRecord),
   hasMore = false,
   schema: Record<string, unknown> = SCHEMA,
   unsent: string[] = [],
+  userName = 'Fixture User',
 ) {
   return new FakeNotionTab(`https://app.notion.com/${hex(DB)}?v=${hex(VIEW)}`)
     .respond(
@@ -74,7 +78,7 @@ function database(
       recordMap: {
         __version__: 3,
         block: Object.fromEntries(rows.map((r) => [r.id, wrapped(r)])),
-        notion_user: { [USER]: wrapped({ id: USER, name: 'Fixture User' }) },
+        notion_user: { [USER]: wrapped({ id: USER, name: userName }) },
       },
     })
     .install()
@@ -370,6 +374,17 @@ describe('query_database options, numbers, and code', () => {
     const result = await query({ filter: [{ property: 'Notes', op: 'contains', value: 'safari' }] })
     const [line] = tableRows(result)
     expect(line).toContain(`[Fix login \\| Safari](${hex(row(2))}) and [spec](https://example.com/a\\|b)`)
+    const cells = (l: string) => l.split(/(?<!\\)\|/).length
+    expect(cells(line)).toBe(cells(result.split('\n').find((l) => l.startsWith('| Task |'))!))
+  })
+
+  it('keeps a person with a pipe in the name in one cell', async () => {
+    const rows = TASKS.map((t) => ({ ...rowRecord(t), created_by_id: USER }))
+    database(rows, false, { ...SCHEMA, 'i:i': { name: 'Creator', type: 'created_by' } }, [], 'Ana | Ops')
+    const result = await query()
+    const [line] = tableRows(result)
+    // The person property (a mention) and the creator (kept on the row) both escape it.
+    expect(line).toContain('| @Ana \\| Ops | 3 | Yes | @Ana \\| Ops |')
     const cells = (l: string) => l.split(/(?<!\\)\|/).length
     expect(cells(line)).toBe(cells(result.split('\n').find((l) => l.startsWith('| Task |'))!))
   })
