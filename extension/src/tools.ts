@@ -49,16 +49,18 @@ export async function currentNotionPage(): Promise<{ title: string; url: string 
   return { title, url: tab.url! }
 }
 
-export const getCurrentPage: ToolSpec = {
-  name: 'get_current_page',
-  description: 'Returns the title and URL of the Notion page open in the current browser tab.',
-  parameters: { type: 'object', properties: {}, additionalProperties: false },
-  run: async () => {
-    const page = await currentNotionPage()
-    if (!page) throw new Error('No Notion page is open in this window.')
-    return page
-  },
+/** Which Notion page is open, told to the model with each question; the page can change between them. */
+export async function openPageNote(): Promise<string> {
+  const page = await currentNotionPage()
+  if (!page) return '[No Notion page is open in the current tab.]'
+  // The page's author picks its title, and a shared link its query: keep both from closing the note
+  // and faking another one.
+  const title = clip(page.title.replace(/[[\]]/g, ''), TITLE_CHARS)
+  const url = page.url.replaceAll('[', '%5B').replaceAll(']', '%5D')
+  return `[The Notion page open in the current tab: ${JSON.stringify(title)}, ${url}]`
 }
+
+const TITLE_CHARS = 200
 
 /** How much of a page one read returns, so a long page doesn't fill the conversation. */
 export const PART_CHARS = 12_000
@@ -775,7 +777,7 @@ export const createPage: ToolSpec = {
   name: 'create_page',
   description:
     'Creates a Notion page with a title and Markdown content (the same Markdown as edit_page). `parent` is a page ' +
-    "(the open page's URL from get_current_page, or another page), and the new page goes at its end; or a " +
+    "(the open page's URL, or another page), and the new page goes at its end; or a " +
     'database, and the new page is a row of it, with `properties` set by name (values as query_database shows ' +
     "them; options must exist). Returns the new page's id and URL.",
   parameters: {
@@ -1294,7 +1296,6 @@ function clip(text: string, max: number): string {
 }
 
 export const TOOLS: ToolSpec[] = [
-  getCurrentPage,
   readPage,
   editPage,
   createPage,
