@@ -32,7 +32,7 @@ Copilot for Notion: a Chrome extension that opens an AI side panel next to Notio
 3. **Implement with tests.** Keep tests in sync with use cases:
    - Remove tests for deleted scenarios, add tests for new ones, rename tests when scenario IDs change.
    - P0 scenarios must be verified before merge; P1 should be; P2 can wait.
-   - `api-test` scenarios are vitest integration tests in `worker/test/`, named with the scenario ID. `ai-e2e` scenarios are verified by an agent driving a real browser, and the run is recorded in the PR.
+   - `api-test` scenarios are vitest integration tests in `worker/test/`, named with the scenario ID. `ai-e2e` scenarios are verified by an agent driving a real browser with `pnpm e2e`, and the run is recorded in the PR (see [Running an `ai-e2e` scenario](docs/bdd.md#running-an-ai-e2e-scenario)).
      ```typescript
      it('[UC-CHAT-001-S01] signed-in user gets a streamed reply', async () => {
      ```
@@ -94,10 +94,11 @@ This is an open-source repository. **Never commit account identifiers or secrets
 
 ```bash
 pnpm install
-pnpm check        # lint, format check, typecheck, extension build, worker tests
+pnpm check        # lint, format check, typecheck, extension build, worker and e2e tool tests
 pnpm format:fix   # format all files
-pnpm test         # worker tests only
+pnpm test         # worker tests and the e2e tool's unit tests
 pnpm build        # build the extension into extension/dist
+pnpm e2e --help   # drive the shared Chrome Canary for ai-e2e runs (maintainer's machine only)
 ```
 
 ## Key decisions

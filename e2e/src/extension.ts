@@ -1,0 +1,149 @@
+// The unpacked extension in Canary: is it enabled, where does Chrome load it from, and reloading it
+// after a build. Read through chrome://extensions (chrome.developerPrivate), in a tab this tool opens
+// and closes. It only reports problems such as Developer mode being off; it never changes settings.
+import { spawn } from 'node:child_process'
+import { access, readFile } from 'node:fs/promises'
+import { isAbsolute, join } from 'node:path'
+import { type Browser, type Target, sleep, until } from './cdp'
+
+/** The extension's id, fixed by the public key in the manifest. */
+export const EXTENSION_ID = 'fafkdcopddmegenpemnmjbnolhlbbfpf'
+export const EXTENSION_NAME = 'Copilot for Notion'
+
+export interface ExtensionStatus {
+  developerMode: boolean
+  /** Undefined when the extension isn't installed in this profile. */
+  extension?: {
+    state: string
+    location: string
+    /** The folder an unpacked extension is loaded from. */
+    path?: string
+    disableReasons: string[]
+  }
+}
+
+/** Why the extension can't run from a build of this checkout, or undefined if it can. */
+export function problem(status: ExtensionStatus): string | undefined {
+  if (!status.developerMode) {
+    return (
+      'Developer mode is off in chrome://extensions, so Chrome disables the unpacked extension. ' +
+      'Turn it on there by hand; this tool never changes browser settings.'
+    )
+  }
+  const ext = status.extension
+  if (!ext)
+    return `${EXTENSION_NAME} (${EXTENSION_ID}) is not installed in this Chrome profile. Load it unpacked by hand.`
+  if (ext.location !== 'UNPACKED' || !ext.path) {
+    return `${EXTENSION_NAME} is not loaded unpacked (${ext.location}), so a build can't replace it.`
+  }
+  if (ext.state !== 'ENABLED') {
+    const why = ext.disableReasons.length ? ` (${ext.disableReasons.join(', ')})` : ''
+    return `${EXTENSION_NAME} is ${ext.state.toLowerCase()}${why}. Enable it in chrome://extensions by hand.`
+  }
+  return undefined
+}
+
+/** Whether a manifest.json is this extension's build, so its folder is safe to build over. */
+export function isOurManifest(text: string): boolean {
+  try {
+    return (JSON.parse(text) as { name?: unknown }).name === EXTENSION_NAME
+  } catch {
+    return false
+  }
+}
+
+/** A chrome://extensions tab of our own, open for the duration of `fn`. */
+export async function withExtensionsPage<T>(browser: Browser, fn: (page: Target) => Promise<T>): Promise<T> {
+  const id = await browser.open(`chrome://extensions/?id=${EXTENSION_ID}`, { background: true })
+  try {
+    const page = await browser.attach(id)
+    await until(() => page.evaluate(() => (typeof chrome?.developerPrivate === 'object' ? true : undefined), []), {
+      ms: 10_000,
+      onTimeout: () => new Error('chrome://extensions did not load.'),
+    })
+    return await fn(page)
+  } finally {
+    await browser.close(id)
+  }
+}
+
+export function readStatus(page: Target): Promise<ExtensionStatus> {
+  return page.evaluate(
+    (id: string) =>
+      new Promise<ExtensionStatus>((resolve) => {
+        chrome.developerPrivate.getProfileConfiguration((config) => {
+          chrome.developerPrivate.getExtensionInfo(id, (info) => {
+            // getExtensionInfo reports an unknown id through lastError.
+            const known = !chrome.runtime?.lastError && info
+            const reasons = (known && info.disableReasons) || {}
+            resolve({
+              developerMode: config.inDeveloperMode,
+              extension: known
+                ? {
+                    state: info.state,
+                    location: info.location,
+                    path: info.path,
+                    disableReasons: Object.keys(reasons).filter((k) => reasons[k]),
+                  }
+                : undefined,
+            })
+          })
+        })
+      }),
+    [EXTENSION_ID],
+  )
+}
+
+/** Reloads the extension from its folder; resolves with Chrome's load error, if any. */
+export function reloadExtension(page: Target): Promise<string | undefined> {
+  return page.evaluate(
+    (id: string) =>
+      new Promise<string | undefined>((resolve) => {
+        chrome.developerPrivate.reload(id, { failQuietly: true }, (loadError) => {
+          const err = chrome.runtime?.lastError?.message
+          resolve(err ?? (loadError ? `${loadError.error} (${loadError.path})` : undefined))
+        })
+      }),
+    [EXTENSION_ID],
+  )
+}
+
+/** Builds this checkout's extension into `outDir`, with this checkout's extension/.env. */
+export async function build(repoRoot: string, outDir: string): Promise<void> {
+  if (!isAbsolute(outDir)) throw new Error(`Chrome reported a relative extension folder: ${outDir}`)
+  const manifest = await readFile(join(outDir, 'manifest.json'), 'utf8').catch(() => '')
+  if (!isOurManifest(manifest)) {
+    throw new Error(`${outDir} doesn't hold a build of ${EXTENSION_NAME}; not building over it.`)
+  }
+  const extension = join(repoRoot, 'extension')
+  if (
+    !(await access(join(extension, 'node_modules', '.bin', 'vite')).then(
+      () => true,
+      () => false,
+    ))
+  ) {
+    throw new Error(`The extension's dependencies are not installed in ${repoRoot}: run pnpm install first.`)
+  }
+  const output: Buffer[] = []
+  const code = await new Promise<number | null>((resolve, reject) => {
+    const child = spawn('pnpm', ['exec', 'vite', 'build', '--outDir', outDir, '--emptyOutDir'], {
+      cwd: extension,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    })
+    child.stdout.on('data', (d: Buffer) => output.push(d))
+    child.stderr.on('data', (d: Buffer) => output.push(d))
+    child.on('error', reject)
+    child.on('close', resolve)
+  })
+  if (code !== 0) throw new Error(`The extension build failed:\n${Buffer.concat(output).toString()}`)
+}
+
+/** Waits for the reloaded extension to report enabled again, and returns its status. */
+export async function settledStatus(page: Target): Promise<ExtensionStatus> {
+  let status = await readStatus(page)
+  for (let i = 0; i < 20 && status.extension?.state !== 'ENABLED'; i++) {
+    await sleep(250)
+    status = await readStatus(page)
+  }
+  return status
+}

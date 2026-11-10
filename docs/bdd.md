@@ -39,6 +39,30 @@ A scenario earns its place only if deleting it would let an implementation pass 
 
 Pick the cheapest strategy that observes the result directly. `ai-e2e` is not a place to park scenarios that could be `api-test`.
 
+## Running an `ai-e2e` scenario
+
+`ai-e2e` runs use the maintainer's Chrome Canary: started with `--remote-debugging-port=9228`, signed in to Notion and to Copilot, with the extension loaded unpacked. `pnpm e2e` drives it over the DevTools protocol (`pnpm e2e --help` lists every command and option):
+
+```bash
+pnpm e2e lock acquire "UC-NOTION-007-S04"    # optional: hold the browser across the steps
+pnpm e2e reload                              # build this checkout into the extension Canary loads, reload it
+pnpm e2e page "e2e S04" "## Meeting notes" "We ship on Friday." "## Next steps" "Write the notes."
+pnpm e2e panel <url printed by page>         # open the side panel on that page, with a new chat
+pnpm e2e ask "Turn the Meeting notes section into its own child page." --allow
+pnpm e2e trash <id printed by page>          # move the throwaway page to the trash
+pnpm e2e close                               # close the Notion tab the tool opened
+pnpm e2e lock release
+```
+
+- **One browser, shared.** Several sessions use the same Canary, so every command takes the Canary lock (`~/.cache/notion-copilot/canary.lock`, shared with the maintainer's `canary-lock.sh`) and releases it when done, unless `lock acquire` already holds it for the same owner (`--owner`, `$E2E_OWNER`, or the git branch). A busy lock exits with code 3 and the holder's name: work on something else and try later, never wait in a loop. A lock not refreshed for 30 minutes counts as abandoned.
+- **Reload first.** Canary loads one extension folder for everyone; `reload` builds this checkout over it, so start every run with it and don't assume another session's build is still there.
+- **Hands off the browser's state.** The tool never signs in or out of Notion or Copilot and never changes browser settings. If Developer mode is off, the extension is disabled, or a sign-in is missing, it says so and stops; fix it by hand.
+- **Only its own tabs and pages.** It works in a Notion tab it opened, and `trash` only takes pages and databases it created (`page` makes a private page from Markdown lines; `db` makes a private task database with Name, Status, and Due). Use throwaway pages, never the workspace's own.
+- **Approvals.** `ask` answers approval prompts with `--allow` or `--deny`. Without either it stops at the first prompt with exit code 4 and prints what the tool would change; run `pnpm e2e ask --allow` (no question) to answer and keep waiting.
+- **What `ask` prints.** The reply in order: the model's text and each tool call with its status, arguments, and result. `--json` prints the same as JSON.
+
+Record each run in the PR description or a comment: the scenario ID, the commit it ran on, the commands, and the reply's tool calls and results that show the scenario's "then", plus anything you checked in Notion directly. Leave out account ids, emails, and the titles or content of the workspace's own pages.
+
 ## Priority
 
 Priority is how much a scenario protects the product, not a schedule.
