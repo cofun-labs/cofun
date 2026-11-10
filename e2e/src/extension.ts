@@ -2,7 +2,7 @@
 // after a build. Read through chrome://extensions (chrome.developerPrivate), in a tab this tool opens
 // and closes. It only reports problems such as Developer mode being off; it never changes settings.
 import { spawn } from 'node:child_process'
-import { access, readFile } from 'node:fs/promises'
+import { access, readFile, rename, rm } from 'node:fs/promises'
 import { isAbsolute, join } from 'node:path'
 import { type Browser, type Target, sleep, until } from './cdp'
 
@@ -45,10 +45,29 @@ export function problem(status: ExtensionStatus): string | undefined {
 
 /** Whether a manifest.json is this extension's build, so its folder is safe to build over. */
 export function isOurManifest(text: string): boolean {
+  return manifestOf(text)?.name === EXTENSION_NAME
+}
+
+/**
+ * Why a new build must not replace the loaded one, or undefined if it may. The manifest `key` fixes
+ * the extension id; a build with another key (or none) would load as another extension, without the
+ * shared profile's storage and Copilot sign-in.
+ */
+export function replaceProblem(loaded: string, built: string): string | undefined {
+  const key = (text: string) => manifestOf(text)?.key
+  if (key(built) === key(loaded)) return undefined
+  return (
+    "The build's manifest key differs from the loaded extension's, so reloading would change the " +
+    "extension id. Check CRX_PUBLIC_KEY in this checkout's extension/.env and .env.local."
+  )
+}
+
+function manifestOf(text: string): { name?: unknown; key?: unknown } | undefined {
   try {
-    return (JSON.parse(text) as { name?: unknown }).name === EXTENSION_NAME
+    const json = JSON.parse(text) as unknown
+    return json && typeof json === 'object' ? json : undefined
   } catch {
-    return false
+    return undefined
   }
 }
 
@@ -108,7 +127,10 @@ export function reloadExtension(page: Target): Promise<string | undefined> {
   )
 }
 
-/** Builds this checkout's extension into `outDir`, with this checkout's extension/.env. */
+/**
+ * Builds this checkout's extension, with this checkout's extension/.env, and puts it in `outDir`. It
+ * is built next to `outDir` first and replaces it only if it would load as the same extension.
+ */
 export async function build(repoRoot: string, outDir: string): Promise<void> {
   if (!isAbsolute(outDir)) throw new Error(`Chrome reported a relative extension folder: ${outDir}`)
   const manifest = await readFile(join(outDir, 'manifest.json'), 'utf8').catch(() => '')
@@ -124,6 +146,19 @@ export async function build(repoRoot: string, outDir: string): Promise<void> {
   ) {
     throw new Error(`The extension's dependencies are not installed in ${repoRoot}: run pnpm install first.`)
   }
+  const next = `${outDir}.next-${process.pid}`
+  try {
+    await viteBuild(extension, next)
+    const stop = replaceProblem(manifest, await readFile(join(next, 'manifest.json'), 'utf8'))
+    if (stop) throw new Error(stop)
+    await rm(outDir, { recursive: true, force: true })
+    await rename(next, outDir)
+  } finally {
+    await rm(next, { recursive: true, force: true })
+  }
+}
+
+async function viteBuild(extension: string, outDir: string): Promise<void> {
   const output: Buffer[] = []
   const code = await new Promise<number | null>((resolve, reject) => {
     const child = spawn('pnpm', ['exec', 'vite', 'build', '--outDir', outDir, '--emptyOutDir'], {

@@ -2,7 +2,7 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { EXTENSION_NAME, type ExtensionStatus, build, isOurManifest, problem } from '../src/extension'
+import { EXTENSION_NAME, type ExtensionStatus, build, isOurManifest, problem, replaceProblem } from '../src/extension'
 import { loadState, saveState, statePath } from '../src/state'
 
 const enabled: ExtensionStatus = {
@@ -54,6 +54,13 @@ describe('build', () => {
     }
   })
 
+  it('refuses a build that would load as another extension', () => {
+    const manifest = (key?: string) => JSON.stringify({ name: EXTENSION_NAME, ...(key ? { key } : {}) })
+    expect(replaceProblem(manifest('KEY'), manifest('KEY'))).toBeUndefined()
+    expect(replaceProblem(manifest('KEY'), manifest())).toMatch(/change the extension id/)
+    expect(replaceProblem(manifest('KEY'), manifest('OTHER'))).toMatch(/change the extension id/)
+  })
+
   it('recognizes its own manifest', () => {
     expect(isOurManifest(JSON.stringify({ manifest_version: 3, name: EXTENSION_NAME }))).toBe(true)
     expect(isOurManifest('not json')).toBe(false)
@@ -65,7 +72,8 @@ describe('state', () => {
     const dir = await mkdtemp(join(tmpdir(), 'e2e-state-'))
     try {
       const path = statePath('claude/issue-106', dir)
-      expect(path).toBe(join(dir, 'claude_issue-106.json'))
+      expect(path).toBe(join(dir, 'claude%2fissue-106.json'))
+      expect(statePath('claude_issue-106', dir)).not.toBe(path)
       expect(await loadState(path)).toEqual({ created: [] })
       await saveState(path, { notionTarget: 'T1', panelTarget: 'T2', created: ['p1'] })
       expect(await loadState(path)).toEqual({ notionTarget: 'T1', panelTarget: 'T2', created: ['p1'] })

@@ -32,12 +32,12 @@ export async function tabPost(tab: Target): Promise<Post> {
 
 /**
  * The workspace of the page the tab shows, or the user's only workspace when it shows none, with the
- * user's view of it.
+ * view of it of the tab's own Notion user (`userId`, from the tab), when known.
  */
-export async function privateSpace(post: Post, tabUrl: string): Promise<PrivateSpace> {
+export async function privateSpace(post: Post, tabUrl: string, userId?: string): Promise<PrivateSpace> {
   const pageId = pageIdFromUrl(tabUrl)
   const spaceId = pageId ? (await getBlock(post, pageId))?.space_id : undefined
-  return findSpaceView(await post('getSpaces', {}), spaceId)
+  return findSpaceView(await post('getSpaces', {}), spaceId, userId)
 }
 
 async function getBlock(post: Post, id: string): Promise<NotionRecord | undefined> {
@@ -49,9 +49,11 @@ async function getBlock(post: Post, id: string): Promise<NotionRecord | undefine
  * Picks the workspace and the user's view of it from getSpaces' answer: one record map per signed-in
  * user, each with a `user_root` listing that user's workspace views.
  */
-export function findSpaceView(spaces: Record<string, unknown>, spaceId?: string): PrivateSpace {
+export function findSpaceView(spaces: Record<string, unknown>, spaceId?: string, tabUser?: string): PrivateSpace {
   const found: PrivateSpace[] = []
   for (const [userId, raw] of Object.entries(spaces)) {
+    // Several signed-in accounts may share a workspace; the page belongs to the tab's account.
+    if (tabUser && userId !== tabUser) continue
     const map = normalizeRecordMap(raw) as Record<string, Record<string, Record<string, unknown>> | undefined>
     const pointers = map.user_root?.[userId]?.space_view_pointers
     if (!Array.isArray(pointers)) continue

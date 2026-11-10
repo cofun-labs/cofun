@@ -152,6 +152,13 @@ describe('findSpaceView', () => {
       ]),
     }
     expect(() => findSpaceView(two)).toThrow('several workspaces')
+    // Another signed-in account sharing the workspace: the tab's own account is the one used.
+    const shared = {
+      'user-other': root('user-other', [{ id: 'view-of-other', spaceId: SPACE.spaceId }]),
+      [SPACE.userId]: root(SPACE.userId, [{ id: SPACE.spaceViewId, spaceId: SPACE.spaceId }]),
+    }
+    expect(() => findSpaceView(shared, SPACE.spaceId)).toThrow('several workspaces')
+    expect(findSpaceView(shared, SPACE.spaceId, SPACE.userId)).toEqual(SPACE)
     expect(() => findSpaceView(two, 'space-missing')).toThrow("Couldn't find")
   })
 })

@@ -2,6 +2,8 @@
 // target. No chrome.debugger and no extension of our own: Canary was started with a debugging port.
 
 export const DEFAULT_PORT = 9228
+/** How long Chrome may take to answer one request, so a wedged target can't hang a command (and hold the lock). */
+export const REQUEST_TIMEOUT_MS = 60_000
 
 export interface TargetInfo {
   targetId: string
@@ -64,7 +66,17 @@ export class Cdp {
   send<T = unknown>(method: string, params: object = {}, sessionId?: string): Promise<T> {
     const id = this.nextId++
     return new Promise<T>((resolve, reject) => {
-      this.pending.set(id, { resolve: resolve as (v: unknown) => void, reject })
+      const timer = setTimeout(() => {
+        this.pending.delete(id)
+        reject(new CdpError(`Chrome did not answer ${method} within ${REQUEST_TIMEOUT_MS / 1000} s.`))
+      }, REQUEST_TIMEOUT_MS)
+      const settle =
+        <V>(fn: (v: V) => void) =>
+        (v: V) => {
+          clearTimeout(timer)
+          fn(v)
+        }
+      this.pending.set(id, { resolve: settle(resolve as (v: unknown) => void), reject: settle(reject) })
       this.ws.send(JSON.stringify({ id, method, params, ...(sessionId ? { sessionId } : {}) }))
     })
   }
@@ -84,25 +96,33 @@ export class Target {
 
   /**
    * Runs `fn(...args)` in the target and returns its (awaited) result. `fn` is sent as source, so it
-   * must not use anything from outside its body. `userGesture` makes it count as a user's click.
+   * must not use anything from outside its body; `args` go as values, never as code. `userGesture`
+   * makes it count as a user's click.
    */
   async evaluate<A extends unknown[], R>(
     fn: (...args: A) => R,
     args: A,
     options: { userGesture?: boolean; contextId?: number } = {},
   ): Promise<Awaited<R>> {
-    // tsx (esbuild's keepNames) wraps named functions in a __name helper that the page lacks.
-    const expression = `(() => { const __name = (f) => f; return (${fn.toString()})(...${JSON.stringify(args)}) })()`
+    // The function runs on the context's global object, which callFunctionOn needs a handle to.
+    const global = await this.send<{ result: { objectId?: string } }>('Runtime.evaluate', {
+      expression: 'globalThis',
+      ...(options.contextId === undefined ? {} : { contextId: options.contextId }),
+    })
+    if (!global.result.objectId) throw new CdpError('Could not reach the page.')
     const res = await this.send<{
       result: { value?: unknown }
       exceptionDetails?: { text: string; exception?: { description?: string } }
-    }>('Runtime.evaluate', {
-      expression,
+    }>('Runtime.callFunctionOn', {
+      // tsx (esbuild's keepNames) wraps named functions in a __name helper that the page lacks.
+      functionDeclaration: `function (...args) { const __name = (f) => f; return (${fn.toString()})(...args) }`,
+      objectId: global.result.objectId,
+      arguments: args.map((value) => ({ value })),
       awaitPromise: true,
       returnByValue: true,
       userGesture: options.userGesture ?? false,
-      ...(options.contextId === undefined ? {} : { contextId: options.contextId }),
     })
+    await this.send('Runtime.releaseObject', { objectId: global.result.objectId }).catch(() => undefined)
     if (res.exceptionDetails) {
       throw new CdpError(res.exceptionDetails.exception?.description ?? res.exceptionDetails.text)
     }
@@ -134,8 +154,9 @@ export class Browser {
     return targetInfos
   }
 
-  async exists(targetId: string | undefined): Promise<boolean> {
-    return !!targetId && (await this.targets()).some((t) => t.targetId === targetId)
+  /** The open target with this id, as Chrome lists it, or undefined if it has closed. */
+  async find(targetId: string | undefined): Promise<TargetInfo | undefined> {
+    return targetId ? (await this.targets()).find((t) => t.targetId === targetId) : undefined
   }
 
   /** Opens a tab; `background` keeps the current tab of its window in front. */

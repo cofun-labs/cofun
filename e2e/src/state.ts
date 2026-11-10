@@ -16,8 +16,10 @@ export interface State {
 
 export const STATE_DIR = join(homedir(), '.cache', 'notion-copilot', 'e2e')
 
+/** One file per owner; other characters are escaped, so different owners never share a file. */
 export function statePath(owner: string, dir = STATE_DIR): string {
-  return join(dir, `${owner.replace(/[^\w.-]+/g, '_')}.json`)
+  const name = owner.replace(/[^\w.-]/g, (c) => `%${c.codePointAt(0)!.toString(16)}`)
+  return join(dir, `${name}.json`)
 }
 
 export async function loadState(path: string): Promise<State> {

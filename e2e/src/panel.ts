@@ -13,7 +13,8 @@ export const DEFAULT_NOTION_URL = process.env.E2E_NOTION_URL ?? 'https://app.not
 
 /** The Notion tab this tool opened, if it is still open. */
 export async function ownNotionTab(browser: Browser, state: State): Promise<string | undefined> {
-  return (await browser.exists(state.notionTarget)) ? state.notionTarget : undefined
+  // Chrome's own id for the tab, not the remembered one: only a tab that is still open is used.
+  return (await browser.find(state.notionTarget))?.targetId
 }
 
 /**
@@ -34,7 +35,9 @@ export async function notionTab(
     const old = await browser.attach(id)
     // Marks the old document, so the wait below doesn't take it for the new one.
     await old.evaluate(() => void ((window as { e2eOld?: boolean }).e2eOld = true), [])
-    await old.send('Page.navigate', { url: target })
+    const { loaderId } = await old.send<{ loaderId?: string }>('Page.navigate', { url: target })
+    // Without a loaderId the navigation stayed in the same document (say, only a #block anchor changed).
+    if (!loaderId) await old.evaluate(() => void delete (window as { e2eOld?: boolean }).e2eOld, [])
   } else if (!id) {
     id = await browser.open(target!)
     state.notionTarget = id
@@ -95,14 +98,18 @@ export async function openPanel(browser: Browser, state: State, notion: Target):
     await browser.close(helperId)
   }
 
-  // The panel is the extension page whose window's active tab is ours.
+  // The panel is the shown extension page whose window's active tab is ours (a hidden one may be
+  // another tab's).
   const panel = await until(
     async () => {
       for (const t of await browser.targets()) {
         if (!t.url.startsWith(PANEL_URL) || t.targetId === helperId) continue
         const page = await browser.attach(t.targetId)
         const active = await page.evaluate(
-          () => chrome.tabs.query({ active: true, currentWindow: true }).then(([t]) => t?.id),
+          () =>
+            document.visibilityState === 'visible'
+              ? chrome.tabs.query({ active: true, currentWindow: true }).then(([t]) => t?.id)
+              : undefined,
           [],
         )
         if (active === tabId) return page
@@ -133,10 +140,9 @@ export async function openPanel(browser: Browser, state: State, notion: Target):
 
 /** The side panel `panel` opened, if it is still open. */
 export async function ownPanel(browser: Browser, state: State): Promise<Target> {
-  if (!(await browser.exists(state.panelTarget))) {
-    throw new E2eError('No side panel opened by pnpm e2e is open: run pnpm e2e panel first.')
-  }
-  return browser.attach(state.panelTarget!)
+  const panel = await browser.find(state.panelTarget)
+  if (!panel) throw new E2eError('No side panel opened by pnpm e2e is open: run pnpm e2e panel first.')
+  return browser.attach(panel.targetId)
 }
 
 export interface AskResult {

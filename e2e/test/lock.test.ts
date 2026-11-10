@@ -67,6 +67,18 @@ describe('CanaryLock', () => {
     expect(await new CanaryLock(dir).holder()).toMatch(/^issue-106 \|/)
   })
 
+  it('lets only one of several sessions take over the same stale lock', async () => {
+    await new CanaryLock(dir).acquire('issue-96', 'forgotten')
+    const old = new Date(Date.now() - STALE_MS - 60_000)
+    await utimes(dir, old, old)
+    const owners = ['issue-1', 'issue-2', 'issue-3', 'issue-4']
+    const results = await Promise.all(owners.map((o) => new CanaryLock(dir).acquire(o, 'e2e')))
+    const winners = owners.filter((_, i) => results[i].status === 'acquired')
+    expect(winners).toHaveLength(1)
+    expect(await new CanaryLock(dir).holder()).toMatch(new RegExp(`^${winners[0]} \\|`))
+    expect(results.filter((r) => r.status === 'busy')).toHaveLength(3)
+  })
+
   it('releases only its own lock', async () => {
     const lock = new CanaryLock(dir)
     await lock.acquire('issue-106', 'e2e')

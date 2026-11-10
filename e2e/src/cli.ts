@@ -116,8 +116,11 @@ async function browserCommand(browser: Browser, state: State, command: Command):
     case 'db': {
       const tab = await notionTab(browser, state, undefined, DEFAULT_NOTION_URL)
       const post = await tabPost(tab)
-      const url = await tab.evaluate(() => location.href, [])
-      const space = await privateSpace(post, url)
+      const { url, userId } = await tab.evaluate(() => {
+        const id = /(?:^|;\s*)notion_user_id=([^;]+)/.exec(document.cookie)?.[1]
+        return { url: location.href, userId: id && decodeURIComponent(id) }
+      }, [])
+      const space = await privateSpace(post, url, userId)
       const id =
         command.name === 'page'
           ? await createPage(post, space, command.title, command.markdown)
