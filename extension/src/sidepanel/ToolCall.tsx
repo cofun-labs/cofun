@@ -12,6 +12,8 @@ export interface ShownTool {
   result: string
   /** What the call changes, in words, as the tool saw things before it ran. */
   preview?: string
+  /** Set while `confirm` when the call is already running and asks this instead of whether to run. */
+  question?: string
 }
 
 const MARK: Record<ShownTool['status'], string> = {
@@ -77,19 +79,32 @@ export const ToolCall = memo(function ToolCall({
           )}
           <div className="tool-label">Arguments</div>
           <pre>{pretty(tool.args)}</pre>
-          {/* Nothing has run yet while the user is asked. */}
-          {tool.status !== 'confirm' && (
+          {/* Nothing has run yet while the user is asked whether to run it. */}
+          {(tool.status !== 'confirm' || tool.question) && (
             <>
               {/* A stopped tool that ended at all ended with an error, e.g. the abort. */}
               <div className="tool-label">
                 {tool.status === 'failed' || (tool.status === 'stopped' && tool.result) ? 'Error' : 'Result'}
               </div>
-              <pre>{tool.status === 'running' ? '…' : pretty(tool.result) || LABEL[tool.status]}</pre>
+              <pre>
+                {tool.status === 'running' || tool.status === 'confirm'
+                  ? '…'
+                  : pretty(tool.result) || LABEL[tool.status]}
+              </pre>
             </>
           )}
         </div>
       </details>
-      {asking && (
+      {asking && tool.question && (
+        <div className="tool-confirm" role="group" aria-label={tool.question}>
+          <span>{tool.question}</span>
+          <button className="primary" onClick={() => onAnswer(true)}>
+            Continue
+          </button>
+          <button onClick={() => onAnswer(false)}>Stop</button>
+        </div>
+      )}
+      {asking && !tool.question && (
         <div className="tool-confirm" role="group" aria-label={`Allow ${tool.name} to run?`}>
           <span>
             Allow <span className="tool-name">{tool.name}</span> to run?

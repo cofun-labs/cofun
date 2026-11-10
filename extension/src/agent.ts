@@ -21,6 +21,19 @@ export interface AgentConfig {
   maxSteps?: number
   /** How much of a long conversation to send. Defaults stay well under the worker's limits. */
   history?: { messages: number; chars: number }
+  /**
+   * Called as each question starts, to count the requests its tools make to the user's data (to
+   * Notion). `ask` puts a yes/no question to the user on the card of the tool that is running, and
+   * resolves false when the question is stopped or nobody can be asked.
+   */
+  meter?: (ask: (question: string) => Promise<boolean>) => QuestionMeter
+}
+
+/** What a question's tools sent, read when it ends. */
+export interface QuestionMeter {
+  readonly requests: number
+  /** A request that changes the user's data was sent and may have landed. */
+  readonly wrote: boolean
 }
 
 /** A tool the model can ask the extension to run. */
@@ -57,9 +70,14 @@ export interface ToolCallRequest {
   args: unknown
   /** What the call would change, in words, when the tool can say. */
   preview?: string
+  /**
+   * Set when the call is already running and asks the user this instead, such as whether to go on
+   * at the question's request budget; resolves true for yes.
+   */
+  question?: string
 }
 
-/** Asks the user whether a tool may run; resolves true to run it. */
+/** Asks the user whether a tool may run, or what `question` asks; resolves true for yes. */
 export type ConfirmTool = (call: ToolCallRequest) => Promise<boolean>
 
 /**
@@ -87,8 +105,11 @@ export type AgentUpdate =
  * a question may take several such steps before the final answer.
  */
 export type HistoryMessage =
-  /** `context`: what the model was told with the question, besides what the user typed. */
-  | { role: 'user'; text: string; context?: string }
+  /**
+   * `context`: what the model was told with the question, besides what the user typed.
+   * `requests`: how many requests its tools made (see AgentConfig.meter), once it ended.
+   */
+  | { role: 'user'; text: string; context?: string; requests?: number }
   | { role: 'assistant'; parts: AssistantPart[] }
   /** The result of one tool call. `id` matches the call in the assistant message before it. */
   | { role: 'tool'; id: string; name: string; status: ToolStatus; result: string }
@@ -98,11 +119,13 @@ export type AssistantPart =
   | { type: 'text'; text: string }
   | { type: 'tool_call'; id: string; name: string; args: Record<string, unknown> }
 
-export type AskResult =
+/** `requests`: how many requests the question's tools made, when it ran and the agent counts them. */
+export type AskResult = (
   | { status: 'done' }
   | { status: 'stopped' }
   | { status: 'step_limit'; steps: number }
   | { status: 'error'; message: string }
+) & { requests?: number }
 
 export const DEFAULT_MAX_STEPS = 10
 // The worker allows 200 messages and 200,000 characters, tools included.
@@ -142,6 +165,8 @@ export class CopilotAgent {
   private readonly statuses = new WeakMap<AgentMessage, ToolStatus>()
   /** What the model is told with each question, by its user message; see AgentConfig.context. */
   private readonly contexts = new WeakMap<AgentMessage, string>()
+  /** The requests each question made, by its user message; see AgentConfig.meter. */
+  private readonly requests = new WeakMap<AgentMessage, number>()
   /** Set by a tool whose error stops the question (see `stopsQuestion`): what the user is told. */
   private stopReason?: string
   /** Set by a tool that changes data and changed something, or may have (see `changesData`). */
@@ -235,6 +260,14 @@ export class CopilotAgent {
     // that needs the user's OK, a Stop between the OK and the run counts as started: for a tool that
     // changes pages, "may have partly happened" is the safe thing to tell the model.
     const started = new Set<string>()
+    // The call running now (tools run one at a time), for a question it puts to the user.
+    let running: ToolCallRequest | undefined
+    const meter = this.config.meter?.(async (text) => {
+      const call = running
+      if (!call || epoch !== this.epoch) return false
+      const answer = await askUser(confirm, { ...call, question: text }, this.cancel.signal)
+      return answer === 'allow' && epoch === this.epoch
+    })
 
     // On the last step, refuse the tools the model asks for instead of running them: the question
     // ends here, so the model would never see their results, and a tool could change a page.
@@ -256,13 +289,16 @@ export class CopilotAgent {
       // From the arguments the tool runs with, and before it runs: the run may change what the preview reads.
       const preview = previewCall(this.tools.get(toolCall.name), args)
       onUpdate({ type: 'tool_ready', id: toolCall.id, args, preview })
+      const call: ToolCallRequest = { id: toolCall.id, name: toolCall.name, args, preview }
       if (!this.confirmed.has(toolCall.name)) {
         started.add(toolCall.id)
+        running = call
         return
       }
-      const answer = await askUser(confirm, { id: toolCall.id, name: toolCall.name, args, preview }, signal)
+      const answer = await askUser(confirm, call, signal)
       if (answer === 'allow' && epoch === this.epoch) {
         started.add(toolCall.id)
+        running = call
         return
       }
       // Only a no from the user shows as declined. Stopped while waiting shows as stopped, and a
@@ -293,6 +329,7 @@ export class CopilotAgent {
           update.result = started.has(update.id) ? `${STOPPED_DURING}\n${update.result}` : STOPPED_BEFORE
         }
         started.delete(update.id)
+        if (running?.id === update.id) running = undefined
         ended.set(update.id, { status: update.status, result: update.result })
       }
       if (update) onUpdate(update)
@@ -311,9 +348,9 @@ export class CopilotAgent {
       }
     })
 
+    // String content: the worker accepts only text, and pi would otherwise send content parts.
+    const question: AgentMessage = { role: 'user', content: text, timestamp: Date.now() }
     try {
-      // String content: the worker accepts only text, and pi would otherwise send content parts.
-      const question: AgentMessage = { role: 'user', content: text, timestamp: Date.now() }
       if (context) this.contexts.set(question, context)
       await agent.prompt(question)
     } catch (err) {
@@ -323,19 +360,25 @@ export class CopilotAgent {
       agent.beforeToolCall = undefined
       agent.finishTurn = undefined
     }
+    // Kept with the question, so a saved session still has it.
+    const counted = meter && { requests: meter.requests }
+    if (meter) this.requests.set(question, meter.requests)
 
     // Also stopped when the abort landed after a model reply that asked for tools, e.g. while a tool
     // finished. A stop after the final answer keeps it: the user has already read it.
     stopped ||= epoch !== this.epoch && !answered
+    // A write that was sent counts even when the tool that sent it does not say it changed data.
+    const changed = this.changed || meter?.wrote === true
     if (!stopped && this.stopReason)
-      failure ??= { text: this.changed ? `${this.stopReason} ${MAY_HAVE_CHANGED}` : this.stopReason }
+      failure ??= { text: changed ? `${this.stopReason} ${MAY_HAVE_CHANGED}` : this.stopReason }
     if (failure || stopped) {
       const kept = usedTools(agent.state.messages.slice(before))
       agent.state.messages = [...agent.state.messages.slice(0, before), ...kept]
       const result: AskResult = stopped ? { status: 'stopped' } : { status: 'error', message: failure!.text }
-      return { result, kept: kept.length > 0, code: stopped ? undefined : failure?.code }
+      return { result: { ...result, ...counted }, kept: kept.length > 0, code: stopped ? undefined : failure?.code }
     }
-    return { result: hitLimit ? { status: 'step_limit', steps } : { status: 'done' }, kept: true }
+    const result: AskResult = hitLimit ? { status: 'step_limit', steps } : { status: 'done' }
+    return { result: { ...result, ...counted }, kept: true }
   }
 
   /**
@@ -399,7 +442,15 @@ export class CopilotAgent {
     switch (message.role) {
       case 'user': {
         const context = this.contexts.get(message)
-        return [{ role: 'user', text: textOf(message.content), ...(context && { context }) }]
+        const requests = this.requests.get(message)
+        return [
+          {
+            role: 'user',
+            text: textOf(message.content),
+            ...(context && { context }),
+            ...(requests !== undefined && { requests }),
+          },
+        ]
       }
       case 'assistant':
         return [
@@ -434,6 +485,7 @@ export class CopilotAgent {
       if (m.role === 'user') {
         const question: AgentMessage = { role: 'user', content: m.text, timestamp }
         if (m.context) this.contexts.set(question, m.context)
+        if (m.requests !== undefined) this.requests.set(question, m.requests)
         return question
       }
       if (m.role === 'assistant') {

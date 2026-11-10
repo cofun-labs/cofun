@@ -3,7 +3,7 @@
 // www.notion.so don't share one), which a request from the tab gets right by construction.
 // The worker's tests import this file too, and their tsconfig has no chrome types.
 /// <reference types="chrome" />
-import { NO_NOTION_TAB, NotionClient, NotionError, type NotionResponse, type NotionTransport } from './api'
+import { NO_NOTION_TAB, NotionClient, NotionError, NotionUsage, type NotionResponse, type NotionTransport } from './api'
 import { NOTION_HOSTS, isNotion, pageIdFromUrl } from './hosts'
 
 /** The Notion tab of the side panel's window, and a client that calls Notion as its user. */
@@ -15,11 +15,26 @@ export interface NotionTab {
   client: NotionClient
 }
 
+/** The Notion requests of the question being answered; see countNotionRequests. */
+let usage: NotionUsage | undefined
+
+/**
+ * Starts counting the Notion requests of a new question: every client made from now on counts
+ * toward it. A client keeps the question it was made in, so a tool still running from an earlier
+ * question never counts toward the next one. `ask` asks the user whether to go on at the budget.
+ */
+export function countNotionRequests(ask?: (question: string) => Promise<boolean>): NotionUsage {
+  return (usage = new NotionUsage(ask))
+}
+
 /** The active tab of the side panel's window, if it is on Notion; otherwise a `no_notion_tab` error. */
 export async function activeNotionTab(): Promise<NotionTab> {
+  // The question that asked for the tab, even if another one starts while the tab is looked up.
+  const counted = usage
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true })
   if (tab?.id === undefined || !tab.url || !isNotion(tab.url)) throw new NotionError('no_notion_tab', NO_NOTION_TAB)
-  return { tabId: tab.id, url: tab.url, pageId: pageIdFromUrl(tab.url), client: new NotionClient(tabTransport(tab.id)) }
+  const client = new NotionClient(tabTransport(tab.id), counted)
+  return { tabId: tab.id, url: tab.url, pageId: pageIdFromUrl(tab.url), client }
 }
 
 export const NO_SITE_ACCESS =
