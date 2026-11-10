@@ -282,12 +282,13 @@ export class NotionClient {
     // One record map per signed-in user, keyed by user id; only the tab's active user's counts. No
     // fallback to the others: another account's map would list that account's private pages, and
     // every later request runs as the active user anyway.
-    const own = userId ? (json[userId] ?? json[toUuid(userId) ?? '']) : undefined
-    if (userId && !own) throw new NotionError('notion_error', NO_USER_MAP)
-    const maps = own ? [normalizeRecordMap(own)] : Object.values(json).map(normalizeRecordMap)
-    const map = maps.find((m) => m.space?.[space])
-    if (!map) throw new NotionError('no_access', NO_ACCESS)
-    const record = map.space![space]
+    if (!userId) throw new NotionError('signed_out', SIGNED_OUT)
+    // The cookie's id, with or without hyphens, as getSpaces may key it.
+    const key = [userId, toUuid(userId), toUuid(userId)?.replace(/-/g, '')].find((k) => k && json[k])
+    if (!key) throw new NotionError('notion_error', NO_USER_MAP)
+    const map = normalizeRecordMap(json[key])
+    if (!map.space?.[space]) throw new NotionError('no_access', NO_ACCESS)
+    const record = map.space[space]
     const view = Object.values(map.space_view ?? {}).find((v) => v.space_id === space)
     const settings = record.settings as { is_teams_enabled?: unknown } | undefined
     let teams: WorkspaceTree['teams'] = []

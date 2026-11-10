@@ -478,6 +478,25 @@ describe('list_pages workspace', () => {
     expect(err.message).toBe(NO_USER_MAP)
   })
 
+  it('says the tab is signed out when it has no Notion user, and reads no account', async () => {
+    new FakeNotionTab(PAGE_URL, 'notion_browser_id=b')
+      .respond('syncRecordValuesMain', 200, OPEN_PAGE)
+      .respond('getSpaces', 200, spaces({}, { private_pages: [id(1)] }))
+      .install()
+    expect((await notionError(run())).code).toBe('signed_out')
+  })
+
+  it('finds the tab user when Notion keys it without hyphens', async () => {
+    const answer = spaces({}, { private_pages: [id(1)] }, USER.replace(/-/g, ''))
+    new FakeNotionTab(PAGE_URL)
+      .respond('syncRecordValuesMain', 200, OPEN_PAGE)
+      .respond('getSpaces', 200, answer)
+      .respond('getTeamsV2', 200, teams([]))
+      .respond('syncRecordValuesMain', 200, records([page(1, 'Mine')]))
+      .install()
+    expect(await run()).toContain(`Private\n- 📄 Mine ^${hex(id(1))}`)
+  })
+
   it('finds the tab user by an undashed cookie id', async () => {
     new FakeNotionTab(PAGE_URL, `notion_user_id=${USER.replace(/-/g, '')}`)
       .respond('syncRecordValuesMain', 200, OPEN_PAGE)
