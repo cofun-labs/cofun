@@ -3,7 +3,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { duplicatePage, editPage, forgetReads, movePage, readPage, trashPage } from '../../extension/src/tools'
 import { FakeNotionTab, FakeWorkspace, PAGE, PAGE_URL, SPACE, notionError, restoreGlobals } from './notion-tab'
-import { DUPLICATE_POLLING, LIMITED_STOP } from '../../extension/src/notion/api'
+import { DUPLICATE_POLLING, LIMITED_STOP, UNEXPECTED_STOP } from '../../extension/src/notion/api'
 
 // Notion's timing for checks on a copy, shortened so the tests run quickly; the number of checks stays.
 const polling = { ...DUPLICATE_POLLING }
@@ -531,8 +531,26 @@ describe('when Notion turns requests away', () => {
     open(ws).limit('deleteContentRecords', 1)
     const err = await notionError(trashPage.run({ pages: [NOTE] }))
     expect(err.message).toBe("The pages were moved to Notion's trash.")
-    expect(err.stopsQuestion).toBe(LIMITED_STOP)
+    expect(err.stopsQuestion).toBe(`The pages were moved to Notion's trash. ${LIMITED_STOP}`)
     expect(err.mayHaveChanged).toBe(true)
+    expect(ws.records.get(NOTE)!.alive).toBe(false)
+  })
+
+  it('stops the question when the call after trashing fails unexpectedly, saying the pages are trashed', async () => {
+    const ws = workspace()
+    open(ws).respondText('deleteContentRecords', 500, 'oops')
+    const err = await notionError(trashPage.run({ pages: [NOTE] }))
+    expect(err.stopsQuestion).toBe(
+      `The pages were moved to Notion's trash. ${UNEXPECTED_STOP} Notion returned an error (500): no details.`,
+    )
+    expect(err.mayHaveChanged).toBe(true)
+    expect(ws.records.get(NOTE)!.alive).toBe(false)
+  })
+
+  it('goes on when the call after trashing fails in a known way: the pages are trashed', async () => {
+    const ws = workspace()
+    open(ws).respond('deleteContentRecords', 403, { name: 'PermissionError', message: 'No' })
+    expect(await trashPage.run({ pages: [NOTE] })).toContain("Moved 1 page to Notion's trash")
     expect(ws.records.get(NOTE)!.alive).toBe(false)
   })
 

@@ -31,9 +31,21 @@ export class NotionError extends Error {
     super(message, options)
     this.name = 'NotionError'
     this.unanswered = options?.unanswered ?? false
-    this.stopsQuestion = options?.stopsQuestion
+    this.stopsQuestion = options?.stopsQuestion ?? unexpectedStop(code, message)
     this.mayHaveChanged = options?.mayHaveChanged ?? code === 'outcome_unknown'
   }
+}
+
+/**
+ * For the user, when a Notion call fails in a way that isn't understood: the question stops there,
+ * so the agent doesn't work around it. Failures with a known meaning (signed out, no access, in the
+ * trash, no Notion tab) go to the model instead.
+ */
+function unexpectedStop(code: NotionErrorCode, message: string): string | undefined {
+  if (code === 'outcome_unknown') return UNKNOWN_STOP
+  if (code !== 'notion_error') return undefined
+  const text = message.trim()
+  return `${UNEXPECTED_STOP} ${/[.!?)]$/.test(text) ? text : `${text}.`}`
 }
 
 export const NO_NOTION_TAB = 'No Notion page is open in this window.'
@@ -63,6 +75,10 @@ export const REQUEST_BUDGET = 100
 export const OVER_BUDGET =
   'Not sent: this question reached its budget of Notion requests, and the user chose to stop. Do not work around the budget, ' +
   'for example with fewer or smaller requests; tell the user what was done so far instead.'
+/** For the user, before what failed, when Notion fails in a way that isn't understood. */
+export const UNEXPECTED_STOP = "Stopped after a Notion failure Notion Copilot doesn't understand:"
+/** For the user, when Notion doesn't say whether a change was saved. */
+export const UNKNOWN_STOP = 'Stopped: Notion did not say whether a change was saved.'
 /** For the user, when they stop a question at its budget. */
 export const BUDGET_STOP = 'Stopped: this question reached its budget of Notion requests.'
 
@@ -747,11 +763,11 @@ export class NotionClient {
       )
     } catch (err) {
       // The pages are in the trash already: the transaction did that. This call only matches
-      // what Notion's own client sends after it. A refusal that stops the question still does.
+      // what Notion's own client sends after it. A failure that stops the question still does.
       if (err instanceof NotionError && err.stopsQuestion)
         throw new NotionError('notion_error', "The pages were moved to Notion's trash.", {
           cause: err,
-          stopsQuestion: err.stopsQuestion,
+          stopsQuestion: `The pages were moved to Notion's trash. ${err.stopsQuestion}`,
           mayHaveChanged: true,
         })
       console.warn('Notion did not take the trashed pages’ deleteContentRecords', err)
@@ -841,12 +857,14 @@ export class NotionClient {
 
 /**
  * Like Promise.all, but waits for every request, so a failure that stops the question is never
- * hidden behind another one that came first.
+ * hidden behind another one that came first. Notion turning requests away comes first of all: the
+ * user is told to wait.
  */
 async function settleAll<T>(promises: Promise<T>[]): Promise<T[]> {
   const settled = await Promise.allSettled(promises)
   const failures = settled.flatMap((s) => (s.status === 'rejected' ? [s.reason as unknown] : []))
-  if (failures.length) throw failures.find((e) => e instanceof NotionError && e.stopsQuestion) ?? failures[0]
+  const stops = failures.filter((e): e is NotionError => e instanceof NotionError && !!e.stopsQuestion)
+  if (failures.length) throw stops.find((e) => e.code === 'rate_limited') ?? stops[0] ?? failures[0]
   return settled.map((s) => (s as PromiseFulfilledResult<T>).value)
 }
 
@@ -974,7 +992,8 @@ function hasCrdtData(value: unknown): boolean {
 /** A record id as Notion keys records by; ids from URLs or the model may be undashed or uppercase. */
 function notionId(id: string): string {
   const uuid = toUuid(id)
-  if (!uuid) throw new NotionError('notion_error', `Not a Notion id: ${id}`)
+  // The model gave it: it can give another, so this doesn't stop the question.
+  if (!uuid) throw new Error(`Not a Notion id: ${id}`)
   return uuid
 }
 

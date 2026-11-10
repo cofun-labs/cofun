@@ -17,6 +17,8 @@ import {
   OVER_BUDGET,
   RATE_LIMITED,
   REQUEST_BUDGET,
+  UNEXPECTED_STOP,
+  UNKNOWN_STOP,
   budgetQuestion,
 } from '../../extension/src/notion/api'
 import { activeNotionTab, countNotionRequests } from '../../extension/src/notion/tab'
@@ -427,6 +429,53 @@ describe('extension agent against the worker', () => {
     const { result } = await ask(makeAgent({ tools: [wrapping] }), 'Make a page')
     expect(result).toEqual({ status: 'error', message: 'Wait a minute.' })
     expect(ai.calls).toHaveLength(1)
+  })
+
+  it('[UC-NOTION-001-S11] the question stops when a read fails in a way that is not understood', async () => {
+    const tab = new FakeNotionTab(PAGE_URL).respondText('loadPageChunk', 500, 'oops').install()
+    // The model would read again, and then try another way.
+    ai.script = [
+      { toolCalls: [{ name: 'read_page', arguments: '{}' }] },
+      { toolCalls: [{ name: 'read_page', arguments: '{}' }] },
+      { reply: 'Trying another way.' },
+    ]
+    const { result, updates } = await ask(makeAgent({ tools: [readPage] }), 'Summarize this page')
+    expect(result).toEqual({
+      status: 'error',
+      message: `${UNEXPECTED_STOP} Notion returned an error (500): no details.`,
+    })
+    expect(toolStatuses(updates)).toEqual(['failed'])
+    expect(tab.sent).toHaveLength(1)
+    expect(ai.calls).toHaveLength(1)
+  })
+
+  it('[UC-NOTION-002-S17] the question stops when Notion refuses an edit without explaining it', async () => {
+    const ws = editablePage()
+    const tab = new FakeNotionTab(PAGE_URL).respond('saveTransactionsFanout', 400, {
+      name: 'ValidationError',
+      debugMessage: 'Invalid input.',
+    })
+    tab.workspace = ws
+    tab.install()
+    const { result } = await ask(makeAgent({ tools: [readPage, editPage] }), 'Put a summary at the top')
+    expect(result).toEqual({
+      status: 'error',
+      message: `${UNEXPECTED_STOP} Notion returned an error (400 ValidationError): Invalid input.`,
+    })
+    expect(tab.sent.filter((r) => r.url.endsWith('/saveTransactionsFanout'))).toHaveLength(1)
+    expect(ws.transactions).toHaveLength(0)
+    expect(ai.calls).toHaveLength(2)
+  })
+
+  it('[UC-NOTION-002-S18] the question stops when an edit gets no answer, and the user is told to check', async () => {
+    const ws = editablePage()
+    const tab = new FakeNotionTab(PAGE_URL).respondText('saveTransactionsFanout', 504, 'Gateway timeout')
+    tab.workspace = ws
+    tab.install()
+    const { result } = await ask(makeAgent({ tools: [readPage, editPage] }), 'Put a summary at the top')
+    expect(result).toEqual({ status: 'error', message: `${UNKNOWN_STOP} ${MAY_HAVE_CHANGED}` })
+    expect(tab.sent.filter((r) => r.url.endsWith('/saveTransactionsFanout'))).toHaveLength(1)
+    expect(ai.calls).toHaveLength(2)
   })
 
   it('[UC-NOTION-002-S12] the question stops when Notion is too busy to say whether an edit was saved', async () => {
