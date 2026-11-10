@@ -12,7 +12,7 @@ A question that fails or is stopped leaves no half-finished exchange behind, but
 
 The user can always see what the agent did: each tool it used, with what input, and whether it worked, in the order it happened within the reply.
 
-Each question's use of Notion is visible and bounded, so heavy use of the user's Notion account never goes unnoticed. When a question ends, whether answered, failed, or stopped, the side panel shows under the reply how many requests it made to Notion, and a reopened session still shows it. A question may make only so many Notion requests before the user is asked whether to go on. Until they answer, nothing more is sent to Notion. If they go on, the question may make as many again before they are asked next; if they stop, the question ends there, and the AI is told not to get around the limit.
+Each question's use of Notion is visible and bounded, so heavy use of the user's Notion account never goes unnoticed. When a question ends, whether answered, failed, or stopped, the side panel shows how many requests it made to Notion, and a reopened session still shows it. A question may make only so many Notion requests before the user is asked whether to go on. Until they answer, nothing more is sent to Notion. If they go on, the question may make as many again before they are asked next; if they stop, the question ends there, and the AI is told not to get around the limit.
 
 Key constraints:
 

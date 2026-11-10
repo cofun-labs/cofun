@@ -75,7 +75,7 @@ export function budgetQuestion(requests: number): string {
  * no (or nobody to ask) stops the question, with nothing more sent.
  */
 export class NotionUsage {
-  /** Requests sent, failed ones included. */
+  /** Requests that went out, or may have: failed ones included, not those known never to have left. */
   requests = 0
   /** A write was sent, and Notion did not say it turned it away: it may have changed data. */
   wrote = false
@@ -91,6 +91,11 @@ export class NotionUsage {
     while (!this.stopped && this.requests >= this.budget) await (this.asking ??= this.askToContinue())
     if (this.stopped) throw new NotionError('over_budget', OVER_BUDGET, { stopsQuestion: BUDGET_STOP })
     this.requests++
+  }
+
+  /** Takes back a request admitted but known never to have left (say, Chrome refused to run it). */
+  unsent(): void {
+    this.requests--
   }
 
   private async askToContinue(): Promise<void> {
@@ -511,15 +516,19 @@ export class NotionClient {
   ): Promise<{ json: T; userId?: string }> {
     if (this.limited) throw new NotionError('rate_limited', NOT_SENT, { stopsQuestion: LIMITED_STOP })
     await this.usage?.admit()
-    // Notion may have turned another request away while this one waited for the user.
-    if (this.limited) throw new NotionError('rate_limited', NOT_SENT, { stopsQuestion: LIMITED_STOP })
+    // Notion may have turned another request away while this one waited for the user: not sent, so not counted.
+    if (this.limited) {
+      this.usage?.unsent()
+      throw new NotionError('rate_limited', NOT_SENT, { stopsQuestion: LIMITED_STOP })
+    }
     const write = endpoint === 'saveTransactionsFanout'
     let res: NotionResponse
     try {
       res = await this.send(endpoint, body, { spaceId })
     } catch (err) {
-      // No answer: the write may have reached Notion.
-      if (write && this.usage) this.usage.wrote = true
+      // The transport says when nothing went out; otherwise the request, and a write, may have reached Notion.
+      if (err instanceof NotionError && !err.unanswered) this.usage?.unsent()
+      else if (write && this.usage) this.usage.wrote = true
       throw err
     }
     const turnedAway = res.error === undefined && !res.redirected && LIMITED.has(res.status)

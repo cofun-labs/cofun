@@ -1455,6 +1455,65 @@ describe('Notion requests per question', () => {
     expect(result).toEqual({ status: 'error', message: `${LIMITED_STOP} ${MAY_HAVE_CHANGED}`, requests: 2 })
   })
 
+  it('requests held at the budget while Notion turns one away are not sent or counted', async () => {
+    const tab = workspaceTab()
+    ai.script = [{ toolCalls: [LOOK_UP] }, { toolCalls: [LOOK_UP] }]
+    const before = lookups(REQUEST_BUDGET - 2)
+    const parallel = lookups(5, { parallel: true })
+    let runs = 0
+    const tool: ToolSpec = {
+      ...before,
+      run: async (args) => {
+        if (runs++ === 0) return before.run(args)
+        // The first of the two that still fit under the budget is turned away.
+        tab.limit('syncRecordValuesMain', 1)
+        return parallel.run(args)
+      },
+    }
+    const { result } = await ask(makeAgent({ tools: [tool], meter: countNotionRequests }), 'Look it up', async () => {
+      // Let the two sent requests come back before answering.
+      await new Promise((r) => setTimeout(r, 20))
+      return true
+    })
+    expect(result).toEqual({ status: 'error', message: LIMITED_STOP, requests: REQUEST_BUDGET })
+    expect(tab.sent).toHaveLength(REQUEST_BUDGET)
+  })
+
+  it('a question cut short by a model change still reports its requests', async () => {
+    workspaceTab()
+    const look = lookups(2)
+    const changing: ToolSpec = {
+      ...look,
+      run: async (args) => {
+        env.MODEL = '@cf/test/next-model'
+        return look.run(args)
+      },
+    }
+    ai.script = [{ toolCalls: [LOOK_UP] }, { reply: 'Done.' }]
+    const { result } = await ask(makeAgent({ tools: [changing], meter: countNotionRequests }), 'Look it up')
+    expect(result).toEqual({ status: 'error', message: 'Copilot was just updated. Ask it to continue.', requests: 2 })
+  })
+
+  it('a request that never left the browser neither counts nor warns of changes', async () => {
+    const tab = workspaceTab()
+    // Chrome refuses to run the write in the tab; then Notion turns the next request away.
+    const writing: ToolSpec = {
+      ...lookups(1),
+      run: async () => {
+        const { client } = await activeNotionTab()
+        tab.injectionError = 'Cannot access contents of the page.'
+        await client.submitTransaction(SPACE, [], 'test').catch(() => undefined)
+        tab.injectionError = undefined
+        tab.limit('syncRecordValuesMain', 1)
+        return client.getRecords([{ table: 'block', id: PAGE }])
+      },
+    }
+    ai.script = [{ toolCalls: [LOOK_UP] }]
+    const { result } = await ask(makeAgent({ tools: [writing], meter: countNotionRequests }), 'Go')
+    expect(result).toEqual({ status: 'error', message: LIMITED_STOP, requests: 1 })
+    expect(tab.sent).toHaveLength(1)
+  })
+
   it('a write Notion turned away for too many requests does not warn of changes', async () => {
     const tab = workspaceTab().limit('saveTransactionsFanout', 1)
     const writing: ToolSpec = {

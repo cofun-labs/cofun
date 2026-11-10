@@ -211,15 +211,17 @@ export class CopilotAgent {
     // nothing behind; a retry runs the whole question again, so after it used a tool (which is now
     // in the conversation), ask the user to repeat it instead.
     if (code === 'unsupported_model' && epoch === this.epoch) {
+      // What the first try sent counts even when the question goes no further.
+      const counted = result.requests === undefined ? {} : { requests: result.requests }
       try {
         this.model = await this.loadModel()
       } catch (err) {
-        return { status: 'error', message: (err as Error).message }
+        return { status: 'error', message: (err as Error).message, ...counted }
       }
       if (this.agent) this.agent.state.model = this.model
       // The question stays in the conversation with the tools it used, so the model can pick up
       // where it left off; asking the same question again could run those tools twice.
-      if (kept) return { status: 'error', message: 'Copilot was just updated. Ask it to continue.' }
+      if (kept) return { status: 'error', message: 'Copilot was just updated. Ask it to continue.', ...counted }
       return (await this.askOnce(text, onUpdate, epoch, confirm)).result
     }
     return result
