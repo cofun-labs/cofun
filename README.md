@@ -25,6 +25,7 @@
 - [x] Edit Notion pages: insert, replace, and delete content by block; the side panel shows each change
 - [x] Create pages with content
 - [x] Change titles, icons, and database properties, and add database rows
+- [x] Create databases, and add, rename, or remove their properties and select options
 - [x] Move pages under another page, duplicate pages, and move pages to Notion's trash (after the user agrees)
 - [x] Work on what the user selected in the page
 - [x] Read a page's comment threads, and add comments on the page or on a block
