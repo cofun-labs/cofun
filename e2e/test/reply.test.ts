@@ -29,6 +29,11 @@ describe('nextStep', () => {
     expect(nextStep(snap({ replies: 2, busy: true, asking: true }), 2, 'deny')).toEqual({ click: 'deny' })
   })
 
+  it('gives up on a call waiting for approval that has no buttons to answer it', () => {
+    const waiting = { type: 'tool' as const, name: 'edit_page', status: 'confirm', sections: [] }
+    expect(nextStep(snap({ replies: 2, busy: true, parts: [waiting] }), 2, 'allow')).toBe('unanswerable')
+  })
+
   it('stops at an approval prompt nobody said how to answer', () => {
     expect(nextStep(snap({ replies: 2, busy: true, asking: true }), 2)).toBe('needs_answer')
   })

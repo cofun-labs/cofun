@@ -20,7 +20,14 @@ import { CanaryLock, checkOwner } from './lock'
 import { type State, loadState, saveState, statePath } from './state'
 
 const REPO_ROOT = resolve(import.meta.dirname, '..', '..')
-const PORT = Number(process.env.E2E_CDP_PORT ?? DEFAULT_PORT)
+
+function cdpPort(): number {
+  const raw = process.env.E2E_CDP_PORT
+  if (raw === undefined) return DEFAULT_PORT
+  const port = Number(raw)
+  if (!Number.isInteger(port) || port <= 0 || port > 65535) throw new UsageError(`E2E_CDP_PORT is not a port: ${raw}`)
+  return port
+}
 const EXIT_BUSY = 3
 const EXIT_NEEDS_ANSWER = 4
 
@@ -167,7 +174,7 @@ async function main(argv: string[]): Promise<number> {
   return withLock(lock, owner, `pnpm e2e ${command.name}`, async () => {
     const path = statePath(owner)
     const state = await loadState(path)
-    const cdp = await Cdp.connect(PORT)
+    const cdp = await Cdp.connect(cdpPort())
     try {
       return await browserCommand(new Browser(cdp), state, command)
     } finally {

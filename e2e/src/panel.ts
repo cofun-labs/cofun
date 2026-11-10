@@ -186,6 +186,9 @@ export async function ask(
     snap = await panel.evaluate(readPanel, [])
     const step = nextStep(snap, expected, answer)
     if (step === 'done' || step === 'needs_answer') return { status: step, parts: snap.parts }
+    if (step === 'unanswerable') {
+      throw new E2eError('A tool call waits for approval, but the side panel shows no Allow or Deny for it.')
+    }
     if (typeof step === 'object') {
       await clickButton(panel, '#messages .msg.assistant:last-child .tool-confirm button', label(step.click))
     } else if (snap.replies < expected && Date.now() - started > 5_000) {

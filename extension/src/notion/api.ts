@@ -465,11 +465,14 @@ function notionId(id: string): string {
 export function blockOps(spaceId: string, now: number) {
   const pointer = (id: string): Pointer => ({ table: 'block', id, spaceId })
   return {
-    /** A new block under `parentId`; it still has to be listed in its parent's content. */
+    /**
+     * A new block under `parentId`; it still has to be listed in its parent's content. Without a
+     * parent, a later operation must give it one.
+     */
     create(
       id: string,
       type: string,
-      parentId: string,
+      parentId: string | undefined,
       fields: { properties?: object; format?: object; parent_table?: 'block' | 'collection' } = {},
     ): Operation {
       return {
@@ -481,8 +484,7 @@ export function blockOps(spaceId: string, now: number) {
           type,
           version: 1,
           alive: true,
-          parent_id: parentId,
-          parent_table: 'block',
+          ...(parentId === undefined ? {} : { parent_id: parentId, parent_table: 'block' }),
           space_id: spaceId,
           created_time: now,
           last_edited_time: now,

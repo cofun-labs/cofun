@@ -558,9 +558,12 @@ function clip(text: string, max = 80): string {
   return text.length > max ? `${text.slice(0, max - 1)}…` : text
 }
 
-/** The operations creating a page at the end of `parentId`, titled `title`, holding `blocks`. */
+/**
+ * The operations creating a page at the end of `parent`, titled `title`, holding `blocks`. With no
+ * parent, the page is created unplaced, for a later operation to put it somewhere.
+ */
 export function planNewPage(
-  parent: { id: string; table: 'block' | 'collection' },
+  parent: { id: string; table: 'block' | 'collection' } | undefined,
   spaceId: string,
   title: string,
   blocks: NewBlock[],
@@ -571,9 +574,9 @@ export function planNewPage(
   const pageId = newId()
   // A database row's parent is the database's collection, which lists its rows itself.
   operations.push(
-    op.create(pageId, 'page', parent.id, {
+    op.create(pageId, 'page', parent?.id, {
       properties: { ...properties, title: [[title]] },
-      ...(parent.table === 'collection' ? { parent_table: 'collection' as const } : {}),
+      ...(parent?.table === 'collection' ? { parent_table: 'collection' as const } : {}),
     }),
   )
   let prev: string | undefined
@@ -582,7 +585,7 @@ export function planNewPage(
     operations.push(op.listAfter(pageId, childId, prev))
     prev = childId
   }
-  if (parent.table === 'block') operations.push(op.listAfter(parent.id, pageId), op.touch(parent.id))
+  if (parent?.table === 'block') operations.push(op.listAfter(parent.id, pageId), op.touch(parent.id))
   return { operations, pageId }
 }
 

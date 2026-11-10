@@ -151,8 +151,17 @@ export async function build(repoRoot: string, outDir: string): Promise<void> {
     await viteBuild(extension, next)
     const stop = replaceProblem(manifest, await readFile(join(next, 'manifest.json'), 'utf8'))
     if (stop) throw new Error(stop)
-    await rm(outDir, { recursive: true, force: true })
-    await rename(next, outDir)
+    // Swap the folders so the shared extension folder is never left missing: the old build comes
+    // back if the new one can't take its place.
+    const old = `${outDir}.old-${process.pid}`
+    await rename(outDir, old)
+    try {
+      await rename(next, outDir)
+    } catch (err) {
+      await rename(old, outDir)
+      throw err
+    }
+    await rm(old, { recursive: true, force: true })
   } finally {
     await rm(next, { recursive: true, force: true })
   }

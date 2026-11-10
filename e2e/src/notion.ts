@@ -87,18 +87,9 @@ export function privatePageOps(
   blocks: NewBlock[],
   options: Parameters<typeof planNewPage>[4] = {},
 ): { operations: Operation[]; pageId: string } {
-  // The extension's own planner, minus the parent: a private page belongs to the workspace, and
-  // moveToPrivate puts it there and in the user's Private section.
-  const { operations, pageId } = planNewPage(
-    { id: space.spaceId, table: 'collection' },
-    space.spaceId,
-    title,
-    blocks,
-    options,
-  )
-  const page = operations[0].args as Record<string, unknown>
-  delete page.parent_id
-  delete page.parent_table
+  // The extension's own planner, with no parent: moveToPrivate puts the page in the workspace and
+  // in the user's Private section.
+  const { operations, pageId } = planNewPage(undefined, space.spaceId, title, blocks, options)
   return { operations: [...operations, moveToPrivate(space, pageId)], pageId }
 }
 

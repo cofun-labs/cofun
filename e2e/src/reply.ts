@@ -29,15 +29,18 @@ export interface PanelSnapshot {
   parts: ReplyPart[]
 }
 
-export type Step = 'wait' | 'done' | 'needs_answer' | { click: Answer }
+export type Step = 'wait' | 'done' | 'needs_answer' | 'unanswerable' | { click: Answer }
 
 /**
  * What to do next while waiting for reply number `expected`: keep waiting, answer an approval
- * prompt as told, stop because nobody said how to answer it, or stop because the reply is done.
+ * prompt as told, stop because nobody said how to answer it or because it can't be answered, or
+ * stop because the reply is done.
  */
 export function nextStep(snap: PanelSnapshot, expected: number, answer?: Answer): Step {
   if (snap.replies < expected) return 'wait'
   if (snap.asking) return answer ? { click: answer } : 'needs_answer'
+  // A call waiting for approval that shows no Allow/Deny buttons can never be answered.
+  if (snap.parts.some((p) => p.type === 'tool' && p.status === 'confirm')) return 'unanswerable'
   return snap.busy ? 'wait' : 'done'
 }
 

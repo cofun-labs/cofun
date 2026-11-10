@@ -61,7 +61,8 @@ export class CanaryLock {
   /**
    * Moves a stale lock out of the way. The rename is atomic, so of several sessions taking over the
    * same stale lock, one moves it and the others find it gone and race for mkdir instead. One that
-   * moved a lock someone took meanwhile (fresh again) puts it back.
+   * moved a lock someone took meanwhile (fresh again) puts it back, but only into a lock directory it
+   * made itself: if a third session took the lock in between, that one keeps it.
    */
   private async takeOver(): Promise<
     { status: 'moved' | 'gone'; holder?: string } | { status: 'busy'; holder: string }
@@ -75,7 +76,14 @@ export class CanaryLock {
     }
     const holder = (await readFile(join(moved, 'owner'), 'utf8').catch(() => '')).trim() || '(unknown holder)'
     if (!this.isStale((await stat(moved)).mtime.getTime())) {
-      await rename(moved, this.dir).catch(() => undefined)
+      try {
+        // An empty directory of our own, which the rename then replaces atomically.
+        await mkdir(this.dir)
+      } catch {
+        await rm(moved, { recursive: true, force: true })
+        return { status: 'busy', holder: (await this.holder()) ?? '(unknown holder)' }
+      }
+      await rename(moved, this.dir)
       return { status: 'busy', holder }
     }
     await rm(moved, { recursive: true, force: true })
