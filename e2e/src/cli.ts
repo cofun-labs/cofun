@@ -12,7 +12,7 @@ import {
   settledStatus,
   withExtensionsPage,
 } from './extension'
-import { createDatabase, createPage, pageUrl, parseRow, privateSpace, tabPost, trash } from './notion'
+import { createDatabase, createPage, pageUrl, parseRow, privateSpace, tabNotion, trash } from './notion'
 import { E2eError } from './errors'
 import { beforeInterruptExit } from './exit'
 import { DEFAULT_NOTION_URL, TimeoutError, isOwnPage, ask, notionTab, openPanel, ownNotionTab, ownPanel } from './panel'
@@ -151,12 +151,12 @@ async function browserCommand(
     case 'page':
     case 'db': {
       const tab = await notionTab(browser, state, undefined, DEFAULT_NOTION_URL)
-      const post = await tabPost(tab)
+      const notion = await tabNotion(tab)
       const { url, userId } = await tab.evaluate(() => {
         const id = /(?:^|;\s*)notion_user_id=([^;]+)/.exec(document.cookie)?.[1]
         return { url: location.href, userId: id && decodeURIComponent(id) }
       }, [])
-      const space = await privateSpace(post, url, userId)
+      const space = await privateSpace(notion.client, url, userId)
       // Remembered before it is sent, so trash still takes it if this command doesn't finish.
       const remember = async (id: string) => {
         state.created.push(id)
@@ -164,8 +164,8 @@ async function browserCommand(
       }
       const id =
         command.name === 'page'
-          ? await createPage(post, space, command.title, command.markdown, remember)
-          : await createDatabase(post, space, command.title, command.rows.map(parseRow), remember)
+          ? await createPage(notion, space, command.title, command.markdown, remember)
+          : await createDatabase(notion, space, command.title, command.rows.map(parseRow), remember)
       console.log(`id: ${id}\nurl: ${pageUrl(url, id)}`)
       return 0
     }
@@ -174,7 +174,7 @@ async function browserCommand(
         throw new E2eError(`pnpm e2e only trashes pages it created, and ${command.id} is not one of them.`)
       }
       const tab = await notionTab(browser, state, undefined, DEFAULT_NOTION_URL)
-      const result = await trash(await tabPost(tab), command.id)
+      const result = await trash(await tabNotion(tab), command.id)
       state.created = state.created.filter((id) => id !== command.id)
       console.log(
         result === 'trashed'

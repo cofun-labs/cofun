@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { NotionClient } from '../../extension/src/notion/api'
 import { parseMarkdown } from '../../extension/src/notion/blocks'
 import { findSpaceView, pageUrl, parseRow, privatePageOps, taskDatabaseOps, type PrivateSpace } from '../src/notion'
 
@@ -125,41 +126,51 @@ describe('parseRow', () => {
   })
 })
 
-describe('findSpaceView', () => {
-  const root = (userId: string, pointers: object[]) => ({
-    user_root: {
-      [userId]: { spaceId: 'x', value: { value: { id: userId, space_view_pointers: pointers }, role: 'editor' } },
-    },
+describe('NotionClient.spaceViews', () => {
+  it('lists every signed-in user’s workspace views from getSpaces', async () => {
+    const root = (userId: string, pointers: object[]) => ({
+      user_root: {
+        [userId]: { spaceId: 'x', value: { value: { id: userId, space_view_pointers: pointers }, role: 'editor' } },
+      },
+    })
+    const answers: Record<string, unknown> = {
+      [SPACE.userId]: root(SPACE.userId, [
+        { id: SPACE.spaceViewId, spaceId: SPACE.spaceId, table: 'space_view' },
+        { id: 'not-a-pointer' },
+      ]),
+      'user-other': root('user-other', [{ id: 'view-of-other', spaceId: SPACE.spaceId, table: 'space_view' }]),
+    }
+    // A fake transport standing in for the Notion tab: it answers getSpaces only.
+    const asked: string[] = []
+    const client = new NotionClient(async (endpoint) => {
+      asked.push(endpoint)
+      return { status: 200, json: answers, signedIn: true }
+    })
+    expect(await client.spaceViews()).toEqual([
+      SPACE,
+      { userId: 'user-other', spaceId: SPACE.spaceId, spaceViewId: 'view-of-other' },
+    ])
+    expect(asked).toEqual(['getSpaces'])
   })
+})
+
+describe('findSpaceView', () => {
+  const other = { userId: SPACE.userId, spaceId: 'space-other', spaceViewId: 'view-other' }
 
   it('picks the user’s view of the workspace asked for', () => {
-    const spaces = {
-      [SPACE.userId]: root(SPACE.userId, [
-        { id: 'view-other', spaceId: 'space-other', table: 'space_view' },
-        { id: SPACE.spaceViewId, spaceId: SPACE.spaceId, table: 'space_view' },
-      ]),
-    }
-    expect(findSpaceView(spaces, SPACE.spaceId)).toEqual(SPACE)
+    expect(findSpaceView([other, SPACE], SPACE.spaceId)).toEqual(SPACE)
   })
 
   it('picks the only workspace when none is asked for, and refuses to guess among several', () => {
-    const one = { [SPACE.userId]: root(SPACE.userId, [{ id: SPACE.spaceViewId, spaceId: SPACE.spaceId }]) }
-    expect(findSpaceView(one)).toEqual(SPACE)
-    const two = {
-      [SPACE.userId]: root(SPACE.userId, [
-        { id: SPACE.spaceViewId, spaceId: SPACE.spaceId },
-        { id: 'view-other', spaceId: 'space-other' },
-      ]),
-    }
-    expect(() => findSpaceView(two)).toThrow('several workspaces')
-    // Another signed-in account sharing the workspace: the tab's own account is the one used.
-    const shared = {
-      'user-other': root('user-other', [{ id: 'view-of-other', spaceId: SPACE.spaceId }]),
-      [SPACE.userId]: root(SPACE.userId, [{ id: SPACE.spaceViewId, spaceId: SPACE.spaceId }]),
-    }
+    expect(findSpaceView([SPACE])).toEqual(SPACE)
+    expect(() => findSpaceView([SPACE, other])).toThrow('several workspaces')
+    expect(() => findSpaceView([SPACE, other], 'space-missing')).toThrow("Couldn't find")
+  })
+
+  it('uses the tab’s own account when another signed-in account shares the workspace', () => {
+    const shared = [{ userId: 'user-other', spaceId: SPACE.spaceId, spaceViewId: 'view-of-other' }, SPACE]
     expect(() => findSpaceView(shared, SPACE.spaceId)).toThrow('several workspaces')
     expect(findSpaceView(shared, SPACE.spaceId, SPACE.userId)).toEqual(SPACE)
-    expect(() => findSpaceView(two, 'space-missing')).toThrow("Couldn't find")
   })
 })
 

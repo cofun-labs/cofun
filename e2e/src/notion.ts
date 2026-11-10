@@ -1,7 +1,18 @@
-// Throwaway pages and databases for ai-e2e runs, made through Notion's internal API from the tool's
-// own Notion tab, as its signed-in user. Requests run in an isolated world of that tab with the
-// extension's own request function, so they look exactly like the extension's.
-import { type NotionRecord, type Operation, checkResponse, normalizeRecordMap } from '../../extension/src/notion/api'
+// Throwaway pages and databases for ai-e2e runs, made through the extension's own NotionClient from
+// the tool's Notion tab, as its signed-in user. Requests run in an isolated world of that tab with
+// the extension's own request function, so they look exactly like the extension's.
+import {
+  IN_TRASH,
+  NO_NOTION_TAB,
+  NotionClient,
+  NotionError,
+  type NotionRecord,
+  type NotionTransport,
+  type Operation,
+  type SpaceView,
+  blockOps,
+  checkResponse,
+} from '../../extension/src/notion/api'
 import { type NewBlock, parseMarkdown } from '../../extension/src/notion/blocks'
 import { planNewPage } from '../../extension/src/notion/edit'
 import { NOTION_HOSTS, pageIdFromUrl } from '../../extension/src/notion/hosts'
@@ -10,74 +21,46 @@ import type { Target } from './cdp'
 import { E2eError } from './errors'
 
 /** Where a private page goes: the workspace, and the user's own view of it (their Private section). */
-export interface PrivateSpace {
-  spaceId: string
-  spaceViewId: string
-  userId: string
+export type PrivateSpace = SpaceView
+
+/** Notion as the tab's signed-in user: the extension's client, and its transport for what it lacks. */
+export interface TabNotion {
+  client: NotionClient
+  send: NotionTransport
 }
 
-type Post = (endpoint: string, body: unknown, spaceId?: string) => Promise<Record<string, unknown>>
-
-/** Sends Notion requests from `tab` as its signed-in user. */
-export async function tabPost(tab: Target): Promise<Post> {
+/** Sends Notion requests from `tab`, like the extension's tabTransport does from its own tab. */
+export async function tabNotion(tab: Target): Promise<TabNotion> {
   const world = await tab.isolatedWorld('notion-copilot-e2e')
-  return async (endpoint, body, spaceId) => {
+  const send: NotionTransport = async (endpoint, body, { spaceId }) => {
     const res = await tab.evaluate(notionRequest, [endpoint, body, spaceId ?? null, NOTION_HOSTS, 30_000], {
       contextId: world,
     })
-    if ('notOnNotion' in res) throw new E2eError('The Notion tab is not on Notion any more.')
-    return checkResponse(res)
+    if ('notOnNotion' in res) throw new NotionError('no_notion_tab', NO_NOTION_TAB)
+    return res
   }
+  return { client: new NotionClient(send), send }
 }
 
 /**
  * The workspace of the page the tab shows, or the user's only workspace when it shows none, with the
  * view of it of the tab's own Notion user (`userId`, from the tab), when known.
  */
-export async function privateSpace(post: Post, tabUrl: string, userId?: string): Promise<PrivateSpace> {
+export async function privateSpace(client: NotionClient, tabUrl: string, userId?: string): Promise<PrivateSpace> {
   const pageId = pageIdFromUrl(tabUrl)
-  const spaceId = pageId ? (await getBlock(post, pageId))?.space_id : undefined
-  return findSpaceView(await post('getSpaces', {}), spaceId, userId)
+  const spaceId = pageId
+    ? (await client.findRecords([{ table: 'block', id: pageId }])).block?.[pageId]?.space_id
+    : undefined
+  return findSpaceView(await client.spaceViews(), spaceId, userId)
 }
 
-async function getBlock(post: Post, id: string): Promise<NotionRecord | undefined> {
-  const res = await post('syncRecordValuesMain', { requests: [{ pointer: { table: 'block', id }, version: -1 }] })
-  return normalizeRecordMap(res.recordMap).block?.[id]
-}
-
-/**
- * Picks the workspace and the user's view of it from getSpaces' answer: one record map per signed-in
- * user, each with a `user_root` listing that user's workspace views.
- */
-export function findSpaceView(spaces: Record<string, unknown>, spaceId?: string, tabUser?: string): PrivateSpace {
-  const found: PrivateSpace[] = []
-  for (const [userId, raw] of Object.entries(spaces)) {
-    // Several signed-in accounts may share a workspace; the page belongs to the tab's account.
-    if (tabUser && userId !== tabUser) continue
-    const map = normalizeRecordMap(raw) as Record<string, Record<string, Record<string, unknown>> | undefined>
-    const pointers = map.user_root?.[userId]?.space_view_pointers
-    if (!Array.isArray(pointers)) continue
-    for (const p of pointers as { id?: unknown; spaceId?: unknown }[]) {
-      if (typeof p.id !== 'string' || typeof p.spaceId !== 'string') continue
-      if (!spaceId || p.spaceId === spaceId) found.push({ spaceId: p.spaceId, spaceViewId: p.id, userId })
-    }
-  }
+/** Picks the view of the workspace asked for (or the only one), of the tab's user when known. */
+export function findSpaceView(views: SpaceView[], spaceId?: string, tabUser?: string): PrivateSpace {
+  // Several signed-in accounts may share a workspace; the page belongs to the tab's account.
+  const found = views.filter((v) => (!tabUser || v.userId === tabUser) && (!spaceId || v.spaceId === spaceId))
   if (found.length === 1) return found[0]
   if (!found.length) throw new E2eError("Couldn't find the workspace of the Notion tab.")
   throw new E2eError('This Notion account has several workspaces: open a page of the one to use, with pnpm e2e panel.')
-}
-
-/** Moves a new top-level page into the user's Private section, as Notion's own client does. */
-function moveToPrivate(space: PrivateSpace, pageId: string): Operation {
-  return {
-    pointer: { table: 'block', id: pageId, spaceId: space.spaceId },
-    path: [],
-    command: 'moveToPrivate',
-    args: {
-      spaceViewPointer: { id: space.spaceViewId, table: 'space_view', spaceId: space.spaceId },
-      userId: space.userId,
-    },
-  } as unknown as Operation
 }
 
 /** The operations creating a private page titled `title` that holds `blocks`. */
@@ -90,7 +73,7 @@ export function privatePageOps(
   // The extension's own planner, with no parent: moveToPrivate puts the page in the workspace and
   // in the user's Private section.
   const { operations, pageId } = planNewPage(undefined, space.spaceId, title, blocks, options)
-  return { operations: [...operations, moveToPrivate(space, pageId)], pageId }
+  return { operations: [...operations, blockOps(space.spaceId, Date.now()).moveToPrivate(pageId, space)], pageId }
 }
 
 export const STATUSES = ['Not started', 'In progress', 'Done']
@@ -168,27 +151,18 @@ export function taskDatabaseOps(
       }),
     )
   }
-  operations.push(moveToPrivate(space, pageId))
+  operations.push(blockOps(spaceId, now).moveToPrivate(pageId, space))
   return { operations, pageId }
 }
 
-export async function transact(post: Post, spaceId: string, operations: Operation[]): Promise<void> {
-  await post(
-    'saveTransactionsFanout',
-    {
-      requestId: crypto.randomUUID(),
-      transactions: [{ id: crypto.randomUUID(), spaceId, debug: { userAction: 'notion-copilot e2e' }, operations }],
-    },
-    spaceId,
-  )
-}
+const USER_ACTION = 'notion-copilot e2e'
 
 /**
  * Creates a private page and returns its id. `beforeWrite` hears the id before anything is sent, so
  * the caller can remember it even if the command is interrupted or Notion doesn't answer.
  */
 export async function createPage(
-  post: Post,
+  { client }: TabNotion,
   space: PrivateSpace,
   title: string,
   markdown: string,
@@ -196,13 +170,13 @@ export async function createPage(
 ): Promise<string> {
   const { operations, pageId } = privatePageOps(space, title, parseMarkdown(markdown))
   await beforeWrite(pageId)
-  await transact(post, space.spaceId, operations)
+  await client.submitTransaction(space.spaceId, operations, USER_ACTION)
   return pageId
 }
 
 /** Creates a private task database and returns its id; `beforeWrite` as for createPage. */
 export async function createDatabase(
-  post: Post,
+  { client }: TabNotion,
   space: PrivateSpace,
   title: string,
   rows: TaskRow[],
@@ -210,7 +184,7 @@ export async function createDatabase(
 ): Promise<string> {
   const { operations, pageId } = taskDatabaseOps(space, title, rows)
   await beforeWrite(pageId)
-  await transact(post, space.spaceId, operations)
+  await client.submitTransaction(space.spaceId, operations, USER_ACTION)
   return pageId
 }
 
@@ -218,26 +192,35 @@ export async function createDatabase(
  * Moves a top-level page to the trash, as Notion's "Move to Trash" does. `missing`: there is no such
  * page, for example because the command creating it was interrupted before Notion saved it.
  */
-export async function trash(post: Post, pageId: string): Promise<'trashed' | 'missing'> {
-  const page = await getBlock(post, pageId)
+export async function trash({ client, send }: TabNotion, pageId: string): Promise<'trashed' | 'missing'> {
+  let page: NotionRecord | undefined
+  try {
+    page = (await client.getRecords([{ table: 'block', id: pageId }])).block?.[pageId]
+  } catch (err) {
+    // Already in the trash, or never saved: nothing to do either way.
+    if (err instanceof NotionError && err.code === 'no_access') return err.message === IN_TRASH ? 'trashed' : 'missing'
+    throw err
+  }
   if (!page?.space_id) return 'missing'
-  if (page.alive === false) return 'trashed'
   const spaceId = page.space_id
   if (page.parent_table !== 'space' || !page.parent_id) {
     throw new E2eError(`The page is no longer at the top of the workspace (its parent is a ${page.parent_table}).`)
   }
-  await transact(post, spaceId, [
-    {
-      pointer: { table: 'space', id: page.parent_id, spaceId },
-      path: ['pages'],
-      command: 'removeChild',
-      args: { id: pageId },
-    } as unknown as Operation,
-  ])
-  await post(
-    'deleteContentRecords',
-    { records: [{ table: 'block', id: pageId, spaceId }], permanentlyDelete: false },
-    spaceId,
+  const remove: Operation = {
+    pointer: { table: 'space', id: page.parent_id, spaceId },
+    path: ['pages'],
+    command: 'removeChild',
+    args: { id: pageId },
+  }
+  await client.submitTransaction(spaceId, [remove], USER_ACTION)
+  // NotionClient has no call for this yet (the agent's own trash tool brings one); same shape as
+  // Notion's own "Move to Trash".
+  checkResponse(
+    await send(
+      'deleteContentRecords',
+      { records: [{ table: 'block', id: pageId, spaceId }], permanentlyDelete: false },
+      { spaceId },
+    ),
   )
   return 'trashed'
 }
