@@ -669,7 +669,7 @@ describe('when Notion is limiting requests', () => {
   it('does not back off again for a request answered after the client gave up', async () => {
     // A slow request is still out when another one runs out of tries; then Notion refuses it too.
     const limited: NotionResponse = { status: 429, json: {}, signedIn: true }
-    let answerSlow = (_: NotionResponse) => {}
+    let answerSlow: (res: NotionResponse) => void = () => {}
     const sent: string[] = []
     const send: NotionTransport = (endpoint) => {
       sent.push(endpoint)
