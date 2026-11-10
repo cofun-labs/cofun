@@ -2,7 +2,7 @@
 import { isNotion, toUuid } from '../../extension/src/notion/hosts'
 
 export type Answer = 'allow' | 'deny'
-export type LockAction = 'acquire' | 'refresh' | 'release' | 'status'
+type LockAction = 'acquire' | 'refresh' | 'release' | 'status'
 
 export type Command =
   | { name: 'help' }

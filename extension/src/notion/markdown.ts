@@ -773,7 +773,7 @@ export function splitIntoParts(sections: string[], max: number): string[] {
  * Escapes characters that inline Markdown would read as formatting, links, or references, a `$`
  * that could open an inline equation, and an `@` that would read as a date.
  */
-export function escapeMarkdown(text: string): string {
+function escapeMarkdown(text: string): string {
   return text
     .replace(/[\\`*~[\]^|<]/g, '\\$&')
     .replace(/(?<!\w)_|_(?!\w)/g, '\\_')

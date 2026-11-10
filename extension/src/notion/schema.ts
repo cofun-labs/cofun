@@ -20,7 +20,7 @@ export const PROPERTY_TYPES = [
   'phone_number',
   'person',
 ] as const
-export type PropertyType = (typeof PROPERTY_TYPES)[number]
+type PropertyType = (typeof PROPERTY_TYPES)[number]
 
 /** How many properties, options, or changes one call takes at most, so its preview stays readable. */
 export const SCHEMA_MAX = 30
@@ -33,13 +33,6 @@ export class SchemaError extends Error {
     super(message)
     this.name = 'SchemaError'
   }
-}
-
-/** A property as the model describes it. */
-export interface PropertySpec {
-  name: string
-  type: string
-  options?: string[]
 }
 
 /** A property in a schema, with the fields changes read. */
