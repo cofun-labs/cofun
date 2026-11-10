@@ -1073,8 +1073,8 @@ function remember(read: PageRead, since = generation) {
 }
 
 /** A page title on one line, as Notion keeps it, so it can't break up the preview's lines. */
-function titleArg(value: unknown): string {
-  return typeof value === 'string' ? oneLine(plainText(value)) : ''
+function titleArg(value: string): string {
+  return oneLine(plainText(value))
 }
 
 /** Text arguments drop Markdown escapes (see plainText), so the model must double a backslash. */
@@ -1508,16 +1508,27 @@ function toProperties(schema: Schema, props: [string, PropertyInput][]): Record<
 }
 
 /** A property as create_database and update_database_schema take it. */
-const PROPERTY_ARG = {
-  name: { type: 'string', description: `The property's name. ${BACKSLASH}` },
-  type: { type: 'string', enum: [...PROPERTY_TYPES] },
-  options: {
-    type: 'array',
-    items: { type: 'string' },
-    maxItems: SCHEMA_MAX,
-    description: "For select and multi_select: the options' names, without commas. A status gets Notion's own.",
-  },
-}
+/** A property's type; `where` says which entry an issue is about, as the model is told. */
+const typeArg = (where: (issue: { path?: PropertyKey[] }) => string) =>
+  z.enum(PROPERTY_TYPES, {
+    error: (issue) => {
+      const given = typeof issue.input === 'string' && issue.input.trim() ? oneLine(issue.input) : 'property without a'
+      return `${where(issue)} can't be a ${given} type. Use one of: ${PROPERTY_TYPES.join(', ')}.`
+    },
+  })
+
+/** Option names for a select or multi-select. */
+const optionsArg = (description: string) =>
+  z
+    .array(z.string())
+    .max(SCHEMA_MAX, { error: `At most ${SCHEMA_MAX} options can be added at once.` })
+    .describe(description)
+    .optional()
+
+/** Which entry of a list argument an issue is about, counted from 1. */
+const entryAt = (issue: { path?: PropertyKey[] }) => Number(issue.path?.[1]) + 1
+
+const DATABASE_PARENT = '`parent` is required: the URL or id of the page to create it in.'
 
 /** Refusals from planning schema changes, for the model; anything else is passed on. */
 function schemaRefusal(err: unknown): never {
@@ -1525,57 +1536,57 @@ function schemaRefusal(err: unknown): never {
   throw err
 }
 
-export const createDatabase: ToolSpec = {
+export const createDatabase = defineTool({
   changesData: true,
   name: 'create_database',
   description:
     "Creates a Notion database (a table) as a page at the end of `parent`, a page (the open page's URL, or " +
     'another page): a title column (`title_property`, "Name" if left out), then `properties` in order, with ' +
     "options for selects. Add rows afterwards with create_page. Returns the new database's id and URL.",
-  parameters: {
-    type: 'object',
-    properties: {
-      parent: { type: 'string', description: 'URL or id of the page to create it in.' },
-      title: { type: 'string', description: `The database's name. ${BACKSLASH}` },
-      title_property: { type: 'string', description: 'The name of the title column. Default: Name.' },
-      properties: {
-        type: 'array',
-        maxItems: SCHEMA_MAX,
-        items: {
-          type: 'object',
-          properties: PROPERTY_ARG,
-          required: ['name', 'type'],
-          additionalProperties: false,
-        },
-      },
-    },
-    required: ['parent', 'title'],
-    additionalProperties: false,
-  },
+  args: z.strictObject({
+    parent: z.string({ error: DATABASE_PARENT }).describe('URL or id of the page to create it in.'),
+    title: z.string({ error: TITLE_EMPTY }).describe(`The database's name. ${BACKSLASH}`),
+    title_property: z
+      .string({ error: 'The title column must not be empty.' })
+      .describe('The name of the title column. Default: Name.')
+      .optional(),
+    properties: z
+      .array(
+        z.strictObject({
+          name: z.string({ error: 'A property name must not be empty.' }).describe(`The property's name. ${BACKSLASH}`),
+          type: typeArg((issue) => `Property ${entryAt(issue)}`),
+          options: optionsArg(
+            "For select and multi_select: the options' names, without commas. A status gets Notion's own.",
+          ),
+        }),
+        { error: '`properties` must be a list of properties.' },
+      )
+      .max(SCHEMA_MAX, { error: `A database can be created with at most ${SCHEMA_MAX} properties.` })
+      .optional(),
+  }),
   preview: (args) => {
-    const given = typeof args.parent === 'string' ? args.parent.trim() : ''
+    const given = args.parent.trim()
     const id = given ? pageArg(given) : undefined
     const known = id ? pageReads.get(id)?.title : undefined
     const parent = id ? `${known ? `${oneLine(known)} ` : ''}^${hexId(id)}` : given || '(none given)'
-    const specs = Array.isArray(args.properties) ? (args.properties as Record<string, unknown>[]) : []
-    const titleColumn = typeof args.title_property === 'string' ? titleArg(args.title_property) : ''
+    const titleColumn = args.title_property === undefined ? '' : titleArg(args.title_property)
     return [
       'Create a database',
       `Title: ${titleArg(args.title)}`,
       `At the end of: ${parent}`,
       'Properties:',
       `    ${titleColumn || 'Name'} (title)`,
-      ...specs.map((p) => {
-        const options = Array.isArray(p?.options) ? `: ${p.options.map((o) => oneLine(String(o))).join(', ')}` : ''
-        return `    ${titleArg(p?.name)} (${oneLine(String(p?.type ?? '')).replace(/_/g, ' ')}${options})`
+      ...(args.properties ?? []).map((p) => {
+        const options = p.options ? `: ${p.options.map((o) => oneLine(o)).join(', ')}` : ''
+        return `    ${titleArg(p.name)} (${p.type.replace(/_/g, ' ')}${options})`
       }),
     ].join('\n')
   },
   run: async (args, signal) => {
     const title = titleArg(args.title)
-    if (!title) throw new Error('`title` must not be empty.')
-    const given = typeof args.parent === 'string' ? args.parent.trim() : ''
-    if (!given) throw new Error('`parent` is required: the URL or id of the page to create it in.')
+    if (!title) throw new Error(TITLE_EMPTY)
+    const given = args.parent.trim()
+    if (!given) throw new Error(DATABASE_PARENT)
     const parentId = pageArg(given)
     if (!parentId) throw new Error(`Not a Notion page URL or id: ${given}`)
     let schema: Schema
@@ -1625,9 +1636,11 @@ export const createDatabase: ToolSpec = {
       `URL: ${pageLink(tab.url, hex)}`,
     ].join('\n')
   },
-}
+})
 
-export const updateDatabaseSchema: ToolSpec = {
+const CHANGES_LIST = '`changes` must be a list with at least one change.'
+
+export const updateDatabaseSchema = defineTool({
   changesData: true,
   name: 'update_database_schema',
   description:
@@ -1637,45 +1650,39 @@ export const updateDatabaseSchema: ToolSpec = {
     'loses its values in every row: remove one only when the user asked to remove exactly it. A property ' +
     "can't change its type, and status options can't be changed. Give the database by id or URL, or leave it " +
     'out when the open page is a database. Nothing changes if any change is refused.',
-  parameters: {
-    type: 'object',
-    properties: {
-      database: { type: 'string', description: 'Id or URL of the database. Leave out for the open page.' },
-      changes: {
-        type: 'array',
-        minItems: 1,
-        maxItems: SCHEMA_MAX,
-        items: {
-          type: 'object',
-          properties: {
-            action: { type: 'string', enum: [...SCHEMA_ACTIONS] },
-            property: { type: 'string', description: 'The property to change, or to add.' },
-            type: PROPERTY_ARG.type,
-            options: { ...PROPERTY_ARG.options, description: 'For add_property and add_options: option names.' },
-            option: { type: 'string', description: 'For rename_option and remove_option: the option.' },
-            to: { type: 'string', description: `For the renames: the new name. ${BACKSLASH}` },
-          },
-          required: ['action', 'property'],
-          additionalProperties: false,
-        },
-      },
-    },
-    required: ['changes'],
-    additionalProperties: false,
-  },
-  preview: (args) => {
-    const given = typeof args.database === 'string' ? args.database.trim() : ''
+  args: z.strictObject({
+    database: z.string().describe('Id or URL of the database. Leave out for the open page.').optional(),
+    changes: z
+      .array(
+        z.strictObject({
+          action: z.enum(SCHEMA_ACTIONS, {
+            error: (issue) => `Change ${entryAt(issue)}: \`action\` must be one of ${SCHEMA_ACTIONS.join(', ')}.`,
+          }),
+          property: z
+            .string({ error: (issue) => `Change ${entryAt(issue)} needs \`property\`.` })
+            .describe('The property to change, or to add.'),
+          type: typeArg((issue) => `Change ${entryAt(issue)}: the property`).optional(),
+          options: optionsArg('For add_property and add_options: option names.'),
+          option: z.string().describe('For rename_option and remove_option: the option.').optional(),
+          to: z.string().describe(`For the renames: the new name. ${BACKSLASH}`).optional(),
+        }),
+        { error: CHANGES_LIST },
+      )
+      .min(1, { error: CHANGES_LIST })
+      .max(SCHEMA_MAX, { error: `At most ${SCHEMA_MAX} changes can be made in one call.` }),
+  }),
+  preview: ({ database, changes }) => {
+    const given = database?.trim() ?? ''
     const id = given ? pageArg(given) : undefined
     const known = id ? seenDatabases.get(id) : undefined
-    const changes = Array.isArray(args.changes) ? (args.changes as Record<string, unknown>[]) : []
-    const name = (v: unknown) => `“${titleArg(v)}”`
-    const list = (v: unknown) => (Array.isArray(v) ? v.map((o) => oneLine(String(o))).join(', ') : '')
+    const name = (v: string | undefined) => `“${titleArg(v ?? '')}”`
+    const list = (v: string[] | undefined) => (v ?? []).map((o) => oneLine(o)).join(', ')
     return [
       `Change the properties of ${id ? `${known ? `${oneLine(known)} ` : ''}^${hexId(id)}` : given ? oneLine(given) : 'the open database'}`,
       ...changes.map((c) => {
-        switch (c?.action) {
+        switch (c.action) {
           case 'add_property':
-            return `    Add the property ${name(c.property)} (${oneLine(String(c.type ?? '')).replace(/_/g, ' ')}${Array.isArray(c.options) ? `: ${list(c.options)}` : ''})`
+            return `    Add the property ${name(c.property)} (${(c.type ?? '').replace(/_/g, ' ')}${c.options ? `: ${list(c.options)}` : ''})`
           case 'rename_property':
             return `    Rename the property ${name(c.property)} to ${name(c.to)}`
           case 'remove_property':
@@ -1686,8 +1693,6 @@ export const updateDatabaseSchema: ToolSpec = {
             return `    Rename the option ${name(c.option)} of ${name(c.property)} to ${name(c.to)}, in every row that has it`
           case 'remove_option':
             return `    Remove the option ${name(c.option)} of ${name(c.property)}: rows that have it lose it`
-          default:
-            return '    (a change that will be refused)'
         }
       }),
     ].join('\n')
@@ -1699,7 +1704,7 @@ export const updateDatabaseSchema: ToolSpec = {
     } catch (err) {
       schemaRefusal(err)
     }
-    const given = typeof args.database === 'string' && args.database.trim() ? args.database : undefined
+    const given = filled(args.database)
     const tab = await activeNotionTab()
     const id = given ? pageArg(given) : tab.pageId
     if (given && !id) throw new Error(`Not a Notion database URL or id: ${given}`)
@@ -1767,7 +1772,7 @@ export const updateDatabaseSchema: ToolSpec = {
       `Properties now: ${rowValuesHeader(plan.schema)}`,
     ].join('\n')
   },
-}
+})
 
 /** How many pages one move_page or trash_page call takes at most, so its preview stays readable. */
 export const ORGANIZE_MAX = 50
