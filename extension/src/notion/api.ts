@@ -79,7 +79,7 @@ export function budgetQuestion(requests: number): string {
 export class NotionUsage {
   /** Requests that went out, or may have: failed ones included, not those known never to have left. */
   requests = 0
-  /** A write was sent, and Notion did not say it turned it away: it may have changed data. */
+  /** A write (see WRITES) was sent, and Notion did not say it turned it away: it may have changed data. */
   wrote = false
   private budget = REQUEST_BUDGET
   private stopped = false
@@ -263,6 +263,9 @@ const CHUNK_LIMIT = 100
 const RECORDS_BATCH = 100
 /** Record lookups sent at once at most. */
 const RECORDS_PARALLEL = 4
+
+/** Endpoints that change the user's data: a request to one counts as a write (see NotionUsage.wrote). */
+const WRITES = new Set<NotionEndpoint>(['saveTransactionsFanout', 'enqueueTask', 'deleteContentRecords'])
 
 /** Statuses with which Notion says it gets too many requests (429) or is too busy (529). */
 const LIMITED = new Set([429, 529])
@@ -714,7 +717,7 @@ export class NotionClient {
       this.usage?.unsent()
       throw new NotionError('rate_limited', NOT_SENT, { stopsQuestion: LIMITED_STOP })
     }
-    const write = endpoint === 'saveTransactionsFanout'
+    const write = WRITES.has(endpoint)
     let res: NotionResponse
     try {
       res = await this.send(endpoint, body, { spaceId })
