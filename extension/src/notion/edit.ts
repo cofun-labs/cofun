@@ -1,7 +1,15 @@
 // Planning an edit_page call: checking the edits against the page as the agent read it and as it
 // is now, and turning them into one Notion transaction. Nothing here talks to Notion.
-import { blockOps, type Block, type LoadedPage, type Operation } from './api'
-import { MarkdownError, TEXT_TYPES, notionLanguage, parseMarkdown, type NewBlock, type RichText } from './blocks'
+import { blockOps, type Block, type LoadedPage, type NotionRecord, type Operation } from './api'
+import {
+  MarkdownError,
+  TEXT_TYPES,
+  notionLanguage,
+  parseMarkdown,
+  withPeople,
+  type NewBlock,
+  type RichText,
+} from './blocks'
 import { PAGE_TYPES, hexId, type PageMarkdown } from './markdown'
 
 /**
@@ -50,7 +58,9 @@ export function pageRead(loaded: LoadedPage, md: PageMarkdown, include: (id: str
     versions,
     lines: new Map([...md.lines].filter(([id]) => refs.has(id))),
     nested,
-    lossy: new Set([...refs.keys()].filter((id) => hasUnwritableMarks(blocks[id]?.properties?.title))),
+    lossy: new Set(
+      [...refs.keys()].filter((id) => hasUnwritableMarks(blocks[id]?.properties?.title, loaded.recordMap.notion_user)),
+    ),
   }
 }
 
@@ -225,7 +235,10 @@ export interface Plan {
   summary: string[]
 }
 
-/** Rich text marks edit_page writes back; others (mentions of people and dates, colors, …) it can't. */
+/**
+ * Rich text marks edit_page writes back; others (mentions of dates, colors, …) it can't. A mention
+ * of a person (`u`) is written back when the person's name is known, as read_page then shows it.
+ */
 const WRITABLE_MARKS = new Set(['b', 'i', 's', 'c', 'a', 'p'])
 
 /**
@@ -236,7 +249,11 @@ export function planEdit(
   loaded: LoadedPage,
   read: PageRead,
   edits: Edit[],
-  { now = Date.now(), newId = () => crypto.randomUUID() } = {},
+  {
+    now = Date.now(),
+    newId = () => crypto.randomUUID(),
+    people = new Map<string, string>(),
+  }: { now?: number; newId?: () => string; people?: Map<string, string> } = {},
 ): Plan {
   const blocks = (loaded.recordMap.block ?? {}) as Record<string, Block>
   const { page, spaceId } = loaded
@@ -393,7 +410,7 @@ export function planEdit(
     if (e.blocks.length === 1 && only.type === target.type && !only.children.length) {
       // The same kind of block: change it in place, keeping its id, children, and comments, and
       // only the fields that differ, so text the agent didn't change keeps what can't be written.
-      const values = changedProperties(target, only, read.lines.get(target.id))
+      const values = changedProperties(target, only, read.lines.get(target.id), people)
       if (Object.keys(values).length) {
         ops.push(op.setProperties(target.id, values))
       }
@@ -405,7 +422,7 @@ export function planEdit(
         continue
       }
       changed.add(target.id)
-      const lost = values.title && hasUnwritableMarks(target.properties?.title)
+      const lost = values.title && hasUnwritableMarks(target.properties?.title, loaded.recordMap.notion_user)
       summary.push(
         `Replaced the text of ${ref(e.target)}.` +
           (lost
@@ -427,7 +444,7 @@ export function planEdit(
     deleted.add(e.target)
     summary.push(
       `Replaced ${ref(e.target)} with ${ids.length} new block${ids.length === 1 ? '' : 's'}.` +
-        (hasUnwritableMarks(target.properties?.title)
+        (hasUnwritableMarks(target.properties?.title, loaded.recordMap.notion_user)
           ? ' Mentions of people or dates, colors, and similar formatting in its old text are now plain text.'
           : ''),
     )
@@ -451,7 +468,12 @@ export function planEdit(
 }
 
 /** The property values of a rewritten block that differ from the block as it is. */
-function changedProperties(target: Block, nb: NewBlock, shownLine: string | undefined): Record<string, unknown> {
+function changedProperties(
+  target: Block,
+  nb: NewBlock,
+  shownLine: string | undefined,
+  people: Map<string, string>,
+): Record<string, unknown> {
   const out: Record<string, unknown> = {}
   if (nb.type === 'code') {
     const code = runsText(target.properties?.title)
@@ -466,6 +488,8 @@ function changedProperties(target: Block, nb: NewBlock, shownLine: string | unde
     let before: NewBlock | undefined
     try {
       before = shownLine ? parseMarkdown(shownLine)[0] : undefined
+      // People named as the new text names them; a person it no longer names makes the text changed.
+      if (before) before = { ...before, title: withPeople(before.title, people) }
     } catch {
       // Not Markdown that can be written back: treat the text as changed.
     }
@@ -482,12 +506,13 @@ function runsText(value: unknown): string {
   return Array.isArray(value) ? value.map((r) => (Array.isArray(r) ? String(r[0]) : '')).join('') : ''
 }
 
-function hasUnwritableMarks(value: unknown): boolean {
+function hasUnwritableMarks(value: unknown, users: Record<string, NotionRecord> = {}): boolean {
+  const writable = (m: unknown[]) =>
+    WRITABLE_MARKS.has(String(m[0])) ||
+    (m[0] === 'u' && typeof users[String(m[1])]?.name === 'string' && !!users[String(m[1])].name)
   return (
     Array.isArray(value) &&
-    value.some(
-      (r) => Array.isArray(r) && Array.isArray(r[1]) && r[1].some((m: unknown[]) => !WRITABLE_MARKS.has(String(m[0]))),
-    )
+    value.some((r) => Array.isArray(r) && Array.isArray(r[1]) && r[1].some((m: unknown[]) => !writable(m)))
   )
 }
 

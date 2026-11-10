@@ -125,6 +125,7 @@ export type NotionEndpoint =
   | 'getTasks'
   | 'deleteContentRecords'
   | 'getTeamsV2'
+  | 'getVisibleUsers'
 
 /** What one request to Notion returned. `error` is set when no HTTP response came back. */
 export interface NotionResponse {
@@ -478,6 +479,31 @@ export class NotionClient {
       return [
         { name: typeof team.name === 'string' && team.name ? team.name : 'Teamspace', pages: ids(team.team_pages) },
       ]
+    })
+  }
+
+  /**
+   * The people of a workspace the signed-in user can see (members and guests) who have a name: the
+   * people Notion's own @ menu offers. One request lists them, then one per 100 people loads their
+   * names.
+   */
+  async workspacePeople(spaceId: string): Promise<{ id: string; name: string }[]> {
+    const space = notionId(spaceId)
+    const { json } = await this.request<{ users?: unknown }>('getVisibleUsers', { spaceId: space }, space)
+    if (!Array.isArray(json.users))
+      throw new NotionError('notion_error', 'Notion returned no list of workspace members.')
+    const userIds = [
+      ...new Set(
+        (json.users as { userId?: unknown }[]).flatMap((u) =>
+          typeof u?.userId === 'string' ? [notionId(u.userId)] : [],
+        ),
+      ),
+    ]
+    const users =
+      (await this.findRecords(userIds.map((id) => ({ table: 'notion_user' as const, id })))).notion_user ?? {}
+    return userIds.flatMap((id) => {
+      const name = users[id]?.name
+      return typeof name === 'string' && name.trim() ? [{ id, name: name.trim() }] : []
     })
   }
 
