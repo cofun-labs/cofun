@@ -390,11 +390,7 @@ class Context {
    */
   rich(value: unknown, { table = false } = {}): string {
     return runs(value)
-      .map(([text, marks = []]) => {
-        const out = this.run(text, marks, table)
-        const raw = marks.some(([m]) => m === 'c' || m === 'e')
-        return table && raw ? out.split('|').join('\\|') : out
-      })
+      .map(([text, marks = []]) => this.run(text, marks, table))
       .join('')
   }
 
@@ -403,8 +399,11 @@ class Context {
     // which would undo a pipe's escape) still must be.
     const pipes = (raw: string) => (table ? tableEscape(raw) : raw)
     const code = marks.some(([m]) => m === 'c')
+    // Code and equations keep their text as it is; in a table only their pipes are escaped, as
+    // GFM reads `\|` there.
+    const raw = (t: string) => (table ? t.split('|').join('\\|') : t)
     // Characters Markdown would read as formatting stay literal behind a backslash.
-    let out = code ? text : escapeMarkdown(text)
+    let out = code ? raw(text) : escapeMarkdown(text)
     let link: string | undefined
     for (const [mark, arg] of marks) {
       switch (mark) {
@@ -415,7 +414,7 @@ class Context {
         case 'd':
           return `@${formatDate(arg)}`
         case 'e':
-          return `$${String(arg)}$`
+          return `$${raw(String(arg))}$`
         case 'a': {
           // Notion links to its own pages by path (`/Title-<id>`); show those as `/<id>` (keeping any
           // `#block`), which read_page opens and which stays a link, unlike a mention's `(<id>)`.

@@ -363,12 +363,24 @@ describe('query_database options, numbers, and code', () => {
   })
 
   it('keeps a mentioned page or a link with a pipe in one cell', async () => {
-    // The row's notes mention the row titled "Fix login | Safari", and link to a URL with a pipe.
-    const notes = [[['‣', [['p', row(2)]]], [' and '], ['spec', [['a', 'https://example.com/a|b']]]]]
+    // The row's notes mention the row titled "Fix login | Safari", and link to a URL with a pipe,
+    // once as text and once as code.
+    const notes = [
+      [
+        ['‣', [['p', row(2)]]],
+        [' and '],
+        ['spec', [['a', 'https://example.com/a|b']]],
+        [' '],
+        ['a|b', [['c'], ['a', 'https://example.com/c|d']]],
+      ],
+    ]
     database(tagged([], notes), false, TAGGED)
     const result = await query({ filter: [{ property: 'Notes', op: 'contains', value: 'safari' }] })
     const [line] = tableRows(result)
-    expect(line).toContain(`[Fix login \\| Safari](${hex(row(2))}) and [spec](https://example.com/a\\|b)`)
+    expect(line).toContain(
+      `[Fix login \\| Safari](${hex(row(2))}) and [spec](https://example.com/a\\|b) ` +
+        '[`a\\|b`](https://example.com/c\\|d)',
+    )
     const cells = (l: string) => l.split(/(?<!\\)\|/).length
     expect(cells(line)).toBe(cells(result.split('\n').find((l) => l.startsWith('| Task |'))!))
   })
