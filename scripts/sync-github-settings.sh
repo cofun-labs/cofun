@@ -58,14 +58,16 @@ done
 repo_json="$(gh api "$api")"
 
 # Squash merge only, with the PR title and body as the commit message, and
-# delete head branches once merged.
+# delete head branches once merged. Auto-merge is allowed because `gh pr merge`
+# needs it to add a PR to the merge queue.
 want_options='{
   "allow_squash_merge": true,
   "allow_merge_commit": false,
   "allow_rebase_merge": false,
   "squash_merge_commit_title": "PR_TITLE",
   "squash_merge_commit_message": "PR_BODY",
-  "delete_branch_on_merge": true
+  "delete_branch_on_merge": true,
+  "allow_auto_merge": true
 }'
 options_diff="$(jq -n --argjson live "$repo_json" --argjson want "$want_options" \
   '$want | with_entries(select($live[.key] != .value))')"
