@@ -747,16 +747,21 @@ export const editPage: ToolSpec = {
       const refs = plan.created.map((c) => next.refs.get(c)).filter(Boolean)
       if (refs.length) newRefs = `New blocks: ${refs.map((r) => `^${r}`).join(', ')}.`
     } catch (err) {
-      // The edit is saved; blocks it changed will be refused until the page is read again. A
-      // failure that stops the question still does, and says the edit was saved.
-      if (err instanceof NotionError && err.stopsQuestion) {
+      // The edit is saved; blocks it changed will be refused until the page is read again. A rate
+      // limit still stops the question, and says the edit was saved.
+      if (err instanceof NotionError && err.code === 'rate_limited') {
         remember(next)
         throw new NotionError(
-          err.code,
+          'notion_error',
           ['Saved, but Notion then turned a request away, so the page was not read back.', ...plan.summary].join('\n'),
           // The user is told the edit was saved, so they don't ask for it again.
           { cause: err, stopsQuestion: LIMITED_STOP_SAVED },
         )
+      }
+      // Any other failure that stops the question is passed on, never swallowed.
+      if (err instanceof NotionError && err.stopsQuestion) {
+        remember(next)
+        throw err
       }
     }
     remember(next)
@@ -895,7 +900,7 @@ export const createPage: ToolSpec = {
         pageReads.delete(parentId)
         throw new NotionError(
           'outcome_unknown',
-          `Notion did not answer, so the page may or may not have been created. ` +
+          `Notion did not confirm it, so the page may or may not have been created. ` +
             `${target.table === 'collection' ? 'Query' : 'Read'} ^${hexId(parentId)} and check for “${title}” ` +
             'before trying again.',
           { cause: err, stopsQuestion: err.stopsQuestion },
@@ -1300,15 +1305,22 @@ async function databaseNames(tab: NotionTab, blocks: (NotionRecord | undefined)[
   const names = new Map<string, string>()
   if (!ids.length) return names
   // One lookup per database, so one that can't be opened (say, a linked view of another
-  // workspace's database) leaves only its own name out.
-  const found = await Promise.allSettled(
-    ids.map((id) =>
-      tab.client.getRecords([{ table: 'collection', id }]).then((r) => [id, r.collection?.[id]] as const),
-    ),
-  )
-  // A failure that stops the question is not a database left unnamed.
-  for (const f of found)
-    if (f.status === 'rejected' && f.reason instanceof NotionError && f.reason.stopsQuestion) throw f.reason
+  // workspace's database) leaves only its own name out. A few at a time, so a burst doesn't go
+  // out after Notion turned one away.
+  const found: PromiseSettledResult<readonly [string, NotionRecord | undefined]>[] = []
+  for (let at = 0; at < ids.length; at += LOOKUPS_PARALLEL) {
+    const settled = await Promise.allSettled(
+      ids
+        .slice(at, at + LOOKUPS_PARALLEL)
+        .map((id) =>
+          tab.client.getRecords([{ table: 'collection', id }]).then((r) => [id, r.collection?.[id]] as const),
+        ),
+    )
+    // A failure that stops the question is not a database left unnamed.
+    for (const f of settled)
+      if (f.status === 'rejected' && f.reason instanceof NotionError && f.reason.stopsQuestion) throw f.reason
+    found.push(...settled)
+  }
   const byCollection = new Map(found.flatMap((f) => (f.status === 'fulfilled' ? [f.value] : [])))
   for (const b of databases) {
     const name = runsText(byCollection.get(collectionOf(b) ?? '')?.name)
@@ -1316,6 +1328,9 @@ async function databaseNames(tab: NotionTab, blocks: (NotionRecord | undefined)[
   }
   return names
 }
+
+/** Database name lookups sent at once at most. */
+const LOOKUPS_PARALLEL = 4
 
 function withoutTag(text: string | undefined, tag: string | undefined): string {
   const out = tag ? (text ?? '').split(`<${tag}>`).join('').split(`</${tag}>`).join('') : (text ?? '')
@@ -1508,7 +1523,7 @@ export const addComment: ToolSpec = {
       if (err instanceof NotionError && err.code === 'outcome_unknown') {
         throw new NotionError(
           'outcome_unknown',
-          `Notion did not answer, so the comment may or may not have been added. Read the comments of ` +
+          `Notion did not confirm it, so the comment may or may not have been added. Read the comments of ` +
             `^${hexId(loaded.page.id)} with read_comments before trying again.`,
           { cause: err, stopsQuestion: err.stopsQuestion },
         )

@@ -277,6 +277,34 @@ describe('search_pages, partial lookups', () => {
     expect((await notionError(search({ query: 'x' }))).stopsQuestion).toBe(LIMITED_STOP)
   })
 
+  it('looks up database names a few at a time, and sends no more once Notion turned one away', async () => {
+    const here = 'f7f7f7f7-0000-4000-8000-000000000001'
+    const dbs = Array.from({ length: 6 }, (_, i) => `f7f7f7f7-0000-4000-8000-0000000000a${i}`)
+    const tab = new FakeNotionTab(`https://app.notion.com/${hex(here)}`)
+      .respond('syncRecordValuesMain', 200, {
+        recordMap: { __version__: 3, block: { [here]: wrapped({ id: here, type: 'page' }) } },
+      })
+      .respond('search', 200, {
+        results: dbs.map((id) => ({ id })),
+        total: dbs.length,
+        recordMap: {
+          __version__: 3,
+          block: Object.fromEntries(
+            dbs.map((id, i) => [
+              id,
+              wrapped({ id, type: 'collection_view_page', collection_id: `c7c7c7c7-0000-4000-8000-0000000000a${i}` }),
+            ]),
+          ),
+        },
+      })
+      .limit('syncRecordValuesMain', 1)
+    for (let i = 0; i < 3; i++) tab.respond('syncRecordValuesMain', 200, { recordMap: { __version__: 3 } })
+    tab.install()
+    expect((await notionError(search({ query: 'x' }))).stopsQuestion).toBe(LIMITED_STOP)
+    // The open page's workspace, then the first four lookups; the last two are never sent.
+    expect(tab.sent.filter((r) => r.url.endsWith('/syncRecordValuesMain'))).toHaveLength(5)
+  })
+
   it("removes no tag when the response has none in Notion's shape", async () => {
     const here = 'f5f5f5f5-0000-4000-8000-000000000001'
     new FakeNotionTab(`https://app.notion.com/${hex(here)}`)

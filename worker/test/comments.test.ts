@@ -388,7 +388,7 @@ describe('add_comment', () => {
     expect(err).toBeInstanceOf(NotionError)
     expect((err as NotionError).code).toBe('outcome_unknown')
     expect(err.message).toBe(
-      'Notion did not answer, so the comment may or may not have been added. Read the comments of ' +
+      'Notion did not confirm it, so the comment may or may not have been added. Read the comments of ' +
         `^${hex(PAGE)} with read_comments before trying again.`,
     )
   })

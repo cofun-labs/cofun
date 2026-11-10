@@ -38,6 +38,8 @@ export const IN_TRASH = 'The Notion page or block is in the trash.'
 export const OUTCOME_UNKNOWN =
   'Notion did not answer, so the change may or may not have been saved. Read the page again before retrying.'
 export const RATE_LIMITED = 'Notion turned this request away (too many requests, or too busy), so it was not done.'
+export const BUSY_UNKNOWN =
+  'Notion said it was too busy, without saying whether the change was saved, so it may or may not have been. Read the page again before retrying.'
 export const NOT_SENT = 'Not sent: Notion turned an earlier request away (too many requests, or too busy).'
 /** For the user, when Notion turns requests away: the question stops, and nothing more is sent. */
 export const LIMITED_STOP =
@@ -172,8 +174,9 @@ const LIMITED = new Set([429, 529])
 
 export class NotionClient {
   /**
-   * Notion turned a request away: this client sends nothing more. A client serves one tool call;
-   * the agent ending the question keeps later tools from sending.
+   * Notion turned a request away: this client sends nothing more after it (requests already in
+   * flight, such as parallel batches, still get their answers). A client serves one tool call; the
+   * agent ending the question keeps later tools from sending.
    */
   private limited = false
 
@@ -411,10 +414,7 @@ export class NotionClient {
       // A 529 to a write may come after Notion applied it, so its outcome stays unknown. A 429
       // means Notion turned it away before doing anything with it.
       if (endpoint === 'saveTransactionsFanout' && res.status === 529) {
-        throw new NotionError('notion_error', 'Notion returned an error (529): too busy.', {
-          unanswered: true,
-          stopsQuestion: BUSY_STOP_UNKNOWN,
-        })
+        throw new NotionError('outcome_unknown', BUSY_UNKNOWN, { stopsQuestion: BUSY_STOP_UNKNOWN })
       }
       throw new NotionError('rate_limited', RATE_LIMITED, { stopsQuestion: LIMITED_STOP })
     }
