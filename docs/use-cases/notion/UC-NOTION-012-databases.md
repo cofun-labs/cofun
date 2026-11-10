@@ -26,5 +26,5 @@ Key constraint:
 
 | ID | Priority | Status | Scenario |
 | --- | --- | --- | --- |
-| UC-NOTION-012-S06 | P0 | 🚧 | Given the side panel open on a Notion page; when the user asks to set up a task tracker with a status, a due date, and tags; then a database with those properties appears at the end of the page, without the user being asked. |
-| UC-NOTION-012-S07 | P1 | 🚧 | Given the side panel open on a database with rows; when the user asks to rename a property, add an option, and remove a property by name; then after a reload the database shows those changes, the rows keep their other values, and the reply or the side panel says the removed property's values are gone. |
+| UC-NOTION-012-S06 | P0 | ✅ | Given the side panel open on a Notion page; when the user asks to set up a task tracker with a status, a due date, and tags; then a database with those properties appears at the end of the page, without the user being asked. |
+| UC-NOTION-012-S07 | P1 | ✅ | Given the side panel open on a database with rows; when the user asks to rename a property, add an option, and remove a property by name; then after a reload the database shows those changes, the rows keep their other values, and the reply or the side panel says the removed property's values are gone. |
