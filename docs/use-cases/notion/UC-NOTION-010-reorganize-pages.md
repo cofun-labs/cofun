@@ -2,7 +2,7 @@
 
 ## Behavior
 
-A signed-in user asks the AI to tidy up their Notion pages: file a page under another page, make a copy of a page to start from, or clear out pages they no longer need. The AI moves a page to the end of another page, duplicates a page with its content next to the original, or moves pages to Notion's trash. Moving and duplicating happen right away, and the side panel shows which page went where. Trashing asks the user first, every time, showing each page and saying it goes to the trash; pages go to Notion's trash, where the user can restore them, and are never deleted for good. A page can't be moved into itself or into a page inside it.
+A signed-in user asks the AI to tidy up their Notion pages: file a page under another page, make a copy of a page to start from, or clear out pages they no longer need. The AI moves a page to the end of another page, duplicates a page with its content next to the original, or moves pages to Notion's trash. Moving and duplicating happen right away, and the side panel shows which page went where. Trashing asks the user first, every time, showing each page and saying it goes to the trash; pages go to Notion's trash, where the user can restore them, and are never deleted for good. A page can't be moved into itself or into a page inside it. Moving doesn't ask first, even though a moved page is shared like the page it goes into, so it can become visible to people who couldn't see it before: only trashing asks, as the user chose.
 
 Key constraints:
 

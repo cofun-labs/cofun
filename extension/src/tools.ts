@@ -1363,8 +1363,9 @@ async function pagesAbove(
         for (const r of Object.values(records ?? {})) known.set(r.id, r)
     }
     walks = next.flatMap((n) => {
-      if (n.table === 'block') above.get(n.id)!.push(n.parentId)
       const at = known.get(n.parentId)
+      // Only pages count: a column or toggle a page sits in is not one the agent or user works with.
+      if (n.table === 'block' && at && PAGE_TYPES.has(String(at.type))) above.get(n.id)!.push(n.parentId)
       return at ? [{ id: n.id, at }] : []
     })
   }
@@ -1415,14 +1416,15 @@ export const duplicatePage: ToolSpec = {
       throw new EditError(
         `^${hexId(id)} is at the top of the sidebar: duplicate it in Notion, or move it into a page first.`,
       )
-    // The pages the copy lands in, from its parent up, whose cached reads it makes stale.
+    // The pages the copy lands in, from the nearest up, whose cached reads it makes stale.
     const above = (await pagesAbove(tab, { [id]: page }, [id])).get(id)!
+    const near = above[0] ?? page.parent_id
     signal?.throwIfAborted()
     try {
       const copy = await tab.client.duplicatePage(String(page.space_id), id, page.parent_id, { signal })
       const hex = hexId(copy)
       return [
-        `Duplicated ^${hexId(id)} as ^${hex}, right after it in ^${hexId(page.parent_id)}.`,
+        `Duplicated ^${hexId(id)} as ^${hex}, right after it in ^${hexId(near)}.`,
         `URL: ${new URL(tab.url).origin}/${hex}`,
       ].join('\n')
     } catch (err) {
@@ -1430,7 +1432,7 @@ export const duplicatePage: ToolSpec = {
       if (err instanceof NotionError && err.code === 'outcome_unknown')
         throw new NotionError(
           'outcome_unknown',
-          `${err.message} List the pages of ^${hexId(page.parent_id)} to see whether the copy is there.`,
+          `${err.message} List the pages of ^${hexId(near)} to see whether the copy is there.`,
           { cause: err },
         )
       throw err

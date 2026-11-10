@@ -344,6 +344,35 @@ describe('duplicating pages', () => {
     expect(Date.now() - started).toBeLessThan(2_000)
   })
 
+  it('names the page a copy lands in, not the column it sits in', async () => {
+    const ws = workspace()
+    const [COLUMNS, COLUMN, INSIDE] = [id(40), id(41), id(42)]
+    ws.records.set(COLUMNS, {
+      id: COLUMNS,
+      version: 1,
+      alive: true,
+      space_id: SPACE,
+      type: 'column_list',
+      parent_id: ARCHIVE,
+      parent_table: 'block',
+      content: [COLUMN],
+    })
+    ws.records.set(COLUMN, {
+      id: COLUMN,
+      version: 1,
+      alive: true,
+      space_id: SPACE,
+      type: 'column',
+      parent_id: COLUMNS,
+      parent_table: 'block',
+      content: [INSIDE],
+    })
+    ws.records.set(INSIDE, { ...page(INSIDE, 'In a column', COLUMN), version: 1, alive: true, space_id: SPACE })
+    ws.edit(ARCHIVE, { content: [COLUMNS] })
+    open(ws)
+    expect(await duplicatePage.run({ page: INSIDE })).toContain(`right after it in ^${hex(ARCHIVE)}.`)
+  })
+
   it('says so when Notion fails to copy the page', async () => {
     const ws = workspace()
     ws.failTask = true
