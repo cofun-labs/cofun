@@ -1751,9 +1751,10 @@ describe('third review of #148', () => {
   })
 
   it('writes only the colors Notion has, green as Notion stores it', () => {
-    expect(inline('<span color="green">a</span> <span color="banana">b</span>')).toEqual([
+    expect(inline('<span color="green">a</span> and <span color="blue_background">b</span>')).toEqual([
       ['a', [['h', 'teal']]],
-      [' <span color="banana">b</span>'],
+      [' and '],
+      ['b', [['h', 'blue_background']]],
     ])
   })
 })
@@ -1814,5 +1815,33 @@ describe('fifth review of #148', () => {
     const result = await edit([{ action: 'replace', block: '^00000001', markdown: shown.replace('Plain', 'Bare') }])
     expect(result).toContain('1 cell changed')
     expect(result).not.toContain("didn't show exactly")
+  })
+})
+
+describe('sixth review of #148', () => {
+  it('refuses a color Notion doesn’t have, naming the ones it has, and writes nothing', async () => {
+    const ws = workspace([1], [block(1, 'text', 'Intro')])
+    open(ws)
+    await read()
+    for (const color of ['banana', 'default', 'Red', '#f00']) {
+      await expect(
+        edit([{ action: 'insert', position: 'end', markdown: `<span color="${color}">x</span>` }]),
+      ).rejects.toThrow(`"${color}" isn't a Notion color. Use one of gray, brown, orange, yellow, green, blue`)
+    }
+    expect(ws.transactions).toEqual([])
+  })
+
+  it('keeps a first row of single dashes as data, and takes a real separator line out', () => {
+    expect(parseMarkdown('| Name | Note |\n| - | - |\n| a | b |')[0].rows).toEqual([
+      [[['Name']], [['Note']]],
+      [[['-']], [['-']]],
+      [[['a']], [['b']]],
+    ])
+    for (const separator of ['| --- | --- |', '|:-|-:|', '| :---: | --- |']) {
+      expect(parseMarkdown(`| Name | Note |\n${separator}\n| a | b |`)[0].rows).toEqual([
+        [[['Name']], [['Note']]],
+        [[['a']], [['b']]],
+      ])
+    }
   })
 })

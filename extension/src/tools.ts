@@ -34,6 +34,7 @@ import {
   personNames,
   withPeople,
   type NewBlock,
+  type RichText,
 } from './notion/blocks'
 import { findPeople, peopleIn } from './notion/people'
 import { COMMENT_CHARS, clip, loadThreads, quote, threadCount, threadLines } from './notion/comments'
@@ -2560,7 +2561,13 @@ export const addComment: ToolSpec = {
         throw new EditError(`^${ref} is a column layout, not a block: comment on a block inside it.`)
       target = found
     }
-    const rich = inline(text)
+    let rich: RichText
+    try {
+      rich = inline(text)
+    } catch (err) {
+      if (err instanceof MarkdownError) throw new EditError(err.message)
+      throw err
+    }
     const [people] = await findPeople(tab.client, loaded.spaceId, [{ names: personNames([rich]) }])
     const operations = commentOps(loaded.spaceId, Date.now()).newThread(
       target,

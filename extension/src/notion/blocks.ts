@@ -224,7 +224,10 @@ const BLOCK_START = /^(?:#{1,3}\s|[-*+]\s|\d+[.)]\s|>|▸|`{3}|\$\$|\||(?:-{3,}|
  * is left out. A `|` escaped by a backslash is part of a cell, in code too, as read_page writes it.
  */
 function table(lines: string[]): NewBlock {
-  const rows = lines.map(cells).filter((row, n) => !(n === 1 && row.every((c) => /^:?-+:?$/.test(c.trim()))))
+  // A separator line has a cell of three dashes or more, or dashes with a colon (`:-`), in each
+  // column, as in GFM; a row of single dashes is data (`| - | - |` for "none").
+  const separator = (row: string[]) => row.every((c) => /^(?:-{3,}|:-+:?|-+:)$/.test(c.trim()))
+  const rows = lines.map(cells).filter((row, n) => !(n === 1 && separator(row)))
   const width = rows[0].length
   if (rows.some((row) => row.length > width)) {
     throw new MarkdownError('A table row has more cells than the header row. Give every row the same columns.')
@@ -333,11 +336,17 @@ export function inline(text: string, marks: Mark[] = []): RichText {
     {
       // A colored run, as read_page shows one.
       // An escaped `\</span>` is text inside it.
-      re: /<span color="([a-z_]+)">([\s\S]+?)(?<!(?:^|[^\\])(?:\\\\)*\\)<\/span>/,
+      re: /<span color="([^"]*)">([\s\S]+?)(?<!(?:^|[^\\])(?:\\\\)*\\)<\/span>/,
       run: (m) => {
         // Green as the Notion app names it.
         const color = m[1].replace(/^green(?=$|_)/, 'teal')
-        return COLOR.test(color) ? inline(m[2], [...marks, ['h', color]]) : [[m[0], marks]]
+        if (!COLOR.test(color)) {
+          throw new MarkdownError(
+            `"${m[1]}" isn't a Notion color. Use one of gray, brown, orange, yellow, green, blue, purple, pink, ` +
+              'or red, each also as a background (red_background).',
+          )
+        }
+        return inline(m[2], [...marks, ['h', color]])
       },
     },
     {
