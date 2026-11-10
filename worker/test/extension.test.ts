@@ -782,6 +782,45 @@ describe('extension agent against the worker', () => {
     }
   })
 
+  it("reads only what it can from the worker's replies: anything else is an error, never a wrong value", async () => {
+    const routed = globalThis.fetch
+    const answer = (status: number, body: unknown) => new Response(JSON.stringify(body), { status })
+    try {
+      // The model lookup: a model that is not text is no model.
+      const lookups: [number, unknown, string][] = [
+        [200, { model: 5 }, 'HTTP 200'],
+        [200, 'a model', 'HTTP 200'],
+        [200, {}, 'HTTP 200'],
+        [503, { error: { message: 'CLERK_JWT_KEY is not set' } }, 'CLERK_JWT_KEY is not set'],
+        [500, { error: 'boom' }, 'HTTP 500'],
+        [502, null, 'HTTP 502'],
+      ]
+      for (const [status, body, message] of lookups) {
+        globalThis.fetch = (async () => answer(status, body)) as typeof fetch
+        expect((await ask(makeAgent(), 'hi')).result, JSON.stringify(body)).toEqual({ status: 'error', message })
+      }
+      // A failed model request: the worker's own words when it gives them as text, wrapped or not.
+      const failures: [unknown, string][] = [
+        [{ error: { code: 'bad_request', message: 'wrapped words' } }, 'wrapped words'],
+        [{ code: 'bad_request', message: 'unwrapped words' }, 'unwrapped words'],
+        // Otherwise what the SDK made of the body, as it is.
+        [{ error: { message: 5 } }, '{"message":5}'],
+        [{ error: 'boom' }, '"boom"'],
+        [['boom'], '["boom"]'],
+      ]
+      for (const [body, message] of failures) {
+        globalThis.fetch = ((input: RequestInfo | URL, init?: RequestInit) =>
+          String(input instanceof Request ? input.url : input).endsWith('/me')
+            ? routed(input, init)
+            : Promise.resolve(answer(400, body))) as typeof fetch
+        const { result } = await ask(makeAgent(), 'hi')
+        expect(result, JSON.stringify(body)).toEqual({ status: 'error', message })
+      }
+    } finally {
+      globalThis.fetch = routed
+    }
+  })
+
   it('a tool that returns nothing still gives the model a result', async () => {
     const quiet: ToolSpec = { ...pageTool().tool, run: async () => undefined }
     ai.script = [{ toolCalls: [{ name: 'lookup_page', arguments: '{}' }] }, { reply: 'Done' }]
