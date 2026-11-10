@@ -9,7 +9,7 @@ The short version: when you ask a question, the conversation, including the Noti
 - **Notion content, as you.** To answer a question, the assistant calls tools that read from Notion with your own Notion session, in your Notion tab: pages (as text), database rows and properties, comment threads, search results, the list of pages in your workspace, what you have selected in the page, and the names of workspace members when you ask it to mention someone. It reads only what a question needs, and it can read anything your Notion account can. The title and URL of the page open in the current tab are added to every question.
 - **Your sign-in session.** You sign in on a web page served by our worker, with [Clerk](https://clerk.com). The extension reads the Clerk session cookies of that page to know who is signed in, and gets a short-lived session token from Clerk for each request to the worker.
 
-The side panel works only on Notion tabs (`www.notion.so` and `app.notion.com`). The extension does not read other sites, your browsing history, or what you type outside the side panel.
+The side panel works only on Notion tabs (`www.notion.so` and `app.notion.com`). To tell Notion tabs from others, the extension looks at the URL of each open tab as it loads or is switched to; those URLs are not stored and not sent anywhere. It does not read the content of other sites, your browsing history, or what you type outside the side panel.
 
 It also writes to Notion when you ask it to: it edits and creates pages, changes properties, adds comments, and moves pages. These changes are requests to Notion, made as you.
 
@@ -26,7 +26,9 @@ The extension sends requests to these hosts and no others. The list is [`extensi
 
 The extension also holds a host permission for `*.kitfun.cc` and sends nothing there: Chrome only lets an extension see a cookie when it has permission for the cookie's domain, and Clerk sets the cookie that says whether you are signed in on the sign-in page's parent domain.
 
-Notion content never goes to Clerk. Your Notion session never leaves your Notion tab: the worker and Clerk do not receive your Notion cookies or credentials.
+Notion content never goes to Clerk. Your Notion session is never sent anywhere but Notion: requests to Notion are made inside your Notion tab, and the worker and Clerk do not receive your Notion cookies or credentials. The extension reads your Notion user id from the tab to make changes as you.
+
+As with any web service, Cloudflare (which runs the worker) and Clerk see your IP address when the extension connects to them.
 
 ### The sign-in page
 
@@ -40,19 +42,20 @@ The worker is the code in [`worker/`](worker/), running on Cloudflare Workers.
 - **It passes the conversation to the model and streams the reply back.** The model runs on Cloudflare's [Workers AI](https://developers.cloudflare.com/workers-ai/), reached through Cloudflare's AI Gateway. The gateway's log collection and cache are turned off for these requests, so it does not keep your messages or the replies; it keeps request analytics (counts, tokens, cost) tagged with your Clerk user id. The worker itself does not store or log the conversation. Cloudflare processes it to run the model; see [Cloudflare's privacy policy](https://www.cloudflare.com/privacypolicy/).
 - **It counts your requests.** A daily counter per Clerk user id (the day and the number of requests) enforces the daily quota.
 - **It writes one usage record per chat request.** The record holds your Clerk user id, the model, whether the reply was streamed, the outcome, the finish reason, the number of messages, the size of the input in characters, the token counts, and the duration. It never holds message or reply text. Records are kept in Cloudflare Workers Analytics Engine, which deletes them after 90 days.
-- **Cloudflare keeps the worker's logs.** These are the request logs Cloudflare records for every Worker (such as the time, URL, and status of a request) and the errors the worker prints when a model call, the quota check, or a usage record fails. The worker never writes the conversation to them.
+- **Cloudflare keeps the worker's logs.** These are the request logs Cloudflare records for every Worker (such as the time, URL, and status of a request) and the errors the worker prints when a request fails. The worker does not write the conversation to them itself; when a model call fails, it logs the error as the model provider returned it.
 
 ## What stays on your device
 
 - **Your conversations.** Sessions are saved in the extension's IndexedDB storage in your Chrome profile, one database per signed-in account. They include tool results, such as the content of Notion pages the assistant read. They are not sent to our servers, except that continuing a conversation sends it to the worker again as described above. They are **not encrypted** and they **stay after you sign out**, so that you can pick up again: anyone with access to your Chrome profile can read them. Deleting a session in the side panel removes it; removing the extension removes them all.
-- **Small settings.** The extension's local storage (`chrome.storage.local`) holds the time until which it waits after Notion turned a request away. Its session storage (`chrome.storage.session`), which Chrome clears when the browser closes, holds a flag that the extension has started.
+- **Your sign-in.** Clerk's code in the extension keeps its client token, which keeps you signed in, in the extension's local storage (`chrome.storage.local`). It is not encrypted either.
+- **Small settings.** The extension's local storage also holds the time until which it waits after Notion turned a request away. Its session storage (`chrome.storage.session`), which Chrome clears when the browser closes, holds a flag that the extension has started.
 
 ## What is never collected
 
 - No analytics, advertising, or tracking in the extension. It loads no remote code.
-- The worker does not store Notion content, messages, or replies, and does not write them to logs.
+- The worker does not store Notion content, messages, or replies, and does not write them to logs itself.
 - No Notion credentials or cookies are sent to the worker or to Clerk.
-- No browsing history, and nothing from sites other than Notion.
+- No browsing history: tab URLs are only checked for being Notion, and nothing from other sites is read, stored, or sent.
 - We do not sell your data, and we do not use it for anything other than providing the assistant.
 
 ## Changes and contact
