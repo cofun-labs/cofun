@@ -164,7 +164,10 @@ const SLOW_DOWN = new Set([429, 529])
 const RETRIES = 3
 /** The first wait when Notion doesn't say how long; it doubles with each try. */
 const BACKOFF_MS = 1_000
-/** A longer wait than this isn't worth holding a tool for; the user is told to wait instead. */
+/**
+ * The longest one client (one tool call) waits in all, across its requests. A longer limit isn't
+ * worth holding a tool call for; the user is told to wait instead.
+ */
 const MAX_WAIT_MS = 30_000
 
 export interface NotionClientOptions {
@@ -178,6 +181,8 @@ export class NotionClient {
   private readonly wait: Wait
   /** Settles when the current backoff ends; every request of this client waits for it. */
   private pause: Promise<unknown> = Promise.resolve()
+  /** How long this client's backoffs took in all, in ms. */
+  private waited = 0
 
   constructor(
     private readonly send: NotionTransport,
@@ -402,8 +407,9 @@ export class NotionClient {
 
   /**
    * Every request to Notion goes through here. `spaceId`, when known, goes along as
-   * `x-notion-space-id`. When Notion says to slow down, waits (as long as Notion asks, or longer
-   * with each try) and tries again a few times; then gives up with `rate_limited`.
+   * `x-notion-space-id`. When Notion says to slow down, waits (as long as Notion asks, and longer
+   * with each try) and tries again a few times; then, or once the client waited too long in all,
+   * gives up with `rate_limited`.
    */
   private async request<T>(
     endpoint: NotionEndpoint,
@@ -417,7 +423,8 @@ export class NotionClient {
       const res = await this.send(endpoint, body, { spaceId })
       if (!slowDown(endpoint, res)) return { json: checkResponse(res) as T, signedIn: res.signedIn }
       const ms = retryDelay(res.retryAfter, retry)
-      if (retry >= RETRIES || ms > MAX_WAIT_MS) throw new NotionError('rate_limited', RATE_LIMITED)
+      if (retry >= RETRIES || this.waited + ms > MAX_WAIT_MS) throw new NotionError('rate_limited', RATE_LIMITED)
+      this.waited += ms
       // A backoff that is already running and ends later is kept.
       this.pause = Promise.all([this.pause, this.wait(ms, this.signal)])
     }
@@ -434,13 +441,16 @@ function slowDown(endpoint: NotionEndpoint, res: NotionResponse): boolean {
   return endpoint === 'saveTransactionsFanout' ? res.status === 429 : SLOW_DOWN.has(res.status)
 }
 
-/** How long to wait before try `retry + 1`: what `Retry-After` says (seconds or a date), or a backoff. */
+/**
+ * How long to wait before try `retry + 1`: what `Retry-After` says (seconds or a date), but never
+ * less than the backoff, so a zero, a past date, or a misread header can't send the tries back to back.
+ */
 function retryDelay(retryAfter: string | undefined, retry: number): number {
+  const backoff = BACKOFF_MS * 2 ** retry
   const value = retryAfter?.trim()
-  if (value && /^\d+$/.test(value)) return Number(value) * 1_000
-  const date = value ? Date.parse(value) : NaN
-  if (!Number.isNaN(date)) return Math.max(0, date - Date.now())
-  return BACKOFF_MS * 2 ** retry
+  if (!value) return backoff
+  const asked = /^\d+$/.test(value) ? Number(value) * 1_000 : Date.parse(value) - Date.now()
+  return Number.isNaN(asked) ? backoff : Math.max(asked, backoff)
 }
 
 const sleep: Wait = (ms, signal) =>

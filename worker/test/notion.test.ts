@@ -527,13 +527,49 @@ describe('when Notion is limiting requests', () => {
     args: { primitiveOp: { command: 'update', args: { title: [['Renamed']] } } },
   }
 
-  it('backs off for 1 s, 2 s, then 4 s when Notion does not say how long, then gives up', async () => {
+  it('[UC-NOTION-001-S08] waits and tries again, then reads the page', async () => {
+    const tab = new FakeNotionTab(PAGE_URL).limit('loadPageChunk', 2).install()
+    tab.workspace = new FakeWorkspace([page], SPACE)
+    const waits: number[] = []
+    expect((await client(waits).loadPage(PAGE)).page.id).toBe(PAGE)
+    expect(waits).toEqual([1_000, 2_000])
+    expect(tab.sent).toHaveLength(3)
+  })
+
+  it('[UC-NOTION-001-S08] backs off for 1 s, 2 s, then 4 s, then stops and says to have the user wait', async () => {
     const tab = new FakeNotionTab(PAGE_URL).limit('loadPageChunk', 10).install()
     const waits: number[] = []
     const err = await notionError(client(waits).loadPage(PAGE))
     expect([err.code, err.message, err.unanswered]).toEqual(['rate_limited', RATE_LIMITED, false])
     expect(waits).toEqual([1_000, 2_000, 4_000])
     expect(tab.sent).toHaveLength(4)
+  })
+
+  it('never waits less than the backoff, whatever Retry-After says', async () => {
+    const tab = new FakeNotionTab(PAGE_URL)
+      .limit('loadPageChunk', 1, { 'retry-after': '0' })
+      .limit('loadPageChunk', 1, { 'retry-after': new Date(Date.now() - 60_000).toUTCString() })
+      .limit('loadPageChunk', 1, { 'retry-after': '1.5' })
+      .install()
+    tab.workspace = new FakeWorkspace([page], SPACE)
+    const waits: number[] = []
+    await client(waits).loadPage(PAGE)
+    expect(waits).toEqual([1_000, 2_000, 4_000])
+  })
+
+  it('gives up once the client waited too long in all, across its requests', async () => {
+    const tab = new FakeNotionTab(PAGE_URL)
+      .limit('loadPageChunk', 2, { 'retry-after': '10' })
+      .limit('syncRecordValuesMain', 2, { 'retry-after': '10' })
+      .install()
+    tab.workspace = new FakeWorkspace([page], SPACE)
+    const waits: number[] = []
+    const notion = client(waits)
+    await notion.loadPage(PAGE)
+    // 20 s so far: one more 10 s wait fits in the 30 s, the one after it doesn't.
+    const err = await notionError(notion.getRecords([{ table: 'block', id: PAGE }]))
+    expect(err.code).toBe('rate_limited')
+    expect(waits).toEqual([10_000, 10_000, 10_000])
   })
 
   it('waits as long as Retry-After says, in seconds or until a date', async () => {
