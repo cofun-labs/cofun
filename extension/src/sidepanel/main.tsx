@@ -100,4 +100,7 @@ root.render(
   </StrictMode>,
 )
 // Closing the panel ends its work: a question still running stops with the chat (see Chat).
-window.addEventListener('pagehide', () => root.unmount(), { once: true })
+// Not when the page is only kept for later (`persisted`): it would come back with nothing in it.
+window.addEventListener('pagehide', (event) => {
+  if (!event.persisted) root.unmount()
+})
