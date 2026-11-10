@@ -1442,6 +1442,17 @@ export const duplicatePage: ToolSpec = {
   },
 }
 
+/** Why trash_page refuses a page, in a few words; undefined if it doesn't. */
+function trashRefusal(page: NotionRecord): string | undefined {
+  if (cannotReorganize(page, 'trashed')) {
+    if (page.parent_table === 'collection') return 'a database row'
+    return 'not a page'
+  }
+  if ((page.parent_table !== 'block' && page.parent_table !== 'space') || !page.parent_id)
+    return 'at the top of a teamspace'
+  return undefined
+}
+
 export const trashPage: ToolSpec = {
   name: 'trash_page',
   description:
@@ -1469,19 +1480,30 @@ export const trashPage: ToolSpec = {
     const ids = pages.flatMap((p) => (p.id ? [p.id] : []))
     let found: Record<string, NotionRecord> = {}
     let names = new Map<string, string>()
+    let inside = new Map<string, number>()
     let checked = false
     let timer: ReturnType<typeof setTimeout> | undefined
     try {
       const lookup = (async () => {
         const tab = await activeNotionTab()
         const blocks = (await tab.client.findRecords(ids.map((id) => ({ table: 'block' as const, id })))).block ?? {}
-        return { blocks, databases: await databaseNames(tab, Object.values(blocks)) }
+        // What each page holds right inside it, so the user sees what goes with it.
+        const childIds = Object.values(blocks).flatMap((b) => (Array.isArray(b.content) ? (b.content as string[]) : []))
+        const children =
+          (await tab.client.findRecords(childIds.map((id) => ({ table: 'block' as const, id })))).block ?? {}
+        const inside = new Map(
+          Object.values(blocks).map((b) => [
+            b.id,
+            ((b.content as string[] | undefined) ?? []).filter((c) => PAGE_TYPES.has(String(children[c]?.type))).length,
+          ]),
+        )
+        return { blocks, inside, databases: await databaseNames(tab, Object.values(blocks)) }
       })()
       // A slow Notion must not hold up the question to the user.
       const late = new Promise<never>((_, reject) => {
         timer = setTimeout(() => reject(new Error('timed out')), PREVIEW_LOOKUP_MS)
       })
-      ;({ blocks: found, databases: names } = await Promise.race([lookup, late]))
+      ;({ blocks: found, inside, databases: names } = await Promise.race([lookup, late]))
       checked = true
     } catch {
       // Without Notion, the names the agent saw are all there is.
@@ -1499,9 +1521,14 @@ export const trashPage: ToolSpec = {
         // tool says. A page Notion doesn't have (already trashed, or out of reach) makes the call fail.
         if (!p.id) return `    ${JSON.stringify(oneLine(p.given) || '(no page given)')}`
         const name = title ?? knownTitle(p.id)
-        const marker =
-          checked && !block ? '[not found in Notion: this call will fail, and nothing will be trashed] ' : ''
-        return `    ${marker}^${hexId(p.id)}${name ? ` ${JSON.stringify(oneLine(name))}` : ''}`
+        // Pages the call will refuse are marked, so the user doesn't agree to what can't happen.
+        const refused = !checked ? undefined : !block ? 'not found in Notion' : trashRefusal(block)
+        const marker = refused ? `[${refused}: this call will fail, and nothing will be trashed] ` : ''
+        const count = inside.get(p.id) ?? 0
+        const holds = count
+          ? ` (with ${count} page${count === 1 ? '' : 's'} or database${count === 1 ? '' : 's'} inside)`
+          : ''
+        return `    ${marker}^${hexId(p.id)}${holds}${name ? ` ${JSON.stringify(oneLine(name))}` : ''}`
       }),
       // The user agrees from these names: say when they are not Notion's current ones.
       ...(checked ? [] : ['Could not check the current names in Notion: these are the names last seen, if any.']),
@@ -1516,9 +1543,8 @@ export const trashPage: ToolSpec = {
       const page = records[id]
       const why = cannotReorganize(page, 'trashed')
       if (why) throw new EditError(why)
-      if ((page.parent_table !== 'block' && page.parent_table !== 'space') || !page.parent_id)
-        throw new EditError(`^${hexId(id)} is at the top of a teamspace: trash it in Notion.`)
-      return { id, parentId: page.parent_id, parentTable: page.parent_table as 'block' | 'space' }
+      if (trashRefusal(page)) throw new EditError(`^${hexId(id)} is at the top of a teamspace: trash it in Notion.`)
+      return { id, parentId: page.parent_id!, parentTable: page.parent_table as 'block' | 'space' }
     })
     const spaces = new Set(ids.map((id) => String(records[id].space_id)))
     if (spaces.size > 1)

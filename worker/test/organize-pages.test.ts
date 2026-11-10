@@ -166,7 +166,7 @@ describe('UC-NOTION-010 reorganize pages', () => {
         'Move 3 pages to the trash, with everything in them',
         `    ^${hex(NOTE)} "Old note"`,
         `    ^${hex(DB)} "Tasks"`,
-        `    ^${hex(PLAN)} "Launch plan"`,
+        `    ^${hex(PLAN)} (with 1 page or database inside) "Launch plan"`,
         "They stay in Notion's trash, where they can be restored.",
       ].join('\n'),
     )
@@ -467,6 +467,19 @@ describe('trashing pages', () => {
     )
   })
 
+  it('marks pages the call will refuse, so the user does not agree to what cannot happen', async () => {
+    const ws = workspace()
+    open(ws)
+    const preview = await trashPage.preview!({ pages: [ROW, TEAM_PAGE, PROJECTS] })
+    expect(preview).toContain(
+      `    [a database row: this call will fail, and nothing will be trashed] ^${hex(ROW)} "A task"`,
+    )
+    expect(preview).toContain(
+      `    [at the top of a teamspace: this call will fail, and nothing will be trashed] ^${hex(TEAM_PAGE)} "Team wiki"`,
+    )
+    expect(preview).toContain(`    ^${hex(PROJECTS)} (with 2 pages or databases inside) "Projects"`)
+  })
+
   it('lists each page once in the preview, as it is trashed once', async () => {
     const ws = workspace()
     open(ws)
@@ -474,7 +487,7 @@ describe('trashing pages', () => {
       [
         'Move 2 pages to the trash, with everything in them',
         `    ^${hex(NOTE)} "Note"`,
-        `    ^${hex(PLAN)} "Launch plan"`,
+        `    ^${hex(PLAN)} (with 1 page or database inside) "Launch plan"`,
         "They stay in Notion's trash, where they can be restored.",
       ].join('\n'),
     )
