@@ -147,14 +147,26 @@ describe('search_pages arguments', () => {
     expect(tab.sent).toEqual([])
   })
 
-  it('passes the limit, and treats an empty one as not given', async () => {
+  it('refuses arguments that are not what its schema says, without asking Notion', async () => {
+    const tab = open()
+    await expect(search({})).rejects.toThrow('`query` must be some words to search for.')
+    await expect(search({ query: 5 })).rejects.toThrow('`query` must be some words to search for.')
+    await expect(search({ query: 'x', limit: 1.5 })).rejects.toThrow('`limit` must be a whole number from 1 to 20.')
+    await expect(search({ query: 'x', limit: '3' })).rejects.toThrow('`limit` must be a whole number from 1 to 20.')
+    await expect(search({ query: 'x', page: 'y' })).rejects.toThrow('Unrecognized key: "page"')
+    expect(tab.sent).toEqual([])
+  })
+
+  // A null is dropped before a tool gets its arguments: see "read_page gets the model's arguments
+  // as its schema reads them" in worker/test/extension.test.ts.
+  it('passes the limit, and uses the default without one', async () => {
     const tab = open()
       .respond('search', 200, SEARCH)
       .respond('syncRecordValuesMain', 200, OPEN_PAGE)
       .respond('search', 200, SEARCH)
     await search({ query: 'x', limit: 3 })
     expect(tab.sent.at(-1)!.body).toMatchObject({ limit: 3 })
-    await search({ query: 'x', limit: null })
+    await search({ query: 'x' })
     expect(tab.sent.at(-1)!.body).toMatchObject({ limit: 10 })
   })
 

@@ -317,6 +317,22 @@ describe('list_pages arguments', () => {
     expect(tab.sent).toEqual([])
   })
 
+  it('refuses arguments that are not what its schema says, without asking Notion', async () => {
+    const tab = new FakeNotionTab(PAGE_URL).install()
+    await expect(run({ depth: 0 })).rejects.toThrow('`depth` must be a whole number from 1 to 3.')
+    await expect(run({ depth: 1.5 })).rejects.toThrow('`depth` must be a whole number from 1 to 3.')
+    await expect(run({ depth: '2' })).rejects.toThrow('`depth` must be a whole number from 1 to 3.')
+    await expect(run({ section: 'Private', offset: 'ten' })).rejects.toThrow(
+      '`offset` must be a whole number of at least 0.',
+    )
+    await expect(run({ page: 5 })).rejects.toThrow('`page`: Invalid input: expected string, received number')
+    await expect(run({ section: ['Private'] })).rejects.toThrow(
+      '`section`: Invalid input: expected string, received array',
+    )
+    await expect(run({ limit: 10 })).rejects.toThrow('Unrecognized key: "limit"')
+    expect(tab.sent).toEqual([])
+  })
+
   it('checks section and offset before asking Notion', async () => {
     const tab = new FakeNotionTab(PAGE_URL).install()
     await expect(run({ offset: 5 })).rejects.toThrow('`offset` needs `page` or `section`.')

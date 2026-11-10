@@ -224,7 +224,7 @@ function setup(
   return { ws, els }
 }
 
-const run = async () => (await getSelection.run({})) as string
+const run = async (args: Record<string, unknown> = {}) => (await getSelection.run(args)) as string
 
 describe('UC-NOTION-003 work on the selection', () => {
   it('[UC-NOTION-003-S01] gets the selected text and the blocks it covers, across two blocks', async () => {
@@ -422,5 +422,11 @@ describe('UC-NOTION-003 work on the selection', () => {
     await expect(editPage.run({ page: hex(PAGE), edits: [{ action: 'delete', block: '^00000001' }] })).rejects.toThrow(
       'is not a block of the page as you last read it',
     )
+  })
+})
+
+describe('get_selection arguments', () => {
+  it('takes no arguments', async () => {
+    await expect(run({ page: 'x' })).rejects.toThrow('Unrecognized key: "page"')
   })
 })
