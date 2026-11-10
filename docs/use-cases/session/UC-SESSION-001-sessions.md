@@ -25,11 +25,10 @@ Key constraints:
 | UC-SESSION-001-S04 | P1 | ✅ | Given sessions with different titles started on different Notion pages; when the user searches by title or picks a page; then only the sessions that match are listed. |
 | UC-SESSION-001-S05 | P1 | ✅ | Given a saved session; when the user deletes it; then it is no longer listed and cannot be reopened. |
 | UC-SESSION-001-S09 | P0 | ✅ | Given sessions saved by one account; when another account signs in on the same browser; then it sees none of them and cannot reopen them. |
-
-### ai-e2e
-
-| ID | Priority | Status | Scenario |
-| --- | --- | --- | --- |
 | UC-SESSION-001-S06 | P0 | ✅ | Given a session from earlier in which the agent used a tool, and the side panel opened again; when the user reopens that session and asks a follow-up; then the earlier conversation shows with its tool calls, and the reply uses the earlier context. |
 | UC-SESSION-001-S07 | P1 | ✅ | Given earlier sessions; when the user opens the side panel; then it starts a new, empty session, and the earlier sessions are in the list. |
 | UC-SESSION-001-S08 | P2 | ✅ | Given a reply still coming in; when the user switches to another session; then that reply stops and does not appear in either session. |
+
+### ai-e2e
+
+(none)

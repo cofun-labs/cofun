@@ -88,7 +88,8 @@ extension/                Chrome extension
   src/notion/tab.ts       runs Notion requests in the user's Notion tab (chrome.scripting)
   src/sidepanel/          React UI (main.tsx: sign-in, Chat.tsx: chat)
   test/                   tests of the extension's client code (fake Notion tab with sanitized
-                          fixtures)
+                          fixtures), and of the side panel's UI: the whole panel in jsdom
+                          (*.test.tsx)
 worker/                   Cloudflare Worker
   src/app.ts              Hono app: Clerk JWT verification + /v1/chat/completions
   src/quota.ts            per-user daily request quota (UserQuota Durable Object in src/index.ts)

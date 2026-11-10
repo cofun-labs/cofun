@@ -33,7 +33,7 @@ Copilot for Notion: a Chrome extension that opens an AI side panel next to Notio
 3. **Implement with tests.** Keep tests in sync with use cases:
    - Remove tests for deleted scenarios, add tests for new ones, rename tests when scenario IDs change.
    - P0 scenarios must be verified before merge; P1 should be; P2 can wait.
-   - `api-test` scenarios are vitest integration tests, named with the scenario ID: in `worker/test/` for the worker's HTTP API, in `extension/test/` for the extension's client code. `ai-e2e` scenarios are verified by an agent driving a real browser with `pnpm e2e`, and the run is recorded in the PR (see [Running an `ai-e2e` scenario](docs/bdd.md#running-an-ai-e2e-scenario)).
+   - `api-test` scenarios are vitest integration tests, named with the scenario ID: in `worker/test/` for the worker's HTTP API, in `extension/test/` for the extension's client code (`*.test.ts`) and the side panel's UI (`*.test.tsx`). `ai-e2e` scenarios are verified by an agent driving a real browser with `pnpm e2e`, and the run is recorded in the PR (see [Running an `ai-e2e` scenario](docs/bdd.md#running-an-ai-e2e-scenario)).
      ```typescript
      it('[UC-CHAT-001-S01] signed-in user gets a streamed reply', async () => {
      ```
@@ -100,8 +100,9 @@ Tools call Notion's internal API as the user's own account, so **stability comes
   - `FakeAiBinding` (`worker/test/fakes.ts`) stands in for the Workers AI binding.
   - `FakeClerk` (`worker/test/clerk.ts`) signs real RS256 session tokens with a local key pair, which the worker verifies like real Clerk tokens.
 - Tests live with the package they cover. `extension/test/` tests the extension's client code against a fake Notion tab (`extension/test/notion-tab.ts`) that answers with sanitized fixtures (`extension/test/fixtures/notion/`). `worker/test/` tests the worker.
+- The side panel's UI is tested in `extension/test/*.test.tsx`, in a DOM (jsdom) without a browser (see [Testing the side panel's UI](docs/bdd.md#testing-the-side-panels-ui)). A test opens the whole panel as `sidepanel.html` boots it (`FakeBrowser` in `extension/test/panel.ts`) and only types, clicks, and reads the screen, finding things by role, accessible name, or visible text: never component state, the agent, or the session store, and no test ids. Fakes sit only at the edges: `chrome.*` and the Notion tab, Clerk (`extension/test/clerk.tsx`, which `extension/vitest.config.ts` resolves `@clerk/chrome-extension` to), IndexedDB, and the model behind the real worker app. The clock is fake with a fixed start time: no sleeps.
 - `worker/test/extension.test.ts` runs the extension's own agent (`src/agent.ts`) against the worker so client and server cannot drift.
-- `smoke/` is the extension smoke test (`pnpm smoke`, also run in CI): Playwright loads the built extension into Chromium and checks that the service worker starts, the side panel is enabled only on Notion tabs, and the side panel page renders signed out. It catches builds that compile but break in Chrome, such as dependency bumps. Nothing leaves the machine: Notion pages and Clerk's Frontend API are answered from `smoke/fixtures/`. Its tests are standalone (no scenario IDs); sign-in, chat, and Notion tools stay `ai-e2e`.
+- `smoke/` is the extension smoke test (`pnpm smoke`, also run in CI): Playwright loads the built extension into Chromium and checks that the service worker starts, the side panel is enabled only on Notion tabs, and the side panel page renders signed out. It catches builds that compile but break in Chrome, such as dependency bumps. Nothing leaves the machine: Notion pages and Clerk's Frontend API are answered from `smoke/fixtures/`. Its tests are standalone (no scenario IDs); what needs real Chrome or real accounts (the panel opening on Notion tabs, Google sign-in, real Notion pages) stays `ai-e2e`.
 
 ## Commands
 

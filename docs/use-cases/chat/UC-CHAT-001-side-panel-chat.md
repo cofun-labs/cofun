@@ -22,9 +22,8 @@ Key constraints:
 | UC-CHAT-001-S05 | P1 | ✅ | Given a user who used up yesterday's quota; when they ask the AI the next day; then they get a reply. |
 | UC-CHAT-001-S06 | P1 | ✅ | Given a question the agent answers with one tool; when the user asks it; then it uses two requests from today's quota, one for each model call. |
 | UC-CHAT-001-S07 | P1 | ✅ | Given a user whose quota runs out after the agent used a tool; when the agent asks the model again; then the question ends with a message saying when the quota resets, and no model is called. |
+| UC-CHAT-001-S03 | P0 | ✅ | Given a signed-in user with the side panel open on Notion; when they send a message; then the message appears and the reply streams in below it. |
 
 ### ai-e2e
 
-| ID | Priority | Status | Scenario |
-| --- | --- | --- | --- |
-| UC-CHAT-001-S03 | P0 | ✅ | Given a signed-in user with the side panel open on Notion; when they send a message; then the message appears and the reply streams in below it. |
+(none)

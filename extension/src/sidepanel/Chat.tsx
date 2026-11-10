@@ -396,6 +396,7 @@ export function Chat({ userId }: { userId: string }) {
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={onKeyDown}
           placeholder="Ask something… (Enter to send, Shift+Enter for newline)"
+          aria-label="Message"
         />
         <button className="primary" type="submit">
           {busy ? 'Stop' : 'Send'}

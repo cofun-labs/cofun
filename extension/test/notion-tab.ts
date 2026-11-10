@@ -1,6 +1,7 @@
 // A fake Notion tab for tests of the extension's Notion code: stands in for chrome.tabs and
 // chrome.scripting, and answers the page's requests with sanitized fixtures of Notion's responses.
 import { readFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
 import { expect } from 'vitest'
 import { NotionError } from '../src/notion/api'
 import { notionCooldown } from '../src/notion/tab'
@@ -15,8 +16,11 @@ export const BLOCKS = [
 ]
 export const PAGE_URL = `https://app.notion.com/p/Fixture-page-${PAGE.replace(/-/g, '')}`
 
+// As a path, not a URL: in a DOM test environment the global URL is the DOM's, which node:fs does not take.
+const FIXTURES = fileURLToPath(import.meta.resolve('./fixtures/notion'))
+
 export function fixture(name: string): unknown {
-  return JSON.parse(readFileSync(new URL(`./fixtures/notion/${name}.json`, import.meta.url), 'utf8'))
+  return JSON.parse(readFileSync(`${FIXTURES}/${name}.json`, 'utf8'))
 }
 
 export interface SentRequest {
@@ -26,7 +30,7 @@ export interface SentRequest {
 }
 
 const globals = globalThis as Record<string, unknown>
-const saved = { chrome: globals.chrome, fetch: globals.fetch, location: globals.location, document: globals.document }
+const saved = { chrome: globals.chrome, fetch: globals.fetch }
 
 /** Puts back the globals a FakeNotionTab replaced. Call it after each test. */
 export function restoreGlobals(): void {
@@ -64,8 +68,8 @@ export class FakeStorage {
 /**
  * A browser window with one active tab, standing in for the chrome.tabs and chrome.scripting APIs.
  * executeScript runs the injected function the way Chrome does: rebuilt from its source, so it can
- * only use its own body, with JSON-cloned arguments, in a page that has the tab's location, cookies,
- * and fetch. The page's fetch answers with queued Notion responses.
+ * only use its own body, with JSON-cloned arguments, and sees the tab's location, cookies, and fetch
+ * in place of the globals. The page's fetch answers with queued Notion responses.
  */
 export class FakeNotionTab {
   sent: SentRequest[] = []
@@ -87,10 +91,6 @@ export class FakeNotionTab {
 
   /** Answers requests no queued response is left for, like Notion would. */
   workspace?: FakeWorkspace
-
-  /** Scripts running in the page now, and the globals outside it while any is. */
-  private running = 0
-  private outside: Record<string, unknown> = {}
 
   /** Signals the page's requests were sent with, to check each has a timeout. */
   signals: (AbortSignal | null | undefined)[] = []
@@ -159,20 +159,17 @@ export class FakeNotionTab {
           if (this.injectionError) throw new Error(this.injectionError)
           this.injections.push({ tabId: target.tabId, world })
           const location = new URL(this.pageUrl ?? this.url!)
-          // The page's globals exist only while scripts run, so code outside the tab (say, the
-          // agent calling the worker) keeps its own fetch. Scripts may run at once (parallel
-          // requests): the first one in saves the outside globals, and the last one out puts them back.
-          if (this.running++ === 0)
-            this.outside = { fetch: globals.fetch, location: globals.location, document: globals.document }
-          globals.location = location
-          globals.document = Object.assign(this.dom ?? {}, { cookie: this.cookie })
-          globals.fetch = (input: string, init: RequestInit) => this.fetch(new URL(input, location).href, init)
-          try {
-            const rebuilt = new Function(`return (${func.toString()})`)() as Function
-            return [{ frameId: 0, result: await rebuilt(...(asChromeSends(args) as unknown[])) }]
-          } finally {
-            if (--this.running === 0) Object.assign(globals, this.outside)
-          }
+          const document = Object.assign(this.dom ?? {}, { cookie: this.cookie })
+          const fetch = (input: string, init: RequestInit) => this.fetch(new URL(input, location).href, init)
+          // The page's globals are the function's own: its `location`, `document`, and `fetch` are
+          // the tab's, while code outside the tab (say, the agent calling the worker, or the side
+          // panel's own document) keeps the real ones.
+          const rebuilt = new Function('location', 'document', 'fetch', `return (${func.toString()})`)(
+            location,
+            document,
+            fetch,
+          ) as Function
+          return [{ frameId: 0, result: await rebuilt(...(asChromeSends(args) as unknown[])) }]
         },
       },
     }
