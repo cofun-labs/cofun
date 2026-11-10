@@ -86,9 +86,9 @@ This is an open-source repository. **Never commit account identifiers or secrets
 
 Tools call Notion's internal API as the user's own account, so **stability comes first**: Notion must never see this extension as automated abuse. Every Notion feature follows these rules:
 
-- **Never retry a Notion request automatically**, and never fall back to another endpoint or another way of getting the same result.
+- **Retry only when it is clearly safe and would fix the problem.** A retry must not be able to apply a change twice, and the cause must be one a retry can fix. When in doubt, don't retry: safety first. Never fall back to another endpoint or another way of getting the same result.
 - **Stop on what we don't understand.** A failure we can't identify, or a response we didn't expect, stops the work and is reported. Don't guess a workaround.
-- **Rate limits stop the question.** When Notion turns a request away (429, or 529), the client sends nothing more, the agent ends the question, and the user is told to wait. A tool error does this by carrying `stopsQuestion` (see `NotionError` in `src/notion/api.ts`).
+- **Rate limits stop the question, with no retry.** When Notion turns a request away (429, or 529), the client sends nothing more, the agent ends the question, and the user is told to wait. A tool error does this by carrying `stopsQuestion` (see `NotionError` in `src/notion/api.ts`). Code that catches Notion errors must rethrow one that carries `stopsQuestion`, never swallow it.
 - Handle only failures whose meaning is known, such as signed out, no access, or a page that changed since it was read.
 
 ## Testing

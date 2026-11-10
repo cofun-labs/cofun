@@ -728,8 +728,17 @@ export const editPage: ToolSpec = {
       )
       const refs = plan.created.map((c) => next.refs.get(c)).filter(Boolean)
       if (refs.length) newRefs = `New blocks: ${refs.map((r) => `^${r}`).join(', ')}.`
-    } catch {
-      // The edit is saved; blocks it changed will be refused until the page is read again.
+    } catch (err) {
+      // The edit is saved; blocks it changed will be refused until the page is read again. A
+      // failure that stops the question still does, and says the edit was saved.
+      if (err instanceof NotionError && err.stopsQuestion) {
+        remember(next)
+        throw new NotionError(
+          err.code,
+          ['Saved, but Notion then turned a request away, so the page was not read back.', ...plan.summary].join('\n'),
+          { cause: err, stopsQuestion: err.stopsQuestion },
+        )
+      }
     }
     remember(next)
     return [...plan.summary, newRefs, 'Read the page again to see the result.'].filter(Boolean).join('\n')
@@ -1278,6 +1287,9 @@ async function databaseNames(tab: NotionTab, blocks: (NotionRecord | undefined)[
       tab.client.getRecords([{ table: 'collection', id }]).then((r) => [id, r.collection?.[id]] as const),
     ),
   )
+  // A failure that stops the question is not a database left unnamed.
+  for (const f of found)
+    if (f.status === 'rejected' && f.reason instanceof NotionError && f.reason.stopsQuestion) throw f.reason
   const byCollection = new Map(found.flatMap((f) => (f.status === 'fulfilled' ? [f.value] : [])))
   for (const b of databases) {
     const name = runsText(byCollection.get(collectionOf(b) ?? '')?.name)
