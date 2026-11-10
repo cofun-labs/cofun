@@ -35,6 +35,8 @@ export const NO_NOTION_TAB = 'No Notion page is open in this window.'
 export const SIGNED_OUT = 'Not signed in to Notion in this tab. Sign in to Notion and try again.'
 export const NO_ACCESS = "The Notion page doesn't exist, or the signed-in Notion account has no access to it."
 export const IN_TRASH = 'The Notion page or block is in the trash.'
+export const NO_USER_MAP =
+  "Notion's list of workspaces has nothing for the account signed in to this tab. Reload the Notion tab and try again."
 export const OUTCOME_UNKNOWN =
   'Notion did not answer, so the change may or may not have been saved. Read the page again before retrying.'
 export const RATE_LIMITED = 'Notion turned this request away (too many requests, or too busy), so it was not done.'
@@ -59,6 +61,7 @@ export type NotionEndpoint =
   | 'search'
   | 'queryCollection'
   | 'getSpaces'
+  | 'getTeamsV2'
 
 /** What one request to Notion returned. `error` is set when no HTTP response came back. */
 export interface NotionResponse {
@@ -135,6 +138,8 @@ export interface WorkspaceTree {
   sharedPages: string[]
   workspacePages: string[]
   teams: { name: string; pages: string[] }[]
+  /** Why the teamspaces could not be loaded, when they couldn't; the other sections still are. */
+  teamsError?: string
 }
 
 /** One search hit as Notion returns it. Highlights mark matched words with a random tag per response. */
@@ -302,28 +307,67 @@ export class NotionClient {
 
   /**
    * How a workspace is organized in the sidebar for the signed-in user: its name, their private
-   * pages, pages shared with them, the workspace's own top-level pages, and its teamspaces.
+   * pages, pages shared with them, the workspace's own top-level pages, and the teamspaces they
+   * joined, in the sidebar's order.
    */
   async getSpace(spaceId: string): Promise<WorkspaceTree> {
     const space = notionId(spaceId)
-    const { json } = await this.request<Record<string, unknown>>('getSpaces', {}, space)
-    // One record map per signed-in user; the one holding this workspace is the tab's.
-    const maps = Object.values(json).map(normalizeRecordMap)
-    const map = maps.find((m) => m.space?.[space])
-    if (!map) throw new NotionError('no_access', NO_ACCESS)
-    const ids = (value: unknown) =>
-      Array.isArray(value) ? value.filter((v): v is string => typeof v === 'string') : []
+    const { json, userId } = await this.request<Record<string, unknown>>('getSpaces', {}, space)
+    // One record map per signed-in user, keyed by user id; only the tab's active user's counts. No
+    // fallback to the others: another account's map would list that account's private pages, and
+    // every later request runs as the active user anyway.
+    if (!userId) throw new NotionError('signed_out', SIGNED_OUT)
+    // The cookie's id, with or without hyphens, as getSpaces may key it.
+    const key = [userId, toUuid(userId), toUuid(userId)?.replace(/-/g, '')].find((k) => k && json[k])
+    if (!key) throw new NotionError('notion_error', NO_USER_MAP)
+    const map = normalizeRecordMap(json[key])
+    if (!map.space?.[space]) throw new NotionError('no_access', NO_ACCESS)
+    const record = map.space[space]
     const view = Object.values(map.space_view ?? {}).find((v) => v.space_id === space)
-    const teams = Object.values(map.team ?? {})
-      .filter((t) => t.space_id === space && t.alive !== false)
-      .map((t) => ({ name: typeof t.name === 'string' ? t.name : 'Teamspace', pages: ids(t.pages) }))
+    const settings = record.settings as { is_teams_enabled?: unknown } | undefined
+    let teams: WorkspaceTree['teams'] = []
+    let teamsError: string | undefined
+    // Teamspaces come from a request of their own, unless the workspace has them turned off; if it
+    // fails, the rest of the sidebar still lists.
+    if (settings?.is_teams_enabled !== false) {
+      try {
+        teams = await this.joinedTeams(space)
+      } catch (err) {
+        // A failure that stops the question is passed on, not shown as missing teamspaces.
+        if (!(err instanceof NotionError) || err.stopsQuestion) throw err
+        teamsError = err.message
+      }
+    }
     return {
-      name: typeof map.space![space].name === 'string' ? (map.space![space].name as string) : 'Workspace',
+      name: typeof record.name === 'string' ? record.name : 'Workspace',
       privatePages: ids(view?.private_pages),
       sharedPages: ids(view?.shared_pages_manual_sort),
-      workspacePages: ids(map.space![space].pages),
+      workspacePages: ids(record.pages),
       teams,
+      ...(teamsError ? { teamsError } : {}),
     }
+  }
+
+  /**
+   * The teamspaces of a workspace the signed-in user joined, in the sidebar's order, with their
+   * top-level pages. getSpaces doesn't hold them; Notion's sidebar loads them like this.
+   */
+  private async joinedTeams(space: string): Promise<WorkspaceTree['teams']> {
+    const { json } = await this.request<{ teams?: unknown; recordMap?: unknown }>(
+      'getTeamsV2',
+      { spaceId: space, teamTypes: ['Joined'] },
+      space,
+    )
+    const records = normalizeRecordMap(json.recordMap).team ?? {}
+    const teams = Array.isArray(json.teams) ? (json.teams as { id?: unknown; type?: unknown }[]) : []
+    return teams.flatMap((t) => {
+      const team = typeof t.id === 'string' && t.type === 'Joined' ? records[t.id] : undefined
+      // Archived teamspaces leave the sidebar.
+      if (!team || team.alive === false || team.archived_by || team.space_id !== space) return []
+      return [
+        { name: typeof team.name === 'string' && team.name ? team.name : 'Teamspace', pages: ids(team.team_pages) },
+      ]
+    })
   }
 
   /** Applies operations in one transaction: Notion applies all of them or none. */
@@ -431,6 +475,11 @@ async function settleAll<T>(promises: Promise<T>[]): Promise<T[]> {
   const failures = settled.flatMap((s) => (s.status === 'rejected' ? [s.reason as unknown] : []))
   if (failures.length) throw failures.find((e) => e instanceof NotionError && e.stopsQuestion) ?? failures[0]
   return settled.map((s) => (s as PromiseFulfilledResult<T>).value)
+}
+
+/** The ids in a record's list field. */
+function ids(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((v): v is string => typeof v === 'string') : []
 }
 
 /** The JSON of a successful response, or a NotionError explaining the failure. */
