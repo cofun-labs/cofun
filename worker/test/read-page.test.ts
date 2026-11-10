@@ -139,7 +139,7 @@ describe('UC-NOTION-001 read a page', () => {
     expect(await read()).toBe(
       [
         `Page: Fixture page ^${PAGE_HEX}`,
-        `URL: https://app.notion.com/${PAGE_HEX}`,
+        `URL: https://app.notion.com/p/${PAGE_HEX}`,
         '',
         '# Plan ^00000001',
         '## Goals ^00000002',
@@ -384,7 +384,7 @@ describe('read_page arguments', () => {
     const result = await read()
     expect(result.split('\n').slice(0, 3)).toEqual([
       `Page: Tasks ^${PAGE_HEX}`,
-      `URL: https://app.notion.com/${PAGE_HEX}`,
+      `URL: https://app.notion.com/p/${PAGE_HEX}`,
       'This page is a database: read its rows with query_database.',
     ])
   })
