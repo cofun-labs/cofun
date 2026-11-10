@@ -96,8 +96,14 @@ function App() {
   )
 }
 
-createRoot(document.getElementById('root')!).render(
+const root = createRoot(document.getElementById('root')!)
+root.render(
   <StrictMode>
     <App />
   </StrictMode>,
 )
+// Closing the panel ends its work: a question still running stops with the chat (see Chat).
+// Not when the page is only kept for later (`persisted`): it would come back with nothing in it.
+window.addEventListener('pagehide', (event) => {
+  if (!event.persisted) root.unmount()
+})

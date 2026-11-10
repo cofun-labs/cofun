@@ -33,7 +33,7 @@ Copilot for Notion: a Chrome extension that opens an AI side panel next to Notio
 3. **Implement with tests.** Keep tests in sync with use cases:
    - Remove tests for deleted scenarios, add tests for new ones, rename tests when scenario IDs change.
    - P0 scenarios must be verified before merge; P1 should be; P2 can wait.
-   - `api-test` scenarios are vitest integration tests, named with the scenario ID: in `worker/test/` for the worker's HTTP API, in `extension/test/` for the extension's client code. `ai-e2e` scenarios are verified by an agent driving a real browser with `pnpm e2e`, and the run is recorded in the PR (see [Running an `ai-e2e` scenario](docs/bdd.md#running-an-ai-e2e-scenario)).
+   - `api-test` scenarios are vitest integration tests, named with the scenario ID: in `worker/test/` for the worker's HTTP API, in `extension/test/` for the extension's client code (`*.test.ts`) and the side panel's UI (`*.test.tsx`). `ai-e2e` scenarios are verified by an agent driving a real browser with `pnpm e2e`, and the run is recorded in the PR (see [Running an `ai-e2e` scenario](docs/bdd.md#running-an-ai-e2e-scenario)).
      ```typescript
      it('[UC-CHAT-001-S01] signed-in user gets a streamed reply', async () => {
      ```
@@ -113,9 +113,12 @@ Tools call Notion's internal API as the user's own account, so **stability comes
 - **No mocking.** Do not use `vi.mock()` or spies. Replace external dependencies with fake objects that implement the same interface, and inject them through `env`:
   - `FakeAiBinding` (`worker/test/fakes.ts`) stands in for the Workers AI binding.
   - `FakeClerk` (`worker/test/clerk.ts`) signs real RS256 session tokens with a local key pair, which the worker verifies like real Clerk tokens.
+  - The one module replaced whole is Clerk's React SDK: the side panel imports its components directly, so the extension's vitest config resolves `@clerk/chrome-extension` to a fake (`extension/test/clerk.tsx`), for the UI tests only. Replace no other module this way.
 - Tests live with the package they cover. `extension/test/` tests the extension's client code against a fake Notion tab (`extension/test/notion-tab.ts`) that answers with sanitized fixtures (`extension/test/fixtures/notion/`). `worker/test/` tests the worker.
+- **UI tests run the whole side panel and act as a user.** Never test a component on its own. A test only types, clicks, and reads the screen, and finds things by role, accessible name, or visible text: never through component state, the agent, the session store, or a test id. If an element can't be found that way, improve its accessibility. Fakes stay at the edges, as above.
+- **Tests never wait for time to pass.** Use a fake clock with an explicit start time and move it; no sleeps, and no assertion that depends on how long something took. Waiting for the screen to change is fine.
 - `worker/test/extension.test.ts` runs the extension's own agent (`src/agent.ts`) against the worker so client and server cannot drift.
-- `smoke/` is the extension smoke test (`pnpm smoke`, also run in CI): Playwright loads the built extension into Chromium and checks that the service worker starts, the side panel is enabled only on Notion tabs, and the side panel page renders signed out. It catches builds that compile but break in Chrome, such as dependency bumps. Nothing leaves the machine: Notion pages and Clerk's Frontend API are answered from `smoke/fixtures/`. Its tests are standalone (no scenario IDs); sign-in, chat, and Notion tools stay `ai-e2e`.
+- `smoke/` is the extension smoke test (`pnpm smoke`, also run in CI): Playwright loads the built extension into Chromium and checks that the service worker starts, the side panel is enabled only on Notion tabs, and the side panel page renders signed out. It catches builds that compile but break in Chrome, such as dependency bumps. Nothing leaves the machine: Notion pages and Clerk's Frontend API are answered from `smoke/fixtures/`. Its tests are standalone (no scenario IDs); what needs real Chrome or real accounts (the panel opening on Notion tabs, Google sign-in, real Notion pages) stays `ai-e2e`.
 
 ## Commands
 
