@@ -34,6 +34,8 @@ import {
   propertyValue,
   schemaEntry,
   shownInput,
+  storedText,
+  type PropertyDef,
   type PropertyInput,
 } from './notion/props'
 import {
@@ -245,8 +247,14 @@ async function resolveDatabase(client: NotionTab['client'], block: NotionRecord)
 
 /** How many rows and databases the agent saw are remembered, for previews; the oldest go first. */
 const SEEN_KEPT = 500
-/** The rows query_database showed, by row id: their title and values as shown. */
-const seenRows = new Map<string, { title: string; values: { name: string; value: string }[] }>()
+/** A row query_database showed: its title and values as shown, and its database's schema. */
+interface SeenRow {
+  title: string
+  values: { name: string; value: string }[]
+  schema: Schema
+}
+/** The rows query_database showed, by row id. */
+const seenRows = new Map<string, SeenRow>()
 /** The databases query_database read, by block id: their names. */
 const seenDatabases = new Map<string, string>()
 
@@ -254,6 +262,26 @@ function keep<T>(map: Map<string, T>, key: string, value: T) {
   map.delete(key)
   map.set(key, value)
   if (map.size > SEEN_KEPT) map.delete(map.keys().next().value!)
+}
+
+/** A value as query_database's table shows it: values come escaped as Markdown already; escape only the pipes that aren't. */
+function cellText(text: string): string {
+  return text.replace(/(?<!\\)((?:\\\\)*)\|/g, '$1\\|').replace(/\n/g, ' ')
+}
+
+/**
+ * Whether `text` is a value query_database showed, under `property` or as a row's title, exactly as
+ * it showed it: then its Markdown escapes are undone. Text the agent writes itself is kept as given.
+ */
+function copiedText(text: unknown, property?: string): boolean {
+  if (typeof text !== 'string' || !text.includes('\\')) return false
+  const want = text.trim()
+  const name = property?.trim().toLowerCase()
+  for (const row of seenRows.values()) {
+    const shown = name === undefined ? row.title : row.values.find((v) => v.name.toLowerCase() === name)?.value
+    if (shown !== undefined && (shown.trim() === want || cellText(shown).trim() === want)) return true
+  }
+  return false
 }
 
 export const queryDatabase: ToolSpec = {
@@ -336,8 +364,6 @@ export const queryDatabase: ToolSpec = {
       throw new Error(`This result has ${parts} part${parts === 1 ? '' : 's'}; there is no part ${part}.`)
     const shown = rows.slice((part - 1) * QUERY_PART, part * QUERY_PART)
     const columns = rows[0]?.values.map((v) => v.name) ?? Object.values(schema).map((s) => s.name ?? '')
-    // Titles come escaped as Markdown already; escape only the pipes that aren't.
-    const escape = (text: string) => text.replace(/(?<!\\)((?:\\\\)*)\|/g, '$1\\|').replace(/\n/g, ' ')
     const from = (part - 1) * QUERY_PART + 1
     const header = [
       `Database: ${name} ^${hexId(id)}`,
@@ -350,12 +376,12 @@ export const queryDatabase: ToolSpec = {
       ...(hasMore ? [`Only the first ${QUERY_LOAD} rows of the database were read; filters apply to those.`] : []),
     ]
     // What the agent saw of each row, so a change to one can show its old values.
-    for (const r of shown) keep(seenRows, r.id, { title: r.values[0]?.value ?? '', values: r.values })
+    for (const r of shown) keep(seenRows, r.id, { title: r.values[0]?.value ?? '', values: r.values, schema })
     if (!shown.length) return [...header, '', '(no rows)'].join('\n')
     const table = [
-      `| ${[...columns.map(escape), 'Row'].join(' | ')} |`,
+      `| ${[...columns.map(cellText), 'Row'].join(' | ')} |`,
       `|${[...columns, 'Row'].map(() => ' --- ').join('|')}|`,
-      ...shown.map((r) => `| ${[...r.values.map((v) => escape(v.value)), `^${hexId(r.id)}`].join(' | ')} |`),
+      ...shown.map((r) => `| ${[...r.values.map((v) => cellText(v.value)), `^${hexId(r.id)}`].join(' | ')} |`),
     ]
     return [...header, '', ...table].join('\n')
   },
@@ -853,7 +879,8 @@ function remember(read: PageRead) {
 
 /** A page title on one line, as Notion keeps it, so it can't break up the preview's lines. */
 function titleArg(value: unknown): string {
-  return typeof value === 'string' ? oneLine(plainText(value)) : ''
+  if (typeof value !== 'string') return ''
+  return oneLine(copiedText(value) ? plainText(value) : value)
 }
 
 /** `properties` as tools take it: values by property name. */
@@ -861,7 +888,8 @@ const PROPERTIES_ARG = {
   type: 'object',
   description:
     'Database properties by name: text, a number, Yes/No for checkboxes, an option name (a list for ' +
-    'multi-select), or a date as YYYY-MM-DD (a range as "YYYY-MM-DD → YYYY-MM-DD"). Empty clears a value.',
+    'multi-select), or a date as YYYY-MM-DD (a range as "YYYY-MM-DD → YYYY-MM-DD"). Empty clears a value. ' +
+    'The title goes in `title`, not here. Setting a date replaces any time or reminder it had.',
   additionalProperties: {
     anyOf: [
       { type: 'string' },
@@ -997,8 +1025,8 @@ export const updatePages: ToolSpec = {
   description:
     "Changes pages' titles, icons (an emoji), or database properties (for rows, by name, values as " +
     'query_database shows them; options must exist; empty clears a value), several pages in one call: "mark ' +
-    'these five tasks done" is one call. Get row ids from query_database. Nothing is written if any value is ' +
-    'refused.',
+    'these five tasks done" is one call. Get row ids from query_database. Write new text plainly, without ' +
+    'Markdown escapes. Nothing is written if any value is refused.',
   parameters: {
     type: 'object',
     properties: {
@@ -1029,15 +1057,12 @@ export const updatePages: ToolSpec = {
       const given = typeof u?.page === 'string' ? u.page.trim() : ''
       const id = given ? pageArg(given) : undefined
       const seen = id ? seenRows.get(id) : undefined
-      const known = seen?.title ?? (id ? pageReads.get(id)?.title : undefined)
+      const known = seen ? plainText(seen.title) : id ? pageReads.get(id)?.title : undefined
       lines.push(id ? `${known ? `${oneLine(known)} ` : ''}^${hexId(id)}` : oneLine(given) || '(no page given)')
-      // The old value when the agent saw it, so the user sees what changes.
-      const was = (name: string) => {
-        const old = seen?.values.find((v) => v.name.toLowerCase() === name.trim().toLowerCase())?.value
-        return old === undefined ? '' : ` (was ${old ? oneLine(old) : 'empty'})`
+      if (typeof u?.title === 'string') {
+        const title = titleArg(u.title)
+        lines.push(`    Title: ${title}${seen ? change(oneLine(plainText(seen.title)), title) : ''}`)
       }
-      if (typeof u?.title === 'string')
-        lines.push(`    Title: ${titleArg(u.title)}${seen ? ` (was ${oneLine(seen.title)})` : ''}`)
       if (typeof u?.icon === 'string') lines.push(`    Icon: ${oneLine(u.icon)}`)
       let props: [string, PropertyInput][] = []
       try {
@@ -1045,7 +1070,7 @@ export const updatePages: ToolSpec = {
       } catch {
         lines.push('    (properties that will be refused)')
       }
-      for (const [name, v] of props) lines.push(`    ${oneLine(name)}: ${shownInput(v)}${was(name)}`)
+      for (const [name, v] of props) lines.push(`    ${oneLine(name)}: ${previewValue(seen, name, v)}`)
     }
     return lines.join('\n')
   },
@@ -1115,6 +1140,32 @@ export const updatePages: ToolSpec = {
   },
 }
 
+/** How a value differs from the old one the agent saw, for the preview. */
+function change(old: string, now: string): string {
+  return old === now ? ' (unchanged)' : ` (was ${old || 'empty'})`
+}
+
+/**
+ * A property's new value for update_pages' preview: as it will be stored when the agent saw the
+ * row's database, with the old value it saw; as given otherwise, or when it will be refused.
+ */
+function previewValue(seen: SeenRow | undefined, name: string, input: PropertyInput): string {
+  if (!seen) return shownInput(input)
+  let def: PropertyDef
+  let now: string
+  try {
+    ;[, def] = schemaEntry(seen.schema, name)
+    now = storedText(def, propertyValue(def, input, copiedText(input, def.name ?? name)))
+  } catch (err) {
+    if (err instanceof PropertyError) return shownInput(input)
+    throw err
+  }
+  const old = seen.values.find((v) => v.name.toLowerCase() === (def.name ?? name).trim().toLowerCase())?.value
+  if (old === undefined) return now || '(empty)'
+  const was = oneLine(plainText(old))
+  return (now || '(empty)') + change(def.type === 'multi_select' ? was.split(/\s*,\s*/).join(', ') : was, now)
+}
+
 /** Whether `text` is exactly one emoji (flags and keycaps included), as Notion takes for an icon. */
 function isEmoji(text: string): boolean {
   const graphemes = [...new Intl.Segmenter(undefined, { granularity: 'grapheme' }).segment(text)]
@@ -1167,7 +1218,7 @@ function toProperties(schema: Schema, props: [string, PropertyInput][]): Record<
       throw new EditError(`Give the title as \`title\`, not as “${oneLine(name)}”.`)
     if (key in out) throw new EditError(`“${oneLine(name)}” is given twice.`)
     try {
-      out[key] = propertyValue(def, input)
+      out[key] = propertyValue(def, input, copiedText(input, def.name ?? key))
     } catch (err) {
       if (err instanceof PropertyError) throw new EditError(err.message)
       throw err

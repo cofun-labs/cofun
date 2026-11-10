@@ -36,17 +36,18 @@ const SCHEMA = {
 }
 const date = (d: string) => [['‣', [['d', { type: 'date', start_date: d }]]]]
 
-function rowRecord(n: number, title: string, status: string) {
+function rowRecord(n: number, title: string, status: string, more: Record<string, unknown> = {}) {
   return {
     id: row(n),
     type: 'page',
     parent_id: COLLECTION,
     parent_table: 'collection',
-    properties: { title: [[title]], 'a:a': [[status]], 'd:d': [['1']] },
+    properties: { title: [[title]], 'a:a': [[status]], 'd:d': [['1']], ...more },
   }
 }
 
-function workspace() {
+/** The workspace, with `more` rows in the database. */
+function workspace(more: ReturnType<typeof rowRecord>[] = []) {
   const ws = new FakeWorkspace(
     [
       {
@@ -60,6 +61,7 @@ function workspace() {
       rowRecord(1, 'Write docs', 'Done'),
       rowRecord(2, 'Fix login', 'In progress'),
       rowRecord(3, 'Ship beta', 'Not started'),
+      ...more,
       { id: PAGE, type: 'page', properties: { title: [['Fixture page']] }, parent_id: SPACE, parent_table: 'space' },
     ],
     SPACE,
@@ -71,6 +73,26 @@ function open(ws: FakeWorkspace, url = PAGE_URL) {
   const tab = new FakeNotionTab(url)
   tab.workspace = ws
   return tab.install()
+}
+/** Has query_database show these rows of the database, as the agent would before changing them. */
+async function query(tab: FakeNotionTab, rows: ReturnType<typeof rowRecord>[]) {
+  tab.respond('queryCollection', 200, {
+    result: {
+      reducerResults: {
+        collection_group_results: { type: 'results', blockIds: rows.map((r) => r.id), hasMore: false },
+      },
+    },
+    recordMap: {
+      __version__: 3,
+      block: Object.fromEntries(
+        rows.map((r) => [
+          r.id,
+          { spaceId: SPACE, value: { role: 'editor', value: { version: 1, alive: true, ...r } } },
+        ]),
+      ),
+    },
+  })
+  await queryDatabase.run({})
 }
 const update = async (pages: unknown) => (await updatePages.run({ pages })) as string
 const props = (ws: FakeWorkspace, n: number) => ws.records.get(row(n))!.properties
@@ -174,41 +196,55 @@ describe('UC-NOTION-008 change properties and rows', () => {
 })
 
 describe('update_pages details', () => {
-  it('needs the user’s OK, and shows the old values the agent saw', async () => {
+  it('runs without asking, and shows the values it stores and the old ones the agent saw', async () => {
     const ws = workspace()
     const tab = open(ws, `https://app.notion.com/${hex(DB)}`)
-    // query_database's rows come from Notion's query; the rest from the workspace.
-    tab.respond('queryCollection', 200, {
-      result: {
-        reducerResults: { collection_group_results: { type: 'results', blockIds: [row(2)], hasMore: false } },
-      },
-      recordMap: {
-        __version__: 3,
-        block: {
-          [row(2)]: {
-            spaceId: SPACE,
-            value: { role: 'editor', value: { version: 1, alive: true, ...rowRecord(2, 'Fix login', 'In progress') } },
-          },
-        },
-      },
-    })
-    await queryDatabase.run({})
+    await query(tab, [
+      rowRecord(2, 'Fix login', 'In progress'),
+      rowRecord(4, '', 'Not started'),
+      rowRecord(5, 'Fix [urgent]', 'Done'),
+    ])
     expect(updatePages.needsConfirmation).toBeUndefined()
     expect(
       updatePages.preview!({
         pages: [
-          { page: hex(row(2)), properties: { Status: 'Done', Notes: 'Shipped' } },
-          { page: hex(row(3)), title: 'Ship the beta\n^fake' },
+          {
+            page: hex(row(2)),
+            properties: {
+              Status: 'done',
+              Urgent: true,
+              Tags: ['bug', 'docs'],
+              Due: '2026-11-20 -> 2026-11-22',
+              Notes: 'Shipped',
+              Points: 1,
+              Owner: 'Kim',
+            },
+          },
+          { page: hex(row(4)), title: 'Named at last' },
+          { page: hex(row(5)), title: 'Fix \\[urgent\\]' },
+          { page: hex(row(3)), title: 'Ship the beta\n^fake', properties: { Urgent: true } },
         ],
       }),
     ).toBe(
       [
-        'Change 2 pages',
+        'Change 4 pages',
         `Fix login ^${hex(row(2))}`,
         '    Status: Done (was In progress)',
+        '    Urgent: Yes (was No)',
+        '    Tags: Bug, Docs (was empty)',
+        '    Due: 2026-11-20 → 2026-11-22 (was empty)',
         '    Notes: Shipped (was empty)',
+        '    Points: 1 (unchanged)',
+        // Refused when it runs: shown as given.
+        '    Owner: Kim',
+        `^${hex(row(4))}`,
+        '    Title: Named at last (was empty)',
+        `Fix [urgent] ^${hex(row(5))}`,
+        '    Title: Fix [urgent] (unchanged)',
+        // A row the agent didn't see: its database's schema is unknown.
         `^${hex(row(3))}`,
         '    Title: Ship the beta ^fake',
+        '    Urgent: true',
       ].join('\n'),
     )
   })
@@ -227,21 +263,27 @@ describe('update_pages details', () => {
     expect(props(ws, 1)!['f:f' as never]).toEqual([['Needs [review]']])
   })
 
-  it('stores text copied from query_database as plain text, and takes numbers for options', async () => {
-    const ws = workspace()
+  it('undoes Markdown escapes only in text copied from query_database, and takes numbers for options', async () => {
+    const copied = rowRecord(5, 'Fix [urgent] _now_', 'Done', { 'g:g': [['a * b | c']] })
+    const ws = workspace([copied])
     ws.collections.get(COLLECTION)!.schema = {
       ...SCHEMA,
       'h:h': { name: 'Priority', type: 'select', options: [{ value: '1' }, { value: '2' }] },
     }
-    open(ws)
+    const tab = open(ws, `https://app.notion.com/${hex(DB)}`)
+    await query(tab, [copied])
     await update([
-      { page: hex(row(1)), title: 'Fix \\[urgent\\] \\_now\\_', properties: { Notes: 'a \\* b', Priority: 1 } },
+      // As query_database showed them.
+      { page: hex(row(5)), title: 'Fix \\[urgent\\] \\_now\\_', properties: { Notes: 'a \\* b \\| c', Priority: 1 } },
+      // Written by the agent: its backslashes are kept.
+      { page: hex(row(1)), title: 'Clean C:\\_tmp', properties: { Notes: 'a \\* b' } },
     ])
-    expect(props(ws, 1)).toMatchObject({
+    expect(props(ws, 5)).toMatchObject({
       title: [['Fix [urgent] _now_']],
-      'g:g': [['a * b']],
+      'g:g': [['a * b | c']],
       'h:h': [['1']],
     })
+    expect(props(ws, 1)).toMatchObject({ title: [['Clean C:\\_tmp']], 'g:g': [['a \\* b']] })
   })
 
   it('takes one emoji as an icon, flags and keycaps included, and nothing else', async () => {

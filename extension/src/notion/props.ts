@@ -45,8 +45,8 @@ export function oneLine(text: string): string {
 }
 
 /**
- * Text as Notion stores it, from text the model may have copied out of query_database or
- * read_page: the backslashes their Markdown puts before marks are dropped.
+ * Text copied out of query_database as Notion stores it: the backslashes its Markdown puts before
+ * marks are dropped. Only for copied text; text the model writes itself is kept as given.
  */
 export function plainText(text: string): string {
   return text.replace(/\\([\\`*~[\]^|<_])/g, '$1')
@@ -67,13 +67,15 @@ export function schemaEntry(schema: Schema, name: string): [string, PropertyDef]
 
 /**
  * The value Notion stores for `input` in a property of this kind. Empty (null or "") clears it.
- * Options must already exist in the schema: Notion's UI would add them, this doesn't.
+ * Options must already exist in the schema: Notion's UI would add them, this doesn't. `copied`
+ * says the text is as query_database showed it, so its Markdown escapes are undone.
  */
-export function propertyValue(def: PropertyDef, input: PropertyInput): unknown[] {
+export function propertyValue(def: PropertyDef, input: PropertyInput, copied = false): unknown[] {
   const name = def.name ?? 'This property'
   const type = def.type ?? 'text'
   if (READ_ONLY.has(type)) throw new PropertyError(`${name} is a ${type.replace(/_/g, ' ')} property; it can't be set.`)
   const text = typeof input === 'string' ? input.trim() : input
+  const plain = (t: string) => (copied ? plainText(t) : t)
   if (text === null || text === '' || (Array.isArray(text) && !text.length)) {
     // An unticked checkbox is stored as No.
     return type === 'checkbox' ? [['No']] : []
@@ -81,13 +83,13 @@ export function propertyValue(def: PropertyDef, input: PropertyInput): unknown[]
   switch (type) {
     case 'title':
       if (typeof text !== 'string') throw new PropertyError(`${name} must be text.`)
-      return [[oneLine(plainText(text))]]
+      return [[oneLine(plain(text))]]
     case 'text':
     case 'url':
     case 'email':
     case 'phone_number':
       if (typeof text !== 'string' && typeof text !== 'number') throw new PropertyError(`${name} must be text.`)
-      return [[typeof text === 'string' ? plainText(text) : String(text)]]
+      return [[typeof text === 'string' ? plain(text) : String(text)]]
     case 'number': {
       const n = typeof text === 'number' ? text : typeof text === 'string' ? Number(text) : Number.NaN
       if (!Number.isFinite(n)) throw new PropertyError(`${name} must be a number, not “${String(input)}”.`)
@@ -168,4 +170,13 @@ export function shownInput(input: PropertyInput): string {
   if (input === null || input === '') return '(empty)'
   if (Array.isArray(input)) return input.length ? input.map((v) => oneLine(String(v))).join(', ') : '(empty)'
   return oneLine(String(input))
+}
+
+/** A value as propertyValue stores it, on one line as the preview shows it; empty is "". */
+export function storedText(def: PropertyDef, value: unknown[]): string {
+  const [segment] = value as [string, [string, { start_date?: string; end_date?: string }?][]?][]
+  if (!segment) return ''
+  const date = segment[1]?.find(([mark]) => mark === 'd')?.[1]
+  if (date) return date.end_date ? `${date.start_date} → ${date.end_date}` : String(date.start_date)
+  return def.type === 'multi_select' ? segment[0].split(',').join(', ') : oneLine(segment[0])
 }
