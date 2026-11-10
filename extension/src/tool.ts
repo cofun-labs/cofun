@@ -31,12 +31,16 @@ export function defineTool<S extends ArgsSchema>({ args, run, preview, ...rest }
   return {
     ...rest,
     parameters: parametersOf(args),
-    run: async (given: unknown, signal) => run(parseArgs(args, given), signal),
+    run: async (given: unknown, signal) => {
+      const parsed = parseArgs(args, given)
+      if (!parsed.ok) throw new Error(parsed.refusal)
+      return run(parsed.args, signal)
+    },
     ...(preview && {
       preview: (given: unknown) => {
         // Arguments that don't parse have no preview: the run refuses them, and says why.
-        const parsed = args.safeParse(given)
-        return parsed.success ? preview(parsed.data) : undefined
+        const parsed = parseArgs(args, given)
+        return parsed.ok ? preview(parsed.args) : undefined
       },
     }),
   }
@@ -46,17 +50,28 @@ export function defineTool<S extends ArgsSchema>({ args, run, preview, ...rest }
 function parametersOf(args: ArgsSchema): object {
   const { $schema: _, ...parameters } = z.toJSONSchema(args, {
     io: 'input',
-    // zod bounds an integer by what a JavaScript number holds exactly; that tells the model nothing.
+    // What zod adds that tells the model nothing: an integer's bounds at what a JavaScript number
+    // holds exactly, and that the keys of an object of values by name are text.
     override: ({ jsonSchema }) => {
       if (jsonSchema.maximum === Number.MAX_SAFE_INTEGER) delete jsonSchema.maximum
       if (jsonSchema.minimum === Number.MIN_SAFE_INTEGER) delete jsonSchema.minimum
+      const names = jsonSchema.propertyNames
+      if (typeof names === 'object' && Object.keys(names).length === 1 && names.type === 'string')
+        delete jsonSchema.propertyNames
     },
   })
   return parameters
 }
 
-/** The arguments as the schema gives them, or an error that says what is wrong with each one. */
-function parseArgs<S extends ArgsSchema>(args: S, given: unknown): z.output<S> {
+/** The arguments as the schema gives them, or what is wrong with each one, for the model. */
+function parseArgs<S extends ArgsSchema>(
+  args: S,
+  given: unknown,
+): { ok: true; args: z.output<S> } | { ok: false; refusal: string } {
+  // zod leaves a key named `__proto__` out of an object of values by name without a word; a call
+  // must not go ahead with part of what it asked for dropped.
+  const dropped = protoKey(given)
+  if (dropped) return { ok: false, refusal: `\`${argumentPath(dropped)}\`: "__proto__" can't be used as a name.` }
   const result = args.safeParse(given, {
     // For what a schema gives no `error` of its own: zod's words, with the argument they are about.
     error: (issue) => {
@@ -66,8 +81,26 @@ function parseArgs<S extends ArgsSchema>(args: S, given: unknown): z.output<S> {
       return issue.path?.length ? `\`${argumentPath(issue.path)}\`: ${text}` : text
     },
   })
-  if (result.success) return result.data
-  throw new Error(result.error.issues.map((issue) => issue.message).join('\n'))
+  if (result.success) return { ok: true, args: result.data }
+  return { ok: false, refusal: result.error.issues.map((issue) => issue.message).join('\n') }
+}
+
+/** The path of the first key named `__proto__` anywhere in a value, if it has one. */
+function protoKey(value: unknown, path: PropertyKey[] = []): PropertyKey[] | undefined {
+  if (!value || typeof value !== 'object') return undefined
+  if (Array.isArray(value)) {
+    for (const [n, item] of value.entries()) {
+      const found = protoKey(item, [...path, n])
+      if (found) return found
+    }
+    return undefined
+  }
+  if (Object.hasOwn(value, '__proto__')) return [...path, '__proto__']
+  for (const [key, item] of Object.entries(value)) {
+    const found = protoKey(item, [...path, key])
+    if (found) return found
+  }
+  return undefined
 }
 
 /** Where in the arguments an issue is, as the model would write it: `filter[0].property`. */

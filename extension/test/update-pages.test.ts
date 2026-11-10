@@ -671,6 +671,40 @@ describe('update_pages details', () => {
     expect(tab.sent).toEqual([])
   })
 
+  it('refuses arguments that are not what its schema says, without asking Notion', async () => {
+    const tab = open(workspace())
+    const refused: [unknown, string][] = [
+      [undefined, '`pages` must be a list with at least one page.'],
+      [{ page: hex(row(1)), title: 'A' }, '`pages` must be a list with at least one page.'],
+      [[hex(row(1))], 'Page 1 needs `page`: the id or URL of a page or row.'],
+      [[{ page: hex(row(1)), title: 'A' }, { title: 'B' }], 'Page 2 needs `page`: the id or URL of a page or row.'],
+      [[{ page: hex(row(1)), title: 5 }], 'Page 1: `title` must not be empty.'],
+      [[{ page: hex(row(1)), icon: 5 }], 'Page 1: `icon` must be an emoji.'],
+      [[{ page: hex(row(1)), properties: 'Status: Done' }], '`properties` must be an object of values by name.'],
+      [
+        [{ page: hex(row(1)), properties: { Status: { name: 'Done' } } }],
+        'The value for “Status” must be text, a number, Yes/No, or a list.',
+      ],
+      [[{ page: hex(row(1)), title: 'A', cover: 'x' }], '`pages[0]`: Unrecognized key: "cover"'],
+    ]
+    for (const [pages, message] of refused) await expect(update(pages)).rejects.toThrow(message)
+    expect(updatePages.preview!({ pages: [{ title: 'B' }] })).toBeUndefined()
+    expect(tab.sent).toEqual([])
+  })
+
+  it('refuses a property named __proto__ instead of leaving it out, and writes nothing', async () => {
+    const ws = workspace()
+    const tab = open(ws)
+    // As the model's JSON gives it: a key of the object's own, which an object literal would not make.
+    const pages = JSON.parse(`[{"page":"${hex(row(1))}","properties":{"__proto__":"x","Status":"Done"}}]`)
+    await expect(update(pages)).rejects.toThrow(
+      '`pages[0].properties.__proto__`: "__proto__" can\'t be used as a name.',
+    )
+    expect(updatePages.preview!({ pages })).toBeUndefined()
+    expect(tab.sent).toEqual([])
+    expect(ws.transactions).toEqual([])
+  })
+
   it('changes only the title and icon of a page that is not a row, and refuses databases', async () => {
     const ws = workspace()
     open(ws)
