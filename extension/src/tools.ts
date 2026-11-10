@@ -1516,7 +1516,12 @@ export const updateDatabaseSchema: ToolSpec = {
           `This database has more than ${QUERY_LOAD} rows, so not every row that has the option can be renamed with it. ` +
             'Nothing was changed; the user can rename the option in Notion.',
         )
-      const rows = renameInRows(db.spaceId, rowIds, recordMap, plan.renames)
+      let rows
+      try {
+        rows = renameInRows(db.spaceId, rowIds, recordMap, plan.renames)
+      } catch (err) {
+        schemaRefusal(err)
+      }
       operations.push(...rows.operations)
       renamedRows = rows.rows
     }

@@ -363,22 +363,26 @@ export function renameInRows(
   const op = blockOps(spaceId, Date.now())
   const operations: Operation[] = []
   const changed: string[] = []
+  // Each renamed option's name before the call, mapped to its name after it, by property. A row's
+  // options are renamed in one pass, so renames that chain or swap names can't undo each other.
+  const byKey = new Map<string, { type: string; names: Map<string, string> }>()
+  for (const r of renames) {
+    const entry = byKey.get(r.key) ?? { type: r.type, names: new Map<string, string>() }
+    entry.names.set(r.from, r.to)
+    byKey.set(r.key, entry)
+  }
   for (const id of rows) {
-    const props = (recordMap.block?.[id]?.properties ?? {}) as Record<string, unknown>
+    const row = recordMap.block?.[id]
+    // A row that didn't come back can't be renamed with the others: it would lose its value.
+    if (!row) throw new SchemaError("Notion didn't return every row, so the options can't be renamed in all of them.")
+    const props = (row.properties ?? {}) as Record<string, unknown>
     const values: Record<string, unknown[]> = {}
-    for (const r of renames) {
-      const text = (props[r.key] as [string?][] | undefined)?.[0]?.[0]
+    for (const [key, { type, names }] of byKey) {
+      const text = (props[key] as [string?][] | undefined)?.[0]?.[0]
       if (typeof text !== 'string') continue
-      const now =
-        r.type === 'multi_select'
-          ? text
-              .split(',')
-              .map((v) => (v === r.from ? r.to : v))
-              .join(',')
-          : text === r.from
-            ? r.to
-            : text
-      if (now !== text) values[r.key] = [[now]]
+      const rename = (v: string) => names.get(v) ?? v
+      const now = type === 'multi_select' ? text.split(',').map(rename).join(',') : rename(text)
+      if (now !== text) values[key] = [[now]]
     }
     if (Object.keys(values).length) {
       operations.push(op.setProperties(id, values))

@@ -273,6 +273,30 @@ describe('UC-NOTION-012 create and change databases', () => {
     expect(table).toContain('| Write post | Writing |')
   })
 
+  it('[UC-NOTION-012-S03] renames several options of one property, even when the names swap', async () => {
+    const ws = workspace()
+    open(ws)
+    await change([
+      { action: 'rename_option', property: 'Tags', option: 'Bug', to: 'Defect' },
+      { action: 'rename_option', property: 'Tags', option: 'Docs', to: 'Guide' },
+    ])
+    expect(values(ws, 1)).toMatchObject({ 'b:b': [['Guide,Defect']] })
+    expect(values(ws, 2)).toMatchObject({ 'b:b': [['Defect']] })
+
+    // Defect and Guide trade names: each row keeps the option it had, under its new name.
+    await change([
+      { action: 'rename_option', property: 'Tags', option: 'Defect', to: 'X' },
+      { action: 'rename_option', property: 'Tags', option: 'Guide', to: 'Defect' },
+      { action: 'rename_option', property: 'Tags', option: 'X', to: 'Guide' },
+    ])
+    expect(schemaOf(ws)['b:b'].options!.map((o) => [o.id, o.value])).toEqual([
+      ['t1', 'Guide'],
+      ['t2', 'Defect'],
+    ])
+    expect(values(ws, 1)).toMatchObject({ 'b:b': [['Defect,Guide']] })
+    expect(values(ws, 2)).toMatchObject({ 'b:b': [['Guide']] })
+  })
+
   it('[UC-NOTION-012-S04] refuses removing the title column, and two properties or options with one name', async () => {
     const ws = workspace()
     open(ws)
@@ -311,6 +335,29 @@ describe('UC-NOTION-012 create and change databases', () => {
     ).rejects.toThrow(`more than ${QUERY_LOAD} rows`)
     expect(ws.transactions).toHaveLength(0)
     expect(values(ws, QUERY_LOAD + 1)).toMatchObject({ 'a:a': [['Draft']] })
+  })
+
+  it('[UC-NOTION-012-S04] refuses renaming an option when Notion leaves out a row', async () => {
+    const ws = workspace()
+    const tab = open(ws)
+    // The query lists a row it doesn't return.
+    tab.respond('queryCollection', 200, {
+      result: {
+        reducerResults: {
+          collection_group_results: { type: 'results', blockIds: [row(1), row(9)], hasMore: false },
+        },
+      },
+      recordMap: {
+        __version__: 3,
+        block: {
+          [row(1)]: { spaceId: SPACE, value: { role: 'editor', value: { version: 1, ...ws.records.get(row(1)) } } },
+        },
+      },
+    })
+    await expect(
+      change([{ action: 'rename_option', property: 'Stage', option: 'Draft', to: 'Writing' }]),
+    ).rejects.toThrow("didn't return every row")
+    expect(ws.transactions).toHaveLength(0)
   })
 
   it('[UC-NOTION-012-S05] removes a property and an option, and the preview says their values go', async () => {
