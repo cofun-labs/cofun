@@ -1792,25 +1792,37 @@ export const ORGANIZE_MAX = 50
 /** How far up from a page move_page looks for the pages it is in. */
 const ANCESTORS_MAX = 100
 
+const PAGES_LIST = '`pages` must be a list with at least one page.'
+/** The `pages` argument of move_page and trash_page: ids or URLs, at least one. */
+const pagesArg = (description: string) =>
+  z
+    .array(
+      z.string({
+        error: (issue) =>
+          `Page ${Number(issue.path?.[1]) + 1} is not a Notion page URL or id: ${oneLine(String(issue.input))}`,
+      }),
+      { error: PAGES_LIST },
+    )
+    .min(1, { error: PAGES_LIST })
+    .max(ORGANIZE_MAX, { error: `At most ${ORGANIZE_MAX} pages can go in one call.` })
+    .describe(description)
+
 /** A list of pages as move_page and trash_page take it: ids, each once. */
-function pageList(value: unknown): string[] {
-  if (!Array.isArray(value) || !value.length) throw new EditError('`pages` must be a list with at least one page.')
-  if (value.length > ORGANIZE_MAX) throw new EditError(`At most ${ORGANIZE_MAX} pages can go in one call.`)
-  const ids = value.map((v, i) => {
-    const id = typeof v === 'string' ? pageArg(v) : undefined
-    if (!id) throw new EditError(`Page ${i + 1} is not a Notion page URL or id: ${oneLine(String(v))}`)
+function pageList(pages: string[]): string[] {
+  const ids = pages.map((page, i) => {
+    const id = pageArg(page)
+    if (!id) throw new EditError(`Page ${i + 1} is not a Notion page URL or id: ${oneLine(page)}`)
     return id
   })
   return [...new Set(ids)]
 }
 
 /** The ids `pages` names, for a preview: whatever can be read of it, never an error. */
-function previewIds(value: unknown): { given: string; id?: string }[] {
-  const list = Array.isArray(value) ? value : []
+function previewIds(pages: string[]): { given: string; id?: string }[] {
   const seen = new Set<string>()
   // Each page once, as `run` takes them, so the preview counts and lists what happens.
-  return list.slice(0, ORGANIZE_MAX).flatMap((v) => {
-    const given = typeof v === 'string' ? v.trim() : ''
+  return pages.flatMap((page) => {
+    const given = page.trim()
     const id = given ? pageArg(given) : undefined
     if (id && seen.has(id)) return []
     if (id) seen.add(id)
@@ -1883,31 +1895,22 @@ function forgetPages(ids: Iterable<string>) {
   }
 }
 
-export const movePage: ToolSpec = {
+const MOVE_TO = '`to` is required: the id or URL of the page to move them into.'
+
+export const movePage = defineTool({
   name: 'move_page',
   changesData: true,
   description:
     'Moves pages, or databases that are pages of their own, to the end of another page, with everything in them, ' +
     'as Notion\'s "Move to" does. Several pages can go in one call. A page can\'t go into itself or a page ' +
     "inside it, and database rows and pages at the top of a teamspace can't be moved.",
-  parameters: {
-    type: 'object',
-    properties: {
-      pages: {
-        type: 'array',
-        minItems: 1,
-        maxItems: ORGANIZE_MAX,
-        items: { type: 'string' },
-        description: 'Ids or URLs of the pages to move.',
-      },
-      to: { type: 'string', description: 'Id or URL of the page to move them into.' },
-    },
-    required: ['pages', 'to'],
-    additionalProperties: false,
-  },
+  args: z.strictObject({
+    pages: pagesArg('Ids or URLs of the pages to move.'),
+    to: z.string({ error: MOVE_TO }).describe('Id or URL of the page to move them into.'),
+  }),
   preview: (args) => {
     const pages = previewIds(args.pages)
-    const to = typeof args.to === 'string' ? args.to.trim() : ''
+    const to = args.to.trim()
     return [
       `Move ${pages.length} page${pages.length === 1 ? '' : 's'}`,
       `To the end of: ${shownPage(to, to ? pageArg(to) : undefined)}`,
@@ -1916,8 +1919,8 @@ export const movePage: ToolSpec = {
   },
   run: async (args, signal) => {
     const ids = pageList(args.pages)
-    const to = typeof args.to === 'string' ? args.to.trim() : ''
-    if (!to) throw new EditError('`to` is required: the id or URL of the page to move them into.')
+    const to = args.to.trim()
+    if (!to) throw new EditError(MOVE_TO)
     const destId = pageArg(to)
     if (!destId) throw new EditError(`Not a Notion page URL or id: ${oneLine(to)}`)
     const tab = await activeNotionTab()
@@ -1978,7 +1981,7 @@ export const movePage: ToolSpec = {
       ...[...nested].map(([id, outer]) => `^${hexId(id)} went along inside ^${hexId(outer)}.`),
     ].join('\n')
   },
-}
+})
 
 /**
  * The pages by id, all of them or an error. One already in the trash, or out of reach, is named,
@@ -2048,7 +2051,9 @@ function nestedIn(above: Map<string, string[]>, ids: string[]): Map<string, stri
   return nested
 }
 
-export const duplicatePage: ToolSpec = {
+const DUPLICATE_PAGE = '`page` is required: the id or URL of the page to duplicate.'
+
+export const duplicatePage = defineTool({
   name: 'duplicate_page',
   changesData: true,
   description:
@@ -2056,22 +2061,19 @@ export const duplicatePage: ToolSpec = {
     "databases inside), as Notion's Duplicate does: the copy goes right after the page, and Notion adds a number " +
     "to its title. Returns the copy's id and URL. Database rows and pages at the top of the sidebar can't be " +
     'duplicated with this tool.',
-  parameters: {
-    type: 'object',
-    properties: { page: { type: 'string', description: 'Id or URL of the page to duplicate.' } },
-    required: ['page'],
-    additionalProperties: false,
-  },
-  preview: (args) => {
-    const given = typeof args.page === 'string' ? args.page.trim() : ''
+  args: z.strictObject({
+    page: z.string({ error: DUPLICATE_PAGE }).describe('Id or URL of the page to duplicate.'),
+  }),
+  preview: ({ page }) => {
+    const given = page.trim()
     return [
       'Duplicate a page, with everything in it',
       `Page: ${shownPage(given, given ? pageArg(given) : undefined)}`,
     ].join('\n')
   },
-  run: async (args, signal) => {
-    const given = typeof args.page === 'string' ? args.page.trim() : ''
-    if (!given) throw new EditError('`page` is required: the id or URL of the page to duplicate.')
+  run: async ({ page: named }, signal) => {
+    const given = named.trim()
+    if (!given) throw new EditError(DUPLICATE_PAGE)
     const id = pageArg(given)
     if (!id) throw new EditError(`Not a Notion page URL or id: ${oneLine(given)}`)
     const tab = await activeNotionTab()
@@ -2109,7 +2111,7 @@ export const duplicatePage: ToolSpec = {
       forgetPages([page.parent_id, ...above])
     }
   },
-}
+})
 
 /** How many children trash_page's preview looks at at most. */
 const COUNT_CHILDREN_MAX = 500
@@ -2147,7 +2149,7 @@ function trashRefusal(page: NotionRecord, parent: NotionRecord | undefined): str
   return placeRefusal(page, parent)
 }
 
-export const trashPage: ToolSpec = {
+export const trashPage = defineTool({
   name: 'trash_page',
   changesData: true,
   description:
@@ -2155,20 +2157,7 @@ export const trashPage: ToolSpec = {
     "is asked first, each time. Nothing is deleted for good: the pages can be restored from Notion's trash. " +
     "Database rows and pages at the top of a teamspace can't be trashed with this tool.",
   needsConfirmation: true,
-  parameters: {
-    type: 'object',
-    properties: {
-      pages: {
-        type: 'array',
-        minItems: 1,
-        maxItems: ORGANIZE_MAX,
-        items: { type: 'string' },
-        description: 'Ids or URLs of the pages to trash.',
-      },
-    },
-    required: ['pages'],
-    additionalProperties: false,
-  },
+  args: z.strictObject({ pages: pagesArg('Ids or URLs of the pages to trash.') }),
   // The user agrees from this, so it names each page as Notion has it now, not as the agent saw it.
   preview: async (args) => {
     const pages = previewIds(args.pages)
@@ -2253,7 +2242,7 @@ export const trashPage: ToolSpec = {
       "They can be restored from Notion's trash.",
     ].join('\n')
   },
-}
+})
 
 export const getSelection = defineTool({
   name: 'get_selection',

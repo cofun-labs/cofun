@@ -637,3 +637,36 @@ describe('pages inside a column or another block', () => {
     )
   })
 })
+
+describe('move_page, duplicate_page, and trash_page arguments', () => {
+  it('refuse arguments that are not what their schemas say, without asking Notion', async () => {
+    const ws = workspace()
+    const tab = open(ws)
+    const many = Array.from({ length: 51 }, (_, n) => id(1000 + n))
+    for (const tool of [movePage, trashPage]) {
+      const rest = tool === movePage ? { to: ARCHIVE } : {}
+      await expect(tool.run({ ...rest, pages: PLAN })).rejects.toThrow('`pages` must be a list with at least one page.')
+      await expect(tool.run({ ...rest })).rejects.toThrow('`pages` must be a list with at least one page.')
+      await expect(tool.run({ ...rest, pages: [] })).rejects.toThrow('`pages` must be a list with at least one page.')
+      await expect(tool.run({ ...rest, pages: many })).rejects.toThrow('At most 50 pages can go in one call.')
+      await expect(tool.run({ ...rest, pages: [PLAN, 7] })).rejects.toThrow('Page 2 is not a Notion page URL or id: 7')
+      await expect(tool.run({ ...rest, pages: [PLAN], confirm: true })).rejects.toThrow('Unrecognized key: "confirm"')
+    }
+    await expect(movePage.run({ pages: [PLAN], to: 5 })).rejects.toThrow('`to` is required')
+    await expect(movePage.run({ pages: [PLAN], to: '  ' })).rejects.toThrow('`to` is required')
+    await expect(duplicatePage.run({})).rejects.toThrow('`page` is required')
+    await expect(duplicatePage.run({ page: ['x'] })).rejects.toThrow('`page` is required')
+    await expect(duplicatePage.run({ page: ' ' })).rejects.toThrow('`page` is required')
+    await expect(duplicatePage.run({ page: PLAN, to: ARCHIVE })).rejects.toThrow('Unrecognized key: "to"')
+    expect(tab.sent).toEqual([])
+    expect(ws.transactions).toEqual([])
+  })
+
+  it('give no preview for arguments their schemas refuse, and ask Notion nothing for it', async () => {
+    const tab = open(workspace())
+    expect(movePage.preview!({ pages: [PLAN] })).toBeUndefined()
+    expect(duplicatePage.preview!({})).toBeUndefined()
+    expect(await trashPage.preview!({ pages: PLAN })).toBeUndefined()
+    expect(tab.sent).toEqual([])
+  })
+})
