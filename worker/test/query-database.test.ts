@@ -139,22 +139,17 @@ describe('UC-NOTION-006 read a database', () => {
     expect(tableRows(empty).map((l) => l.split(' | ')[0])).toEqual(['| Plan retro'])
   })
 
-  it('[UC-NOTION-006-S02] orders the rows, empty values last in either direction', async () => {
+  it('[UC-NOTION-006-S02] has Notion order the rows, and keeps its order', async () => {
     const titles = (result: string) => tableRows(result).map((l) => l.split(' | ')[0].slice(2))
-    database()
+    // Notion answers with the rows sorted (by due date, descending; empty last).
+    const tab = database([TASKS[2], TASKS[1], TASKS[0], TASKS[3]].map(rowRecord))
     expect(titles(await query({ sort: { property: 'Due', direction: 'descending' } }))).toEqual([
       'Ship beta',
       'Fix login \\| Safari',
       'Write docs',
       'Plan retro',
     ])
-    database()
-    expect(titles(await query({ sort: { property: 'Points' } }))).toEqual([
-      'Plan retro',
-      'Write docs',
-      'Fix login \\| Safari',
-      'Ship beta',
-    ])
+    expect(tab.sent.at(-1)!.body).toMatchObject({ loader: { sort: [{ property: 'b:b', direction: 'descending' }] } })
   })
 
   it('[UC-NOTION-006-S03] reads many rows part by part, and says when there are more than it read', async () => {
@@ -380,11 +375,12 @@ describe('query_database options, numbers, and code', () => {
 
   it('keeps a person with a pipe in the name in one cell', async () => {
     const rows = TASKS.map((t) => ({ ...rowRecord(t), created_by_id: USER }))
-    database(rows, false, { ...SCHEMA, 'i:i': { name: 'Creator', type: 'created_by' } }, [], 'Ana | Ops')
+    database(rows, false, { ...SCHEMA, 'i:i': { name: 'Creator', type: 'created_by' } }, [], 'Ana\\ | Ops')
     const result = await query()
     const [line] = tableRows(result)
-    // The person property (a mention) and the creator (kept on the row) both escape it.
-    expect(line).toContain('| @Ana \\| Ops | 3 | Yes | @Ana \\| Ops |')
+    // The person property (a mention) and the creator (kept on the row) both escape it, and the
+    // backslash before it, which would otherwise undo the pipe's escape.
+    expect(line).toContain('| @Ana\\\\ \\| Ops | 3 | Yes | @Ana\\\\ \\| Ops |')
     const cells = (l: string) => l.split(/(?<!\\)\|/).length
     expect(cells(line)).toBe(cells(result.split('\n').find((l) => l.startsWith('| Task |'))!))
   })
@@ -412,13 +408,6 @@ describe('query_database numbers and linked views', () => {
     expect(tableRows(over)).toEqual([])
   })
 
-  it('sorts negative and decimal numbers by value', async () => {
-    const values = ['-5', '-10', '1.5', '1.25']
-    database(TASKS.map((t, i) => rowRecord({ ...t, points: values[i] })))
-    const result = await query({ sort: { property: 'Points' } })
-    expect(tableRows(result).map((l) => l.split(' | ')[4])).toEqual(['-10', '-5', '1.25', '1.5'])
-  })
-
   it('reads a linked view in the workspace its database lives in', async () => {
     const OTHER = '5b5b5b5b-0000-4000-8000-000000000002'
     const tab = new FakeNotionTab(`https://app.notion.com/${hex(DB)}`)
@@ -441,10 +430,9 @@ describe('query_database numbers and linked views', () => {
       })
       .install()
     await query()
-    // The database's rows from its own workspace, through the view in the block's.
     expect(tab.sent.at(-1)!.body).toMatchObject({
       source: { id: COLLECTION, spaceId: OTHER },
-      collectionView: { id: VIEW, spaceId: SPACE },
+      collectionView: { id: VIEW, spaceId: OTHER },
     })
     expect(tab.sent.at(-1)!.headers['x-notion-space-id']).toBe(OTHER)
   })

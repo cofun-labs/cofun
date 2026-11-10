@@ -341,7 +341,7 @@ class Context {
       case 'last_edited_by': {
         const user = page[`${type}_id`]
         const name = typeof user === 'string' ? this.userName(user) : undefined
-        return name === undefined ? '' : `@${table ? name.replace(/\|/g, '\\|') : name}`
+        return name === undefined ? '' : `@${table ? tableEscape(name) : name}`
       }
       // Computed by Notion when it shows the database; the row doesn't store them.
       case 'formula':
@@ -399,8 +399,9 @@ class Context {
   }
 
   private run(text: string, marks: [string, unknown?][], table = false): string {
-    // Names and link targets aren't Markdown-escaped; in a table their pipes still must be.
-    const pipes = (raw: string) => (table ? raw.replace(/\|/g, '\\|') : raw)
+    // Names and link targets aren't Markdown-escaped; in a table their pipes (and so backslashes,
+    // which would undo a pipe's escape) still must be.
+    const pipes = (raw: string) => (table ? tableEscape(raw) : raw)
     const code = marks.some(([m]) => m === 'c')
     // Characters Markdown would read as formatting stay literal behind a backslash.
     let out = code ? text : escapeMarkdown(text)
@@ -460,6 +461,11 @@ function withRef(pad: string, prefix: string, text: string, ref: string, breaks:
   const lines = [`${pad}${prefix}${first}`, ...rest.map((l) => `${pad}${l}`)]
   lines[lines.length - 1] += ref
   return lines
+}
+
+/** Text that isn't Markdown-escaped, for a table cell: a `|` can't end the cell, nor `\` undo that. */
+function tableEscape(raw: string): string {
+  return raw.replace(/[\\|]/g, '\\$&')
 }
 
 /** Puts Markdown marks around text, keeping surrounding spaces outside them (`**a** `, not `**a **`). */

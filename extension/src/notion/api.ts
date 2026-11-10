@@ -336,18 +336,14 @@ export class NotionClient {
    * The rows of a database, at most `limit` of them, through one of its views. The view's own
    * filters and sorts are not applied: every row comes back, in Notion's default order, or ordered
    * by `sort` (a property's schema key), so the `limit` read are the first in that order. Notion
-   * only returns rows the signed-in account can open. `viewSpaceId` is the view's own workspace
-   * when it differs from the database's (a linked view of a database in another workspace).
+   * only returns rows the signed-in account can open.
    */
   async queryCollection(
     collectionId: string,
     viewId: string,
     spaceId: string,
     limit: number,
-    {
-      viewSpaceId = spaceId,
-      sort,
-    }: { viewSpaceId?: string; sort?: { property: string; direction: 'ascending' | 'descending' } } = {},
+    { sort }: { sort?: { property: string; direction: 'ascending' | 'descending' } } = {},
   ): Promise<{ rowIds: string[]; hasMore: boolean; recordMap: RecordMap }> {
     const space = notionId(spaceId)
     const { json } = await this.request<{
@@ -357,7 +353,7 @@ export class NotionClient {
       'queryCollection',
       {
         source: { type: 'collection', id: notionId(collectionId), spaceId: space },
-        collectionView: { id: notionId(viewId), spaceId: notionId(viewSpaceId) },
+        collectionView: { id: notionId(viewId), spaceId: space },
         loader: {
           type: 'reducer',
           reducers: { collection_group_results: { type: 'results', limit } },

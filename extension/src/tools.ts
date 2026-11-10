@@ -234,14 +234,12 @@ async function resolveDatabase(client: NotionTab['client'], block: NotionRecord)
   const pointer = (block.format as { collection_pointer?: { spaceId?: string } } | undefined)?.collection_pointer
   const id = collectionId(block)
   if (!id) throw new Error('This database has no data source.')
-  // A linked view's database may live in another workspace; its pointer says which. The view
-  // itself lives with the block that shows it.
+  // A linked view's database may live in another workspace; its pointer says which.
   const spaceId = String(block.collection_id ? block.space_id : (pointer?.spaceId ?? block.space_id))
   const collection = (await client.getRecords([{ table: 'collection', id, spaceId }])).collection![id]
   return {
     collectionId: id,
     spaceId,
-    viewSpaceId: String(block.space_id ?? spaceId),
     schema: (collection.schema ?? {}) as Schema,
     name: runsText(collection.name) || 'Untitled database',
     views: Array.isArray(block.view_ids) ? (block.view_ids as string[]) : [],
@@ -276,7 +274,7 @@ export const queryDatabase: ToolSpec = {
     'whose shown values match every condition (text, case-insensitive; people and linked pages by name; ' +
     'numbers by value; dates as YYYY-MM-DD, a date range or a time by the day it starts on; checkboxes as ' +
     'Yes/No; multi-select by whole options: `contains` "A, B" keeps rows with both, `is` rows with exactly ' +
-    "those); `sort` orders them. Formulas and rollups can't be used. Long results come in parts; ask for " +
+    "those); `sort` orders them as Notion's own sort does. Formulas and rollups can't be used. Long results come in parts; ask for " +
     'the next with `part`.',
   parameters: {
     type: 'object',
@@ -332,7 +330,7 @@ export const queryDatabase: ToolSpec = {
       )
     }
     const dbId = block.id
-    const { collectionId, spaceId, viewSpaceId, schema, name, views } = await resolveDatabase(tab.client, block)
+    const { collectionId, spaceId, schema, name, views } = await resolveDatabase(tab.client, block)
     // The view the user is looking at (`?v=` in the URL) when it is one of this database's.
     const viewInUrl = urlView(given ?? tab.url)
     const viewId = views.find((v) => toUuid(v) === viewInUrl) ?? views[0]
@@ -341,10 +339,9 @@ export const queryDatabase: ToolSpec = {
 
     const filters = parseFilters(args.filter, schema)
     const sort = parseSort(args.sort, schema)
-    // Notion orders the rows too, so when there are more than one read loads, the ones read are
-    // the first in that order.
+    // Notion orders the rows, as its own sort does (a select by its options, empty values last), so
+    // when there are more than one read loads, the ones read are the first in that order.
     const { rowIds, hasMore, recordMap } = await tab.client.queryCollection(collectionId, viewId, spaceId, QUERY_LOAD, {
-      viewSpaceId,
       sort: sort && { property: sort.key, direction: sort.sign === 1 ? 'ascending' : 'descending' },
     })
     const listed = rowIds.map((r) => recordMap.block?.[r] as Block | undefined)
@@ -354,15 +351,6 @@ export const queryDatabase: ToolSpec = {
       .filter((r): r is Block => !!r && r.alive !== false)
       .map((r) => ({ id: r.id, block: r, values: rowValues(recordMap, r, schema) }))
     rows = rows.filter((r) => filters.every((f) => matches(r.values, f)))
-    // When Notion had more rows than one read loads, the rows read are the first in Notion's own
-    // order (a select's by its options), so they stay in it.
-    if (sort && !hasMore) {
-      // Decided once for the column: numbers by value, anything else as text.
-      const numbers = numeric(rows, sort.property)
-      rows.sort((a, b) =>
-        compareValues(cell(a.values, sort.property), cell(b.values, sort.property), sort.sign, numbers),
-      )
-    }
 
     const parts = Math.max(1, Math.ceil(rows.length / QUERY_PART))
     if (part > parts)
@@ -558,22 +546,6 @@ function matches(values: { name: string; value: string }[], f: Filter): boolean 
     case 'after':
       return v !== '' && order() > 0
   }
-}
-
-/**
- * Compares two values in the asked direction (`sign`); empty values go last either way. A column of
- * numbers compares by value (negatives and decimals included); anything else as text.
- */
-function compareValues(a: string, b: string, sign: 1 | -1, numbers: boolean): number {
-  if (!a || !b) return a ? -1 : b ? 1 : 0
-  const order = numbers ? Number(a) - Number(b) : a.localeCompare(b, undefined, { numeric: true })
-  return order * sign
-}
-
-/** Whether every non-empty value of a property, across the rows, is a number. */
-function numeric(rows: { values: { name: string; value: string }[] }[], property: string): boolean {
-  const values = rows.map((r) => cell(r.values, property)).filter((v) => v !== '')
-  return values.length > 0 && values.every((v) => asNumber(v) !== undefined)
 }
 
 /** A value's leading YYYY-MM-DD when it starts with one, else the value. */
