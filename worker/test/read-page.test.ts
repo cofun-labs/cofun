@@ -334,6 +334,28 @@ describe('UC-NOTION-001 read a page', () => {
   })
 })
 
+describe('read_page when Notion is limiting requests', () => {
+  // Retry-After: 0 keeps the tests fast; the waits themselves are tested in notion.test.ts.
+  it('[UC-NOTION-001-S08] waits and tries again, then reads the page', async () => {
+    const page = chunk([id(1)], { block: block(id(1), 'text', 'Hello') })
+    const tab = new FakeNotionTab(PAGE_URL)
+      .limit('loadPageChunk', 2, { 'retry-after': '0' })
+      .respond('loadPageChunk', 200, page)
+      .install()
+    expect(body(await read())).toContain('Hello')
+    expect(tab.sent).toHaveLength(3)
+  })
+
+  it('[UC-NOTION-001-S08] stops after a few tries and tells the AI to have the user wait', async () => {
+    const tab = new FakeNotionTab(PAGE_URL).limit('loadPageChunk', 10, { 'retry-after': '0' }).install()
+    await expect(read()).rejects.toThrow(
+      'Notion is limiting requests from this account right now, so this was not done. Do not try again or work around it with other tools: tell the user to wait a minute before asking again.',
+    )
+    // The first try and three more, then nothing.
+    expect(tab.sent).toHaveLength(4)
+  })
+})
+
 describe('read_page arguments', () => {
   it('opens a page by URL or by id, with or without dashes', async () => {
     const page = chunk([id(1)], { block: block(id(1), 'text', 'Hi') })

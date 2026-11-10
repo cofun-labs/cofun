@@ -15,11 +15,15 @@ export interface NotionTab {
   client: NotionClient
 }
 
-/** The active tab of the side panel's window, if it is on Notion; otherwise a `no_notion_tab` error. */
-export async function activeNotionTab(): Promise<NotionTab> {
+/**
+ * The active tab of the side panel's window, if it is on Notion; otherwise a `no_notion_tab` error.
+ * `signal` stops the client's requests and waits (the user stopped the question).
+ */
+export async function activeNotionTab(signal?: AbortSignal): Promise<NotionTab> {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true })
   if (tab?.id === undefined || !tab.url || !isNotion(tab.url)) throw new NotionError('no_notion_tab', NO_NOTION_TAB)
-  return { tabId: tab.id, url: tab.url, pageId: pageIdFromUrl(tab.url), client: new NotionClient(tabTransport(tab.id)) }
+  const client = new NotionClient(tabTransport(tab.id), { signal })
+  return { tabId: tab.id, url: tab.url, pageId: pageIdFromUrl(tab.url), client }
 }
 
 export const NO_SITE_ACCESS =
@@ -106,7 +110,8 @@ export async function notionRequest(
     } catch {
       // Not JSON (e.g. an HTML error page); the status says enough.
     }
-    return { status: res.status, json, signedIn: !!userId }
+    const retryAfter = res.headers.get('retry-after')
+    return { status: res.status, json, signedIn: !!userId, ...(retryAfter === null ? {} : { retryAfter }) }
   } catch (err) {
     return { status: 0, json: null, signedIn: !!userId, error: err instanceof Error ? err.message : String(err) }
   }

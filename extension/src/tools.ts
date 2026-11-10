@@ -79,10 +79,10 @@ export const readPage: ToolSpec = {
     },
     additionalProperties: false,
   },
-  run: async (args) => {
+  run: async (args, signal) => {
     // Models often fill optional arguments with null or an empty string; those mean "not given".
     const pageText = typeof args.page === 'string' && args.page.trim() ? args.page : undefined
-    const tab = await activeNotionTab()
+    const tab = await activeNotionTab(signal)
     const id = pageText === undefined ? tab.pageId : pageArg(pageText)
     if (!id) {
       throw new Error(
@@ -278,11 +278,11 @@ export const queryDatabase: ToolSpec = {
     },
     additionalProperties: false,
   },
-  run: async (args) => {
+  run: async (args, signal) => {
     const given = typeof args.database === 'string' && args.database.trim() ? args.database : undefined
     const part = args.part === undefined || args.part === null || args.part === '' ? 1 : Number(args.part)
     if (!Number.isInteger(part) || part < 1) throw new Error('`part` must be a whole number from 1.')
-    const tab = await activeNotionTab()
+    const tab = await activeNotionTab(signal)
     const id = given ? pageArg(given) : tab.pageId
     if (given && !id) throw new Error(`Not a Notion database URL or id: ${given}`)
     if (!id) throw new Error('Give `database`: the open tab does not show a page.')
@@ -529,7 +529,7 @@ export const listPages: ToolSpec = {
     },
     additionalProperties: false,
   },
-  run: async (args) => {
+  run: async (args, signal) => {
     const given = typeof args.page === 'string' && args.page.trim() ? args.page : undefined
     const rootId = given ? pageArg(given) : undefined
     if (given && !rootId) throw new Error(`Not a Notion page URL or id: ${given}`)
@@ -537,7 +537,7 @@ export const listPages: ToolSpec = {
     if (!Number.isInteger(depth) || depth < 1 || depth > LIST_MAX_DEPTH) {
       throw new Error(`\`depth\` must be a whole number from 1 to ${LIST_MAX_DEPTH}.`)
     }
-    const tab = await activeNotionTab()
+    const tab = await activeNotionTab(signal)
     const cutOff = (truncated: boolean) =>
       truncated
         ? [
@@ -682,7 +682,7 @@ export const editPage: ToolSpec = {
     if (!given) throw new EditError('Give `page`: the id read_page shows after "Page:".')
     const id = pageArg(given)
     if (!id) throw new Error(`Not a Notion page URL or id: ${given}`)
-    const tab = await activeNotionTab()
+    const tab = await activeNotionTab(signal)
     const read = pageReads.get(id)
     if (!read) throw new EditError('Read the page with read_page first, then edit it using the references it shows.')
     const edits = parseEdits(args.edits, read)
@@ -829,7 +829,7 @@ export const createPage: ToolSpec = {
     const parentId = pageArg(given)
     if (!parentId) throw new Error(`Not a Notion page URL or id: ${given}`)
     const props = propertiesArg(args.properties)
-    const tab = await activeNotionTab()
+    const tab = await activeNotionTab(signal)
     let blocks: NewBlock[] = []
     if (typeof args.markdown === 'string' && args.markdown.trim()) {
       try {
@@ -952,7 +952,7 @@ export const updatePages: ToolSpec = {
   },
   run: async (args, signal) => {
     const updates = parseUpdates(args.pages)
-    const tab = await activeNotionTab()
+    const tab = await activeNotionTab(signal)
     const ids = updates.map((u) => u.id)
     const blocks = (await tab.client.getRecords(ids.map((id) => ({ table: 'block', id })))).block!
     for (const u of updates) {
@@ -1084,8 +1084,8 @@ export const getSelection: ToolSpec = {
     'Markdown with its reference, ready for edit_page (no read_page needed for those blocks). Use it when the user ' +
     'says "this", "the selection", or "the highlighted text". Nothing selected is a normal answer.',
   parameters: { type: 'object', properties: {}, additionalProperties: false },
-  run: async () => {
-    const tab = await activeNotionTab()
+  run: async (_args, signal) => {
+    const tab = await activeNotionTab(signal)
     if (!tab.pageId) throw new Error('The Notion tab does not show a page.')
     const selection = await selectionIn(tab.tabId)
     if (!selection?.blockIds.length) return 'Nothing is selected in the Notion page.'
@@ -1168,7 +1168,7 @@ export const searchPages: ToolSpec = {
     required: ['query'],
     additionalProperties: false,
   },
-  run: async (args) => {
+  run: async (args, signal) => {
     const query = typeof args.query === 'string' ? args.query.trim() : ''
     if (!query) throw new Error('`query` must be some words to search for.')
     const limit =
@@ -1176,7 +1176,7 @@ export const searchPages: ToolSpec = {
     if (!Number.isInteger(limit) || limit < 1 || limit > SEARCH_MAX) {
       throw new Error(`\`limit\` must be a whole number from 1 to ${SEARCH_MAX}.`)
     }
-    const tab = await activeNotionTab()
+    const tab = await activeNotionTab(signal)
     if (!tab.pageId) throw new Error('Open a page of the workspace to search it.')
     // The workspace to search is the open page's; it is looked up once per page.
     const spaceId = await workspaceOf(tab)

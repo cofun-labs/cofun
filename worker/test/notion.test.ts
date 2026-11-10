@@ -1,12 +1,20 @@
 // The extension's Notion API client (extension/src/notion/), against a fake Notion tab that serves
 // sanitized fixtures of Notion's responses.
 import { afterEach, describe, expect, it } from 'vitest'
-import { NotionError, normalizeRecordMap, type Operation } from '../../extension/src/notion/api'
+import {
+  NotionClient,
+  NotionError,
+  RATE_LIMITED,
+  normalizeRecordMap,
+  type Operation,
+  type Wait,
+} from '../../extension/src/notion/api'
 import { pageIdFromUrl } from '../../extension/src/notion/hosts'
-import { activeNotionTab } from '../../extension/src/notion/tab'
+import { activeNotionTab, tabTransport } from '../../extension/src/notion/tab'
 import {
   BLOCKS,
   FakeNotionTab,
+  FakeWorkspace,
   PAGE,
   PAGE_URL,
   SPACE,
@@ -502,5 +510,111 @@ describe('record maps', () => {
         },
       }),
     ).toEqual({ block: { b1: record, b2: { ...record, id: 'b2' } } })
+  })
+})
+
+describe('when Notion is limiting requests', () => {
+  /** A client whose waits are recorded and end at once. */
+  function client(waits: number[] = []): NotionClient {
+    const wait: Wait = async (ms) => void waits.push(ms)
+    return new NotionClient(tabTransport(7), { wait })
+  }
+  const page = { id: PAGE, type: 'page', properties: { title: [['Fixture page']] } }
+  const rename: Operation = {
+    pointer: { table: 'block', id: PAGE, spaceId: SPACE },
+    path: ['properties'],
+    command: 'updateBlockPropertyValue',
+    args: { primitiveOp: { command: 'update', args: { title: [['Renamed']] } } },
+  }
+
+  it('backs off for 1 s, 2 s, then 4 s when Notion does not say how long, then gives up', async () => {
+    const tab = new FakeNotionTab(PAGE_URL).limit('loadPageChunk', 10).install()
+    const waits: number[] = []
+    const err = await notionError(client(waits).loadPage(PAGE))
+    expect([err.code, err.message, err.unanswered]).toEqual(['rate_limited', RATE_LIMITED, false])
+    expect(waits).toEqual([1_000, 2_000, 4_000])
+    expect(tab.sent).toHaveLength(4)
+  })
+
+  it('waits as long as Retry-After says, in seconds or until a date', async () => {
+    const tab = new FakeNotionTab(PAGE_URL)
+      .limit('syncRecordValuesMain', 1, { 'retry-after': '3' })
+      .limit('syncRecordValuesMain', 1, { 'retry-after': new Date(Date.now() + 5_000).toUTCString() })
+      .install()
+    tab.workspace = new FakeWorkspace([page], SPACE)
+    const waits: number[] = []
+    const records = await client(waits).getRecords([{ table: 'block', id: PAGE }])
+    expect(records.block?.[PAGE]?.id).toBe(PAGE)
+    expect(waits[0]).toBe(3_000)
+    // The date has whole seconds only.
+    expect(waits[1]).toBeGreaterThan(3_500)
+    expect(waits[1]).toBeLessThanOrEqual(5_000)
+  })
+
+  it('gives up at once when Notion asks for a longer wait than a tool should hold', async () => {
+    const tab = new FakeNotionTab(PAGE_URL).limit('loadPageChunk', 1, { 'retry-after': '120' }).install()
+    const waits: number[] = []
+    expect((await notionError(client(waits).loadPage(PAGE))).code).toBe('rate_limited')
+    expect([waits, tab.sent.length]).toEqual([[], 1])
+  })
+
+  it('treats an overloaded answer to a read like a rate limit', async () => {
+    const tab = new FakeNotionTab(PAGE_URL).limit('loadPageChunk', 1, {}, 529).install()
+    tab.workspace = new FakeWorkspace([page], SPACE)
+    expect((await client().loadPage(PAGE)).page.id).toBe(PAGE)
+    expect(tab.sent).toHaveLength(2)
+  })
+
+  it('sends a change again when Notion refused it for coming too fast, and it is applied once', async () => {
+    const tab = new FakeNotionTab(PAGE_URL).limit('saveTransactionsFanout', 1).install()
+    tab.workspace = new FakeWorkspace([page], SPACE)
+    await client().submitTransaction(SPACE, [rename], 'rename page')
+    expect(tab.sent).toHaveLength(2)
+    expect(tab.workspace.transactions).toHaveLength(1)
+    expect(tab.workspace.records.get(PAGE)?.properties).toEqual({ title: [['Renamed']] })
+  })
+
+  it('does not send a change again after an overloaded answer, which may come after it was applied', async () => {
+    const tab = new FakeNotionTab(PAGE_URL).limit('saveTransactionsFanout', 1, {}, 529).install()
+    const waits: number[] = []
+    const err = await notionError(client(waits).submitTransaction(SPACE, [rename], 'rename page'))
+    expect(err.code).toBe('outcome_unknown')
+    expect([waits, tab.sent.length]).toEqual([[], 1])
+  })
+
+  it('says a change was not done when Notion keeps refusing it', async () => {
+    const tab = new FakeNotionTab(PAGE_URL).limit('saveTransactionsFanout', 10).install()
+    const err = await notionError(client().submitTransaction(SPACE, [rename], 'rename page'))
+    expect(err.code).toBe('rate_limited')
+    expect(tab.sent).toHaveLength(4)
+  })
+
+  it('holds the client’s other requests while one backs off', async () => {
+    let release = () => {}
+    const waits: number[] = []
+    const wait: Wait = (ms) => {
+      waits.push(ms)
+      return new Promise((resolve) => (release = resolve))
+    }
+    const tab = new FakeNotionTab(PAGE_URL).limit('syncRecordValuesMain', 1).install()
+    tab.workspace = new FakeWorkspace([page], SPACE)
+    const notion = new NotionClient(tabTransport(7), { wait })
+    const first = notion.getRecords([{ table: 'block', id: PAGE }])
+    while (waits.length === 0) await new Promise((resolve) => setTimeout(resolve, 1))
+    const second = notion.getRecords([{ table: 'block', id: PAGE }])
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(tab.sent).toHaveLength(1)
+    release()
+    await Promise.all([first, second])
+    expect(tab.sent).toHaveLength(3)
+  })
+
+  it('stops waiting as soon as the user stops, and sends nothing more', async () => {
+    const tab = new FakeNotionTab(PAGE_URL).limit('loadPageChunk', 1, { 'retry-after': '20' }).install()
+    const { client: notion } = await activeNotionTab(AbortSignal.timeout(20))
+    const started = Date.now()
+    await expect(notion.loadPage(PAGE)).rejects.toMatchObject({ name: 'TimeoutError' })
+    expect(Date.now() - started).toBeLessThan(1_000)
+    expect(tab.sent).toHaveLength(1)
   })
 })

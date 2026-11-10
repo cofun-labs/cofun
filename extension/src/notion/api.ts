@@ -5,7 +5,13 @@
 import { toUuid } from './hosts'
 
 /** Why a Notion call failed, for the model and the user. */
-export type NotionErrorCode = 'no_notion_tab' | 'signed_out' | 'no_access' | 'notion_error' | 'outcome_unknown'
+export type NotionErrorCode =
+  | 'no_notion_tab'
+  | 'signed_out'
+  | 'no_access'
+  | 'notion_error'
+  | 'outcome_unknown'
+  | 'rate_limited'
 
 export class NotionError extends Error {
   /** The request may have reached Notion, but no answer came back (timeout, tab closed mid-request). */
@@ -28,6 +34,8 @@ export const NO_ACCESS = "The Notion page doesn't exist, or the signed-in Notion
 export const IN_TRASH = 'The Notion page or block is in the trash.'
 export const OUTCOME_UNKNOWN =
   'Notion did not answer, so the change may or may not have been saved. Read the page again before retrying.'
+export const RATE_LIMITED =
+  'Notion is limiting requests from this account right now, so this was not done. Do not try again or work around it with other tools: tell the user to wait a minute before asking again.'
 
 /** The endpoints under /api/v3/ the client uses. */
 export type NotionEndpoint =
@@ -47,6 +55,8 @@ export interface NotionResponse {
   error?: string
   /** Notion answered with a redirect (likely to a sign-in page), which was not followed. */
   redirected?: boolean
+  /** The response's `Retry-After` header, if it had one. */
+  retryAfter?: string
 }
 
 /** Sends one request to Notion as the user of a Notion tab (see tab.ts). */
@@ -145,8 +155,37 @@ const RECORDS_BATCH = 100
 /** Record lookups sent at once at most. */
 const RECORDS_PARALLEL = 4
 
+/** Waits `ms`, or rejects with the signal's reason as soon as it aborts. */
+export type Wait = (ms: number, signal?: AbortSignal) => Promise<void>
+
+/** Statuses with which Notion says it is getting too many requests. */
+const SLOW_DOWN = new Set([429, 529])
+/** Tries after the first one when Notion says to slow down. */
+const RETRIES = 3
+/** The first wait when Notion doesn't say how long; it doubles with each try. */
+const BACKOFF_MS = 1_000
+/** A longer wait than this isn't worth holding a tool for; the user is told to wait instead. */
+const MAX_WAIT_MS = 30_000
+
+export interface NotionClientOptions {
+  /** Stops waiting and sending (the user stopped the question). */
+  signal?: AbortSignal
+  wait?: Wait
+}
+
 export class NotionClient {
-  constructor(private readonly send: NotionTransport) {}
+  private readonly signal?: AbortSignal
+  private readonly wait: Wait
+  /** Settles when the current backoff ends; every request of this client waits for it. */
+  private pause: Promise<unknown> = Promise.resolve()
+
+  constructor(
+    private readonly send: NotionTransport,
+    { signal, wait = sleep }: NotionClientOptions = {},
+  ) {
+    this.signal = signal
+    this.wait = wait
+  }
 
   /** Loads a page with its content, following loadPageChunk's cursor until the page is complete. */
   async loadPage(id: string, { maxChunks = 50 } = {}): Promise<LoadedPage> {
@@ -361,16 +400,62 @@ export class NotionClient {
     return { results, total: Math.max(total, results.length), recordMap: normalizeRecordMap(json.recordMap) }
   }
 
-  /** `spaceId`, when known, goes along as `x-notion-space-id`. */
+  /**
+   * Every request to Notion goes through here. `spaceId`, when known, goes along as
+   * `x-notion-space-id`. When Notion says to slow down, waits (as long as Notion asks, or longer
+   * with each try) and tries again a few times; then gives up with `rate_limited`.
+   */
   private async request<T>(
     endpoint: NotionEndpoint,
     body: unknown,
     spaceId?: string,
   ): Promise<{ json: T; signedIn: boolean }> {
-    const res = await this.send(endpoint, body, { spaceId })
-    return { json: checkResponse(res) as T, signedIn: res.signedIn }
+    for (let retry = 0; ; retry++) {
+      // While one request backs off, the others of this client wait too, so a burst doesn't go on.
+      await this.pause
+      this.signal?.throwIfAborted()
+      const res = await this.send(endpoint, body, { spaceId })
+      if (!slowDown(endpoint, res)) return { json: checkResponse(res) as T, signedIn: res.signedIn }
+      const ms = retryDelay(res.retryAfter, retry)
+      if (retry >= RETRIES || ms > MAX_WAIT_MS) throw new NotionError('rate_limited', RATE_LIMITED)
+      // A backoff that is already running and ends later is kept.
+      this.pause = Promise.all([this.pause, this.wait(ms, this.signal)])
+    }
   }
 }
+
+/**
+ * Whether Notion said to slow down, so the request can be sent again. A 429 means Notion did
+ * nothing with it, writes included. A 529 to a write may come after Notion applied it, so it
+ * stays a server error, and the change's outcome stays unknown.
+ */
+function slowDown(endpoint: NotionEndpoint, res: NotionResponse): boolean {
+  if (res.error !== undefined || res.redirected) return false
+  return endpoint === 'saveTransactionsFanout' ? res.status === 429 : SLOW_DOWN.has(res.status)
+}
+
+/** How long to wait before try `retry + 1`: what `Retry-After` says (seconds or a date), or a backoff. */
+function retryDelay(retryAfter: string | undefined, retry: number): number {
+  const value = retryAfter?.trim()
+  if (value && /^\d+$/.test(value)) return Number(value) * 1_000
+  const date = value ? Date.parse(value) : NaN
+  if (!Number.isNaN(date)) return Math.max(0, date - Date.now())
+  return BACKOFF_MS * 2 ** retry
+}
+
+const sleep: Wait = (ms, signal) =>
+  new Promise((resolve, reject) => {
+    if (signal?.aborted) return reject(signal.reason)
+    const onAbort = () => {
+      clearTimeout(timer)
+      reject(signal!.reason)
+    }
+    const timer = setTimeout(() => {
+      signal?.removeEventListener('abort', onAbort)
+      resolve()
+    }, ms)
+    signal?.addEventListener('abort', onAbort, { once: true })
+  })
 
 /** The JSON of a successful response, or a NotionError explaining the failure. */
 export function checkResponse(res: NotionResponse): Record<string, unknown> {
