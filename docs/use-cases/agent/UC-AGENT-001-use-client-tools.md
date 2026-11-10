@@ -12,6 +12,8 @@ A question that fails or is stopped leaves no half-finished exchange behind, but
 
 The user can always see what the agent did: each tool it used, with what input, and whether it worked, in the order it happened within the reply.
 
+Each question's use of Notion is visible and bounded, so heavy use of the user's Notion account never goes unnoticed. When a question ends, whether answered, failed, or stopped, the side panel shows how many requests it made to Notion, and a reopened session still shows it. A question may make only so many Notion requests before the user is asked whether to go on. Until they answer, nothing more is sent to Notion. If they go on, the question may make as many again before they are asked next; if they stop, the question ends there, and the AI is told not to get around the limit.
+
 Key constraints:
 
 - Tools run in the extension, never on the server. The server only carries the AI's request to run a tool and the result back.
@@ -35,6 +37,9 @@ Key constraints:
 | UC-AGENT-001-S13 | P1 | ✅ | Given a question that fails after the agent used a tool; when the user asks the next question; then the AI is given that tool's request and result. |
 | UC-AGENT-001-S14 | P1 | ✅ | Given a question that is stopped or fails before the agent used any tool; when the user asks the next question; then that question is left out of the conversation. |
 | UC-AGENT-001-S15 | P1 | ✅ | Given a Notion page open in the current tab; when the user asks a question, moves to another site, and asks again; then the AI is told with the first question which page was open, and with the second that no Notion page is, also when the session is reopened later. |
+| UC-AGENT-001-S17 | P1 | ✅ | Given a question that reads a Notion page; when it ends; then the agent reports how many Notion requests it made, and the saved session keeps that count. |
+| UC-AGENT-001-S18 | P1 | ✅ | Given a question that has made as many Notion requests as it may; when the next request would go over that; then the agent asks the user and sends nothing more until they answer, and when they go on, the question continues. |
+| UC-AGENT-001-S19 | P1 | ✅ | Given a question that has made as many Notion requests as it may; when the user chooses to stop; then nothing more is sent, the question ends, and the AI is told not to work around the limit. |
 
 ### ai-e2e
 
@@ -43,3 +48,5 @@ Key constraints:
 | UC-AGENT-001-S16 | P0 | ✅ | Given the side panel open on a Notion page; when the user asks which page they are on; then the agent answers with the page's title without using a tool. |
 | UC-AGENT-001-S08 | P1 | ✅ | Given the agent used a tool to answer; when the user looks at the reply; then it shows which tool ran, with what input, whether it worked, and, on request, what it returned. |
 | UC-AGENT-001-S11 | P1 | ✅ | Given a tool that needs confirmation; when the agent wants to use it; then the side panel asks the user first, showing what the tool will do, and the tool runs only after they agree. |
+| UC-AGENT-001-S20 | P1 | ✅ | Given the side panel open on a Notion page; when the user asks a question that reads the page; then the reply shows how many Notion requests it made, also after the session is reopened. |
+| UC-AGENT-001-S21 | P2 | 🚧 | Given a question that has made as many Notion requests as it may; when it needs another; then the side panel asks the user whether to continue, and the question goes on only after they agree. |

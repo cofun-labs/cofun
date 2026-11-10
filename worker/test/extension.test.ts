@@ -4,13 +4,22 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vites
 import {
   CopilotAgent,
   MAY_HAVE_CHANGED,
+  type AgentConfig,
   type AgentUpdate,
   type ConfirmTool,
   type HistoryMessage,
   type ToolCallRequest,
   type ToolSpec,
 } from '../../extension/src/agent'
-import { LIMITED_STOP, RATE_LIMITED } from '../../extension/src/notion/api'
+import {
+  BUDGET_STOP,
+  LIMITED_STOP,
+  OVER_BUDGET,
+  RATE_LIMITED,
+  REQUEST_BUDGET,
+  budgetQuestion,
+} from '../../extension/src/notion/api'
+import { activeNotionTab, countNotionRequests } from '../../extension/src/notion/tab'
 import { editPage, movePage, openPageNote, readPage, trashPage } from '../../extension/src/tools'
 import { createApp, type Env } from '../src/app'
 import { FakeClerk } from './clerk'
@@ -77,6 +86,7 @@ function makeAgent(
     systemPrompt?: string
     getToken?: () => Promise<string | null>
     context?: () => Promise<string | undefined>
+    meter?: AgentConfig['meter']
   } = {},
 ) {
   return new CopilotAgent({
@@ -87,6 +97,7 @@ function makeAgent(
     maxSteps: options.maxSteps,
     history: options.history,
     context: options.context,
+    meter: options.meter,
   })
 }
 
@@ -1413,5 +1424,312 @@ describe('the open page note', () => {
       withActiveTab(tab)
       expect(await openPageNote()).toBe('[No Notion page is open in the current tab.]')
     }
+  })
+})
+
+describe('Notion requests per question', () => {
+  /** The fixture page in a workspace that answers every read, and applies edits. */
+  function workspaceTab() {
+    const tab = new FakeNotionTab(PAGE_URL)
+    tab.workspace = new FakeWorkspace(
+      [{ id: PAGE, type: 'page', properties: { title: [['Fixture page']] }, parent_id: SPACE, parent_table: 'space' }],
+      SPACE,
+    )
+    return tab.install()
+  }
+
+  /** A tool that looks the open page up `times` times, one request after another (or all at once). */
+  function lookups(times: number, { parallel = false } = {}): ToolSpec {
+    return {
+      name: 'look_up',
+      description: 'Looks the open page up.',
+      parameters: { type: 'object', properties: {}, additionalProperties: false },
+      run: async () => {
+        const { client } = await activeNotionTab()
+        const once = () => client.getRecords([{ table: 'block', id: PAGE }])
+        if (parallel) await Promise.all(Array.from({ length: times }, once))
+        else for (let i = 0; i < times; i++) await once()
+        return 'Looked up.'
+      },
+    }
+  }
+  const LOOK_UP = { name: 'look_up', arguments: '{}' }
+
+  it('[UC-AGENT-001-S17] a question reports the Notion requests it made, and the saved session keeps them', async () => {
+    const tab = new FakeNotionTab(PAGE_URL)
+      .respond('loadPageChunk', 200, fixture('load-page-chunk-0'))
+      .respond('loadPageChunk', 200, fixture('load-page-chunk-1'))
+      .install()
+    ai.script = [{ toolCalls: [{ name: 'read_page', arguments: '{}' }] }, { reply: 'It says to ship it.' }]
+    const agent = makeAgent({ tools: [readPage], meter: countNotionRequests })
+    const { result } = await ask(agent, 'Summarize this page')
+    expect(result).toEqual({ status: 'done', requests: 2 })
+    expect(tab.sent).toHaveLength(2)
+
+    // A question that sends nothing to Notion counts none.
+    ai.script = [{ reply: 'You are welcome.' }]
+    expect((await ask(agent, 'Thanks')).result).toEqual({ status: 'done', requests: 0 })
+
+    const saved = structuredClone(agent.history())
+    expect(saved.filter((m) => m.role === 'user')).toEqual([
+      { role: 'user', text: 'Summarize this page', requests: 2 },
+      { role: 'user', text: 'Thanks', requests: 0 },
+    ])
+    const resumed = makeAgent({ tools: [readPage], meter: countNotionRequests })
+    await resumed.reset(saved)
+    expect(resumed.history()).toEqual(saved)
+  })
+
+  it('a failed or stopped question reports the requests it made too', async () => {
+    new FakeNotionTab(PAGE_URL).limit('loadPageChunk', 1).install()
+    ai.script = [{ toolCalls: [{ name: 'read_page', arguments: '{}' }] }]
+    const failed = await ask(makeAgent({ tools: [readPage], meter: countNotionRequests }), 'Summarize this page')
+    expect(failed.result).toEqual({ status: 'error', message: LIMITED_STOP, requests: 1 })
+
+    workspaceTab()
+    ai.script = [{ toolCalls: [LOOK_UP] }, { toolCalls: [LOOK_UP] }]
+    // The user presses Stop once the tool has made its requests.
+    let agent: CopilotAgent | undefined
+    const stopping: ToolSpec = { ...lookups(3), run: async (args) => (await lookups(3).run(args), agent!.stop(), '') }
+    agent = makeAgent({ tools: [stopping], meter: countNotionRequests })
+    const stopped = await ask(agent, 'Look it up')
+    expect(stopped.result).toEqual({ status: 'stopped', requests: 3 })
+  })
+
+  it('[UC-AGENT-001-S18] at the budget, the agent asks the user and sends nothing until they answer', async () => {
+    const tab = workspaceTab()
+    ai.script = [{ toolCalls: [LOOK_UP] }, { reply: 'Done.' }]
+    const asked: { call: ToolCallRequest; sent: number }[] = []
+    const { result, updates } = await ask(
+      makeAgent({ tools: [lookups(REQUEST_BUDGET + 5)], meter: countNotionRequests }),
+      'Look it up',
+      async (call) => {
+        asked.push({ call, sent: tab.sent.length })
+        return true
+      },
+    )
+    expect(asked).toEqual([
+      {
+        call: { id: 'chatcmpl-tool-0', name: 'look_up', args: {}, question: budgetQuestion(REQUEST_BUDGET) },
+        sent: REQUEST_BUDGET,
+      },
+    ])
+    expect(budgetQuestion(REQUEST_BUDGET)).toBe('This question has made 100 Notion requests. Continue?')
+    expect(result).toEqual({ status: 'done', requests: REQUEST_BUDGET + 5 })
+    expect(toolStatuses(updates)).toEqual(['done'])
+    expect(tab.sent).toHaveLength(REQUEST_BUDGET + 5)
+  })
+
+  it('each yes allows as many requests again before the next question', async () => {
+    workspaceTab()
+    ai.script = [{ toolCalls: [LOOK_UP] }, { reply: 'Done.' }]
+    const asked: string[] = []
+    const { result } = await ask(
+      makeAgent({ tools: [lookups(2 * REQUEST_BUDGET + 1)], meter: countNotionRequests }),
+      'Look it up',
+      async (call) => (asked.push(call.question!), true),
+    )
+    expect(asked).toEqual([budgetQuestion(REQUEST_BUDGET), budgetQuestion(2 * REQUEST_BUDGET)])
+    expect(result).toEqual({ status: 'done', requests: 2 * REQUEST_BUDGET + 1 })
+  })
+
+  it('requests sent at once wait for the one answer', async () => {
+    const tab = workspaceTab()
+    ai.script = [{ toolCalls: [LOOK_UP] }, { toolCalls: [LOOK_UP] }, { reply: 'Done.' }]
+    let asked = 0
+    const before: ToolSpec = { ...lookups(REQUEST_BUDGET - 2), name: 'look_up' }
+    const parallel = lookups(5, { parallel: true })
+    let runs = 0
+    const tool: ToolSpec = { ...before, run: (args) => (runs++ === 0 ? before : parallel).run(args) }
+    let sentWhenAsked = 0
+    const { result } = await ask(makeAgent({ tools: [tool], meter: countNotionRequests }), 'Look it up', async () => {
+      asked++
+      sentWhenAsked = tab.sent.length
+      return true
+    })
+    // The two under the budget went out (they may still be on their way); the other three waited.
+    expect(asked).toBe(1)
+    expect(sentWhenAsked).toBeLessThanOrEqual(REQUEST_BUDGET)
+    expect(result).toEqual({ status: 'done', requests: REQUEST_BUDGET + 3 })
+    expect(tab.sent).toHaveLength(REQUEST_BUDGET + 3)
+  })
+
+  it('[UC-AGENT-001-S19] stopping at the budget sends nothing more, ends the question, and tells the AI not to work around it', async () => {
+    const tab = workspaceTab()
+    // The model would try again, with fewer requests.
+    ai.script = [{ toolCalls: [LOOK_UP] }, { toolCalls: [LOOK_UP] }, { reply: 'Trying another way.' }]
+    const agent = makeAgent({ tools: [lookups(REQUEST_BUDGET + 5)], meter: countNotionRequests })
+    const { result, updates } = await ask(agent, 'Look it up', async () => false)
+    expect(result).toEqual({ status: 'error', message: BUDGET_STOP, requests: REQUEST_BUDGET })
+    expect(toolStatuses(updates)).toEqual(['failed'])
+    expect(tab.sent).toHaveLength(REQUEST_BUDGET)
+    expect(ai.calls).toHaveLength(1)
+
+    // The next question starts with a fresh budget, and the AI knows why the last one stopped.
+    ai.script = [{ reply: 'Ok.' }]
+    expect((await ask(agent, 'What happened?')).result).toEqual({ status: 'done', requests: 0 })
+    expect(sentMessages(1).find((m) => m.role === 'tool')).toMatchObject({ content: OVER_BUDGET })
+  })
+
+  /**
+   * After a tool that makes all but one of the question's budgeted requests, a tool that needs the
+   * user's OK and looks the page up three times for its preview, crossing the budget there.
+   */
+  function previewAcrossBudget() {
+    const runs: unknown[] = []
+    const looking = lookups(3)
+    const confirmed: ToolSpec = {
+      ...looking,
+      name: 'trash_it',
+      needsConfirmation: true,
+      preview: async () => (await looking.run({}), 'Moves the page to the trash.'),
+      run: async (args) => (runs.push(args), 'Trashed.'),
+    }
+    ai.script = [{ toolCalls: [LOOK_UP] }, { toolCalls: [{ name: 'trash_it', arguments: '{}' }] }, { reply: 'Done.' }]
+    return { tools: [lookups(REQUEST_BUDGET - 1), confirmed], runs }
+  }
+
+  it("a preview that crosses the budget asks the user on its call's card, and Continue goes on", async () => {
+    const tab = workspaceTab()
+    const { tools, runs } = previewAcrossBudget()
+    const asked: ToolCallRequest[] = []
+    const { result, updates } = await ask(
+      makeAgent({ tools, meter: countNotionRequests }),
+      'Trash it',
+      async (call) => (asked.push(call), true),
+    )
+    // First the budget, from the preview's lookups; then the OK for the call itself.
+    expect(asked).toEqual([
+      { id: 'chatcmpl-tool-1', name: 'trash_it', args: {}, question: budgetQuestion(REQUEST_BUDGET) },
+      { id: 'chatcmpl-tool-1', name: 'trash_it', args: {}, preview: 'Moves the page to the trash.' },
+    ])
+    expect(result).toEqual({ status: 'done', requests: REQUEST_BUDGET + 2 })
+    expect(toolStatuses(updates)).toEqual(['done', 'done'])
+    expect(runs).toHaveLength(1)
+    expect(tab.sent).toHaveLength(REQUEST_BUDGET + 2)
+  })
+
+  it('Stop at the budget during a preview ends the question with nothing more sent', async () => {
+    const tab = workspaceTab()
+    const { tools, runs } = previewAcrossBudget()
+    const asked: ToolCallRequest[] = []
+    const { result, updates } = await ask(
+      makeAgent({ tools, meter: countNotionRequests }),
+      'Trash it',
+      async (call) => (asked.push(call), false),
+    )
+    expect(asked.map((c) => c.question)).toEqual([budgetQuestion(REQUEST_BUDGET)])
+    expect(result).toEqual({ status: 'error', message: BUDGET_STOP, requests: REQUEST_BUDGET })
+    expect(toolStatuses(updates)).toEqual(['done', 'skipped'])
+    expect(runs).toEqual([])
+    expect(tab.sent).toHaveLength(REQUEST_BUDGET)
+    expect(ai.calls).toHaveLength(2)
+  })
+
+  it('at the budget with nobody to ask, the question stops', async () => {
+    const tab = workspaceTab()
+    ai.script = [{ toolCalls: [LOOK_UP] }]
+    const { result } = await ask(makeAgent({ tools: [lookups(REQUEST_BUDGET + 1)], meter: countNotionRequests }), 'Go')
+    expect(result).toEqual({ status: 'error', message: BUDGET_STOP, requests: REQUEST_BUDGET })
+    expect(tab.sent).toHaveLength(REQUEST_BUDGET)
+  })
+
+  it('Stop while the user is asked at the budget ends the question as stopped', async () => {
+    const tab = workspaceTab()
+    ai.script = [{ toolCalls: [LOOK_UP] }]
+    const agent = makeAgent({ tools: [lookups(REQUEST_BUDGET + 1)], meter: countNotionRequests })
+    // The user presses Stop instead of answering.
+    const { result, updates } = await ask(agent, 'Go', () => (agent.stop(), new Promise<boolean>(() => {})))
+    expect(result).toEqual({ status: 'stopped', requests: REQUEST_BUDGET })
+    expect(toolStatuses(updates)).toEqual(['stopped'])
+    expect(tab.sent).toHaveLength(REQUEST_BUDGET)
+  })
+
+  it('a write that was sent warns of changes even when its tool does not say it changes data', async () => {
+    const tab = workspaceTab()
+    // Sends a write, then Notion turns its next request away; the tool sets no changesData.
+    const writing: ToolSpec = {
+      ...lookups(1),
+      run: async () => {
+        const { client } = await activeNotionTab()
+        await client.submitTransaction(SPACE, [], 'test')
+        tab.limit('syncRecordValuesMain', 1)
+        return client.getRecords([{ table: 'block', id: PAGE }])
+      },
+    }
+    ai.script = [{ toolCalls: [LOOK_UP] }]
+    const { result } = await ask(makeAgent({ tools: [writing], meter: countNotionRequests }), 'Go')
+    expect(result).toEqual({ status: 'error', message: `${LIMITED_STOP} ${MAY_HAVE_CHANGED}`, requests: 2 })
+  })
+
+  it('requests held at the budget while Notion turns one away are not sent or counted', async () => {
+    const tab = workspaceTab()
+    ai.script = [{ toolCalls: [LOOK_UP] }, { toolCalls: [LOOK_UP] }]
+    const before = lookups(REQUEST_BUDGET - 2)
+    const parallel = lookups(5, { parallel: true })
+    let runs = 0
+    const tool: ToolSpec = {
+      ...before,
+      run: async (args) => {
+        if (runs++ === 0) return before.run(args)
+        // The first of the two that still fit under the budget is turned away.
+        tab.limit('syncRecordValuesMain', 1)
+        return parallel.run(args)
+      },
+    }
+    const { result } = await ask(makeAgent({ tools: [tool], meter: countNotionRequests }), 'Look it up', async () => {
+      // Let the two sent requests come back before answering.
+      await new Promise((r) => setTimeout(r, 20))
+      return true
+    })
+    expect(result).toEqual({ status: 'error', message: LIMITED_STOP, requests: REQUEST_BUDGET })
+    expect(tab.sent).toHaveLength(REQUEST_BUDGET)
+  })
+
+  it('a question cut short by a model change still reports its requests', async () => {
+    workspaceTab()
+    const look = lookups(2)
+    const changing: ToolSpec = {
+      ...look,
+      run: async (args) => {
+        env.MODEL = '@cf/test/next-model'
+        return look.run(args)
+      },
+    }
+    ai.script = [{ toolCalls: [LOOK_UP] }, { reply: 'Done.' }]
+    const { result } = await ask(makeAgent({ tools: [changing], meter: countNotionRequests }), 'Look it up')
+    expect(result).toEqual({ status: 'error', message: 'Copilot was just updated. Ask it to continue.', requests: 2 })
+  })
+
+  it('a request that never left the browser neither counts nor warns of changes', async () => {
+    const tab = workspaceTab()
+    // Chrome refuses to run the write in the tab; then Notion turns the next request away.
+    const writing: ToolSpec = {
+      ...lookups(1),
+      run: async () => {
+        const { client } = await activeNotionTab()
+        tab.injectionError = 'Cannot access contents of the page.'
+        await client.submitTransaction(SPACE, [], 'test').catch(() => undefined)
+        tab.injectionError = undefined
+        tab.limit('syncRecordValuesMain', 1)
+        return client.getRecords([{ table: 'block', id: PAGE }])
+      },
+    }
+    ai.script = [{ toolCalls: [LOOK_UP] }]
+    const { result } = await ask(makeAgent({ tools: [writing], meter: countNotionRequests }), 'Go')
+    expect(result).toEqual({ status: 'error', message: LIMITED_STOP, requests: 1 })
+    expect(tab.sent).toHaveLength(1)
+  })
+
+  it('a write Notion turned away for too many requests does not warn of changes', async () => {
+    const tab = workspaceTab().limit('saveTransactionsFanout', 1)
+    const writing: ToolSpec = {
+      ...lookups(1),
+      run: async () => (await activeNotionTab()).client.submitTransaction(SPACE, [], 'test'),
+    }
+    ai.script = [{ toolCalls: [LOOK_UP] }]
+    const { result } = await ask(makeAgent({ tools: [writing], meter: countNotionRequests }), 'Go')
+    expect(result).toEqual({ status: 'error', message: LIMITED_STOP, requests: 1 })
+    expect(tab.sent).toHaveLength(1)
   })
 })

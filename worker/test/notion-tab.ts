@@ -62,6 +62,10 @@ export class FakeNotionTab {
   /** Answers requests no queued response is left for, like Notion would. */
   workspace?: FakeWorkspace
 
+  /** Scripts running in the page now, and the globals outside it while any is. */
+  private running = 0
+  private outside: Record<string, unknown> = {}
+
   /** Signals the page's requests were sent with, to check each has a timeout. */
   signals: (AbortSignal | null | undefined)[] = []
 
@@ -121,9 +125,11 @@ export class FakeNotionTab {
           if (this.injectionError) throw new Error(this.injectionError)
           this.injections.push({ tabId: target.tabId, world })
           const location = new URL(this.pageUrl ?? this.url!)
-          // The page's globals exist only while the script runs, so code outside the tab (say, the
-          // agent calling the worker) keeps its own fetch.
-          const outside = { fetch: globals.fetch, location: globals.location, document: globals.document }
+          // The page's globals exist only while scripts run, so code outside the tab (say, the
+          // agent calling the worker) keeps its own fetch. Scripts may run at once (parallel
+          // requests): the first one in saves the outside globals, and the last one out puts them back.
+          if (this.running++ === 0)
+            this.outside = { fetch: globals.fetch, location: globals.location, document: globals.document }
           globals.location = location
           globals.document = Object.assign(this.dom ?? {}, { cookie: this.cookie })
           globals.fetch = (input: string, init: RequestInit) => this.fetch(new URL(input, location).href, init)
@@ -131,7 +137,7 @@ export class FakeNotionTab {
             const rebuilt = new Function(`return (${func.toString()})`)() as Function
             return [{ frameId: 0, result: await rebuilt(...structuredClone(args)) }]
           } finally {
-            Object.assign(globals, outside)
+            if (--this.running === 0) Object.assign(globals, this.outside)
           }
         },
       },

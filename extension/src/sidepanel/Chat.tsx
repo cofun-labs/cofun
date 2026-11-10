@@ -1,6 +1,7 @@
 import { useAuth } from '@clerk/chrome-extension'
 import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from 'react'
 import { CopilotAgent, type AgentUpdate, type ConfirmTool, type HistoryMessage } from '../agent'
+import { countNotionRequests } from '../notion/tab'
 import { SessionStore, titleFor, type Session } from '../sessions'
 import { currentNotionPage, forgetReads, openPageNote, TOOLS } from '../tools'
 import { Sessions } from './Sessions'
@@ -44,6 +45,8 @@ type Shown =
       error?: string
       stopped?: boolean
       note?: string
+      /** Notion requests the question made, once it ended. */
+      requests?: number
     }
 
 /** The open session; saved once its first question is answered. */
@@ -84,6 +87,7 @@ export function Chat({ userId }: { userId: string }) {
     systemPrompt: SYSTEM_PROMPT,
     tools: TOOLS,
     context: openPageNote,
+    meter: countNotionRequests,
   })
   const agent = agentRef.current
 
@@ -151,7 +155,7 @@ export function Chat({ userId }: { userId: string }) {
         pending.current.set(call.id, answer)
         // Normally the call is already shown as running. If not, show it now: the agent must never
         // wait on a prompt nobody can see. Show the arguments the tool will run with.
-        const { preview } = call
+        const { preview, question } = call
         updateReply((m) => {
           const j = newestOpenCall(m.parts, call.id)
           const parts = [...m.parts]
@@ -162,6 +166,7 @@ export function Chat({ userId }: { userId: string }) {
             status: 'confirm',
             result: '',
             preview,
+            question,
           }
           if (j < 0) parts.push({ type: 'tool', tool })
           else
@@ -172,6 +177,7 @@ export function Chat({ userId }: { userId: string }) {
                 args: call.args,
                 status: 'confirm',
                 preview,
+                question,
               },
             }
           return { ...m, parts }
@@ -217,6 +223,8 @@ export function Chat({ userId }: { userId: string }) {
     const before = agent.history().length
     try {
       const result = await agent.ask(text, onUpdate, confirm)
+      const { requests } = result
+      if (requests !== undefined) updateReply((m) => ({ ...m, requests }))
       if (result.status === 'stopped') {
         updateTools((t) => (t.status === 'running' || t.status === 'confirm' ? { ...t, status: 'stopped' } : t))
         updateReply((m) => ({ ...m, stopped: true }))
@@ -370,6 +378,7 @@ export function Chat({ userId }: { userId: string }) {
               )}
               {m.stopped && <div className="note">Stopped</div>}
               {m.note && <div className="note">{m.note}</div>}
+              {m.requests !== undefined && <div className="note">Notion requests: {m.requests}</div>}
             </div>
           ),
         )}
@@ -394,13 +403,16 @@ export function Chat({ userId }: { userId: string }) {
 /** A saved conversation as the panel shows it: each question, then everything the agent did for it. */
 function toShown(history: HistoryMessage[]): Shown[] {
   const shown: Shown[] = []
+  // Of the latest question, shown under its reply.
+  let requests: number | undefined
   for (const m of history) {
     if (m.role === 'user') {
       shown.push({ role: 'user', content: m.text })
+      requests = m.requests
       continue
     }
     let reply = shown.at(-1)
-    if (reply?.role !== 'assistant') shown.push((reply = { role: 'assistant', parts: [] }))
+    if (reply?.role !== 'assistant') shown.push((reply = { role: 'assistant', parts: [], requests }))
     if (m.role === 'assistant') {
       for (const p of m.parts)
         reply.parts.push(

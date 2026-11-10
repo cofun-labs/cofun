@@ -35,7 +35,7 @@ A scenario earns its place only if deleting it would let an implementation pass 
 | Strategy | Use for | Verified by |
 |---|---|---|
 | `api-test` | Anything observable through the worker's HTTP API or the extension's client code | A vitest integration test in `worker/test/` whose name starts with the scenario ID |
-| `ai-e2e` | Paths that need a real browser: the side panel, Clerk sign-in, Notion pages | An agent drives Chrome with the extension loaded; the PR description or a comment records the run |
+| `ai-e2e` | Paths that need a real browser: the side panel, Clerk sign-in, Notion pages | An agent drives Chrome with the extension loaded; the PR description or a comment records the run, with the Notion requests each tested question made (the side panel shows the count with the reply) |
 
 Pick the cheapest strategy that observes the result directly. `ai-e2e` is not a place to park scenarios that could be `api-test`.
 
