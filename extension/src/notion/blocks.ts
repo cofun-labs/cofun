@@ -267,15 +267,18 @@ export function personNames(titles: RichText[]): string[] {
   return [...new Set(names)]
 }
 
-/** Rich text with each person's name replaced by their user id, from `ids` (by name). */
-export function withPeople(title: RichText, ids: Map<string, string>): RichText {
+/**
+ * Rich text with each person's name replaced by their user id, from `ids` (by name). `keep` leaves
+ * a name `ids` lacks as it is; otherwise one is a bug, since names are looked up before writing.
+ */
+export function withPeople(title: RichText, ids: Map<string, string>, { keep = false } = {}): RichText {
   return title.map((run) => {
     if (!run[1]?.some((m) => personName(m) !== undefined)) return run
     const marks = run[1].map((m): Mark => {
       const name = personName(m)
       if (name === undefined) return m
       const id = ids.get(name)
-      // Every name is looked up before anything is written; one missing here is a bug.
+      if (!id && keep) return m
       if (!id) throw new Error(`No member was found for @[${name}].`)
       return ['u', id]
     })

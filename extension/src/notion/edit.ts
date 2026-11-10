@@ -492,10 +492,12 @@ function changedProperties(
     let before: NewBlock | undefined
     try {
       before = shownLine ? parseMarkdown(shownLine)[0] : undefined
-      // People named as the new text names them; a person it no longer names makes the text changed.
-      if (before) before = { ...before, title: withPeople(before.title, people) }
-    } catch {
+      // People named as the new text names them; a person it no longer names stays a name, so the
+      // text differs.
+      if (before) before = { ...before, title: withPeople(before.title, people, { keep: true }) }
+    } catch (err) {
       // Not Markdown that can be written back: treat the text as changed.
+      if (!(err instanceof MarkdownError)) throw err
     }
     if (!before || JSON.stringify(before.title) !== JSON.stringify(nb.title)) out.title = nb.title
   }

@@ -81,6 +81,8 @@ export class NotionUsage {
   requests = 0
   /** A write was sent, and Notion did not say it turned it away: it may have changed data. */
   wrote = false
+  /** The people of each workspace (see workspacePeople), loaded once per question, by workspace id. */
+  readonly people = new Map<string, Promise<{ id: string; name: string }[]>>()
   private budget = REQUEST_BUDGET
   private stopped = false
   /** The question to the user while one is open; requests sent meanwhile wait for the same answer. */
@@ -485,10 +487,20 @@ export class NotionClient {
   /**
    * The people of a workspace the signed-in user can see (members and guests) who have a name: the
    * people Notion's own @ menu offers. One request lists them, then one per 100 people loads their
-   * names.
+   * names; once per question, so later tools in it send none.
    */
   async workspacePeople(spaceId: string): Promise<{ id: string; name: string }[]> {
     const space = notionId(spaceId)
+    const known = this.usage?.people.get(space)
+    if (known) return known
+    const loading = this.loadPeople(space)
+    // A lookup that failed is not kept: the question stops, or a later tool may try again.
+    this.usage?.people.set(space, loading)
+    loading.catch(() => this.usage?.people.delete(space))
+    return loading
+  }
+
+  private async loadPeople(space: string): Promise<{ id: string; name: string }[]> {
     const { json } = await this.request<{ users?: unknown }>('getVisibleUsers', { spaceId: space }, space)
     if (!Array.isArray(json.users))
       throw new NotionError('notion_error', 'Notion returned no list of workspace members.')

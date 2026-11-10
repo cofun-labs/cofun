@@ -1,9 +1,15 @@
 // Mentions of people in what the agent writes (edit_page, create_page, add_comment), against a fake
 // Notion workspace whose members getVisibleUsers lists, as Notion's own @ menu sees them.
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { LIMITED_STOP } from '../../extension/src/notion/api'
+import { countNotionRequests } from '../../extension/src/notion/tab'
 import { addComment, createPage, editPage, forgetReads, readPage } from '../../extension/src/tools'
 import { FakeNotionTab, FakeWorkspace, PAGE, PAGE_URL, SPACE, USER, notionError, restoreGlobals } from './notion-tab'
+
+// Each test is one question, as the side panel starts one per message.
+beforeEach(() => {
+  countNotionRequests()
+})
 
 afterEach(() => {
   restoreGlobals()
@@ -255,6 +261,35 @@ describe('mention details', () => {
     ws.edit(id(1), { properties: { title: [['Changed in Notion']] } })
     await expect(edit([{ action: 'replace', block: '^00000001', markdown: '@[Kim Lee] intro' }])).rejects.toThrow()
     expect(endpoints(tab)).not.toContain('getVisibleUsers')
+  })
+
+  it('looks the members up once per question', async () => {
+    const ws = workspace([block(1, 'text', [['Intro']])])
+    const tab = open(ws)
+    await read()
+    const lookups = () => endpoints(tab).filter((e) => e === 'getVisibleUsers' || e === 'syncRecordValuesMain')
+    await edit([{ action: 'insert', position: 'end', markdown: '- [ ] @[Kim Lee] sends the notes' }])
+    expect(lookups()).toEqual(['getVisibleUsers', 'syncRecordValuesMain'])
+    // A later call in the same question, mentioning someone else, sends no lookup.
+    await addComment.run({ page: hex(PAGE), text: '@[Alex Kim], please review' })
+    expect(lookups()).toEqual(['getVisibleUsers', 'syncRecordValuesMain'])
+    expect(ws.table('comment')[0].text).toEqual([['‣', [['u', ALEX]]], [', please review']])
+    // The next question looks them up again.
+    countNotionRequests()
+    await addComment.run({ page: hex(PAGE), text: '@[Ann], thanks' })
+    expect(lookups()).toEqual(['getVisibleUsers', 'syncRecordValuesMain', 'getVisibleUsers', 'syncRecordValuesMain'])
+  })
+
+  it('looks the members up again in the same question after a lookup failed', async () => {
+    const ws = workspace([block(1, 'text', [['Intro']])])
+    const tab = open(ws)
+    await read()
+    tab.respond('getVisibleUsers', 200, { unexpected: true })
+    await expect(edit([{ action: 'insert', position: 'end', markdown: '@[Kim Lee]' }])).rejects.toThrow(
+      'no list of workspace members',
+    )
+    await edit([{ action: 'insert', position: 'end', markdown: '@[Kim Lee]' }])
+    expect((ws.content(PAGE).at(-1)!.properties as Rec).title).toEqual([['‣', [['u', KIM]]]])
   })
 
   it('looks up only the people the user can see', async () => {
