@@ -127,6 +127,35 @@ export async function notionRequest(
   }
 }
 
+/**
+ * The Notion user signed in to the tab, the one its requests go as; undefined when none is, or the
+ * tab can't be read. Reads the tab's cookie, without asking Notion.
+ */
+export async function notionUserIn(tabId: number): Promise<string | undefined> {
+  try {
+    const [frame] = await chrome.scripting.executeScript({
+      target: { tabId },
+      world: 'ISOLATED',
+      func: tabUser,
+      args: [],
+    })
+    return typeof frame?.result === 'string' ? frame.result : undefined
+  } catch {
+    return undefined
+  }
+}
+
+/** Runs in the Notion tab, like notionRequest: the user it sends as, from the same cookie. */
+function tabUser(): string | null {
+  const raw = /(?:^|;\s*)notion_user_id=([^;]+)/.exec(document.cookie)?.[1]
+  if (!raw) return null
+  try {
+    return decodeURIComponent(raw)
+  } catch {
+    return raw
+  }
+}
+
 /** What the user has selected in the Notion page: the selected text and the blocks it covers. */
 export interface PageSelection {
   /** The text selected with the mouse; none when blocks are selected as blocks. */

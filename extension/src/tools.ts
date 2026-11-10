@@ -3,7 +3,6 @@
 /// <reference types="chrome" />
 import type { ToolSpec } from './agent'
 import {
-  IN_TRASH,
   NotionError,
   SIGNED_OUT,
   blockOps,
@@ -46,7 +45,7 @@ import {
   splitSections,
   type Schema,
 } from './notion/markdown'
-import { activeNotionTab, selectionIn, type NotionTab } from './notion/tab'
+import { activeNotionTab, notionUserIn, selectionIn, type NotionTab } from './notion/tab'
 import { PageLookups, contentOf, pageTree, runsText, treeLines, type PageTree } from './notion/tree'
 
 /**
@@ -213,7 +212,9 @@ async function loadWithDatabase(tab: NotionTab, id: string): Promise<Loaded> {
     return { loaded, databaseMissing: false }
   } catch (err) {
     // A row can be shared with someone who can't open its database; the row itself still reads.
-    if (err instanceof NotionError && err.code === 'no_access') return { loaded, databaseMissing: true }
+    if (err instanceof NotionError && (err.code === 'no_access' || err.code === 'in_trash')) {
+      return { loaded, databaseMissing: true }
+    }
     throw err
   }
 }
@@ -1292,6 +1293,7 @@ function forgetPages(ids: Iterable<string>) {
     pageReads.delete(id)
     seenRows.delete(id)
     for (const key of recentReads.keys()) if (key.endsWith(`:${id}`)) recentReads.delete(key)
+    for (const key of pageWorkspaces.keys()) if (key.endsWith(`:${id}`)) pageWorkspaces.delete(key)
   }
 }
 
@@ -1400,7 +1402,7 @@ async function loadPages(tab: NotionTab, ids: string[]): Promise<Record<string, 
   try {
     return (await tab.client.getRecords(ids.map((id) => ({ table: 'block' as const, id })))).block!
   } catch (err) {
-    if (!(err instanceof NotionError) || err.code !== 'no_access') throw err
+    if (!(err instanceof NotionError) || (err.code !== 'no_access' && err.code !== 'in_trash')) throw err
     const found = (await tab.client.findRecords(ids.map((id) => ({ table: 'block' as const, id })))).block ?? {}
     const missing = ids.filter((id) => !found[id])
     if (!missing.length) throw err
@@ -1773,7 +1775,11 @@ export const searchPages: ToolSpec = {
 
     const found = await tab.client.search(spaceId, query, limit)
     // A page in the trash can't be read, so it isn't offered.
-    found.results = found.results.filter((r) => found.recordMap.block?.[r.id]?.alive !== false)
+    const alive = found.results.filter((r) => found.recordMap.block?.[r.id]?.alive !== false)
+    const trashed = found.results.length - alive.length
+    // Fewer results than asked for are all Notion has, whatever its total says.
+    const complete = found.results.length < limit
+    found.results = alive
     if (!found.results.length) return `No pages found for "${query}".`
     const origin = new URL(tab.url).origin
     const tag = highlightTag(found.results)
@@ -1807,7 +1813,10 @@ export const searchPages: ToolSpec = {
       ].join('\n')
     })
     const shown = found.results.length
-    const more = found.total > shown ? ` (${found.total} in all; showing ${shown})` : ''
+    // Notion's total counts the trashed pages it found too. Those among the results are taken off;
+    // others beyond them may be in it still, so the rest is only an upper bound then.
+    const total = found.total - trashed
+    const more = !complete && total > shown ? ` (${trashed ? 'up to ' : ''}${total} in all; showing ${shown})` : ''
     return [`Pages found for "${query}"${more}:`, '', ...lines].join('\n')
   },
 }
@@ -1831,25 +1840,42 @@ function highlightTag(results: { highlight?: Record<string, unknown> }[]): strin
   return ranked[0]?.[0]
 }
 
-/** Workspace ids of pages, so searching or listing from the same page doesn't look it up again. */
+/**
+ * Workspace ids of open pages, by tab, Notion user, and page (in that order, so a key ends with the
+ * page id), so searching or listing from the same page doesn't look it up again.
+ */
 const pageWorkspaces = new Map<string, string>()
+/** Open pages whose workspace is remembered at most; the one used longest ago is forgotten first. */
+const WORKSPACE_PAGES = 20
 
+/** The workspace of the page open in the tab, which must show one. */
 async function workspaceOf(tab: NotionTab): Promise<string> {
   const pageId = tab.pageId!
-  const known = pageWorkspaces.get(pageId)
-  if (known) return known
+  // Remembered for the tab's Notion user only: after the tab switched accounts, the page is looked
+  // up again as the new one, which may not open it. Without a user, nothing is remembered.
+  const user = await notionUserIn(tab.tabId)
+  const key = user ? `${tab.tabId}:${user}:${pageId}` : undefined
+  const known = key ? pageWorkspaces.get(key) : undefined
+  if (key && known) {
+    pageWorkspaces.delete(key)
+    pageWorkspaces.set(key, known)
+    return known
+  }
   let spaceId: string | undefined
   try {
     const opened = await tab.client.getRecords([{ table: 'block', id: pageId }])
     spaceId = (opened.block?.[pageId] as { space_id?: string } | undefined)?.space_id
   } catch (err) {
-    if (err instanceof NotionError && err.message === IN_TRASH) {
+    if (err instanceof NotionError && err.code === 'in_trash') {
       throw new Error('The open page is in the trash. Open another page of the workspace.')
     }
     throw err
   }
   if (!spaceId) throw new Error('Could not tell which workspace the open page is in.')
-  pageWorkspaces.set(pageId, spaceId)
+  if (key) {
+    pageWorkspaces.set(key, spaceId)
+    if (pageWorkspaces.size > WORKSPACE_PAGES) pageWorkspaces.delete(pageWorkspaces.keys().next().value!)
+  }
   return spaceId
 }
 
@@ -1861,33 +1887,24 @@ async function databaseNames(tab: NotionTab, blocks: (NotionRecord | undefined)[
   const ids = [...new Set(databases.map(collectionId).filter((id): id is string => !!id))]
   const names = new Map<string, string>()
   if (!ids.length) return names
-  // One lookup per database, so one that can't be opened (say, a linked view of another
-  // workspace's database) leaves only its own name out. A few at a time, so a burst doesn't go
-  // out after Notion turned one away.
-  const found: PromiseSettledResult<readonly [string, NotionRecord | undefined]>[] = []
-  for (let at = 0; at < ids.length; at += LOOKUPS_PARALLEL) {
-    const settled = await Promise.allSettled(
-      ids
-        .slice(at, at + LOOKUPS_PARALLEL)
-        .map((id) =>
-          tab.client.getRecords([{ table: 'collection', id }]).then((r) => [id, r.collection?.[id]] as const),
-        ),
-    )
-    // A failure that stops the question is not a database left unnamed.
-    for (const f of settled)
-      if (f.status === 'rejected' && f.reason instanceof NotionError && f.reason.stopsQuestion) throw f.reason
-    found.push(...settled)
+  // All in one request. Notion answers for each record on its own, leaving out one the account
+  // can't open (say, a linked view's source in another workspace), so only that name is left out.
+  // No workspace is assumed, since a linked view's source may be in another one.
+  let collections: Record<string, NotionRecord>
+  try {
+    collections =
+      (await tab.client.findRecords(ids.map((id) => ({ table: 'collection' as const, id })))).collection ?? {}
+  } catch (err) {
+    // Notion refusing the whole lookup leaves every name out; anything else isn't understood, so it stops the search.
+    if (err instanceof NotionError && err.code === 'no_access') return names
+    throw err
   }
-  const byCollection = new Map(found.flatMap((f) => (f.status === 'fulfilled' ? [f.value] : [])))
   for (const b of databases) {
-    const name = runsText(byCollection.get(collectionId(b) ?? '')?.name)
+    const name = runsText(collections[collectionId(b) ?? '']?.name)
     if (name) names.set(b.id, name)
   }
   return names
 }
-
-/** Database name lookups sent at once at most. */
-const LOOKUPS_PARALLEL = 4
 
 function withoutTag(text: string | undefined, tag: string | undefined): string {
   const out = tag ? (text ?? '').split(`<${tag}>`).join('').split(`</${tag}>`).join('') : (text ?? '')

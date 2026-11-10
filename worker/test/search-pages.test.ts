@@ -1,8 +1,8 @@
 // The search_pages tool (extension/src/tools.ts) against a fake Notion tab answering with search
 // results in the shape Notion's /api/v3/search returns (see the #64 spike).
 import { afterEach, describe, expect, it } from 'vitest'
-import { LIMITED_STOP } from '../../extension/src/notion/api'
-import { readPage, searchPages } from '../../extension/src/tools'
+import { LIMITED_STOP, NO_ACCESS } from '../../extension/src/notion/api'
+import { forgetReads, readPage, searchPages } from '../../extension/src/tools'
 import { FakeNotionTab, PAGE, PAGE_URL, SPACE, notionError, restoreGlobals } from './notion-tab'
 
 afterEach(restoreGlobals)
@@ -10,6 +10,7 @@ afterEach(restoreGlobals)
 const hex = (id: string) => id.replace(/-/g, '')
 const FOUND = 'f1f1f1f1-0000-4000-8000-000000000001'
 const DATABASE = 'f1f1f1f1-0000-4000-8000-000000000002'
+const COLLECTION_A = 'c1c1c1c1-0000-4000-8000-000000000001'
 
 function wrapped(record: Record<string, unknown>) {
   return { spaceId: SPACE, value: { role: 'editor', value: { version: 1, alive: true, space_id: SPACE, ...record } } }
@@ -60,7 +61,8 @@ const search = async (args: Record<string, unknown>) => (await searchPages.run(a
 describe('UC-NOTION-004 find and read other pages', () => {
   it('[UC-NOTION-004-S01] finds pages with their titles, where they are, the matching text, and their ids', async () => {
     const tab = open().respond('search', 200, SEARCH)
-    expect(await search({ query: 'beta plan' })).toBe(
+    // Notion has more than the two asked for.
+    expect(await search({ query: 'beta plan', limit: 2 })).toBe(
       [
         'Pages found for "beta plan" (5 in all; showing 2):',
         '',
@@ -78,7 +80,7 @@ describe('UC-NOTION-004 find and read other pages', () => {
     // It searched the open page's workspace, as the tab's Notion user.
     const sent = tab.sent.at(-1)!
     expect(sent.url).toBe('https://app.notion.com/api/v3/search')
-    expect(sent.body).toMatchObject({ type: 'BlocksInSpace', query: 'beta plan', spaceId: SPACE, limit: 10 })
+    expect(sent.body).toMatchObject({ type: 'BlocksInSpace', query: 'beta plan', spaceId: SPACE, limit: 2 })
     expect(sent.headers['x-notion-space-id']).toBe(SPACE)
   })
 
@@ -244,11 +246,10 @@ describe('search_pages, partial lookups', () => {
           },
         },
       })
+      // The other database's source is out of reach: Notion leaves it out of the answer.
       .respond('syncRecordValuesMain', 200, {
         recordMap: { __version__: 3, collection: { [A]: wrapped({ id: A, name: [['Roadmap']] }) } },
       })
-      // The other database's source is out of reach: Notion answers with nothing.
-      .respond('syncRecordValuesMain', 200, { recordMap: { __version__: 3 } })
       .install()
     const result = await search({ query: 'x' })
     expect(result).toContain(`1. 🗃 Roadmap ^${hex(dbA)}`)
@@ -277,9 +278,10 @@ describe('search_pages, partial lookups', () => {
     expect((await notionError(search({ query: 'x' }))).stopsQuestion).toBe(LIMITED_STOP)
   })
 
-  it('looks up database names a few at a time, and sends no more once Notion turned one away', async () => {
+  it('looks up every database name in one request, without assuming the workspace', async () => {
     const here = 'f7f7f7f7-0000-4000-8000-000000000001'
     const dbs = Array.from({ length: 6 }, (_, i) => `f7f7f7f7-0000-4000-8000-0000000000a${i}`)
+    const collection = (i: number) => `c7c7c7c7-0000-4000-8000-0000000000a${i}`
     const tab = new FakeNotionTab(`https://app.notion.com/${hex(here)}`)
       .respond('syncRecordValuesMain', 200, {
         recordMap: { __version__: 3, block: { [here]: wrapped({ id: here, type: 'page' }) } },
@@ -290,19 +292,48 @@ describe('search_pages, partial lookups', () => {
         recordMap: {
           __version__: 3,
           block: Object.fromEntries(
-            dbs.map((id, i) => [
-              id,
-              wrapped({ id, type: 'collection_view_page', collection_id: `c7c7c7c7-0000-4000-8000-0000000000a${i}` }),
-            ]),
+            dbs.map((id, i) => [id, wrapped({ id, type: 'collection_view_page', collection_id: collection(i) })]),
           ),
         },
       })
-      .limit('syncRecordValuesMain', 1)
-    for (let i = 0; i < 3; i++) tab.respond('syncRecordValuesMain', 200, { recordMap: { __version__: 3 } })
-    tab.install()
-    expect((await notionError(search({ query: 'x' }))).stopsQuestion).toBe(LIMITED_STOP)
-    // The open page's workspace, then the first four lookups; the last two are never sent.
-    expect(tab.sent.filter((r) => r.url.endsWith('/syncRecordValuesMain'))).toHaveLength(5)
+      .respond('syncRecordValuesMain', 200, {
+        recordMap: {
+          __version__: 3,
+          collection: Object.fromEntries(
+            [0, 1, 2, 3, 4, 5].map((i) => [collection(i), wrapped({ id: collection(i), name: [[`Board ${i}`]] })]),
+          ),
+        },
+      })
+      .install()
+    const result = await search({ query: 'x' })
+    for (let i = 0; i < 6; i++) expect(result).toContain(`${i + 1}. 🗃 Board ${i} ^${hex(dbs[i])}`)
+    // The open page's workspace, then one lookup for all six names.
+    const lookups = tab.sent.filter((r) => r.url.endsWith('/syncRecordValuesMain'))
+    expect(lookups).toHaveLength(2)
+    expect(lookups[1].headers['x-notion-space-id']).toBeUndefined()
+    expect(lookups[1].body).toEqual({
+      requests: [0, 1, 2, 3, 4, 5].map((i) => ({ pointer: { table: 'collection', id: collection(i) }, version: -1 })),
+    })
+  })
+
+  it('still lists the databases, unnamed, when Notion refuses the name lookup as a whole', async () => {
+    const here = 'f7f7f7f7-0000-4000-8000-000000000002'
+    const dbA = 'f4f4f4f4-0000-4000-8000-00000000000a'
+    new FakeNotionTab(`https://app.notion.com/${hex(here)}`)
+      .respond('syncRecordValuesMain', 200, {
+        recordMap: { __version__: 3, block: { [here]: wrapped({ id: here, type: 'page' }) } },
+      })
+      .respond('search', 200, {
+        results: [{ id: dbA }],
+        total: 1,
+        recordMap: {
+          __version__: 3,
+          block: { [dbA]: wrapped({ id: dbA, type: 'collection_view_page', collection_id: COLLECTION_A }) },
+        },
+      })
+      .respond('syncRecordValuesMain', 403, { isNotionError: true, name: 'PermissionError' })
+      .install()
+    expect(await search({ query: 'x' })).toContain(`1. 🗃 Untitled database ^${hex(dbA)}`)
   })
 
   it("removes no tag when the response has none in Notion's shape", async () => {
@@ -341,5 +372,112 @@ describe('search_pages, tags and trash', () => {
     const result = await search({ query: 'plan' })
     expect(result).toContain(`1. 📄 Launch plan ^${hex(FOUND)}`)
     expect(result).not.toContain(hex(gone))
+  })
+})
+
+describe('search_pages, the open page’s workspace', () => {
+  afterEach(forgetReads)
+
+  /** A tab showing `id` as `user`, whose workspace lookup answers with `block` (none: no access). */
+  function openAs(id: string, user: string, block?: Record<string, unknown>): FakeNotionTab {
+    return new FakeNotionTab(`https://app.notion.com/${hex(id)}`, `notion_user_id=${user}`)
+      .respond('syncRecordValuesMain', 200, {
+        recordMap: { __version__: 3, ...(block ? { block: { [id]: wrapped({ id, type: 'page', ...block }) } } : {}) },
+      })
+      .install()
+  }
+  const NOTHING = { results: [], total: 0, recordMap: { __version__: 3 } }
+  const lookups = (tab: FakeNotionTab) => tab.sent.filter((r) => r.url.endsWith('/syncRecordValuesMain')).length
+  const ME = '0e0e0e0e-0000-4000-8000-0000000000a1'
+  const OTHER = '0e0e0e0e-0000-4000-8000-0000000000a2'
+  const here = 'f8f8f8f8-0000-4000-8000-000000000001'
+
+  it('looks the workspace up once per page and Notion user, and again after the tab switched accounts', async () => {
+    const tab = openAs(here, ME, {}).respond('search', 200, NOTHING).respond('search', 200, NOTHING)
+    await search({ query: 'x' })
+    await search({ query: 'y' })
+    expect(lookups(tab)).toBe(1)
+    // Signed in to another account, which can't open the page: it is told so, not that nothing was found.
+    const switched = openAs(here, OTHER)
+    expect(await notionError(search({ query: 'x' }))).toMatchObject({ code: 'no_access', message: NO_ACCESS })
+    expect(switched.sent.map((r) => r.url.split('/api/v3/')[1])).toEqual(['syncRecordValuesMain'])
+  })
+
+  it('looks it up again in a new conversation', async () => {
+    openAs(here, ME, {}).respond('search', 200, NOTHING)
+    await search({ query: 'x' })
+    forgetReads()
+    const tab = openAs(here, ME, {}).respond('search', 200, NOTHING)
+    await search({ query: 'x' })
+    expect(lookups(tab)).toBe(1)
+  })
+
+  it('remembers the workspaces of the last 20 pages only', async () => {
+    const pages = Array.from(
+      { length: 21 },
+      (_, i) => `f8f8f8f8-0000-4000-8000-0000000001${String(i).padStart(2, '0')}`,
+    )
+    for (const id of pages) {
+      openAs(id, ME, {}).respond('search', 200, NOTHING)
+      await search({ query: 'x' })
+    }
+    // The last one is still known; the first one was forgotten.
+    const last = openAs(pages[20], ME, {}).respond('search', 200, NOTHING)
+    await search({ query: 'x' })
+    expect(lookups(last)).toBe(0)
+    const first = openAs(pages[0], ME, {}).respond('search', 200, NOTHING)
+    await search({ query: 'x' })
+    expect(lookups(first)).toBe(1)
+  })
+
+  it('remembers nothing when no Notion user is signed in to the tab', async () => {
+    const tab = new FakeNotionTab(`https://app.notion.com/${hex(here)}`, 'notion_browser_id=b')
+      .respond('syncRecordValuesMain', 200, { recordMap: { __version__: 3 } })
+      .install()
+    expect((await notionError(search({ query: 'x' }))).code).toBe('signed_out')
+    expect(lookups(tab)).toBe(1)
+  })
+})
+
+describe('search_pages, the count of results', () => {
+  afterEach(forgetReads)
+
+  const here = 'f9f9f9f9-0000-4000-8000-000000000001'
+  const gone = 'f9f9f9f9-0000-4000-8000-000000000002'
+  function found(total: number) {
+    return new FakeNotionTab(`https://app.notion.com/${hex(here)}`)
+      .respond('syncRecordValuesMain', 200, {
+        recordMap: { __version__: 3, block: { [here]: wrapped({ id: here, type: 'page' }) } },
+      })
+      .respond('search', 200, {
+        results: [{ id: FOUND }, { id: gone }, { id: DATABASE }],
+        total,
+        recordMap: {
+          __version__: 3,
+          block: {
+            [FOUND]: wrapped({ id: FOUND, type: 'page', properties: { title: [['Launch plan']] } }),
+            [gone]: wrapped({ id: gone, type: 'page', alive: false }),
+            [DATABASE]: wrapped({ id: DATABASE, type: 'page', properties: { title: [['Beta notes']] } }),
+          },
+        },
+      })
+      .install()
+  }
+
+  it('takes trashed results off the total, which is then only an upper bound', async () => {
+    found(9)
+    expect((await search({ query: 'x', limit: 3 })).split('\n')[0]).toBe(
+      'Pages found for "x" (up to 8 in all; showing 2):',
+    )
+  })
+
+  it('gives no total when the trashed results were the only ones left out', async () => {
+    found(3)
+    expect((await search({ query: 'x', limit: 3 })).split('\n')[0]).toBe('Pages found for "x":')
+  })
+
+  it('gives no total when Notion returned fewer results than asked for, whatever its total says', async () => {
+    found(4)
+    expect((await search({ query: 'x', limit: 4 })).split('\n')[0]).toBe('Pages found for "x":')
   })
 })
