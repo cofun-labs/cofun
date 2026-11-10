@@ -15,7 +15,7 @@ import {
 import { type TabNotion, createDatabase, createPage, pageUrl, parseRow, privateSpace, tabNotion, trash } from './notion'
 import { withinOwnPages } from './scope'
 import { E2eError } from './errors'
-import { beforeInterruptExit } from './exit'
+import { beforeInterruptExit, onInterrupt } from './exit'
 import { DEFAULT_NOTION_URL, TimeoutError, isOwnPage, ask, notionTab, openPanel, ownNotionTab, ownPanel } from './panel'
 import { formatReply } from './reply'
 import { CanaryLock, checkOwner } from './lock'
@@ -235,9 +235,12 @@ async function main(argv: string[]): Promise<number> {
     const path = statePath(owner)
     const state = await loadState(path)
     const cdp = await Cdp.connect(cdpPort())
+    // An interrupt skips the finally below; still remember the tabs this command opened.
+    const forget = onInterrupt(() => saveState(path, state))
     try {
       return await browserCommand(new Browser(cdp), state, command, () => saveState(path, state))
     } finally {
+      forget()
       await saveState(path, state)
       cdp.close()
     }
