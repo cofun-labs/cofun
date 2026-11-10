@@ -432,9 +432,11 @@ export class NotionClient {
 }
 
 /**
- * Whether Notion said to slow down, so the request can be sent again. A 429 means Notion did
- * nothing with it, writes included. A 529 to a write may come after Notion applied it, so it
- * stays a server error, and the change's outcome stays unknown.
+ * Whether Notion said to slow down, so the request can be sent again, body unchanged (a write
+ * keeps its requestId and transaction id). A 429 means Notion turned the request away before
+ * doing anything with it, writes included: that is what the status means, and these internal
+ * endpoints have no documentation that says otherwise. A 529 to a write may come after Notion
+ * applied it, so it stays a server error, and the change's outcome stays unknown.
  */
 function slowDown(endpoint: NotionEndpoint, res: NotionResponse): boolean {
   if (res.error !== undefined || res.redirected) return false
