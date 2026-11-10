@@ -72,7 +72,9 @@ describe('state', () => {
     const dir = await mkdtemp(join(tmpdir(), 'e2e-state-'))
     try {
       const path = statePath('claude/issue-106', dir)
-      expect(path).toBe(join(dir, 'claude%2fissue-106.json'))
+      expect(path).toBe(join(dir, 'claude%00002fissue-106.json'))
+      // Escapes of different lengths could make two owners meet; fixed width can't.
+      expect(statePath('\u0001a', dir)).not.toBe(statePath('\u001a', dir))
       expect(statePath('claude_issue-106', dir)).not.toBe(path)
       expect(await loadState(path)).toEqual({ created: [] })
       await saveState(path, { notionTarget: 'T1', panelTarget: 'T2', created: ['p1'] })

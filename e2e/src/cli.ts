@@ -92,7 +92,12 @@ async function withLock<T>(lock: CanaryLock, owner: string, purpose: string, fn:
   }
 }
 
-async function browserCommand(browser: Browser, state: State, command: Command): Promise<number> {
+async function browserCommand(
+  browser: Browser,
+  state: State,
+  command: Command,
+  save: () => Promise<void>,
+): Promise<number> {
   switch (command.name) {
     case 'reload': {
       const path = await withExtensionsPage(browser, async (page) => {
@@ -141,11 +146,15 @@ async function browserCommand(browser: Browser, state: State, command: Command):
         return { url: location.href, userId: id && decodeURIComponent(id) }
       }, [])
       const space = await privateSpace(post, url, userId)
+      // Remembered before it is sent, so trash still takes it if this command doesn't finish.
+      const remember = async (id: string) => {
+        state.created.push(id)
+        await save()
+      }
       const id =
         command.name === 'page'
-          ? await createPage(post, space, command.title, command.markdown)
-          : await createDatabase(post, space, command.title, command.rows.map(parseRow))
-      state.created.push(id)
+          ? await createPage(post, space, command.title, command.markdown, remember)
+          : await createDatabase(post, space, command.title, command.rows.map(parseRow), remember)
       console.log(`id: ${id}\nurl: ${pageUrl(url, id)}`)
       return 0
     }
@@ -154,9 +163,13 @@ async function browserCommand(browser: Browser, state: State, command: Command):
         throw new E2eError(`pnpm e2e only trashes pages it created, and ${command.id} is not one of them.`)
       }
       const tab = await notionTab(browser, state, undefined, DEFAULT_NOTION_URL)
-      await trash(await tabPost(tab), command.id)
+      const result = await trash(await tabPost(tab), command.id)
       state.created = state.created.filter((id) => id !== command.id)
-      console.log(`Moved ${command.id} to the trash.`)
+      console.log(
+        result === 'trashed'
+          ? `Moved ${command.id} to the trash.`
+          : `${command.id} doesn't exist (its creation never reached Notion); forgot it.`,
+      )
       return 0
     }
     case 'close': {
@@ -189,7 +202,7 @@ async function main(argv: string[]): Promise<number> {
     const state = await loadState(path)
     const cdp = await Cdp.connect(cdpPort())
     try {
-      return await browserCommand(new Browser(cdp), state, command)
+      return await browserCommand(new Browser(cdp), state, command, () => saveState(path, state))
     } finally {
       await saveState(path, state)
       cdp.close()

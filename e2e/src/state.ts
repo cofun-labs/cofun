@@ -18,7 +18,8 @@ export const STATE_DIR = join(homedir(), '.cache', 'notion-copilot', 'e2e')
 
 /** One file per owner; other characters are escaped, so different owners never share a file. */
 export function statePath(owner: string, dir = STATE_DIR): string {
-  const name = owner.replace(/[^\w.-]/g, (c) => `%${c.codePointAt(0)!.toString(16)}`)
+  // Fixed width, so the escape is one-to-one.
+  const name = owner.replace(/[^\w.-]/gu, (c) => `%${c.codePointAt(0)!.toString(16).padStart(6, '0')}`)
   return join(dir, `${name}.json`)
 }
 

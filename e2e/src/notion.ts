@@ -183,23 +183,45 @@ export async function transact(post: Post, spaceId: string, operations: Operatio
   )
 }
 
-export async function createPage(post: Post, space: PrivateSpace, title: string, markdown: string): Promise<string> {
+/**
+ * Creates a private page and returns its id. `beforeWrite` hears the id before anything is sent, so
+ * the caller can remember it even if the command is interrupted or Notion doesn't answer.
+ */
+export async function createPage(
+  post: Post,
+  space: PrivateSpace,
+  title: string,
+  markdown: string,
+  beforeWrite: (id: string) => Promise<void>,
+): Promise<string> {
   const { operations, pageId } = privatePageOps(space, title, parseMarkdown(markdown))
+  await beforeWrite(pageId)
   await transact(post, space.spaceId, operations)
   return pageId
 }
 
-export async function createDatabase(post: Post, space: PrivateSpace, title: string, rows: TaskRow[]): Promise<string> {
+/** Creates a private task database and returns its id; `beforeWrite` as for createPage. */
+export async function createDatabase(
+  post: Post,
+  space: PrivateSpace,
+  title: string,
+  rows: TaskRow[],
+  beforeWrite: (id: string) => Promise<void>,
+): Promise<string> {
   const { operations, pageId } = taskDatabaseOps(space, title, rows)
+  await beforeWrite(pageId)
   await transact(post, space.spaceId, operations)
   return pageId
 }
 
-/** Moves a top-level page to the trash, as Notion's "Move to Trash" does. */
-export async function trash(post: Post, pageId: string): Promise<void> {
+/**
+ * Moves a top-level page to the trash, as Notion's "Move to Trash" does. `missing`: there is no such
+ * page, for example because the command creating it was interrupted before Notion saved it.
+ */
+export async function trash(post: Post, pageId: string): Promise<'trashed' | 'missing'> {
   const page = await getBlock(post, pageId)
-  if (!page?.space_id) throw new E2eError('The page is gone, or the signed-in Notion account has no access to it.')
-  if (page.alive === false) return
+  if (!page?.space_id) return 'missing'
+  if (page.alive === false) return 'trashed'
   const spaceId = page.space_id
   if (page.parent_table !== 'space' || !page.parent_id) {
     throw new E2eError(`The page is no longer at the top of the workspace (its parent is a ${page.parent_table}).`)
@@ -217,6 +239,7 @@ export async function trash(post: Post, pageId: string): Promise<void> {
     { records: [{ table: 'block', id: pageId, spaceId }], permanentlyDelete: false },
     spaceId,
   )
+  return 'trashed'
 }
 
 /** The link to a page, on the tab's host. */
