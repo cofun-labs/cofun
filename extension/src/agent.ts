@@ -35,9 +35,9 @@ export interface ToolSpec {
   needsConfirmation?: boolean
   /**
    * What a call does, in words, from the state before it runs: shown on the call's card, and to the
-   * user before agreeing when the tool needs confirmation.
+   * user before agreeing when the tool needs confirmation. It may look things up first.
    */
-  preview?: (args: Record<string, unknown>) => string | undefined
+  preview?: (args: Record<string, unknown>) => string | undefined | Promise<string | undefined>
 }
 
 /** A tool call waiting for the user's OK. */
@@ -229,7 +229,7 @@ export class CopilotAgent {
         }
       }
       // From the arguments the tool runs with, and before it runs: the run may change what the preview reads.
-      const preview = previewCall(this.tools.get(toolCall.name), args)
+      const preview = await previewCall(this.tools.get(toolCall.name), args)
       onUpdate({ type: 'tool_ready', id: toolCall.id, args, preview })
       if (!this.confirmed.has(toolCall.name)) {
         started.add(toolCall.id)
@@ -585,9 +585,9 @@ function size(message: AgentMessage): number {
 }
 
 /** What a call changes, in words; a broken preview must not stop the call, so it gives none. */
-function previewCall(tool: ToolSpec | undefined, args: unknown): string | undefined {
+async function previewCall(tool: ToolSpec | undefined, args: unknown): Promise<string | undefined> {
   try {
-    return tool?.preview?.((args ?? {}) as Record<string, unknown>)
+    return await tool?.preview?.((args ?? {}) as Record<string, unknown>)
   } catch (err) {
     console.error('Could not preview the tool call', err)
     return undefined

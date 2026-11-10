@@ -25,6 +25,7 @@
 - [x] Edit Notion pages: insert, replace, and delete content by block; the side panel shows each change
 - [x] Create pages with content
 - [x] Change titles, icons, and database properties, and add database rows
+- [x] Move pages under another page, duplicate pages, and move pages to Notion's trash (after the user agrees)
 - [x] Work on what the user selected in the page
 
 ## Tech choices
@@ -59,7 +60,7 @@ Conversations are saved in the extension's IndexedDB, one database per Clerk use
 
 ### Writes without approval
 
-The agent edits pages, creates pages and rows, and changes properties without asking first. No tool deletes pages yet; the one that will (#74) is to ask for the user's approval each time. Each change shows on its tool card in the side panel, and a page's history in Notion can undo edits. The trade-off: the agent reads text the user doesn't control (shared pages, guest content, search results), and an instruction hidden in that text can make it write as the user without anyone being asked. It could change many pages in one call, or copy content the user can see into a page someone else can read. Page history can undo the changes, but not the copy.
+The agent edits pages, creates pages and rows, changes properties, and moves and duplicates pages without asking first. Moving pages to the trash is the one thing it asks the user's approval for, each time, showing each page by its current name; pages only ever go to Notion's trash, where they can be restored. Each change shows on its tool card in the side panel, and a page's history in Notion can undo edits. The trade-off: the agent reads text the user doesn't control (shared pages, guest content, search results), and an instruction hidden in that text can make it write as the user without anyone being asked. It could change many pages in one call, move a page somewhere others can read it, or copy content the user can see into a page someone else can read. Page history and "Move to" can undo the changes, but not the copy.
 
 ## Layout
 

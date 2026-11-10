@@ -26,6 +26,8 @@ export const NO_NOTION_TAB = 'No Notion page is open in this window.'
 export const SIGNED_OUT = 'Not signed in to Notion in this tab. Sign in to Notion and try again.'
 export const NO_ACCESS = "The Notion page doesn't exist, or the signed-in Notion account has no access to it."
 export const IN_TRASH = 'The Notion page or block is in the trash.'
+export const DUPLICATE_UNKNOWN =
+  'Notion did not say whether the copy was made: it may still appear. Look for it before trying again.'
 export const OUTCOME_UNKNOWN =
   'Notion did not answer, so the change may or may not have been saved. Read the page again before retrying.'
 
@@ -37,6 +39,9 @@ export type NotionEndpoint =
   | 'search'
   | 'queryCollection'
   | 'getSpaces'
+  | 'enqueueTask'
+  | 'getTasks'
+  | 'deleteContentRecords'
 
 /** What one request to Notion returned. `error` is set when no HTTP response came back. */
 export interface NotionResponse {
@@ -98,11 +103,21 @@ export interface Pointer {
  * One write. Only these commands are used: `set` creates a record, `update` changes non-property
  * fields, the list commands edit child lists, and `updateBlockPropertyValue` changes property
  * values, text included. Notion rejects `set` on an existing block's properties.
+ * `insertChildrenAfter` moves existing blocks into a parent: Notion takes them out of their old
+ * parent itself. `removeChild` on a page's parent moves the page to the trash.
  */
 export interface Operation {
   pointer: Pointer
   path: string[]
-  command: 'set' | 'update' | 'listAfter' | 'listBefore' | 'listRemove' | 'removeChild' | 'updateBlockPropertyValue'
+  command:
+    | 'set'
+    | 'update'
+    | 'listAfter'
+    | 'listBefore'
+    | 'listRemove'
+    | 'removeChild'
+    | 'insertChildrenAfter'
+    | 'updateBlockPropertyValue'
   args: unknown
 }
 
@@ -138,6 +153,11 @@ export interface LoadedPage {
   /** False if the page had more chunks than `maxChunks`. */
   complete: boolean
 }
+
+/** How often a duplicate's progress is checked, and how long it may take before giving up. */
+const TASK_POLL_MS = 500
+const TASK_TIMEOUT_MS = 60_000
+const FIRST_POLL_MS = 200
 
 const CHUNK_LIMIT = 100
 /** Records asked for in one syncRecordValuesMain request at most. */
@@ -326,6 +346,110 @@ export class NotionClient {
   }
 
   /**
+   * Copies a page with everything in it (content, child pages, databases), as Notion's Duplicate
+   * does: Notion copies it on its side, puts the copy right after the page in `parentId`, and adds
+   * a number to its title. Resolves with the copy's id once Notion has finished.
+   */
+  async duplicatePage(
+    space: string,
+    pageId: string,
+    parentId: string,
+    { signal, pollMs = TASK_POLL_MS, timeoutMs = TASK_TIMEOUT_MS }: DuplicateOptions = {},
+  ): Promise<string> {
+    const spaceId = notionId(space)
+    const page = notionId(pageId)
+    const parent = notionId(parentId)
+    let taskId: unknown
+    try {
+      // Without the workspace on the request, Notion routes the task where the page isn't, and it fails.
+      const { json } = await this.request<{ taskId?: unknown }>(
+        'enqueueTask',
+        {
+          task: {
+            eventName: 'duplicateSubtree',
+            request: {
+              source: { ids: [page], spaceId },
+              destination: { type: 'block', parent: { table: 'block', id: parent, spaceId }, siblingId: page },
+              options: { appendNumericTitleSuffix: true },
+              userAction: 'Notion Copilot: duplicate_page',
+            },
+            cellRouting: { spaceIds: [spaceId] },
+          },
+        },
+        spaceId,
+      )
+      taskId = json.taskId
+    } catch (err) {
+      if (err instanceof NotionError && err.unanswered) throw new NotionError('outcome_unknown', DUPLICATE_UNKNOWN)
+      throw err
+    }
+    if (typeof taskId !== 'string') throw new NotionError('notion_error', 'Notion did not start copying the page.')
+    const deadline = Date.now() + timeoutMs
+    // Once Notion has the task, it copies the page whatever happens here: stopping or failing to
+    // hear back leaves the outcome unknown, never undone.
+    for (let poll = 0; ; poll++) {
+      // A small page is copied at once; a big one takes a while.
+      await wait(poll === 0 ? Math.min(pollMs, FIRST_POLL_MS) : pollMs, signal).catch(() => {
+        throw new NotionError('outcome_unknown', DUPLICATE_UNKNOWN)
+      })
+      let task: { state?: unknown; error?: unknown; status?: { targetIds?: unknown } } | undefined
+      try {
+        const { json } = await this.request<{ results?: (typeof task)[] }>('getTasks', { taskIds: [taskId] }, spaceId)
+        task = json.results?.[0]
+      } catch (err) {
+        if (err instanceof NotionError && (err.code === 'signed_out' || err.code === 'no_access')) throw err
+        throw new NotionError('outcome_unknown', DUPLICATE_UNKNOWN, { cause: err })
+      }
+      if (task?.state === 'success') {
+        const [copy] = Array.isArray(task.status?.targetIds) ? task.status.targetIds : []
+        if (typeof copy !== 'string') throw new NotionError('outcome_unknown', DUPLICATE_UNKNOWN)
+        return copy
+      }
+      if (task?.state === 'failure') {
+        throw new NotionError('notion_error', `Notion could not copy the page: ${String(task.error ?? 'no details')}`)
+      }
+      if (Date.now() >= deadline) throw new NotionError('outcome_unknown', DUPLICATE_UNKNOWN)
+    }
+  }
+
+  /**
+   * Moves pages to Notion's trash, as its "Move to Trash" does: each is taken out of its parent's
+   * list in one transaction, then Notion is told they are trashed. Never deletes for good: they
+   * stay in the trash, where they can be restored.
+   */
+  async trashPages(space: string, pages: { id: string; parentId: string; parentTable: 'block' | 'space' }[]) {
+    const spaceId = notionId(space)
+    const now = Date.now()
+    const operations: Operation[] = []
+    for (const p of pages) {
+      // A page in a page is listed in its `content`; a top-level page in its workspace's `pages`.
+      operations.push({
+        pointer: { table: p.parentTable, id: p.parentId },
+        path: [p.parentTable === 'block' ? 'content' : 'pages'],
+        command: 'removeChild',
+        args: { id: notionId(p.id) },
+      })
+      operations.push({
+        pointer: { table: 'block', id: p.id },
+        path: [],
+        command: 'update',
+        args: { last_edited_time: now },
+      })
+    }
+    await this.submitTransaction(spaceId, operations, 'Notion Copilot: trash_page')
+    try {
+      // What Notion's own client sends after trashing; `permanentlyDelete` stays false, always.
+      await this.request(
+        'deleteContentRecords',
+        { records: pages.map((p) => ({ id: notionId(p.id), table: 'block', spaceId })), permanentlyDelete: false },
+        spaceId,
+      )
+    } catch {
+      // The pages are in the trash already: the transaction did that.
+    }
+  }
+
+  /**
    * Searches a workspace's pages by title and content, as Notion's quick find does. Notion only
    * returns what the signed-in account can open.
    */
@@ -445,6 +569,28 @@ export function mergeRecordMaps(target: RecordMap, source: RecordMap): RecordMap
   return target
 }
 
+export interface DuplicateOptions {
+  signal?: AbortSignal
+  pollMs?: number
+  timeoutMs?: number
+}
+
+/** Resolves after `ms`, or rejects when `signal` aborts. */
+function wait(ms: number, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) return reject(signal.reason)
+    const timer = setTimeout(() => {
+      signal?.removeEventListener('abort', abort)
+      resolve()
+    }, ms)
+    const abort = () => {
+      clearTimeout(timer)
+      reject(signal!.reason)
+    }
+    signal?.addEventListener('abort', abort, { once: true })
+  })
+}
+
 /** Whether `value` has a `crdt_data` key at any depth. */
 function hasCrdtData(value: unknown): boolean {
   if (!value || typeof value !== 'object') return false
@@ -520,6 +666,13 @@ export function blockOps(spaceId: string, now: number) {
     },
     setFormat(id: string, format: object): Operation {
       return { pointer: pointer(id), path: ['format'], command: 'update', args: format }
+    },
+    /**
+     * Moves pages to the end of `parentId`, as Notion's "Move to" does. Notion takes each out of
+     * its old parent itself, and refuses to move a page into one of its own pages.
+     */
+    moveInto(parentId: string, ids: string[]): Operation {
+      return { pointer: pointer(parentId), path: ['content'], command: 'insertChildrenAfter', args: { ids } }
     },
     /** Marks a block as edited now; Notion doesn't do it itself. */
     touch(id: string): Operation {

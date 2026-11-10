@@ -1074,6 +1074,289 @@ function toProperties(schema: Schema, props: [string, PropertyInput][]): Record<
   return out
 }
 
+/** How many pages one move_page or trash_page call takes at most, so its preview stays readable. */
+export const ORGANIZE_MAX = 50
+
+/** How far up from a page move_page looks for the pages it is in. */
+const ANCESTORS_MAX = 100
+
+/** A list of pages as move_page and trash_page take it: ids, each once. */
+function pageList(value: unknown): string[] {
+  if (!Array.isArray(value) || !value.length) throw new EditError('`pages` must be a list with at least one page.')
+  if (value.length > ORGANIZE_MAX) throw new EditError(`At most ${ORGANIZE_MAX} pages can go in one call.`)
+  const ids = value.map((v, i) => {
+    const id = typeof v === 'string' ? pageArg(v) : undefined
+    if (!id) throw new EditError(`Page ${i + 1} is not a Notion page URL or id: ${oneLine(String(v))}`)
+    return id
+  })
+  return [...new Set(ids)]
+}
+
+/** The ids `pages` names, for a preview: whatever can be read of it, never an error. */
+function previewIds(value: unknown): { given: string; id?: string }[] {
+  const list = Array.isArray(value) ? value : []
+  return list.slice(0, ORGANIZE_MAX).map((v) => {
+    const given = typeof v === 'string' ? v.trim() : ''
+    return { given, id: given ? pageArg(given) : undefined }
+  })
+}
+
+/** A page's title as the agent last saw it, if it saw one. */
+function knownTitle(id: string): string | undefined {
+  return pageReads.get(id)?.title ?? seenRows.get(id)?.title ?? seenDatabases.get(id)
+}
+
+/** A page for a preview: its title when known, and its reference. */
+function shownPage(given: string, id: string | undefined, title = id ? knownTitle(id) : undefined): string {
+  if (!id) return oneLine(given) || '(no page given)'
+  return `${title ? `${oneLine(title)} ` : ''}^${hexId(id)}`
+}
+
+/** Why a block can't be moved, copied, or trashed as a page; undefined if it can. */
+function notAPage(block: NotionRecord, verb: string): string | undefined {
+  const ref = `^${hexId(block.id)}`
+  if (block.type === 'collection_view') return `${ref} is a database inside a page, not a page: move the page it is on.`
+  if (block.type !== 'page' && block.type !== 'collection_view_page')
+    return `${ref} is a block inside a page, not a page.`
+  if (block.parent_table === 'collection') return `${ref} is a database row: rows can't be ${verb} with this tool.`
+  return undefined
+}
+
+/** Forgets what the agent cached of these pages, which a move, copy, or trash changed. */
+function forgetPages(ids: Iterable<string>) {
+  for (const id of ids) {
+    pageReads.delete(id)
+    seenRows.delete(id)
+    for (const key of recentReads.keys()) if (key.endsWith(`:${id}`)) recentReads.delete(key)
+  }
+}
+
+export const movePage: ToolSpec = {
+  name: 'move_page',
+  description:
+    'Moves pages, or databases that are pages of their own, to the end of another page, with everything in them, ' +
+    'as Notion\'s "Move to" does. Several pages can go in one call. A page can\'t go into itself or a page ' +
+    "inside it, and database rows can't be moved.",
+  parameters: {
+    type: 'object',
+    properties: {
+      pages: {
+        type: 'array',
+        minItems: 1,
+        maxItems: ORGANIZE_MAX,
+        items: { type: 'string' },
+        description: 'Ids or URLs of the pages to move.',
+      },
+      to: { type: 'string', description: 'Id or URL of the page to move them into.' },
+    },
+    required: ['pages', 'to'],
+    additionalProperties: false,
+  },
+  preview: (args) => {
+    const pages = previewIds(args.pages)
+    const to = typeof args.to === 'string' ? args.to.trim() : ''
+    return [
+      `Move ${pages.length} page${pages.length === 1 ? '' : 's'}`,
+      `To the end of: ${shownPage(to, to ? pageArg(to) : undefined)}`,
+      ...pages.map((p) => `    ${shownPage(p.given, p.id)}`),
+    ].join('\n')
+  },
+  run: async (args, signal) => {
+    const ids = pageList(args.pages)
+    const to = typeof args.to === 'string' ? args.to.trim() : ''
+    if (!to) throw new EditError('`to` is required: the id or URL of the page to move them into.')
+    const destId = pageArg(to)
+    if (!destId) throw new EditError(`Not a Notion page URL or id: ${oneLine(to)}`)
+    const tab = await activeNotionTab()
+    const records = (await tab.client.getRecords([...ids, destId].map((id) => ({ table: 'block' as const, id }))))
+      .block!
+    const dest = records[destId]
+    if (dest.type !== 'page') {
+      throw new EditError(
+        PAGE_TYPES.has(String(dest.type))
+          ? `^${hexId(destId)} is a database: pages can only be moved into a page.`
+          : `^${hexId(destId)} is a block inside a page: pages can only be moved into a page.`,
+      )
+    }
+    for (const id of ids) {
+      const why = notAPage(records[id], 'moved')
+      if (why) throw new EditError(why)
+      if (records[id].space_id !== dest.space_id)
+        throw new EditError(`^${hexId(id)} is in another workspace than ^${hexId(destId)}.`)
+    }
+    // The destination and every page it is in: none of them may be a page that moves.
+    const chain = await ancestors(tab, dest)
+    for (const id of ids) {
+      if (chain.includes(id))
+        throw new EditError(
+          id === destId
+            ? `^${hexId(id)} can't be moved into itself.`
+            : `^${hexId(id)} can't be moved into ^${hexId(destId)}: that page is inside it.`,
+        )
+    }
+    const op = blockOps(String(dest.space_id), Date.now())
+    const parents = new Set(ids.map((id) => String(records[id].parent_id)))
+    signal?.throwIfAborted()
+    try {
+      // Moving again puts the pages in the same place, so after a lost answer a retry does no harm.
+      await tab.client.submitTransaction(
+        String(dest.space_id),
+        [op.moveInto(destId, ids), op.touch(destId), ...ids.map((id) => op.touch(id))],
+        'Notion Copilot: move_page',
+      )
+    } finally {
+      forgetPages([destId, ...parents])
+    }
+    return `Moved ${ids.length} page${ids.length === 1 ? '' : 's'} to the end of ^${hexId(destId)}: ${ids.map((id) => `^${hexId(id)}`).join(', ')}.`
+  },
+}
+
+/** `page` and the pages it is in, from `page` up, as far as the account can see. */
+async function ancestors(tab: NotionTab, page: NotionRecord): Promise<string[]> {
+  const chain = [page.id]
+  let current = page
+  for (let depth = 0; depth < ANCESTORS_MAX && current.parent_table === 'block' && current.parent_id; depth++) {
+    const parentId = current.parent_id
+    // A page the account can't open ends the walk; Notion itself still refuses a move into a page's own pages.
+    const parent = (await tab.client.findRecords([{ table: 'block', id: parentId }])).block?.[parentId]
+    if (!parent) break
+    chain.push(parent.id)
+    current = parent
+  }
+  return chain
+}
+
+export const duplicatePage: ToolSpec = {
+  name: 'duplicate_page',
+  description:
+    'Duplicates a page, or a database that is a page of its own, with everything in it (content, pages, and ' +
+    "databases inside), as Notion's Duplicate does: the copy goes right after the page, and Notion adds a number " +
+    "to its title. Returns the copy's id and URL. Database rows and pages at the top of the sidebar can't be " +
+    'duplicated with this tool.',
+  parameters: {
+    type: 'object',
+    properties: { page: { type: 'string', description: 'Id or URL of the page to duplicate.' } },
+    required: ['page'],
+    additionalProperties: false,
+  },
+  preview: (args) => {
+    const given = typeof args.page === 'string' ? args.page.trim() : ''
+    return [
+      'Duplicate a page, with everything in it',
+      `Page: ${shownPage(given, given ? pageArg(given) : undefined)}`,
+    ].join('\n')
+  },
+  run: async (args, signal) => {
+    const given = typeof args.page === 'string' ? args.page.trim() : ''
+    if (!given) throw new EditError('`page` is required: the id or URL of the page to duplicate.')
+    const id = pageArg(given)
+    if (!id) throw new EditError(`Not a Notion page URL or id: ${oneLine(given)}`)
+    const tab = await activeNotionTab()
+    const page = (await tab.client.getRecords([{ table: 'block', id }])).block![id]
+    const why = notAPage(page, 'duplicated')
+    if (why) throw new EditError(why)
+    if (page.parent_table !== 'block' || !page.parent_id)
+      throw new EditError(
+        `^${hexId(id)} is at the top of the sidebar: duplicate it in Notion, or move it into a page first.`,
+      )
+    signal?.throwIfAborted()
+    try {
+      const copy = await tab.client.duplicatePage(String(page.space_id), id, page.parent_id, { signal })
+      const hex = hexId(copy)
+      return [
+        `Duplicated ^${hexId(id)} as ^${hex}, right after it in ^${hexId(page.parent_id)}.`,
+        `URL: ${new URL(tab.url).origin}/${hex}`,
+      ].join('\n')
+    } catch (err) {
+      // A retry would make a second copy if this one was made: the agent must look first.
+      if (err instanceof NotionError && err.code === 'outcome_unknown')
+        throw new NotionError(
+          'outcome_unknown',
+          `${err.message} List the pages of ^${hexId(page.parent_id)} to see whether the copy is there.`,
+          { cause: err },
+        )
+      throw err
+    } finally {
+      forgetPages([page.parent_id])
+    }
+  },
+}
+
+export const trashPage: ToolSpec = {
+  name: 'trash_page',
+  description:
+    "Moves pages, or databases that are pages of their own, to Notion's trash, with everything in them. The user " +
+    "is asked first, each time. Nothing is deleted for good: the pages can be restored from Notion's trash. " +
+    "Database rows and pages at the top of a teamspace can't be trashed with this tool.",
+  needsConfirmation: true,
+  parameters: {
+    type: 'object',
+    properties: {
+      pages: {
+        type: 'array',
+        minItems: 1,
+        maxItems: ORGANIZE_MAX,
+        items: { type: 'string' },
+        description: 'Ids or URLs of the pages to trash.',
+      },
+    },
+    required: ['pages'],
+    additionalProperties: false,
+  },
+  // The user agrees from this, so it names each page as Notion has it now, not as the agent saw it.
+  preview: async (args) => {
+    const pages = previewIds(args.pages)
+    const ids = pages.flatMap((p) => (p.id ? [p.id] : []))
+    let found: Record<string, NotionRecord> = {}
+    let names = new Map<string, string>()
+    try {
+      const tab = await activeNotionTab()
+      found = (await tab.client.findRecords(ids.map((id) => ({ table: 'block' as const, id })))).block ?? {}
+      names = await databaseNames(tab, Object.values(found))
+    } catch {
+      // Without Notion, the names the agent saw are all there is.
+    }
+    return [
+      `Move ${pages.length} page${pages.length === 1 ? '' : 's'} to the trash, with everything in ${pages.length === 1 ? 'it' : 'them'}`,
+      ...pages.map((p) => {
+        const block = p.id ? found[p.id] : undefined
+        const title = block
+          ? names.get(block.id) || runsText((block.properties as { title?: unknown } | undefined)?.title) || 'Untitled'
+          : undefined
+        return `    ${shownPage(p.given, p.id, title ?? (p.id ? knownTitle(p.id) : undefined))}`
+      }),
+      "They stay in Notion's trash, where they can be restored.",
+    ].join('\n')
+  },
+  run: async (args, signal) => {
+    const ids = pageList(args.pages)
+    const tab = await activeNotionTab()
+    const records = (await tab.client.getRecords(ids.map((id) => ({ table: 'block' as const, id })))).block!
+    const pages = ids.map((id) => {
+      const page = records[id]
+      const why = notAPage(page, 'trashed')
+      if (why) throw new EditError(why)
+      if ((page.parent_table !== 'block' && page.parent_table !== 'space') || !page.parent_id)
+        throw new EditError(`^${hexId(id)} is at the top of a teamspace: trash it in Notion.`)
+      return { id, parentId: page.parent_id, parentTable: page.parent_table as 'block' | 'space' }
+    })
+    const spaces = new Set(ids.map((id) => String(records[id].space_id)))
+    if (spaces.size > 1)
+      throw new EditError('These pages are in different workspaces: trash each workspace’s pages in its own call.')
+    signal?.throwIfAborted()
+    try {
+      // Trashing again changes nothing, so after a lost answer a retry does no harm.
+      await tab.client.trashPages([...spaces][0], pages)
+    } finally {
+      forgetPages([...ids, ...pages.map((p) => p.parentId)])
+    }
+    return [
+      `Moved ${ids.length} page${ids.length === 1 ? '' : 's'} to Notion's trash: ${ids.map((id) => `^${hexId(id)}`).join(', ')}.`,
+      "They can be restored from Notion's trash.",
+    ].join('\n')
+  },
+}
+
 export const getSelection: ToolSpec = {
   name: 'get_selection',
   description:
@@ -1304,4 +1587,7 @@ export const TOOLS: ToolSpec[] = [
   queryDatabase,
   updatePages,
   listPages,
+  movePage,
+  duplicatePage,
+  trashPage,
 ]

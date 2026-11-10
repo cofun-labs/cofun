@@ -170,6 +170,12 @@ export class FakeWorkspace {
   failAfterApply = false
   /** Databases' data sources (their schemas), by collection id. */
   collections = new Map<string, NotionRecordLike>()
+  /** Background tasks (duplicates), by task id; each reports `in_progress` once before it ends. */
+  tasks = new Map<string, { polls: number; result: Record<string, unknown> }>()
+  /** Makes the next duplicate fail on Notion's side. */
+  failTask = false
+  /** deleteContentRecords requests, as sent. */
+  contentDeletes: { records: { id: string }[]; permanentlyDelete: unknown }[] = []
 
   constructor(
     blocks: Record<string, unknown>[],
@@ -229,6 +235,40 @@ export class FakeWorkspace {
         json: { recordMap: { __version__: 3, block, ...(Object.keys(collection).length ? { collection } : {}) } },
       }
     }
+    if (endpoint === 'enqueueTask') {
+      const task = body.task as { eventName: string; request: Record<string, unknown> }
+      const taskId = `${crypto.randomUUID()}:fake-cell`
+      if (task.eventName !== 'duplicateSubtree') return { status: 400, json: { name: 'ValidationError' } }
+      const request = task.request as {
+        source: { ids: string[]; spaceId?: string }
+        destination: { parent: { id: string; spaceId?: string }; siblingId: string }
+      }
+      // Notion routes the task by its workspace; without it the task fails, as it does in Notion.
+      if (request.source.spaceId !== this.spaceId || request.destination.parent.spaceId !== this.spaceId) {
+        this.tasks.set(taskId, { polls: 0, result: { state: 'in_progress', error: 'Invalid input.' } })
+        return { status: 200, json: { taskId } }
+      }
+      if (this.failTask) {
+        this.failTask = false
+        this.tasks.set(taskId, { polls: 0, result: { state: 'failure', error: 'Copy failed.' } })
+        return { status: 200, json: { taskId } }
+      }
+      const copy = this.duplicate(request.source.ids[0], request.destination.parent.id, request.destination.siblingId)
+      this.tasks.set(taskId, { polls: 0, result: { state: 'success', status: { targetIds: [copy] } } })
+      return { status: 200, json: { taskId } }
+    }
+    if (endpoint === 'getTasks') {
+      const results = (body.taskIds as string[]).map((id) => {
+        const task = this.tasks.get(id)!
+        const result = task.polls++ === 0 ? { state: 'in_progress' } : task.result
+        return { id, eventName: 'duplicateSubtree', ...result }
+      })
+      return { status: 200, json: { results } }
+    }
+    if (endpoint === 'deleteContentRecords') {
+      this.contentDeletes.push(body as FakeWorkspace['contentDeletes'][number])
+      return { status: 200, json: { recordMap: { __version__: 3 } } }
+    }
     if (endpoint === 'saveTransactionsFanout') {
       if (this.reject) {
         this.reject = false
@@ -264,6 +304,34 @@ export class FakeWorkspace {
       return { status: 200, json: {} }
     }
     return undefined
+  }
+
+  /**
+   * Copies a page and everything under it, as Notion's duplicateSubtree does: new ids throughout,
+   * a number added to the title, and the copy right after `siblingId` in `parentId`.
+   */
+  private duplicate(sourceId: string, parentId: string, siblingId: string): string {
+    const copyOf = (id: string, parent: string): string => {
+      const r = this.records.get(id)!
+      const copy = structuredClone(r)
+      copy.id = crypto.randomUUID()
+      copy.version = 1
+      copy.parent_id = parent
+      copy.parent_table = 'block'
+      copy.copied_from = id
+      copy.content = ((r.content as string[] | undefined) ?? []).map((c) => copyOf(c, copy.id))
+      this.records.set(copy.id, copy)
+      return copy.id
+    }
+    const copyId = copyOf(sourceId, parentId)
+    const copy = this.records.get(copyId)!
+    const title = (copy.properties as { title?: string[][] } | undefined)?.title?.[0]?.[0] ?? 'Untitled'
+    copy.properties = { ...(copy.properties as object), title: [[`${title} (1)`]] }
+    const parent = this.records.get(parentId)!
+    const list = [...((parent.content as string[]) ?? [])]
+    list.splice(list.indexOf(siblingId) + 1, 0, copyId)
+    this.records.set(parentId, { ...parent, content: list, version: parent.version + 1 })
+    return copyId
   }
 }
 
@@ -317,6 +385,38 @@ function applyOperation(
         list.splice(i, 0, args.id as string)
       }
       record[op.path[0]] = list
+      return
+    }
+    case 'insertChildrenAfter': {
+      // Notion's "Move to": it takes each page out of its old parent itself.
+      const { ids, after } = args as { ids: string[]; after?: string }
+      for (const moved of ids) {
+        for (let at: NotionRecordLike | undefined = record; at;) {
+          if (at.id === moved) throw new Error('incomplete_ancestor_path')
+          at = at.parent_table === 'block' ? records.get(at.parent_id as string) : undefined
+        }
+        const child = records.get(moved)
+        if (!child) throw new Error(`No record ${moved} to move`)
+        const old = records.get(child.parent_id as string)
+        const oldList = child.parent_table === 'block' ? 'content' : 'pages'
+        if (old) old[oldList] = ((old[oldList] as string[] | undefined) ?? []).filter((x) => x !== moved)
+        child.parent_id = id
+        child.parent_table = 'block'
+      }
+      const list = ((record.content as string[] | undefined) ?? []).filter((x) => !ids.includes(x))
+      const i = after ? list.indexOf(after) + 1 : list.length
+      list.splice(i, 0, ...ids)
+      record.content = list
+      return
+    }
+    case 'removeChild': {
+      // Notion's "Move to Trash": out of the parent's list, and into the trash.
+      const childId = args.id as string
+      const child = records.get(childId)
+      if (!child || child.parent_id !== id) throw new Error(`${childId} does not have ${id} as its parent`)
+      record[op.path[0]] = ((record[op.path[0]] as string[] | undefined) ?? []).filter((x) => x !== childId)
+      child.alive = false
+      child.moved_to_trash_time = Date.now()
       return
     }
     default:

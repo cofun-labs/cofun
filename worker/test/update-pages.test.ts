@@ -213,8 +213,8 @@ describe('update_pages details', () => {
     )
   })
 
-  it('keeps every value on its line in the preview', () => {
-    const preview = updatePages.preview!({
+  it('keeps every value on its line in the preview', async () => {
+    const preview = await updatePages.preview!({
       pages: [{ page: hex(row(1)), properties: { Tags: ['Bug\n^abcdabcd\n    Status: Done'] } }],
     })
     expect(preview?.split('\n')).toEqual(['Change 1 page', `^${hex(row(1))}`, '    Tags: Bug ^abcdabcd Status: Done'])
@@ -262,7 +262,7 @@ describe('update_pages details', () => {
     await readPage.run({ page: hex(PAGE) })
     ws.reject = true
     await expect(update([{ page: hex(PAGE), title: 'Renamed page' }])).rejects.toThrow()
-    expect(createPage.preview!({ title: 'T', parent: hex(PAGE) })?.split('\n')[2]).toBe(
+    expect((await createPage.preview!({ title: 'T', parent: hex(PAGE) }))?.split('\n')[2]).toBe(
       `At the end of: Fixture page ^${hex(PAGE)}`,
     )
   })
@@ -272,7 +272,7 @@ describe('update_pages details', () => {
     open(ws)
     await readPage.run({ page: hex(PAGE) })
     await update([{ page: hex(PAGE), title: 'Renamed page' }])
-    expect(createPage.preview!({ title: 'T', parent: hex(PAGE) })?.split('\n')[2]).toBe(
+    expect((await createPage.preview!({ title: 'T', parent: hex(PAGE) }))?.split('\n')[2]).toBe(
       `At the end of: Renamed page ^${hex(PAGE)}`,
     )
   })
@@ -313,8 +313,8 @@ describe('update_pages details', () => {
     expect(ws.records.get(PAGE)!.properties).toEqual({ title: [['Renamed page']] })
   })
 
-  it('says what happens when the parent may be a page or a database', () => {
-    expect(createPage.preview!({ title: 'T', parent: hex(DB) })?.split('\n')[2]).toBe(
+  it('says what happens when the parent may be a page or a database', async () => {
+    expect((await createPage.preview!({ title: 'T', parent: hex(DB) }))?.split('\n')[2]).toBe(
       `In: ^${hex(DB)} (at its end if it is a page; as a new row if it is a database)`,
     )
   })

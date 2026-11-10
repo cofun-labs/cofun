@@ -9,7 +9,7 @@ import {
   type ToolCallRequest,
   type ToolSpec,
 } from '../../extension/src/agent'
-import { editPage, openPageNote, readPage } from '../../extension/src/tools'
+import { editPage, openPageNote, readPage, trashPage } from '../../extension/src/tools'
 import { createApp, type Env } from '../src/app'
 import { FakeClerk } from './clerk'
 import { FakeAiBinding, FakeQuotaNamespace, FakeUsageDataset } from './fakes'
@@ -313,6 +313,51 @@ describe('extension agent against the worker', () => {
     expect(toolStatuses(updates)).toEqual(['done', 'done'])
     const [first] = ws.content(PAGE)
     expect(first.properties).toEqual({ title: [['Summary: hi']] })
+  })
+
+  it('[UC-NOTION-009-S02] the agent trashes a page only after the user agrees to what the preview names', async () => {
+    const OLD = 'b0b0b0b0-0000-4000-8000-000000000001'
+    const ws = new FakeWorkspace(
+      [
+        {
+          id: PAGE,
+          type: 'page',
+          properties: { title: [['Fixture page']] },
+          content: [OLD],
+          parent_id: SPACE,
+          parent_table: 'space',
+        },
+        { id: OLD, type: 'page', properties: { title: [['Old notes']] }, parent_id: PAGE, parent_table: 'block' },
+      ],
+      SPACE,
+    )
+    const tab = new FakeNotionTab(PAGE_URL)
+    tab.workspace = ws
+    tab.install()
+    const trashCall = { name: 'trash_page', arguments: JSON.stringify({ pages: [OLD] }) }
+    const asked: ToolCallRequest[] = []
+    const agent = makeAgent({ tools: [trashPage] })
+
+    ai.script = [{ toolCalls: [trashCall] }, { reply: 'Kept it.' }]
+    const declined = await ask(agent, 'Delete the old notes', async (call) => {
+      asked.push(call)
+      return false
+    })
+    expect(toolStatuses(declined.updates)).toEqual(['declined'])
+    expect(asked[0].preview).toBe(
+      [
+        'Move 1 page to the trash, with everything in it',
+        `    Old notes ^${OLD.replace(/-/g, '')}`,
+        "They stay in Notion's trash, where they can be restored.",
+      ].join('\n'),
+    )
+    expect(ws.records.get(OLD)!.alive).toBe(true)
+
+    ai.script = [{ toolCalls: [trashCall] }, { reply: 'Moved it to the trash.' }]
+    const agreed = await ask(agent, 'Yes, delete it', async () => true)
+    expect(toolStatuses(agreed.updates)).toEqual(['done'])
+    expect(ws.records.get(OLD)!.alive).toBe(false)
+    expect(ws.records.get(PAGE)!.content).toEqual([])
   })
 
   it('[UC-AGENT-001-S05] a model that keeps calling tools is stopped at the step limit', async () => {
