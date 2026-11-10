@@ -211,9 +211,9 @@ export class CopilotAgent {
     const declined = new Set<string>()
     // How the latest call with each id ended, kept with its result message when that arrives.
     const ended = new Map<string, { status: ToolStatus; result: string }>()
-    // Calls allowed to run, so a Stop may have cut them short; the others never started. A Stop
-    // between the OK and the run counts as started: for a tool that edits pages, "may have partly
-    // happened" is the safe thing to tell the model.
+    // Calls allowed to run, so a Stop may have cut them short; the others never started. For a tool
+    // that needs the user's OK, a Stop between the OK and the run counts as started: for a tool that
+    // changes pages, "may have partly happened" is the safe thing to tell the model.
     const started = new Set<string>()
 
     // On the last step, refuse the tools the model asks for instead of running them: the question

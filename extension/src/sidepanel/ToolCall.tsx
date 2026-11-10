@@ -35,7 +35,7 @@ const LABEL: Record<ShownTool['status'], string> = {
 }
 
 const CHANGES: Record<ShownTool['status'], string> = {
-  running: 'Changes',
+  running: 'Changes (in progress)',
   confirm: 'Changes',
   done: 'Changes',
   failed: 'Changes (failed)',
