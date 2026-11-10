@@ -70,7 +70,7 @@ export async function activeNotionTab(): Promise<NotionTab> {
   return { tabId: tab.id, url: tab.url, pageId: pageIdFromUrl(tab.url), client }
 }
 
-export const NO_SITE_ACCESS =
+const NO_SITE_ACCESS =
   "Notion Copilot is not allowed to access this Notion site. Allow it in the extension's site access settings and try again"
 
 /** How long one Notion request may take before it fails, so a stalled request can't hang a tool. */
@@ -224,7 +224,7 @@ export async function selectionIn(tabId: number): Promise<PageSelection | undefi
  * Runs in the Notion tab: the selection inside the page's content (not the sidebar). Chrome
  * serializes this function on its own, so it must not use anything from outside its body.
  */
-export function readSelection(): PageSelection | null {
+function readSelection(): PageSelection | null {
   // The main page and a side peek each have their own content.
   const roots = [...document.querySelectorAll('.notion-page-content')]
   const idOf = (el: Element) => el.getAttribute('data-block-id') ?? ''

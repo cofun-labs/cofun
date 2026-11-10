@@ -17,7 +17,7 @@ function manifest(env: Record<string, string>): Plugin {
 }
 
 export default defineConfig(({ mode }) => {
-  const env = loadEnv(mode, process.cwd(), '')
+  const env = loadEnv(mode, import.meta.dirname, '')
   for (const name of ['VITE_CLERK_PUBLISHABLE_KEY', 'VITE_CLERK_SYNC_HOST', 'VITE_API_URL']) {
     if (!env[name]) throw new Error(`${name} is not set. Put it in .env.local.`)
   }
