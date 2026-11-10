@@ -33,7 +33,7 @@ Copilot for Notion: a Chrome extension that opens an AI side panel next to Notio
 3. **Implement with tests.** Keep tests in sync with use cases:
    - Remove tests for deleted scenarios, add tests for new ones, rename tests when scenario IDs change.
    - P0 scenarios must be verified before merge; P1 should be; P2 can wait.
-   - `api-test` scenarios are vitest integration tests in `worker/test/`, named with the scenario ID. `ai-e2e` scenarios are verified by an agent driving a real browser with `pnpm e2e`, and the run is recorded in the PR (see [Running an `ai-e2e` scenario](docs/bdd.md#running-an-ai-e2e-scenario)).
+   - `api-test` scenarios are vitest integration tests, named with the scenario ID: in `worker/test/` for the worker's HTTP API, in `extension/test/` for the extension's client code. `ai-e2e` scenarios are verified by an agent driving a real browser with `pnpm e2e`, and the run is recorded in the PR (see [Running an `ai-e2e` scenario](docs/bdd.md#running-an-ai-e2e-scenario)).
      ```typescript
      it('[UC-CHAT-001-S01] signed-in user gets a streamed reply', async () => {
      ```
@@ -82,10 +82,11 @@ This is an open-source repository. **Never commit account identifiers or secrets
 - `extension/`: Chrome MV3 side panel. Vite + React + TypeScript. Clerk sign-in through Sync Host. `vite.config.ts` generates `manifest.json` from `.env`. The agent loop runs in the side panel on `@earendil-works/pi-agent-core`; only `src/agent.ts` imports pi, and tools live in `src/tools.ts`.
 - `worker/`: Cloudflare Worker with Hono. Serves `/login`, verifies Clerk session JWTs locally, and proxies OpenAI-compatible `/v1/chat/completions` to Workers AI through AI Gateway.
 - Notion tools call Notion's own internal endpoints (`/api/v3/…`) as the signed-in Notion user, through `src/notion/api.ts`: the only module that knows Notion's endpoints and request shapes. Requests run inside the user's Notion tab (`src/notion/tab.ts`, `chrome.scripting` in the ISOLATED world), so they go to that tab's own host with its session. Tools never `fetch` Notion URLs themselves. Do not use `chrome.debugger`: it shows a permanent "debugging this browser" banner.
+- **These module boundaries are lint errors** (`.oxlintrc.json`, run by `pnpm lint` and so by `pnpm check`): only `src/agent.ts` imports pi; `fetch` is used only in `src/notion/tab.ts` (Notion) and `src/agent.ts` (the worker); `chrome.scripting` is used only in `src/notion/tab.ts`; `chrome.debugger` is used nowhere; and `src/notion/` imports nothing from `src/agent.ts`, `src/tools.ts`, `src/sessions.ts`, or `src/sidepanel/`. When a boundary changes, change the rule and this section together. Never silence one with an `oxlint-disable` comment.
 
 ## Calling Notion: stop, don't work around
 
-Tools call Notion's internal API as the user's own account, so **stability comes first**: Notion must never see this extension as automated abuse. Every Notion feature follows these rules:
+Tools call Notion's internal API as the user's own account, so **stability comes first**: Notion must never see this extension as automated abuse. Every Notion feature follows these rules. Where Notion requests may be sent from is not left to review: `.oxlintrc.json` makes it a lint error (see Architecture).
 
 - **Retry only when it is clearly safe and would fix the problem.** A retry must not be able to apply a change twice, and the cause must be one a retry can fix. When in doubt, don't retry: safety first. Never fall back to another endpoint or another way of getting the same result.
 - **Stop on what we don't understand.** A failure we can't identify, or a response we didn't expect, stops the question and is reported to the user. Don't guess a workaround. A `NotionError` with the code `notion_error` or `outcome_unknown` does this by itself; give a failure another code only when its meaning is known and the model can act on it, and throw a plain error for bad input from the model.
@@ -98,6 +99,7 @@ Tools call Notion's internal API as the user's own account, so **stability comes
 - **No mocking.** Do not use `vi.mock()` or spies. Replace external dependencies with fake objects that implement the same interface, and inject them through `env`:
   - `FakeAiBinding` (`worker/test/fakes.ts`) stands in for the Workers AI binding.
   - `FakeClerk` (`worker/test/clerk.ts`) signs real RS256 session tokens with a local key pair, which the worker verifies like real Clerk tokens.
+- Tests live with the package they cover. `extension/test/` tests the extension's client code against a fake Notion tab (`extension/test/notion-tab.ts`) that answers with sanitized fixtures (`extension/test/fixtures/notion/`). `worker/test/` tests the worker.
 - `worker/test/extension.test.ts` runs the extension's own agent (`src/agent.ts`) against the worker so client and server cannot drift.
 - `smoke/` is the extension smoke test (`pnpm smoke`, also run in CI): Playwright loads the built extension into Chromium and checks that the service worker starts, the side panel is enabled only on Notion tabs, and the side panel page renders signed out. It catches builds that compile but break in Chrome, such as dependency bumps. Nothing leaves the machine: Notion pages and Clerk's Frontend API are answered from `smoke/fixtures/`. Its tests are standalone (no scenario IDs); sign-in, chat, and Notion tools stay `ai-e2e`.
 
@@ -105,9 +107,9 @@ Tools call Notion's internal API as the user's own account, so **stability comes
 
 ```bash
 pnpm install
-pnpm check        # lint, format check, typecheck, extension build, worker and e2e tool tests
+pnpm check        # lint, format check, typecheck, extension build, and every package's tests
 pnpm format:fix   # format all files
-pnpm test         # worker tests and the e2e tool's unit tests
+pnpm test         # extension and worker tests, and the e2e tool's unit tests
 pnpm build        # build the extension into extension/dist
 pnpm smoke        # build the extension and run the smoke test in Chromium (also runs in CI)
 pnpm e2e --help   # drive the shared Chrome Canary for ai-e2e runs (maintainer's machine only)

@@ -1,7 +1,7 @@
 // The side panel's saved sessions (extension/src/sessions.ts), on an in-memory IndexedDB.
 import 'fake-indexeddb/auto'
 import { beforeEach, describe, expect, it } from 'vitest'
-import type { HistoryMessage } from '../../extension/src/agent'
+import type { HistoryMessage } from '../src/agent'
 import {
   filterSessions,
   pageKey,
@@ -10,7 +10,7 @@ import {
   titleFor,
   type Session,
   type SessionInfo,
-} from '../../extension/src/sessions'
+} from '../src/sessions'
 
 const ROADMAP = { title: 'Q4 Roadmap', url: 'https://www.notion.so/team/Q4-Roadmap-0a1b2c3d4e5f60718293a4b5c6d7e8f9' }
 const NOTES_ID = '1111aaaa2222bbbb3333cccc4444dddd'

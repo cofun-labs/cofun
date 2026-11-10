@@ -6,7 +6,7 @@ A signed-in user asks the AI about a Notion page: the one open next to the side 
 
 Child pages and databases on the page appear by name, and the AI can open them in turn, but their content is not part of the page. Each piece of the page is marked, so the AI can refer to it exactly.
 
-The AI reads as the user's own Notion account: it can read only what that account can open. A long page is read in parts, so one read never crowds out the conversation. When Notion turns the AI's requests away (it is limiting requests, or too busy), nothing is tried again: the question stops there, nothing more is sent to Notion, and the user is told to wait before asking again, so the account isn't pushed further. Nothing is sent to Notion until the wait is over, even when the user asks again sooner. The same holds when Notion fails in a way that isn't understood: an error it doesn't explain, an answer that isn't what Notion sends, or no answer at all. Nothing is tried again, the question stops, and the user is told what went wrong. Failures the AI can act on, such as a page the account can't open or one in the trash, are told to the AI instead, and it goes on. All of this holds for everything the AI does in Notion, such as finding, listing, creating, commenting, and editing (UC-NOTION-002).
+The AI reads as the user's own Notion account: it can read only what that account can open. A long page is read in parts, so one read never crowds out the conversation. When Notion turns the AI's requests away (it is limiting requests, or too busy), nothing is tried again: the question stops there, nothing more is sent to Notion, and the user is told to wait before asking again, so the account isn't pushed further. When Notion says how long to wait, nothing is sent to Notion until that wait is over, even when the user asks again sooner. The same holds when Notion fails in a way that isn't understood: an error it doesn't explain, an answer that isn't what Notion sends, or no answer at all. Nothing is tried again, the question stops, and the user is told what went wrong. Failures the AI can act on, such as a page the account can't open or one in the trash, are told to the AI instead, and it goes on. All of this holds for everything the AI does in Notion, such as finding, listing, creating, commenting, and editing (UC-NOTION-002).
 
 Key constraints:
 
@@ -28,7 +28,7 @@ Key constraints:
 | UC-NOTION-001-S08 | P1 | ✅ | Given Notion turns a request away because it is limiting requests; when the AI reads a page; then nothing is tried again, nothing more is sent to Notion, the question stops, and the user is told to wait before asking again. |
 | UC-NOTION-001-S09 | P1 | ✅ | Given a page with closed toggles; when the AI reads it; then it gets what is inside them too, nested toggles included. |
 | UC-NOTION-001-S11 | P1 | ✅ | Given Notion fails a request in a way that isn't understood (a server error, an error it doesn't explain, an answer that isn't what Notion sends); when the AI reads a page; then nothing is tried again, the question stops, and the user is told what went wrong. |
-| UC-NOTION-001-S12 | P1 | ✅ | Given Notion turned a request away a moment ago; when the user asks again before the wait is over; then nothing is sent to Notion, the question stops, and the user is told how long to wait. |
+| UC-NOTION-001-S13 | P1 | ✅ | Given Notion turned a request away and said how long to wait; when the user asks again before that wait is over; then nothing is sent to Notion, the question stops, and the user is told how long to wait. |
 
 ### ai-e2e
 

@@ -27,7 +27,15 @@ import { editPage, movePage, openPageNote, readPage, trashPage } from '../../ext
 import { createApp, type Env } from '../src/app'
 import { FakeClerk } from './clerk'
 import { FakeAiBinding, FakeQuotaNamespace, FakeUsageDataset } from './fakes'
-import { FakeNotionTab, FakeStorage, FakeWorkspace, PAGE, PAGE_URL, SPACE, fixture } from './notion-tab'
+import {
+  FakeNotionTab,
+  FakeStorage,
+  FakeWorkspace,
+  PAGE,
+  PAGE_URL,
+  SPACE,
+  fixture,
+} from '../../extension/test/notion-tab'
 
 const EXT = 'chrome-extension://abcdefghijklmnopabcdefghijklmnop'
 const MODEL = '@cf/test/model'
@@ -404,7 +412,7 @@ describe('extension agent against the worker', () => {
     })
   })
 
-  it('[UC-NOTION-001-S12] asked again before the wait is over, nothing is sent and the user is told how long to wait', async () => {
+  it('[UC-NOTION-001-S13] asked again before the wait Notion asked for is over, nothing is sent and the user is told how long to wait', async () => {
     let now = Date.now()
     const tab = new FakeNotionTab(PAGE_URL).limit('loadPageChunk', 1, 429, '120').install()
     notionCooldown.now = () => now

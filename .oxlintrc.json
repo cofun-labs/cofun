@@ -1,0 +1,144 @@
+// The extension's module boundaries (AGENTS.md: "Architecture" and "Calling Notion"), as lint errors.
+// Oxlint's default rules stay on: this file only adds rules.
+//
+// An override replaces a rule's whole configuration, it does not merge with the one before it. So
+// each block below repeats the restrictions that still hold for its files, and a later block wins.
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "rules": {
+    // Everywhere in the repository, tests included. extension/src/agent.ts is exempted below.
+    "no-restricted-imports": [
+      "error",
+      {
+        "patterns": [
+          {
+            "group": [
+              "@earendil-works/pi-agent-core",
+              "@earendil-works/pi-agent-core/**",
+              "@earendil-works/pi-ai",
+              "@earendil-works/pi-ai/**"
+            ],
+            "message": "Only extension/src/agent.ts imports pi. Import what you need from agent.ts, or add it there."
+          }
+        ]
+      }
+    ]
+  },
+  "overrides": [
+    {
+      "files": ["extension/**"],
+      "rules": {
+        "no-restricted-properties": [
+          "error",
+          {
+            "object": "chrome",
+            "property": "debugger",
+            "message": "Never use chrome.debugger: it shows a permanent \"debugging this browser\" banner. Notion requests run through chrome.scripting in extension/src/notion/tab.ts."
+          }
+        ]
+      }
+    },
+    {
+      "files": ["extension/src/**"],
+      "rules": {
+        "no-restricted-globals": [
+          "error",
+          {
+            "name": "fetch",
+            "message": "Only extension/src/notion/tab.ts sends requests to Notion, and only extension/src/agent.ts calls the worker. Tools call the typed methods of NotionClient (extension/src/notion/api.ts)."
+          }
+        ],
+        "no-restricted-properties": [
+          "error",
+          {
+            "object": "chrome",
+            "property": "debugger",
+            "message": "Never use chrome.debugger: it shows a permanent \"debugging this browser\" banner. Notion requests run through chrome.scripting in extension/src/notion/tab.ts."
+          },
+          {
+            "object": "chrome",
+            "property": "scripting",
+            "message": "Only extension/src/notion/tab.ts uses chrome.scripting: it is how requests run inside the user's Notion tab. Use the helpers tab.ts exports."
+          },
+          {
+            "object": "globalThis",
+            "property": "fetch",
+            "message": "Only extension/src/notion/tab.ts sends requests to Notion, and only extension/src/agent.ts calls the worker. Tools call the typed methods of NotionClient (extension/src/notion/api.ts)."
+          },
+          {
+            "object": "window",
+            "property": "fetch",
+            "message": "Only extension/src/notion/tab.ts sends requests to Notion, and only extension/src/agent.ts calls the worker. Tools call the typed methods of NotionClient (extension/src/notion/api.ts)."
+          },
+          {
+            "object": "self",
+            "property": "fetch",
+            "message": "Only extension/src/notion/tab.ts sends requests to Notion, and only extension/src/agent.ts calls the worker. Tools call the typed methods of NotionClient (extension/src/notion/api.ts)."
+          }
+        ]
+      }
+    },
+    {
+      // The Notion layer knows nothing about the agent, the tools, sessions, or the UI.
+      "files": ["extension/src/notion/**"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": [
+                  "@earendil-works/pi-agent-core",
+                  "@earendil-works/pi-agent-core/**",
+                  "@earendil-works/pi-ai",
+                  "@earendil-works/pi-ai/**"
+                ],
+                "message": "Only extension/src/agent.ts imports pi. Import what you need from agent.ts, or add it there."
+              },
+              {
+                "regex": "^(\\.\\./)+(agent|tools|sessions|sidepanel)(\\.|/|$)",
+                "message": "extension/src/notion/ imports nothing from agent.ts, tools.ts, sessions.ts, or sidepanel/: those modules depend on the Notion layer, not the other way round."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      // The one module that imports pi, and the one that calls the worker.
+      "files": ["extension/src/agent.ts"],
+      "rules": {
+        "no-restricted-imports": "off",
+        "no-restricted-globals": "off",
+        "no-restricted-properties": [
+          "error",
+          {
+            "object": "chrome",
+            "property": "debugger",
+            "message": "Never use chrome.debugger: it shows a permanent \"debugging this browser\" banner. Notion requests run through chrome.scripting in extension/src/notion/tab.ts."
+          },
+          {
+            "object": "chrome",
+            "property": "scripting",
+            "message": "Only extension/src/notion/tab.ts uses chrome.scripting: it is how requests run inside the user's Notion tab. Use the helpers tab.ts exports."
+          }
+        ]
+      }
+    },
+    {
+      // The one module that sends requests to Notion. Its import restrictions (the notion/ block) still hold.
+      "files": ["extension/src/notion/tab.ts"],
+      "rules": {
+        "no-restricted-globals": "off",
+        "no-restricted-properties": [
+          "error",
+          {
+            "object": "chrome",
+            "property": "debugger",
+            "message": "Never use chrome.debugger: it shows a permanent \"debugging this browser\" banner. Notion requests run through chrome.scripting in extension/src/notion/tab.ts."
+          }
+        ]
+      }
+    }
+  ]
+}

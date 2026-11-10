@@ -2,9 +2,9 @@
 // block lookups (syncRecordValuesMain) the way Notion does, and getSpaces and getTeamsV2 answer
 // with queued responses in Notion's shapes.
 import { afterEach, describe, expect, it } from 'vitest'
-import { LIST_LIMIT, LIST_LOOKUPS, SECTION_LIMIT, forgetReads, listPages } from '../../extension/src/tools'
+import { LIST_LIMIT, LIST_LOOKUPS, SECTION_LIMIT, forgetReads, listPages } from '../src/tools'
 import { FakeNotionTab, FakeWorkspace, PAGE, PAGE_URL, SPACE, USER, notionError, restoreGlobals } from './notion-tab'
-import { LIMITED_STOP, NO_USER_MAP, UNEXPECTED_STOP } from '../../extension/src/notion/api'
+import { LIMITED_STOP, NO_USER_MAP, UNEXPECTED_STOP } from '../src/notion/api'
 
 afterEach(() => {
   restoreGlobals()

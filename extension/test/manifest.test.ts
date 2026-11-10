@@ -3,7 +3,7 @@
 // change to them must change this file in the same pull request, where a reviewer sees it.
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
-import { buildManifest, clerkFrontendApi, type ManifestEnv } from '../../extension/manifest'
+import { buildManifest, clerkFrontendApi, type ManifestEnv } from '../manifest'
 
 const NOTION = ['https://www.notion.so/*', 'https://app.notion.com/*']
 const CLERK_HOST = 'clerk.example.com'
@@ -16,7 +16,7 @@ function manifest(env: Partial<ManifestEnv> & Pick<ManifestEnv, 'VITE_CLERK_SYNC
 
 /** The committed build config of the hosted extension (extension/.env), as `KEY=value` lines. */
 function hostedEnv(): Record<string, string> {
-  const text = readFileSync(new URL('../../extension/.env', import.meta.url), 'utf8')
+  const text = readFileSync(new URL('../.env', import.meta.url), 'utf8')
   return Object.fromEntries(
     text
       .split('\n')
