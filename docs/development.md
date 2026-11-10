@@ -7,6 +7,7 @@ pnpm install
 pnpm check        # lint, unused code check (knip), format check, typecheck, extension build, and every package's tests
 pnpm knip         # unused files, exports, and dependencies (knip.jsonc lists what is kept, and why)
 pnpm smoke        # build the extension and load it into Chromium (first: pnpm --filter notion-copilot-smoke exec playwright install chromium)
+pnpm icons        # export extension/icons/icon.svg into extension/public/icons (needs the same Chromium); commit the PNGs
 ```
 
 A lefthook pre-commit hook runs `pnpm check`. GitHub Actions runs it and `pnpm smoke` on every pull request.

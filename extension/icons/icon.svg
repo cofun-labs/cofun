@@ -1,0 +1,18 @@
+<!-- The extension icon: a page with the Copilot panel docked beside it. This is the source of
+     extension/public/icons/icon-{16,32,48,128}.png; export them again after editing
+     with `pnpm icons`. Shapes sit on an 8-unit grid, which is one pixel at 16px. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
+  <rect x="8" y="16" width="112" height="96" rx="20" fill="#ffffff" />
+  <rect x="9.5" y="17.5" width="109" height="93" rx="18.5" fill="none" stroke="#b9b8b4" stroke-width="3" />
+  <path d="M72 16H100a20 20 0 0 1 20 20V92a20 20 0 0 1-20 20H72Z" fill="#2383e2" />
+  <rect x="24" y="40" width="34" height="8" rx="4" fill="#191919" />
+  <rect x="24" y="60" width="25" height="8" rx="4" fill="#c8c7c3" />
+  <rect x="24" y="80" width="31" height="8" rx="4" fill="#c8c7c3" />
+  <path
+    d="M96 46Q96 64 114 64Q96 64 96 82Q96 64 78 64Q96 64 96 46Z"
+    fill="#ffffff"
+    stroke="#ffffff"
+    stroke-width="4"
+    stroke-linejoin="round"
+  />
+</svg>
