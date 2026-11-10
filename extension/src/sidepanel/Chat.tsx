@@ -50,15 +50,24 @@ type Shown =
       error?: string
       stopped?: boolean
       note?: string
+      /** Another window continued the session too, so this conversation was saved as a new session. */
+      copied?: boolean
       /** Notion requests the question made, once it ended. */
       requests?: number
     }
 
-/** The open session; saved once its first question is answered. */
+/**
+ * The open session; saved once its first question is answered. One object for as long as the
+ * session is open: a save updates `id` and `updatedAt` in place, so the next save, which may
+ * already be waiting, starts from what the last one stored.
+ */
 interface Current {
+  /** Changes if a save finds that another window continued the session: this one is saved as a new session. */
   id: string
   createdAt: number
   page: Promise<Session['page']>
+  /** As this panel loaded or last saved it; not set until the first save. */
+  updatedAt?: number
 }
 
 /** The chat of one signed-in user; mount a new one for another user. */
@@ -83,6 +92,8 @@ export function Chat({ userId }: { userId: string }) {
   const opening = useRef(0)
   // Sessions deleted in this panel; a save still waiting to write must not bring one back.
   const deleted = useRef(new Set<string>())
+  // The save in progress, if any; the next one waits for it.
+  const saving = useRef(Promise.resolve())
   const tokenRef = useRef(getToken)
   tokenRef.current = getToken
   const agentRef = useRef<CopilotAgent | null>(null)
@@ -119,6 +130,8 @@ export function Chat({ userId }: { userId: string }) {
     setInput('')
     setBusy(true)
     setStopping(false)
+    // Where this question's reply goes in the list.
+    const reply = messages.length + 1
     setMessages((ms) => [...ms, { role: 'user', content: text }, { role: 'assistant', parts: [] }])
     const updateReply = (fn: (m: Extract<Shown, { role: 'assistant' }>) => Shown) =>
       setMessages((ms) => {
@@ -247,25 +260,42 @@ export function Chat({ userId }: { userId: string }) {
         // A question that failed or was stopped before using a tool leaves the conversation as it
         // was; don't move the session to the top of the list for it. One that used tools keeps them.
         const messages = agent.history()
-        if (messages.length !== before) void save(session, messages)
+        if (messages.length !== before) {
+          // One at a time: each save starts from the `updatedAt` the one before it stored.
+          saving.current = saving.current.then(() => save(session, messages, id, reply))
+        }
       }
     }
   }
 
-  async function save(session: Current, messages: HistoryMessage[]) {
+  /**
+   * Saves the session after a question; `chat` is the `chatId` it was open under and `reply` the
+   * place of the question's reply in the list. Never rejects.
+   */
+  async function save(session: Current, messages: HistoryMessage[], chat: number, reply: number) {
     try {
-      const { id, createdAt } = session
       const page = await session.page
+      const { id, createdAt, updatedAt: loaded } = session
       if (deleted.current.has(id)) return
-      await store.save({
-        id,
-        createdAt,
-        page,
-        title: titleFor(messages),
-        updatedAt: Date.now(),
-        messages,
-      })
+      const saved = await store.save(
+        {
+          id,
+          createdAt,
+          page,
+          title: titleFor(messages),
+          // Always a new value, so another panel that loaded this session can tell it changed.
+          updatedAt: Math.max(Date.now(), (loaded ?? 0) + 1),
+          messages,
+        },
+        loaded,
+      )
+      session.id = saved.id
+      session.updatedAt = saved.updatedAt
+      // Also shows the session's new id, if it got one, to the list.
       setSaved((n) => n + 1)
+      if (saved.id !== id && chatId.current === chat)
+        // On the reply that was saved; the user may have asked the next question already.
+        setMessages((ms) => ms.map((m, i) => (i === reply && m.role === 'assistant' ? { ...m, copied: true } : m)))
     } catch (err) {
       console.error('Could not save the session', err)
     }
@@ -281,7 +311,14 @@ export function Chat({ userId }: { userId: string }) {
     setBusy(false)
     setStopping(false)
     setMessages(session ? toShown(session.messages) : [])
-    setCurrent(session && { id: session.id, createdAt: session.createdAt, page: Promise.resolve(session.page) })
+    setCurrent(
+      session && {
+        id: session.id,
+        createdAt: session.createdAt,
+        page: Promise.resolve(session.page),
+        updatedAt: session.updatedAt,
+      },
+    )
     setView('chat')
   }
 
@@ -297,6 +334,8 @@ export function Chat({ userId }: { userId: string }) {
     agent.stop()
     const chat = chatId.current
     const token = ++opening.current
+    // A save of this panel's still waiting to write would otherwise look like another window's later.
+    await saving.current
     const session = await store.get(id)
     // The user started a new chat, opened another session, or asked something meanwhile; that wins.
     if (chatId.current !== chat || opening.current !== token) return true
@@ -383,6 +422,12 @@ export function Chat({ userId }: { userId: string }) {
               )}
               {m.stopped && <div className="note">Stopped</div>}
               {m.note && <div className="note">{m.note}</div>}
+              {m.copied && (
+                <div className="note">
+                  This session was also continued in another window, so this conversation is saved as a separate
+                  session.
+                </div>
+              )}
               {m.requests !== undefined && <div className="note">Notion requests: {m.requests}</div>}
             </div>
           ),
