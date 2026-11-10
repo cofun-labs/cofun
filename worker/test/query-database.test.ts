@@ -411,6 +411,45 @@ describe('query_database options, numbers, and code', () => {
     expect(await filter('a*b')).toEqual(['Ship beta'])
   })
 
+  it('[UC-NOTION-006-S06] shows a status never set as the database’s default, and filters by it', async () => {
+    const options = ['Not started', 'In progress', 'Done'].map((value) => ({ value }))
+    const schema = { ...SCHEMA, 'a:a': { name: 'Status', type: 'status', options, defaultOption: 'Not started' } }
+    const rows = TASKS.map(rowRecord)
+    delete (rows[3].properties as Record<string, unknown>)['a:a']
+    database(rows, false, schema)
+    expect(tableRows(await query())[3]).toContain('| Plan retro | Not started |')
+    database(rows, false, schema)
+    expect(titles(await query({ filter: [{ property: 'Status', op: 'is', value: 'Not started' }] }))).toEqual([
+      'Ship beta',
+      'Plan retro',
+    ])
+    // A default that isn't one of the options is not shown.
+    database(rows, false, { ...schema, 'a:a': { ...schema['a:a'], defaultOption: 'Gone' } })
+    expect(tableRows(await query())[3]).toContain('| Plan retro |  |')
+  })
+
+  it('[UC-NOTION-006-S07] shows a relation by the titles of its pages, looked up when the result leaves them out', async () => {
+    const REVIEW = 'b1b1b1b1-0000-4000-8000-000000000050'
+    const schema = { ...SCHEMA, 'r:r': { name: 'Blocked by', type: 'relation' } }
+    const rows = TASKS.map(rowRecord)
+    Object.assign(rows[0].properties, { 'r:r': [['‣', [['p', REVIEW]]]] })
+    const review = sync('block', [{ id: REVIEW, type: 'page', properties: { title: [['Design review']] } }])
+    const tab = database(rows, false, schema).respond('syncRecordValuesMain', 200, review)
+    expect(tableRows(await query())[0]).toContain(`| [Design review](${hex(REVIEW)}) |`)
+    // One lookup, for the page the result left out.
+    expect(tab.sent.at(-1)!.body).toMatchObject({ requests: [{ pointer: { table: 'block', id: REVIEW } }] })
+    database(rows, false, schema).respond('syncRecordValuesMain', 200, review)
+    expect(titles(await query({ filter: [{ property: 'Blocked by', op: 'is', value: 'design review' }] }))).toEqual([
+      'Write docs',
+    ])
+    // A page the account can't open stays unnamed; the rows still read.
+    database(rows, false, schema).respond('syncRecordValuesMain', 403, {})
+    expect(tableRows(await query())[0]).toContain(`| [page](${hex(REVIEW)}) |`)
+    // Notion turning the lookup away still stops the read.
+    database(rows, false, schema).limit('syncRecordValuesMain', 1)
+    await expect(query()).rejects.toMatchObject({ code: 'rate_limited' })
+  })
+
   it('keeps a person with a pipe in the name in one cell', async () => {
     const rows = TASKS.map((t) => ({ ...rowRecord(t), created_by_id: USER }))
     database(rows, false, { ...SCHEMA, 'i:i': { name: 'Creator', type: 'created_by' } }, [], 'Ana\\ | Ops')
