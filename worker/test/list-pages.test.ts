@@ -347,9 +347,29 @@ describe('list_pages arguments', () => {
     expect(await listed('Teamspace: Private', page(11, 'Team notes'))).toEqual([`- 📄 Team notes ^${hex(id(11))}`])
     expect(await listed('teamspace: design (2)', page(31, 'Second'))).toEqual([`- 📄 Second ^${hex(id(31))}`])
     expect(await listed('Teamspace: Design (1) (1)', page(41, 'Third'))).toEqual([`- 📄 Third ^${hex(id(41))}`])
-    // A bare name shared by two teamspaces names neither.
+    // A teamspace's own name picks it, even when another teamspace's label looks the same.
+    expect(await listed('Design (1)', page(41, 'Third'))).toEqual([`- 📄 Third ^${hex(id(41))}`])
+    // A name two teamspaces share names neither.
     workspace().install()
     await expect(run({ section: 'Design' })).rejects.toThrow('No section “Design”.')
+  })
+
+  it('tells apart teamspaces whose names differ only in case', async () => {
+    const workspace = () =>
+      new FakeNotionTab(PAGE_URL)
+        .respond('syncRecordValuesMain', 200, OPEN_PAGE)
+        .respond('getSpaces', 200, spaces({}, {}))
+        .respond('getTeamsV2', 200, teams([team(1, 'Design', [id(11)]), team(2, 'design', [id(21)])]))
+    workspace().install()
+    await expect(run({ section: 'nope' })).rejects.toThrow(
+      'The sections are: Private, Shared, Workspace, Teamspace: Design (1), Teamspace: design (2).',
+    )
+    workspace()
+      .respond('syncRecordValuesMain', 200, records([page(21, 'Lower')]))
+      .install()
+    expect((await run({ section: 'Teamspace: design (2)' })).split('\n').slice(2)).toEqual([
+      `- 📄 Lower ^${hex(id(21))}`,
+    ])
   })
 
   it('says a page with nothing under it has no pages', async () => {

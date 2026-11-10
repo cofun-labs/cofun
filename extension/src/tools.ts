@@ -587,14 +587,16 @@ export const listPages: ToolSpec = {
     const spaceId = (opened.block?.[tab.pageId] as { space_id?: string } | undefined)?.space_id
     if (!spaceId) throw new Error('Could not tell which workspace the open page is in.')
     const space = await tab.client.getSpace(spaceId)
-    // Every label is unique, so `section` can name any one of them: teamspaces sharing a name are numbered.
+    // Every label is unique, ignoring case, so `section` can name any one of them: teamspaces whose
+    // names match are numbered until their label is free.
+    const lower = (label: string) => label.toLowerCase()
     const bases = space.teams.map((t) => `Teamspace: ${t.name}`)
-    const used = new Set<string>()
+    const used = new Set(['private', 'shared', 'workspace'])
     const labels = bases.map((base) => {
+      const shared = bases.filter((b) => lower(b) === lower(base)).length > 1
       let label = base
-      for (let n = 1; used.has(label) || (label === base && bases.filter((b) => b === base).length > 1); n++)
-        label = `${base} (${n})`
-      used.add(label)
+      for (let n = 1; used.has(lower(label)) || (shared && label === base); n++) label = `${base} (${n})`
+      used.add(lower(label))
       return label
     })
     // A page can be in more than one list (a shared page often stays in the owner's private
@@ -616,11 +618,11 @@ export const listPages: ToolSpec = {
     const teamsNote = space.teamsError ? [`(Teamspaces could not be listed: ${space.teamsError})`] : []
 
     if (wanted) {
-      // The label as a list shows it, or a teamspace's bare name when only one teamspace has it.
-      const key = wanted.toLowerCase()
-      const exact = sections.find(([label]) => label.toLowerCase() === key)
-      const named = sections.filter(([label]) => label.toLowerCase() === `teamspace: ${key}`)
-      const section = exact ?? (named.length === 1 ? named[0] : undefined)
+      // The label as a list shows it, or a teamspace's own name when only one teamspace has it.
+      const key = lower(wanted)
+      const named = space.teams.flatMap((t, i) => (lower(t.name) === key ? [labels[i]] : []))
+      const match = sections.find(([l]) => lower(l) === key)?.[0] ?? (named.length === 1 ? named[0] : undefined)
+      const section = sections.find(([l]) => l === match)
       if (!section) {
         throw new Error(
           `No section “${wanted}”. The sections are: ${sections.map(([label]) => label).join(', ')}.` +
