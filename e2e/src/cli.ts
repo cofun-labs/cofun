@@ -15,7 +15,7 @@ import {
 import { createDatabase, createPage, pageUrl, parseRow, privateSpace, tabPost, trash } from './notion'
 import { E2eError } from './errors'
 import { beforeInterruptExit } from './exit'
-import { DEFAULT_NOTION_URL, TimeoutError, ask, notionTab, openPanel, ownNotionTab, ownPanel } from './panel'
+import { DEFAULT_NOTION_URL, TimeoutError, isOwnPage, ask, notionTab, openPanel, ownNotionTab, ownPanel } from './panel'
 import { formatReply } from './reply'
 import { CanaryLock, checkOwner } from './lock'
 import { type State, loadState, saveState, statePath } from './state'
@@ -31,6 +31,8 @@ function cdpPort(): number {
 }
 const EXIT_BUSY = 3
 const EXIT_NEEDS_ANSWER = 4
+const NOT_OWN_PAGE =
+  'The side panel opens only on pages pnpm e2e created: pass the url that pnpm e2e page or db printed.'
 
 function defaultOwner(): string {
   try {
@@ -118,7 +120,13 @@ async function browserCommand(
       return 0
     }
     case 'panel': {
+      const own = (url: string) => isOwnPage(url, state.created)
+      // Checked before going there, and again once loaded (Notion may redirect).
+      if (command.url && !own(command.url)) throw new E2eError(NOT_OWN_PAGE)
       const notion = await notionTab(browser, state, command.url)
+      if (!own(await notion.evaluate(() => location.href, []))) {
+        throw new E2eError(NOT_OWN_PAGE)
+      }
       await openPanel(browser, state, notion)
       console.log('Side panel open on the Notion tab, with a new chat.')
       return 0

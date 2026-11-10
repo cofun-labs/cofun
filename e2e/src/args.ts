@@ -38,7 +38,8 @@ Commands:
   reload                       Build this checkout into the extension folder Canary loads, reload it,
                                and check it is enabled
   panel [url]                  Open the side panel for the Notion tab this tool opened, first going to
-                               url if given (a tab is opened if there is none yet); starts a new chat
+                               url if given (a tab is opened if there is none yet); starts a new chat.
+                               Only on a page or database this tool created
   ask [question]               Send the question in the side panel, wait for the reply, and print it
                                with each tool call; without a question, keep waiting for the last reply
       --allow | --deny         Answer every approval prompt this way (otherwise stop at the first one)

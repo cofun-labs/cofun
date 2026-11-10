@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { isOwnPage } from '../src/panel'
 import { type PanelSnapshot, formatReply, nextStep } from '../src/reply'
 
 const snap = (s: Partial<PanelSnapshot>): PanelSnapshot => ({
@@ -76,5 +77,16 @@ describe('formatReply', () => {
 
   it('prints nothing for an empty reply', () => {
     expect(formatReply([])).toBe('')
+  })
+})
+
+describe('isOwnPage', () => {
+  const id = '9f8637a1-cfcc-46bb-a9da-3eba20da5996'
+  it('accepts only pages this tool created, however the URL shows them', () => {
+    expect(isOwnPage('https://app.notion.com/p/9f8637a1cfcc46bba9da3eba20da5996', [id])).toBe(true)
+    expect(isOwnPage('https://app.notion.com/e2e-S04-9f8637a1cfcc46bba9da3eba20da5996?v=1#block', [id])).toBe(true)
+    expect(isOwnPage('https://app.notion.com/p/0123456789abcdef0123456789abcdef', [id])).toBe(false)
+    // Notion's home, or a page of the user's own.
+    expect(isOwnPage('https://app.notion.com/', [id])).toBe(false)
   })
 })

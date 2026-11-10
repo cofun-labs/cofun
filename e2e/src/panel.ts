@@ -1,5 +1,5 @@
 // The Notion tab this tool opens, the side panel next to it, and asking questions there.
-import { isNotion } from '../../extension/src/notion/hosts'
+import { isNotion, pageIdFromUrl } from '../../extension/src/notion/hosts'
 import type { Answer } from './args'
 import { type Browser, type Target, sleep, until } from './cdp'
 import { E2eError } from './errors'
@@ -59,6 +59,12 @@ export async function notionTab(
   if (!isNotion(loaded.url)) throw new E2eError('The Notion tab is not on Notion any more.')
   if (!loaded.signedIn) throw new E2eError('Notion is signed out in this browser. Sign in by hand, then try again.')
   return tab
+}
+
+/** Whether a Notion URL shows a page this tool created, so the agent works only on throwaway pages. */
+export function isOwnPage(url: string, created: string[]): boolean {
+  const id = pageIdFromUrl(url)
+  return !!id && created.includes(id)
 }
 
 /** Opens the side panel for the tool's Notion tab, starts a new chat, and returns the panel. */
