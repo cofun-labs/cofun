@@ -37,6 +37,7 @@ export type NotionEndpoint =
   | 'search'
   | 'queryCollection'
   | 'getSpaces'
+  | 'getTeamsV2'
 
 /** What one request to Notion returned. `error` is set when no HTTP response came back. */
 export interface NotionResponse {
@@ -44,6 +45,8 @@ export interface NotionResponse {
   json: unknown
   /** Whether the tab has a signed-in Notion user (the `notion_user_id` cookie). */
   signedIn: boolean
+  /** The tab's active Notion user (the `notion_user_id` cookie), when signed in. */
+  userId?: string
   error?: string
   /** Notion answered with a redirect (likely to a sign-in page), which was not followed. */
   redirected?: boolean
@@ -266,28 +269,48 @@ export class NotionClient {
 
   /**
    * How a workspace is organized in the sidebar for the signed-in user: its name, their private
-   * pages, pages shared with them, the workspace's own top-level pages, and its teamspaces.
+   * pages, pages shared with them, the workspace's own top-level pages, and the teamspaces they
+   * joined, in the sidebar's order.
    */
   async getSpace(spaceId: string): Promise<WorkspaceTree> {
     const space = notionId(spaceId)
-    const { json } = await this.request<Record<string, unknown>>('getSpaces', {}, space)
-    // One record map per signed-in user; the one holding this workspace is the tab's.
-    const maps = Object.values(json).map(normalizeRecordMap)
+    const { json, userId } = await this.request<Record<string, unknown>>('getSpaces', {}, space)
+    // One record map per signed-in user; the tab's active user's, when it holds this workspace.
+    const maps = userId ? [normalizeRecordMap(json[userId])] : Object.values(json).map(normalizeRecordMap)
     const map = maps.find((m) => m.space?.[space])
     if (!map) throw new NotionError('no_access', NO_ACCESS)
-    const ids = (value: unknown) =>
-      Array.isArray(value) ? value.filter((v): v is string => typeof v === 'string') : []
+    const record = map.space![space]
     const view = Object.values(map.space_view ?? {}).find((v) => v.space_id === space)
-    const teams = Object.values(map.team ?? {})
-      .filter((t) => t.space_id === space && t.alive !== false)
-      .map((t) => ({ name: typeof t.name === 'string' ? t.name : 'Teamspace', pages: ids(t.pages) }))
+    const settings = record.settings as { is_teams_enabled?: unknown } | undefined
     return {
-      name: typeof map.space![space].name === 'string' ? (map.space![space].name as string) : 'Workspace',
+      name: typeof record.name === 'string' ? record.name : 'Workspace',
       privatePages: ids(view?.private_pages),
       sharedPages: ids(view?.shared_pages_manual_sort),
-      workspacePages: ids(map.space![space].pages),
-      teams,
+      workspacePages: ids(record.pages),
+      teams: settings?.is_teams_enabled === true ? await this.joinedTeams(space) : [],
     }
+  }
+
+  /**
+   * The teamspaces of a workspace the signed-in user joined, in the sidebar's order, with their
+   * top-level pages. getSpaces doesn't hold them; Notion's sidebar loads them like this.
+   */
+  private async joinedTeams(space: string): Promise<WorkspaceTree['teams']> {
+    const { json } = await this.request<{ teams?: unknown; recordMap?: unknown }>(
+      'getTeamsV2',
+      { spaceId: space, teamTypes: ['Joined'] },
+      space,
+    )
+    const records = normalizeRecordMap(json.recordMap).team ?? {}
+    const teams = Array.isArray(json.teams) ? (json.teams as { id?: unknown; type?: unknown }[]) : []
+    return teams.flatMap((t) => {
+      const team = typeof t.id === 'string' && t.type === 'Joined' ? records[t.id] : undefined
+      // Archived teamspaces leave the sidebar.
+      if (!team || team.alive === false || team.archived_by || team.space_id !== space) return []
+      return [
+        { name: typeof team.name === 'string' && team.name ? team.name : 'Teamspace', pages: ids(team.team_pages) },
+      ]
+    })
   }
 
   /** Applies operations in one transaction: Notion applies all of them or none. */
@@ -366,10 +389,15 @@ export class NotionClient {
     endpoint: NotionEndpoint,
     body: unknown,
     spaceId?: string,
-  ): Promise<{ json: T; signedIn: boolean }> {
+  ): Promise<{ json: T; signedIn: boolean; userId?: string }> {
     const res = await this.send(endpoint, body, { spaceId })
-    return { json: checkResponse(res) as T, signedIn: res.signedIn }
+    return { json: checkResponse(res) as T, signedIn: res.signedIn, userId: res.userId }
   }
+}
+
+/** The ids in a record's list field. */
+function ids(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((v): v is string => typeof v === 'string') : []
 }
 
 /** The JSON of a successful response, or a NotionError explaining the failure. */

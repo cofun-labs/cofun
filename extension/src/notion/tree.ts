@@ -20,7 +20,12 @@ export async function pageTree(
   limit: number,
   /** Records already loaded; more are added as the tree is built. */
   records: RecordMap = {},
-): Promise<{ nodes: TreeNode[]; truncated: boolean }> {
+): Promise<{
+  nodes: TreeNode[]
+  truncated: boolean
+  /** Where in `roots` the next top-level entries start, when more of them are pages than were listed. */
+  next?: number
+}> {
   let count = 0
   let truncated = false
   // Roots are looked up a limit's worth at a time, until enough of them turn out to be pages.
@@ -33,6 +38,7 @@ export async function pageTree(
     top.push(...(await nodesFor(client, slice, records)))
   }
   const nodes = take(top)
+  const next = top.length > nodes.length && nodes.length ? roots.indexOf(nodes.at(-1)!.id) + 1 : undefined
   let level = nodes
   // A level is expanded only while there is room for more entries.
   let d = 1
@@ -66,7 +72,7 @@ export async function pageTree(
   // Full before the asked depth: pages on the last level shown may have pages under them that
   // weren't listed, so the list is cut off.
   if (!truncated && d < depth && level.some((n) => !n.database && contentOf(records, n.id).length)) truncated = true
-  return { nodes, truncated }
+  return { nodes, truncated, next }
 
   function take(list: TreeNode[]): TreeNode[] {
     const room = Math.max(0, limit - count)

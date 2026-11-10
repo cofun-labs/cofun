@@ -507,10 +507,9 @@ export const listPages: ToolSpec = {
   name: 'list_pages',
   description:
     "Lists pages and databases as Notion's sidebar shows them: without `page`, the top level of the open page's " +
-    "workspace (private and shared pages, and the workspace's own pages and teamspaces where its records list " +
-    'them); with `page`, the pages ' +
-    'and databases under it. Titles and ids only, no content: read a page with read_page. `depth` also lists the ' +
-    'pages under those, up to 3 levels.',
+    'workspace by section (Private, Shared, Workspace, and each teamspace the user joined); with `page`, the ' +
+    'pages and databases under it. Titles and ids only, no content: read a page with read_page. `depth` also ' +
+    'lists the pages under those, up to 3 levels. A long list is cut off; `section` and `offset` list the rest.',
   parameters: {
     type: 'object',
     properties: {
@@ -518,11 +517,24 @@ export const listPages: ToolSpec = {
         type: 'string',
         description: 'URL or id of a page to list the pages under. Leave out for the top level.',
       },
+      section: {
+        type: 'string',
+        description:
+          'Without `page`: list only this top-level section, by its name as a list showed it (say "Private", or ' +
+          "a teamspace's name).",
+      },
       depth: {
         type: 'integer',
         minimum: 1,
         maximum: LIST_MAX_DEPTH,
         description: 'How many levels to list. Defaults to 1.',
+      },
+      offset: {
+        type: 'integer',
+        minimum: 0,
+        description:
+          'With `page` or `section`: skip this many entries of the top level, to see what a cut-off list left ' +
+          'out. A cut-off list says which offset comes next.',
       },
     },
     additionalProperties: false,
@@ -531,18 +543,23 @@ export const listPages: ToolSpec = {
     const given = typeof args.page === 'string' && args.page.trim() ? args.page : undefined
     const rootId = given ? pageArg(given) : undefined
     if (given && !rootId) throw new Error(`Not a Notion page URL or id: ${given}`)
-    const depth = args.depth === undefined || args.depth === null || args.depth === '' ? 1 : Number(args.depth)
-    if (!Number.isInteger(depth) || depth < 1 || depth > LIST_MAX_DEPTH) {
-      throw new Error(`\`depth\` must be a whole number from 1 to ${LIST_MAX_DEPTH}.`)
+    const wanted = typeof args.section === 'string' && args.section.trim() ? args.section.trim() : undefined
+    if (wanted && rootId) throw new Error('Give `page` or `section`, not both.')
+    const whole = (name: string, fallback: number, min: number, max = Infinity) => {
+      const value = args[name] === undefined || args[name] === null || args[name] === '' ? fallback : Number(args[name])
+      if (!Number.isInteger(value) || value < min || value > max) {
+        throw new Error(
+          max === Infinity
+            ? `\`${name}\` must be a whole number of at least ${min}.`
+            : `\`${name}\` must be a whole number from ${min} to ${max}.`,
+        )
+      }
+      return value
     }
+    const depth = whole('depth', 1, 1, LIST_MAX_DEPTH)
+    const offset = whole('offset', 0, 0)
+    if (offset && !rootId && !wanted) throw new Error('`offset` needs `page` or `section`.')
     const tab = await activeNotionTab()
-    const cutOff = (truncated: boolean) =>
-      truncated
-        ? [
-            `Not every page may be listed: a list shows at most ${LIST_LIMIT} pages, and pages under the ` +
-              'last ones shown may be left out. To see what is under a listed page, list it by its id.',
-          ]
-        : []
 
     if (rootId) {
       const records = await tab.client.getRecords([{ table: 'block', id: rootId }])
@@ -555,13 +572,13 @@ export const listPages: ToolSpec = {
         )
       }
       const children = (await pageChildren(tab.client, [rootId], records)).get(rootId) ?? []
-      const { nodes, truncated } = await pageTree(tab.client, children, depth, LIST_LIMIT, records)
+      const { nodes, truncated, next } = await pageTree(tab.client, children.slice(offset), depth, LIST_LIMIT, records)
       const title = runsText((root.properties as { title?: unknown } | undefined)?.title) || 'Untitled'
       return [
-        `Pages under “${title}” ^${hexId(rootId)}:`,
+        `Pages under “${title}” ^${hexId(rootId)}${offset ? `, from entry ${offset}` : ''}:`,
         '',
         ...(treeLines(nodes).length ? treeLines(nodes) : ['(no pages)']),
-        ...cutOff(truncated),
+        ...(truncated ? [cutOff(next === undefined ? undefined : offset + next, 'page')] : []),
       ].join('\n')
     }
 
@@ -571,14 +588,30 @@ export const listPages: ToolSpec = {
     if (!spaceId) throw new Error('Could not tell which workspace the open page is in.')
     const space = await tab.client.getSpace(spaceId)
     // A page can be in more than one list (a shared page often stays in the owner's private
-    // pages, where the sidebar shows it); it is listed in the first. Teamspaces are listed when the
-    // workspace's records name them; workspaces that load them another way don't show them yet.
+    // pages, where the sidebar shows it); it is listed in the first.
     const sections: [string, string[]][] = [
       ['Private', space.privatePages],
       ['Shared', space.sharedPages],
       ['Workspace', space.workspacePages],
       ...space.teams.map((t): [string, string[]] => [`Teamspace: ${t.name}`, t.pages]),
     ]
+
+    if (wanted) {
+      const key = wanted.toLowerCase().replace(/^teamspace:\s*/, '')
+      const section = sections.find(([label]) => label.toLowerCase().replace(/^teamspace:\s*/, '') === key)
+      if (!section) {
+        throw new Error(`No section “${wanted}”. The sections are: ${sections.map(([label]) => label).join(', ')}.`)
+      }
+      const [label, all] = section
+      const { nodes, truncated, next } = await pageTree(tab.client, all.slice(offset), depth, LIST_LIMIT)
+      return [
+        `${label}, in the workspace “${space.name}”${offset ? `, from entry ${offset}` : ''}:`,
+        '',
+        ...(treeLines(nodes).length ? treeLines(nodes) : ['(no pages)']),
+        ...(truncated ? [cutOff(next === undefined ? undefined : offset + next, 'section', label)] : []),
+      ].join('\n')
+    }
+
     // Each section has its own share of the limit, so a long one can't hide the others, and all of
     // them together stay within the overall limit.
     const seen = new Set<string>()
@@ -594,19 +627,33 @@ export const listPages: ToolSpec = {
         continue
       }
       const limit = Math.min(SECTION_LIMIT, left)
-      const { nodes, truncated } = await pageTree(tab.client, ids, depth, limit)
+      const { nodes, truncated, next } = await pageTree(tab.client, ids, depth, limit)
       if (!nodes.length) continue
       any = true
       left -= countNodes(nodes)
       out.push('', label, ...treeLines(nodes))
       // Only pages actually listed count as listed, so one cut from this section can show in a later one.
       for (const id of nodeIds(nodes)) seen.add(id)
-      if (truncated) out.push('(This section was cut off: not every page in it is listed.)')
+      // The offset counts entries of the section's own list, as the section listed alone has it.
+      if (truncated) out.push(cutOff(next === undefined ? undefined : all.indexOf(ids[next - 1]) + 1, 'section', label))
     }
-    if (skipped.length) out.push('', `Not listed, to keep the list short: ${skipped.join(', ')}.`)
+    if (skipped.length)
+      out.push('', `Not listed, to keep the list short: ${skipped.join(', ')}. List one with \`section\`.`)
     if (!any) out.push('', '(no pages)')
     return out.join('\n')
   },
+}
+
+/**
+ * Why a list may be incomplete and how to see the rest: from `next` on when its top level was cut
+ * off, or through a listed page when only pages under the ones shown were left out.
+ */
+function cutOff(next: number | undefined, what: 'page' | 'section', label = ''): string {
+  const where = what === 'section' ? `\`section: "${label.replace(/^Teamspace: /, '')}"\` and ` : ''
+  return next !== undefined
+    ? `(Cut off: more entries follow. List them with ${where}\`offset: ${next}\`.)`
+    : `(Cut off: a list shows at most ${LIST_LIMIT} pages, so pages under the last ones shown may be left out. ` +
+        'To see what is under a listed page, list it by its id.)'
 }
 
 function nodeIds(nodes: { id: string; children: unknown[] }[]): string[] {
