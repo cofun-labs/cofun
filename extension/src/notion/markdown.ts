@@ -78,6 +78,16 @@ export function pageToMarkdown({ page, recordMap }: LoadedPage): PageMarkdown {
   }
 }
 
+/** Rich text from outside a page's blocks (a comment, say) as Markdown, with mentions named from `recordMap`. */
+export function richMarkdown(recordMap: RecordMap, value: unknown): string {
+  return new Context(recordMap, (recordMap.block ?? {}) as Record<string, Block>).rich(value)
+}
+
+/** A Notion user's name as `recordMap` has it, or "someone". */
+export function userName(recordMap: RecordMap, id: string): string {
+  return new Context(recordMap, {}).userName(id)
+}
+
 /** A database's property definitions, by property id (the title's is `title`). */
 export type Schema = Record<string, { name?: string; type?: string }>
 

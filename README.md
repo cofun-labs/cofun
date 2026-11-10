@@ -26,6 +26,7 @@
 - [x] Create pages with content, after the user approves
 - [x] Change titles, icons, and database properties, and add database rows, after the user approves
 - [x] Work on what the user selected in the page
+- [x] Read a page's comment threads, and add comments on the page or on a block
 
 ## Tech choices
 
@@ -72,6 +73,7 @@ extension/                Chrome extension
   src/notion/markdown.ts  Notion pages as Markdown for the model, with a reference on each block
   src/notion/blocks.ts    Markdown from the model back into Notion blocks
   src/notion/edit.ts      checks edits against the page as the agent read it, and plans the transaction
+  src/notion/comments.ts  a page's comment threads for the model, quoted so they read as data
   src/notion/props.ts     page titles and database property values, checked against the database's schema
   src/notion/tree.ts      pages as the sidebar lists them, level by level, without content
   src/notion/tab.ts       runs Notion requests in the user's Notion tab (chrome.scripting)
