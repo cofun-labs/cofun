@@ -277,7 +277,9 @@ export class NotionClient {
   async getSpace(spaceId: string): Promise<WorkspaceTree> {
     const space = notionId(spaceId)
     const { json, userId } = await this.request<Record<string, unknown>>('getSpaces', {}, space)
-    // One record map per signed-in user, keyed by user id; only the tab's active user's counts.
+    // One record map per signed-in user, keyed by user id; only the tab's active user's counts. No
+    // fallback to the others: another account's map would list that account's private pages, and
+    // every later request runs as the active user anyway.
     const maps = userId ? [normalizeRecordMap(json[userId])] : Object.values(json).map(normalizeRecordMap)
     const map = maps.find((m) => m.space?.[space])
     if (!map) throw new NotionError('no_access', NO_ACCESS)
