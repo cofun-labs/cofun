@@ -57,6 +57,10 @@ The extension ID is pinned with the manifest `key`, so Clerk and the worker can 
 
 Conversations are saved in the extension's IndexedDB, one database per Clerk user (`notion-copilot-sessions-<userId>`), and never sent to the worker beyond what the model needs for the current question. They stay after sign-out so the user can pick up again, and they are not encrypted: keeping accounts apart only means one account's panel never shows another's sessions. Anyone with access to the Chrome profile can read them, tool results included, such as the content of Notion pages the agent read (for example in DevTools).
 
+### Writes without approval
+
+The agent edits pages, creates pages and rows, and changes properties without asking first; only deleting a page needs the user's approval. Each change shows on its tool card in the side panel, and a page's history in Notion can undo edits. The trade-off: the agent reads text the user doesn't control (shared pages, guest content, search results), and an instruction hidden in that text can make it write as the user with nobody asked. It could change many pages in one call, or copy content the user can see into a page someone else can read. Page history can undo the changes, but not the copy.
+
 ## Layout
 
 ```
