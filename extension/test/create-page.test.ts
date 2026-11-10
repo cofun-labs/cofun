@@ -199,4 +199,27 @@ describe('create_page details', () => {
     )
     expect(tab.sent).toEqual([])
   })
+
+  it('refuses arguments that are not what its schema says, without asking Notion', async () => {
+    const tab = open(workspace())
+    await expect(create({ parent: PAGE_URL })).rejects.toThrow('`title` must not be empty.')
+    await expect(create({ title: 5, parent: PAGE_URL })).rejects.toThrow('`title` must not be empty.')
+    await expect(create({ title: 'T', parent: 5 })).rejects.toThrow('`parent` is required')
+    await expect(create({ title: 'T', parent: '  ' })).rejects.toThrow('`parent` is required')
+    await expect(create({ title: 'T', parent: PAGE_URL, markdown: ['# A'] })).rejects.toThrow(
+      '`markdown`: Invalid input: expected string, received array',
+    )
+    await expect(create({ title: 'T', parent: PAGE_URL, properties: ['Status'] })).rejects.toThrow(
+      '`properties` must be an object of values by name.',
+    )
+    await expect(create({ title: 'T', parent: PAGE_URL, properties: { Status: { name: 'Done' } } })).rejects.toThrow(
+      'The value for “Status” must be text, a number, Yes/No, or a list.',
+    )
+    await expect(create({ title: 'T', parent: PAGE_URL, properties: { Tags: ['a', 1] } })).rejects.toThrow(
+      'The value for “Tags” must be text, a number, Yes/No, or a list.',
+    )
+    await expect(create({ title: 'T', parent: PAGE_URL, icon: '📝' })).rejects.toThrow('Unrecognized key: "icon"')
+    expect(createPage.preview!({ title: 'T' })).toBeUndefined()
+    expect(tab.sent).toEqual([])
+  })
 })

@@ -46,10 +46,14 @@ export function defineTool<S extends ArgsSchema>({ args, run, preview, ...rest }
 function parametersOf(args: ArgsSchema): object {
   const { $schema: _, ...parameters } = z.toJSONSchema(args, {
     io: 'input',
-    // zod bounds an integer by what a JavaScript number holds exactly; that tells the model nothing.
+    // What zod adds that tells the model nothing: an integer's bounds at what a JavaScript number
+    // holds exactly, and that the keys of an object of values by name are text.
     override: ({ jsonSchema }) => {
       if (jsonSchema.maximum === Number.MAX_SAFE_INTEGER) delete jsonSchema.maximum
       if (jsonSchema.minimum === Number.MIN_SAFE_INTEGER) delete jsonSchema.minimum
+      const names = jsonSchema.propertyNames
+      if (typeof names === 'object' && Object.keys(names).length === 1 && names.type === 'string')
+        delete jsonSchema.propertyNames
     },
   })
   return parameters

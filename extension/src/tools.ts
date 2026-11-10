@@ -1086,8 +1086,8 @@ const INLINE_MARKDOWN =
   '`@2026-11-20`): put a backslash before a character that must stay literal, and write a backslash itself as \\\\'
 
 /** A page's new title, from the Markdown the model gives: on one line, as rich text and as previews show it. */
-function pageTitle(value: unknown): { rich: RichText; shown: string } {
-  const markdown = typeof value === 'string' ? oneLine(value) : ''
+function pageTitle(value: string): { rich: RichText; shown: string } {
+  const markdown = oneLine(value)
   try {
     return { rich: richValue(markdown), shown: shownMarkdown(markdown) }
   } catch (err) {
@@ -1097,25 +1097,28 @@ function pageTitle(value: unknown): { rich: RichText; shown: string } {
 }
 
 /** `properties` as tools take it: values by property name. */
-const PROPERTIES_ARG = {
-  type: 'object',
-  description:
+const PROPERTIES_ARG = z
+  .record(
+    z.string(),
+    z.union([z.string(), z.number(), z.boolean(), z.array(z.string()), z.null()], {
+      error: (issue) =>
+        `The value for “${oneLine(String(issue.path?.at(-1)))}” must be text, a number, Yes/No, or a list.`,
+    }),
+    { error: '`properties` must be an object of values by name.' },
+  )
+  .describe(
     'Database properties by name: text, a number, Yes/No for checkboxes, an option name (a list for ' +
-    'multi-select), or a date as YYYY-MM-DD (a range as "YYYY-MM-DD → YYYY-MM-DD"). Empty clears a value. ' +
-    'The title goes in `title`, not here. Setting a date replaces any time or reminder it had. ' +
-    `A text property is ${INLINE_MARKDOWN}. In other values, Markdown escapes are undone.`,
-  additionalProperties: {
-    anyOf: [
-      { type: 'string' },
-      { type: 'number' },
-      { type: 'boolean' },
-      { type: 'array', items: { type: 'string' } },
-      { type: 'null' },
-    ],
-  },
-}
+      'multi-select), or a date as YYYY-MM-DD (a range as "YYYY-MM-DD → YYYY-MM-DD"). Empty clears a value. ' +
+      'The title goes in `title`, not here. Setting a date replaces any time or reminder it had. ' +
+      `A text property is ${INLINE_MARKDOWN}. In other values, Markdown escapes are undone.`,
+  )
+  .optional()
 
-export const createPage: ToolSpec = {
+const TITLE_EMPTY = '`title` must not be empty.'
+const PAGES_LIST = '`pages` must be a list with at least one page.'
+const CREATE_PARENT = '`parent` is required: the URL or id of the page or database to create it in.'
+
+export const createPage = defineTool({
   changesData: true,
   name: 'create_page',
   description:
@@ -1123,28 +1126,23 @@ export const createPage: ToolSpec = {
     "(the open page's URL, or another page), and the new page goes at its end; or a " +
     'database, and the new page is a row of it, with `properties` set by name (values as query_database shows ' +
     "them; options must exist). Returns the new page's id and URL.",
-  parameters: {
-    type: 'object',
-    properties: {
-      title: { type: 'string', description: `The new page's title, on one line: ${INLINE_MARKDOWN}.` },
-      markdown: { type: 'string', description: "The page's content, as Markdown. Leave out for an empty page." },
-      parent: { type: 'string', description: 'URL or id of the page or database to create it in.' },
-      properties: PROPERTIES_ARG,
-    },
-    required: ['title', 'parent'],
-    additionalProperties: false,
-  },
+  args: z.strictObject({
+    title: z.string({ error: TITLE_EMPTY }).describe(`The new page's title, on one line: ${INLINE_MARKDOWN}.`),
+    markdown: z.string().describe("The page's content, as Markdown. Leave out for an empty page.").optional(),
+    parent: z.string({ error: CREATE_PARENT }).describe('URL or id of the page or database to create it in.'),
+    properties: PROPERTIES_ARG,
+  }),
   preview: (args) => {
-    const title = typeof args.title === 'string' ? shownMarkdown(args.title) : ''
+    const title = shownMarkdown(args.title)
     // The page exactly as `run` will resolve it, so the user sees where the page went.
-    const given = typeof args.parent === 'string' ? args.parent.trim() : ''
+    const given = args.parent.trim()
     const id = given ? pageArg(given) : undefined
     // By name when the agent has read it, so the user can tell which page or database it is.
     const database = id ? seenDatabases.get(id) : undefined
     const known = id ? (database ?? pageReads.get(id)?.title) : undefined
     const parent = id ? `${known ? `${oneLine(known)} ` : ''}^${hexId(id)}` : given || '(none given)'
-    const markdown = typeof args.markdown === 'string' && args.markdown.trim() ? args.markdown : '(empty)'
-    const props = propertiesArg(args.properties)
+    const markdown = filled(args.markdown) ?? '(empty)'
+    const props = Object.entries(args.properties ?? {})
     // Each part on a line of its own, so text in the title can't read as where the page goes.
     // Whether the parent is a page or a database decides what happens; say it only when known.
     const row = !!database || props.length > 0
@@ -1164,17 +1162,18 @@ export const createPage: ToolSpec = {
   },
   run: async (args, signal) => {
     const { rich, shown: title } = pageTitle(args.title)
-    if (!rich.length) throw new Error('`title` must not be empty.')
-    const given = typeof args.parent === 'string' ? args.parent.trim() : ''
-    if (!given) throw new Error('`parent` is required: the URL or id of the page or database to create it in.')
+    if (!rich.length) throw new Error(TITLE_EMPTY)
+    const given = args.parent.trim()
+    if (!given) throw new Error(CREATE_PARENT)
     const parentId = pageArg(given)
     if (!parentId) throw new Error(`Not a Notion page URL or id: ${given}`)
-    const props = propertiesArg(args.properties)
+    const props = Object.entries(args.properties ?? {})
     const tab = await activeNotionTab()
     let blocks: NewBlock[] = []
-    if (typeof args.markdown === 'string' && args.markdown.trim()) {
+    const markdown = filled(args.markdown)
+    if (markdown) {
       try {
-        blocks = parseMarkdown(args.markdown)
+        blocks = parseMarkdown(markdown)
       } catch (err) {
         if (err instanceof MarkdownError) throw new EditError(err.message)
         throw err
@@ -1235,12 +1234,42 @@ export const createPage: ToolSpec = {
       `URL: ${pageLink(tab.url, hex)}`,
     ].join('\n')
   },
-}
+})
 
 /** How many pages one update_pages call changes at most, so its preview stays readable. */
 export const UPDATE_MAX = 50
 
-export const updatePages: ToolSpec = {
+/** Which entry of `pages` an issue is about, as the model is told: "Page 1". */
+const pageAt = (issue: { path?: PropertyKey[] }) => `Page ${Number(issue.path?.[1]) + 1}`
+const needsPage = (issue: { path?: PropertyKey[] }) =>
+  `${pageAt(issue)} needs \`page\`: the id or URL of a page or row.`
+
+const UPDATE_ARGS = z.strictObject({
+  pages: z
+    .array(
+      z.strictObject(
+        {
+          page: z.string({ error: needsPage }).describe('Id or URL of the page or row.'),
+          title: z
+            .string({ error: (issue) => `${pageAt(issue)}: ${TITLE_EMPTY}` })
+            .describe(`A new title, on one line: ${INLINE_MARKDOWN}.`)
+            .optional(),
+          icon: z
+            .string({ error: (issue) => `${pageAt(issue)}: \`icon\` must be an emoji.` })
+            .describe('A new icon: one emoji.')
+            .optional(),
+          properties: PROPERTIES_ARG,
+        },
+        // An entry that is not an object names no page; an unknown key keeps zod's own words.
+        { error: (issue) => (issue.code === 'invalid_type' ? needsPage(issue) : undefined) },
+      ),
+      { error: PAGES_LIST },
+    )
+    .min(1, { error: PAGES_LIST })
+    .max(UPDATE_MAX, { error: `At most ${UPDATE_MAX} pages can change in one call.` }),
+})
+
+export const updatePages = defineTool({
   changesData: true,
   name: 'update_pages',
   description:
@@ -1248,53 +1277,25 @@ export const updatePages: ToolSpec = {
     'query_database shows them; options must exist; empty clears a value), several pages in one call: "mark ' +
     'these five tasks done" is one call. Get row ids from query_database. Nothing is written if any value is ' +
     'refused.',
-  parameters: {
-    type: 'object',
-    properties: {
-      pages: {
-        type: 'array',
-        minItems: 1,
-        maxItems: UPDATE_MAX,
-        items: {
-          type: 'object',
-          properties: {
-            page: { type: 'string', description: 'Id or URL of the page or row.' },
-            title: { type: 'string', description: `A new title, on one line: ${INLINE_MARKDOWN}.` },
-            icon: { type: 'string', description: 'A new icon: one emoji.' },
-            properties: PROPERTIES_ARG,
-          },
-          required: ['page'],
-          additionalProperties: false,
-        },
-      },
-    },
-    required: ['pages'],
-    additionalProperties: false,
-  },
-  preview: (args) => {
-    const updates = Array.isArray(args.pages) ? (args.pages as Record<string, unknown>[]) : []
+  args: UPDATE_ARGS,
+  preview: ({ pages: updates }) => {
     const lines = [`Change ${updates.length} page${updates.length === 1 ? '' : 's'}`]
     for (const u of updates) {
-      const given = typeof u?.page === 'string' ? u.page.trim() : ''
+      const given = u.page.trim()
       const id = given ? pageArg(given) : undefined
       const seen = id ? seenRows.get(id) : undefined
       const known = seen ? shownText(seen.title) : id ? pageReads.get(id)?.title : undefined
       lines.push(id ? `${known ? `${oneLine(known)} ` : ''}^${hexId(id)}` : oneLine(given) || '(no page given)')
-      if (typeof u?.title === 'string') {
+      if (u.title !== undefined) {
         const title = shownMarkdown(u.title)
         const old = seen
           ? change(shownMarkdown(seen.title, { cell: false }), title, sameMarkdown(seen.title, oneLine(u.title)))
           : ''
         lines.push(`    Title: ${title}${old}`)
       }
-      if (typeof u?.icon === 'string') lines.push(`    Icon: ${oneLine(u.icon)}`)
-      let props: [string, PropertyInput][] = []
-      try {
-        props = propertiesArg(u?.properties)
-      } catch {
-        lines.push('    (properties that will be refused)')
-      }
-      for (const [name, v] of props) lines.push(`    ${oneLine(name)}: ${previewValue(seen, name, v)}`)
+      if (u.icon !== undefined) lines.push(`    Icon: ${oneLine(u.icon)}`)
+      for (const [name, v] of Object.entries(u.properties ?? {}))
+        lines.push(`    ${oneLine(name)}: ${previewValue(seen, name, v)}`)
     }
     return lines.join('\n')
   },
@@ -1406,7 +1407,7 @@ export const updatePages: ToolSpec = {
     }
     return [`Changed ${updates.length} page${updates.length === 1 ? '' : 's'}:`, ...summary].join('\n')
   },
-}
+})
 
 /**
  * How a value differs from the old one the agent saw, for the preview. Text that reads the same may
@@ -1470,39 +1471,21 @@ function isEmoji(text: string): boolean {
 }
 
 /** update_pages' `pages`, checked before anything is asked of Notion. */
-function parseUpdates(value: unknown) {
-  if (!Array.isArray(value) || !value.length) throw new EditError('`pages` must be a list with at least one page.')
-  if (value.length > UPDATE_MAX) throw new EditError(`At most ${UPDATE_MAX} pages can change in one call.`)
+function parseUpdates(pages: z.output<typeof UPDATE_ARGS>['pages']) {
   const seen = new Set<string>()
-  return value.map((raw: unknown, i) => {
-    const u = (raw ?? {}) as Record<string, unknown>
-    const id = typeof u.page === 'string' ? pageArg(u.page) : undefined
+  return pages.map((u, i) => {
+    const id = pageArg(u.page)
     if (!id) throw new EditError(`Page ${i + 1} needs \`page\`: the id or URL of a page or row.`)
     if (seen.has(id)) throw new EditError(`^${hexId(id)} is given twice; put all its changes in one entry.`)
     seen.add(id)
     const title = u.title === undefined ? undefined : pageTitle(u.title)
-    if (title && !title.rich.length) throw new EditError(`Page ${i + 1}: \`title\` must not be empty.`)
-    const icon = u.icon === undefined ? undefined : typeof u.icon === 'string' ? u.icon.trim() : ''
+    if (title && !title.rich.length) throw new EditError(`Page ${i + 1}: ${TITLE_EMPTY}`)
+    const icon = u.icon?.trim()
     if (icon !== undefined && !isEmoji(icon)) throw new EditError(`Page ${i + 1}: \`icon\` must be an emoji.`)
-    const props = propertiesArg(u.properties)
+    const props = Object.entries(u.properties ?? {})
     if (title === undefined && icon === undefined && !props.length)
       throw new EditError(`Page ${i + 1} changes nothing: give \`title\`, \`icon\`, or \`properties\`.`)
     return { id, title, icon, props }
-  })
-}
-
-/** The `properties` argument as [name, value] pairs; anything else is refused. */
-function propertiesArg(value: unknown): [string, PropertyInput][] {
-  if (value === undefined || value === null) return []
-  if (typeof value !== 'object' || Array.isArray(value))
-    throw new EditError('`properties` must be an object of values by name.')
-  return Object.entries(value as Record<string, unknown>).map(([name, v]) => {
-    const ok =
-      v === null ||
-      ['string', 'number', 'boolean'].includes(typeof v) ||
-      (Array.isArray(v) && v.every((x) => typeof x === 'string'))
-    if (!ok) throw new EditError(`The value for “${oneLine(name)}” must be text, a number, Yes/No, or a list.`)
-    return [name, v as PropertyInput]
   })
 }
 
@@ -1792,7 +1775,6 @@ export const ORGANIZE_MAX = 50
 /** How far up from a page move_page looks for the pages it is in. */
 const ANCESTORS_MAX = 100
 
-const PAGES_LIST = '`pages` must be a list with at least one page.'
 /** The `pages` argument of move_page and trash_page: ids or URLs, at least one. */
 const pagesArg = (description: string) =>
   z
