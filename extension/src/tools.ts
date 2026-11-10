@@ -302,11 +302,27 @@ async function resolveDatabase(client: NotionTab['client'], block: NotionRecord)
 
 /** How many rows and databases the agent saw are remembered, for previews; the oldest go first. */
 const SEEN_KEPT = 500
-/** A row query_database showed: its title and values as shown, and its database's schema. */
+/**
+ * A row query_database showed: its title and values as shown, its database's schema, and the date
+ * properties (by name, lowercase) whose date has a reminder, which query_database doesn't show.
+ */
 interface SeenRow {
   title: string
   values: { name: string; value: string }[]
   schema: Schema
+  reminders: Set<string>
+}
+
+/** The date properties of a row whose date has a reminder, by name in lowercase. */
+function dateReminders(row: Block, schema: Schema): Set<string> {
+  const out = new Set<string>()
+  for (const [key, def] of Object.entries(schema as Record<string, PropertyDef>)) {
+    if (def.type !== 'date') continue
+    const runs = (row.properties?.[key] ?? []) as [string, [string, { reminder?: unknown }?][]?][]
+    const dated = runs.some(([, marks]) => marks?.some(([m, arg]) => m === 'd' && arg?.reminder))
+    if (dated) out.add((def.name ?? key).toLowerCase())
+  }
+  return out
 }
 /** The rows query_database showed, by row id. */
 const seenRows = new Map<string, SeenRow>()
@@ -437,7 +453,15 @@ export const queryDatabase: ToolSpec = {
         : []),
     ]
     // What the agent saw of each row, so a change to one can show its old values.
-    for (const r of shown) keep(seenRows, r.id, { title: r.values[0]?.value ?? '', values: r.values, schema })
+    for (const r of shown) {
+      const seen = {
+        title: r.values[0]?.value ?? '',
+        values: r.values,
+        schema,
+        reminders: dateReminders(r.block, schema),
+      }
+      keep(seenRows, r.id, seen)
+    }
     if (!shown.length) return [...header, '', '(no rows)'].join('\n')
     const table = [
       `| ${[...columns, 'Row'].join(' | ')} |`,
@@ -1212,11 +1236,11 @@ export const updatePages: ToolSpec = {
       const given = typeof u?.page === 'string' ? u.page.trim() : ''
       const id = given ? pageArg(given) : undefined
       const seen = id ? seenRows.get(id) : undefined
-      const known = seen ? plainText(seen.title) : id ? pageReads.get(id)?.title : undefined
+      const known = seen ? shownText(seen.title) : id ? pageReads.get(id)?.title : undefined
       lines.push(id ? `${known ? `${oneLine(known)} ` : ''}^${hexId(id)}` : oneLine(given) || '(no page given)')
       if (typeof u?.title === 'string') {
         const title = titleArg(u.title)
-        lines.push(`    Title: ${title}${seen ? change(oneLine(plainText(seen.title)), title) : ''}`)
+        lines.push(`    Title: ${title}${seen ? change(oneLine(shownText(seen.title)), title) : ''}`)
       }
       if (typeof u?.icon === 'string') lines.push(`    Icon: ${oneLine(u.icon)}`)
       let props: [string, PropertyInput][] = []
@@ -1318,12 +1342,16 @@ function previewValue(seen: SeenRow | undefined, name: string, input: PropertyIn
     if (err instanceof PropertyError) return shownInput(input)
     throw err
   }
-  const old = seen.values.find((v) => v.name.toLowerCase() === (def.name ?? name).trim().toLowerCase())?.value
+  const property = (def.name ?? name).trim().toLowerCase()
+  const old = seen.values.find((v) => v.name.toLowerCase() === property)?.value
   if (old === undefined) return now || '(empty)'
-  // As storedText shows it: query_database shows a date as a mention, and options without spaces.
-  let was = oneLine(plainText(old))
-  if (def.type === 'date') was = was.replace(/^@/, '')
+  // As storedText shows it: plain text, without query_database's Markdown marks, links, or the @
+  // before a date; options without spaces.
+  let was = oneLine(shownText(old))
   if (def.type === 'multi_select') was = was.split(/\s*,\s*/).join(', ')
+  // The write replaces the whole date, so a reminder query_database didn't show goes.
+  if (def.type === 'date' && seen.reminders.has(property))
+    return `${now || '(empty)'} (${was === now ? 'same date' : `was ${was || 'empty'}`}; its reminder is removed)`
   return (now || '(empty)') + change(was, now)
 }
 
