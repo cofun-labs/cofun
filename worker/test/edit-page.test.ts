@@ -1845,3 +1845,58 @@ describe('sixth review of #148', () => {
     }
   })
 })
+
+describe('seventh review of #148', () => {
+  const ws3 = () =>
+    workspace(
+      [1],
+      [
+        block(1, 'table', undefined, {
+          content: [id(2), id(3)],
+          format: { table_block_column_order: ['a', 'b', 'c'] },
+        }),
+        block(2, 'table_row', undefined, { properties: { a: [['A']], b: [['B']], c: [['C']] } }, id(1)),
+        block(
+          3,
+          'table_row',
+          undefined,
+          { properties: { a: [['1', [['m', 'thread']]]], b: [['2']], c: [['3']] } },
+          id(1),
+        ),
+      ],
+    )
+
+  it('moves a column with its cells, comments and all, when the columns are reordered', async () => {
+    const ws = ws3()
+    open(ws)
+    await read()
+    const result = await edit([
+      { action: 'replace', block: '^00000001', markdown: '| B | C | A |\n| --- | --- | --- |\n| 2 | 3 | 1 |' },
+    ])
+    expect(result).toBe(
+      ['Rewrote the table ^00000001: columns moved.', 'Read the page again to see the result.'].join('\n'),
+    )
+    expect(ws.records.get(id(1))!.format).toEqual({ table_block_column_order: ['b', 'c', 'a'] })
+    expect(ws.records.get(id(3))!.properties).toEqual({ a: [['1', [['m', 'thread']]]], b: [['2']], c: [['3']] })
+  })
+
+  it('says so when a column it removes held formatting read_page doesn’t show', async () => {
+    const ws = ws3()
+    open(ws)
+    await read()
+    const result = await edit([
+      { action: 'replace', block: '^00000001', markdown: '| B | C |\n| --- | --- |\n| 2 | 3 |' },
+    ])
+    expect(result).toContain('1 column removed')
+    expect(result).toContain("Columns it removed held formatting read_page doesn't show")
+  })
+
+  it('warns on the card when a table it replaces has cells read_page can’t show exactly', async () => {
+    const ws = ws3()
+    open(ws)
+    await read()
+    expect(
+      editPage.preview!({ page: hex(PAGE), edits: [{ action: 'replace', block: '^00000001', markdown: '- x' }] }),
+    ).toContain("what read_page didn't show exactly")
+  })
+})

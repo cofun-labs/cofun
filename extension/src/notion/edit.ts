@@ -69,10 +69,11 @@ export function pageRead(
     lines: new Map([...md.lines].filter(([id]) => refs.has(id))),
     nested,
     lossy: new Set(
-      [...refs.keys()].filter(
-        (id) =>
-          TEXT_TYPES.has(blocks[id]?.type) &&
-          lossyText(blocks[id].properties?.title, md.lines.get(id), loaded.recordMap.notion_user),
+      [...refs.keys()].filter((id) =>
+        blocks[id]?.type === 'table'
+          ? lossyTable(blocks, blocks[id], md.lines.get(id), loaded.recordMap.notion_user)
+          : TEXT_TYPES.has(blocks[id]?.type) &&
+            lossyText(blocks[id].properties?.title, md.lines.get(id), loaded.recordMap.notion_user),
       ),
     ),
   }
@@ -405,15 +406,7 @@ export function planEdit(
   const lossy = (block: Block): boolean => {
     const users = loaded.recordMap.notion_user
     if (block.type !== 'table') return lossyText(block.properties?.title, read.lines.get(block.id), users)
-    const columns = (block.format?.table_block_column_order as string[] | undefined) ?? []
-    const shown = shownRows(block)
-    return aliveChildren(block).some((r, n) =>
-      Object.entries(blocks[r]?.properties ?? {}).some(([column, value]) => {
-        const c = columns.indexOf(column)
-        // A cell of a column the table no longer shows isn't shown at all.
-        return c < 0 ? hasUnwritableMarks(value, users) : lossyRich(value, shown?.[n]?.[c], users)
-      }),
-    )
+    return lossyTable(blocks, block, read.lines.get(block.id), users)
   }
 
   /** The cells of a table as read_page showed them, parsed, row by row; none if they can't be. */
@@ -443,15 +436,20 @@ export function planEdit(
     const shownKeys = shown.map((row) => row.map((cell) => key(withPeople(cell, people, { keep: true }))))
     const newRows = nb.rows ?? []
 
-    const columnPairs = align(
-      columns.map((_, c) => shownKeys[0]?.[c] ?? ''),
-      (newRows[0] ?? []).map(key),
-    )
-    /** For each new column: its id, and its index in the table as read, if it was there. */
-    const kept = columnPairs.filter((p) => p.b !== undefined)
-    const order = kept.map((p) => (p.a === undefined ? columnId(newId) : columns[p.a]))
-    const was = kept.map((p) => p.a)
-    const both = columnPairs.filter((p) => p.a !== undefined && p.b !== undefined)
+    const oldHeads = columns.map((_, c) => shownKeys[0]?.[c] ?? '')
+    const newHeads = (newRows[0] ?? []).map(key)
+    /** For each new column, its index in the table as read, if it was there. */
+    const was: (number | undefined)[] = newHeads.map(() => undefined)
+    for (const p of align(oldHeads, newHeads)) if (p.a !== undefined && p.b !== undefined) was[p.b] = p.a
+    // A column moved elsewhere is matched by its header too, so its cells move with it.
+    newHeads.forEach((head, b) => {
+      if (was[b] !== undefined) return
+      const a = oldHeads.findIndex((h, n) => h === head && !was.includes(n))
+      if (a >= 0) was[b] = a
+    })
+    const order = was.map((a) => (a === undefined ? columnId(newId) : columns[a]))
+    const removedColumns = columns.filter((_, n) => !was.includes(n))
+    const both = was.flatMap((a, b) => (a === undefined ? [] : [{ a, b }]))
     const rowPairs = align(
       shownKeys.map((row) => JSON.stringify(both.map((p) => row[p.a!]))),
       newRows.map((row) => JSON.stringify(both.map((p) => key(row[p.b!])))),
@@ -460,8 +458,8 @@ export function planEdit(
       cells: 0,
       rowsAdded: 0,
       rowsRemoved: 0,
-      columnsAdded: kept.filter((p) => p.a === undefined).length,
-      columnsRemoved: columnPairs.filter((p) => p.b === undefined).length,
+      columnsAdded: was.filter((a) => a === undefined).length,
+      columnsRemoved: removedColumns.length,
     }
     if (order.length !== columns.length || order.some((c, n) => c !== columns[n])) {
       ops.push(op.setFormat(table.id, { table_block_column_order: order }))
@@ -510,6 +508,10 @@ export function planEdit(
       deleted.add(row)
       counts.rowsRemoved++
     }
+    // A removed column's cells stay in its rows, but the table no longer shows them.
+    const lostColumns = rows.some((row) =>
+      removedColumns.some((c) => hasUnwritableMarks(blocks[row].properties?.[c], users)),
+    )
 
     const n = (count: number, what: string, done: string) =>
       count ? `${count} ${what}${count === 1 ? '' : 's'} ${done}` : ''
@@ -519,6 +521,7 @@ export function planEdit(
       n(counts.rowsRemoved, 'row', 'removed'),
       n(counts.columnsAdded, 'column', 'added'),
       n(counts.columnsRemoved, 'column', 'removed'),
+      both.some((p, i) => i > 0 && p.a < both[i - 1].a) ? 'columns moved' : '',
     ].filter(Boolean)
     if (!parts.length) return `${tableRef} already had that content; nothing changed.`
     changed.add(table.id)
@@ -527,6 +530,10 @@ export function planEdit(
       (lostCells ? ` In the cells it changed, ${LOST}` : '') +
       (lostRows
         ? " Rows it removed held formatting read_page doesn't show (such as comments); the page's history in " +
+          'Notion can bring them back.'
+        : '') +
+      (lostColumns
+        ? " Columns it removed held formatting read_page doesn't show (such as comments); the page's history in " +
           'Notion can bring them back.'
         : '')
     )
@@ -739,6 +746,33 @@ function lossyText(stored: unknown, shown: string | undefined, users: Record<str
     if (!(err instanceof MarkdownError)) throw err
   }
   return lossyRich(stored, title, users)
+}
+
+/**
+ * Whether replacing a table loses something read_page didn't show exactly in its cells, given
+ * `shown`, the table's Markdown as read_page showed it.
+ */
+function lossyTable(
+  blocks: Record<string, Block>,
+  table: Block,
+  shown: string | undefined,
+  users: Record<string, NotionRecord> = {},
+): boolean {
+  const columns = (table.format?.table_block_column_order as string[] | undefined) ?? []
+  let rows: RichText[][] | undefined
+  try {
+    rows = parseMarkdown(shown ?? '')[0]?.rows
+  } catch (err) {
+    if (!(err instanceof MarkdownError)) throw err
+  }
+  const alive = (table.content ?? []).filter((r) => blocks[r]?.alive !== false)
+  return alive.some((r, n) =>
+    Object.entries(blocks[r]?.properties ?? {}).some(([column, value]) => {
+      const c = columns.indexOf(column)
+      // A cell of a column the table no longer shows isn't shown at all.
+      return c < 0 ? hasUnwritableMarks(value, users) : lossyRich(value, rows?.[n]?.[c], users)
+    }),
+  )
 }
 
 /**
