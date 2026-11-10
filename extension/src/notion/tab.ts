@@ -3,7 +3,15 @@
 // www.notion.so don't share one), which a request from the tab gets right by construction.
 // The worker's tests import this file too, and their tsconfig has no chrome types.
 /// <reference types="chrome" />
-import { NO_NOTION_TAB, NotionClient, NotionError, NotionUsage, type NotionResponse, type NotionTransport } from './api'
+import {
+  NO_NOTION_TAB,
+  NotionClient,
+  NotionCooldown,
+  NotionError,
+  NotionUsage,
+  type NotionResponse,
+  type NotionTransport,
+} from './api'
 import { NOTION_HOSTS, isNotion, pageIdFromUrl } from './hosts'
 
 /** The Notion tab of the side panel's window, and a client that calls Notion as its user. */
@@ -14,6 +22,9 @@ export interface NotionTab {
   pageId?: string
   client: NotionClient
 }
+
+/** The wait after Notion turns a request away, kept by every client of the side panel. */
+export const notionCooldown = new NotionCooldown()
 
 /** The Notion requests of the question being answered; see countNotionRequests. */
 let usage: NotionUsage | undefined
@@ -33,7 +44,7 @@ export async function activeNotionTab(): Promise<NotionTab> {
   const counted = usage
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true })
   if (tab?.id === undefined || !tab.url || !isNotion(tab.url)) throw new NotionError('no_notion_tab', NO_NOTION_TAB)
-  const client = new NotionClient(tabTransport(tab.id), counted)
+  const client = new NotionClient(tabTransport(tab.id), counted, notionCooldown)
   return { tabId: tab.id, url: tab.url, pageId: pageIdFromUrl(tab.url), client }
 }
 
@@ -124,7 +135,7 @@ export async function notionRequest(
     } catch {
       // Not JSON (e.g. an HTML error page); the status says enough.
     }
-    return { status: res.status, json, userId }
+    return { status: res.status, json, userId, retryAfter: res.headers.get('retry-after') ?? undefined }
   } catch (err) {
     return { status: 0, json: null, userId, error: err instanceof Error ? err.message : String(err) }
   }

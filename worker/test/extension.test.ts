@@ -14,6 +14,7 @@ import {
 import {
   BUDGET_STOP,
   LIMITED_STOP,
+  coolingStop,
   OVER_BUDGET,
   RATE_LIMITED,
   REQUEST_BUDGET,
@@ -21,7 +22,7 @@ import {
   UNKNOWN_STOP,
   budgetQuestion,
 } from '../../extension/src/notion/api'
-import { activeNotionTab, countNotionRequests } from '../../extension/src/notion/tab'
+import { activeNotionTab, countNotionRequests, notionCooldown } from '../../extension/src/notion/tab'
 import { editPage, movePage, openPageNote, readPage, trashPage } from '../../extension/src/tools'
 import { createApp, type Env } from '../src/app'
 import { FakeClerk } from './clerk'
@@ -398,6 +399,34 @@ describe('extension agent against the worker', () => {
     expect(sentMessages(1).find((m) => m.role === 'tool')).toMatchObject({
       content: expect.stringContaining(RATE_LIMITED),
     })
+  })
+
+  it('[UC-NOTION-001-S12] asked again before the wait is over, nothing is sent and the user is told how long to wait', async () => {
+    let now = Date.now()
+    const tab = new FakeNotionTab(PAGE_URL).limit('loadPageChunk', 1, 429, '120').install()
+    notionCooldown.now = () => now
+    tab.workspace = new FakeWorkspace(
+      [{ id: PAGE, type: 'page', properties: { title: [['Fixture page']] }, parent_id: SPACE, parent_table: 'space' }],
+      SPACE,
+    )
+    const agent = makeAgent({ tools: [readPage] })
+    const readIt = () =>
+      (ai.script = [{ toolCalls: [{ name: 'read_page', arguments: '{}' }] }, { reply: 'A summary.' }])
+    readIt()
+    expect((await ask(agent, 'Summarize this page')).result).toMatchObject({
+      status: 'error',
+      message: expect.stringContaining('Wait 2 minutes, then ask again.'),
+    })
+    // Asked again a minute later: nothing goes to Notion.
+    now += 60_000
+    readIt()
+    expect((await ask(agent, 'Summarize this page')).result).toEqual({ status: 'error', message: coolingStop(60_000) })
+    expect(tab.sent).toHaveLength(1)
+    // Once the wait is over, the page is read.
+    now += 60_000
+    readIt()
+    expect((await ask(agent, 'Summarize this page')).result).toEqual({ status: 'done' })
+    expect(tab.sent).toHaveLength(2)
   })
 
   it('[UC-NOTION-002-S11] the question stops when Notion turns an edit away, and nothing changes', async () => {
