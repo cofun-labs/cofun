@@ -2,12 +2,13 @@
 // against its schema. A change that would lose values the user didn't ask to remove is refused
 // before anything is sent: no type changes, no removing the title, no two properties or options
 // with one name.
+import { z } from '../zod'
 import { blockOps, collectionOps, type Operation, type RecordMap, type SchemaOption } from './api'
 import type { Schema } from './markdown'
 import { oneLine, plainText } from './props'
 
 /** The property types a database can be given, by the names its schema uses. */
-export const PROPERTY_TYPES = [
+const PROPERTY_TYPES = [
   'text',
   'number',
   'select',
@@ -35,13 +36,6 @@ export class SchemaError extends Error {
   }
 }
 
-/** A property as the model describes it. */
-export interface PropertySpec {
-  name: string
-  type: PropertyType
-  options?: string[]
-}
-
 /** A property in a schema, with the fields changes read. */
 interface PropertyDef {
   name?: string
@@ -60,7 +54,7 @@ export type SchemaChange =
   | { action: 'rename_option'; property: string; option: string; to: string }
   | { action: 'remove_option'; property: string; option: string }
 
-export const SCHEMA_ACTIONS = [
+const SCHEMA_ACTIONS = [
   'add_property',
   'rename_property',
   'remove_property',
@@ -68,6 +62,55 @@ export const SCHEMA_ACTIONS = [
   'rename_option',
   'remove_option',
 ] as const
+
+/** Text arguments drop Markdown escapes (see plainText), so the model must double a backslash. */
+export const BACKSLASH = 'Markdown escapes are undone: write a backslash itself as \\\\.'
+
+/** Which entry of a list argument an issue is about, counted from 1. */
+const entryAt = (issue: { path?: PropertyKey[] }) => Number(issue.path?.[1]) + 1
+
+/** A property's type; `where` says which entry an issue is about, as the model is told. */
+const typeArg = (where: (issue: { path?: PropertyKey[] }) => string) =>
+  z.enum(PROPERTY_TYPES, {
+    error: (issue) => {
+      const given = typeof issue.input === 'string' && issue.input.trim() ? oneLine(issue.input) : 'property without a'
+      return `${where(issue)} can't be a ${given} type. Use one of: ${PROPERTY_TYPES.join(', ')}.`
+    },
+  })
+
+/** Option names for a select or multi-select. */
+const optionsArg = (description: string) =>
+  z
+    .array(z.string())
+    .max(SCHEMA_MAX, { error: `At most ${SCHEMA_MAX} options can be added at once.` })
+    .describe(description)
+    .optional()
+
+/** A property as the model describes it, and as it is described to the model. */
+export const PROPERTY_SPEC = z.strictObject({
+  name: z.string({ error: 'A property name must not be empty.' }).describe(`The property's name. ${BACKSLASH}`),
+  type: typeArg((issue) => `Property ${entryAt(issue)}`),
+  options: optionsArg("For select and multi_select: the options' names, without commas. A status gets Notion's own."),
+})
+type PropertySpec = z.output<typeof PROPERTY_SPEC>
+
+/**
+ * One entry of the `changes` argument, as it is described to the model: its action, and the fields
+ * the actions take between them. Which fields an action needs is checked by parseChanges.
+ */
+export const CHANGE_ARG = z.strictObject({
+  action: z.enum(SCHEMA_ACTIONS, {
+    error: (issue) => `Change ${entryAt(issue)}: \`action\` must be one of ${SCHEMA_ACTIONS.join(', ')}.`,
+  }),
+  property: z
+    .string({ error: (issue) => `Change ${entryAt(issue)} needs \`property\`.` })
+    .describe('The property to change, or to add.'),
+  type: typeArg((issue) => `Change ${entryAt(issue)}: the property`).optional(),
+  options: optionsArg('For add_property and add_options: option names.'),
+  option: z.string().describe('For rename_option and remove_option: the option.').optional(),
+  to: z.string().describe(`For the renames: the new name. ${BACKSLASH}`).optional(),
+})
+type ChangeArg = z.output<typeof CHANGE_ARG>
 
 /** A name for a property or an option: on one line, Markdown escapes undone. */
 function nameArg(value: string, what: string): string {
@@ -216,16 +259,6 @@ export interface SchemaPlan {
   lines: string[]
   /** Options renamed; every row that has one must be rewritten too (see renameInRows). */
   renames: OptionRename[]
-}
-
-/** One entry of the `changes` argument: its action, and the fields the actions take between them. */
-export interface ChangeArg {
-  action: SchemaChange['action']
-  property: string
-  type?: PropertyType
-  options?: string[]
-  option?: string
-  to?: string
 }
 
 /** The `changes` argument as changes, each with what its action needs, before anything is asked of Notion. */

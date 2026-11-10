@@ -12,6 +12,7 @@
     "test": "pnpm -r test",
     "e2e": "pnpm --silent --filter notion-copilot-e2e e2e",
     "smoke": "pnpm build && pnpm --silent --filter notion-copilot-smoke smoke",
+    "icons": "pnpm --silent --filter notion-copilot-smoke icons",
     "check": "pnpm lint && pnpm knip && pnpm format:check && pnpm typecheck && pnpm build && pnpm test",
     "prepare": "lefthook install"
   },

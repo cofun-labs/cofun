@@ -72,8 +72,9 @@ import {
   type Schema,
 } from './notion/markdown'
 import {
-  PROPERTY_TYPES,
-  SCHEMA_ACTIONS,
+  BACKSLASH,
+  CHANGE_ARG,
+  PROPERTY_SPEC,
   SCHEMA_MAX,
   SchemaError,
   newSchema,
@@ -1049,7 +1050,6 @@ function titleArg(value: string): string {
 }
 
 /** Text arguments drop Markdown escapes (see plainText), so the model must double a backslash. */
-const BACKSLASH = 'Markdown escapes are undone: write a backslash itself as \\\\.'
 
 /** Page titles and text properties are inline Markdown (see richValue). */
 const INLINE_MARKDOWN =
@@ -1478,26 +1478,6 @@ function toProperties(schema: Schema, props: [string, PropertyInput][]): Record<
   return out
 }
 
-/** A property's type; `where` says which entry an issue is about, as the model is told. */
-const typeArg = (where: (issue: { path?: PropertyKey[] }) => string) =>
-  z.enum(PROPERTY_TYPES, {
-    error: (issue) => {
-      const given = typeof issue.input === 'string' && issue.input.trim() ? oneLine(issue.input) : 'property without a'
-      return `${where(issue)} can't be a ${given} type. Use one of: ${PROPERTY_TYPES.join(', ')}.`
-    },
-  })
-
-/** Option names for a select or multi-select. */
-const optionsArg = (description: string) =>
-  z
-    .array(z.string())
-    .max(SCHEMA_MAX, { error: `At most ${SCHEMA_MAX} options can be added at once.` })
-    .describe(description)
-    .optional()
-
-/** Which entry of a list argument an issue is about, counted from 1. */
-const entryAt = (issue: { path?: PropertyKey[] }) => Number(issue.path?.[1]) + 1
-
 const DATABASE_PARENT = '`parent` is required: the URL or id of the page to create it in.'
 
 /** Refusals from planning schema changes, for the model; anything else is passed on. */
@@ -1521,16 +1501,7 @@ export const createDatabase = defineTool({
       .describe('The name of the title column. Default: Name.')
       .optional(),
     properties: z
-      .array(
-        z.strictObject({
-          name: z.string({ error: 'A property name must not be empty.' }).describe(`The property's name. ${BACKSLASH}`),
-          type: typeArg((issue) => `Property ${entryAt(issue)}`),
-          options: optionsArg(
-            "For select and multi_select: the options' names, without commas. A status gets Notion's own.",
-          ),
-        }),
-        { error: '`properties` must be a list of properties.' },
-      )
+      .array(PROPERTY_SPEC, { error: '`properties` must be a list of properties.' })
       .max(SCHEMA_MAX, { error: `A database can be created with at most ${SCHEMA_MAX} properties.` })
       .optional(),
   }),
@@ -1623,21 +1594,7 @@ export const updateDatabaseSchema = defineTool({
   args: z.strictObject({
     database: z.string().describe('Id or URL of the database. Leave out for the open page.').optional(),
     changes: z
-      .array(
-        z.strictObject({
-          action: z.enum(SCHEMA_ACTIONS, {
-            error: (issue) => `Change ${entryAt(issue)}: \`action\` must be one of ${SCHEMA_ACTIONS.join(', ')}.`,
-          }),
-          property: z
-            .string({ error: (issue) => `Change ${entryAt(issue)} needs \`property\`.` })
-            .describe('The property to change, or to add.'),
-          type: typeArg((issue) => `Change ${entryAt(issue)}: the property`).optional(),
-          options: optionsArg('For add_property and add_options: option names.'),
-          option: z.string().describe('For rename_option and remove_option: the option.').optional(),
-          to: z.string().describe(`For the renames: the new name. ${BACKSLASH}`).optional(),
-        }),
-        { error: CHANGES_LIST },
-      )
+      .array(CHANGE_ARG, { error: CHANGES_LIST })
       .min(1, { error: CHANGES_LIST })
       .max(SCHEMA_MAX, { error: `At most ${SCHEMA_MAX} changes can be made in one call.` }),
   }),
