@@ -2,9 +2,9 @@
   <title id="title">How Copilot for Notion works</title>
   <desc id="desc">
     Inside your browser, the Copilot side panel reads and edits pages through your own Notion tab,
-    which is already signed in as you. The side panel sends your question to the Copilot server,
-    which checks who you are and passes the conversation to an AI model. The server never talks to
-    Notion.
+    which is already signed in as you. The side panel sends your question, together with what it
+    read to answer it, to the Copilot server, which checks who you are and passes the conversation
+    to an AI model. The server never talks to Notion.
   </desc>
   <style>
     :root {
@@ -40,12 +40,12 @@
     .dot { fill: var(--accent); }
     .dot.model { fill: var(--model); }
 
-    /* Dots travel along the wires: requests to Notion and back, the question out, the reply back. */
+    /* Dots travel along the wires: requests to Notion and back, then the question out to the model. */
     .move { opacity: 0; animation: 3.2s linear infinite; }
     .to-notion { animation-name: to-notion; }
     .from-notion { animation-name: from-notion; animation-delay: 0.8s; }
     .to-server { animation-name: to-server; animation-delay: 1.6s; }
-    .to-model { animation-name: to-model; animation-delay: 2.1s; }
+    .to-model { animation-name: to-model; animation-delay: 2.9s; }
     @keyframes to-notion {
       0% { opacity: 0; transform: translateX(0) }
       8%, 32% { opacity: 1 }
@@ -106,7 +106,8 @@
 
   <path class="wire" d="M 556.5 110.5 H 652" />
   <path class="head" d="M 660.5 110.5 l -9 -5 v 10 z" />
-  <text class="muted" x="620" y="98" font-size="12">question</text>
+  <text class="muted" x="620" y="84" font-size="12">question +</text>
+  <text class="muted" x="620" y="99" font-size="12">what it read</text>
   <circle class="dot move to-server" cx="560" cy="110.5" r="4" />
 
   <line class="wire" x1="760.5" y1="129" x2="760.5" y2="170" />
