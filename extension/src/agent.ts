@@ -30,7 +30,7 @@ export interface AgentConfig {
 }
 
 /** What a question's tools sent, read when it ends. */
-export interface QuestionMeter {
+interface QuestionMeter {
   readonly requests: number
   /** A request that changes the user's data was sent and may have landed. */
   readonly wrote: boolean
@@ -120,7 +120,7 @@ export type HistoryMessage =
   | { role: 'tool'; id: string; name: string; status: ToolStatus; result: string }
 
 /** What the model wrote, in order: text and the tools it asked to run. */
-export type AssistantPart =
+type AssistantPart =
   | { type: 'text'; text: string }
   | { type: 'tool_call'; id: string; name: string; args: Record<string, unknown> }
 
@@ -132,7 +132,7 @@ export type AskResult = (
   | { status: 'error'; message: string }
 ) & { requests?: number }
 
-export const DEFAULT_MAX_STEPS = 10
+const DEFAULT_MAX_STEPS = 10
 // The worker allows 200 messages and 200,000 characters, tools included.
 const DEFAULT_HISTORY = { messages: 100, chars: 150_000 }
 

@@ -6,7 +6,7 @@ import { mkdir, readFile, rm, stat, utimes, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 
-export const LOCK_DIR = join(homedir(), '.cache', 'notion-copilot', 'canary.lock')
+const LOCK_DIR = join(homedir(), '.cache', 'notion-copilot', 'canary.lock')
 export const STALE_MS = 30 * 60_000
 
 /** How old a takeover guard must be to count as left behind by a session that died taking over. */
@@ -139,7 +139,7 @@ function oneLine(text: string): string {
 }
 
 /** Local time as the shell script writes it: 2026-11-10 08:11. */
-export function stamp(d: Date): string {
+function stamp(d: Date): string {
   const two = (n: number) => String(n).padStart(2, '0')
   return `${d.getFullYear()}-${two(d.getMonth() + 1)}-${two(d.getDate())} ${two(d.getHours())}:${two(d.getMinutes())}`
 }

@@ -3,7 +3,7 @@
 
 export const DEFAULT_PORT = 9228
 /** How long Chrome may take to answer one request, so a wedged target can't hang a command (and hold the lock). */
-export const REQUEST_TIMEOUT_MS = 60_000
+const REQUEST_TIMEOUT_MS = 60_000
 
 export interface TargetInfo {
   targetId: string
@@ -17,7 +17,7 @@ interface Pending {
   reject: (err: Error) => void
 }
 
-export class CdpError extends Error {
+class CdpError extends Error {
   constructor(message: string) {
     super(message)
     this.name = 'CdpError'

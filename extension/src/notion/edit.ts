@@ -160,7 +160,7 @@ export class EditError extends Error {
   }
 }
 
-export const READ_AGAIN = 'Read the page again with read_page, then redo the edit on what it shows now.'
+const READ_AGAIN = 'Read the page again with read_page, then redo the edit on what it shows now.'
 
 /** Which entry of `edits` an issue is about, as the model is told: "Edit 1". */
 const editAt = (issue: { path?: PropertyKey[] }) => `Edit ${Number(issue.path?.[1]) + 1}`

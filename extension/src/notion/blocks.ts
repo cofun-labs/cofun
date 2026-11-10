@@ -280,12 +280,12 @@ type Mark = [string, unknown?]
  * A mention of a person by the name `@[Name]` gives, stored in a `u` mark until it is matched to a
  * member's id (see people.ts).
  */
-export interface PersonName {
+interface PersonName {
   name: string
 }
 
 /** A date mention's value as Notion stores it. */
-export interface DateValue {
+interface DateValue {
   type: 'date' | 'datetime' | 'daterange' | 'datetimerange'
   start_date: string
   start_time?: string

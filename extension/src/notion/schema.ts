@@ -20,7 +20,7 @@ export const PROPERTY_TYPES = [
   'phone_number',
   'person',
 ] as const
-export type PropertyType = (typeof PROPERTY_TYPES)[number]
+type PropertyType = (typeof PROPERTY_TYPES)[number]
 
 /** How many properties, options, or changes one call takes at most, so its preview stays readable. */
 export const SCHEMA_MAX = 30
