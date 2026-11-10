@@ -405,9 +405,25 @@ export function planEdit(
   const lossy = (block: Block): boolean => {
     const users = loaded.recordMap.notion_user
     if (block.type !== 'table') return lossyText(block.properties?.title, read.lines.get(block.id), users)
-    return aliveChildren(block).some((r) =>
-      Object.values(blocks[r]?.properties ?? {}).some((v) => hasUnwritableMarks(v, users)),
+    const columns = (block.format?.table_block_column_order as string[] | undefined) ?? []
+    const shown = shownRows(block)
+    return aliveChildren(block).some((r, n) =>
+      Object.entries(blocks[r]?.properties ?? {}).some(([column, value]) => {
+        const c = columns.indexOf(column)
+        // A cell of a column the table no longer shows isn't shown at all.
+        return c < 0 ? hasUnwritableMarks(value, users) : lossyRich(value, shown?.[n]?.[c], users)
+      }),
     )
+  }
+
+  /** The cells of a table as read_page showed them, parsed, row by row; none if they can't be. */
+  const shownRows = (table: Block): RichText[][] | undefined => {
+    try {
+      return parseMarkdown(read.lines.get(table.id) ?? '')[0]?.rows
+    } catch (err) {
+      if (!(err instanceof MarkdownError)) throw err
+      return undefined
+    }
   }
 
   /**
@@ -419,12 +435,7 @@ export function planEdit(
   const rewriteTable = (table: Block, rows: string[], nb: NewBlock, people: Map<string, string>): string => {
     const tableRef = ref(table.id)
     const columns = (table.format?.table_block_column_order as string[] | undefined) ?? []
-    let shown: RichText[][] | undefined = rows.length ? undefined : []
-    try {
-      shown ??= parseMarkdown(read.lines.get(table.id) ?? '')[0]?.rows
-    } catch (err) {
-      if (!(err instanceof MarkdownError)) throw err
-    }
+    const shown = rows.length ? shownRows(table) : []
     if (!shown || shown.length !== rows.length || shown.some((r) => r.length !== columns.length)) {
       throw new EditError(`${tableRef} isn't as read_page showed it. ${READ_AGAIN}`)
     }
@@ -483,7 +494,7 @@ export function planEdit(
         if (was[c] !== undefined && shownKeys[p.a!][was[c]!] === key(cell)) return
         const old = blocks[row].properties?.[column]
         if (key((old ?? []) as RichText) === key(cell)) return
-        if (hasUnwritableMarks(old, users)) lostCells = true
+        if (lossyRich(old, was[c] === undefined ? [] : shown[p.a!][was[c]!], users)) lostCells = true
         values[column] = keepDates(cell, [old])
       })
       if (Object.keys(values).length) {
@@ -727,11 +738,21 @@ function lossyText(stored: unknown, shown: string | undefined, users: Record<str
   } catch (err) {
     if (!(err instanceof MarkdownError)) throw err
   }
-  if (!title) return true
+  return lossyRich(stored, title, users)
+}
+
+/**
+ * Whether rewriting stored rich text loses something, given `shown`, the rich text read_page's
+ * Markdown for it parses to (a table cell's, say); none means it couldn't be parsed.
+ */
+function lossyRich(stored: unknown, shown: RichText | undefined, users: Record<string, NotionRecord> = {}): boolean {
+  if (hasUnwritableMarks(stored, users)) return true
+  if (!Array.isArray(stored) || !stored.length) return false
+  if (!shown) return true
   const ids = new Map(
     Object.entries(users).flatMap(([id, u]) => (typeof u.name === 'string' && u.name ? [[u.name, id] as const] : [])),
   )
-  return canonical(keepDates(withPeople(title, ids, { keep: true }), [stored])) !== canonical(stored as RichText)
+  return canonical(keepDates(withPeople(shown, ids, { keep: true }), [stored])) !== canonical(stored as RichText)
 }
 
 /** Rich text in one form: marks sorted, runs with the same marks merged (mentions and equations kept apart). */

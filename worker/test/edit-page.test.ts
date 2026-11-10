@@ -1779,3 +1779,40 @@ describe('fourth review of #148', () => {
     expect(ws.records.get(id(3))!.properties).toEqual({ a: [['‣', [['u', GUEST]]]], b: [['2']] })
   })
 })
+
+describe('fifth review of #148', () => {
+  const table = (cell: unknown) => [
+    block(1, 'table', undefined, { content: [id(2), id(3)], format: { table_block_column_order: ['a'] } }),
+    block(2, 'table_row', undefined, { properties: { a: [['Head']] } }, id(1)),
+    block(3, 'table_row', undefined, { properties: { a: cell } }, id(1)),
+  ]
+
+  it('says so when a changed cell held text read_page showed in a way that doesn’t parse back', async () => {
+    const date = [['‣', [['d', { type: 'date', start_date: '2026-11-12' }]]], [' 10:00 meeting']]
+    const ws = workspace([1], table(date))
+    open(ws)
+    const shown = body(await read())
+    expect(shown).toContain('| @2026-11-12 10:00 meeting |')
+    expect(
+      await edit([{ action: 'replace', block: '^00000001', markdown: shown.replace('meeting', 'call') }]),
+    ).toContain("In the cells it changed, what read_page didn't show exactly")
+  })
+
+  it('says so when a table replaced by other content had a cell read_page can’t show exactly', async () => {
+    const ws = workspace([1], table([['⁍', [['e', 'x'], ['b']]]]))
+    open(ws)
+    await read()
+    expect(await edit([{ action: 'replace', block: '^00000001', markdown: '- x' }])).toContain(
+      "In its old cells, what read_page didn't show exactly",
+    )
+  })
+
+  it('does not warn when a table’s cells all read back as stored', async () => {
+    const ws = workspace([1], table([['Plain '], ['bold', [['b']]]]))
+    open(ws)
+    const shown = body(await read())
+    const result = await edit([{ action: 'replace', block: '^00000001', markdown: shown.replace('Plain', 'Bare') }])
+    expect(result).toContain('1 cell changed')
+    expect(result).not.toContain("didn't show exactly")
+  })
+})
