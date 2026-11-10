@@ -741,6 +741,85 @@ describe('tool calling', () => {
     })
   })
 
+  it('says what is wrong with each part of a request, and the first thing when several are', async () => {
+    const call = { id: 'c1', type: 'function', function: { name: 'f', arguments: '{}' } }
+    const tool = { type: 'function', function: { name: 'f' } }
+    const refused: [unknown, string][] = [
+      [[], 'body must be a JSON object'],
+      [{}, 'messages must be a non-empty array'],
+      [{ messages: [] }, 'messages must be a non-empty array'],
+      [{ messages: Array.from({ length: 201 }, () => askPage[0]) }, 'at most 200 messages'],
+      [{ messages: ['hi'] }, 'each message must be an object'],
+      [{ messages: [{ content: 'hi' }] }, 'each message needs a role: system, user, assistant, or tool'],
+      [{ messages: [{ role: 'user', content: 5 }] }, 'user messages need string content'],
+      [{ messages: [{ role: 'system' }] }, 'system messages need string content'],
+      [{ messages: [{ role: 'assistant' }] }, 'assistant messages need string content or tool_calls'],
+      [
+        { messages: [{ role: 'assistant', content: 5, tool_calls: [call] }] },
+        'assistant content must be a string or null',
+      ],
+      [{ messages: [{ role: 'assistant', tool_calls: [] }] }, 'tool_calls must be an array of 1 to 32 calls'],
+      [
+        { messages: [{ role: 'assistant', tool_calls: [{ ...call, type: 'tool' }] }] },
+        'each tool call needs an id, type "function", and a function with a name and string arguments',
+      ],
+      [{ messages: [{ role: 'tool', content: 'r' }] }, 'tool messages need a tool_call_id and string content'],
+      [
+        { messages: [{ role: 'tool', tool_call_id: 'c1', content: 'r' }] },
+        'each tool message must answer a call from the assistant message before it',
+      ],
+      [
+        { messages: [{ role: 'assistant', tool_calls: [call] }, askPage[0]] },
+        'each tool call needs its result right after the assistant message',
+      ],
+      [{ messages: [{ role: 'assistant', tool_calls: [call, call] }] }, 'tool call ids in one message must be unique'],
+      [{ messages: askPage, tools: [] }, 'tools must be an array of 1 to 64 tools'],
+      [
+        { messages: askPage, tools: [{ type: 'function' }] },
+        'each tool needs type "function" and a function definition',
+      ],
+      [
+        { messages: askPage, tools: [{ type: 'function', function: { name: 'bad name' } }] },
+        'tool names are 1 to 64 letters, digits, underscores, or dashes',
+      ],
+      [{ messages: askPage, tools: [tool, tool] }, 'tool f is defined twice'],
+      [
+        { messages: askPage, tools: [{ type: 'function', function: { name: 'f', description: 5 } }] },
+        'tool descriptions must be strings',
+      ],
+      [
+        { messages: askPage, tools: [{ type: 'function', function: { name: 'f', parameters: [] } }] },
+        'tool parameters must be an object',
+      ],
+      [{ messages: askPage, tool_choice: 'auto' }, 'tool_choice needs tools'],
+      [
+        { messages: askPage, tools: [tool], tool_choice: 'always' },
+        'tool_choice must be auto, required, or {"type":"function","function":{"name":...}}',
+      ],
+      [
+        { messages: askPage, tools: [tool], tool_choice: { type: 'function', function: { name: 'g' } } },
+        'tool_choice names an unknown tool: g',
+      ],
+      [{ messages: askPage, max_tokens: 0 }, 'max_tokens must be an integer from 1 to 16384'],
+      [{ messages: askPage, stream: 'yes' }, 'stream must be a boolean'],
+      // The conversation is checked first, then the tools, then the settings.
+      [{ messages: [], tools: [], max_tokens: 0, stream: 1 }, 'messages must be a non-empty array'],
+      [{ messages: askPage, tools: [], max_tokens: 0, stream: 1 }, 'tools must be an array of 1 to 64 tools'],
+      [
+        { messages: askPage, max_tokens: 0, stream: 1, model: 'other' },
+        'max_tokens must be an integer from 1 to 16384',
+      ],
+    ]
+    for (const [body, message] of refused) {
+      const res = await chat(token, body)
+      expect([res.status, await json(res)], JSON.stringify(body).slice(0, 80)).toEqual([
+        400,
+        { error: { code: 'bad_request', message } },
+      ])
+    }
+    expect(ai.calls).toHaveLength(0)
+  })
+
   it('tools without a description or parameters are allowed', async () => {
     const bare = [{ type: 'function', function: { name: 'ping' } }]
     expect((await chat(token, { messages: askPage, tools: bare })).status).toBe(200)
