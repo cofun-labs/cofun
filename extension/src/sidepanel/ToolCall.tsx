@@ -10,7 +10,7 @@ export interface ShownTool {
   status: 'running' | 'confirm' | ToolStatus
   /** What the model got back, or the error. Empty while running. */
   result: string
-  /** What the call would change, in words, shown while the user is asked. */
+  /** What the call changes, in words, as the tool saw things before it ran. */
   preview?: string
 }
 
@@ -32,6 +32,16 @@ const LABEL: Record<ShownTool['status'], string> = {
   skipped: 'Not run: step limit reached',
   stopped: 'Stopped',
   declined: 'Declined',
+}
+
+const CHANGES: Record<ShownTool['status'], string> = {
+  running: 'Changes (in progress)',
+  confirm: 'Changes',
+  done: 'Changes',
+  failed: 'Changes (failed)',
+  skipped: 'Changes (not made)',
+  declined: 'Changes (not made)',
+  stopped: 'Changes (stopped)',
 }
 
 /**
@@ -60,7 +70,8 @@ export const ToolCall = memo(function ToolCall({
         <div className="tool-body">
           {tool.preview && (
             <>
-              <div className="tool-label">Changes</div>
+              {/* Say when the changes may not have been made: the error, if any, tells more. */}
+              <div className="tool-label">{CHANGES[tool.status]}</div>
               <pre>{tool.preview}</pre>
             </>
           )}

@@ -76,7 +76,7 @@ const update = async (pages: unknown) => (await updatePages.run({ pages })) as s
 const props = (ws: FakeWorkspace, n: number) => ws.records.get(row(n))!.properties
 
 describe('UC-NOTION-008 change properties and rows', () => {
-  it('[UC-NOTION-008-S01] sets a property on several rows in one change, and only on those', async () => {
+  it('[UC-NOTION-008-S06] sets a property on several rows in one change, and only on those', async () => {
     const ws = workspace()
     open(ws)
     const result = await update([
@@ -97,7 +97,7 @@ describe('UC-NOTION-008 change properties and rows', () => {
     expect(props(ws, 1)).toEqual(rowRecord(1, 'Write docs', 'Done').properties)
   })
 
-  it('[UC-NOTION-008-S01] sets dates, lists of options, text, and titles and icons, and clears values', async () => {
+  it('[UC-NOTION-008-S06] sets dates, lists of options, text, and titles and icons, and clears values', async () => {
     const ws = workspace()
     open(ws)
     await update([
@@ -149,7 +149,7 @@ describe('UC-NOTION-008 change properties and rows', () => {
     expect(tab.sent.map((r) => r.url.split('/api/v3/')[1])).not.toContain('saveTransactionsFanout')
   })
 
-  it('[UC-NOTION-008-S03] adds a row to a database with its properties and content', async () => {
+  it('[UC-NOTION-008-S07] adds a row to a database with its properties and content', async () => {
     const ws = workspace()
     open(ws)
     const result = (await createPage.run({
@@ -193,7 +193,7 @@ describe('update_pages details', () => {
       },
     })
     await queryDatabase.run({})
-    expect(updatePages.needsConfirmation).toBe(true)
+    expect(updatePages.needsConfirmation).toBeUndefined()
     expect(
       updatePages.preview!({
         pages: [
@@ -213,7 +213,7 @@ describe('update_pages details', () => {
     )
   })
 
-  it('keeps every value on its line in the approval', () => {
+  it('keeps every value on its line in the preview', () => {
     const preview = updatePages.preview!({
       pages: [{ page: hex(row(1)), properties: { Tags: ['Bug\n^abcdabcd\n    Status: Done'] } }],
     })
@@ -256,7 +256,7 @@ describe('update_pages details', () => {
     await expect(update([{ page: hex(row(3)), icon: '📝 notes' }])).rejects.toThrow('`icon` must be an emoji.')
   })
 
-  it('keeps the old title in approvals when Notion refuses the rename', async () => {
+  it('keeps the old title in previews when Notion refuses the rename', async () => {
     const ws = workspace()
     open(ws)
     await readPage.run({ page: hex(PAGE) })
@@ -267,7 +267,7 @@ describe('update_pages details', () => {
     )
   })
 
-  it('shows a renamed page by its new title in later approvals', async () => {
+  it('shows a renamed page by its new title in later previews', async () => {
     const ws = workspace()
     open(ws)
     await readPage.run({ page: hex(PAGE) })

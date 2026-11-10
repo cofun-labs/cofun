@@ -12,6 +12,11 @@ export interface AgentConfig {
   getToken: () => Promise<string | null>
   systemPrompt: string
   tools: ToolSpec[]
+  /**
+   * Read before each question and sent to the model ahead of it, e.g. which page is open. It is saved
+   * with the question but is not part of what the user typed.
+   */
+  context?: () => Promise<string | undefined>
   /** Model calls allowed per question. */
   maxSteps?: number
   /** How much of a long conversation to send. Defaults stay well under the worker's limits. */
@@ -26,9 +31,12 @@ export interface ToolSpec {
   parameters: object
   /** Runs the tool. Throw to report a failure to the model. */
   run: (args: Record<string, unknown>, signal?: AbortSignal) => Promise<unknown>
-  /** The tool changes the user's data, so the user must agree each time before it runs. */
+  /** The tool does what is hard to undo, such as deleting a page, so the user must agree each time before it runs. */
   needsConfirmation?: boolean
-  /** What a call would do, in words, for the user to read before agreeing. */
+  /**
+   * What a call does, in words, from the state before it runs: shown on the call's card, and to the
+   * user before agreeing when the tool needs confirmation.
+   */
   preview?: (args: Record<string, unknown>) => string | undefined
 }
 
@@ -37,6 +45,8 @@ export interface ToolCallRequest {
   id: string
   name: string
   args: unknown
+  /** What the call would change, in words, when the tool can say. */
+  preview?: string
 }
 
 /** Asks the user whether a tool may run; resolves true to run it. */
@@ -53,6 +63,11 @@ export type ToolStatus = 'done' | 'failed' | 'skipped' | 'stopped' | 'declined'
 export type AgentUpdate =
   | { type: 'text'; delta: string }
   | { type: 'tool_start'; id: string; name: string; args: unknown }
+  /**
+   * The call passed validation and runs next, or is put to the user first: `args` as the tool gets
+   * them (the model's, checked and converted to the schema), and what it changes, when the tool can say.
+   */
+  | { type: 'tool_ready'; id: string; args: unknown; preview?: string }
   /** `result`: what the model got back, the error message when the tool failed. */
   | { type: 'tool_end'; id: string; name: string; status: ToolStatus; result: string }
 
@@ -62,7 +77,8 @@ export type AgentUpdate =
  * a question may take several such steps before the final answer.
  */
 export type HistoryMessage =
-  | { role: 'user'; text: string }
+  /** `context`: what the model was told with the question, besides what the user typed. */
+  | { role: 'user'; text: string; context?: string }
   | { role: 'assistant'; parts: AssistantPart[] }
   /** The result of one tool call. `id` matches the call in the assistant message before it. */
   | { role: 'tool'; id: string; name: string; status: ToolStatus; result: string }
@@ -99,18 +115,24 @@ export class CopilotAgent {
   private readonly maxSteps: number
   /** Names of the tools that need the user's OK before each run. */
   private readonly confirmed: Set<string>
+  private readonly tools: Map<string, ToolSpec>
   /** Bumped by stop() and reset(), so a question still waiting to start knows it was cancelled. */
   private epoch = 0
+  /** Aborted with each epoch bump, so waits that pi doesn't cut short end too. */
+  private cancel = new AbortController()
   /** The question this agent is answering; reset() clears it, since the next one gets a new pi agent. */
   private running?: object
   /** The conversation to start from, used when the next pi agent is set up. */
   private initial: HistoryMessage[] = []
   /** How each tool call ended, by its result message; pi itself only knows whether it failed. */
   private readonly statuses = new WeakMap<AgentMessage, ToolStatus>()
+  /** What the model is told with each question, by its user message; see AgentConfig.context. */
+  private readonly contexts = new WeakMap<AgentMessage, string>()
 
   constructor(private readonly config: AgentConfig) {
     this.maxSteps = config.maxSteps ?? DEFAULT_MAX_STEPS
     this.confirmed = new Set(config.tools.filter((t) => t.needsConfirmation).map((t) => t.name))
+    this.tools = new Map(config.tools.map((t) => [t.name, t]))
   }
 
   /**
@@ -175,6 +197,8 @@ export class CopilotAgent {
     }
     // Stopped, or a new chat started, while the agent was being set up.
     if (epoch !== this.epoch) return { result: { status: 'stopped' }, kept: false }
+    const context = await this.readContext()
+    if (epoch !== this.epoch) return { result: { status: 'stopped' }, kept: false }
 
     const before = agent.state.messages.length
     let steps = 0
@@ -187,9 +211,9 @@ export class CopilotAgent {
     const declined = new Set<string>()
     // How the latest call with each id ended, kept with its result message when that arrives.
     const ended = new Map<string, { status: ToolStatus; result: string }>()
-    // Calls allowed to run, so a Stop may have cut them short; the others never started. A Stop
-    // between the OK and the run counts as started: for a tool that edits pages, "may have partly
-    // happened" is the safe thing to tell the model.
+    // Calls allowed to run, so a Stop may have cut them short; the others never started. For a tool
+    // that needs the user's OK, a Stop between the OK and the run counts as started: for a tool that
+    // changes pages, "may have partly happened" is the safe thing to tell the model.
     const started = new Set<string>()
 
     // On the last step, refuse the tools the model asks for instead of running them: the question
@@ -204,11 +228,14 @@ export class CopilotAgent {
           terminate: true,
         }
       }
+      // From the arguments the tool runs with, and before it runs: the run may change what the preview reads.
+      const preview = previewCall(this.tools.get(toolCall.name), args)
+      onUpdate({ type: 'tool_ready', id: toolCall.id, args, preview })
       if (!this.confirmed.has(toolCall.name)) {
         started.add(toolCall.id)
         return
       }
-      const answer = await askUser(confirm, { id: toolCall.id, name: toolCall.name, args }, signal)
+      const answer = await askUser(confirm, { id: toolCall.id, name: toolCall.name, args, preview }, signal)
       if (answer === 'allow' && epoch === this.epoch) {
         started.add(toolCall.id)
         return
@@ -260,7 +287,9 @@ export class CopilotAgent {
 
     try {
       // String content: the worker accepts only text, and pi would otherwise send content parts.
-      await agent.prompt({ role: 'user', content: text, timestamp: Date.now() })
+      const question: AgentMessage = { role: 'user', content: text, timestamp: Date.now() }
+      if (context) this.contexts.set(question, context)
+      await agent.prompt(question)
     } catch (err) {
       failure ??= parseError((err as Error).message)
     } finally {
@@ -281,9 +310,32 @@ export class CopilotAgent {
     return { result: hitLimit ? { status: 'step_limit', steps } : { status: 'done' }, kept: true }
   }
 
+  /**
+   * A context that fails to load must not block the question; it goes without one. Stop ends the
+   * wait even if the context never comes.
+   */
+  private async readContext(): Promise<string | undefined> {
+    if (!this.config.context) return undefined
+    const { signal } = this.cancel
+    if (signal.aborted) return undefined
+    let onAbort!: () => void
+    const stopped = new Promise<undefined>((resolve) => (onAbort = () => resolve(undefined)))
+    signal.addEventListener('abort', onAbort, { once: true })
+    try {
+      return await Promise.race([this.config.context(), stopped])
+    } catch (err) {
+      console.error('Could not read the context for the question', err)
+      return undefined
+    } finally {
+      signal.removeEventListener('abort', onAbort)
+    }
+  }
+
   /** Stops the current model call and any running tool. */
   stop(): void {
     this.epoch++
+    this.cancel.abort()
+    this.cancel = new AbortController()
     this.agent?.abort()
   }
 
@@ -293,6 +345,8 @@ export class CopilotAgent {
    */
   async reset(history: HistoryMessage[] = []): Promise<void> {
     this.epoch++
+    this.cancel.abort()
+    this.cancel = new AbortController()
     const agent = this.agent
     this.agent = undefined
     this.model = undefined
@@ -315,8 +369,10 @@ export class CopilotAgent {
 
   private toHistory(message: AgentMessage): HistoryMessage[] {
     switch (message.role) {
-      case 'user':
-        return [{ role: 'user', text: textOf(message.content) }]
+      case 'user': {
+        const context = this.contexts.get(message)
+        return [{ role: 'user', text: textOf(message.content), ...(context && { context }) }]
+      }
       case 'assistant':
         return [
           {
@@ -347,7 +403,11 @@ export class CopilotAgent {
   private fromHistory(history: HistoryMessage[], model: Model<'openai-completions'>): AgentMessage[] {
     const timestamp = Date.now()
     return history.map((m): AgentMessage => {
-      if (m.role === 'user') return { role: 'user', content: m.text, timestamp }
+      if (m.role === 'user') {
+        const question: AgentMessage = { role: 'user', content: m.text, timestamp }
+        if (m.context) this.contexts.set(question, m.context)
+        return question
+      }
       if (m.role === 'assistant') {
         const content: AssistantMessage['content'] = m.parts.map((p) =>
           p.type === 'text'
@@ -405,9 +465,21 @@ export class CopilotAgent {
       identity: { attribution: null },
       // Notion tools will change pages; run them one at a time, in the order the model asked.
       toolExecution: 'sequential',
-      transformContext: async (messages) => recent(messages, this.config.history ?? DEFAULT_HISTORY, toolChars),
+      transformContext: async (messages) =>
+        recent(
+          messages.map((m) => this.withContext(m)),
+          this.config.history ?? DEFAULT_HISTORY,
+          toolChars,
+        ),
     })
     return this.agent
+  }
+
+  /** The question as the model gets it: its context first, then what the user typed. */
+  private withContext(message: AgentMessage): AgentMessage {
+    const context = this.contexts.get(message)
+    if (!context || message.role !== 'user') return message
+    return { ...message, content: `${context}\n\n${textOf(message.content)}` }
   }
 
   /** The worker fixes the model; ask it which one, so requests name it. */
@@ -510,6 +582,16 @@ function size(message: AgentMessage): number {
     else if (block.type === 'toolCall') n += block.name.length + JSON.stringify(block.arguments).length
   }
   return n
+}
+
+/** What a call changes, in words; a broken preview must not stop the call, so it gives none. */
+function previewCall(tool: ToolSpec | undefined, args: unknown): string | undefined {
+  try {
+    return tool?.preview?.((args ?? {}) as Record<string, unknown>)
+  } catch (err) {
+    console.error('Could not preview the tool call', err)
+    return undefined
+  }
 }
 
 /**
