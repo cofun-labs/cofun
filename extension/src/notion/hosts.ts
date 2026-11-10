@@ -24,6 +24,16 @@ export function pageIdFromUrl(url: string): string | undefined {
   }
 }
 
+/** The id of the page under a side peek: the id at the end of the URL's path, as a dashed UUID. */
+export function pathPageIdFromUrl(url: string): string | undefined {
+  try {
+    const hex = trailingId(new URL(url).pathname.split('/').at(-1) ?? '')
+    return hex && dashed(hex)
+  } catch {
+    return undefined
+  }
+}
+
 /** A Notion id in the form Notion's API keys records by (dashed, lowercase), or undefined if `id` isn't one. */
 export function toUuid(id: string): string | undefined {
   const hex = id.replace(/-/g, '')

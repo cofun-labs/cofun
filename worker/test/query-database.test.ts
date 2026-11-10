@@ -51,17 +51,25 @@ function rowRecord(t: (typeof TASKS)[number]) {
   }
 }
 
-function database(rows = TASKS.map(rowRecord), hasMore = false) {
+/** A database whose view lists `rows`, and `unsent` ids whose records the response leaves out. */
+function database(
+  rows = TASKS.map(rowRecord),
+  hasMore = false,
+  schema: Record<string, unknown> = SCHEMA,
+  unsent: string[] = [],
+) {
   return new FakeNotionTab(`https://app.notion.com/${hex(DB)}?v=${hex(VIEW)}`)
     .respond(
       'syncRecordValuesMain',
       200,
       sync('block', [{ id: DB, type: 'collection_view_page', collection_id: COLLECTION, view_ids: [VIEW] }]),
     )
-    .respond('syncRecordValuesMain', 200, sync('collection', [{ id: COLLECTION, name: [['Tasks']], schema: SCHEMA }]))
+    .respond('syncRecordValuesMain', 200, sync('collection', [{ id: COLLECTION, name: [['Tasks']], schema }]))
     .respond('queryCollection', 200, {
       result: {
-        reducerResults: { collection_group_results: { type: 'results', blockIds: rows.map((r) => r.id), hasMore } },
+        reducerResults: {
+          collection_group_results: { type: 'results', blockIds: [...rows.map((r) => r.id), ...unsent], hasMore },
+        },
       },
       recordMap: {
         __version__: 3,
@@ -155,7 +163,24 @@ describe('UC-NOTION-006 read a database', () => {
     expect(first).toContain(`Only the first ${QUERY_LOAD} rows of the database were read; filters apply to those.`)
     expect(tableRows(first)).toHaveLength(QUERY_PART)
     database(many, true)
-    expect(tableRows(await query({ part: 2 }))).toHaveLength(10)
+    const second = await query({ part: 2 })
+    expect(tableRows(second)).toHaveLength(10)
+    expect(second).toContain('This part comes from a new read of the database')
+  })
+
+  it('[UC-NOTION-006-S05] with more rows than one read loads, asks Notion for the order, so the rows read come first in it', async () => {
+    const tab = database(TASKS.map(rowRecord), true)
+    const result = await query({ sort: { property: 'points', direction: 'descending' } })
+    expect(tab.sent.at(-1)!.body).toMatchObject({
+      loader: { sort: [{ property: 'd:d', direction: 'descending' }] },
+    })
+    expect(result).toContain(
+      `Only the first ${QUERY_LOAD} rows of the database by Points (descending) were read; filters apply to those.`,
+    )
+    // Without a sort, Notion's own order.
+    const plain = database()
+    await query()
+    expect(plain.sent.at(-1)!.body).toMatchObject({ loader: { sort: [] } })
   })
 })
 
@@ -233,7 +258,36 @@ describe('query_database arguments', () => {
         sync('block', [{ id: '1a1a1a1a-0000-4000-8000-000000000010', type: 'page' }]),
       )
       .install()
-    await expect(query()).rejects.toThrow('The open page is not a database. Give `database`.')
+    await expect(query()).rejects.toThrow(
+      "The open page is not a database. Give `database`: a database inside a page has its id in read_page's result.",
+    )
+  })
+})
+
+describe('query_database open page', () => {
+  it('reads the database under a row open in side peek', async () => {
+    const tab = new FakeNotionTab(`https://app.notion.com/${hex(DB)}?v=${hex(VIEW)}&p=${hex(row(1))}`)
+      .respond('syncRecordValuesMain', 200, sync('block', [rowRecord(TASKS[0])]))
+      .respond(
+        'syncRecordValuesMain',
+        200,
+        sync('block', [{ id: DB, type: 'collection_view_page', collection_id: COLLECTION, view_ids: [VIEW] }]),
+      )
+      .respond('syncRecordValuesMain', 200, sync('collection', [{ id: COLLECTION, name: [['Tasks']], schema: SCHEMA }]))
+      .respond('queryCollection', 200, {
+        result: { reducerResults: { collection_group_results: { blockIds: [] } } },
+        recordMap: {},
+      })
+      .install()
+    expect(await query()).toContain(`Database: Tasks ^${hex(DB)}`)
+    expect(tab.sent.at(-1)!.body).toMatchObject({ collectionView: { id: VIEW } })
+  })
+
+  it('counts rows Notion listed without their values', async () => {
+    database(TASKS.map(rowRecord), false, SCHEMA, [row(99)])
+    const result = await query()
+    expect(result).toContain('Rows: 4 (showing 1–4).')
+    expect(result).toContain('1 more row came without its values and is not shown.')
   })
 })
 
@@ -250,6 +304,66 @@ describe('query_database dates and headers', () => {
     database(rows)
     const onDay = await query({ filter: [{ property: 'Due', op: 'is', value: '2026-11-07' }] })
     expect(tableRows(onDay).map((l) => l.split(' | ')[0].slice(2))).toEqual(['Write docs', 'Fix login \\| Safari'])
+  })
+})
+
+describe('query_database options, numbers, and code', () => {
+  const TAGGED = { ...SCHEMA, 'g:g': { name: 'Tags', type: 'multi_select' }, 'h:h': { name: 'Notes', type: 'text' } }
+  const tagged = (tags: string[], notes: unknown[] = []) =>
+    TASKS.map((t, i) => {
+      const r = rowRecord(t)
+      Object.assign(r.properties, { ...(tags[i] ? { 'g:g': [[tags[i]]] } : {}), 'h:h': notes[i] ?? [] })
+      return r
+    })
+  const titles = (result: string) => tableRows(result).map((l) => l.split(' | ')[0].slice(2))
+
+  it('matches multi-select options one by one', async () => {
+    const tags = ['Bug', 'Debug,UI', 'Bug,UI', '']
+    database(tagged(tags), false, TAGGED)
+    expect(titles(await query({ filter: [{ property: 'Tags', op: 'contains', value: 'bug' }] }))).toEqual([
+      'Write docs',
+      'Ship beta',
+    ])
+    database(tagged(tags), false, TAGGED)
+    expect(titles(await query({ filter: [{ property: 'Tags', op: 'contains', value: 'UI, Bug' }] }))).toEqual([
+      'Ship beta',
+    ])
+    database(tagged(tags), false, TAGGED)
+    expect(titles(await query({ filter: [{ property: 'Tags', op: 'is', value: 'Bug' }] }))).toEqual(['Write docs'])
+    database(tagged(tags), false, TAGGED)
+    expect(titles(await query({ filter: [{ property: 'Tags', op: 'not_contains', value: 'Bug' }] }))).toEqual([
+      'Fix login \\| Safari',
+      'Plan retro',
+    ])
+  })
+
+  it('compares a number property by value in is and is_not', async () => {
+    database()
+    expect(titles(await query({ filter: [{ property: 'Points', op: 'is', value: '5.0' }] }))).toEqual([
+      'Fix login \\| Safari',
+    ])
+    database()
+    expect(tableRows(await query({ filter: [{ property: 'Points', op: 'is_not', value: '5.00' }] }))).toHaveLength(3)
+  })
+
+  it('keeps backslashes in code when filtering, and keeps a code cell with a pipe in one cell', async () => {
+    const notes = [[['C:\\temp', [['c']]]], [['a\\|b', [['c']]]], [['C:temp']]]
+    database(tagged([], notes), false, TAGGED)
+    expect(titles(await query({ filter: [{ property: 'Notes', op: 'is', value: 'C:\\temp' }] }))).toEqual([
+      'Write docs',
+    ])
+    database(tagged([], notes), false, TAGGED)
+    const result = await query({ filter: [{ property: 'Notes', op: 'contains', value: '|' }] })
+    const [line] = tableRows(result)
+    // Every pipe in the code is escaped, so the cell holds the code as it is: one cell, not two.
+    expect(line).toContain(' | `a\\\\|b` | ')
+    const cells = (l: string) => l.split(/(?<!\\)\|/).length
+    expect(cells(line)).toBe(cells(result.split('\n').find((l) => l.startsWith('| Task |'))!))
+  })
+
+  it('escapes a pipe in a property name in the table header', async () => {
+    database(TASKS.map(rowRecord), false, { ...SCHEMA, 'd:d': { name: 'Points | est', type: 'number' } })
+    expect(await query()).toContain('| Task | Status | Due | Owner | Points \\| est | Done | Row |')
   })
 })
 
@@ -292,6 +406,11 @@ describe('query_database numbers and linked views', () => {
       })
       .install()
     await query()
-    expect(tab.sent.at(-1)!.body).toMatchObject({ source: { id: COLLECTION, spaceId: OTHER } })
+    // The database's rows from its own workspace, through the view in the block's.
+    expect(tab.sent.at(-1)!.body).toMatchObject({
+      source: { id: COLLECTION, spaceId: OTHER },
+      collectionView: { id: VIEW, spaceId: SPACE },
+    })
+    expect(tab.sent.at(-1)!.headers['x-notion-space-id']).toBe(OTHER)
   })
 })
