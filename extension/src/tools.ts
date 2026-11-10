@@ -1049,8 +1049,6 @@ function titleArg(value: string): string {
   return oneLine(plainText(value))
 }
 
-/** Text arguments drop Markdown escapes (see plainText), so the model must double a backslash. */
-
 /** Page titles and text properties are inline Markdown (see richValue). */
 const INLINE_MARKDOWN =
   'inline Markdown as query_database and read_page show text (bold, links, `[Title](page id)`, `@[Name]`, ' +
