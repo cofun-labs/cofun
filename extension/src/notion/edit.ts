@@ -161,12 +161,12 @@ export class EditError extends Error {
 
 export const READ_AGAIN = 'Read the page again with read_page, then redo the edit on what it shows now.'
 
-/** One edit as the model asks for it. */
+/** One edit as the model asks for it; which fields an action needs is checked by parseEdits. */
 export interface EditArgs {
-  action?: unknown
-  block?: unknown
-  position?: unknown
-  markdown?: unknown
+  action: 'insert' | 'replace' | 'delete'
+  block?: string
+  position?: 'after' | 'inside' | 'start' | 'end'
+  markdown?: string
 }
 
 /** `people`: the user id of each person the edit's Markdown mentions, by the name it gives. */
@@ -184,15 +184,13 @@ export type Edit =
   | { action: 'delete'; target: string }
 
 /** Checks the edits and resolves their references against the agent's read, before asking Notion anything. */
-export function parseEdits(raw: unknown, read: PageRead): Edit[] {
-  if (!Array.isArray(raw) || raw.length === 0) throw new EditError('`edits` must be a list with at least one edit.')
+export function parseEdits(raw: EditArgs[], read: PageRead): Edit[] {
   const touched = new Set<string>()
   const anchors = new Set<string>()
-  const edits = raw.map((value, n): Edit => {
-    const e = (value ?? {}) as EditArgs
+  const edits = raw.map((e, n): Edit => {
     const where = `Edit ${n + 1}`
     const markdown = () => {
-      if (typeof e.markdown !== 'string' || !e.markdown.trim()) throw new EditError(`${where} needs \`markdown\`.`)
+      if (!e.markdown?.trim()) throw new EditError(`${where} needs \`markdown\`.`)
       try {
         const blocks = parseMarkdown(e.markdown)
         if (!blocks.length) throw new EditError(`${where} needs \`markdown\` with some content.`)
@@ -203,9 +201,7 @@ export function parseEdits(raw: unknown, read: PageRead): Edit[] {
       }
     }
     const block = () => {
-      if (typeof e.block !== 'string' || !e.block.trim()) {
-        throw new EditError(`${where} needs \`block\`, a reference such as ^1a2b3c4d.`)
-      }
+      if (!e.block?.trim()) throw new EditError(`${where} needs \`block\`, a reference such as ^1a2b3c4d.`)
       const ref = e.block.trim().replace(/^\^/, '').toLowerCase()
       const id = read.ids.get(ref)
       if (!id) throw new EditError(`${where}: ^${ref} is not a block of the page as you last read it. ${READ_AGAIN}`)
@@ -213,12 +209,8 @@ export function parseEdits(raw: unknown, read: PageRead): Edit[] {
     }
     switch (e.action) {
       case 'insert': {
-        // null and '' mean "not given", as models often fill optional fields.
-        const given = (v: unknown) => v !== undefined && v !== null && v !== ''
-        const position = given(e.position) ? e.position : given(e.block) ? 'after' : 'end'
-        if (position !== 'after' && position !== 'start' && position !== 'end' && position !== 'inside') {
-          throw new EditError(`${where}: \`position\` must be "after", "inside", "start", or "end".`)
-        }
+        // An empty `block` means "not given", as models often fill optional fields.
+        const position = e.position ?? (e.block ? 'after' : 'end')
         const anchor = position === 'after' || position === 'inside' ? block() : undefined
         if (anchor) anchors.add(anchor)
         return { action: 'insert', anchor, position, ...markdown() }
@@ -231,8 +223,6 @@ export function parseEdits(raw: unknown, read: PageRead): Edit[] {
         touched.add(target)
         return e.action === 'replace' ? { action: 'replace', target, ...markdown() } : { action: 'delete', target }
       }
-      default:
-        throw new EditError(`${where}: \`action\` must be "insert", "replace", or "delete".`)
     }
   })
   for (const anchor of anchors) {
@@ -814,29 +804,27 @@ function properties(nb: NewBlock): Record<string, unknown> {
 }
 
 /** What an edit_page call changes, for the user to read on its card. */
-export function previewEdits(raw: unknown, read: PageRead | undefined, page: string): string | undefined {
-  if (!Array.isArray(raw)) return undefined
-  const shown = (block: unknown) => {
-    const ref = typeof block === 'string' ? block.trim().replace(/^\^/, '').toLowerCase() : ''
+export function previewEdits(raw: EditArgs[], read: PageRead | undefined, page: string): string {
+  const refOf = (block: string | undefined) => (block ?? '').trim().replace(/^\^/, '').toLowerCase()
+  const shown = (block: string | undefined) => {
+    const ref = refOf(block)
     const id = read?.ids.get(ref)
     const line = id ? read!.lines.get(id) : undefined
     return line ? `^${ref} “${clip(line.replace(/\n/g, ' ⏎ '))}”` : `^${ref}`
   }
-  const nested = (block: unknown) => {
-    const ref = typeof block === 'string' ? block.trim().replace(/^\^/, '').toLowerCase() : ''
-    const id = read?.ids.get(ref)
+  const nested = (block: string | undefined) => {
+    const id = read?.ids.get(refOf(block))
     const n = id ? (read!.nested.get(id)?.length ?? 0) : 0
     return n ? ` and the ${n} block${n === 1 ? '' : 's'} nested under it` : ''
   }
-  const body = (markdown: unknown) =>
-    typeof markdown === 'string'
+  const body = (markdown: string | undefined) =>
+    markdown !== undefined
       ? markdown
           .split('\n')
           .map((l) => `    ${l}`)
           .join('\n')
       : '    (nothing)'
-  const changes = raw.map((value) => {
-    const e = (value ?? {}) as EditArgs
+  const changes = raw.map((e) => {
     switch (e.action) {
       case 'insert': {
         const where =
@@ -850,8 +838,7 @@ export function previewEdits(raw: unknown, read: PageRead | undefined, page: str
         return `Insert ${where}:\n${body(e.markdown)}`
       }
       case 'replace': {
-        const ref = typeof e.block === 'string' ? e.block.trim().replace(/^\^/, '').toLowerCase() : ''
-        const id = read?.ids.get(ref)
+        const id = read?.ids.get(refOf(e.block))
         const lossy = id && read!.lossy?.has(id)
         return (
           `Replace ${shown(e.block)} with:\n${body(e.markdown)}` +
@@ -862,16 +849,11 @@ export function previewEdits(raw: unknown, read: PageRead | undefined, page: str
       }
       case 'delete':
         return `Delete ${shown(e.block)}${nested(e.block)}`
-      default:
-        return `Unknown edit: ${JSON.stringify(value)}`
     }
   })
   // Nobody is asked first, so say where removed text can be found again. On a call that failed, the
   // card's label says the changes may not have been made.
-  const removes = raw.some((value) => {
-    const action = (value as EditArgs | null)?.action
-    return action === 'replace' || action === 'delete'
-  })
+  const removes = raw.some((e) => e.action === 'replace' || e.action === 'delete')
   return [
     `On the page “${read?.title ?? page}”:`,
     ...changes,

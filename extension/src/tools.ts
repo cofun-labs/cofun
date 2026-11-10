@@ -893,30 +893,35 @@ export function forgetReads(): void {
   pageWorkspaces.clear()
 }
 
-const EDIT_ITEM = {
-  type: 'object',
-  properties: {
-    action: { type: 'string', enum: ['insert', 'replace', 'delete'] },
-    block: {
-      type: 'string',
-      description:
-        'Reference of the block, as read_page shows it (e.g. ^1a2b3c4d). For insert: the block to insert after, ' +
-        'or inside.',
-    },
-    position: {
-      type: 'string',
-      enum: ['after', 'inside', 'start', 'end'],
-      description:
-        'For insert: after `block` (the default when `block` is given); inside `block`, nested in it before what ' +
-        'it already holds; or at the start or end of the page.',
-    },
-    markdown: { type: 'string', description: 'For insert and replace: the new content, as Markdown.' },
-  },
-  required: ['action'],
-  additionalProperties: false,
-}
+/** Which entry of `edits` an issue is about, as the model is told: "Edit 1". */
+const editAt = (issue: { path?: PropertyKey[] }) => `Edit ${entryAt(issue)}`
+const EDITS_LIST = '`edits` must be a list with at least one edit.'
+const GIVE_PAGE = 'Give `page`: the id read_page shows after "Page:".'
 
-export const editPage: ToolSpec = {
+const EDIT_ITEM = z.strictObject({
+  action: z.enum(['insert', 'replace', 'delete'], {
+    error: (issue) => `${editAt(issue)}: \`action\` must be "insert", "replace", or "delete".`,
+  }),
+  block: z
+    .string()
+    .describe(
+      'Reference of the block, as read_page shows it (e.g. ^1a2b3c4d). For insert: the block to insert after, ' +
+        'or inside.',
+    )
+    .optional(),
+  position: z
+    .enum(['after', 'inside', 'start', 'end'], {
+      error: (issue) => `${editAt(issue)}: \`position\` must be "after", "inside", "start", or "end".`,
+    })
+    .describe(
+      'For insert: after `block` (the default when `block` is given); inside `block`, nested in it before what ' +
+        'it already holds; or at the start or end of the page.',
+    )
+    .optional(),
+  markdown: z.string().describe('For insert and replace: the new content, as Markdown.').optional(),
+})
+
+export const editPage = defineTool({
   changesData: true,
   name: 'edit_page',
   description:
@@ -931,25 +936,22 @@ export const editPage: ToolSpec = {
     'heading); inside a quote or callout, nest with "> " and two spaces. ' +
     "Child pages, databases, and files can't be written. If the page changed since you read it, the edit is " +
     'refused: read it again and redo the edit.',
-  parameters: {
-    type: 'object',
-    properties: {
-      page: { type: 'string', description: 'Id of the page to edit, as read_page shows it after "Page:".' },
-      edits: { type: 'array', items: EDIT_ITEM, minItems: 1 },
-    },
-    required: ['page', 'edits'],
-    additionalProperties: false,
-  },
+  args: z.strictObject({
+    page: z
+      .string({ error: GIVE_PAGE })
+      .describe('Id of the page to edit, as read_page shows it after "Page:".'),
+    edits: z.array(EDIT_ITEM, { error: EDITS_LIST }).min(1, { error: EDITS_LIST }),
+  }),
   preview: (args) => {
-    const given = givenPage(args)
+    const given = filled(args.page)
     if (!given) return undefined
     return previewEdits(args.edits, pageReads.get(pageArg(given) ?? ''), given)
   },
   run: async (args, signal) => {
     const since = generation
     // The page is named in the call, so the page the preview names is the page that gets changed.
-    const given = givenPage(args)
-    if (!given) throw new EditError('Give `page`: the id read_page shows after "Page:".')
+    const given = filled(args.page)
+    if (!given) throw new EditError(GIVE_PAGE)
     const id = pageArg(given)
     if (!id) throw new Error(`Not a Notion page URL or id: ${given}`)
     const tab = await activeNotionTab()
@@ -1047,12 +1049,9 @@ export const editPage: ToolSpec = {
     remember(next, since)
     return [...plan.summary, newRefs, 'Read the page again to see the result.'].filter(Boolean).join('\n')
   },
-}
+})
 
-/** The page argument, if given; null and blank mean not given. */
-function givenPage(args: Record<string, unknown>): string | undefined {
-  return typeof args.page === 'string' && args.page.trim() ? args.page : undefined
-}
+
 
 /** How many pages' reads are kept; the oldest go first. */
 const READS_KEPT = 20
@@ -2581,13 +2580,13 @@ export const readComments = defineTool({
 })
 
 /** The block reference a call gives: `^1a2b3c4d`, the bare reference, or a full id. */
-function blockArg(value: unknown): string | undefined {
-  return typeof value === 'string' && value.trim()
-    ? value.trim().replace(/^\^/, '').replace(/-/g, '').toLowerCase()
-    : undefined
+function blockArg(value: string | undefined): string | undefined {
+  return value?.trim() ? value.trim().replace(/^\^/, '').replace(/-/g, '').toLowerCase() : undefined
 }
 
-export const addComment: ToolSpec = {
+const TEXT_EMPTY = '`text` must not be empty.'
+
+export const addComment = defineTool({
   changesData: true,
   name: 'add_comment',
   description:
@@ -2595,25 +2594,20 @@ export const addComment: ToolSpec = {
     "its blocks by the reference read_page or read_comments shows (e.g. ^1a2b3c4d). The page's content does not " +
     'change. `text` may use **bold**, *italic*, ~~strike~~, `code`, [links](url), [page](<page id>) mentions, and ' +
     '@[Name] mentions of workspace members.',
-  parameters: {
-    type: 'object',
-    properties: {
-      page: { type: 'string', description: 'URL or id of the page, as read_page shows it after "Page:".' },
-      block: { type: 'string', description: 'Reference of the block to comment on. Leave out for the page itself.' },
-      text: { type: 'string', description: 'The comment.' },
-    },
-    required: ['page', 'text'],
-    additionalProperties: false,
-  },
+  args: z.strictObject({
+    page: z.string({ error: GIVE_PAGE }).describe('URL or id of the page, as read_page shows it after "Page:".'),
+    block: z.string().describe('Reference of the block to comment on. Leave out for the page itself.').optional(),
+    text: z.string({ error: TEXT_EMPTY }).describe('The comment.'),
+  }),
   preview: (args) => {
-    const given = givenPage(args)
+    const given = filled(args.page)
     const id = given ? pageArg(given) : undefined
     const read = id ? pageReads.get(id) : undefined
     const page = id ? `${read ? `${oneLine(read.title)} ` : ''}^${hexId(id)}` : oneLine(given ?? '') || '(none given)'
     const ref = blockArg(args.block)
     const blockId = ref ? read?.ids.get(ref) : undefined
     const line = blockId ? read?.lines.get(blockId) : undefined
-    const text = typeof args.text === 'string' ? args.text : ''
+    const { text } = args
     return [
       'Add a comment',
       ref ? `On the block: ^${ref}${line ? ` ${oneLine(line)}` : ''}` : 'On the page itself',
@@ -2623,12 +2617,12 @@ export const addComment: ToolSpec = {
     ].join('\n')
   },
   run: async (args, signal) => {
-    const given = givenPage(args)
-    if (!given) throw new EditError('Give `page`: the id read_page shows after "Page:".')
+    const given = filled(args.page)
+    if (!given) throw new EditError(GIVE_PAGE)
     const id = pageArg(given)
     if (!id) throw new Error(`Not a Notion page URL or id: ${given}`)
-    const text = typeof args.text === 'string' ? args.text.trim() : ''
-    if (!text) throw new EditError('`text` must not be empty.')
+    const text = args.text.trim()
+    if (!text) throw new EditError(TEXT_EMPTY)
     if (text.length > COMMENT_CHARS)
       throw new EditError(`A comment can be at most ${COMMENT_CHARS} characters; shorten it or split it in two.`)
     const ref = blockArg(args.block)
@@ -2692,7 +2686,7 @@ export const addComment: ToolSpec = {
     }
     return `Added a comment on ${where} of ${quote(md.title)} ^${hexId(loaded.page.id)}.`
   },
-}
+})
 
 export const TOOLS: ToolSpec[] = [
   readPage,
