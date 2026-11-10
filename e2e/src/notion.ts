@@ -15,6 +15,7 @@ import {
 } from '../../extension/src/notion/api'
 import { type NewBlock, parseMarkdown } from '../../extension/src/notion/blocks'
 import { planNewPage } from '../../extension/src/notion/edit'
+import { propertyValue } from '../../extension/src/notion/props'
 import { NOTION_HOSTS, pageIdFromUrl } from '../../extension/src/notion/hosts'
 import { notionRequest } from '../../extension/src/notion/tab'
 import type { Target } from './cdp'
@@ -104,18 +105,8 @@ export function taskDatabaseOps(
   rows: TaskRow[],
   { now = Date.now(), newId = () => crypto.randomUUID() } = {},
 ): { operations: Operation[]; pageId: string } {
-  const { spaceId } = space
-  const pageId = newId()
-  const collectionId = newId()
-  const viewId = newId()
-  const base = { version: 1, alive: true, space_id: spaceId }
-  const times = { created_time: now, last_edited_time: now }
-  const set = (table: 'block' | 'collection' | 'collection_view', id: string, args: object): Operation => ({
-    pointer: { table, id, spaceId },
-    path: [],
-    command: 'set',
-    args: { id, ...base, ...args },
-  })
+  const op = blockOps(space.spaceId, now)
+  const ids = { page: newId(), collection: newId(), view: newId() }
   const schema = {
     title: { name: 'Name', type: 'title' },
     [STATUS]: {
@@ -125,34 +116,16 @@ export function taskDatabaseOps(
     },
     [DUE]: { name: 'Due', type: 'date' },
   }
-  const operations: Operation[] = [
-    set('block', pageId, { ...times, type: 'collection_view_page', collection_id: collectionId, view_ids: [viewId] }),
-    set('collection', collectionId, { parent_id: pageId, parent_table: 'block', name: [[title]], schema }),
-    set('collection_view', viewId, {
-      type: 'table',
-      name: 'Table',
-      parent_id: pageId,
-      parent_table: 'block',
-      format: { collection_pointer: { id: collectionId, table: 'collection', spaceId } },
-    }),
-  ]
+  const operations = op.createDatabase(ids, title, schema)
   for (const row of rows) {
-    const properties: Record<string, unknown> = { title: [[row.name]] }
-    if (row.status) properties[STATUS] = [[row.status]]
-    if (row.due) properties[DUE] = [['‣', [['d', { type: 'date', start_date: row.due }]]]]
-    // A row's parent is the collection, which lists its rows itself.
-    operations.push(
-      set('block', newId(), {
-        ...times,
-        type: 'page',
-        parent_id: collectionId,
-        parent_table: 'collection',
-        properties,
-      }),
-    )
+    // Values the way the extension writes them, checked against the schema.
+    const properties: Record<string, unknown> = { title: propertyValue(schema.title, row.name) }
+    if (row.status) properties[STATUS] = propertyValue(schema[STATUS], row.status)
+    if (row.due) properties[DUE] = propertyValue(schema[DUE], row.due)
+    operations.push(op.create(newId(), 'page', ids.collection, { properties, parent_table: 'collection' }))
   }
-  operations.push(blockOps(spaceId, now).moveToPrivate(pageId, space))
-  return { operations, pageId }
+  operations.push(op.moveToPrivate(ids.page, space))
+  return { operations, pageId: ids.page }
 }
 
 const USER_ACTION = 'notion-copilot e2e'

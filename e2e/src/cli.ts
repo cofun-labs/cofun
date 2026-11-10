@@ -134,6 +134,12 @@ async function browserCommand(
     }
     case 'ask': {
       const panel = await ownPanel(browser, state)
+      // The tab may have moved since panel checked it (by hand, or page/db going to E2E_NOTION_URL).
+      const notionId = await ownNotionTab(browser, state)
+      const notionUrl = notionId && (await (await browser.attach(notionId)).evaluate(() => location.href, []))
+      if (!notionUrl || !isOwnPage(notionUrl, state.created)) {
+        throw new E2eError('The Notion tab is no longer on a page pnpm e2e created: run pnpm e2e panel <url> again.')
+      }
       // --allow approves only calls inside the pages this tool created, checked in Notion.
       let notion: Promise<TabNotion> | undefined
       const mayAllow = async (callText: string) => {

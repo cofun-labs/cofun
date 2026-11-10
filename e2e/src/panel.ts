@@ -45,11 +45,12 @@ export async function notionTab(
     state.panelTarget = undefined
   }
   const tab = await browser.attach(id!)
+  // A parsed document is enough: Notion's app can keep a resource loading, so `complete` may never come.
   const loaded = await until(
     () =>
       tab.evaluate(
         () =>
-          document.readyState === 'complete' && !(window as { e2eOld?: boolean }).e2eOld
+          document.readyState !== 'loading' && !(window as { e2eOld?: boolean }).e2eOld
             ? { url: location.href, signedIn: /(?:^|;\s*)notion_user_id=/.test(document.cookie) }
             : undefined,
         [],
