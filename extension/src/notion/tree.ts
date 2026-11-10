@@ -30,15 +30,20 @@ export async function pageTree(
   let truncated = false
   // Roots are looked up a limit's worth at a time, until enough of them turn out to be pages.
   const top: TreeNode[] = []
-  for (let at = 0; at < roots.length && top.length <= limit; at += limit) {
-    const slice = roots.slice(at, at + limit)
+  // Where in `roots` each top-level node came from: an id can be in a list twice.
+  const at: number[] = []
+  for (let from = 0; from < roots.length && top.length <= limit; from += limit) {
+    const slice = roots.slice(from, from + limit)
     const unknown = slice.filter((id) => !records.block?.[id])
     if (unknown.length)
       mergeRecordMaps(records, await client.findRecords(unknown.map((id) => ({ table: 'block', id }))))
     top.push(...(await nodesFor(client, slice, records)))
+    slice.forEach((id, i) => {
+      if (PAGE_TYPES.has(String(records.block?.[id]?.type))) at.push(from + i)
+    })
   }
   const nodes = take(top)
-  const next = top.length > nodes.length && nodes.length ? roots.indexOf(nodes.at(-1)!.id) + 1 : undefined
+  const next = top.length > nodes.length && nodes.length ? at[nodes.length - 1] + 1 : undefined
   let level = nodes
   // A level is expanded only while there is room for more entries.
   let d = 1

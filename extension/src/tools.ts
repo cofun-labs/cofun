@@ -534,7 +534,7 @@ export const listPages: ToolSpec = {
         minimum: 0,
         description:
           'With `page` or `section`: skip this many entries of the top level, to see what a cut-off list left ' +
-          'out. A cut-off list says which offset comes next.',
+          'out. Entries include blocks that are not listed (text, say), so use the offset a cut-off list gives.',
       },
     },
     additionalProperties: false,

@@ -400,6 +400,27 @@ describe('list_pages at the limit', () => {
     expect(result).toContain('To see what is under a listed page, list it by its id.')
   })
 
+  it('gives the next offset by position when the list holds an id twice', async () => {
+    // The first child is listed again later; the offset still points past the last one shown.
+    const kids = Array.from({ length: LIST_LIMIT + 5 }, (_, i) => id(700 + i))
+    kids[LIST_LIMIT - 1] = kids[0]
+    const root = page(10, 'Twice', kids)
+    new FakeNotionTab(PAGE_URL)
+      .respond('syncRecordValuesMain', 200, records([root]))
+      .respond(
+        'syncRecordValuesMain',
+        200,
+        records([...new Set(kids)].slice(0, 99).map((k, i) => ({ ...page(0, `Child ${i}`), id: k }))),
+      )
+      .respond(
+        'syncRecordValuesMain',
+        200,
+        records([...new Set(kids)].slice(99).map((k) => ({ ...page(0, 'More'), id: k }))),
+      )
+      .install()
+    expect(await run({ page: hex(id(10)) })).toContain(`List them with \`offset: ${LIST_LIMIT}\`.)`)
+  })
+
   it('says pages under the ones shown are left out too when the top level is cut off deeper than one level', async () => {
     const kids = Array.from({ length: LIST_LIMIT + 1 }, (_, i) => id(300 + i))
     const root = page(10, 'Too many', kids)
