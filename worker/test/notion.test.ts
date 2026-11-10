@@ -7,6 +7,8 @@ import {
   NOT_SENT,
   NotionError,
   RATE_LIMITED,
+  UNEXPECTED_STOP,
+  UNKNOWN_STOP,
   normalizeRecordMap,
   type Operation,
 } from '../../extension/src/notion/api'
@@ -242,10 +244,12 @@ describe('loading a page', () => {
     }
   })
 
-  it('refuses an id that is not a Notion id, without asking Notion', async () => {
+  it('refuses an id that is not a Notion id, without asking Notion or stopping the question', async () => {
     const tab = pageTab()
-    const err = await notionError((await activeNotionTab()).client.loadPage('Q4 Roadmap'))
-    expect([err.code, err.message]).toEqual(['notion_error', 'Not a Notion id: Q4 Roadmap'])
+    const err = await (await activeNotionTab()).client.loadPage('Q4 Roadmap').catch((e: unknown) => e)
+    // The model gave the id and can give another one.
+    expect(err).not.toBeInstanceOf(NotionError)
+    expect((err as Error).message).toBe('Not a Notion id: Q4 Roadmap')
     expect(tab.sent).toEqual([])
   })
 
@@ -417,8 +421,9 @@ describe('submitting a transaction', () => {
     expect(body.transactions[0].operations).toEqual([rename])
     expect(tab.sent[0].headers['x-notion-space-id']).toBe(SPACE)
 
-    const err = await notionError(client.submitTransaction('space\nX-Evil: 1', [rename], 'rename page'))
-    expect(err.code).toBe('notion_error')
+    await expect(client.submitTransaction('space\nX-Evil: 1', [rename], 'rename page')).rejects.toThrow(
+      'Not a Notion id: space',
+    )
     await expect(client.getRecords([{ table: 'block', id: PAGE, spaceId: 'not a space' }])).rejects.toThrow(
       'Not a Notion id: not a space',
     )
@@ -428,8 +433,9 @@ describe('submitting a transaction', () => {
   it('refuses an operation on an id that is not a Notion id, without asking Notion', async () => {
     const tab = new FakeNotionTab(PAGE_URL).install()
     const op: Operation = { ...rename, pointer: { table: 'block', id: 'Q4 Roadmap' } }
-    const err = await notionError((await activeNotionTab()).client.submitTransaction(SPACE, [op], 'rename page'))
-    expect([err.code, err.message]).toEqual(['notion_error', 'Not a Notion id: Q4 Roadmap'])
+    await expect((await activeNotionTab()).client.submitTransaction(SPACE, [op], 'rename page')).rejects.toThrow(
+      'Not a Notion id: Q4 Roadmap',
+    )
     expect(tab.sent).toEqual([])
   })
 
@@ -571,9 +577,68 @@ describe('when Notion turns requests away', () => {
     expect([err.code, err.stopsQuestion]).toEqual(['rate_limited', LIMITED_STOP])
   })
 
-  it('treats other errors as before: the question goes on', async () => {
-    new FakeNotionTab(PAGE_URL).respondText('loadPageChunk', 503, 'busy').install()
-    const err = await notionError((await activeNotionTab()).client.loadPage(PAGE))
-    expect([err.code, err.stopsQuestion]).toEqual(['notion_error', undefined])
+  it('[UC-NOTION-001-S11] stops the question on each failure that is not understood, and sends it once', async () => {
+    const cases: [string, (tab: FakeNotionTab) => void, string][] = [
+      [
+        'server error',
+        (t) => t.respondText('loadPageChunk', 503, 'busy'),
+        'Notion returned an error (503): no details.',
+      ],
+      [
+        'unexplained refusal',
+        (t) => t.respond('loadPageChunk', 409, { name: 'ConflictError', message: 'Conflict' }),
+        'Notion returned an error (409 ConflictError): Conflict.',
+      ],
+      [
+        'answer that is not an object',
+        (t) => t.respondText('loadPageChunk', 200, '<html></html>'),
+        'Notion returned an unexpected response (200).',
+      ],
+      [
+        'redirect while signed in',
+        (t) => ((t.redirects = true), t.respond('loadPageChunk', 200, {})),
+        'Notion redirected the request instead of answering it.',
+      ],
+      ['no network', (t) => (t.networkDown = true), 'Could not reach Notion: Failed to fetch.'],
+      [
+        'script that cannot run',
+        (t) => (t.injectionError = 'Frame was removed'),
+        'Could not run in the Notion tab: Frame was removed.',
+      ],
+    ]
+    for (const [what, setUp, told] of cases) {
+      const tab = new FakeNotionTab(PAGE_URL)
+      setUp(tab)
+      tab.install()
+      const err = await notionError((await activeNotionTab()).client.loadPage(PAGE))
+      expect([what, err.code, err.stopsQuestion]).toEqual([what, 'notion_error', `${UNEXPECTED_STOP} ${told}`])
+      expect(tab.sent.length, what).toBeLessThanOrEqual(1)
+    }
+  })
+
+  it('goes on after failures with a known meaning: the model is told', async () => {
+    const cases: [number, string][] = [
+      [401, 'signed_out'],
+      [403, 'no_access'],
+    ]
+    for (const [status, code] of cases) {
+      new FakeNotionTab(PAGE_URL).respond('loadPageChunk', status, { name: 'X', message: 'x' }).install()
+      const err = await notionError((await activeNotionTab()).client.loadPage(PAGE))
+      expect([err.code, err.stopsQuestion]).toEqual([code, undefined])
+    }
+  })
+
+  it('[UC-NOTION-002-S18] stops the question when a change gets no answer, saying it may have been saved', async () => {
+    for (const setUp of [
+      (t: FakeNotionTab) => t.respondText('saveTransactionsFanout', 504, 'Gateway timeout'),
+      (t: FakeNotionTab) => (t.networkDown = true),
+    ]) {
+      const tab = new FakeNotionTab(PAGE_URL)
+      setUp(tab)
+      tab.install()
+      const err = await notionError((await activeNotionTab()).client.submitTransaction(SPACE, [rename], 'rename page'))
+      expect([err.code, err.stopsQuestion, err.mayHaveChanged]).toEqual(['outcome_unknown', UNKNOWN_STOP, true])
+      expect(tab.sent.length).toBeLessThanOrEqual(1)
+    }
   })
 })

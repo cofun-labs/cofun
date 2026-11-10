@@ -4,7 +4,7 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { LIST_LIMIT, LIST_LOOKUPS, SECTION_LIMIT, forgetReads, listPages } from '../../extension/src/tools'
 import { FakeNotionTab, FakeWorkspace, PAGE, PAGE_URL, SPACE, USER, notionError, restoreGlobals } from './notion-tab'
-import { LIMITED_STOP, NO_USER_MAP } from '../../extension/src/notion/api'
+import { LIMITED_STOP, NO_USER_MAP, UNEXPECTED_STOP } from '../../extension/src/notion/api'
 
 afterEach(() => {
   restoreGlobals()
@@ -650,10 +650,21 @@ describe('list_pages workspace', () => {
     expect(rest).toEqual(blocks.slice(SECTION_LIMIT).map((b, i) => `- 📄 Shared ${SECTION_LIMIT + i} ^${hex(b.id)}`))
   })
 
-  it('still lists the other sections when the teamspaces fail to load', async () => {
-    notion([page(1, 'Notes')])
+  it('stops the question when the teamspaces fail in a way that is not understood', async () => {
+    const tab = notion([page(1, 'Notes')])
       .respond('getSpaces', 200, spaces({}, { private_pages: [id(1)] }))
       .respond('getTeamsV2', 400, { name: 'ValidationError', debugMessage: 'Invalid input.' })
+      .install()
+    expect((await notionError(run())).stopsQuestion).toBe(
+      `${UNEXPECTED_STOP} Notion returned an error (400 ValidationError): Invalid input.`,
+    )
+    expect(endpoints(tab)).toEqual(['syncRecordValuesMain', 'getSpaces', 'getTeamsV2'])
+  })
+
+  it('still lists the other sections when the teamspaces can not be opened', async () => {
+    notion([page(1, 'Notes')])
+      .respond('getSpaces', 200, spaces({}, { private_pages: [id(1)] }))
+      .respond('getTeamsV2', 403, { name: 'PermissionError', message: 'No access.' })
       .install()
     expect(await run()).toBe(
       [
@@ -662,7 +673,7 @@ describe('list_pages workspace', () => {
         'Private',
         `- 📄 Notes ^${hex(id(1))}`,
         '',
-        '(Teamspaces could not be listed: Notion returned an error (400 ValidationError): Invalid input.)',
+        "(Teamspaces could not be listed: The Notion page doesn't exist, or the signed-in Notion account has no access to it.)",
       ].join('\n'),
     )
   })

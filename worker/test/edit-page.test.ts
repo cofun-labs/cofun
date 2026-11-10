@@ -5,7 +5,7 @@ import { inline, parseMarkdown } from '../../extension/src/notion/blocks'
 import { mergeReads, type PageRead } from '../../extension/src/notion/edit'
 import { splitSections } from '../../extension/src/notion/markdown'
 import { editPage, forgetReads, readPage } from '../../extension/src/tools'
-import { LIMITED_STOP } from '../../extension/src/notion/api'
+import { LIMITED_STOP, UNEXPECTED_STOP } from '../../extension/src/notion/api'
 import { FakeNotionTab, FakeWorkspace, PAGE, PAGE_URL, SPACE, USER, notionError, restoreGlobals } from './notion-tab'
 
 afterEach(restoreGlobals)
@@ -192,14 +192,13 @@ describe('UC-NOTION-002 edit a page', () => {
     expect(body(await read())).toBe(['▸ New title ^00000001', '  Inside ^00000002'].join('\n'))
   })
 
-  it('[UC-NOTION-002-S07] tells the AI when Notion refuses the edit, and nothing changes', async () => {
+  it('[UC-NOTION-002-S17] stops the question when Notion refuses the edit, and nothing changes', async () => {
     const ws = workspace([1], [block(1, 'text', 'Intro')])
     open(ws)
     await read()
     ws.reject = true
-    await expect(edit([{ action: 'insert', position: 'end', markdown: 'More' }])).rejects.toThrow(
-      'Notion returned an error (400 ValidationError): Invalid input.',
-    )
+    const err = await notionError(edit([{ action: 'insert', position: 'end', markdown: 'More' }]))
+    expect(err.stopsQuestion).toBe(`${UNEXPECTED_STOP} Notion returned an error (400 ValidationError): Invalid input.`)
     expect(withoutRefs(body(await read()))).toBe('Intro')
   })
 })
@@ -249,7 +248,7 @@ describe('edit_page details', () => {
     tab.limit('loadPageChunk', 1)
     const err = await notionError(edit([{ action: 'insert', position: 'end', markdown: 'Second' }]))
     // Marked as having changed the page, so the user is told to check before asking again.
-    expect([err.stopsQuestion, err.mayHaveChanged]).toEqual([LIMITED_STOP, true])
+    expect([err.stopsQuestion, err.mayHaveChanged]).toEqual([`The edit was saved. ${LIMITED_STOP}`, true])
     expect(err.message.split('\n')[0]).toBe(
       'The edit was saved. Reading the page back afterwards was refused, so read it again before changing it.',
     )

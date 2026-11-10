@@ -995,7 +995,7 @@ export const editPage: ToolSpec = {
             'The edit was saved. Reading the page back afterwards was refused, so read it again before changing it.',
             ...plan.summary,
           ].join('\n'),
-          { cause: err, stopsQuestion: err.stopsQuestion, mayHaveChanged: true },
+          { cause: err, stopsQuestion: `The edit was saved. ${err.stopsQuestion}`, mayHaveChanged: true },
         )
       }
     }
@@ -1979,8 +1979,8 @@ export const duplicatePage: ToolSpec = {
 const COUNT_CHILDREN_MAX = 500
 
 /**
- * How many pages or databases sit right inside each page, for the trash preview; best effort:
- * nothing when the pages hold too many blocks to look at, or Notion takes too long.
+ * How many pages or databases sit right inside each page, for the trash preview: nothing when the
+ * pages hold too many blocks to look at, or Notion says they can't be opened.
  */
 async function childCounts(tab: NotionTab, pages: NotionRecord[]): Promise<Map<string, number>> {
   const childIds = pages.flatMap((b) => (Array.isArray(b.content) ? (b.content as string[]) : []))
@@ -1994,7 +1994,7 @@ async function childCounts(tab: NotionTab, pages: NotionRecord[]): Promise<Map<s
       ]),
     )
   } catch (err) {
-    // Only what stops the question goes on; a failed count just leaves the counts out.
+    // Only what stops the question goes on; a count Notion says can't be made is left out.
     if (err instanceof NotionError && err.stopsQuestion) throw err
     return new Map()
   }
@@ -2053,7 +2053,7 @@ export const trashPage: ToolSpec = {
       inside = await childCounts(tab, Object.values(found))
     } catch (err) {
       if (err instanceof NotionError && err.stopsQuestion) throw err
-      // Without Notion, the names the agent saw are all there is.
+      // When Notion says the pages can't be opened, the names the agent saw are all there is.
     }
     return [
       `Move ${pages.length} page${pages.length === 1 ? '' : 's'} to the trash, with everything in ${pages.length === 1 ? 'it' : 'them'}`,
