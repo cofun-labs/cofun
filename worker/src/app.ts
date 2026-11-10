@@ -187,40 +187,56 @@ const Messages = part(z.array(z.unknown()).min(1), 'messages must be a non-empty
 const TOOL = 'each tool needs type "function" and a function definition'
 const TOOL_NAMES = 'tool names are 1 to 64 letters, digits, underscores, or dashes'
 
-/** The tool definitions: function tools only, with unique names. */
-const Tools = part(z.array(z.unknown()).min(1).max(MAX_TOOLS), `tools must be an array of 1 to ${MAX_TOOLS} tools`)
-  .pipe(
-    z.array(
-      z.object(
-        {
-          type: z.literal('function', { error: TOOL }),
-          function: z.object(
-            {
-              name: z.string({ error: TOOL_NAMES }).regex(TOOL_NAME, { error: TOOL_NAMES }),
-              description: z.string({ error: 'tool descriptions must be strings' }).optional(),
-              // Passed on as it is. Bounded, so serializing the request (here and in the AI binding)
-              // can never run out of stack.
-              parameters: z
-                .custom<Record<string, unknown>>(isObject, { error: 'tool parameters must be an object' })
-                .refine((parameters) => !nestedDeeperThan(parameters, MAX_SCHEMA_DEPTH), {
-                  error: `tool parameters are nested more than ${MAX_SCHEMA_DEPTH} levels deep`,
-                })
-                .optional(),
-            },
-            { error: TOOL },
-          ),
-        },
-        { error: TOOL },
-      ),
+/** A tool as far as its name: a function tool. What else its function holds is read after the name is known to be new. */
+const ToolHead = z.object(
+  {
+    type: z.literal('function', { error: TOOL }),
+    function: z.looseObject(
+      { name: z.string({ error: TOOL_NAMES }).regex(TOOL_NAME, { error: TOOL_NAMES }) },
+      { error: TOOL },
     ),
-  )
-  .superRefine((tools, ctx) => {
-    const names = new Set<string>()
-    for (const { function: fn } of tools) {
-      if (names.has(fn.name)) ctx.addIssue({ code: 'custom', message: `tool ${fn.name} is defined twice` })
-      names.add(fn.name)
-    }
-  })
+  },
+  { error: TOOL },
+)
+
+const ToolBody = z.object({
+  description: z.string({ error: 'tool descriptions must be strings' }).optional(),
+  // Passed on as it is. Bounded, so serializing the request (here and in the AI binding) can never
+  // run out of stack.
+  parameters: z
+    .custom<Record<string, unknown>>(isObject, { error: 'tool parameters must be an object' })
+    .refine((parameters) => !nestedDeeperThan(parameters, MAX_SCHEMA_DEPTH), {
+      error: `tool parameters are nested more than ${MAX_SCHEMA_DEPTH} levels deep`,
+    })
+    .optional(),
+})
+
+/**
+ * The tool definitions: function tools only, with unique names. Tools are read one at a time, so the
+ * first thing wrong in the list is what the client is told.
+ */
+const Tools = part(
+  z.array(z.unknown()).min(1).max(MAX_TOOLS),
+  `tools must be an array of 1 to ${MAX_TOOLS} tools`,
+).transform((list, ctx) => {
+  const refuse = (message: string) => {
+    ctx.addIssue({ code: 'custom', message })
+    return z.NEVER
+  }
+  const names = new Set<string>()
+  const tools: { type: 'function'; function: { name: string } & z.output<typeof ToolBody> }[] = []
+  for (const item of list) {
+    const head = ToolHead.safeParse(item)
+    if (!head.success) return refuse(head.error.issues[0].message)
+    const { name } = head.data.function
+    if (names.has(name)) return refuse(`tool ${name} is defined twice`)
+    names.add(name)
+    const body = ToolBody.safeParse(head.data.function)
+    if (!body.success) return refuse(body.error.issues[0].message)
+    tools.push({ type: 'function', function: { name, ...body.data } })
+  }
+  return tools
+})
 
 // `none` is left out on purpose: the model ignores it and writes fake tool calls into the reply text.
 // Clients that want no tool calls leave out `tools`.

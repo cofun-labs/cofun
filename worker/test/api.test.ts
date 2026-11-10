@@ -783,6 +783,15 @@ describe('tool calling', () => {
         'tool names are 1 to 64 letters, digits, underscores, or dashes',
       ],
       [{ messages: askPage, tools: [tool, tool] }, 'tool f is defined twice'],
+      // Tools are read in order: a name given twice is said before what is wrong with it, or with a later tool.
+      [
+        { messages: askPage, tools: [tool, { type: 'function', function: { name: 'f', description: 5 } }] },
+        'tool f is defined twice',
+      ],
+      [
+        { messages: askPage, tools: [tool, tool, { type: 'function', function: { name: 'bad name' } }] },
+        'tool f is defined twice',
+      ],
       [
         { messages: askPage, tools: [{ type: 'function', function: { name: 'f', description: 5 } }] },
         'tool descriptions must be strings',
