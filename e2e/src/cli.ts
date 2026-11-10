@@ -133,7 +133,10 @@ async function browserCommand(
         console.error('\nWaiting for approval: run pnpm e2e ask --allow or pnpm e2e ask --deny.')
         return EXIT_NEEDS_ANSWER
       } catch (err) {
-        if (err instanceof TimeoutError) console.log(formatReply(err.snapshot.parts))
+        if (err instanceof TimeoutError) {
+          const parts = err.snapshot.parts
+          console.log(command.json ? JSON.stringify({ status: 'timeout', parts }, null, 2) : formatReply(parts))
+        }
         throw err
       }
     }

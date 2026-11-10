@@ -65,7 +65,6 @@ export async function notionTab(
 export async function openPanel(browser: Browser, state: State, notion: Target): Promise<Target> {
   // The panel works on the active tab of its window.
   await browser.activate(notion.targetId)
-  const url = await notion.evaluate(() => location.href, [])
 
   // chrome.sidePanel.open needs a user gesture in an extension page: open one of ours in a helper
   // tab, call it there as a click, and close the tab.
@@ -73,26 +72,42 @@ export async function openPanel(browser: Browser, state: State, notion: Target):
   let tabId: number
   try {
     const helper = await browser.attach(helperId)
-    const tabs = await until(
-      () =>
-        helper.evaluate(
-          (u: string) =>
-            typeof chrome?.tabs?.query === 'function'
-              ? chrome.tabs.query({}).then((all) => all.filter((t) => t.url === u).map((t) => t.id!))
-              : undefined,
-          [url],
-        ),
-      {
-        ms: 10_000,
-        onTimeout: () =>
-          new E2eError('The extension page did not load. Is the extension enabled? Run pnpm e2e reload to check.'),
+    await until(() => helper.evaluate(() => (typeof chrome?.tabs?.query === 'function' ? true : undefined), []), {
+      ms: 10_000,
+      onTimeout: () =>
+        new E2eError('The extension page did not load. Is the extension enabled? Run pnpm e2e reload to check.'),
+    })
+    // Other tabs may show the same page, so mark ours by a title of its own for a moment and find
+    // it by that.
+    const marker = `notion-copilot-e2e-${crypto.randomUUID()}`
+    const title = await notion.evaluate(
+      (m: string) => {
+        const before = document.title
+        document.title = m
+        return before
       },
+      [marker],
     )
-    if (tabs.length !== 1) {
-      throw new E2eError(
-        tabs.length ? 'Several tabs show this Notion page; close the others and try again.' : 'Lost the Notion tab.',
+    let tabs: number[]
+    try {
+      tabs = await until(
+        () =>
+          helper.evaluate(
+            (m: string) =>
+              chrome.tabs.query({ title: m }).then((found) => (found.length ? found.map((t) => t.id!) : undefined)),
+            [marker],
+          ),
+        { ms: 5_000, onTimeout: () => new E2eError('Could not find the Notion tab among the browser’s tabs.') },
+      )
+    } finally {
+      await notion.evaluate(
+        (m: string, t: string) => {
+          if (document.title === m) document.title = t
+        },
+        [marker, title],
       )
     }
+    if (tabs.length !== 1) throw new E2eError('Several tabs carry the marker of the Notion tab.')
     tabId = tabs[0]
     await helper.evaluate((id: number) => chrome.sidePanel.open({ tabId: id }), [tabId], { userGesture: true })
   } finally {
