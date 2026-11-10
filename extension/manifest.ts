@@ -1,7 +1,7 @@
 // Builds the extension's manifest.json from env values. vite.config.ts writes the result into the
-// build, and worker/test/manifest.test.ts pins its permissions: Chrome disables an installed
-// extension on update when the new version adds a permission warning, so a permission must never
-// change unnoticed. worker/test/allowed-hosts.test.ts checks every host it names against
+// build, and test/manifest.test.ts pins its permissions: Chrome disables an installed extension
+// on update when the new version adds a permission warning, so a permission must never
+// change unnoticed. test/allowed-hosts.test.ts checks every host it names against
 // allowed-hosts.json.
 
 /** The env values the manifest is built from (see .env). */

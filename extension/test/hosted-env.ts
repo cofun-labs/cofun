@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs'
 
 /** The committed build config of the hosted extension (extension/.env), as `KEY=value` lines. */
 export function hostedEnv(): Record<string, string> {
-  const text = readFileSync(new URL('../../extension/.env', import.meta.url), 'utf8')
+  const text = readFileSync(new URL('../.env', import.meta.url), 'utf8')
   return Object.fromEntries(
     text
       .split('\n')

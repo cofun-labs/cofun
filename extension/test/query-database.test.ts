@@ -1,7 +1,7 @@
 // The query_database tool (extension/src/tools.ts) against a fake Notion tab answering in the
 // shapes Notion's syncRecordValuesMain and queryCollection return (see the #64 spike).
 import { afterEach, describe, expect, it } from 'vitest'
-import { QUERY_LOAD, QUERY_PART, localDate, queryDatabase } from '../../extension/src/tools'
+import { QUERY_LOAD, QUERY_PART, localDate, queryDatabase } from '../src/tools'
 import { FakeNotionTab, PAGE_URL, SPACE, USER, restoreGlobals } from './notion-tab'
 
 afterEach(restoreGlobals)

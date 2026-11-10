@@ -90,13 +90,15 @@ extension/                Chrome extension
   src/notion/tree.ts      pages as the sidebar lists them, level by level, without content
   src/notion/tab.ts       runs Notion requests in the user's Notion tab (chrome.scripting)
   src/sidepanel/          React UI (main.tsx: sign-in, Chat.tsx: chat)
+  test/                   tests of the extension's client code (fake Notion tab with sanitized
+                          fixtures)
 worker/                   Cloudflare Worker
   src/app.ts              Hono app: Clerk JWT verification + /v1/chat/completions
   src/quota.ts            per-user daily request quota (UserQuota Durable Object in src/index.ts)
   src/usage.ts            per-request usage records (Workers Analytics Engine), no message content
   src/login.ts            sign-in page (Clerk Sync Host)
-  test/                   REST integration tests (real signed JWTs, fake AI binding), and tests of
-                          the extension's client code (fake Notion tab with sanitized fixtures)
+  test/                   REST integration tests (real signed JWTs, fake AI binding), and the
+                          extension's agent run against the worker
 e2e/                      pnpm e2e: drives the shared Chrome Canary over CDP for ai-e2e runs
                           (maintainer's machine only; its unit tests run in pnpm test)
 smoke/                    pnpm smoke: loads the built extension into Chromium and checks that it
@@ -118,7 +120,7 @@ Requires Node.js 24 and pnpm.
 
 ```bash
 pnpm install
-pnpm check        # lint, format check, typecheck, extension build, worker and e2e tool tests
+pnpm check        # lint, format check, typecheck, extension build, and every package's tests
 pnpm smoke        # build the extension and load it into Chromium (first: pnpm --filter notion-copilot-smoke exec playwright install chromium)
 ```
 

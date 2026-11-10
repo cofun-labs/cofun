@@ -2,7 +2,7 @@
 // update when the new version adds a permission warning, so the permissions are pinned here: a
 // change to them must change this file in the same pull request, where a reviewer sees it.
 import { describe, expect, it } from 'vitest'
-import { buildManifest, clerkFrontendApi, type ManifestEnv } from '../../extension/manifest'
+import { buildManifest, clerkFrontendApi, type ManifestEnv } from '../manifest'
 import { hostedEnv } from './hosted-env'
 
 const NOTION = ['https://www.notion.so/*', 'https://app.notion.com/*']

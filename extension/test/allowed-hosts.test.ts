@@ -5,8 +5,8 @@
 // request, where a reviewer sees it.
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
-import { buildManifest, CLERK_IMAGE_HOST, clerkFrontendApi, type ManifestEnv } from '../../extension/manifest'
-import { NOTION_HOSTS } from '../../extension/src/notion/hosts'
+import { buildManifest, CLERK_IMAGE_HOST, clerkFrontendApi, type ManifestEnv } from '../manifest'
+import { NOTION_HOSTS } from '../src/notion/hosts'
 import { hostedEnv } from './hosted-env'
 
 interface AllowedHosts {
@@ -16,9 +16,7 @@ interface AllowedHosts {
   permissionOnly: Record<string, string>
 }
 
-const allowed = JSON.parse(
-  readFileSync(new URL('../../extension/allowed-hosts.json', import.meta.url), 'utf8'),
-) as AllowedHosts
+const allowed = JSON.parse(readFileSync(new URL('../allowed-hosts.json', import.meta.url), 'utf8')) as AllowedHosts
 const REQUESTS = Object.keys(allowed.requests)
 const PERMISSION_ONLY = Object.keys(allowed.permissionOnly)
 

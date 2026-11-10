@@ -2,15 +2,8 @@
 // extension/src/tools.ts), against a fake Notion workspace that applies transactions the way
 // Notion's web client was seen to make them.
 import { afterEach, describe, expect, it } from 'vitest'
-import {
-  QUERY_LOAD,
-  createDatabase,
-  createPage,
-  forgetReads,
-  queryDatabase,
-  updateDatabaseSchema,
-} from '../../extension/src/tools'
-import { newSchema } from '../../extension/src/notion/schema'
+import { QUERY_LOAD, createDatabase, createPage, forgetReads, queryDatabase, updateDatabaseSchema } from '../src/tools'
+import { newSchema } from '../src/notion/schema'
 import { FakeNotionTab, FakeWorkspace, PAGE, PAGE_URL, SPACE, USER, restoreGlobals } from './notion-tab'
 
 afterEach(() => {
