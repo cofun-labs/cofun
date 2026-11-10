@@ -289,6 +289,13 @@ describe('update_pages details', () => {
     expect(props(ws, 2)).toMatchObject({ title: [['Clean C:\\_tmp']] })
   })
 
+  it('stores a dollar sign and an @ before a date as query_database escapes them, without the backslash', async () => {
+    const ws = workspace()
+    open(ws)
+    await update([{ page: hex(row(1)), title: 'Cost \\$5', properties: { Notes: 'Due \\@2026-11-12' } }])
+    expect(props(ws, 1)).toMatchObject({ title: [['Cost $5']], 'g:g': [['Due @2026-11-12']] })
+  })
+
   it('takes one emoji as an icon, flags and keycaps included, and nothing else', async () => {
     const ws = workspace()
     open(ws)
