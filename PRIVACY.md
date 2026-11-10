@@ -24,7 +24,7 @@ The extension sends requests to these hosts and no others. The list is [`extensi
 | `saving-yeti-9519.clerk.accounts.dev` (Clerk's Frontend API) | Your Clerk session, to load your account and get session tokens | Sign-in |
 | `img.clerk.com` (Clerk's image host) | A request for your account's avatar image | To show who is signed in |
 
-The extension also holds a host permission for `*.kitfun.cc` and sends nothing there: Chrome only lets an extension see a cookie when it has permission for the cookie's domain, and Clerk sets the cookie that says whether you are signed in on the sign-in page's parent domain.
+The extension also holds a host permission for `*.kitfun.cc`. It uses it for nothing but reading one cookie, and sends no requests to any host under it other than the worker above: Chrome only lets an extension see a cookie when it has permission for the cookie's domain, and Clerk sets the cookie that says whether you are signed in on the sign-in page's parent domain.
 
 Notion content never goes to Clerk. Your Notion session is never sent anywhere but Notion: requests to Notion are made inside your Notion tab, and the worker and Clerk do not receive your Notion cookies or credentials. The extension reads your Notion user id from the tab to make changes as you.
 
