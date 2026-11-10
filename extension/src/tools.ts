@@ -1502,7 +1502,6 @@ function toProperties(schema: Schema, props: [string, PropertyInput][]): Record<
   return out
 }
 
-/** A property as create_database and update_database_schema take it. */
 /** A property's type; `where` says which entry an issue is about, as the model is told. */
 const typeArg = (where: (issue: { path?: PropertyKey[] }) => string) =>
   z.enum(PROPERTY_TYPES, {
