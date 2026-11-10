@@ -1,5 +1,3 @@
-// @vitest-environment jsdom
-//
 // The side panel's UI, tested as a user meets it: the whole panel runs (see panel.ts) and the tests
 // only type, click, and read what is on screen. Besides the screen they look at the edges alone:
 // what the model was sent, and what Notion was asked to do.
