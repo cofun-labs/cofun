@@ -1705,6 +1705,26 @@ describe('Notion requests per question', () => {
     expect(result).toEqual({ status: 'error', message: 'Copilot was just updated. Ask it to continue.', requests: 2 })
   })
 
+  for (const endpoint of ['enqueueTask', 'deleteContentRecords'] as const) {
+    it(`a sent ${endpoint} counts as a write too`, async () => {
+      const tab = workspaceTab().respond(endpoint, 200, {})
+      const writing: ToolSpec = {
+        ...lookups(1),
+        run: async () => {
+          const { client } = await activeNotionTab()
+          // Straight through the client's one request path, as its copy and trash methods send it.
+          const send = client as unknown as { request(endpoint: string, body: unknown): Promise<unknown> }
+          await send.request(endpoint, {})
+          tab.limit('syncRecordValuesMain', 1)
+          return client.getRecords([{ table: 'block', id: PAGE }])
+        },
+      }
+      ai.script = [{ toolCalls: [LOOK_UP] }]
+      const { result } = await ask(makeAgent({ tools: [writing], meter: countNotionRequests }), 'Go')
+      expect(result).toEqual({ status: 'error', message: `${LIMITED_STOP} ${MAY_HAVE_CHANGED}`, requests: 2 })
+    })
+  }
+
   it('a request that never left the browser neither counts nor warns of changes', async () => {
     const tab = workspaceTab()
     // Chrome refuses to run the write in the tab; then Notion turns the next request away.
