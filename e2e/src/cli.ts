@@ -12,10 +12,8 @@ import {
   settledStatus,
   withExtensionsPage,
 } from './extension'
-import { type TabNotion, createDatabase, createPage, pageUrl, parseRow, privateSpace, tabNotion, trash } from './notion'
-import { withinOwnPages } from './scope'
+import { createDatabase, createPage, pageUrl, parseRow, privateSpace, tabNotion, trash } from './notion'
 import { E2eError } from './errors'
-import { beforeInterruptExit, onInterrupt } from './exit'
 import { DEFAULT_NOTION_URL, TimeoutError, isOwnPage, ask, notionTab, openPanel, ownNotionTab, ownPanel } from './panel'
 import { formatReply } from './reply'
 import { CanaryLock, checkOwner } from './lock'
@@ -80,10 +78,8 @@ async function withLock<T>(lock: CanaryLock, owner: string, purpose: string, fn:
   const signals = { SIGINT: 130, SIGTERM: 143 } as const
   const onSignal = (signal: keyof typeof signals) => {
     clearInterval(keepFresh)
-    void beforeInterruptExit()
-      .then(() => (r.status === 'acquired' ? lock.release(owner) : false))
-      .catch(() => undefined)
-      .finally(() => process.exit(signals[signal]))
+    const release = r.status === 'acquired' ? lock.release(owner) : Promise.resolve(false)
+    void release.catch(() => undefined).finally(() => process.exit(signals[signal]))
   }
   for (const signal of Object.keys(signals) as (keyof typeof signals)[]) process.once(signal, onSignal)
   try {
@@ -140,33 +136,12 @@ async function browserCommand(
       if (!notionUrl || !isOwnPage(notionUrl, state.created)) {
         throw new E2eError('The Notion tab is no longer on a page pnpm e2e created: run pnpm e2e panel <url> again.')
       }
-      // --allow approves only calls inside the pages this tool created, checked in Notion.
-      let notion: Promise<TabNotion> | undefined
-      const mayAllow = async (callText: string) => {
-        const tab = await ownNotionTab(browser, state)
-        if (!tab) return false
-        notion ??= browser.attach(tab).then(tabNotion)
-        const { client } = await notion
-        return withinOwnPages(callText, state.created, async ({ table, id }) => {
-          const record = (await client.findRecords([{ table: table as 'block' | 'collection', id }]))[
-            table as 'block' | 'collection'
-          ]?.[id]
-          return record?.parent_id && record.parent_table
-            ? { table: record.parent_table, id: record.parent_id }
-            : undefined
-        })
-      }
       try {
-        const result = await ask(panel, command.question, command.answer, command.timeoutMs, mayAllow)
+        const result = await ask(panel, command.question, command.answer, command.timeoutMs)
         if (command.json) console.log(JSON.stringify(result, null, 2))
         else console.log(formatReply(result.parts))
         if (result.status === 'done') return 0
-        console.error(
-          result.status === 'outside'
-            ? '\nNot approving: this call reaches beyond the pages pnpm e2e created. Deny it with pnpm e2e ask ' +
-                '--deny, or decide in the side panel yourself.'
-            : '\nWaiting for approval: run pnpm e2e ask --allow or pnpm e2e ask --deny.',
-        )
+        console.error('\nWaiting for approval: run pnpm e2e ask --allow or pnpm e2e ask --deny.')
         return EXIT_NEEDS_ANSWER
       } catch (err) {
         if (err instanceof TimeoutError) {
@@ -241,12 +216,9 @@ async function main(argv: string[]): Promise<number> {
     const path = statePath(owner)
     const state = await loadState(path)
     const cdp = await Cdp.connect(cdpPort())
-    // An interrupt skips the finally below; still remember the tabs this command opened.
-    const forget = onInterrupt(() => saveState(path, state))
     try {
       return await browserCommand(new Browser(cdp), state, command, () => saveState(path, state))
     } finally {
-      forget()
       await saveState(path, state)
       cdp.close()
     }

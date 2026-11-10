@@ -42,9 +42,7 @@ export class CanaryLock {
         return { status: 'held' }
       }
       if (this.isStale(modified)) {
-        const took = await this.takeOver()
-        if (took.status === 'busy') return took
-        tookOver = took.holder
+        tookOver = await this.takeOver()
       }
     }
     await mkdir(join(this.dir, '..'), { recursive: true })
@@ -59,35 +57,21 @@ export class CanaryLock {
   }
 
   /**
-   * Moves a stale lock out of the way. The rename is atomic, so of several sessions taking over the
-   * same stale lock, one moves it and the others find it gone and race for mkdir instead. One that
-   * moved a lock someone took meanwhile (fresh again) puts it back, but only into a lock directory it
-   * made itself: if a third session took the lock in between, that one keeps it.
+   * Moves a stale lock out of the way and returns its holder. The rename is atomic, so of several
+   * sessions taking over the same stale lock, one moves it and the others find it gone and race for
+   * mkdir instead.
    */
-  private async takeOver(): Promise<
-    { status: 'moved' | 'gone'; holder?: string } | { status: 'busy'; holder: string }
-  > {
+  private async takeOver(): Promise<string | undefined> {
     const moved = `${this.dir}.stale-${process.pid}-${Date.now()}`
     try {
       await rename(this.dir, moved)
     } catch (err) {
-      if ((err as NodeJS.ErrnoException).code === 'ENOENT') return { status: 'gone' }
+      if ((err as NodeJS.ErrnoException).code === 'ENOENT') return undefined
       throw err
     }
     const holder = (await readFile(join(moved, 'owner'), 'utf8').catch(() => '')).trim() || '(unknown holder)'
-    if (!this.isStale((await stat(moved)).mtime.getTime())) {
-      try {
-        // An empty directory of our own, which the rename then replaces atomically.
-        await mkdir(this.dir)
-      } catch {
-        await rm(moved, { recursive: true, force: true })
-        return { status: 'busy', holder: (await this.holder()) ?? '(unknown holder)' }
-      }
-      await rename(moved, this.dir)
-      return { status: 'busy', holder }
-    }
     await rm(moved, { recursive: true, force: true })
-    return { status: 'moved', holder }
+    return holder
   }
 
   private isStale(modified: number): boolean {

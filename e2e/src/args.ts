@@ -42,8 +42,7 @@ Commands:
                                Only on a page or database this tool created
   ask [question]               Send the question in the side panel, wait for the reply, and print it
                                with each tool call; without a question, keep waiting for the last reply
-      --allow | --deny         Answer every approval prompt this way (otherwise stop at the first one).
-                               --allow approves only calls inside pages this tool created
+      --allow | --deny         Answer every approval prompt this way (otherwise stop at the first one)
       --timeout <seconds>      How long to wait for the reply (default ${DEFAULT_TIMEOUT_S})
       --json                   Print the reply as JSON
   page <title> [markdown…]     Create a throwaway private page; each argument is a line of Markdown
