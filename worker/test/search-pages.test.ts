@@ -70,11 +70,11 @@ describe('UC-NOTION-004 find and read other pages', () => {
         '   In: Fixture workspace / Projects',
         '   Edited: 2026-11-08',
         '   Match: “We will ship the beta on Friday.”',
-        `   URL: https://app.notion.com/${hex(FOUND)}`,
+        `   URL: https://app.notion.com/p/${hex(FOUND)}`,
         `2. 🗃 Untitled database ^${hex(DATABASE)}`,
         '   In: Fixture workspace',
         '   Edited: 2026-11-01',
-        `   URL: https://app.notion.com/${hex(DATABASE)}`,
+        `   URL: https://app.notion.com/p/${hex(DATABASE)}`,
       ].join('\n'),
     )
     // It searched the open page's workspace, as the tab's Notion user.

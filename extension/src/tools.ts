@@ -13,7 +13,7 @@ import {
   type NotionRecord,
   type Operation,
 } from './notion/api'
-import { isNotion, pageIdFromUrl, pathPageIdFromUrl, toUuid } from './notion/hosts'
+import { isNotion, pageIdFromUrl, pageLink, pathPageIdFromUrl, toUuid } from './notion/hosts'
 import {
   EditError,
   forget,
@@ -143,7 +143,7 @@ export const readPage: ToolSpec = {
     const threads = threadCount(loaded, md)
     const header = [
       `Page: ${md.title} ^${pageHex}`,
-      `URL: ${new URL(tab.url).origin}/${pageHex}`,
+      `URL: ${pageLink(tab.url, pageHex)}`,
       ...(parts.length > 1
         ? [`Part ${part} of ${parts.length}${part < parts.length ? `. Read part ${part + 1} for more.` : '.'}`]
         : []),
@@ -1104,7 +1104,7 @@ export const createPage: ToolSpec = {
       target.table === 'collection'
         ? `Added the row “${title}” ^${hex} to the database ^${hexId(parentId)}.`
         : `Created the page “${title}” ^${hex} at the end of ^${hexId(parentId)}.`,
-      `URL: ${new URL(tab.url).origin}/${hex}`,
+      `URL: ${pageLink(tab.url, hex)}`,
     ].join('\n')
   },
 }
@@ -1441,8 +1441,7 @@ export const createDatabase: ToolSpec = {
     return [
       `Created the database “${title}” ^${hex} at the end of ^${hexId(parentId)}.`,
       `Properties: ${rowValuesHeader(schema)}`,
-      // app.notion.com opens a page only under /p/; www.notion.so takes it too.
-      `URL: ${new URL(tab.url).origin}/p/${hex}`,
+      `URL: ${pageLink(tab.url, hex)}`,
     ].join('\n')
   },
 }
@@ -1897,7 +1896,7 @@ export const duplicatePage: ToolSpec = {
       const hex = hexId(copy)
       return [
         `Duplicated ^${hexId(id)} as ^${hex}, right after it in ^${hexId(near)}.`,
-        `URL: ${new URL(tab.url).origin}/${hex}`,
+        `URL: ${pageLink(tab.url, hex)}`,
       ].join('\n')
     } catch (err) {
       // A retry would make a second copy if this one was made: the agent must look first.
@@ -2199,7 +2198,6 @@ export const searchPages: ToolSpec = {
     const complete = found.results.length < limit
     found.results = alive
     if (!found.results.length) return `No pages found for "${query}".`
-    const origin = new URL(tab.url).origin
     const tag = highlightTag(found.results)
     const plain = (text: unknown) => withoutTag(typeof text === 'string' ? text : undefined, tag)
     // A database's name is on its collection, which search doesn't return.
@@ -2227,7 +2225,7 @@ export const searchPages: ToolSpec = {
         ...(where ? [`   In: ${where}`] : []),
         ...(edited ? [`   Edited: ${edited}`] : []),
         ...(text ? [`   Match: “${clip(text, 200)}”`] : []),
-        `   URL: ${origin}/${hexId(r.id)}`,
+        `   URL: ${pageLink(tab.url, r.id)}`,
       ].join('\n')
     })
     const shown = found.results.length

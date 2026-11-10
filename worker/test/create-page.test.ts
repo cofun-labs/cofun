@@ -63,7 +63,7 @@ describe('UC-NOTION-007 create a page', () => {
     })
     const created = /\^([0-9a-f]{32})/.exec(result)![1]
     expect(result).toBe(
-      `Created the page “Launch notes” ^${created} at the end of ^${hex(PAGE)}.\nURL: https://app.notion.com/${created}`,
+      `Created the page “Launch notes” ^${created} at the end of ^${hex(PAGE)}.\nURL: https://app.notion.com/p/${created}`,
     )
     // It is the open page's last block, and reads back with its content.
     expect(ws.content(PAGE).map((b) => b.type)).toEqual(['text', 'page'])

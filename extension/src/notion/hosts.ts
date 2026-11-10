@@ -33,6 +33,11 @@ export function pathPageIdFromUrl(url: string): string | undefined {
   }
 }
 
+/** A link that opens a page on the tab's Notion host: app.notion.com opens pages only under `/p/`. */
+export function pageLink(tabUrl: string, id: string): string {
+  return `${new URL(tabUrl).origin}/p/${id.replace(/-/g, '').toLowerCase()}`
+}
+
 /** A Notion id in the form Notion's API keys records by (dashed, lowercase), or undefined if `id` isn't one. */
 export function toUuid(id: string): string | undefined {
   const hex = id.replace(/-/g, '')

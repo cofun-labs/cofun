@@ -266,7 +266,7 @@ describe('extension agent against the worker', () => {
       tool_call_id: 'chatcmpl-tool-0',
       content: [
         'Page: Fixture page ^1a1a1a1a000040008000000000000010',
-        'URL: https://app.notion.com/1a1a1a1a000040008000000000000010',
+        'URL: https://app.notion.com/p/1a1a1a1a000040008000000000000010',
         'This page has 1 comment thread: read it with read_comments.',
         '',
         'Hello **bold** ^00000011',
