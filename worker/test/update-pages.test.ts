@@ -90,7 +90,19 @@ async function query(tab: FakeNotionTab, rows: ReturnType<typeof rowRecord>[]) {
       ),
     },
   })
-  await queryDatabase.run({})
+  return (await queryDatabase.run({})) as string
+}
+/** The cells of a row as query_database's table shows them, by column name. */
+function shownCells(table: string, id: string): Record<string, string> {
+  const cells = (line: string) =>
+    line
+      .split(/(?<!\\)\|/)
+      .slice(1, -1)
+      .map((c) => c.trim())
+  const lines = table.split('\n')
+  const header = cells(lines.find((l) => l.startsWith('| Task'))!)
+  const row = cells(lines.find((l) => l.includes(hex(id)))!)
+  return Object.fromEntries(header.map((name, n) => [name, row[n]]))
 }
 const update = async (pages: unknown) => (await updatePages.run({ pages })) as string
 const props = (ws: FakeWorkspace, n: number) => ws.records.get(row(n))!.properties
@@ -202,6 +214,230 @@ describe('UC-NOTION-008 change properties and rows', () => {
 })
 
 describe('update_pages details', () => {
+  const ANN = 'f0f0f0f0-0000-4000-8000-000000000001'
+  const ANN2 = 'f0f0f0f0-0000-4000-8000-000000000002'
+  const SPEC = 'b2b2b2b2-0000-4000-8000-000000000001'
+  /** The workspace with a member named Ann and a page named Spec, for values that mention them. */
+  function mentionable() {
+    const ws = workspace()
+    ws.put('notion_user', { id: ANN, name: 'Ann' })
+    ws.records.set(SPEC, {
+      ...ws.records.get(PAGE)!,
+      id: SPEC,
+      properties: { title: [['Spec']] },
+    })
+    ws.collections.get(COLLECTION)!.schema = {
+      ...SCHEMA,
+      'i:i': { name: 'Link', type: 'url' },
+      'j:j': { name: 'Mail', type: 'email' },
+      'k:k': { name: 'Phone', type: 'phone_number' },
+    }
+    return ws
+  }
+  /** Bold, a person, a link, a page, and a date, as Notion stores them. */
+  const NOTES = [
+    ['Done', [['b']]],
+    [' by '],
+    ['‣', [['u', ANN]]],
+    [', see '],
+    ['the plan', [['a', 'https://x.example/plan']]],
+    [' and '],
+    ['‣', [['p', SPEC]]],
+    [' on '],
+    ['‣', [['d', { type: 'date', start_date: '2026-11-20' }]]],
+  ]
+
+  it('[UC-NOTION-008-S10] stores the Markdown of a text value and a title as formatting, links, and mentions', async () => {
+    const ws = mentionable()
+    const tab = open(ws)
+    await update([
+      {
+        page: hex(row(1)),
+        title: 'Write *the* docs',
+        properties: {
+          Notes: `**Done** by @[Ann], see [the plan](https://x.example/plan) and [Spec](${hex(SPEC)}) on @2026-11-20`,
+        },
+      },
+      { page: hex(row(2)), properties: { Status: 'Done' } },
+    ])
+    expect(props(ws, 1)).toMatchObject({
+      title: [['Write '], ['the', [['i']]], [' docs']],
+      'g:g': NOTES,
+    })
+    expect(props(ws, 2)).toMatchObject({ title: [['Fix login']], 'a:a': [['Done']] })
+    // The members are looked up once, and only because a value mentions someone.
+    expect(tab.sent.filter((r) => r.url.endsWith('/getVisibleUsers'))).toHaveLength(1)
+  })
+
+  it('[UC-NOTION-008-S10] stores the Markdown of a new row’s title and text', async () => {
+    const ws = mentionable()
+    open(ws)
+    const result = (await createPage.run({
+      title: '**Renew** the domain with @[Ann]',
+      parent: hex(DB),
+      properties: { Notes: `Ask @[ann] about [Spec](${hex(SPEC)})`, Link: 'https://x.example/a_b_c' },
+    })) as string
+    const created = /\^([0-9a-f]{32})/.exec(result)![1]
+    expect(result.split('\n')[0]).toBe(
+      `Added the row “Renew the domain with Ann” ^${created} to the database ^${hex(DB)}.`,
+    )
+    expect([...ws.records.values()].find((r) => hex(r.id) === created)!.properties).toEqual({
+      title: [['Renew', [['b']]], [' the domain with '], ['‣', [['u', ANN]]]],
+      'g:g': [['Ask '], ['‣', [['u', ANN]]], [' about '], ['‣', [['p', SPEC]]]],
+      'i:i': [['https://x.example/a_b_c']],
+    })
+  })
+
+  it('[UC-NOTION-008-S11] stores a text value and a title written back as query_database shows them as they were', async () => {
+    const ws = mentionable()
+    const tab = open(ws, `https://app.notion.com/${hex(DB)}`)
+    const title = [['Write '], ['the', [['i']]], [' a|b [docs] with '], ['‣', [['u', ANN]]]]
+    const notes = [
+      ...NOTES,
+      [' for $5 '],
+      ['x|y', [['c']]],
+      [' and '],
+      ['red', [['h', 'red'], ['b']]],
+      [' '],
+      ['⁍', [['e', 'a|b\\|c']]],
+    ]
+    ws.edit(row(1), { properties: { title, 'a:a': [['Done']], 'g:g': notes } })
+    const stored = structuredClone(props(ws, 1))
+    const shown = shownCells(await query(tab, [ws.records.get(row(1)) as never]), row(1))
+    expect(shown.Notes).toContain('**Done** by @[Ann], see [the plan](https://x.example/plan) and [Spec](')
+    const pages = [{ page: hex(row(1)), title: shown.Task, properties: { Notes: shown.Notes } }]
+    expect(updatePages.preview!({ pages })).toBe(
+      [
+        'Change 1 page',
+        `Write the a|b [docs] with Ann ^${hex(row(1))}`,
+        '    Title: Write the a|b [docs] with Ann (unchanged)',
+        '    Notes: Done by Ann, see the plan and Spec on 2026-11-20 for $5 x|y and red a|b\\|c (unchanged)',
+      ].join('\n'),
+    )
+    await update(pages)
+    expect(props(ws, 1)).toEqual(stored)
+  })
+
+  it('[UC-NOTION-008-S12] writes nothing when a text value or a title mentions a name no member has', async () => {
+    const ws = mentionable()
+    const tab = open(ws)
+    for (const change of [{ properties: { Notes: 'Ask @[Bob]' } }, { title: 'For @[Bob]' }]) {
+      await expect(
+        update([
+          { page: hex(row(1)), properties: { Status: 'Not started' } },
+          { page: hex(row(2)), ...change },
+        ]),
+      ).rejects.toThrow('@[Bob]: no workspace member has that name.')
+    }
+    await expect(
+      createPage.run({ title: 'For @[Bob]', parent: hex(DB), properties: { Notes: 'Ask @[Bob]' } }),
+    ).rejects.toThrow('@[Bob]: no workspace member has that name.')
+    expect(ws.transactions).toEqual([])
+    expect(tab.sent.map((r) => r.url.split('/api/v3/')[1])).not.toContain('saveTransactionsFanout')
+  })
+
+  it('keeps the person a text value already mentions when two members share the name, and what its dates stored', async () => {
+    const ws = mentionable()
+    ws.put('notion_user', { id: ANN2, name: 'Ann' })
+    const tab = open(ws)
+    const day = {
+      type: 'date',
+      start_date: '2026-11-20',
+      time_zone: 'Europe/Paris',
+      reminder: { unit: 'day', value: 1 },
+    }
+    ws.edit(row(1), {
+      properties: { title: [['Write docs']], 'g:g': [['‣', [['u', ANN2]]], [' on '], ['‣', [['d', day]]]] },
+    })
+    await update([{ page: hex(row(1)), properties: { Notes: 'Ask @[Ann] before @2026-11-20' } }])
+    expect(props(ws, 1)).toMatchObject({
+      'g:g': [['Ask '], ['‣', [['u', ANN2]]], [' before '], ['‣', [['d', day]]]],
+    })
+    // The name alone can't tell the two apart where the old value doesn't mention either.
+    await expect(update([{ page: hex(row(2)), properties: { Notes: 'Ask @[Ann]' } }])).rejects.toThrow(
+      '2 workspace members are named “Ann”',
+    )
+    expect(ws.transactions).toHaveLength(1)
+    expect(tab.sent.filter((r) => r.url.endsWith('/getVisibleUsers'))).toHaveLength(1)
+  })
+
+  it('refuses to write @someone over a person whose name it could not read', async () => {
+    const ws = mentionable()
+    const tab = open(ws, `https://app.notion.com/${hex(DB)}`)
+    const gone = 'f0f0f0f0-0000-4000-8000-00000000dead'
+    ws.edit(row(1), { properties: { title: [['Write docs']], 'g:g': [['Ask '], ['‣', [['u', gone]]]] } })
+    const shown = shownCells(await query(tab, [ws.records.get(row(1)) as never]), row(1))
+    expect(shown.Notes).toBe('Ask @someone')
+    await expect(update([{ page: hex(row(1)), properties: { Notes: shown.Notes } }])).rejects.toThrow(
+      'Notes mentions a person whose name could not be read, shown as @someone.',
+    )
+    expect(ws.transactions).toEqual([])
+    // Other text replaces the value as usual, and text that already said @someone stays.
+    ws.edit(row(2), { properties: { title: [['Fix login']], 'g:g': [['@someone said, '], ['‣', [['u', ANN]]]] } })
+    await update([
+      { page: hex(row(1)), properties: { Notes: 'Ask @[Ann]' } },
+      { page: hex(row(2)), properties: { Notes: '@someone said, @[Ann]' } },
+    ])
+    expect(props(ws, 1)).toMatchObject({ 'g:g': [['Ask '], ['‣', [['u', ANN]]]] })
+    expect(props(ws, 2)).toMatchObject({ 'g:g': [['@someone said, '], ['‣', [['u', ANN]]]] })
+  })
+
+  it('does not call a text value unchanged when writing it back removes its line breaks', async () => {
+    const ws = mentionable()
+    const tab = open(ws, `https://app.notion.com/${hex(DB)}`)
+    ws.edit(row(1), { properties: { title: [['Write docs']], 'g:g': [['First\nSecond']] } })
+    const shown = shownCells(await query(tab, [ws.records.get(row(1)) as never]), row(1))
+    expect(shown.Notes).toBe('First Second')
+    const preview = await updatePages.preview!({ pages: [{ page: hex(row(1)), properties: { Notes: shown.Notes } }] })
+    expect(preview?.split('\n')[2]).toBe('    Notes: First Second (same text; its formatting changes)')
+  })
+
+  it('stores a page title written back as read_page shows it as it was', async () => {
+    const ws = mentionable()
+    open(ws)
+    const title = [['*Draft* plan [v2] with '], ['‣', [['u', ANN]]], [' and @[name] syntax']]
+    ws.edit(PAGE, { properties: { title } })
+    const shown = /^Page: (.*) \^[0-9a-f]{32}$/.exec(((await readPage.run({})) as string).split('\n')[0])![1]
+    expect(shown).toBe('\\*Draft\\* plan \\[v2\\] with @[Ann] and @\\[name\\] syntax')
+    await update([{ page: hex(PAGE), title: shown, icon: '📝' }])
+    expect(ws.records.get(PAGE)!.properties).toEqual({ title })
+  })
+
+  it('stores URLs, emails, and phone numbers as plain text, and numbers given for text', async () => {
+    const ws = mentionable()
+    open(ws)
+    await update([
+      {
+        page: hex(row(1)),
+        properties: {
+          Link: 'https://x.example/a_b_c?q=*x*',
+          Mail: '\\_ann\\_@x.example',
+          Phone: '+1 555 **',
+          Notes: 42,
+        },
+      },
+    ])
+    expect(props(ws, 1)).toMatchObject({
+      'i:i': [['https://x.example/a_b_c?q=*x*']],
+      'j:j': [['_ann_@x.example']],
+      'k:k': [['+1 555 **']],
+      'g:g': [['42']],
+    })
+  })
+
+  it('refuses Markdown it can’t store in a text value or a title, and shows it as given in the preview', async () => {
+    const ws = mentionable()
+    const tab = open(ws, `https://app.notion.com/${hex(DB)}`)
+    await query(tab, [rowRecord(2, 'Fix login', 'In progress')])
+    const pages = [{ page: hex(row(2)), properties: { Notes: '<span color="neon">Hi</span>' } }]
+    expect((await updatePages.preview!({ pages }))?.split('\n')[2]).toBe('    Notes: <span color="neon">Hi</span>')
+    await expect(update(pages)).rejects.toThrow('Notes: "neon" isn\'t a Notion color.')
+    await expect(update([{ page: hex(row(2)), title: '<span color="neon">Hi</span>' }])).rejects.toThrow(
+      'The title: "neon" isn\'t a Notion color.',
+    )
+    expect(ws.transactions).toEqual([])
+  })
+
   it('runs without asking, and shows the values it stores and the old ones the agent saw', async () => {
     const ws = workspace()
     const tab = open(ws, `https://app.notion.com/${hex(DB)}`)
@@ -258,7 +494,7 @@ describe('update_pages details', () => {
     )
   })
 
-  it('compares old values as plain text, without the marks query_database shows', async () => {
+  it('says when a text value or a title reads the same but loses its formatting', async () => {
     const ws = workspace()
     const tab = open(ws, `https://app.notion.com/${hex(DB)}`)
     const notes = [
@@ -293,8 +529,8 @@ describe('update_pages details', () => {
       [
         'Change 1 page',
         `@home Bold ^${hex(row(6))}`,
-        '    Title: @home Bold (unchanged)',
-        '    Notes: See code, old, red, a*b and docs @kitfun (unchanged)',
+        '    Title: @home Bold (same text; its formatting changes)',
+        '    Notes: See code, old, red, a*b and docs @kitfun (same text; its formatting changes)',
       ].join('\n'),
     )
   })
@@ -345,7 +581,7 @@ describe('update_pages details', () => {
     expect(props(ws, 1)!['f:f' as never]).toEqual([['Needs [review]']])
   })
 
-  it('stores text copied from query_database as plain text, a doubled backslash as one, and numbers as options', async () => {
+  it('stores escaped marks copied from query_database as text, a doubled backslash as one, and numbers as options', async () => {
     const ws = workspace()
     ws.collections.get(COLLECTION)!.schema = {
       ...SCHEMA,

@@ -9,6 +9,11 @@ type Run = [string, [string, unknown?][]?]
 
 export interface PageMarkdown {
   title: string
+  /**
+   * A page's title as Markdown, as read_page shows it and update_pages takes one: its formatting,
+   * mentions, and escapes, on one line. A database's name is plain text.
+   */
+  titleMarkdown: string
   /** `name: value` lines for a database row's properties; empty for other pages. */
   properties: string[]
   /** The page's top-level blocks, each with its children, in page order. */
@@ -76,6 +81,7 @@ export function pageToMarkdown({ page, recordMap }: LoadedPage): PageMarkdown {
   const sections = isDatabase ? [] : ctx.children(page, 0).map((lines) => lines.join('\n'))
   return {
     title: title || 'Untitled',
+    titleMarkdown: (isDatabase ? title : ctx.rich(page.properties?.title).replace(/\s+/g, ' ').trim()) || 'Untitled',
     properties: ctx.properties(page),
     sections,
     kind: isDatabase ? 'database' : 'page',
