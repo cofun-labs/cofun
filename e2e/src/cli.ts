@@ -14,6 +14,7 @@ import {
 } from './extension'
 import { createDatabase, createPage, pageUrl, parseRow, privateSpace, tabPost, trash } from './notion'
 import { E2eError } from './errors'
+import { beforeInterruptExit } from './exit'
 import { DEFAULT_NOTION_URL, TimeoutError, ask, notionTab, openPanel, ownNotionTab, ownPanel } from './panel'
 import { formatReply } from './reply'
 import { CanaryLock, checkOwner } from './lock'
@@ -76,8 +77,10 @@ async function withLock<T>(lock: CanaryLock, owner: string, purpose: string, fn:
   const signals = { SIGINT: 130, SIGTERM: 143 } as const
   const onSignal = (signal: keyof typeof signals) => {
     clearInterval(keepFresh)
-    const release = r.status === 'acquired' ? lock.release(owner) : Promise.resolve(false)
-    void release.catch(() => undefined).finally(() => process.exit(signals[signal]))
+    void beforeInterruptExit()
+      .then(() => (r.status === 'acquired' ? lock.release(owner) : false))
+      .catch(() => undefined)
+      .finally(() => process.exit(signals[signal]))
   }
   for (const signal of Object.keys(signals) as (keyof typeof signals)[]) process.once(signal, onSignal)
   try {

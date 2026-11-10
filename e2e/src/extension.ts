@@ -5,6 +5,7 @@ import { spawn } from 'node:child_process'
 import { access, readFile, rename, rm } from 'node:fs/promises'
 import { isAbsolute, join } from 'node:path'
 import { type Browser, type Target, sleep, until } from './cdp'
+import { onInterrupt, uninterruptible } from './exit'
 
 /** The extension's id, fixed by the public key in the manifest. */
 export const EXTENSION_ID = 'fafkdcopddmegenpemnmjbnolhlbbfpf'
@@ -147,24 +148,31 @@ export async function build(repoRoot: string, outDir: string): Promise<void> {
     throw new Error(`The extension's dependencies are not installed in ${repoRoot}: run pnpm install first.`)
   }
   const next = `${outDir}.next-${process.pid}`
+  const removeNext = () => rm(next, { recursive: true, force: true })
+  const forget = onInterrupt(removeNext)
   try {
     await viteBuild(extension, next)
     const stop = replaceProblem(manifest, await readFile(join(next, 'manifest.json'), 'utf8'))
     if (stop) throw new Error(stop)
     // Swap the folders so the shared extension folder is never left missing: the old build comes
-    // back if the new one can't take its place.
-    const old = `${outDir}.old-${process.pid}`
-    await rename(outDir, old)
-    try {
-      await rename(next, outDir)
-    } catch (err) {
-      await rename(old, outDir)
-      throw err
-    }
-    await rm(old, { recursive: true, force: true })
+    // back if the new one can't take its place, and an interrupt waits for the swap to finish.
+    await uninterruptible(swap(outDir, next))
   } finally {
-    await rm(next, { recursive: true, force: true })
+    forget()
+    await removeNext()
   }
+}
+
+async function swap(outDir: string, next: string): Promise<void> {
+  const old = `${outDir}.old-${process.pid}`
+  await rename(outDir, old)
+  try {
+    await rename(next, outDir)
+  } catch (err) {
+    await rename(old, outDir)
+    throw err
+  }
+  await rm(old, { recursive: true, force: true })
 }
 
 async function viteBuild(extension: string, outDir: string): Promise<void> {

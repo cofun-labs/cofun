@@ -48,7 +48,7 @@ describe('parseArgs', () => {
     expect(() => parseArgs(['ask', 'hi', '--timeout', 'soon'])).toThrow('Not a number')
     expect(() => parseArgs(['ask', 'hi', '--timeout'])).toThrow('needs a value')
     expect(() => parseArgs(['ask', '  '])).toThrow('empty')
-    expect(() => parseArgs(['page', 'T', '--allow'])).toThrow('only goes with ask')
+    expect(() => parseArgs(['reload', '--allow'])).toThrow('only goes with ask')
     expect(() => parseArgs(['ask', 'one', 'two'])).toThrow('Too many arguments')
   })
 
@@ -59,6 +59,20 @@ describe('parseArgs', () => {
       markdown: '## Goals\nShip it',
     })
     expect(() => parseArgs(['page'])).toThrow('needs a title')
+  })
+
+  it('takes every argument of page and db as text, even ones that look like options', () => {
+    expect(parseArgs(['page', 'T', 'Intro', '---', '-h', '--help', '--allow', 'More']).command).toEqual({
+      name: 'page',
+      title: 'T',
+      markdown: 'Intro\n---\n-h\n--help\n--allow\nMore',
+    })
+    expect(parseArgs(['db', '--json', 'row']).command).toEqual({ name: 'db', title: '--json', rows: ['row'] })
+    // --owner still works anywhere.
+    expect(parseArgs(['page', 'T', '---', '--owner', 'issue-1'])).toEqual({
+      command: { name: 'page', title: 'T', markdown: '---' },
+      owner: 'issue-1',
+    })
   })
 
   it('passes everything after -- as arguments, even if it looks like an option', () => {

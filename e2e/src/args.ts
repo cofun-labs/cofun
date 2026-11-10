@@ -45,6 +45,7 @@ Commands:
       --timeout <seconds>      How long to wait for the reply (default ${DEFAULT_TIMEOUT_S})
       --json                   Print the reply as JSON
   page <title> [markdown…]     Create a throwaway private page; each argument is a line of Markdown
+                               (taken as text, even "---" or "-h"; only --owner is an option)
   db <title> [row…]            Create a throwaway private task database (Name, Status, Due); each row
                                is "name|status|YYYY-MM-DD", status and date optional
   trash <id>                   Move a page or database this tool created to the trash
@@ -60,6 +61,8 @@ Exit codes: 0 done, 1 failed, 2 usage error, 3 Canary busy (prints the holder),
 
 const LOCK_ACTIONS = new Set<string>(['acquire', 'refresh', 'release', 'status'])
 const ASK_FLAGS = new Set(['--allow', '--deny', '--timeout', '--json'])
+/** Commands whose arguments are all text, so Markdown like "---" or "- item" passes as is. */
+const TEXT_COMMANDS = new Set(['page', 'db'])
 
 export function parseArgs(argv: string[]): Parsed {
   const positional: string[] = []
@@ -70,8 +73,10 @@ export function parseArgs(argv: string[]): Parsed {
       positional.push(...argv.slice(i + 1))
       break
     }
-    if (arg === '-h' || arg === '--help') return { command: { name: 'help' } }
-    if (!arg.startsWith('--')) {
+    // After page or db, every argument is text (a title, or Markdown such as "---"), except --owner.
+    const text = TEXT_COMMANDS.has(positional[0]) && arg !== '--owner' && !arg.startsWith('--owner=')
+    if (!text && (arg === '-h' || arg === '--help')) return { command: { name: 'help' } }
+    if (text || !arg.startsWith('--')) {
       positional.push(arg)
       continue
     }
