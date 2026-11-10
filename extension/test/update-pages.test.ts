@@ -692,6 +692,19 @@ describe('update_pages details', () => {
     expect(tab.sent).toEqual([])
   })
 
+  it('refuses a property named __proto__ instead of leaving it out, and writes nothing', async () => {
+    const ws = workspace()
+    const tab = open(ws)
+    // As the model's JSON gives it: a key of the object's own, which an object literal would not make.
+    const pages = JSON.parse(`[{"page":"${hex(row(1))}","properties":{"__proto__":"x","Status":"Done"}}]`)
+    await expect(update(pages)).rejects.toThrow(
+      '`pages[0].properties.__proto__`: "__proto__" can\'t be used as a name.',
+    )
+    expect(updatePages.preview!({ pages })).toBeUndefined()
+    expect(tab.sent).toEqual([])
+    expect(ws.transactions).toEqual([])
+  })
+
   it('changes only the title and icon of a page that is not a row, and refuses databases', async () => {
     const ws = workspace()
     open(ws)
