@@ -3,7 +3,7 @@
 // fixtures/, and any other request fails the test. The extension's own code and its bundled
 // dependencies run unchanged.
 import { chromium, expect, test as base, type BrowserContext, type Request, type Worker } from '@playwright/test'
-import { existsSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import path from 'node:path'
 
 const DIST = path.resolve(import.meta.dirname, '../../extension/dist')
@@ -19,6 +19,18 @@ const CLERK_FIXTURES: Record<string, string> = {
   '/v1/client': 'clerk-client.json',
 }
 
+/**
+ * Hosts the built extension may call besides Notion: Clerk's Frontend API and the sign-in page,
+ * as its manifest lists them. Clerk's fixtures answer only there, so a request for the same
+ * path on any other host is blocked like the rest.
+ */
+function apiHosts(): string[] {
+  const manifest = JSON.parse(readFileSync(path.join(DIST, 'manifest.json'), 'utf8')) as { host_permissions: string[] }
+  return manifest.host_permissions
+    .map((pattern) => new URL(pattern.replace('*.', '')).hostname)
+    .filter((host) => !PAGE_HOSTS.includes(host))
+}
+
 function corsHeaders(request: Request): Record<string, string> {
   return {
     'access-control-allow-origin': request.headers().origin ?? '*',
@@ -32,6 +44,8 @@ interface Fixtures {
   background: Worker
   /** Requests the fixtures don't answer. They are blocked, and a test expects none. */
   blocked: string[]
+  /** What the service worker logged with console.error, which is how background.ts reports failures. */
+  backgroundErrors: string[]
 }
 
 const test = base.extend<Fixtures>({
@@ -46,6 +60,7 @@ const test = base.extend<Fixtures>({
     }
     // Extensions need a persistent context, and Playwright's own Chromium: Chrome and Edge
     // no longer take --load-extension.
+    const clerkHosts = apiHosts()
     const context = await chromium.launchPersistentContext('', {
       channel: 'chromium',
       args: [`--disable-extensions-except=${DIST}`, `--load-extension=${DIST}`],
@@ -55,7 +70,8 @@ const test = base.extend<Fixtures>({
       const url = new URL(request.url())
       if (url.protocol === 'chrome-extension:') return route.continue()
       if (PAGE_HOSTS.includes(url.hostname)) return route.fulfill({ path: path.join(FIXTURES, 'page.html') })
-      const clerkFixture = request.method() === 'GET' ? CLERK_FIXTURES[url.pathname] : undefined
+      const clerkFixture =
+        request.method() === 'GET' && clerkHosts.includes(url.hostname) ? CLERK_FIXTURES[url.pathname] : undefined
       if (clerkFixture) {
         return route.fulfill({ path: path.join(FIXTURES, clerkFixture), headers: corsHeaders(request) })
       }
@@ -68,6 +84,13 @@ const test = base.extend<Fixtures>({
   background: async ({ context }, use) => {
     await use(context.serviceWorkers()[0] ?? (await context.waitForEvent('serviceworker')))
   },
+  backgroundErrors: async ({ background }, use) => {
+    const errors: string[] = []
+    background.on('console', (message) => {
+      if (message.type() === 'error') errors.push(message.text())
+    })
+    await use(errors)
+  },
 })
 
 /** The side panel options background.ts has set for the tab showing `url`. */
@@ -79,7 +102,7 @@ function panelOptions(background: Worker, url: string): Promise<chrome.sidePanel
   }, url)
 }
 
-test('the service worker starts and sets up the side panel', async ({ background, blocked }) => {
+test('the service worker starts and sets up the side panel', async ({ background, backgroundErrors }) => {
   // background.ts sets this flag once its start-up has run without failing.
   await expect
     .poll(() => background.evaluate(() => chrome.storage.session.get('panelInit')))
@@ -89,16 +112,23 @@ test('the service worker starts and sets up the side panel', async ({ background
   expect(await background.evaluate(() => chrome.sidePanel.getPanelBehavior())).toEqual({
     openPanelOnActionClick: true,
   })
-  expect(blocked).toEqual([])
+  expect(backgroundErrors).toEqual([])
 })
 
-test('the side panel is enabled on Notion tabs and on no other site', async ({ context, background, blocked }) => {
+test('the side panel is enabled on Notion tabs and on no other site', async ({
+  context,
+  background,
+  backgroundErrors,
+  blocked,
+}) => {
   for (const url of NOTION_URLS) {
     const page = await context.newPage()
     await page.goto(url)
     await expect.poll(() => panelOptions(background, url), url).toMatchObject({ enabled: true, path: 'sidepanel.html' })
   }
 
+  // A new tab on another site is off by default, so this alone would pass without background.ts
+  // looking at the tab. The step after it is the one that needs the panel turned off.
   const page = await context.newPage()
   await page.goto(OTHER_URL)
   await expect.poll(() => panelOptions(background, OTHER_URL), OTHER_URL).toMatchObject({ enabled: false })
@@ -107,6 +137,7 @@ test('the side panel is enabled on Notion tabs and on no other site', async ({ c
   const notionPage = context.pages().find((candidate) => candidate.url() === NOTION_URLS[0])!
   await notionPage.goto(`${OTHER_URL}next`)
   await expect.poll(() => panelOptions(background, `${OTHER_URL}next`)).toMatchObject({ enabled: false })
+  expect(backgroundErrors).toEqual([])
   expect(blocked).toEqual([])
 })
 
