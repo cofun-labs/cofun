@@ -90,8 +90,10 @@ worker/                   Cloudflare Worker
   src/login.ts            sign-in page (Clerk Sync Host)
   test/                   REST integration tests (real signed JWTs, fake AI binding), and tests of
                           the extension's client code (fake Notion tab with sanitized fixtures)
+e2e/                      pnpm e2e: drives the shared Chrome Canary over CDP for ai-e2e runs
+                          (maintainer's machine only; its unit tests run in pnpm test)
 docs/
-  bdd.md                  how use cases and scenarios are written
+  bdd.md                  how use cases and scenarios are written, and how to run ai-e2e scenarios
   use-cases/              use cases by domain; tests reference their scenario IDs
 .github/rulesets/         GitHub branch rulesets (export format)
 .github/dependabot.yml    weekly dependency updates
@@ -106,7 +108,7 @@ Requires Node.js 24 and pnpm.
 
 ```bash
 pnpm install
-pnpm check        # lint, format check, typecheck, extension build, worker tests
+pnpm check        # lint, format check, typecheck, extension build, worker and e2e tool tests
 ```
 
 A lefthook pre-commit hook runs `pnpm check`. GitHub Actions runs it on every pull request.
