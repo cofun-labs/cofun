@@ -400,6 +400,13 @@ describe('query_database options, numbers, and code', () => {
     ])
   })
 
+  it('compares colored text and equations as Notion shows them', async () => {
+    database(tagged([], [[['Urgent', [['h', 'red']]]], [], [['⁍', [['e', 'a*b']]]], []]), false, TAGGED)
+    expect(titles(await query({ filter: [{ property: 'Notes', op: 'is', value: 'urgent' }] }))).toEqual(['Write docs'])
+    database(tagged([], [[['Urgent', [['h', 'red']]]], [], [['⁍', [['e', 'a*b']]]], []]), false, TAGGED)
+    expect(titles(await query({ filter: [{ property: 'Notes', op: 'is', value: 'a*b' }] }))).toEqual(['Ship beta'])
+  })
+
   it('keeps a person with a pipe in the name in one cell', async () => {
     const rows = TASKS.map((t) => ({ ...rowRecord(t), created_by_id: USER }))
     database(rows, false, { ...SCHEMA, 'i:i': { name: 'Creator', type: 'created_by' } }, [], 'Ana\\ | Ops')

@@ -556,15 +556,16 @@ function cell(values: { name: string; value: string }[], property: string): stri
 }
 
 /**
- * Markdown as the user reads it: links and people (`@[Ann]`) as their text, no mention marks, marks
- * and escapes undone, so filters compare against what Notion shows. Code spans are kept as they
- * are: their text has no escapes (`C:\temp` keeps its backslash).
+ * Markdown as the user reads it: links and people (`@[Ann]`) as their text, no mention marks,
+ * colors, marks, or escapes, so filters compare against what Notion shows. Code spans and equations
+ * are kept as they are: their text has no escapes (`C:\temp` keeps its backslash).
  */
 function shownText(markdown: string): string {
   return markdown.replace(
-    /`([^`]*)`|\[((?:\\.|[^\]\\])*)\]\([^)]*\)|@\[((?:\\.|[^\]\\])*)\]|\\(.)|[*~]|(?<=^|[\s,(])@/g,
-    (_, code?: string, link?: string, person?: string, escaped?: string) => {
+    /`([^`]*)`|\$((?:\\.|[^$\\])+)\$|\[((?:\\.|[^\]\\])*)\]\([^)]*\)|@\[((?:\\.|[^\]\\])*)\]|<span color="[^"]*">|<\/span>|\\(.)|[*~]|(?<=^|[\s,(])@/g,
+    (_, code?: string, equation?: string, link?: string, person?: string, escaped?: string) => {
       if (code !== undefined) return code
+      if (equation !== undefined) return equation
       const named = link ?? person
       return named !== undefined ? shownText(named) : (escaped ?? '')
     },
