@@ -23,4 +23,4 @@ A large workspace is listed only up to a limit, and the AI is told when the list
 | ID | Priority | Status | Scenario |
 | --- | --- | --- | --- |
 | UC-NOTION-005-S04 | P0 | ✅ | Given the side panel open on a page with pages under it; when the user asks what is under it; then the agent lists them without reading their content. |
-| UC-NOTION-005-S07 | P1 | 🚧 | Given the side panel open in a workspace with a teamspace the user joined; when the user asks what teamspaces they have; then the agent names the teamspace and the pages in it. |
+| UC-NOTION-005-S07 | P1 | ✅ | Given the side panel open in a workspace with a teamspace the user joined; when the user asks what teamspaces they have; then the agent names the teamspace and the pages in it. |
