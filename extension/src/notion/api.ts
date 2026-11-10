@@ -277,7 +277,7 @@ export class NotionClient {
   async getSpace(spaceId: string): Promise<WorkspaceTree> {
     const space = notionId(spaceId)
     const { json, userId } = await this.request<Record<string, unknown>>('getSpaces', {}, space)
-    // One record map per signed-in user; the tab's active user's, when it holds this workspace.
+    // One record map per signed-in user, keyed by user id; only the tab's active user's counts.
     const maps = userId ? [normalizeRecordMap(json[userId])] : Object.values(json).map(normalizeRecordMap)
     const map = maps.find((m) => m.space?.[space])
     if (!map) throw new NotionError('no_access', NO_ACCESS)
@@ -286,8 +286,9 @@ export class NotionClient {
     const settings = record.settings as { is_teams_enabled?: unknown } | undefined
     let teams: WorkspaceTree['teams'] = []
     let teamsError: string | undefined
-    // Teamspaces come from a request of their own; if it fails, the rest of the sidebar still lists.
-    if (settings?.is_teams_enabled === true) {
+    // Teamspaces come from a request of their own, unless the workspace has them turned off; if it
+    // fails, the rest of the sidebar still lists.
+    if (settings?.is_teams_enabled !== false) {
       try {
         teams = await this.joinedTeams(space)
       } catch (err) {

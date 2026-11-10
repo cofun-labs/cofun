@@ -424,6 +424,48 @@ describe('list_pages workspace', () => {
     expect(await run()).toContain(`Private\n- 📄 Mine ^${hex(id(1))}`)
   })
 
+  it('asks for teamspaces when the workspace does not say whether it has them', async () => {
+    new FakeNotionTab(PAGE_URL)
+      .respond('syncRecordValuesMain', 200, OPEN_PAGE)
+      .respond('getSpaces', 200, spaces({ settings: {} }, {}))
+      .respond('getTeamsV2', 200, teams([team(1, 'Engineering', [id(11)])]))
+      .respond('syncRecordValuesMain', 200, records([page(11, 'Eng handbook')]))
+      .install()
+    expect(await run()).toContain(`Teamspace: Engineering\n- 📄 Eng handbook ^${hex(id(11))}`)
+  })
+
+  it('leaves out teams that getTeamsV2 lists as anything but joined', async () => {
+    const answer = teams([team(1, 'Engineering', [id(11)]), team(2, 'Elsewhere', [id(21)])])
+    answer.teams[1].type = 'Archived'
+    new FakeNotionTab(PAGE_URL)
+      .respond('syncRecordValuesMain', 200, OPEN_PAGE)
+      .respond('getSpaces', 200, spaces({}, {}))
+      .respond('getTeamsV2', 200, answer)
+      .respond('syncRecordValuesMain', 200, records([page(11, 'Eng handbook')]))
+      .install()
+    const result = await run()
+    expect(result).toContain('Teamspace: Engineering')
+    expect(result).not.toContain('Elsewhere')
+  })
+
+  it('gives the next offset in the section own list when earlier sections already listed some of its pages', async () => {
+    // The first private page is also in Shared, so the shared list left after it starts one entry in.
+    const shared = [id(1), ...Array.from({ length: SECTION_LIMIT + 5 }, (_, i) => id(400 + i))]
+    new FakeNotionTab(PAGE_URL)
+      .respond('syncRecordValuesMain', 200, OPEN_PAGE)
+      .respond('getSpaces', 200, spaces({}, { private_pages: [id(1)], shared_pages_manual_sort: shared }))
+      .respond('getTeamsV2', 200, teams([]))
+      .respond('syncRecordValuesMain', 200, records([page(1, 'Notes')]))
+      .respond(
+        'syncRecordValuesMain',
+        200,
+        records(shared.slice(1).map((m, i) => ({ ...page(0, `Shared ${i}`), id: m }))),
+      )
+      .install()
+    // Shared shows entries 1 to 50 of its own list, so the rest starts at entry 51.
+    expect(await run()).toContain(`List them with \`section: "Shared"\` and \`offset: ${SECTION_LIMIT + 1}\`.)`)
+  })
+
   it('still lists the other sections when the teamspaces fail to load', async () => {
     new FakeNotionTab(PAGE_URL)
       .respond('syncRecordValuesMain', 200, OPEN_PAGE)
@@ -443,8 +485,8 @@ describe('list_pages workspace', () => {
     )
   })
 
-  it('asks for no teamspaces in a workspace without them', async () => {
-    const getSpaces = spaces({ settings: {} }, { private_pages: [id(1)] })
+  it('asks for no teamspaces in a workspace that has them turned off', async () => {
+    const getSpaces = spaces({ settings: { is_teams_enabled: false } }, { private_pages: [id(1)] })
     const tab = new FakeNotionTab(PAGE_URL)
       .respond('syncRecordValuesMain', 200, OPEN_PAGE)
       .respond('getSpaces', 200, getSpaces)
