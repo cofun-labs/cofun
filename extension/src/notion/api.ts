@@ -354,6 +354,8 @@ export class NotionCooldown {
   /** When the wait ends, by `now`'s clock; kept here so `left` needs no storage read. */
   private until = 0
   private loading?: Promise<void>
+  /** Whether the store's changes are followed already. */
+  private following = false
 
   constructor(
     public now: () => number = () => Date.now(),
@@ -362,7 +364,8 @@ export class NotionCooldown {
 
   /**
    * Resolves once the wait kept in the store is known here, and later changes to it are followed.
-   * Nothing may be sent before. A store that fails is logged, and the wait is then this panel's only.
+   * Nothing may be sent before. A store that fails is logged, and the wait is this panel's only
+   * until a later call loads it: each call tries again after a failure.
    */
   ready(): Promise<void> {
     return (this.loading ??= this.load())
@@ -371,10 +374,12 @@ export class NotionCooldown {
   private async load(): Promise<void> {
     if (!this.store) return
     try {
-      this.store.onChange((until) => this.adopt(until))
+      if (!this.following) this.store.onChange((until) => this.adopt(until))
+      this.following = true
       this.adopt(await this.store.load())
     } catch (err) {
       console.error('Could not load the wait after Notion turned requests away', err)
+      this.loading = undefined
     }
   }
 
@@ -398,9 +403,14 @@ export class NotionCooldown {
     this.save()
   }
 
-  /** Ends the wait in this side panel and in the store: requests may be sent again at once. For tests. */
+  /**
+   * For tests, as a browser started anew: ends the wait in this side panel and in the store, and
+   * has the next `ready` load the store, and follow it, again.
+   */
   clear(): void {
     this.until = 0
+    this.loading = undefined
+    this.following = false
     this.save()
   }
 
@@ -1000,9 +1010,12 @@ export class NotionClient {
     if (left) throw new NotionError('rate_limited', NOT_SENT, { stopsQuestion: coolingStop(left) })
   }
 
-  /** The wait left after Notion turned this client's request away; without a cooldown, the usual one. */
+  /**
+   * The wait left after Notion turned this client's request away. Without a cooldown, or once it
+   * is over while this client still refuses to send, the usual one.
+   */
   private waitLeft(): number {
-    return this.cooldown ? this.cooldown.left() : COOLDOWN_MS
+    return this.cooldown?.left() || COOLDOWN_MS
   }
 }
 

@@ -648,6 +648,10 @@ describe('when Notion turns requests away', () => {
     now += 90_000
     const last = await notionError(client.getRecords([{ table: 'block', id: PAGE }]))
     expect(last.stopsQuestion).toBe(limitedStop(30_000))
+    // Once the wait is over, the client still sends nothing, and names the usual wait, not none.
+    now += 30_000
+    const over = await notionError(client.getRecords([{ table: 'block', id: PAGE }]))
+    expect(over.stopsQuestion).toBe(LIMITED_STOP)
     expect(tab.sent).toHaveLength(1)
   })
 
@@ -725,6 +729,45 @@ describe('when Notion turns requests away', () => {
       console.error = logged
     }
     expect(errors).toHaveLength(2)
+  })
+
+  it('loads the kept wait on a later try when the first load failed', async () => {
+    const now = Date.parse('2026-11-10T08:00:00Z')
+    let loads = 0
+    let listeners = 0
+    const flaky: CooldownStore = {
+      load: async () => {
+        if (loads++ === 0) throw new Error('storage is busy')
+        return now + 120_000
+      },
+      save: async () => {},
+      onChange: () => void listeners++,
+    }
+    const logged = console.error
+    console.error = () => {}
+    try {
+      const cooldown = new NotionCooldown(() => now, flaky)
+      await cooldown.ready()
+      expect(cooldown.left()).toBe(0)
+      await cooldown.ready()
+      expect(cooldown.left()).toBe(120_000)
+      // Loaded: not loaded again, and the store's changes are followed once.
+      await cooldown.ready()
+      expect([loads, listeners]).toEqual([2, 1])
+    } finally {
+      console.error = logged
+    }
+  })
+
+  it('reads the wait kept in a new browser, not the one before it', async () => {
+    new FakeNotionTab(PAGE_URL).install()
+    await activeNotionTab()
+    const tab = new FakeNotionTab(PAGE_URL).install()
+    tab.workspace = new FakeWorkspace([page], SPACE)
+    await tab.storage.local.set({ [COOLDOWN_KEY]: Date.now() + 120_000 })
+    const err = await notionError((await activeNotionTab()).client.loadPage(PAGE))
+    expect([err.code, err.stopsQuestion]).toEqual(['rate_limited', coolingStop(120_000)])
+    expect(tab.sent).toHaveLength(0)
   })
 
   it('a side panel opened during the wait loads it before its first request', async () => {
