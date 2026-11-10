@@ -4,7 +4,6 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   BUSY_UNKNOWN,
   COOLDOWN_MAX_MS,
-  COOLDOWN_MS,
   LIMITED_STOP,
   NotionClient,
   NotionCooldown,
@@ -557,6 +556,25 @@ describe('when Notion turns requests away', () => {
     }
   })
 
+  it('starts no wait when Notion does not say how long: the next client sends', async () => {
+    for (const retryAfter of [undefined, 'soon', '0']) {
+      const tab = new FakeNotionTab(PAGE_URL).limit('loadPageChunk', 1, 429, retryAfter).install()
+      tab.workspace = new FakeWorkspace([page], SPACE)
+      const { client } = await activeNotionTab()
+      const err = await notionError(client.loadPage(PAGE))
+      expect([err.code, err.stopsQuestion]).toEqual(['rate_limited', LIMITED_STOP])
+      // The client that was turned away still sends nothing more.
+      const later = await notionError(client.getRecords([{ table: 'block', id: PAGE }]))
+      expect([later.message, later.stopsQuestion]).toEqual([NOT_SENT, LIMITED_STOP])
+      expect(tab.sent).toHaveLength(1)
+      // Nothing is kept for the browser's side panels either.
+      expect(tab.storage.values[COOLDOWN_KEY] ?? 0).toBe(0)
+      // Another client, as the next question would make, sends at once.
+      await (await activeNotionTab()).client.loadPage(PAGE)
+      expect(tab.sent).toHaveLength(2)
+    }
+  })
+
   it('keeps every client from sending until the wait Notion asked for is over', async () => {
     let now = Date.now()
     const tab = new FakeNotionTab(PAGE_URL).limit('loadPageChunk', 1, 429, '120').install()
@@ -579,28 +597,28 @@ describe('when Notion turns requests away', () => {
     expect(tab.sent).toHaveLength(2)
   })
 
-  it('waits as long as Retry-After asks, within limits, and a minute when it says nothing usable', () => {
+  it('waits as long as Retry-After asks, up to the longest wait, and not at all when it says nothing usable', () => {
     const now = Date.parse('2026-11-10T08:00:00Z')
-    // Never shorter than COOLDOWN_MS: the user was told to wait.
+    // 0 is no wait: only what Notion asks for in a way that is understood starts one.
     const waits: [string | undefined, number][] = [
       ['120', 120_000],
-      ['5', COOLDOWN_MS],
-      ['0', COOLDOWN_MS],
+      ['5', 5000],
+      ['0', 0],
       ['Tue, 10 Nov 2026 08:02:00 GMT', 120_000],
-      ['Tue, 10 Nov 2026 07:00:00 GMT', COOLDOWN_MS],
-      ['-1', COOLDOWN_MS],
-      ['1.5', COOLDOWN_MS],
+      ['Tue, 10 Nov 2026 07:00:00 GMT', 0],
+      ['-1', 0],
+      ['1.5', 0],
       ['99999', COOLDOWN_MAX_MS],
       ['9'.repeat(400), COOLDOWN_MAX_MS],
-      [undefined, COOLDOWN_MS],
-      ['soon', COOLDOWN_MS],
+      [undefined, 0],
+      ['soon', 0],
       // Not seconds or an HTTP date, though JavaScript's own date parsing would make a date of each.
-      ['Dec 2026', COOLDOWN_MS],
-      ['retry 2040', COOLDOWN_MS],
-      ['2026-11-10T08:05:00Z', COOLDOWN_MS],
-      ['Tue, 10 Nov 2026 08:05:00 PST', COOLDOWN_MS],
-      ['Tue, 10 Nov 2026 08:05:00 +0000', COOLDOWN_MS],
-      ['120, 120', COOLDOWN_MS],
+      ['Dec 2026', 0],
+      ['retry 2040', 0],
+      ['2026-11-10T08:05:00Z', 0],
+      ['Tue, 10 Nov 2026 08:05:00 PST', 0],
+      ['Tue, 10 Nov 2026 08:05:00 +0000', 0],
+      ['120, 120', 0],
     ]
     for (const [retryAfter, ms] of waits) {
       const cooldown = new NotionCooldown(() => now)
@@ -616,12 +634,11 @@ describe('when Notion turns requests away', () => {
 
   it('words a wait the same way in both messages, rounded up', () => {
     const texts: [number, string][] = [
-      [0, '1 second'],
       [1, '1 second'],
       [30_000, '30 seconds'],
       [59_000, '59 seconds'],
       [59_001, 'a minute'],
-      [COOLDOWN_MS, 'a minute'],
+      [60_000, 'a minute'],
       [60_001, '2 minutes'],
       [75_000, '2 minutes'],
       [5 * 60_000, '5 minutes'],
@@ -632,7 +649,9 @@ describe('when Notion turns requests away', () => {
       expect(limitedStop(ms)).toContain(`Wait ${text}, then ask again.`)
       expect(coolingStop(ms)).toContain(`Ask again in ${text}.`)
     }
-    expect(LIMITED_STOP).toBe(limitedStop(COOLDOWN_MS))
+    expect(waitText(0)).toBe('1 second')
+    // Without a wait Notion asked for, a minute is the advice.
+    expect([LIMITED_STOP, limitedStop(0)]).toEqual([limitedStop(60_000), limitedStop(60_000)])
   })
 
   it('tells a request the same client makes after a refusal the wait that is left, not a minute', async () => {
@@ -768,8 +787,8 @@ describe('when Notion turns requests away', () => {
     const [first, second] = [await openPanel(), await openPanel()]
     // Both turned away before either hears of the other: the shorter wait is saved last.
     first.start('600')
-    second.start()
-    expect(kept).toBe(now + COOLDOWN_MS)
+    second.start('60')
+    expect(kept).toBe(now + 60_000)
     while (events.length) for (const until of events.splice(0)) for (const listener of listeners) listener(until)
     expect([first.left(), second.left()]).toEqual([COOLDOWN_MAX_MS, COOLDOWN_MAX_MS])
     // A panel opened afterwards waits as long as Notion asked.
