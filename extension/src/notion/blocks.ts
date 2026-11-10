@@ -154,6 +154,13 @@ export function parseMarkdown(markdown: string): NewBlock[] {
       // two spaces after the `>`; written by hand, a line that starts a list, heading, or other
       // block starts them too (text that only looks like one starts with a backslash).
       const own = [line.replace(/^>\s?/, '')]
+      // read_page draws blocks nested in a quote that way; on its own, such a line isn't a quote.
+      if (/^\s{2}/.test(own[0])) {
+        throw new MarkdownError(
+          '`>   ` starts a block nested in a quote or callout, as read_page draws it. To write that block by ' +
+            'its own reference, leave out the `>` and the indentation after it.',
+        )
+      }
       const nested: string[] = []
       const callout = /^\[!([^\]]+)\]\s?(.*)$/.exec(own[0])
       if (callout && BLOCK_START.test(callout[2])) {
@@ -282,7 +289,7 @@ export interface DateValue {
 }
 
 /** A date as read_page shows a date mention: `@2026-11-10`, with a time and an end if it has them. */
-const DATE = /@(\d{4}-\d{2}-\d{2})(?: (\d{2}:\d{2}))?(?: → (\d{4}-\d{2}-\d{2})(?: (\d{2}:\d{2}))?)?/
+const DATE = /(?<![\w@])@(\d{4}-\d{2}-\d{2})(?: (\d{2}:\d{2}))?(?: → (\d{4}-\d{2}-\d{2})(?: (\d{2}:\d{2}))?)?/
 
 /** Text colors and backgrounds, as Notion names them (`red`, `blue_background`, …). */
 export const COLOR = /^[a-z]+(?:_background)?$/
@@ -297,8 +304,9 @@ export function inline(text: string, marks: Mark[] = []): RichText {
     { re: /\\([\\`*_~[\]^|#><$@])/, run: (m) => [marks.length ? [m[1], marks] : [m[1]]] },
     {
       // `$x^2$` is an inline equation, its LaTeX as it is. As in Pandoc, `$` opens one only before
-      // a non-space and closes it only after one, and not before a digit, so prices stay text.
-      re: /\$(?=\S)((?:\\.|[^$\\\n])+?)(?<=\S)\$(?!\d)/,
+      // a non-space and closes it only after one, and not before a letter or digit, so prices and
+      // `$HOME/$USER` stay text.
+      re: /\$(?=\S)((?:\\.|[^$\\\n])+?)(?<=\S)\$(?!\w)/,
       run: (m) => [['⁍', [...marks, ['e', m[1]]]]],
     },
     {
@@ -322,7 +330,8 @@ export function inline(text: string, marks: Mark[] = []): RichText {
     },
     {
       // A colored run, as read_page shows one.
-      re: /<span color="([a-z_]+)">([\s\S]+?)<\/span>/,
+      // An escaped `\</span>` is text inside it.
+      re: /<span color="([a-z_]+)">([\s\S]+?)(?<!(?:^|[^\\])(?:\\\\)*\\)<\/span>/,
       run: (m) => (COLOR.test(m[1]) ? inline(m[2], [...marks, ['h', m[1]]]) : [[m[0], marks]]),
     },
     {

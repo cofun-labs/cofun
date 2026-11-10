@@ -412,7 +412,7 @@ describe('mention details', () => {
     open(ws)
     expect(await read()).toBe('Call @[Kim Lee] ^00000001')
     expect(await edit([{ action: 'replace', block: '^00000001', markdown: 'Call @[Kim Lee] now' }])).toContain(
-      "people it can't name, and the like) is gone.",
+      "people it can't name, and the like) is now as it was shown.",
     )
     expect(title(ws, id(1))).toEqual([['Call '], ['‣', [['u', KIM]]], [' now']])
   })
@@ -433,7 +433,7 @@ describe('mention details', () => {
     open(ws)
     expect(await read()).toBe('Call @[Kim Lee] ^00000001')
     expect(await edit([{ action: 'replace', block: '^00000001', markdown: 'Call @[Kim Lee] now' }])).toContain(
-      "people it can't name, and the like) is gone.",
+      "people it can't name, and the like) is now as it was shown.",
     )
   })
 

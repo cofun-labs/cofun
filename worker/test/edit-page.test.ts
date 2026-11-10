@@ -502,7 +502,7 @@ describe('edit_page safety', () => {
     // Changing the text says what was lost. The block changed, so it is read again first.
     await read()
     expect(await edit([{ action: 'replace', block: '^00000001', markdown: '- [x] Call later' }])).toContain(
-      "people it can't name, and the like) is gone.",
+      "people it can't name, and the like) is now as it was shown.",
     )
   })
 
@@ -729,7 +729,7 @@ describe('edit_page safety, round 4', () => {
     open(ws)
     await read()
     expect(await edit([{ action: 'replace', block: '^00000001', markdown: '- [ ] Call @Fixture User' }])).toContain(
-      "people it can't name, and the like) is gone.",
+      "people it can't name, and the like) is now as it was shown.",
     )
   })
 
@@ -1118,7 +1118,7 @@ describe('round 16', () => {
     await read()
     expect(
       editPage.preview!({ page: hex(PAGE), edits: [{ action: 'replace', block: '^00000001', markdown: 'Ask them' }] }),
-    ).toContain("If its text changes, formatting read_page doesn't show, such as comments on it, is lost.")
+    ).toContain("If its text changes, what read_page didn't show exactly, such as comments on it, is lost.")
   })
 
   it('refuses to empty a column', async () => {
@@ -1459,7 +1459,7 @@ describe('more inline content written by edit_page', () => {
     const ws = workspace([1], [block(1, 'text', 'Pay $5 or $10 by @2026-01-01, $x$')])
     open(ws)
     const shown = body(await read())
-    expect(shown).toBe('Pay \\$5 or \\$10 by \\@2026-01-01, \\$x$ ^00000001')
+    expect(shown).toBe('Pay \\$5 or \\$10 by \\@2026-01-01, \\$x\\$ ^00000001')
     await edit([{ action: 'replace', block: '^00000001', markdown: shown.replace('Pay', 'Send') }])
     expect(ws.records.get(id(1))!.properties).toEqual({ title: [['Send $5 or $10 by @2026-01-01, $x$']] })
     // Written by hand, prices are text too.
@@ -1652,5 +1652,92 @@ describe('review of #148', () => {
     expect(inline('@2026-13-45 and @2026-02-29 and @2026-11-12 25:00')).toEqual([
       ['@2026-13-45 and @2026-02-29 and @2026-11-12 25:00'],
     ])
+  })
+})
+
+describe('second review of #148', () => {
+  it('refuses a line drawn inside a callout when it is written on its own, instead of making it a quote', async () => {
+    const ws = workspace(
+      [1],
+      [
+        block(1, 'callout', 'Box', { content: [id(2)], format: { page_icon: '💡' } }),
+        block(2, 'bulleted_list', 'Item', {}, id(1)),
+      ],
+    )
+    open(ws)
+    await read()
+    await expect(edit([{ action: 'replace', block: '^00000002', markdown: '>   - Item changed' }])).rejects.toThrow(
+      'leave out the `>` and the indentation after it',
+    )
+    await edit([{ action: 'replace', block: '^00000002', markdown: '- Item changed' }])
+    expect(ws.records.get(id(2))).toMatchObject({ type: 'bulleted_list', properties: { title: [['Item changed']] } })
+  })
+
+  it('says so when text read_page showed doesn’t parse back to what is stored', async () => {
+    // A date mention followed by a time written as text reads back as a date with a time.
+    const title = [['‣', [['d', { type: 'date', start_date: '2026-11-12' }]]], [' 10:00 meeting']]
+    const ws = workspace([1], [block(1, 'text', undefined, { properties: { title } })])
+    open(ws)
+    const shown = body(await read())
+    expect(shown).toBe('@2026-11-12 10:00 meeting ^00000001')
+    const edits = [{ action: 'replace', block: '^00000001', markdown: '@2026-11-12 10:00 call' }]
+    expect(editPage.preview!({ page: hex(PAGE), edits })).toContain("what read_page didn't show exactly")
+    expect(await edit(edits)).toContain("In its old text, what read_page didn't show exactly")
+  })
+
+  it('round-trips a dollar sign before inline code, and </span> inside colored text', async () => {
+    const ws = workspace(
+      [1, 2],
+      [
+        block(1, 'text', undefined, { properties: { title: [['cost $'], ['x', [['c']]], [' and $y']] } }),
+        block(2, 'text', undefined, { properties: { title: [['a</span>b', [['h', 'red']]]] } }),
+      ],
+    )
+    open(ws)
+    const lines = body(await read()).split('\n')
+    expect(lines).toEqual(['cost \\$`x` and \\$y ^00000001', '<span color="red">a\\</span>b</span> ^00000002'])
+    const result = await edit([
+      { action: 'replace', block: '^00000001', markdown: lines[0].replace('cost', 'price').replace(/ \^\w+$/, '') },
+      { action: 'replace', block: '^00000002', markdown: `${lines[1].replace(/ \^\w+$/, '')}!` },
+    ])
+    expect(result).not.toContain("didn't show exactly")
+    expect(ws.records.get(id(1))!.properties).toEqual({ title: [['price $'], ['x', [['c']]], [' and $y']] })
+    expect(ws.records.get(id(2))!.properties).toEqual({ title: [['a</span>b', [['h', 'red']]], ['!']] })
+  })
+
+  it('keeps shell variables and dates inside words as text', () => {
+    expect(inline('$HOME/$USER and me@2026-01-01.example')).toEqual([['$HOME/$USER and me@2026-01-01.example']])
+  })
+
+  it('keeps a backslash in a link in a table cell when the table is rewritten', async () => {
+    const href = 'https://example.com/a\\b|c'
+    const ws = workspace(
+      [1],
+      [
+        block(1, 'table', undefined, { content: [id(2), id(3)], format: { table_block_column_order: ['a', 'b'] } }),
+        block(2, 'table_row', undefined, { properties: { a: [['Link']], b: [['N']] } }, id(1)),
+        block(3, 'table_row', undefined, { properties: { a: [['docs', [['a', href]]]], b: [['1']] } }, id(1)),
+      ],
+    )
+    open(ws)
+    const shown = body(await read())
+    await edit([{ action: 'replace', block: '^00000001', markdown: shown.replace('| 1 |', '| 2 |') }])
+    expect(ws.records.get(id(3))!.properties).toEqual({ a: [['docs', [['a', href]]]], b: [['2']] })
+    expect(parseMarkdown(withoutRefs(shown).replace(/\n\^\w+$/, ''))[0].rows![1][0]).toEqual([['docs', [['a', href]]]])
+  })
+
+  it('says so when a table replaced by other content had cells with formatting read_page doesn’t show', async () => {
+    const ws = workspace(
+      [1],
+      [
+        block(1, 'table', undefined, { content: [id(2)], format: { table_block_column_order: ['a'] } }),
+        block(2, 'table_row', undefined, { properties: { a: [['A', [['m', 'thread']]]] } }, id(1)),
+      ],
+    )
+    open(ws)
+    await read()
+    expect(await edit([{ action: 'replace', block: '^00000001', markdown: '- A' }])).toContain(
+      "In its old cells, what read_page didn't show exactly",
+    )
   })
 })

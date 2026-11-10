@@ -513,6 +513,8 @@ class Context {
     // Names and link targets aren't Markdown-escaped; in a table their pipes (and so backslashes,
     // which would undo a pipe's escape) still must be.
     const pipes = (raw: string) => (table ? tableEscape(raw) : raw)
+    // A link target is read as it is, a table cell's `\|` aside, so only its pipes are escaped.
+    const target = (href: string) => (table ? href.split('|').join('\\|') : href)
     const code = marks.some(([m]) => m === 'c')
     // Code and equations keep their text as it is; in a table only their pipes are escaped, as
     // GFM reads `\|` there.
@@ -529,7 +531,7 @@ class Context {
           // A link mention (a web page shown as a preview) is a link to that page.
           const { href, title } = (arg ?? {}) as { href?: unknown; title?: unknown }
           if (typeof href !== 'string' || !href) break
-          return `[${escapeMarkdown(typeof title === 'string' && title ? title : href)}](${pipes(href)})`
+          return `[${escapeMarkdown(typeof title === 'string' && title ? title : href)}](${target(href)})`
         }
         case 'u':
           // Its bold, italic, and strikethrough still apply, as for text (a link can't: `[@[Name]](url)`
@@ -551,7 +553,7 @@ class Context {
           const page = href.startsWith('/')
             ? /[0-9a-f]{32}$/i.exec(path.split('?')[0].replace(/-/g, ''))?.[0]
             : undefined
-          link = page ? `/${page.toLowerCase()}${hash ? `#${hash}` : ''}` : pipes(href)
+          link = page ? `/${page.toLowerCase()}${hash ? `#${hash}` : ''}` : target(href)
           break
         }
       }
@@ -734,5 +736,5 @@ export function escapeMarkdown(text: string): string {
   return text
     .replace(/[\\`*~[\]^|<]/g, '\\$&')
     .replace(/(?<!\w)_|_(?!\w)/g, '\\_')
-    .replace(/\$(?=\S)|@(?=\d{4}-\d{2}-\d{2})/g, '\\$&')
+    .replace(/\$(?!\s)|@(?=\d{4}-\d{2}-\d{2})/g, '\\$&')
 }

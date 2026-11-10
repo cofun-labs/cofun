@@ -69,7 +69,11 @@ export function pageRead(
     lines: new Map([...md.lines].filter(([id]) => refs.has(id))),
     nested,
     lossy: new Set(
-      [...refs.keys()].filter((id) => hasUnwritableMarks(blocks[id]?.properties?.title, loaded.recordMap.notion_user)),
+      [...refs.keys()].filter(
+        (id) =>
+          TEXT_TYPES.has(blocks[id]?.type) &&
+          lossyText(blocks[id].properties?.title, md.lines.get(id), loaded.recordMap.notion_user),
+      ),
     ),
   }
 }
@@ -263,7 +267,8 @@ const WRITABLE_MARKS = new Set(['b', 'i', 's', 'c', 'a', 'p', 'd', 'e'])
 const ALONE_MARKS = new Set(['p', 'lm', 'd', 'e'])
 
 /** What becomes of formatting edit_page can't write back when text is rewritten. */
-const LOST = "formatting read_page doesn't show (comments, underlines, people it can't name, and the like) is gone."
+const LOST =
+  "what read_page didn't show exactly (comments, underlines, people it can't name, and the like) is now as it was shown."
 
 /** Blocks that show what is nested in them; a heading does only as a toggle heading. */
 const HOLDERS = new Set(['text', 'bulleted_list', 'numbered_list', 'to_do', 'toggle', 'quote', 'callout'])
@@ -394,6 +399,15 @@ export function planEdit(
     const children = list(parent)
     if (children.includes(id)) children.splice(children.indexOf(id), 1)
     changed.add(parent.id)
+  }
+
+  /** Whether rewriting `block` loses something read_page didn't show exactly. */
+  const lossy = (block: Block): boolean => {
+    const users = loaded.recordMap.notion_user
+    if (block.type !== 'table') return lossyText(block.properties?.title, read.lines.get(block.id), users)
+    return aliveChildren(block).some((r) =>
+      Object.values(blocks[r]?.properties ?? {}).some((v) => hasUnwritableMarks(v, users)),
+    )
   }
 
   /**
@@ -595,7 +609,7 @@ export function planEdit(
         continue
       }
       changed.add(target.id)
-      const lost = values.title && hasUnwritableMarks(target.properties?.title, loaded.recordMap.notion_user)
+      const lost = values.title && lossy(target)
       summary.push(`Replaced the text of ${ref(e.target)}.` + (lost ? ` In its old text, ${LOST}` : ''))
       continue
     }
@@ -614,7 +628,7 @@ export function planEdit(
     deleted.add(e.target)
     summary.push(
       `Replaced ${ref(e.target)} with ${ids.length} new block${ids.length === 1 ? '' : 's'}.` +
-        (hasUnwritableMarks(target.properties?.title, loaded.recordMap.notion_user) ? ` In its old text, ${LOST}` : ''),
+        (lossy(target) ? ` In its old ${target.type === 'table' ? 'cells' : 'text'}, ${LOST}` : ''),
     )
   }
 
@@ -699,6 +713,42 @@ function hasUnwritableMarks(value: unknown, users: Record<string, NotionRecord> 
   )
 }
 
+/**
+ * Whether rewriting text loses something: formatting edit_page can't write, or text read_page
+ * showed in a way that doesn't parse back to what is stored (a date mention followed by a time
+ * written as text, say).
+ */
+function lossyText(stored: unknown, shown: string | undefined, users: Record<string, NotionRecord> = {}): boolean {
+  if (hasUnwritableMarks(stored, users)) return true
+  if (!Array.isArray(stored) || !stored.length) return false
+  let title: RichText | undefined
+  try {
+    title = shown === undefined ? undefined : parseMarkdown(shown)[0]?.title
+  } catch (err) {
+    if (!(err instanceof MarkdownError)) throw err
+  }
+  if (!title) return true
+  const ids = new Map(
+    Object.entries(users).flatMap(([id, u]) => (typeof u.name === 'string' && u.name ? [[u.name, id] as const] : [])),
+  )
+  return canonical(keepDates(withPeople(title, ids, { keep: true }), [stored])) !== canonical(stored as RichText)
+}
+
+/** Rich text in one form: marks sorted, runs with the same marks merged (mentions and equations kept apart). */
+function canonical(text: RichText): string {
+  const out: [string, string][] = []
+  for (const run of text) {
+    if (!Array.isArray(run) || typeof run[0] !== 'string' || !run[0]) continue
+    const marks = (run[1] ?? []).map((m) => JSON.stringify(m)).sort()
+    const key = JSON.stringify(marks)
+    const alone = (run[1] ?? []).some((m) => ['p', 'u', 'd', 'e'].includes(m[0]))
+    const last = out.at(-1)
+    if (last && last[1] === key && !alone) last[0] += run[0]
+    else out.push([run[0], key])
+  }
+  return JSON.stringify(out)
+}
+
 /** A block's property values as Notion stores them, for a new block. */
 function properties(nb: NewBlock): Record<string, unknown> {
   return {
@@ -751,7 +801,7 @@ export function previewEdits(raw: unknown, read: PageRead | undefined, page: str
         return (
           `Replace ${shown(e.block)} with:\n${body(e.markdown)}` +
           (lossy
-            ? "\n    (If its text changes, formatting read_page doesn't show, such as comments on it, is lost.)"
+            ? "\n    (If its text changes, what read_page didn't show exactly, such as comments on it, is lost.)"
             : '')
         )
       }
