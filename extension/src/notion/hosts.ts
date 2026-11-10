@@ -16,9 +16,8 @@ export function isNotion(url?: string): boolean {
  */
 export function pageIdFromUrl(url: string): string | undefined {
   try {
-    const u = new URL(url)
-    const hex = trailingId(u.searchParams.get('p') ?? '') ?? trailingId(u.pathname.split('/').at(-1) ?? '')
-    return hex && dashed(hex)
+    const hex = trailingId(new URL(url).searchParams.get('p') ?? '')
+    return hex ? dashed(hex) : pathPageIdFromUrl(url)
   } catch {
     return undefined
   }

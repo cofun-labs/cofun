@@ -383,18 +383,23 @@ class Context {
   }
 
   /** Rich text as Markdown, with mentions resolved to names. */
-  /** In a table, every `|` is escaped, code and equations too, so it can't split a cell. */
+  /**
+   * In a table, every `|` is escaped (in code, equations, mentioned names, and link targets too), so
+   * it can't split a cell.
+   */
   rich(value: unknown, { table = false } = {}): string {
     return runs(value)
       .map(([text, marks = []]) => {
-        const out = this.run(text, marks)
+        const out = this.run(text, marks, table)
         const raw = marks.some(([m]) => m === 'c' || m === 'e')
         return table && raw ? out.split('|').join('\\|') : out
       })
       .join('')
   }
 
-  private run(text: string, marks: [string, unknown?][]): string {
+  private run(text: string, marks: [string, unknown?][], table = false): string {
+    // Names and link targets aren't Markdown-escaped; in a table their pipes still must be.
+    const pipes = (raw: string) => (table ? raw.replace(/\|/g, '\\|') : raw)
     const code = marks.some(([m]) => m === 'c')
     // Characters Markdown would read as formatting stay literal behind a backslash.
     let out = code ? text : escapeMarkdown(text)
@@ -402,9 +407,9 @@ class Context {
     for (const [mark, arg] of marks) {
       switch (mark) {
         case 'p':
-          return `[${this.pageTitle(String(arg))}](${hexId(String(arg))})`
+          return `[${pipes(this.pageTitle(String(arg)))}](${hexId(String(arg))})`
         case 'u':
-          return `@${this.userName(String(arg))}`
+          return `@${pipes(this.userName(String(arg)))}`
         case 'd':
           return `@${formatDate(arg)}`
         case 'e':
@@ -417,7 +422,7 @@ class Context {
           const page = href.startsWith('/')
             ? /[0-9a-f]{32}$/i.exec(path.split('?')[0].replace(/-/g, ''))?.[0]
             : undefined
-          link = page ? `/${page.toLowerCase()}${hash ? `#${hash}` : ''}` : href
+          link = page ? `/${page.toLowerCase()}${hash ? `#${hash}` : ''}` : pipes(href)
           break
         }
       }

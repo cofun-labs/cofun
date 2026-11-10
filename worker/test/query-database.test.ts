@@ -177,6 +177,8 @@ describe('UC-NOTION-006 read a database', () => {
     expect(result).toContain(
       `Only the first ${QUERY_LOAD} rows of the database by Points (descending) were read; filters apply to those.`,
     )
+    // The rows read stay in Notion's order (here, as the fake lists them), which chose them.
+    expect(tableRows(result).map((l) => l.split(' | ')[4])).toEqual(TASKS.map((t) => t.points))
     // Without a sort, Notion's own order.
     const plain = database()
     await query()
@@ -359,6 +361,24 @@ describe('query_database options, numbers, and code', () => {
     expect(line).toContain(' | `a\\\\|b` | ')
     const cells = (l: string) => l.split(/(?<!\\)\|/).length
     expect(cells(line)).toBe(cells(result.split('\n').find((l) => l.startsWith('| Task |'))!))
+  })
+
+  it('keeps a mentioned page or a link with a pipe in one cell', async () => {
+    // The row's notes mention the row titled "Fix login | Safari", and link to a URL with a pipe.
+    const notes = [[['‣', [['p', row(2)]]], [' and '], ['spec', [['a', 'https://example.com/a|b']]]]]
+    database(tagged([], notes), false, TAGGED)
+    const result = await query({ filter: [{ property: 'Notes', op: 'contains', value: 'safari' }] })
+    const [line] = tableRows(result)
+    expect(line).toContain(`[Fix login \\| Safari](${hex(row(2))}) and [spec](https://example.com/a\\|b)`)
+    const cells = (l: string) => l.split(/(?<!\\)\|/).length
+    expect(cells(line)).toBe(cells(result.split('\n').find((l) => l.startsWith('| Task |'))!))
+  })
+
+  it('needs at least one option in a multi-select value', async () => {
+    database(tagged([]), false, TAGGED)
+    await expect(query({ filter: [{ property: 'Tags', op: 'contains', value: ' , ' }] })).rejects.toThrow(
+      'Filter 1 needs `value`.',
+    )
   })
 
   it('escapes a pipe in a property name in the table header', async () => {

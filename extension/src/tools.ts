@@ -354,7 +354,9 @@ export const queryDatabase: ToolSpec = {
       .filter((r): r is Block => !!r && r.alive !== false)
       .map((r) => ({ id: r.id, block: r, values: rowValues(recordMap, r, schema) }))
     rows = rows.filter((r) => filters.every((f) => matches(r.values, f)))
-    if (sort) {
+    // When Notion had more rows than one read loads, the rows read are the first in Notion's own
+    // order (a select's by its options), so they stay in it.
+    if (sort && !hasMore) {
       // Decided once for the column: numbers by value, anything else as text.
       const numbers = numeric(rows, sort.property)
       rows.sort((a, b) =>
@@ -424,7 +426,11 @@ function parseFilters(raw: unknown, schema: Schema): Filter[] {
     if (!FILTER_OPS.includes(op as FilterOp))
       throw new Error(`${where}: \`op\` must be one of ${FILTER_OPS.join(', ')}.`)
     const needsValue = op !== 'is_empty' && op !== 'is_not_empty'
-    if (needsValue && (typeof value !== 'string' || !value.trim())) throw new Error(`${where} needs \`value\`.`)
+    // A multi-select value is a list of options; a list of only commas names none.
+    const named = def.type === 'multi_select' ? String(value ?? '').replace(/,/g, '') : value
+    if (needsValue && (typeof value !== 'string' || typeof named !== 'string' || !named.trim())) {
+      throw new Error(`${where} needs \`value\`.`)
+    }
     return {
       property: def.name ?? key,
       type: def.type ?? 'text',
