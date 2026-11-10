@@ -26,7 +26,7 @@ import {
   planNewPage,
 } from './notion/edit'
 import { MarkdownError, inline, parseMarkdown, type NewBlock } from './notion/blocks'
-import { loadThreads, quote, threadCount, threadText } from './notion/comments'
+import { loadThreads, quote, threadCount, threadLines } from './notion/comments'
 import {
   PropertyError,
   oneLine,
@@ -1358,18 +1358,28 @@ export const readComments: ToolSpec = {
     const pageHex = hexId(loaded.page.id)
     const header = `Comments on the page ${quote(md.title)} ^${pageHex}`
     if (!threads.length) return `${header}: none.`
-    // Threads stay whole: a part holds as many as fit, at least one.
-    const texts = threads.map((t, n) => threadText(t, n + 1, md, loaded.page.id))
-    const parts: string[][] = [[]]
+    // A part holds as many comments as fit, at least one. A thread that goes on in the next part
+    // starts it again with its heading, marked as continued.
+    const parts: string[][] = []
+    let lines: string[] = []
     let size = 0
-    for (const text of texts) {
-      if (parts.at(-1)!.length && size + text.length > PART_CHARS) {
-        parts.push([])
-        size = 0
+    const chars = (list: string[]) => list.reduce((n, l) => n + l.length + 1, 0)
+    for (const [n, thread] of threads.entries()) {
+      const { head, comments } = threadLines(thread, n + 1, md, loaded.page.id)
+      for (const [i, comment] of comments.entries()) {
+        const entry = (fresh: boolean) => [...(i === 0 ? head(false) : fresh ? head(true) : []), comment]
+        let add = [...(i === 0 && lines.length ? [''] : []), ...entry(false)]
+        if (lines.length && size + chars(add) > PART_CHARS) {
+          parts.push(lines)
+          lines = []
+          size = 0
+          add = entry(true)
+        }
+        lines.push(...add)
+        size += chars(add)
       }
-      parts.at(-1)!.push(text)
-      size += text.length + 2
     }
+    parts.push(lines)
     if (part > parts.length) {
       throw new Error(`These comments have ${plural(parts.length, 'part')}; there is no part ${part}.`)
     }
@@ -1382,7 +1392,7 @@ export const readComments: ToolSpec = {
       ...(loaded.complete ? [] : ['The page is too long to load in full; only threads on its beginning are shown.']),
       'Comment text and author names are quoted exactly as written.',
       '',
-      parts[part - 1].join('\n\n'),
+      ...parts[part - 1],
     ].join('\n')
   },
 }
@@ -1456,7 +1466,9 @@ export const addComment: ToolSpec = {
             "Read the page with read_page for its blocks' references.",
         )
       }
-      if (PAGE_TYPES.has(String(blocks[found]?.type)))
+      // Its type is unknown, so it might be a child page, whose comments are its own.
+      if (!blocks[found]) throw new EditError(`^${ref} could not be loaded, so it can't be commented on.`)
+      if (PAGE_TYPES.has(String(blocks[found].type)))
         throw new EditError(`^${ref} is a page of its own: comment on it by giving it as \`page\`.`)
       target = found
     }

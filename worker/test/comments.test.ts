@@ -199,6 +199,17 @@ describe('UC-NOTION-009 read and add comments', () => {
     )
     expect(ws.transactions).toEqual([])
   })
+
+  it('refuses a block of the page that could not be loaded, as it might be a page', async () => {
+    const ws = workspace()
+    // Listed in the page's content, but its record never comes back.
+    ws.edit(PAGE, { content: [id(1), id(2), id(3), id(9)] })
+    open(ws)
+    expect((await failure(add({ block: '^00000009', text: 'Hi' }))).message).toBe(
+      "^00000009 could not be loaded, so it can't be commented on.",
+    )
+    expect(ws.transactions).toEqual([])
+  })
 })
 
 describe('read_comments', () => {
@@ -240,6 +251,19 @@ describe('read_comments', () => {
     expect(tables).toEqual(['discussion', 'comment', 'notion_user'])
   })
 
+  it('splits a long thread between comments, starting the next part with its heading', async () => {
+    const ws = workspace([{ on: id(2), n: 100 }])
+    for (let n = 0; n < 20; n++) comment(ws, 100, 300 + n, [[`${n} `.padEnd(1500, 'x')]])
+    open(ws)
+    const parts = [await read(), await read({ part: 2 }), await read({ part: 3 })]
+    expect(parts[0]).toContain('Part 1 of 3. Read part 2 for more.')
+    for (const text of parts) expect(text.length).toBeLessThan(PART_CHARS + 1000)
+    expect(parts[1]).toContain('\n\n1. On the block ^00000002 "The plan", open, continued:\n   - "Ann"')
+    // Every comment once, in order.
+    const shown = parts.flatMap((t) => [...t.matchAll(/UTC: "(\d+) /g)].map((m) => Number(m[1])))
+    expect(shown).toEqual(Array.from({ length: 20 }, (_, n) => n))
+  })
+
   it('splits many comments into parts, keeping threads whole', async () => {
     const ws = workspace(Array.from({ length: 12 }, (_, n) => ({ on: PAGE, n: 100 + n })))
     for (let n = 0; n < 12; n++) comment(ws, 100 + n, 300 + n, [['x'.repeat(1500)]])
@@ -274,6 +298,17 @@ describe('read_page and comments', () => {
     comment(ws, 101, 201, [['Two']])
     open(ws)
     expect(await readPage.run({})).toContain('This page has 2 comment threads: read them with read_comments.')
+  })
+
+  it('counts only threads that read_comments shows', async () => {
+    const ws = workspace([
+      { on: PAGE, n: 100 },
+      { on: id(2), n: 101 },
+    ])
+    comment(ws, 100, 200, [['Gone']], { alive: false })
+    comment(ws, 101, 201, [['Kept']])
+    open(ws)
+    expect(await readPage.run({})).toContain('This page has 1 comment thread: read it with read_comments.')
   })
 
   it('says nothing about comments when there are none', async () => {

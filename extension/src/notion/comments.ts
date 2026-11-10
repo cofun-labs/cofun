@@ -37,10 +37,16 @@ function discussionsOf(loaded: LoadedPage, md: PageMarkdown): { blockId: string;
   return anchors(loaded, md).flatMap((blockId) => ids(blocks[blockId]?.discussions).map((id) => ({ blockId, id })))
 }
 
-/** How many comment threads the page and its blocks have, as far as the load shows. */
+/**
+ * How many comment threads the page and its blocks have, counted as loadThreads shows them: those
+ * with a comment left. Only what the page load brought counts (Notion's load brings them all).
+ */
 export function threadCount(loaded: LoadedPage, md: PageMarkdown): number {
-  const discussions = loaded.recordMap.discussion ?? {}
-  return discussionsOf(loaded, md).filter(({ id }) => discussions[id]?.alive !== false).length
+  const { discussion = {}, comment = {} } = loaded.recordMap
+  const live = (r: NotionRecord | undefined) => !!r && r.alive !== false
+  return discussionsOf(loaded, md).filter(
+    ({ id }) => live(discussion[id]) && ids(discussion[id].comments).some((c) => live(comment[c])),
+  ).length
 }
 
 /**
@@ -96,20 +102,30 @@ export async function loadThreads(client: NotionClient, loaded: LoadedPage, md: 
     .filter((t) => t.comments.length > 0)
 }
 
-/** One thread as the model reads it: everything from the page or its authors is quoted. */
-export function threadText(thread: Thread, n: number, md: PageMarkdown, pageId: string): string {
+/**
+ * One thread as the model reads it, as its heading and one line per comment, so a long thread can
+ * be split between comments. Everything from the page or its people is quoted.
+ */
+export function threadLines(
+  thread: Thread,
+  n: number,
+  md: PageMarkdown,
+  pageId: string,
+): { head: (continued: boolean) => string[]; comments: string[] } {
   const where =
     thread.blockId === pageId
       ? 'On the page'
       : `On the block ^${md.refs.get(thread.blockId) ?? hexId(thread.blockId)} ${quote(clip(md.lines.get(thread.blockId) ?? '', EXCERPT_CHARS))}`
-  return [
-    `${n}. ${where}, ${thread.resolved ? 'resolved' : 'open'}:`,
-    ...(thread.context ? [`   About the text: ${quote(clip(thread.context, EXCERPT_CHARS))}`] : []),
-    ...thread.comments.map(
+  return {
+    head: (continued) => [
+      `${n}. ${where}, ${thread.resolved ? 'resolved' : 'open'}${continued ? ', continued' : ''}:`,
+      ...(thread.context ? [`   About the text: ${quote(clip(thread.context, EXCERPT_CHARS))}`] : []),
+    ],
+    comments: thread.comments.map(
       (c) =>
         `   - ${quote(c.author)}${c.time === undefined ? '' : `, ${when(c.time)}`}: ${quote(clip(c.text, COMMENT_CHARS))}`,
     ),
-  ].join('\n')
+  }
 }
 
 /**
