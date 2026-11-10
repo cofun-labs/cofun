@@ -20,7 +20,7 @@ import {
   budgetQuestion,
 } from '../../extension/src/notion/api'
 import { activeNotionTab, countNotionRequests } from '../../extension/src/notion/tab'
-import { editPage, openPageNote, readPage } from '../../extension/src/tools'
+import { editPage, movePage, openPageNote, readPage, trashPage } from '../../extension/src/tools'
 import { createApp, type Env } from '../src/app'
 import { FakeClerk } from './clerk'
 import { FakeAiBinding, FakeQuotaNamespace, FakeUsageDataset } from './fakes'
@@ -329,6 +329,51 @@ describe('extension agent against the worker', () => {
     expect(first.properties).toEqual({ title: [['Summary: hi']] })
   })
 
+  it('[UC-NOTION-010-S02] the agent trashes a page only after the user agrees to what the preview names', async () => {
+    const OLD = 'b0b0b0b0-0000-4000-8000-000000000001'
+    const ws = new FakeWorkspace(
+      [
+        {
+          id: PAGE,
+          type: 'page',
+          properties: { title: [['Fixture page']] },
+          content: [OLD],
+          parent_id: SPACE,
+          parent_table: 'space',
+        },
+        { id: OLD, type: 'page', properties: { title: [['Old notes']] }, parent_id: PAGE, parent_table: 'block' },
+      ],
+      SPACE,
+    )
+    const tab = new FakeNotionTab(PAGE_URL)
+    tab.workspace = ws
+    tab.install()
+    const trashCall = { name: 'trash_page', arguments: JSON.stringify({ pages: [OLD] }) }
+    const asked: ToolCallRequest[] = []
+    const agent = makeAgent({ tools: [trashPage] })
+
+    ai.script = [{ toolCalls: [trashCall] }, { reply: 'Kept it.' }]
+    const declined = await ask(agent, 'Delete the old notes', async (call) => {
+      asked.push(call)
+      return false
+    })
+    expect(toolStatuses(declined.updates)).toEqual(['declined'])
+    expect(asked[0].preview).toBe(
+      [
+        'Move 1 page to the trash, with everything in it',
+        `    ^${OLD.replace(/-/g, '')} "Old notes"`,
+        "They stay in Notion's trash, where they can be restored.",
+      ].join('\n'),
+    )
+    expect(ws.records.get(OLD)!.alive).toBe(true)
+
+    ai.script = [{ toolCalls: [trashCall] }, { reply: 'Moved it to the trash.' }]
+    const agreed = await ask(agent, 'Yes, delete it', async () => true)
+    expect(toolStatuses(agreed.updates)).toEqual(['done'])
+    expect(ws.records.get(OLD)!.alive).toBe(false)
+    expect(ws.records.get(PAGE)!.content).toEqual([])
+  })
+
   it('[UC-NOTION-001-S08] the question stops when Notion turns a read away, and nothing more is sent', async () => {
     const tab = new FakeNotionTab(PAGE_URL).limit('loadPageChunk', 1).install()
     // The model would read again, and then try another way.
@@ -412,6 +457,74 @@ describe('extension agent against the worker', () => {
     const { result } = await ask(makeAgent({ tools: [readPage, editPage, reading] }), 'Put a summary at the top')
     expect(result).toEqual({ status: 'error', message: `${LIMITED_STOP} ${MAY_HAVE_CHANGED}` })
     expect(ws.transactions).toHaveLength(1)
+  })
+
+  it('[UC-NOTION-010-S02] a trash preview Notion turns away ends the question before the user is asked', async () => {
+    const OLD = 'b0b0b0b0-0000-4000-8000-000000000001'
+    const ws = new FakeWorkspace(
+      [
+        {
+          id: PAGE,
+          type: 'page',
+          properties: { title: [['Fixture page']] },
+          content: [OLD],
+          parent_id: SPACE,
+          parent_table: 'space',
+        },
+        { id: OLD, type: 'page', properties: { title: [['Old notes']] }, parent_id: PAGE, parent_table: 'block' },
+      ],
+      SPACE,
+    )
+    const tab = new FakeNotionTab(PAGE_URL).limit('syncRecordValuesMain', 1)
+    tab.workspace = ws
+    tab.install()
+    const trashCall = { name: 'trash_page', arguments: JSON.stringify({ pages: [OLD] }) }
+    // The model would try again after the refusal.
+    ai.script = [{ toolCalls: [trashCall] }, { toolCalls: [trashCall] }, { reply: 'Trashed.' }]
+    const asked: ToolCallRequest[] = []
+    const { result, updates } = await ask(makeAgent({ tools: [trashPage] }), 'Delete the old notes', async (call) => {
+      asked.push(call)
+      return true
+    })
+    expect(result).toEqual({ status: 'error', message: LIMITED_STOP })
+    expect(asked).toEqual([])
+    expect(toolStatuses(updates)).toEqual(['skipped'])
+    expect(tab.sent).toHaveLength(1)
+    expect(ai.calls).toHaveLength(1)
+    expect(ws.records.get(OLD)!.alive).toBe(true)
+  })
+
+  it('a question stopped after a page was moved tells the user that change was made', async () => {
+    const MOVED = 'b0b0b0b0-0000-4000-8000-000000000002'
+    const TO = 'b0b0b0b0-0000-4000-8000-000000000003'
+    const ws = new FakeWorkspace(
+      [
+        {
+          id: PAGE,
+          type: 'page',
+          properties: { title: [['Fixture page']] },
+          content: [MOVED, TO],
+          parent_id: SPACE,
+          parent_table: 'space',
+        },
+        { id: MOVED, type: 'page', properties: { title: [['Notes']] }, parent_id: PAGE, parent_table: 'block' },
+        { id: TO, type: 'page', properties: { title: [['Archive']] }, parent_id: PAGE, parent_table: 'block' },
+      ],
+      SPACE,
+    )
+    const tab = new FakeNotionTab(PAGE_URL)
+    tab.workspace = ws
+    tab.install()
+    const { tool } = pageTool()
+    const reading: ToolSpec = { ...tool, run: async () => (tab.limit('loadPageChunk', 1), readPage.run({})) }
+    ai.script = [
+      { toolCalls: [{ name: 'move_page', arguments: JSON.stringify({ pages: [MOVED], to: TO }) }] },
+      { toolCalls: [{ name: 'lookup_page', arguments: '{}' }] },
+      { reply: 'Done.' },
+    ]
+    const { result } = await ask(makeAgent({ tools: [movePage, reading] }), 'File the notes under Archive')
+    expect(result).toEqual({ status: 'error', message: `${LIMITED_STOP} ${MAY_HAVE_CHANGED}` })
+    expect(ws.records.get(MOVED)!.parent_id).toBe(TO)
   })
 
   it('a stopped question mentions an earlier change whose outcome was unknown', async () => {
@@ -843,6 +956,45 @@ describe('extension agent against the worker', () => {
         preview: 'Tag 1 page(s); 0 run(s) so far',
       },
     ])
+  })
+
+  it('Stop does not wait for a preview that is still looking things up', async () => {
+    let agent: CopilotAgent
+    const { tool, runs } = renameTool()
+    const slow: ToolSpec = {
+      ...tool,
+      preview: () => {
+        agent.stop()
+        return new Promise<string>(() => {})
+      },
+    }
+    agent = makeAgent({ tools: [slow] })
+    ai.script = [{ toolCalls: [RENAME_CALL] }]
+    const asked: ToolCallRequest[] = []
+    const { result } = await ask(agent, 'Rename this page to Q4 Plan', async (call) => {
+      asked.push(call)
+      return true
+    })
+    expect(result).toEqual({ status: 'stopped' })
+    expect(asked).toEqual([])
+    expect(runs).toEqual([])
+  })
+
+  it('a tool that runs without asking does not start when Stop lands during its preview', async () => {
+    let agent: CopilotAgent
+    const { tool, runs } = pageTool()
+    const slow: ToolSpec = {
+      ...tool,
+      preview: async () => {
+        agent.stop()
+        return 'Looks up the page'
+      },
+    }
+    agent = makeAgent({ tools: [slow] })
+    ai.script = [{ toolCalls: [{ name: 'lookup_page', arguments: '{}' }] }]
+    const { result } = await ask(agent, 'Which page am I on?')
+    expect(result).toEqual({ status: 'stopped' })
+    expect(runs).toEqual([])
   })
 
   it('a broken preview does not stop the call', async () => {

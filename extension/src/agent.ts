@@ -58,9 +58,9 @@ export interface ToolSpec {
   changesData?: boolean
   /**
    * What a call does, in words, from the state before it runs: shown on the call's card, and to the
-   * user before agreeing when the tool needs confirmation.
+   * user before agreeing when the tool needs confirmation. It may look things up first.
    */
-  preview?: (args: Record<string, unknown>) => string | undefined
+  preview?: (args: Record<string, unknown>) => string | undefined | Promise<string | undefined>
 }
 
 /** A tool call waiting for the user's OK. */
@@ -140,6 +140,8 @@ const UNASKED = "Not run: this action needs the user's confirmation, and they co
 export const MAY_HAVE_CHANGED = 'Some changes in this question may already have been made: check before asking again.'
 /** For the model: the reason itself is in the failed tool's result. */
 const STOPPED_BY_ERROR = "Not run: an earlier tool's error stopped the question."
+const STOPPED_IN_PREVIEW =
+  'Not run: Notion turned the request away while it was being prepared, so the question stopped.'
 // What the model gets back for a call the user stopped: whether it may have done something matters
 // for a tool that changes a page.
 const STOPPED_BEFORE = 'Not run: the user stopped the question before this action started.'
@@ -289,7 +291,15 @@ export class CopilotAgent {
         }
       }
       // From the arguments the tool runs with, and before it runs: the run may change what the preview reads.
-      const preview = previewCall(this.tools.get(toolCall.name), args)
+      const { preview, stop } = await previewCall(this.tools.get(toolCall.name), args, signal)
+      // Stopped while the preview looked things up: the tool must not start.
+      if (signal?.aborted || epoch !== this.epoch) return { block: true, reason: STOPPED_BEFORE }
+      // Notion turned the preview's lookups away: the question stops here, before anyone is asked.
+      if (stop) {
+        this.stopReason ??= stop
+        refused.add(toolCall.id)
+        return { block: true, reason: STOPPED_BY_ERROR, terminate: true }
+      }
       onUpdate({ type: 'tool_ready', id: toolCall.id, args, preview })
       const call: ToolCallRequest = { id: toolCall.id, name: toolCall.name, args, preview }
       if (!this.confirmed.has(toolCall.name)) {
@@ -683,13 +693,33 @@ function size(message: AgentMessage): number {
   return n
 }
 
-/** What a call changes, in words; a broken preview must not stop the call, so it gives none. */
-function previewCall(tool: ToolSpec | undefined, args: unknown): string | undefined {
+/**
+ * What a call changes, in words; a broken preview must not stop the call, so it gives none. A
+ * preview error that stops the question (see `stopsQuestion`) comes back as `stop`.
+ */
+async function previewCall(
+  tool: ToolSpec | undefined,
+  args: unknown,
+  signal?: AbortSignal,
+): Promise<{ preview?: string; stop?: string }> {
   try {
-    return tool?.preview?.((args ?? {}) as Record<string, unknown>)
+    const preview = tool?.preview?.((args ?? {}) as Record<string, unknown>)
+    if (typeof preview === 'string' || preview === undefined) return { preview }
+    // Stop must not wait for a preview that looks things up.
+    return {
+      preview: await new Promise<string | undefined>((resolve, reject) => {
+        if (signal?.aborted) return resolve(undefined)
+        const onAbort = () => resolve(undefined)
+        signal?.addEventListener('abort', onAbort, { once: true })
+        preview.then(resolve, reject).finally(() => signal?.removeEventListener('abort', onAbort))
+      }),
+    }
   } catch (err) {
+    // A preview turned away by Notion stops the question, like a tool's error would.
+    const stop = stopsQuestion(err)
+    if (stop) return { stop }
     console.error('Could not preview the tool call', err)
-    return undefined
+    return {}
   }
 }
 
