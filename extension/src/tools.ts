@@ -4,7 +4,6 @@
 import type { ToolSpec } from './agent'
 import {
   IN_TRASH,
-  LIMITED_STOP_SAVED,
   NotionError,
   SIGNED_OUT,
   blockOps,
@@ -739,6 +738,7 @@ const EDIT_ITEM = {
 }
 
 export const editPage: ToolSpec = {
+  changesData: true,
   name: 'edit_page',
   description:
     'Changes a Notion page you have read with read_page: insert Markdown after a block or at the start or end of the ' +
@@ -817,27 +817,24 @@ export const editPage: ToolSpec = {
       const refs = plan.created.map((c) => next.refs.get(c)).filter(Boolean)
       if (refs.length) newRefs = `New blocks: ${refs.map((r) => `^${r}`).join(', ')}.`
     } catch (err) {
-      // The edit is saved; blocks it changed will be refused until the page is read again. A rate
-      // limit still stops the question, and says the edit was saved.
-      if (err instanceof NotionError && err.code === 'rate_limited') {
+      // The edit is saved; blocks it changed will be refused until the page is read again. A
+      // failure that stops the question is passed on, and the user is told the edit was saved.
+      if (err instanceof NotionError && err.stopsQuestion) {
         remember(next)
         throw new NotionError(
           'notion_error',
-          ['Saved, but Notion then turned a request away, so the page was not read back.', ...plan.summary].join('\n'),
-          // The user is told the edit was saved, so they don't ask for it again.
-          { cause: err, stopsQuestion: LIMITED_STOP_SAVED },
+          [`Saved, but the page could not be read back: ${err.message}`, ...plan.summary].join('\n'),
+          { cause: err, stopsQuestion: `${err.stopsQuestion} ${EDIT_SAVED}` },
         )
-      }
-      // Any other failure that stops the question is passed on, never swallowed.
-      if (err instanceof NotionError && err.stopsQuestion) {
-        remember(next)
-        throw err
       }
     }
     remember(next)
     return [...plan.summary, newRefs, 'Read the page again to see the result.'].filter(Boolean).join('\n')
   },
 }
+
+/** Added for the user when the question stops after edit_page saved its edit. */
+export const EDIT_SAVED = 'The edit was saved: check the page before asking again.'
 
 /** The page argument, if given; null and blank mean not given. */
 function givenPage(args: Record<string, unknown>): string | undefined {
@@ -877,6 +874,7 @@ const PROPERTIES_ARG = {
 }
 
 export const createPage: ToolSpec = {
+  changesData: true,
   name: 'create_page',
   description:
     'Creates a Notion page with a title and Markdown content (the same Markdown as edit_page). `parent` is a page ' +
@@ -994,6 +992,7 @@ export const createPage: ToolSpec = {
 export const UPDATE_MAX = 50
 
 export const updatePages: ToolSpec = {
+  changesData: true,
   name: 'update_pages',
   description:
     "Changes pages' titles, icons (an emoji), or database properties (for rows, by name, values as " +
@@ -1508,6 +1507,7 @@ function blockArg(value: unknown): string | undefined {
 }
 
 export const addComment: ToolSpec = {
+  changesData: true,
   name: 'add_comment',
   description:
     "Adds a comment to a Notion page, as a new thread under the user's name: on the page itself, or on one of " +

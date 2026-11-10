@@ -3,13 +3,14 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   CopilotAgent,
+  EARLIER_SAVED,
   type AgentUpdate,
   type ConfirmTool,
   type HistoryMessage,
   type ToolCallRequest,
   type ToolSpec,
 } from '../../extension/src/agent'
-import { LIMITED_STOP, RATE_LIMITED } from '../../extension/src/notion/api'
+import { BUSY_STOP_UNKNOWN, LIMITED_STOP, RATE_LIMITED } from '../../extension/src/notion/api'
 import { editPage, openPageNote, readPage } from '../../extension/src/tools'
 import { createApp, type Env } from '../src/app'
 import { FakeClerk } from './clerk'
@@ -370,6 +371,36 @@ describe('extension agent against the worker', () => {
     const { result } = await ask(makeAgent({ tools: [wrapping] }), 'Make a page')
     expect(result).toEqual({ status: 'error', message: 'Wait a minute.' })
     expect(ai.calls).toHaveLength(1)
+  })
+
+  it('[UC-NOTION-002-S12] the question stops when Notion is too busy to say whether an edit was saved', async () => {
+    const ws = editablePage()
+    const tab = new FakeNotionTab(PAGE_URL).limit('saveTransactionsFanout', 1, 529)
+    tab.workspace = ws
+    tab.install()
+    const { result } = await ask(makeAgent({ tools: [readPage, editPage] }), 'Put a summary at the top')
+    expect(result).toEqual({ status: 'error', message: BUSY_STOP_UNKNOWN })
+    expect(tab.sent.filter((r) => r.url.endsWith('/saveTransactionsFanout'))).toHaveLength(1)
+    expect(ai.calls).toHaveLength(2)
+  })
+
+  it('[UC-NOTION-002-S13] a question stopped after an earlier change tells the user that change was made', async () => {
+    const ws = editablePage()
+    const tab = new FakeNotionTab(PAGE_URL)
+    tab.workspace = ws
+    tab.install()
+    // The edit is saved; then the model reads the page again, and Notion turns that away.
+    const { tool } = pageTool()
+    const reading: ToolSpec = { ...tool, run: async () => (tab.limit('loadPageChunk', 1), readPage.run({})) }
+    ai.script = [
+      { toolCalls: [{ name: 'read_page', arguments: '{}' }] },
+      ai.script[1],
+      { toolCalls: [{ name: 'lookup_page', arguments: '{}' }] },
+      { reply: 'Done.' },
+    ]
+    const { result } = await ask(makeAgent({ tools: [readPage, editPage, reading] }), 'Put a summary at the top')
+    expect(result).toEqual({ status: 'error', message: `${LIMITED_STOP} ${EARLIER_SAVED}` })
+    expect(ws.transactions).toHaveLength(1)
   })
 
   it('tools the model asked for after a refused one, in the same reply, do not run', async () => {

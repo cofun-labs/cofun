@@ -49,9 +49,6 @@ export const LIMITED_STOP =
 /** For the user, when Notion was too busy to say whether a change was saved. */
 export const BUSY_STOP_UNKNOWN =
   'Notion is too busy right now, so Notion Copilot stopped. The last change may or may not have been saved: check the page before asking again.'
-/** For the user, when a change was saved but Notion then turned a request away. */
-export const LIMITED_STOP_SAVED =
-  'Notion is limiting requests right now, so Notion Copilot stopped. The last change was saved. Wait a minute, then ask again.'
 
 /** The endpoints under /api/v3/ the client uses. */
 export type NotionEndpoint =
@@ -399,7 +396,7 @@ export class NotionClient {
     } catch (err) {
       // Notion may have applied it; a blind retry could apply it twice (say, a duplicated block).
       if (err instanceof NotionError && err.unanswered) {
-        throw new NotionError('outcome_unknown', OUTCOME_UNKNOWN, { cause: err, stopsQuestion: err.stopsQuestion })
+        throw new NotionError('outcome_unknown', OUTCOME_UNKNOWN, { cause: err })
       }
       throw err
     }

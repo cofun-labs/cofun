@@ -37,6 +37,11 @@ export interface ToolSpec {
   /** The tool does what is hard to undo, such as deleting a page, so the user must agree each time before it runs. */
   needsConfirmation?: boolean
   /**
+   * The tool changes the user's data. When a question stops after such a tool finished, the user
+   * is told that change was made, so they don't ask for it twice.
+   */
+  changesData?: boolean
+  /**
    * What a call does, in words, from the state before it runs: shown on the call's card, and to the
    * user before agreeing when the tool needs confirmation.
    */
@@ -108,6 +113,8 @@ const DECLINED = 'Not run: the user declined this action. Do not retry it; ask t
 const UNASKED = "Not run: this action needs the user's confirmation, and they could not be asked."
 // What the model gets back for a call the user stopped: whether it may have done something matters
 // for a tool that changes a page.
+/** Added for the user when a question stops after a tool already changed something. */
+export const EARLIER_SAVED = 'Changes made earlier in this question were saved: check before asking again.'
 /** For the model: the reason itself is in the failed tool's result. */
 const STOPPED_BY_ERROR = "Not run: an earlier tool's error stopped the question."
 const STOPPED_BEFORE = 'Not run: the user stopped the question before this action started.'
@@ -209,6 +216,8 @@ export class CopilotAgent {
 
     const before = agent.state.messages.length
     this.stopReason = undefined
+    // A tool that changes the user's data finished: a stopped question says so.
+    let changed = false
     let steps = 0
     let hitLimit = false
     let failure: Failure | undefined
@@ -282,6 +291,7 @@ export class CopilotAgent {
         }
         started.delete(update.id)
         ended.set(update.id, { status: update.status, result: update.result })
+        if (update.status === 'done' && this.tools.get(update.name)?.changesData) changed = true
       }
       if (update) onUpdate(update)
       if (event.type === 'message_end' && event.message.role === 'toolResult') {
@@ -315,7 +325,8 @@ export class CopilotAgent {
     // Also stopped when the abort landed after a model reply that asked for tools, e.g. while a tool
     // finished. A stop after the final answer keeps it: the user has already read it.
     stopped ||= epoch !== this.epoch && !answered
-    if (!stopped && this.stopReason) failure ??= { text: this.stopReason }
+    if (!stopped && this.stopReason)
+      failure ??= { text: changed ? `${this.stopReason} ${EARLIER_SAVED}` : this.stopReason }
     if (failure || stopped) {
       const kept = usedTools(agent.state.messages.slice(before))
       agent.state.messages = [...agent.state.messages.slice(0, before), ...kept]

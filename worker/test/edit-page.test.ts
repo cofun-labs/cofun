@@ -3,8 +3,8 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { inline, parseMarkdown } from '../../extension/src/notion/blocks'
 import { mergeReads, type PageRead } from '../../extension/src/notion/edit'
-import { editPage, forgetReads, readPage } from '../../extension/src/tools'
-import { LIMITED_STOP_SAVED } from '../../extension/src/notion/api'
+import { EDIT_SAVED, editPage, forgetReads, readPage } from '../../extension/src/tools'
+import { LIMITED_STOP, RATE_LIMITED } from '../../extension/src/notion/api'
 import { FakeNotionTab, FakeWorkspace, PAGE, PAGE_URL, SPACE, USER, notionError, restoreGlobals } from './notion-tab'
 
 afterEach(restoreGlobals)
@@ -248,10 +248,8 @@ describe('edit_page details', () => {
     tab.limit('loadPageChunk', 1)
     const err = await notionError(edit([{ action: 'insert', position: 'end', markdown: 'Second' }]))
     // The user is told the edit was saved, so they don't ask for it again.
-    expect(err.stopsQuestion).toBe(LIMITED_STOP_SAVED)
-    expect(err.message.split('\n')[0]).toBe(
-      'Saved, but Notion then turned a request away, so the page was not read back.',
-    )
+    expect(err.stopsQuestion).toBe(`${LIMITED_STOP} ${EDIT_SAVED}`)
+    expect(err.message.split('\n')[0]).toBe(`Saved, but the page could not be read back: ${RATE_LIMITED}`)
     expect(ws.transactions).toHaveLength(1)
   })
 
