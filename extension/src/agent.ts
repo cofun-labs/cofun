@@ -290,29 +290,37 @@ export class CopilotAgent {
           terminate: true,
         }
       }
+      // Running from here on: a preview's lookups count toward the question, so at its request budget
+      // they ask the user on this call's card.
+      running = { id: toolCall.id, name: toolCall.name, args }
       // From the arguments the tool runs with, and before it runs: the run may change what the preview reads.
       const { preview, stop } = await previewCall(this.tools.get(toolCall.name), args, signal)
       // Stopped while the preview looked things up: the tool must not start.
-      if (signal?.aborted || epoch !== this.epoch) return { block: true, reason: STOPPED_BEFORE }
-      // Notion turned the preview's lookups away: the question stops here, before anyone is asked.
+      if (signal?.aborted || epoch !== this.epoch) {
+        running = undefined
+        return { block: true, reason: STOPPED_BEFORE }
+      }
+      // Notion turned the preview's lookups away, or the user stopped at the budget: the question
+      // stops here, before anyone is asked.
       if (stop) {
+        running = undefined
         this.stopReason ??= stop
         refused.add(toolCall.id)
         return { block: true, reason: STOPPED_BY_ERROR, terminate: true }
       }
       onUpdate({ type: 'tool_ready', id: toolCall.id, args, preview })
       const call: ToolCallRequest = { id: toolCall.id, name: toolCall.name, args, preview }
+      running = call
       if (!this.confirmed.has(toolCall.name)) {
         started.add(toolCall.id)
-        running = call
         return
       }
       const answer = await askUser(confirm, call, signal)
       if (answer === 'allow' && epoch === this.epoch) {
         started.add(toolCall.id)
-        running = call
         return
       }
+      running = undefined
       // Only a no from the user shows as declined. Stopped while waiting shows as stopped, and a
       // prompt that could not be shown as failed, with the reason.
       if (answer === 'deny' && epoch === this.epoch) declined.add(toolCall.id)

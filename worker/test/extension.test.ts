@@ -1571,6 +1571,61 @@ describe('Notion requests per question', () => {
     expect(sentMessages(1).find((m) => m.role === 'tool')).toMatchObject({ content: OVER_BUDGET })
   })
 
+  /**
+   * After a tool that makes all but one of the question's budgeted requests, a tool that needs the
+   * user's OK and looks the page up three times for its preview, crossing the budget there.
+   */
+  function previewAcrossBudget() {
+    const runs: unknown[] = []
+    const looking = lookups(3)
+    const confirmed: ToolSpec = {
+      ...looking,
+      name: 'trash_it',
+      needsConfirmation: true,
+      preview: async () => (await looking.run({}), 'Moves the page to the trash.'),
+      run: async (args) => (runs.push(args), 'Trashed.'),
+    }
+    ai.script = [{ toolCalls: [LOOK_UP] }, { toolCalls: [{ name: 'trash_it', arguments: '{}' }] }, { reply: 'Done.' }]
+    return { tools: [lookups(REQUEST_BUDGET - 1), confirmed], runs }
+  }
+
+  it("a preview that crosses the budget asks the user on its call's card, and Continue goes on", async () => {
+    const tab = workspaceTab()
+    const { tools, runs } = previewAcrossBudget()
+    const asked: ToolCallRequest[] = []
+    const { result, updates } = await ask(
+      makeAgent({ tools, meter: countNotionRequests }),
+      'Trash it',
+      async (call) => (asked.push(call), true),
+    )
+    // First the budget, from the preview's lookups; then the OK for the call itself.
+    expect(asked).toEqual([
+      { id: 'chatcmpl-tool-1', name: 'trash_it', args: {}, question: budgetQuestion(REQUEST_BUDGET) },
+      { id: 'chatcmpl-tool-1', name: 'trash_it', args: {}, preview: 'Moves the page to the trash.' },
+    ])
+    expect(result).toEqual({ status: 'done', requests: REQUEST_BUDGET + 2 })
+    expect(toolStatuses(updates)).toEqual(['done', 'done'])
+    expect(runs).toHaveLength(1)
+    expect(tab.sent).toHaveLength(REQUEST_BUDGET + 2)
+  })
+
+  it('Stop at the budget during a preview ends the question with nothing more sent', async () => {
+    const tab = workspaceTab()
+    const { tools, runs } = previewAcrossBudget()
+    const asked: ToolCallRequest[] = []
+    const { result, updates } = await ask(
+      makeAgent({ tools, meter: countNotionRequests }),
+      'Trash it',
+      async (call) => (asked.push(call), false),
+    )
+    expect(asked.map((c) => c.question)).toEqual([budgetQuestion(REQUEST_BUDGET)])
+    expect(result).toEqual({ status: 'error', message: BUDGET_STOP, requests: REQUEST_BUDGET })
+    expect(toolStatuses(updates)).toEqual(['done', 'skipped'])
+    expect(runs).toEqual([])
+    expect(tab.sent).toHaveLength(REQUEST_BUDGET)
+    expect(ai.calls).toHaveLength(2)
+  })
+
   it('at the budget with nobody to ask, the question stops', async () => {
     const tab = workspaceTab()
     ai.script = [{ toolCalls: [LOOK_UP] }]
