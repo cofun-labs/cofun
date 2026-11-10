@@ -343,14 +343,16 @@ export class NotionClient {
 
   /**
    * The rows of a database, at most `limit` of them, through one of its views. The view's own
-   * filters and sorts are not applied: every row comes back, in Notion's default order. Notion only
-   * returns rows the signed-in account can open.
+   * filters and sorts are not applied: every row comes back, in Notion's default order, or ordered
+   * by `sort` (a property's schema key), so the `limit` read are the first in that order. Notion
+   * only returns rows the signed-in account can open.
    */
   async queryCollection(
     collectionId: string,
     viewId: string,
     spaceId: string,
     limit: number,
+    { sort }: { sort?: { property: string; direction: 'ascending' | 'descending' } } = {},
   ): Promise<{ rowIds: string[]; hasMore: boolean; recordMap: RecordMap }> {
     const space = notionId(spaceId)
     const { json } = await this.request<{
@@ -364,7 +366,7 @@ export class NotionClient {
         loader: {
           type: 'reducer',
           reducers: { collection_group_results: { type: 'results', limit } },
-          sort: [],
+          sort: sort ? [sort] : [],
           searchQuery: '',
           // The user's own zone, as the tool's `Today:` uses.
           userTimeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
