@@ -1,10 +1,10 @@
 // The read_comments and add_comment tools (extension/src/tools.ts) against a fake Notion workspace
 // that holds discussions and comments the way Notion does.
 import { afterEach, describe, expect, it } from 'vitest'
-import { NotionError } from '../../extension/src/notion/api'
-import { EditError } from '../../extension/src/notion/edit'
-import { COMMENT_CHARS } from '../../extension/src/notion/comments'
-import { PART_CHARS, addComment, readComments, readPage } from '../../extension/src/tools'
+import { NotionError } from '../src/notion/api'
+import { EditError } from '../src/notion/edit'
+import { COMMENT_CHARS } from '../src/notion/comments'
+import { PART_CHARS, addComment, readComments, readPage } from '../src/tools'
 import { FakeNotionTab, FakeWorkspace, PAGE, PAGE_URL, SPACE, USER, pageTab, restoreGlobals } from './notion-tab'
 
 afterEach(restoreGlobals)

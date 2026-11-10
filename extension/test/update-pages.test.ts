@@ -2,7 +2,7 @@
 // extension/src/tools.ts), against a fake Notion workspace that applies transactions the way
 // Notion does.
 import { afterEach, describe, expect, it } from 'vitest'
-import { UPDATE_MAX, createPage, forgetReads, queryDatabase, readPage, updatePages } from '../../extension/src/tools'
+import { UPDATE_MAX, createPage, forgetReads, queryDatabase, readPage, updatePages } from '../src/tools'
 import { FakeNotionTab, FakeWorkspace, PAGE, PAGE_URL, SPACE, USER, restoreGlobals } from './notion-tab'
 
 afterEach(() => {

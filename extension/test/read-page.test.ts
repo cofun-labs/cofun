@@ -1,10 +1,10 @@
 // The read_page tool (extension/src/tools.ts) against a fake Notion tab, with pages built in the
 // shape Notion's loadPageChunk returns them (see fixtures/notion/ for recorded examples).
 import { afterEach, describe, expect, it } from 'vitest'
-import { NESTED_MAX } from '../../extension/src/notion/api'
-import { inline } from '../../extension/src/notion/blocks'
-import { blockRefs, codeSpan, splitIntoParts } from '../../extension/src/notion/markdown'
-import { PART_CHARS, editPage, readPage } from '../../extension/src/tools'
+import { NESTED_MAX } from '../src/notion/api'
+import { inline } from '../src/notion/blocks'
+import { blockRefs, codeSpan, splitIntoParts } from '../src/notion/markdown'
+import { PART_CHARS, editPage, readPage } from '../src/tools'
 import { FakeNotionTab, PAGE, PAGE_URL, SPACE, USER, fixture, restoreGlobals } from './notion-tab'
 
 afterEach(restoreGlobals)

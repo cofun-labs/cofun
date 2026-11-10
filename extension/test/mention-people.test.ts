@@ -1,9 +1,9 @@
 // Mentions of people in what the agent writes (edit_page, create_page, add_comment), against a fake
 // Notion workspace whose members getVisibleUsers lists, as Notion's own @ menu sees them.
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { LIMITED_STOP } from '../../extension/src/notion/api'
-import { countNotionRequests } from '../../extension/src/notion/tab'
-import { addComment, createPage, editPage, forgetReads, readPage } from '../../extension/src/tools'
+import { LIMITED_STOP } from '../src/notion/api'
+import { countNotionRequests } from '../src/notion/tab'
+import { addComment, createPage, editPage, forgetReads, readPage } from '../src/tools'
 import { FakeNotionTab, FakeWorkspace, PAGE, PAGE_URL, SPACE, USER, notionError, restoreGlobals } from './notion-tab'
 
 // Each test is one question, as the side panel starts one per message.

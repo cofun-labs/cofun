@@ -71,13 +71,15 @@ extension/                Chrome extension
   src/notion/tab.ts       runs Notion requests in the user's Notion tab (chrome.scripting)
   src/sidepanel/          React UI (main.tsx: sign-in, Chat.tsx: chat, Sessions.tsx: saved sessions,
                           ToolCall.tsx: one tool call and its changes)
+  test/                   tests of the extension's client code (fake Notion tab with sanitized
+                          fixtures)
 worker/                   Cloudflare Worker
   src/app.ts              Hono app: Clerk JWT verification + /v1/chat/completions
   src/quota.ts            per-user daily request quota (UserQuota Durable Object in src/index.ts)
   src/usage.ts            per-request usage records (Workers Analytics Engine), no message content
   src/login.ts            sign-in page (Clerk Sync Host)
-  test/                   REST integration tests (real signed JWTs, fake AI binding), and tests of
-                          the extension's client code (fake Notion tab with sanitized fixtures)
+  test/                   REST integration tests (real signed JWTs, fake AI binding), and the
+                          extension's agent run against the worker
 e2e/                      pnpm e2e: drives the shared Chrome Canary over CDP for ai-e2e runs
                           (maintainer's machine only; its unit tests run in pnpm test)
 smoke/                    pnpm smoke: loads the built extension into Chromium and checks that it
@@ -88,6 +90,7 @@ docs/
   assets/                 pictures used by README.md
   bdd.md                  how use cases and scenarios are written, and how to run ai-e2e scenarios
   use-cases/              use cases by domain; tests reference their scenario IDs
+.oxlintrc.json            lint rules, including the extension's module boundaries
 .github/rulesets/         GitHub branch rulesets (export format)
 .github/workflows/        CI, CodeQL, dependency review, workflow lint, and Claude review
 .github/dependabot.yml    weekly dependency updates

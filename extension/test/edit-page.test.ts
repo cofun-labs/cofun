@@ -1,11 +1,11 @@
 // The edit_page tool (extension/src/tools.ts) against a fake Notion workspace that applies
 // transactions the way Notion does, so each test checks the page as it is after the edit.
 import { afterEach, describe, expect, it } from 'vitest'
-import { inline, parseMarkdown } from '../../extension/src/notion/blocks'
-import { mergeReads, type PageRead } from '../../extension/src/notion/edit'
-import { splitSections } from '../../extension/src/notion/markdown'
-import { editPage, forgetReads, readPage } from '../../extension/src/tools'
-import { LIMITED_STOP, UNEXPECTED_STOP } from '../../extension/src/notion/api'
+import { inline, parseMarkdown } from '../src/notion/blocks'
+import { mergeReads, type PageRead } from '../src/notion/edit'
+import { splitSections } from '../src/notion/markdown'
+import { editPage, forgetReads, readPage } from '../src/tools'
+import { LIMITED_STOP, UNEXPECTED_STOP } from '../src/notion/api'
 import { FakeNotionTab, FakeWorkspace, PAGE, PAGE_URL, SPACE, USER, notionError, restoreGlobals } from './notion-tab'
 
 afterEach(restoreGlobals)
