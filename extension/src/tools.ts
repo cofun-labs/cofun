@@ -1395,6 +1395,7 @@ export const trashPage: ToolSpec = {
     const ids = pages.flatMap((p) => (p.id ? [p.id] : []))
     let found: Record<string, NotionRecord> = {}
     let names = new Map<string, string>()
+    let checked = false
     let timer: ReturnType<typeof setTimeout> | undefined
     try {
       const lookup = (async () => {
@@ -1407,6 +1408,7 @@ export const trashPage: ToolSpec = {
         timer = setTimeout(() => reject(new Error('timed out')), PREVIEW_LOOKUP_MS)
       })
       ;({ blocks: found, databases: names } = await Promise.race([lookup, late]))
+      checked = true
     } catch {
       // Without Notion, the names the agent saw are all there is.
     } finally {
@@ -1419,8 +1421,12 @@ export const trashPage: ToolSpec = {
         const title = block
           ? names.get(block.id) || runsText((block.properties as { title?: unknown } | undefined)?.title) || 'Untitled'
           : undefined
-        return `    ${shownPage(p.given, p.id, title ?? (p.id ? knownTitle(p.id) : undefined))}`
+        // A page Notion doesn't have (already trashed, or out of reach) makes the call fail.
+        const missing = checked && p.id && !block ? ' (not found in Notion: nothing will be trashed)' : ''
+        return `    ${shownPage(p.given, p.id, title ?? (p.id ? knownTitle(p.id) : undefined))}${missing}`
       }),
+      // The user agrees from these names: say when they are not Notion's current ones.
+      ...(checked ? [] : ['Could not check the current names in Notion: these are the names last seen, if any.']),
       "They stay in Notion's trash, where they can be restored.",
     ].join('\n')
   },

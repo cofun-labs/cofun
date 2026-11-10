@@ -366,25 +366,31 @@ export class NotionClient {
     let taskId: unknown
     try {
       // Without the workspace on the request, Notion routes the task where the page isn't, and it fails.
-      const { json } = await this.request<{ taskId?: unknown }>(
-        'enqueueTask',
-        {
-          task: {
-            eventName: 'duplicateSubtree',
-            request: {
-              source: { ids: [page], spaceId },
-              destination: { type: 'block', parent: { table: 'block', id: parent, spaceId }, siblingId: page },
-              options: { appendNumericTitleSuffix: true },
-              userAction: 'Notion Copilot: duplicate_page',
+      // Stopped while it is sent, the task may have reached Notion: the outcome is unknown.
+      const { json } = await cutShort(
+        this.request<{ taskId?: unknown }>(
+          'enqueueTask',
+          {
+            task: {
+              eventName: 'duplicateSubtree',
+              request: {
+                source: { ids: [page], spaceId },
+                destination: { type: 'block', parent: { table: 'block', id: parent, spaceId }, siblingId: page },
+                options: { appendNumericTitleSuffix: true },
+                userAction: 'Notion Copilot: duplicate_page',
+              },
+              cellRouting: { spaceIds: [spaceId] },
             },
-            cellRouting: { spaceIds: [spaceId] },
           },
-        },
-        spaceId,
+          spaceId,
+        ),
+        undefined,
+        signal,
       )
       taskId = json.taskId
     } catch (err) {
-      if (err instanceof NotionError && err.unanswered) throw new NotionError('outcome_unknown', DUPLICATE_UNKNOWN)
+      if (err instanceof NotionError && (err.unanswered || err.code === 'outcome_unknown'))
+        throw new NotionError('outcome_unknown', DUPLICATE_UNKNOWN, { cause: err })
       throw err
     }
     if (typeof taskId !== 'string') throw new NotionError('notion_error', 'Notion did not start copying the page.')
@@ -398,9 +404,15 @@ export class NotionClient {
       })
       let task: { state?: unknown; error?: unknown; status?: { targetIds?: unknown } } | undefined
       try {
-        const { json } = await this.request<{ results?: (typeof task)[] }>('getTasks', { taskIds: [taskId] }, spaceId)
+        // A stalled check gives way to Stop and to the deadline.
+        const { json } = await cutShort(
+          this.request<{ results?: (typeof task)[] }>('getTasks', { taskIds: [taskId] }, spaceId),
+          Math.max(0, deadline - Date.now()),
+          signal,
+        )
         task = json.results?.[0]
       } catch (err) {
+        if (err instanceof NotionError && err.code === 'outcome_unknown') throw err
         // A failed check says nothing about the copy, which goes on regardless. Only a check that may
         // clear up (no answer, or a server error) is worth repeating, until the deadline.
         const transient = err instanceof NotionError && err.unanswered
@@ -579,6 +591,23 @@ export interface DuplicateOptions {
   signal?: AbortSignal
   pollMs?: number
   timeoutMs?: number
+}
+
+/**
+ * `promise`, unless `signal` aborts or `ms` pass first: then an `outcome_unknown` error, since
+ * the request may still reach Notion. The request itself is left to finish or time out.
+ */
+function cutShort<T>(promise: Promise<T>, ms: number | undefined, signal?: AbortSignal): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const unknown = () => reject(new NotionError('outcome_unknown', DUPLICATE_UNKNOWN))
+    if (signal?.aborted) return unknown()
+    const timer = ms === undefined ? undefined : setTimeout(unknown, ms)
+    signal?.addEventListener('abort', unknown, { once: true })
+    promise.then(resolve, reject).finally(() => {
+      clearTimeout(timer)
+      signal?.removeEventListener('abort', unknown)
+    })
+  })
 }
 
 /** Resolves after `ms`, or rejects when `signal` aborts. */

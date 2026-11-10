@@ -288,6 +288,21 @@ describe('duplicating pages', () => {
     expect(err.message).toContain('it may still appear')
   })
 
+  it('stopped while a check on the copy stalls, answers at once that the copy may still appear', async () => {
+    const ws = workspace()
+    const tab = open(ws)
+    const stop = new AbortController()
+    const running = duplicatePage.run({ page: PLAN }, stop.signal)
+    // The task is queued; then Notion stops answering.
+    while (!tab.sent.some((r) => r.url.endsWith('/enqueueTask'))) await new Promise((r) => setTimeout(r, 5))
+    tab.stalled = true
+    setTimeout(() => stop.abort(), 300)
+    const started = Date.now()
+    const err = await notionError(running)
+    expect(err.code).toBe('outcome_unknown')
+    expect(Date.now() - started).toBeLessThan(2_000)
+  })
+
   it('says so when Notion fails to copy the page', async () => {
     const ws = workspace()
     ws.failTask = true
@@ -352,6 +367,15 @@ describe('trashing pages', () => {
     expect(ws.records.get(ARCHIVE)!.alive).toBe(true)
   })
 
+  it('marks a page Notion does not have in the preview', async () => {
+    const ws = workspace()
+    open(ws)
+    await trashPage.run({ pages: [NOTE] })
+    expect(await trashPage.preview!({ pages: [NOTE] })).toContain(
+      `    ^${hex(NOTE)} (not found in Notion: nothing will be trashed)`,
+    )
+  })
+
   it('lists each page once in the preview, as it is trashed once', async () => {
     const ws = workspace()
     open(ws)
@@ -371,7 +395,9 @@ describe('trashing pages', () => {
     await readPage.run({ page: hex(ARCHIVE) })
     tab.stalled = true
     const started = Date.now()
-    expect(await trashPage.preview!({ pages: [hex(ARCHIVE)] })).toContain(`    Archive ^${hex(ARCHIVE)}`)
+    const preview = await trashPage.preview!({ pages: [hex(ARCHIVE)] })
+    expect(preview).toContain(`    Archive ^${hex(ARCHIVE)}`)
+    expect(preview).toContain('Could not check the current names in Notion')
     expect(Date.now() - started).toBeLessThan(PREVIEW_LOOKUP_MS + 1_000)
   })
 
@@ -412,6 +438,7 @@ describe('trashing pages', () => {
         'Move 2 pages to the trash, with everything in them',
         `    Archive ^${hex(ARCHIVE)}`,
         `    ^${hex(NOTE)}`,
+        'Could not check the current names in Notion: these are the names last seen, if any.',
         "They stay in Notion's trash, where they can be restored.",
       ].join('\n'),
     )
