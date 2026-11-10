@@ -31,7 +31,7 @@ export function clerkFrontendApi(publishableKey: string): string | undefined {
  * CLERK_COOKIE_DOMAIN for suffixes such as example.co.uk. IPs and single-label
  * hosts (localhost) get a permission for the host itself.
  */
-export function clerkCookiePermission(syncHost: string, cookieDomain?: string): string {
+function clerkCookiePermission(syncHost: string, cookieDomain?: string): string {
   const { protocol, hostname } = new URL(syncHost)
   const labels = hostname.split('.')
   if (cookieDomain) return `${protocol}//*.${cookieDomain.replace(/^\./, '')}/*`
@@ -46,7 +46,7 @@ export function clerkCookiePermission(syncHost: string, cookieDomain?: string): 
  * come from Clerk's image host. So the browser itself enforces the host list in PRIVACY.md. Notion calls
  * are not made from these pages (they run in the Notion tab).
  */
-export function contentSecurityPolicy(env: ManifestEnv): string {
+function contentSecurityPolicy(env: ManifestEnv): string {
   const clerkHost = clerkFrontendApi(env.VITE_CLERK_PUBLISHABLE_KEY ?? '')
   const connect = [
     ...new Set([

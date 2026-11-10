@@ -51,12 +51,12 @@ function unexpectedStop(code: NotionErrorCode, message: string): string | undefi
 export const NO_NOTION_TAB = 'No Notion page is open in this window.'
 export const SIGNED_OUT = 'Not signed in to Notion in this tab. Sign in to Notion and try again.'
 export const NO_ACCESS = "The Notion page doesn't exist, or the signed-in Notion account has no access to it."
-export const IN_TRASH = 'The Notion page or block is in the trash.'
-export const DUPLICATE_UNKNOWN =
+const IN_TRASH = 'The Notion page or block is in the trash.'
+const DUPLICATE_UNKNOWN =
   'Notion did not say whether the copy was made: it may still appear. Look for it before trying again.'
 export const NO_USER_MAP =
   "Notion's list of workspaces has nothing for the account signed in to this tab. Reload the Notion tab and try again."
-export const OUTCOME_UNKNOWN =
+const OUTCOME_UNKNOWN =
   'Notion did not answer, so the change may or may not have been saved. Read the page again before retrying.'
 export const RATE_LIMITED = 'Notion turned this request away (too many requests, or too busy), so it was not done.'
 export const BUSY_UNKNOWN =
@@ -190,7 +190,7 @@ export type NotionTransport = (
   options: { spaceId?: string },
 ) => Promise<NotionResponse>
 
-export type Table =
+type Table =
   | 'block'
   | 'collection'
   | 'collection_view'
@@ -274,7 +274,7 @@ export interface WorkspaceTree {
 }
 
 /** One search hit as Notion returns it. Highlights mark matched words with a random tag per response. */
-export interface RawSearchResult {
+interface RawSearchResult {
   id: string
   score?: number
   highlight?: { title?: string; text?: string; pathText?: string }
@@ -311,7 +311,7 @@ const CHUNK_LIMIT = 100
 /** Blocks a page lists but didn't send (closed toggles) that one read looks up at most. */
 export const NESTED_MAX = 300
 /** How many levels of nesting one read walks to find them: at most one lookup per level, or a few per level when many are missing. */
-export const NESTED_LEVELS = 8
+const NESTED_LEVELS = 8
 /** Blocks whose children belong to another page: a page read doesn't look inside them. */
 const NESTED_STOP = new Set(['page', 'collection_view_page', 'collection_view'])
 /** Records asked for in one syncRecordValuesMain request at most. */

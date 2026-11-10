@@ -677,7 +677,7 @@ export function localDate(d: Date): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
 }
 
-export const LIST_MAX_DEPTH = 3
+const LIST_MAX_DEPTH = 3
 /** How many pages one list shows, so a large workspace still fits the conversation. */
 export const LIST_LIMIT = 100
 /** How many pages each top-level section shows. */
@@ -1803,7 +1803,7 @@ export const updateDatabaseSchema: ToolSpec = {
 }
 
 /** How many pages one move_page or trash_page call takes at most, so its preview stays readable. */
-export const ORGANIZE_MAX = 50
+const ORGANIZE_MAX = 50
 
 /** How far up from a page move_page looks for the pages it is in. */
 const ANCESTORS_MAX = 100
@@ -2368,8 +2368,8 @@ export const getSelection: ToolSpec = {
   },
 }
 
-export const SEARCH_DEFAULT = 10
-export const SEARCH_MAX = 20
+const SEARCH_DEFAULT = 10
+const SEARCH_MAX = 20
 
 export const searchPages: ToolSpec = {
   name: 'search_pages',

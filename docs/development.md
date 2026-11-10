@@ -4,7 +4,8 @@ Requires Node.js 24 and pnpm.
 
 ```bash
 pnpm install
-pnpm check        # lint, format check, typecheck, extension build, and every package's tests
+pnpm check        # lint, unused code check (knip), format check, typecheck, extension build, and every package's tests
+pnpm knip         # unused files, exports, and dependencies (knip.jsonc lists what is kept, and why)
 pnpm smoke        # build the extension and load it into Chromium (first: pnpm --filter notion-copilot-smoke exec playwright install chromium)
 ```
 
