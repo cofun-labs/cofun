@@ -79,7 +79,7 @@ This is an open-source repository. **Never commit account identifiers or secrets
 
 ## Privacy
 
-[PRIVACY.md](PRIVACY.md) tells users what data leaves the browser and where it goes, and it is the Chrome Web Store privacy policy. **A change to what data leaves the browser, or to where it goes, updates `PRIVACY.md` in the same PR**: a new host, new data sent to an existing host, or a change to what the worker stores or logs. The hosts the extension may contact are listed in `extension/allowed-hosts.json`; a test and the smoke test check the manifest, `extension/.env`, and the extension's content security policy against it, so a new host must be added there, with what goes to it, and described in `PRIVACY.md`.
+[PRIVACY.md](PRIVACY.md) tells users what data leaves the browser and where it goes, and it is the Chrome Web Store privacy policy. **A change to what data leaves the browser, or to where it goes, updates `PRIVACY.md` in the same PR**: a new host, new data sent to an existing host, or a change to what the worker stores or logs. The table of hosts in `PRIVACY.md` is the list of hosts the extension may contact. The extension's content security policy (`extension/manifest.ts`) enforces it for the extension's pages, and `extension/test/manifest.test.ts` pins that policy and the host permissions, so a new host changes the policy, that test, and the table together.
 
 ## Architecture
 

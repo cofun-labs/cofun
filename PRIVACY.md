@@ -15,7 +15,7 @@ It also writes to Notion when you ask it to: it edits and creates pages, changes
 
 ## Where data goes
 
-The extension sends requests to these hosts and no others. The list is [`extension/allowed-hosts.json`](extension/allowed-hosts.json); a test fails when the extension's manifest or configuration names a host that is not on it, and the extension's content security policy stops its pages from connecting anywhere else.
+The extension sends requests to these hosts and no others. The extension's content security policy stops its own pages from connecting anywhere else, and a test pins that policy and the hosts the extension has permission for, so neither can change unnoticed.
 
 | Host | What is sent | Why |
 |---|---|---|

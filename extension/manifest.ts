@@ -1,8 +1,8 @@
 // Builds the extension's manifest.json from env values. vite.config.ts writes the result into the
 // build, and test/manifest.test.ts pins its permissions: Chrome disables an installed extension
 // on update when the new version adds a permission warning, so a permission must never
-// change unnoticed. test/allowed-hosts.test.ts checks every host it names against
-// allowed-hosts.json.
+// change unnoticed. It also pins the content security policy, which names the hosts
+// the extension's pages may contact (see PRIVACY.md).
 
 /** The env values the manifest is built from (see .env). */
 export interface ManifestEnv {
@@ -15,7 +15,7 @@ export interface ManifestEnv {
 }
 
 /** Clerk serves user avatars and provider icons from here, for every instance. */
-export const CLERK_IMAGE_HOST = 'img.clerk.com'
+const CLERK_IMAGE_HOST = 'img.clerk.com'
 
 /** Clerk's Frontend API host is encoded in the publishable key: pk_test_<base64("host$")>. */
 export function clerkFrontendApi(publishableKey: string): string | undefined {
@@ -43,7 +43,7 @@ export function clerkCookiePermission(syncHost: string, cookieDomain?: string): 
  * The policy for the extension's own pages (the side panel and the service worker). Chrome's
  * default only limits scripts; this one limits every kind of load to the extension itself, except
  * requests, which may also go to the worker and Clerk's Frontend API, and images, which may also
- * come from Clerk's image host. So the browser itself enforces allowed-hosts.json. Notion calls
+ * come from Clerk's image host. So the browser itself enforces the host list in PRIVACY.md. Notion calls
  * are not made from these pages (they run in the Notion tab).
  */
 export function contentSecurityPolicy(env: ManifestEnv): string {
