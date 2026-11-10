@@ -192,7 +192,8 @@ export interface Pointer {
  * values, text included. Notion rejects `set` on an existing block's properties. `moveToPrivate`
  * puts a new page at the top of the user's Private section. `insertChildrenAfter` moves existing
  * blocks into a parent: Notion takes them out of their old parent itself. `removeChild` on a
- * page's parent moves the page to the trash.
+ * page's parent moves the page to the trash. `updateCollectionPropertySchema` and
+ * `updateCollectionDeletedPropertySchema` change a database's properties (see collectionOps).
  */
 export interface Operation {
   pointer: Pointer
@@ -207,6 +208,8 @@ export interface Operation {
     | 'insertChildrenAfter'
     | 'updateBlockPropertyValue'
     | 'moveToPrivate'
+    | 'updateCollectionPropertySchema'
+    | 'updateCollectionDeletedPropertySchema'
   args: unknown
 }
 
@@ -1005,11 +1008,17 @@ export function blockOps(spaceId: string, now: number) {
       return { pointer: pointer(parentId), path: ['content'], command: 'insertChildrenAfter', args: { ids } }
     },
     /**
-     * A new full-page database, without a parent yet: the page, its collection with `schema`, and
-     * one table view. Its rows are pages created under the collection (`create` with
-     * `parent_table: 'collection'`).
+     * A new full-page database: the page, its collection with `schema`, and one table view showing
+     * every property in the schema's order. Without `parentId` it has no parent yet, and a later
+     * operation must give it one; with it, it still has to be listed in that page's content. Its
+     * rows are pages created under the collection (`create` with `parent_table: 'collection'`).
      */
-    createDatabase(ids: { page: string; collection: string; view: string }, name: string, schema: object): Operation[] {
+    createDatabase(
+      ids: { page: string; collection: string; view: string },
+      name: string,
+      schema: object,
+      parentId?: string,
+    ): Operation[] {
       const base = { version: 1, alive: true, space_id: spaceId }
       const set = (table: 'block' | 'collection' | 'collection_view', id: string, args: object): Operation => ({
         pointer: { table, id, spaceId },
@@ -1017,11 +1026,14 @@ export function blockOps(spaceId: string, now: number) {
         command: 'set',
         args: { id, ...base, ...args },
       })
+      const collectionPointer = { id: ids.collection, table: 'collection', spaceId }
       return [
         set('block', ids.page, {
           type: 'collection_view_page',
           collection_id: ids.collection,
           view_ids: [ids.view],
+          format: { collection_pointer: collectionPointer },
+          ...(parentId === undefined ? {} : { parent_id: parentId, parent_table: 'block' }),
           created_time: now,
           last_edited_time: now,
         }),
@@ -1031,7 +1043,10 @@ export function blockOps(spaceId: string, now: number) {
           name: 'Table',
           parent_id: ids.page,
           parent_table: 'block',
-          format: { collection_pointer: { id: ids.collection, table: 'collection', spaceId } },
+          format: {
+            collection_pointer: collectionPointer,
+            table_properties: Object.keys(schema).map((property) => ({ property, visible: true })),
+          },
         }),
       ]
     },
@@ -1047,6 +1062,68 @@ export function blockOps(spaceId: string, now: number) {
     /** Marks a block as edited now; Notion doesn't do it itself. */
     touch(id: string): Operation {
       return { pointer: pointer(id), path: [], command: 'update', args: { last_edited_time: now } }
+    },
+  }
+}
+
+/** An option of a select, multi-select, or status property, as a database's schema keeps it. */
+export interface SchemaOption {
+  id: string
+  value: string
+  color?: string
+}
+
+/**
+ * Builders for changes to a database's properties, as Notion's web client makes them (checked
+ * against it, 2026-11). Rows keep an option's text, not its id: renaming an option takes a change
+ * to each row that has it too (blockOps' setProperties), as Notion's client does.
+ */
+export function collectionOps(spaceId: string, collectionId: string) {
+  const pointer: Pointer = { table: 'collection', id: collectionId, spaceId }
+  const schema = (path: string[], command: string, args: unknown): Operation => ({
+    pointer,
+    path: ['schema', ...path],
+    command: 'updateCollectionPropertySchema',
+    args: { primitiveOp: { command, args } },
+  })
+  return {
+    /** A new property under a key the schema doesn't use yet. */
+    addProperty(key: string, def: object): Operation {
+      return schema([], 'update', { [key]: def })
+    },
+    renameProperty(key: string, name: string): Operation {
+      return schema([key, 'name'], 'set', name)
+    },
+    /**
+     * Removes a property as Notion's "Delete property" does: it moves to the database's deleted
+     * properties, and rows keep their values for it, but they no longer show.
+     */
+    removeProperty(key: string, def: object): Operation[] {
+      return [
+        {
+          pointer,
+          path: ['deleted_schema'],
+          command: 'updateCollectionDeletedPropertySchema',
+          args: { primitiveOp: { command: 'update', args: { [key]: def } } },
+        },
+        schema([], 'update', { [key]: null }),
+      ]
+    },
+    /** Adds an option at the end of a property's options. */
+    addOption(key: string, option: SchemaOption): Operation {
+      return schema([key, 'options'], 'keyedObjectListAfter', { value: option })
+    },
+    /** Changes an option, found by its id: its name, say. */
+    updateOption(key: string, option: SchemaOption): Operation {
+      return schema([key, 'options'], 'keyedObjectListUpdate', { value: option })
+    },
+    /** Removes an option; rows that have it keep its text, but no longer show it. */
+    removeOption(key: string, optionId: string): Operation {
+      return schema([key, 'options'], 'keyedObjectListRemove', { remove: { id: optionId } })
+    },
+    /** Marks the database as edited now. */
+    touch(now: number): Operation {
+      return { pointer, path: [], command: 'update', args: { last_edited_time: now } }
     },
   }
 }

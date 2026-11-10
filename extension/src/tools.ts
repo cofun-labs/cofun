@@ -59,6 +59,16 @@ import {
   titleFirst,
   type Schema,
 } from './notion/markdown'
+import {
+  PROPERTY_TYPES,
+  SCHEMA_ACTIONS,
+  SCHEMA_MAX,
+  SchemaError,
+  newSchema,
+  parseChanges,
+  planSchemaChanges,
+  renameInRows,
+} from './notion/schema'
 import { activeNotionTab, notionUserIn, selectionIn, type NotionTab } from './notion/tab'
 import { PageLookups, contentOf, pageTree, runsText, treeLines, type PageTree } from './notion/tree'
 
@@ -1316,6 +1326,269 @@ function toProperties(schema: Schema, props: [string, PropertyInput][]): Record<
   return out
 }
 
+/** A property as create_database and update_database_schema take it. */
+const PROPERTY_ARG = {
+  name: { type: 'string', description: `The property's name. ${BACKSLASH}` },
+  type: { type: 'string', enum: [...PROPERTY_TYPES] },
+  options: {
+    type: 'array',
+    items: { type: 'string' },
+    maxItems: SCHEMA_MAX,
+    description: "For select and multi_select: the options' names, without commas. A status gets Notion's own.",
+  },
+}
+
+/** Refusals from planning schema changes, for the model; anything else is passed on. */
+function schemaRefusal(err: unknown): never {
+  if (err instanceof SchemaError) throw new EditError(err.message)
+  throw err
+}
+
+export const createDatabase: ToolSpec = {
+  changesData: true,
+  name: 'create_database',
+  description:
+    "Creates a Notion database (a table) as a page at the end of `parent`, a page (the open page's URL, or " +
+    'another page): a title column (`title_property`, "Name" if left out), then `properties` in order, with ' +
+    "options for selects. Add rows afterwards with create_page. Returns the new database's id and URL.",
+  parameters: {
+    type: 'object',
+    properties: {
+      parent: { type: 'string', description: 'URL or id of the page to create it in.' },
+      title: { type: 'string', description: `The database's name. ${BACKSLASH}` },
+      title_property: { type: 'string', description: 'The name of the title column. Default: Name.' },
+      properties: {
+        type: 'array',
+        maxItems: SCHEMA_MAX,
+        items: {
+          type: 'object',
+          properties: PROPERTY_ARG,
+          required: ['name', 'type'],
+          additionalProperties: false,
+        },
+      },
+    },
+    required: ['parent', 'title'],
+    additionalProperties: false,
+  },
+  preview: (args) => {
+    const given = typeof args.parent === 'string' ? args.parent.trim() : ''
+    const id = given ? pageArg(given) : undefined
+    const known = id ? pageReads.get(id)?.title : undefined
+    const parent = id ? `${known ? `${oneLine(known)} ` : ''}^${hexId(id)}` : given || '(none given)'
+    const specs = Array.isArray(args.properties) ? (args.properties as Record<string, unknown>[]) : []
+    const titleColumn = typeof args.title_property === 'string' ? titleArg(args.title_property) : ''
+    return [
+      'Create a database',
+      `Title: ${titleArg(args.title)}`,
+      `At the end of: ${parent}`,
+      'Properties:',
+      `    ${titleColumn || 'Name'} (title)`,
+      ...specs.map((p) => {
+        const options = Array.isArray(p?.options) ? `: ${p.options.map((o) => oneLine(String(o))).join(', ')}` : ''
+        return `    ${titleArg(p?.name)} (${oneLine(String(p?.type ?? '')).replace(/_/g, ' ')}${options})`
+      }),
+    ].join('\n')
+  },
+  run: async (args, signal) => {
+    const title = titleArg(args.title)
+    if (!title) throw new Error('`title` must not be empty.')
+    const given = typeof args.parent === 'string' ? args.parent.trim() : ''
+    if (!given) throw new Error('`parent` is required: the URL or id of the page to create it in.')
+    const parentId = pageArg(given)
+    if (!parentId) throw new Error(`Not a Notion page URL or id: ${given}`)
+    let schema: Schema
+    try {
+      schema = newSchema(args.title_property, args.properties)
+    } catch (err) {
+      schemaRefusal(err)
+    }
+    const tab = await activeNotionTab()
+    const parent = (await tab.client.getRecords([{ table: 'block', id: parentId }])).block![parentId]
+    if (parent.type === 'collection_view_page' || parent.type === 'collection_view')
+      throw new EditError('That parent is a database: give a page. (To add a row to it, use create_page.)')
+    if (parent.type !== 'page') throw new EditError('That id is a block inside a page, not a page.')
+    const spaceId = parent.space_id
+    if (typeof spaceId !== 'string' || !spaceId)
+      throw new NotionError('notion_error', 'Notion returned the page without its workspace.')
+    const ids = { page: crypto.randomUUID(), collection: crypto.randomUUID(), view: crypto.randomUUID() }
+    const op = blockOps(spaceId, Date.now())
+    const operations = [
+      ...op.createDatabase(ids, title, schema, parentId),
+      op.listAfter(parentId, ids.page),
+      op.touch(parentId),
+    ]
+    signal?.throwIfAborted()
+    try {
+      await tab.client.submitTransaction(spaceId, operations, 'Notion Copilot: create_database')
+    } catch (err) {
+      // A retry would create a second database if this one was saved: the agent must look first.
+      if (err instanceof NotionError && err.code === 'outcome_unknown') {
+        pageReads.delete(parentId)
+        throw new NotionError(
+          'outcome_unknown',
+          `Notion did not confirm it, so the database may or may not have been created. Read ^${hexId(parentId)} ` +
+            `and check for “${title}” before trying again.`,
+          { cause: err, stopsQuestion: err.stopsQuestion },
+        )
+      }
+      throw err
+    } finally {
+      for (const key of recentReads.keys()) if (key.endsWith(`:${parentId}`)) recentReads.delete(key)
+    }
+    keep(seenDatabases, ids.page, title)
+    const hex = hexId(ids.page)
+    return [
+      `Created the database “${title}” ^${hex} at the end of ^${hexId(parentId)}.`,
+      `Properties: ${rowValuesHeader(schema)}`,
+      // app.notion.com opens a page only under /p/; www.notion.so takes it too.
+      `URL: ${new URL(tab.url).origin}/p/${hex}`,
+    ].join('\n')
+  },
+}
+
+export const updateDatabaseSchema: ToolSpec = {
+  changesData: true,
+  name: 'update_database_schema',
+  description:
+    "Changes a Notion database's properties, in order, in one change: add_property (with `type`, and " +
+    '`options` for selects), rename_property (`to`), add_options, rename_option (`option`, `to`; every row ' +
+    'that has it is renamed too), remove_option, and remove_property. Removing a property or an option ' +
+    'loses its values in every row: remove one only when the user asked to remove exactly it. A property ' +
+    "can't change its type, and status options can't be changed. Give the database by id or URL, or leave it " +
+    'out when the open page is a database. Nothing changes if any change is refused.',
+  parameters: {
+    type: 'object',
+    properties: {
+      database: { type: 'string', description: 'Id or URL of the database. Leave out for the open page.' },
+      changes: {
+        type: 'array',
+        minItems: 1,
+        maxItems: SCHEMA_MAX,
+        items: {
+          type: 'object',
+          properties: {
+            action: { type: 'string', enum: [...SCHEMA_ACTIONS] },
+            property: { type: 'string', description: 'The property to change, or to add.' },
+            type: PROPERTY_ARG.type,
+            options: { ...PROPERTY_ARG.options, description: 'For add_property and add_options: option names.' },
+            option: { type: 'string', description: 'For rename_option and remove_option: the option.' },
+            to: { type: 'string', description: `For the renames: the new name. ${BACKSLASH}` },
+          },
+          required: ['action', 'property'],
+          additionalProperties: false,
+        },
+      },
+    },
+    required: ['changes'],
+    additionalProperties: false,
+  },
+  preview: (args) => {
+    const given = typeof args.database === 'string' ? args.database.trim() : ''
+    const id = given ? pageArg(given) : undefined
+    const known = id ? seenDatabases.get(id) : undefined
+    const changes = Array.isArray(args.changes) ? (args.changes as Record<string, unknown>[]) : []
+    const name = (v: unknown) => `“${titleArg(v)}”`
+    const list = (v: unknown) => (Array.isArray(v) ? v.map((o) => oneLine(String(o))).join(', ') : '')
+    return [
+      `Change the properties of ${id ? `${known ? `${oneLine(known)} ` : ''}^${hexId(id)}` : given ? oneLine(given) : 'the open database'}`,
+      ...changes.map((c) => {
+        switch (c?.action) {
+          case 'add_property':
+            return `    Add the property ${name(c.property)} (${oneLine(String(c.type ?? '')).replace(/_/g, ' ')}${Array.isArray(c.options) ? `: ${list(c.options)}` : ''})`
+          case 'rename_property':
+            return `    Rename the property ${name(c.property)} to ${name(c.to)}`
+          case 'remove_property':
+            return `    Remove the property ${name(c.property)}: its values in every row are lost`
+          case 'add_options':
+            return `    Add options to ${name(c.property)}: ${list(c.options)}`
+          case 'rename_option':
+            return `    Rename the option ${name(c.option)} of ${name(c.property)} to ${name(c.to)}, in every row that has it`
+          case 'remove_option':
+            return `    Remove the option ${name(c.option)} of ${name(c.property)}: rows that have it lose it`
+          default:
+            return '    (a change that will be refused)'
+        }
+      }),
+    ].join('\n')
+  },
+  run: async (args, signal) => {
+    let changes
+    try {
+      changes = parseChanges(args.changes)
+    } catch (err) {
+      schemaRefusal(err)
+    }
+    const given = typeof args.database === 'string' && args.database.trim() ? args.database : undefined
+    const tab = await activeNotionTab()
+    const id = given ? pageArg(given) : tab.pageId
+    if (given && !id) throw new Error(`Not a Notion database URL or id: ${given}`)
+    if (!id) throw new Error('Give `database`: the open tab does not show a page.')
+    const block = (await tab.client.getRecords([{ table: 'block', id }])).block![id]
+    if (block.type !== 'collection_view_page' && block.type !== 'collection_view')
+      throw new EditError(given ? 'That is not a database.' : 'The open page is not a database. Give `database`.')
+    const db = await resolveDatabase(tab.client, block)
+    let plan
+    try {
+      plan = planSchemaChanges(db.spaceId, db.collectionId, db.schema, changes)
+    } catch (err) {
+      schemaRefusal(err)
+    }
+    const operations = [...plan.operations]
+    let renamedRows: string[] = []
+    if (plan.renames.length) {
+      // Rows keep an option's text: every row that has a renamed option is renamed with it, or the
+      // ones left out would lose their value. So every row must be read first.
+      const viewId = db.views[0]
+      if (!viewId)
+        throw new EditError("This database's rows can't be read (it has no view), so its options can't be renamed.")
+      const { rowIds, hasMore, recordMap } = await tab.client.queryCollection(
+        db.collectionId,
+        viewId,
+        db.spaceId,
+        QUERY_LOAD,
+      )
+      if (hasMore)
+        throw new EditError(
+          `This database has more than ${QUERY_LOAD} rows, so not every row that has the option can be renamed with it. ` +
+            'Nothing was changed; the user can rename the option in Notion.',
+        )
+      let rows
+      try {
+        rows = renameInRows(db.spaceId, rowIds, recordMap, plan.renames)
+      } catch (err) {
+        schemaRefusal(err)
+      }
+      operations.push(...rows.operations)
+      renamedRows = rows.rows
+    }
+    signal?.throwIfAborted()
+    try {
+      await tab.client.submitTransaction(db.spaceId, operations, 'Notion Copilot: update_database_schema')
+    } catch (err) {
+      // A retry would add a property a second time if this change was saved: the agent must look first.
+      if (err instanceof NotionError && err.code === 'outcome_unknown')
+        throw new NotionError(
+          'outcome_unknown',
+          'Notion did not confirm it, so the properties may or may not have changed. Query ' +
+            `^${hexId(id)} to see its properties before trying again.`,
+          { cause: err, stopsQuestion: err.stopsQuestion },
+        )
+      throw err
+    } finally {
+      // Reads of the database and its rows show the old properties.
+      for (const key of recentReads.keys()) if (key.endsWith(`:${id}`)) recentReads.delete(key)
+      for (const row of renamedRows) seenRows.delete(row)
+    }
+    return [
+      `Changed the properties of “${db.name}” ^${hexId(id)}:`,
+      ...plan.lines,
+      ...(plan.renames.length ? [`Rows renamed with their options: ${renamedRows.length}.`] : []),
+      `Properties now: ${rowValuesHeader(plan.schema)}`,
+    ].join('\n')
+  },
+}
+
 /** How many pages one move_page or trash_page call takes at most, so its preview stays readable. */
 export const ORGANIZE_MAX = 50
 
@@ -2265,6 +2538,8 @@ export const TOOLS: ToolSpec[] = [
   getSelection,
   queryDatabase,
   updatePages,
+  createDatabase,
+  updateDatabaseSchema,
   listPages,
   movePage,
   duplicatePage,

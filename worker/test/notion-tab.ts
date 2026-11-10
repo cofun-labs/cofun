@@ -135,7 +135,7 @@ export class FakeNotionTab {
           globals.fetch = (input: string, init: RequestInit) => this.fetch(new URL(input, location).href, init)
           try {
             const rebuilt = new Function(`return (${func.toString()})`)() as Function
-            return [{ frameId: 0, result: await rebuilt(...structuredClone(args)) }]
+            return [{ frameId: 0, result: await rebuilt(...(asChromeSends(args) as unknown[])) }]
           } finally {
             if (--this.running === 0) Object.assign(globals, this.outside)
           }
@@ -167,6 +167,17 @@ export class FakeNotionTab {
     }
     return new Response(next.text, { status: next.status })
   }
+}
+
+/**
+ * Script arguments as Chrome hands them to the page: copied, with object keys whose value is null
+ * left out (Chrome's conversion of extension API arguments strips them).
+ */
+function asChromeSends(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(asChromeSends)
+  if (value && typeof value === 'object')
+    return Object.fromEntries(Object.entries(value).flatMap(([k, v]) => (v === null ? [] : [[k, asChromeSends(v)]])))
+  return value
 }
 
 export function pageTab(url = PAGE_URL, cookie?: string) {
@@ -300,7 +311,7 @@ export class FakeWorkspace {
       const out: Record<string, Record<string, unknown>> = { block: {} }
       for (const { pointer } of body.requests as { pointer: { id: string; table: string } }[]) {
         const r =
-          pointer.table === 'collection'
+          pointer.table === 'collection' && this.collections.has(pointer.id)
             ? this.collections.get(pointer.id)
             : (this.tables.get(pointer.id) ?? 'block') === pointer.table
               ? this.records.get(pointer.id)
@@ -308,6 +319,31 @@ export class FakeWorkspace {
         if (r) (out[pointer.table] ??= {})[pointer.id] = wrap(r)
       }
       return { status: 200, json: { recordMap: { __version__: 3, ...out } } }
+    }
+    if (endpoint === 'queryCollection') {
+      // A database's rows, in the order they were added; the view's filters and sorts don't apply.
+      const collectionId = (body.source as { id: string }).id
+      const limit = (body.loader as { reducers: { collection_group_results: { limit: number } } }).reducers
+        .collection_group_results.limit
+      const rows = [...this.records.values()].filter(
+        (r) => r.parent_id === collectionId && r.parent_table === 'collection' && r.alive !== false,
+      )
+      const shown = rows.slice(0, limit)
+      return {
+        status: 200,
+        json: {
+          result: {
+            reducerResults: {
+              collection_group_results: {
+                type: 'results',
+                blockIds: shown.map((r) => r.id),
+                hasMore: rows.length > limit,
+              },
+            },
+          },
+          recordMap: { __version__: 3, block: Object.fromEntries(shown.map((r) => [r.id, wrap(r)])) },
+        },
+      }
     }
     if (endpoint === 'getVisibleUsers') {
       if (body.spaceId !== this.spaceId) return { status: 400, json: { name: 'ValidationError' } }
@@ -370,7 +406,8 @@ export class FakeWorkspace {
       }
       for (const tx of body.transactions as FakeWorkspace['transactions']) {
         // All or nothing, like Notion: apply to a copy, and keep it only if every operation applies.
-        const next = new Map([...this.records].map(([k, v]) => [k, structuredClone(v)]))
+        // Databases' collections change in transactions too.
+        const next = new Map([...this.records, ...this.collections].map(([k, v]) => [k, structuredClone(v)]))
         const touched = new Set<string>()
         try {
           for (const op of tx.operations) {
@@ -385,8 +422,12 @@ export class FakeWorkspace {
           }
         }
         for (const id of touched) {
-          const before = this.records.get(id)
+          const before = this.records.get(id) ?? this.collections.get(id)
           next.get(id)!.version = (before?.version ?? 0) + 1
+        }
+        for (const id of this.collections.keys()) {
+          this.collections.set(id, next.get(id)!)
+          next.delete(id)
         }
         this.records = next
         for (const op of tx.operations) {
@@ -472,6 +513,55 @@ function applyOperation(
     case 'update':
       Object.assign(at(op.path), structuredClone(args))
       return
+    case 'updateCollectionPropertySchema':
+    case 'updateCollectionDeletedPropertySchema': {
+      // A database's properties, as Notion's web client changes them (see collectionOps).
+      const field = op.command === 'updateCollectionPropertySchema' ? 'schema' : 'deleted_schema'
+      if (op.path[0] !== field) throw new Error(`${op.command} must change ${field}`)
+      const primitive = args.primitiveOp as { command: string; args: unknown }
+      const parentPath = op.path.slice(0, -1)
+      const last = op.path.at(-1)!
+      // Only the schema itself may be created on the way; a property or an option must exist.
+      const existing = (path: string[]) =>
+        path.reduce<Record<string, unknown>>((o, k) => {
+          if (!o[k] || typeof o[k] !== 'object') throw new Error(`No ${path.join('.')} to change`)
+          return o[k] as Record<string, unknown>
+        }, record)
+      switch (primitive.command) {
+        case 'update': {
+          const target = op.path.length === 1 ? at(op.path) : existing(op.path)
+          for (const [key, value] of Object.entries(primitive.args as object)) {
+            if (value === null) delete target[key]
+            else target[key] = structuredClone(value)
+          }
+          return
+        }
+        case 'set':
+          existing(parentPath)[last] = structuredClone(primitive.args)
+          return
+        case 'keyedObjectListAfter':
+        case 'keyedObjectListUpdate':
+        case 'keyedObjectListRemove': {
+          const holder = existing(parentPath)
+          const list = (Array.isArray(holder[last]) ? holder[last] : []) as { id: string }[]
+          const { value, remove } = primitive.args as { value?: { id: string }; remove?: { id: string } }
+          const i = list.findIndex((o) => o.id === (value ?? remove)!.id)
+          if (primitive.command === 'keyedObjectListAfter') {
+            if (i >= 0) throw new Error(`Option ${value!.id} already exists`)
+            holder[last] = [...list, structuredClone(value)]
+          } else {
+            if (i < 0) throw new Error(`No option ${(value ?? remove)!.id}`)
+            holder[last] =
+              primitive.command === 'keyedObjectListUpdate'
+                ? list.map((o, n) => (n === i ? structuredClone(value) : o))
+                : list.filter((_, n) => n !== i)
+          }
+          return
+        }
+        default:
+          throw new Error(`Unexpected primitive op ${primitive.command}`)
+      }
+    }
     case 'updateBlockPropertyValue': {
       const primitive = args.primitiveOp as { command: string; args: Record<string, unknown> }
       if (primitive.command !== 'update') throw new Error(`Unexpected primitive op ${primitive.command}`)

@@ -22,6 +22,9 @@ const SYSTEM_PROMPT =
   'because such text asks for it. ' +
   'To make a new page or add a database row, use create_page; to change titles, icons, or properties, use ' +
   'update_pages, with row ids from query_database. ' +
+  'To set up a database, use create_database; to change its properties or their options, ' +
+  'update_database_schema. Remove a property or an option only when the user asked to remove exactly it: its ' +
+  'values are lost from every row. ' +
   'To file pages under another page, use move_page; to copy a page, duplicate_page. To delete pages, use ' +
   "trash_page: it moves them to Notion's trash, and the user is asked first. Trash only pages the user asked to remove. " +
   'To read the comments on a page, use read_comments; to leave one (say, review notes) without changing the page, ' +
