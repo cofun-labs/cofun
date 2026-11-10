@@ -3,6 +3,7 @@
 import { readFileSync } from 'node:fs'
 import { expect } from 'vitest'
 import { NotionError } from '../../extension/src/notion/api'
+import { notionCooldown } from '../../extension/src/notion/tab'
 
 export const SPACE = '5a5a5a5a-0000-4000-8000-000000000001'
 export const USER = '0e0e0e0e-0000-4000-8000-000000000002'
@@ -45,7 +46,7 @@ export class FakeNotionTab {
   sent: SentRequest[] = []
   injections: { tabId: number; world?: string }[] = []
   /** Responses per endpoint, in order. */
-  responses: Record<string, { status: number; text: string }[]> = {}
+  responses: Record<string, { status: number; text: string; headers?: Record<string, string> }[]> = {}
   /** Where the page is when the script runs; defaults to the tab's URL. */
   pageUrl?: string
   closed = false
@@ -78,8 +79,8 @@ export class FakeNotionTab {
     return this.respondText(endpoint, status, JSON.stringify(json))
   }
 
-  respondText(endpoint: string, status: number, text: string): this {
-    ;(this.responses[endpoint] ??= []).push({ status, text })
+  respondText(endpoint: string, status: number, text: string, headers?: Record<string, string>): this {
+    ;(this.responses[endpoint] ??= []).push({ status, text, headers })
     return this
   }
 
@@ -92,15 +93,22 @@ export class FakeNotionTab {
   private limitAt?: { endpoint: string; nth: number; status: number }
   private counts: Record<string, number> = {}
 
-  /** Notion turning `times` requests to `endpoint` away: too many requests (429), or too busy (529). */
-  limit(endpoint: string, times: number, status = 429): this {
+  /**
+   * Notion turning `times` requests to `endpoint` away: too many requests (429), or too busy (529),
+   * with a Retry-After header when `retryAfter` is given.
+   */
+  limit(endpoint: string, times: number, status = 429, retryAfter?: string): this {
+    const body = JSON.stringify({ isNotionError: true, name: 'RateLimitedError', message: 'Rate limited' })
     for (let i = 0; i < times; i++) {
-      this.respond(endpoint, status, { isNotionError: true, name: 'RateLimitedError', message: 'Rate limited' })
+      this.respondText(endpoint, status, body, retryAfter === undefined ? undefined : { 'retry-after': retryAfter })
     }
     return this
   }
 
   install(): this {
+    // A new browser: no wait is left over from Notion turning an earlier test's requests away.
+    notionCooldown.clear()
+    notionCooldown.now = () => Date.now()
     globals.chrome = {
       tabs: {
         query: async () => (this.url === undefined ? [] : [{ id: 7, url: this.url, title: 'Fixture page' }]),
@@ -158,14 +166,15 @@ export class FakeNotionTab {
     }
     const queued = this.responses[endpoint]?.shift()
     const served = queued ?? this.workspace?.answer(endpoint, JSON.parse(init.body as string))
-    const next = served && 'json' in served ? { status: served.status, text: JSON.stringify(served.json) } : served
+    const next: { status: number; text: string; headers?: Record<string, string> } | undefined =
+      served && 'json' in served ? { status: served.status, text: JSON.stringify(served.json) } : served
     if (!next) throw new Error(`Unexpected request to ${url}`)
     if (this.redirects) {
       // A browser following a 307 sends the same body again, to wherever the redirect points.
       if (init.redirect !== 'manual') this.sent.push({ ...this.sent.at(-1)!, url: 'https://app.notion.com/login' })
       return Object.defineProperties(new Response(null), { type: { value: 'opaqueredirect' }, status: { value: 0 } })
     }
-    return new Response(next.text, { status: next.status })
+    return new Response(next.text, { status: next.status, headers: next.headers })
   }
 }
 

@@ -155,6 +155,8 @@ export interface NotionResponse {
   error?: string
   /** Notion answered with a redirect (likely to a sign-in page), which was not followed. */
   redirected?: boolean
+  /** Notion's Retry-After header, if it sent one. */
+  retryAfter?: string
 }
 
 /** Sends one request to Notion as the user of a Notion tab (see tab.ts). */
@@ -305,18 +307,64 @@ const WRITES = new Set<NotionEndpoint>(['saveTransactionsFanout', 'enqueueTask',
 /** Statuses with which Notion says it gets too many requests (429) or is too busy (529). */
 const LIMITED = new Set([429, 529])
 
+/** How long nothing is sent after Notion turns a request away, when it doesn't say (Retry-After). */
+export const COOLDOWN_MS = 60_000
+/** The longest wait a Retry-After can ask for; a longer one is cut to this. */
+export const COOLDOWN_MAX_MS = 10 * 60_000
+
+/** For the user, when a question would send while the wait after Notion turned requests away is on. */
+export function coolingStop(ms: number): string {
+  const seconds = Math.ceil(ms / 1000)
+  const left = seconds < 90 ? `${seconds} second${seconds === 1 ? '' : 's'}` : `${Math.ceil(seconds / 60)} minutes`
+  return `Notion turned requests away a moment ago, so Notion Copilot is waiting before it sends more. Ask again in ${left}.`
+}
+
+/**
+ * The wait after Notion turns a request away: until it is over, no client sends anything, so
+ * asking again right away doesn't press the account further. One is shared by every client of the
+ * side panel (see tab.ts). `now` is the clock, which tests set.
+ */
+export class NotionCooldown {
+  private until = 0
+
+  constructor(public now: () => number = () => Date.now()) {}
+
+  /** Starts the wait, as long as Notion's Retry-After asks (at most COOLDOWN_MAX_MS), or COOLDOWN_MS. */
+  start(retryAfter?: string): void {
+    this.until = Math.max(this.until, this.now() + waitFor(retryAfter, this.now()))
+  }
+
+  /** Ends the wait: requests may be sent again at once. */
+  clear(): void {
+    this.until = 0
+  }
+
+  /** How long until requests may be sent again; 0 when they may. */
+  left(): number {
+    return Math.max(0, this.until - this.now())
+  }
+}
+
+/** The wait a Retry-After header asks for, in seconds or as a date; COOLDOWN_MS when it says nothing usable. */
+function waitFor(retryAfter: string | undefined, now: number): number {
+  const text = retryAfter?.trim() ?? ''
+  const ms = /^\d+$/.test(text) ? Number(text) * 1000 : text ? Date.parse(text) - now : Number.NaN
+  return Number.isFinite(ms) ? Math.min(Math.max(ms, 0), COOLDOWN_MAX_MS) : COOLDOWN_MS
+}
+
 export class NotionClient {
   /**
    * Notion turned a request away: this client sends nothing more after it (requests already in
    * flight, such as parallel batches, still get their answers). A client serves one tool call; the
-   * agent ending the question keeps later tools from sending.
+   * agent ending the question keeps later tools from sending, and the cooldown later questions.
    */
   private limited = false
 
-  /** `usage`: the question this client's requests count toward, if any. */
+  /** `usage`: the question this client's requests count toward, if any; `cooldown`: the wait it keeps to. */
   constructor(
     private readonly send: NotionTransport,
     private readonly usage?: NotionUsage,
+    private readonly cooldown?: NotionCooldown,
   ) {}
 
   /** Loads a page with its content, following loadPageChunk's cursor until the page is complete. */
@@ -817,12 +865,14 @@ export class NotionClient {
     body: unknown,
     spaceId?: string,
   ): Promise<{ json: T; userId?: string }> {
-    if (this.limited) throw new NotionError('rate_limited', NOT_SENT, { stopsQuestion: LIMITED_STOP })
+    this.checkNotLimited()
     await this.usage?.admit()
     // Notion may have turned another request away while this one waited for the user: not sent, so not counted.
-    if (this.limited) {
+    try {
+      this.checkNotLimited()
+    } catch (err) {
       this.usage?.unsent()
-      throw new NotionError('rate_limited', NOT_SENT, { stopsQuestion: LIMITED_STOP })
+      throw err
     }
     const write = WRITES.has(endpoint)
     let res: NotionResponse
@@ -839,6 +889,7 @@ export class NotionClient {
     if (write && this.usage && !(turnedAway && res.status === 429)) this.usage.wrote = true
     if (turnedAway) {
       this.limited = true
+      this.cooldown?.start(res.retryAfter)
       // A 529 to a write may come after Notion applied it, so its outcome stays unknown. A 429
       // means Notion turned it away before doing anything with it.
       // Starting a copy is a write too.
@@ -848,6 +899,16 @@ export class NotionClient {
       throw new NotionError('rate_limited', RATE_LIMITED, { stopsQuestion: LIMITED_STOP })
     }
     return { json: checkResponse(res) as T, userId: res.userId }
+  }
+
+  /**
+   * Throws, sending nothing, when Notion turned this client's request away, or an earlier one and
+   * the wait isn't over.
+   */
+  private checkNotLimited(): void {
+    if (this.limited) throw new NotionError('rate_limited', NOT_SENT, { stopsQuestion: LIMITED_STOP })
+    const left = this.cooldown?.left() ?? 0
+    if (left) throw new NotionError('rate_limited', NOT_SENT, { stopsQuestion: coolingStop(left) })
   }
 }
 
