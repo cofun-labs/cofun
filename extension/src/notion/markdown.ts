@@ -134,19 +134,29 @@ export function userName(recordMap: RecordMap, id: string): string {
 /** A database's property definitions, by property id (the title's is `title`). */
 export type Schema = Record<string, { name?: string; type?: string }>
 
-/** Each property of a database row as text: the title first, then the rest in the schema's order. */
+const isTitle = ([key, s]: [string, { type?: string }]) => key === 'title' || s.type === 'title'
+
+/** A database's properties as [key, definition]: the title first, then the rest in the schema's order. */
+export function titleFirst(schema: Schema): [string, Schema[string]][] {
+  const entries = Object.entries(schema)
+  return [...entries.filter(isTitle), ...entries.filter((e) => !isTitle(e))]
+}
+
+/**
+ * Each property of a database row as text, in titleFirst's order. With `table`, each value is
+ * escaped to sit in a Markdown table cell: no `|` in it can end the cell.
+ */
 export function rowValues(
   recordMap: RecordMap,
   row: Block,
   schema: Schema,
+  { table = false } = {},
 ): { name: string; type: string; value: string }[] {
   const ctx = new Context(recordMap, (recordMap.block ?? {}) as Record<string, Block>)
-  const isTitle = ([key, s]: [string, { type?: string }]) => key === 'title' || s.type === 'title'
-  const entries = Object.entries(schema)
-  return [...entries.filter(isTitle), ...entries.filter((e) => !isTitle(e))].map(([key, s]) => ({
+  return titleFirst(schema).map(([key, s]) => ({
     name: s.name ?? key,
     type: s.type ?? 'text',
-    value: isTitle([key, s]) ? ctx.rich(row.properties?.title) : ctx.property(row, key, s.type),
+    value: isTitle([key, s]) ? ctx.rich(row.properties?.title, { table }) : ctx.property(row, key, s.type, { table }),
   }))
 }
 
@@ -424,7 +434,7 @@ class Context {
     return listed.flatMap((p: { property?: unknown }) => (typeof p?.property === 'string' ? [p.property] : []))
   }
 
-  property(page: Block, key: string, type: string | undefined): string {
+  property(page: Block, key: string, type: string | undefined, { table = false } = {}): string {
     switch (type) {
       // Notion keeps these on the row itself, not in its properties.
       case 'created_time':
@@ -445,7 +455,7 @@ class Context {
         // A checkbox never ticked has no value stored; Notion shows it unticked.
         return this.plain(page.properties?.[key]) === 'Yes' ? 'Yes' : 'No'
       default:
-        return this.rich(page.properties?.[key])
+        return this.rich(page.properties?.[key], { table })
     }
   }
 
@@ -478,14 +488,15 @@ class Context {
   }
 
   /** Rich text as Markdown, with mentions resolved to names. */
-  /** In a table, every `|` is escaped, code and equations too, so it can't split a cell. */
+  /**
+   * In a table, every `|` is escaped (in code, equations, mentioned names, and link targets too), so
+   * it can't split a cell.
+   */
   rich(value: unknown, { table = false } = {}): string {
     let afterPerson = false
     return runs(value)
       .map(([text, marks = []]) => {
-        let out = this.run(text, marks)
-        const raw = marks.some(([m]) => m === 'c' || m === 'e')
-        if (table && raw) out = out.split('|').join('\\|')
+        let out = this.run(text, marks, table)
         // `@[Name](` would read as an @ before a link: the parenthesis after a mention stays literal.
         if (afterPerson && out.startsWith('(')) out = `\\${out}`
         afterPerson = /@\[.*\]$/s.test(out) && marks.some(([m]) => m === 'u')
@@ -494,30 +505,36 @@ class Context {
       .join('')
   }
 
-  private run(text: string, marks: [string, unknown?][]): string {
+  private run(text: string, marks: [string, unknown?][], table = false): string {
+    // Names and link targets aren't Markdown-escaped; in a table their pipes (and so backslashes,
+    // which would undo a pipe's escape) still must be.
+    const pipes = (raw: string) => (table ? tableEscape(raw) : raw)
     const code = marks.some(([m]) => m === 'c')
+    // Code and equations keep their text as it is; in a table only their pipes are escaped, as
+    // GFM reads `\|` there.
+    const raw = (t: string) => (table ? t.split('|').join('\\|') : t)
     // Characters Markdown would read as formatting stay literal behind a backslash.
-    let out = code ? text : escapeMarkdown(text)
+    let out = code ? raw(text) : escapeMarkdown(text)
     let link: string | undefined
     for (const [mark, arg] of marks) {
       switch (mark) {
         case 'p':
-          return `[${this.pageTitle(String(arg))}](${hexId(String(arg))})`
+          return `[${pipes(this.pageTitle(String(arg)))}](${hexId(String(arg))})`
         case 'lm': {
           // A link mention (a web page shown as a preview) is a link to that page.
           const { href, title } = (arg ?? {}) as { href?: unknown; title?: unknown }
           if (typeof href !== 'string' || !href) break
-          return `[${escapeMarkdown(typeof title === 'string' && title ? title : href)}](${href})`
+          return `[${escapeMarkdown(typeof title === 'string' && title ? title : href)}](${pipes(href)})`
         }
         case 'u':
           // Its bold, italic, and strikethrough still apply, as for text (a link can't: `[@[Name]](url)`
-          // wouldn't read back).
+          // wouldn't read back). The name is Markdown-escaped, so its pipes are too.
           out = this.mention(String(arg))
           break
         case 'd':
           return `@${formatDate(arg)}`
         case 'e':
-          return `$${String(arg)}$`
+          return `$${raw(String(arg))}$`
         case 'a': {
           // Notion links to its own pages by path (`/Title-<id>`); show those as `/<id>` (keeping any
           // `#block`), which read_page opens and which stays a link, unlike a mention's `(<id>)`.
@@ -526,7 +543,7 @@ class Context {
           const page = href.startsWith('/')
             ? /[0-9a-f]{32}$/i.exec(path.split('?')[0].replace(/-/g, ''))?.[0]
             : undefined
-          link = page ? `/${page.toLowerCase()}${hash ? `#${hash}` : ''}` : href
+          link = page ? `/${page.toLowerCase()}${hash ? `#${hash}` : ''}` : pipes(href)
           break
         }
       }
@@ -595,6 +612,11 @@ export function codeSpan(text: string): string {
       return `${fence}${pad}${line}${pad}${fence}`
     })
     .join('\n')
+}
+
+/** Text that isn't Markdown-escaped, for a table cell: a `|` can't end the cell, nor `\` undo that. */
+function tableEscape(raw: string): string {
+  return raw.replace(/[\\|]/g, '\\$&')
 }
 
 /** Puts Markdown marks around text, keeping surrounding spaces outside them (`**a** `, not `**a **`). */
