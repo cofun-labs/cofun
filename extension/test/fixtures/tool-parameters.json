@@ -1,0 +1,465 @@
+{
+  "read_page": {
+    "type": "object",
+    "properties": {
+      "page": {
+        "type": "string",
+        "description": "URL or id of the page to read. Leave out to read the open page."
+      },
+      "part": {
+        "type": "integer",
+        "minimum": 1,
+        "description": "Which part of a long page to read, starting at 1."
+      }
+    },
+    "additionalProperties": false
+  },
+  "query_database": {
+    "type": "object",
+    "properties": {
+      "database": {
+        "type": "string",
+        "description": "Id or URL of the database. Leave out for the open page."
+      },
+      "filter": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "property": {
+              "type": "string",
+              "description": "Property name, as the result lists it."
+            },
+            "op": {
+              "type": "string",
+              "enum": ["is", "is_not", "contains", "not_contains", "is_empty", "is_not_empty", "before", "after"]
+            },
+            "value": {
+              "type": "string",
+              "description": "What to compare with; not needed for is_empty and is_not_empty."
+            }
+          },
+          "required": ["property", "op"],
+          "additionalProperties": false
+        }
+      },
+      "sort": {
+        "type": "object",
+        "properties": {
+          "property": {
+            "type": "string"
+          },
+          "direction": {
+            "type": "string",
+            "enum": ["ascending", "descending"]
+          }
+        },
+        "required": ["property"],
+        "additionalProperties": false
+      },
+      "part": {
+        "type": "integer",
+        "minimum": 1,
+        "description": "Which part of a long result, starting at 1."
+      }
+    },
+    "additionalProperties": false
+  },
+  "list_pages": {
+    "type": "object",
+    "properties": {
+      "page": {
+        "type": "string",
+        "description": "URL or id of a page to list the pages under. Leave out for the top level."
+      },
+      "section": {
+        "type": "string",
+        "description": "Without `page`: list only this top-level section, by its name as a list showed it (say \"Private\", or a teamspace's name)."
+      },
+      "depth": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 3,
+        "description": "How many levels to list. Defaults to 1."
+      },
+      "offset": {
+        "type": "integer",
+        "minimum": 0,
+        "description": "With `page` or `section`: skip this many entries of the top level, to see what a cut-off list left out. Entries include blocks that are not listed (text, say), so use the offset a cut-off list gives."
+      }
+    },
+    "additionalProperties": false
+  },
+  "edit_page": {
+    "type": "object",
+    "properties": {
+      "page": {
+        "type": "string",
+        "description": "Id of the page to edit, as read_page shows it after \"Page:\"."
+      },
+      "edits": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "action": {
+              "type": "string",
+              "enum": ["insert", "replace", "delete"]
+            },
+            "block": {
+              "type": "string",
+              "description": "Reference of the block, as read_page shows it (e.g. ^1a2b3c4d). For insert: the block to insert after, or inside."
+            },
+            "position": {
+              "type": "string",
+              "enum": ["after", "inside", "start", "end"],
+              "description": "For insert: after `block` (the default when `block` is given); inside `block`, nested in it before what it already holds; or at the start or end of the page."
+            },
+            "markdown": {
+              "type": "string",
+              "description": "For insert and replace: the new content, as Markdown."
+            }
+          },
+          "required": ["action"],
+          "additionalProperties": false
+        },
+        "minItems": 1
+      }
+    },
+    "required": ["page", "edits"],
+    "additionalProperties": false
+  },
+  "create_page": {
+    "type": "object",
+    "properties": {
+      "title": {
+        "type": "string",
+        "description": "The new page's title, on one line: inline Markdown as query_database and read_page show text (bold, links, `[Title](page id)`, `@[Name]`, `@2026-11-20`): put a backslash before a character that must stay literal, and write a backslash itself as \\\\."
+      },
+      "markdown": {
+        "type": "string",
+        "description": "The page's content, as Markdown. Leave out for an empty page."
+      },
+      "parent": {
+        "type": "string",
+        "description": "URL or id of the page or database to create it in."
+      },
+      "properties": {
+        "type": "object",
+        "description": "Database properties by name: text, a number, Yes/No for checkboxes, an option name (a list for multi-select), or a date as YYYY-MM-DD (a range as \"YYYY-MM-DD → YYYY-MM-DD\"). Empty clears a value. The title goes in `title`, not here. Setting a date replaces any time or reminder it had. A text property is inline Markdown as query_database and read_page show text (bold, links, `[Title](page id)`, `@[Name]`, `@2026-11-20`): put a backslash before a character that must stay literal, and write a backslash itself as \\\\. In other values, Markdown escapes are undone.",
+        "additionalProperties": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "required": ["title", "parent"],
+    "additionalProperties": false
+  },
+  "update_pages": {
+    "type": "object",
+    "properties": {
+      "pages": {
+        "type": "array",
+        "minItems": 1,
+        "maxItems": 50,
+        "items": {
+          "type": "object",
+          "properties": {
+            "page": {
+              "type": "string",
+              "description": "Id or URL of the page or row."
+            },
+            "title": {
+              "type": "string",
+              "description": "A new title, on one line: inline Markdown as query_database and read_page show text (bold, links, `[Title](page id)`, `@[Name]`, `@2026-11-20`): put a backslash before a character that must stay literal, and write a backslash itself as \\\\."
+            },
+            "icon": {
+              "type": "string",
+              "description": "A new icon: one emoji."
+            },
+            "properties": {
+              "type": "object",
+              "description": "Database properties by name: text, a number, Yes/No for checkboxes, an option name (a list for multi-select), or a date as YYYY-MM-DD (a range as \"YYYY-MM-DD → YYYY-MM-DD\"). Empty clears a value. The title goes in `title`, not here. Setting a date replaces any time or reminder it had. A text property is inline Markdown as query_database and read_page show text (bold, links, `[Title](page id)`, `@[Name]`, `@2026-11-20`): put a backslash before a character that must stay literal, and write a backslash itself as \\\\. In other values, Markdown escapes are undone.",
+              "additionalProperties": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "boolean"
+                  },
+                  {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            }
+          },
+          "required": ["page"],
+          "additionalProperties": false
+        }
+      }
+    },
+    "required": ["pages"],
+    "additionalProperties": false
+  },
+  "create_database": {
+    "type": "object",
+    "properties": {
+      "parent": {
+        "type": "string",
+        "description": "URL or id of the page to create it in."
+      },
+      "title": {
+        "type": "string",
+        "description": "The database's name. Markdown escapes are undone: write a backslash itself as \\\\."
+      },
+      "title_property": {
+        "type": "string",
+        "description": "The name of the title column. Default: Name."
+      },
+      "properties": {
+        "type": "array",
+        "maxItems": 30,
+        "items": {
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string",
+              "description": "The property's name. Markdown escapes are undone: write a backslash itself as \\\\."
+            },
+            "type": {
+              "type": "string",
+              "enum": [
+                "text",
+                "number",
+                "select",
+                "multi_select",
+                "status",
+                "date",
+                "checkbox",
+                "url",
+                "email",
+                "phone_number",
+                "person"
+              ]
+            },
+            "options": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "maxItems": 30,
+              "description": "For select and multi_select: the options' names, without commas. A status gets Notion's own."
+            }
+          },
+          "required": ["name", "type"],
+          "additionalProperties": false
+        }
+      }
+    },
+    "required": ["parent", "title"],
+    "additionalProperties": false
+  },
+  "update_database_schema": {
+    "type": "object",
+    "properties": {
+      "database": {
+        "type": "string",
+        "description": "Id or URL of the database. Leave out for the open page."
+      },
+      "changes": {
+        "type": "array",
+        "minItems": 1,
+        "maxItems": 30,
+        "items": {
+          "type": "object",
+          "properties": {
+            "action": {
+              "type": "string",
+              "enum": [
+                "add_property",
+                "rename_property",
+                "remove_property",
+                "add_options",
+                "rename_option",
+                "remove_option"
+              ]
+            },
+            "property": {
+              "type": "string",
+              "description": "The property to change, or to add."
+            },
+            "type": {
+              "type": "string",
+              "enum": [
+                "text",
+                "number",
+                "select",
+                "multi_select",
+                "status",
+                "date",
+                "checkbox",
+                "url",
+                "email",
+                "phone_number",
+                "person"
+              ]
+            },
+            "options": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "maxItems": 30,
+              "description": "For add_property and add_options: option names."
+            },
+            "option": {
+              "type": "string",
+              "description": "For rename_option and remove_option: the option."
+            },
+            "to": {
+              "type": "string",
+              "description": "For the renames: the new name. Markdown escapes are undone: write a backslash itself as \\\\."
+            }
+          },
+          "required": ["action", "property"],
+          "additionalProperties": false
+        }
+      }
+    },
+    "required": ["changes"],
+    "additionalProperties": false
+  },
+  "move_page": {
+    "type": "object",
+    "properties": {
+      "pages": {
+        "type": "array",
+        "minItems": 1,
+        "maxItems": 50,
+        "items": {
+          "type": "string"
+        },
+        "description": "Ids or URLs of the pages to move."
+      },
+      "to": {
+        "type": "string",
+        "description": "Id or URL of the page to move them into."
+      }
+    },
+    "required": ["pages", "to"],
+    "additionalProperties": false
+  },
+  "duplicate_page": {
+    "type": "object",
+    "properties": {
+      "page": {
+        "type": "string",
+        "description": "Id or URL of the page to duplicate."
+      }
+    },
+    "required": ["page"],
+    "additionalProperties": false
+  },
+  "trash_page": {
+    "type": "object",
+    "properties": {
+      "pages": {
+        "type": "array",
+        "minItems": 1,
+        "maxItems": 50,
+        "items": {
+          "type": "string"
+        },
+        "description": "Ids or URLs of the pages to trash."
+      }
+    },
+    "required": ["pages"],
+    "additionalProperties": false
+  },
+  "get_selection": {
+    "type": "object",
+    "properties": {},
+    "additionalProperties": false
+  },
+  "search_pages": {
+    "type": "object",
+    "properties": {
+      "query": {
+        "type": "string",
+        "description": "Words to search for."
+      },
+      "limit": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 20,
+        "description": "How many pages to return, up to 20. Defaults to 10."
+      }
+    },
+    "required": ["query"],
+    "additionalProperties": false
+  },
+  "read_comments": {
+    "type": "object",
+    "properties": {
+      "page": {
+        "type": "string",
+        "description": "URL or id of the page. Leave out for the open page."
+      },
+      "part": {
+        "type": "integer",
+        "minimum": 1,
+        "description": "Which part of many comments to read, starting at 1."
+      }
+    },
+    "additionalProperties": false
+  },
+  "add_comment": {
+    "type": "object",
+    "properties": {
+      "page": {
+        "type": "string",
+        "description": "URL or id of the page, as read_page shows it after \"Page:\"."
+      },
+      "block": {
+        "type": "string",
+        "description": "Reference of the block to comment on. Leave out for the page itself."
+      },
+      "text": {
+        "type": "string",
+        "description": "The comment."
+      }
+    },
+    "required": ["page", "text"],
+    "additionalProperties": false
+  }
+}

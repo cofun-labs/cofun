@@ -214,6 +214,15 @@ describe('UC-NOTION-009 read and add comments', () => {
 })
 
 describe('read_comments', () => {
+  it('refuses arguments that are not what its schema says, without asking Notion', async () => {
+    const tab = open(workspace())
+    await expect(read({ part: 0 })).rejects.toThrow('`part` must be a whole number from 1.')
+    await expect(read({ part: '2' })).rejects.toThrow('`part` must be a whole number from 1.')
+    await expect(read({ page: 5 })).rejects.toThrow('`page`: Invalid input: expected string, received number')
+    await expect(read({ block: 'x' })).rejects.toThrow('Unrecognized key: "block"')
+    expect(tab.sent).toEqual([])
+  })
+
   it('leaves out deleted comments, and threads with no comment left', async () => {
     const ws = workspace([
       { on: PAGE, n: 100 },
