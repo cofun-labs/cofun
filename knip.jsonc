@@ -1,0 +1,24 @@
+// Unused files, exports, types, and dependencies fail `pnpm knip`, and so `pnpm check`.
+//
+// No entry points are listed here: knip's plugins read each package's own config, so the entries
+// cannot drift from what is really built and run.
+//   extension  vite.config.ts (build.rollupOptions.input: sidepanel.html and src/background.ts),
+//              and the tests vitest.config.ts includes
+//   worker     wrangler.jsonc (main: src/index.ts), and vitest's default test files
+//   e2e        the "e2e" script in package.json (tsx src/cli.ts), and vitest's default test files
+//   smoke      playwright.config.ts (testDir: test)
+//   root       .oxlintrc.json, lefthook.yml, and the scripts in package.json
+//
+// A finding is fixed by deleting the code or the dependency. Only a false positive, or something
+// kept on purpose, is listed below, each with its reason. Never ignore a directory or a whole
+// category of findings.
+{
+  "$schema": "https://unpkg.com/knip@6/schema-jsonc.json",
+  "workspaces": {
+    "e2e": {
+      // src/extension.ts runs `pnpm exec vite build` with the extension package as its working
+      // directory, so the binary is the extension's vite, not a dependency of this package.
+      "ignoreBinaries": ["vite"]
+    }
+  }
+}
