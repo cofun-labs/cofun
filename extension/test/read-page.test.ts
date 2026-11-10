@@ -439,10 +439,32 @@ describe('read_page arguments', () => {
     expect(tab.sent).toEqual([])
   })
 
-  it('treats an empty page or a null part as not given', async () => {
+  // A null is dropped before the tool gets its arguments: see "read_page gets the model's arguments
+  // as its schema reads them" in worker/test/extension.test.ts.
+  it('treats an empty page as not given', async () => {
     const page = chunk([id(1)], { block: block(id(1), 'text', 'Hi') })
     openPage(page)
-    expect(body(await read({ page: ' ', part: null }))).toBe('Hi ^00000001')
+    expect(body(await read({ page: ' ' }))).toBe('Hi ^00000001')
+  })
+
+  it('refuses arguments that are not what its schema says, without asking Notion', async () => {
+    const tab = openPage()
+    await expect(read({ part: '2' })).rejects.toThrow('`part` must be a whole number from 1.')
+    await expect(read({ part: null })).rejects.toThrow('`part` must be a whole number from 1.')
+    await expect(read({ page: 5 })).rejects.toThrow('`page`: Invalid input: expected string, received number')
+    await expect(read({ pages: 'x' })).rejects.toThrow('Unrecognized key: "pages"')
+    expect(tab.sent).toEqual([])
+  })
+
+  it('tells the model its arguments as before', () => {
+    expect(readPage.parameters).toEqual({
+      type: 'object',
+      properties: {
+        page: { type: 'string', description: 'URL or id of the page to read. Leave out to read the open page.' },
+        part: { type: 'integer', minimum: 1, description: 'Which part of a long page to read, starting at 1.' },
+      },
+      additionalProperties: false,
+    })
   })
 
   it('asks for a page when the Notion tab shows none', async () => {

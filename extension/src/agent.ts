@@ -40,7 +40,11 @@ interface QuestionMeter {
 export interface ToolSpec {
   name: string
   description: string
-  /** JSON Schema of the arguments object. */
+  /**
+   * JSON Schema of the arguments object. The model is sent it, and the agent runtime checks each
+   * call against it before the tool runs (see `toAgentTool`). Define a tool with `defineTool`
+   * (tool.ts), which derives this from the schema it parses the arguments with.
+   */
   parameters: object
   /**
    * Runs the tool. Throw to report a failure to the model. An error with a `stopsQuestion` string
@@ -783,6 +787,13 @@ interface Reporter {
   changed(): void
 }
 
+/**
+ * The tool as pi runs it. Before `execute`, pi converts the model's arguments where it can (a null
+ * for an optional argument is dropped, "2" becomes 2 for a number, one value becomes a list of one)
+ * and checks the result against `parameters`. A call that does not fit never reaches the tool or
+ * `beforeToolCall`: the model gets pi's list of what is wrong with each argument. The tool gets the
+ * converted copy, which it parses itself when it is defined with `defineTool` (tool.ts).
+ */
 function toAgentTool(spec: ToolSpec, reporter: () => Reporter): AgentTool {
   return {
     name: spec.name,

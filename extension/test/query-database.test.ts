@@ -251,6 +251,78 @@ describe('query_database arguments', () => {
     await expect(query({ filter: [{ property: 'Status', op: 'is' }] })).rejects.toThrow('Filter 1 needs `value`.')
   })
 
+  it('refuses arguments that are not what its schema says, without asking Notion', async () => {
+    const tab = database()
+    await expect(query({ part: 0 })).rejects.toThrow('`part` must be a whole number from 1.')
+    await expect(query({ part: 1.5 })).rejects.toThrow('`part` must be a whole number from 1.')
+    await expect(query({ filter: 'Status is Done' })).rejects.toThrow('`filter` must be a list of conditions.')
+    await expect(query({ filter: [{ property: 'Status', op: 'is' }, { property: 'Status' }] })).rejects.toThrow(
+      'Filter 2: `op` must be one of is, is_not, contains, not_contains, is_empty, is_not_empty, before, after.',
+    )
+    await expect(query({ filter: [{ op: 'is_empty' }] })).rejects.toThrow(
+      "Filter 1 needs `property`: a property's name.",
+    )
+    await expect(query({ filter: [{ property: 'Status', op: 'is', value: 5 }] })).rejects.toThrow(
+      'Filter 1: `value` must be text.',
+    )
+    await expect(query({ sort: { direction: 'descending' } })).rejects.toThrow(
+      '`sort.property`: Invalid input: expected string, received undefined',
+    )
+    await expect(query({ sort: { property: 'Status', direction: 'down' } })).rejects.toThrow(
+      '`sort.direction`: Invalid option: expected one of "ascending"|"descending"',
+    )
+    await expect(query({ database: 5 })).rejects.toThrow('`database`: Invalid input: expected string, received number')
+    await expect(query({ limit: 10 })).rejects.toThrow('Unrecognized key: "limit"')
+    // An argument inside a list is named as the model would write it.
+    await expect(query({ filter: [{ property: 'Status', op: 'is_empty', values: 'x' }] })).rejects.toThrow(
+      '`filter[0]`: Unrecognized key: "values"',
+    )
+    // Everything wrong with a call is said at once.
+    await expect(query({ part: 0, sort: {} })).rejects.toThrow(
+      '`sort.property`: Invalid input: expected string, received undefined\n`part` must be a whole number from 1.',
+    )
+    expect(tab.sent).toEqual([])
+  })
+
+  it('tells the model its arguments as before', () => {
+    expect(queryDatabase.parameters).toEqual({
+      type: 'object',
+      properties: {
+        database: { type: 'string', description: 'Id or URL of the database. Leave out for the open page.' },
+        filter: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              property: { type: 'string', description: 'Property name, as the result lists it.' },
+              op: {
+                type: 'string',
+                enum: ['is', 'is_not', 'contains', 'not_contains', 'is_empty', 'is_not_empty', 'before', 'after'],
+              },
+              value: {
+                type: 'string',
+                description: 'What to compare with; not needed for is_empty and is_not_empty.',
+              },
+            },
+            required: ['property', 'op'],
+            additionalProperties: false,
+          },
+        },
+        sort: {
+          type: 'object',
+          properties: {
+            property: { type: 'string' },
+            direction: { type: 'string', enum: ['ascending', 'descending'] },
+          },
+          required: ['property'],
+          additionalProperties: false,
+        },
+        part: { type: 'integer', minimum: 1, description: 'Which part of a long result, starting at 1.' },
+      },
+      additionalProperties: false,
+    })
+  })
+
   it('says when the page is not a database', async () => {
     new FakeNotionTab(PAGE_URL)
       .respond(

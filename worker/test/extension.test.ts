@@ -290,6 +290,40 @@ describe('extension agent against the worker', () => {
     })
   })
 
+  it("read_page gets the model's arguments as its schema reads them, and a call that does not fit never runs", async () => {
+    const tab = new FakeNotionTab(PAGE_URL)
+      .respond('loadPageChunk', 200, fixture('load-page-chunk-0'))
+      .respond('loadPageChunk', 200, fixture('load-page-chunk-1'))
+      .install()
+    ai.script = [
+      // A null for an argument left out, and a number as text: what models often send.
+      { toolCalls: [{ name: 'read_page', arguments: '{"page":null,"part":"1"}' }] },
+      { toolCalls: [{ name: 'read_page', arguments: '{"part":0,"pages":"x"}' }] },
+      { reply: 'It says to ship it.' },
+    ]
+    const { result, updates } = await ask(makeAgent({ tools: [readPage] }), 'Summarize this page')
+
+    expect(result).toEqual({ status: 'done' })
+    expect(updates.filter((u) => u.type === 'tool_ready')).toEqual([
+      { type: 'tool_ready', id: 'chatcmpl-tool-0', args: { part: 1 }, preview: undefined },
+    ])
+    expect(sentMessages(1).at(-1)).toMatchObject({ content: expect.stringContaining('Page: Fixture page') })
+    // The second call is refused with what is wrong with each argument, and asks Notion nothing.
+    expect(sentMessages(2).at(-1)).toEqual({
+      role: 'tool',
+      tool_call_id: 'chatcmpl-tool-1',
+      content: [
+        'Validation failed for tool "read_page":',
+        '  - part: expected >= 1',
+        '  - pages: unknown field',
+        '',
+        'Received arguments:',
+        '{\n  "part": 0,\n  "pages": "x"\n}',
+      ].join('\n'),
+    })
+    expect(tab.sent).toHaveLength(2)
+  })
+
   /** The fixture page in a workspace that applies edits, with one paragraph. */
   function editablePage() {
     const intro = 'e1e1e1e1-0000-4000-8000-000000000001'
