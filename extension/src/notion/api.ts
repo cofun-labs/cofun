@@ -348,7 +348,8 @@ export interface CooldownStore {
  * The wait after Notion turns a request away: until it is over, no client sends anything, so
  * asking again right away doesn't press the account further. A side panel has one for all its
  * clients, and with a `store` every side panel keeps to the same wait: another Notion tab's, and
- * one opened or reloaded later (see tab.ts). `now` is the clock, which tests set.
+ * one opened or reloaded later (see tab.ts). `now` is the clock, which tests set. The end is a
+ * time of day, the only clock side panels share: a clock set forward ends the wait early.
  */
 export class NotionCooldown {
   /** When the wait ends, by `now`'s clock; kept here so `left` needs no storage read. */

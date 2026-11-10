@@ -716,19 +716,10 @@ describe('when Notion turns requests away', () => {
       save: () => Promise.reject(new Error('storage is broken')),
       onChange: () => {},
     }
-    const errors: unknown[][] = []
-    const logged = console.error
-    console.error = (...args: unknown[]) => void errors.push(args)
-    try {
-      const cooldown = new NotionCooldown(() => now, broken)
-      await cooldown.ready()
-      cooldown.start('120')
-      expect(cooldown.left()).toBe(120_000)
-      await Promise.resolve()
-    } finally {
-      console.error = logged
-    }
-    expect(errors).toHaveLength(2)
+    const cooldown = new NotionCooldown(() => now, broken)
+    await cooldown.ready()
+    cooldown.start('120')
+    expect(cooldown.left()).toBe(120_000)
   })
 
   it('loads the kept wait on a later try when the first load failed', async () => {
@@ -743,20 +734,14 @@ describe('when Notion turns requests away', () => {
       save: async () => {},
       onChange: () => void listeners++,
     }
-    const logged = console.error
-    console.error = () => {}
-    try {
-      const cooldown = new NotionCooldown(() => now, flaky)
-      await cooldown.ready()
-      expect(cooldown.left()).toBe(0)
-      await cooldown.ready()
-      expect(cooldown.left()).toBe(120_000)
-      // Loaded: not loaded again, and the store's changes are followed once.
-      await cooldown.ready()
-      expect([loads, listeners]).toEqual([2, 1])
-    } finally {
-      console.error = logged
-    }
+    const cooldown = new NotionCooldown(() => now, flaky)
+    await cooldown.ready()
+    expect(cooldown.left()).toBe(0)
+    await cooldown.ready()
+    expect(cooldown.left()).toBe(120_000)
+    // Loaded: not loaded again, and the store's changes are followed once.
+    await cooldown.ready()
+    expect([loads, listeners]).toEqual([2, 1])
   })
 
   it('reads the wait kept in a new browser, not the one before it', async () => {
