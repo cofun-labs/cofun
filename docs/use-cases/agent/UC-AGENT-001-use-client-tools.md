@@ -40,6 +40,6 @@ Key constraints:
 
 | ID | Priority | Status | Scenario |
 | --- | --- | --- | --- |
-| UC-AGENT-001-S16 | P0 | 🚧 | Given the side panel open on a Notion page; when the user asks which page they are on; then the agent answers with the page's title without using a tool. |
+| UC-AGENT-001-S16 | P0 | ✅ | Given the side panel open on a Notion page; when the user asks which page they are on; then the agent answers with the page's title without using a tool. |
 | UC-AGENT-001-S08 | P1 | ✅ | Given the agent used a tool to answer; when the user looks at the reply; then it shows which tool ran, with what input, whether it worked, and, on request, what it returned. |
 | UC-AGENT-001-S11 | P1 | ✅ | Given a tool that needs confirmation; when the agent wants to use it; then the side panel asks the user first, showing what the tool will do, and the tool runs only after they agree. |
