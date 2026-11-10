@@ -23,7 +23,9 @@ import {
   budgetQuestion,
 } from '../../extension/src/notion/api'
 import { activeNotionTab, countNotionRequests, notionCooldown } from '../../extension/src/notion/tab'
+import { defineTool } from '../../extension/src/tool'
 import { editPage, movePage, openPageNote, readPage, trashPage } from '../../extension/src/tools'
+import { z } from '../../extension/src/zod'
 import { createApp, type Env } from '../src/app'
 import { FakeClerk } from './clerk'
 import { FakeAiBinding, FakeQuotaNamespace, FakeUsageDataset } from './fakes'
@@ -1092,20 +1094,16 @@ describe('extension agent against the worker', () => {
 
   it('previews a call from the arguments it runs with, before it runs', async () => {
     const runs: unknown[] = []
-    const tool: ToolSpec = {
+    const tool = defineTool({
       name: 'tag_pages',
       description: 'Tags pages.',
-      parameters: {
-        type: 'object',
-        properties: { pages: { type: 'array', items: { type: 'object', properties: { page: { type: 'string' } } } } },
-        required: ['pages'],
-      },
-      preview: (args) => `Tag ${(args.pages as unknown[]).length} page(s); ${runs.length} run(s) so far`,
+      args: z.object({ pages: z.array(z.object({ page: z.string().optional() })) }),
+      preview: (args) => `Tag ${args.pages.length} page(s); ${runs.length} run(s) so far`,
       run: async (args) => {
         runs.push(args)
         return 'Tagged.'
       },
-    }
+    })
     // One page given as an object instead of a list: the tool gets it as a list of one.
     ai.script = [{ toolCalls: [{ name: 'tag_pages', arguments: '{"pages":{"page":"a"}}' }] }, { reply: 'Done' }]
     const { updates } = await ask(makeAgent({ tools: [tool] }), 'Tag page a')

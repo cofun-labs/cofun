@@ -937,9 +937,7 @@ export const editPage = defineTool({
     "Child pages, databases, and files can't be written. If the page changed since you read it, the edit is " +
     'refused: read it again and redo the edit.',
   args: z.strictObject({
-    page: z
-      .string({ error: GIVE_PAGE })
-      .describe('Id of the page to edit, as read_page shows it after "Page:".'),
+    page: z.string({ error: GIVE_PAGE }).describe('Id of the page to edit, as read_page shows it after "Page:".'),
     edits: z.array(EDIT_ITEM, { error: EDITS_LIST }).min(1, { error: EDITS_LIST }),
   }),
   preview: (args) => {
@@ -1050,8 +1048,6 @@ export const editPage = defineTool({
     return [...plan.summary, newRefs, 'Read the page again to see the result.'].filter(Boolean).join('\n')
   },
 })
-
-
 
 /** How many pages' reads are kept; the oldest go first. */
 const READS_KEPT = 20
