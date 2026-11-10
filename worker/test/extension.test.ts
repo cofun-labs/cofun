@@ -3,12 +3,14 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   CopilotAgent,
+  MAY_HAVE_CHANGED,
   type AgentUpdate,
   type ConfirmTool,
   type HistoryMessage,
   type ToolCallRequest,
   type ToolSpec,
 } from '../../extension/src/agent'
+import { LIMITED_STOP, RATE_LIMITED } from '../../extension/src/notion/api'
 import { editPage, openPageNote, readPage } from '../../extension/src/tools'
 import { createApp, type Env } from '../src/app'
 import { FakeClerk } from './clerk'
@@ -314,6 +316,143 @@ describe('extension agent against the worker', () => {
     expect(toolStatuses(updates)).toEqual(['done', 'done'])
     const [first] = ws.content(PAGE)
     expect(first.properties).toEqual({ title: [['Summary: hi']] })
+  })
+
+  it('[UC-NOTION-001-S08] the question stops when Notion turns a read away, and nothing more is sent', async () => {
+    const tab = new FakeNotionTab(PAGE_URL).limit('loadPageChunk', 1).install()
+    // The model would read again, and then try another way.
+    ai.script = [
+      { toolCalls: [{ name: 'read_page', arguments: '{}' }] },
+      { toolCalls: [{ name: 'read_page', arguments: '{}' }] },
+      { reply: 'Trying another way.' },
+    ]
+    const agent = makeAgent({ tools: [readPage] })
+    const { result, updates } = await ask(agent, 'Summarize this page')
+    expect(result).toEqual({ status: 'error', message: LIMITED_STOP })
+    expect(toolStatuses(updates)).toEqual(['failed'])
+    // Not retried, and the model was not asked again.
+    expect(tab.sent).toHaveLength(1)
+    expect(ai.calls).toHaveLength(1)
+
+    // The next question knows what happened.
+    ai.script = [{ reply: 'Ok.' }]
+    expect((await ask(agent, 'And now?')).result).toEqual({ status: 'done' })
+    expect(sentMessages(1).find((m) => m.role === 'tool')).toMatchObject({
+      content: expect.stringContaining(RATE_LIMITED),
+    })
+  })
+
+  it('[UC-NOTION-002-S11] the question stops when Notion turns an edit away, and nothing changes', async () => {
+    const ws = editablePage()
+    const tab = new FakeNotionTab(PAGE_URL).limit('saveTransactionsFanout', 1)
+    tab.workspace = ws
+    tab.install()
+    const before = structuredClone([...ws.records])
+    const { result } = await ask(makeAgent({ tools: [readPage, editPage] }), 'Put a summary at the top')
+    expect(result).toEqual({ status: 'error', message: LIMITED_STOP })
+    expect(ws.transactions).toEqual([])
+    expect([...ws.records]).toEqual(before)
+    // The read, the edit's own check of the page, and the refused change; the model was not asked again.
+    expect(tab.sent.map((r) => r.url.split('/api/v3/')[1])).toEqual([
+      'loadPageChunk',
+      'loadPageChunk',
+      'saveTransactionsFanout',
+    ])
+    expect(ai.calls).toHaveLength(2)
+  })
+
+  it('a tool that wraps an error that stops the question still stops it', async () => {
+    const stop = Object.assign(new Error('Turned away.'), { stopsQuestion: 'Wait a minute.' })
+    const wrapping: ToolSpec = {
+      ...pageTool().tool,
+      run: async () => Promise.reject(new Error('The page may or may not have been created.', { cause: stop })),
+    }
+    ai.script = [{ toolCalls: [{ name: 'lookup_page', arguments: '{}' }] }, { reply: 'Trying again.' }]
+    const { result } = await ask(makeAgent({ tools: [wrapping] }), 'Make a page')
+    expect(result).toEqual({ status: 'error', message: 'Wait a minute.' })
+    expect(ai.calls).toHaveLength(1)
+  })
+
+  it('[UC-NOTION-002-S12] the question stops when Notion is too busy to say whether an edit was saved', async () => {
+    const ws = editablePage()
+    const tab = new FakeNotionTab(PAGE_URL).limit('saveTransactionsFanout', 1, 529)
+    tab.workspace = ws
+    tab.install()
+    const { result } = await ask(makeAgent({ tools: [readPage, editPage] }), 'Put a summary at the top')
+    expect(result).toEqual({ status: 'error', message: `${LIMITED_STOP} ${MAY_HAVE_CHANGED}` })
+    expect(tab.sent.filter((r) => r.url.endsWith('/saveTransactionsFanout'))).toHaveLength(1)
+    expect(ai.calls).toHaveLength(2)
+  })
+
+  it('[UC-NOTION-002-S13] a question stopped after an earlier change tells the user that change was made', async () => {
+    const ws = editablePage()
+    const tab = new FakeNotionTab(PAGE_URL)
+    tab.workspace = ws
+    tab.install()
+    // The edit is saved; then the model reads the page again, and Notion turns that away.
+    const { tool } = pageTool()
+    const reading: ToolSpec = { ...tool, run: async () => (tab.limit('loadPageChunk', 1), readPage.run({})) }
+    ai.script = [
+      { toolCalls: [{ name: 'read_page', arguments: '{}' }] },
+      ai.script[1],
+      { toolCalls: [{ name: 'lookup_page', arguments: '{}' }] },
+      { reply: 'Done.' },
+    ]
+    const { result } = await ask(makeAgent({ tools: [readPage, editPage, reading] }), 'Put a summary at the top')
+    expect(result).toEqual({ status: 'error', message: `${LIMITED_STOP} ${MAY_HAVE_CHANGED}` })
+    expect(ws.transactions).toHaveLength(1)
+  })
+
+  it('a stopped question mentions an earlier change whose outcome was unknown', async () => {
+    const lost = Object.assign(new Error('Notion did not answer.'), { mayHaveChanged: true })
+    const writing: ToolSpec = {
+      ...renameTool().tool,
+      needsConfirmation: false,
+      changesData: true,
+      run: async () => Promise.reject(lost),
+    }
+    const refused: ToolSpec = {
+      ...pageTool().tool,
+      run: async () => Promise.reject(Object.assign(new Error('Turned away.'), { stopsQuestion: 'Wait a minute.' })),
+    }
+    ai.script = [{ toolCalls: [RENAME_CALL] }, { toolCalls: [{ name: 'lookup_page', arguments: '{}' }] }]
+    const { result } = await ask(makeAgent({ tools: [writing, refused] }), 'Rename this page')
+    expect(result).toEqual({ status: 'error', message: `Wait a minute. ${MAY_HAVE_CHANGED}` })
+  })
+
+  it('finds a possible change in any cause, even under a wrapper that says none', async () => {
+    const lost = Object.assign(new Error('Notion did not answer.'), { mayHaveChanged: true })
+    const wrapped = Object.assign(new Error('Could not finish.', { cause: lost }), {
+      mayHaveChanged: false,
+      stopsQuestion: 'Wait a minute.',
+    })
+    // Without changesData: the error alone says data may have changed.
+    const writing: ToolSpec = {
+      ...renameTool().tool,
+      needsConfirmation: false,
+      run: async () => Promise.reject(wrapped),
+    }
+    ai.script = [{ toolCalls: [RENAME_CALL] }]
+    const { result } = await ask(makeAgent({ tools: [writing] }), 'Rename this page')
+    expect(result).toEqual({ status: 'error', message: `Wait a minute. ${MAY_HAVE_CHANGED}` })
+  })
+
+  it('tools the model asked for after a refused one, in the same reply, do not run', async () => {
+    const tab = new FakeNotionTab(PAGE_URL).limit('loadPageChunk', 1).install()
+    const { tool, runs } = pageTool()
+    ai.script = [
+      {
+        toolCalls: [
+          { name: 'read_page', arguments: '{}' },
+          { name: 'lookup_page', arguments: '{}' },
+        ],
+      },
+    ]
+    const { result, updates } = await ask(makeAgent({ tools: [readPage, tool] }), 'Summarize this page')
+    expect(result).toEqual({ status: 'error', message: LIMITED_STOP })
+    expect(toolStatuses(updates)).toEqual(['failed', 'skipped'])
+    expect(runs).toEqual([])
+    expect(tab.sent).toHaveLength(1)
   })
 
   it('[UC-AGENT-001-S05] a model that keeps calling tools is stopped at the step limit', async () => {

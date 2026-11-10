@@ -5,20 +5,32 @@
 import { toUuid } from './hosts'
 
 /** Why a Notion call failed, for the model and the user. */
-export type NotionErrorCode = 'no_notion_tab' | 'signed_out' | 'no_access' | 'notion_error' | 'outcome_unknown'
+export type NotionErrorCode =
+  | 'no_notion_tab'
+  | 'signed_out'
+  | 'no_access'
+  | 'notion_error'
+  | 'outcome_unknown'
+  | 'rate_limited'
 
 export class NotionError extends Error {
   /** The request may have reached Notion, but no answer came back (timeout, tab closed mid-request). */
   readonly unanswered: boolean
+  /** Set when the question must stop here: what the user is told. The agent runs nothing more. */
+  readonly stopsQuestion?: string
+  /** The failed call may have changed the user's data anyway: always so when the outcome is unknown. */
+  readonly mayHaveChanged: boolean
 
   constructor(
     readonly code: NotionErrorCode,
     message: string,
-    options?: { cause?: unknown; unanswered?: boolean },
+    options?: { cause?: unknown; unanswered?: boolean; stopsQuestion?: string; mayHaveChanged?: boolean },
   ) {
     super(message, options)
     this.name = 'NotionError'
     this.unanswered = options?.unanswered ?? false
+    this.stopsQuestion = options?.stopsQuestion
+    this.mayHaveChanged = options?.mayHaveChanged ?? code === 'outcome_unknown'
   }
 }
 
@@ -30,6 +42,16 @@ export const NO_USER_MAP =
   "Notion's list of workspaces has nothing for the account signed in to this tab. Reload the Notion tab and try again."
 export const OUTCOME_UNKNOWN =
   'Notion did not answer, so the change may or may not have been saved. Read the page again before retrying.'
+export const RATE_LIMITED = 'Notion turned this request away (too many requests, or too busy), so it was not done.'
+export const BUSY_UNKNOWN =
+  'Notion said it was too busy, without saying whether the change was saved, so it may or may not have been. Read the page again before retrying.'
+export const NOT_SENT = 'Not sent: Notion turned an earlier request away (too many requests, or too busy).'
+/**
+ * For the user, when Notion turns requests away: the question stops, and nothing more is sent.
+ * The agent adds a line when changes may already have been made.
+ */
+export const LIMITED_STOP =
+  'Notion is turning requests away right now (too many requests, or too busy), so Notion Copilot stopped. Wait a minute, then ask again.'
 
 /** The endpoints under /api/v3/ the client uses. */
 export type NotionEndpoint =
@@ -152,7 +174,17 @@ const RECORDS_BATCH = 100
 /** Record lookups sent at once at most. */
 const RECORDS_PARALLEL = 4
 
+/** Statuses with which Notion says it gets too many requests (429) or is too busy (529). */
+const LIMITED = new Set([429, 529])
+
 export class NotionClient {
+  /**
+   * Notion turned a request away: this client sends nothing more after it (requests already in
+   * flight, such as parallel batches, still get their answers). A client serves one tool call; the
+   * agent ending the question keeps later tools from sending.
+   */
+  private limited = false
+
   constructor(private readonly send: NotionTransport) {}
 
   /** Loads a page with its content, following loadPageChunk's cursor until the page is complete. */
@@ -250,7 +282,7 @@ export class NotionClient {
       // A few batches at a time, so a long list doesn't flood the user's tab with requests.
       const out: RecordMap = {}
       for (let at = 0; at < batches.length; at += RECORDS_PARALLEL) {
-        const maps = await Promise.all(batches.slice(at, at + RECORDS_PARALLEL).map((b) => this.findRecords(b)))
+        const maps = await settleAll(batches.slice(at, at + RECORDS_PARALLEL).map((b) => this.findRecords(b)))
         for (const map of maps) mergeRecordMaps(out, map)
       }
       return out
@@ -301,7 +333,8 @@ export class NotionClient {
       try {
         teams = await this.joinedTeams(space)
       } catch (err) {
-        if (!(err instanceof NotionError)) throw err
+        // A failure that stops the question is passed on, not shown as missing teamspaces.
+        if (!(err instanceof NotionError) || err.stopsQuestion) throw err
         teamsError = err.message
       }
     }
@@ -408,15 +441,40 @@ export class NotionClient {
     return { results, total: Math.max(total, results.length), recordMap: normalizeRecordMap(json.recordMap) }
   }
 
-  /** `spaceId`, when known, goes along as `x-notion-space-id`. */
+  /**
+   * Every request to Notion goes through here. `spaceId`, when known, goes along as
+   * `x-notion-space-id`. When Notion turns a request away for coming too fast, nothing is retried:
+   * the client sends nothing more, and the question stops (see CLAUDE.md, calling Notion).
+   */
   private async request<T>(
     endpoint: NotionEndpoint,
     body: unknown,
     spaceId?: string,
   ): Promise<{ json: T; userId?: string }> {
+    if (this.limited) throw new NotionError('rate_limited', NOT_SENT, { stopsQuestion: LIMITED_STOP })
     const res = await this.send(endpoint, body, { spaceId })
+    if (res.error === undefined && !res.redirected && LIMITED.has(res.status)) {
+      this.limited = true
+      // A 529 to a write may come after Notion applied it, so its outcome stays unknown. A 429
+      // means Notion turned it away before doing anything with it.
+      if (endpoint === 'saveTransactionsFanout' && res.status === 529) {
+        throw new NotionError('outcome_unknown', BUSY_UNKNOWN, { stopsQuestion: LIMITED_STOP })
+      }
+      throw new NotionError('rate_limited', RATE_LIMITED, { stopsQuestion: LIMITED_STOP })
+    }
     return { json: checkResponse(res) as T, userId: res.userId }
   }
+}
+
+/**
+ * Like Promise.all, but waits for every request, so a failure that stops the question is never
+ * hidden behind another one that came first.
+ */
+async function settleAll<T>(promises: Promise<T>[]): Promise<T[]> {
+  const settled = await Promise.allSettled(promises)
+  const failures = settled.flatMap((s) => (s.status === 'rejected' ? [s.reason as unknown] : []))
+  if (failures.length) throw failures.find((e) => e instanceof NotionError && e.stopsQuestion) ?? failures[0]
+  return settled.map((s) => (s as PromiseFulfilledResult<T>).value)
 }
 
 /** The ids in a record's list field. */
