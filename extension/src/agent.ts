@@ -303,14 +303,16 @@ export class CopilotAgent {
     if (!this.config.context) return undefined
     const { signal } = this.cancel
     if (signal.aborted) return undefined
+    let onAbort!: () => void
+    const stopped = new Promise<undefined>((resolve) => (onAbort = () => resolve(undefined)))
+    signal.addEventListener('abort', onAbort, { once: true })
     try {
-      return await Promise.race([
-        this.config.context(),
-        new Promise<undefined>((resolve) => signal.addEventListener('abort', () => resolve(undefined), { once: true })),
-      ])
+      return await Promise.race([this.config.context(), stopped])
     } catch (err) {
       console.error('Could not read the context for the question', err)
       return undefined
+    } finally {
+      signal.removeEventListener('abort', onAbort)
     }
   }
 

@@ -53,9 +53,11 @@ export async function currentNotionPage(): Promise<{ title: string; url: string 
 export async function openPageNote(): Promise<string> {
   const page = await currentNotionPage()
   if (!page) return '[No Notion page is open in the current tab.]'
-  // The page's author picks its title: keep it short, and without brackets that could fake a note.
+  // The page's author picks its title, and a shared link its query: keep both from closing the note
+  // and faking another one.
   const title = clip(page.title.replace(/[[\]]/g, ''), TITLE_CHARS)
-  return `[The Notion page open in the current tab: ${JSON.stringify(title)}, ${page.url}]`
+  const url = page.url.replaceAll('[', '%5B').replaceAll(']', '%5D')
+  return `[The Notion page open in the current tab: ${JSON.stringify(title)}, ${url}]`
 }
 
 const TITLE_CHARS = 200
