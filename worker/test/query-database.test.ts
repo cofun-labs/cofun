@@ -101,10 +101,10 @@ describe('UC-NOTION-006 read a database', () => {
         '',
         '| Task | Status | Due | Owner | Points | Done | Row |',
         '| --- | --- | --- | --- | --- | --- | --- |',
-        `| Write docs | Done | @2026-11-05 | @Fixture User | 3 | Yes | ^${hex(row(1))} |`,
-        `| Fix login \\| Safari | In progress | @2026-11-07 | @Fixture User | 5 | No | ^${hex(row(2))} |`,
-        `| Ship beta | Not started | @2026-11-20 | @Fixture User | 8 | No | ^${hex(row(3))} |`,
-        `| Plan retro | Not started |  | @Fixture User | 1 | No | ^${hex(row(4))} |`,
+        `| Write docs | Done | @2026-11-05 | @[Fixture User] | 3 | Yes | ^${hex(row(1))} |`,
+        `| Fix login \\| Safari | In progress | @2026-11-07 | @[Fixture User] | 5 | No | ^${hex(row(2))} |`,
+        `| Ship beta | Not started | @2026-11-20 | @[Fixture User] | 8 | No | ^${hex(row(3))} |`,
+        `| Plan retro | Not started |  | @[Fixture User] | 1 | No | ^${hex(row(4))} |`,
       ].join('\n'),
     )
     // The rows came from the database's view, as the tab's Notion user.
@@ -127,7 +127,7 @@ describe('UC-NOTION-006 read a database', () => {
     })
     expect(result).toContain('Matching rows: 1 (showing 1–1).')
     expect(tableRows(result)).toEqual([
-      `| Fix login \\| Safari | In progress | @2026-11-07 | @Fixture User | 5 | No | ^${hex(row(2))} |`,
+      `| Fix login \\| Safari | In progress | @2026-11-07 | @[Fixture User] | 5 | No | ^${hex(row(2))} |`,
     ])
 
     // Against the text as Notion shows it, not as escaped for Markdown.
@@ -392,7 +392,11 @@ describe('query_database options, numbers, and code', () => {
     const [line] = tableRows(result)
     // The person property (a mention) and the creator (kept on the row) both escape it, and the
     // backslash before it, which would otherwise undo the pipe's escape.
-    expect(line).toContain('| @Ana\\\\ \\| Ops | 3 | Yes | @Ana\\\\ \\| Ops |')
+    expect(line).toContain('| @[Ana\\\\ \\| Ops] | 3 | Yes | @[Ana\\\\ \\| Ops] |')
+    // A filter still compares the name as Notion shows it.
+    database(rows, false, { ...SCHEMA, 'i:i': { name: 'Creator', type: 'created_by' } }, [], 'Ana\\ | Ops')
+    const byName = await query({ filter: [{ property: 'Creator', op: 'is', value: 'ana\\ | ops' }] })
+    expect(tableRows(byName)).toHaveLength(4)
     const cells = (l: string) => l.split(/(?<!\\)\|/).length
     expect(cells(line)).toBe(cells(result.split('\n').find((l) => l.startsWith('| Task |'))!))
   })

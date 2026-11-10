@@ -178,12 +178,29 @@ function lineBlock(line: string): NewBlock {
 
 type Mark = [string, unknown?]
 
-/** Inline Markdown (bold, italic, strikethrough, code, links, links to pages) as rich text. */
+/**
+ * A mention of a person by the name `@[Name]` gives, stored in a `u` mark until it is matched to a
+ * member's id (see people.ts).
+ */
+export interface PersonName {
+  name: string
+}
+
+/** Inline Markdown (bold, italic, strikethrough, code, links, links to pages, people) as rich text. */
 export function inline(text: string, marks: Mark[] = []): RichText {
   const patterns: { re: RegExp; run: (m: RegExpExecArray) => RichText }[] = [
     // A backslash keeps the next character literal, as read_page escapes them.
     { re: /\\([\\`*_~[\]^|#><])/, run: (m) => [marks.length ? [m[1], marks] : [m[1]]] },
     { re: /`([^`]+)`/, run: (m) => [[m[1], [...marks, ['c']]]] },
+    {
+      // `@[Name]` mentions a person, as read_page shows mentions; `@[text](url)` is an @ before a link.
+      // read_page writes a parenthesis right after a mention as `\(`; the backslash goes with the mention.
+      re: /@\[((?:\\.|[^\]\\])+)\](?!\()(?:\\(?=\())?/,
+      run: (m) => {
+        const name = m[1].replace(/\\(.)/g, '$1').trim()
+        return name ? [['‣', [...marks, ['u', { name } satisfies PersonName]]]] : [[m[0], marks]]
+      },
+    },
     {
       // A URL may hold one level of parentheses, as in …/wiki/Foo_(bar).
       re: /\[((?:\\.|[^\]\\])+)\]\(((?:[^()\s]|\([^()\s]*\))+)\)/,
@@ -226,11 +243,52 @@ function push(out: RichText, text: string, marks: Mark[]) {
   if (!text) return
   const last = out.at(-1)
   const same = (a: Mark[] = [], b: Mark[]) => JSON.stringify(a) === JSON.stringify(b)
-  if (last && same(last[1], marks) && !marks.some(([m]) => m === 'p')) {
+  // Each mention is a run of its own.
+  if (last && same(last[1], marks) && !marks.some(([m]) => m === 'p' || m === 'u')) {
     last[0] += text
     return
   }
   out.push(marks.length ? [text, marks] : [text])
+}
+
+/** The rich text of blocks and of everything nested in them. */
+export function blockTitles(blocks: NewBlock[]): RichText[] {
+  return blocks.flatMap((b) => [b.title, ...blockTitles(b.children)])
+}
+
+function personName(mark: Mark): string | undefined {
+  const value = mark[1] as Partial<PersonName> | undefined
+  return mark[0] === 'u' && typeof value?.name === 'string' ? value.name : undefined
+}
+
+/** The names `@[Name]` mentions in rich text, each once. */
+export function personNames(titles: RichText[]): string[] {
+  const names = titles.flatMap((t) => t.flatMap((r) => (r[1] ?? []).flatMap((m) => personName(m) ?? [])))
+  return [...new Set(names)]
+}
+
+/**
+ * Rich text with each person's name replaced by their user id, from `ids` (by name). `keep` leaves
+ * a name `ids` lacks as it is; otherwise one is a bug, since names are looked up before writing.
+ */
+export function withPeople(title: RichText, ids: Map<string, string>, { keep = false } = {}): RichText {
+  return title.map((run) => {
+    if (!run[1]?.some((m) => personName(m) !== undefined)) return run
+    const marks = run[1].map((m): Mark => {
+      const name = personName(m)
+      if (name === undefined) return m
+      const id = ids.get(name)
+      if (!id && keep) return m
+      if (!id) throw new Error(`No member was found for @[${name}].`)
+      return ['u', id]
+    })
+    return [run[0], marks]
+  })
+}
+
+/** Blocks with each person's name replaced by their user id, from `ids` (by name). */
+export function blocksWithPeople(blocks: NewBlock[], ids: Map<string, string>): NewBlock[] {
+  return blocks.map((b) => ({ ...b, title: withPeople(b.title, ids), children: blocksWithPeople(b.children, ids) }))
 }
 
 function dashed(hex: string): string {

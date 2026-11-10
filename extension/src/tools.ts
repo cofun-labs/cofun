@@ -25,7 +25,17 @@ import {
   type PageRead,
   planNewPage,
 } from './notion/edit'
-import { MarkdownError, inline, parseMarkdown, type NewBlock } from './notion/blocks'
+import {
+  MarkdownError,
+  blockTitles,
+  blocksWithPeople,
+  inline,
+  parseMarkdown,
+  personNames,
+  withPeople,
+  type NewBlock,
+} from './notion/blocks'
+import { findPeople, peopleIn } from './notion/people'
 import { COMMENT_CHARS, clip, loadThreads, quote, threadCount, threadLines } from './notion/comments'
 import {
   PropertyError,
@@ -478,15 +488,18 @@ function cell(values: { name: string; value: string }[], property: string): stri
 }
 
 /**
- * Markdown as the user reads it: links as their text, no mention marks, marks and escapes undone,
- * so filters compare against what Notion shows. Code spans are kept as they are: their text has no
- * escapes (`C:\temp` keeps its backslash).
+ * Markdown as the user reads it: links and people (`@[Ann]`) as their text, no mention marks, marks
+ * and escapes undone, so filters compare against what Notion shows. Code spans are kept as they
+ * are: their text has no escapes (`C:\temp` keeps its backslash).
  */
 function shownText(markdown: string): string {
   return markdown.replace(
-    /`([^`]*)`|\[((?:\\.|[^\]\\])*)\]\([^)]*\)|\\(.)|[*~]|(?<=^|[\s,(])@/g,
-    (_, code: string | undefined, link: string | undefined, escaped: string | undefined) =>
-      code ?? (link !== undefined ? shownText(link) : (escaped ?? '')),
+    /`([^`]*)`|\[((?:\\.|[^\]\\])*)\]\([^)]*\)|@\[((?:\\.|[^\]\\])*)\]|\\(.)|[*~]|(?<=^|[\s,(])@/g,
+    (_, code?: string, link?: string, person?: string, escaped?: string) => {
+      if (code !== undefined) return code
+      const named = link ?? person
+      return named !== undefined ? shownText(named) : (escaped ?? '')
+    },
   )
 }
 
@@ -813,7 +826,8 @@ export const editPage: ToolSpec = {
     'page, replace a block with Markdown, or delete a block. Blocks are named by the references read_page shows. ' +
     'All edits in one call are applied together, or none are. Supported Markdown: paragraphs, # headings, - lists, ' +
     '1. lists, - [ ] to-dos, ▸ toggles, > quotes, > [!💡] callouts, ``` code, ---, $$equations$$, **bold**, *italic*, ' +
-    '~~strike~~, `code`, [links](url), and [page](<page id>) mentions; a backslash keeps a character literal. ' +
+    '~~strike~~, `code`, [links](url), [page](<page id>) mentions, and @[Name] mentions of workspace members by ' +
+    'name; a backslash keeps a character literal. ' +
     'Indent by two spaces to nest under lists, to-dos, toggles, and paragraphs; quotes and callouts hold text only. ' +
     "Child pages, databases, files, and tables can't be written. If the page changed since you read it, the edit is " +
     'refused: read it again and redo the edit.',
@@ -850,6 +864,28 @@ export const editPage: ToolSpec = {
           : 'That id is a block inside a page, not a page.',
       )
     }
+    // The edit is checked against the page first, so a refused edit costs no member lookup.
+    planEdit(loaded, read, edits)
+    // People the new Markdown mentions, matched before anything is written. In a block being
+    // rewritten, a name it already mentions is that same person.
+    const writes = edits.filter((e) => e.action !== 'delete')
+    const users = loaded.recordMap.notion_user
+    const blocks = loaded.recordMap.block ?? {}
+    const found = await findPeople(
+      tab.client,
+      loaded.spaceId,
+      writes.map((e) => ({
+        names: personNames(blockTitles(e.blocks)),
+        known:
+          e.action === 'replace'
+            ? peopleIn((blocks[e.target] as Block | undefined)?.properties?.title, users)
+            : undefined,
+      })),
+    )
+    writes.forEach((e, n) => {
+      e.people = found[n]
+      e.blocks = blocksWithPeople(e.blocks, found[n])
+    })
     const plan = planEdit(loaded, read, edits)
     // The last point where nothing has been sent: a Stop pressed while the page loaded wins.
     // Every edit was a no-op: there is nothing to send, and the page stays as read.
@@ -1029,6 +1065,8 @@ export const createPage: ToolSpec = {
     }
     if (typeof spaceId !== 'string' || !spaceId)
       throw new NotionError('notion_error', 'Notion returned the page without its workspace.')
+    const [people] = await findPeople(tab.client, spaceId, [{ names: personNames(blockTitles(blocks)) }])
+    blocks = blocksWithPeople(blocks, people)
     const { operations, pageId } = planNewPage(target, spaceId, title, blocks, { properties })
     signal?.throwIfAborted()
     // The parent's list changes: cached parts of it would hide the new page, and after an unknown
@@ -1752,7 +1790,8 @@ export const getSelection: ToolSpec = {
   description:
     'Returns what the user has selected in the open Notion page: the selected text, and each selected block as ' +
     'Markdown with its reference, ready for edit_page (no read_page needed for those blocks). Use it when the user ' +
-    'says "this", "the selection", or "the highlighted text". Nothing selected is a normal answer.',
+    'refers to what they selected: "the selection", "the highlighted text", or "this" on its own (as in "rewrite ' +
+    'this"), not "this page". Nothing selected is a normal answer.',
   parameters: { type: 'object', properties: {}, additionalProperties: false },
   run: async () => {
     const tab = await activeNotionTab()
@@ -1774,6 +1813,32 @@ export const getSelection: ToolSpec = {
       ? "aren't on the open page"
       : "aren't on the open page, or are past the part of it that could be loaded"
     if (!ids.length) return `The selected blocks ${beyond}. Read the page instead, or ask the user to select again.`
+    // Blocks selected as blocks that reach the first or last block Notion drew may go on past it,
+    // when the page has blocks there that weren't drawn.
+    const order = [...md.refs.keys()]
+    const selectedIds = new Set(selection.blockIds.map(toUuid))
+    const picked = order.filter((b) => selectedIds.has(b))
+    const pickedSet = new Set(picked)
+    // The page's blocks that hold `b`, nearest first.
+    const holders = (b: string): string[] => {
+      const out: string[] = []
+      for (
+        let p = loaded.recordMap.block?.[b]?.parent_id;
+        p && md.refs.has(p);
+        p = loaded.recordMap.block?.[p]?.parent_id
+      )
+        out.push(p)
+      return out
+    }
+    const first = picked[0]
+    const last = picked.at(-1)
+    const aboveFirst = new Set(first ? holders(first) : [])
+    const goesOn =
+      (selection.reaches?.start && first && order.slice(0, order.indexOf(first)).some((b) => !aboveFirst.has(b))) ||
+      (selection.reaches?.end &&
+        last &&
+        (!loaded.complete ||
+          order.slice(order.indexOf(last) + 1).some((b) => !holders(b).some((p) => pickedSet.has(p)))))
     // A block of several lines (a table, code) gets its reference on a line of its own.
     const lineOf = (b: string) => {
       const own = md.lines.get(b)!
@@ -1801,16 +1866,18 @@ export const getSelection: ToolSpec = {
     return [
       `Selection on the page “${md.title}” ^${pageHex}:`,
       '',
-      ...(selection.text === undefined
-        ? []
-        : [
-            `Selected text: “${selection.text.length > 2000 ? `${selection.text.slice(0, 1999)}…` : selection.text}”`,
-            '',
-          ]),
+      ...(selection.text === undefined ? [] : [`Selected text: “${clip(selection.text, 2000)}”`, '']),
       `Selected block${ids.length === 1 ? '' : 's'}:`,
       ...lines,
       ...(more ? ['', `${more} more selected block${more === 1 ? '' : 's'}: read the page for them.`] : []),
       ...(missed ? ['', `Only part of the selection is shown: the other selected blocks ${beyond}.`] : []),
+      ...(goesOn
+        ? [
+            '',
+            'The selection may go on past the part of the page Notion has drawn in the browser, so some selected ' +
+              'blocks may be missing. Ask the user whether more is selected, or read the page.',
+          ]
+        : []),
     ].join('\n')
   },
 }
@@ -2095,7 +2162,8 @@ export const addComment: ToolSpec = {
   description:
     "Adds a comment to a Notion page, as a new thread under the user's name: on the page itself, or on one of " +
     "its blocks by the reference read_page or read_comments shows (e.g. ^1a2b3c4d). The page's content does not " +
-    'change. `text` may use **bold**, *italic*, ~~strike~~, `code`, [links](url), and [page](<page id>) mentions.',
+    'change. `text` may use **bold**, *italic*, ~~strike~~, `code`, [links](url), [page](<page id>) mentions, and ' +
+    '@[Name] mentions of workspace members.',
   parameters: {
     type: 'object',
     properties: {
@@ -2160,12 +2228,14 @@ export const addComment: ToolSpec = {
         throw new EditError(`^${ref} is a column layout, not a block: comment on a block inside it.`)
       target = found
     }
+    const rich = inline(text)
+    const [people] = await findPeople(tab.client, loaded.spaceId, [{ names: personNames([rich]) }])
     const operations = commentOps(loaded.spaceId, Date.now()).newThread(
       target,
       crypto.randomUUID(),
       crypto.randomUUID(),
       loaded.userId,
-      inline(text),
+      withPeople(rich, people),
     )
     const where = target === loaded.page.id ? 'the page' : `the block ^${md.refs.get(target)}`
     signal?.throwIfAborted()

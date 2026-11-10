@@ -215,6 +215,8 @@ export class FakeWorkspace {
   contentDeletes: { records: { id: string }[]; permanentlyDelete: unknown }[] = []
   /** The table of each record that isn't a block (discussions, comments, users), by id. */
   tables = new Map<string, string>()
+  /** The users getVisibleUsers lists, by id; every user record when not set. */
+  visibleUsers?: string[]
 
   constructor(
     blocks: Record<string, unknown>[],
@@ -280,7 +282,19 @@ export class FakeWorkspace {
       }
       visit(pageId)
       const comments = Object.keys(discussion).length ? { discussion, comment } : {}
-      return { status: 200, json: { cursor: { stack: [] }, recordMap: { __version__: 3, block, ...comments } } }
+      // Like Notion, the people its blocks mention come along.
+      const notion_user: Record<string, unknown> = {}
+      for (const b of Object.values(block) as { value: { value: NotionRecordLike } }[]) {
+        for (const user of mentionedUsers(b.value.value.properties)) {
+          const r = this.tables.get(user) === 'notion_user' ? this.records.get(user) : undefined
+          if (r) notion_user[user] = wrap(r)
+        }
+      }
+      const users = Object.keys(notion_user).length ? { notion_user } : {}
+      return {
+        status: 200,
+        json: { cursor: { stack: [] }, recordMap: { __version__: 3, block, ...comments, ...users } },
+      }
     }
     if (endpoint === 'syncRecordValuesMain') {
       const out: Record<string, Record<string, unknown>> = { block: {} }
@@ -294,6 +308,16 @@ export class FakeWorkspace {
         if (r) (out[pointer.table] ??= {})[pointer.id] = wrap(r)
       }
       return { status: 200, json: { recordMap: { __version__: 3, ...out } } }
+    }
+    if (endpoint === 'getVisibleUsers') {
+      if (body.spaceId !== this.spaceId) return { status: 400, json: { name: 'ValidationError' } }
+      const users = (this.visibleUsers ?? this.table('notion_user').map((u) => u.id)).map((userId) => ({
+        userId,
+        membershipType: 'member',
+        firstJoinedSpaceTime: 0,
+        aliases: [],
+      }))
+      return { status: 200, json: { users, userSimilarity: {}, shouldUseEdgeCache: false, joinedMemberIds: [] } }
     }
     if (endpoint === 'enqueueTask') {
       const task = body.task as { eventName: string; request: Record<string, unknown> }
@@ -407,6 +431,19 @@ export class FakeWorkspace {
     this.records.set(parentId, { ...parent, content: list, version: parent.version + 1 })
     return copyId
   }
+}
+
+/** The users rich text properties mention (`u` marks). */
+function mentionedUsers(properties: unknown): string[] {
+  return Object.values((properties ?? {}) as Record<string, unknown>).flatMap((value) =>
+    Array.isArray(value)
+      ? value.flatMap((run) =>
+          Array.isArray(run) && Array.isArray(run[1])
+            ? (run[1] as unknown[][]).flatMap((m) => (m[0] === 'u' && typeof m[1] === 'string' ? [m[1]] : []))
+            : [],
+        )
+      : [],
+  )
 }
 
 function applyOperation(
