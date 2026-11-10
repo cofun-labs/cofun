@@ -24,4 +24,4 @@ Key constraints:
 
 | ID | Priority | Status | Scenario |
 | --- | --- | --- | --- |
-| UC-NOTION-010-S05 | P0 | 🚧 | Given the side panel open on a Notion page; when the user asks to move one page under another, duplicate it, and trash a third; then the move and copy happen without asking, the panel asks before trashing, and after the user agrees the page is in Notion's trash. |
+| UC-NOTION-010-S05 | P0 | ✅ | Given the side panel open on a Notion page; when the user asks to move one page under another, duplicate it, and trash a third; then the move and copy happen without asking, the panel asks before trashing, and after the user agrees the page is in Notion's trash. |
