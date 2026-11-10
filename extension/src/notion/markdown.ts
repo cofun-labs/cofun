@@ -133,6 +133,37 @@ export function unnamedMentions({ page, recordMap, spaceId }: LoadedPage): Point
   return pointers.slice(0, UNNAMED_MAX)
 }
 
+/**
+ * The pages and people database rows mention (a relation's pages, a page mentioned in text, a
+ * person) that `recordMap` doesn't hold, so they can be looked up and shown by name: at most
+ * UNNAMED_MAX, pages first. `left` counts the ones past that.
+ */
+export function unnamedRowMentions(
+  recordMap: RecordMap,
+  rows: Block[],
+  spaceId: string,
+): { pointers: Pointer[]; left: number } {
+  const users = new Set<string>()
+  const pages = new Map<string, string>()
+  for (const row of rows) {
+    for (const value of Object.values(row.properties ?? {})) {
+      for (const [, marks = []] of runs(value)) {
+        for (const [mark, arg, space] of marks as [string, unknown?, unknown?][]) {
+          if (mark === 'u' && typeof arg === 'string') users.add(arg)
+          if (mark === 'p' && typeof arg === 'string') pages.set(arg, typeof space === 'string' ? space : spaceId)
+        }
+      }
+    }
+  }
+  const all: Pointer[] = [
+    ...[...pages]
+      .filter(([id]) => !recordMap.block?.[id])
+      .map(([id, space]) => ({ table: 'block' as const, id, spaceId: space })),
+    ...[...users].filter((id) => !recordMap.notion_user?.[id]).map((id) => ({ table: 'notion_user' as const, id })),
+  ]
+  return { pointers: all.slice(0, UNNAMED_MAX), left: Math.max(0, all.length - UNNAMED_MAX) }
+}
+
 /** Rich text from outside a page's blocks (a comment, say) as Markdown, with mentions named from `recordMap`. */
 export function richMarkdown(recordMap: RecordMap, value: unknown): string {
   return new Context(recordMap, (recordMap.block ?? {}) as Record<string, Block>).rich(value)
@@ -144,7 +175,10 @@ export function userName(recordMap: RecordMap, id: string): string {
 }
 
 /** A database's property definitions, by property id (the title's is `title`). */
-export type Schema = Record<string, { name?: string; type?: string }>
+export type Schema = Record<
+  string,
+  { name?: string; type?: string; options?: { value?: string }[]; defaultOption?: unknown }
+>
 
 const isTitle = ([key, s]: [string, { type?: string }]) => key === 'title' || s.type === 'title'
 
@@ -168,7 +202,7 @@ export function rowValues(
   return titleFirst(schema).map(([key, s]) => ({
     name: s.name ?? key,
     type: s.type ?? 'text',
-    value: isTitle([key, s]) ? ctx.rich(row.properties?.title, { table }) : ctx.property(row, key, s.type, { table }),
+    value: isTitle([key, s]) ? ctx.rich(row.properties?.title, { table }) : ctx.property(row, key, s, { table }),
   }))
 }
 
@@ -421,7 +455,7 @@ class Context {
     for (const key of new Set([...order, ...keys])) {
       const { name, type } = schema[key]
       if (key === 'title' || type === 'title') continue
-      const shown = this.property(page, key, type)
+      const shown = this.property(page, key, schema[key])
       if (shown) out.push(`${name ?? key}: ${shown}`)
     }
     return out
@@ -438,7 +472,8 @@ class Context {
     return listed.flatMap((p: { property?: unknown }) => (typeof p?.property === 'string' ? [p.property] : []))
   }
 
-  property(page: Block, key: string, type: string | undefined, { table = false } = {}): string {
+  property(page: Block, key: string, def: Schema[string], { table = false } = {}): string {
+    const type = def.type
     switch (type) {
       // Notion keeps these on the row itself, not in its properties.
       case 'created_time':
@@ -458,6 +493,13 @@ class Context {
       case 'checkbox':
         // A checkbox never ticked has no value stored; Notion shows it unticked.
         return this.plain(page.properties?.[key]) === 'Yes' ? 'Yes' : 'No'
+      case 'status': {
+        // A row with no status stored shows the database's default option, as Notion does.
+        const shown = this.rich(page.properties?.[key], { table })
+        const fallback = def.defaultOption
+        if (shown || typeof fallback !== 'string' || !def.options?.some((o) => o.value === fallback)) return shown
+        return escapeMarkdown(fallback)
+      }
       default:
         return this.rich(page.properties?.[key], { table })
     }
