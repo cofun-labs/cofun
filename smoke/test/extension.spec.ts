@@ -82,7 +82,14 @@ const test = base.extend<Fixtures>({
     await context.close()
   },
   background: async ({ context }, use) => {
-    await use(context.serviceWorkers()[0] ?? (await context.waitForEvent('serviceworker')))
+    const background = context.serviceWorkers()[0] ?? (await context.waitForEvent('serviceworker'))
+    // background.ts sets this flag once its start-up has run without failing. Tests wait for it
+    // before opening tabs: start-up applies the tab list it read earlier, and applied late that
+    // would turn the panel off again on a tab a test has just opened.
+    await expect
+      .poll(() => background.evaluate(() => chrome.storage.session.get('panelInit')))
+      .toEqual({ panelInit: true })
+    await use(background)
   },
   backgroundErrors: async ({ background }, use) => {
     const errors: string[] = []
@@ -102,17 +109,13 @@ function panelOptions(background: Worker, url: string): Promise<chrome.sidePanel
   }, url)
 }
 
-test('the service worker starts and sets up the side panel', async ({ background, backgroundErrors }) => {
-  // background.ts sets this flag once its start-up has run without failing.
-  await expect
-    .poll(() => background.evaluate(() => chrome.storage.session.get('panelInit')))
-    .toEqual({
-      panelInit: true,
-    })
+test('the service worker starts and sets up the side panel', async ({ background, backgroundErrors, blocked }) => {
+  // The background fixture has already waited for start-up to finish.
   expect(await background.evaluate(() => chrome.sidePanel.getPanelBehavior())).toEqual({
     openPanelOnActionClick: true,
   })
   expect(backgroundErrors).toEqual([])
+  expect(blocked).toEqual([])
 })
 
 test('the side panel is enabled on Notion tabs and on no other site', async ({
