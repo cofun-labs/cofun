@@ -14,7 +14,7 @@ export interface State {
   created: string[]
 }
 
-export const STATE_DIR = join(homedir(), '.cache', 'notion-copilot', 'e2e')
+const STATE_DIR = join(homedir(), '.cache', 'notion-copilot', 'e2e')
 
 /** One file per owner; other characters are escaped, so different owners never share a file. */
 export function statePath(owner: string, dir = STATE_DIR): string {

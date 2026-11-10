@@ -83,7 +83,7 @@ export function privatePageOps(
   }
 }
 
-export const STATUSES = ['Not started', 'In progress', 'Done']
+const STATUSES = ['Not started', 'In progress', 'Done']
 const STATUS = 'st:x'
 const DUE = 'du:x'
 
