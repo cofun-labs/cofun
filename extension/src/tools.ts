@@ -1077,6 +1077,9 @@ function toProperties(schema: Schema, props: [string, PropertyInput][]): Record<
 /** How many pages one move_page or trash_page call takes at most, so its preview stays readable. */
 export const ORGANIZE_MAX = 50
 
+/** How long trash_page's preview waits for Notion's current titles before using those the agent saw. */
+export const PREVIEW_LOOKUP_MS = 3_000
+
 /** How far up from a page move_page looks for the pages it is in. */
 const ANCESTORS_MAX = 100
 
@@ -1095,9 +1098,14 @@ function pageList(value: unknown): string[] {
 /** The ids `pages` names, for a preview: whatever can be read of it, never an error. */
 function previewIds(value: unknown): { given: string; id?: string }[] {
   const list = Array.isArray(value) ? value : []
-  return list.slice(0, ORGANIZE_MAX).map((v) => {
+  const seen = new Set<string>()
+  // Each page once, as `run` takes them, so the preview counts and lists what happens.
+  return list.slice(0, ORGANIZE_MAX).flatMap((v) => {
     const given = typeof v === 'string' ? v.trim() : ''
-    return { given, id: given ? pageArg(given) : undefined }
+    const id = given ? pageArg(given) : undefined
+    if (id && seen.has(id)) return []
+    if (id) seen.add(id)
+    return [{ given, id }]
   })
 }
 
@@ -1214,13 +1222,19 @@ export const movePage: ToolSpec = {
 /** `page` and the pages it is in, from `page` up, as far as the account can see. */
 async function ancestors(tab: NotionTab, page: NotionRecord): Promise<string[]> {
   const chain = [page.id]
-  let current = page
-  for (let depth = 0; depth < ANCESTORS_MAX && current.parent_table === 'block' && current.parent_id; depth++) {
+  let current: NotionRecord = page
+  for (let depth = 0; depth < ANCESTORS_MAX && current.parent_id; depth++) {
     const parentId = current.parent_id
-    // A page the account can't open ends the walk; Notion itself still refuses a move into a page's own pages.
-    const parent = (await tab.client.findRecords([{ table: 'block', id: parentId }])).block?.[parentId]
+    // A row's parent is its database's data source, which sits in the database block.
+    const table =
+      current.parent_table === 'block' ? 'block' : current.parent_table === 'collection' ? 'collection' : undefined
+    if (!table) break
+    // A record the account can't open ends the walk; Notion itself still refuses a move into a page's own pages.
+    const parent: NotionRecord | undefined = (await tab.client.findRecords([{ table, id: parentId }]))[table]?.[
+      parentId
+    ]
     if (!parent) break
-    chain.push(parent.id)
+    if (table === 'block') chain.push(parent.id)
     current = parent
   }
   return chain
@@ -1309,12 +1323,22 @@ export const trashPage: ToolSpec = {
     const ids = pages.flatMap((p) => (p.id ? [p.id] : []))
     let found: Record<string, NotionRecord> = {}
     let names = new Map<string, string>()
+    let timer: ReturnType<typeof setTimeout> | undefined
     try {
-      const tab = await activeNotionTab()
-      found = (await tab.client.findRecords(ids.map((id) => ({ table: 'block' as const, id })))).block ?? {}
-      names = await databaseNames(tab, Object.values(found))
+      const lookup = (async () => {
+        const tab = await activeNotionTab()
+        const blocks = (await tab.client.findRecords(ids.map((id) => ({ table: 'block' as const, id })))).block ?? {}
+        return { blocks, databases: await databaseNames(tab, Object.values(blocks)) }
+      })()
+      // A slow Notion must not hold up the question to the user.
+      const late = new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error('timed out')), PREVIEW_LOOKUP_MS)
+      })
+      ;({ blocks: found, databases: names } = await Promise.race([lookup, late]))
     } catch {
       // Without Notion, the names the agent saw are all there is.
+    } finally {
+      clearTimeout(timer)
     }
     return [
       `Move ${pages.length} page${pages.length === 1 ? '' : 's'} to the trash, with everything in ${pages.length === 1 ? 'it' : 'them'}`,

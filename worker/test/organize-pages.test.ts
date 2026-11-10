@@ -1,7 +1,7 @@
 // Moving, duplicating, and trashing pages (move_page, duplicate_page, and trash_page in
 // extension/src/tools.ts), against a fake Notion workspace that applies them the way Notion does.
 import { afterEach, describe, expect, it } from 'vitest'
-import { duplicatePage, forgetReads, movePage, readPage, trashPage } from '../../extension/src/tools'
+import { PREVIEW_LOOKUP_MS, duplicatePage, forgetReads, movePage, readPage, trashPage } from '../../extension/src/tools'
 import { FakeNotionTab, FakeWorkspace, PAGE, PAGE_URL, SPACE, notionError, restoreGlobals } from './notion-tab'
 
 afterEach(() => {
@@ -59,7 +59,15 @@ function workspace() {
     ],
     SPACE,
   )
-  ws.collections.set(COLLECTION, { id: COLLECTION, version: 1, name: [['Tasks']], schema: {}, space_id: SPACE })
+  ws.collections.set(COLLECTION, {
+    id: COLLECTION,
+    version: 1,
+    name: [['Tasks']],
+    schema: {},
+    space_id: SPACE,
+    parent_id: DB,
+    parent_table: 'block',
+  })
   return ws
 }
 
@@ -106,6 +114,16 @@ describe('UC-NOTION-010 reorganize pages', () => {
     await expect(movePage.run({ pages: [NOTE, PLAN], to: DRAFT })).rejects.toThrow('that page is inside it')
     expect(ws.transactions).toEqual([])
     expect(ws.records.get(PLAN)!.parent_id).toBe(PROJECTS)
+  })
+
+  it('[UC-NOTION-010-S04] refuses to move a page into a row of a database inside it', async () => {
+    const ws = workspace()
+    open(ws)
+    // ROW is a row of the database DB, which is inside PAGE.
+    await expect(movePage.run({ pages: [PAGE], to: ROW })).rejects.toThrow(
+      `^${hex(PAGE)} can't be moved into ^${hex(ROW)}: that page is inside it.`,
+    )
+    expect(ws.transactions).toEqual([])
   })
 
   it('[UC-NOTION-010-S03] duplicates a page with its content right after it, without asking', async () => {
@@ -264,6 +282,29 @@ describe('duplicating pages', () => {
 })
 
 describe('trashing pages', () => {
+  it('lists each page once in the preview, as it is trashed once', async () => {
+    const ws = workspace()
+    open(ws)
+    expect(await trashPage.preview!({ pages: [NOTE, hex(NOTE), PLAN] })).toBe(
+      [
+        'Move 2 pages to the trash, with everything in them',
+        `    Note ^${hex(NOTE)}`,
+        `    Launch plan ^${hex(PLAN)}`,
+        "They stay in Notion's trash, where they can be restored.",
+      ].join('\n'),
+    )
+  })
+
+  it('previews from what the agent saw when Notion is too slow to answer', async () => {
+    const ws = workspace()
+    const tab = open(ws)
+    await readPage.run({ page: hex(ARCHIVE) })
+    tab.stalled = true
+    const started = Date.now()
+    expect(await trashPage.preview!({ pages: [hex(ARCHIVE)] })).toContain(`    Archive ^${hex(ARCHIVE)}`)
+    expect(Date.now() - started).toBeLessThan(PREVIEW_LOOKUP_MS + 1_000)
+  })
+
   it('trashes a page at the top of the sidebar from its workspace', async () => {
     const ws = workspace()
     open(ws)

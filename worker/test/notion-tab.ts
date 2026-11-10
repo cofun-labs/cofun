@@ -52,6 +52,8 @@ export class FakeNotionTab {
   /** Makes executeScript fail with this message while the tab is still open on Notion. */
   injectionError?: string
   networkDown = false
+  /** Makes Notion never answer, as a stalled tab would. */
+  stalled = false
   /** Makes Notion answer with a redirect, as it might to a sign-in page. */
   redirects = false
   /** The page's DOM, for scripts that read it (the selection); only what they use. */
@@ -122,6 +124,7 @@ export class FakeNotionTab {
 
   private async fetch(url: string, init: RequestInit): Promise<Response> {
     if (this.networkDown) throw new TypeError('Failed to fetch')
+    if (this.stalled) return new Promise<Response>(() => {})
     this.signals.push(init.signal)
     this.sent.push({ url, headers: init.headers as Record<string, string>, body: JSON.parse(init.body as string) })
     const endpoint = url.split('/api/v3/')[1]

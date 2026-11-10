@@ -739,6 +739,28 @@ describe('extension agent against the worker', () => {
     ])
   })
 
+  it('Stop does not wait for a preview that is still looking things up', async () => {
+    let agent: CopilotAgent
+    const { tool, runs } = renameTool()
+    const slow: ToolSpec = {
+      ...tool,
+      preview: () => {
+        agent.stop()
+        return new Promise<string>(() => {})
+      },
+    }
+    agent = makeAgent({ tools: [slow] })
+    ai.script = [{ toolCalls: [RENAME_CALL] }]
+    const asked: ToolCallRequest[] = []
+    const { result } = await ask(agent, 'Rename this page to Q4 Plan', async (call) => {
+      asked.push(call)
+      return true
+    })
+    expect(result).toEqual({ status: 'stopped' })
+    expect(asked).toEqual([])
+    expect(runs).toEqual([])
+  })
+
   it('a broken preview does not stop the call', async () => {
     const { tool, runs } = pageTool()
     ai.script = [{ toolCalls: [{ name: 'lookup_page', arguments: '{}' }] }, { reply: 'Done' }]

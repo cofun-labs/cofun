@@ -229,7 +229,7 @@ export class CopilotAgent {
         }
       }
       // From the arguments the tool runs with, and before it runs: the run may change what the preview reads.
-      const preview = await previewCall(this.tools.get(toolCall.name), args)
+      const preview = await previewCall(this.tools.get(toolCall.name), args, signal)
       onUpdate({ type: 'tool_ready', id: toolCall.id, args, preview })
       if (!this.confirmed.has(toolCall.name)) {
         started.add(toolCall.id)
@@ -585,9 +585,21 @@ function size(message: AgentMessage): number {
 }
 
 /** What a call changes, in words; a broken preview must not stop the call, so it gives none. */
-async function previewCall(tool: ToolSpec | undefined, args: unknown): Promise<string | undefined> {
+async function previewCall(
+  tool: ToolSpec | undefined,
+  args: unknown,
+  signal?: AbortSignal,
+): Promise<string | undefined> {
   try {
-    return await tool?.preview?.((args ?? {}) as Record<string, unknown>)
+    const preview = tool?.preview?.((args ?? {}) as Record<string, unknown>)
+    if (typeof preview === 'string' || preview === undefined) return preview
+    // Stop must not wait for a preview that looks things up.
+    return await new Promise<string | undefined>((resolve, reject) => {
+      if (signal?.aborted) return resolve(undefined)
+      const onAbort = () => resolve(undefined)
+      signal?.addEventListener('abort', onAbort, { once: true })
+      preview.then(resolve, reject).finally(() => signal?.removeEventListener('abort', onAbort))
+    })
   } catch (err) {
     console.error('Could not preview the tool call', err)
     return undefined
