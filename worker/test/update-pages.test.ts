@@ -264,18 +264,29 @@ describe('update_pages details', () => {
       ['⁍', [['e', 'a*b']]],
       [' and '],
       ['docs', [['a', 'https://x.example']]],
+      [' @kitfun'],
     ]
-    await query(tab, [rowRecord(6, '', 'Done', { title: [['Bold', [['b'], ['h', 'red']]]], 'g:g': notes })])
+    await query(tab, [
+      rowRecord(6, '', 'Done', {
+        title: [
+          ['@home ', [['b'], ['h', 'red']]],
+          ['Bold', [['b'], ['h', 'red']]],
+        ],
+        'g:g': notes,
+      }),
+    ])
     expect(
       updatePages.preview!({
-        pages: [{ page: hex(row(6)), title: 'Bold', properties: { Notes: 'See code, old, red, a*b and docs' } }],
+        pages: [
+          { page: hex(row(6)), title: '@home Bold', properties: { Notes: 'See code, old, red, a*b and docs @kitfun' } },
+        ],
       }),
     ).toBe(
       [
         'Change 1 page',
-        `Bold ^${hex(row(6))}`,
-        '    Title: Bold (unchanged)',
-        '    Notes: See code, old, red, a*b and docs (unchanged)',
+        `@home Bold ^${hex(row(6))}`,
+        '    Title: @home Bold (unchanged)',
+        '    Notes: See code, old, red, a*b and docs @kitfun (unchanged)',
       ].join('\n'),
     )
   })

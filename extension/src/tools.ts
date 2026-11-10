@@ -558,11 +558,12 @@ function cell(values: { name: string; value: string }[], property: string): stri
 /**
  * Markdown as the user reads it: links and people (`@[Ann]`) as their text, no mention marks,
  * colors, marks, or escapes, so filters compare against what Notion shows. Code spans and equations
- * are kept as they are: their text has no escapes (`C:\temp` keeps its backslash).
+ * are kept as they are: their text has no escapes (`C:\temp` keeps its backslash). An equation is
+ * found as edit_page's parser finds one (see `inline` in notion/blocks.ts), so prices stay text.
  */
 function shownText(markdown: string): string {
   return markdown.replace(
-    /`([^`]*)`|\$((?:\\.|[^$\\])+)\$|\[((?:\\.|[^\]\\])*)\]\([^)]*\)|@\[((?:\\.|[^\]\\])*)\]|<span color="[^"]*">|<\/span>|\\(.)|[*~]|(?<=^|[\s,(])@/g,
+    /`([^`]*)`|\$(?=\S)((?:\\.|[^$\\\n])+?)(?<=\S)\$(?!\w)|\[((?:\\.|[^\]\\])*)\]\([^)]*\)|@\[((?:\\.|[^\]\\])*)\]|<span color="[^"]*">|<\/span>|\\(.)|[*~]|(?<=^|[\s,(])@(?=\d{4}-\d{2}-\d{2})/g,
     (_, code?: string, equation?: string, link?: string, person?: string, escaped?: string) => {
       if (code !== undefined) return code
       if (equation !== undefined) return equation

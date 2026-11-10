@@ -400,11 +400,15 @@ describe('query_database options, numbers, and code', () => {
     ])
   })
 
-  it('compares colored text and equations as Notion shows them', async () => {
-    database(tagged([], [[['Urgent', [['h', 'red']]]], [], [['⁍', [['e', 'a*b']]]], []]), false, TAGGED)
-    expect(titles(await query({ filter: [{ property: 'Notes', op: 'is', value: 'urgent' }] }))).toEqual(['Write docs'])
-    database(tagged([], [[['Urgent', [['h', 'red']]]], [], [['⁍', [['e', 'a*b']]]], []]), false, TAGGED)
-    expect(titles(await query({ filter: [{ property: 'Notes', op: 'is', value: 'a*b' }] }))).toEqual(['Ship beta'])
+  it('compares colored text and equations as Notion shows them, and prices as text', async () => {
+    const notes = [[['Urgent', [['h', 'red']]]], [['Costs 5$ and 6$ total']], [['⁍', [['e', 'a*b']]]], []]
+    const filter = async (value: string) => {
+      database(tagged([], notes), false, TAGGED)
+      return titles(await query({ filter: [{ property: 'Notes', op: 'is', value }] }))
+    }
+    expect(await filter('urgent')).toEqual(['Write docs'])
+    expect(await filter('Costs 5$ and 6$ total')).toEqual(['Fix login \\| Safari'])
+    expect(await filter('a*b')).toEqual(['Ship beta'])
   })
 
   it('keeps a person with a pipe in the name in one cell', async () => {
