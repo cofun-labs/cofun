@@ -435,7 +435,7 @@ export const queryDatabase: ToolSpec = {
     await loadRowMentions(
       tab,
       recordMap,
-      listed.filter((r): r is Block => !!r),
+      listed.filter((r): r is Block => !!r && r.alive !== false),
       spaceId,
     )
     let rows = listed
