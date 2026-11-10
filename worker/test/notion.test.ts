@@ -609,7 +609,7 @@ describe('when Notion is limiting requests', () => {
     expect(tab.sent).toHaveLength(2)
   })
 
-  it('sends a change again when Notion refused it for coming too fast, and it is applied once', async () => {
+  it('[UC-NOTION-002-S11] sends a change again when Notion refused it for coming too fast, and it is applied once', async () => {
     const tab = new FakeNotionTab(PAGE_URL).limit('saveTransactionsFanout', 1).install()
     tab.workspace = new FakeWorkspace([page], SPACE)
     await client().submitTransaction(SPACE, [rename], 'rename page')
@@ -626,11 +626,14 @@ describe('when Notion is limiting requests', () => {
     expect([waits, tab.sent.length]).toEqual([[], 1])
   })
 
-  it('says a change was not done when Notion keeps refusing it', async () => {
+  it('[UC-NOTION-002-S11] says a change was not done when Notion keeps refusing it', async () => {
     const tab = new FakeNotionTab(PAGE_URL).limit('saveTransactionsFanout', 10).install()
+    tab.workspace = new FakeWorkspace([page], SPACE)
     const err = await notionError(client().submitTransaction(SPACE, [rename], 'rename page'))
-    expect(err.code).toBe('rate_limited')
+    expect([err.code, err.message]).toEqual(['rate_limited', RATE_LIMITED])
     expect(tab.sent).toHaveLength(4)
+    expect(tab.workspace.transactions).toEqual([])
+    expect(tab.workspace.records.get(PAGE)?.properties).toEqual({ title: [['Fixture page']] })
   })
 
   it('holds the client’s other requests while one backs off', async () => {

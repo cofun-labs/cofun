@@ -6,6 +6,8 @@ A signed-in user asks the AI to change a Notion page: rewrite a paragraph, put a
 
 The change is made right away, all at once or not at all, and the side panel shows what changed, piece by piece with the new text and what a deletion removed, so the user can bring it back from the page's history in Notion if they need to. Rewriting a piece as the same kind of content keeps what is nested under it. Deleting a piece deletes what is nested under it too, so a piece with a child page or database under it, or with nested content the AI wasn't shown, is not deleted.
 
+As with reading (UC-NOTION-001), when Notion is limiting the account's requests, the AI holds off; the change is made once Notion lets it, never twice.
+
 Key constraints:
 
 - An edit never overwrites what changed after the AI read the page: if a piece it changes, or inserts after, was changed or removed since, nothing is changed and the AI is told to read the page again.
@@ -23,6 +25,7 @@ Key constraints:
 | UC-NOTION-002-S05 | P1 | ✅ | Given a page the AI has not read; when it tries to edit it; then nothing changes and it is asked to read the page first. |
 | UC-NOTION-002-S06 | P1 | ✅ | Given a piece with content nested under it; when the AI rewrites the piece as the same kind of content; then the nested content stays. |
 | UC-NOTION-002-S07 | P1 | ✅ | Given an edit Notion refuses; then nothing on the page changes and the AI is told the edit failed. |
+| UC-NOTION-002-S11 | P1 | ✅ | Given Notion is limiting the account's requests; when the AI edits a page; then the edit is made once, when Notion lets it, or if Notion keeps refusing, nothing changes and the AI is told to have the user wait. |
 
 ### ai-e2e
 
