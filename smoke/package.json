@@ -6,6 +6,7 @@
   "type": "module",
   "scripts": {
     "smoke": "playwright test",
+    "icons": "node export-icons.ts",
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {

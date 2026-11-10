@@ -14,6 +14,9 @@ export interface ManifestEnv {
   VITE_API_URL?: string
 }
 
+/** The icon (icons/icon.svg) at each size Chrome asks for; `pnpm icons` exports them into public/icons. */
+const ICONS = { 16: 'icons/icon-16.png', 32: 'icons/icon-32.png', 48: 'icons/icon-48.png', 128: 'icons/icon-128.png' }
+
 /** Clerk serves user avatars and provider icons from here, for every instance. */
 const CLERK_IMAGE_HOST = 'img.clerk.com'
 
@@ -75,6 +78,7 @@ export function buildManifest(env: ManifestEnv, version: string) {
     version,
     description: 'A side panel AI helper for Notion pages.',
     ...(env.CRX_PUBLIC_KEY ? { key: env.CRX_PUBLIC_KEY } : {}),
+    icons: ICONS,
     // scripting: Notion calls run in the user's Notion tab (src/notion/tab.ts).
     // tabs: background.ts and src/notion/tab.ts read tab URLs to tell Notion tabs from others. Host
     // permissions would expose a Notion tab's URL too, but not once the user limits the extension's
@@ -95,6 +99,6 @@ export function buildManifest(env: ManifestEnv, version: string) {
     background: { service_worker: 'background.js', type: 'module' },
     // No side_panel.default_path: without it, a tab has no panel unless background.ts
     // sets one, so the panel stays off on other sites even before background.ts runs.
-    action: { default_title: 'Open Copilot for Notion' },
+    action: { default_title: 'Open Copilot for Notion', default_icon: ICONS },
   }
 }

@@ -84,12 +84,26 @@ describe('extension manifest', () => {
         'content_security_policy',
         'description',
         'host_permissions',
+        'icons',
         'manifest_version',
         'name',
         'permissions',
         'version',
       ].sort(),
     )
+  })
+
+  it('lists icons that exist in the build at the size they are listed for', () => {
+    const json = manifest({ VITE_CLERK_SYNC_HOST: 'https://notion-copilot.kitfun.cc' })
+    expect(Object.keys(json.icons)).toEqual(['16', '32', '48', '128'])
+    expect(json.action.default_icon).toEqual(json.icons)
+    for (const [size, file] of Object.entries(json.icons)) {
+      // Vite copies public/ into the build as it is. A PNG starts with its signature and the
+      // IHDR chunk, which holds the width and height at bytes 16 and 20.
+      const png = readFileSync(new URL(`../public/${file}`, import.meta.url))
+      expect(png.subarray(1, 4).toString('latin1')).toBe('PNG')
+      expect([png.readUInt32BE(16), png.readUInt32BE(20)]).toEqual([Number(size), Number(size)])
+    }
   })
 
   it("covers Notion, Clerk, the sign-in page, and the sign-in page's parent domain", () => {
