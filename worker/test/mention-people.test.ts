@@ -106,6 +106,52 @@ describe('UC-NOTION-011 mention people', () => {
     expect(title(ws, id(1))).toEqual([['Call '], ['‣', [['u', KIM]]], [' tomorrow']])
   })
 
+  it('[UC-NOTION-011-S02] keeps the person a block mentions, even one no longer among the members', async () => {
+    // Kim Lee left the workspace; Notion still loads their name with the page.
+    const ws = workspace([block(1, 'to_do', [['‣', [['u', KIM]]], [' follows up']])])
+    ws.visibleUsers = [ALEX, USER]
+    ;(ws.records.get(id(1))!.properties as Rec).checked = [['No']]
+    const tab = open(ws)
+    expect(await read()).toBe('- [ ] @[Kim Lee] follows up ^00000001')
+    const sent = tab.sent.length
+    await edit([{ action: 'replace', block: '^00000001', markdown: '- [x] @[Kim Lee] follows up today' }])
+    expect(title(ws, id(1))).toEqual([['‣', [['u', KIM]]], [' follows up today']])
+    expect((ws.records.get(id(1))!.properties as Rec).checked).toEqual([['Yes']])
+    // The block's own mention names the person: no member lookup.
+    expect(endpoints(tab, sent)).not.toContain('getVisibleUsers')
+  })
+
+  it('[UC-NOTION-011-S02] keeps the person a block mentions when a member has the same name', async () => {
+    const ws = workspace(
+      [block(1, 'text', [['Call '], ['‣', [['u', KIM]]], [' today']])],
+      [
+        [KIM, 'Kim Lee'],
+        [ALEX, 'Kim Lee'],
+      ],
+    )
+    ws.visibleUsers = [ALEX]
+    open(ws)
+    await read()
+    await edit([{ action: 'replace', block: '^00000001', markdown: 'Call @[Kim Lee] tomorrow' }])
+    expect(title(ws, id(1))).toEqual([['Call '], ['‣', [['u', KIM]]], [' tomorrow']])
+  })
+
+  it('[UC-NOTION-011-S05] refuses a name a block mentions two people by', async () => {
+    const ws = workspace(
+      [block(1, 'text', [['‣', [['u', KIM]]], [' and '], ['‣', [['u', ALEX]]]])],
+      [
+        [KIM, 'Kim Lee'],
+        [ALEX, 'Kim Lee'],
+      ],
+    )
+    open(ws)
+    expect(await read()).toBe('@[Kim Lee] and @[Kim Lee] ^00000001')
+    await expect(
+      edit([{ action: 'replace', block: '^00000001', markdown: '@[Kim Lee] and @[Kim Lee], today' }]),
+    ).rejects.toThrow("the block mentions more than one person with that name, so a mention can't tell them apart")
+    expect(ws.transactions).toEqual([])
+  })
+
   it('[UC-NOTION-011-S03] mentions a member in a new page', async () => {
     const ws = workspace([block(1, 'text', [['Intro']])])
     open(ws)
@@ -244,6 +290,27 @@ describe('mention details', () => {
     expect(shown).toBe('@[Ops \\[EU\\] \\*on call\\*] ^00000001')
     await edit([{ action: 'insert', block: '^00000001', markdown: shown.replace(/ \^\w+$/, '') }])
     expect((ws.content(PAGE)[1].properties as Rec).title).toEqual([['‣', [['u', KIM]]]])
+  })
+
+  it('reads a bold mention back with its marks', async () => {
+    const ws = workspace([block(1, 'text', [['‣', [['b'], ['u', KIM]]], [' and '], ['‣', [['s'], ['u', KIM]]]])])
+    open(ws)
+    const shown = await read()
+    expect(shown).toBe('**@[Kim Lee]** and ~~@[Kim Lee]~~ ^00000001')
+    await edit([{ action: 'insert', block: '^00000001', markdown: shown.replace(/ \^\w+$/, '') }])
+    expect((ws.content(PAGE)[1].properties as Rec).title).toEqual([
+      ['‣', [['b'], ['u', KIM]]],
+      [' and '],
+      ['‣', [['s'], ['u', KIM]]],
+    ])
+  })
+
+  it('keeps a backslash before a parenthesis that does not follow a mention', async () => {
+    const ws = workspace([block(1, 'text', [['Intro']])])
+    open(ws)
+    await read()
+    await edit([{ action: 'insert', position: 'end', markdown: 'Inline math \\(x\\)' }])
+    expect((ws.content(PAGE).at(-1)!.properties as Rec).title).toEqual([['Inline math \\(x\\)']])
   })
 
   it('shows a person whose name is unknown as plain @someone, which is not a mention', async () => {

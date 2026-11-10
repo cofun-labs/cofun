@@ -9,6 +9,7 @@ import {
   blockOps,
   commentOps,
   mergeRecordMaps,
+  type Block,
   type LoadedPage,
   type NotionRecord,
   type Operation,
@@ -35,7 +36,7 @@ import {
   withPeople,
   type NewBlock,
 } from './notion/blocks'
-import { findPeople } from './notion/people'
+import { findPeople, peopleIn } from './notion/people'
 import { COMMENT_CHARS, clip, loadThreads, quote, threadCount, threadLines } from './notion/comments'
 import {
   PropertyError,
@@ -817,11 +818,27 @@ export const editPage: ToolSpec = {
           : 'That id is a block inside a page, not a page.',
       )
     }
-    // People the new Markdown mentions, matched to members before anything is written.
-    const names = personNames(edits.flatMap((e) => (e.action === 'delete' ? [] : blockTitles(e.blocks))))
-    const people = await findPeople(tab.client, loaded.spaceId, names)
-    for (const e of edits) if (e.action !== 'delete') e.blocks = blocksWithPeople(e.blocks, people)
-    const plan = planEdit(loaded, read, edits, { people })
+    // People the new Markdown mentions, matched before anything is written. In a block being
+    // rewritten, a name it already mentions is that same person.
+    const writes = edits.filter((e) => e.action !== 'delete')
+    const users = loaded.recordMap.notion_user
+    const blocks = loaded.recordMap.block ?? {}
+    const found = await findPeople(
+      tab.client,
+      loaded.spaceId,
+      writes.map((e) => ({
+        names: personNames(blockTitles(e.blocks)),
+        known:
+          e.action === 'replace'
+            ? peopleIn((blocks[e.target] as Block | undefined)?.properties?.title, users)
+            : undefined,
+      })),
+    )
+    writes.forEach((e, n) => {
+      e.people = found[n]
+      e.blocks = blocksWithPeople(e.blocks, found[n])
+    })
+    const plan = planEdit(loaded, read, edits)
     // The last point where nothing has been sent: a Stop pressed while the page loaded wins.
     // Every edit was a no-op: there is nothing to send, and the page stays as read.
     if (!plan.operations.length) return plan.summary.join('\n')
@@ -995,7 +1012,8 @@ export const createPage: ToolSpec = {
     }
     if (typeof spaceId !== 'string' || !spaceId)
       throw new NotionError('notion_error', 'Notion returned the page without its workspace.')
-    blocks = blocksWithPeople(blocks, await findPeople(tab.client, spaceId, personNames(blockTitles(blocks))))
+    const [people] = await findPeople(tab.client, spaceId, [{ names: personNames(blockTitles(blocks)) }])
+    blocks = blocksWithPeople(blocks, people)
     const { operations, pageId } = planNewPage(target, spaceId, title, blocks, { properties })
     signal?.throwIfAborted()
     // The parent's list changes: cached parts of it would hide the new page, and after an unknown
@@ -2084,7 +2102,7 @@ export const addComment: ToolSpec = {
       target = found
     }
     const rich = inline(text)
-    const people = await findPeople(tab.client, loaded.spaceId, personNames([rich]))
+    const [people] = await findPeople(tab.client, loaded.spaceId, [{ names: personNames([rich]) }])
     const operations = commentOps(loaded.spaceId, Date.now()).newThread(
       target,
       crypto.randomUUID(),

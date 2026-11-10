@@ -154,9 +154,17 @@ export interface EditArgs {
   markdown?: unknown
 }
 
+/** `people`: the user id of each person the edit's Markdown mentions, by the name it gives. */
 export type Edit =
-  | { action: 'insert'; anchor?: string; position: 'after' | 'start' | 'end'; markdown: string; blocks: NewBlock[] }
-  | { action: 'replace'; target: string; markdown: string; blocks: NewBlock[] }
+  | {
+      action: 'insert'
+      anchor?: string
+      position: 'after' | 'start' | 'end'
+      markdown: string
+      blocks: NewBlock[]
+      people?: Map<string, string>
+    }
+  | { action: 'replace'; target: string; markdown: string; blocks: NewBlock[]; people?: Map<string, string> }
   | { action: 'delete'; target: string }
 
 /** Checks the edits and resolves their references against the agent's read, before asking Notion anything. */
@@ -249,11 +257,7 @@ export function planEdit(
   loaded: LoadedPage,
   read: PageRead,
   edits: Edit[],
-  {
-    now = Date.now(),
-    newId = () => crypto.randomUUID(),
-    people = new Map<string, string>(),
-  }: { now?: number; newId?: () => string; people?: Map<string, string> } = {},
+  { now = Date.now(), newId = () => crypto.randomUUID() } = {},
 ): Plan {
   const blocks = (loaded.recordMap.block ?? {}) as Record<string, Block>
   const { page, spaceId } = loaded
@@ -410,7 +414,7 @@ export function planEdit(
     if (e.blocks.length === 1 && only.type === target.type && !only.children.length) {
       // The same kind of block: change it in place, keeping its id, children, and comments, and
       // only the fields that differ, so text the agent didn't change keeps what can't be written.
-      const values = changedProperties(target, only, read.lines.get(target.id), people)
+      const values = changedProperties(target, only, read.lines.get(target.id), e.people ?? new Map())
       if (Object.keys(values).length) {
         ops.push(op.setProperties(target.id, values))
       }

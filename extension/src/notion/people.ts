@@ -1,6 +1,6 @@
 // Mentions of people: matching the names `@[Name]` gives to the workspace's members, as the
-// signed-in user sees them. A mention must name exactly one member, or nothing is written.
-import type { NotionClient } from './api'
+// signed-in user sees them. A mention must name exactly one person, or nothing is written.
+import type { NotionClient, NotionRecord } from './api'
 import { EditError } from './edit'
 
 /** How many members a refusal lists at most. */
@@ -11,27 +11,65 @@ function key(name: string): string {
   return name.normalize('NFKC').replace(/\s+/g, ' ').trim().toLowerCase()
 }
 
+/** People already mentioned (in a block being rewritten): user id by name, or null for a name two of them share. */
+export type KnownPeople = Map<string, string | null>
+
+/** The people `title` mentions whose name `users` holds, as read_page shows them. */
+export function peopleIn(title: unknown, users: Record<string, NotionRecord> = {}): KnownPeople {
+  const known: KnownPeople = new Map()
+  if (!Array.isArray(title)) return known
+  for (const run of title) {
+    if (!Array.isArray(run) || !Array.isArray(run[1])) continue
+    for (const mark of run[1] as unknown[][]) {
+      const id = mark[0] === 'u' ? String(mark[1]) : undefined
+      const name = id ? users[id]?.name : undefined
+      if (!id || typeof name !== 'string' || !name.trim()) continue
+      const k = key(name)
+      known.set(k, known.has(k) && known.get(k) !== id ? null : id)
+    }
+  }
+  return known
+}
+
 /**
- * The user id of each name, by name. Looks the workspace's members up only when there are names,
- * and refuses with an EditError when a name matches no member or more than one.
+ * The user id of each name, by name, for each set of names. A name the set's `known` people have
+ * (the block being rewritten already mentions them) is that person. The others are looked up among
+ * the workspace's members, in one lookup, only if there are any. Refuses with an EditError when a
+ * name matches no one or more than one.
  */
-export async function findPeople(client: NotionClient, spaceId: string, names: string[]): Promise<Map<string, string>> {
-  const ids = new Map<string, string>()
-  if (!names.length) return ids
-  const people = await client.workspacePeople(spaceId)
+export async function findPeople(
+  client: NotionClient,
+  spaceId: string,
+  sets: { names: string[]; known?: KnownPeople }[],
+): Promise<Map<string, string>[]> {
   const problems: string[] = []
-  for (const name of names) {
+  const ambiguous = (name: string, who: string) =>
+    problems.push(
+      `@[${name}]: ${who}, so a mention can't tell them apart. Write the name as plain text, or ask the user ` +
+        'which person they mean.',
+    )
+  const unknown = new Set<string>()
+  for (const { names, known } of sets) for (const name of names) if (!known?.has(key(name))) unknown.add(name)
+  const people = unknown.size ? await client.workspacePeople(spaceId) : []
+  const found = new Map<string, string>()
+  for (const name of unknown) {
     const matches = people.filter((p) => key(p.name) === key(name))
-    if (matches.length === 1) ids.set(name, matches[0].id)
-    else if (matches.length > 1)
-      problems.push(
-        `@[${name}]: ${matches.length} workspace members are named “${matches[0].name}”, so a mention can't tell ` +
-          'them apart. Write the name as plain text, or ask the user which person they mean.',
-      )
+    if (matches.length === 1) found.set(name, matches[0].id)
+    else if (matches.length > 1) ambiguous(name, `${matches.length} workspace members are named “${matches[0].name}”`)
     else problems.push(`@[${name}]: no workspace member has that name. ${candidates(name, people)}`)
   }
-  if (problems.length) throw new EditError([...problems, 'Nothing was written.'].join('\n'))
-  return ids
+  const out = sets.map(({ names, known }) => {
+    const ids = new Map<string, string>()
+    for (const name of names) {
+      const own = known?.get(key(name))
+      if (own) ids.set(name, own)
+      else if (own === null) ambiguous(name, 'the block mentions more than one person with that name')
+      else if (found.has(name)) ids.set(name, found.get(name)!)
+    }
+    return ids
+  })
+  if (problems.length) throw new EditError([...new Set(problems), 'Nothing was written.'].join('\n'))
+  return out
 }
 
 /** Members whose name is like `name`, or else the members there are, for the agent to pick from. */

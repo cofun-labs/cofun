@@ -383,7 +383,7 @@ class Context {
         if (table && raw) out = out.split('|').join('\\|')
         // `@[Name](` would read as an @ before a link: the parenthesis after a mention stays literal.
         if (afterPerson && out.startsWith('(')) out = `\\${out}`
-        afterPerson = /^@\[.*\]$/s.test(out) && marks.some(([m]) => m === 'u')
+        afterPerson = /@\[.*\]$/s.test(out) && marks.some(([m]) => m === 'u')
         return out
       })
       .join('')
@@ -399,7 +399,10 @@ class Context {
         case 'p':
           return `[${this.pageTitle(String(arg))}](${hexId(String(arg))})`
         case 'u':
-          return this.mention(String(arg))
+          // Its bold, italic, and strikethrough still apply, as for text (a link can't: `[@[Name]](url)`
+          // wouldn't read back).
+          out = this.mention(String(arg))
+          break
         case 'd':
           return `@${formatDate(arg)}`
         case 'e':
@@ -422,7 +425,7 @@ class Context {
     if (has('b')) out = wrap(out, '**')
     if (has('i')) out = wrap(out, '*')
     if (has('s')) out = wrap(out, '~~')
-    if (link) out = `[${out}](${link})`
+    if (link && !marks.some(([m]) => m === 'u')) out = `[${out}](${link})`
     return out
   }
 

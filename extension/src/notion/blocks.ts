@@ -190,11 +190,12 @@ export interface PersonName {
 export function inline(text: string, marks: Mark[] = []): RichText {
   const patterns: { re: RegExp; run: (m: RegExpExecArray) => RichText }[] = [
     // A backslash keeps the next character literal, as read_page escapes them.
-    { re: /\\([\\`*_~[\]^|#><(])/, run: (m) => [marks.length ? [m[1], marks] : [m[1]]] },
+    { re: /\\([\\`*_~[\]^|#><])/, run: (m) => [marks.length ? [m[1], marks] : [m[1]]] },
     { re: /`([^`]+)`/, run: (m) => [[m[1], [...marks, ['c']]]] },
     {
       // `@[Name]` mentions a person, as read_page shows mentions; `@[text](url)` is an @ before a link.
-      re: /@\[((?:\\.|[^\]\\])+)\](?!\()/,
+      // read_page writes a parenthesis right after a mention as `\(`; the backslash goes with the mention.
+      re: /@\[((?:\\.|[^\]\\])+)\](?!\()(?:\\(?=\())?/,
       run: (m) => {
         const name = m[1].replace(/\\(.)/g, '$1').trim()
         return name ? [['‣', [...marks, ['u', { name } satisfies PersonName]]]] : [[m[0], marks]]
