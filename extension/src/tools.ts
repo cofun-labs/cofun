@@ -679,10 +679,6 @@ function cutOff(next: number | undefined, depth: number, section?: string): stri
   return `(Cut off: more entries follow. List them with ${where}\`offset: ${next}\`.${under})`
 }
 
-function nodeIds(nodes: { id: string; children: unknown[] }[]): string[] {
-  return nodes.flatMap((n) => [n.id, ...nodeIds(n.children as { id: string; children: unknown[] }[])])
-}
-
 function countNodes(nodes: { children: unknown[] }[]): number {
   return nodes.reduce((n, node) => n + 1 + countNodes(node.children as { children: unknown[] }[]), 0)
 }
