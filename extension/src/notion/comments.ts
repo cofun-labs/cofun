@@ -2,7 +2,7 @@
 // the page, so everything in them is quoted: a comment can't end its line, start another thread, or
 // pass for the tool's own words.
 import { mergeRecordMaps, type NotionClient, type LoadedPage, type NotionRecord, type Pointer } from './api'
-import { PAGE_TYPES, hexId, richMarkdown, userName, type PageMarkdown } from './markdown'
+import { LAYOUT_TYPES, PAGE_TYPES, hexId, richMarkdown, userName, type PageMarkdown } from './markdown'
 
 export interface Thread {
   id: string
@@ -22,8 +22,12 @@ const EXCERPT_CHARS = 80
 /** The blocks threads can be on, in page order: the page, then the blocks it shows. */
 function anchors(loaded: LoadedPage, md: PageMarkdown): string[] {
   const blocks = loaded.recordMap.block ?? {}
-  // A child page's comments are that page's own, not a block's of this one.
-  const shown = [...md.refs.keys()].filter((id) => !PAGE_TYPES.has(String(blocks[id]?.type)))
+  // A child page's comments are that page's own, not a block's of this one; columns only lay out
+  // their blocks, and Notion shows no comments on them.
+  const shown = [...md.refs.keys()].filter((id) => {
+    const type = String(blocks[id]?.type)
+    return !PAGE_TYPES.has(type) && !LAYOUT_TYPES.has(type)
+  })
   return [loaded.page.id, ...shown]
 }
 

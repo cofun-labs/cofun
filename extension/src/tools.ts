@@ -36,7 +36,15 @@ import {
   shownInput,
   type PropertyInput,
 } from './notion/props'
-import { PAGE_TYPES, hexId, pageToMarkdown, rowValues, splitSections, type Schema } from './notion/markdown'
+import {
+  LAYOUT_TYPES,
+  PAGE_TYPES,
+  hexId,
+  pageToMarkdown,
+  rowValues,
+  splitSections,
+  type Schema,
+} from './notion/markdown'
 import { activeNotionTab, selectionIn, type NotionTab } from './notion/tab'
 import { pageChildren, pageTree, runsText, treeLines } from './notion/tree'
 
@@ -1393,9 +1401,6 @@ export const readComments: ToolSpec = {
   },
 }
 
-/** How long one comment may be: Notion's limit for a piece of text. */
-export const COMMENT_MAX = 2000
-
 /** The block reference a call gives: `^1a2b3c4d`, the bare reference, or a full id. */
 function blockArg(value: unknown): string | undefined {
   return typeof value === 'string' && value.trim()
@@ -1443,8 +1448,8 @@ export const addComment: ToolSpec = {
     if (!id) throw new Error(`Not a Notion page URL or id: ${given}`)
     const text = typeof args.text === 'string' ? args.text.trim() : ''
     if (!text) throw new EditError('`text` must not be empty.')
-    if (text.length > COMMENT_MAX)
-      throw new EditError(`A comment can be at most ${COMMENT_MAX} characters; shorten it or split it in two.`)
+    if (text.length > COMMENT_CHARS)
+      throw new EditError(`A comment can be at most ${COMMENT_CHARS} characters; shorten it or split it in two.`)
     const ref = blockArg(args.block)
     const tab = await activeNotionTab()
     const loaded = await tab.client.loadPage(id)
@@ -1454,7 +1459,9 @@ export const addComment: ToolSpec = {
     const md = pageToMarkdown(loaded)
     const blocks = loaded.recordMap.block ?? {}
     let target = loaded.page.id
-    if (ref && ref !== hexId(loaded.page.id)) {
+    const pageHex = hexId(loaded.page.id)
+    // The page's own id, or its short reference, means the page itself.
+    if (ref && ref !== pageHex && !(ref.length === 8 && pageHex.endsWith(ref))) {
       const found = [...md.refs].find(([b, r]) => r === ref || hexId(b) === ref)?.[0]
       if (!found) {
         throw new EditError(
@@ -1466,6 +1473,9 @@ export const addComment: ToolSpec = {
       if (!blocks[found]) throw new EditError(`^${ref} could not be loaded, so it can't be commented on.`)
       if (PAGE_TYPES.has(String(blocks[found].type)))
         throw new EditError(`^${ref} is a page of its own: comment on it by giving it as \`page\`.`)
+      // Columns only lay out their blocks; Notion has nowhere to show a comment on one.
+      if (LAYOUT_TYPES.has(String(blocks[found].type)))
+        throw new EditError(`^${ref} is a column layout, not a block: comment on a block inside it.`)
       target = found
     }
     const operations = commentOps(loaded.spaceId, Date.now()).newThread(

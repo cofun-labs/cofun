@@ -3,7 +3,8 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { NotionError } from '../../extension/src/notion/api'
 import { EditError } from '../../extension/src/notion/edit'
-import { COMMENT_MAX, PART_CHARS, addComment, readComments, readPage } from '../../extension/src/tools'
+import { COMMENT_CHARS } from '../../extension/src/notion/comments'
+import { PART_CHARS, addComment, readComments, readPage } from '../../extension/src/tools'
 import { FakeNotionTab, FakeWorkspace, PAGE, PAGE_URL, SPACE, USER, pageTab, restoreGlobals } from './notion-tab'
 
 afterEach(restoreGlobals)
@@ -329,10 +330,47 @@ describe('add_comment', () => {
   it('refuses empty and overlong text before asking Notion anything', async () => {
     const tab = open(workspace())
     expect((await failure(add({ text: '  ' }))).message).toBe('`text` must not be empty.')
-    expect((await failure(add({ text: 'x'.repeat(COMMENT_MAX + 1) }))).message).toBe(
-      `A comment can be at most ${COMMENT_MAX} characters; shorten it or split it in two.`,
+    expect((await failure(add({ text: 'x'.repeat(COMMENT_CHARS + 1) }))).message).toBe(
+      `A comment can be at most ${COMMENT_CHARS} characters; shorten it or split it in two.`,
     )
     expect(tab.sent).toEqual([])
+  })
+
+  it("takes the page's own short reference as the page", async () => {
+    const ws = workspace()
+    open(ws)
+    await add({ block: `^${hex(PAGE).slice(-8)}`, text: 'Hi' })
+    expect(ws.table('discussion')[0].parent_id).toBe(PAGE)
+  })
+
+  it('refuses a column layout, which Notion shows no comments on', async () => {
+    const ws = workspace()
+    ws.edit(PAGE, { content: [id(1), id(2), id(3), id(10)] })
+    ws.records.set(id(10), {
+      id: id(10),
+      version: 1,
+      alive: true,
+      space_id: SPACE,
+      type: 'column_list',
+      parent_id: PAGE,
+      parent_table: 'block',
+      content: [id(11)],
+    })
+    ws.records.set(id(11), {
+      id: id(11),
+      version: 1,
+      alive: true,
+      space_id: SPACE,
+      type: 'column',
+      parent_id: id(10),
+      parent_table: 'block',
+      content: [],
+    })
+    open(ws)
+    expect((await failure(add({ block: '^0000000a', text: 'Hi' }))).message).toBe(
+      '^0000000a is a column layout, not a block: comment on a block inside it.',
+    )
+    expect(ws.transactions).toEqual([])
   })
 
   it('takes a block by its full id', async () => {
