@@ -1144,7 +1144,7 @@ export const movePage: ToolSpec = {
   description:
     'Moves pages, or databases that are pages of their own, to the end of another page, with everything in them, ' +
     'as Notion\'s "Move to" does. Several pages can go in one call. A page can\'t go into itself or a page ' +
-    "inside it, and database rows can't be moved.",
+    "inside it, and database rows and pages at the top of a teamspace can't be moved.",
   parameters: {
     type: 'object',
     properties: {
@@ -1176,8 +1176,7 @@ export const movePage: ToolSpec = {
     const destId = pageArg(to)
     if (!destId) throw new EditError(`Not a Notion page URL or id: ${oneLine(to)}`)
     const tab = await activeNotionTab()
-    const records = (await tab.client.getRecords([...ids, destId].map((id) => ({ table: 'block' as const, id }))))
-      .block!
+    const records = await loadPages(tab, [...ids, destId])
     const dest = records[destId]
     if (dest.type !== 'page') {
       throw new EditError(
@@ -1189,6 +1188,9 @@ export const movePage: ToolSpec = {
     for (const id of ids) {
       const why = notAPage(records[id], 'moved')
       if (why) throw new EditError(why)
+      // How Notion takes a page out of a teamspace's list is not checked yet.
+      if (records[id].parent_table === 'team')
+        throw new EditError(`^${hexId(id)} is at the top of a teamspace: move it in Notion.`)
       if (records[id].space_id !== dest.space_id)
         throw new EditError(`^${hexId(id)} is in another workspace than ^${hexId(destId)}.`)
     }
@@ -1202,21 +1204,83 @@ export const movePage: ToolSpec = {
             : `^${hexId(id)} can't be moved into ^${hexId(destId)}: that page is inside it.`,
         )
     }
+    // A page inside another page that moves goes along inside it, where it is.
+    const nested = await nestedIn(tab, records, ids)
+    const moving = ids.filter((id) => !nested.has(id))
     const op = blockOps(String(dest.space_id), Date.now())
-    const parents = new Set(ids.map((id) => String(records[id].parent_id)))
+    const parents = new Set(moving.map((id) => String(records[id].parent_id)))
     signal?.throwIfAborted()
     try {
       // Moving again puts the pages in the same place, so after a lost answer a retry does no harm.
       await tab.client.submitTransaction(
         String(dest.space_id),
-        [op.moveInto(destId, ids), op.touch(destId), ...ids.map((id) => op.touch(id))],
+        [op.moveInto(destId, moving), op.touch(destId), ...moving.map((id) => op.touch(id))],
         'Notion Copilot: move_page',
       )
     } finally {
       forgetPages([destId, ...parents])
     }
-    return `Moved ${ids.length} page${ids.length === 1 ? '' : 's'} to the end of ^${hexId(destId)}: ${ids.map((id) => `^${hexId(id)}`).join(', ')}.`
+    return [
+      `Moved ${moving.length} page${moving.length === 1 ? '' : 's'} to the end of ^${hexId(destId)}: ${moving.map((id) => `^${hexId(id)}`).join(', ')}.`,
+      ...[...nested].map(([id, outer]) => `^${hexId(id)} went along inside ^${hexId(outer)}.`),
+    ].join('\n')
   },
+}
+
+/**
+ * The pages by id, all of them or an error. One already in the trash, or out of reach, is named,
+ * so the agent can tell which (say, after a lost answer, which pages were trashed already).
+ */
+async function loadPages(tab: NotionTab, ids: string[]): Promise<Record<string, NotionRecord>> {
+  try {
+    return (await tab.client.getRecords(ids.map((id) => ({ table: 'block' as const, id })))).block!
+  } catch (err) {
+    if (!(err instanceof NotionError) || err.code !== 'no_access') throw err
+    const found = (await tab.client.findRecords(ids.map((id) => ({ table: 'block' as const, id })))).block ?? {}
+    const missing = ids.filter((id) => !found[id])
+    if (!missing.length) throw err
+    throw new NotionError(
+      'no_access',
+      `${missing.map((id) => `^${hexId(id)}`).join(', ')} ${missing.length === 1 ? 'is' : 'are'} in the trash, ` +
+        "or can't be opened with this Notion account. Nothing was changed.",
+      { cause: err },
+    )
+  }
+}
+
+/**
+ * Which of `ids` are inside another of them, with the outermost one each is in. Walks up from all
+ * of them a level at a time, as far as the account can see, through rows' databases too.
+ */
+async function nestedIn(
+  tab: NotionTab,
+  records: Record<string, NotionRecord>,
+  ids: string[],
+): Promise<Map<string, string>> {
+  const listed = new Set(ids)
+  const known = new Map<string, NotionRecord>(Object.entries(records))
+  const nested = new Map<string, string>()
+  // Where each walk is now: the table and id of the next record up.
+  let walks = ids.map((id) => ({ id, at: records[id] as NotionRecord | undefined }))
+  for (let depth = 0; depth < ANCESTORS_MAX && walks.length; depth++) {
+    const next = walks.flatMap((w) => {
+      const table: 'block' | 'collection' | undefined =
+        w.at?.parent_table === 'block' ? 'block' : w.at?.parent_table === 'collection' ? 'collection' : undefined
+      return table && w.at?.parent_id ? [{ id: w.id, table, parentId: w.at.parent_id }] : []
+    })
+    const wanted = [...new Map(next.filter((n) => !known.has(n.parentId)).map((n) => [n.parentId, n])).values()]
+    if (wanted.length) {
+      const found = await tab.client.findRecords(wanted.map((n) => ({ table: n.table, id: n.parentId })))
+      for (const records of [found.block, found.collection])
+        for (const r of Object.values(records ?? {})) known.set(r.id, r)
+    }
+    walks = next.flatMap((n) => {
+      if (n.table === 'block' && listed.has(n.parentId)) nested.set(n.id, n.parentId)
+      const at = known.get(n.parentId)
+      return at ? [{ id: n.id, at }] : []
+    })
+  }
+  return nested
 }
 
 /** `page` and the pages it is in, from `page` up, as far as the account can see. */
@@ -1355,7 +1419,7 @@ export const trashPage: ToolSpec = {
   run: async (args, signal) => {
     const ids = pageList(args.pages)
     const tab = await activeNotionTab()
-    const records = (await tab.client.getRecords(ids.map((id) => ({ table: 'block' as const, id })))).block!
+    const records = await loadPages(tab, ids)
     const pages = ids.map((id) => {
       const page = records[id]
       const why = notAPage(page, 'trashed')
@@ -1367,15 +1431,19 @@ export const trashPage: ToolSpec = {
     const spaces = new Set(ids.map((id) => String(records[id].space_id)))
     if (spaces.size > 1)
       throw new EditError('These pages are in different workspaces: trash each workspace’s pages in its own call.')
+    // A page inside another page being trashed stays inside it, so restoring that page brings it back too.
+    const nested = await nestedIn(tab, records, ids)
+    const trashing = pages.filter((p) => !nested.has(p.id))
     signal?.throwIfAborted()
     try {
-      // Trashing again changes nothing, so after a lost answer a retry does no harm.
-      await tab.client.trashPages([...spaces][0], pages)
+      // After a lost answer, a retry names the pages already in the trash and trashes nothing.
+      await tab.client.trashPages([...spaces][0], trashing)
     } finally {
       forgetPages([...ids, ...pages.map((p) => p.parentId)])
     }
     return [
       `Moved ${ids.length} page${ids.length === 1 ? '' : 's'} to Notion's trash: ${ids.map((id) => `^${hexId(id)}`).join(', ')}.`,
+      ...[...nested].map(([id, outer]) => `^${hexId(id)} went inside ^${hexId(outer)}.`),
       "They can be restored from Notion's trash.",
     ].join('\n')
   },

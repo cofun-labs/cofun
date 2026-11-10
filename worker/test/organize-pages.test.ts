@@ -196,7 +196,7 @@ describe('UC-NOTION-010 reorganize pages', () => {
 })
 
 describe('moving pages', () => {
-  it('refuses rows, blocks, and other workspaces, and moves only into a page', async () => {
+  it('refuses rows, blocks, teamspace top-level pages, and other workspaces, and moves only into a page', async () => {
     const ws = workspace()
     ws.records.set(id(20), { ...page(id(20), 'Elsewhere', SPACE), id: id(20), version: 1, space_id: 'other' })
     open(ws)
@@ -205,6 +205,7 @@ describe('moving pages', () => {
     await expect(movePage.run({ pages: [PLAN], to: DB })).rejects.toThrow('is a database: pages can only be moved')
     await expect(movePage.run({ pages: [PLAN], to: TEXT })).rejects.toThrow('is a block inside a page')
     await expect(movePage.run({ pages: [id(20)], to: ARCHIVE })).rejects.toThrow('in another workspace')
+    await expect(movePage.run({ pages: [TEAM_PAGE], to: ARCHIVE })).rejects.toThrow('at the top of a teamspace')
     await expect(movePage.run({ pages: [], to: ARCHIVE })).rejects.toThrow('at least one page')
     await expect(movePage.run({ pages: ['nope'], to: ARCHIVE })).rejects.toThrow('not a Notion page URL or id')
     await expect(movePage.run({ pages: [PLAN] })).rejects.toThrow('`to` is required')
@@ -213,11 +214,31 @@ describe('moving pages', () => {
 
   it('moves a database that is a page of its own, and a page from the top of the sidebar', async () => {
     const ws = workspace()
+    const TOP = id(21)
+    ws.records.set(TOP, {
+      ...page(TOP, 'Loose page', SPACE),
+      parent_table: 'space',
+      version: 1,
+      alive: true,
+      space_id: SPACE,
+    })
+    ws.edit(SPACE, { pages: [PAGE, TOP] })
     open(ws)
-    await movePage.run({ pages: [DB], to: ARCHIVE })
-    expect(contentOf(ws, ARCHIVE)).toEqual([DB])
-    await movePage.run({ pages: [TEAM_PAGE], to: ARCHIVE })
-    expect(ws.records.get(TEAM_PAGE)).toMatchObject({ parent_id: ARCHIVE, parent_table: 'block' })
+    await movePage.run({ pages: [DB, TOP], to: ARCHIVE })
+    expect(contentOf(ws, ARCHIVE)).toEqual([DB, TOP])
+    expect(ws.records.get(SPACE)!.pages).toEqual([PAGE])
+    expect(ws.records.get(TOP)).toMatchObject({ parent_id: ARCHIVE, parent_table: 'block' })
+  })
+
+  it('moves a page inside another moving page along with it, where it is', async () => {
+    const ws = workspace()
+    open(ws)
+    const result = await movePage.run({ pages: [DRAFT, PROJECTS], to: ARCHIVE })
+    expect(result).toBe(
+      `Moved 1 page to the end of ^${hex(ARCHIVE)}: ^${hex(PROJECTS)}.\n^${hex(DRAFT)} went along inside ^${hex(PROJECTS)}.`,
+    )
+    expect(contentOf(ws, ARCHIVE)).toEqual([PROJECTS])
+    expect(contentOf(ws, PLAN)).toEqual([TEXT, DRAFT])
   })
 
   it('names the pages it has seen in the preview', async () => {
@@ -239,6 +260,23 @@ describe('duplicating pages', () => {
     await expect(duplicatePage.run({ page: PAGE })).rejects.toThrow('at the top of the sidebar')
     await expect(duplicatePage.run({ page: TEAM_PAGE })).rejects.toThrow('at the top of the sidebar')
     expect(ws.tasks.size).toBe(0)
+  })
+
+  it('keeps checking on the copy when one check fails', async () => {
+    const ws = workspace()
+    const tab = open(ws)
+    tab.respond('getTasks', 502, { name: 'BadGateway' })
+    await duplicatePage.run({ page: PLAN })
+    expect(contentOf(ws, PROJECTS)).toHaveLength(3)
+  })
+
+  it('says the copy may still appear when the account is signed out while Notion copies', async () => {
+    const ws = workspace()
+    const tab = open(ws)
+    tab.respond('getTasks', 401, { name: 'UnauthorizedError' })
+    const err = await notionError(duplicatePage.run({ page: PLAN }))
+    expect(err.code).toBe('outcome_unknown')
+    expect(err.message).toContain('it may still appear')
   })
 
   it('says so when Notion fails to copy the page', async () => {
@@ -282,6 +320,29 @@ describe('duplicating pages', () => {
 })
 
 describe('trashing pages', () => {
+  it('leaves a page inside another page being trashed where it is, so restoring brings both back', async () => {
+    const ws = workspace()
+    open(ws)
+    const result = await trashPage.run({ pages: [PLAN, PROJECTS, DRAFT] })
+    expect(result).toContain(`^${hex(PLAN)} went inside ^${hex(PROJECTS)}.`)
+    expect(result).toContain(`^${hex(DRAFT)} went inside ^${hex(PROJECTS)}.`)
+    expect(contentOf(ws, PAGE)).toEqual([ARCHIVE, DB])
+    expect(contentOf(ws, PROJECTS)).toEqual([PLAN, NOTE])
+    expect(contentOf(ws, PLAN)).toEqual([TEXT, DRAFT])
+    expect(ws.records.get(PROJECTS)!.alive).toBe(false)
+  })
+
+  it('names the pages already in the trash, and trashes nothing', async () => {
+    const ws = workspace()
+    open(ws)
+    await trashPage.run({ pages: [NOTE] })
+    const err = await notionError(trashPage.run({ pages: [ARCHIVE, NOTE] }))
+    expect(err.message).toBe(
+      `^${hex(NOTE)} is in the trash, or can't be opened with this Notion account. Nothing was changed.`,
+    )
+    expect(ws.records.get(ARCHIVE)!.alive).toBe(true)
+  })
+
   it('lists each page once in the preview, as it is trashed once', async () => {
     const ws = workspace()
     open(ws)

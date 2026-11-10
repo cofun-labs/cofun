@@ -397,8 +397,11 @@ export class NotionClient {
         const { json } = await this.request<{ results?: (typeof task)[] }>('getTasks', { taskIds: [taskId] }, spaceId)
         task = json.results?.[0]
       } catch (err) {
-        if (err instanceof NotionError && (err.code === 'signed_out' || err.code === 'no_access')) throw err
-        throw new NotionError('outcome_unknown', DUPLICATE_UNKNOWN, { cause: err })
+        // A lost or failed check says nothing about the copy, which goes on: ask again until the
+        // deadline. Signed out, the copy goes on too, but there is no asking any more.
+        const stuck = err instanceof NotionError && (err.code === 'signed_out' || err.code === 'no_access')
+        if (stuck || Date.now() >= deadline) throw new NotionError('outcome_unknown', DUPLICATE_UNKNOWN, { cause: err })
+        continue
       }
       if (task?.state === 'success') {
         const [copy] = Array.isArray(task.status?.targetIds) ? task.status.targetIds : []
@@ -406,7 +409,8 @@ export class NotionClient {
         return copy
       }
       if (task?.state === 'failure') {
-        throw new NotionError('notion_error', `Notion could not copy the page: ${String(task.error ?? 'no details')}`)
+        const why = typeof task.error === 'string' ? task.error : JSON.stringify(task.error ?? 'no details')
+        throw new NotionError('notion_error', `Notion could not copy the page: ${why}`)
       }
       if (Date.now() >= deadline) throw new NotionError('outcome_unknown', DUPLICATE_UNKNOWN)
     }
@@ -444,8 +448,10 @@ export class NotionClient {
         { records: pages.map((p) => ({ id: notionId(p.id), table: 'block', spaceId })), permanentlyDelete: false },
         spaceId,
       )
-    } catch {
-      // The pages are in the trash already: the transaction did that.
+    } catch (err) {
+      // The pages are in the trash already: the transaction did that. This call only matches
+      // what Notion's own client sends after it.
+      console.warn('Notion did not take the trashed pages’ deleteContentRecords', err)
     }
   }
 
