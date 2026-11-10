@@ -124,6 +124,10 @@ export const readPage: ToolSpec = {
     if (!PAGE_TYPES.has(loaded.page.type)) {
       throw new Error('That id is a block inside a page, not a page. Read the page it is on instead.')
     }
+    if (!mentionsLoaded.has(loaded)) {
+      await loadMentioned(tab, loaded)
+      mentionsLoaded.add(loaded)
+    }
     const md = pageToMarkdown(loaded)
     // A row's properties come first, as front matter, and count toward the size of the first part.
     const front = md.properties.length ? [['---', ...md.properties, '---'].join('\n')] : []
@@ -155,14 +159,15 @@ export const readPage: ToolSpec = {
         ? ["This is a database row, but its database can't be opened, so its properties are not shown."]
         : []),
     ]
-    const body = parts[part - 1] || (md.kind === 'page' ? '(This page is empty.)' : '')
+    const body = parts[part - 1]
+    const empty = md.kind === 'page' && !md.sections.length ? ['(This page is empty.)'] : []
     // What edit_page checks edits against: only the blocks this read showed, as they were. Part 1
     // starts a new read; later parts add to it.
     // The blocks this part drew, as the renderer reports them: never inferred from page text.
     const drawn = new Set(members[part - 1].flatMap(({ section, from, to }) => owners[section].slice(from, to)))
     const seen = pageRead(loaded, md, (b) => drawn.has(b))
     remember(part === 1 ? seen : mergeReads(pageReads.get(loaded.page.id), seen))
-    return [...header, '', ...(body ? [body] : [])].join('\n')
+    return [...header, '', ...(body ? [body] : []), ...(part === 1 ? empty : [])].join('\n')
   },
 }
 
@@ -234,9 +239,11 @@ async function loadWithDatabase(tab: NotionTab, id: string): Promise<Loaded> {
       databaseMissing = true
     }
   }
-  await loadMentioned(tab, loaded)
   return { loaded, databaseMissing }
 }
+
+/** Loads whose mentioned people and pages were looked up, so later parts don't look again. */
+const mentionsLoaded = new WeakSet<LoadedPage>()
 
 /** Adds the people and pages `loaded` mentions but doesn't hold to it; ones out of reach stay unnamed. */
 async function loadMentioned(tab: NotionTab, loaded: LoadedPage): Promise<void> {
@@ -877,11 +884,12 @@ export const editPage: ToolSpec = {
     }
     // The edit is checked against the page first, so a refused edit costs no member lookup.
     planEdit(loaded, read, edits)
-    // People read_page named, as it loaded them: a name a block already mentions is that person.
-    await loadMentioned(tab, loaded)
+    const writes = edits.filter((e) => e.action !== 'delete')
+    // Names read_page showed for people the page mentions, so a name a rewritten block already
+    // mentions is matched to that person. Only needed when the new Markdown mentions someone.
+    if (writes.some((e) => personNames(blockTitles(e.blocks)).length)) await loadMentioned(tab, loaded)
     // People the new Markdown mentions, matched before anything is written. In a block being
     // rewritten, a name it already mentions is that same person.
-    const writes = edits.filter((e) => e.action !== 'delete')
     const users = loaded.recordMap.notion_user
     const blocks = loaded.recordMap.block ?? {}
     const found = await findPeople(

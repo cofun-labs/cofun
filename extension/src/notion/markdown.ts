@@ -70,8 +70,7 @@ export function pageToMarkdown({ page, recordMap }: LoadedPage): PageMarkdown {
 
   // References are assigned over every block shown, so they are unique within the page.
   const shown = isDatabase ? [] : ctx.descendants(page)
-  // A synced copy shown twice shows the same blocks twice: each still has one reference.
-  ctx.refs = blockRefs([...new Set(shown)])
+  ctx.refs = blockRefs(shown)
   ctx.topLevel = true
   const sections = isDatabase ? [] : ctx.children(page, 0).map((lines) => lines.join('\n'))
   return {
@@ -89,11 +88,12 @@ export function pageToMarkdown({ page, recordMap }: LoadedPage): PageMarkdown {
 const UNNAMED_MAX = 100
 
 /**
- * People and pages the page mentions (in its text, a row's properties, or who created or edited a
- * row) whose records `loadPage` didn't return, so they would show as `@someone` and `[page](id)`.
- * Loading them shows their names.
+ * People and pages a page shows as mentions (in its text, and in the row properties it shows)
+ * whose records `loadPage` didn't return, so they would show as `@someone` and `[page](id)`.
+ * Loading them shows their names. Only for a page: a database shows no text of its own.
  */
 export function unnamedMentions({ page, recordMap, spaceId }: LoadedPage): Pointer[] {
+  if (page.type !== 'page') return []
   const blocks = (recordMap.block ?? {}) as Record<string, Block>
   const ctx = new Context(recordMap, blocks)
   const users = new Set<string>()
@@ -106,13 +106,18 @@ export function unnamedMentions({ page, recordMap, spaceId }: LoadedPage): Point
       }
     }
   }
-  const shown = PAGE_TYPES.has(page.type) && page.type !== 'page' ? [] : ctx.descendants(page)
-  for (const block of [page, ...shown.map((id) => blocks[id])]) {
-    for (const value of Object.values(block?.properties ?? {})) scan(value)
+  for (const id of ctx.descendants(page)) {
+    for (const value of Object.values(blocks[id]?.properties ?? {})) scan(value)
   }
-  for (const field of ['created_by_id', 'last_edited_by_id']) {
-    const user = page[field]
-    if (page.parent_table === 'collection' && typeof user === 'string') users.add(user)
+  // A row's properties show only with its database, which names them.
+  const schema = (
+    page.parent_table === 'collection' ? recordMap.collection?.[String(page.parent_id)]?.schema : undefined
+  ) as Schema | undefined
+  for (const [key, { type }] of Object.entries(schema ?? {})) {
+    if (type === 'created_by' || type === 'last_edited_by') {
+      const user = page[`${type}_id`]
+      if (typeof user === 'string') users.add(user)
+    } else if (type !== 'title') scan(page.properties?.[key])
   }
   const pointers: Pointer[] = [
     ...[...users].filter((id) => !recordMap.notion_user?.[id]).map((id) => ({ table: 'notion_user' as const, id })),
@@ -169,7 +174,10 @@ class Context {
   topLevel = false
   /** Line owners of the blocks drawn inside each block being drawn. */
   private ownerFrames: string[][] = []
-  /** The originals of the synced copies being drawn, outermost first. */
+  /**
+   * The originals of the synced copies being drawn, outermost first. Their blocks live where the
+   * original is, so they are drawn without references: tools can't change them from this page.
+   */
   private within: string[] = []
 
   constructor(
@@ -178,31 +186,18 @@ class Context {
   ) {}
 
   /**
-   * Ids of the blocks the page shows, in order: children, and the content a synced copy shows, but
-   * not the content of child pages.
+   * Ids of the blocks the page shows, in order: children, but not the content of child pages, nor
+   * what a synced copy shows (those blocks are the original's, on its page).
    */
-  descendants(parent: Block, within: string[] = []): string[] {
+  descendants(parent: Block): string[] {
     const out: string[] = []
-    const { content, within: inner } = this.contentOf(parent, within)
-    for (const id of content) {
+    for (const id of parent.content ?? []) {
       const block = this.blocks[id]
       if (block?.alive === false) continue
       out.push(id)
-      if (block && !PAGE_TYPES.has(block.type)) out.push(...this.descendants(block, inner))
+      if (block && !PAGE_TYPES.has(block.type)) out.push(...this.descendants(block))
     }
     return out
-  }
-
-  /**
-   * The blocks shown under `block`: its children, or for a synced copy the children of its
-   * original. `within` lists the originals of the copies being drawn around it, so a copy inside
-   * its own original isn't drawn again and again.
-   */
-  private contentOf(block: Block, within: string[]): { content: string[]; within: string[] } {
-    if (block.type !== 'transclusion_reference') return { content: block.content ?? [], within }
-    const original = this.original(block)
-    if (!original || within.includes(original.id)) return { content: [], within }
-    return { content: original.content ?? [], within: [...within, original.id] }
   }
 
   /** The original a synced copy shows, if it was loaded. */
@@ -251,7 +246,7 @@ class Context {
         // The block's own Markdown: its lines up to the one carrying its reference, without its
         // children, its reference, or the indentation of its depth.
         const ref = this.ref(id).trim()
-        const end = lines.findIndex((l) => l.endsWith(` ${ref}`) || l.trim() === ref)
+        const end = ref ? lines.findIndex((l) => l.endsWith(` ${ref}`) || l.trim() === ref) : 0
         const owners = [...Array<string>(end < 0 ? 1 : end + 1).fill(id), ...nestedOwners]
         while (owners.length < lines.length) owners.push(id)
         owners.length = lines.length
@@ -315,7 +310,7 @@ class Context {
           ...code.split('\n').map((l) => `${pad}${l}`),
           `${pad}${fence}`,
           // On its own line: text after a closing fence would stop it from closing the block.
-          `${pad}${caption ? `[caption: ${caption}]${ref}` : ref.trim()}`,
+          ...(caption ? [`${pad}[caption: ${caption}]${ref}`] : refLine(pad, ref)),
           ...children(),
         ]
       }
@@ -341,12 +336,13 @@ class Context {
         return line('↗ ', `[${this.pageTitle(target)}](${hexId(target)})`)
       }
       case 'table':
-        return [...this.table(block, pad), `${pad}${ref.trim()}`]
+        return [...this.table(block, pad), ...refLine(pad, ref)]
       case 'transclusion_container':
         // The original of a synced block: its content is this page's, and shows on other pages too.
         return line('', '[synced block]')
       case 'transclusion_reference': {
-        // A copy of a synced block shows its original's content, which lives where the original is.
+        // A copy of a synced block shows its original's content, which lives where the original is:
+        // drawn without references, so an edit on this page can't change another page.
         const original = this.original(block)
         if (!original || this.within.includes(original.id)) return line('', '[synced copy, not loaded]')
         this.within.push(original.id)
@@ -473,7 +469,7 @@ class Context {
   }
 
   private ref(id: string): string {
-    return ` ^${this.refs.get(id) ?? hexId(id)}`
+    return this.within.length ? '' : ` ^${this.refs.get(id) ?? hexId(id)}`
   }
 
   private fullRef(id: string): string {
@@ -590,6 +586,11 @@ function withRef(pad: string, prefix: string, text: string, ref: string, breaks:
   const lines = [`${pad}${prefix}${first}`, ...rest.map((l) => `${pad}${l}`)]
   lines[lines.length - 1] += ref
   return lines
+}
+
+/** A reference on a line of its own, after a block whose last line can't carry it; none for none. */
+function refLine(pad: string, ref: string): string[] {
+  return ref ? [`${pad}${ref.trim()}`] : []
 }
 
 /** The length of the longest run of backticks in `text`. */

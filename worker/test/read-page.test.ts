@@ -2,7 +2,7 @@
 // shape Notion's loadPageChunk returns them (see fixtures/notion/ for recorded examples).
 import { afterEach, describe, expect, it } from 'vitest'
 import { blockRefs, codeSpan, splitIntoParts } from '../../extension/src/notion/markdown'
-import { PART_CHARS, readPage } from '../../extension/src/tools'
+import { PART_CHARS, editPage, readPage } from '../../extension/src/tools'
 import { FakeNotionTab, PAGE, PAGE_URL, SPACE, USER, fixture, restoreGlobals } from './notion-tab'
 
 afterEach(restoreGlobals)
@@ -223,15 +223,21 @@ describe('UC-NOTION-001 read a page', () => {
 
   it('[UC-NOTION-001-S01] shows what a synced copy shows: the content of its original', async () => {
     new FakeNotionTab(PAGE_URL).respond('loadPageChunk', 200, fixture('synced-copy')).install()
+    // The copied blocks are the original's, on another page: they have no references here.
     expect(body(await read({ page: RECORDED.syncedCopy }))).toBe(
       [
         'Before the copy ^0000011c',
         '[synced copy] ^0000011d',
-        '  Synced line one ^00000112',
-        '  - Synced item ^00000113',
+        '  Synced line one',
+        '  - Synced item',
         'After the copy ^0000011e',
       ].join('\n'),
     )
+    // So edit_page can't change them from this page; the copy itself it can delete.
+    const edit = (block: string) =>
+      editPage.run({ page: RECORDED.syncedCopy, edits: [{ action: 'replace', block, markdown: 'Changed' }] })
+    await expect(edit('^00000112')).rejects.toThrow('^00000112 is not a block of the page as you last read it.')
+    await expect(edit(hex('f1f1f1f1-0000-4000-8000-000000000112'))).rejects.toThrow('is not a block of the page')
   })
 
   it('[UC-NOTION-001-S02] marks content it cannot show, and keeps everything after it', async () => {
@@ -801,5 +807,47 @@ describe('faithful details', () => {
     expect(splitIntoParts(['aaaaaaaaaa\n```\nb\n```'], 15)).toEqual(['aaaaaaaaaa', '```\nb\n```'])
     // A cut line in a quote is quoted on in the next part.
     expect(splitIntoParts(['> aaaaaaaa'], 6)).toEqual(['> aaaa', '> aaaa'])
+  })
+})
+
+describe('lookups of mentioned people and pages', () => {
+  it('are not sent for a row whose database it cannot open, nor for an id of a block', async () => {
+    const stranger = '0f0f0f0f-0000-4000-8000-000000000003'
+    const row = chunk(
+      [id(1)],
+      { block: block(id(1), 'text', 'Row body') },
+      { parent_id: COLLECTION, parent_table: 'collection', properties: { 'g:h': [['‣', [['u', stranger]]]] } },
+    )
+    const tab = openPage(row).respond('syncRecordValuesMain', 200, fixture('empty-record-map'))
+    expect(body(await read())).toBe('Row body ^00000001')
+    // Only the database was asked for; the hidden person was not.
+    expect(tab.sent.map((r) => r.url.split('/').at(-1))).toEqual(['loadPageChunk', 'syncRecordValuesMain'])
+
+    const notAPage = openPage({
+      cursor: { stack: [] },
+      recordMap: {
+        __version__: 3,
+        block: block(PAGE, 'text', [['‣', [['u', stranger]]]], {}, id(9)),
+      },
+    })
+    await expect(read()).rejects.toThrow('That id is a block inside a page, not a page.')
+    expect(notAPage.sent).toHaveLength(1)
+  })
+
+  it('still says a row with no content is empty', async () => {
+    const collection = {
+      [COLLECTION]: wrapped({
+        id: COLLECTION,
+        schema: { title: { name: 'Name', type: 'title' }, 's:s': { name: 'Status', type: 'select' } },
+      }),
+    }
+    openPage(
+      chunk(
+        [],
+        { collection },
+        { parent_id: COLLECTION, parent_table: 'collection', properties: { title: [['Row']], 's:s': [['Doing']] } },
+      ),
+    )
+    expect(body(await read())).toBe(['---', 'Status: Doing', '---', '(This page is empty.)'].join('\n'))
   })
 })

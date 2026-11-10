@@ -1167,3 +1167,22 @@ describe('round trips of what read_page shows more faithfully', () => {
     })
   })
 })
+
+describe('lookups of mentioned people in edits', () => {
+  it('are sent only when the new Markdown mentions someone', async () => {
+    const stranger = '0f0f0f0f-0000-4000-8000-000000000003'
+    const ws = workspace(
+      [1, 2],
+      [
+        block(1, 'text', undefined, { properties: { title: [['Ask '], ['‣', [['u', stranger]]]] } }),
+        block(2, 'text', 'Two'),
+      ],
+    )
+    const tab = open(ws)
+    await read()
+    const lookups = () => tab.sent.filter((r) => r.url.endsWith('/syncRecordValuesMain')).length
+    const before = lookups()
+    await edit([{ action: 'delete', block: '^00000002' }])
+    expect(lookups()).toBe(before)
+  })
+})
