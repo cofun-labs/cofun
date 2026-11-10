@@ -22,7 +22,7 @@
 - [x] Search the workspace for pages, then read what it finds
 - [x] List the workspace's pages like the sidebar, or the pages under a page
 - [x] Read database rows as a table, filtered and sorted by their values
-- [x] Edit Notion pages: insert, replace, and delete content by block; each change shows in the reply
+- [x] Edit Notion pages: insert, replace, and delete content by block; the side panel shows each change
 - [x] Create pages with content
 - [x] Change titles, icons, and database properties, and add database rows
 - [x] Work on what the user selected in the page

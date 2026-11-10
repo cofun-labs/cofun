@@ -148,6 +148,7 @@ describe('extension agent against the worker', () => {
     expect(runs).toEqual([{}])
     expect(updates.filter((u) => u.type !== 'text')).toEqual([
       { type: 'tool_start', id: 'chatcmpl-tool-0', name: 'get_current_page', args: {} },
+      { type: 'tool_ready', id: 'chatcmpl-tool-0', args: {} },
       { type: 'tool_end', id: 'chatcmpl-tool-0', name: 'get_current_page', status: 'done', result: PAGE_JSON },
     ])
     expect(reply).toBe('You are on Q4 Roadmap ')
@@ -596,6 +597,50 @@ describe('extension agent against the worker', () => {
     expect(sentMessages(1).at(-1)).toMatchObject({ role: 'tool', content: expect.stringContaining('declined') })
     expect(result).toEqual({ status: 'done' })
     expect(reply).toBe('OK, I left the title as it is ')
+  })
+
+  it('previews a call from the arguments it runs with, before it runs', async () => {
+    const runs: unknown[] = []
+    const tool: ToolSpec = {
+      name: 'tag_pages',
+      description: 'Tags pages.',
+      parameters: {
+        type: 'object',
+        properties: { pages: { type: 'array', items: { type: 'object', properties: { page: { type: 'string' } } } } },
+        required: ['pages'],
+      },
+      preview: (args) => `Tag ${(args.pages as unknown[]).length} page(s); ${runs.length} run(s) so far`,
+      run: async (args) => {
+        runs.push(args)
+        return 'Tagged.'
+      },
+    }
+    // One page given as an object instead of a list: the tool gets it as a list of one.
+    ai.script = [{ toolCalls: [{ name: 'tag_pages', arguments: '{"pages":{"page":"a"}}' }] }, { reply: 'Done' }]
+    const { updates } = await ask(makeAgent({ tools: [tool] }), 'Tag page a')
+    expect(runs).toEqual([{ pages: [{ page: 'a' }] }])
+    expect(updates.filter((u) => u.type === 'tool_ready')).toEqual([
+      {
+        type: 'tool_ready',
+        id: 'chatcmpl-tool-0',
+        args: { pages: [{ page: 'a' }] },
+        preview: 'Tag 1 page(s); 0 run(s) so far',
+      },
+    ])
+  })
+
+  it('a broken preview does not stop the call', async () => {
+    const { tool, runs } = pageTool()
+    ai.script = [{ toolCalls: [{ name: 'get_current_page', arguments: '{}' }] }, { reply: 'Done' }]
+    const broken: ToolSpec = {
+      ...tool,
+      preview: () => {
+        throw new Error('broken')
+      },
+    }
+    const { updates } = await ask(makeAgent({ tools: [broken] }), 'Which page am I on?')
+    expect(runs).toEqual([{}])
+    expect(toolStatuses(updates)).toEqual(['done'])
   })
 
   it('[UC-AGENT-001-S10] a tool the user agrees to runs, and the answer uses its result', async () => {

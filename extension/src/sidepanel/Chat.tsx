@@ -22,17 +22,6 @@ const SYSTEM_PROMPT =
   'When the answer is likely on another page, search for it, read what you find, and say which page you used. ' +
   'Read child pages or other pages only when the question needs them. Be concise.'
 
-/** What a call changes, in words, when its tool can say: shown on the call's card. */
-function previewOf(name: string, args: unknown): string | undefined {
-  try {
-    return TOOLS.find((t) => t.name === name)?.preview?.((args ?? {}) as Record<string, unknown>)
-  } catch (err) {
-    // A broken preview must not break the card or the prompt: the arguments are still shown.
-    console.error('Could not preview the tool call', err)
-    return undefined
-  }
-}
-
 /** A reply in the order it happened: text the model wrote and the tools it ran in between. */
 type Part = { type: 'text'; text: string } | { type: 'tool'; tool: ShownTool }
 
@@ -152,7 +141,7 @@ export function Chat({ userId }: { userId: string }) {
         pending.current.set(call.id, answer)
         // Normally the call is already shown as running. If not, show it now: the agent must never
         // wait on a prompt nobody can see. Show the arguments the tool will run with.
-        const preview = previewOf(call.name, call.args)
+        const { preview } = call
         updateReply((m) => {
           const j = newestOpenCall(m.parts, call.id)
           const parts = [...m.parts]
@@ -187,18 +176,24 @@ export function Chat({ userId }: { userId: string }) {
             return { ...m, parts: [...m.parts.slice(0, -1), { ...last, text: last.text + u.delta }] }
           return { ...m, parts: [...m.parts, { type: 'text', text: u.delta }] }
         })
-      else if (u.type === 'tool_start') {
-        // Now, before the tool runs: the preview reads what the agent saw, which the run may update.
-        // React may run the updater below later.
-        const preview = previewOf(u.name, u.args)
+      else if (u.type === 'tool_start')
         updateReply((m) => {
           // A prompt shown before the start event already stands for this call; don't show it twice.
           const j = newestOpenCall(m.parts, u.id)
           if (j >= 0 && (m.parts[j] as Extract<Part, { type: 'tool' }>).tool.status === 'confirm') return m
-          const tool: ShownTool = { id: u.id, name: u.name, args: u.args, status: 'running', result: '', preview }
+          const tool: ShownTool = { id: u.id, name: u.name, args: u.args, status: 'running', result: '' }
           return { ...m, parts: [...m.parts, { type: 'tool', tool }] }
         })
-      } else
+      else if (u.type === 'tool_ready')
+        updateReply((m) => {
+          const j = newestOpenCall(m.parts, u.id)
+          if (j < 0) return m
+          const part = m.parts[j] as Extract<Part, { type: 'tool' }>
+          const parts = [...m.parts]
+          parts[j] = { ...part, tool: { ...part.tool, args: u.args, preview: u.preview } }
+          return { ...m, parts }
+        })
+      else
         updateReply((m) => {
           const j = newestOpenCall(m.parts, u.id)
           if (j < 0) return m

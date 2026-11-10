@@ -40,6 +40,8 @@ export interface ToolCallRequest {
   id: string
   name: string
   args: unknown
+  /** What the call would change, in words, when the tool can say. */
+  preview?: string
 }
 
 /** Asks the user whether a tool may run; resolves true to run it. */
@@ -56,6 +58,11 @@ export type ToolStatus = 'done' | 'failed' | 'skipped' | 'stopped' | 'declined'
 export type AgentUpdate =
   | { type: 'text'; delta: string }
   | { type: 'tool_start'; id: string; name: string; args: unknown }
+  /**
+   * The call passed validation and runs next, or is put to the user first: `args` as the tool gets
+   * them (the model's, checked and converted to the schema), and what it changes, when the tool can say.
+   */
+  | { type: 'tool_ready'; id: string; args: unknown; preview?: string }
   /** `result`: what the model got back, the error message when the tool failed. */
   | { type: 'tool_end'; id: string; name: string; status: ToolStatus; result: string }
 
@@ -102,6 +109,7 @@ export class CopilotAgent {
   private readonly maxSteps: number
   /** Names of the tools that need the user's OK before each run. */
   private readonly confirmed: Set<string>
+  private readonly tools: Map<string, ToolSpec>
   /** Bumped by stop() and reset(), so a question still waiting to start knows it was cancelled. */
   private epoch = 0
   /** The question this agent is answering; reset() clears it, since the next one gets a new pi agent. */
@@ -114,6 +122,7 @@ export class CopilotAgent {
   constructor(private readonly config: AgentConfig) {
     this.maxSteps = config.maxSteps ?? DEFAULT_MAX_STEPS
     this.confirmed = new Set(config.tools.filter((t) => t.needsConfirmation).map((t) => t.name))
+    this.tools = new Map(config.tools.map((t) => [t.name, t]))
   }
 
   /**
@@ -207,11 +216,14 @@ export class CopilotAgent {
           terminate: true,
         }
       }
+      // From the arguments the tool runs with, and before it runs: the run may change what the preview reads.
+      const preview = previewCall(this.tools.get(toolCall.name), args)
+      onUpdate({ type: 'tool_ready', id: toolCall.id, args, preview })
       if (!this.confirmed.has(toolCall.name)) {
         started.add(toolCall.id)
         return
       }
-      const answer = await askUser(confirm, { id: toolCall.id, name: toolCall.name, args }, signal)
+      const answer = await askUser(confirm, { id: toolCall.id, name: toolCall.name, args, preview }, signal)
       if (answer === 'allow' && epoch === this.epoch) {
         started.add(toolCall.id)
         return
@@ -513,6 +525,16 @@ function size(message: AgentMessage): number {
     else if (block.type === 'toolCall') n += block.name.length + JSON.stringify(block.arguments).length
   }
   return n
+}
+
+/** What a call changes, in words; a broken preview must not stop the call, so it gives none. */
+function previewCall(tool: ToolSpec | undefined, args: unknown): string | undefined {
+  try {
+    return tool?.preview?.((args ?? {}) as Record<string, unknown>)
+  } catch (err) {
+    console.error('Could not preview the tool call', err)
+    return undefined
+  }
 }
 
 /**
