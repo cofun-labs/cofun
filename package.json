@@ -4,6 +4,7 @@
   "type": "module",
   "scripts": {
     "lint": "oxlint .",
+    "knip": "knip",
     "format:fix": "oxfmt --write '**/*.{ts,tsx,json,css}'",
     "format:check": "oxfmt --check '**/*.{ts,tsx,json,css}'",
     "typecheck": "pnpm -r typecheck",
@@ -11,10 +12,11 @@
     "test": "pnpm -r test",
     "e2e": "pnpm --silent --filter notion-copilot-e2e e2e",
     "smoke": "pnpm build && pnpm --silent --filter notion-copilot-smoke smoke",
-    "check": "pnpm lint && pnpm format:check && pnpm typecheck && pnpm build && pnpm test",
+    "check": "pnpm lint && pnpm knip && pnpm format:check && pnpm typecheck && pnpm build && pnpm test",
     "prepare": "lefthook install"
   },
   "devDependencies": {
+    "knip": "^6.44.2",
     "lefthook": "^2.2.2",
     "oxfmt": "~0.77.0",
     "oxlint": "^1.92.0"

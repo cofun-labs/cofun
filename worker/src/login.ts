@@ -5,7 +5,7 @@
  */
 
 /** Clerk's Frontend API host is encoded in the publishable key: pk_test_<base64("host$")>. */
-export function clerkFrontendApi(publishableKey: string): string {
+function clerkFrontendApi(publishableKey: string): string {
   return atob(publishableKey.split('_')[2] ?? '').replace(/\$$/, '')
 }
 

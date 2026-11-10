@@ -118,7 +118,8 @@ Tools call Notion's internal API as the user's own account, so **stability comes
 
 ```bash
 pnpm install
-pnpm check        # lint, format check, typecheck, extension build, and every package's tests
+pnpm check        # lint, unused code check (knip), format check, typecheck, extension build, and every package's tests
+pnpm knip         # unused files, exports, and dependencies (knip.jsonc lists what is kept, and why)
 pnpm format:fix   # format all files
 pnpm test         # extension and worker tests, and the e2e tool's unit tests
 pnpm build        # build the extension into extension/dist
@@ -128,6 +129,6 @@ pnpm e2e --help   # drive the shared Chrome Canary for ai-e2e runs (maintainer's
 
 ## Key decisions
 
-- **No backward compatibility.** Pick the cleanest solution; delete old code instead of deprecating it.
+- **No backward compatibility.** Pick the cleanest solution; delete old code instead of deprecating it. `pnpm knip` fails on unused files, exports, and dependencies: delete what it finds, and list something in `knip.jsonc` only when it is a false positive or kept on purpose, with the reason.
 - **TypeScript everywhere.**
 - **The worker fixes the model.** Clients cannot choose another model.
