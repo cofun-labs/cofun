@@ -1,6 +1,6 @@
 // Mentions of people: matching the names `@[Name]` gives to the workspace's members, as the
 // signed-in user sees them. A mention must name exactly one person, or nothing is written.
-import type { NotionClient, NotionRecord } from './api'
+import { PEOPLE_MAX, type NotionClient, type NotionRecord } from './api'
 import { EditError } from './edit'
 
 /** How many members one refusal lists at most, over all its names. */
@@ -50,7 +50,14 @@ export async function findPeople(
     )
   const unknown = new Set<string>()
   for (const { names, known } of sets) for (const name of names) if (!known?.has(key(name))) unknown.add(name)
-  const people = unknown.size ? await client.workspacePeople(spaceId) : []
+  const loaded = unknown.size ? await client.workspacePeople(spaceId) : []
+  if (!loaded) {
+    throw new EditError(
+      `${[...unknown].map((n) => `@[${n}]`).join(', ')}: this workspace has more than ${PEOPLE_MAX} people, too ` +
+        'many to look up by name for mentions yet. Write the names as plain text. Nothing was written.',
+    )
+  }
+  const people = loaded
   const found = new Map<string, string>()
   const listed = { left: LISTED }
   for (const name of unknown) {

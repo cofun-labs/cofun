@@ -82,7 +82,7 @@ export class NotionUsage {
   /** A write was sent, and Notion did not say it turned it away: it may have changed data. */
   wrote = false
   /** The people of each workspace (see workspacePeople), loaded once per question, by workspace id. */
-  readonly people = new Map<string, Promise<{ id: string; name: string }[]>>()
+  readonly people = new Map<string, Promise<{ id: string; name: string }[] | null>>()
   private budget = REQUEST_BUDGET
   private stopped = false
   /** The question to the user while one is open; requests sent meanwhile wait for the same answer. */
@@ -266,6 +266,12 @@ const CHUNK_LIMIT = 100
 const RECORDS_BATCH = 100
 /** Record lookups sent at once at most. */
 const RECORDS_PARALLEL = 4
+
+/**
+ * The most people whose names a mention lookup loads: five requests' worth. A larger workspace would
+ * cost a request per 100 people for every question that mentions someone.
+ */
+export const PEOPLE_MAX = 5 * RECORDS_BATCH
 
 /** Statuses with which Notion says it gets too many requests (429) or is too busy (529). */
 const LIMITED = new Set([429, 529])
@@ -487,9 +493,10 @@ export class NotionClient {
   /**
    * The people of a workspace the signed-in user can see (members and guests) who have a name: the
    * people Notion's own @ menu offers. One request lists them, then one per 100 people loads their
-   * names; once per question, so later tools in it send none.
+   * names; once per question, so later tools in it send none. Null for a workspace with more than
+   * `PEOPLE_MAX` people, whose names are not loaded: that would take too many requests.
    */
-  async workspacePeople(spaceId: string): Promise<{ id: string; name: string }[]> {
+  async workspacePeople(spaceId: string): Promise<{ id: string; name: string }[] | null> {
     const space = notionId(spaceId)
     const known = this.usage?.people.get(space)
     if (known) return known
@@ -500,7 +507,7 @@ export class NotionClient {
     return loading
   }
 
-  private async loadPeople(space: string): Promise<{ id: string; name: string }[]> {
+  private async loadPeople(space: string): Promise<{ id: string; name: string }[] | null> {
     const { json } = await this.request<{ users?: unknown }>('getVisibleUsers', { spaceId: space }, space)
     if (!Array.isArray(json.users))
       throw new NotionError('notion_error', 'Notion returned no list of workspace members.')
@@ -511,6 +518,7 @@ export class NotionClient {
         ),
       ),
     ]
+    if (userIds.length > PEOPLE_MAX) return null
     const users =
       (await this.findRecords(userIds.map((id) => ({ table: 'notion_user' as const, id })))).notion_user ?? {}
     return userIds.flatMap((id) => {

@@ -317,6 +317,39 @@ describe('mention details', () => {
     expect((ws.content(PAGE).at(-1)!.properties as Rec).title).toEqual([['‣', [['u', KIM]]]])
   })
 
+  it('loads at most 500 people, and refuses mentions in a larger workspace', async () => {
+    const people = (count: number): [string, string][] => [
+      [KIM, 'Kim Lee'],
+      ...Array.from({ length: count - 1 }, (_, n): [string, string] => [person(1000 + n), `Member ${n}`]),
+    ]
+    const lookups = (tab: FakeNotionTab, from: number) =>
+      endpoints(tab, from).filter((e) => e === 'getVisibleUsers' || e === 'syncRecordValuesMain')
+
+    // 500 people: their list, then five requests for their names.
+    let ws = workspace([block(1, 'text', [['Intro']])], people(500))
+    let tab = open(ws)
+    await read()
+    let sent = tab.sent.length
+    await edit([{ action: 'insert', position: 'end', markdown: '@[Kim Lee]' }])
+    expect(lookups(tab, sent)).toEqual(['getVisibleUsers', ...Array<string>(5).fill('syncRecordValuesMain')])
+
+    // 501 people: only their list, then the mention is refused, and again later in the question.
+    restoreGlobals()
+    forgetReads()
+    countNotionRequests()
+    ws = workspace([block(1, 'text', [['Intro']])], people(501))
+    tab = open(ws)
+    await read()
+    sent = tab.sent.length
+    for (let n = 0; n < 2; n++) {
+      await expect(edit([{ action: 'insert', position: 'end', markdown: '@[Kim Lee]' }])).rejects.toThrow(
+        '@[Kim Lee]: this workspace has more than 500 people, too many to look up by name for mentions yet.',
+      )
+    }
+    expect(lookups(tab, sent)).toEqual(['getVisibleUsers'])
+    expect(ws.transactions).toEqual([])
+  })
+
   it('stops the question, writing nothing, when Notion turns the member lookup away', async () => {
     const ws = workspace([block(1, 'text', [['Intro']])])
     const tab = open(ws)
