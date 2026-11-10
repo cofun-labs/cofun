@@ -397,10 +397,11 @@ export class NotionClient {
         const { json } = await this.request<{ results?: (typeof task)[] }>('getTasks', { taskIds: [taskId] }, spaceId)
         task = json.results?.[0]
       } catch (err) {
-        // A lost or failed check says nothing about the copy, which goes on: ask again until the
-        // deadline. Signed out, the copy goes on too, but there is no asking any more.
-        const stuck = err instanceof NotionError && (err.code === 'signed_out' || err.code === 'no_access')
-        if (stuck || Date.now() >= deadline) throw new NotionError('outcome_unknown', DUPLICATE_UNKNOWN, { cause: err })
+        // A failed check says nothing about the copy, which goes on regardless. Only a check that may
+        // clear up (no answer, or a server error) is worth repeating, until the deadline.
+        const transient = err instanceof NotionError && err.unanswered
+        if (!transient || Date.now() >= deadline)
+          throw new NotionError('outcome_unknown', DUPLICATE_UNKNOWN, { cause: err })
         continue
       }
       if (task?.state === 'success') {
@@ -423,22 +424,17 @@ export class NotionClient {
    */
   async trashPages(space: string, pages: { id: string; parentId: string; parentTable: 'block' | 'space' }[]) {
     const spaceId = notionId(space)
-    const now = Date.now()
+    const op = blockOps(spaceId, Date.now())
     const operations: Operation[] = []
     for (const p of pages) {
       // A page in a page is listed in its `content`; a top-level page in its workspace's `pages`.
       operations.push({
-        pointer: { table: p.parentTable, id: p.parentId },
+        pointer: { table: p.parentTable, id: p.parentId, spaceId },
         path: [p.parentTable === 'block' ? 'content' : 'pages'],
         command: 'removeChild',
         args: { id: notionId(p.id) },
       })
-      operations.push({
-        pointer: { table: 'block', id: p.id },
-        path: [],
-        command: 'update',
-        args: { last_edited_time: now },
-      })
+      operations.push(op.touch(p.id))
     }
     await this.submitTransaction(spaceId, operations, 'Notion Copilot: trash_page')
     try {

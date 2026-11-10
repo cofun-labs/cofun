@@ -1195,7 +1195,8 @@ export const movePage: ToolSpec = {
         throw new EditError(`^${hexId(id)} is in another workspace than ^${hexId(destId)}.`)
     }
     // The destination and every page it is in: none of them may be a page that moves.
-    const chain = await ancestors(tab, dest)
+    const above = await pagesAbove(tab, records, [destId, ...ids])
+    const chain = [destId, ...above.get(destId)!]
     for (const id of ids) {
       if (chain.includes(id))
         throw new EditError(
@@ -1205,7 +1206,7 @@ export const movePage: ToolSpec = {
         )
     }
     // A page inside another page that moves goes along inside it, where it is.
-    const nested = await nestedIn(tab, records, ids)
+    const nested = nestedIn(above, ids)
     const moving = ids.filter((id) => !nested.has(id))
     const op = blockOps(String(dest.space_id), Date.now())
     const parents = new Set(moving.map((id) => String(records[id].parent_id)))
@@ -1249,21 +1250,21 @@ async function loadPages(tab: NotionTab, ids: string[]): Promise<Record<string, 
 }
 
 /**
- * Which of `ids` are inside another of them, with the outermost one each is in. Walks up from all
- * of them a level at a time, as far as the account can see, through rows' databases too.
+ * The pages each of `ids` is in, nearest first, as far as the account can see (a record it can't
+ * open ends that walk; Notion itself still refuses a move into a page's own pages). Walks up from
+ * all of them a level at a time, in one request per level, through rows' databases too.
  */
-async function nestedIn(
+async function pagesAbove(
   tab: NotionTab,
   records: Record<string, NotionRecord>,
   ids: string[],
-): Promise<Map<string, string>> {
-  const listed = new Set(ids)
+): Promise<Map<string, string[]>> {
   const known = new Map<string, NotionRecord>(Object.entries(records))
-  const nested = new Map<string, string>()
-  // Where each walk is now: the table and id of the next record up.
+  const above = new Map(ids.map((id) => [id, [] as string[]]))
   let walks = ids.map((id) => ({ id, at: records[id] as NotionRecord | undefined }))
   for (let depth = 0; depth < ANCESTORS_MAX && walks.length; depth++) {
     const next = walks.flatMap((w) => {
+      // A row's parent is its database's data source, which sits in the database block.
       const table: 'block' | 'collection' | undefined =
         w.at?.parent_table === 'block' ? 'block' : w.at?.parent_table === 'collection' ? 'collection' : undefined
       return table && w.at?.parent_id ? [{ id: w.id, table, parentId: w.at.parent_id }] : []
@@ -1275,33 +1276,23 @@ async function nestedIn(
         for (const r of Object.values(records ?? {})) known.set(r.id, r)
     }
     walks = next.flatMap((n) => {
-      if (n.table === 'block' && listed.has(n.parentId)) nested.set(n.id, n.parentId)
+      if (n.table === 'block') above.get(n.id)!.push(n.parentId)
       const at = known.get(n.parentId)
       return at ? [{ id: n.id, at }] : []
     })
   }
-  return nested
+  return above
 }
 
-/** `page` and the pages it is in, from `page` up, as far as the account can see. */
-async function ancestors(tab: NotionTab, page: NotionRecord): Promise<string[]> {
-  const chain = [page.id]
-  let current: NotionRecord = page
-  for (let depth = 0; depth < ANCESTORS_MAX && current.parent_id; depth++) {
-    const parentId = current.parent_id
-    // A row's parent is its database's data source, which sits in the database block.
-    const table =
-      current.parent_table === 'block' ? 'block' : current.parent_table === 'collection' ? 'collection' : undefined
-    if (!table) break
-    // A record the account can't open ends the walk; Notion itself still refuses a move into a page's own pages.
-    const parent: NotionRecord | undefined = (await tab.client.findRecords([{ table, id: parentId }]))[table]?.[
-      parentId
-    ]
-    if (!parent) break
-    if (table === 'block') chain.push(parent.id)
-    current = parent
+/** Which of `ids` are inside another of them, with the outermost one each is in. */
+function nestedIn(above: Map<string, string[]>, ids: string[]): Map<string, string> {
+  const listed = new Set(ids)
+  const nested = new Map<string, string>()
+  for (const id of ids) {
+    const outer = (above.get(id) ?? []).filter((a) => listed.has(a)).at(-1)
+    if (outer) nested.set(id, outer)
   }
-  return chain
+  return nested
 }
 
 export const duplicatePage: ToolSpec = {
@@ -1432,7 +1423,7 @@ export const trashPage: ToolSpec = {
     if (spaces.size > 1)
       throw new EditError('These pages are in different workspaces: trash each workspace’s pages in its own call.')
     // A page inside another page being trashed stays inside it, so restoring that page brings it back too.
-    const nested = await nestedIn(tab, records, ids)
+    const nested = nestedIn(await pagesAbove(tab, records, ids), ids)
     const trashing = pages.filter((p) => !nested.has(p.id))
     signal?.throwIfAborted()
     try {

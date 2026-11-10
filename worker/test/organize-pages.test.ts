@@ -270,6 +270,15 @@ describe('duplicating pages', () => {
     expect(contentOf(ws, PROJECTS)).toHaveLength(3)
   })
 
+  it('stops checking at once when Notion refuses the check, and says the copy may still appear', async () => {
+    const ws = workspace()
+    const tab = open(ws)
+    tab.respond('getTasks', 400, { name: 'ValidationError', debugMessage: 'Unknown task.' })
+    const err = await notionError(duplicatePage.run({ page: PLAN }))
+    expect(err.code).toBe('outcome_unknown')
+    expect(tab.sent.filter((r) => r.url.endsWith('/getTasks'))).toHaveLength(1)
+  })
+
   it('says the copy may still appear when the account is signed out while Notion copies', async () => {
     const ws = workspace()
     const tab = open(ws)
