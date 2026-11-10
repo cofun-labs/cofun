@@ -4,6 +4,7 @@
 import type { ToolSpec } from './agent'
 import {
   IN_TRASH,
+  LIMITED_STOP_SAVED,
   NotionError,
   SIGNED_OUT,
   blockOps,
@@ -753,7 +754,8 @@ export const editPage: ToolSpec = {
         throw new NotionError(
           err.code,
           ['Saved, but Notion then turned a request away, so the page was not read back.', ...plan.summary].join('\n'),
-          { cause: err, stopsQuestion: err.stopsQuestion },
+          // The user is told the edit was saved, so they don't ask for it again.
+          { cause: err, stopsQuestion: LIMITED_STOP_SAVED },
         )
       }
     }
@@ -896,7 +898,7 @@ export const createPage: ToolSpec = {
           `Notion did not answer, so the page may or may not have been created. ` +
             `${target.table === 'collection' ? 'Query' : 'Read'} ^${hexId(parentId)} and check for “${title}” ` +
             'before trying again.',
-          { cause: err },
+          { cause: err, stopsQuestion: err.stopsQuestion },
         )
       }
       throw err
@@ -1508,7 +1510,7 @@ export const addComment: ToolSpec = {
           'outcome_unknown',
           `Notion did not answer, so the comment may or may not have been added. Read the comments of ` +
             `^${hexId(loaded.page.id)} with read_comments before trying again.`,
-          { cause: err },
+          { cause: err, stopsQuestion: err.stopsQuestion },
         )
       }
       throw err

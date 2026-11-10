@@ -2,6 +2,7 @@
 // sanitized fixtures of Notion's responses.
 import { afterEach, describe, expect, it } from 'vitest'
 import {
+  BUSY_STOP_UNKNOWN,
   LIMITED_STOP,
   NOT_SENT,
   NotionError,
@@ -549,7 +550,8 @@ describe('when Notion turns requests away', () => {
   it('says the outcome of a change is unknown when Notion is too busy, which may come after it was applied', async () => {
     const tab = new FakeNotionTab(PAGE_URL).limit('saveTransactionsFanout', 1, 529).install()
     const err = await notionError((await activeNotionTab()).client.submitTransaction(SPACE, [rename], 'rename page'))
-    expect([err.code, err.message, err.stopsQuestion]).toEqual(['outcome_unknown', OUTCOME_UNKNOWN, LIMITED_STOP])
+    // The user is told the change may have been saved, since the question stops before the AI can say so.
+    expect([err.code, err.message, err.stopsQuestion]).toEqual(['outcome_unknown', OUTCOME_UNKNOWN, BUSY_STOP_UNKNOWN])
     expect(tab.sent).toHaveLength(1)
   })
 

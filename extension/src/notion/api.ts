@@ -42,6 +42,12 @@ export const NOT_SENT = 'Not sent: Notion turned an earlier request away (too ma
 /** For the user, when Notion turns requests away: the question stops, and nothing more is sent. */
 export const LIMITED_STOP =
   'Notion is limiting requests right now, so Notion Copilot stopped. Wait a minute, then ask again.'
+/** For the user, when Notion was too busy to say whether a change was saved. */
+export const BUSY_STOP_UNKNOWN =
+  'Notion is too busy right now, so Notion Copilot stopped. The last change may or may not have been saved: check the page before asking again.'
+/** For the user, when a change was saved but Notion then turned a request away. */
+export const LIMITED_STOP_SAVED =
+  'Notion is limiting requests right now, so Notion Copilot stopped. The last change was saved. Wait a minute, then ask again.'
 
 /** The endpoints under /api/v3/ the client uses. */
 export type NotionEndpoint =
@@ -165,7 +171,10 @@ const RECORDS_PARALLEL = 4
 const LIMITED = new Set([429, 529])
 
 export class NotionClient {
-  /** Notion turned a request away for coming too fast: the client sends nothing more. */
+  /**
+   * Notion turned a request away: this client sends nothing more. A client serves one tool call;
+   * the agent ending the question keeps later tools from sending.
+   */
   private limited = false
 
   constructor(private readonly send: NotionTransport) {}
@@ -404,7 +413,7 @@ export class NotionClient {
       if (endpoint === 'saveTransactionsFanout' && res.status === 529) {
         throw new NotionError('notion_error', 'Notion returned an error (529): too busy.', {
           unanswered: true,
-          stopsQuestion: LIMITED_STOP,
+          stopsQuestion: BUSY_STOP_UNKNOWN,
         })
       }
       throw new NotionError('rate_limited', RATE_LIMITED, { stopsQuestion: LIMITED_STOP })
