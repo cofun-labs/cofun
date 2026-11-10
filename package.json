@@ -10,6 +10,7 @@
     "build": "pnpm --filter notion-copilot-extension build",
     "test": "pnpm -r test",
     "e2e": "pnpm --silent --filter notion-copilot-e2e e2e",
+    "smoke": "pnpm build && pnpm --silent --filter notion-copilot-smoke smoke",
     "check": "pnpm lint && pnpm format:check && pnpm typecheck && pnpm build && pnpm test",
     "prepare": "lefthook install"
   },
