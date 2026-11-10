@@ -4,6 +4,7 @@
 import { Agent, type AgentEvent, type AgentMessage, type AgentTool } from '@earendil-works/pi-agent-core'
 import type { AssistantMessage, Model, ToolCall, ToolResultMessage } from '@earendil-works/pi-ai'
 import { streamSimple } from '@earendil-works/pi-ai/api/openai-completions'
+import { z } from './zod'
 
 export interface AgentConfig {
   /** Base URL including /v1. */
@@ -617,13 +618,12 @@ export class CopilotAgent {
     if (!token) throw new Error(SIGN_IN)
     const baseUrl = this.config.apiUrl.replace(/\/+$/, '')
     const res = await fetch(`${baseUrl}/me`, { headers: { authorization: `Bearer ${token}` } })
-    const body = (await res.json().catch(() => undefined)) as
-      | { model?: string; error?: { message?: string } }
-      | undefined
-    if (!res.ok || !body?.model) throw new Error(body?.error?.message ?? `HTTP ${res.status}`)
+    const body = MeReply.safeParse(await res.json().catch(() => undefined)).data
+    const model = body?.model
+    if (!res.ok || !model) throw new Error(body?.error?.message ?? `HTTP ${res.status}`)
     return {
-      id: body.model,
-      name: body.model,
+      id: model,
+      name: model,
       api: 'openai-completions',
       provider: 'notion-copilot',
       baseUrl,
@@ -855,6 +855,18 @@ function resultText(result: { content?: { type: string; text?: string }[] } | un
   return (result?.content ?? []).map((block) => (block.type === 'text' ? (block.text ?? '') : '')).join('\n')
 }
 
+// What the worker answers, as far as the agent reads it. Each field is read loosely: one that is not
+// text counts as missing, so a reply the agent can't read ends in the fallback, never in a wrong value.
+const text = z.string().optional().catch(undefined)
+
+/** The worker's answer to `/me`: the model it uses, or why it refused. */
+const MeReply = z.object({ model: text, error: z.object({ message: text }).optional().catch(undefined) })
+
+/** An error as the worker words it. */
+const ErrorFields = z.object({ code: text, message: text })
+/** The body of a failed request: the error itself, or wrapped in `error`. */
+const ErrorBody = ErrorFields.extend({ error: z.unknown().optional() })
+
 /**
  * The worker's own error message and code when there are any. The SDK reports HTTP errors as
  * `<status>: <body>` or `<status> <message>`, and the worker's body is `{ error: { code, message } }`
@@ -863,18 +875,15 @@ function resultText(result: { content?: { type: string; text?: string }[] } | un
 function parseError(message: string | undefined): Failure {
   if (!message) return { text: 'The model failed.' }
   const rest = message.replace(/^\d{3}:?\s+/, '')
+  let json: unknown
   try {
-    const body = JSON.parse(rest) as {
-      code?: unknown
-      message?: unknown
-      error?: { code?: unknown; message?: unknown }
-    }
-    const inner = body.error ?? body
-    if (typeof inner.message === 'string' && inner.message) {
-      return { text: inner.message, code: typeof inner.code === 'string' ? inner.code : undefined }
-    }
-  } catch {}
-  return { text: rest }
+    json = JSON.parse(rest)
+  } catch {
+    return { text: rest }
+  }
+  const body = ErrorBody.safeParse(json).data
+  const inner = body?.error === undefined || body.error === null ? body : ErrorFields.safeParse(body.error).data
+  return inner?.message ? { text: inner.message, code: inner.code } : { text: rest }
 }
 
 interface Failure {
