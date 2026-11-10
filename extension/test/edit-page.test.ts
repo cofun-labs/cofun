@@ -886,12 +886,48 @@ describe('round 7', () => {
     expect(withoutRefs(body(await read()))).toBe(['Intro', 'Once'].join('\n'))
   })
 
-  it('treats an empty position as not given', async () => {
+  // An empty `position` never reaches the tool from the model: it is not one of the four, so the
+  // agent runtime refuses it, as the tool does for any other caller.
+  it('inserts after the block when no position is given, and refuses an empty one', async () => {
     const ws = workspace([1, 2], [block(1, 'text', 'A'), block(2, 'text', 'C')])
     open(ws)
     await read()
-    await edit([{ action: 'insert', block: '^00000001', position: '', markdown: 'B' }])
+    await expect(edit([{ action: 'insert', block: '^00000001', position: '', markdown: 'X' }])).rejects.toThrow(
+      'Edit 1: `position` must be "after", "inside", "start", or "end".',
+    )
+    await edit([{ action: 'insert', block: '^00000001', markdown: 'B' }])
     expect(withoutRefs(body(await read()))).toBe(['A', 'B', 'C'].join('\n'))
+  })
+
+  it('refuses arguments that are not what its schema says, before the page is read or Notion asked', async () => {
+    const tab = open(workspace([1], [block(1, 'text', 'A')]))
+    const run = (args: Rec) => editPage.run(args)
+    const insert = { action: 'insert', markdown: 'x' }
+    const refused: [Rec, string][] = [
+      [{ edits: [insert] }, 'Give `page`: the id read_page shows after "Page:".'],
+      [{ page: 5, edits: [insert] }, 'Give `page`'],
+      [{ page: hex(PAGE) }, '`edits` must be a list with at least one edit.'],
+      [{ page: hex(PAGE), edits: insert }, '`edits` must be a list with at least one edit.'],
+      [{ page: hex(PAGE), edits: [] }, '`edits` must be a list with at least one edit.'],
+      [
+        { page: hex(PAGE), edits: [insert, { block: '^1' }] },
+        'Edit 2: `action` must be "insert", "replace", or "delete".',
+      ],
+      [
+        { page: hex(PAGE), edits: [{ ...insert, position: 'before' }] },
+        'Edit 1: `position` must be "after", "inside", "start", or "end".',
+      ],
+      [{ page: hex(PAGE), edits: [{ ...insert, block: 1 }] }, '`edits[0].block`: Invalid input: expected string'],
+      [
+        { page: hex(PAGE), edits: [{ ...insert, markdown: ['x'] }] },
+        '`edits[0].markdown`: Invalid input: expected string',
+      ],
+      [{ page: hex(PAGE), edits: [{ ...insert, text: 'x' }] }, '`edits[0]`: Unrecognized key: "text"'],
+      [{ page: hex(PAGE), edits: ['delete ^1'] }, '`edits[0]`: Invalid input: expected object, received string'],
+    ]
+    for (const [args, message] of refused) await expect(run(args)).rejects.toThrow(message)
+    expect(editPage.preview!({ page: hex(PAGE), edits: [{ action: 'move' }] })).toBeUndefined()
+    expect(tab.sent).toEqual([])
   })
 
   it('keeps literal <br> text apart from line breaks', async () => {

@@ -49,8 +49,9 @@ export interface ToolSpec {
   /**
    * Runs the tool. Throw to report a failure to the model. An error with a `stopsQuestion` string
    * (on it or a cause) also stops the question: nothing more runs, and the user is told that string.
+   * The arguments come from the model: a tool parses them before it uses them.
    */
-  run: (args: Record<string, unknown>, signal?: AbortSignal) => Promise<unknown>
+  run: (args: unknown, signal?: AbortSignal) => Promise<unknown>
   /** The tool does what is hard to undo, such as deleting a page, so the user must agree each time before it runs. */
   needsConfirmation?: boolean
   /**
@@ -64,7 +65,7 @@ export interface ToolSpec {
    * What a call does, in words, from the state before it runs: shown on the call's card, and to the
    * user before agreeing when the tool needs confirmation. It may look things up first.
    */
-  preview?: (args: Record<string, unknown>) => string | undefined | Promise<string | undefined>
+  preview?: (args: unknown) => string | undefined | Promise<string | undefined>
 }
 
 /** A tool call waiting for the user's OK. */
@@ -722,7 +723,7 @@ async function previewCall(
   signal?: AbortSignal,
 ): Promise<{ preview?: string; stop?: string }> {
   try {
-    const preview = tool?.preview?.((args ?? {}) as Record<string, unknown>)
+    const preview = tool?.preview?.(args)
     if (typeof preview === 'string' || preview === undefined) return { preview }
     // Stop must not wait for a preview that looks things up.
     return {
@@ -804,7 +805,7 @@ function toAgentTool(spec: ToolSpec, reporter: () => Reporter): AgentTool {
       const report = reporter()
       let result: unknown
       try {
-        result = await spec.run(params as Record<string, unknown>, signal)
+        result = await spec.run(params, signal)
       } catch (err) {
         const reason = stopsQuestion(err)
         if (reason) report.stop(reason)

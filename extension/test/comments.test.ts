@@ -337,6 +337,21 @@ describe('read_page and comments', () => {
 })
 
 describe('add_comment', () => {
+  it('refuses arguments that are not what its schema says, without asking Notion', async () => {
+    const tab = open(workspace())
+    const run = (args: Rec) => addComment.run(args)
+    await expect(run({ text: 'Hi' })).rejects.toThrow('Give `page`: the id read_page shows after "Page:".')
+    await expect(run({ page: ' ', text: 'Hi' })).rejects.toThrow('Give `page`')
+    await expect(run({ page: hex(PAGE) })).rejects.toThrow('`text` must not be empty.')
+    await expect(run({ page: hex(PAGE), text: ['Hi'] })).rejects.toThrow('`text` must not be empty.')
+    await expect(run({ page: hex(PAGE), text: 'Hi', block: 5 })).rejects.toThrow(
+      '`block`: Invalid input: expected string, received number',
+    )
+    await expect(run({ page: hex(PAGE), text: 'Hi', resolve: true })).rejects.toThrow('Unrecognized key: "resolve"')
+    expect(addComment.preview!({ page: hex(PAGE) })).toBeUndefined()
+    expect(tab.sent).toEqual([])
+  })
+
   it('refuses empty and overlong text before asking Notion anything', async () => {
     const tab = open(workspace())
     expect((await failure(add({ text: '  ' }))).message).toBe('`text` must not be empty.')
