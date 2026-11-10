@@ -549,12 +549,14 @@ describe('when Notion turns requests away', () => {
 
   it('keeps every client from sending until the wait Notion asked for is over', async () => {
     let now = Date.now()
-    const tab = new FakeNotionTab(PAGE_URL).limit('loadPageChunk', 1, 429, '30').install()
+    const tab = new FakeNotionTab(PAGE_URL).limit('loadPageChunk', 1, 429, '120').install()
     notionCooldown.now = () => now
     tab.workspace = new FakeWorkspace([page], SPACE)
-    await notionError((await activeNotionTab()).client.loadPage(PAGE))
+    const first = await notionError((await activeNotionTab()).client.loadPage(PAGE))
+    // The user is told the wait Notion asked for.
+    expect(first.stopsQuestion).toContain('Wait 2 minutes, then ask again.')
     // Another client, as the next question would make: nothing is sent while the wait is on.
-    now += 29_000
+    now += 119_000
     const waiting = await notionError((await activeNotionTab()).client.loadPage(PAGE))
     expect([waiting.code, waiting.message, waiting.stopsQuestion]).toEqual([
       'rate_limited',
@@ -569,11 +571,17 @@ describe('when Notion turns requests away', () => {
 
   it('waits as long as Retry-After asks, within limits, and a minute when it says nothing usable', () => {
     const now = Date.parse('2026-11-10T08:00:00Z')
+    // Never shorter than COOLDOWN_MS: the user was told to wait.
     const waits: [string | undefined, number][] = [
-      ['5', 5000],
-      ['0', 0],
+      ['120', 120_000],
+      ['5', COOLDOWN_MS],
+      ['0', COOLDOWN_MS],
       ['Tue, 10 Nov 2026 08:02:00 GMT', 120_000],
+      ['Tue, 10 Nov 2026 07:00:00 GMT', COOLDOWN_MS],
+      ['-1', COOLDOWN_MS],
+      ['1.5', COOLDOWN_MS],
       ['99999', COOLDOWN_MAX_MS],
+      ['9'.repeat(400), COOLDOWN_MAX_MS],
       [undefined, COOLDOWN_MS],
       ['soon', COOLDOWN_MS],
     ]
@@ -585,7 +593,7 @@ describe('when Notion turns requests away', () => {
     // A shorter wait never cuts a longer one short.
     const cooldown = new NotionCooldown(() => now)
     cooldown.start('120')
-    cooldown.start('5')
+    cooldown.start('70')
     expect(cooldown.left()).toBe(120_000)
     expect(coolingStop(30_000)).toContain('Ask again in 30 seconds.')
     expect(coolingStop(1)).toContain('Ask again in 1 second.')

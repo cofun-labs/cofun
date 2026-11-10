@@ -403,7 +403,7 @@ describe('extension agent against the worker', () => {
 
   it('[UC-NOTION-001-S12] asked again before the wait is over, nothing is sent and the user is told how long to wait', async () => {
     let now = Date.now()
-    const tab = new FakeNotionTab(PAGE_URL).limit('loadPageChunk', 1, 429, '30').install()
+    const tab = new FakeNotionTab(PAGE_URL).limit('loadPageChunk', 1, 429, '120').install()
     notionCooldown.now = () => now
     tab.workspace = new FakeWorkspace(
       [{ id: PAGE, type: 'page', properties: { title: [['Fixture page']] }, parent_id: SPACE, parent_table: 'space' }],
@@ -413,14 +413,17 @@ describe('extension agent against the worker', () => {
     const readIt = () =>
       (ai.script = [{ toolCalls: [{ name: 'read_page', arguments: '{}' }] }, { reply: 'A summary.' }])
     readIt()
-    expect((await ask(agent, 'Summarize this page')).result).toEqual({ status: 'error', message: LIMITED_STOP })
-    // Asked again ten seconds later: nothing goes to Notion.
-    now += 10_000
+    expect((await ask(agent, 'Summarize this page')).result).toMatchObject({
+      status: 'error',
+      message: expect.stringContaining('Wait 2 minutes, then ask again.'),
+    })
+    // Asked again a minute later: nothing goes to Notion.
+    now += 60_000
     readIt()
-    expect((await ask(agent, 'Summarize this page')).result).toEqual({ status: 'error', message: coolingStop(20_000) })
+    expect((await ask(agent, 'Summarize this page')).result).toEqual({ status: 'error', message: coolingStop(60_000) })
     expect(tab.sent).toHaveLength(1)
     // Once the wait is over, the page is read.
-    now += 20_000
+    now += 60_000
     readIt()
     expect((await ask(agent, 'Summarize this page')).result).toEqual({ status: 'done' })
     expect(tab.sent).toHaveLength(2)

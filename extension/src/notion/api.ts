@@ -345,11 +345,21 @@ export class NotionCooldown {
   }
 }
 
-/** The wait a Retry-After header asks for, in seconds or as a date; COOLDOWN_MS when it says nothing usable. */
+/**
+ * The wait after Notion turns a request away: COOLDOWN_MS, or longer when Retry-After (in seconds
+ * or as a date) asks for longer, up to COOLDOWN_MAX_MS. It never asks for less: the user was told
+ * to wait.
+ */
 function waitFor(retryAfter: string | undefined, now: number): number {
   const text = retryAfter?.trim() ?? ''
   const ms = /^\d+$/.test(text) ? Number(text) * 1000 : text ? Date.parse(text) - now : Number.NaN
-  return Number.isFinite(ms) ? Math.min(Math.max(ms, 0), COOLDOWN_MAX_MS) : COOLDOWN_MS
+  return Number.isNaN(ms) ? COOLDOWN_MS : Math.min(Math.max(ms, COOLDOWN_MS), COOLDOWN_MAX_MS)
+}
+
+/** For the user, when Notion turns a request away: LIMITED_STOP, or the wait when it is longer than a minute. */
+function limitedStop(ms: number): string {
+  if (ms <= COOLDOWN_MS) return LIMITED_STOP
+  return `Notion is turning requests away right now (too many requests, or too busy), so Notion Copilot stopped. Wait ${Math.ceil(ms / 60_000)} minutes, then ask again.`
 }
 
 export class NotionClient {
@@ -890,13 +900,14 @@ export class NotionClient {
     if (turnedAway) {
       this.limited = true
       this.cooldown?.start(res.retryAfter)
+      const stopsQuestion = limitedStop(this.cooldown?.left() ?? 0)
       // A 529 to a write may come after Notion applied it, so its outcome stays unknown. A 429
       // means Notion turned it away before doing anything with it.
       // Starting a copy is a write too.
       if ((endpoint === 'saveTransactionsFanout' || endpoint === 'enqueueTask') && res.status === 529) {
-        throw new NotionError('outcome_unknown', BUSY_UNKNOWN, { stopsQuestion: LIMITED_STOP })
+        throw new NotionError('outcome_unknown', BUSY_UNKNOWN, { stopsQuestion })
       }
-      throw new NotionError('rate_limited', RATE_LIMITED, { stopsQuestion: LIMITED_STOP })
+      throw new NotionError('rate_limited', RATE_LIMITED, { stopsQuestion })
     }
     return { json: checkResponse(res) as T, userId: res.userId }
   }
