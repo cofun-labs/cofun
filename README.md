@@ -60,7 +60,7 @@ Conversations are saved in the extension's IndexedDB, one database per Clerk use
 
 ### Writes without approval
 
-The agent edits pages, creates pages and rows, and changes properties without asking first. No tool deletes pages yet; the one that will (#74) is to ask for the user's approval each time. Each change shows on its tool card in the side panel, and a page's history in Notion can undo edits. The trade-off: the agent reads text the user doesn't control (shared pages, guest content, search results), and an instruction hidden in that text can make it write as the user without anyone being asked. It could change many pages in one call, or copy content the user can see into a page someone else can read. Page history can undo the changes, but not the copy.
+The agent edits pages, creates pages and rows, changes properties, and adds comments without asking first. No tool deletes pages yet; the one that will (#74) is to ask for the user's approval each time. Each change shows on its tool card in the side panel, and a page's history in Notion can undo edits. The trade-off: the agent reads text the user doesn't control (shared pages, guest content, search results), and an instruction hidden in that text can make it write as the user without anyone being asked. It could change many pages in one call, or copy content the user can see into a page or a comment someone else can read; a comment also notifies the people following the page or the thread. Page history can undo the changes, but not the copy.
 
 ## Layout
 
