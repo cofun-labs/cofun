@@ -36,6 +36,31 @@ export function restoreGlobals(): void {
   }
 }
 
+type StorageListener = (changes: Record<string, { oldValue?: unknown; newValue?: unknown }>, area: string) => void
+
+/**
+ * Stands in for chrome.storage: the `local` area, and the change events every document of the
+ * extension gets, the one that made the change included.
+ */
+export class FakeStorage {
+  values: Record<string, unknown> = {}
+  private listeners: StorageListener[] = []
+
+  local = {
+    get: async (key: string) => (key in this.values ? { [key]: this.values[key] } : {}),
+    set: async (items: Record<string, unknown>) => {
+      const changes: Parameters<StorageListener>[0] = {}
+      for (const [key, newValue] of Object.entries(items)) {
+        changes[key] = { oldValue: this.values[key], newValue }
+        this.values[key] = newValue
+      }
+      for (const listener of this.listeners) listener(changes, 'local')
+    },
+  }
+
+  onChanged = { addListener: (listener: StorageListener) => void this.listeners.push(listener) }
+}
+
 /**
  * A browser window with one active tab, standing in for the chrome.tabs and chrome.scripting APIs.
  * executeScript runs the injected function the way Chrome does: rebuilt from its source, so it can
@@ -105,11 +130,12 @@ export class FakeNotionTab {
     return this
   }
 
+  /** The browser's chrome.storage, which all its side panels share. */
+  storage = new FakeStorage()
+
   install(): this {
-    // A new browser: no wait is left over from Notion turning an earlier test's requests away.
-    notionCooldown.clear()
-    notionCooldown.now = () => Date.now()
     globals.chrome = {
+      storage: this.storage,
       tabs: {
         query: async () => (this.url === undefined ? [] : [{ id: 7, url: this.url, title: 'Fixture page' }]),
         get: async (tabId: number) => {
@@ -150,6 +176,9 @@ export class FakeNotionTab {
         },
       },
     }
+    // A new browser: no wait is left over from Notion turning an earlier test's requests away.
+    notionCooldown.clear()
+    notionCooldown.now = () => Date.now()
     return this
   }
 

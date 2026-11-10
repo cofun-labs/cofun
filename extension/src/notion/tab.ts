@@ -9,6 +9,7 @@ import {
   NotionCooldown,
   NotionError,
   NotionUsage,
+  type CooldownStore,
   type NotionResponse,
   type NotionTransport,
 } from './api'
@@ -23,8 +24,27 @@ export interface NotionTab {
   client: NotionClient
 }
 
-/** The wait after Notion turns a request away, kept by every client of the side panel. */
-export const notionCooldown = new NotionCooldown()
+/** Where chrome.storage.local keeps the time the wait after Notion turned a request away ends. */
+export const COOLDOWN_KEY = 'notionCooldownUntil'
+
+/**
+ * The wait's end time in chrome.storage.local, which every side panel of the browser shares and
+ * a browser restart keeps. A value left over from long ago does no harm: it is in the past.
+ */
+export const chromeCooldownStore: CooldownStore = {
+  load: async () => (await chrome.storage.local.get(COOLDOWN_KEY))[COOLDOWN_KEY],
+  save: async (until) => chrome.storage.local.set({ [COOLDOWN_KEY]: until }),
+  onChange: (listener) =>
+    chrome.storage.onChanged.addListener((changes, area) => {
+      if (area === 'local' && changes[COOLDOWN_KEY]) listener(changes[COOLDOWN_KEY].newValue)
+    }),
+}
+
+/**
+ * The wait after Notion turns a request away, kept by every client of every side panel: each
+ * panel is a document of its own, so the end time lives in chrome.storage (see activeNotionTab).
+ */
+export const notionCooldown = new NotionCooldown(undefined, chromeCooldownStore)
 
 /** The Notion requests of the question being answered; see countNotionRequests. */
 let usage: NotionUsage | undefined
@@ -42,6 +62,8 @@ export function countNotionRequests(ask?: (question: string) => Promise<boolean>
 export async function activeNotionTab(): Promise<NotionTab> {
   // The question that asked for the tab, even if another one starts while the tab is looked up.
   const counted = usage
+  // Every client is made here, so none sends before a wait another side panel started is known.
+  await notionCooldown.ready()
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true })
   if (tab?.id === undefined || !tab.url || !isNotion(tab.url)) throw new NotionError('no_notion_tab', NO_NOTION_TAB)
   const client = new NotionClient(tabTransport(tab.id), counted, notionCooldown)
