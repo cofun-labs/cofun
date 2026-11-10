@@ -66,7 +66,10 @@ export const ToolCall = memo(function ToolCall({
       {/* Open while asking, so the user sees exactly what the tool would do. */}
       <details className={`tool ${tool.status}`} open={tool.status === 'confirm'}>
         <summary title={LABEL[tool.status]}>
-          <span className="tool-mark">{MARK[tool.status]}</span> <span className="tool-name">{tool.name}</span>
+          <span className="tool-mark" role="img" aria-label={LABEL[tool.status]}>
+            {MARK[tool.status]}
+          </span>{' '}
+          <span className="tool-name">{tool.name}</span>
           {input && <span className="tool-input"> {input}</span>}
         </summary>
         <div className="tool-body">

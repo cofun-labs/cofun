@@ -31,6 +31,8 @@ export class FakeAiBinding implements AiBinding {
   rawSse?: string
   /** When set, a streamed call fails with this error after sending the first slice. */
   streamFailWith?: Error
+  /** When set, a streamed reply stops once `after` bytes are sent, until `until` resolves: a model still writing. */
+  pause?: { after: number; until: Promise<void> }
   /** When set, the model writes the reply as a preamble and then asks the client to run these tools. */
   toolCalls?: FakeToolCall[]
   /**
@@ -67,7 +69,7 @@ export class FakeAiBinding implements AiBinding {
     // Like OpenAI, usage comes in a last chunk with no choices, only when asked for.
     const streamOptions = inputs.stream_options as { include_usage?: boolean } | undefined
     if (streamOptions?.include_usage) events.push({ choices: [], usage: FAKE_USAGE })
-    return sliced(new TextEncoder().encode(toSse(events)), this.streamFailWith)
+    return sliced(new TextEncoder().encode(toSse(events)), this.streamFailWith, this.pause)
   }
 
   /**
@@ -140,17 +142,23 @@ export class FakeAiBinding implements AiBinding {
       events.push({ choices: [], usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 } })
       events.push({ response: '', usage: FAKE_USAGE })
     }
-    return sliced(new TextEncoder().encode(toSse(events)), this.streamFailWith)
+    return sliced(new TextEncoder().encode(toSse(events)), this.streamFailWith, this.pause)
   }
 }
 
 const toSse = (events: unknown[]) => events.map((e) => `data: ${JSON.stringify(e)}\n\n`).join('') + 'data: [DONE]\n\n'
 
-function sliced(bytes: Uint8Array, failWith?: Error, size = 16): ReadableStream<Uint8Array> {
+function sliced(
+  bytes: Uint8Array,
+  failWith?: Error,
+  pause?: { after: number; until: Promise<void> },
+  size = 16,
+): ReadableStream<Uint8Array> {
   let offset = 0
   return new ReadableStream({
-    pull(controller) {
+    async pull(controller) {
       if (failWith && offset > 0) return controller.error(failWith)
+      if (pause && offset >= pause.after) await pause.until
       if (offset >= bytes.length) return controller.close()
       controller.enqueue(bytes.slice(offset, (offset += size)))
     },
