@@ -15,7 +15,7 @@ A big database is read in parts, and the AI is told when it holds more rows than
 | UC-NOTION-006-S01 | P0 | ✅ | Given a database with rows; when the AI reads it; then it gets the database's properties and every row's values, each row with a way to open it. |
 | UC-NOTION-006-S02 | P0 | ✅ | Given conditions on the rows' values and an order; when the AI reads the database with them; then it gets only the rows that match every condition, in that order. |
 | UC-NOTION-006-S03 | P1 | ✅ | Given more rows than one result shows; when the AI reads the database; then it gets the first ones, is told there are more, and can read the rest part by part. |
-| UC-NOTION-006-S05 | P1 | 🚧 | Given more rows than one read covers; when the AI reads the database in an order; then the rows it gets are the first ones in that order, and it is told only part of the database was read. |
+| UC-NOTION-006-S05 | P1 | ✅ | Given more rows than one read covers; when the AI reads the database in an order; then the rows it gets are the first ones in that order, and it is told only part of the database was read. |
 
 ### ai-e2e
 
