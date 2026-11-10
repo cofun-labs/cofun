@@ -134,10 +134,15 @@ export function unnamedMentions({ page, recordMap, spaceId }: LoadedPage): Point
 }
 
 /**
- * The people and pages database rows mention (a relation's pages, a person, a page mentioned in
- * text) that `recordMap` doesn't hold, so they can be looked up and shown by name.
+ * The pages and people database rows mention (a relation's pages, a page mentioned in text, a
+ * person) that `recordMap` doesn't hold, so they can be looked up and shown by name: at most
+ * UNNAMED_MAX, pages first. `left` counts the ones past that.
  */
-export function unnamedRowMentions(recordMap: RecordMap, rows: Block[], spaceId: string): Pointer[] {
+export function unnamedRowMentions(
+  recordMap: RecordMap,
+  rows: Block[],
+  spaceId: string,
+): { pointers: Pointer[]; left: number } {
   const users = new Set<string>()
   const pages = new Map<string, string>()
   for (const row of rows) {
@@ -150,13 +155,13 @@ export function unnamedRowMentions(recordMap: RecordMap, rows: Block[], spaceId:
       }
     }
   }
-  const pointers: Pointer[] = [
-    ...[...users].filter((id) => !recordMap.notion_user?.[id]).map((id) => ({ table: 'notion_user' as const, id })),
+  const all: Pointer[] = [
     ...[...pages]
       .filter(([id]) => !recordMap.block?.[id])
       .map(([id, space]) => ({ table: 'block' as const, id, spaceId: space })),
+    ...[...users].filter((id) => !recordMap.notion_user?.[id]).map((id) => ({ table: 'notion_user' as const, id })),
   ]
-  return pointers.slice(0, UNNAMED_MAX)
+  return { pointers: all.slice(0, UNNAMED_MAX), left: Math.max(0, all.length - UNNAMED_MAX) }
 }
 
 /** Rich text from outside a page's blocks (a comment, say) as Markdown, with mentions named from `recordMap`. */

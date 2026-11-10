@@ -450,6 +450,30 @@ describe('query_database options, numbers, and code', () => {
     await expect(query()).rejects.toMatchObject({ code: 'rate_limited' })
   })
 
+  it('looks up linked pages before people, and says when some were left unnamed', async () => {
+    // More linked pages than one lookup takes: the first ones are named, and the result says so.
+    const linked = Array.from({ length: 103 }, (_, i) => `b2b2b2b2-0000-4000-8000-${String(i).padStart(12, '0')}`)
+    const schema = { ...SCHEMA, 'r:r': { name: 'Blocked by', type: 'relation' } }
+    const rows = TASKS.map(rowRecord)
+    Object.assign(rows[0].properties, {
+      'c:c': [['‣', [['u', 'f0f0f0f0-0000-4000-8000-000000000099']]]],
+      'r:r': linked.map((id) => ['‣', [['p', id]]]),
+    })
+    const found = sync(
+      'block',
+      linked.slice(0, 100).map((id, i) => ({ id, type: 'page', properties: { title: [[`P${i}`]] } })),
+    )
+    const tab = database(rows, false, schema).respond('syncRecordValuesMain', 200, found)
+    const result = await query()
+    const asked = (tab.sent.at(-1)!.body as { requests: { pointer: { table: string } }[] }).requests
+    expect(asked).toHaveLength(100)
+    expect(asked.every((r) => r.pointer.table === 'block')).toBe(true)
+    expect(result).toContain(
+      '4 more linked pages or people were not looked up and show unnamed; filters on their names may miss rows.',
+    )
+    expect(tableRows(result)[0]).toContain(`[P0](${hex(linked[0])})`)
+  })
+
   it('keeps a person with a pipe in the name in one cell', async () => {
     const rows = TASKS.map((t) => ({ ...rowRecord(t), created_by_id: USER }))
     database(rows, false, { ...SCHEMA, 'i:i': { name: 'Creator', type: 'created_by' } }, [], 'Ana\\ | Ops')

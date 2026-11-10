@@ -279,16 +279,20 @@ async function loadMentioned(tab: NotionTab, loaded: LoadedPage): Promise<void> 
   }
 }
 
-/** Adds the people and pages `rows` mention but `recordMap` lacks; ones out of reach stay unnamed. */
-async function loadRowMentions(tab: NotionTab, recordMap: RecordMap, rows: Block[], spaceId: string): Promise<void> {
-  const missing = unnamedRowMentions(recordMap, rows, spaceId)
-  if (!missing.length) return
+/**
+ * Adds the pages and people `rows` mention but `recordMap` lacks; ones out of reach stay unnamed.
+ * Returns how many weren't looked up, past the lookup's limit.
+ */
+async function loadRowMentions(tab: NotionTab, recordMap: RecordMap, rows: Block[], spaceId: string): Promise<number> {
+  const { pointers, left } = unnamedRowMentions(recordMap, rows, spaceId)
+  if (!pointers.length) return left
   try {
-    mergeRecordMaps(recordMap, await tab.client.findRecords(missing))
+    mergeRecordMaps(recordMap, await tab.client.findRecords(pointers))
   } catch (err) {
     // As in loadMentioned: only names, so records the account can't open stay unnamed.
     if (!(err instanceof NotionError && (err.code === 'no_access' || err.code === 'in_trash'))) throw err
   }
+  return left
 }
 
 /** How many rows one query loads, and how many one result shows. */
@@ -432,7 +436,7 @@ export const queryDatabase: ToolSpec = {
     // Rows Notion listed but sent no record for can't be shown or filtered; they are counted instead.
     const missing = listed.filter((r) => !r).length
     // Notion leaves out the pages a relation points to: looked up, they show and filter by name.
-    await loadRowMentions(
+    const unnamed = await loadRowMentions(
       tab,
       recordMap,
       listed.filter((r): r is Block => !!r && r.alive !== false),
@@ -467,6 +471,11 @@ export const queryDatabase: ToolSpec = {
       ...(missing
         ? [
             `${plural(missing, 'more row')} came without ${missing === 1 ? 'its' : 'their'} values and ${missing === 1 ? 'is' : 'are'} not shown.`,
+          ]
+        : []),
+      ...(unnamed
+        ? [
+            `${unnamed} more linked ${unnamed === 1 ? 'page or person was' : 'pages or people were'} not looked up and show unnamed; filters on their names may miss rows.`,
           ]
         : []),
       ...(part > 1
