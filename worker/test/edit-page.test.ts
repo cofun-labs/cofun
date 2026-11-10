@@ -1900,3 +1900,14 @@ describe('seventh review of #148', () => {
     ).toContain("what read_page didn't show exactly")
   })
 })
+
+describe('eighth review of #148', () => {
+  it('keeps a span with any color inside inline code as code, and still refuses one outside it', () => {
+    expect(inline('use `<span color="x">a</span>` here')).toEqual([
+      ['use '],
+      ['<span color="x">a</span>', [['c']]],
+      [' here'],
+    ])
+    expect(() => inline('use <span color="x">a</span> here')).toThrow(`"x" isn't a Notion color.`)
+  })
+})

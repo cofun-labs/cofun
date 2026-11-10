@@ -384,17 +384,19 @@ export function inline(text: string, marks: Mark[] = []): RichText {
   const out: RichText = []
   let rest = text
   while (rest) {
-    let best: { index: number; length: number; runs: RichText } | undefined
+    // The earliest match wins; only it is turned into runs, so a pattern that refuses what it
+    // matched (an unknown color) doesn't fire inside one that comes first (inline code).
+    let best: { index: number; length: number; m: RegExpExecArray; run: (m: RegExpExecArray) => RichText } | undefined
     for (const { re, run } of patterns) {
       const m = re.exec(rest)
-      if (m && (!best || m.index < best.index)) best = { index: m.index, length: m[0].length, runs: run(m) }
+      if (m && (!best || m.index < best.index)) best = { index: m.index, length: m[0].length, m, run }
     }
     if (!best) {
       push(out, rest, marks)
       break
     }
     if (best.index) push(out, rest.slice(0, best.index), marks)
-    for (const r of best.runs) push(out, r[0], r[1] ?? [])
+    for (const r of best.run(best.m)) push(out, r[0], r[1] ?? [])
     rest = rest.slice(best.index + best.length)
   }
   return out
