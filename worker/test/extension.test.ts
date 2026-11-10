@@ -531,7 +531,8 @@ describe('extension agent against the worker', () => {
     // The model would try again after the refusal.
     ai.script = [{ toolCalls: [trashCall] }, { toolCalls: [trashCall] }, { reply: 'Trashed.' }]
     const asked: ToolCallRequest[] = []
-    const { result, updates } = await ask(makeAgent({ tools: [trashPage] }), 'Delete the old notes', async (call) => {
+    const agent = makeAgent({ tools: [trashPage] })
+    const { result, updates } = await ask(agent, 'Delete the old notes', async (call) => {
       asked.push(call)
       return true
     })
@@ -541,10 +542,44 @@ describe('extension agent against the worker', () => {
     expect(tab.sent).toHaveLength(1)
     expect(ai.calls).toHaveLength(1)
     expect(ws.records.get(OLD)!.alive).toBe(true)
-    // The conversation keeps why the call didn't run: Notion turned it away while it was prepared.
-    expect(updates.find((u) => u.type === 'tool_end')).toMatchObject({
-      result: expect.stringContaining('turned the request away while it was being prepared'),
-    })
+    // The conversation keeps why the call didn't run, so the next question knows it.
+    const notRun = `Not run: the question stopped while this action was being prepared. The user was told: ${LIMITED_STOP}`
+    expect(updates.find((u) => u.type === 'tool_end')).toMatchObject({ result: notRun })
+    ai.script = [{ reply: 'Ok.' }]
+    await ask(agent, 'And now?')
+    expect(sentMessages(1).find((m) => m.role === 'tool')).toMatchObject({ content: notRun })
+  })
+
+  it('calls after one whose preview stopped the question are told the same reason', async () => {
+    const OLD = 'b0b0b0b0-0000-4000-8000-000000000001'
+    const ws = new FakeWorkspace(
+      [
+        {
+          id: PAGE,
+          type: 'page',
+          properties: { title: [['Fixture page']] },
+          content: [OLD],
+          parent_id: SPACE,
+          parent_table: 'space',
+        },
+        { id: OLD, type: 'page', properties: { title: [['Old notes']] }, parent_id: PAGE, parent_table: 'block' },
+      ],
+      SPACE,
+    )
+    const tab = new FakeNotionTab(PAGE_URL).limit('syncRecordValuesMain', 1)
+    tab.workspace = ws
+    tab.install()
+    const trashCall = { name: 'trash_page', arguments: JSON.stringify({ pages: [OLD] }) }
+    ai.script = [{ toolCalls: [trashCall, trashCall] }, { reply: 'Trashed.' }]
+    const { result, updates } = await ask(makeAgent({ tools: [trashPage] }), 'Delete the old notes', async () => true)
+    expect(result).toEqual({ status: 'error', message: LIMITED_STOP })
+    const ends = updates.flatMap((u) => (u.type === 'tool_end' ? [u.result] : []))
+    expect(ends).toEqual([
+      `Not run: the question stopped while this action was being prepared. The user was told: ${LIMITED_STOP}`,
+      `Not run: the question stopped while an earlier action was being prepared. The user was told: ${LIMITED_STOP}`,
+    ])
+    expect(tab.sent).toHaveLength(1)
+    expect(ws.records.get(OLD)!.alive).toBe(true)
   })
 
   it('a question stopped after a page was moved tells the user that change was made', async () => {
@@ -1674,6 +1709,10 @@ describe('Notion requests per question', () => {
     expect(asked.map((c) => c.question)).toEqual([budgetQuestion(REQUEST_BUDGET)])
     expect(result).toEqual({ status: 'error', message: BUDGET_STOP, requests: REQUEST_BUDGET })
     expect(toolStatuses(updates)).toEqual(['done', 'skipped'])
+    // The model is told why: the budget, not Notion.
+    expect(updates.filter((u) => u.type === 'tool_end').at(-1)).toMatchObject({
+      result: `Not run: the question stopped while this action was being prepared. The user was told: ${BUDGET_STOP}`,
+    })
     expect(runs).toEqual([])
     expect(tab.sent).toHaveLength(REQUEST_BUDGET)
     expect(ai.calls).toHaveLength(2)
