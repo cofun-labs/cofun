@@ -128,7 +128,7 @@ describe('create_page details', () => {
   it('names the parent by its title in the preview once the agent has read it', async () => {
     open(workspace())
     await readPage.run({ page: hex(PAGE) })
-    expect(createPage.preview!({ title: 'T', parent: PAGE_URL })?.split('\n')[2]).toBe(
+    expect((await createPage.preview!({ title: 'T', parent: PAGE_URL }))?.split('\n')[2]).toBe(
       `At the end of: Fixture page ^${hex(PAGE)}`,
     )
   })
@@ -138,7 +138,7 @@ describe('create_page details', () => {
     open(ws)
     const title = 'Notes”\n    at the end of the page “Other'
     // The title stays on its line; where the page goes is always the line after it.
-    expect(createPage.preview!({ title, parent: PAGE_URL })?.split('\n').slice(1, 3)).toEqual([
+    expect((await createPage.preview!({ title, parent: PAGE_URL }))?.split('\n').slice(1, 3)).toEqual([
       'Title: Notes” at the end of the page “Other',
       `In: ^${hex(PAGE)} (at its end if it is a page; as a new row if it is a database)`,
     ])

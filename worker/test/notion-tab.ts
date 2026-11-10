@@ -52,6 +52,8 @@ export class FakeNotionTab {
   /** Makes executeScript fail with this message while the tab is still open on Notion. */
   injectionError?: string
   networkDown = false
+  /** Makes Notion never answer, as a stalled tab would. */
+  stalled = false
   /** Makes Notion answer with a redirect, as it might to a sign-in page. */
   redirects = false
   /** The page's DOM, for scripts that read it (the selection); only what they use. */
@@ -76,6 +78,15 @@ export class FakeNotionTab {
     ;(this.responses[endpoint] ??= []).push({ status, text })
     return this
   }
+
+  /** Turns away the `nth` request to `endpoint` (1 is the first), letting the others through. */
+  limitNth(endpoint: string, nth: number, status = 429): this {
+    this.limitAt = { endpoint, nth, status }
+    return this
+  }
+
+  private limitAt?: { endpoint: string; nth: number; status: number }
+  private counts: Record<string, number> = {}
 
   /** Notion turning `times` requests to `endpoint` away: too many requests (429), or too busy (529). */
   limit(endpoint: string, times: number, status = 429): this {
@@ -130,9 +141,15 @@ export class FakeNotionTab {
 
   private async fetch(url: string, init: RequestInit): Promise<Response> {
     if (this.networkDown) throw new TypeError('Failed to fetch')
+    if (this.stalled) return new Promise<Response>(() => {})
     this.signals.push(init.signal)
     this.sent.push({ url, headers: init.headers as Record<string, string>, body: JSON.parse(init.body as string) })
     const endpoint = url.split('/api/v3/')[1]
+    this.counts[endpoint] = (this.counts[endpoint] ?? 0) + 1
+    if (this.limitAt?.endpoint === endpoint && this.limitAt.nth === this.counts[endpoint]) {
+      const body = { isNotionError: true, name: 'RateLimitedError', message: 'Rate limited' }
+      return new Response(JSON.stringify(body), { status: this.limitAt.status })
+    }
     const queued = this.responses[endpoint]?.shift()
     const served = queued ?? this.workspace?.answer(endpoint, JSON.parse(init.body as string))
     const next = served && 'json' in served ? { status: served.status, text: JSON.stringify(served.json) } : served
@@ -180,6 +197,16 @@ export class FakeWorkspace {
   failAfterApply = false
   /** Databases' data sources (their schemas), by collection id. */
   collections = new Map<string, NotionRecordLike>()
+  /** Background tasks (duplicates), by task id; each reports `in_progress` once before it ends. */
+  tasks = new Map<string, { polls: number; result: Record<string, unknown> }>()
+  /** Makes the next duplicate fail on Notion's side. */
+  failTask = false
+  /** Makes the next duplicate keep running with this error, as a misrouted task does in Notion. */
+  stuckTask?: string
+  /** Makes the next duplicate keep running, with no error, for as long as it is checked. */
+  endlessTask = false
+  /** deleteContentRecords requests, as sent. */
+  contentDeletes: { records: { id: string }[]; permanentlyDelete: unknown }[] = []
   /** The table of each record that isn't a block (discussions, comments, users), by id. */
   tables = new Map<string, string>()
 
@@ -262,6 +289,50 @@ export class FakeWorkspace {
       }
       return { status: 200, json: { recordMap: { __version__: 3, ...out } } }
     }
+    if (endpoint === 'enqueueTask') {
+      const task = body.task as { eventName: string; request: Record<string, unknown> }
+      const taskId = `${crypto.randomUUID()}:fake-cell`
+      if (task.eventName !== 'duplicateSubtree') return { status: 400, json: { name: 'ValidationError' } }
+      const request = task.request as {
+        source: { ids: string[]; spaceId?: string }
+        destination: { parent: { id: string; spaceId?: string }; siblingId: string }
+      }
+      // Notion routes the task by its workspace; without it the task fails, as it does in Notion.
+      if (request.source.spaceId !== this.spaceId || request.destination.parent.spaceId !== this.spaceId) {
+        this.tasks.set(taskId, { polls: 0, result: { state: 'in_progress', error: 'Invalid input.' } })
+        return { status: 200, json: { taskId } }
+      }
+      if (this.endlessTask) {
+        this.tasks.set(taskId, { polls: 0, result: { state: 'in_progress' } })
+        this.endlessTask = false
+        return { status: 200, json: { taskId } }
+      }
+      if (this.stuckTask) {
+        this.tasks.set(taskId, { polls: 0, result: { state: 'in_progress', error: this.stuckTask } })
+        this.stuckTask = undefined
+        return { status: 200, json: { taskId } }
+      }
+      if (this.failTask) {
+        this.failTask = false
+        this.tasks.set(taskId, { polls: 0, result: { state: 'failure', error: 'Copy failed.' } })
+        return { status: 200, json: { taskId } }
+      }
+      const copy = this.duplicate(request.source.ids[0], request.destination.parent.id, request.destination.siblingId)
+      this.tasks.set(taskId, { polls: 0, result: { state: 'success', status: { targetIds: [copy] } } })
+      return { status: 200, json: { taskId } }
+    }
+    if (endpoint === 'getTasks') {
+      const results = (body.taskIds as string[]).map((id) => {
+        const task = this.tasks.get(id)!
+        const result = task.polls++ === 0 ? { state: 'in_progress' } : task.result
+        return { id, eventName: 'duplicateSubtree', ...result }
+      })
+      return { status: 200, json: { results } }
+    }
+    if (endpoint === 'deleteContentRecords') {
+      this.contentDeletes.push(body as FakeWorkspace['contentDeletes'][number])
+      return { status: 200, json: { recordMap: { __version__: 3 } } }
+    }
     if (endpoint === 'saveTransactionsFanout') {
       if (this.reject) {
         this.reject = false
@@ -301,6 +372,34 @@ export class FakeWorkspace {
       return { status: 200, json: {} }
     }
     return undefined
+  }
+
+  /**
+   * Copies a page and everything under it, as Notion's duplicateSubtree does: new ids throughout,
+   * a number added to the title, and the copy right after `siblingId` in `parentId`.
+   */
+  private duplicate(sourceId: string, parentId: string, siblingId: string): string {
+    const copyOf = (id: string, parent: string): string => {
+      const r = this.records.get(id)!
+      const copy = structuredClone(r)
+      copy.id = crypto.randomUUID()
+      copy.version = 1
+      copy.parent_id = parent
+      copy.parent_table = 'block'
+      copy.copied_from = id
+      copy.content = ((r.content as string[] | undefined) ?? []).map((c) => copyOf(c, copy.id))
+      this.records.set(copy.id, copy)
+      return copy.id
+    }
+    const copyId = copyOf(sourceId, parentId)
+    const copy = this.records.get(copyId)!
+    const title = (copy.properties as { title?: string[][] } | undefined)?.title?.[0]?.[0] ?? 'Untitled'
+    copy.properties = { ...(copy.properties as object), title: [[`${title} (1)`]] }
+    const parent = this.records.get(parentId)!
+    const list = [...((parent.content as string[]) ?? [])]
+    list.splice(list.indexOf(siblingId) + 1, 0, copyId)
+    this.records.set(parentId, { ...parent, content: list, version: parent.version + 1 })
+    return copyId
   }
 }
 
@@ -354,6 +453,38 @@ function applyOperation(
         list.splice(i, 0, args.id as string)
       }
       record[op.path[0]] = list
+      return
+    }
+    case 'insertChildrenAfter': {
+      // Notion's "Move to": it takes each page out of its old parent itself.
+      const { ids, after } = args as { ids: string[]; after?: string }
+      for (const moved of ids) {
+        for (let at: NotionRecordLike | undefined = record; at;) {
+          if (at.id === moved) throw new Error('incomplete_ancestor_path')
+          at = at.parent_table === 'block' ? records.get(at.parent_id as string) : undefined
+        }
+        const child = records.get(moved)
+        if (!child) throw new Error(`No record ${moved} to move`)
+        const old = records.get(child.parent_id as string)
+        const oldList = child.parent_table === 'block' ? 'content' : 'pages'
+        if (old) old[oldList] = ((old[oldList] as string[] | undefined) ?? []).filter((x) => x !== moved)
+        child.parent_id = id
+        child.parent_table = 'block'
+      }
+      const list = ((record.content as string[] | undefined) ?? []).filter((x) => !ids.includes(x))
+      const i = after ? list.indexOf(after) + 1 : list.length
+      list.splice(i, 0, ...ids)
+      record.content = list
+      return
+    }
+    case 'removeChild': {
+      // Notion's "Move to Trash": out of the parent's list, and into the trash.
+      const childId = args.id as string
+      const child = records.get(childId)
+      if (!child || child.parent_id !== id) throw new Error(`${childId} does not have ${id} as its parent`)
+      record[op.path[0]] = ((record[op.path[0]] as string[] | undefined) ?? []).filter((x) => x !== childId)
+      child.alive = false
+      child.moved_to_trash_time = Date.now()
       return
     }
     default:
