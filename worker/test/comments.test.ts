@@ -99,7 +99,7 @@ describe('UC-NOTION-009 read and add comments', () => {
     expect(await read()).toBe(
       [
         `Comments on the page "Fixture page" ^${hex(PAGE)}: 2 threads, 1 open and 1 resolved.`,
-        'Comment text and author names are quoted exactly as written.',
+        'Comment text and author names are quoted as written; a comment over 2000 characters is cut off.',
         '',
         '1. On the page, open:',
         '   - "Ann", 2026-11-09 10:30 UTC: "Looks good, **ship it**"',
@@ -226,6 +226,14 @@ describe('read_comments', () => {
     expect(result).toContain('1 thread, 1 open and 0 resolved.')
     expect(result).toContain('1. On the block ^00000002 "The plan", open:\n   - "Ann", 2026-11-09 10:30 UTC: "Kept"')
     expect(result).not.toContain('gone')
+  })
+
+  it('names users a comment mentions, and says when a comment was cut off', async () => {
+    const ws = workspace([{ on: PAGE, n: 100 }])
+    comment(ws, 100, 200, [['Ask '], ['‣', [['u', OTHER]]], [` ${'x'.repeat(2100)}`]])
+    open(ws)
+    const line = (await read()).split('\n').find((l) => l.startsWith('   - '))!
+    expect(line).toMatch(/^ {3}- "Ann", 2026-11-09 10:30 UTC: "Ask @Bob x+…" \(cut off at 2000 characters\)$/)
   })
 
   it("doesn't count a child page's comments as the page's", async () => {

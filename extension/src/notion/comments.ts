@@ -78,11 +78,13 @@ export async function loadThreads(client: NotionClient, loaded: LoadedPage, md: 
     ids(d.comments).flatMap((c) => (live(map.comment?.[c]) ? [map.comment![c]] : []))
   await lookUp(
     'notion_user',
-    discussions.flatMap((d) =>
-      comments(d.record).flatMap((c) =>
-        c.created_by_table === 'notion_user' && typeof c.created_by_id === 'string' ? [c.created_by_id] : [],
-      ),
-    ),
+    discussions.flatMap((d) => [
+      ...mentionedUsers(d.record.context),
+      ...comments(d.record).flatMap((c) => [
+        ...(c.created_by_table === 'notion_user' && typeof c.created_by_id === 'string' ? [c.created_by_id] : []),
+        ...mentionedUsers(c.text),
+      ]),
+    ]),
   )
   return discussions
     .map(({ blockId, record }) => ({
@@ -100,6 +102,18 @@ export async function loadThreads(client: NotionClient, loaded: LoadedPage, md: 
       })),
     }))
     .filter((t) => t.comments.length > 0)
+}
+
+/** The users rich text mentions (`@Name`), so their names can be looked up. */
+function mentionedUsers(value: unknown): string[] {
+  if (!Array.isArray(value)) return []
+  return value.flatMap((run) =>
+    Array.isArray(run) && Array.isArray(run[1])
+      ? (run[1] as unknown[]).flatMap((mark) =>
+          Array.isArray(mark) && mark[0] === 'u' && typeof mark[1] === 'string' ? [mark[1]] : [],
+        )
+      : [],
+  )
 }
 
 /**
@@ -123,7 +137,8 @@ export function threadLines(
     ],
     comments: thread.comments.map(
       (c) =>
-        `   - ${quote(c.author)}${c.time === undefined ? '' : `, ${when(c.time)}`}: ${quote(clip(c.text, COMMENT_CHARS))}`,
+        `   - ${quote(c.author)}${c.time === undefined ? '' : `, ${when(c.time)}`}: ${quote(clip(c.text, COMMENT_CHARS))}` +
+        (c.text.length > COMMENT_CHARS ? ` (cut off at ${COMMENT_CHARS} characters)` : ''),
     ),
   }
 }
@@ -143,6 +158,7 @@ function when(time: number): string {
   return `${new Date(time).toISOString().slice(0, 16).replace('T', ' ')} UTC`
 }
 
-function clip(text: string, max: number): string {
+/** Text cut to `max` characters, ending with … when cut. */
+export function clip(text: string, max: number): string {
   return text.length > max ? `${text.slice(0, max - 1)}…` : text
 }

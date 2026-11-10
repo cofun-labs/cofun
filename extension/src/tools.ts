@@ -26,7 +26,7 @@ import {
   planNewPage,
 } from './notion/edit'
 import { MarkdownError, inline, parseMarkdown, type NewBlock } from './notion/blocks'
-import { loadThreads, quote, threadCount, threadLines } from './notion/comments'
+import { COMMENT_CHARS, clip, loadThreads, quote, threadCount, threadLines } from './notion/comments'
 import {
   PropertyError,
   oneLine,
@@ -1300,10 +1300,6 @@ function withoutTag(text: string | undefined, tag: string | undefined): string {
   return out.replace(/\s+/g, ' ').trim()
 }
 
-function clip(text: string, max: number): string {
-  return text.length > max ? `${text.slice(0, max - 1)}…` : text
-}
-
 function plural(n: number, word: string): string {
   return `${n} ${word}${n === 1 ? '' : 's'}`
 }
@@ -1390,7 +1386,7 @@ export const readComments: ToolSpec = {
         ? [`Part ${part} of ${parts.length}${part < parts.length ? `. Read part ${part + 1} for more.` : '.'}`]
         : []),
       ...(loaded.complete ? [] : ['The page is too long to load in full; only threads on its beginning are shown.']),
-      'Comment text and author names are quoted exactly as written.',
+      `Comment text and author names are quoted as written; a comment over ${COMMENT_CHARS} characters is cut off.`,
       '',
       ...parts[part - 1],
     ].join('\n')
