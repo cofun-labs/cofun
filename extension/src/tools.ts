@@ -1777,6 +1777,8 @@ export const searchPages: ToolSpec = {
     // A page in the trash can't be read, so it isn't offered.
     const alive = found.results.filter((r) => found.recordMap.block?.[r.id]?.alive !== false)
     const trashed = found.results.length - alive.length
+    // Fewer results than asked for are all Notion has, whatever its total says.
+    const complete = found.results.length < limit
     found.results = alive
     if (!found.results.length) return `No pages found for "${query}".`
     const origin = new URL(tab.url).origin
@@ -1814,7 +1816,7 @@ export const searchPages: ToolSpec = {
     // Notion's total counts the trashed pages it found too. Those among the results are taken off;
     // others beyond them may be in it still, so the rest is only an upper bound then.
     const total = found.total - trashed
-    const more = total > shown ? ` (${trashed ? 'up to ' : ''}${total} in all; showing ${shown})` : ''
+    const more = !complete && total > shown ? ` (${trashed ? 'up to ' : ''}${total} in all; showing ${shown})` : ''
     return [`Pages found for "${query}"${more}:`, '', ...lines].join('\n')
   },
 }

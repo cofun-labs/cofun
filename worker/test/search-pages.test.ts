@@ -61,7 +61,8 @@ const search = async (args: Record<string, unknown>) => (await searchPages.run(a
 describe('UC-NOTION-004 find and read other pages', () => {
   it('[UC-NOTION-004-S01] finds pages with their titles, where they are, the matching text, and their ids', async () => {
     const tab = open().respond('search', 200, SEARCH)
-    expect(await search({ query: 'beta plan' })).toBe(
+    // Notion has more than the two asked for.
+    expect(await search({ query: 'beta plan', limit: 2 })).toBe(
       [
         'Pages found for "beta plan" (5 in all; showing 2):',
         '',
@@ -79,7 +80,7 @@ describe('UC-NOTION-004 find and read other pages', () => {
     // It searched the open page's workspace, as the tab's Notion user.
     const sent = tab.sent.at(-1)!
     expect(sent.url).toBe('https://app.notion.com/api/v3/search')
-    expect(sent.body).toMatchObject({ type: 'BlocksInSpace', query: 'beta plan', spaceId: SPACE, limit: 10 })
+    expect(sent.body).toMatchObject({ type: 'BlocksInSpace', query: 'beta plan', spaceId: SPACE, limit: 2 })
     expect(sent.headers['x-notion-space-id']).toBe(SPACE)
   })
 
@@ -473,5 +474,10 @@ describe('search_pages, the count of results', () => {
   it('gives no total when the trashed results were the only ones left out', async () => {
     found(3)
     expect((await search({ query: 'x', limit: 3 })).split('\n')[0]).toBe('Pages found for "x":')
+  })
+
+  it('gives no total when Notion returned fewer results than asked for, whatever its total says', async () => {
+    found(4)
+    expect((await search({ query: 'x', limit: 4 })).split('\n')[0]).toBe('Pages found for "x":')
   })
 })
