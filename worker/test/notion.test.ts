@@ -581,16 +581,18 @@ describe('when Notion is limiting requests', () => {
   it('waits as long as Retry-After says, in seconds or until a date', async () => {
     const tab = new FakeNotionTab(PAGE_URL)
       .limit('syncRecordValuesMain', 1, { 'retry-after': '3' })
-      .limit('syncRecordValuesMain', 1, { 'retry-after': new Date(Date.now() + 5_000).toUTCString() })
+      // A whole second, as an HTTP date has no milliseconds, well past the 2 s backoff.
+      .limit('syncRecordValuesMain', 1, {
+        'retry-after': new Date(Math.floor(Date.now() / 1_000) * 1_000 + 10_000).toUTCString(),
+      })
       .install()
     tab.workspace = new FakeWorkspace([page], SPACE)
     const waits: number[] = []
     const records = await client(waits).getRecords([{ table: 'block', id: PAGE }])
     expect(records.block?.[PAGE]?.id).toBe(PAGE)
     expect(waits[0]).toBe(3_000)
-    // The date has whole seconds only.
-    expect(waits[1]).toBeGreaterThan(3_500)
-    expect(waits[1]).toBeLessThanOrEqual(5_000)
+    expect(waits[1]).toBeGreaterThan(5_000)
+    expect(waits[1]).toBeLessThanOrEqual(10_000)
   })
 
   it('gives up at once when Notion asks for a longer wait than a tool should hold', async () => {
@@ -682,6 +684,35 @@ describe('when Notion is limiting requests', () => {
     answerSlow(limited)
     expect((await slow).code).toBe('rate_limited')
     expect(sent.filter((e) => e === 'syncRecordValuesMain')).toHaveLength(1)
+  })
+
+  it('stops a request held behind another one as soon as the user stops', async () => {
+    const limited: NotionResponse = { status: 429, json: {}, signedIn: true }
+    const sent: string[] = []
+    // Notion refuses the first request, and doesn't answer its resend yet.
+    const send: NotionTransport = (endpoint) => {
+      sent.push(endpoint)
+      return sent.length === 1 ? Promise.resolve(limited) : new Promise(() => {})
+    }
+    const stop = new AbortController()
+    const notion = new NotionClient(send, { signal: stop.signal, wait: async () => {} })
+    void notion.loadPage(PAGE).catch(() => {})
+    while (sent.length < 2) await new Promise((resolve) => setTimeout(resolve, 1))
+    const held = notion.getRecords([{ table: 'block', id: PAGE }])
+    stop.abort()
+    await expect(held).rejects.toMatchObject({ name: 'AbortError' })
+    expect(sent).toEqual(['loadPageChunk', 'loadPageChunk'])
+  })
+
+  it('backs off longer each time within a tool call, also when a burst is refused again', async () => {
+    // Two reads in a row, each refused once: the second backoff waits longer than the first.
+    const tab = new FakeNotionTab(PAGE_URL).limit('loadPageChunk', 1).limit('syncRecordValuesMain', 1).install()
+    tab.workspace = new FakeWorkspace([page], SPACE)
+    const waits: number[] = []
+    const notion = client(waits)
+    await notion.loadPage(PAGE)
+    await notion.getRecords([{ table: 'block', id: PAGE }])
+    expect(waits).toEqual([1_000, 2_000])
   })
 
   it('backs off once for a burst Notion refuses together, and the others send after it is answered', async () => {

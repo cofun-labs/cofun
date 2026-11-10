@@ -186,6 +186,8 @@ export class NotionClient {
   private waited = 0
   /** A backoff ran out: the client sends nothing more. */
   private gaveUp = false
+  /** Backoffs so far; each waits twice as long as the last (or as long as Notion asks, if longer). */
+  private backoffs = 0
 
   constructor(
     private readonly send: NotionTransport,
@@ -411,29 +413,31 @@ export class NotionClient {
   /**
    * Every request to Notion goes through here. `spaceId`, when known, goes along as
    * `x-notion-space-id`. When Notion says to slow down, one request backs off at a time, and the
-   * client's other requests hold until Notion answers it, so they neither go on as a burst nor
-   * all come back at once.
+   * client's other requests hold until Notion takes that one again, so they don't go on while
+   * Notion is refusing. A request is refused a few times at most, and the client waits 30 s at
+   * most in all; then it gives up with `rate_limited` and sends nothing more.
    */
   private async request<T>(
     endpoint: NotionEndpoint,
     body: unknown,
     spaceId?: string,
   ): Promise<{ json: T; signedIn: boolean }> {
-    for (;;) {
-      await this.held
+    for (let refusals = 0; ;) {
+      await orAbort(this.held, this.signal)
       if (this.gaveUp) throw new NotionError('rate_limited', RATE_LIMITED)
       this.signal?.throwIfAborted()
       const res = await this.send(endpoint, body, { spaceId })
       if (!slowDown(endpoint, res)) return { json: checkResponse(res) as T, signedIn: res.signedIn }
       // A request still in flight when the client gave up doesn't start over.
       if (this.gaveUp) throw new NotionError('rate_limited', RATE_LIMITED)
+      if (++refusals > RETRIES) throw this.giveUp()
       // Another request is backing off already: hold until Notion answers it, then send again.
       if (this.backingOff) continue
       this.backingOff = true
       let release = () => {}
       this.held = new Promise((resolve) => (release = resolve))
       try {
-        return await this.backOff<T>(endpoint, body, spaceId, res)
+        return await this.backOff<T>(endpoint, body, spaceId, res, refusals)
       } finally {
         this.backingOff = false
         release()
@@ -441,28 +445,39 @@ export class NotionClient {
     }
   }
 
-  /**
-   * Waits (as long as Notion asks, and longer with each try) and sends again, a few times at most;
-   * then, or once the client waited too long in all, gives up with `rate_limited`.
-   */
+  /** Waits and sends again until Notion takes the request, while the client's others hold. */
   private async backOff<T>(
     endpoint: NotionEndpoint,
     body: unknown,
     spaceId: string | undefined,
     res: NotionResponse,
+    refusals: number,
   ): Promise<{ json: T; signedIn: boolean }> {
-    for (let retry = 0; slowDown(endpoint, res); retry++) {
-      const ms = retryDelay(res.retryAfter, retry)
-      if (retry >= RETRIES || this.waited + ms > MAX_WAIT_MS) {
-        this.gaveUp = true
-        throw new NotionError('rate_limited', RATE_LIMITED)
-      }
+    for (; slowDown(endpoint, res); refusals++) {
+      const ms = retryDelay(res.retryAfter, this.backoffs++)
+      if (refusals > RETRIES || this.waited + ms > MAX_WAIT_MS) throw this.giveUp()
       this.waited += ms
       await this.wait(ms, this.signal)
       res = await this.send(endpoint, body, { spaceId })
     }
     return { json: checkResponse(res) as T, signedIn: res.signedIn }
   }
+
+  private giveUp(): NotionError {
+    this.gaveUp = true
+    return new NotionError('rate_limited', RATE_LIMITED)
+  }
+}
+
+/** `promise`, or a rejection with the signal's reason as soon as it aborts. */
+function orAbort<T>(promise: Promise<T>, signal: AbortSignal | undefined): Promise<T> {
+  if (!signal) return promise
+  return new Promise((resolve, reject) => {
+    if (signal.aborted) return reject(signal.reason)
+    const onAbort = () => reject(signal.reason)
+    signal.addEventListener('abort', onAbort, { once: true })
+    promise.then(resolve, reject).finally(() => signal.removeEventListener('abort', onAbort))
+  })
 }
 
 /**
@@ -478,11 +493,12 @@ function slowDown(endpoint: NotionEndpoint, res: NotionResponse): boolean {
 }
 
 /**
- * How long to wait before try `retry + 1`: what `Retry-After` says (seconds or a date), but never
- * less than the backoff, so a zero, a past date, or a misread header can't send the tries back to back.
+ * How long the client's backoff number `n` (from 0) waits: what `Retry-After` says (seconds or a
+ * date), but never less than the backoff, so a zero, a past date, or a misread header can't send
+ * the tries back to back.
  */
-function retryDelay(retryAfter: string | undefined, retry: number): number {
-  const backoff = BACKOFF_MS * 2 ** retry
+function retryDelay(retryAfter: string | undefined, n: number): number {
+  const backoff = BACKOFF_MS * 2 ** n
   const value = retryAfter?.trim()
   if (!value) return backoff
   // Seconds, or an HTTP date (it names the day and month); Date.parse alone would also read, say, "1.5".
