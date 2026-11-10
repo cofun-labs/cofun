@@ -62,6 +62,7 @@ export type NotionEndpoint =
   | 'queryCollection'
   | 'getSpaces'
   | 'getTeamsV2'
+  | 'deleteContentRecords'
 
 /** What one request to Notion returned. `error` is set when no HTTP response came back. */
 export interface NotionResponse {
@@ -122,13 +123,29 @@ export interface Pointer {
 /**
  * One write. Only these commands are used: `set` creates a record, `update` changes non-property
  * fields, the list commands edit child lists, and `updateBlockPropertyValue` changes property
- * values, text included. Notion rejects `set` on an existing block's properties.
+ * values, text included. Notion rejects `set` on an existing block's properties. `moveToPrivate`
+ * puts a new page at the top of the user's Private section.
  */
 export interface Operation {
   pointer: Pointer
   path: string[]
-  command: 'set' | 'update' | 'listAfter' | 'listBefore' | 'listRemove' | 'removeChild' | 'updateBlockPropertyValue'
+  command:
+    | 'set'
+    | 'update'
+    | 'listAfter'
+    | 'listBefore'
+    | 'listRemove'
+    | 'removeChild'
+    | 'updateBlockPropertyValue'
+    | 'moveToPrivate'
   args: unknown
+}
+
+/** A signed-in user's own view of a workspace, which holds their Private section. */
+export interface SpaceView {
+  userId: string
+  spaceId: string
+  spaceViewId: string
 }
 
 /** A workspace's sidebar: page ids by section. */
@@ -303,6 +320,23 @@ export class NotionClient {
       for (const [id, record] of Object.entries(records ?? {})) if (record.alive === false) delete records![id]
     }
     return recordMap
+  }
+
+  /** Every signed-in user's views of their workspaces, from each user's root record. */
+  async spaceViews(): Promise<SpaceView[]> {
+    const { json } = await this.request<Record<string, unknown>>('getSpaces', {})
+    const views: SpaceView[] = []
+    for (const [userId, raw] of Object.entries(json)) {
+      const root = (normalizeRecordMap(raw) as Record<string, Record<string, NotionRecord> | undefined>).user_root?.[
+        userId
+      ]
+      const pointers = Array.isArray(root?.space_view_pointers) ? root.space_view_pointers : []
+      for (const p of pointers as { id?: unknown; spaceId?: unknown }[]) {
+        if (typeof p.id === 'string' && typeof p.spaceId === 'string')
+          views.push({ userId, spaceId: p.spaceId, spaceViewId: p.id })
+      }
+    }
+    return views
   }
 
   /**
@@ -575,11 +609,14 @@ function notionId(id: string): string {
 export function blockOps(spaceId: string, now: number) {
   const pointer = (id: string): Pointer => ({ table: 'block', id, spaceId })
   return {
-    /** A new block under `parentId`; it still has to be listed in its parent's content. */
+    /**
+     * A new block under `parentId`; it still has to be listed in its parent's content. Without a
+     * parent, a later operation must give it one.
+     */
     create(
       id: string,
       type: string,
-      parentId: string,
+      parentId: string | undefined,
       fields: { properties?: object; format?: object; parent_table?: 'block' | 'collection' } = {},
     ): Operation {
       return {
@@ -591,8 +628,7 @@ export function blockOps(spaceId: string, now: number) {
           type,
           version: 1,
           alive: true,
-          parent_id: parentId,
-          parent_table: 'block',
+          ...(parentId === undefined ? {} : { parent_id: parentId, parent_table: 'block' }),
           space_id: spaceId,
           created_time: now,
           last_edited_time: now,
@@ -630,6 +666,46 @@ export function blockOps(spaceId: string, now: number) {
     },
     setFormat(id: string, format: object): Operation {
       return { pointer: pointer(id), path: ['format'], command: 'update', args: format }
+    },
+    /**
+     * A new full-page database, without a parent yet: the page, its collection with `schema`, and
+     * one table view. Its rows are pages created under the collection (`create` with
+     * `parent_table: 'collection'`).
+     */
+    createDatabase(ids: { page: string; collection: string; view: string }, name: string, schema: object): Operation[] {
+      const base = { version: 1, alive: true, space_id: spaceId }
+      const set = (table: 'block' | 'collection' | 'collection_view', id: string, args: object): Operation => ({
+        pointer: { table, id, spaceId },
+        path: [],
+        command: 'set',
+        args: { id, ...base, ...args },
+      })
+      return [
+        set('block', ids.page, {
+          type: 'collection_view_page',
+          collection_id: ids.collection,
+          view_ids: [ids.view],
+          created_time: now,
+          last_edited_time: now,
+        }),
+        set('collection', ids.collection, { parent_id: ids.page, parent_table: 'block', name: [[name]], schema }),
+        set('collection_view', ids.view, {
+          type: 'table',
+          name: 'Table',
+          parent_id: ids.page,
+          parent_table: 'block',
+          format: { collection_pointer: { id: ids.collection, table: 'collection', spaceId } },
+        }),
+      ]
+    },
+    /** Puts a new page, created without a parent, at the top of `view`'s Private section. */
+    moveToPrivate(id: string, view: SpaceView): Operation {
+      return {
+        pointer: pointer(id),
+        path: [],
+        command: 'moveToPrivate',
+        args: { spaceViewPointer: { id: view.spaceViewId, table: 'space_view', spaceId }, userId: view.userId },
+      }
     },
     /** Marks a block as edited now; Notion doesn't do it itself. */
     touch(id: string): Operation {

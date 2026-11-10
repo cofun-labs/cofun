@@ -8,7 +8,8 @@
     "format:check": "oxfmt --check '**/*.{ts,tsx,json,css}'",
     "typecheck": "pnpm -r typecheck",
     "build": "pnpm --filter notion-copilot-extension build",
-    "test": "pnpm --filter notion-copilot-worker test",
+    "test": "pnpm -r test",
+    "e2e": "pnpm --silent --filter notion-copilot-e2e e2e",
     "check": "pnpm lint && pnpm format:check && pnpm typecheck && pnpm build && pnpm test",
     "prepare": "lefthook install"
   },
