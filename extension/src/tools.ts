@@ -1491,9 +1491,12 @@ export const trashPage: ToolSpec = {
         const title = block
           ? names.get(block.id) || runsText((block.properties as { title?: unknown } | undefined)?.title) || 'Untitled'
           : undefined
-        // A page Notion doesn't have (already trashed, or out of reach) makes the call fail.
-        const missing = checked && p.id && !block ? ' (not found in Notion: nothing will be trashed)' : ''
-        return `    ${shownPage(p.given, p.id, title ?? (p.id ? knownTitle(p.id) : undefined))}${missing}`
+        // A page's editors choose its title: it goes last and in quotes, so it can't pass for what the
+        // tool says. A page Notion doesn't have (already trashed, or out of reach) makes the call fail.
+        if (!p.id) return `    ${JSON.stringify(oneLine(p.given) || '(no page given)')}`
+        const name = title ?? knownTitle(p.id)
+        const marker = checked && !block ? '[not found in Notion: nothing will be trashed] ' : ''
+        return `    ${marker}^${hexId(p.id)}${name ? ` ${JSON.stringify(oneLine(name))}` : ''}`
       }),
       // The user agrees from these names: say when they are not Notion's current ones.
       ...(checked ? [] : ['Could not check the current names in Notion: these are the names last seen, if any.']),

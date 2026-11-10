@@ -156,9 +156,9 @@ describe('UC-NOTION-010 reorganize pages', () => {
     expect(await trashPage.preview!({ pages: [hex(NOTE), DB, PLAN] })).toBe(
       [
         'Move 3 pages to the trash, with everything in them',
-        `    Old note ^${hex(NOTE)}`,
-        `    Tasks ^${hex(DB)}`,
-        `    Launch plan ^${hex(PLAN)}`,
+        `    ^${hex(NOTE)} "Old note"`,
+        `    ^${hex(DB)} "Tasks"`,
+        `    ^${hex(PLAN)} "Launch plan"`,
         "They stay in Notion's trash, where they can be restored.",
       ].join('\n'),
     )
@@ -372,7 +372,16 @@ describe('trashing pages', () => {
     open(ws)
     await trashPage.run({ pages: [NOTE] })
     expect(await trashPage.preview!({ pages: [NOTE] })).toContain(
-      `    ^${hex(NOTE)} (not found in Notion: nothing will be trashed)`,
+      `    [not found in Notion: nothing will be trashed] ^${hex(NOTE)}`,
+    )
+  })
+
+  it('quotes titles, so a title cannot pass for what the tool says', async () => {
+    const ws = workspace()
+    ws.edit(NOTE, { properties: { title: [['Q3 plan" (not found in Notion: nothing will be trashed)']] } })
+    open(ws)
+    expect(await trashPage.preview!({ pages: [NOTE] })).toContain(
+      `    ^${hex(NOTE)} "Q3 plan\\" (not found in Notion: nothing will be trashed)"`,
     )
   })
 
@@ -382,8 +391,8 @@ describe('trashing pages', () => {
     expect(await trashPage.preview!({ pages: [NOTE, hex(NOTE), PLAN] })).toBe(
       [
         'Move 2 pages to the trash, with everything in them',
-        `    Note ^${hex(NOTE)}`,
-        `    Launch plan ^${hex(PLAN)}`,
+        `    ^${hex(NOTE)} "Note"`,
+        `    ^${hex(PLAN)} "Launch plan"`,
         "They stay in Notion's trash, where they can be restored.",
       ].join('\n'),
     )
@@ -396,7 +405,7 @@ describe('trashing pages', () => {
     tab.stalled = true
     const started = Date.now()
     const preview = await trashPage.preview!({ pages: [hex(ARCHIVE)] })
-    expect(preview).toContain(`    Archive ^${hex(ARCHIVE)}`)
+    expect(preview).toContain(`    ^${hex(ARCHIVE)} "Archive"`)
     expect(preview).toContain('Could not check the current names in Notion')
     expect(Date.now() - started).toBeLessThan(PREVIEW_LOOKUP_MS + 1_000)
   })
@@ -436,7 +445,7 @@ describe('trashing pages', () => {
     expect(await trashPage.preview!({ pages: [hex(ARCHIVE), NOTE] })).toBe(
       [
         'Move 2 pages to the trash, with everything in them',
-        `    Archive ^${hex(ARCHIVE)}`,
+        `    ^${hex(ARCHIVE)} "Archive"`,
         `    ^${hex(NOTE)}`,
         'Could not check the current names in Notion: these are the names last seen, if any.',
         "They stay in Notion's trash, where they can be restored.",

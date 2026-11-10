@@ -348,7 +348,7 @@ describe('extension agent against the worker', () => {
     expect(asked[0].preview).toBe(
       [
         'Move 1 page to the trash, with everything in it',
-        `    Old notes ^${OLD.replace(/-/g, '')}`,
+        `    ^${OLD.replace(/-/g, '')} "Old notes"`,
         "They stay in Notion's trash, where they can be restored.",
       ].join('\n'),
     )
