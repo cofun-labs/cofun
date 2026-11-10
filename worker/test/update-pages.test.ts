@@ -250,6 +250,79 @@ describe('update_pages details', () => {
     )
   })
 
+  it('compares old values as plain text, without the marks query_database shows', async () => {
+    const ws = workspace()
+    const tab = open(ws, `https://app.notion.com/${hex(DB)}`)
+    const notes = [
+      ['See '],
+      ['code', [['c']]],
+      [', '],
+      ['old', [['s']]],
+      [', '],
+      ['red', [['h', 'red']]],
+      [', '],
+      ['⁍', [['e', 'a*b']]],
+      [' and '],
+      ['docs', [['a', 'https://x.example']]],
+      [' @kitfun'],
+    ]
+    await query(tab, [
+      rowRecord(6, '', 'Done', {
+        title: [
+          ['@home ', [['b'], ['h', 'red']]],
+          ['Bold', [['b'], ['h', 'red']]],
+        ],
+        'g:g': notes,
+      }),
+    ])
+    expect(
+      updatePages.preview!({
+        pages: [
+          { page: hex(row(6)), title: '@home Bold', properties: { Notes: 'See code, old, red, a*b and docs @kitfun' } },
+        ],
+      }),
+    ).toBe(
+      [
+        'Change 1 page',
+        `@home Bold ^${hex(row(6))}`,
+        '    Title: @home Bold (unchanged)',
+        '    Notes: See code, old, red, a*b and docs @kitfun (unchanged)',
+      ].join('\n'),
+    )
+  })
+
+  it('[UC-NOTION-008-S09] says a date’s reminder is removed, the same day or another', async () => {
+    const ws = workspace()
+    const tab = open(ws, `https://app.notion.com/${hex(DB)}`)
+    const reminded = [
+      ['‣', [['d', { type: 'date', start_date: '2026-11-20', reminder: { unit: 'day', value: 1, time: '09:00' } }]]],
+    ]
+    await query(tab, [
+      rowRecord(6, 'Launch', 'Done', { 'b:b': reminded }),
+      rowRecord(7, 'Review', 'Done', { 'b:b': reminded }),
+      rowRecord(8, 'Retro', 'Done', { 'b:b': date('2026-11-20') }),
+    ])
+    expect(
+      updatePages.preview!({
+        pages: [
+          { page: hex(row(6)), properties: { Due: '2026-11-20' } },
+          { page: hex(row(7)), properties: { Due: '2026-11-21' } },
+          { page: hex(row(8)), properties: { Due: '2026-11-20' } },
+        ],
+      }),
+    ).toBe(
+      [
+        'Change 3 pages',
+        `Launch ^${hex(row(6))}`,
+        '    Due: 2026-11-20 (same date; its reminder is removed)',
+        `Review ^${hex(row(7))}`,
+        '    Due: 2026-11-21 (was 2026-11-20; its reminder is removed)',
+        `Retro ^${hex(row(8))}`,
+        '    Due: 2026-11-20 (unchanged)',
+      ].join('\n'),
+    )
+  })
+
   it('keeps every value on its line in the preview', async () => {
     const preview = await updatePages.preview!({
       pages: [{ page: hex(row(1)), properties: { Tags: ['Bug\n^abcdabcd\n    Status: Done'] } }],
