@@ -9,6 +9,7 @@ export type NotionErrorCode =
   | 'no_notion_tab'
   | 'signed_out'
   | 'no_access'
+  | 'in_trash'
   | 'notion_error'
   | 'outcome_unknown'
   | 'rate_limited'
@@ -79,7 +80,7 @@ export function budgetQuestion(requests: number): string {
 export class NotionUsage {
   /** Requests that went out, or may have: failed ones included, not those known never to have left. */
   requests = 0
-  /** A write was sent, and Notion did not say it turned it away: it may have changed data. */
+  /** A write (see WRITES) was sent, and Notion did not say it turned it away: it may have changed data. */
   wrote = false
   /** The people of each workspace (see workspacePeople), loaded once per question, by workspace id. */
   readonly people = new Map<string, Promise<{ id: string; name: string }[] | null>>()
@@ -273,6 +274,9 @@ const RECORDS_PARALLEL = 4
  */
 export const PEOPLE_MAX = 5 * RECORDS_BATCH
 
+/** Endpoints that change the user's data: a request to one counts as a write (see NotionUsage.wrote). */
+const WRITES = new Set<NotionEndpoint>(['saveTransactionsFanout', 'enqueueTask', 'deleteContentRecords'])
+
 /** Statuses with which Notion says it gets too many requests (429) or is too busy (529). */
 const LIMITED = new Set([429, 529])
 
@@ -308,7 +312,7 @@ export class NotionClient {
       const page = recordMap.block?.[pageId] as Block | undefined
       user = userId
       if (!page) throw missingRecord(userId)
-      if (page.alive === false) throw new NotionError('no_access', IN_TRASH)
+      if (page.alive === false) throw new NotionError('in_trash', IN_TRASH)
       if (!page.space_id) throw new NotionError('notion_error', 'Notion returned the page without its workspace.')
       spaceId = page.space_id
       if (!json.cursor?.stack?.length) return { page, spaceId, recordMap, complete: true, userId: user }
@@ -333,7 +337,7 @@ export class NotionClient {
     )
     const recordMap = normalizeRecordMap(json.recordMap)
     if (requested.some((p) => !recordMap[p.table]?.[p.id])) throw missingRecord(userId)
-    if (requested.some((p) => recordMap[p.table]![p.id].alive === false)) throw new NotionError('no_access', IN_TRASH)
+    if (requested.some((p) => recordMap[p.table]![p.id].alive === false)) throw new NotionError('in_trash', IN_TRASH)
     return recordMap
   }
 
@@ -760,7 +764,7 @@ export class NotionClient {
       this.usage?.unsent()
       throw new NotionError('rate_limited', NOT_SENT, { stopsQuestion: LIMITED_STOP })
     }
-    const write = endpoint === 'saveTransactionsFanout'
+    const write = WRITES.has(endpoint)
     let res: NotionResponse
     try {
       res = await this.send(endpoint, body, { spaceId })
