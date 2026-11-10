@@ -38,6 +38,7 @@ export const IN_TRASH = 'The Notion page or block is in the trash.'
 export const OUTCOME_UNKNOWN =
   'Notion did not answer, so the change may or may not have been saved. Read the page again before retrying.'
 export const RATE_LIMITED = 'Notion turned this request away (too many requests, or too busy), so it was not done.'
+export const NOT_SENT = 'Not sent: Notion turned an earlier request away (too many requests, or too busy).'
 /** For the user, when Notion turns requests away: the question stops, and nothing more is sent. */
 export const LIMITED_STOP =
   'Notion is limiting requests right now, so Notion Copilot stopped. Wait a minute, then ask again.'
@@ -390,7 +391,7 @@ export class NotionClient {
     body: unknown,
     spaceId?: string,
   ): Promise<{ json: T; signedIn: boolean }> {
-    if (this.limited) throw new NotionError('rate_limited', RATE_LIMITED, { stopsQuestion: LIMITED_STOP })
+    if (this.limited) throw new NotionError('rate_limited', NOT_SENT, { stopsQuestion: LIMITED_STOP })
     const res = await this.send(endpoint, body, { spaceId })
     if (res.error === undefined && !res.redirected && LIMITED.has(res.status)) {
       this.limited = true

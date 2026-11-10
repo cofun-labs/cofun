@@ -359,6 +359,18 @@ describe('extension agent against the worker', () => {
     expect(ai.calls).toHaveLength(2)
   })
 
+  it('a tool that wraps an error that stops the question still stops it', async () => {
+    const stop = Object.assign(new Error('Turned away.'), { stopsQuestion: 'Wait a minute.' })
+    const wrapping: ToolSpec = {
+      ...pageTool().tool,
+      run: async () => Promise.reject(new Error('The page may or may not have been created.', { cause: stop })),
+    }
+    ai.script = [{ toolCalls: [{ name: 'lookup_page', arguments: '{}' }] }, { reply: 'Trying again.' }]
+    const { result } = await ask(makeAgent({ tools: [wrapping] }), 'Make a page')
+    expect(result).toEqual({ status: 'error', message: 'Wait a minute.' })
+    expect(ai.calls).toHaveLength(1)
+  })
+
   it('tools the model asked for after a refused one, in the same reply, do not run', async () => {
     const tab = new FakeNotionTab(PAGE_URL).limit('loadPageChunk', 1).install()
     const { tool, runs } = pageTool()

@@ -3,6 +3,7 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import {
   LIMITED_STOP,
+  NOT_SENT,
   NotionError,
   OUTCOME_UNKNOWN,
   RATE_LIMITED,
@@ -530,7 +531,8 @@ describe('when Notion turns requests away', () => {
       const err = await notionError(client.loadPage(PAGE))
       expect([err.code, err.message, err.stopsQuestion]).toEqual(['rate_limited', RATE_LIMITED, LIMITED_STOP])
       // Not retried, and the same client sends nothing more, though Notion would answer now.
-      expect((await notionError(client.getRecords([{ table: 'block', id: PAGE }]))).code).toBe('rate_limited')
+      const later = await notionError(client.getRecords([{ table: 'block', id: PAGE }]))
+      expect([later.code, later.message, later.stopsQuestion]).toEqual(['rate_limited', NOT_SENT, LIMITED_STOP])
       expect(tab.sent).toHaveLength(1)
     }
   })
