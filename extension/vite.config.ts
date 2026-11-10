@@ -8,12 +8,7 @@ function manifest(env: Record<string, string>): Plugin {
     name: 'notion-copilot-manifest',
     generateBundle() {
       const json = buildManifest(
-        {
-          VITE_CLERK_PUBLISHABLE_KEY: env.VITE_CLERK_PUBLISHABLE_KEY,
-          VITE_CLERK_SYNC_HOST: env.VITE_CLERK_SYNC_HOST,
-          CLERK_COOKIE_DOMAIN: env.CLERK_COOKIE_DOMAIN,
-          CRX_PUBLIC_KEY: env.CRX_PUBLIC_KEY,
-        },
+        { ...env, VITE_CLERK_SYNC_HOST: env.VITE_CLERK_SYNC_HOST },
         process.env.npm_package_version ?? '0.1.0',
       )
       this.emitFile({ type: 'asset', fileName: 'manifest.json', source: JSON.stringify(json, null, 2) })
