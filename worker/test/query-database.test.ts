@@ -89,10 +89,10 @@ describe('UC-NOTION-006 read a database', () => {
         '',
         '| Task | Status | Due | Owner | Points | Done | Row |',
         '| --- | --- | --- | --- | --- | --- | --- |',
-        `| Write docs | Done | @2026-11-05 | @Fixture User | 3 | Yes | ^${hex(row(1))} |`,
-        `| Fix login \\| Safari | In progress | @2026-11-07 | @Fixture User | 5 | No | ^${hex(row(2))} |`,
-        `| Ship beta | Not started | @2026-11-20 | @Fixture User | 8 | No | ^${hex(row(3))} |`,
-        `| Plan retro | Not started |  | @Fixture User | 1 | No | ^${hex(row(4))} |`,
+        `| Write docs | Done | @2026-11-05 | @[Fixture User] | 3 | Yes | ^${hex(row(1))} |`,
+        `| Fix login \\| Safari | In progress | @2026-11-07 | @[Fixture User] | 5 | No | ^${hex(row(2))} |`,
+        `| Ship beta | Not started | @2026-11-20 | @[Fixture User] | 8 | No | ^${hex(row(3))} |`,
+        `| Plan retro | Not started |  | @[Fixture User] | 1 | No | ^${hex(row(4))} |`,
       ].join('\n'),
     )
     // The rows came from the database's view, as the tab's Notion user.
@@ -115,7 +115,7 @@ describe('UC-NOTION-006 read a database', () => {
     })
     expect(result).toContain('Matching rows: 1 (showing 1–1).')
     expect(tableRows(result)).toEqual([
-      `| Fix login \\| Safari | In progress | @2026-11-07 | @Fixture User | 5 | No | ^${hex(row(2))} |`,
+      `| Fix login \\| Safari | In progress | @2026-11-07 | @[Fixture User] | 5 | No | ^${hex(row(2))} |`,
     ])
 
     // Against the text as Notion shows it, not as escaped for Markdown.

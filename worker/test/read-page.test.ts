@@ -144,7 +144,7 @@ describe('UC-NOTION-001 read a page', () => {
         '# Plan ^00000001',
         '## Goals ^00000002',
         'Ship **fast** and *safe*, see [docs](https://example.com/docs) or run `pnpm check`. ^00000003',
-        `Ask @Fixture User about [Fixture page](${PAGE_HEX}) by @2026-11-20 ^00000004`,
+        `Ask @[Fixture User] about [Fixture page](${PAGE_HEX}) by @2026-11-20 ^00000004`,
         '- First ^00000005',
         '  - Nested ^00000006',
         '1. One ^00000007',
@@ -275,7 +275,7 @@ describe('UC-NOTION-001 read a page', () => {
         'Status: Doing',
         'Done: Yes',
         'Due: @2026-11-12',
-        'Owner: @Fixture User',
+        'Owner: @[Fixture User]',
         '---',
         'Row body ^00000001',
       ].join('\n'),
@@ -482,7 +482,7 @@ describe('converter details', () => {
       'Score: [formula, not shown]',
       'Total: [rollup, not shown]',
       'Created: 2026-11-09 08:30 UTC',
-      'Edited by: @Fixture User',
+      'Edited by: @[Fixture User]',
       '---',
     ])
   })

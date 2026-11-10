@@ -234,7 +234,7 @@ describe('read_comments', () => {
     comment(ws, 100, 200, [['Ask '], ['‣', [['u', OTHER]]], [` ${'x'.repeat(2100)}`]])
     open(ws)
     const line = (await read()).split('\n').find((l) => l.startsWith('   - '))!
-    expect(line).toMatch(/^ {3}- "Ann", 2026-11-09 10:30 UTC: "Ask @Bob x+…" \(cut off at 2000 characters\)$/)
+    expect(line).toMatch(/^ {3}- "Ann", 2026-11-09 10:30 UTC: "Ask @\[Bob\] x+…" \(cut off at 2000 characters\)$/)
   })
 
   it("doesn't count a child page's comments as the page's", async () => {

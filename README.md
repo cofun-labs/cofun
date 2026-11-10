@@ -29,6 +29,7 @@
 - [x] Move pages under another page, duplicate pages, and move pages to Notion's trash (after the user agrees)
 - [x] Work on what the user selected in the page
 - [x] Read a page's comment threads, and add comments on the page or on a block
+- [x] Mention workspace members by name in pages and comments
 
 ## Tech choices
 
@@ -62,7 +63,7 @@ Conversations are saved in the extension's IndexedDB, one database per Clerk use
 
 ### Writes without approval
 
-The agent edits pages, creates pages and rows, changes properties, adds comments, and moves and duplicates pages without asking first. Moving pages to the trash is the one thing it asks the user's approval for, each time, showing each page by its current name; pages only ever go to Notion's trash, where they can be restored. Each change shows on its tool card in the side panel, and a page's history in Notion can undo edits. The trade-off: the agent reads text the user doesn't control (shared pages, guest content, search results), and an instruction hidden in that text can make it write as the user without anyone being asked. It could change many pages in one call, move a private page under a page others can read (a page takes its sharing from where it sits, so it is exposed as soon as it moves), or copy content the user can see into a page or a comment someone else can read; a comment also notifies the people following the page or the thread. Page history and "Move to" can undo the changes, but not what someone read in the meantime.
+The agent edits pages, creates pages and rows, changes properties, adds comments, and moves and duplicates pages without asking first. Moving pages to the trash is the one thing it asks the user's approval for, each time, showing each page by its current name; pages only ever go to Notion's trash, where they can be restored. Each change shows on its tool card in the side panel, and a page's history in Notion can undo edits. The trade-off: the agent reads text the user doesn't control (shared pages, guest content, search results), and an instruction hidden in that text can make it write as the user without anyone being asked. It could change many pages in one call, move a private page under a page others can read (a page takes its sharing from where it sits, so it is exposed as soon as it moves), or copy content the user can see into a page or a comment someone else can read; a comment also notifies the people following the page or the thread, and a mention notifies the person mentioned. When a mention's name matches no one, the agent is told the members with a similar name, so text in a page could have it probe for the names of the workspace's people. Page history and "Move to" can undo the changes, but not what someone read in the meantime.
 
 ## Layout
 
@@ -80,6 +81,7 @@ extension/                Chrome extension
   src/notion/blocks.ts    Markdown from the model back into Notion blocks
   src/notion/edit.ts      checks edits against the page as the agent read it, and plans the transaction
   src/notion/comments.ts  a page's comment threads for the model, quoted so they read as data
+  src/notion/people.ts    matches the people mentions name to the workspace's members
   src/notion/props.ts     page titles and database property values, checked against the database's schema
   src/notion/tree.ts      pages as the sidebar lists them, level by level, without content
   src/notion/tab.ts       runs Notion requests in the user's Notion tab (chrome.scripting)

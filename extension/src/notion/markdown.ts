@@ -330,7 +330,7 @@ class Context {
       case 'created_by':
       case 'last_edited_by': {
         const user = page[`${type}_id`]
-        return typeof user === 'string' ? `@${this.userName(user)}` : ''
+        return typeof user === 'string' ? this.mention(user) : ''
       }
       // Computed by Notion when it shows the database; the row doesn't store them.
       case 'formula':
@@ -375,11 +375,16 @@ class Context {
   /** Rich text as Markdown, with mentions resolved to names. */
   /** In a table, every `|` is escaped, code and equations too, so it can't split a cell. */
   rich(value: unknown, { table = false } = {}): string {
+    let afterPerson = false
     return runs(value)
       .map(([text, marks = []]) => {
-        const out = this.run(text, marks)
+        let out = this.run(text, marks)
         const raw = marks.some(([m]) => m === 'c' || m === 'e')
-        return table && raw ? out.split('|').join('\\|') : out
+        if (table && raw) out = out.split('|').join('\\|')
+        // `@[Name](` would read as an @ before a link: the parenthesis after a mention stays literal.
+        if (afterPerson && out.startsWith('(')) out = `\\${out}`
+        afterPerson = /@\[.*\]$/s.test(out) && marks.some(([m]) => m === 'u')
+        return out
       })
       .join('')
   }
@@ -394,7 +399,10 @@ class Context {
         case 'p':
           return `[${this.pageTitle(String(arg))}](${hexId(String(arg))})`
         case 'u':
-          return `@${this.userName(String(arg))}`
+          // Its bold, italic, and strikethrough still apply, as for text (a link can't: `[@[Name]](url)`
+          // wouldn't read back).
+          out = this.mention(String(arg))
+          break
         case 'd':
           return `@${formatDate(arg)}`
         case 'e':
@@ -413,12 +421,22 @@ class Context {
       }
     }
     const has = (m: string) => marks.some(([mark]) => mark === m)
-    if (has('c')) out = wrap(out, '`')
+    // A mention in backticks would read back as code, not a mention.
+    if (has('c') && !has('u')) out = wrap(out, '`')
     if (has('b')) out = wrap(out, '**')
     if (has('i')) out = wrap(out, '*')
     if (has('s')) out = wrap(out, '~~')
-    if (link) out = `[${out}](${link})`
+    if (link && !marks.some(([m]) => m === 'u')) out = `[${out}](${link})`
     return out
+  }
+
+  /**
+   * A mention of a person as `@[Name]`, which edit_page writes back as the same mention. A person
+   * whose name isn't known shows as `@someone`, which is plain text when written back.
+   */
+  private mention(id: string): string {
+    const user = this.recordMap.notion_user?.[id] as (NotionRecord & { name?: string }) | undefined
+    return user?.name ? `@[${escapeMarkdown(user.name)}]` : '@someone'
   }
 
   userName(id: string): string {

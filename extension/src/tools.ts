@@ -8,6 +8,7 @@ import {
   blockOps,
   commentOps,
   mergeRecordMaps,
+  type Block,
   type LoadedPage,
   type NotionRecord,
   type Operation,
@@ -24,7 +25,17 @@ import {
   type PageRead,
   planNewPage,
 } from './notion/edit'
-import { MarkdownError, inline, parseMarkdown, type NewBlock } from './notion/blocks'
+import {
+  MarkdownError,
+  blockTitles,
+  blocksWithPeople,
+  inline,
+  parseMarkdown,
+  personNames,
+  withPeople,
+  type NewBlock,
+} from './notion/blocks'
+import { findPeople, peopleIn } from './notion/people'
 import { COMMENT_CHARS, clip, loadThreads, quote, threadCount, threadLines } from './notion/comments'
 import {
   PropertyError,
@@ -465,6 +476,7 @@ function cell(values: { name: string; value: string }[], property: string): stri
   // escapes undone, so filters compare against what Notion shows.
   return raw
     .replace(/\[((?:\\.|[^\]\\])*)\]\([^)]*\)/g, '$1')
+    .replace(/@\[((?:\\.|[^\]\\])*)\]/g, '$1')
     .replace(/(^|[\s,(])@/g, '$1')
     .replace(/\\(.)|\*\*|~~|`/g, (_, escaped: string | undefined) => escaped ?? '')
     .trim()
@@ -787,7 +799,8 @@ export const editPage: ToolSpec = {
     'page, replace a block with Markdown, or delete a block. Blocks are named by the references read_page shows. ' +
     'All edits in one call are applied together, or none are. Supported Markdown: paragraphs, # headings, - lists, ' +
     '1. lists, - [ ] to-dos, ▸ toggles, > quotes, > [!💡] callouts, ``` code, ---, $$equations$$, **bold**, *italic*, ' +
-    '~~strike~~, `code`, [links](url), and [page](<page id>) mentions; a backslash keeps a character literal. ' +
+    '~~strike~~, `code`, [links](url), [page](<page id>) mentions, and @[Name] mentions of workspace members by ' +
+    'name; a backslash keeps a character literal. ' +
     'Indent by two spaces to nest under lists, to-dos, toggles, and paragraphs; quotes and callouts hold text only. ' +
     "Child pages, databases, files, and tables can't be written. If the page changed since you read it, the edit is " +
     'refused: read it again and redo the edit.',
@@ -824,6 +837,28 @@ export const editPage: ToolSpec = {
           : 'That id is a block inside a page, not a page.',
       )
     }
+    // The edit is checked against the page first, so a refused edit costs no member lookup.
+    planEdit(loaded, read, edits)
+    // People the new Markdown mentions, matched before anything is written. In a block being
+    // rewritten, a name it already mentions is that same person.
+    const writes = edits.filter((e) => e.action !== 'delete')
+    const users = loaded.recordMap.notion_user
+    const blocks = loaded.recordMap.block ?? {}
+    const found = await findPeople(
+      tab.client,
+      loaded.spaceId,
+      writes.map((e) => ({
+        names: personNames(blockTitles(e.blocks)),
+        known:
+          e.action === 'replace'
+            ? peopleIn((blocks[e.target] as Block | undefined)?.properties?.title, users)
+            : undefined,
+      })),
+    )
+    writes.forEach((e, n) => {
+      e.people = found[n]
+      e.blocks = blocksWithPeople(e.blocks, found[n])
+    })
     const plan = planEdit(loaded, read, edits)
     // The last point where nothing has been sent: a Stop pressed while the page loaded wins.
     // Every edit was a no-op: there is nothing to send, and the page stays as read.
@@ -1003,6 +1038,8 @@ export const createPage: ToolSpec = {
     }
     if (typeof spaceId !== 'string' || !spaceId)
       throw new NotionError('notion_error', 'Notion returned the page without its workspace.')
+    const [people] = await findPeople(tab.client, spaceId, [{ names: personNames(blockTitles(blocks)) }])
+    blocks = blocksWithPeople(blocks, people)
     const { operations, pageId } = planNewPage(target, spaceId, title, blocks, { properties })
     signal?.throwIfAborted()
     // The parent's list changes: cached parts of it would hide the new page, and after an unknown
@@ -2356,7 +2393,8 @@ export const addComment: ToolSpec = {
   description:
     "Adds a comment to a Notion page, as a new thread under the user's name: on the page itself, or on one of " +
     "its blocks by the reference read_page or read_comments shows (e.g. ^1a2b3c4d). The page's content does not " +
-    'change. `text` may use **bold**, *italic*, ~~strike~~, `code`, [links](url), and [page](<page id>) mentions.',
+    'change. `text` may use **bold**, *italic*, ~~strike~~, `code`, [links](url), [page](<page id>) mentions, and ' +
+    '@[Name] mentions of workspace members.',
   parameters: {
     type: 'object',
     properties: {
@@ -2421,12 +2459,14 @@ export const addComment: ToolSpec = {
         throw new EditError(`^${ref} is a column layout, not a block: comment on a block inside it.`)
       target = found
     }
+    const rich = inline(text)
+    const [people] = await findPeople(tab.client, loaded.spaceId, [{ names: personNames([rich]) }])
     const operations = commentOps(loaded.spaceId, Date.now()).newThread(
       target,
       crypto.randomUUID(),
       crypto.randomUUID(),
       loaded.userId,
-      inline(text),
+      withPeople(rich, people),
     )
     const where = target === loaded.page.id ? 'the page' : `the block ^${md.refs.get(target)}`
     signal?.throwIfAborted()
