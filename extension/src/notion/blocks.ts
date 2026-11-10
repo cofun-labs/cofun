@@ -12,6 +12,11 @@ export interface NewBlock {
   checked?: boolean
   language?: string
   icon?: string
+  /**
+   * A code block's caption as read_page shows it (`[caption: …]` right after the fence), as
+   * Markdown. Captions can't be written yet: it only lets a rewrite pass the caption back unchanged.
+   */
+  caption?: string
   children: NewBlock[]
 }
 
@@ -59,7 +64,7 @@ const REF_LINE = /^\s*\^[0-9a-f]{8}(?:[0-9a-f]{24})?\s*$/i
 const PLACEHOLDER =
   /^(?:📄 |🗃 |↗ |\[(?:unsupported block: [^\]]+|(?:image|video|audio|pdf|file)(?::[^\]]*)?|embed: [^\]]*|(?:block|\d+ blocks) not loaded|empty table|link to a page|synced block|synced copy(?:, not loaded)?)\]$)/
 /** The line read_page writes after a code block that has a caption. */
-const CAPTION = /^\[caption: .*\]$/
+const CAPTION = /^\[caption: (.*)\]$/
 /**
  * Inline code as read_page writes it: in a run of backticks the code has none as long as, with one
  * space inside each end when the code starts or ends with a backtick.
@@ -101,14 +106,23 @@ export function parseMarkdown(markdown: string): NewBlock[] {
       if (j === lines.length) throw new MarkdownError('A code block is missing its closing fence.')
       i = j
       const language = fence[2].trim()
+      // The caption line read_page writes right after the fence belongs to the code block.
+      const caption = i + 1 < lines.length ? CAPTION.exec(lines[i + 1].trim().replace(TRAILING_REF, '')) : null
+      if (caption) i++
       // No language on the fence means none given: a rewrite keeps the block's own.
-      add(indent, { type: 'code', title: [[code.join('\n')]], ...(language ? { language } : {}), children: [] })
+      add(indent, {
+        type: 'code',
+        title: [[code.join('\n')]],
+        ...(language ? { language } : {}),
+        ...(caption ? { caption: caption[1] } : {}),
+        children: [],
+      })
       continue
     }
     if (CAPTION.test(line)) {
       throw new MarkdownError(
-        "Code block captions can't be written yet. Leave out the [caption: …] line; a code block you rewrite " +
-          'keeps its caption.',
+        "A [caption: …] line belongs right after a code block's closing fence. Code block captions can't be " +
+          'written yet; a code block you rewrite keeps its caption.',
       )
     }
     if (PLACEHOLDER.test(line)) {

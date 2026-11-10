@@ -106,8 +106,14 @@ export function unnamedMentions({ page, recordMap, spaceId }: LoadedPage): Point
       }
     }
   }
-  for (const id of ctx.descendants(page)) {
-    for (const value of Object.values(blocks[id]?.properties ?? {})) scan(value)
+  // What synced copies show is drawn too, from their originals (a copy inside its own original,
+  // once).
+  const shown = ctx.descendants(page)
+  for (let n = 0; n < shown.length; n++) {
+    const block = blocks[shown[n]]
+    for (const value of Object.values(block?.properties ?? {})) scan(value)
+    const original = block?.type === 'transclusion_reference' ? ctx.original(block) : undefined
+    if (original && !shown.includes(original.id)) shown.push(original.id, ...ctx.descendants(original))
   }
   // A row's properties show only with its database, which names them.
   const schema = (
@@ -201,7 +207,7 @@ class Context {
   }
 
   /** The original a synced copy shows, if it was loaded. */
-  private original(block: Block): Block | undefined {
+  original(block: Block): Block | undefined {
     const pointer = block.format?.transclusion_reference_pointer as { id?: unknown } | undefined
     const original = typeof pointer?.id === 'string' ? this.blocks[pointer.id] : undefined
     return original && original.alive !== false ? original : undefined

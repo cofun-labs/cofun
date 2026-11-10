@@ -248,7 +248,14 @@ const mentionsLoaded = new WeakSet<LoadedPage>()
 /** Adds the people and pages `loaded` mentions but doesn't hold to it; ones out of reach stay unnamed. */
 async function loadMentioned(tab: NotionTab, loaded: LoadedPage): Promise<void> {
   const missing = unnamedMentions(loaded)
-  if (missing.length) mergeRecordMaps(loaded.recordMap, await tab.client.findRecords(missing))
+  if (!missing.length) return
+  try {
+    mergeRecordMaps(loaded.recordMap, await tab.client.findRecords(missing))
+  } catch (err) {
+    // Only names: records the account can't open (a page in another workspace, say) stay unnamed,
+    // as when Notion leaves them out. Anything else, a rate limit included, still stops the read.
+    if (!(err instanceof NotionError && (err.code === 'no_access' || err.code === 'in_trash'))) throw err
+  }
 }
 
 /** How many rows one query loads, and how many one result shows. */

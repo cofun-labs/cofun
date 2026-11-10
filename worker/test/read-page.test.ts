@@ -834,6 +834,44 @@ describe('lookups of mentioned people and pages', () => {
     expect(notAPage.sent).toHaveLength(1)
   })
 
+  it('still read the page when Notion refuses them, leaving those mentions unnamed', async () => {
+    const elsewhere = '3b3b3b3b-0000-4000-8000-000000000033'
+    const ws = '9a9a9a9a-0000-4000-8000-000000000099'
+    openPage(chunk([id(1)], { block: block(id(1), 'text', [['See '], ['‣', [['p', elsewhere, ws]]]]) })).respond(
+      'syncRecordValuesMain',
+      403,
+      {},
+    )
+    expect(body(await read())).toBe(`See [page](${hex(elsewhere)}) ^00000001`)
+    // A rate limit still stops the read.
+    openPage(chunk([id(1)], { block: block(id(1), 'text', [['‣', [['p', elsewhere, ws]]]]) })).respond(
+      'syncRecordValuesMain',
+      429,
+      {},
+    )
+    await expect(read()).rejects.toMatchObject({ code: 'rate_limited' })
+  })
+
+  it('include mentions inside what a synced copy shows', async () => {
+    const stranger = '0f0f0f0f-0000-4000-8000-000000000003'
+    const original = 'f2f2f2f2-0000-4000-8000-000000000001'
+    const tab = openPage(
+      chunk([id(1)], {
+        block: {
+          ...block(id(1), 'transclusion_reference', undefined, {
+            format: { transclusion_reference_pointer: { id: original, table: 'block', spaceId: SPACE } },
+          }),
+          ...block(original, 'transclusion_container', undefined, { content: [id(2)] }, id(9)),
+          ...block(id(2), 'text', [['Ask '], ['‣', [['u', stranger]]]], {}, original),
+        },
+      }),
+    ).respond('syncRecordValuesMain', 200, {
+      recordMap: { __version__: 3, notion_user: { [stranger]: wrapped({ id: stranger, name: 'Other User' }) } },
+    })
+    expect(body(await read())).toBe(['[synced copy] ^00000001', '  Ask @[Other User]'].join('\n'))
+    expect(tab.sent[1].body).toEqual({ requests: [{ pointer: { table: 'notion_user', id: stranger }, version: -1 }] })
+  })
+
   it('still says a row with no content is empty', async () => {
     const collection = {
       [COLLECTION]: wrapped({

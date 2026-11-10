@@ -1140,8 +1140,12 @@ describe('round trips of what read_page shows more faithfully', () => {
   })
 
   it('refuses a code caption and the lines that stand for synced blocks or blocks not loaded', () => {
-    expect(() => parseMarkdown('```js\nx\n```\n[caption: Example code] ^00000001')).toThrow(
-      "Code block captions can't be written yet. Leave out the [caption: …] line",
+    // The caption line right after a fence belongs to the code block; anywhere else it is refused.
+    expect(parseMarkdown('```js\nx\n```\n[caption: Example code] ^00000001')).toEqual([
+      { type: 'code', title: [['x']], language: 'js', caption: 'Example code', children: [] },
+    ])
+    expect(() => parseMarkdown('Intro\n[caption: Example code]')).toThrow(
+      "A [caption: …] line belongs right after a code block's closing fence.",
     )
     for (const line of ['[synced block]', '[synced copy]', '[synced copy, not loaded]', '[3 blocks not loaded]']) {
       expect(() => parseMarkdown(`${line} ^00000001`)).toThrow("stands for content edit_page can't create")
@@ -1158,13 +1162,26 @@ describe('round trips of what read_page shows more faithfully', () => {
       ],
     )
     open(ws)
-    expect(body(await read())).toBe(['```python', 'a = 1', '```', '[caption: Example] ^00000001'].join('\n'))
-    await edit([{ action: 'replace', block: '^00000001', markdown: '```python\na = 2\n```' }])
+    const shown = body(await read())
+    expect(shown).toBe(['```python', 'a = 1', '```', '[caption: Example] ^00000001'].join('\n'))
+    // A new or changed caption can't be written; nothing is sent.
+    await expect(
+      edit([{ action: 'replace', block: '^00000001', markdown: shown.replace('Example', 'Other') }]),
+    ).rejects.toThrow("^00000001: code block captions can't be changed yet.")
+    await expect(
+      edit([{ action: 'insert', position: 'end', markdown: '```js\nb\n```\n[caption: New]' }]),
+    ).rejects.toThrow("Code block captions can't be written yet.")
+    expect(ws.transactions).toEqual([])
+    // The block copied back with its caption line, one line changed: the caption stays.
+    await edit([{ action: 'replace', block: '^00000001', markdown: shown.replace('a = 1', 'a = 2') }])
     expect(ws.records.get(id(1))!.properties).toEqual({
       title: [['a = 2']],
       language: [['Python']],
       caption: [['Example']],
     })
+    await read()
+    await edit([{ action: 'replace', block: '^00000001', markdown: '```python\na = 3\n```' }])
+    expect(ws.records.get(id(1))!.properties).toMatchObject({ title: [['a = 3']], caption: [['Example']] })
   })
 })
 

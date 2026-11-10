@@ -412,6 +412,13 @@ export function planEdit(
     }
     const [only] = e.blocks
     if (e.blocks.length === 1 && only.type === target.type && !only.children.length) {
+      // A caption passed back as read_page showed it is kept; a new or changed one can't be written.
+      if (only.caption !== undefined && only.caption !== shownCaption(read.lines.get(target.id))) {
+        throw new EditError(
+          `${ref(e.target)}: code block captions can't be changed yet. Keep the [caption: …] line as read_page ` +
+            'showed it, or leave it out; the block keeps its caption.',
+        )
+      }
       // The same kind of block: change it in place, keeping its id, children, and comments, and
       // only the fields that differ, so text the agent didn't change keeps what can't be written.
       const values = changedProperties(target, only, read.lines.get(target.id), e.people ?? new Map())
@@ -506,6 +513,11 @@ function changedProperties(
     if (checked !== !!nb.checked) out.checked = [[nb.checked ? 'Yes' : 'No']]
   }
   return out
+}
+
+/** The caption read_page showed after a code block (the last line of its Markdown), if any. */
+function shownCaption(shown: string | undefined): string | undefined {
+  return /^\[caption: (.*)\]$/.exec(shown?.split('\n').at(-1)?.trim() ?? '')?.[1]
 }
 
 function runsText(value: unknown): string {
@@ -646,6 +658,9 @@ function createBlock(
   newId: () => string,
   onCreate?: (id: string) => void,
 ): string {
+  if (nb.caption !== undefined) {
+    throw new EditError("Code block captions can't be written yet. Leave out the [caption: …] line.")
+  }
   const id = newId()
   onCreate?.(id)
   ops.push(
