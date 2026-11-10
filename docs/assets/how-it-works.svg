@@ -1,0 +1,115 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 880 300" role="img" aria-labelledby="title desc">
+  <title id="title">How Copilot for Notion works</title>
+  <desc id="desc">
+    Inside your browser, the Copilot side panel reads and edits pages through your own Notion tab,
+    which is already signed in as you. The side panel sends your question to the Copilot server,
+    which checks who you are and passes the conversation to an AI model. The server never talks to
+    Notion.
+  </desc>
+  <style>
+    :root {
+      --bg: #ffffff;
+      --fg: #37352f;
+      --muted: #8f8e8b;
+      --line: #d9d8d4;
+      --soft: #f7f6f3;
+      --accent: #2383e2;
+      --model: #9065b0;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #191919;
+        --fg: #e6e6e4;
+        --muted: #8a8a87;
+        --line: #3a3a3a;
+        --soft: #222222;
+        --accent: #4a9eed;
+        --model: #b18ad0;
+      }
+    }
+    text {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+      fill: var(--fg);
+      text-anchor: middle;
+    }
+    .muted { fill: var(--muted); }
+    .card { fill: var(--bg); stroke: var(--line); }
+    .frame { fill: var(--soft); stroke: var(--line); stroke-dasharray: 5 5; }
+    .wire { fill: none; stroke: var(--line); stroke-width: 1.5; }
+    .head { fill: var(--line); }
+    .dot { fill: var(--accent); }
+    .dot.model { fill: var(--model); }
+
+    /* Dots travel along the wires: requests to Notion and back, the question out, the reply back. */
+    .move { opacity: 0; animation: 3.2s linear infinite; }
+    .to-notion { animation-name: to-notion; }
+    .from-notion { animation-name: from-notion; animation-delay: 0.8s; }
+    .to-server { animation-name: to-server; animation-delay: 1.6s; }
+    .to-model { animation-name: to-model; animation-delay: 2.1s; }
+    @keyframes to-notion {
+      0% { opacity: 0; transform: translateX(0) }
+      8%, 32% { opacity: 1 }
+      40%, 100% { opacity: 0; transform: translateX(-82px) }
+    }
+    @keyframes from-notion {
+      0% { opacity: 0; transform: translateX(0) }
+      8%, 32% { opacity: 1 }
+      40%, 100% { opacity: 0; transform: translateX(82px) }
+    }
+    @keyframes to-server {
+      0% { opacity: 0; transform: translateX(0) }
+      8%, 32% { opacity: 1 }
+      40%, 100% { opacity: 0; transform: translateX(94px) }
+    }
+    @keyframes to-model {
+      0% { opacity: 0; transform: translateY(0) }
+      8%, 24% { opacity: 1 }
+      30%, 100% { opacity: 0; transform: translateY(40px) }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .move { animation: none; }
+    }
+  </style>
+
+  <!-- Your browser -->
+  <rect class="frame" x="20.5" y="24.5" width="560" height="232" rx="12" />
+  <text class="muted" x="300.5" y="48" font-size="12" font-weight="600" letter-spacing="0.6">YOUR BROWSER</text>
+
+  <rect class="card" x="44.5" y="72.5" width="210" height="150" rx="10" />
+  <text x="149.5" y="120" font-size="16" font-weight="600">Your Notion tab</text>
+  <text class="muted" x="149.5" y="146" font-size="13">already signed in as you</text>
+  <text class="muted" x="149.5" y="166" font-size="13">no integration to set up</text>
+
+  <rect class="card" x="346.5" y="72.5" width="210" height="150" rx="10" />
+  <text x="451.5" y="120" font-size="16" font-weight="600">Copilot side panel</text>
+  <text class="muted" x="451.5" y="146" font-size="13">plans the steps, runs the tools</text>
+  <text class="muted" x="451.5" y="166" font-size="13">keeps your chats on this device</text>
+
+  <!-- Side panel to Notion tab and back -->
+  <text class="muted" x="300.5" y="118" font-size="12">read · edit</text>
+  <line class="wire" x1="346" y1="134.5" x2="262" y2="134.5" />
+  <path class="head" d="M 254.5 134.5 l 9 -5 v 10 z" />
+  <line class="wire" x1="255" y1="162.5" x2="338" y2="162.5" />
+  <path class="head" d="M 346.5 162.5 l -9 -5 v 10 z" />
+  <text class="muted" x="300.5" y="186" font-size="12">page content</text>
+  <circle class="dot move to-notion" cx="342" cy="134.5" r="4" />
+  <circle class="dot move from-notion" cx="259" cy="162.5" r="4" />
+
+  <!-- Outside the browser -->
+  <rect class="card" x="660.5" y="44.5" width="200" height="84" rx="10" />
+  <text x="760.5" y="80" font-size="16" font-weight="600">Copilot server</text>
+  <text class="muted" x="760.5" y="104" font-size="13">checks who you are</text>
+
+  <rect class="card" x="660.5" y="178.5" width="200" height="84" rx="10" />
+  <text x="760.5" y="214" font-size="16" font-weight="600">AI model</text>
+  <text class="muted" x="760.5" y="238" font-size="13">writes the reply</text>
+
+  <path class="wire" d="M 556.5 110.5 H 652" />
+  <path class="head" d="M 660.5 110.5 l -9 -5 v 10 z" />
+  <text class="muted" x="620" y="98" font-size="12">question</text>
+  <circle class="dot move to-server" cx="560" cy="110.5" r="4" />
+
+  <line class="wire" x1="760.5" y1="129" x2="760.5" y2="170" />
+  <path class="head" d="M 760.5 178.5 l -5 -9 h 10 z" />
+  <circle class="dot model move to-model" cx="760.5" cy="133" r="4" />
+</svg>

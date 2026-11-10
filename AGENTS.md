@@ -2,7 +2,7 @@
 
 Copilot for Notion: a Chrome extension that opens an AI side panel next to Notion pages, backed by a Cloudflare Worker.
 
-**Before starting work, read [README.md](README.md)** for the architecture, auth flow, and setup. This file covers the development workflow and coding conventions.
+**Before starting work, read [docs/architecture.md](docs/architecture.md)** for the architecture, auth flow, and code layout; setup and deployment are in [docs/development.md](docs/development.md). [README.md](README.md) is written for the extension's users: what it does and how to use it, with little technical detail. This file covers the development workflow and coding conventions.
 
 ## Workflow
 
