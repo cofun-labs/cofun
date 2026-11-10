@@ -1,0 +1,191 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 880 500" role="img" aria-labelledby="title desc">
+  <title id="title">Copilot for Notion turning a page's notes into action items</title>
+  <desc id="desc">
+    An illustration, not a screenshot. A Notion page is open with the Copilot side panel next to it.
+    The user asks to turn the notes into action items. Copilot reads the page, edits it, and an
+    "Action items" section with three to-dos appears in the page.
+  </desc>
+  <style>
+    /* One 16s loop. Without animation every element rests in its final state, so the picture
+       still makes sense with reduced motion or in a viewer that doesn't animate. */
+    :root {
+      --bg: #ffffff;
+      --fg: #37352f;
+      --muted: #9b9a97;
+      --line: #e3e2df;
+      --soft: #f1f1ef;
+      --accent: #2383e2;
+      --on-accent: #ffffff;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #191919;
+        --fg: #e6e6e4;
+        --muted: #8a8a87;
+        --line: #333333;
+        --soft: #262626;
+        --accent: #4a9eed;
+        --on-accent: #10202f;
+      }
+    }
+    text {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+      fill: var(--fg);
+    }
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+    .muted { fill: var(--muted); }
+    .bg { fill: var(--bg); }
+    .soft { fill: var(--soft); }
+    .accent { fill: var(--accent); }
+    .on-accent { fill: var(--on-accent); }
+    .stroke { fill: none; stroke: var(--line); }
+    .mark { fill: none; stroke: var(--accent); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+
+    .anim { animation-duration: 16s; animation-iteration-count: infinite; animation-timing-function: ease-out; }
+    .rise { transform: translateY(0); }
+
+    /* The question is typed into the input, then sent. */
+    .typed { opacity: 0; animation-name: typed; }
+    .cover { transform-box: fill-box; transform-origin: right center; animation-name: cover; }
+    .placeholder { animation-name: placeholder; }
+    @keyframes typed { 0%, 19% { opacity: 1 } 19.5%, 100% { opacity: 0 } }
+    @keyframes cover {
+      0%, 6% { transform: scaleX(1); animation-timing-function: steps(34, end) }
+      18%, 100% { transform: scaleX(0) }
+    }
+    @keyframes placeholder { 0%, 6% { opacity: 1 } 6.5%, 19.5% { opacity: 0 } 20%, 100% { opacity: 1 } }
+
+    /* Each part of the conversation appears in turn and stays until the loop restarts. */
+    .question { animation-name: question; }
+    .tool-1 { animation-name: tool-1; }
+    .tool-2 { animation-name: tool-2; }
+    .reply { animation-name: reply; }
+    .block { animation-name: block; }
+    @keyframes question { 0%, 19% { opacity: 0; transform: translateY(6px) } 21%, 94% { opacity: 1; transform: translateY(0) } 98%, 100% { opacity: 0 } }
+    @keyframes tool-1 { 0%, 23% { opacity: 0; transform: translateY(6px) } 25%, 94% { opacity: 1; transform: translateY(0) } 98%, 100% { opacity: 0 } }
+    @keyframes tool-2 { 0%, 34% { opacity: 0; transform: translateY(6px) } 36%, 94% { opacity: 1; transform: translateY(0) } 98%, 100% { opacity: 0 } }
+    @keyframes reply { 0%, 51% { opacity: 0; transform: translateY(6px) } 53%, 94% { opacity: 1; transform: translateY(0) } 98%, 100% { opacity: 0 } }
+    @keyframes block { 0%, 46% { opacity: 0; transform: translateY(6px) } 49%, 94% { opacity: 1; transform: translateY(0) } 98%, 100% { opacity: 0 } }
+
+    /* A tool call spins while it runs, then shows a check. */
+    .spin { transform-box: fill-box; transform-origin: center; animation: spin 0.9s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg) } }
+    .run-1 { opacity: 0; animation-name: run-1; }
+    .done-1 { animation-name: done-1; }
+    .run-2 { opacity: 0; animation-name: run-2; }
+    .done-2 { animation-name: done-2; }
+    @keyframes run-1 { 0%, 23% { opacity: 0 } 25%, 32% { opacity: 1 } 33%, 100% { opacity: 0 } }
+    @keyframes done-1 { 0%, 32% { opacity: 0 } 33%, 94% { opacity: 1 } 98%, 100% { opacity: 0 } }
+    @keyframes run-2 { 0%, 34% { opacity: 0 } 36%, 45% { opacity: 1 } 46%, 100% { opacity: 0 } }
+    @keyframes done-2 { 0%, 45% { opacity: 0 } 46%, 94% { opacity: 1 } 98%, 100% { opacity: 0 } }
+
+    /* The new section flashes once when it lands in the page. */
+    .flash { opacity: 0; animation-name: flash; }
+    @keyframes flash { 0%, 46% { opacity: 0 } 49% { opacity: 0.16 } 62%, 100% { opacity: 0 } }
+
+    /* The step under the window that is happening now. */
+    .step-1 { opacity: 0; animation-name: step-1; }
+    .step-2 { opacity: 0; animation-name: step-2; }
+    .step-3 { animation-name: step-3; }
+    @keyframes step-1 { 0%, 5% { opacity: 0 } 7%, 22% { opacity: 1 } 24%, 100% { opacity: 0 } }
+    @keyframes step-2 { 0%, 22% { opacity: 0 } 24%, 33% { opacity: 1 } 35%, 100% { opacity: 0 } }
+    @keyframes step-3 { 0%, 33% { opacity: 0 } 35%, 94% { opacity: 1 } 98%, 100% { opacity: 0 } }
+
+    @media (prefers-reduced-motion: reduce) {
+      .anim, .spin { animation: none; }
+    }
+  </style>
+
+  <!-- Browser window -->
+  <rect class="bg" x="0.5" y="0.5" width="879" height="439" rx="12" />
+  <rect class="stroke" x="0.5" y="0.5" width="879" height="439" rx="12" />
+  <line class="stroke" x1="0.5" y1="36.5" x2="879.5" y2="36.5" />
+  <circle class="soft" cx="20" cy="18.5" r="5" />
+  <circle class="soft" cx="38" cy="18.5" r="5" />
+  <circle class="soft" cx="56" cy="18.5" r="5" />
+  <rect class="soft" x="300" y="8.5" width="280" height="20" rx="10" />
+  <text class="muted" x="440" y="22.5" font-size="11" text-anchor="middle">notion.so/Weekly-sync</text>
+  <line class="stroke" x1="560.5" y1="36.5" x2="560.5" y2="439.5" />
+
+  <!-- Notion page -->
+  <text x="64" y="100" font-size="28" font-weight="700">Weekly sync</text>
+  <text x="64" y="142" font-size="16" font-weight="600">Notes</text>
+  <g font-size="14">
+    <circle class="muted" cx="70" cy="165" r="2.5" />
+    <text x="84" y="170">Launch moved to Friday, pending QA sign-off.</text>
+    <circle class="muted" cx="70" cy="191" r="2.5" />
+    <text x="84" y="196">Maya will draft the release notes.</text>
+    <circle class="muted" cx="70" cy="217" r="2.5" />
+    <text x="84" y="222">Pricing page still needs legal review.</text>
+  </g>
+
+  <!-- The section Copilot adds -->
+  <rect class="accent anim flash" x="50" y="246" width="470" height="118" rx="6" />
+  <g class="anim rise block">
+    <text x="64" y="272" font-size="16" font-weight="600">Action items</text>
+    <g font-size="14">
+      <rect class="stroke" x="65.5" y="287.5" width="13" height="13" rx="3" />
+      <text x="90" y="299">Get QA sign-off before Friday</text>
+      <rect class="stroke" x="65.5" y="313.5" width="13" height="13" rx="3" />
+      <text x="90" y="325">Maya: draft the release notes</text>
+      <rect class="stroke" x="65.5" y="339.5" width="13" height="13" rx="3" />
+      <text x="90" y="351">Send the pricing page to legal</text>
+    </g>
+  </g>
+
+  <!-- Side panel -->
+  <text x="576" y="60" font-size="13" font-weight="600">Copilot for Notion</text>
+  <line class="stroke" x1="560.5" y1="72.5" x2="879.5" y2="72.5" />
+
+  <g class="anim rise question">
+    <rect class="soft" x="624" y="86" width="240" height="32" rx="10" />
+    <text x="852" y="107" font-size="13" text-anchor="end">Turn these notes into action items</text>
+  </g>
+
+  <g class="anim rise tool-1">
+    <rect class="stroke" x="576.5" y="132.5" width="287" height="30" rx="6" />
+    <text class="mono" x="608" y="152" font-size="12">read_page</text>
+    <text class="muted" x="852" y="152" font-size="12" text-anchor="end">Weekly sync</text>
+  </g>
+  <g class="anim run-1"><path class="mark spin" d="M 591 141.5 a 6 6 0 1 1 -6 6" /></g>
+  <path class="mark anim done-1" d="M 585.5 147.5 l 4 4 l 7 -8" />
+
+  <g class="anim rise tool-2">
+    <rect class="stroke" x="576.5" y="170.5" width="287" height="30" rx="6" />
+    <text class="mono" x="608" y="190" font-size="12">edit_page</text>
+    <text class="muted" x="852" y="190" font-size="12" text-anchor="end">insert 4 blocks</text>
+  </g>
+  <g class="anim run-2"><path class="mark spin" d="M 591 179.5 a 6 6 0 1 1 -6 6" /></g>
+  <path class="mark anim done-2" d="M 585.5 185.5 l 4 4 l 7 -8" />
+
+  <g class="anim rise reply" font-size="13">
+    <text x="576" y="230">Done. I added an Action items section</text>
+    <text x="576" y="249">with three to-dos under your notes.</text>
+  </g>
+
+  <!-- Input -->
+  <rect class="stroke" x="576.5" y="388.5" width="287" height="36" rx="8" />
+  <text class="anim typed" x="588" y="411" font-size="13">Turn these notes into action items</text>
+  <rect class="bg anim cover" x="586" y="396" width="240" height="22" />
+  <text class="muted anim placeholder" x="588" y="411" font-size="13">Ask something…</text>
+  <circle class="accent" cx="846" cy="406.5" r="11" />
+  <path class="on-accent" d="M 846 400 l 5.5 6 h -4 v 6.5 h -3 v -6.5 h -4 z" />
+
+  <!-- Steps -->
+  <g font-size="13" text-anchor="middle">
+    <rect class="stroke" x="25.5" y="456.5" width="250" height="32" rx="16" />
+    <rect class="accent anim step-1" x="25.5" y="456.5" width="250" height="32" rx="16" />
+    <text class="muted" x="150.5" y="477">1 · You ask in the side panel</text>
+    <text class="on-accent anim step-1" x="150.5" y="477">1 · You ask in the side panel</text>
+
+    <rect class="stroke" x="315.5" y="456.5" width="250" height="32" rx="16" />
+    <rect class="accent anim step-2" x="315.5" y="456.5" width="250" height="32" rx="16" />
+    <text class="muted" x="440.5" y="477">2 · Copilot reads the page</text>
+    <text class="on-accent anim step-2" x="440.5" y="477">2 · Copilot reads the page</text>
+
+    <rect class="stroke" x="605.5" y="456.5" width="250" height="32" rx="16" />
+    <rect class="accent anim step-3" x="605.5" y="456.5" width="250" height="32" rx="16" />
+    <text class="muted" x="730.5" y="477">3 · It edits the page for you</text>
+    <text class="on-accent anim step-3" x="730.5" y="477">3 · It edits the page for you</text>
+  </g>
+</svg>
