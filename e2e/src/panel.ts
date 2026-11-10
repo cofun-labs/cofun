@@ -31,6 +31,7 @@ export async function notionTab(
   let id = await ownNotionTab(browser, state)
   const target = url ?? (id ? undefined : fallback)
   if (!id && !target) throw new E2eError('No Notion tab opened by pnpm e2e yet: pass a Notion page URL.')
+  if (target && !isNotion(target)) throw new E2eError(`Not a Notion URL: ${target} (check E2E_NOTION_URL).`)
   if (id && target) {
     const old = await browser.attach(id)
     // Marks the old document, so the wait below doesn't take it for the new one.

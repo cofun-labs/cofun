@@ -71,9 +71,19 @@ async function withLock<T>(lock: CanaryLock, owner: string, purpose: string, fn:
   if (r.status === 'acquired' && r.tookOver) console.error(`took over a stale lock: ${r.tookOver}`)
   // A long wait for a reply must not let the lock look abandoned.
   const keepFresh = setInterval(() => void lock.refresh(owner).catch(() => undefined), 60_000)
+  // Ctrl-C, or a shell killing a long ask, skips the finally below: free a lock taken just for this
+  // command there too, or it would look held by this owner until it goes stale.
+  const signals = { SIGINT: 130, SIGTERM: 143 } as const
+  const onSignal = (signal: keyof typeof signals) => {
+    clearInterval(keepFresh)
+    const release = r.status === 'acquired' ? lock.release(owner) : Promise.resolve(false)
+    void release.catch(() => undefined).finally(() => process.exit(signals[signal]))
+  }
+  for (const signal of Object.keys(signals) as (keyof typeof signals)[]) process.once(signal, onSignal)
   try {
     return await fn()
   } finally {
+    for (const signal of Object.keys(signals)) process.removeListener(signal, onSignal)
     clearInterval(keepFresh)
     if (r.status === 'acquired') await lock.release(owner)
   }

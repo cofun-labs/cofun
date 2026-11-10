@@ -47,7 +47,7 @@ export class Cdp {
   static async connect(port = DEFAULT_PORT): Promise<Cdp> {
     let url: string
     try {
-      const res = await fetch(`http://127.0.0.1:${port}/json/version`)
+      const res = await fetch(`http://127.0.0.1:${port}/json/version`, { signal: AbortSignal.timeout(5_000) })
       url = ((await res.json()) as { webSocketDebuggerUrl: string }).webSocketDebuggerUrl
     } catch {
       throw new CdpError(
@@ -57,8 +57,13 @@ export class Cdp {
     }
     const ws = new WebSocket(url)
     await new Promise<void>((resolve, reject) => {
-      ws.addEventListener('open', () => resolve(), { once: true })
-      ws.addEventListener('error', () => reject(new CdpError(`Could not connect to ${url}`)), { once: true })
+      const fail = () => {
+        ws.close()
+        reject(new CdpError(`Could not connect to ${url}`))
+      }
+      const timer = setTimeout(fail, 5_000)
+      ws.addEventListener('open', () => (clearTimeout(timer), resolve()), { once: true })
+      ws.addEventListener('error', () => (clearTimeout(timer), fail()), { once: true })
     })
     return new Cdp(ws)
   }
