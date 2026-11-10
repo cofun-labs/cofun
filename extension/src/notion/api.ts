@@ -116,6 +116,8 @@ export interface WorkspaceTree {
   sharedPages: string[]
   workspacePages: string[]
   teams: { name: string; pages: string[] }[]
+  /** Why the teamspaces could not be loaded, when they couldn't; the other sections still are. */
+  teamsError?: string
 }
 
 /** One search hit as Notion returns it. Highlights mark matched words with a random tag per response. */
@@ -282,12 +284,24 @@ export class NotionClient {
     const record = map.space![space]
     const view = Object.values(map.space_view ?? {}).find((v) => v.space_id === space)
     const settings = record.settings as { is_teams_enabled?: unknown } | undefined
+    let teams: WorkspaceTree['teams'] = []
+    let teamsError: string | undefined
+    // Teamspaces come from a request of their own; if it fails, the rest of the sidebar still lists.
+    if (settings?.is_teams_enabled === true) {
+      try {
+        teams = await this.joinedTeams(space)
+      } catch (err) {
+        if (!(err instanceof NotionError)) throw err
+        teamsError = err.message
+      }
+    }
     return {
       name: typeof record.name === 'string' ? record.name : 'Workspace',
       privatePages: ids(view?.private_pages),
       sharedPages: ids(view?.shared_pages_manual_sort),
       workspacePages: ids(record.pages),
-      teams: settings?.is_teams_enabled === true ? await this.joinedTeams(space) : [],
+      teams,
+      ...(teamsError ? { teamsError } : {}),
     }
   }
 

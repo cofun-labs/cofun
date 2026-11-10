@@ -246,7 +246,7 @@ describe('UC-NOTION-005 browse the workspace', () => {
       .install()
     const first = await run()
     expect(first).toContain(
-      `(Cut off: more entries follow. List them with \`section: "Engineering"\` and \`offset: ${SECTION_LIMIT}\`.)`,
+      `(Cut off: more entries follow. List them with \`section: "Teamspace: Engineering"\` and \`offset: ${SECTION_LIMIT}\`.)`,
     )
 
     workspace()
@@ -256,7 +256,7 @@ describe('UC-NOTION-005 browse the workspace', () => {
         records(many.slice(SECTION_LIMIT).map((m, i) => ({ ...page(0, `Eng ${SECTION_LIMIT + i}`), id: m }))),
       )
       .install()
-    const rest = await run({ section: 'Engineering', offset: SECTION_LIMIT })
+    const rest = await run({ section: 'Teamspace: Engineering', offset: SECTION_LIMIT })
     expect(rest).toBe(
       [
         `Teamspace: Engineering, in the workspace “Fixture workspace”, from entry ${SECTION_LIMIT}:`,
@@ -317,6 +317,34 @@ describe('list_pages arguments', () => {
     )
   })
 
+  it('tells apart teamspaces named like a built-in section or like each other', async () => {
+    const workspace = () =>
+      new FakeNotionTab(PAGE_URL)
+        .respond('syncRecordValuesMain', 200, OPEN_PAGE)
+        .respond('getSpaces', 200, spaces({}, { private_pages: [id(1)] }))
+        .respond(
+          'getTeamsV2',
+          200,
+          teams([team(1, 'Private', [id(11)]), team(2, 'Design', [id(21)]), team(3, 'Design', [id(31)])]),
+        )
+    workspace().install()
+    await expect(run({ section: 'nope' })).rejects.toThrow(
+      'The sections are: Private, Shared, Workspace, Teamspace: Private, Teamspace: Design (1), Teamspace: Design (2).',
+    )
+    const listed = async (section: string, page: Rec) => {
+      workspace()
+        .respond('syncRecordValuesMain', 200, records([page]))
+        .install()
+      return (await run({ section })).split('\n').slice(2)
+    }
+    expect(await listed('Private', page(1, 'Notes'))).toEqual([`- 📄 Notes ^${hex(id(1))}`])
+    expect(await listed('Teamspace: Private', page(11, 'Team notes'))).toEqual([`- 📄 Team notes ^${hex(id(11))}`])
+    expect(await listed('teamspace: design (2)', page(31, 'Second'))).toEqual([`- 📄 Second ^${hex(id(31))}`])
+    // A bare name shared by two teamspaces names neither.
+    workspace().install()
+    await expect(run({ section: 'Design' })).rejects.toThrow('No section “Design”.')
+  })
+
   it('says a page with nothing under it has no pages', async () => {
     new FakeNotionTab(PAGE_URL).respond('syncRecordValuesMain', 200, records([page(10, 'Empty')])).install()
     expect(await run({ page: hex(id(10)) })).toBe(`Pages under “Empty” ^${hex(id(10))}:\n\n(no pages)`)
@@ -342,6 +370,23 @@ describe('list_pages at the limit', () => {
     expect(asked.map((r) => r.pointer.id)).toEqual([id(1000), id(1001)])
     expect(result.split('\n').filter((l) => l.trimStart().startsWith('- '))).toHaveLength(LIST_LIMIT)
     expect(result).toContain('To see what is under a listed page, list it by its id.')
+  })
+
+  it('says pages under the ones shown are left out too when the top level is cut off deeper than one level', async () => {
+    const kids = Array.from({ length: LIST_LIMIT + 1 }, (_, i) => id(300 + i))
+    const root = page(10, 'Too many', kids)
+    new FakeNotionTab(PAGE_URL)
+      .respond('syncRecordValuesMain', 200, records([root]))
+      .respond(
+        'syncRecordValuesMain',
+        200,
+        records(kids.slice(0, 100).map((k, i) => ({ ...page(0, `Child ${i}`), id: k }))),
+      )
+      .respond('syncRecordValuesMain', 200, records(kids.slice(100).map((k) => ({ ...page(0, 'Last'), id: k }))))
+      .install()
+    expect(await run({ page: hex(id(10)), depth: 2 })).toContain(
+      `List them with \`offset: ${LIST_LIMIT}\`. Pages under the ones shown may be left out too. To see what is under a listed page, list it by its id.)`,
+    )
   })
 
   it('[UC-NOTION-005-S03] says the list was cut off when it fills up before the asked depth', async () => {
@@ -377,6 +422,25 @@ describe('list_pages workspace', () => {
       .respond('syncRecordValuesMain', 200, records([page(1, 'Mine')]))
       .install()
     expect(await run()).toContain(`Private\n- 📄 Mine ^${hex(id(1))}`)
+  })
+
+  it('still lists the other sections when the teamspaces fail to load', async () => {
+    new FakeNotionTab(PAGE_URL)
+      .respond('syncRecordValuesMain', 200, OPEN_PAGE)
+      .respond('getSpaces', 200, spaces({}, { private_pages: [id(1)] }))
+      .respond('getTeamsV2', 400, { name: 'ValidationError', debugMessage: 'Invalid input.' })
+      .respond('syncRecordValuesMain', 200, records([page(1, 'Notes')]))
+      .install()
+    expect(await run()).toBe(
+      [
+        'Pages in the workspace “Fixture workspace”:',
+        '',
+        'Private',
+        `- 📄 Notes ^${hex(id(1))}`,
+        '',
+        '(Teamspaces could not be listed: Notion returned an error (400 ValidationError): Invalid input.)',
+      ].join('\n'),
+    )
   })
 
   it('asks for no teamspaces in a workspace without them', async () => {

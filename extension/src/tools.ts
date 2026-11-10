@@ -578,7 +578,7 @@ export const listPages: ToolSpec = {
         `Pages under “${title}” ^${hexId(rootId)}${offset ? `, from entry ${offset}` : ''}:`,
         '',
         ...(treeLines(nodes).length ? treeLines(nodes) : ['(no pages)']),
-        ...(truncated ? [cutOff(next === undefined ? undefined : offset + next, 'page')] : []),
+        ...(truncated ? [cutOff(next === undefined ? undefined : offset + next, depth)] : []),
       ].join('\n')
     }
 
@@ -589,18 +589,31 @@ export const listPages: ToolSpec = {
     const space = await tab.client.getSpace(spaceId)
     // A page can be in more than one list (a shared page often stays in the owner's private
     // pages, where the sidebar shows it); it is listed in the first.
+    // Every label is unique, so `section` can name any one of them: teamspaces sharing a name are numbered.
+    const teamLabels = space.teams.map((t) => `Teamspace: ${t.name}`)
     const sections: [string, string[]][] = [
       ['Private', space.privatePages],
       ['Shared', space.sharedPages],
       ['Workspace', space.workspacePages],
-      ...space.teams.map((t): [string, string[]] => [`Teamspace: ${t.name}`, t.pages]),
+      ...space.teams.map((t, i): [string, string[]] => {
+        const same = teamLabels.filter((l) => l === teamLabels[i]).length
+        const nth = teamLabels.slice(0, i).filter((l) => l === teamLabels[i]).length + 1
+        return [same > 1 ? `${teamLabels[i]} (${nth})` : teamLabels[i], t.pages]
+      }),
     ]
+    const teamsNote = space.teamsError ? [`(Teamspaces could not be listed: ${space.teamsError})`] : []
 
     if (wanted) {
-      const key = wanted.toLowerCase().replace(/^teamspace:\s*/, '')
-      const section = sections.find(([label]) => label.toLowerCase().replace(/^teamspace:\s*/, '') === key)
+      // The label as a list shows it, or a teamspace's bare name when only one teamspace has it.
+      const key = wanted.toLowerCase()
+      const exact = sections.find(([label]) => label.toLowerCase() === key)
+      const named = sections.filter(([label]) => label.toLowerCase() === `teamspace: ${key}`)
+      const section = exact ?? (named.length === 1 ? named[0] : undefined)
       if (!section) {
-        throw new Error(`No section “${wanted}”. The sections are: ${sections.map(([label]) => label).join(', ')}.`)
+        throw new Error(
+          `No section “${wanted}”. The sections are: ${sections.map(([label]) => label).join(', ')}.` +
+            (teamsNote.length ? ` ${teamsNote[0]}` : ''),
+        )
       }
       const [label, all] = section
       const { nodes, truncated, next } = await pageTree(tab.client, all.slice(offset), depth, LIST_LIMIT)
@@ -608,7 +621,7 @@ export const listPages: ToolSpec = {
         `${label}, in the workspace “${space.name}”${offset ? `, from entry ${offset}` : ''}:`,
         '',
         ...(treeLines(nodes).length ? treeLines(nodes) : ['(no pages)']),
-        ...(truncated ? [cutOff(next === undefined ? undefined : offset + next, 'section', label)] : []),
+        ...(truncated ? [cutOff(next === undefined ? undefined : offset + next, depth, label)] : []),
       ].join('\n')
     }
 
@@ -635,25 +648,28 @@ export const listPages: ToolSpec = {
       // Only pages actually listed count as listed, so one cut from this section can show in a later one.
       for (const id of nodeIds(nodes)) seen.add(id)
       // The offset counts entries of the section's own list, as the section listed alone has it.
-      if (truncated) out.push(cutOff(next === undefined ? undefined : all.indexOf(ids[next - 1]) + 1, 'section', label))
+      if (truncated) out.push(cutOff(next === undefined ? undefined : all.indexOf(ids[next - 1]) + 1, depth, label))
     }
     if (skipped.length)
       out.push('', `Not listed, to keep the list short: ${skipped.join(', ')}. List one with \`section\`.`)
     if (!any) out.push('', '(no pages)')
+    if (teamsNote.length) out.push('', ...teamsNote)
     return out.join('\n')
   },
 }
 
 /**
  * Why a list may be incomplete and how to see the rest: from `next` on when its top level was cut
- * off, or through a listed page when only pages under the ones shown were left out.
+ * off, and through a listed page for pages under the ones shown. `section` is the section's label.
  */
-function cutOff(next: number | undefined, what: 'page' | 'section', label = ''): string {
-  const where = what === 'section' ? `\`section: "${label.replace(/^Teamspace: /, '')}"\` and ` : ''
-  return next !== undefined
-    ? `(Cut off: more entries follow. List them with ${where}\`offset: ${next}\`.)`
-    : `(Cut off: a list shows at most ${LIST_LIMIT} pages, so pages under the last ones shown may be left out. ` +
-        'To see what is under a listed page, list it by its id.)'
+function cutOff(next: number | undefined, depth: number, section?: string): string {
+  const deeper = 'To see what is under a listed page, list it by its id.'
+  if (next === undefined)
+    return `(Cut off: a list shows at most ${LIST_LIMIT} pages, so pages under the last ones shown may be left out. ${deeper})`
+  const where = section ? `\`section: ${JSON.stringify(section)}\` and ` : ''
+  // A full top level leaves no room for the levels under it.
+  const under = depth > 1 ? ` Pages under the ones shown may be left out too. ${deeper}` : ''
+  return `(Cut off: more entries follow. List them with ${where}\`offset: ${next}\`.${under})`
 }
 
 function nodeIds(nodes: { id: string; children: unknown[] }[]): string[] {
