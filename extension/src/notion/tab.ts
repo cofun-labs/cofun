@@ -161,6 +161,11 @@ export interface PageSelection {
   /** The text selected with the mouse; none when blocks are selected as blocks. */
   text?: string
   blockIds: string[]
+  /**
+   * Blocks selected as blocks that reach the first or last block Notion has drawn in the page.
+   * Notion may draw only part of a long page, so the selection may go on past what was drawn.
+   */
+  reaches?: { start: boolean; end: boolean }
 }
 
 /** Reads the selection in the Notion tab: text selected with the mouse, or blocks selected as blocks. */
@@ -189,19 +194,27 @@ export function readSelection(): PageSelection | null {
   const idOf = (el: Element) => el.getAttribute('data-block-id') ?? ''
   // Blocks selected as blocks (Esc, or dragging across them) carry a highlight inside them.
   for (const root of roots) {
+    const blocks = [...root.querySelectorAll('[data-block-id]')]
     const haloed = [...root.querySelectorAll('.notion-selectable-halo')]
       .map((h) => h.closest('[data-block-id]'))
       .filter((b): b is Element => !!b && root.contains(b))
-    if (haloed.length)
-      return {
-        blockIds: [...root.querySelectorAll('[data-block-id]')].filter((b) => haloed.includes(b)).map(idOf),
-      }
+    const chosen = blocks.filter((b) => haloed.includes(b))
+    if (!chosen.length) continue
+    const first = chosen[0]
+    const last = chosen[chosen.length - 1]
+    return {
+      blockIds: chosen.map(idOf),
+      reaches: {
+        // Only blocks that hold the first one are drawn before it.
+        start: blocks.slice(0, blocks.indexOf(first)).every((b) => b.contains(first)),
+        // Only blocks inside selected ones are drawn after the last one.
+        end: blocks.slice(blocks.indexOf(last) + 1).every((b) => chosen.some((c) => c.contains(b))),
+      },
+    }
   }
   const selection = document.getSelection()
   if (!selection || selection.rangeCount === 0 || selection.isCollapsed) return null
   const range = selection.getRangeAt(0)
-  const root = roots.find((r) => r.contains(range.commonAncestorContainer))
-  if (!root) return null
   // Whether the range selects some characters of `node`. A range that only starts at its end or
   // ends at its start (a triple-click, or a drag to the end of a line) doesn't select it.
   const covers = (node: Node): boolean => {
@@ -212,14 +225,19 @@ export function readSelection(): PageSelection | null {
     if (range.compareBoundaryPoints(2, part) < 0) part.setEnd(range.endContainer, range.endOffset)
     return !part.collapsed && part.toString().length > 0
   }
-  const blocks = [...root.querySelectorAll('[data-block-id]')]
-  const touched = blocks.filter(covers)
   // Whether the range covers some of the block's own content, not only the blocks nested in it.
   const ownTouched = (el: Element): boolean =>
     [...el.children].some(
       (c) => !c.getAttribute('data-block-id') && covers(c) && (!c.querySelector('[data-block-id]') || ownTouched(c)),
     )
-  const chosen = touched.filter((b) => !touched.some((other) => other !== b && b.contains(other)) || ownTouched(b))
+  // A range can start outside the content (in the page title) or run from the page into a side
+  // peek: only the blocks it covers inside each content count.
+  const chosen = roots
+    .filter((root) => range.intersectsNode(root))
+    .flatMap((root) => {
+      const touched = [...root.querySelectorAll('[data-block-id]')].filter(covers)
+      return touched.filter((b) => !touched.some((other) => other !== b && b.contains(other)) || ownTouched(b))
+    })
   if (!chosen.length) return null
   return { text: selection.toString(), blockIds: chosen.map(idOf) }
 }

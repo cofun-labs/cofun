@@ -1716,7 +1716,8 @@ export const getSelection: ToolSpec = {
   description:
     'Returns what the user has selected in the open Notion page: the selected text, and each selected block as ' +
     'Markdown with its reference, ready for edit_page (no read_page needed for those blocks). Use it when the user ' +
-    'says "this", "the selection", or "the highlighted text". Nothing selected is a normal answer.',
+    'refers to what they selected: "the selection", "the highlighted text", or "this" on its own (as in "rewrite ' +
+    'this"), not "this page". Nothing selected is a normal answer.',
   parameters: { type: 'object', properties: {}, additionalProperties: false },
   run: async () => {
     const tab = await activeNotionTab()
@@ -1738,6 +1739,32 @@ export const getSelection: ToolSpec = {
       ? "aren't on the open page"
       : "aren't on the open page, or are past the part of it that could be loaded"
     if (!ids.length) return `The selected blocks ${beyond}. Read the page instead, or ask the user to select again.`
+    // Blocks selected as blocks that reach the first or last block Notion drew may go on past it,
+    // when the page has blocks there that weren't drawn.
+    const order = [...md.refs.keys()]
+    const selectedIds = new Set(selection.blockIds.map(toUuid))
+    const picked = order.filter((b) => selectedIds.has(b))
+    const pickedSet = new Set(picked)
+    // The page's blocks that hold `b`, nearest first.
+    const holders = (b: string): string[] => {
+      const out: string[] = []
+      for (
+        let p = loaded.recordMap.block?.[b]?.parent_id;
+        p && md.refs.has(p);
+        p = loaded.recordMap.block?.[p]?.parent_id
+      )
+        out.push(p)
+      return out
+    }
+    const first = picked[0]
+    const last = picked.at(-1)
+    const aboveFirst = new Set(first ? holders(first) : [])
+    const goesOn =
+      (selection.reaches?.start && first && order.slice(0, order.indexOf(first)).some((b) => !aboveFirst.has(b))) ||
+      (selection.reaches?.end &&
+        last &&
+        (!loaded.complete ||
+          order.slice(order.indexOf(last) + 1).some((b) => !holders(b).some((p) => pickedSet.has(p)))))
     // A block of several lines (a table, code) gets its reference on a line of its own.
     const lineOf = (b: string) => {
       const own = md.lines.get(b)!
@@ -1765,16 +1792,18 @@ export const getSelection: ToolSpec = {
     return [
       `Selection on the page “${md.title}” ^${pageHex}:`,
       '',
-      ...(selection.text === undefined
-        ? []
-        : [
-            `Selected text: “${selection.text.length > 2000 ? `${selection.text.slice(0, 1999)}…` : selection.text}”`,
-            '',
-          ]),
+      ...(selection.text === undefined ? [] : [`Selected text: “${clip(selection.text, 2000)}”`, '']),
       `Selected block${ids.length === 1 ? '' : 's'}:`,
       ...lines,
       ...(more ? ['', `${more} more selected block${more === 1 ? '' : 's'}: read the page for them.`] : []),
       ...(missed ? ['', `Only part of the selection is shown: the other selected blocks ${beyond}.`] : []),
+      ...(goesOn
+        ? [
+            '',
+            'The selection may go on past the part of the page Notion has drawn in the browser, so some selected ' +
+              'blocks may be missing. Ask the user whether more is selected, or read the page.',
+          ]
+        : []),
     ].join('\n')
   },
 }

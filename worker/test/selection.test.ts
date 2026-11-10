@@ -103,11 +103,10 @@ class FakeRange {
   get collapsed() {
     return this.start >= this.end
   }
-  /** The root holding the range: enough for a range inside one page's content. */
-  get commonAncestorContainer() {
-    let el = this.startContainer
-    while (el.parent) el = el.parent
-    return el
+  /** Whether the range and the element's contents overlap or touch. */
+  intersectsNode(el: FakeElement) {
+    const [s, e] = this.at.get(el)!
+    return s <= this.end && e >= this.start
   }
   /** The text element a point is in; at the edge between two, a start is in the later one. */
   private leafAt(pos: number, start: boolean) {
@@ -138,12 +137,17 @@ class FakeRange {
 const textOf = (el: FakeElement) => (el.text ? el : el.children[0])
 
 /**
- * Pages whose content are `roots` (the main page, then a side peek), and a text selection from
- * `from` to `to`: [element, offset into its text], each a block or a block's text element.
+ * A document of `top` elements in order (the page title, the main page's content, a side peek's),
+ * the contents among them `roots`, and a text selection from `from` to `to`: [element, offset into
+ * its text], each a block or a block's text element.
  */
-function dom(roots: FakeElement[], selection?: { from: [FakeElement, number]; to: [FakeElement, number] }) {
-  const at = positions(roots)
-  const all = roots.map((r) => r.textContent.split('\n').join('')).join('')
+function dom(
+  top: FakeElement[],
+  roots: FakeElement[],
+  selection?: { from: [FakeElement, number]; to: [FakeElement, number] },
+) {
+  const at = positions(top)
+  const all = top.map((r) => r.textContent.split('\n').join('')).join('')
   const range = () => new FakeRange(at, all)
   const selected = () => {
     const r = range()
@@ -176,8 +180,15 @@ function setup(
     els: FakeElement[],
     root: FakeElement,
     peek: FakeElement,
+    title: FakeElement,
   ) => { from: [FakeElement, number]; to: [FakeElement, number] } | undefined,
-  more: { blocks?: Record<string, unknown>[]; els?: FakeElement[]; content?: string[] } = {},
+  more: {
+    blocks?: Record<string, unknown>[]
+    els?: FakeElement[]
+    content?: string[]
+    /** The page's own blocks (by index) Notion hasn't drawn. */
+    undrawn?: number[]
+  } = {},
 ) {
   const ws = new FakeWorkspace(
     [
@@ -202,11 +213,13 @@ function setup(
     new FakeElement(id(3), 'A task'),
     ...(more.els ?? []),
   ]
-  const root = new FakeElement(undefined).add(...els)
+  const root = new FakeElement(undefined).add(...els.filter((_, n) => !more.undrawn?.includes(n)))
   const peek = new FakeElement(undefined).add(new FakeElement(id(90), 'In the peek'))
+  // The title is drawn outside the page's content.
+  const title = new FakeElement(undefined, 'Fixture page')
   const tab = new FakeNotionTab(PAGE_URL)
   tab.workspace = ws
-  tab.dom = dom([root, peek], selection(els, root, peek))
+  tab.dom = dom([title, root, peek], [root, peek], selection(els, root, peek, title))
   tab.install()
   return { ws, els }
 }
@@ -327,6 +340,65 @@ describe('UC-NOTION-003 work on the selection', () => {
     await expect(
       editPage.run({ page: hex(PAGE), edits: [{ action: 'delete', block: `^${hex(id(129)).slice(-8)}` }] }),
     ).rejects.toThrow('is not a block of the page as you last read it')
+  })
+
+  it('[UC-NOTION-003-S05] says when blocks selected as blocks may go on past what Notion has drawn', async () => {
+    const notice =
+      'The selection may go on past the part of the page Notion has drawn in the browser, so some selected ' +
+      'blocks may be missing. Ask the user whether more is selected, or read the page.'
+    // The last block drawn is selected, and the page goes on after it.
+    const later = { blocks: [block(4, 'text', 'Not drawn yet')], content: [id(4)] }
+    setup((els) => {
+      els[2].halo = true
+      return undefined
+    }, later)
+    expect((await run()).split('\n').slice(-4)).toEqual(['Selected block:', '- [ ] A task ^00000003', '', notice])
+    // The first block drawn is selected, and the page has blocks before it.
+    restoreGlobals()
+    forgetReads()
+    setup(
+      (els) => {
+        els[1].halo = true
+        return undefined
+      },
+      { undrawn: [0] },
+    )
+    expect((await run()).split('\n').slice(-4)).toEqual(['Selected block:', 'Second paragraph. ^00000002', '', notice])
+    // Drawn blocks on both sides: nothing more to say.
+    restoreGlobals()
+    forgetReads()
+    setup((els) => {
+      els[1].halo = true
+      return undefined
+    }, later)
+    expect((await run()).split('\n').slice(-2)).toEqual(['Selected block:', 'Second paragraph. ^00000002'])
+  })
+
+  it('[UC-NOTION-003-S06] gets a text selection that starts in the page title', async () => {
+    setup((els, _, __, title) => ({ from: [title, 8], to: [els[0], 5] }))
+    expect(await run()).toBe(
+      [
+        `Selection on the page “Fixture page” ^${hex(PAGE)}:`,
+        '',
+        'Selected text: “pageFirst”',
+        '',
+        'Selected block:',
+        'First paragraph. ^00000001',
+      ].join('\n'),
+    )
+  })
+
+  it('[UC-NOTION-003-S06] gets the open page’s blocks of a text selection that runs into a side peek', async () => {
+    const { ws } = setup((els, _, peek) => ({ from: [els[2], 2], to: [peek.children[0], 2] }))
+    expect((await run()).split('\n').slice(-6)).toEqual([
+      'Selected text: “taskIn”',
+      '',
+      'Selected block:',
+      '- [ ] A task ^00000003',
+      '',
+      "Only part of the selection is shown: the other selected blocks aren't on the open page.",
+    ])
+    expect(ws.transactions).toEqual([])
   })
 
   it('[UC-NOTION-003-S02] says when nothing is selected', async () => {
