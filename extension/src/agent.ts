@@ -263,7 +263,7 @@ export class CopilotAgent {
       if (stop) {
         this.stopReason ??= stop
         refused.add(toolCall.id)
-        return { block: true, reason: STOPPED_BY_ERROR, terminate: true }
+        return { block: true, reason: STOPPED_IN_PREVIEW, terminate: true }
       }
       onUpdate({ type: 'tool_ready', id: toolCall.id, args, preview })
       if (!this.confirmed.has(toolCall.name)) {
