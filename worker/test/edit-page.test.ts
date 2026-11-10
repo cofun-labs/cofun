@@ -1120,3 +1120,50 @@ describe('round 16', () => {
     expect(withoutRefs(body(await read()))).toBe(['- Left, as a list', 'Right'].join('\n'))
   })
 })
+
+describe('round trips of what read_page shows more faithfully', () => {
+  it('round-trips inline code with backticks, spaces, or <br> in it', async () => {
+    const title = [['Run '], ['a `b` c', [['c']]], [' or '], ['x<br>y', [['c']]], [' and '], ['`q', [['c']]]]
+    const ws = workspace([1], [block(1, 'text', undefined, { properties: { title } })])
+    open(ws)
+    const shown = body(await read())
+    expect(shown).toBe('Run ``a `b` c`` or `x<br>y` and `` `q `` ^00000001')
+    // A one-word change keeps the code as it was.
+    await edit([{ action: 'replace', block: '^00000001', markdown: shown.replace('Run', 'Try') }])
+    expect(ws.records.get(id(1))!.properties).toEqual({ title: [['Try '], ...title.slice(1)] })
+  })
+
+  it('keeps a line break in inline code a line break', () => {
+    expect(parseMarkdown('Run `line 1`<br>`line 2`')).toEqual([
+      { type: 'text', title: [['Run '], ['line 1', [['c']]], ['\n'], ['line 2', [['c']]]], children: [] },
+    ])
+  })
+
+  it('refuses a code caption and the lines that stand for synced blocks or blocks not loaded', () => {
+    expect(() => parseMarkdown('```js\nx\n```\n[caption: Example code] ^00000001')).toThrow(
+      "Code block captions can't be written yet. Leave out the [caption: …] line",
+    )
+    for (const line of ['[synced block]', '[synced copy]', '[synced copy, not loaded]', '[3 blocks not loaded]']) {
+      expect(() => parseMarkdown(`${line} ^00000001`)).toThrow("stands for content edit_page can't create")
+    }
+  })
+
+  it('rewrites a code block with a caption, keeping the caption', async () => {
+    const ws = workspace(
+      [1],
+      [
+        block(1, 'code', undefined, {
+          properties: { title: [['a = 1']], language: [['Python']], caption: [['Example']] },
+        }),
+      ],
+    )
+    open(ws)
+    expect(body(await read())).toBe(['```python', 'a = 1', '```', '[caption: Example] ^00000001'].join('\n'))
+    await edit([{ action: 'replace', block: '^00000001', markdown: '```python\na = 2\n```' }])
+    expect(ws.records.get(id(1))!.properties).toEqual({
+      title: [['a = 2']],
+      language: [['Python']],
+      caption: [['Example']],
+    })
+  })
+})

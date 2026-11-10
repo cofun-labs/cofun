@@ -1,0 +1,43 @@
+{
+  "recordMap": {
+    "__version__": 3,
+    "notion_user": {
+      "0e0e0e0e-0000-4000-8000-000000000002": {
+        "value": {
+          "value": {
+            "id": "0e0e0e0e-0000-4000-8000-000000000002",
+            "version": 2,
+            "name": "Fixture User"
+          },
+          "role": "editor"
+        }
+      }
+    },
+    "block": {
+      "f1f1f1f1-0000-4000-8000-000000000116": {
+        "spaceId": "5a5a5a5a-0000-4000-8000-000000000001",
+        "value": {
+          "value": {
+            "id": "f1f1f1f1-0000-4000-8000-000000000116",
+            "version": 4,
+            "type": "page",
+            "properties": {
+              "re:y": [["‣", [["p", "f1f1f1f1-0000-4000-8000-000000000115", "5a5a5a5a-0000-4000-8000-000000000001"]]]],
+              "title": [["Review it"]]
+            },
+            "created_time": 1794284069725,
+            "last_edited_time": 1794284069725,
+            "parent_id": "f1f1f1f1-0000-4000-8000-000000000118",
+            "parent_table": "collection",
+            "alive": true,
+            "space_id": "5a5a5a5a-0000-4000-8000-000000000001",
+            "crdt_format_version": 1,
+            "nav_parent_table": "collection",
+            "nav_parent_id": "f1f1f1f1-0000-4000-8000-000000000118"
+          },
+          "role": "editor"
+        }
+      }
+    }
+  }
+}

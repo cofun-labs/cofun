@@ -1,0 +1,746 @@
+{
+  "cursor": {
+    "stack": []
+  },
+  "recordMap": {
+    "__version__": 3,
+    "block": {
+      "1a1a1a1a-0000-4000-8000-000000000010": {
+        "spaceId": "5a5a5a5a-0000-4000-8000-000000000001",
+        "value": {
+          "value": {
+            "id": "1a1a1a1a-0000-4000-8000-000000000010",
+            "version": 16,
+            "type": "page",
+            "properties": {
+              "title": [["Fixture rich page"]]
+            },
+            "content": [
+              "f1f1f1f1-0000-4000-8000-000000000101",
+              "f1f1f1f1-0000-4000-8000-000000000102",
+              "f1f1f1f1-0000-4000-8000-000000000103",
+              "f1f1f1f1-0000-4000-8000-000000000104",
+              "f1f1f1f1-0000-4000-8000-000000000105",
+              "f1f1f1f1-0000-4000-8000-000000000106",
+              "f1f1f1f1-0000-4000-8000-000000000108",
+              "f1f1f1f1-0000-4000-8000-000000000109",
+              "f1f1f1f1-0000-4000-8000-00000000010c",
+              "f1f1f1f1-0000-4000-8000-000000000111",
+              "f1f1f1f1-0000-4000-8000-000000000114"
+            ],
+            "permissions": [
+              {
+                "role": "editor",
+                "type": "user_permission",
+                "user_id": "0e0e0e0e-0000-4000-8000-000000000002"
+              }
+            ],
+            "created_time": 1794284069725,
+            "last_edited_time": 1794284069725,
+            "parent_id": "5a5a5a5a-0000-4000-8000-000000000001",
+            "parent_table": "space",
+            "alive": true,
+            "space_id": "5a5a5a5a-0000-4000-8000-000000000001",
+            "crdt_format_version": 1,
+            "nav_parent_table": "space",
+            "nav_parent_id": "5a5a5a5a-0000-4000-8000-000000000001"
+          },
+          "role": "editor"
+        }
+      },
+      "f1f1f1f1-0000-4000-8000-000000000101": {
+        "value": {
+          "value": {
+            "id": "f1f1f1f1-0000-4000-8000-000000000101",
+            "version": 3,
+            "type": "header",
+            "properties": {
+              "title": [["Overview"]]
+            },
+            "created_time": 1794284069725,
+            "last_edited_time": 1794284069725,
+            "parent_id": "1a1a1a1a-0000-4000-8000-000000000010",
+            "parent_table": "block",
+            "alive": true,
+            "space_id": "5a5a5a5a-0000-4000-8000-000000000001",
+            "crdt_format_version": 1,
+            "nav_parent_table": "block",
+            "nav_parent_id": "1a1a1a1a-0000-4000-8000-000000000010"
+          },
+          "role": "editor"
+        }
+      },
+      "f1f1f1f1-0000-4000-8000-000000000102": {
+        "value": {
+          "value": {
+            "id": "f1f1f1f1-0000-4000-8000-000000000102",
+            "version": 3,
+            "type": "text",
+            "properties": {
+              "title": [
+                ["Ask "],
+                ["‣", [["u", "0e0e0e0e-0000-4000-8000-000000000002"]]],
+                [" about "],
+                ["‣", [["p", "f1f1f1f1-0000-4000-8000-000000000115", "5a5a5a5a-0000-4000-8000-000000000001"]]],
+                [" by "],
+                [
+                  "‣",
+                  [
+                    [
+                      "d",
+                      {
+                        "type": "date",
+                        "start_date": "2026-11-20"
+                      }
+                    ]
+                  ]
+                ],
+                [", see "],
+                [
+                  "‣",
+                  [
+                    [
+                      "lm",
+                      {
+                        "href": "https://example.com/",
+                        "title": "Example Domain",
+                        "description": "An example site."
+                      }
+                    ]
+                  ]
+                ],
+                [" and run "],
+                ["a `b` c", [["c"]]],
+                ["."]
+              ]
+            },
+            "created_time": 1794284069725,
+            "last_edited_time": 1794284069725,
+            "parent_id": "1a1a1a1a-0000-4000-8000-000000000010",
+            "parent_table": "block",
+            "alive": true,
+            "space_id": "5a5a5a5a-0000-4000-8000-000000000001",
+            "crdt_format_version": 1,
+            "nav_parent_table": "block",
+            "nav_parent_id": "1a1a1a1a-0000-4000-8000-000000000010"
+          },
+          "role": "editor"
+        }
+      },
+      "f1f1f1f1-0000-4000-8000-000000000103": {
+        "value": {
+          "value": {
+            "id": "f1f1f1f1-0000-4000-8000-000000000103",
+            "version": 3,
+            "type": "numbered_list",
+            "properties": {
+              "title": [["Fifth"]]
+            },
+            "format": {
+              "list_start_index": 5
+            },
+            "created_time": 1794284069725,
+            "last_edited_time": 1794284069725,
+            "parent_id": "1a1a1a1a-0000-4000-8000-000000000010",
+            "parent_table": "block",
+            "alive": true,
+            "space_id": "5a5a5a5a-0000-4000-8000-000000000001",
+            "crdt_format_version": 1,
+            "nav_parent_table": "block",
+            "nav_parent_id": "1a1a1a1a-0000-4000-8000-000000000010"
+          },
+          "role": "editor"
+        }
+      },
+      "f1f1f1f1-0000-4000-8000-000000000104": {
+        "value": {
+          "value": {
+            "id": "f1f1f1f1-0000-4000-8000-000000000104",
+            "version": 3,
+            "type": "numbered_list",
+            "properties": {
+              "title": [["Sixth"]]
+            },
+            "created_time": 1794284069725,
+            "last_edited_time": 1794284069725,
+            "parent_id": "1a1a1a1a-0000-4000-8000-000000000010",
+            "parent_table": "block",
+            "alive": true,
+            "space_id": "5a5a5a5a-0000-4000-8000-000000000001",
+            "crdt_format_version": 1,
+            "nav_parent_table": "block",
+            "nav_parent_id": "1a1a1a1a-0000-4000-8000-000000000010"
+          },
+          "role": "editor"
+        }
+      },
+      "f1f1f1f1-0000-4000-8000-000000000105": {
+        "value": {
+          "value": {
+            "id": "f1f1f1f1-0000-4000-8000-000000000105",
+            "version": 3,
+            "type": "quote",
+            "properties": {
+              "title": [["Line one\nLine two"]]
+            },
+            "created_time": 1794284069725,
+            "last_edited_time": 1794284069725,
+            "parent_id": "1a1a1a1a-0000-4000-8000-000000000010",
+            "parent_table": "block",
+            "alive": true,
+            "space_id": "5a5a5a5a-0000-4000-8000-000000000001",
+            "crdt_format_version": 1,
+            "nav_parent_table": "block",
+            "nav_parent_id": "1a1a1a1a-0000-4000-8000-000000000010"
+          },
+          "role": "editor"
+        }
+      },
+      "f1f1f1f1-0000-4000-8000-000000000106": {
+        "value": {
+          "value": {
+            "id": "f1f1f1f1-0000-4000-8000-000000000106",
+            "version": 4,
+            "type": "callout",
+            "properties": {
+              "title": [["Heads up"]]
+            },
+            "content": ["f1f1f1f1-0000-4000-8000-000000000107"],
+            "format": {
+              "page_icon": "💡"
+            },
+            "created_time": 1794284069725,
+            "last_edited_time": 1794284069725,
+            "parent_id": "1a1a1a1a-0000-4000-8000-000000000010",
+            "parent_table": "block",
+            "alive": true,
+            "space_id": "5a5a5a5a-0000-4000-8000-000000000001",
+            "crdt_format_version": 1,
+            "nav_parent_table": "block",
+            "nav_parent_id": "1a1a1a1a-0000-4000-8000-000000000010"
+          },
+          "role": "editor"
+        }
+      },
+      "f1f1f1f1-0000-4000-8000-000000000108": {
+        "value": {
+          "value": {
+            "id": "f1f1f1f1-0000-4000-8000-000000000108",
+            "version": 3,
+            "type": "code",
+            "properties": {
+              "title": [["const a = 1\nconsole.log(a)"]],
+              "caption": [["Example code"]],
+              "language": [["TypeScript"]]
+            },
+            "created_time": 1794284069725,
+            "last_edited_time": 1794284069725,
+            "parent_id": "1a1a1a1a-0000-4000-8000-000000000010",
+            "parent_table": "block",
+            "alive": true,
+            "space_id": "5a5a5a5a-0000-4000-8000-000000000001",
+            "crdt_format_version": 1,
+            "nav_parent_table": "block",
+            "nav_parent_id": "1a1a1a1a-0000-4000-8000-000000000010"
+          },
+          "role": "editor"
+        }
+      },
+      "f1f1f1f1-0000-4000-8000-000000000109": {
+        "value": {
+          "value": {
+            "id": "f1f1f1f1-0000-4000-8000-000000000109",
+            "version": 4,
+            "type": "table",
+            "content": ["f1f1f1f1-0000-4000-8000-00000000010a", "f1f1f1f1-0000-4000-8000-00000000010b"],
+            "format": {
+              "table_block_column_order": ["c1", "c2"],
+              "table_block_column_header": true
+            },
+            "created_time": 1794284069725,
+            "last_edited_time": 1794284069725,
+            "parent_id": "1a1a1a1a-0000-4000-8000-000000000010",
+            "parent_table": "block",
+            "alive": true,
+            "space_id": "5a5a5a5a-0000-4000-8000-000000000001",
+            "crdt_format_version": 1,
+            "nav_parent_table": "block",
+            "nav_parent_id": "1a1a1a1a-0000-4000-8000-000000000010"
+          },
+          "role": "editor"
+        }
+      },
+      "f1f1f1f1-0000-4000-8000-00000000010c": {
+        "value": {
+          "value": {
+            "id": "f1f1f1f1-0000-4000-8000-00000000010c",
+            "version": 4,
+            "type": "column_list",
+            "content": ["f1f1f1f1-0000-4000-8000-00000000010d", "f1f1f1f1-0000-4000-8000-00000000010f"],
+            "created_time": 1794284069725,
+            "last_edited_time": 1794284069725,
+            "parent_id": "1a1a1a1a-0000-4000-8000-000000000010",
+            "parent_table": "block",
+            "alive": true,
+            "space_id": "5a5a5a5a-0000-4000-8000-000000000001",
+            "crdt_format_version": 1,
+            "nav_parent_table": "block",
+            "nav_parent_id": "1a1a1a1a-0000-4000-8000-000000000010"
+          },
+          "role": "editor"
+        }
+      },
+      "f1f1f1f1-0000-4000-8000-000000000111": {
+        "value": {
+          "value": {
+            "id": "f1f1f1f1-0000-4000-8000-000000000111",
+            "version": 4,
+            "type": "transclusion_container",
+            "content": ["f1f1f1f1-0000-4000-8000-000000000112", "f1f1f1f1-0000-4000-8000-000000000113"],
+            "created_time": 1794284069725,
+            "last_edited_time": 1794284069725,
+            "parent_id": "1a1a1a1a-0000-4000-8000-000000000010",
+            "parent_table": "block",
+            "alive": true,
+            "space_id": "5a5a5a5a-0000-4000-8000-000000000001",
+            "crdt_format_version": 1,
+            "nav_parent_table": "block",
+            "nav_parent_id": "1a1a1a1a-0000-4000-8000-000000000010"
+          },
+          "role": "editor"
+        }
+      },
+      "f1f1f1f1-0000-4000-8000-000000000114": {
+        "value": {
+          "value": {
+            "id": "f1f1f1f1-0000-4000-8000-000000000114",
+            "version": 3,
+            "type": "text",
+            "properties": {
+              "title": [["After the synced block"]]
+            },
+            "created_time": 1794284069725,
+            "last_edited_time": 1794284069725,
+            "parent_id": "1a1a1a1a-0000-4000-8000-000000000010",
+            "parent_table": "block",
+            "alive": true,
+            "space_id": "5a5a5a5a-0000-4000-8000-000000000001",
+            "crdt_format_version": 1,
+            "nav_parent_table": "block",
+            "nav_parent_id": "1a1a1a1a-0000-4000-8000-000000000010"
+          },
+          "role": "editor"
+        }
+      },
+      "f1f1f1f1-0000-4000-8000-000000000115": {
+        "spaceId": "5a5a5a5a-0000-4000-8000-000000000001",
+        "value": {
+          "value": {
+            "id": "f1f1f1f1-0000-4000-8000-000000000115",
+            "version": 4,
+            "type": "page",
+            "properties": {
+              "nt:x": [["Some notes"]],
+              "ow:x": [["‣", [["u", "0e0e0e0e-0000-4000-8000-000000000002"]]]],
+              "re:x": [["‣", [["p", "f1f1f1f1-0000-4000-8000-000000000116", "5a5a5a5a-0000-4000-8000-000000000001"]]]],
+              "st:x": [["Doing"]],
+              "title": [["Write the plan"]]
+            },
+            "content": ["f1f1f1f1-0000-4000-8000-000000000117"],
+            "created_time": 1794284069725,
+            "last_edited_time": 1794284069725,
+            "parent_id": "f1f1f1f1-0000-4000-8000-000000000118",
+            "parent_table": "collection",
+            "alive": true,
+            "space_id": "5a5a5a5a-0000-4000-8000-000000000001",
+            "crdt_format_version": 1,
+            "nav_parent_table": "collection",
+            "nav_parent_id": "f1f1f1f1-0000-4000-8000-000000000118"
+          },
+          "role": "editor"
+        }
+      },
+      "f1f1f1f1-0000-4000-8000-000000000119": {
+        "spaceId": "5a5a5a5a-0000-4000-8000-000000000001",
+        "value": {
+          "value": {
+            "id": "f1f1f1f1-0000-4000-8000-000000000119",
+            "version": 4,
+            "type": "collection_view_page",
+            "view_ids": ["f1f1f1f1-0000-4000-8000-00000000011a"],
+            "collection_id": "f1f1f1f1-0000-4000-8000-000000000118",
+            "format": {
+              "collection_pointer": {
+                "id": "f1f1f1f1-0000-4000-8000-000000000118",
+                "table": "collection",
+                "spaceId": "5a5a5a5a-0000-4000-8000-000000000001"
+              }
+            },
+            "permissions": [
+              {
+                "role": "editor",
+                "type": "user_permission",
+                "user_id": "0e0e0e0e-0000-4000-8000-000000000002"
+              }
+            ],
+            "created_time": 1794284069725,
+            "last_edited_time": 1794284069725,
+            "parent_id": "5a5a5a5a-0000-4000-8000-000000000001",
+            "parent_table": "space",
+            "alive": true,
+            "space_id": "5a5a5a5a-0000-4000-8000-000000000001",
+            "crdt_format_version": 1,
+            "nav_parent_table": "space",
+            "nav_parent_id": "5a5a5a5a-0000-4000-8000-000000000001"
+          },
+          "role": "editor"
+        }
+      },
+      "f1f1f1f1-0000-4000-8000-000000000107": {
+        "value": {
+          "value": {
+            "id": "f1f1f1f1-0000-4000-8000-000000000107",
+            "version": 3,
+            "type": "text",
+            "properties": {
+              "title": [["Inside the callout"]]
+            },
+            "created_time": 1794284069725,
+            "last_edited_time": 1794284069725,
+            "parent_id": "f1f1f1f1-0000-4000-8000-000000000106",
+            "parent_table": "block",
+            "alive": true,
+            "space_id": "5a5a5a5a-0000-4000-8000-000000000001",
+            "crdt_format_version": 1,
+            "nav_parent_table": "block",
+            "nav_parent_id": "1a1a1a1a-0000-4000-8000-000000000010"
+          },
+          "role": "editor"
+        }
+      },
+      "f1f1f1f1-0000-4000-8000-00000000010a": {
+        "value": {
+          "value": {
+            "id": "f1f1f1f1-0000-4000-8000-00000000010a",
+            "version": 2,
+            "type": "table_row",
+            "properties": {
+              "c1": [["Name"]],
+              "c2": [["Owner"]]
+            },
+            "created_time": 1794284069725,
+            "last_edited_time": 1794284069725,
+            "parent_id": "f1f1f1f1-0000-4000-8000-000000000109",
+            "parent_table": "block",
+            "alive": true,
+            "space_id": "5a5a5a5a-0000-4000-8000-000000000001",
+            "crdt_format_version": 1,
+            "nav_parent_table": "block",
+            "nav_parent_id": "1a1a1a1a-0000-4000-8000-000000000010"
+          },
+          "role": "editor"
+        }
+      },
+      "f1f1f1f1-0000-4000-8000-00000000010b": {
+        "value": {
+          "value": {
+            "id": "f1f1f1f1-0000-4000-8000-00000000010b",
+            "version": 2,
+            "type": "table_row",
+            "properties": {
+              "c1": [["Plan"]],
+              "c2": [["‣", [["u", "0e0e0e0e-0000-4000-8000-000000000002"]]]]
+            },
+            "created_time": 1794284069725,
+            "last_edited_time": 1794284069725,
+            "parent_id": "f1f1f1f1-0000-4000-8000-000000000109",
+            "parent_table": "block",
+            "alive": true,
+            "space_id": "5a5a5a5a-0000-4000-8000-000000000001",
+            "crdt_format_version": 1,
+            "nav_parent_table": "block",
+            "nav_parent_id": "1a1a1a1a-0000-4000-8000-000000000010"
+          },
+          "role": "editor"
+        }
+      },
+      "f1f1f1f1-0000-4000-8000-00000000010d": {
+        "spaceId": "5a5a5a5a-0000-4000-8000-000000000001",
+        "value": {
+          "value": {
+            "id": "f1f1f1f1-0000-4000-8000-00000000010d",
+            "version": 3,
+            "type": "column",
+            "content": ["f1f1f1f1-0000-4000-8000-00000000010e"],
+            "format": {
+              "column_ratio": 0.5
+            },
+            "created_time": 1794284069725,
+            "last_edited_time": 1794284069725,
+            "parent_id": "f1f1f1f1-0000-4000-8000-00000000010c",
+            "parent_table": "block",
+            "alive": true,
+            "space_id": "5a5a5a5a-0000-4000-8000-000000000001",
+            "crdt_format_version": 1,
+            "nav_parent_table": "block",
+            "nav_parent_id": "1a1a1a1a-0000-4000-8000-000000000010"
+          },
+          "role": "editor"
+        }
+      },
+      "f1f1f1f1-0000-4000-8000-00000000010f": {
+        "spaceId": "5a5a5a5a-0000-4000-8000-000000000001",
+        "value": {
+          "value": {
+            "id": "f1f1f1f1-0000-4000-8000-00000000010f",
+            "version": 3,
+            "type": "column",
+            "content": ["f1f1f1f1-0000-4000-8000-000000000110"],
+            "format": {
+              "column_ratio": 0.5
+            },
+            "created_time": 1794284069725,
+            "last_edited_time": 1794284069725,
+            "parent_id": "f1f1f1f1-0000-4000-8000-00000000010c",
+            "parent_table": "block",
+            "alive": true,
+            "space_id": "5a5a5a5a-0000-4000-8000-000000000001",
+            "crdt_format_version": 1,
+            "nav_parent_table": "block",
+            "nav_parent_id": "1a1a1a1a-0000-4000-8000-000000000010"
+          },
+          "role": "editor"
+        }
+      },
+      "f1f1f1f1-0000-4000-8000-00000000010e": {
+        "value": {
+          "value": {
+            "id": "f1f1f1f1-0000-4000-8000-00000000010e",
+            "version": 3,
+            "type": "text",
+            "properties": {
+              "title": [["Left column"]]
+            },
+            "created_time": 1794284069725,
+            "last_edited_time": 1794284069725,
+            "parent_id": "f1f1f1f1-0000-4000-8000-00000000010d",
+            "parent_table": "block",
+            "alive": true,
+            "space_id": "5a5a5a5a-0000-4000-8000-000000000001",
+            "crdt_format_version": 1,
+            "nav_parent_table": "block",
+            "nav_parent_id": "1a1a1a1a-0000-4000-8000-000000000010"
+          },
+          "role": "editor"
+        }
+      },
+      "f1f1f1f1-0000-4000-8000-000000000110": {
+        "value": {
+          "value": {
+            "id": "f1f1f1f1-0000-4000-8000-000000000110",
+            "version": 3,
+            "type": "text",
+            "properties": {
+              "title": [["Right column"]]
+            },
+            "created_time": 1794284069725,
+            "last_edited_time": 1794284069725,
+            "parent_id": "f1f1f1f1-0000-4000-8000-00000000010f",
+            "parent_table": "block",
+            "alive": true,
+            "space_id": "5a5a5a5a-0000-4000-8000-000000000001",
+            "crdt_format_version": 1,
+            "nav_parent_table": "block",
+            "nav_parent_id": "1a1a1a1a-0000-4000-8000-000000000010"
+          },
+          "role": "editor"
+        }
+      },
+      "f1f1f1f1-0000-4000-8000-000000000112": {
+        "value": {
+          "value": {
+            "id": "f1f1f1f1-0000-4000-8000-000000000112",
+            "version": 3,
+            "type": "text",
+            "properties": {
+              "title": [["Synced line one"]]
+            },
+            "created_time": 1794284069725,
+            "last_edited_time": 1794284069725,
+            "parent_id": "f1f1f1f1-0000-4000-8000-000000000111",
+            "parent_table": "block",
+            "alive": true,
+            "space_id": "5a5a5a5a-0000-4000-8000-000000000001",
+            "crdt_format_version": 1,
+            "nav_parent_table": "block",
+            "nav_parent_id": "1a1a1a1a-0000-4000-8000-000000000010"
+          },
+          "role": "editor"
+        }
+      },
+      "f1f1f1f1-0000-4000-8000-000000000113": {
+        "value": {
+          "value": {
+            "id": "f1f1f1f1-0000-4000-8000-000000000113",
+            "version": 3,
+            "type": "bulleted_list",
+            "properties": {
+              "title": [["Synced item"]]
+            },
+            "created_time": 1794284069725,
+            "last_edited_time": 1794284069725,
+            "parent_id": "f1f1f1f1-0000-4000-8000-000000000111",
+            "parent_table": "block",
+            "alive": true,
+            "space_id": "5a5a5a5a-0000-4000-8000-000000000001",
+            "crdt_format_version": 1,
+            "nav_parent_table": "block",
+            "nav_parent_id": "1a1a1a1a-0000-4000-8000-000000000010"
+          },
+          "role": "editor"
+        }
+      }
+    },
+    "notion_user": {
+      "0e0e0e0e-0000-4000-8000-000000000002": {
+        "value": {
+          "value": {
+            "id": "0e0e0e0e-0000-4000-8000-000000000002",
+            "version": 2,
+            "name": "Fixture User"
+          },
+          "role": "editor"
+        }
+      }
+    },
+    "collection": {
+      "f1f1f1f1-0000-4000-8000-000000000118": {
+        "spaceId": "5a5a5a5a-0000-4000-8000-000000000001",
+        "value": {
+          "value": {
+            "id": "f1f1f1f1-0000-4000-8000-000000000118",
+            "version": 1,
+            "name": [["Fixture tasks"]],
+            "schema": {
+              "nt:x": {
+                "name": "Notes",
+                "type": "text"
+              },
+              "ow:x": {
+                "name": "Owner",
+                "type": "person"
+              },
+              "re:x": {
+                "name": "Related",
+                "type": "relation",
+                "version": "v2",
+                "property": "re:y",
+                "collection_id": "f1f1f1f1-0000-4000-8000-000000000118",
+                "collection_pointer": {
+                  "id": "f1f1f1f1-0000-4000-8000-000000000118",
+                  "table": "collection",
+                  "spaceId": "5a5a5a5a-0000-4000-8000-000000000001"
+                }
+              },
+              "re:y": {
+                "name": "Related back",
+                "type": "relation",
+                "version": "v2",
+                "property": "re:x",
+                "collection_id": "f1f1f1f1-0000-4000-8000-000000000118",
+                "collection_pointer": {
+                  "id": "f1f1f1f1-0000-4000-8000-000000000118",
+                  "table": "collection",
+                  "spaceId": "5a5a5a5a-0000-4000-8000-000000000001"
+                }
+              },
+              "st:x": {
+                "name": "Status",
+                "type": "select",
+                "options": [
+                  {
+                    "id": "s0",
+                    "color": "blue",
+                    "value": "Doing"
+                  }
+                ]
+              },
+              "title": {
+                "name": "Name",
+                "type": "title"
+              }
+            },
+            "parent_id": "f1f1f1f1-0000-4000-8000-000000000119",
+            "parent_table": "block",
+            "alive": true,
+            "migrated": true,
+            "space_id": "5a5a5a5a-0000-4000-8000-000000000001",
+            "created_time": 1794284070185,
+            "last_edited_time": 1794284070185,
+            "created_by_table": "notion_user",
+            "created_by_id": "0e0e0e0e-0000-4000-8000-000000000002",
+            "last_edited_by_table": "notion_user",
+            "last_edited_by_id": "0e0e0e0e-0000-4000-8000-000000000002",
+            "nav_parent_table": "block",
+            "nav_parent_id": "f1f1f1f1-0000-4000-8000-000000000119"
+          },
+          "role": "editor"
+        }
+      }
+    },
+    "collection_view": {
+      "f1f1f1f1-0000-4000-8000-00000000011a": {
+        "spaceId": "5a5a5a5a-0000-4000-8000-000000000001",
+        "value": {
+          "value": {
+            "id": "f1f1f1f1-0000-4000-8000-00000000011a",
+            "version": 1,
+            "type": "table",
+            "name": "Table",
+            "format": {
+              "table_properties": [
+                {
+                  "width": 200,
+                  "visible": true,
+                  "property": "title"
+                },
+                {
+                  "width": 200,
+                  "visible": true,
+                  "property": "nt:x"
+                },
+                {
+                  "width": 200,
+                  "visible": true,
+                  "property": "re:x"
+                },
+                {
+                  "width": 200,
+                  "visible": true,
+                  "property": "ow:x"
+                },
+                {
+                  "width": 200,
+                  "visible": true,
+                  "property": "st:x"
+                }
+              ],
+              "collection_pointer": {
+                "id": "f1f1f1f1-0000-4000-8000-000000000118",
+                "table": "collection",
+                "spaceId": "5a5a5a5a-0000-4000-8000-000000000001"
+              }
+            },
+            "parent_id": "f1f1f1f1-0000-4000-8000-000000000119",
+            "parent_table": "block",
+            "alive": true,
+            "space_id": "5a5a5a5a-0000-4000-8000-000000000001",
+            "nav_parent_table": "block",
+            "nav_parent_id": "f1f1f1f1-0000-4000-8000-000000000119"
+          },
+          "role": "editor"
+        }
+      }
+    }
+  }
+}

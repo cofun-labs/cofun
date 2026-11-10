@@ -1,0 +1,225 @@
+{
+  "cursor": {
+    "stack": []
+  },
+  "recordMap": {
+    "__version__": 3,
+    "block": {
+      "f1f1f1f1-0000-4000-8000-000000000115": {
+        "spaceId": "5a5a5a5a-0000-4000-8000-000000000001",
+        "value": {
+          "value": {
+            "id": "f1f1f1f1-0000-4000-8000-000000000115",
+            "version": 4,
+            "type": "page",
+            "properties": {
+              "nt:x": [["Some notes"]],
+              "ow:x": [["‣", [["u", "0e0e0e0e-0000-4000-8000-000000000002"]]]],
+              "re:x": [["‣", [["p", "f1f1f1f1-0000-4000-8000-000000000116", "5a5a5a5a-0000-4000-8000-000000000001"]]]],
+              "st:x": [["Doing"]],
+              "title": [["Write the plan"]]
+            },
+            "content": ["f1f1f1f1-0000-4000-8000-000000000117"],
+            "created_time": 1794284069725,
+            "last_edited_time": 1794284069725,
+            "parent_id": "f1f1f1f1-0000-4000-8000-000000000118",
+            "parent_table": "collection",
+            "alive": true,
+            "space_id": "5a5a5a5a-0000-4000-8000-000000000001",
+            "crdt_format_version": 1,
+            "nav_parent_table": "collection",
+            "nav_parent_id": "f1f1f1f1-0000-4000-8000-000000000118"
+          },
+          "role": "editor"
+        }
+      },
+      "f1f1f1f1-0000-4000-8000-000000000119": {
+        "spaceId": "5a5a5a5a-0000-4000-8000-000000000001",
+        "value": {
+          "value": {
+            "id": "f1f1f1f1-0000-4000-8000-000000000119",
+            "version": 4,
+            "type": "collection_view_page",
+            "view_ids": ["f1f1f1f1-0000-4000-8000-00000000011a"],
+            "collection_id": "f1f1f1f1-0000-4000-8000-000000000118",
+            "format": {
+              "collection_pointer": {
+                "id": "f1f1f1f1-0000-4000-8000-000000000118",
+                "table": "collection",
+                "spaceId": "5a5a5a5a-0000-4000-8000-000000000001"
+              }
+            },
+            "permissions": [
+              {
+                "role": "editor",
+                "type": "user_permission",
+                "user_id": "0e0e0e0e-0000-4000-8000-000000000002"
+              }
+            ],
+            "created_time": 1794284069725,
+            "last_edited_time": 1794284069725,
+            "parent_id": "5a5a5a5a-0000-4000-8000-000000000001",
+            "parent_table": "space",
+            "alive": true,
+            "space_id": "5a5a5a5a-0000-4000-8000-000000000001",
+            "crdt_format_version": 1,
+            "nav_parent_table": "space",
+            "nav_parent_id": "5a5a5a5a-0000-4000-8000-000000000001"
+          },
+          "role": "editor"
+        }
+      },
+      "f1f1f1f1-0000-4000-8000-000000000117": {
+        "value": {
+          "value": {
+            "id": "f1f1f1f1-0000-4000-8000-000000000117",
+            "version": 3,
+            "type": "text",
+            "properties": {
+              "title": [["Row body"]]
+            },
+            "created_time": 1794284069725,
+            "last_edited_time": 1794284069725,
+            "parent_id": "f1f1f1f1-0000-4000-8000-000000000115",
+            "parent_table": "block",
+            "alive": true,
+            "space_id": "5a5a5a5a-0000-4000-8000-000000000001",
+            "crdt_format_version": 1,
+            "nav_parent_table": "block",
+            "nav_parent_id": "f1f1f1f1-0000-4000-8000-000000000115"
+          },
+          "role": "editor"
+        }
+      }
+    },
+    "collection": {
+      "f1f1f1f1-0000-4000-8000-000000000118": {
+        "spaceId": "5a5a5a5a-0000-4000-8000-000000000001",
+        "value": {
+          "value": {
+            "id": "f1f1f1f1-0000-4000-8000-000000000118",
+            "version": 1,
+            "name": [["Fixture tasks"]],
+            "schema": {
+              "nt:x": {
+                "name": "Notes",
+                "type": "text"
+              },
+              "ow:x": {
+                "name": "Owner",
+                "type": "person"
+              },
+              "re:x": {
+                "name": "Related",
+                "type": "relation",
+                "version": "v2",
+                "property": "re:y",
+                "collection_id": "f1f1f1f1-0000-4000-8000-000000000118",
+                "collection_pointer": {
+                  "id": "f1f1f1f1-0000-4000-8000-000000000118",
+                  "table": "collection",
+                  "spaceId": "5a5a5a5a-0000-4000-8000-000000000001"
+                }
+              },
+              "re:y": {
+                "name": "Related back",
+                "type": "relation",
+                "version": "v2",
+                "property": "re:x",
+                "collection_id": "f1f1f1f1-0000-4000-8000-000000000118",
+                "collection_pointer": {
+                  "id": "f1f1f1f1-0000-4000-8000-000000000118",
+                  "table": "collection",
+                  "spaceId": "5a5a5a5a-0000-4000-8000-000000000001"
+                }
+              },
+              "st:x": {
+                "name": "Status",
+                "type": "select",
+                "options": [
+                  {
+                    "id": "s0",
+                    "color": "blue",
+                    "value": "Doing"
+                  }
+                ]
+              },
+              "title": {
+                "name": "Name",
+                "type": "title"
+              }
+            },
+            "parent_id": "f1f1f1f1-0000-4000-8000-000000000119",
+            "parent_table": "block",
+            "alive": true,
+            "migrated": true,
+            "space_id": "5a5a5a5a-0000-4000-8000-000000000001",
+            "created_time": 1794284070185,
+            "last_edited_time": 1794284070185,
+            "created_by_table": "notion_user",
+            "created_by_id": "0e0e0e0e-0000-4000-8000-000000000002",
+            "last_edited_by_table": "notion_user",
+            "last_edited_by_id": "0e0e0e0e-0000-4000-8000-000000000002",
+            "nav_parent_table": "block",
+            "nav_parent_id": "f1f1f1f1-0000-4000-8000-000000000119"
+          },
+          "role": "editor"
+        }
+      }
+    },
+    "collection_view": {
+      "f1f1f1f1-0000-4000-8000-00000000011a": {
+        "spaceId": "5a5a5a5a-0000-4000-8000-000000000001",
+        "value": {
+          "value": {
+            "id": "f1f1f1f1-0000-4000-8000-00000000011a",
+            "version": 1,
+            "type": "table",
+            "name": "Table",
+            "format": {
+              "table_properties": [
+                {
+                  "width": 200,
+                  "visible": true,
+                  "property": "title"
+                },
+                {
+                  "width": 200,
+                  "visible": true,
+                  "property": "nt:x"
+                },
+                {
+                  "width": 200,
+                  "visible": true,
+                  "property": "re:x"
+                },
+                {
+                  "width": 200,
+                  "visible": true,
+                  "property": "ow:x"
+                },
+                {
+                  "width": 200,
+                  "visible": true,
+                  "property": "st:x"
+                }
+              ],
+              "collection_pointer": {
+                "id": "f1f1f1f1-0000-4000-8000-000000000118",
+                "table": "collection",
+                "spaceId": "5a5a5a5a-0000-4000-8000-000000000001"
+              }
+            },
+            "parent_id": "f1f1f1f1-0000-4000-8000-000000000119",
+            "parent_table": "block",
+            "alive": true,
+            "space_id": "5a5a5a5a-0000-4000-8000-000000000001",
+            "nav_parent_table": "block",
+            "nav_parent_id": "f1f1f1f1-0000-4000-8000-000000000119"
+          },
+          "role": "editor"
+        }
+      }
+    }
+  }
+}

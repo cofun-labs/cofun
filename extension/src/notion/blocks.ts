@@ -57,7 +57,14 @@ const TRAILING_REF = /\s+\^[0-9a-f]{8}(?:[0-9a-f]{24})?\s*$/i
 const REF_LINE = /^\s*\^[0-9a-f]{8}(?:[0-9a-f]{24})?\s*$/i
 /** Lines read_page writes for content that can't be written back, and nothing else (not a `[file](url)` link). */
 const PLACEHOLDER =
-  /^(?:📄 |🗃 |↗ |\[(?:unsupported block: [^\]]+|(?:image|video|audio|pdf|file)(?::[^\]]*)?|embed: [^\]]*|block not loaded|empty table|link to a page)\]$)/
+  /^(?:📄 |🗃 |↗ |\[(?:unsupported block: [^\]]+|(?:image|video|audio|pdf|file)(?::[^\]]*)?|embed: [^\]]*|(?:block|\d+ blocks) not loaded|empty table|link to a page|synced block|synced copy(?:, not loaded)?)\]$)/
+/** The line read_page writes after a code block that has a caption. */
+const CAPTION = /^\[caption: .*\]$/
+/**
+ * Inline code as read_page writes it: in a run of backticks the code has none as long as, with one
+ * space inside each end when the code starts or ends with a backtick.
+ */
+const CODE_SPAN = /(`+)([^`]|[^`][\s\S]*?[^`])\1(?!`)/
 
 export function parseMarkdown(markdown: string): NewBlock[] {
   const lines = markdown.replace(/\r\n?/g, '\n').split('\n')
@@ -98,10 +105,17 @@ export function parseMarkdown(markdown: string): NewBlock[] {
       add(indent, { type: 'code', title: [[code.join('\n')]], ...(language ? { language } : {}), children: [] })
       continue
     }
+    if (CAPTION.test(line)) {
+      throw new MarkdownError(
+        "Code block captions can't be written yet. Leave out the [caption: …] line; a code block you rewrite " +
+          'keeps its caption.',
+      )
+    }
     if (PLACEHOLDER.test(line)) {
       throw new MarkdownError(
         `"${line.slice(0, 60)}" stands for content edit_page can't create (a child page, database, file, ` +
-          'or unsupported block). Leave that block out of new Markdown; it stays as it is unless you delete it.',
+          'synced block, or unsupported block). Leave that block out of new Markdown; it stays as it is unless ' +
+          'you delete it.',
       )
     }
     if (line.startsWith('|')) throw new MarkdownError("Tables can't be written yet. Write the content as a list.")
@@ -191,7 +205,11 @@ export function inline(text: string, marks: Mark[] = []): RichText {
   const patterns: { re: RegExp; run: (m: RegExpExecArray) => RichText }[] = [
     // A backslash keeps the next character literal, as read_page escapes them.
     { re: /\\([\\`*_~[\]^|#><])/, run: (m) => [marks.length ? [m[1], marks] : [m[1]]] },
-    { re: /`([^`]+)`/, run: (m) => [[m[1], [...marks, ['c']]]] },
+    {
+      re: CODE_SPAN,
+      // Markdown drops one space from each end of code that has spaces on both (and isn't all spaces).
+      run: (m) => [[/^ [\s\S]* $/.test(m[2]) && m[2].trim() ? m[2].slice(1, -1) : m[2], [...marks, ['c']]]],
+    },
     {
       // `@[Name]` mentions a person, as read_page shows mentions; `@[text](url)` is an @ before a link.
       // read_page writes a parenthesis right after a mention as `\(`; the backslash goes with the mention.
@@ -345,8 +363,23 @@ export function notionLanguage(language: string): string {
   return LANGUAGES[key] ?? ALIASES[key] ?? language.trim()
 }
 
-/** read_page's <br> for a line break inside a block; an escaped \\<br> is the literal text. */
+/**
+ * read_page's <br> for a line break inside a block; an escaped \\<br> is the literal text, and so is
+ * a <br> inside inline code (read_page ends the code before a line break).
+ */
 function breaks(text: string): string {
+  // A backtick behind an odd number of backslashes is a literal backtick, not the start of code.
+  const code = new RegExp(`(?<!(?:^|[^\\\\])(?:\\\\\\\\)*\\\\)${CODE_SPAN.source}`, 'g')
+  let out = ''
+  let at = 0
+  for (const m of text.matchAll(code)) {
+    out += lineBreaks(text.slice(at, m.index)) + m[0]
+    at = m.index + m[0].length
+  }
+  return out + lineBreaks(text.slice(at))
+}
+
+function lineBreaks(text: string): string {
   // Escaped only behind an odd number of backslashes: `\\<br>` is a backslash, then a line break.
   return text.replace(/(?<!(?:^|[^\\])(?:\\\\)*\\)<br\s*\/?>/gi, '\n')
 }
