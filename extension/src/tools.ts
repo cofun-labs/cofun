@@ -823,7 +823,10 @@ export const editPage: ToolSpec = {
         remember(next)
         throw new NotionError(
           'notion_error',
-          [`Saved, but the page could not be read back: ${err.message}`, ...plan.summary].join('\n'),
+          [
+            'The edit was saved. Reading the page back afterwards was refused, so read it again before changing it.',
+            ...plan.summary,
+          ].join('\n'),
           { cause: err, stopsQuestion: err.stopsQuestion, mayHaveChanged: true },
         )
       }

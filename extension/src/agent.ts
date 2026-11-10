@@ -39,7 +39,8 @@ export interface ToolSpec {
   /**
    * The tool changes the user's data. When a question stops after such a tool ran and changed
    * something, or may have (its error has `mayHaveChanged`), the user is told to check before
-   * asking again, so they don't ask for a change twice.
+   * asking again, so they don't ask for a change twice. Every successful run counts, even one
+   * that changed nothing (an edit of no-ops): over-warning is the safe side.
    */
   changesData?: boolean
   /**

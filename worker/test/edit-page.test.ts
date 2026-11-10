@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { inline, parseMarkdown } from '../../extension/src/notion/blocks'
 import { mergeReads, type PageRead } from '../../extension/src/notion/edit'
 import { editPage, forgetReads, readPage } from '../../extension/src/tools'
-import { LIMITED_STOP, RATE_LIMITED } from '../../extension/src/notion/api'
+import { LIMITED_STOP } from '../../extension/src/notion/api'
 import { FakeNotionTab, FakeWorkspace, PAGE, PAGE_URL, SPACE, USER, notionError, restoreGlobals } from './notion-tab'
 
 afterEach(restoreGlobals)
@@ -249,7 +249,9 @@ describe('edit_page details', () => {
     const err = await notionError(edit([{ action: 'insert', position: 'end', markdown: 'Second' }]))
     // Marked as having changed the page, so the user is told to check before asking again.
     expect([err.stopsQuestion, err.mayHaveChanged]).toEqual([LIMITED_STOP, true])
-    expect(err.message.split('\n')[0]).toBe(`Saved, but the page could not be read back: ${RATE_LIMITED}`)
+    expect(err.message.split('\n')[0]).toBe(
+      'The edit was saved. Reading the page back afterwards was refused, so read it again before changing it.',
+    )
     expect(ws.transactions).toHaveLength(1)
   })
 
