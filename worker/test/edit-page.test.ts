@@ -502,7 +502,7 @@ describe('edit_page safety', () => {
     // Changing the text says what was lost. The block changed, so it is read again first.
     await read()
     expect(await edit([{ action: 'replace', block: '^00000001', markdown: '- [x] Call later' }])).toContain(
-      'are now plain text',
+      "people it can't name, and the like) is gone.",
     )
   })
 
@@ -729,7 +729,7 @@ describe('edit_page safety, round 4', () => {
     open(ws)
     await read()
     expect(await edit([{ action: 'replace', block: '^00000001', markdown: '- [ ] Call @Fixture User' }])).toContain(
-      'are now plain text',
+      "people it can't name, and the like) is gone.",
     )
   })
 
@@ -1118,7 +1118,7 @@ describe('round 16', () => {
     await read()
     expect(
       editPage.preview!({ page: hex(PAGE), edits: [{ action: 'replace', block: '^00000001', markdown: 'Ask them' }] }),
-    ).toContain('If its text changes, its mentions, dates, colors, and similar formatting become plain text.')
+    ).toContain("If its text changes, formatting read_page doesn't show, such as comments on it, is lost.")
   })
 
   it('refuses to empty a column', async () => {
@@ -1405,7 +1405,7 @@ describe('tables written by edit_page', () => {
     open(ws)
     await read()
     expect(await edit([{ action: 'replace', block: '^00000001', markdown: '| A |\n| --- |' }])).toContain(
-      '1 row removed, 1 column now',
+      '1 row removed, 1 column removed',
     )
     expect(ws.records.get(id(3))).toMatchObject({ alive: false })
     expect(withoutRefs(body(await read()))).toBe(['| A |', '| --- |', '^00000001'].join('\n'))
@@ -1561,5 +1561,96 @@ describe('dates and editors written by edit_page', () => {
     for (const changed of [PAGE, id(2)]) {
       expect(ws.records.get(changed)).toMatchObject({ last_edited_by_id: USER, last_edited_by_table: 'notion_user' })
     }
+  })
+})
+
+describe('review of #148', () => {
+  it('reads back a code block with a blank line nested in a callout, and keeps the callout when only its text changes', async () => {
+    const ws = workspace(
+      [1],
+      [
+        block(1, 'callout', undefined, {
+          content: [id(2)],
+          format: { page_icon: '💡' },
+          properties: { title: [['Box', [['m', 'thread']]]] },
+        }),
+        block(2, 'code', undefined, { properties: { title: [['a  \n\nb']], language: [['JavaScript']] } }, id(1)),
+      ],
+    )
+    open(ws)
+    const shown = body(await read())
+    expect(shown).toBe(
+      ['> [!💡] Box ^00000001', '>   ```javascript', '>   a  ', '>   ', '>   b', '>   ```', '>   ^00000002'].join('\n'),
+    )
+    // The whole callout, copied, parses as it was read.
+    expect(parseMarkdown(withoutRefs(shown))).toEqual([
+      {
+        type: 'callout',
+        title: [['Box']],
+        icon: '💡',
+        children: [{ type: 'code', title: [['a  \n\nb']], language: 'javascript', children: [] }],
+      },
+    ])
+    // Its own line written back as read changes nothing, so the comment on its text stays.
+    await edit([{ action: 'replace', block: '^00000001', markdown: '> [!💡] Box' }])
+    expect(ws.records.get(id(1))!.properties).toEqual({ title: [['Box', [['m', 'thread']]]] })
+  })
+
+  it('removes a row or column from the middle of a table without moving the others', async () => {
+    const ws = workspace(
+      [1],
+      [
+        block(1, 'table', undefined, {
+          content: [id(2), id(3), id(4)],
+          format: { table_block_column_order: ['a', 'b', 'c'] },
+        }),
+        block(2, 'table_row', undefined, { properties: { a: [['Name']], b: [['Note']], c: [['Due']] } }, id(1)),
+        block(
+          3,
+          'table_row',
+          undefined,
+          { properties: { a: [['Ship']], b: [['Soon', [['m', 'thread']]]], c: [['Fri']] } },
+          id(1),
+        ),
+        block(4, 'table_row', undefined, { properties: { a: [['Test']], b: [['Later']], c: [['Mon']] } }, id(1)),
+      ],
+    )
+    open(ws)
+    await read()
+    const result = await edit([
+      { action: 'replace', block: '^00000001', markdown: '| Name | Due |\n| --- | --- |\n| Test | Mon |' },
+    ])
+    expect(result).toContain('Rewrote the table ^00000001: 1 row removed, 1 column removed.')
+    expect(result).toContain('Rows it removed held formatting')
+    expect(ws.records.get(id(3))).toMatchObject({ alive: false })
+    expect(ws.records.get(id(4))!.properties).toEqual({ a: [['Test']], b: [['Later']], c: [['Mon']] })
+    expect(ws.records.get(id(1))!.format).toEqual({ table_block_column_order: ['a', 'c'] })
+    expect(withoutRefs(body(await read()))).toBe(
+      ['| Name | Due |', '| --- | --- |', '| Test | Mon |', '^00000001'].join('\n'),
+    )
+  })
+
+  it('adds a row in the middle of a table where it was written', async () => {
+    const ws = workspace(
+      [1],
+      [
+        block(1, 'table', undefined, { content: [id(2), id(3)], format: { table_block_column_order: ['a'] } }),
+        block(2, 'table_row', undefined, { properties: { a: [['First']] } }, id(1)),
+        block(3, 'table_row', undefined, { properties: { a: [['Last']] } }, id(1)),
+      ],
+    )
+    open(ws)
+    await read()
+    await edit([{ action: 'replace', block: '^00000001', markdown: '| First |\n| --- |\n| Middle |\n| Last |' }])
+    expect(ws.records.get(id(3))!.properties).toEqual({ a: [['Last']] })
+    expect(withoutRefs(body(await read()))).toBe(
+      ['| First |', '| --- |', '| Middle |', '| Last |', '^00000001'].join('\n'),
+    )
+  })
+
+  it('keeps dates and times that do not exist as text', () => {
+    expect(inline('@2026-13-45 and @2026-02-29 and @2026-11-12 25:00')).toEqual([
+      ['@2026-13-45 and @2026-02-29 and @2026-11-12 25:00'],
+    ])
   })
 })

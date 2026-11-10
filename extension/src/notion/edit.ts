@@ -262,6 +262,9 @@ const WRITABLE_MARKS = new Set(['b', 'i', 's', 'c', 'a', 'p', 'd', 'e'])
 /** Marks read_page shows a run by alone, dropping its color. */
 const ALONE_MARKS = new Set(['p', 'lm', 'd', 'e'])
 
+/** What becomes of formatting edit_page can't write back when text is rewritten. */
+const LOST = "formatting read_page doesn't show (comments, underlines, people it can't name, and the like) is gone."
+
 /** Blocks that show what is nested in them; a heading does only as a toggle heading. */
 const HOLDERS = new Set(['text', 'bulleted_list', 'numbered_list', 'to_do', 'toggle', 'quote', 'callout'])
 
@@ -394,38 +397,80 @@ export function planEdit(
   }
 
   /**
-   * Rewrites a table in place from `nb`: changed cells, rows added at the end or removed from it,
-   * and columns added or removed at the right. Cells the agent passed back as read_page showed
-   * them keep what they hold.
+   * Rewrites a table in place from `nb`. Columns are matched to the table's by their header cell,
+   * and rows by their cells in those columns, so a row or column added or removed anywhere keeps
+   * the others where they are; what doesn't match between two matches is changed in place, in
+   * order. Cells the agent passed back as read_page showed them keep what they hold.
    */
   const rewriteTable = (table: Block, rows: string[], nb: NewBlock, people: Map<string, string>): string => {
     const tableRef = ref(table.id)
     const columns = (table.format?.table_block_column_order as string[] | undefined) ?? []
-    const newRows = nb.rows ?? []
-    const width = newRows[0]?.length ?? 0
-    const order = columns.slice(0, width)
-    while (order.length < width) order.push(columnId(newId))
-    const counts = { cells: 0, added: 0, removed: 0 }
-    if (order.length !== columns.length || order.some((c, n) => c !== columns[n])) {
-      ops.push(op.setFormat(table.id, { table_block_column_order: order }))
-    }
-    let shown: RichText[][] | undefined
+    let shown: RichText[][] | undefined = rows.length ? undefined : []
     try {
-      shown = parseMarkdown(read.lines.get(table.id) ?? '')[0]?.rows
+      shown ??= parseMarkdown(read.lines.get(table.id) ?? '')[0]?.rows
     } catch (err) {
       if (!(err instanceof MarkdownError)) throw err
     }
-    let lost = false
-    rows.forEach((row, n) => {
-      if (n >= newRows.length) return
+    if (!shown || shown.length !== rows.length || shown.some((r) => r.length !== columns.length)) {
+      throw new EditError(`${tableRef} isn't as read_page showed it. ${READ_AGAIN}`)
+    }
+    const key = (cell: RichText) => JSON.stringify(cell)
+    const shownKeys = shown.map((row) => row.map((cell) => key(withPeople(cell, people, { keep: true }))))
+    const newRows = nb.rows ?? []
+    const width = newRows[0]?.length ?? 0
+
+    const columnPairs = align(
+      columns.map((_, c) => shownKeys[0]?.[c] ?? ''),
+      (newRows[0] ?? []).map(key),
+    )
+    /** For each new column: its id, and its index in the table as read, if it was there. */
+    const kept = columnPairs.filter((p) => p.b !== undefined)
+    const order = kept.map((p) => (p.a === undefined ? columnId(newId) : columns[p.a]))
+    const was = kept.map((p) => p.a)
+    const both = columnPairs.filter((p) => p.a !== undefined && p.b !== undefined)
+    const rowPairs = align(
+      shownKeys.map((row) => JSON.stringify(both.map((p) => row[p.a!]))),
+      newRows.map((row) => JSON.stringify(both.map((p) => key(row[p.b!])))),
+    )
+    const counts = {
+      cells: 0,
+      rowsAdded: 0,
+      rowsRemoved: 0,
+      columnsAdded: kept.filter((p) => p.a === undefined).length,
+      columnsRemoved: columnPairs.filter((p) => p.b === undefined).length,
+    }
+    if (order.length !== columns.length || order.some((c, n) => c !== columns[n])) {
+      ops.push(op.setFormat(table.id, { table_block_column_order: order }))
+    }
+
+    const users = loaded.recordMap.notion_user
+    let lostCells = false
+    let lostRows = false
+    let prev: string | undefined
+    const removed: string[] = []
+    for (const p of rowPairs) {
+      if (p.b === undefined) {
+        removed.push(rows[p.a!])
+        continue
+      }
+      const cells = newRows[p.b]
+      if (p.a === undefined) {
+        const id = createRow(op, ops, cells, order, table.id, newId)
+        createdAll.push(id)
+        // Before the first row when nothing comes before it; rows are removed only after this.
+        ops.push(prev || !rows.length ? op.listAfter(table.id, id, prev) : op.listBefore(table.id, id, rows[0]))
+        prev = id
+        counts.rowsAdded++
+        continue
+      }
+      const row = rows[p.a]
       const values: Record<string, unknown> = {}
       order.forEach((column, c) => {
-        const cell = newRows[n][c]
-        const before = shown?.[n]?.[c]
-        if (before && columns.includes(column) && same(withPeople(before, people, { keep: true }), cell)) return
+        const cell = cells[c]
+        if (was[c] !== undefined && shownKeys[p.a!][was[c]!] === key(cell)) return
         const old = blocks[row].properties?.[column]
-        if (JSON.stringify(old ?? []) === JSON.stringify(cell)) return
-        if (hasUnwritableMarks(old, loaded.recordMap.notion_user)) lost = true
+        if (key((old ?? []) as RichText) === key(cell)) return
+        if (hasUnwritableMarks(old, users)) lostCells = true
         values[column] = keepDates(cell, [old])
       })
       if (Object.keys(values).length) {
@@ -433,31 +478,33 @@ export function planEdit(
         changed.add(row)
         counts.cells += Object.keys(values).length
       }
-    })
-    let prev = rows.at(-1)
-    for (const cells of newRows.slice(rows.length)) {
-      const id = createRow(op, ops, cells, order, table.id, newId)
-      createdAll.push(id)
-      ops.push(op.listAfter(table.id, id, prev))
-      prev = id
-      counts.added++
+      prev = row
     }
-    for (const row of rows.slice(newRows.length)) {
+    for (const row of removed) {
+      if (Object.values(blocks[row].properties ?? {}).some((v) => hasUnwritableMarks(v, users))) lostRows = true
       ops.push(...op.remove(table.id, row))
       deleted.add(row)
-      counts.removed++
+      counts.rowsRemoved++
     }
+
+    const n = (count: number, what: string, done: string) =>
+      count ? `${count} ${what}${count === 1 ? '' : 's'} ${done}` : ''
     const parts = [
-      counts.cells ? `${counts.cells} cell${counts.cells === 1 ? '' : 's'} changed` : '',
-      counts.added ? `${counts.added} row${counts.added === 1 ? '' : 's'} added` : '',
-      counts.removed ? `${counts.removed} row${counts.removed === 1 ? '' : 's'} removed` : '',
-      order.length !== columns.length ? `${width} column${width === 1 ? '' : 's'} now` : '',
+      n(counts.cells, 'cell', 'changed'),
+      n(counts.rowsAdded, 'row', 'added'),
+      n(counts.rowsRemoved, 'row', 'removed'),
+      n(counts.columnsAdded, 'column', 'added'),
+      n(counts.columnsRemoved, 'column', 'removed'),
     ].filter(Boolean)
     if (!parts.length) return `${tableRef} already had that content; nothing changed.`
     changed.add(table.id)
     return (
       `Rewrote the table ${tableRef}: ${parts.join(', ')}.` +
-      (lost ? ' Mentions, colors, and similar formatting in the cells it changed are now plain text.' : '')
+      (lostCells ? ` In the cells it changed, ${LOST}` : '') +
+      (lostRows
+        ? " Rows it removed held formatting read_page doesn't show (such as comments); the page's history in " +
+          'Notion can bring them back.'
+        : '')
     )
   }
 
@@ -550,12 +597,7 @@ export function planEdit(
       }
       changed.add(target.id)
       const lost = values.title && hasUnwritableMarks(target.properties?.title, loaded.recordMap.notion_user)
-      summary.push(
-        `Replaced the text of ${ref(e.target)}.` +
-          (lost
-            ? ' Mentions of people or dates, colors, and similar formatting in its old text are now plain text.'
-            : ''),
-      )
+      summary.push(`Replaced the text of ${ref(e.target)}.` + (lost ? ` In its old text, ${LOST}` : ''))
       continue
     }
     // Anything nested, loaded or not, would go with the old block (a table's rows, checked above,
@@ -573,9 +615,7 @@ export function planEdit(
     deleted.add(e.target)
     summary.push(
       `Replaced ${ref(e.target)} with ${ids.length} new block${ids.length === 1 ? '' : 's'}.` +
-        (hasUnwritableMarks(target.properties?.title, loaded.recordMap.notion_user)
-          ? ' Mentions of people or dates, colors, and similar formatting in its old text are now plain text.'
-          : ''),
+        (hasUnwritableMarks(target.properties?.title, loaded.recordMap.notion_user) ? ` In its old text, ${LOST}` : ''),
     )
   }
 
@@ -712,7 +752,7 @@ export function previewEdits(raw: unknown, read: PageRead | undefined, page: str
         return (
           `Replace ${shown(e.block)} with:\n${body(e.markdown)}` +
           (lossy
-            ? '\n    (If its text changes, its mentions, dates, colors, and similar formatting become plain text.)'
+            ? "\n    (If its text changes, formatting read_page doesn't show, such as comments on it, is lost.)"
             : '')
         )
       }
@@ -870,4 +910,40 @@ function keepDates(title: RichText, old: unknown[]): RichText {
 /** Blocks with their date mentions kept as `old` stored them (see keepDates). */
 function withDates(blocks: NewBlock[], old: unknown[]): NewBlock[] {
   return blocks.map((b) => ({ ...b, title: keepDates(b.title, old), children: withDates(b.children, old) }))
+}
+
+/**
+ * Pairs up two lists: equal items in the longest run they share, in order, then what is left
+ * between two such pairs one to one, in order, and the rest alone. Each pair names an index of
+ * `a`, of `b`, or both; the pairs keep the order of both lists.
+ */
+function align(a: string[], b: string[]): { a?: number; b?: number }[] {
+  // longest[i][j]: how many items a[i..] and b[j..] share in order.
+  const longest = Array.from({ length: a.length + 1 }, () => new Array<number>(b.length + 1).fill(0))
+  for (let i = a.length - 1; i >= 0; i--) {
+    for (let j = b.length - 1; j >= 0; j--) {
+      longest[i][j] = a[i] === b[j] ? longest[i + 1][j + 1] + 1 : Math.max(longest[i + 1][j], longest[i][j + 1])
+    }
+  }
+  const out: { a?: number; b?: number }[] = []
+  let left: number[] = []
+  let right: number[] = []
+  const flush = () => {
+    for (let k = 0; k < Math.max(left.length, right.length); k++) out.push({ a: left[k], b: right[k] })
+    left = []
+    right = []
+  }
+  let i = 0
+  let j = 0
+  while (i < a.length && j < b.length) {
+    if (a[i] === b[j]) {
+      flush()
+      out.push({ a: i++, b: j++ })
+    } else if (longest[i + 1][j] >= longest[i][j + 1]) left.push(i++)
+    else right.push(j++)
+  }
+  while (i < a.length) left.push(i++)
+  while (j < b.length) right.push(j++)
+  flush()
+  return out
 }

@@ -165,13 +165,22 @@ export function parseMarkdown(markdown: string): NewBlock[] {
       // A line that carries a block reference ends that block: after the quote's own text, the
       // next line at its own indentation is another block, as read_page draws two quotes in a row.
       let referenced = TRAILING_REF.test(raw)
+      // The fence of a code block open among the nested lines: its lines, blank ones too, are its own.
+      let fence: string | undefined
       while (i + 1 < lines.length && lines[i + 1].trim().startsWith('>') && leading(lines[i + 1]) === indent) {
-        const next = lines[i + 1].trim().replace(/^>\s?/, '')
+        // Only the start is trimmed: a code line keeps its trailing spaces, and a blank one (`>   `)
+        // its indentation.
+        const next = lines[i + 1].trimStart().replace(/^>\s?/, '')
         const deeper = /^\s{2}/.test(next)
-        if (!deeper && referenced) break
+        if (!deeper && referenced && !fence) break
         i++
-        if (deeper || nested.length || BLOCK_START.test(next)) nested.push(next)
-        else own.push(next.replace(TRAILING_REF, ''))
+        if (deeper || nested.length || BLOCK_START.test(next)) {
+          nested.push(next)
+          const code = /^\s*(`{3,})/.exec(next)
+          if (!fence && code) fence = code[1]
+          else if (fence && /^`+$/.test(next.trim().replace(TRAILING_REF, '')) && next.trim().startsWith(fence))
+            fence = undefined
+        } else own.push(next.replace(TRAILING_REF, '').trimEnd())
         if (TRAILING_REF.test(next)) referenced = true
       }
       // A leading backslash keeps a line that looks like a list or heading as text.
@@ -295,6 +304,10 @@ export function inline(text: string, marks: Mark[] = []): RichText {
     {
       re: DATE,
       run: (m) => {
+        // A date or time that doesn't exist stays text rather than being sent to Notion.
+        if (![m[1], m[3]].every((d) => !d || realDate(d)) || ![m[2], m[4]].every((t) => !t || realTime(t))) {
+          return [marks.length ? [m[0], marks] : [m[0]]]
+        }
         // A range has a time at both ends or at neither: one given at one end is taken for both.
         const time = m[3] ? (m[2] ?? m[4]) : m[2]
         const value: DateValue = {
@@ -497,4 +510,16 @@ function breaks(text: string): string {
 function lineBreaks(text: string): string {
   // Escaped only behind an odd number of backslashes: `\\<br>` is a backslash, then a line break.
   return text.replace(/(?<!(?:^|[^\\])(?:\\\\)*\\)<br\s*\/?>/gi, '\n')
+}
+
+/** Whether `YYYY-MM-DD` is a day on the calendar. */
+function realDate(date: string): boolean {
+  const day = new Date(`${date}T00:00:00Z`)
+  return !Number.isNaN(day.getTime()) && day.toISOString().slice(0, 10) === date
+}
+
+/** Whether `HH:MM` is a time of day. */
+function realTime(time: string): boolean {
+  const [h, m] = time.split(':').map(Number)
+  return h < 24 && m < 60
 }
