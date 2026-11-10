@@ -384,6 +384,17 @@ describe('update_pages details', () => {
     expect(preview?.split('\n')[2]).toBe('    Notes: First Second (same text; its formatting changes)')
   })
 
+  it('stores a page title written back as read_page shows it as it was', async () => {
+    const ws = mentionable()
+    open(ws)
+    const title = [['*Draft* plan [v2] with '], ['‣', [['u', ANN]]], [' and @[name] syntax']]
+    ws.edit(PAGE, { properties: { title } })
+    const shown = /^Page: (.*) \^[0-9a-f]{32}$/.exec(((await readPage.run({})) as string).split('\n')[0])![1]
+    expect(shown).toBe('\\*Draft\\* plan \\[v2\\] with @[Ann] and @\\[name\\] syntax')
+    await update([{ page: hex(PAGE), title: shown, icon: '📝' }])
+    expect(ws.records.get(PAGE)!.properties).toEqual({ title })
+  })
+
   it('stores URLs, emails, and phone numbers as plain text, and numbers given for text', async () => {
     const ws = mentionable()
     open(ws)

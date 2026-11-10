@@ -159,7 +159,7 @@ export const readPage: ToolSpec = {
     const pageHex = hexId(loaded.page.id)
     const threads = threadCount(loaded, md)
     const header = [
-      `Page: ${md.title} ^${pageHex}`,
+      `Page: ${md.titleMarkdown} ^${pageHex}`,
       `URL: ${pageLink(tab.url, pageHex)}`,
       ...(parts.length > 1
         ? [`Part ${part} of ${parts.length}${part < parts.length ? `. Read part ${part + 1} for more.` : '.'}`]
@@ -1356,11 +1356,12 @@ export const updatePages: ToolSpec = {
     // People the new values mention, matched before anything is written. A name the old value
     // already mentions is that same person, so a value written back as read keeps its mentions.
     const mentioning = changes.filter((c) => c.names.length)
-    const old = mentioning.map((c) => ({ ...c.block, properties: pick(c.block.properties, c.texts) }))
-    const users = unnamedRowMentions({}, old, spaceId).pointers.filter((p) => p.table === 'notion_user')
+    const users = [
+      ...new Set(mentioning.flatMap((c) => c.texts.flatMap((key) => mentioned(c.block.properties?.[key])))),
+    ]
     let named: RecordMap = {}
     try {
-      named = await tab.client.findRecords(users)
+      named = await tab.client.findRecords(users.map((id) => ({ table: 'notion_user' as const, id })))
     } catch (err) {
       // As in loadMentioned: only names, so a person out of reach is looked up among the members.
       if (!(err instanceof NotionError && (err.code === 'no_access' || err.code === 'in_trash'))) throw err
@@ -1430,9 +1431,14 @@ function change(old: string, now: string, same = old === now): string {
   return old === now ? ' (same text; its formatting changes)' : ` (was ${old || 'empty'})`
 }
 
-/** The entries of `properties` under `keys`. */
-function pick(properties: Record<string, unknown> | undefined, keys: string[]): Record<string, unknown> {
-  return Object.fromEntries(keys.map((key) => [key, properties?.[key]]))
+/** The ids of the people rich text mentions. */
+function mentioned(value: unknown): string[] {
+  const runs = (Array.isArray(value) ? value : []) as [string, [string, unknown?][]?][]
+  return runs.flatMap((run) =>
+    (Array.isArray(run?.[1]) ? run[1] : []).flatMap(([mark, id]) =>
+      mark === 'u' && typeof id === 'string' ? [id] : [],
+    ),
+  )
 }
 
 /**
