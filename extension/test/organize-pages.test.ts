@@ -1,9 +1,9 @@
 // Moving, duplicating, and trashing pages (move_page, duplicate_page, and trash_page in
 // extension/src/tools.ts), against a fake Notion workspace that applies them the way Notion does.
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { duplicatePage, editPage, forgetReads, movePage, readPage, trashPage } from '../../extension/src/tools'
+import { duplicatePage, editPage, forgetReads, movePage, readPage, trashPage } from '../src/tools'
 import { FakeNotionTab, FakeWorkspace, PAGE, PAGE_URL, SPACE, USER, notionError, restoreGlobals } from './notion-tab'
-import { DUPLICATE_POLLING, LIMITED_STOP, UNEXPECTED_STOP } from '../../extension/src/notion/api'
+import { DUPLICATE_POLLING, LIMITED_STOP, UNEXPECTED_STOP } from '../src/notion/api'
 
 // Notion's timing for checks on a copy, shortened so the tests run quickly; the number of checks stays.
 const polling = { ...DUPLICATE_POLLING }

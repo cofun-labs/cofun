@@ -1,8 +1,8 @@
 // The search_pages tool (extension/src/tools.ts) against a fake Notion tab answering with search
 // results in the shape Notion's /api/v3/search returns (see the #64 spike).
 import { afterEach, describe, expect, it } from 'vitest'
-import { LIMITED_STOP, NO_ACCESS } from '../../extension/src/notion/api'
-import { forgetReads, readPage, searchPages } from '../../extension/src/tools'
+import { LIMITED_STOP, NO_ACCESS } from '../src/notion/api'
+import { forgetReads, readPage, searchPages } from '../src/tools'
 import { FakeNotionTab, PAGE, PAGE_URL, SPACE, notionError, restoreGlobals } from './notion-tab'
 
 afterEach(restoreGlobals)
