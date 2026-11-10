@@ -41,6 +41,29 @@ describe('extension manifest', () => {
     ])
   })
 
+  // Where the published extension's own pages may load from and send requests to: the hosts
+  // PRIVACY.md lists, enforced by the browser. A change to extension/.env or to the policy that
+  // adds a host must change this test and PRIVACY.md in the same pull request.
+  it('ships with a content security policy that allows only these hosts', () => {
+    const env = hostedEnv()
+    const json = buildManifest({ ...env, VITE_CLERK_SYNC_HOST: env.VITE_CLERK_SYNC_HOST! }, '1.2.3')
+    expect(json.content_security_policy.extension_pages).toBe(
+      "default-src 'self'; script-src 'self'; object-src 'self'; style-src 'self' 'unsafe-inline'; " +
+        "connect-src 'self' https://notion-copilot.kitfun.cc https://saving-yeti-9519.clerk.accounts.dev; " +
+        "img-src 'self' data: blob: https://img.clerk.com",
+    )
+  })
+
+  it('allows requests only to the configured worker and Clerk host, whatever the env', () => {
+    const csp = (env: Partial<ManifestEnv>) =>
+      manifest({ VITE_CLERK_SYNC_HOST: 'https://app.example.com', ...env }).content_security_policy.extension_pages
+    expect(csp({ VITE_API_URL: 'http://localhost:8787/v1' })).toContain(
+      `connect-src 'self' http://localhost:8787 https://${CLERK_HOST};`,
+    )
+    // Without a worker URL or a Clerk host, requests stay inside the extension.
+    expect(csp({ VITE_CLERK_PUBLISHABLE_KEY: '' })).toContain("connect-src 'self';")
+  })
+
   it('asks for exactly these permissions, whatever the env', () => {
     const envs: ManifestEnv[] = [
       { VITE_CLERK_SYNC_HOST: 'https://notion-copilot.kitfun.cc' },
@@ -58,6 +81,7 @@ describe('extension manifest', () => {
       [
         'action',
         'background',
+        'content_security_policy',
         'description',
         'host_permissions',
         'manifest_version',

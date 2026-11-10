@@ -52,7 +52,7 @@ The agent edits pages, creates pages and rows, changes properties, adds comments
 ```
 extension/                Chrome extension
   vite.config.ts          build config; writes manifest.json into the build
-  manifest.ts             builds manifest.json from .env; a test pins its permissions
+  manifest.ts             builds manifest.json from .env; a test pins its permissions and content security policy
   sidepanel.html
   src/background.ts       opens the side panel from the toolbar icon; enabled only on Notion tabs
   src/agent.ts            agent loop (pi) against the worker; the only module that imports pi
@@ -97,5 +97,6 @@ docs/
 scripts/
   sync-github-settings.sh applies the rulesets and repository options with gh
 README.md                 what the extension does and how to use it
+PRIVACY.md                what data the extension reads, where it goes, and what is kept
 AGENTS.md                 development workflow and conventions (CLAUDE.md links here)
 ```

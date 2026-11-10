@@ -50,7 +50,7 @@ There is nothing to connect on the Notion side: no integration to create, no tok
 
 ## Privacy and safety
 
-**What leaves your browser.** Your questions, and what Copilot reads to answer them (pages, database rows, comments, search results), go to the Copilot server and on to the AI model, which runs on Cloudflare Workers AI. The server doesn't keep them: for each request it records who asked, sizes, token counts, and the outcome, never the text of a prompt or a reply.
+**What leaves your browser.** Your questions, and what Copilot reads to answer them (pages, database rows, comments, search results), go to the Copilot server and on to the AI model, which runs on Cloudflare Workers AI. The server doesn't keep them: for each request it records who asked, sizes, token counts, and the outcome, never the text of a prompt or a reply. [PRIVACY.md](PRIVACY.md) has the full account: what is read, which hosts it goes to, and what is kept.
 
 **What stays on your device.** Conversations are saved in Chrome on your device, per account, and kept after you sign out so you can pick up again. They are not encrypted: anyone who can use your Chrome profile can read them, including the page content Copilot read.
 
