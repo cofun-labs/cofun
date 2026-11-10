@@ -179,7 +179,9 @@ export function parseMarkdown(markdown: string): NewBlock[] {
         // its indentation.
         const next = lines[i + 1].trimStart().replace(/^>\s?/, '')
         const deeper = /^\s{2}/.test(next)
-        if (!deeper && referenced && !fence) break
+        // A line that starts a block is nested in the quote even after its reference: read_page
+        // starts the text of a quote with a backslash when it looks like one.
+        if (!deeper && referenced && !fence && !BLOCK_START.test(next)) break
         i++
         if (deeper || nested.length || BLOCK_START.test(next)) {
           nested.push(next)
@@ -291,8 +293,8 @@ export interface DateValue {
 /** A date as read_page shows a date mention: `@2026-11-10`, with a time and an end if it has them. */
 const DATE = /(?<![\w@])@(\d{4}-\d{2}-\d{2})(?: (\d{2}:\d{2}))?(?: → (\d{4}-\d{2}-\d{2})(?: (\d{2}:\d{2}))?)?/
 
-/** Text colors and backgrounds, as Notion names them (`red`, `blue_background`, …). */
-export const COLOR = /^[a-z]+(?:_background)?$/
+/** Text colors and backgrounds, as Notion stores them (`red`, `blue_background`, …); Notion's green is `teal`. */
+export const COLOR = /^(?:gray|brown|orange|yellow|teal|blue|purple|pink|red)(?:_background)?$/
 
 /**
  * Inline Markdown (bold, italic, strikethrough, code, links, links to pages, people, dates, inline
@@ -332,7 +334,11 @@ export function inline(text: string, marks: Mark[] = []): RichText {
       // A colored run, as read_page shows one.
       // An escaped `\</span>` is text inside it.
       re: /<span color="([a-z_]+)">([\s\S]+?)(?<!(?:^|[^\\])(?:\\\\)*\\)<\/span>/,
-      run: (m) => (COLOR.test(m[1]) ? inline(m[2], [...marks, ['h', m[1]]]) : [[m[0], marks]]),
+      run: (m) => {
+        // Green as the Notion app names it.
+        const color = m[1].replace(/^green(?=$|_)/, 'teal')
+        return COLOR.test(color) ? inline(m[2], [...marks, ['h', color]]) : [[m[0], marks]]
+      },
     },
     {
       re: CODE_SPAN,

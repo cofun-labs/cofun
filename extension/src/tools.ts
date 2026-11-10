@@ -1014,7 +1014,11 @@ function remember(read: PageRead, since = generation) {
   if (since !== generation) return
   pageReads.delete(read.pageId)
   pageReads.set(read.pageId, read)
-  if (pageReads.size > READS_KEPT) pageReads.delete(pageReads.keys().next().value!)
+  if (pageReads.size > READS_KEPT) {
+    const oldest = pageReads.keys().next().value!
+    pageReads.delete(oldest)
+    partsRead.delete(oldest)
+  }
 }
 
 /** A page title on one line, as Notion keeps it, so it can't break up the preview's lines. */

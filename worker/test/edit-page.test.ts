@@ -1741,3 +1741,19 @@ describe('second review of #148', () => {
     )
   })
 })
+
+describe('third review of #148', () => {
+  it('nests a list written under a quote line that carries its reference, instead of starting a new quote', () => {
+    expect(parseMarkdown('> Note ^1a2b3c4d\n> - new item\n> Next quote ^2b3c4d5e')).toEqual([
+      { type: 'quote', title: [['Note']], children: [{ type: 'bulleted_list', title: [['new item']], children: [] }] },
+      { type: 'quote', title: [['Next quote']], children: [] },
+    ])
+  })
+
+  it('writes only the colors Notion has, green as Notion stores it', () => {
+    expect(inline('<span color="green">a</span> <span color="banana">b</span>')).toEqual([
+      ['a', [['h', 'teal']]],
+      [' <span color="banana">b</span>'],
+    ])
+  })
+})
