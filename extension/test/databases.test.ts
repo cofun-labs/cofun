@@ -476,3 +476,65 @@ describe('create_database and update_database_schema', () => {
     ])
   })
 })
+
+describe('create_database and update_database_schema arguments', () => {
+  it('create_database refuses arguments that are not what its schema says, without asking Notion', async () => {
+    const tab = open(workspace())
+    const create = (args: Record<string, unknown>) =>
+      createDatabase.run({ parent: PAGE_URL, title: 'Tracker', ...args })
+    const many = Array.from({ length: 31 }, (_, n) => ({ name: `P${n}`, type: 'text' }))
+    const refused: [Record<string, unknown>, string][] = [
+      [{ parent: undefined }, '`parent` is required: the URL or id of the page to create it in.'],
+      [{ parent: ['x'] }, '`parent` is required'],
+      [{ title: undefined }, '`title` must not be empty.'],
+      [{ title_property: 5 }, 'The title column must not be empty.'],
+      [{ properties: { name: 'A', type: 'text' } }, '`properties` must be a list of properties.'],
+      [{ properties: many }, 'A database can be created with at most 30 properties.'],
+      [{ properties: [{ type: 'text' }] }, 'A property name must not be empty.'],
+      [{ properties: [{ name: 'A', type: 'text' }, { name: 'B' }] }, "Property 2 can't be a property without a type."],
+      [{ properties: [{ name: 'A', type: 'Text' }] }, "Property 1 can't be a Text type. Use one of: text, number,"],
+      [
+        { properties: [{ name: 'A', type: 'select', options: 'x' }] },
+        '`properties[0].options`: Invalid input: expected array, received string',
+      ],
+      [
+        { properties: [{ name: 'A', type: 'select', options: Array.from({ length: 31 }, (_, n) => `o${n}`) }] },
+        'At most 30 options can be added at once.',
+      ],
+      [{ properties: [{ name: 'A', type: 'text', color: 'red' }] }, '`properties[0]`: Unrecognized key: "color"'],
+      [{ icon: '📋' }, 'Unrecognized key: "icon"'],
+    ]
+    for (const [args, message] of refused) await expect(create(args)).rejects.toThrow(message)
+    expect(createDatabase.preview!({ title: 'Tracker' })).toBeUndefined()
+    expect(tab.sent).toEqual([])
+  })
+
+  it('update_database_schema refuses arguments that are not what its schema says, without asking Notion', async () => {
+    const tab = open(workspace())
+    const many = Array.from({ length: 31 }, (_, n) => ({ action: 'remove_property', property: `P${n}` }))
+    const refused: [unknown, string][] = [
+      [undefined, '`changes` must be a list with at least one change.'],
+      [[], '`changes` must be a list with at least one change.'],
+      [{ action: 'remove_property', property: 'Notes' }, '`changes` must be a list with at least one change.'],
+      [many, 'At most 30 changes can be made in one call.'],
+      [[{ property: 'Notes' }], 'Change 1: `action` must be one of add_property, rename_property,'],
+      [[{ action: 'remove_property' }], 'Change 1 needs `property`.'],
+      [[{ action: 'remove_property', property: ' ' }], 'Change 1 (remove_property) needs `property`.'],
+      [[{ action: 'add_property', property: 'Due' }], 'Change 1 (add_property) needs `type`.'],
+      [[{ action: 'add_property', property: 'Due', type: 'Date' }], "Change 1: the property can't be a Date type."],
+      [[{ action: 'rename_property', property: 'Notes' }], 'Change 1 (rename_property) needs `to`.'],
+      [[{ action: 'rename_option', property: 'Stage', to: 'X' }], 'Change 1 (rename_option) needs `option`.'],
+      [[{ action: 'remove_option', property: 'Stage' }], 'Change 1 (remove_option) needs `option`.'],
+      [[{ action: 'add_options', property: 'Stage' }], 'Change 1 (add_options) needs `options`: a list of names.'],
+      [
+        [{ action: 'add_options', property: 'Stage', options: 'Draft' }],
+        '`changes[0].options`: Invalid input: expected array, received string',
+      ],
+      [[{ action: 'rename_property', property: 'Notes', to: 5 }], '`changes[0].to`: Invalid input: expected string'],
+      [[{ action: 'remove_property', property: 'Notes', force: true }], '`changes[0]`: Unrecognized key: "force"'],
+    ]
+    for (const [changes, message] of refused) await expect(change(changes)).rejects.toThrow(message)
+    expect(updateDatabaseSchema.preview!({ changes: [{ action: 'drop', property: 'Notes' }] })).toBeUndefined()
+    expect(tab.sent).toEqual([])
+  })
+})

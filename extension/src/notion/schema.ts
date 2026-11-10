@@ -2,12 +2,13 @@
 // against its schema. A change that would lose values the user didn't ask to remove is refused
 // before anything is sent: no type changes, no removing the title, no two properties or options
 // with one name.
+import { z } from '../zod'
 import { blockOps, collectionOps, type Operation, type RecordMap, type SchemaOption } from './api'
 import type { Schema } from './markdown'
 import { oneLine, plainText } from './props'
 
 /** The property types a database can be given, by the names its schema uses. */
-export const PROPERTY_TYPES = [
+const PROPERTY_TYPES = [
   'text',
   'number',
   'select',
@@ -46,14 +47,14 @@ type Defs = Record<string, PropertyDef>
 
 /** One change to a database's properties, as the model gives it. */
 export type SchemaChange =
-  | { action: 'add_property'; property: string; type: string; options?: string[] }
+  | { action: 'add_property'; property: string; type: PropertyType; options?: string[] }
   | { action: 'rename_property'; property: string; to: string }
   | { action: 'remove_property'; property: string }
   | { action: 'add_options'; property: string; options: string[] }
   | { action: 'rename_option'; property: string; option: string; to: string }
   | { action: 'remove_option'; property: string; option: string }
 
-export const SCHEMA_ACTIONS = [
+const SCHEMA_ACTIONS = [
   'add_property',
   'rename_property',
   'remove_property',
@@ -62,9 +63,58 @@ export const SCHEMA_ACTIONS = [
   'remove_option',
 ] as const
 
+/** Text arguments drop Markdown escapes (see plainText), so the model must double a backslash. */
+export const BACKSLASH = 'Markdown escapes are undone: write a backslash itself as \\\\.'
+
+/** Which entry of a list argument an issue is about, counted from 1. */
+const entryAt = (issue: { path?: PropertyKey[] }) => Number(issue.path?.[1]) + 1
+
+/** A property's type; `where` says which entry an issue is about, as the model is told. */
+const typeArg = (where: (issue: { path?: PropertyKey[] }) => string) =>
+  z.enum(PROPERTY_TYPES, {
+    error: (issue) => {
+      const given = typeof issue.input === 'string' && issue.input.trim() ? oneLine(issue.input) : 'property without a'
+      return `${where(issue)} can't be a ${given} type. Use one of: ${PROPERTY_TYPES.join(', ')}.`
+    },
+  })
+
+/** Option names for a select or multi-select. */
+const optionsArg = (description: string) =>
+  z
+    .array(z.string())
+    .max(SCHEMA_MAX, { error: `At most ${SCHEMA_MAX} options can be added at once.` })
+    .describe(description)
+    .optional()
+
+/** A property as the model describes it, and as it is described to the model. */
+export const PROPERTY_SPEC = z.strictObject({
+  name: z.string({ error: 'A property name must not be empty.' }).describe(`The property's name. ${BACKSLASH}`),
+  type: typeArg((issue) => `Property ${entryAt(issue)}`),
+  options: optionsArg("For select and multi_select: the options' names, without commas. A status gets Notion's own."),
+})
+type PropertySpec = z.output<typeof PROPERTY_SPEC>
+
+/**
+ * One entry of the `changes` argument, as it is described to the model: its action, and the fields
+ * the actions take between them. Which fields an action needs is checked by parseChanges.
+ */
+export const CHANGE_ARG = z.strictObject({
+  action: z.enum(SCHEMA_ACTIONS, {
+    error: (issue) => `Change ${entryAt(issue)}: \`action\` must be one of ${SCHEMA_ACTIONS.join(', ')}.`,
+  }),
+  property: z
+    .string({ error: (issue) => `Change ${entryAt(issue)} needs \`property\`.` })
+    .describe('The property to change, or to add.'),
+  type: typeArg((issue) => `Change ${entryAt(issue)}: the property`).optional(),
+  options: optionsArg('For add_property and add_options: option names.'),
+  option: z.string().describe('For rename_option and remove_option: the option.').optional(),
+  to: z.string().describe(`For the renames: the new name. ${BACKSLASH}`).optional(),
+})
+type ChangeArg = z.output<typeof CHANGE_ARG>
+
 /** A name for a property or an option: on one line, Markdown escapes undone. */
-function nameArg(value: unknown, what: string): string {
-  const name = typeof value === 'string' ? oneLine(plainText(value)) : ''
+function nameArg(value: string, what: string): string {
+  const name = oneLine(plainText(value))
   if (!name) throw new SchemaError(`${what} must not be empty.`)
   return name
 }
@@ -87,9 +137,8 @@ function checkFreeName(defs: Defs, name: string, except?: string) {
 }
 
 /** Option names for a select or multi-select, checked: on one line, no commas, none twice. */
-function optionNames(value: unknown, property: string, existing: SchemaOption[] = []): string[] {
-  if (!Array.isArray(value) || !value.length) throw new SchemaError(`Give the options of “${property}” as a list.`)
-  if (value.length > SCHEMA_MAX) throw new SchemaError(`At most ${SCHEMA_MAX} options can be added at once.`)
+function optionNames(value: string[], property: string, existing: SchemaOption[] = []): string[] {
+  if (!value.length) throw new SchemaError(`Give the options of “${property}” as a list.`)
   const names: string[] = []
   for (const raw of value) {
     const name = nameArg(raw, `An option of “${property}”`)
@@ -145,17 +194,11 @@ function statusDef(name: string, newId: () => string): PropertyDef {
 }
 
 /** A new property's definition, checked. */
-function propertyDef(spec: Record<string, unknown>, newId: () => string): PropertyDef {
-  const name = nameArg(spec.name, 'A property name')
-  const type = typeof spec.type === 'string' ? spec.type.trim().toLowerCase() : ''
-  if (!PROPERTY_TYPES.includes(type as PropertyType))
-    throw new SchemaError(
-      `“${name}” can't be a ${type || 'property without a'} type. Use one of: ${PROPERTY_TYPES.join(', ')}.`,
-    )
-  const hasOptions = spec.options !== undefined && spec.options !== null
+function propertyDef({ name: given, type, options }: PropertySpec, newId: () => string): PropertyDef {
+  const name = nameArg(given, 'A property name')
   if (type === 'select' || type === 'multi_select')
-    return { name, type, options: hasOptions ? newOptions(optionNames(spec.options, name), newId) : [] }
-  if (hasOptions)
+    return { name, type, options: options ? newOptions(optionNames(options, name), newId) : [] }
+  if (options)
     throw new SchemaError(
       type === 'status'
         ? `“${name}” is a status: it gets Notion's options (Not started, In progress, Done), which can't be chosen here.`
@@ -185,20 +228,15 @@ export interface SchemaOptions {
 
 /** The schema of a new database: its title column, then `specs` in order. Names must differ. */
 export function newSchema(
-  titleName: unknown,
-  specs: unknown,
+  titleName: string | undefined,
+  specs: PropertySpec[] = [],
   { newId = () => crypto.randomUUID(), random = Math.random }: SchemaOptions = {},
 ): Schema {
   const defs: Defs = {
     title: { name: titleName === undefined ? 'Name' : nameArg(titleName, 'The title column'), type: 'title' },
   }
-  if (specs !== undefined && specs !== null && !Array.isArray(specs))
-    throw new SchemaError('`properties` must be a list of properties.')
-  const list = (specs ?? []) as Record<string, unknown>[]
-  if (list.length > SCHEMA_MAX)
-    throw new SchemaError(`A database can be created with at most ${SCHEMA_MAX} properties.`)
-  for (const spec of list) {
-    const def = propertyDef(spec ?? {}, newId)
+  for (const spec of specs) {
+    const def = propertyDef(spec, newId)
     checkFreeName(defs, def.name!)
     defs[newKey(defs, random)] = def
   }
@@ -223,26 +261,32 @@ export interface SchemaPlan {
   renames: OptionRename[]
 }
 
-/** The `changes` argument, checked for shape before anything is asked of Notion. */
-export function parseChanges(value: unknown): SchemaChange[] {
-  if (!Array.isArray(value) || !value.length)
-    throw new SchemaError('`changes` must be a list with at least one change.')
-  if (value.length > SCHEMA_MAX) throw new SchemaError(`At most ${SCHEMA_MAX} changes can be made in one call.`)
-  return value.map((raw: unknown, i) => {
-    const c = (raw ?? {}) as Record<string, unknown>
-    if (!SCHEMA_ACTIONS.includes(c.action as (typeof SCHEMA_ACTIONS)[number]))
-      throw new SchemaError(`Change ${i + 1}: \`action\` must be one of ${SCHEMA_ACTIONS.join(', ')}.`)
-    const need = (field: string) => {
-      if (typeof c[field] !== 'string' || !(c[field] as string).trim())
-        throw new SchemaError(`Change ${i + 1} (${String(c.action)}) needs \`${field}\`.`)
+/** The `changes` argument as changes, each with what its action needs, before anything is asked of Notion. */
+export function parseChanges(changes: ChangeArg[]): SchemaChange[] {
+  return changes.map((c, i): SchemaChange => {
+    const refuse = (needs: string) => new SchemaError(`Change ${i + 1} (${c.action}) needs ${needs}.`)
+    const need = <T extends string>(field: string, value: T | undefined): T => {
+      if (!value?.trim()) throw refuse(`\`${field}\``)
+      return value
     }
-    need('property')
-    if (c.action === 'add_property') need('type')
-    if (c.action === 'rename_property' || c.action === 'rename_option') need('to')
-    if (c.action === 'rename_option' || c.action === 'remove_option') need('option')
-    if (c.action === 'add_options' && !Array.isArray(c.options))
-      throw new SchemaError(`Change ${i + 1} (add_options) needs \`options\`: a list of names.`)
-    return c as unknown as SchemaChange
+    const property = need('property', c.property)
+    switch (c.action) {
+      case 'add_property':
+        return { action: c.action, property, type: need('type', c.type), options: c.options }
+      case 'rename_property':
+        return { action: c.action, property, to: need('to', c.to) }
+      case 'remove_property':
+        return { action: c.action, property }
+      case 'add_options':
+        if (!c.options) throw refuse('`options`: a list of names')
+        return { action: c.action, property, options: c.options }
+      case 'rename_option': {
+        const to = need('to', c.to)
+        return { action: c.action, property, option: need('option', c.option), to }
+      }
+      case 'remove_option':
+        return { action: c.action, property, option: need('option', c.option) }
+    }
   })
 }
 
