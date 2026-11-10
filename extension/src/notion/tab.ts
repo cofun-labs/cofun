@@ -53,7 +53,9 @@ export function tabTransport(tabId: number): NotionTransport {
         target: { tabId },
         world: 'ISOLATED',
         func: notionRequest,
-        args: [endpoint, body, spaceId ?? null, NOTION_HOSTS, REQUEST_TIMEOUT_MS],
+        // As JSON text: Chrome drops object keys whose value is null from script arguments, and a
+        // null can mean something to Notion (it removes a database property).
+        args: [endpoint, JSON.stringify(body), spaceId ?? null, NOTION_HOSTS, REQUEST_TIMEOUT_MS],
       })
       result = frame?.result
     } catch (err) {
@@ -86,7 +88,8 @@ export function tabTransport(tabId: number): NotionTransport {
  */
 export async function notionRequest(
   endpoint: string,
-  body: unknown,
+  /** The request body as JSON text. */
+  body: string,
   spaceId: string | null,
   hosts: string[],
   timeoutMs: number,
@@ -108,7 +111,7 @@ export async function notionRequest(
     const res = await fetch(`/api/v3/${endpoint}`, {
       method: 'POST',
       headers,
-      body: JSON.stringify(body),
+      body,
       signal: AbortSignal.timeout(timeoutMs),
       // Notion's API never redirects; following one would send the body (a write, say) elsewhere.
       redirect: 'manual',

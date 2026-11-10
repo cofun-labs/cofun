@@ -33,9 +33,13 @@ export interface TabNotion {
 export async function tabNotion(tab: Target): Promise<TabNotion> {
   const world = await tab.isolatedWorld('notion-copilot-e2e')
   const send: NotionTransport = async (endpoint, body, { spaceId }) => {
-    const res = await tab.evaluate(notionRequest, [endpoint, body, spaceId ?? null, NOTION_HOSTS, 30_000], {
-      contextId: world,
-    })
+    const res = await tab.evaluate(
+      notionRequest,
+      [endpoint, JSON.stringify(body), spaceId ?? null, NOTION_HOSTS, 30_000],
+      {
+        contextId: world,
+      },
+    )
     if ('notOnNotion' in res) throw new NotionError('no_notion_tab', NO_NOTION_TAB)
     return res
   }

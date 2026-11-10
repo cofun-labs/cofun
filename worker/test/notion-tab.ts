@@ -135,7 +135,7 @@ export class FakeNotionTab {
           globals.fetch = (input: string, init: RequestInit) => this.fetch(new URL(input, location).href, init)
           try {
             const rebuilt = new Function(`return (${func.toString()})`)() as Function
-            return [{ frameId: 0, result: await rebuilt(...structuredClone(args)) }]
+            return [{ frameId: 0, result: await rebuilt(...(asChromeSends(args) as unknown[])) }]
           } finally {
             if (--this.running === 0) Object.assign(globals, this.outside)
           }
@@ -167,6 +167,17 @@ export class FakeNotionTab {
     }
     return new Response(next.text, { status: next.status })
   }
+}
+
+/**
+ * Script arguments as Chrome hands them to the page: copied, with object keys whose value is null
+ * left out (Chrome's conversion of extension API arguments strips them).
+ */
+function asChromeSends(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(asChromeSends)
+  if (value && typeof value === 'object')
+    return Object.fromEntries(Object.entries(value).flatMap(([k, v]) => (v === null ? [] : [[k, asChromeSends(v)]])))
+  return value
 }
 
 export function pageTab(url = PAGE_URL, cookie?: string) {
