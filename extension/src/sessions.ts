@@ -30,12 +30,38 @@ export class SessionStore {
 
   constructor(private readonly userId: string) {}
 
-  async save({ messages, ...info }: Session): Promise<void> {
-    await this.run('readwrite', (infos, all) => {
-      infos.put(info)
-      all.put({ id: info.id, messages })
-      return () => undefined
-    })
+  /**
+   * Saves a session and resolves with its details as stored. `loaded` is the `updatedAt` the caller
+   * loaded or last saved the session with; leave it out for a session that was never saved.
+   *
+   * Another panel may have saved the session since. Its conversation is then not overwritten:
+   * this one is saved as a new session, under the new id in the result. The check and the write
+   * are one transaction, so of two panels saving at once only one keeps the id.
+   */
+  async save({ messages, ...info }: Session, loaded?: number): Promise<SessionInfo> {
+    let saved = info
+    let failure: unknown
+    try {
+      await this.run('readwrite', (infos, all) => {
+        const stored = infos.get(info.id) as IDBRequest<SessionInfo | undefined>
+        stored.onsuccess = () => {
+          try {
+            // A session that is gone (deleted elsewhere) has nothing to overwrite.
+            if (stored.result && stored.result.updatedAt !== loaded) saved = { ...info, id: crypto.randomUUID() }
+            infos.put(saved)
+            all.put({ id: saved.id, messages })
+          } catch (err) {
+            // A write that throws (e.g. data that can't be cloned) must not leave the other one committed.
+            failure = err
+            infos.transaction.abort()
+          }
+        }
+        return () => undefined
+      })
+    } catch (err) {
+      throw failure ?? err
+    }
+    return saved
   }
 
   async get(id: string): Promise<Session | undefined> {

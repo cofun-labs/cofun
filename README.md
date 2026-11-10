@@ -1,233 +1,68 @@
-# notion-copilot
+<h1 align="center">Copilot for Notion</h1>
 
-**Copilot for Notion**: a Chrome extension that opens an AI side panel next to your Notion pages to help you read and edit them.
+<p align="center">
+  An AI side panel for Chrome that reads and edits your Notion pages with you.<br />
+  Ask in plain words; it finds the pages, does the work, and shows you every change.
+</p>
 
-```
-┌────────────────── Chrome ──────────────────┐
-│ Notion page │ Side panel (React)            │──Bearer <Clerk session JWT>──▶ Worker ──▶ AI Gateway ──▶ Workers AI
-│             │  chat                         │                                (verifies JWT)
-├─────────────┴───────────────────────────────┤      ▲ reads the session cookie (Clerk Sync Host)
-│ Sign-in tab: notion-copilot.kitfun.cc/login │──────┘  this page is served by the same worker
-└─────────────────────────────────────────────┘
-```
+<p align="center">
+  <img src="docs/assets/demo.svg" alt="You ask in the side panel, Copilot reads the open page, then adds an Action items section to it" width="880" />
+</p>
 
-## Status
+<p align="center"><sub>An illustration of the side panel, not a screenshot.</sub></p>
 
-- [x] Side panel opens from the toolbar icon on Notion tabs
-- [x] Sign in on a web page (Google supported); the session syncs into the extension
-- [x] Chat with streamed replies
-- [x] Basic agent: the model calls tools that run in the extension, and is told which page is open with each question
-- [x] Sessions: start, list, search, filter by page, delete, and resume past conversations, kept on the device
-- [x] Read Notion pages as Markdown: the open page or another one, in parts when long
-- [x] Search the workspace for pages, then read what it finds
-- [x] List the workspace's pages like the sidebar, or the pages under a page
-- [x] Read database rows as a table, filtered and sorted by their values
-- [x] Edit Notion pages: insert, replace, and delete content by block; the side panel shows each change
-- [x] Create pages with content
-- [x] Change titles, icons, and database properties, and add database rows
-- [x] Create databases, and add, rename, or remove their properties and select options
-- [x] Move pages under another page, duplicate pages, and move pages to Notion's trash (after the user agrees)
-- [x] Work on what the user selected in the page
-- [x] Read a page's comment threads, and add comments on the page or on a block
-- [x] Mention workspace members by name in pages and comments
+## What it can do
 
-[PRIVACY.md](PRIVACY.md) says what data the extension reads, where it sends it, and what is kept.
-
-## Tech choices
-
-| Area | Choice | Why |
-|---|---|---|
-| Extension | Chrome MV3 + [Side Panel API](https://developer.chrome.com/docs/extensions/reference/api/sidePanel) | Sits next to the page without covering Notion; enabled only on Notion tabs |
-| Extension build | Vite + React + TypeScript | Clerk's extension SDK is React-based; Vite needs little config and no extension framework |
-| Sign-in | [Clerk](https://clerk.com) (`@clerk/chrome-extension`) with [Sync Host](https://clerk.com/docs/references/chrome-extension/sync-host) | Ready-made sign-in UI and sessions; the backend only verifies JWTs with a public key. Social logins need a redirect, which Chrome side panels don't support, so users sign in on a normal web page and the session syncs into the extension |
-| Backend | Cloudflare Workers + Hono | Model access stays server-side; the AI binding needs no API token |
-| Model | Workers AI through AI Gateway | No third-party API keys; the gateway adds logs, caching, and per-user analytics |
-| API shape | OpenAI-compatible `/v1/chat/completions` | A common streaming format, so the extension doesn't change if the model or backend does |
-| Agent runtime | [`@earendil-works/pi-agent-core`](https://www.npmjs.com/package/@earendil-works/pi-agent-core), wrapped in `extension/src/agent.ts` | Tool loop, events, abort, and tool hooks in a small package; it runs in the side panel because tools act on the browser. Only `agent.ts` imports it, so it can be replaced |
-| Deploy | Cloudflare Workers Builds (Git integration) | Cloudflare pulls the repo and deploys on merge to `main`; no Cloudflare credentials stored on GitHub |
-| Notion read/write | Notion's own internal endpoints (`/api/v3/loadPageChunk` to read, `/api/v3/saveTransactionsFanout` to write), called from inside the user's Notion tab with `chrome.scripting` | Verified to read and write a real page, with edits persisting after reload. Requests are same-origin and carry the tab's own Notion session (sessions are per host: `app.notion.com` and `www.notion.so` don't share one), so no Notion integration token is needed. They run in an isolated world, out of the page's reach. No `chrome.debugger` (which shows a permanent "debugging this browser" banner). The trade-off: these are not public APIs and may change |
-
-### Auth flow
-
-1. The user clicks "Sign in" in the side panel. The extension opens `https://notion-copilot.kitfun.cc/login` in a new tab; the worker serves this page with Clerk's sign-in UI.
-2. After sign-in, Clerk's session cookie lives on that domain. The extension is configured with `syncHost` and uses the `cookies` permission to read that session. Clerk doesn't refresh an already-open side panel, so the extension watches those cookies and reloads the panel when they change.
-3. Before each request, the extension gets a short-lived session JWT with `getToken()` and sends it as `Authorization: Bearer`.
-4. The worker verifies the JWT locally with Clerk's JWT public key (signature, expiry). If the token has an `azp` (the web origin that requested it), it must be an allowed origin, which stops other websites from using a session they obtained in the browser. Tokens the extension gets through Clerk's Native API carry no `azp`. No network call to Clerk is needed.
-5. The worker counts the request against the user's daily quota (a Durable Object per user, reset at 00:00 UTC) and refuses it once the quota is used up.
-6. The request goes through AI Gateway to Workers AI, tagged with the Clerk user id for per-user analytics. Gateway log collection is off (`collectLog: false`), so the gateway keeps request analytics but not prompts or replies.
-7. The worker writes one usage record for the request (see [Usage records](#usage-records)).
-
-The extension ID is pinned with the manifest `key`, so Clerk and the worker can trust it.
-
-### Sessions
-
-Conversations are saved in the extension's IndexedDB, one database per Clerk user (`notion-copilot-sessions-<userId>`), and never sent to the worker beyond what the model needs for the current question. They stay after sign-out so the user can pick up again, and they are not encrypted: keeping accounts apart only means one account's panel never shows another's sessions. Anyone with access to the Chrome profile can read them, tool results included, such as the content of Notion pages the agent read (for example in DevTools).
-
-### Writes without approval
-
-The agent edits pages, creates pages and rows, changes properties, adds comments, and moves and duplicates pages without asking first. Moving pages to the trash is the one thing it asks the user's approval for, each time, showing each page by its current name; pages only ever go to Notion's trash, where they can be restored. Each change shows on its tool card in the side panel, and a page's history in Notion can undo edits. The trade-off: the agent reads text the user doesn't control (shared pages, guest content, search results), and an instruction hidden in that text can make it write as the user without anyone being asked. It could change many pages in one call, move a private page under a page others can read (a page takes its sharing from where it sits, so it is exposed as soon as it moves), or copy content the user can see into a page or a comment someone else can read; a comment also notifies the people following the page or the thread, and a mention notifies the person mentioned. When a mention's name matches no one, the agent is told the members with a similar name, so text in a page could have it probe for the names of the workspace's people. Page history and "Move to" can undo the changes, but not what someone read in the meantime.
-
-## Layout
-
-```
-extension/                Chrome extension
-  vite.config.ts          build config; writes manifest.json into the build
-  manifest.ts             builds manifest.json from .env; a test pins its permissions
-  allowed-hosts.json      the hosts the extension may contact; a test checks the manifest and .env against it
-  sidepanel.html
-  src/background.ts       opens the side panel from the toolbar icon; enabled only on Notion tabs
-  src/agent.ts            agent loop (pi) against the worker; the only module that imports pi
-  src/tools.ts            tools the agent runs in the extension
-  src/sessions.ts         saved sessions (IndexedDB, per user)
-  src/notion/hosts.ts     Notion hosts, and the page id in a Notion URL
-  src/notion/api.ts       Notion's internal API: endpoints, request shapes, record maps, errors
-  src/notion/markdown.ts  Notion pages as Markdown for the model, with a reference on each block
-  src/notion/blocks.ts    Markdown from the model back into Notion blocks
-  src/notion/edit.ts      checks edits against the page as the agent read it, and plans the transaction
-  src/notion/comments.ts  a page's comment threads for the model, quoted so they read as data
-  src/notion/people.ts    matches the people mentions name to the workspace's members
-  src/notion/props.ts     page titles and database property values, checked against the database's schema
-  src/notion/tree.ts      pages as the sidebar lists them, level by level, without content
-  src/notion/tab.ts       runs Notion requests in the user's Notion tab (chrome.scripting)
-  src/sidepanel/          React UI (main.tsx: sign-in, Chat.tsx: chat)
-  test/                   tests of the extension's client code (fake Notion tab with sanitized
-                          fixtures)
-worker/                   Cloudflare Worker
-  src/app.ts              Hono app: Clerk JWT verification + /v1/chat/completions
-  src/quota.ts            per-user daily request quota (UserQuota Durable Object in src/index.ts)
-  src/usage.ts            per-request usage records (Workers Analytics Engine), no message content
-  src/login.ts            sign-in page (Clerk Sync Host)
-  test/                   REST integration tests (real signed JWTs, fake AI binding), and the
-                          extension's agent run against the worker
-e2e/                      pnpm e2e: drives the shared Chrome Canary over CDP for ai-e2e runs
-                          (maintainer's machine only; its unit tests run in pnpm test)
-smoke/                    pnpm smoke: loads the built extension into Chromium and checks that it
-                          still works (Notion and Clerk answered from fixtures; runs in CI)
-docs/
-  bdd.md                  how use cases and scenarios are written, and how to run ai-e2e scenarios
-  use-cases/              use cases by domain; tests reference their scenario IDs
-.github/rulesets/         GitHub branch rulesets (export format)
-.github/dependabot.yml    weekly dependency updates
-scripts/
-  sync-github-settings.sh applies the rulesets and repository options with gh
-PRIVACY.md                what data the extension reads, where it goes, and what is kept
-AGENTS.md                 development workflow and conventions (CLAUDE.md links here)
-```
-
-## Development
-
-Requires Node.js 24 and pnpm.
-
-```bash
-pnpm install
-pnpm check        # lint, format check, typecheck, extension build, and every package's tests
-pnpm smoke        # build the extension and load it into Chromium (first: pnpm --filter notion-copilot-smoke exec playwright install chromium)
-```
-
-A lefthook pre-commit hook runs `pnpm check`. GitHub Actions runs it and `pnpm smoke` on every pull request.
-
-See [AGENTS.md](AGENTS.md) for the issue → PR → review → merge workflow.
-
-### GitHub settings
-
-The `main` branch ruleset is kept in [`.github/rulesets/main.json`](.github/rulesets/main.json): no deletion or force push, linear history of signed commits, changes only through PRs with CI, dependency review, and actionlint passing and every review thread resolved, no open CodeQL or zizmor code scanning alerts of medium severity or above, merged by a merge queue that runs the required checks again on top of the latest `main` before it squash-merges (code scanning runs on the PR and on `main`, not in the queue). Every action is pinned to a full commit SHA. [`scripts/sync-github-settings.sh`](scripts/sync-github-settings.sh) applies it along with the repository options: squash merge only (the PR title and body become the commit message), delete head branches on merge, secret scanning with push protection, and Dependabot alerts and security updates. Weekly Dependabot version updates are configured in [`.github/dependabot.yml`](.github/dependabot.yml).
-
-A repository admin runs it from their machine with `gh` signed in; it is not run in CI, so no admin token is stored on GitHub. It changes only what differs and prints what it changed:
-
-```bash
-scripts/sync-github-settings.sh
-```
-
-If you change a setting in the GitHub dashboard, copy it back into these files.
-
-### Worker
-
-Merging to `main` deploys the worker through Cloudflare Workers Builds. To deploy by hand:
-
-```bash
-cd worker
-npx wrangler login
-# If your Cloudflare login has several accounts, pick one with an env var (don't commit it)
-CLOUDFLARE_ACCOUNT_ID=<account id> pnpm run deploy
-```
-
-The worker runs on the custom domain `notion-copilot.kitfun.cc` (see `routes` in `wrangler.jsonc`). The domain's zone must belong to the deploying Cloudflare account.
-
-Variables in `wrangler.jsonc`:
-
-| Variable | Description |
+| | |
 |---|---|
-| `CLERK_PUBLISHABLE_KEY` | Clerk publishable key, used by the sign-in page |
-| `AI_GATEWAY_ID` | AI Gateway id; leave empty to call Workers AI directly |
-| `MODEL` | The only model clients can use |
-| `DAILY_REQUEST_LIMIT` | Chat requests each user may make per UTC day; counted in the `UserQuota` Durable Object (one per user) |
-| `CLERK_AUTHORIZED_PARTIES` | Allowed origins, comma-separated: `chrome-extension://<extension id>` and the sign-in page |
-| `CLERK_JWT_KEY` | Clerk JWT public key (PEM). Public; also available at `https://<frontend-api>/.well-known/jwks.json` |
+| **Read** | The page you have open or any other page, long pages included. Databases as tables, filtered and sorted. Comment threads. |
+| **Find** | Search your workspace, or browse pages the way the sidebar lists them, then read what it finds. |
+| **Write** | Insert, replace, and delete content in a page. Create new pages with content. Change titles and icons. |
+| **Databases** | Create databases, add rows, fill in properties, and add, rename, or remove properties and select options. |
+| **Organize** | Move pages under another page, duplicate them, or move them to Notion's trash (it asks you first). |
+| **Collaborate** | Add comments on a page or on a block, and mention workspace members by name. |
+| **Stay in context** | It knows which page is open and what you selected in it. Past conversations are saved, searchable, and can be picked up again. |
 
-#### Usage records
+## Get started
 
-Every chat request that passes auth leaves one data point in the `notion_copilot_usage` Analytics Engine dataset (binding `USAGE`), written when the reply ends, is refused, or fails. Records hold sizes, token counts, and the outcome, never message or reply text. Analytics Engine deletes them after 90 days.
+1. **Install** the extension from the Chrome Web Store. _(Not published yet; the link will be here.)_
+2. **Open a Notion page** and click the Copilot for Notion icon in Chrome's toolbar. The side panel opens next to the page.
+3. **Sign in.** The panel opens a sign-in page in a new tab (Google is supported); once you're signed in, the panel picks it up.
+4. **Ask.** A few things to try:
+   - _Summarize this page in five bullet points._
+   - _Turn the notes on this page into a list of action items._
+   - _Find our onboarding docs and tell me what's out of date._
+   - _Which tasks in this database are overdue? Add a comment on each one._
+   - _Create a page for next week's meeting, with the agenda from the last one._
+   - Select some text in the page, then: _Rewrite this to be shorter._
 
-| Column | Value |
-|---|---|
-| `index1` | Clerk user id |
-| `blob1` | model |
-| `blob2` | outcome: `ok`, `incomplete` (stream ended early), `cancelled`, `stream_error`, or the error code returned (`rate_limited`, `provider_error`, `quota_unavailable`, `bad_request`, …). A stream whose model reports an error is `provider_error` |
-| `blob3` | finish reason: `stop`, `length`, `content_filter`, `tool_calls`, `other`, or empty |
-| `blob4` | `stream` or `sync` |
-| `double1` … `double5` | messages, input characters (message text, tool calls, and tool definitions), prompt tokens, completion tokens, duration in ms (until the request was refused, the reply was sent, or a stream ended; for streams it includes the time the client spends reading) |
+There is nothing to connect on the Notion side: no integration to create, no token to paste.
 
-Query them with the [SQL API](https://developers.cloudflare.com/analytics/analytics-engine/sql-api/), for example requests and tokens per user per day:
+## How it works
 
-```sql
-SELECT index1 AS user, toStartOfDay(timestamp) AS day,
-       sum(_sample_interval) AS requests,
-       sum(_sample_interval * double3) AS prompt_tokens,
-       sum(_sample_interval * double4) AS completion_tokens,
-       sumIf(_sample_interval, blob2 != 'ok' AND blob2 != 'cancelled') AS failed
-FROM notion_copilot_usage
-WHERE timestamp > NOW() - INTERVAL '7' DAY
-GROUP BY user, day
-ORDER BY day DESC, requests DESC
-```
+<p align="center">
+  <img src="docs/assets/how-it-works.svg" alt="The side panel reads and edits pages through your own Notion tab, and sends your question to the Copilot server, which passes it to an AI model" width="880" />
+</p>
 
-#### Workers Builds settings
+- **It works as you, in your own Notion tab.** Pages are read and changed from inside the Notion tab you already have open, with the session you're already signed in with. Copilot can reach what you can reach, and nothing else. The trade-off: it uses the same internal API as Notion's own web app, which is not a public API and may change.
+- **The server never talks to Notion.** It checks who you are and passes the conversation to the model. The work on your pages happens in your browser.
+- **It is careful with your Notion account.** If Notion asks it to slow down, or answers with something it doesn't understand, it stops and tells you instead of pushing on or working around it.
 
-In the Cloudflare dashboard: Workers & Pages → `notion-copilot` → Settings → Builds → connect `kitfun/notion-copilot`.
+## Privacy and safety
 
-| Setting | Value |
-|---|---|
-| Root directory | `worker` |
-| Build command | `pnpm install --frozen-lockfile && pnpm test` |
-| Deploy command | `npx wrangler deploy` |
-| Production branch | `main` |
+**What leaves your browser.** Your questions, and the content of the pages Copilot reads to answer them, go to the Copilot server and on to the AI model. The server doesn't keep them: for each request it records who asked, sizes, token counts, and the outcome, never the text of a prompt or a reply. [PRIVACY.md](PRIVACY.md) has the full account: what is read, which hosts it goes to, and what is kept.
 
-### Extension
+**What stays on your device.** Conversations are saved in Chrome on your device, per account, and kept after you sign out so you can pick up again. They are not encrypted: anyone who can use your Chrome profile can read them, including the page content Copilot read.
 
-```bash
-pnpm build        # outputs extension/dist
-```
+**It edits without asking first.** Copilot edits pages, creates pages and rows, changes properties, adds comments, and moves and duplicates pages as soon as it decides to. Moving pages to the trash is the one thing it asks you about, every time. Each change is shown in the side panel as it happens, and Notion's page history can undo edits.
 
-In `chrome://extensions`, turn on Developer mode, click "Load unpacked", and pick `extension/dist`.
+**Be careful with pages you don't control.** Copilot reads text written by other people: shared pages, guest content, search results. An instruction hidden in that text could make it act as you without anyone being asked, for example by copying something private into a page or a comment that others can read. Comments and mentions also notify people. Page history can undo a change, but not what someone read in the meantime. [More on this trade-off](docs/architecture.md#writes-without-approval).
 
-`extension/.env` holds the public build config. To point at your own deployment, override values in `extension/.env.local`:
+Copilot for Notion is an independent open-source project. It is not made or endorsed by Notion.
 
-| Variable | Description |
-|---|---|
-| `VITE_CLERK_PUBLISHABLE_KEY` | Clerk publishable key |
-| `VITE_CLERK_SYNC_HOST` | URL of the sign-in page (the worker's domain) |
-| `VITE_API_URL` | Worker base URL, including `/v1` |
-| `CRX_PUBLIC_KEY` | Extension signing public key; pins the extension ID |
-| `CLERK_COOKIE_DOMAIN` | Optional. The registrable domain Clerk sets its cookies on, e.g. `example.co.uk`. Defaults to the last two labels of the sign-in page's host |
+## For developers
 
-Generate your own signing key and extension ID:
-
-```bash
-mkdir -p extension/keys
-openssl genrsa -out extension/keys/crx-private.pem 2048
-openssl rsa -in extension/keys/crx-private.pem -pubout -outform DER > extension/keys/pub.der
-base64 -i extension/keys/pub.der | tr -d '\n'                          # CRX_PUBLIC_KEY
-shasum -a 256 extension/keys/pub.der | cut -c1-32 | tr '0-9a-f' 'a-p'  # extension ID
-```
-
-In the Clerk dashboard, enable the Native API (Native applications page) so the Chrome extension can sign in.
+- [Architecture](docs/architecture.md): how it is built, the technical choices and why, the sign-in flow, and the code layout.
+- [Development](docs/development.md): build and load the extension, run the checks, and deploy your own worker.
+- [AGENTS.md](AGENTS.md): the issue → PR → review → merge workflow and coding rules.
+- [BDD](docs/bdd.md) and [use cases](docs/use-cases): the product behavior contract and how it is tested.
