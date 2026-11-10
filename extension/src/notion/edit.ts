@@ -417,7 +417,6 @@ export function planEdit(
     const key = (cell: RichText) => JSON.stringify(cell)
     const shownKeys = shown.map((row) => row.map((cell) => key(withPeople(cell, people, { keep: true }))))
     const newRows = nb.rows ?? []
-    const width = newRows[0]?.length ?? 0
 
     const columnPairs = align(
       columns.map((_, c) => shownKeys[0]?.[c] ?? ''),
@@ -877,10 +876,6 @@ function columnId(newId: () => string): string {
   return hexId(newId()).slice(-8)
 }
 
-function same(a: RichText, b: RichText): boolean {
-  return JSON.stringify(a) === JSON.stringify(b)
-}
-
 /**
  * Rich text whose date mentions keep what the old text stored for the same date (its time zone,
  * reminder, and format), which read_page doesn't show.
@@ -919,7 +914,7 @@ function withDates(blocks: NewBlock[], old: unknown[]): NewBlock[] {
  */
 function align(a: string[], b: string[]): { a?: number; b?: number }[] {
   // longest[i][j]: how many items a[i..] and b[j..] share in order.
-  const longest = Array.from({ length: a.length + 1 }, () => new Array<number>(b.length + 1).fill(0))
+  const longest = Array.from({ length: a.length + 1 }, () => Array.from({ length: b.length + 1 }, () => 0))
   for (let i = a.length - 1; i >= 0; i--) {
     for (let j = b.length - 1; j >= 0; j--) {
       longest[i][j] = a[i] === b[j] ? longest[i + 1][j + 1] + 1 : Math.max(longest[i + 1][j], longest[i][j + 1])
