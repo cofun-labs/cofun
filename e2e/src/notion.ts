@@ -2,7 +2,6 @@
 // the tool's Notion tab, as its signed-in user. Requests run in an isolated world of that tab with
 // the extension's own request function, so they look exactly like the extension's.
 import {
-  IN_TRASH,
   NO_NOTION_TAB,
   NotionClient,
   NotionError,
@@ -171,7 +170,8 @@ export async function trash({ client, send }: TabNotion, pageId: string): Promis
     page = (await client.getRecords([{ table: 'block', id: pageId }])).block?.[pageId]
   } catch (err) {
     // Already in the trash, or never saved: nothing to do either way.
-    if (err instanceof NotionError && err.code === 'no_access') return err.message === IN_TRASH ? 'trashed' : 'missing'
+    if (err instanceof NotionError && err.code === 'in_trash') return 'trashed'
+    if (err instanceof NotionError && err.code === 'no_access') return 'missing'
     throw err
   }
   if (!page?.space_id) return 'missing'

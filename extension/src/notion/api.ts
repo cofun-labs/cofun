@@ -9,6 +9,7 @@ export type NotionErrorCode =
   | 'no_notion_tab'
   | 'signed_out'
   | 'no_access'
+  | 'in_trash'
   | 'notion_error'
   | 'outcome_unknown'
   | 'rate_limited'
@@ -299,7 +300,7 @@ export class NotionClient {
       const page = recordMap.block?.[pageId] as Block | undefined
       user = userId
       if (!page) throw missingRecord(userId)
-      if (page.alive === false) throw new NotionError('no_access', IN_TRASH)
+      if (page.alive === false) throw new NotionError('in_trash', IN_TRASH)
       if (!page.space_id) throw new NotionError('notion_error', 'Notion returned the page without its workspace.')
       spaceId = page.space_id
       if (!json.cursor?.stack?.length) return { page, spaceId, recordMap, complete: true, userId: user }
@@ -324,7 +325,7 @@ export class NotionClient {
     )
     const recordMap = normalizeRecordMap(json.recordMap)
     if (requested.some((p) => !recordMap[p.table]?.[p.id])) throw missingRecord(userId)
-    if (requested.some((p) => recordMap[p.table]![p.id].alive === false)) throw new NotionError('no_access', IN_TRASH)
+    if (requested.some((p) => recordMap[p.table]![p.id].alive === false)) throw new NotionError('in_trash', IN_TRASH)
     return recordMap
   }
 

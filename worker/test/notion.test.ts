@@ -254,7 +254,7 @@ describe('loading a page', () => {
     chunk.recordMap.block[PAGE].value.value = { ...chunk.recordMap.block[PAGE].value.value, alive: false }
     new FakeNotionTab(PAGE_URL).respond('loadPageChunk', 200, chunk).install()
     const err = await notionError((await activeNotionTab()).client.loadPage(PAGE))
-    expect([err.code, err.message]).toEqual(['no_access', 'The Notion page or block is in the trash.'])
+    expect([err.code, err.message]).toEqual(['in_trash', 'The Notion page or block is in the trash.'])
   })
 
   it('treats a page missing from the response as no access', async () => {
@@ -355,7 +355,7 @@ describe('loading records', () => {
     sync.recordMap.block[BLOCKS[0]].value.value = { ...sync.recordMap.block[BLOCKS[0]].value.value, alive: false }
     new FakeNotionTab(PAGE_URL).respond('syncRecordValuesMain', 200, sync).install()
     const err = await notionError((await activeNotionTab()).client.getRecords([{ table: 'block', id: BLOCKS[0] }]))
-    expect([err.code, err.message]).toEqual(['no_access', 'The Notion page or block is in the trash.'])
+    expect([err.code, err.message]).toEqual(['in_trash', 'The Notion page or block is in the trash.'])
   })
 
   it('treats a record missing from the response as no access', async () => {
