@@ -130,6 +130,8 @@ export function Chat({ userId }: { userId: string }) {
     setInput('')
     setBusy(true)
     setStopping(false)
+    // Where this question's reply goes in the list.
+    const reply = messages.length + 1
     setMessages((ms) => [...ms, { role: 'user', content: text }, { role: 'assistant', parts: [] }])
     const updateReply = (fn: (m: Extract<Shown, { role: 'assistant' }>) => Shown) =>
       setMessages((ms) => {
@@ -260,14 +262,17 @@ export function Chat({ userId }: { userId: string }) {
         const messages = agent.history()
         if (messages.length !== before) {
           // One at a time: each save starts from the `updatedAt` the one before it stored.
-          saving.current = saving.current.then(() => save(session, messages, id))
+          saving.current = saving.current.then(() => save(session, messages, id, reply))
         }
       }
     }
   }
 
-  /** Saves the session; `chat` is the `chatId` it was open under. Never rejects. */
-  async function save(session: Current, messages: HistoryMessage[], chat: number) {
+  /**
+   * Saves the session after a question; `chat` is the `chatId` it was open under and `reply` the
+   * place of the question's reply in the list. Never rejects.
+   */
+  async function save(session: Current, messages: HistoryMessage[], chat: number, reply: number) {
     try {
       const page = await session.page
       const { id, createdAt, updatedAt: loaded } = session
@@ -289,10 +294,8 @@ export function Chat({ userId }: { userId: string }) {
       // Also shows the session's new id, if it got one, to the list.
       setSaved((n) => n + 1)
       if (saved.id !== id && chatId.current === chat)
-        setMessages((ms) => {
-          const last = ms.at(-1)
-          return last?.role === 'assistant' ? [...ms.slice(0, -1), { ...last, copied: true }] : ms
-        })
+        // On the reply that was saved; the user may have asked the next question already.
+        setMessages((ms) => ms.map((m, i) => (i === reply && m.role === 'assistant' ? { ...m, copied: true } : m)))
     } catch (err) {
       console.error('Could not save the session', err)
     }
@@ -331,6 +334,8 @@ export function Chat({ userId }: { userId: string }) {
     agent.stop()
     const chat = chatId.current
     const token = ++opening.current
+    // A save of this panel's still waiting to write would otherwise look like another window's later.
+    await saving.current
     const session = await store.get(id)
     // The user started a new chat, opened another session, or asked something meanwhile; that wins.
     if (chatId.current !== chat || opening.current !== token) return true
