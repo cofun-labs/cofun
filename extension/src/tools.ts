@@ -264,26 +264,6 @@ function keep<T>(map: Map<string, T>, key: string, value: T) {
   if (map.size > SEEN_KEPT) map.delete(map.keys().next().value!)
 }
 
-/** A value as query_database's table shows it: values come escaped as Markdown already; escape only the pipes that aren't. */
-function cellText(text: string): string {
-  return text.replace(/(?<!\\)((?:\\\\)*)\|/g, '$1\\|').replace(/\n/g, ' ')
-}
-
-/**
- * Whether `text` is a value query_database showed, under `property` or as a row's title, exactly as
- * it showed it: then its Markdown escapes are undone. Text the agent writes itself is kept as given.
- */
-function copiedText(text: unknown, property?: string): boolean {
-  if (typeof text !== 'string' || !text.includes('\\')) return false
-  const want = text.trim()
-  const name = property?.trim().toLowerCase()
-  for (const row of seenRows.values()) {
-    const shown = name === undefined ? row.title : row.values.find((v) => v.name.toLowerCase() === name)?.value
-    if (shown !== undefined && (shown.trim() === want || cellText(shown).trim() === want)) return true
-  }
-  return false
-}
-
 export const queryDatabase: ToolSpec = {
   name: 'query_database',
   description:
@@ -364,6 +344,8 @@ export const queryDatabase: ToolSpec = {
       throw new Error(`This result has ${parts} part${parts === 1 ? '' : 's'}; there is no part ${part}.`)
     const shown = rows.slice((part - 1) * QUERY_PART, part * QUERY_PART)
     const columns = rows[0]?.values.map((v) => v.name) ?? Object.values(schema).map((s) => s.name ?? '')
+    // Titles come escaped as Markdown already; escape only the pipes that aren't.
+    const escape = (text: string) => text.replace(/(?<!\\)((?:\\\\)*)\|/g, '$1\\|').replace(/\n/g, ' ')
     const from = (part - 1) * QUERY_PART + 1
     const header = [
       `Database: ${name} ^${hexId(id)}`,
@@ -379,9 +361,9 @@ export const queryDatabase: ToolSpec = {
     for (const r of shown) keep(seenRows, r.id, { title: r.values[0]?.value ?? '', values: r.values, schema })
     if (!shown.length) return [...header, '', '(no rows)'].join('\n')
     const table = [
-      `| ${[...columns.map(cellText), 'Row'].join(' | ')} |`,
+      `| ${[...columns.map(escape), 'Row'].join(' | ')} |`,
       `|${[...columns, 'Row'].map(() => ' --- ').join('|')}|`,
-      ...shown.map((r) => `| ${[...r.values.map((v) => cellText(v.value)), `^${hexId(r.id)}`].join(' | ')} |`),
+      ...shown.map((r) => `| ${[...r.values.map((v) => escape(v.value)), `^${hexId(r.id)}`].join(' | ')} |`),
     ]
     return [...header, '', ...table].join('\n')
   },
@@ -879,9 +861,11 @@ function remember(read: PageRead) {
 
 /** A page title on one line, as Notion keeps it, so it can't break up the preview's lines. */
 function titleArg(value: unknown): string {
-  if (typeof value !== 'string') return ''
-  return oneLine(copiedText(value) ? plainText(value) : value)
+  return typeof value === 'string' ? oneLine(plainText(value)) : ''
 }
+
+/** Text arguments drop Markdown escapes (see plainText), so the model must double a backslash. */
+const BACKSLASH = 'Markdown escapes are undone: write a backslash itself as \\\\.'
 
 /** `properties` as tools take it: values by property name. */
 const PROPERTIES_ARG = {
@@ -889,7 +873,8 @@ const PROPERTIES_ARG = {
   description:
     'Database properties by name: text, a number, Yes/No for checkboxes, an option name (a list for ' +
     'multi-select), or a date as YYYY-MM-DD (a range as "YYYY-MM-DD → YYYY-MM-DD"). Empty clears a value. ' +
-    'The title goes in `title`, not here. Setting a date replaces any time or reminder it had.',
+    'The title goes in `title`, not here. Setting a date replaces any time or reminder it had. ' +
+    BACKSLASH,
   additionalProperties: {
     anyOf: [
       { type: 'string' },
@@ -912,7 +897,7 @@ export const createPage: ToolSpec = {
   parameters: {
     type: 'object',
     properties: {
-      title: { type: 'string', description: "The new page's title." },
+      title: { type: 'string', description: `The new page's title. ${BACKSLASH}` },
       markdown: { type: 'string', description: "The page's content, as Markdown. Leave out for an empty page." },
       parent: { type: 'string', description: 'URL or id of the page or database to create it in.' },
       properties: PROPERTIES_ARG,
@@ -1025,8 +1010,8 @@ export const updatePages: ToolSpec = {
   description:
     "Changes pages' titles, icons (an emoji), or database properties (for rows, by name, values as " +
     'query_database shows them; options must exist; empty clears a value), several pages in one call: "mark ' +
-    'these five tasks done" is one call. Get row ids from query_database. Write new text plainly, without ' +
-    'Markdown escapes. Nothing is written if any value is refused.',
+    'these five tasks done" is one call. Get row ids from query_database. Nothing is written if any value is ' +
+    'refused.',
   parameters: {
     type: 'object',
     properties: {
@@ -1038,7 +1023,7 @@ export const updatePages: ToolSpec = {
           type: 'object',
           properties: {
             page: { type: 'string', description: 'Id or URL of the page or row.' },
-            title: { type: 'string', description: 'A new title.' },
+            title: { type: 'string', description: `A new title. ${BACKSLASH}` },
             icon: { type: 'string', description: 'A new icon: one emoji.' },
             properties: PROPERTIES_ARG,
           },
@@ -1154,16 +1139,22 @@ function previewValue(seen: SeenRow | undefined, name: string, input: PropertyIn
   let def: PropertyDef
   let now: string
   try {
-    ;[, def] = schemaEntry(seen.schema, name)
-    now = storedText(def, propertyValue(def, input, copiedText(input, def.name ?? name)))
+    let key: string
+    ;[key, def] = schemaEntry(seen.schema, name)
+    // `run` refuses the title among the properties.
+    if (key === 'title' || def.type === 'title') return shownInput(input)
+    now = storedText(def, propertyValue(def, input))
   } catch (err) {
     if (err instanceof PropertyError) return shownInput(input)
     throw err
   }
   const old = seen.values.find((v) => v.name.toLowerCase() === (def.name ?? name).trim().toLowerCase())?.value
   if (old === undefined) return now || '(empty)'
-  const was = oneLine(plainText(old))
-  return (now || '(empty)') + change(def.type === 'multi_select' ? was.split(/\s*,\s*/).join(', ') : was, now)
+  // As storedText shows it: query_database shows a date as a mention, and options without spaces.
+  let was = oneLine(plainText(old))
+  if (def.type === 'date') was = was.replace(/^@/, '')
+  if (def.type === 'multi_select') was = was.split(/\s*,\s*/).join(', ')
+  return (now || '(empty)') + change(was, now)
 }
 
 /** Whether `text` is exactly one emoji (flags and keycaps included), as Notion takes for an icon. */
@@ -1218,7 +1209,7 @@ function toProperties(schema: Schema, props: [string, PropertyInput][]): Record<
       throw new EditError(`Give the title as \`title\`, not as “${oneLine(name)}”.`)
     if (key in out) throw new EditError(`“${oneLine(name)}” is given twice.`)
     try {
-      out[key] = propertyValue(def, input, copiedText(input, def.name ?? key))
+      out[key] = propertyValue(def, input)
     } catch (err) {
       if (err instanceof PropertyError) throw new EditError(err.message)
       throw err

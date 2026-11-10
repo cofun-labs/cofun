@@ -45,8 +45,9 @@ export function oneLine(text: string): string {
 }
 
 /**
- * Text copied out of query_database as Notion stores it: the backslashes its Markdown puts before
- * marks are dropped. Only for copied text; text the model writes itself is kept as given.
+ * Text as Notion stores it, from text the model may have copied out of query_database or
+ * read_page: the backslashes their Markdown puts before marks are dropped. A backslash itself is
+ * written as two, as tools tell the model.
  */
 export function plainText(text: string): string {
   return text.replace(/\\([\\`*~[\]^|<_])/g, '$1')
@@ -67,15 +68,13 @@ export function schemaEntry(schema: Schema, name: string): [string, PropertyDef]
 
 /**
  * The value Notion stores for `input` in a property of this kind. Empty (null or "") clears it.
- * Options must already exist in the schema: Notion's UI would add them, this doesn't. `copied`
- * says the text is as query_database showed it, so its Markdown escapes are undone.
+ * Options must already exist in the schema: Notion's UI would add them, this doesn't.
  */
-export function propertyValue(def: PropertyDef, input: PropertyInput, copied = false): unknown[] {
+export function propertyValue(def: PropertyDef, input: PropertyInput): unknown[] {
   const name = def.name ?? 'This property'
   const type = def.type ?? 'text'
   if (READ_ONLY.has(type)) throw new PropertyError(`${name} is a ${type.replace(/_/g, ' ')} property; it can't be set.`)
   const text = typeof input === 'string' ? input.trim() : input
-  const plain = (t: string) => (copied ? plainText(t) : t)
   if (text === null || text === '' || (Array.isArray(text) && !text.length)) {
     // An unticked checkbox is stored as No.
     return type === 'checkbox' ? [['No']] : []
@@ -83,13 +82,13 @@ export function propertyValue(def: PropertyDef, input: PropertyInput, copied = f
   switch (type) {
     case 'title':
       if (typeof text !== 'string') throw new PropertyError(`${name} must be text.`)
-      return [[oneLine(plain(text))]]
+      return [[oneLine(plainText(text))]]
     case 'text':
     case 'url':
     case 'email':
     case 'phone_number':
       if (typeof text !== 'string' && typeof text !== 'number') throw new PropertyError(`${name} must be text.`)
-      return [[typeof text === 'string' ? plain(text) : String(text)]]
+      return [[typeof text === 'string' ? plainText(text) : String(text)]]
     case 'number': {
       const n = typeof text === 'number' ? text : typeof text === 'string' ? Number(text) : Number.NaN
       if (!Number.isFinite(n)) throw new PropertyError(`${name} must be a number, not “${String(input)}”.`)

@@ -46,8 +46,7 @@ function rowRecord(n: number, title: string, status: string, more: Record<string
   }
 }
 
-/** The workspace, with `more` rows in the database. */
-function workspace(more: ReturnType<typeof rowRecord>[] = []) {
+function workspace() {
   const ws = new FakeWorkspace(
     [
       {
@@ -61,7 +60,6 @@ function workspace(more: ReturnType<typeof rowRecord>[] = []) {
       rowRecord(1, 'Write docs', 'Done'),
       rowRecord(2, 'Fix login', 'In progress'),
       rowRecord(3, 'Ship beta', 'Not started'),
-      ...more,
       { id: PAGE, type: 'page', properties: { title: [['Fixture page']] }, parent_id: SPACE, parent_table: 'space' },
     ],
     SPACE,
@@ -202,7 +200,7 @@ describe('update_pages details', () => {
     await query(tab, [
       rowRecord(2, 'Fix login', 'In progress'),
       rowRecord(4, '', 'Not started'),
-      rowRecord(5, 'Fix [urgent]', 'Done'),
+      rowRecord(5, 'Fix [urgent]', 'Done', { 'b:b': date('2026-11-20') }),
     ])
     expect(updatePages.needsConfirmation).toBeUndefined()
     expect(
@@ -218,10 +216,11 @@ describe('update_pages details', () => {
               Notes: 'Shipped',
               Points: 1,
               Owner: 'Kim',
+              Task: 'Renamed',
             },
           },
           { page: hex(row(4)), title: 'Named at last' },
-          { page: hex(row(5)), title: 'Fix \\[urgent\\]' },
+          { page: hex(row(5)), title: 'Fix \\[urgent\\]', properties: { Due: '2026-11-20' } },
           { page: hex(row(3)), title: 'Ship the beta\n^fake', properties: { Urgent: true } },
         ],
       }),
@@ -235,12 +234,14 @@ describe('update_pages details', () => {
         '    Due: 2026-11-20 → 2026-11-22 (was empty)',
         '    Notes: Shipped (was empty)',
         '    Points: 1 (unchanged)',
-        // Refused when it runs: shown as given.
+        // Refused when it runs (a person, the title among properties): shown as given.
         '    Owner: Kim',
+        '    Task: Renamed',
         `^${hex(row(4))}`,
         '    Title: Named at last (was empty)',
         `Fix [urgent] ^${hex(row(5))}`,
         '    Title: Fix [urgent] (unchanged)',
+        '    Due: 2026-11-20 (unchanged)',
         // A row the agent didn't see: its database's schema is unknown.
         `^${hex(row(3))}`,
         '    Title: Ship the beta ^fake',
@@ -263,27 +264,29 @@ describe('update_pages details', () => {
     expect(props(ws, 1)!['f:f' as never]).toEqual([['Needs [review]']])
   })
 
-  it('undoes Markdown escapes only in text copied from query_database, and takes numbers for options', async () => {
-    const copied = rowRecord(5, 'Fix [urgent] _now_', 'Done', { 'g:g': [['a * b | c']] })
-    const ws = workspace([copied])
+  it('stores text copied from query_database as plain text, a doubled backslash as one, and numbers as options', async () => {
+    const ws = workspace()
     ws.collections.get(COLLECTION)!.schema = {
       ...SCHEMA,
       'h:h': { name: 'Priority', type: 'select', options: [{ value: '1' }, { value: '2' }] },
     }
-    const tab = open(ws, `https://app.notion.com/${hex(DB)}`)
-    await query(tab, [copied])
+    open(ws)
     await update([
-      // As query_database showed them.
-      { page: hex(row(5)), title: 'Fix \\[urgent\\] \\_now\\_', properties: { Notes: 'a \\* b \\| c', Priority: 1 } },
-      // Written by the agent: its backslashes are kept.
-      { page: hex(row(1)), title: 'Clean C:\\_tmp', properties: { Notes: 'a \\* b' } },
+      // Copied from query_database, then added to.
+      {
+        page: hex(row(1)),
+        title: 'Fix \\[urgent\\] \\_now\\_',
+        properties: { Notes: 'a \\* b \\| c, done', Priority: 1 },
+      },
+      // A backslash itself, written as the tools say.
+      { page: hex(row(2)), title: 'Clean C:\\\\_tmp' },
     ])
-    expect(props(ws, 5)).toMatchObject({
+    expect(props(ws, 1)).toMatchObject({
       title: [['Fix [urgent] _now_']],
-      'g:g': [['a * b | c']],
+      'g:g': [['a * b | c, done']],
       'h:h': [['1']],
     })
-    expect(props(ws, 1)).toMatchObject({ title: [['Clean C:\\_tmp']], 'g:g': [['a \\* b']] })
+    expect(props(ws, 2)).toMatchObject({ title: [['Clean C:\\_tmp']] })
   })
 
   it('takes one emoji as an icon, flags and keycaps included, and nothing else', async () => {
