@@ -37,8 +37,9 @@ export interface ToolSpec {
   /** The tool does what is hard to undo, such as deleting a page, so the user must agree each time before it runs. */
   needsConfirmation?: boolean
   /**
-   * The tool changes the user's data. When a question stops after such a tool finished, the user
-   * is told that change was made, so they don't ask for it twice.
+   * The tool changes the user's data. When a question stops after such a tool ran and changed
+   * something, or may have (its error has `mayHaveChanged`), the user is told to check before
+   * asking again, so they don't ask for a change twice.
    */
   changesData?: boolean
   /**
@@ -113,8 +114,8 @@ const DECLINED = 'Not run: the user declined this action. Do not retry it; ask t
 const UNASKED = "Not run: this action needs the user's confirmation, and they could not be asked."
 // What the model gets back for a call the user stopped: whether it may have done something matters
 // for a tool that changes a page.
-/** Added for the user when a question stops after a tool already changed something. */
-export const EARLIER_SAVED = 'Changes made earlier in this question were saved: check before asking again.'
+/** Added for the user when a question stops after a tool changed something, or may have. */
+export const MAY_HAVE_CHANGED = 'Some changes in this question may already have been made: check before asking again.'
 /** For the model: the reason itself is in the failed tool's result. */
 const STOPPED_BY_ERROR = "Not run: an earlier tool's error stopped the question."
 const STOPPED_BEFORE = 'Not run: the user stopped the question before this action started.'
@@ -142,6 +143,8 @@ export class CopilotAgent {
   private readonly contexts = new WeakMap<AgentMessage, string>()
   /** Set by a tool whose error stops the question (see `stopsQuestion`): what the user is told. */
   private stopReason?: string
+  /** Set by a tool that changes data and changed something, or may have (see `changesData`). */
+  private changed = false
 
   constructor(private readonly config: AgentConfig) {
     this.maxSteps = config.maxSteps ?? DEFAULT_MAX_STEPS
@@ -216,8 +219,7 @@ export class CopilotAgent {
 
     const before = agent.state.messages.length
     this.stopReason = undefined
-    // A tool that changes the user's data finished: a stopped question says so.
-    let changed = false
+    this.changed = false
     let steps = 0
     let hitLimit = false
     let failure: Failure | undefined
@@ -291,7 +293,6 @@ export class CopilotAgent {
         }
         started.delete(update.id)
         ended.set(update.id, { status: update.status, result: update.result })
-        if (update.status === 'done' && this.tools.get(update.name)?.changesData) changed = true
       }
       if (update) onUpdate(update)
       if (event.type === 'message_end' && event.message.role === 'toolResult') {
@@ -326,7 +327,7 @@ export class CopilotAgent {
     // finished. A stop after the final answer keeps it: the user has already read it.
     stopped ||= epoch !== this.epoch && !answered
     if (!stopped && this.stopReason)
-      failure ??= { text: changed ? `${this.stopReason} ${EARLIER_SAVED}` : this.stopReason }
+      failure ??= { text: this.changed ? `${this.stopReason} ${MAY_HAVE_CHANGED}` : this.stopReason }
     if (failure || stopped) {
       const kept = usedTools(agent.state.messages.slice(before))
       agent.state.messages = [...agent.state.messages.slice(0, before), ...kept]
@@ -465,13 +466,19 @@ export class CopilotAgent {
   }
 
   /**
-   * For a tool starting now: stops the running question with a reason for the user. A tool still
-   * running from a question that was stopped or reset does nothing to the next one.
+   * For a tool starting now: how it reports to the running question that it stops it (with a
+   * reason for the user) or changed data. A tool still running from a question that was stopped
+   * or reset reports nothing to the next one.
    */
-  private stopper(): (reason: string) => void {
+  private reporter(): Reporter {
     const epoch = this.epoch
-    return (reason) => {
-      if (epoch === this.epoch) this.stopReason ??= reason
+    return {
+      stop: (reason) => {
+        if (epoch === this.epoch) this.stopReason ??= reason
+      },
+      changed: () => {
+        if (epoch === this.epoch) this.changed = true
+      },
     }
   }
 
@@ -488,7 +495,7 @@ export class CopilotAgent {
       initialState: {
         systemPrompt: this.config.systemPrompt,
         model,
-        tools: this.config.tools.map((t) => toAgentTool(t, () => this.stopper())),
+        tools: this.config.tools.map((t) => toAgentTool(t, () => this.reporter())),
         messages: this.fromHistory(this.initial, model),
       },
       streamFn: (m, context, options) => streamSimple(m as Model<'openai-completions'>, context, options),
@@ -658,29 +665,42 @@ function askUser(
  * or on one of its causes (a tool may wrap the error it got).
  */
 function stopsQuestion(err: unknown): string | undefined {
+  const reason = inCauses(err, 'stopsQuestion')
+  return typeof reason === 'string' ? reason : undefined
+}
+
+/** A field of an error, or of the first of its causes that has it (a tool may wrap the error it got). */
+function inCauses(err: unknown, field: string): unknown {
   for (let e = err, depth = 0; e && typeof e === 'object' && depth < 5; e = (e as Error).cause, depth++) {
-    const reason = (e as { stopsQuestion?: unknown }).stopsQuestion
-    if (typeof reason === 'string') return reason
+    const value = (e as Record<string, unknown>)[field]
+    if (value !== undefined) return value
   }
   return undefined
 }
 
-function toAgentTool(spec: ToolSpec, stopper: () => (reason: string) => void): AgentTool {
+interface Reporter {
+  stop(reason: string): void
+  changed(): void
+}
+
+function toAgentTool(spec: ToolSpec, reporter: () => Reporter): AgentTool {
   return {
     name: spec.name,
     label: spec.name,
     description: spec.description,
     parameters: spec.parameters,
     execute: async (_id, params, signal) => {
-      const stop = stopper()
+      const report = reporter()
       let result: unknown
       try {
         result = await spec.run(params as Record<string, unknown>, signal)
       } catch (err) {
         const reason = stopsQuestion(err)
-        if (reason) stop(reason)
+        if (reason) report.stop(reason)
+        if (spec.changesData && inCauses(err, 'mayHaveChanged') === true) report.changed()
         throw err
       }
+      if (spec.changesData) report.changed()
       // JSON.stringify(undefined) is undefined; tool results must be strings.
       const text = typeof result === 'string' ? result : (JSON.stringify(result) ?? '')
       return { content: [{ type: 'text', text }], details: undefined }

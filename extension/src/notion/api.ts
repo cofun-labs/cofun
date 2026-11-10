@@ -18,16 +18,19 @@ export class NotionError extends Error {
   readonly unanswered: boolean
   /** Set when the question must stop here: what the user is told. The agent runs nothing more. */
   readonly stopsQuestion?: string
+  /** The failed call may have changed the user's data anyway: always so when the outcome is unknown. */
+  readonly mayHaveChanged: boolean
 
   constructor(
     readonly code: NotionErrorCode,
     message: string,
-    options?: { cause?: unknown; unanswered?: boolean; stopsQuestion?: string },
+    options?: { cause?: unknown; unanswered?: boolean; stopsQuestion?: string; mayHaveChanged?: boolean },
   ) {
     super(message, options)
     this.name = 'NotionError'
     this.unanswered = options?.unanswered ?? false
     this.stopsQuestion = options?.stopsQuestion
+    this.mayHaveChanged = options?.mayHaveChanged ?? code === 'outcome_unknown'
   }
 }
 
@@ -43,12 +46,12 @@ export const RATE_LIMITED = 'Notion turned this request away (too many requests,
 export const BUSY_UNKNOWN =
   'Notion said it was too busy, without saying whether the change was saved, so it may or may not have been. Read the page again before retrying.'
 export const NOT_SENT = 'Not sent: Notion turned an earlier request away (too many requests, or too busy).'
-/** For the user, when Notion turns requests away: the question stops, and nothing more is sent. */
+/**
+ * For the user, when Notion turns requests away: the question stops, and nothing more is sent.
+ * The agent adds a line when changes may already have been made.
+ */
 export const LIMITED_STOP =
-  'Notion is limiting requests right now, so Notion Copilot stopped. Wait a minute, then ask again.'
-/** For the user, when Notion was too busy to say whether a change was saved. */
-export const BUSY_STOP_UNKNOWN =
-  'Notion is too busy right now, so Notion Copilot stopped. The last change may or may not have been saved: check the page before asking again.'
+  'Notion is turning requests away right now (too many requests, or too busy), so Notion Copilot stopped. Wait a minute, then ask again.'
 
 /** The endpoints under /api/v3/ the client uses. */
 export type NotionEndpoint =
@@ -455,7 +458,7 @@ export class NotionClient {
       // A 529 to a write may come after Notion applied it, so its outcome stays unknown. A 429
       // means Notion turned it away before doing anything with it.
       if (endpoint === 'saveTransactionsFanout' && res.status === 529) {
-        throw new NotionError('outcome_unknown', BUSY_UNKNOWN, { stopsQuestion: BUSY_STOP_UNKNOWN })
+        throw new NotionError('outcome_unknown', BUSY_UNKNOWN, { stopsQuestion: LIMITED_STOP })
       }
       throw new NotionError('rate_limited', RATE_LIMITED, { stopsQuestion: LIMITED_STOP })
     }

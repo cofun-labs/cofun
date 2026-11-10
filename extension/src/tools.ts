@@ -818,13 +818,13 @@ export const editPage: ToolSpec = {
       if (refs.length) newRefs = `New blocks: ${refs.map((r) => `^${r}`).join(', ')}.`
     } catch (err) {
       // The edit is saved; blocks it changed will be refused until the page is read again. A
-      // failure that stops the question is passed on, and the user is told the edit was saved.
+      // failure that stops the question is passed on, marked as having changed the page.
       if (err instanceof NotionError && err.stopsQuestion) {
         remember(next)
         throw new NotionError(
           'notion_error',
           [`Saved, but the page could not be read back: ${err.message}`, ...plan.summary].join('\n'),
-          { cause: err, stopsQuestion: `${err.stopsQuestion} ${EDIT_SAVED}` },
+          { cause: err, stopsQuestion: err.stopsQuestion, mayHaveChanged: true },
         )
       }
     }
@@ -832,9 +832,6 @@ export const editPage: ToolSpec = {
     return [...plan.summary, newRefs, 'Read the page again to see the result.'].filter(Boolean).join('\n')
   },
 }
-
-/** Added for the user when the question stops after edit_page saved its edit. */
-export const EDIT_SAVED = 'The edit was saved: check the page before asking again.'
 
 /** The page argument, if given; null and blank mean not given. */
 function givenPage(args: Record<string, unknown>): string | undefined {

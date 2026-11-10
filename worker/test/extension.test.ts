@@ -3,14 +3,14 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   CopilotAgent,
-  EARLIER_SAVED,
+  MAY_HAVE_CHANGED,
   type AgentUpdate,
   type ConfirmTool,
   type HistoryMessage,
   type ToolCallRequest,
   type ToolSpec,
 } from '../../extension/src/agent'
-import { BUSY_STOP_UNKNOWN, LIMITED_STOP, RATE_LIMITED } from '../../extension/src/notion/api'
+import { LIMITED_STOP, RATE_LIMITED } from '../../extension/src/notion/api'
 import { editPage, openPageNote, readPage } from '../../extension/src/tools'
 import { createApp, type Env } from '../src/app'
 import { FakeClerk } from './clerk'
@@ -379,7 +379,7 @@ describe('extension agent against the worker', () => {
     tab.workspace = ws
     tab.install()
     const { result } = await ask(makeAgent({ tools: [readPage, editPage] }), 'Put a summary at the top')
-    expect(result).toEqual({ status: 'error', message: BUSY_STOP_UNKNOWN })
+    expect(result).toEqual({ status: 'error', message: `${LIMITED_STOP} ${MAY_HAVE_CHANGED}` })
     expect(tab.sent.filter((r) => r.url.endsWith('/saveTransactionsFanout'))).toHaveLength(1)
     expect(ai.calls).toHaveLength(2)
   })
@@ -399,8 +399,25 @@ describe('extension agent against the worker', () => {
       { reply: 'Done.' },
     ]
     const { result } = await ask(makeAgent({ tools: [readPage, editPage, reading] }), 'Put a summary at the top')
-    expect(result).toEqual({ status: 'error', message: `${LIMITED_STOP} ${EARLIER_SAVED}` })
+    expect(result).toEqual({ status: 'error', message: `${LIMITED_STOP} ${MAY_HAVE_CHANGED}` })
     expect(ws.transactions).toHaveLength(1)
+  })
+
+  it('a stopped question mentions an earlier change whose outcome was unknown', async () => {
+    const lost = Object.assign(new Error('Notion did not answer.'), { mayHaveChanged: true })
+    const writing: ToolSpec = {
+      ...renameTool().tool,
+      needsConfirmation: false,
+      changesData: true,
+      run: async () => Promise.reject(lost),
+    }
+    const refused: ToolSpec = {
+      ...pageTool().tool,
+      run: async () => Promise.reject(Object.assign(new Error('Turned away.'), { stopsQuestion: 'Wait a minute.' })),
+    }
+    ai.script = [{ toolCalls: [RENAME_CALL] }, { toolCalls: [{ name: 'lookup_page', arguments: '{}' }] }]
+    const { result } = await ask(makeAgent({ tools: [writing, refused] }), 'Rename this page')
+    expect(result).toEqual({ status: 'error', message: `Wait a minute. ${MAY_HAVE_CHANGED}` })
   })
 
   it('tools the model asked for after a refused one, in the same reply, do not run', async () => {
