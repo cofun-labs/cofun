@@ -2,6 +2,7 @@
 // (` ^<ref>`, like an Obsidian block reference) so tools that change the page can point at it.
 // Child pages, databases, and links to pages carry the full page id, which read_page accepts.
 import type { Block, LoadedPage, NotionRecord, Pointer, RecordMap } from './api'
+import { COLOR } from './blocks'
 
 /** A run of text and its decorations, as Notion stores rich text: `[text, [[mark, value?], …]?]`. */
 type Run = [string, [string, unknown?][]?]
@@ -377,7 +378,8 @@ class Context {
       .map((l) => (LOOKS_LIKE_BLOCK.test(l) ? `\\${l}` : l))
       .join('\n')
     const own = withRef('', label, escaped, ref, 'lines')
-    const children = this.children(block, 0).flat()
+    // Nested blocks are indented under the quote's own text, inside it, so they read as nested.
+    const children = this.children(block, 1).flat()
     return [...own, ...children].map((l) => `${pad}> ${l}`)
   }
 
@@ -511,6 +513,8 @@ class Context {
     // Names and link targets aren't Markdown-escaped; in a table their pipes (and so backslashes,
     // which would undo a pipe's escape) still must be.
     const pipes = (raw: string) => (table ? tableEscape(raw) : raw)
+    // A link target is read as it is, a table cell's `\|` aside, so only its pipes are escaped.
+    const target = (href: string) => (table ? href.split('|').join('\\|') : href)
     const code = marks.some(([m]) => m === 'c')
     // Code and equations keep their text as it is; in a table only their pipes are escaped, as
     // GFM reads `\|` there.
@@ -518,6 +522,7 @@ class Context {
     // Characters Markdown would read as formatting stay literal behind a backslash.
     let out = code ? raw(text) : escapeMarkdown(text)
     let link: string | undefined
+    let color: string | undefined
     for (const [mark, arg] of marks) {
       switch (mark) {
         case 'p':
@@ -526,7 +531,7 @@ class Context {
           // A link mention (a web page shown as a preview) is a link to that page.
           const { href, title } = (arg ?? {}) as { href?: unknown; title?: unknown }
           if (typeof href !== 'string' || !href) break
-          return `[${escapeMarkdown(typeof title === 'string' && title ? title : href)}](${pipes(href)})`
+          return `[${escapeMarkdown(typeof title === 'string' && title ? title : href)}](${target(href)})`
         }
         case 'u':
           // Its bold, italic, and strikethrough still apply, as for text (a link can't: `[@[Name]](url)`
@@ -537,6 +542,9 @@ class Context {
           return `@${formatDate(arg)}`
         case 'e':
           return `$${raw(String(arg))}$`
+        case 'h':
+          if (typeof arg === 'string' && COLOR.test(arg)) color = arg
+          break
         case 'a': {
           // Notion links to its own pages by path (`/Title-<id>`); show those as `/<id>` (keeping any
           // `#block`), which read_page opens and which stays a link, unlike a mention's `(<id>)`.
@@ -545,7 +553,7 @@ class Context {
           const page = href.startsWith('/')
             ? /[0-9a-f]{32}$/i.exec(path.split('?')[0].replace(/-/g, ''))?.[0]
             : undefined
-          link = page ? `/${page.toLowerCase()}${hash ? `#${hash}` : ''}` : pipes(href)
+          link = page ? `/${page.toLowerCase()}${hash ? `#${hash}` : ''}` : target(href)
           break
         }
       }
@@ -556,6 +564,7 @@ class Context {
     if (has('b')) out = wrap(out, '**')
     if (has('i')) out = wrap(out, '*')
     if (has('s')) out = wrap(out, '~~')
+    if (color) out = `<span color="${color}">${out}</span>`
     if (link && !marks.some(([m]) => m === 'u')) out = `[${out}](${link})`
     return out
   }
@@ -632,7 +641,8 @@ function wrap(text: string, mark: string): string {
   return core ? `${lead}${mark}${core}${mark}${trail}` : text
 }
 
-function formatDate(arg: unknown): string {
+/** A date mention's date as read_page shows it, after the `@`. */
+export function formatDate(arg: unknown): string {
   const d = (arg ?? {}) as { start_date?: string; start_time?: string; end_date?: string; end_time?: string }
   const start = [d.start_date, d.start_time].filter(Boolean).join(' ')
   const end = [d.end_date, d.end_time].filter(Boolean).join(' ')
@@ -682,7 +692,8 @@ export function splitSections(
     let code: { open: string; close: string; prefix: string } | undefined
     section.split('\n').forEach((whole, i) => {
       const closes = !!code && whole.trimEnd() === code.close
-      const fence = code ? undefined : /^(\s*(?:>\s?)*)(`{3,})[^`]*$/.exec(whole)
+      // A code block nested in a quote is indented after the quote marks.
+      const fence = code ? undefined : /^(\s*(?:>\s*)*)(`{3,})[^`]*$/.exec(whole)
       const opens = fence ? { open: whole, close: `${fence[1]}${fence[2]}`, prefix: fence[1] } : undefined
       // Room kept for closing an open code block at the end of a part and opening it again.
       const reserve = code && !closes ? code.open.length + code.close.length + 2 : 0
@@ -717,7 +728,13 @@ export function splitIntoParts(sections: string[], max: number): string[] {
   return splitSections(sections, max).parts
 }
 
-/** Escapes characters that inline Markdown would read as formatting, links, or references. */
+/**
+ * Escapes characters that inline Markdown would read as formatting, links, or references, a `$`
+ * that could open an inline equation, and an `@` that would read as a date.
+ */
 export function escapeMarkdown(text: string): string {
-  return text.replace(/[\\`*~[\]^|<]/g, '\\$&').replace(/(?<!\w)_|_(?!\w)/g, '\\_')
+  return text
+    .replace(/[\\`*~[\]^|<]/g, '\\$&')
+    .replace(/(?<!\w)_|_(?!\w)/g, '\\_')
+    .replace(/\$(?!\s)|@(?=\d{4}-\d{2}-\d{2})/g, '\\$&')
 }

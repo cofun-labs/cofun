@@ -50,7 +50,7 @@ export function oneLine(text: string): string {
  * written as two, as tools tell the model.
  */
 export function plainText(text: string): string {
-  return text.replace(/\\([\\`*~[\]^|<_])/g, '$1')
+  return text.replace(/\\([\\`*~[\]^|<_$@])/g, '$1')
 }
 
 /** The schema entry for a property name (any case), as [key, def]. */

@@ -937,10 +937,15 @@ function notionId(id: string): string {
 
 /**
  * Builders for the operations a transaction is made of, so Notion's wire format for writes lives
- * here with the rest of the API. All act on blocks in one workspace.
+ * here with the rest of the API. All act on blocks in one workspace. With `userId` (the tab's
+ * signed-in user), blocks created, changed, and
+ * deleted name that user as their creator and last editor, as Notion's own editor does; Notion
+ * doesn't fill those in itself.
  */
-export function blockOps(spaceId: string, now: number) {
+export function blockOps(spaceId: string, now: number, userId?: string) {
   const pointer = (id: string): Pointer => ({ table: 'block', id, spaceId })
+  const editedBy = userId ? { last_edited_by_id: userId, last_edited_by_table: 'notion_user' } : {}
+  const createdBy = userId ? { created_by_id: userId, created_by_table: 'notion_user', ...editedBy } : {}
   return {
     /**
      * A new block under `parentId`; it still has to be listed in its parent's content. Without a
@@ -965,6 +970,7 @@ export function blockOps(spaceId: string, now: number) {
           space_id: spaceId,
           created_time: now,
           last_edited_time: now,
+          ...createdBy,
           ...fields,
         },
       }
@@ -984,7 +990,12 @@ export function blockOps(spaceId: string, now: number) {
     /** Deletes a block the way Notion does: marked not alive, and taken out of its parent's list. */
     remove(parentId: string, id: string): Operation[] {
       return [
-        { pointer: pointer(id), path: [], command: 'update', args: { alive: false, last_edited_time: now } },
+        {
+          pointer: pointer(id),
+          path: [],
+          command: 'update',
+          args: { alive: false, last_edited_time: now, ...editedBy },
+        },
         { pointer: pointer(parentId), path: ['content'], command: 'listRemove', args: { id } },
       ]
     },
@@ -1061,7 +1072,7 @@ export function blockOps(spaceId: string, now: number) {
     },
     /** Marks a block as edited now; Notion doesn't do it itself. */
     touch(id: string): Operation {
-      return { pointer: pointer(id), path: [], command: 'update', args: { last_edited_time: now } }
+      return { pointer: pointer(id), path: [], command: 'update', args: { last_edited_time: now, ...editedBy } }
     },
   }
 }
