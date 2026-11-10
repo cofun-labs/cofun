@@ -112,12 +112,12 @@ const SIGN_IN = 'Please sign in first.'
 const DECLINED = 'Not run: the user declined this action. Do not retry it; ask the user how to proceed instead.'
 // The same when there was nobody to ask: the model must not claim the user said no.
 const UNASKED = "Not run: this action needs the user's confirmation, and they could not be asked."
-// What the model gets back for a call the user stopped: whether it may have done something matters
-// for a tool that changes a page.
 /** Added for the user when a question stops after a tool changed something, or may have. */
 export const MAY_HAVE_CHANGED = 'Some changes in this question may already have been made: check before asking again.'
 /** For the model: the reason itself is in the failed tool's result. */
 const STOPPED_BY_ERROR = "Not run: an earlier tool's error stopped the question."
+// What the model gets back for a call the user stopped: whether it may have done something matters
+// for a tool that changes a page.
 const STOPPED_BEFORE = 'Not run: the user stopped the question before this action started.'
 const STOPPED_DURING =
   'Stopped by the user while this action was running; it may have partly happened. Check before trying it again.'
@@ -665,17 +665,17 @@ function askUser(
  * or on one of its causes (a tool may wrap the error it got).
  */
 function stopsQuestion(err: unknown): string | undefined {
-  const reason = inCauses(err, 'stopsQuestion')
-  return typeof reason === 'string' ? reason : undefined
+  const reason = causes(err).find((e) => typeof e.stopsQuestion === 'string')?.stopsQuestion
+  return reason as string | undefined
 }
 
-/** A field of an error, or of the first of its causes that has it (a tool may wrap the error it got). */
-function inCauses(err: unknown, field: string): unknown {
-  for (let e = err, depth = 0; e && typeof e === 'object' && depth < 5; e = (e as Error).cause, depth++) {
-    const value = (e as Record<string, unknown>)[field]
-    if (value !== undefined) return value
+/** The error and its causes (a tool may wrap the error it got). */
+function causes(err: unknown): Record<string, unknown>[] {
+  const out: Record<string, unknown>[] = []
+  for (let e = err; e && typeof e === 'object' && out.length < 5; e = (e as Error).cause) {
+    out.push(e as Record<string, unknown>)
   }
-  return undefined
+  return out
 }
 
 interface Reporter {
@@ -697,7 +697,7 @@ function toAgentTool(spec: ToolSpec, reporter: () => Reporter): AgentTool {
       } catch (err) {
         const reason = stopsQuestion(err)
         if (reason) report.stop(reason)
-        if (spec.changesData && inCauses(err, 'mayHaveChanged') === true) report.changed()
+        if (spec.changesData && causes(err).some((e) => e.mayHaveChanged === true)) report.changed()
         throw err
       }
       if (spec.changesData) report.changed()

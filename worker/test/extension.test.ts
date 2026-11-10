@@ -420,6 +420,23 @@ describe('extension agent against the worker', () => {
     expect(result).toEqual({ status: 'error', message: `Wait a minute. ${MAY_HAVE_CHANGED}` })
   })
 
+  it('finds a possible change in any cause, even under a wrapper that says none', async () => {
+    const lost = Object.assign(new Error('Notion did not answer.'), { mayHaveChanged: true })
+    const wrapped = Object.assign(new Error('Could not finish.', { cause: lost }), {
+      mayHaveChanged: false,
+      stopsQuestion: 'Wait a minute.',
+    })
+    const writing: ToolSpec = {
+      ...renameTool().tool,
+      needsConfirmation: false,
+      changesData: true,
+      run: async () => Promise.reject(wrapped),
+    }
+    ai.script = [{ toolCalls: [RENAME_CALL] }]
+    const { result } = await ask(makeAgent({ tools: [writing] }), 'Rename this page')
+    expect(result).toEqual({ status: 'error', message: `Wait a minute. ${MAY_HAVE_CHANGED}` })
+  })
+
   it('tools the model asked for after a refused one, in the same reply, do not run', async () => {
     const tab = new FakeNotionTab(PAGE_URL).limit('loadPageChunk', 1).install()
     const { tool, runs } = pageTool()
