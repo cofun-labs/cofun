@@ -1,6 +1,6 @@
 import react from '@vitejs/plugin-react'
 import { defineConfig, loadEnv, type Plugin } from 'vite'
-import { buildManifest } from './manifest'
+import { buildManifest } from './manifest.ts'
 
 /** Writes manifest.json into the build, filled from env. */
 function manifest(env: Record<string, string>): Plugin {
