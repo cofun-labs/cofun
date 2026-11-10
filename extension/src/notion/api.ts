@@ -369,19 +369,34 @@ export class NotionCooldown {
    * until a later call loads it: each call tries again after a failure.
    */
   ready(): Promise<void> {
-    return (this.loading ??= this.load())
+    return (this.loading ??= this.load().then((loaded) => {
+      if (!loaded) this.loading = undefined
+    }))
   }
 
-  private async load(): Promise<void> {
-    if (!this.store) return
+  /** Whether the store's wait was loaded, and its changes are followed. */
+  private async load(): Promise<boolean> {
+    if (!this.store) return true
     try {
-      if (!this.following) this.store.onChange((until) => this.adopt(until))
+      if (!this.following) this.store.onChange((until) => this.changed(until))
       this.following = true
       this.adopt(await this.store.load())
+      return true
     } catch (err) {
       console.error('Could not load the wait after Notion turned requests away', err)
-      this.loading = undefined
+      return false
     }
+  }
+
+  /**
+   * The store's end time changed. Side panels turned away at the same moment each save their own
+   * end, and the last one saved may be the earlier: the panel whose wait ends later saves it again,
+   * so that a panel opened afterwards loads the later end.
+   */
+  private changed(until: unknown): void {
+    this.adopt(until)
+    // `left` first cuts an end here that is too far ahead, so that one is never saved back.
+    if (this.left() > 0 && typeof until === 'number' && until < this.until) this.save()
   }
 
   /** Takes an end time from the store, unless the wait here ends later, or it isn't a time. */

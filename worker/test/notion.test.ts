@@ -695,8 +695,10 @@ describe('when Notion turns requests away', () => {
 
   it('cuts a kept wait that ends too far ahead to the longest wait, and ignores one that is not a time', async () => {
     const now = Date.parse('2026-11-10T08:00:00Z')
-    const tab = new FakeNotionTab(PAGE_URL).install()
+    let tab = new FakeNotionTab(PAGE_URL).install()
+    // Each in a browser of its own.
     const kept = async (value: unknown) => {
+      tab = new FakeNotionTab(PAGE_URL).install()
       await tab.storage.local.set({ [COOLDOWN_KEY]: value })
       const cooldown = new NotionCooldown(() => now, chromeCooldownStore)
       await cooldown.ready()
@@ -742,6 +744,53 @@ describe('when Notion turns requests away', () => {
     // Loaded: not loaded again, and the store's changes are followed once.
     await cooldown.ready()
     expect([loads, listeners]).toEqual([2, 1])
+  })
+
+  it('keeps the later end when two side panels are turned away at the same moment', async () => {
+    const now = Date.parse('2026-11-10T08:00:00Z')
+    // A storage whose change events arrive later, as chrome.storage's do.
+    let kept: unknown
+    const events: number[] = []
+    const listeners: ((until: unknown) => void)[] = []
+    const store: CooldownStore = {
+      load: async () => kept,
+      save: async (until) => {
+        kept = until
+        events.push(until)
+      },
+      onChange: (listener) => void listeners.push(listener),
+    }
+    const openPanel = async () => {
+      const cooldown = new NotionCooldown(() => now, store)
+      await cooldown.ready()
+      return cooldown
+    }
+    const [first, second] = [await openPanel(), await openPanel()]
+    // Both turned away before either hears of the other: the shorter wait is saved last.
+    first.start('600')
+    second.start()
+    expect(kept).toBe(now + COOLDOWN_MS)
+    while (events.length) for (const until of events.splice(0)) for (const listener of listeners) listener(until)
+    expect([first.left(), second.left()]).toEqual([COOLDOWN_MAX_MS, COOLDOWN_MAX_MS])
+    // A panel opened afterwards waits as long as Notion asked.
+    expect((await openPanel()).left()).toBe(COOLDOWN_MAX_MS)
+  })
+
+  it('tries again when following the storage failed', async () => {
+    const now = Date.parse('2026-11-10T08:00:00Z')
+    let tries = 0
+    const store: CooldownStore = {
+      load: async () => now + 120_000,
+      save: async () => {},
+      onChange: () => {
+        if (tries++ === 0) throw new Error('storage is busy')
+      },
+    }
+    const cooldown = new NotionCooldown(() => now, store)
+    await cooldown.ready()
+    expect(cooldown.left()).toBe(0)
+    await cooldown.ready()
+    expect(cooldown.left()).toBe(120_000)
   })
 
   it('reads the wait kept in a new browser, not the one before it', async () => {
