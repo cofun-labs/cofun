@@ -551,7 +551,8 @@ export function previewEdits(raw: unknown, read: PageRead | undefined, page: str
         return `Unknown edit: ${JSON.stringify(value)}`
     }
   })
-  // Nobody is asked first, so say where removed text can be found again.
+  // Nobody is asked first, so say where removed text can be found again. The card keeps this after
+  // a call that failed too, hence the "if".
   const removes = raw.some((value) => {
     const action = (value as EditArgs | null)?.action
     return action === 'replace' || action === 'delete'
@@ -559,7 +560,9 @@ export function previewEdits(raw: unknown, read: PageRead | undefined, page: str
   return [
     `On the page “${read?.title ?? page}”:`,
     ...changes,
-    ...(removes ? ["What was replaced or deleted can be brought back from the page's history in Notion."] : []),
+    ...(removes
+      ? ["If the edit was made, what it replaced or deleted can be brought back from the page's history in Notion."]
+      : []),
   ].join('\n\n')
 }
 

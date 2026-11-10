@@ -233,7 +233,7 @@ describe('edit_page details', () => {
         'Insert at the start of the page:',
         '    # Top',
         '',
-        "What was replaced or deleted can be brought back from the page's history in Notion.",
+        "If the edit was made, what it replaced or deleted can be brought back from the page's history in Notion.",
       ].join('\n'),
     )
   })
