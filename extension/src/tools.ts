@@ -108,6 +108,7 @@ export const readPage: ToolSpec = {
     }
 
     const pageHex = hexId(loaded.page.id)
+    const threads = threadCount(loaded, md)
     const header = [
       `Page: ${md.title} ^${pageHex}`,
       `URL: ${new URL(tab.url).origin}/${pageHex}`,
@@ -115,10 +116,9 @@ export const readPage: ToolSpec = {
         ? [`Part ${part} of ${parts.length}${part < parts.length ? `. Read part ${part + 1} for more.` : '.'}`]
         : []),
       ...(md.kind === 'database' ? ['This page is a database: read its rows with query_database.'] : []),
-      ...(part === 1 && threadCount(loaded, md)
+      ...(part === 1 && threads
         ? [
-            `This page has ${plural(threadCount(loaded, md), 'comment thread')}: ` +
-              `read ${threadCount(loaded, md) === 1 ? 'it' : 'them'} with read_comments.`,
+            `This page has ${plural(threads, 'comment thread')}: read ${threads === 1 ? 'it' : 'them'} with read_comments.`,
           ]
         : []),
       ...(loaded.complete ? [] : ['The page is too long to load in full; only its beginning is shown.']),
@@ -1308,8 +1308,8 @@ function plural(n: number, word: string): string {
   return `${n} ${word}${n === 1 ? '' : 's'}`
 }
 
-/** A page argument, or the open page when none is given; the page must be a page, not a database. */
-async function commentsPage(tab: NotionTab, given: string | undefined): Promise<string> {
+/** The page a call names, or the open page when it names none. */
+function commentsPage(tab: NotionTab, given: string | undefined): string {
   const id = given === undefined ? tab.pageId : pageArg(given)
   if (!id) {
     throw new Error(
@@ -1347,7 +1347,7 @@ export const readComments: ToolSpec = {
   },
   run: async (args) => {
     const tab = await activeNotionTab()
-    const id = await commentsPage(tab, givenPage(args))
+    const id = commentsPage(tab, givenPage(args))
     const part = args.part === undefined || args.part === null || args.part === '' ? 1 : Number(args.part)
     if (!Number.isInteger(part) || part < 1) throw new Error('`part` must be a whole number from 1.')
     const loaded = await tab.client.loadPage(id)
