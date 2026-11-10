@@ -140,8 +140,11 @@ const UNASKED = "Not run: this action needs the user's confirmation, and they co
 export const MAY_HAVE_CHANGED = 'Some changes in this question may already have been made: check before asking again.'
 /** For the model: the reason itself is in the failed tool's result. */
 const STOPPED_BY_ERROR = "Not run: an earlier tool's error stopped the question."
-const STOPPED_IN_PREVIEW =
-  'Not run: Notion turned the request away while it was being prepared, so the question stopped.'
+/** For the model, when the question stopped while this call, or an earlier one, was being prepared. */
+function stoppedInPreview(reason: string, earlier: boolean): string {
+  const which = earlier ? 'an earlier action' : 'this action'
+  return `Not run: the question stopped while ${which} was being prepared. The user was told: ${reason}`
+}
 // What the model gets back for a call the user stopped: whether it may have done something matters
 // for a tool that changes a page.
 const STOPPED_BEFORE = 'Not run: the user stopped the question before this action started.'
@@ -266,6 +269,8 @@ export class CopilotAgent {
     const started = new Set<string>()
     // The call running now (tools run one at a time), for a question it puts to the user.
     let running: ToolCallRequest | undefined
+    // Why the question stopped, when it stopped in a call's preview rather than in a tool's run.
+    let previewStop: string | undefined
     const meter = this.config.meter?.(async (text) => {
       const call = running
       if (!call || epoch !== this.epoch) return false
@@ -276,10 +281,11 @@ export class CopilotAgent {
     // On the last step, refuse the tools the model asks for instead of running them: the question
     // ends here, so the model would never see their results, and a tool could change a page.
     agent.beforeToolCall = async ({ toolCall, args }, signal) => {
-      // A tool's error stopped the question: nothing more runs.
+      // A tool's error, or an earlier call's preview, stopped the question: nothing more runs.
       if (this.stopReason) {
         refused.add(toolCall.id)
-        return { block: true, reason: STOPPED_BY_ERROR, terminate: true }
+        const reason = previewStop === undefined ? STOPPED_BY_ERROR : stoppedInPreview(previewStop, true)
+        return { block: true, reason, terminate: true }
       }
       if (steps >= this.maxSteps) {
         hitLimit = true
@@ -305,8 +311,9 @@ export class CopilotAgent {
       if (stop) {
         running = undefined
         this.stopReason ??= stop
+        previewStop = stop
         refused.add(toolCall.id)
-        return { block: true, reason: STOPPED_IN_PREVIEW, terminate: true }
+        return { block: true, reason: stoppedInPreview(stop, false), terminate: true }
       }
       onUpdate({ type: 'tool_ready', id: toolCall.id, args, preview })
       const call: ToolCallRequest = { id: toolCall.id, name: toolCall.name, args, preview }
