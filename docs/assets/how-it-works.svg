@@ -40,7 +40,7 @@
     .dot { fill: var(--accent); }
     .dot.model { fill: var(--model); }
 
-    /* Dots travel along the wires: requests to Notion and back, the question out, the reply back. */
+    /* Dots travel along the wires: requests to Notion and back, then the question out to the model. */
     .move { opacity: 0; animation: 3.2s linear infinite; }
     .to-notion { animation-name: to-notion; }
     .from-notion { animation-name: from-notion; animation-delay: 0.8s; }
