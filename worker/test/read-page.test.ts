@@ -1,6 +1,7 @@
 // The read_page tool (extension/src/tools.ts) against a fake Notion tab, with pages built in the
 // shape Notion's loadPageChunk returns them (see fixtures/notion/ for recorded examples).
 import { afterEach, describe, expect, it } from 'vitest'
+import { NESTED_MAX } from '../../extension/src/notion/api'
 import { blockRefs, codeSpan, splitIntoParts } from '../../extension/src/notion/markdown'
 import { PART_CHARS, editPage, readPage } from '../../extension/src/tools'
 import { FakeNotionTab, PAGE, PAGE_URL, SPACE, USER, fixture, restoreGlobals } from './notion-tab'
@@ -512,6 +513,7 @@ describe('converter details', () => {
   })
 
   it('keeps table rows on one line each, and marks rows that were not loaded', async () => {
+    // Notion sends no record for the last row, even when asked for it.
     openPage(
       chunk([id(1)], {
         block: {
@@ -523,7 +525,7 @@ describe('converter details', () => {
           ...block(id(3), 'table_row', undefined, { properties: { c1: [['One']], c2: [['line 1\nline 2']] } }, id(1)),
         },
       }),
-    )
+    ).respond('syncRecordValuesMain', 200, { recordMap: { __version__: 3 } })
     expect(body(await read())).toBe(
       ['| Step | Notes |', '| --- | --- |', '| One | line 1<br>line 2 |', '| [row not loaded] |  |', '^00000001'].join(
         '\n',
@@ -689,13 +691,58 @@ describe('more converter and argument details', () => {
 })
 
 describe('faithful details', () => {
+  it('[UC-NOTION-001-S09] reads what is inside closed toggles, level by level', async () => {
+    // Notion's page load leaves out a closed toggle's children; they come from a record lookup.
+    const tab = openPage(chunk([id(1)], { block: { ...block(id(1), 'toggle', 'Details', { content: [id(2)] }) } }))
+      .respond('syncRecordValuesMain', 200, {
+        recordMap: {
+          __version__: 3,
+          block: block(id(2), 'sub_sub_header', 'Inner', { content: [id(3)], format: { toggleable: true } }, id(1)),
+        },
+      })
+      .respond('syncRecordValuesMain', 200, {
+        recordMap: { __version__: 3, block: block(id(3), 'text', 'Deep note', {}, id(2)) },
+      })
+    expect(body(await read())).toBe(
+      ['▸ Details ^00000001', '  ### Inner ^00000002', '    Deep note ^00000003'].join('\n'),
+    )
+    expect(tab.sent.map((r) => r.url.split('/api/v3/')[1])).toEqual([
+      'loadPageChunk',
+      'syncRecordValuesMain',
+      'syncRecordValuesMain',
+    ])
+  })
+
+  it('looks up at most NESTED_MAX left-out blocks, and none inside child pages', async () => {
+    const many = Array.from({ length: NESTED_MAX + 50 }, (_, n) => id(1000 + n))
+    const tab = openPage(
+      chunk([id(1), id(2)], {
+        block: {
+          ...block(id(1), 'toggle', 'Long', { content: many }),
+          ...block(id(2), 'page', 'Child page', { content: [id(3)] }),
+        },
+      }),
+    )
+    for (let n = 0; n < NESTED_MAX / 100; n++)
+      tab.respond('syncRecordValuesMain', 200, { recordMap: { __version__: 3 } })
+    await read()
+    const asked = tab.sent
+      .filter((r) => r.url.endsWith('syncRecordValuesMain'))
+      .flatMap((r) => (r.body.requests as { pointer: { id: string } }[]).map((q) => q.pointer.id))
+    expect(asked).toHaveLength(NESTED_MAX)
+    expect(asked).not.toContain(id(3))
+  })
+
   it('folds blocks that were not loaded into one line', async () => {
-    // As when a page is too long to load in full: the blocks after the first two weren't returned.
+    // Blocks Notion returns no record for, even when asked: they can't be shown.
     openPage(
       chunk([1, 2, 3, 4, 5].map(id), {
         block: { ...block(id(1), 'text', 'Loaded'), ...block(id(2), 'toggle', 'Open', { content: [id(6)] }) },
       }),
     )
+      // One lookup per level: the page's missing blocks, then the toggle's.
+      .respond('syncRecordValuesMain', 200, { recordMap: { __version__: 3 } })
+      .respond('syncRecordValuesMain', 200, { recordMap: { __version__: 3 } })
     expect(body(await read())).toBe(
       [
         'Loaded ^00000001',

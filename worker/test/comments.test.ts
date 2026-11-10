@@ -257,7 +257,8 @@ describe('read_comments', () => {
     const tables = tab.sent.flatMap((s) =>
       ((s.body.requests as { pointer: { table: string } }[] | undefined) ?? []).map((r) => r.pointer.table),
     )
-    expect(tables).toEqual(['discussion', 'comment', 'notion_user'])
+    // The page's blocks the chunk left out are looked up too, before its comments.
+    expect(tables.filter((t) => t !== 'block')).toEqual(['discussion', 'comment', 'notion_user'])
   })
 
   it('splits a long thread between comments, starting the next part with its heading', async () => {

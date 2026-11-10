@@ -266,6 +266,10 @@ export const DUPLICATE_POLLING = { firstMs: 1_000, maxMs: 5_000, polls: 15 }
 const TASK_ERROR_POLLS = 3
 
 const CHUNK_LIMIT = 100
+/** Blocks a page lists but didn't send (closed toggles) that one read looks up at most. */
+export const NESTED_MAX = 300
+/** Blocks whose children belong to another page: a page read doesn't look inside them. */
+const NESTED_STOP = new Set(['page', 'collection_view_page', 'collection_view'])
 /** Records asked for in one syncRecordValuesMain request at most. */
 const RECORDS_BATCH = 100
 /** Record lookups sent at once at most. */
@@ -318,10 +322,43 @@ export class NotionClient {
       if (page.alive === false) throw new NotionError('in_trash', IN_TRASH)
       if (!page.space_id) throw new NotionError('notion_error', 'Notion returned the page without its workspace.')
       spaceId = page.space_id
-      if (!json.cursor?.stack?.length) return { page, spaceId, recordMap, complete: true, userId: user }
+      if (!json.cursor?.stack?.length) {
+        await this.loadNested(pageId, spaceId, recordMap)
+        return { page, spaceId, recordMap, complete: true, userId: user }
+      }
       cursor = json.cursor
     }
     return { page: recordMap.block![pageId] as Block, spaceId: spaceId!, recordMap, complete: false, userId: user }
+  }
+
+  /**
+   * Loads the blocks a loaded page lists but loadPageChunk left out: Notion sends a closed
+   * toggle's (or toggle heading's) children only once they were opened. Looks up the missing
+   * ids level by level, as Notion's client does when a toggle opens, up to `NESTED_MAX` blocks,
+   * and never inside child pages or databases. What is still missing shows as not loaded.
+   */
+  private async loadNested(pageId: string, spaceId: string, recordMap: RecordMap): Promise<void> {
+    const asked = new Set<string>()
+    let level = [pageId]
+    while (level.length && asked.size < NESTED_MAX) {
+      const missing: string[] = []
+      const next: string[] = []
+      for (const id of level) {
+        const block = recordMap.block?.[id] as Block | undefined
+        if (!block || (id !== pageId && NESTED_STOP.has(String(block.type)))) continue
+        for (const child of block.content ?? []) {
+          if (recordMap.block?.[child]) next.push(child)
+          else if (!asked.has(child)) missing.push(child)
+        }
+      }
+      const ask = missing.slice(0, NESTED_MAX - asked.size)
+      for (const id of ask) asked.add(id)
+      if (ask.length) {
+        mergeRecordMaps(recordMap, await this.findRecords(ask.map((id) => ({ table: 'block', id, spaceId }))))
+        next.push(...ask.filter((id) => recordMap.block?.[id]))
+      }
+      level = next
+    }
   }
 
   /** Loads specific records of any table. Every requested record must come back. */
