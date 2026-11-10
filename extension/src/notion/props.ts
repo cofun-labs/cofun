@@ -1,6 +1,7 @@
 // Values for a page's title and a database row's properties, from what the model gives to what
 // Notion stores, checked against the database's schema before anything is written.
-import type { Schema } from './markdown'
+import { MarkdownError, inline, type RichText } from './blocks'
+import { formatDate, type Schema } from './markdown'
 
 /** A property value as the model gives it: text, a number, Yes/No, a list of options, or empty. */
 export type PropertyInput = string | number | boolean | string[] | null
@@ -45,12 +46,75 @@ export function oneLine(text: string): string {
 }
 
 /**
- * Text as Notion stores it, from text the model may have copied out of query_database or
- * read_page: the backslashes their Markdown puts before marks are dropped. A backslash itself is
- * written as two, as tools tell the model.
+ * Plain text as Notion stores it (a name, a URL), from text the model may have copied out of
+ * query_database or read_page: the backslashes their Markdown puts before marks are dropped. A
+ * backslash itself is written as two, as tools tell the model.
  */
 export function plainText(text: string): string {
   return text.replace(/\\([\\`*~[\]^|<_$@])/g, '$1')
+}
+
+/**
+ * Markdown as query_database and read_page show a text value or a title, as the rich text Notion
+ * stores: the inline Markdown edit_page writes (see `inline`), read as a table cell's. People are
+ * still names (see `withPeople`). Markdown that can't be written (an unknown color) is refused.
+ */
+export function richValue(markdown: string, name = 'The title'): RichText {
+  try {
+    return cellText(markdown)
+  } catch (err) {
+    if (err instanceof MarkdownError) throw new PropertyError(`${name}: ${err.message}`)
+    throw err
+  }
+}
+
+/**
+ * A table cell's Markdown as rich text. query_database's table writes every `|` as `\|`, in code
+ * and equations too, where a backslash is otherwise text: `\|` is read as `|`, as in edit_page's tables.
+ */
+function cellText(markdown: string): RichText {
+  return inline(markdown.replace(/\\\|/g, '|'))
+}
+
+/** A link to a page as query_database shows a mention of one: `[Title](<32 hex digits>)`. */
+const PAGE_MENTION = /\[((?:\\.|[^\]\\])+)\]\([0-9a-f]{32}\)/gi
+
+/**
+ * A text value's or a title's Markdown on one line as the preview shows it: plain text, with
+ * people, pages, and dates as their names and no marks. Markdown that can't be written is shown as
+ * it is.
+ */
+export function shownMarkdown(markdown: string): string {
+  try {
+    // A mentioned page shows by the title its link gives; the rich text keeps only its id.
+    return oneLine(cellText(markdown.replace(PAGE_MENTION, '$1')).map(shownRun).join(''))
+  } catch (err) {
+    if (err instanceof MarkdownError) return oneLine(markdown)
+    throw err
+  }
+}
+
+/** A run of rich text as the preview shows it: a person by name, a date as written, an equation's LaTeX. */
+function shownRun([text, marks = []]: RichText[number]): string {
+  for (const [mark, arg] of marks) {
+    if (mark === 'u') return (arg as { name?: string } | undefined)?.name ?? text
+    if (mark === 'd') return formatDate(arg)
+    if (mark === 'e') return String(arg)
+  }
+  return text
+}
+
+/**
+ * Whether two text values or titles, as Markdown, are stored as the same rich text: the same text
+ * with the same formatting, links, and mentions.
+ */
+export function sameMarkdown(a: string, b: string): boolean {
+  try {
+    return JSON.stringify(cellText(oneLine(a))) === JSON.stringify(cellText(oneLine(b)))
+  } catch (err) {
+    if (err instanceof MarkdownError) return false
+    throw err
+  }
 }
 
 /** The schema entry for a property name (any case), as [key, def]. */
@@ -68,9 +132,10 @@ export function schemaEntry(schema: Schema, name: string): [string, PropertyDef]
 
 /**
  * The value Notion stores for `input` in a property of this kind. Empty (null or "") clears it.
- * Options must already exist in the schema: Notion's UI would add them, this doesn't.
+ * Options must already exist in the schema: Notion's UI would add them, this doesn't. Text and
+ * titles are Markdown (see richValue); URLs, emails, and phone numbers are plain text.
  */
-export function propertyValue(def: PropertyDef, input: PropertyInput): unknown[] {
+export function propertyValue(def: PropertyDef, input: PropertyInput): RichText {
   const name = def.name ?? 'This property'
   const type = def.type ?? 'text'
   if (READ_ONLY.has(type)) throw new PropertyError(`${name} is a ${type.replace(/_/g, ' ')} property; it can't be set.`)
@@ -82,8 +147,10 @@ export function propertyValue(def: PropertyDef, input: PropertyInput): unknown[]
   switch (type) {
     case 'title':
       if (typeof text !== 'string') throw new PropertyError(`${name} must be text.`)
-      return [[oneLine(plainText(text))]]
+      return richValue(oneLine(text), name)
     case 'text':
+      if (typeof text !== 'string' && typeof text !== 'number') throw new PropertyError(`${name} must be text.`)
+      return typeof text === 'string' ? richValue(text, name) : [[String(text)]]
     case 'url':
     case 'email':
     case 'phone_number':

@@ -884,13 +884,13 @@ function clip(text: string, max = 80): string {
 }
 
 /**
- * The operations creating a page at the end of `parent`, titled `title`, holding `blocks`, made by
+ * The operations creating a page at the end of `parent`, titled `title` (rich text), holding `blocks`, made by
  * `userId`. With no parent, the page is created unplaced, for a later operation to put it somewhere.
  */
 export function planNewPage(
   parent: { id: string; table: 'block' | 'collection' } | undefined,
   spaceId: string,
-  title: string,
+  title: RichText,
   blocks: NewBlock[],
   userId: string | undefined,
   { now = Date.now(), newId = () => crypto.randomUUID(), properties = {} as Record<string, unknown> } = {},
@@ -901,7 +901,7 @@ export function planNewPage(
   // A database row's parent is the database's collection, which lists its rows itself.
   operations.push(
     op.create(pageId, 'page', parent?.id, {
-      properties: { ...properties, title: [[title]] },
+      properties: { ...properties, title },
       ...(parent?.table === 'collection' ? { parent_table: 'collection' as const } : {}),
     }),
   )
@@ -986,7 +986,7 @@ function columnId(newId: () => string): string {
  * Rich text whose date mentions keep what the old text stored for the same date (its time zone,
  * reminder, and format), which read_page doesn't show.
  */
-function keepDates(title: RichText, old: unknown[]): RichText {
+export function keepDates(title: RichText, old: unknown[]): RichText {
   const dates = new Map<string, unknown>()
   for (const value of old) {
     if (!Array.isArray(value)) continue
