@@ -46,7 +46,8 @@ export function oneLine(text: string): string {
 
 /**
  * Text as Notion stores it, from text the model may have copied out of query_database or
- * read_page: the backslashes their Markdown puts before marks are dropped.
+ * read_page: the backslashes their Markdown puts before marks are dropped. A backslash itself is
+ * written as two, as tools tell the model.
  */
 export function plainText(text: string): string {
   return text.replace(/\\([\\`*~[\]^|<_])/g, '$1')
@@ -168,4 +169,13 @@ export function shownInput(input: PropertyInput): string {
   if (input === null || input === '') return '(empty)'
   if (Array.isArray(input)) return input.length ? input.map((v) => oneLine(String(v))).join(', ') : '(empty)'
   return oneLine(String(input))
+}
+
+/** A value as propertyValue stores it, on one line as the preview shows it; empty is "". */
+export function storedText(def: PropertyDef, value: unknown[]): string {
+  const [segment] = value as [string, [string, { start_date?: string; end_date?: string }?][]?][]
+  if (!segment) return ''
+  const date = segment[1]?.find(([mark]) => mark === 'd')?.[1]
+  if (date) return date.end_date ? `${date.start_date} → ${date.end_date}` : String(date.start_date)
+  return def.type === 'multi_select' ? segment[0].split(',').join(', ') : oneLine(segment[0])
 }

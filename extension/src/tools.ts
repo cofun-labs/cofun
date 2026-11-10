@@ -33,6 +33,8 @@ import {
   propertyValue,
   schemaEntry,
   shownInput,
+  storedText,
+  type PropertyDef,
   type PropertyInput,
 } from './notion/props'
 import {
@@ -244,8 +246,14 @@ async function resolveDatabase(client: NotionTab['client'], block: NotionRecord)
 
 /** How many rows and databases the agent saw are remembered, for previews; the oldest go first. */
 const SEEN_KEPT = 500
-/** The rows query_database showed, by row id: their title and values as shown. */
-const seenRows = new Map<string, { title: string; values: { name: string; value: string }[] }>()
+/** A row query_database showed: its title and values as shown, and its database's schema. */
+interface SeenRow {
+  title: string
+  values: { name: string; value: string }[]
+  schema: Schema
+}
+/** The rows query_database showed, by row id. */
+const seenRows = new Map<string, SeenRow>()
 /** The databases query_database read, by block id: their names. */
 const seenDatabases = new Map<string, string>()
 
@@ -349,7 +357,7 @@ export const queryDatabase: ToolSpec = {
       ...(hasMore ? [`Only the first ${QUERY_LOAD} rows of the database were read; filters apply to those.`] : []),
     ]
     // What the agent saw of each row, so a change to one can show its old values.
-    for (const r of shown) keep(seenRows, r.id, { title: r.values[0]?.value ?? '', values: r.values })
+    for (const r of shown) keep(seenRows, r.id, { title: r.values[0]?.value ?? '', values: r.values, schema })
     if (!shown.length) return [...header, '', '(no rows)'].join('\n')
     const table = [
       `| ${[...columns.map(escape), 'Row'].join(' | ')} |`,
@@ -880,12 +888,17 @@ function titleArg(value: unknown): string {
   return typeof value === 'string' ? oneLine(plainText(value)) : ''
 }
 
+/** Text arguments drop Markdown escapes (see plainText), so the model must double a backslash. */
+const BACKSLASH = 'Markdown escapes are undone: write a backslash itself as \\\\.'
+
 /** `properties` as tools take it: values by property name. */
 const PROPERTIES_ARG = {
   type: 'object',
   description:
     'Database properties by name: text, a number, Yes/No for checkboxes, an option name (a list for ' +
-    'multi-select), or a date as YYYY-MM-DD (a range as "YYYY-MM-DD → YYYY-MM-DD"). Empty clears a value.',
+    'multi-select), or a date as YYYY-MM-DD (a range as "YYYY-MM-DD → YYYY-MM-DD"). Empty clears a value. ' +
+    'The title goes in `title`, not here. Setting a date replaces any time or reminder it had. ' +
+    BACKSLASH,
   additionalProperties: {
     anyOf: [
       { type: 'string' },
@@ -908,7 +921,7 @@ export const createPage: ToolSpec = {
   parameters: {
     type: 'object',
     properties: {
-      title: { type: 'string', description: "The new page's title." },
+      title: { type: 'string', description: `The new page's title. ${BACKSLASH}` },
       markdown: { type: 'string', description: "The page's content, as Markdown. Leave out for an empty page." },
       parent: { type: 'string', description: 'URL or id of the page or database to create it in.' },
       properties: PROPERTIES_ARG,
@@ -1034,7 +1047,7 @@ export const updatePages: ToolSpec = {
           type: 'object',
           properties: {
             page: { type: 'string', description: 'Id or URL of the page or row.' },
-            title: { type: 'string', description: 'A new title.' },
+            title: { type: 'string', description: `A new title. ${BACKSLASH}` },
             icon: { type: 'string', description: 'A new icon: one emoji.' },
             properties: PROPERTIES_ARG,
           },
@@ -1053,15 +1066,12 @@ export const updatePages: ToolSpec = {
       const given = typeof u?.page === 'string' ? u.page.trim() : ''
       const id = given ? pageArg(given) : undefined
       const seen = id ? seenRows.get(id) : undefined
-      const known = seen?.title ?? (id ? pageReads.get(id)?.title : undefined)
+      const known = seen ? plainText(seen.title) : id ? pageReads.get(id)?.title : undefined
       lines.push(id ? `${known ? `${oneLine(known)} ` : ''}^${hexId(id)}` : oneLine(given) || '(no page given)')
-      // The old value when the agent saw it, so the user sees what changes.
-      const was = (name: string) => {
-        const old = seen?.values.find((v) => v.name.toLowerCase() === name.trim().toLowerCase())?.value
-        return old === undefined ? '' : ` (was ${old ? oneLine(old) : 'empty'})`
+      if (typeof u?.title === 'string') {
+        const title = titleArg(u.title)
+        lines.push(`    Title: ${title}${seen ? change(oneLine(plainText(seen.title)), title) : ''}`)
       }
-      if (typeof u?.title === 'string')
-        lines.push(`    Title: ${titleArg(u.title)}${seen ? ` (was ${oneLine(seen.title)})` : ''}`)
       if (typeof u?.icon === 'string') lines.push(`    Icon: ${oneLine(u.icon)}`)
       let props: [string, PropertyInput][] = []
       try {
@@ -1069,7 +1079,7 @@ export const updatePages: ToolSpec = {
       } catch {
         lines.push('    (properties that will be refused)')
       }
-      for (const [name, v] of props) lines.push(`    ${oneLine(name)}: ${shownInput(v)}${was(name)}`)
+      for (const [name, v] of props) lines.push(`    ${oneLine(name)}: ${previewValue(seen, name, v)}`)
     }
     return lines.join('\n')
   },
@@ -1137,6 +1147,38 @@ export const updatePages: ToolSpec = {
     }
     return [`Changed ${updates.length} page${updates.length === 1 ? '' : 's'}:`, ...summary].join('\n')
   },
+}
+
+/** How a value differs from the old one the agent saw, for the preview. */
+function change(old: string, now: string): string {
+  return old === now ? ' (unchanged)' : ` (was ${old || 'empty'})`
+}
+
+/**
+ * A property's new value for update_pages' preview: as it will be stored when the agent saw the
+ * row's database, with the old value it saw; as given otherwise, or when it will be refused.
+ */
+function previewValue(seen: SeenRow | undefined, name: string, input: PropertyInput): string {
+  if (!seen) return shownInput(input)
+  let def: PropertyDef
+  let now: string
+  try {
+    let key: string
+    ;[key, def] = schemaEntry(seen.schema, name)
+    // `run` refuses the title among the properties.
+    if (key === 'title' || def.type === 'title') return shownInput(input)
+    now = storedText(def, propertyValue(def, input))
+  } catch (err) {
+    if (err instanceof PropertyError) return shownInput(input)
+    throw err
+  }
+  const old = seen.values.find((v) => v.name.toLowerCase() === (def.name ?? name).trim().toLowerCase())?.value
+  if (old === undefined) return now || '(empty)'
+  // As storedText shows it: query_database shows a date as a mention, and options without spaces.
+  let was = oneLine(plainText(old))
+  if (def.type === 'date') was = was.replace(/^@/, '')
+  if (def.type === 'multi_select') was = was.split(/\s*,\s*/).join(', ')
+  return (now || '(empty)') + change(was, now)
 }
 
 /** Whether `text` is exactly one emoji (flags and keycaps included), as Notion takes for an icon. */
