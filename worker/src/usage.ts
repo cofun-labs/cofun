@@ -1,4 +1,5 @@
 import * as z from 'zod'
+import './zod'
 
 /** The slice of a Workers Analytics Engine dataset binding the usage records use. */
 export interface UsageDataset {

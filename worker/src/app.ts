@@ -3,6 +3,7 @@ import { Hono, type Context } from 'hono'
 import { cors } from 'hono/cors'
 import type { ContentfulStatusCode } from 'hono/utils/http-status'
 import * as z from 'zod'
+import './zod'
 import { loginPage } from './login'
 import type { QuotaNamespace } from './quota'
 import {
