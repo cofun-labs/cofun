@@ -42,6 +42,7 @@ import { findPeople, peopleIn } from './notion/people'
 import { COMMENT_CHARS, clip, loadThreads, quote, threadCount, threadLines } from './notion/comments'
 import {
   PropertyError,
+  losesUnnamedPeople,
   oneLine,
   plainText,
   propertyValue,
@@ -1297,7 +1298,7 @@ export const updatePages: ToolSpec = {
       lines.push(id ? `${known ? `${oneLine(known)} ` : ''}^${hexId(id)}` : oneLine(given) || '(no page given)')
       if (typeof u?.title === 'string') {
         const title = shownMarkdown(u.title)
-        const old = seen ? change(shownMarkdown(seen.title), title, sameMarkdown(seen.title, u.title)) : ''
+        const old = seen ? change(shownMarkdown(seen.title), title, sameMarkdown(seen.title, oneLine(u.title))) : ''
         lines.push(`    Title: ${title}${old}`)
       }
       if (typeof u?.icon === 'string') lines.push(`    Icon: ${oneLine(u.icon)}`)
@@ -1342,6 +1343,14 @@ export const updatePages: ToolSpec = {
       if (u.title !== undefined) values.title = u.title.rich
       // The text and title being set: what the page stores for them now is looked at below.
       const texts = Object.keys(values).filter((key) => key === 'title' || schema[key]?.type === 'text')
+      // A person shown as @someone can't be written back: the text would replace the mention.
+      const unnamed = texts.find((key) => losesUnnamedPeople(values[key], block.properties?.[key]))
+      if (unnamed)
+        throw new EditError(
+          `^${hexId(u.id)}: ${unnamed === 'title' ? 'the title' : (schema[unnamed]?.name ?? unnamed)} mentions a ` +
+            'person whose name could not be read, shown as @someone. Writing @someone back would replace that ' +
+            'mention with text: leave this value as it is, or name the person as @[Name]. Nothing was written.',
+        )
       return { values, texts, names: personNames(Object.values(values)), block }
     })
     // People the new values mention, matched before anything is written. A name the old value

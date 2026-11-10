@@ -106,11 +106,11 @@ function shownRun([text, marks = []]: RichText[number]): string {
 
 /**
  * Whether two text values or titles, as Markdown, are stored as the same rich text: the same text
- * with the same formatting, links, and mentions.
+ * with the same formatting, links, mentions, and line breaks.
  */
 export function sameMarkdown(a: string, b: string): boolean {
   try {
-    return JSON.stringify(cellText(oneLine(a))) === JSON.stringify(cellText(oneLine(b)))
+    return JSON.stringify(cellText(a.trim())) === JSON.stringify(cellText(b.trim()))
   } catch (err) {
     if (err instanceof MarkdownError) return false
     throw err
@@ -245,4 +245,20 @@ export function storedText(def: PropertyDef, value: unknown[]): string {
   const date = segment[1]?.find(([mark]) => mark === 'd')?.[1]
   if (date) return date.end_date ? `${date.start_date} → ${date.end_date}` : String(date.start_date)
   return def.type === 'multi_select' ? segment[0].split(',').join(', ') : oneLine(segment[0])
+}
+
+/** How query_database and read_page show a person whose name they couldn't read. */
+const UNNAMED = /@someone/g
+
+/**
+ * Whether writing `value` over `old` would turn a mention of a person into the text "@someone":
+ * the old value mentions people, and the new one holds that text more often than the old one did.
+ * Such a person was shown without a name, so the Markdown can't say who they are.
+ */
+export function losesUnnamedPeople(value: RichText, old: unknown): boolean {
+  const runs = (Array.isArray(old) ? old.filter((r) => Array.isArray(r) && typeof r[0] === 'string') : []) as RichText
+  const person = (run: RichText[number]) => !!run[1]?.some(([mark]) => mark === 'u')
+  const literal = (text: RichText) =>
+    text.filter((run) => !person(run)).reduce((n, run) => n + (run[0].match(UNNAMED)?.length ?? 0), 0)
+  return runs.some(person) && literal(value) > literal(runs)
 }

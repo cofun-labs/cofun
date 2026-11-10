@@ -353,6 +353,37 @@ describe('update_pages details', () => {
     expect(tab.sent.filter((r) => r.url.endsWith('/getVisibleUsers'))).toHaveLength(1)
   })
 
+  it('refuses to write @someone over a person whose name it could not read', async () => {
+    const ws = mentionable()
+    const tab = open(ws, `https://app.notion.com/${hex(DB)}`)
+    const gone = 'f0f0f0f0-0000-4000-8000-00000000dead'
+    ws.edit(row(1), { properties: { title: [['Write docs']], 'g:g': [['Ask '], ['‣', [['u', gone]]]] } })
+    const shown = shownCells(await query(tab, [ws.records.get(row(1)) as never]), row(1))
+    expect(shown.Notes).toBe('Ask @someone')
+    await expect(update([{ page: hex(row(1)), properties: { Notes: shown.Notes } }])).rejects.toThrow(
+      'Notes mentions a person whose name could not be read, shown as @someone.',
+    )
+    expect(ws.transactions).toEqual([])
+    // Other text replaces the value as usual, and text that already said @someone stays.
+    ws.edit(row(2), { properties: { title: [['Fix login']], 'g:g': [['@someone said, '], ['‣', [['u', ANN]]]] } })
+    await update([
+      { page: hex(row(1)), properties: { Notes: 'Ask @[Ann]' } },
+      { page: hex(row(2)), properties: { Notes: '@someone said, @[Ann]' } },
+    ])
+    expect(props(ws, 1)).toMatchObject({ 'g:g': [['Ask '], ['‣', [['u', ANN]]]] })
+    expect(props(ws, 2)).toMatchObject({ 'g:g': [['@someone said, '], ['‣', [['u', ANN]]]] })
+  })
+
+  it('does not call a text value unchanged when writing it back removes its line breaks', async () => {
+    const ws = mentionable()
+    const tab = open(ws, `https://app.notion.com/${hex(DB)}`)
+    ws.edit(row(1), { properties: { title: [['Write docs']], 'g:g': [['First\nSecond']] } })
+    const shown = shownCells(await query(tab, [ws.records.get(row(1)) as never]), row(1))
+    expect(shown.Notes).toBe('First Second')
+    const preview = await updatePages.preview!({ pages: [{ page: hex(row(1)), properties: { Notes: shown.Notes } }] })
+    expect(preview?.split('\n')[2]).toBe('    Notes: First Second (same text; its formatting changes)')
+  })
+
   it('stores URLs, emails, and phone numbers as plain text, and numbers given for text', async () => {
     const ws = mentionable()
     open(ws)
