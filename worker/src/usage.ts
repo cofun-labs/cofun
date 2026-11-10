@@ -1,3 +1,6 @@
+import * as z from 'zod'
+import './zod'
+
 /** The slice of a Workers Analytics Engine dataset binding the usage records use. */
 export interface UsageDataset {
   writeDataPoint(point: { indexes?: string[]; blobs?: string[]; doubles?: number[] }): void
@@ -38,6 +41,35 @@ export function finishReason(value: unknown): string {
 /** A token count from the model, or 0 when missing or malformed. */
 export function tokenCount(value: unknown): number {
   return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? Math.floor(value) : 0
+}
+
+/**
+ * What a reply from the model, or one chunk of a streamed reply, says about itself. Only these
+ * fields are read, loosely: a field that is not what is expected counts as missing, and anything
+ * else in the reply is passed on unread.
+ */
+const Choice = z.object({ finish_reason: z.unknown().optional() }).catch({})
+
+const ReplyInfo = z.object({
+  error: z.unknown().optional(),
+  usage: z
+    .object({ prompt_tokens: z.unknown().optional(), completion_tokens: z.unknown().optional() })
+    .optional()
+    .catch(undefined),
+  // The first choice, as `choices[0]` reads it: from a list, or from an object with a field named 0.
+  choices: z.union([z.array(Choice), z.record(z.string(), Choice)]).catch([]),
+})
+
+/**
+ * The fields of a reply or chunk that usage records read: its error, its token usage, and its first
+ * choice's finish reason. Undefined when it is not an object.
+ */
+export function replyInfo(value: unknown) {
+  const parsed = ReplyInfo.safeParse(value)
+  if (!parsed.success) return undefined
+  const { error, usage, choices } = parsed.data
+  const first = Array.isArray(choices) ? choices[0] : choices['0']
+  return { error, usage, finish_reason: first?.finish_reason }
 }
 
 /**
@@ -105,12 +137,8 @@ export function meterStream(
     } catch {
       return
     }
-    if (!parsed || typeof parsed !== 'object') return
-    const event = parsed as {
-      error?: unknown
-      usage?: Record<string, unknown>
-      choices?: { finish_reason?: unknown }[]
-    }
+    const event = replyInfo(parsed)
+    if (!event) return
     // The model can report a failure inside the stream; the extension shows it as an error.
     if (event.error) sawError = true
     // OpenAI sends usage once, in the last chunk. Workers AI also adds per-chunk counts and a
@@ -119,7 +147,7 @@ export function meterStream(
       summary.promptTokens = Math.max(summary.promptTokens, tokenCount(event.usage.prompt_tokens))
       summary.completionTokens = Math.max(summary.completionTokens, tokenCount(event.usage.completion_tokens))
     }
-    const reason = event.choices?.[0]?.finish_reason
+    const reason = event.finish_reason
     if (reason) summary.finishReason = finishReason(reason)
   }
 

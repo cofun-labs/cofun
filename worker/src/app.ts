@@ -2,9 +2,19 @@ import { verifyToken } from '@clerk/backend'
 import { Hono, type Context } from 'hono'
 import { cors } from 'hono/cors'
 import type { ContentfulStatusCode } from 'hono/utils/http-status'
+import * as z from 'zod'
+import './zod'
 import { loginPage } from './login'
 import type { QuotaNamespace } from './quota'
-import { finishReason, meterStream, recordUsage, tokenCount, type UsageDataset, type UsageRecord } from './usage'
+import {
+  finishReason,
+  meterStream,
+  recordUsage,
+  replyInfo,
+  tokenCount,
+  type UsageDataset,
+  type UsageRecord,
+} from './usage'
 
 /** The slice of the Workers AI binding this worker uses. */
 export interface AiBinding {
@@ -56,22 +66,18 @@ const MAX_ID_CHARS = 256
 const MAX_SCHEMA_DEPTH = 64
 /** OpenAI's rule for function names. */
 const TOOL_NAME = /^[a-zA-Z0-9_-]{1,64}$/
-// `none` is left out on purpose: the model ignores it and writes fake tool calls into the reply text.
-// Clients that want no tool calls leave out `tools`.
-const TOOL_CHOICES = new Set(['auto', 'required'])
-
-async function readJson(c: Ctx): Promise<Record<string, unknown>> {
-  try {
-    const body = await c.req.json()
-    if (body && typeof body === 'object' && !Array.isArray(body)) return body
-  } catch {}
-  throw new HttpError(400, 'bad_request', 'body must be a JSON object')
-}
-
 const badRequest = (message: string) => new HttpError(400, 'bad_request', message)
 
 function isObject(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === 'object' && !Array.isArray(value)
+}
+
+/**
+ * Whether a value can be read as a stream. Judged by the method the worker calls, not by class: the
+ * AI binding's stream need not be an instance of this module's `ReadableStream`.
+ */
+function isStream(value: unknown): value is ReadableStream<Uint8Array> {
+  return !!value && typeof value === 'object' && 'getReader' in value && typeof value.getReader === 'function'
 }
 
 /** Whether a JSON value nests objects or arrays more than `max` levels deep. Stops at `max`, so it can't overflow. */
@@ -81,113 +87,196 @@ function nestedDeeperThan(value: unknown, max: number): boolean {
   return Object.values(value).some((child) => nestedDeeperThan(child, max - 1))
 }
 
-const isId = (value: unknown): value is string =>
-  typeof value === 'string' && value.length > 0 && value.length <= MAX_ID_CHARS
+// What the worker accepts in a chat request. Every part is a zod schema that keeps only the fields
+// the model needs, so anything else a client added is dropped. A request is refused with the first
+// thing wrong with it, in the words below: the client is told what the part needs, not zod's own
+// description of the mismatch.
+
+/** `schema`, refused with `message` whatever is wrong inside it. */
+function part<S extends z.ZodType>(schema: S, message: string) {
+  return z.unknown().transform((value, ctx): z.output<S> => {
+    const parsed = schema.safeParse(value)
+    if (parsed.success) return parsed.data
+    ctx.addIssue({ code: 'custom', message })
+    return z.NEVER
+  })
+}
+
+/** The value as `schema` gives it, or a 400 with the first thing wrong with it. */
+function parse<S extends z.ZodType>(schema: S, value: unknown): z.output<S> {
+  const parsed = schema.safeParse(value)
+  if (parsed.success) return parsed.data
+  throw badRequest(parsed.error.issues[0].message)
+}
+
+/** The body: a JSON object. Its fields are checked one by one, in the order the refusals are given. */
+const Body = part(
+  z.object({
+    messages: z.unknown().optional(),
+    tools: z.unknown().optional(),
+    tool_choice: z.unknown().optional(),
+    max_tokens: z.unknown().optional(),
+    stream: z.unknown().optional(),
+    model: z.unknown().optional(),
+  }),
+  'body must be a JSON object',
+)
+
+/**
+ * A tool call's id: 1 to 256 characters as JavaScript counts them. Not `.max()`: zod counts a string
+ * over the limit by code point, which would let an id of emoji be twice as long.
+ */
+const isId = (id: string) => id.length > 0 && id.length <= MAX_ID_CHARS
+const Id = z.string().refine(isId)
+const ToolName = z.string().regex(TOOL_NAME)
+
+const ToolCalls = part(
+  z.array(z.unknown()).min(1).max(MAX_TOOL_CALLS),
+  `tool_calls must be an array of 1 to ${MAX_TOOL_CALLS} calls`,
+).pipe(
+  z.array(
+    part(
+      z.object({
+        id: Id,
+        type: z.literal('function'),
+        function: z.object({ name: ToolName, arguments: z.string() }),
+      }),
+      'each tool call needs an id, type "function", and a function with a name and string arguments',
+    ),
+  ),
+)
+
+/** An assistant message: its text, or the tools it called, with text or without. */
+const AssistantMessage = z
+  .object({ role: z.literal('assistant'), content: z.unknown().optional(), tool_calls: z.unknown().optional() })
+  .transform((m, ctx) => {
+    const refuse = (message: string) => {
+      ctx.addIssue({ code: 'custom', message })
+      return z.NEVER
+    }
+    if (m.tool_calls === undefined || m.tool_calls === null) {
+      if (typeof m.content !== 'string') return refuse('assistant messages need string content or tool_calls')
+      return { role: m.role, content: m.content }
+    }
+    if (m.content !== undefined && m.content !== null && typeof m.content !== 'string') {
+      return refuse('assistant content must be a string or null')
+    }
+    const calls = ToolCalls.safeParse(m.tool_calls)
+    if (!calls.success) return refuse(calls.error.issues[0].message)
+    // The model accepts an empty string next to tool calls; OpenAI clients often send null.
+    return { role: m.role, content: m.content ?? '', tool_calls: calls.data }
+  })
+
+const TOOL_MESSAGE = 'tool messages need a tool_call_id and string content'
+
+/** One message, with the fields the model needs for its role. */
+const Message = part(z.looseObject({}), 'each message must be an object').pipe(
+  z.discriminatedUnion(
+    'role',
+    [
+      z.object({ role: z.literal('system'), content: z.string({ error: 'system messages need string content' }) }),
+      z.object({ role: z.literal('user'), content: z.string({ error: 'user messages need string content' }) }),
+      AssistantMessage,
+      z.object({
+        role: z.literal('tool'),
+        tool_call_id: z.string({ error: TOOL_MESSAGE }).refine(isId, { error: TOOL_MESSAGE }),
+        content: z.string({ error: TOOL_MESSAGE }),
+      }),
+    ],
+    { error: 'each message needs a role: system, user, assistant, or tool' },
+  ),
+)
+
+const Messages = part(z.array(z.unknown()).min(1), 'messages must be a non-empty array')
+  .refine((messages) => messages.length <= MAX_MESSAGES, { error: `at most ${MAX_MESSAGES} messages`, abort: true })
+  .pipe(z.array(Message))
+
+const TOOL = 'each tool needs type "function" and a function definition'
+const TOOL_NAMES = 'tool names are 1 to 64 letters, digits, underscores, or dashes'
+
+/** A tool as far as its name: a function tool. What else its function holds is read after the name is known to be new. */
+const ToolHead = z.object(
+  {
+    type: z.literal('function', { error: TOOL }),
+    function: z.looseObject(
+      { name: z.string({ error: TOOL_NAMES }).regex(TOOL_NAME, { error: TOOL_NAMES }) },
+      { error: TOOL },
+    ),
+  },
+  { error: TOOL },
+)
+
+const ToolBody = z.object({
+  description: z.string({ error: 'tool descriptions must be strings' }).optional(),
+  // Passed on as it is. Bounded, so serializing the request (here and in the AI binding) can never
+  // run out of stack.
+  parameters: z
+    .custom<Record<string, unknown>>(isObject, { error: 'tool parameters must be an object' })
+    .refine((parameters) => !nestedDeeperThan(parameters, MAX_SCHEMA_DEPTH), {
+      error: `tool parameters are nested more than ${MAX_SCHEMA_DEPTH} levels deep`,
+    })
+    .optional(),
+})
+
+/**
+ * The tool definitions: function tools only, with unique names. Tools are read one at a time, so the
+ * first thing wrong in the list is what the client is told.
+ */
+const Tools = part(
+  z.array(z.unknown()).min(1).max(MAX_TOOLS),
+  `tools must be an array of 1 to ${MAX_TOOLS} tools`,
+).transform((list, ctx) => {
+  const refuse = (message: string) => {
+    ctx.addIssue({ code: 'custom', message })
+    return z.NEVER
+  }
+  const names = new Set<string>()
+  const tools: { type: 'function'; function: { name: string } & z.output<typeof ToolBody> }[] = []
+  for (const item of list) {
+    const head = ToolHead.safeParse(item)
+    if (!head.success) return refuse(head.error.issues[0].message)
+    const { name } = head.data.function
+    if (names.has(name)) return refuse(`tool ${name} is defined twice`)
+    names.add(name)
+    const body = ToolBody.safeParse(head.data.function)
+    if (!body.success) return refuse(body.error.issues[0].message)
+    tools.push({ type: 'function', function: { name, ...body.data } })
+  }
+  return tools
+})
+
+// `none` is left out on purpose: the model ignores it and writes fake tool calls into the reply text.
+// Clients that want no tool calls leave out `tools`.
+const ToolChoice = part(
+  z.union([
+    z.enum(['auto', 'required']),
+    z.object({ type: z.literal('function'), function: z.object({ name: ToolName }) }),
+  ]),
+  'tool_choice must be auto, required, or {"type":"function","function":{"name":...}}',
+)
+
+const MaxTokens = part(z.int().min(1).max(MAX_TOKENS), `max_tokens must be an integer from 1 to ${MAX_TOKENS}`)
+const Stream = part(z.boolean().optional(), 'stream must be a boolean')
+
+type Tools = z.output<typeof Tools>
 
 /** What the model gets: the fields it needs from each part of the request, nothing else. */
 interface ModelInputs {
-  messages: Record<string, unknown>[]
-  tools?: Record<string, unknown>[]
-  tool_choice?: unknown
+  messages: z.output<typeof Messages>
+  tools?: Tools
+  tool_choice?: z.output<typeof ToolChoice>
 }
 
-/** Rebuilds an assistant message's tool calls from the fields the model needs. */
-function parseToolCalls(value: unknown): Record<string, unknown>[] {
-  if (!Array.isArray(value) || value.length === 0 || value.length > MAX_TOOL_CALLS) {
-    throw badRequest(`tool_calls must be an array of 1 to ${MAX_TOOL_CALLS} calls`)
-  }
-  return value.map((call) => {
-    const fn = isObject(call) ? call.function : undefined
-    if (
-      !isObject(call) ||
-      !isId(call.id) ||
-      call.type !== 'function' ||
-      !isObject(fn) ||
-      typeof fn.name !== 'string' ||
-      !TOOL_NAME.test(fn.name) ||
-      typeof fn.arguments !== 'string'
-    ) {
-      throw badRequest('each tool call needs an id, type "function", and a function with a name and string arguments')
-    }
-    return { id: call.id, type: 'function', function: { name: fn.name, arguments: fn.arguments } }
-  })
-}
-
-/** Rebuilds one message from the fields the model needs for its role. */
-function parseMessage(m: unknown): Record<string, unknown> {
-  if (!isObject(m)) throw badRequest('each message must be an object')
-  switch (m.role) {
-    case 'system':
-    case 'user':
-      if (typeof m.content !== 'string') throw badRequest(`${m.role} messages need string content`)
-      return { role: m.role, content: m.content }
-    case 'assistant': {
-      if (m.tool_calls === undefined || m.tool_calls === null) {
-        if (typeof m.content !== 'string') throw badRequest('assistant messages need string content or tool_calls')
-        return { role: 'assistant', content: m.content }
-      }
-      if (m.content !== undefined && m.content !== null && typeof m.content !== 'string') {
-        throw badRequest('assistant content must be a string or null')
-      }
-      // The model accepts an empty string next to tool calls; OpenAI clients often send null.
-      return { role: 'assistant', content: m.content ?? '', tool_calls: parseToolCalls(m.tool_calls) }
-    }
-    case 'tool':
-      if (!isId(m.tool_call_id) || typeof m.content !== 'string') {
-        throw badRequest('tool messages need a tool_call_id and string content')
-      }
-      return { role: 'tool', tool_call_id: m.tool_call_id, content: m.content }
-    default:
-      throw badRequest('each message needs a role: system, user, assistant, or tool')
-  }
-}
-
-/** Rebuilds the tool definitions: function tools only, with unique names. */
-function parseTools(value: unknown): Record<string, unknown>[] {
-  if (!Array.isArray(value) || value.length === 0 || value.length > MAX_TOOLS) {
-    throw badRequest(`tools must be an array of 1 to ${MAX_TOOLS} tools`)
-  }
-  const names = new Set<string>()
-  return value.map((tool) => {
-    const fn = isObject(tool) ? tool.function : undefined
-    if (!isObject(tool) || tool.type !== 'function' || !isObject(fn)) {
-      throw badRequest('each tool needs type "function" and a function definition')
-    }
-    if (typeof fn.name !== 'string' || !TOOL_NAME.test(fn.name)) {
-      throw badRequest('tool names are 1 to 64 letters, digits, underscores, or dashes')
-    }
-    if (names.has(fn.name)) throw badRequest(`tool ${fn.name} is defined twice`)
-    names.add(fn.name)
-    if (fn.description !== undefined && typeof fn.description !== 'string') {
-      throw badRequest('tool descriptions must be strings')
-    }
-    if (fn.parameters !== undefined && !isObject(fn.parameters)) {
-      throw badRequest('tool parameters must be an object')
-    }
-    // Bounded, so serializing the request (here and in the AI binding) can never run out of stack.
-    if (nestedDeeperThan(fn.parameters, MAX_SCHEMA_DEPTH)) {
-      throw badRequest(`tool parameters are nested more than ${MAX_SCHEMA_DEPTH} levels deep`)
-    }
-    const out: Record<string, unknown> = { name: fn.name }
-    if (fn.description !== undefined) out.description = fn.description
-    if (fn.parameters !== undefined) out.parameters = fn.parameters
-    return { type: 'function', function: out }
-  })
-}
-
-function parseToolChoice(value: unknown, tools: Record<string, unknown>[] | undefined): unknown {
+function parseToolChoice(value: unknown, tools: Tools | undefined): z.output<typeof ToolChoice> {
   if (!tools) throw badRequest('tool_choice needs tools')
   if (value === 'none') throw badRequest('tool_choice none is not supported; leave out tools instead')
-  if (typeof value === 'string' && TOOL_CHOICES.has(value)) return value
-  const name =
-    isObject(value) && value.type === 'function' && isObject(value.function) ? value.function.name : undefined
-  if (typeof name !== 'string' || !TOOL_NAME.test(name)) {
-    throw badRequest('tool_choice must be auto, required, or {"type":"function","function":{"name":...}}')
-  }
-  if (!tools.some((t) => (t.function as { name: string }).name === name)) {
+  const choice = parse(ToolChoice, value)
+  if (typeof choice === 'string') return choice
+  const { name } = choice.function
+  if (!tools.some((tool) => tool.function.name === name)) {
     throw badRequest(`tool_choice names an unknown tool: ${name}`)
   }
-  return { type: 'function', function: { name } }
+  return choice
 }
 
 /**
@@ -195,12 +284,9 @@ function parseToolChoice(value: unknown, tools: Record<string, unknown>[] | unde
  * `chars` counts message text, tool calls and results, and tool definitions, so tools can't get around
  * the size limit.
  */
-function parseModelInputs(body: Record<string, unknown>): { inputs: ModelInputs; chars: number } {
-  const { messages } = body
-  if (!Array.isArray(messages) || messages.length === 0) throw badRequest('messages must be a non-empty array')
-  if (messages.length > MAX_MESSAGES) throw badRequest(`at most ${MAX_MESSAGES} messages`)
-  const inputs: ModelInputs = { messages: messages.map(parseMessage) }
-  if (body.tools !== undefined && body.tools !== null) inputs.tools = parseTools(body.tools)
+function parseModelInputs(body: z.output<typeof Body>): { inputs: ModelInputs; chars: number } {
+  const inputs: ModelInputs = { messages: parse(Messages, body.messages) }
+  if (body.tools !== undefined && body.tools !== null) inputs.tools = parse(Tools, body.tools)
   if (body.tool_choice !== undefined && body.tool_choice !== null) {
     inputs.tool_choice = parseToolChoice(body.tool_choice, inputs.tools)
   }
@@ -212,17 +298,16 @@ function parseModelInputs(body: Record<string, unknown>): { inputs: ModelInputs;
   const unanswered = () => badRequest('each tool call needs its result right after the assistant message')
   let chars = 0
   for (const m of inputs.messages) {
-    chars += (m.content as string).length
+    chars += m.content.length
     if (m.role === 'tool') {
-      const id = m.tool_call_id as string
-      if (!pending.delete(id)) {
+      if (!pending.delete(m.tool_call_id)) {
         throw badRequest('each tool message must answer a call from the assistant message before it')
       }
-      chars += id.length
+      chars += m.tool_call_id.length
       continue
     }
     if (pending.size) throw unanswered()
-    const toolCalls = m.tool_calls as { id: string }[] | undefined
+    const toolCalls = 'tool_calls' in m ? m.tool_calls : undefined
     if (toolCalls) {
       pending = new Set(toolCalls.map((call) => call.id))
       if (pending.size !== toolCalls.length) throw badRequest('tool call ids in one message must be unique')
@@ -326,23 +411,17 @@ export function createApp({ now = () => new Date() }: AppOptions = {}) {
    * Throws HttpError for refusals; the caller records those.
    */
   async function chatCompletion(c: Ctx, usage: UsageRecord, record: (outcome: string) => void): Promise<Response> {
-    const body = await readJson(c)
-    const { stream } = body
-    usage.stream = stream === true
-    const max_tokens = body.max_tokens ?? undefined // null means not set
+    const body = parse(Body, await c.req.json().catch(() => undefined))
+    usage.stream = body.stream === true
     const { inputs: modelInputs, chars } = parseModelInputs(body)
     usage.messages = modelInputs.messages.length
     usage.inputChars = chars
     if (chars > MAX_CONTENT_CHARS)
       throw new HttpError(400, 'bad_request', `messages and tools exceed ${MAX_CONTENT_CHARS} characters`)
-    if (
-      max_tokens !== undefined &&
-      !(Number.isInteger(max_tokens) && (max_tokens as number) > 0 && (max_tokens as number) <= MAX_TOKENS)
-    ) {
-      throw new HttpError(400, 'bad_request', `max_tokens must be an integer from 1 to ${MAX_TOKENS}`)
-    }
-    if (stream !== undefined && typeof stream !== 'boolean')
-      throw new HttpError(400, 'bad_request', 'stream must be a boolean')
+    // null means not set.
+    const max_tokens =
+      body.max_tokens === undefined || body.max_tokens === null ? undefined : parse(MaxTokens, body.max_tokens)
+    const stream = parse(Stream, body.stream)
     if (body.model !== undefined && body.model !== c.env.MODEL) {
       // A distinct code lets a client that cached the old model name notice and look it up again.
       throw new HttpError(400, 'unsupported_model', `unsupported model; use ${c.env.MODEL} or omit it`)
@@ -407,7 +486,8 @@ export function createApp({ now = () => new Date() }: AppOptions = {}) {
 
     if (stream === true) {
       // Workers AI already streams OpenAI-style SSE; pass it through, reading usage on the way.
-      const metered = meterStream(out as ReadableStream<Uint8Array>, (outcome, summary) => {
+      if (!isStream(out)) throw new Error('the model returned no stream')
+      const metered = meterStream(out, (outcome, summary) => {
         Object.assign(usage, summary)
         record(outcome)
       })
@@ -415,12 +495,13 @@ export function createApp({ now = () => new Date() }: AppOptions = {}) {
         headers: { 'content-type': 'text/event-stream', 'cache-control': 'no-cache' },
       })
     }
-    const reply = out as { usage?: Record<string, unknown>; choices?: { finish_reason?: unknown }[] } | null
+    const reply = replyInfo(out)
     usage.promptTokens = tokenCount(reply?.usage?.prompt_tokens)
     usage.completionTokens = tokenCount(reply?.usage?.completion_tokens)
-    usage.finishReason = finishReason(reply?.choices?.[0]?.finish_reason)
-    // Build the response first: if that throws, the request is recorded once, as internal.
-    const res = c.json(out as Record<string, unknown>)
+    usage.finishReason = finishReason(reply?.finish_reason)
+    // The reply as the model gave it. Build the response first: if that throws, the request is
+    // recorded once, as internal.
+    const res = c.newResponse(JSON.stringify(out), 200, { 'content-type': 'application/json' })
     record('ok')
     return res
   }
