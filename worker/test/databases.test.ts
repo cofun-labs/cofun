@@ -166,7 +166,7 @@ describe('UC-NOTION-012 create and change databases', () => {
       [
         `Created the database “Content calendar” ^${hex(dbId)} at the end of ^${hex(PAGE)}.`,
         'Properties: Post (title), Stage (select), Channels (multi_select), Publish on (date), Status (status), Words (number)',
-        `URL: https://app.notion.com/${hex(dbId)}`,
+        `URL: https://app.notion.com/p/${hex(dbId)}`,
       ].join('\n'),
     )
 

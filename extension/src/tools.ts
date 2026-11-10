@@ -1367,7 +1367,8 @@ export const createDatabase: ToolSpec = {
     return [
       `Created the database “${title}” ^${hex} at the end of ^${hexId(parentId)}.`,
       `Properties: ${rowValuesHeader(schema)}`,
-      `URL: ${new URL(tab.url).origin}/${hex}`,
+      // app.notion.com opens a page only under /p/; www.notion.so takes it too.
+      `URL: ${new URL(tab.url).origin}/p/${hex}`,
     ].join('\n')
   },
 }
