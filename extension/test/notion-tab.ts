@@ -2,8 +2,8 @@
 // chrome.scripting, and answers the page's requests with sanitized fixtures of Notion's responses.
 import { readFileSync } from 'node:fs'
 import { expect } from 'vitest'
-import { NotionError } from '../../extension/src/notion/api'
-import { notionCooldown } from '../../extension/src/notion/tab'
+import { NotionError } from '../src/notion/api'
+import { notionCooldown } from '../src/notion/tab'
 
 export const SPACE = '5a5a5a5a-0000-4000-8000-000000000001'
 export const USER = '0e0e0e0e-0000-4000-8000-000000000002'

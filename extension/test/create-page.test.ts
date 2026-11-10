@@ -1,9 +1,9 @@
 // The create_page tool (extension/src/tools.ts) against a fake Notion workspace that applies
 // transactions the way Notion does.
 import { afterEach, describe, expect, it } from 'vitest'
-import { LIMITED_STOP } from '../../extension/src/notion/api'
-import { createPage, forgetReads, readPage } from '../../extension/src/tools'
-import { toUuid } from '../../extension/src/notion/hosts'
+import { LIMITED_STOP } from '../src/notion/api'
+import { createPage, forgetReads, readPage } from '../src/tools'
+import { toUuid } from '../src/notion/hosts'
 import { FakeNotionTab, FakeWorkspace, PAGE, PAGE_URL, SPACE, USER, notionError, restoreGlobals } from './notion-tab'
 
 afterEach(() => {

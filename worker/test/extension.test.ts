@@ -27,7 +27,15 @@ import { editPage, movePage, openPageNote, readPage, trashPage } from '../../ext
 import { createApp, type Env } from '../src/app'
 import { FakeClerk } from './clerk'
 import { FakeAiBinding, FakeQuotaNamespace, FakeUsageDataset } from './fakes'
-import { FakeNotionTab, FakeStorage, FakeWorkspace, PAGE, PAGE_URL, SPACE, fixture } from './notion-tab'
+import {
+  FakeNotionTab,
+  FakeStorage,
+  FakeWorkspace,
+  PAGE,
+  PAGE_URL,
+  SPACE,
+  fixture,
+} from '../../extension/test/notion-tab'
 
 const EXT = 'chrome-extension://abcdefghijklmnopabcdefghijklmnop'
 const MODEL = '@cf/test/model'

@@ -19,15 +19,9 @@ import {
   UNKNOWN_STOP,
   normalizeRecordMap,
   type Operation,
-} from '../../extension/src/notion/api'
-import { pageIdFromUrl } from '../../extension/src/notion/hosts'
-import {
-  COOLDOWN_KEY,
-  activeNotionTab,
-  chromeCooldownStore,
-  notionCooldown,
-  tabTransport,
-} from '../../extension/src/notion/tab'
+} from '../src/notion/api'
+import { pageIdFromUrl } from '../src/notion/hosts'
+import { COOLDOWN_KEY, activeNotionTab, chromeCooldownStore, notionCooldown, tabTransport } from '../src/notion/tab'
 import {
   BLOCKS,
   FakeNotionTab,
@@ -810,7 +804,7 @@ describe('when Notion turns requests away', () => {
     await notionError((await activeNotionTab()).client.loadPage(PAGE))
     // The side panel's modules loaded anew, as in a panel that was closed and opened again.
     vi.resetModules()
-    const reopened = await import('../../extension/src/notion/tab')
+    const reopened = await import('../src/notion/tab')
     const { client } = await reopened.activeNotionTab()
     const err = await client.loadPage(PAGE).then(
       () => undefined,

@@ -33,7 +33,7 @@ Copilot for Notion: a Chrome extension that opens an AI side panel next to Notio
 3. **Implement with tests.** Keep tests in sync with use cases:
    - Remove tests for deleted scenarios, add tests for new ones, rename tests when scenario IDs change.
    - P0 scenarios must be verified before merge; P1 should be; P2 can wait.
-   - `api-test` scenarios are vitest integration tests in `worker/test/`, named with the scenario ID. `ai-e2e` scenarios are verified by an agent driving a real browser with `pnpm e2e`, and the run is recorded in the PR (see [Running an `ai-e2e` scenario](docs/bdd.md#running-an-ai-e2e-scenario)).
+   - `api-test` scenarios are vitest integration tests, named with the scenario ID: in `worker/test/` for the worker's HTTP API, in `extension/test/` for the extension's client code. `ai-e2e` scenarios are verified by an agent driving a real browser with `pnpm e2e`, and the run is recorded in the PR (see [Running an `ai-e2e` scenario](docs/bdd.md#running-an-ai-e2e-scenario)).
      ```typescript
      it('[UC-CHAT-001-S01] signed-in user gets a streamed reply', async () => {
      ```
@@ -98,6 +98,7 @@ Tools call Notion's internal API as the user's own account, so **stability comes
 - **No mocking.** Do not use `vi.mock()` or spies. Replace external dependencies with fake objects that implement the same interface, and inject them through `env`:
   - `FakeAiBinding` (`worker/test/fakes.ts`) stands in for the Workers AI binding.
   - `FakeClerk` (`worker/test/clerk.ts`) signs real RS256 session tokens with a local key pair, which the worker verifies like real Clerk tokens.
+- Tests live with the package they cover. `extension/test/` tests the extension's client code against a fake Notion tab (`extension/test/notion-tab.ts`) that answers with sanitized fixtures (`extension/test/fixtures/notion/`). `worker/test/` tests the worker.
 - `worker/test/extension.test.ts` runs the extension's own agent (`src/agent.ts`) against the worker so client and server cannot drift.
 - `smoke/` is the extension smoke test (`pnpm smoke`, also run in CI): Playwright loads the built extension into Chromium and checks that the service worker starts, the side panel is enabled only on Notion tabs, and the side panel page renders signed out. It catches builds that compile but break in Chrome, such as dependency bumps. Nothing leaves the machine: Notion pages and Clerk's Frontend API are answered from `smoke/fixtures/`. Its tests are standalone (no scenario IDs); sign-in, chat, and Notion tools stay `ai-e2e`.
 
@@ -105,9 +106,9 @@ Tools call Notion's internal API as the user's own account, so **stability comes
 
 ```bash
 pnpm install
-pnpm check        # lint, format check, typecheck, extension build, worker and e2e tool tests
+pnpm check        # lint, format check, typecheck, extension build, and every package's tests
 pnpm format:fix   # format all files
-pnpm test         # worker tests and the e2e tool's unit tests
+pnpm test         # extension and worker tests, and the e2e tool's unit tests
 pnpm build        # build the extension into extension/dist
 pnpm smoke        # build the extension and run the smoke test in Chromium (also runs in CI)
 pnpm e2e --help   # drive the shared Chrome Canary for ai-e2e runs (maintainer's machine only)
