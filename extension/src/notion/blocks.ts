@@ -1,6 +1,6 @@
 // Markdown, as the model writes it, back into Notion blocks: the reverse of markdown.ts for the
 // blocks that can be written. Lines that stand for content that can't be written (child pages,
-// databases, media, tables, unsupported blocks) are refused, so an edit can't replace them by accident.
+// databases, media, unsupported blocks) are refused, so an edit can't replace them by accident.
 
 /** Rich text as Notion stores it: runs of `[text, [[mark, value?], …]?]`. */
 export type RichText = ([string] | [string, [string, unknown?][]])[]
@@ -17,6 +17,10 @@ export interface NewBlock {
    * Markdown. Captions can't be written yet: it only lets a rewrite pass the caption back unchanged.
    */
   caption?: string
+  /** A heading with blocks nested under it: Notion shows those only under a toggle heading. */
+  toggleable?: boolean
+  /** A table's cells, row by row, the first row being its header; every row has the same length. */
+  rows?: RichText[][]
   children: NewBlock[]
 }
 
@@ -45,15 +49,15 @@ export const TEXT_TYPES = new Set([
   'divider',
 ])
 
+/** Heading types: a heading holds nested blocks only as a toggle heading. */
+export const HEADING_TYPES = new Set(['header', 'sub_header', 'sub_sub_header'])
+
+/** Blocks Notion shows nothing nested under. */
 const LEAF_NAMES: Record<string, string> = {
-  header: 'heading',
-  sub_header: 'heading',
-  sub_sub_header: 'heading',
   code: 'code block',
   divider: 'divider',
   equation: 'equation',
-  quote: 'quote',
-  callout: 'callout',
+  table: 'table',
 }
 const LEAF_TYPES = new Set(Object.keys(LEAF_NAMES))
 
@@ -79,11 +83,13 @@ export function parseMarkdown(markdown: string): NewBlock[] {
   const add = (indent: number, block: NewBlock) => {
     while (stack.length && stack.at(-1)!.indent >= indent) stack.pop()
     const parent = stack.at(-1)?.block
-    // Notion hides blocks nested under headings, code, dividers, and equations; quotes and callouts
-    // show them, but their nested blocks can't be written back yet. Refuse rather than misplace them.
+    // Notion hides blocks nested under code, dividers, equations, and tables: refuse rather than
+    // misplace them.
     if (parent && LEAF_TYPES.has(parent.type)) {
       throw new MarkdownError(`Lines can't be nested under a ${LEAF_NAMES[parent.type]}; un-indent them.`)
     }
+    // Lines nested under a heading make it a toggle heading, as read_page shows one.
+    if (parent && HEADING_TYPES.has(parent.type)) parent.toggleable = true
     ;(parent?.children ?? root).push(block)
     stack.push({ indent, block })
   }
@@ -132,42 +138,53 @@ export function parseMarkdown(markdown: string): NewBlock[] {
           'you delete it.',
       )
     }
-    if (line.startsWith('|')) throw new MarkdownError("Tables can't be written yet. Write the content as a list.")
+    if (line.startsWith('|')) {
+      // A table runs over the following `|` lines at the same indentation.
+      const rows = [line]
+      while (i + 1 < lines.length && lines[i + 1].trim().startsWith('|') && leading(lines[i + 1]) === indent) {
+        rows.push(lines[++i].trim().replace(TRAILING_REF, ''))
+      }
+      add(indent, table(rows))
+      continue
+    }
 
     if (line.startsWith('>')) {
-      // A quote or callout runs over the following `>` lines at the same indentation.
-      const quoted = [line.replace(/^>\s?/, '')]
-      // …but a line that carries a block reference ends it: the next `>` line is another block.
-      let ended = TRAILING_REF.test(raw)
-      while (
-        !ended &&
-        i + 1 < lines.length &&
-        lines[i + 1].trim().startsWith('>') &&
-        leading(lines[i + 1]) === indent
-      ) {
-        ended = TRAILING_REF.test(lines[i + 1])
-        quoted.push(lines[++i].trim().replace(TRAILING_REF, '').replace(/^>\s?/, ''))
+      // A quote or callout runs over the following `>` lines at the same indentation: first its own
+      // text, a line break between each, then the blocks nested in it. read_page indents those by
+      // two spaces after the `>`; written by hand, a line that starts a list, heading, or other
+      // block starts them too (text that only looks like one starts with a backslash).
+      const own = [line.replace(/^>\s?/, '')]
+      const nested: string[] = []
+      const callout = /^\[!([^\]]+)\]\s?(.*)$/.exec(own[0])
+      if (callout && BLOCK_START.test(callout[2])) {
+        own[0] = `[!${callout[1]}]`
+        nested.push(callout[2])
+      } else if (!callout && BLOCK_START.test(own[0])) {
+        nested.push(own.pop()!)
       }
-      // read_page draws blocks nested in a quote with the quote's prefix; those can't be written yet.
-      const nested = quoted.some((l, n) =>
-        /^(?:[-*+]\s|\d+[.)]\s|#{1,3}\s|▸|`{3})/.test(n ? l : l.replace(/^\[![^\]]+\]\s?/, '')),
-      )
-      if (nested) {
-        throw new MarkdownError(
-          "Blocks nested inside a quote or callout (lists, headings, toggles, code) can't be written yet; " +
-            'write them after it instead.',
-        )
+      // A line that carries a block reference ends that block: after the quote's own text, the
+      // next line at its own indentation is another block, as read_page draws two quotes in a row.
+      let referenced = TRAILING_REF.test(raw)
+      while (i + 1 < lines.length && lines[i + 1].trim().startsWith('>') && leading(lines[i + 1]) === indent) {
+        const next = lines[i + 1].trim().replace(/^>\s?/, '')
+        const deeper = /^\s{2}/.test(next)
+        if (!deeper && referenced) break
+        i++
+        if (deeper || nested.length || BLOCK_START.test(next)) nested.push(next)
+        else own.push(next.replace(TRAILING_REF, ''))
+        if (TRAILING_REF.test(next)) referenced = true
       }
       // A leading backslash keeps a line that looks like a list or heading as text.
       const unlead = (l: string) => (l.startsWith('\\') ? l.slice(1) : l)
-      const callout = /^\[!([^\]]+)\]\s?(.*)$/.exec(quoted[0])
+      const children = nested.length ? parseMarkdown(nested.join('\n')) : []
       if (callout) {
         // Only an emoji is an icon; `[!NOTE]` and other labels leave the callout's icon as it is.
         const icon = /^\p{Extended_Pictographic}/u.test(callout[1]) ? callout[1] : undefined
-        const text = [callout[2], ...quoted.slice(1)].map(unlead).join('\n')
-        add(indent, { type: 'callout', title: inline(text), icon, children: [] })
+        const first = /^\[![^\]]+\]\s?(.*)$/.exec(own[0])![1]
+        const text = [first, ...own.slice(1)].map(unlead).join('\n')
+        add(indent, { type: 'callout', title: inline(text), icon, children })
       } else {
-        add(indent, { type: 'quote', title: inline(quoted.map(unlead).join('\n')), children: [] })
+        add(indent, { type: 'quote', title: inline(own.map(unlead).join('\n')), children })
       }
       continue
     }
@@ -179,6 +196,38 @@ export function parseMarkdown(markdown: string): NewBlock[] {
 
 function leading(line: string): number {
   return line.length - line.trimStart().length
+}
+
+/** A line inside a quote that starts a block of its own, not more of the quote's text. */
+const BLOCK_START = /^(?:#{1,3}\s|[-*+]\s|\d+[.)]\s|>|▸|`{3}|\$\$|\||(?:-{3,}|\*{3,}|_{3,})$)/
+
+/**
+ * A Markdown table as a table block: its first row is the header, and a line of dashes after it
+ * is left out. A `|` escaped by a backslash is part of a cell, in code too, as read_page writes it.
+ */
+function table(lines: string[]): NewBlock {
+  const rows = lines.map(cells).filter((row, n) => !(n === 1 && row.every((c) => /^:?-+:?$/.test(c.trim()))))
+  const width = rows[0].length
+  if (rows.some((row) => row.length > width)) {
+    throw new MarkdownError('A table row has more cells than the header row. Give every row the same columns.')
+  }
+  if (rows.some((row) => row.some((c) => PLACEHOLDER.test(c.trim()) || /^\[row not loaded\]$/.test(c.trim())))) {
+    throw new MarkdownError("A table cell stands for content edit_page can't write. Leave that row out.")
+  }
+  return {
+    type: 'table',
+    title: [],
+    rows: rows.map((row) =>
+      [...row, ...Array<string>(width - row.length).fill('')].map((c) => inline(breaks(c.trim()))),
+    ),
+    children: [],
+  }
+}
+
+/** The cells of a table row: split at each `|` not behind a backslash, with `\|` read as `|`. */
+function cells(line: string): string[] {
+  const inner = line.replace(/^\|/, '').replace(/(?<!\\)\|\s*$/, '')
+  return inner.split(/(?<!\\)\|/).map((c) => c.replace(/\\\|/g, '|'))
 }
 
 function lineBlock(line: string): NewBlock {
@@ -214,11 +263,55 @@ export interface PersonName {
   name: string
 }
 
-/** Inline Markdown (bold, italic, strikethrough, code, links, links to pages, people) as rich text. */
+/** A date mention's value as Notion stores it. */
+export interface DateValue {
+  type: 'date' | 'datetime' | 'daterange' | 'datetimerange'
+  start_date: string
+  start_time?: string
+  end_date?: string
+  end_time?: string
+}
+
+/** A date as read_page shows a date mention: `@2026-11-10`, with a time and an end if it has them. */
+const DATE = /@(\d{4}-\d{2}-\d{2})(?: (\d{2}:\d{2}))?(?: → (\d{4}-\d{2}-\d{2})(?: (\d{2}:\d{2}))?)?/
+
+/** Text colors and backgrounds, as Notion names them (`red`, `blue_background`, …). */
+export const COLOR = /^[a-z]+(?:_background)?$/
+
+/**
+ * Inline Markdown (bold, italic, strikethrough, code, links, links to pages, people, dates, inline
+ * equations, colors) as rich text.
+ */
 export function inline(text: string, marks: Mark[] = []): RichText {
   const patterns: { re: RegExp; run: (m: RegExpExecArray) => RichText }[] = [
     // A backslash keeps the next character literal, as read_page escapes them.
-    { re: /\\([\\`*_~[\]^|#><])/, run: (m) => [marks.length ? [m[1], marks] : [m[1]]] },
+    { re: /\\([\\`*_~[\]^|#><$@])/, run: (m) => [marks.length ? [m[1], marks] : [m[1]]] },
+    {
+      // `$x^2$` is an inline equation, its LaTeX as it is. As in Pandoc, `$` opens one only before
+      // a non-space and closes it only after one, and not before a digit, so prices stay text.
+      re: /\$(?=\S)((?:\\.|[^$\\\n])+?)(?<=\S)\$(?!\d)/,
+      run: (m) => [['⁍', [...marks, ['e', m[1]]]]],
+    },
+    {
+      re: DATE,
+      run: (m) => {
+        // A range has a time at both ends or at neither: one given at one end is taken for both.
+        const time = m[3] ? (m[2] ?? m[4]) : m[2]
+        const value: DateValue = {
+          type: m[3] ? (time ? 'datetimerange' : 'daterange') : time ? 'datetime' : 'date',
+          start_date: m[1],
+          ...(time ? { start_time: m[2] ?? time } : {}),
+          ...(m[3] ? { end_date: m[3] } : {}),
+          ...(m[3] && time ? { end_time: m[4] ?? time } : {}),
+        }
+        return [['‣', [...marks, ['d', value]]]]
+      },
+    },
+    {
+      // A colored run, as read_page shows one.
+      re: /<span color="([a-z_]+)">([\s\S]+?)<\/span>/,
+      run: (m) => (COLOR.test(m[1]) ? inline(m[2], [...marks, ['h', m[1]]]) : [[m[0], marks]]),
+    },
     {
       re: CODE_SPAN,
       // Markdown drops one space from each end of code that has spaces on both (and isn't all spaces).
@@ -270,22 +363,25 @@ export function inline(text: string, marks: Mark[] = []): RichText {
   return out
 }
 
+/** Marks of runs that each stand for one thing (a page, a person, a date, an equation). */
+const MENTION_MARKS = new Set(['p', 'u', 'd', 'e'])
+
 /** Adds a run, merging it into the previous one when their marks are the same. */
 function push(out: RichText, text: string, marks: Mark[]) {
   if (!text) return
   const last = out.at(-1)
   const same = (a: Mark[] = [], b: Mark[]) => JSON.stringify(a) === JSON.stringify(b)
-  // Each mention is a run of its own.
-  if (last && same(last[1], marks) && !marks.some(([m]) => m === 'p' || m === 'u')) {
+  // Each mention and inline equation is a run of its own.
+  if (last && same(last[1], marks) && !marks.some(([m]) => MENTION_MARKS.has(m))) {
     last[0] += text
     return
   }
   out.push(marks.length ? [text, marks] : [text])
 }
 
-/** The rich text of blocks and of everything nested in them. */
+/** The rich text of blocks (a table's cells too) and of everything nested in them. */
 export function blockTitles(blocks: NewBlock[]): RichText[] {
-  return blocks.flatMap((b) => [b.title, ...blockTitles(b.children)])
+  return blocks.flatMap((b) => [b.title, ...(b.rows?.flat() ?? []), ...blockTitles(b.children)])
 }
 
 function personName(mark: Mark): string | undefined {
@@ -320,7 +416,12 @@ export function withPeople(title: RichText, ids: Map<string, string>, { keep = f
 
 /** Blocks with each person's name replaced by their user id, from `ids` (by name). */
 export function blocksWithPeople(blocks: NewBlock[], ids: Map<string, string>): NewBlock[] {
-  return blocks.map((b) => ({ ...b, title: withPeople(b.title, ids), children: blocksWithPeople(b.children, ids) }))
+  return blocks.map((b) => ({
+    ...b,
+    title: withPeople(b.title, ids),
+    ...(b.rows ? { rows: b.rows.map((row) => row.map((cell) => withPeople(cell, ids))) } : {}),
+    children: blocksWithPeople(b.children, ids),
+  }))
 }
 
 function dashed(hex: string): string {

@@ -116,6 +116,7 @@ export const readPage: ToolSpec = {
     additionalProperties: false,
   },
   run: async (args) => {
+    const since = generation
     // Models often fill optional arguments with null or an empty string; those mean "not given".
     const pageText = typeof args.page === 'string' && args.page.trim() ? args.page : undefined
     const tab = await activeNotionTab()
@@ -174,9 +175,16 @@ export const readPage: ToolSpec = {
     // What edit_page checks edits against: only the blocks this read showed, as they were. Part 1
     // starts a new read; later parts add to it.
     // The blocks this part drew, as the renderer reports them: never inferred from page text.
-    const drawn = new Set(members[part - 1].flatMap(({ section, from, to }) => owners[section].slice(from, to)))
-    const seen = pageRead(loaded, md, (b) => drawn.has(b))
-    remember(part === 1 ? seen : mergeReads(pageReads.get(loaded.page.id), seen))
+    const drawnIn = members.map((m) => new Set(m.flatMap(({ section, from, to }) => owners[section].slice(from, to))))
+    const drawn = drawnIn[part - 1]
+    // A block drawn in several parts (a paragraph longer than a part, say) is seen in full only
+    // once each of them was read since part 1 (or since the page was loaded again).
+    const read = part === 1 || reloaded ? new Set<number>() : (partsRead.get(loaded.page.id) ?? new Set<number>())
+    read.add(part)
+    const whole = (b: string) => drawnIn.every((d, n) => !d.has(b) || read.has(n + 1))
+    const seen = pageRead(loaded, md, (b) => drawn.has(b), whole)
+    if (since === generation) partsRead.set(loaded.page.id, read)
+    remember(part === 1 ? seen : mergeReads(pageReads.get(loaded.page.id), seen), since)
     return [...header, '', ...(body ? [body] : []), ...(part === 1 ? empty : [])].join('\n')
   },
 }
@@ -823,10 +831,16 @@ function countNodes(nodes: { children: unknown[] }[]): number {
 
 /** The last read of each page, by page id: what edit_page checks edits against. */
 const pageReads = new Map<string, PageRead>()
+/** The parts of each page read since its part 1 was. */
+const partsRead = new Map<string, Set<number>>()
+/** Counts the times reads were forgotten, so a read that ends after that isn't kept. */
+let generation = 0
 
 /** Forgets what the agent read, for a new or another conversation, which must read pages itself. */
 export function forgetReads(): void {
+  generation++
   pageReads.clear()
+  partsRead.clear()
   recentReads.clear()
   seenRows.clear()
   seenDatabases.clear()
@@ -840,12 +854,15 @@ const EDIT_ITEM = {
     block: {
       type: 'string',
       description:
-        'Reference of the block, as read_page shows it (e.g. ^1a2b3c4d). For insert: the block to insert after.',
+        'Reference of the block, as read_page shows it (e.g. ^1a2b3c4d). For insert: the block to insert after, ' +
+        'or inside.',
     },
     position: {
       type: 'string',
-      enum: ['after', 'start', 'end'],
-      description: 'For insert: after `block` (the default when `block` is given), or at the start or end of the page.',
+      enum: ['after', 'inside', 'start', 'end'],
+      description:
+        'For insert: after `block` (the default when `block` is given); inside `block`, nested in it before what ' +
+        'it already holds; or at the start or end of the page.',
     },
     markdown: { type: 'string', description: 'For insert and replace: the new content, as Markdown.' },
   },
@@ -857,14 +874,16 @@ export const editPage: ToolSpec = {
   changesData: true,
   name: 'edit_page',
   description:
-    'Changes a Notion page you have read with read_page: insert Markdown after a block or at the start or end of the ' +
-    'page, replace a block with Markdown, or delete a block. Blocks are named by the references read_page shows. ' +
-    'All edits in one call are applied together, or none are. Supported Markdown: paragraphs, # headings, - lists, ' +
-    '1. lists, - [ ] to-dos, ▸ toggles, > quotes, > [!💡] callouts, ``` code, ---, $$equations$$, **bold**, *italic*, ' +
-    '~~strike~~, `code`, [links](url), [page](<page id>) mentions, and @[Name] mentions of workspace members by ' +
-    'name; a backslash keeps a character literal. ' +
-    'Indent by two spaces to nest under lists, to-dos, toggles, and paragraphs; quotes and callouts hold text only. ' +
-    "Child pages, databases, files, and tables can't be written. If the page changed since you read it, the edit is " +
+    'Changes a Notion page you have read with read_page: insert Markdown after a block, inside one, or at the start ' +
+    'or end of the page, replace a block with Markdown, or delete a block. Blocks are named by the references ' +
+    'read_page shows. All edits in one call are applied together, or none are. Supported Markdown: paragraphs, ' +
+    '# headings, - lists, 1. lists, - [ ] to-dos, ▸ toggles, > quotes, > [!💡] callouts, ``` code, ---, ' +
+    '$$equations$$, | tables |, **bold**, *italic*, ~~strike~~, `code`, $inline equations$, ' +
+    '<span color="red">colors</span>, [links](url), [page](<page id>) mentions, @2026-01-31 dates, and @[Name] ' +
+    'mentions of workspace members by name; a backslash keeps a character literal (\\$5). ' +
+    'Indent by two spaces to nest under lists, to-dos, toggles, paragraphs, and headings (which makes a toggle ' +
+    'heading); inside a quote or callout, nest with "> " and two spaces. ' +
+    "Child pages, databases, and files can't be written. If the page changed since you read it, the edit is " +
     'refused: read it again and redo the edit.',
   parameters: {
     type: 'object',
@@ -881,6 +900,7 @@ export const editPage: ToolSpec = {
     return previewEdits(args.edits, pageReads.get(pageArg(given) ?? ''), given)
   },
   run: async (args, signal) => {
+    const since = generation
     // The page is named in the call, so the page the preview names is the page that gets changed.
     const given = givenPage(args)
     if (!given) throw new EditError('Give `page`: the id read_page shows after "Page:".')
@@ -962,7 +982,7 @@ export const editPage: ToolSpec = {
       // The edit is saved; blocks it changed will be refused until the page is read again. A
       // failure that stops the question is passed on, marked as having changed the page.
       if (err instanceof NotionError && err.stopsQuestion) {
-        remember(next)
+        remember(next, since)
         throw new NotionError(
           'notion_error',
           [
@@ -973,7 +993,7 @@ export const editPage: ToolSpec = {
         )
       }
     }
-    remember(next)
+    remember(next, since)
     return [...plan.summary, newRefs, 'Read the page again to see the result.'].filter(Boolean).join('\n')
   },
 }
@@ -986,8 +1006,12 @@ function givenPage(args: Record<string, unknown>): string | undefined {
 /** How many pages' reads are kept; the oldest go first. */
 const READS_KEPT = 20
 
-/** Keeps a read, as the most recent one. */
-function remember(read: PageRead) {
+/**
+ * Keeps a read, as the most recent one, unless reads were forgotten since `since` (the conversation
+ * changed while it was being made).
+ */
+function remember(read: PageRead, since = generation) {
+  if (since !== generation) return
   pageReads.delete(read.pageId)
   pageReads.set(read.pageId, read)
   if (pageReads.size > READS_KEPT) pageReads.delete(pageReads.keys().next().value!)

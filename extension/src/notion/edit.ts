@@ -2,6 +2,8 @@
 // is now, and turning them into one Notion transaction. Nothing here talks to Notion.
 import { blockOps, type Block, type LoadedPage, type NotionRecord, type Operation } from './api'
 import {
+  COLOR,
+  HEADING_TYPES,
   MarkdownError,
   TEXT_TYPES,
   notionLanguage,
@@ -10,7 +12,7 @@ import {
   type NewBlock,
   type RichText,
 } from './blocks'
-import { PAGE_TYPES, hexId, type PageMarkdown } from './markdown'
+import { PAGE_TYPES, formatDate, hexId, type PageMarkdown } from './markdown'
 
 /**
  * What the agent saw of a page: the references it was shown, and the version of each block it saw.
@@ -32,15 +34,23 @@ export interface PageRead {
   lossy?: Set<string>
 }
 
-/** The blocks of `md` the agent saw: those `include` picks, such as the blocks a part drew. */
-export function pageRead(loaded: LoadedPage, md: PageMarkdown, include: (id: string) => boolean): PageRead {
+/**
+ * The blocks of `md` the agent saw: those `include` picks, such as the blocks a part drew. Only
+ * those `whole` passes were seen in full, so only those can be changed.
+ */
+export function pageRead(
+  loaded: LoadedPage,
+  md: PageMarkdown,
+  include: (id: string) => boolean,
+  whole: (id: string) => boolean = () => true,
+): PageRead {
   const blocks = (loaded.recordMap.block ?? {}) as Record<string, Block>
   const seen = include
   const refs = new Map([...md.refs].filter(([id]) => seen(id)))
   const versions = new Map<string, number>()
   const nested = new Map<string, string[]>()
   for (const id of [loaded.page.id, ...refs.keys()]) {
-    if (blocks[id]) versions.set(id, blocks[id].version)
+    if (blocks[id] && (id === loaded.page.id || whole(id))) versions.set(id, blocks[id].version)
   }
   // Table rows and layout columns are drawn as part of the block around them, without references
   // of their own; they were seen with it.
@@ -159,7 +169,8 @@ export type Edit =
   | {
       action: 'insert'
       anchor?: string
-      position: 'after' | 'start' | 'end'
+      /** `inside`: at the start of what is nested in `anchor`. */
+      position: 'after' | 'start' | 'end' | 'inside'
       markdown: string
       blocks: NewBlock[]
       people?: Map<string, string>
@@ -200,10 +211,10 @@ export function parseEdits(raw: unknown, read: PageRead): Edit[] {
         // null and '' mean "not given", as models often fill optional fields.
         const given = (v: unknown) => v !== undefined && v !== null && v !== ''
         const position = given(e.position) ? e.position : given(e.block) ? 'after' : 'end'
-        if (position !== 'after' && position !== 'start' && position !== 'end') {
-          throw new EditError(`${where}: \`position\` must be "after", "start", or "end".`)
+        if (position !== 'after' && position !== 'start' && position !== 'end' && position !== 'inside') {
+          throw new EditError(`${where}: \`position\` must be "after", "inside", "start", or "end".`)
         }
-        const anchor = position === 'after' ? block() : undefined
+        const anchor = position === 'after' || position === 'inside' ? block() : undefined
         if (anchor) anchors.add(anchor)
         return { action: 'insert', anchor, position, ...markdown() }
       }
@@ -222,7 +233,7 @@ export function parseEdits(raw: unknown, read: PageRead): Edit[] {
   for (const anchor of anchors) {
     if (touched.has(anchor)) {
       throw new EditError(
-        `^${read.refs.get(anchor)} is replaced or deleted, so nothing can be inserted after it in the same call.`,
+        `^${read.refs.get(anchor)} is replaced or deleted, so nothing can be inserted after or inside it in the same call.`,
       )
     }
   }
@@ -244,10 +255,15 @@ export interface Plan {
 }
 
 /**
- * Rich text marks edit_page writes back; others (mentions of dates, colors, …) it can't. A mention
- * of a person (`u`) is written back when the person's name is known, as read_page then shows it.
+ * Rich text marks edit_page writes back; others (comments, underlines, …) it can't. A mention of a
+ * person (`u`) is written back when the person's name is known, as read_page then shows it.
  */
-const WRITABLE_MARKS = new Set(['b', 'i', 's', 'c', 'a', 'p'])
+const WRITABLE_MARKS = new Set(['b', 'i', 's', 'c', 'a', 'p', 'd', 'e'])
+/** Marks read_page shows a run by alone, dropping its color. */
+const ALONE_MARKS = new Set(['p', 'lm', 'd', 'e'])
+
+/** Blocks that show what is nested in them; a heading does only as a toggle heading. */
+const HOLDERS = new Set(['text', 'bulleted_list', 'numbered_list', 'to_do', 'toggle', 'quote', 'callout'])
 
 /**
  * Turns edits into operations on the page as it is now (`loaded`), refusing them if a block they
@@ -270,7 +286,9 @@ export function planEdit(
       throw new EditError(`${what} was deleted since you read the page. ${READ_AGAIN}`)
     }
     if (!read.versions.has(id)) {
-      throw new EditError(`${what} wasn't shown to you: read the part of the page it is in, then redo the edit.`)
+      throw new EditError(
+        `${what} wasn't shown to you in full: read each part of the page it is in, then redo the edit.`,
+      )
     }
     if (block.version !== read.versions.get(id)) {
       throw new EditError(`${what} was changed since you read the page. ${READ_AGAIN}`)
@@ -313,7 +331,7 @@ export function planEdit(
   const createdAll: string[] = []
   const summary: string[] = []
   const changed = new Set<string>([page.id])
-  const op = blockOps(spaceId, now)
+  const op = blockOps(spaceId, now, loaded.userId)
   /** Where the next block inserted at each place goes: after the last one inserted there. */
   const tails = new Map<string, string>()
 
@@ -323,7 +341,9 @@ export function planEdit(
     if (!parent) throw new EditError(`${ref(id)} is not inside a block that can hold new content.`)
     return parent
   }
-  const aliveChildren = (block: Block) => (block.content ?? []).filter((id) => blocks[id] && blocks[id].alive !== false)
+  // Blocks that weren't loaded stay in the list: inserting at the start goes before them too.
+  const aliveChildren = (block: Block) =>
+    (block.content ?? []).filter((id) => !blocks[id] || blocks[id].alive !== false)
   /** Each parent's list of children as this plan's operations leave it, so anchors are always current. */
   const lists = new Map<string, string[]>()
   const list = (parent: Block) => {
@@ -373,11 +393,94 @@ export function planEdit(
     changed.add(parent.id)
   }
 
+  /**
+   * Rewrites a table in place from `nb`: changed cells, rows added at the end or removed from it,
+   * and columns added or removed at the right. Cells the agent passed back as read_page showed
+   * them keep what they hold.
+   */
+  const rewriteTable = (table: Block, rows: string[], nb: NewBlock, people: Map<string, string>): string => {
+    const tableRef = ref(table.id)
+    const columns = (table.format?.table_block_column_order as string[] | undefined) ?? []
+    const newRows = nb.rows ?? []
+    const width = newRows[0]?.length ?? 0
+    const order = columns.slice(0, width)
+    while (order.length < width) order.push(columnId(newId))
+    const counts = { cells: 0, added: 0, removed: 0 }
+    if (order.length !== columns.length || order.some((c, n) => c !== columns[n])) {
+      ops.push(op.setFormat(table.id, { table_block_column_order: order }))
+    }
+    let shown: RichText[][] | undefined
+    try {
+      shown = parseMarkdown(read.lines.get(table.id) ?? '')[0]?.rows
+    } catch (err) {
+      if (!(err instanceof MarkdownError)) throw err
+    }
+    let lost = false
+    rows.forEach((row, n) => {
+      if (n >= newRows.length) return
+      const values: Record<string, unknown> = {}
+      order.forEach((column, c) => {
+        const cell = newRows[n][c]
+        const before = shown?.[n]?.[c]
+        if (before && columns.includes(column) && same(withPeople(before, people, { keep: true }), cell)) return
+        const old = blocks[row].properties?.[column]
+        if (JSON.stringify(old ?? []) === JSON.stringify(cell)) return
+        if (hasUnwritableMarks(old, loaded.recordMap.notion_user)) lost = true
+        values[column] = keepDates(cell, [old])
+      })
+      if (Object.keys(values).length) {
+        ops.push(op.setProperties(row, values))
+        changed.add(row)
+        counts.cells += Object.keys(values).length
+      }
+    })
+    let prev = rows.at(-1)
+    for (const cells of newRows.slice(rows.length)) {
+      const id = createRow(op, ops, cells, order, table.id, newId)
+      createdAll.push(id)
+      ops.push(op.listAfter(table.id, id, prev))
+      prev = id
+      counts.added++
+    }
+    for (const row of rows.slice(newRows.length)) {
+      ops.push(...op.remove(table.id, row))
+      deleted.add(row)
+      counts.removed++
+    }
+    const parts = [
+      counts.cells ? `${counts.cells} cell${counts.cells === 1 ? '' : 's'} changed` : '',
+      counts.added ? `${counts.added} row${counts.added === 1 ? '' : 's'} added` : '',
+      counts.removed ? `${counts.removed} row${counts.removed === 1 ? '' : 's'} removed` : '',
+      order.length !== columns.length ? `${width} column${width === 1 ? '' : 's'} now` : '',
+    ].filter(Boolean)
+    if (!parts.length) return `${tableRef} already had that content; nothing changed.`
+    changed.add(table.id)
+    return (
+      `Rewrote the table ${tableRef}: ${parts.join(', ')}.` +
+      (lost ? ' Mentions, colors, and similar formatting in the cells it changed are now plain text.' : '')
+    )
+  }
+
   for (const e of edits) {
     if (e.action === 'insert') {
       // The end of a page that didn't load in full is past blocks nobody was shown.
       if (e.position === 'end' && !loaded.complete) {
         throw new EditError("The page didn't load in full, so its end isn't known. Insert after a block instead.")
+      }
+      if (e.position === 'inside') {
+        const holder = blocks[e.anchor!]
+        const toggle = HEADING_TYPES.has(holder.type) && holder.format?.toggleable === true
+        if (!HOLDERS.has(holder.type) && !toggle) {
+          throw new EditError(
+            `${ref(holder.id)} can't hold nested blocks (it is ${PAGE_TYPES.has(holder.type) ? 'a page of its own' : `a ${holder.type} block`}). Insert after it instead.`,
+          )
+        }
+        const ids = insert(e.blocks, holder, { start: true, key: `inside:${holder.id}` })
+        created.push(...ids)
+        summary.push(
+          `Inserted ${ids.length} block${ids.length === 1 ? '' : 's'} at the start of ${ref(holder.id)}, nested in it.`,
+        )
+        continue
       }
       const parent = e.anchor ? parentOf(e.anchor) : page
       const key = e.anchor ?? e.position
@@ -405,7 +508,19 @@ export function planEdit(
       )
       continue
     }
-    if (!TEXT_TYPES.has(target.type)) {
+    if (target.type === 'table') {
+      // A table's rows are drawn with it: each must be as the agent read it.
+      if ((target.content ?? []).some((r) => !blocks[r])) {
+        throw new EditError(`${ref(e.target)} has rows that weren't loaded, so it can't be rewritten.`)
+      }
+      const rows = aliveChildren(target)
+      for (const r of rows) check(r, `A row of ${ref(e.target)}`)
+      const [only] = e.blocks
+      if (e.blocks.length === 1 && only.type === 'table') {
+        summary.push(rewriteTable(target, rows, only, e.people ?? new Map()))
+        continue
+      }
+    } else if (!TEXT_TYPES.has(target.type)) {
       throw new EditError(
         `${ref(e.target)} is content edit_page can't rewrite (${target.type}). Delete it if that's what you mean.`,
       )
@@ -422,6 +537,7 @@ export function planEdit(
       // The same kind of block: change it in place, keeping its id, children, and comments, and
       // only the fields that differ, so text the agent didn't change keeps what can't be written.
       const values = changedProperties(target, only, read.lines.get(target.id), e.people ?? new Map())
+      if (values.title) values.title = keepDates(values.title as RichText, [target.properties?.title])
       if (Object.keys(values).length) {
         ops.push(op.setProperties(target.id, values))
       }
@@ -442,14 +558,16 @@ export function planEdit(
       )
       continue
     }
-    // Anything nested, loaded or not, would go with the old block.
-    if ((target.content ?? []).some((c) => !blocks[c] || blocks[c].alive !== false)) {
+    // Anything nested, loaded or not, would go with the old block (a table's rows, checked above,
+    // are part of it).
+    if (target.type !== 'table' && (target.content ?? []).some((c) => !blocks[c] || blocks[c].alive !== false)) {
       throw new EditError(
         `${ref(e.target)} has nested blocks. Replace it with one block of the same kind and no nested lines, ` +
           'and change the nested blocks by their own references.',
       )
     }
-    const ids = insert(e.blocks, parentOf(e.target), { after: e.target, key: e.target })
+    const dated = withDates(e.blocks, [target.properties?.title])
+    const ids = insert(dated, parentOf(e.target), { after: e.target, key: e.target })
     remove(e.target)
     created.push(...ids)
     deleted.add(e.target)
@@ -527,8 +645,13 @@ function runsText(value: unknown): string {
 function hasUnwritableMarks(value: unknown, users: Record<string, NotionRecord> = {}): boolean {
   const named = (id: unknown) => typeof users[String(id)]?.name === 'string' && !!users[String(id)].name
   // read_page shows a mention without its link or code, so such a mention isn't written back whole.
-  const writable = (m: unknown[], marks: unknown[][]) =>
-    m[0] === 'u' ? named(m[1]) && !marks.some((o) => o[0] === 'a' || o[0] === 'c') : WRITABLE_MARKS.has(String(m[0]))
+  const writable = (m: unknown[], marks: unknown[][]) => {
+    if (m[0] === 'u') return named(m[1]) && !marks.some((o) => o[0] === 'a' || o[0] === 'c')
+    // read_page shows a color unless the run is shown by one mark alone (a page or a date, say).
+    if (m[0] === 'h')
+      return typeof m[1] === 'string' && COLOR.test(m[1]) && !marks.some((o) => ALONE_MARKS.has(String(o[0])))
+    return WRITABLE_MARKS.has(String(m[0]))
+  }
   return (
     Array.isArray(value) &&
     value.some(
@@ -577,7 +700,9 @@ export function previewEdits(raw: unknown, read: PageRead | undefined, page: str
             ? 'at the start of the page'
             : !e.block || e.position === 'end'
               ? 'at the end of the page'
-              : `after ${shown(e.block)}`
+              : e.position === 'inside'
+                ? `at the start of ${shown(e.block)}, nested in it`
+                : `after ${shown(e.block)}`
         return `Insert ${where}:\n${body(e.markdown)}`
       }
       case 'replace': {
@@ -663,18 +788,86 @@ function createBlock(
   }
   const id = newId()
   onCreate?.(id)
+  // A table's columns are named by ids of its own; its first row is a header, as Markdown's is.
+  const columns = nb.rows?.[0]?.map(() => columnId(newId))
+  const format = {
+    ...(nb.icon ? { page_icon: nb.icon } : {}),
+    ...(nb.toggleable ? { toggleable: true } : {}),
+    ...(columns ? { table_block_column_order: columns, table_block_column_header: true } : {}),
+  }
   ops.push(
     op.create(id, nb.type, parentId, {
-      ...(nb.type === 'divider' ? {} : { properties: properties(nb) }),
-      ...(nb.icon ? { format: { page_icon: nb.icon } } : {}),
+      ...(nb.type === 'divider' || nb.type === 'table' ? {} : { properties: properties(nb) }),
+      ...(Object.keys(format).length ? { format } : {}),
     }),
   )
-  // Children go inside it, in order, the same way top-level blocks go into the page.
   let prev: string | undefined
+  for (const cells of nb.rows ?? []) {
+    const rowId = createRow(op, ops, cells, columns!, id, newId)
+    onCreate?.(rowId)
+    ops.push(op.listAfter(id, rowId, prev))
+    prev = rowId
+  }
+  // Children go inside it, in order, the same way top-level blocks go into the page.
   for (const child of nb.children) {
     const childId = createBlock(op, ops, child, id, newId, onCreate)
     ops.push(op.listAfter(id, childId, prev))
     prev = childId
   }
   return id
+}
+
+/** Adds the operations creating a table row holding `cells`, one per column of `columns`, and returns its id. */
+function createRow(
+  op: ReturnType<typeof blockOps>,
+  ops: Operation[],
+  cells: RichText[],
+  columns: string[],
+  tableId: string,
+  newId: () => string,
+): string {
+  const id = newId()
+  const properties = Object.fromEntries(columns.flatMap((c, n) => (cells[n]?.length ? [[c, cells[n]]] : [])))
+  ops.push(op.create(id, 'table_row', tableId, { properties }))
+  return id
+}
+
+/** An id for a new table column: Notion's own are short strings unique within the table. */
+function columnId(newId: () => string): string {
+  return hexId(newId()).slice(-8)
+}
+
+function same(a: RichText, b: RichText): boolean {
+  return JSON.stringify(a) === JSON.stringify(b)
+}
+
+/**
+ * Rich text whose date mentions keep what the old text stored for the same date (its time zone,
+ * reminder, and format), which read_page doesn't show.
+ */
+function keepDates(title: RichText, old: unknown[]): RichText {
+  const dates = new Map<string, unknown>()
+  for (const value of old) {
+    if (!Array.isArray(value)) continue
+    for (const run of value) {
+      for (const m of (Array.isArray(run) && Array.isArray(run[1]) ? run[1] : []) as unknown[][]) {
+        if (m[0] === 'd' && !dates.has(formatDate(m[1]))) dates.set(formatDate(m[1]), m[1])
+      }
+    }
+  }
+  if (!dates.size) return title
+  return title.map((run) => {
+    if (!run[1]?.some((m) => m[0] === 'd')) return run
+    return [
+      run[0],
+      run[1].map((m): [string, unknown?] =>
+        m[0] === 'd' && dates.has(formatDate(m[1])) ? ['d', dates.get(formatDate(m[1]))] : m,
+      ),
+    ]
+  })
+}
+
+/** Blocks with their date mentions kept as `old` stored them (see keepDates). */
+function withDates(blocks: NewBlock[], old: unknown[]): NewBlock[] {
+  return blocks.map((b) => ({ ...b, title: keepDates(b.title, old), children: withDates(b.children, old) }))
 }

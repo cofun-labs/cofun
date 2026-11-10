@@ -3,6 +3,7 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { inline, parseMarkdown } from '../../extension/src/notion/blocks'
 import { mergeReads, type PageRead } from '../../extension/src/notion/edit'
+import { splitSections } from '../../extension/src/notion/markdown'
 import { editPage, forgetReads, readPage } from '../../extension/src/tools'
 import { LIMITED_STOP } from '../../extension/src/notion/api'
 import { FakeNotionTab, FakeWorkspace, PAGE, PAGE_URL, SPACE, USER, notionError, restoreGlobals } from './notion-tab'
@@ -321,9 +322,16 @@ describe('edit_page details', () => {
           { action: 'delete', block: '^00000001' },
           { action: 'insert', block: '^00000001', markdown: 'x' },
         ],
-        'so nothing can be inserted after it in the same call.',
+        'so nothing can be inserted after or inside it in the same call.',
       ],
-      [[{ action: 'insert', markdown: '| a | b |' }], "Tables can't be written yet."],
+      [
+        [{ action: 'insert', markdown: '| a |\n| --- |\n| b | c |' }],
+        'A table row has more cells than the header row.',
+      ],
+      [
+        [{ action: 'insert', block: '^00000001', position: 'nowhere', markdown: 'x' }],
+        '`position` must be "after", "inside", "start", or "end".',
+      ],
       [[{ action: 'insert', markdown: '```\nunclosed' }], 'A code block is missing its closing fence.'],
     ] as const
     for (const [edits, message] of refused) {
@@ -626,7 +634,11 @@ describe('edit_page safety, round 2', () => {
         ],
       }),
     ).toContain(
-      ['Delete ^00000001 “> line one ⏎ > line two”', '', 'Delete ^00000002 “```python ⏎ print(1) ⏎ ```”'].join('\n'),
+      [
+        'Delete ^00000001 “> line one ⏎ > line <span color="red">two</span>”',
+        '',
+        'Delete ^00000002 “```python ⏎ print(1) ⏎ ```”',
+      ].join('\n'),
     )
     // Writing the quote back as shown changes nothing, so its color stays.
     const lines = shown.split('\n')
@@ -681,7 +693,7 @@ describe('edit_page safety, round 3', () => {
       ],
     )
     open(ws)
-    expect(body(await read())).toBe(['> [!💡] Box ^00000001', '> - [ ] Inside ^00000002'].join('\n'))
+    expect(body(await read())).toBe(['> [!💡] Box ^00000001', '>   - [ ] Inside ^00000002'].join('\n'))
     await edit([{ action: 'replace', block: '^00000002', markdown: '- [x] Inside' }])
     expect(ws.records.get(id(2))!.properties).toEqual({ title: [['Inside']], checked: [['Yes']] })
   })
@@ -725,7 +737,7 @@ describe('edit_page safety, round 4', () => {
     const ws = workspace([1], [block(1, 'quote', 'Quote', { content: [id(2)] }), block(2, 'text', 'Inside', {}, id(1))])
     open(ws)
     const shown = body(await read())
-    expect(shown).toBe(['> Quote ^00000001', '> Inside ^00000002'].join('\n'))
+    expect(shown).toBe(['> Quote ^00000001', '>   Inside ^00000002'].join('\n'))
     // The whole quote with its nested line can't become one block, and the quote stays as it was.
     await expect(edit([{ action: 'replace', block: '^00000001', markdown: shown }])).rejects.toThrow(
       'has nested blocks',
@@ -778,12 +790,15 @@ describe('edit_page round trips, round 5', () => {
     })
   })
 
-  it('refuses lines nested under a heading, code block, or callout', async () => {
+  it('refuses lines nested under a code block, divider, or table', async () => {
     const ws = workspace([1], [block(1, 'text', 'Intro')])
     open(ws)
     await read()
-    await expect(edit([{ action: 'insert', position: 'end', markdown: '## Title\n  - hidden' }])).rejects.toThrow(
-      "Lines can't be nested under a heading; un-indent them.",
+    await expect(edit([{ action: 'insert', position: 'end', markdown: '```js\nx\n```\n  - hidden' }])).rejects.toThrow(
+      "Lines can't be nested under a code block; un-indent them.",
+    )
+    await expect(edit([{ action: 'insert', position: 'end', markdown: '| a |\n| --- |\n  - hidden' }])).rejects.toThrow(
+      "Lines can't be nested under a table; un-indent them.",
     )
     expect(ws.transactions).toEqual([])
   })
@@ -977,8 +992,15 @@ describe('round 11', () => {
     )
   })
 
-  it('refuses blocks nested inside a quote or callout instead of turning them into its text', () => {
-    expect(() => parseMarkdown('> [!💡] Box\n> - item')).toThrow('Blocks nested inside a quote or callout')
+  it('reads blocks inside a quote or callout as nested in it, not as its text', () => {
+    expect(parseMarkdown('> [!💡] Box\n> - item')).toEqual([
+      {
+        type: 'callout',
+        title: [['Box']],
+        icon: '💡',
+        children: [{ type: 'bulleted_list', title: [['item']], children: [] }],
+      },
+    ])
     expect(parseMarkdown('> line one\n> line two')).toEqual([
       { type: 'quote', title: [['line one\nline two']], children: [] },
     ])
@@ -998,7 +1020,7 @@ describe('round 12', () => {
     // Every part but the last read: some of the toggle's items are still unseen.
     for (let part = 2; part < parts; part++) await read({ part })
     await expect(edit([{ action: 'delete', block: '^00000001' }])).rejects.toThrow(
-      "wasn't shown to you: read the part of the page it is in",
+      "wasn't shown to you in full: read each part of the page it is in",
     )
     await read({ part: parts })
     await edit([{ action: 'delete', block: '^00000001' }])
@@ -1201,5 +1223,343 @@ describe('lookups of mentioned people in edits', () => {
     const before = lookups()
     await edit([{ action: 'delete', block: '^00000002' }])
     expect(lookups()).toBe(before)
+  })
+})
+
+describe('UC-NOTION-002 writing more of what read_page shows', () => {
+  const ADA = '0f0f0f0f-0000-4000-8000-000000000004'
+
+  it('[UC-NOTION-002-S14] writes tables, nested quotes and headings, colors, equations, people, and dates as read_page shows them', async () => {
+    const ws = workspace([1], [block(1, 'text', 'Intro')])
+    ws.put('notion_user', { id: ADA, name: 'Ada Lovelace' })
+    open(ws)
+    await read()
+    const markdown = [
+      '| Name | Due |',
+      '| --- | --- |',
+      '| Ship | @2026-11-20 |',
+      '| Pay \\| tax | $x^2$ |',
+      '> [!💡] Plan',
+      '>   - First',
+      '>     - Detail',
+      '>   Then this',
+      '## Details',
+      '  Under the heading',
+      'Ask @[Ada Lovelace] about <span color="red">**this**</span> by @2026-11-12 10:00 → 2026-11-13 10:00; it costs \\$5 for $E = mc^2$.',
+    ].join('\n')
+    await edit([{ action: 'insert', block: '^00000001', markdown }])
+    // Read back, it is what the AI wrote, refs aside.
+    const shown = body(await read())
+    expect(
+      withoutRefs(shown)
+        .replace(/^\^[0-9a-f]+$/gm, '')
+        .replace(/\n+/g, '\n'),
+    ).toBe(`Intro\n${markdown}`)
+
+    const records = [...ws.records.values()] as Rec[]
+    const table = records.find((r) => r.type === 'table')!
+    expect(table.format).toMatchObject({ table_block_column_header: true })
+    const columns = (table.format as { table_block_column_order: string[] }).table_block_column_order
+    const rows = (table.content as string[]).map((r) => ws.records.get(r)!.properties as Record<string, unknown>)
+    expect(rows.map((r) => columns.map((c) => r[c]))).toEqual([
+      [[['Name']], [['Due']]],
+      [[['Ship']], [['‣', [['d', { type: 'date', start_date: '2026-11-20' }]]]]],
+      [[['Pay | tax']], [['⁍', [['e', 'x^2']]]]],
+    ])
+    expect(records.find((r) => r.type === 'sub_header')!.format).toEqual({ toggleable: true })
+    const text = records.find((r) => r.type === 'text' && r.id !== id(1) && r.parent_id === PAGE)!
+    expect((text.properties as { title: unknown }).title).toEqual([
+      ['Ask '],
+      ['‣', [['u', ADA]]],
+      [' about '],
+      ['this', [['h', 'red'], ['b']]],
+      [' by '],
+      [
+        '‣',
+        [
+          [
+            'd',
+            {
+              type: 'datetimerange',
+              start_date: '2026-11-12',
+              start_time: '10:00',
+              end_date: '2026-11-13',
+              end_time: '10:00',
+            },
+          ],
+        ],
+      ],
+      ['; it costs $5 for '],
+      ['⁍', [['e', 'E = mc^2']]],
+      ['.'],
+    ])
+
+    // Written back as shown, nothing changes.
+    const sent = ws.transactions.length
+    const lines = shown.split('\n')
+    const own = (ref: string) => lines.find((l) => l.endsWith(` ${ref}`))!.replace(/^\s*/, '')
+    const tableLines = lines.slice(
+      lines.findIndex((l) => l.startsWith('| Name')),
+      lines.findIndex((l) => l.startsWith('| Pay')) + 2,
+    )
+    const tableRef = tableLines.at(-1)!
+    const refOf = (start: string) => / (\^[0-9a-f]+)$/.exec(lines.find((l) => l.startsWith(start))!)![1]
+    const result = await edit([
+      { action: 'replace', block: tableRef, markdown: tableLines.join('\n') },
+      { action: 'replace', block: refOf('Ask'), markdown: own(refOf('Ask')) },
+      { action: 'replace', block: refOf('> [!💡]'), markdown: own(refOf('> [!💡]')) },
+    ])
+    expect(result).toContain(`${tableRef} already had that content; nothing changed.`)
+    expect(ws.transactions).toHaveLength(sent)
+  })
+
+  it('[UC-NOTION-002-S15] inserts content nested inside a block, before what it holds', async () => {
+    const ws = workspace(
+      [1, 2, 3, 4, 5],
+      [
+        block(1, 'toggle', 'Toggle', { content: [id(6)] }),
+        block(6, 'text', 'Old child', {}, id(1)),
+        block(2, 'callout', 'Box', { format: { page_icon: '💡' } }),
+        block(3, 'code', undefined, { properties: { title: [['x']], language: [['Plain Text']] } }),
+        block(4, 'header', 'Plain heading'),
+        block(5, 'sub_header', 'Toggle heading', { format: { toggleable: true } }),
+      ],
+    )
+    open(ws)
+    await read()
+    const result = await edit([
+      { action: 'insert', block: '^00000001', position: 'inside', markdown: '- New first\n- New second' },
+      { action: 'insert', block: '^00000002', position: 'inside', markdown: 'Inside the box' },
+      { action: 'insert', block: '^00000005', position: 'inside', markdown: 'Under it' },
+    ])
+    expect(result).toContain('Inserted 2 blocks at the start of ^00000001, nested in it.')
+    expect(withoutRefs(body(await read()))).toBe(
+      [
+        '▸ Toggle',
+        '  - New first',
+        '  - New second',
+        '  Old child',
+        '> [!💡] Box',
+        '>   Inside the box',
+        '```',
+        'x',
+        '```',
+        '^00000003',
+        '# Plain heading',
+        '## Toggle heading',
+        '  Under it',
+      ].join('\n'),
+    )
+    // Blocks that show nothing nested in them can't take it.
+    const sent = ws.transactions.length
+    for (const ref of ['^00000003', '^00000004']) {
+      await expect(edit([{ action: 'insert', block: ref, position: 'inside', markdown: 'x' }])).rejects.toThrow(
+        `${ref} can't hold nested blocks`,
+      )
+    }
+    expect(ws.transactions).toHaveLength(sent)
+  })
+
+  it('[UC-NOTION-002-S16] rewrites a table in place: a changed cell and a new row, the rest as it was', async () => {
+    const ws = workspace(
+      [1],
+      [
+        block(1, 'table', undefined, {
+          content: [id(2), id(3)],
+          format: { table_block_column_order: ['a', 'b'], table_block_column_header: true },
+        }),
+        // A comment on the cell's text: read_page can't show it, so it stays only if the cell does.
+        block(2, 'table_row', undefined, { properties: { a: [['Key']], b: [['Value', [['m', 'thread']]]] } }, id(1)),
+        block(3, 'table_row', undefined, { properties: { a: [['x']], b: [['1']] } }, id(1)),
+      ],
+    )
+    open(ws)
+    const shown = body(await read())
+    expect(shown).toBe(['| Key | Value |', '| --- | --- |', '| x | 1 |', '^00000001'].join('\n'))
+    const result = await edit([
+      { action: 'replace', block: '^00000001', markdown: shown.replace('| x | 1 |', '| x | 2 |\n| y | 3 |') },
+    ])
+    expect(result).toContain('Rewrote the table ^00000001: 1 cell changed, 1 row added.')
+    expect(ws.records.get(id(2))!.properties).toEqual({ a: [['Key']], b: [['Value', [['m', 'thread']]]] })
+    expect(ws.records.get(id(3))!.properties).toEqual({ a: [['x']], b: [['2']] })
+    expect(withoutRefs(body(await read()))).toBe(
+      ['| Key | Value |', '| --- | --- |', '| x | 2 |', '| y | 3 |', '^00000001'].join('\n'),
+    )
+    expect(ws.records.get(id(1))!.format).toEqual({
+      table_block_column_order: ['a', 'b'],
+      table_block_column_header: true,
+    })
+  })
+})
+
+describe('tables written by edit_page', () => {
+  it('removes rows and columns at the end, and adds columns', async () => {
+    const ws = workspace(
+      [1],
+      [
+        block(1, 'table', undefined, { content: [id(2), id(3)], format: { table_block_column_order: ['a', 'b'] } }),
+        block(2, 'table_row', undefined, { properties: { a: [['A']], b: [['B']] } }, id(1)),
+        block(3, 'table_row', undefined, { properties: { a: [['1']], b: [['2']] } }, id(1)),
+      ],
+    )
+    open(ws)
+    await read()
+    expect(await edit([{ action: 'replace', block: '^00000001', markdown: '| A |\n| --- |' }])).toContain(
+      '1 row removed, 1 column now',
+    )
+    expect(ws.records.get(id(3))).toMatchObject({ alive: false })
+    expect(withoutRefs(body(await read()))).toBe(['| A |', '| --- |', '^00000001'].join('\n'))
+    await edit([{ action: 'replace', block: '^00000001', markdown: '| A | B | C |\n| --- | --- | --- |' }])
+    const order = (ws.records.get(id(1))!.format as { table_block_column_order: string[] }).table_block_column_order
+    expect(order.slice(0, 1)).toEqual(['a'])
+    expect(order).toHaveLength(3)
+    expect(withoutRefs(body(await read()))).toBe(['| A | B | C |', '| --- | --- | --- |', '^00000001'].join('\n'))
+  })
+
+  it('replaces a table with other content, its rows going with it', async () => {
+    const ws = workspace(
+      [1],
+      [
+        block(1, 'table', undefined, { content: [id(2)], format: { table_block_column_order: ['a'] } }),
+        block(2, 'table_row', undefined, { properties: { a: [['A']] } }, id(1)),
+      ],
+    )
+    open(ws)
+    await read()
+    await edit([{ action: 'replace', block: '^00000001', markdown: '- A' }])
+    expect(withoutRefs(body(await read()))).toBe('- A')
+    expect(ws.records.get(id(1))).toMatchObject({ alive: false })
+  })
+
+  it('refuses a row with more cells than the header, and a table nested under a line', () => {
+    expect(() => parseMarkdown('| a |\n| --- |\n| b | c |')).toThrow('more cells than the header')
+    expect(parseMarkdown('| a | b |\n| c |')[0].rows).toEqual([
+      [[['a']], [['b']]],
+      [[['c']], []],
+    ])
+    expect(parseMarkdown('| `a\\|b` | x<br>y |')[0].rows).toEqual([[[['a|b', [['c']]]], [['x\ny']]]])
+  })
+})
+
+describe('more inline content written by edit_page', () => {
+  it('keeps what a date mention stores beyond what read_page shows, when the text around it changes', async () => {
+    const date = { type: 'datetime', start_date: '2026-11-12', start_time: '10:00', time_zone: 'Europe/Berlin' }
+    const ws = workspace(
+      [1],
+      [block(1, 'text', undefined, { properties: { title: [['Meet '], ['‣', [['d', date]]]] } })],
+    )
+    open(ws)
+    const shown = body(await read())
+    expect(shown).toBe('Meet @2026-11-12 10:00 ^00000001')
+    await edit([{ action: 'replace', block: '^00000001', markdown: 'Meet Ada @2026-11-12 10:00' }])
+    expect(ws.records.get(id(1))!.properties).toEqual({ title: [['Meet Ada '], ['‣', [['d', date]]]] })
+  })
+
+  it('keeps dollar signs and @dates that are only text as text', async () => {
+    const ws = workspace([1], [block(1, 'text', 'Pay $5 or $10 by @2026-01-01, $x$')])
+    open(ws)
+    const shown = body(await read())
+    expect(shown).toBe('Pay \\$5 or \\$10 by \\@2026-01-01, \\$x$ ^00000001')
+    await edit([{ action: 'replace', block: '^00000001', markdown: shown.replace('Pay', 'Send') }])
+    expect(ws.records.get(id(1))!.properties).toEqual({ title: [['Send $5 or $10 by @2026-01-01, $x$']] })
+    // Written by hand, prices are text too.
+    expect(inline('From $5 to $10, or $5-$10')).toEqual([['From $5 to $10, or $5-$10']])
+  })
+
+  it('round-trips colored text, and says what a color it can’t show becomes', async () => {
+    const title = [['Plain '], ['red', [['h', 'red']]], [' and '], ['back', [['h', 'yellow_background'], ['i']]]]
+    const ws = workspace([1], [block(1, 'text', undefined, { properties: { title } })])
+    open(ws)
+    const shown = body(await read())
+    expect(shown).toBe('Plain <span color="red">red</span> and <span color="yellow_background">*back*</span> ^00000001')
+    await edit([{ action: 'replace', block: '^00000001', markdown: shown.replace('Plain', 'Bare') }])
+    expect(ws.records.get(id(1))!.properties).toEqual({
+      title: [['Bare '], ['red', [['h', 'red']]], [' and '], ['back', [['h', 'yellow_background'], ['i']]]],
+    })
+  })
+})
+
+describe('reads edit_page checks against', () => {
+  it('[UC-NOTION-002-S05] refuses a block longer than a part until every part it is in was read', async () => {
+    const ws = workspace([1, 2], [block(1, 'text', 'a'.repeat(15_000)), block(2, 'text', 'End')])
+    open(ws)
+    expect(await read()).toContain('Part 1 of 2')
+    await expect(edit([{ action: 'replace', block: '^00000001', markdown: 'Short' }])).rejects.toThrow(
+      "^00000001 wasn't shown to you in full",
+    )
+    await read({ part: 2 })
+    await edit([{ action: 'replace', block: '^00000001', markdown: 'Short' }])
+    expect(ws.records.get(id(1))!.properties).toEqual({ title: [['Short']] })
+  })
+
+  it('[UC-NOTION-002-S05] does not keep a read that ends after the conversation changed', async () => {
+    const ws = workspace([1], [block(1, 'text', 'Intro')])
+    open(ws)
+    const reading = read()
+    forgetReads()
+    await reading
+    await expect(edit([{ action: 'delete', block: '^00000001' }])).rejects.toThrow('Read the page with read_page first')
+  })
+
+  it('inserts at the start of a page before blocks that were not loaded', async () => {
+    const ws = workspace([9, 1], [block(1, 'text', 'Intro')])
+    open(ws)
+    await read()
+    await edit([{ action: 'insert', position: 'start', markdown: 'First' }])
+    const content = ws.records.get(PAGE)!.content as string[]
+    expect(content.slice(1)).toEqual([id(9), id(1)])
+  })
+
+  it('closes and opens again a code block indented in a quote when a part splits it', () => {
+    const code = Array.from({ length: 40 }, (_, n) => `>   line ${n} ${'x'.repeat(20)}`)
+    const section = ['> [!💡] Box ^00000001', '>   - Item ^00000002', '>   ```js', ...code, '>   ```'].join('\n')
+    const { parts } = splitSections([section], 400)
+    expect(parts.length).toBeGreaterThan(2)
+    for (const part of parts.slice(0, -1)) expect(part.split('\n').at(-1)).toBe('>   ```')
+    for (const part of parts.slice(1)) expect(part.split('\n')[0]).toBe('>   ```js')
+  })
+})
+
+describe('dates and editors written by edit_page', () => {
+  it('takes a time given at one end of a date range for both ends', () => {
+    expect(inline('@2026-11-12 10:00 → 2026-11-13')).toEqual([
+      [
+        '‣',
+        [
+          [
+            'd',
+            {
+              type: 'datetimerange',
+              start_date: '2026-11-12',
+              start_time: '10:00',
+              end_date: '2026-11-13',
+              end_time: '10:00',
+            },
+          ],
+        ],
+      ],
+    ])
+  })
+
+  it('names the signed-in user as the creator and last editor of what it writes', async () => {
+    const ws = workspace([1, 2], [block(1, 'text', 'Intro'), block(2, 'text', 'Old')])
+    open(ws)
+    await read()
+    await edit([
+      { action: 'insert', block: '^00000001', markdown: 'New' },
+      { action: 'delete', block: '^00000002' },
+    ])
+    const created = [...ws.records.values()].find(
+      (r) => (r as Rec).properties && JSON.stringify((r as Rec).properties) === '{"title":[["New"]]}',
+    )!
+    expect(created).toMatchObject({
+      created_by_id: USER,
+      created_by_table: 'notion_user',
+      last_edited_by_id: USER,
+      last_edited_by_table: 'notion_user',
+    })
+    for (const changed of [PAGE, id(2)]) {
+      expect(ws.records.get(changed)).toMatchObject({ last_edited_by_id: USER, last_edited_by_table: 'notion_user' })
+    }
   })
 })

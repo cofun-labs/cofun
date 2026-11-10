@@ -201,7 +201,7 @@ describe('UC-NOTION-001 read a page', () => {
         '> Line one',
         '> Line two ^00000105',
         '> [!💡] Heads up ^00000106',
-        '> Inside the callout ^00000107',
+        '>   Inside the callout ^00000107',
         '```typescript',
         'const a = 1',
         'console.log(a)',
@@ -612,7 +612,7 @@ describe('more converter and argument details', () => {
       }),
     )
     expect(body(await read())).toBe(
-      ['> Line one', '> Line two ^00000001', '> [!callout] Note ^00000002', '> - Inside ^00000003'].join('\n'),
+      ['> Line one', '> Line two ^00000001', '> [!callout] Note ^00000002', '>   - Inside ^00000003'].join('\n'),
     )
   })
 

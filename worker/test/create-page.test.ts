@@ -172,8 +172,8 @@ describe('create_page details', () => {
     const tab = open(ws)
     await expect(create({ title: '  ', parent: PAGE_URL })).rejects.toThrow('`title` must not be empty.')
     await expect(create({ title: 'T' })).rejects.toThrow('`parent` is required')
-    await expect(create({ title: 'T', parent: PAGE_URL, markdown: '| a | b |' })).rejects.toThrow(
-      "Tables can't be written yet.",
+    await expect(create({ title: 'T', parent: PAGE_URL, markdown: '[image: Logo]' })).rejects.toThrow(
+      "stands for content edit_page can't create",
     )
     expect(tab.sent).toEqual([])
   })
