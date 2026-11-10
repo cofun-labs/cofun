@@ -95,6 +95,8 @@ worker/                   Cloudflare Worker
                           the extension's client code (fake Notion tab with sanitized fixtures)
 e2e/                      pnpm e2e: drives the shared Chrome Canary over CDP for ai-e2e runs
                           (maintainer's machine only; its unit tests run in pnpm test)
+smoke/                    pnpm smoke: loads the built extension into Chromium and checks that it
+                          still works (Notion and Clerk answered from fixtures; runs in CI)
 docs/
   bdd.md                  how use cases and scenarios are written, and how to run ai-e2e scenarios
   use-cases/              use cases by domain; tests reference their scenario IDs
@@ -112,9 +114,10 @@ Requires Node.js 24 and pnpm.
 ```bash
 pnpm install
 pnpm check        # lint, format check, typecheck, extension build, worker and e2e tool tests
+pnpm smoke        # build the extension and load it into Chromium (first: pnpm --filter notion-copilot-smoke exec playwright install chromium)
 ```
 
-A lefthook pre-commit hook runs `pnpm check`. GitHub Actions runs it on every pull request.
+A lefthook pre-commit hook runs `pnpm check`. GitHub Actions runs it and `pnpm smoke` on every pull request.
 
 See [AGENTS.md](AGENTS.md) for the issue → PR → review → merge workflow.
 

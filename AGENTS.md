@@ -99,6 +99,7 @@ Tools call Notion's internal API as the user's own account, so **stability comes
   - `FakeAiBinding` (`worker/test/fakes.ts`) stands in for the Workers AI binding.
   - `FakeClerk` (`worker/test/clerk.ts`) signs real RS256 session tokens with a local key pair, which the worker verifies like real Clerk tokens.
 - `worker/test/extension.test.ts` runs the extension's own agent (`src/agent.ts`) against the worker so client and server cannot drift.
+- `smoke/` is the extension smoke test (`pnpm smoke`, also run in CI): Playwright loads the built extension into Chromium and checks that the service worker starts, the side panel is enabled only on Notion tabs, and the side panel page renders signed out. It catches builds that compile but break in Chrome, such as dependency bumps. Nothing leaves the machine: Notion pages and Clerk's Frontend API are answered from `smoke/fixtures/`. Its tests are standalone (no scenario IDs); sign-in, chat, and Notion tools stay `ai-e2e`.
 
 ## Commands
 
@@ -108,6 +109,7 @@ pnpm check        # lint, format check, typecheck, extension build, worker and e
 pnpm format:fix   # format all files
 pnpm test         # worker tests and the e2e tool's unit tests
 pnpm build        # build the extension into extension/dist
+pnpm smoke        # build the extension and run the smoke test in Chromium (also runs in CI)
 pnpm e2e --help   # drive the shared Chrome Canary for ai-e2e runs (maintainer's machine only)
 ```
 
