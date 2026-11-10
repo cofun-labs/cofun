@@ -404,7 +404,7 @@ describe('extension agent against the worker', () => {
     })
   })
 
-  it('[UC-NOTION-001-S12] asked again before the wait is over, nothing is sent and the user is told how long to wait', async () => {
+  it('[UC-NOTION-001-S13] asked again before the wait Notion asked for is over, nothing is sent and the user is told how long to wait', async () => {
     let now = Date.now()
     const tab = new FakeNotionTab(PAGE_URL).limit('loadPageChunk', 1, 429, '120').install()
     notionCooldown.now = () => now
