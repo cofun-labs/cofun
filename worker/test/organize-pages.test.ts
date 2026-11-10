@@ -1,19 +1,16 @@
 // Moving, duplicating, and trashing pages (move_page, duplicate_page, and trash_page in
 // extension/src/tools.ts), against a fake Notion workspace that applies them the way Notion does.
-import { afterEach, describe, expect, it } from 'vitest'
-import {
-  PREVIEW_LOOKUP_MS,
-  duplicatePage,
-  editPage,
-  forgetReads,
-  movePage,
-  readPage,
-  trashPage,
-} from '../../extension/src/tools'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { duplicatePage, editPage, forgetReads, movePage, readPage, trashPage } from '../../extension/src/tools'
 import { FakeNotionTab, FakeWorkspace, PAGE, PAGE_URL, SPACE, notionError, restoreGlobals } from './notion-tab'
-import { LIMITED_STOP } from '../../extension/src/notion/api'
+import { DUPLICATE_POLLING, LIMITED_STOP } from '../../extension/src/notion/api'
+
+// Notion's timing for checks on a copy, shortened so the tests run quickly; the number of checks stays.
+const polling = { ...DUPLICATE_POLLING }
+beforeEach(() => Object.assign(DUPLICATE_POLLING, { firstMs: 2, maxMs: 10 }))
 
 afterEach(() => {
+  Object.assign(DUPLICATE_POLLING, polling)
   restoreGlobals()
   forgetReads()
 })
@@ -351,6 +348,7 @@ describe('duplicating pages', () => {
 
   it('stopped while Notion copies, says the copy may still appear and where to look', async () => {
     const ws = workspace()
+    ws.endlessTask = true
     open(ws)
     const stop = new AbortController()
     const running = duplicatePage.run({ page: PLAN }, stop.signal)
@@ -459,18 +457,6 @@ describe('trashing pages', () => {
     )
   })
 
-  it('previews from what the agent saw when Notion is too slow to answer', async () => {
-    const ws = workspace()
-    const tab = open(ws)
-    await readPage.run({ page: hex(ARCHIVE) })
-    tab.stalled = true
-    const started = Date.now()
-    const preview = await trashPage.preview!({ pages: [hex(ARCHIVE)] })
-    expect(preview).toContain(`    ^${hex(ARCHIVE)} "Archive"`)
-    expect(preview).toContain('Could not check the current names in Notion')
-    expect(Date.now() - started).toBeLessThan(PREVIEW_LOOKUP_MS + 1_000)
-  })
-
   it('trashes a page at the top of the sidebar from its workspace', async () => {
     const ws = workspace()
     open(ws)
@@ -550,18 +536,29 @@ describe('when Notion turns requests away', () => {
     expect(ws.records.get(NOTE)!.alive).toBe(false)
   })
 
-  it('a trash preview turned away says so, and the run then stops without sending anything', async () => {
+  it('a trash preview turned away stops the question, and its run is never reached', async () => {
     const ws = workspace()
-    const tab = open(ws).limit('syncRecordValuesMain', 1)
-    const preview = await trashPage.preview!({ pages: [NOTE] })
-    expect(preview).toContain(
-      'Notion is turning requests away right now: this call will stop, and nothing will be trashed.',
-    )
-    const sent = tab.sent.length
-    const err = await notionError(trashPage.run({ pages: [NOTE] }))
+    open(ws).limit('syncRecordValuesMain', 1)
+    const err = await notionError(Promise.resolve(trashPage.preview!({ pages: [NOTE] })))
     expect(err.stopsQuestion).toBe(LIMITED_STOP)
-    expect(tab.sent).toHaveLength(sent)
-    expect(ws.records.get(NOTE)!.alive).toBe(true)
+  })
+
+  it('waits for every lookup of the trash preview, so one turned away later still stops the question', async () => {
+    const ws = workspace()
+    // The first lookup answers; the next one (the parent of the page) is turned away.
+    open(ws).limitNth('syncRecordValuesMain', 2)
+    const err = await notionError(Promise.resolve(trashPage.preview!({ pages: [NOTE] })))
+    expect(err.stopsQuestion).toBe(LIMITED_STOP)
+  })
+
+  it('checks on a copy that is not done yet a few times, ever less often, then says the outcome is unknown', async () => {
+    const ws = workspace()
+    ws.endlessTask = true
+    const tab = open(ws)
+    const err = await notionError(duplicatePage.run({ page: PLAN }))
+    expect(err.code).toBe('outcome_unknown')
+    expect(err.message).toContain('it may still appear')
+    expect(tab.sent.filter((r) => r.url.endsWith('/getTasks'))).toHaveLength(DUPLICATE_POLLING.polls)
   })
 })
 
@@ -604,18 +601,5 @@ describe('pages inside a column or another block', () => {
     expect(await trashPage.preview!({ pages: [INSIDE] })).toContain(
       `    [inside a column, not right in a page: this call will fail, and nothing will be trashed] ^${hex(INSIDE)} "In a column"`,
     )
-  })
-})
-
-describe('a trash preview turned away', () => {
-  it('stops only its own run, not a later call whose preview reached Notion', async () => {
-    const ws = workspace()
-    const tab = open(ws).limit('syncRecordValuesMain', 1)
-    expect(await trashPage.preview!({ pages: [NOTE] })).toContain('Notion is turning requests away')
-    // The user declined that call; the next one's preview reaches Notion, and its run goes ahead.
-    expect(await trashPage.preview!({ pages: [NOTE] })).not.toContain('Notion is turning requests away')
-    await trashPage.run({ pages: [NOTE] })
-    expect(ws.records.get(NOTE)!.alive).toBe(false)
-    expect(tab.sent.some((r) => r.url.endsWith('/saveTransactionsFanout'))).toBe(true)
   })
 })

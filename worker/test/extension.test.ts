@@ -448,6 +448,41 @@ describe('extension agent against the worker', () => {
     expect(ws.transactions).toHaveLength(1)
   })
 
+  it('[UC-NOTION-010-S02] a trash preview Notion turns away ends the question before the user is asked', async () => {
+    const OLD = 'b0b0b0b0-0000-4000-8000-000000000001'
+    const ws = new FakeWorkspace(
+      [
+        {
+          id: PAGE,
+          type: 'page',
+          properties: { title: [['Fixture page']] },
+          content: [OLD],
+          parent_id: SPACE,
+          parent_table: 'space',
+        },
+        { id: OLD, type: 'page', properties: { title: [['Old notes']] }, parent_id: PAGE, parent_table: 'block' },
+      ],
+      SPACE,
+    )
+    const tab = new FakeNotionTab(PAGE_URL).limit('syncRecordValuesMain', 1)
+    tab.workspace = ws
+    tab.install()
+    const trashCall = { name: 'trash_page', arguments: JSON.stringify({ pages: [OLD] }) }
+    // The model would try again after the refusal.
+    ai.script = [{ toolCalls: [trashCall] }, { toolCalls: [trashCall] }, { reply: 'Trashed.' }]
+    const asked: ToolCallRequest[] = []
+    const { result, updates } = await ask(makeAgent({ tools: [trashPage] }), 'Delete the old notes', async (call) => {
+      asked.push(call)
+      return true
+    })
+    expect(result).toEqual({ status: 'error', message: LIMITED_STOP })
+    expect(asked).toEqual([])
+    expect(toolStatuses(updates)).toEqual(['skipped'])
+    expect(tab.sent).toHaveLength(1)
+    expect(ai.calls).toHaveLength(1)
+    expect(ws.records.get(OLD)!.alive).toBe(true)
+  })
+
   it('a question stopped after a page was moved tells the user that change was made', async () => {
     const MOVED = 'b0b0b0b0-0000-4000-8000-000000000002'
     const TO = 'b0b0b0b0-0000-4000-8000-000000000003'

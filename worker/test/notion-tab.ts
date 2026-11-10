@@ -79,6 +79,15 @@ export class FakeNotionTab {
     return this
   }
 
+  /** Turns away the `nth` request to `endpoint` (1 is the first), letting the others through. */
+  limitNth(endpoint: string, nth: number, status = 429): this {
+    this.limitAt = { endpoint, nth, status }
+    return this
+  }
+
+  private limitAt?: { endpoint: string; nth: number; status: number }
+  private counts: Record<string, number> = {}
+
   /** Notion turning `times` requests to `endpoint` away: too many requests (429), or too busy (529). */
   limit(endpoint: string, times: number, status = 429): this {
     for (let i = 0; i < times; i++) {
@@ -136,6 +145,11 @@ export class FakeNotionTab {
     this.signals.push(init.signal)
     this.sent.push({ url, headers: init.headers as Record<string, string>, body: JSON.parse(init.body as string) })
     const endpoint = url.split('/api/v3/')[1]
+    this.counts[endpoint] = (this.counts[endpoint] ?? 0) + 1
+    if (this.limitAt?.endpoint === endpoint && this.limitAt.nth === this.counts[endpoint]) {
+      const body = { isNotionError: true, name: 'RateLimitedError', message: 'Rate limited' }
+      return new Response(JSON.stringify(body), { status: this.limitAt.status })
+    }
     const queued = this.responses[endpoint]?.shift()
     const served = queued ?? this.workspace?.answer(endpoint, JSON.parse(init.body as string))
     const next = served && 'json' in served ? { status: served.status, text: JSON.stringify(served.json) } : served
@@ -189,6 +203,8 @@ export class FakeWorkspace {
   failTask = false
   /** Makes the next duplicate keep running with this error, as a misrouted task does in Notion. */
   stuckTask?: string
+  /** Makes the next duplicate keep running, with no error, for as long as it is checked. */
+  endlessTask = false
   /** deleteContentRecords requests, as sent. */
   contentDeletes: { records: { id: string }[]; permanentlyDelete: unknown }[] = []
   /** The table of each record that isn't a block (discussions, comments, users), by id. */
@@ -284,6 +300,11 @@ export class FakeWorkspace {
       // Notion routes the task by its workspace; without it the task fails, as it does in Notion.
       if (request.source.spaceId !== this.spaceId || request.destination.parent.spaceId !== this.spaceId) {
         this.tasks.set(taskId, { polls: 0, result: { state: 'in_progress', error: 'Invalid input.' } })
+        return { status: 200, json: { taskId } }
+      }
+      if (this.endlessTask) {
+        this.tasks.set(taskId, { polls: 0, result: { state: 'in_progress' } })
+        this.endlessTask = false
         return { status: 200, json: { taskId } }
       }
       if (this.stuckTask) {

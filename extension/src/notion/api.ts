@@ -192,10 +192,11 @@ export interface LoadedPage {
   userId?: string
 }
 
-/** How often a duplicate's progress is checked, and how long it may take before giving up. */
-const TASK_POLL_MS = 500
-const TASK_TIMEOUT_MS = 60_000
-const FIRST_POLL_MS = 200
+/**
+ * How a duplicate's progress is checked: first after `firstMs`, then twice as long each time up to
+ * `maxMs`, `polls` times at most, so a slow copy costs Notion few requests.
+ */
+export const DUPLICATE_POLLING = { firstMs: 1_000, maxMs: 5_000, polls: 15 }
 /** How many checks in a row may report an error on a running copy before giving up on it. */
 const TASK_ERROR_POLLS = 3
 
@@ -462,7 +463,7 @@ export class NotionClient {
     space: string,
     pageId: string,
     parentId: string,
-    { signal, pollMs = TASK_POLL_MS, timeoutMs = TASK_TIMEOUT_MS }: DuplicateOptions = {},
+    { signal }: DuplicateOptions = {},
   ): Promise<string> {
     const spaceId = notionId(space)
     const page = notionId(pageId)
@@ -498,16 +499,20 @@ export class NotionClient {
       throw err
     }
     if (typeof taskId !== 'string') throw new NotionError('notion_error', 'Notion did not start copying the page.')
-    const deadline = Date.now() + timeoutMs
+    const { firstMs, maxMs, polls } = DUPLICATE_POLLING
+    // Only a check that stalls meets this: all of them, at their longest wait, with room to answer.
+    const deadline = Date.now() + 2 * polls * maxMs
+    let delay = firstMs
     // Polls in a row on which Notion said the task hit an error while still running.
     let erroring = 0
     // Once Notion has the task, it copies the page whatever happens here: stopping or failing to
     // hear back leaves the outcome unknown, never undone.
-    for (let poll = 0; ; poll++) {
+    for (let poll = 0; poll < polls; poll++) {
       // A small page is copied at once; a big one takes a while.
-      await wait(poll === 0 ? Math.min(pollMs, FIRST_POLL_MS) : pollMs, signal).catch(() => {
+      await wait(delay, signal).catch(() => {
         throw new NotionError('outcome_unknown', DUPLICATE_UNKNOWN)
       })
+      delay = Math.min(delay * 2, maxMs)
       let task: { state?: unknown; error?: unknown; status?: { targetIds?: unknown } } | undefined
       try {
         // A stalled check gives way to Stop and to the deadline.
@@ -520,7 +525,7 @@ export class NotionClient {
       } catch (err) {
         if (err instanceof NotionError && err.code === 'outcome_unknown') throw err
         // A failed check says nothing about the copy, which goes on regardless. Only a check that may
-        // clear up (no answer, or a server error) is worth repeating, until the deadline.
+        // clear up (no answer, or a server error) is worth repeating, as one of the checks allowed.
         const transient = err instanceof NotionError && err.unanswered
         // Turned away for coming too fast, nothing more is asked: the question stops.
         if (!transient || Date.now() >= deadline)
@@ -549,6 +554,8 @@ export class NotionClient {
         )
       if (Date.now() >= deadline) throw new NotionError('outcome_unknown', DUPLICATE_UNKNOWN)
     }
+    // Still not done after every check allowed: what became of the copy is unknown.
+    throw new NotionError('outcome_unknown', DUPLICATE_UNKNOWN)
   }
 
   /**
@@ -744,8 +751,6 @@ export function mergeRecordMaps(target: RecordMap, source: RecordMap): RecordMap
 
 export interface DuplicateOptions {
   signal?: AbortSignal
-  pollMs?: number
-  timeoutMs?: number
 }
 
 /**

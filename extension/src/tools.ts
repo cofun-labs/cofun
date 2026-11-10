@@ -4,7 +4,6 @@
 import type { ToolSpec } from './agent'
 import {
   IN_TRASH,
-  NOT_SENT,
   NotionError,
   SIGNED_OUT,
   blockOps,
@@ -716,7 +715,6 @@ export function forgetReads(): void {
   recentReads.clear()
   seenRows.clear()
   seenDatabases.clear()
-  trashStop = undefined
 }
 
 const EDIT_ITEM = {
@@ -1181,9 +1179,6 @@ function toProperties(schema: Schema, props: [string, PropertyInput][]): Record<
 /** How many pages one move_page or trash_page call takes at most, so its preview stays readable. */
 export const ORGANIZE_MAX = 50
 
-/** How long trash_page's preview waits for Notion's current titles before using those the agent saw. */
-export const PREVIEW_LOOKUP_MS = 3_000
-
 /** How far up from a page move_page looks for the pages it is in. */
 const ANCESTORS_MAX = 100
 
@@ -1505,14 +1500,8 @@ export const duplicatePage: ToolSpec = {
   },
 }
 
-/** A refusal from Notion seen by trash_page's preview, which the run that follows stops on. */
-let trashStop: { error: NotionError; at: number } | undefined
-/** How long a refusal seen by the preview stops the run that follows. */
-const TRASH_STOP_MS = 60_000
-
-/** How many children trash_page's preview looks at at most, and how long it waits for them. */
+/** How many children trash_page's preview looks at at most. */
 const COUNT_CHILDREN_MAX = 500
-const COUNT_WAIT_MS = 1_000
 
 /**
  * How many pages or databases sit right inside each page, for the trash preview; best effort:
@@ -1521,14 +1510,8 @@ const COUNT_WAIT_MS = 1_000
 async function childCounts(tab: NotionTab, pages: NotionRecord[]): Promise<Map<string, number>> {
   const childIds = pages.flatMap((b) => (Array.isArray(b.content) ? (b.content as string[]) : []))
   if (!childIds.length || childIds.length > COUNT_CHILDREN_MAX) return new Map()
-  let timer: ReturnType<typeof setTimeout> | undefined
   try {
-    const children = await Promise.race([
-      tab.client.findRecords(childIds.map((id) => ({ table: 'block' as const, id }))).then((r) => r.block ?? {}),
-      new Promise<never>((_, reject) => {
-        timer = setTimeout(() => reject(new Error('timed out')), COUNT_WAIT_MS)
-      }),
-    ])
+    const children = (await tab.client.findRecords(childIds.map((id) => ({ table: 'block' as const, id })))).block ?? {}
     return new Map(
       pages.map((b) => [
         b.id,
@@ -1536,11 +1519,9 @@ async function childCounts(tab: NotionTab, pages: NotionRecord[]): Promise<Map<s
       ]),
     )
   } catch (err) {
-    // Only what stops the question goes on; a slow or failed count just leaves the counts out.
+    // Only what stops the question goes on; a failed count just leaves the counts out.
     if (err instanceof NotionError && err.stopsQuestion) throw err
     return new Map()
-  } finally {
-    clearTimeout(timer)
   }
 }
 
@@ -1586,35 +1567,19 @@ export const trashPage: ToolSpec = {
     let names = new Map<string, string>()
     let inside = new Map<string, number>()
     let checked = false
-    let timer: ReturnType<typeof setTimeout> | undefined
-    // Each call's preview decides for its own run: a refusal seen for an earlier call (one the user
-    // declined, say) doesn't carry over.
-    trashStop = undefined
     try {
-      const lookup = (async () => {
-        const tab = await activeNotionTab()
-        const blocks = (await tab.client.findRecords(ids.map((id) => ({ table: 'block' as const, id })))).block ?? {}
-        const parents = await blockParents(tab, blocks, Object.values(blocks))
-        return { tab, blocks, parents, databases: await databaseNames(tab, Object.values(blocks)) }
-      })()
-      // A slow Notion must not hold up the question to the user.
-      const late = new Promise<never>((_, reject) => {
-        timer = setTimeout(() => reject(new Error('timed out')), PREVIEW_LOOKUP_MS)
-      })
-      const result = await Promise.race([lookup, late])
-      ;({ blocks: found, parents, databases: names } = result)
+      // Waited for in full, Stop aside, so nothing it asks of Notion goes unheard: Notion turning a
+      // lookup away stops the question before the user is asked (see previewCall in agent.ts).
+      const tab = await activeNotionTab()
+      found = (await tab.client.findRecords(ids.map((id) => ({ table: 'block' as const, id })))).block ?? {}
+      parents = await blockParents(tab, found, Object.values(found))
+      names = await databaseNames(tab, Object.values(found))
       checked = true
-      clearTimeout(timer)
-      // Names and refusals are settled; what each page holds is only shown if it comes quickly.
-      inside = await childCounts(result.tab, Object.values(found))
+      inside = await childCounts(tab, Object.values(found))
     } catch (err) {
-      // Without Notion, the names the agent saw are all there is. Turned away, nothing more may be
-      // sent: the run that follows stops the question instead of trying again.
-      if (err instanceof NotionError && err.stopsQuestion) trashStop = { error: err, at: Date.now() }
-    } finally {
-      clearTimeout(timer)
+      if (err instanceof NotionError && err.stopsQuestion) throw err
+      // Without Notion, the names the agent saw are all there is.
     }
-    const turnedAway = !!trashStop && Date.now() - trashStop.at < TRASH_STOP_MS
     return [
       `Move ${pages.length} page${pages.length === 1 ? '' : 's'} to the trash, with everything in ${pages.length === 1 ? 'it' : 'them'}`,
       ...pages.map((p) => {
@@ -1637,18 +1602,10 @@ export const trashPage: ToolSpec = {
       }),
       // The user agrees from these names: say when they are not Notion's current ones.
       ...(checked ? [] : ['Could not check the current names in Notion: these are the names last seen, if any.']),
-      ...(turnedAway
-        ? ['Notion is turning requests away right now: this call will stop, and nothing will be trashed.']
-        : []),
       "They stay in Notion's trash, where they can be restored.",
     ].join('\n')
   },
   run: async (args, signal) => {
-    // The preview was turned away: send nothing more, and stop the question.
-    const stop = trashStop
-    trashStop = undefined
-    if (stop && Date.now() - stop.at < TRASH_STOP_MS)
-      throw new NotionError('rate_limited', NOT_SENT, { cause: stop.error, stopsQuestion: stop.error.stopsQuestion })
     const ids = pageList(args.pages)
     const tab = await activeNotionTab()
     const records = await loadPages(tab, ids)
