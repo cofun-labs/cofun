@@ -1,0 +1,12 @@
+{
+  "requests": {
+    "www.notion.so": "Notion's own API, called from inside the user's Notion tab with that tab's session",
+    "app.notion.com": "Notion's own API, called from inside the user's Notion tab with that tab's session",
+    "notion-copilot.kitfun.cc": "The worker: chat requests with the Clerk session token, and the sign-in page opened in a tab",
+    "saving-yeti-9519.clerk.accounts.dev": "Clerk's Frontend API: the user's session and account",
+    "img.clerk.com": "Clerk's image host: the signed-in user's avatar"
+  },
+  "permissionOnly": {
+    "*.kitfun.cc": "No requests. Lets the side panel see Clerk's signed-in cookie on the sign-in page's parent domain"
+  }
+}

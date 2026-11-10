@@ -1,9 +1,9 @@
 // The extension's manifest (extension/manifest.ts). Chrome disables an installed extension on
 // update when the new version adds a permission warning, so the permissions are pinned here: a
 // change to them must change this file in the same pull request, where a reviewer sees it.
-import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import { buildManifest, clerkFrontendApi, type ManifestEnv } from '../../extension/manifest'
+import { hostedEnv } from './hosted-env'
 
 const NOTION = ['https://www.notion.so/*', 'https://app.notion.com/*']
 const CLERK_HOST = 'clerk.example.com'
@@ -12,17 +12,6 @@ const PUBLISHABLE_KEY = `pk_live_${Buffer.from(`${CLERK_HOST}$`).toString('base6
 
 function manifest(env: Partial<ManifestEnv> & Pick<ManifestEnv, 'VITE_CLERK_SYNC_HOST'>) {
   return buildManifest({ VITE_CLERK_PUBLISHABLE_KEY: PUBLISHABLE_KEY, ...env }, '1.2.3')
-}
-
-/** The committed build config of the hosted extension (extension/.env), as `KEY=value` lines. */
-function hostedEnv(): Record<string, string> {
-  const text = readFileSync(new URL('../../extension/.env', import.meta.url), 'utf8')
-  return Object.fromEntries(
-    text
-      .split('\n')
-      .filter((line) => /^\w+=/.test(line))
-      .map((line) => [line.slice(0, line.indexOf('=')), line.slice(line.indexOf('=') + 1).trim()]),
-  )
 }
 
 describe('extension manifest', () => {
@@ -58,6 +47,7 @@ describe('extension manifest', () => {
       [
         'action',
         'background',
+        'content_security_policy',
         'description',
         'host_permissions',
         'manifest_version',

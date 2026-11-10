@@ -19,16 +19,26 @@ const CLERK_FIXTURES: Record<string, string> = {
   '/v1/client': 'clerk-client.json',
 }
 
+/** The hosts the extension may send requests to (extension/allowed-hosts.json; see PRIVACY.md). */
+const ALLOWED_HOSTS = Object.keys(
+  (
+    JSON.parse(readFileSync(path.resolve(import.meta.dirname, '../../extension/allowed-hosts.json'), 'utf8')) as {
+      requests: Record<string, string>
+    }
+  ).requests,
+)
+
 /**
  * Hosts the built extension may call besides Notion: Clerk's Frontend API and the sign-in page,
- * as its manifest lists them. Clerk's fixtures answer only there, so a request for the same
- * path on any other host is blocked like the rest.
+ * as its manifest lists them, and only if they are on the allowed list. Clerk's fixtures answer
+ * only there, so a request to a host off the list, or for the same path on any other host, is
+ * blocked like the rest and fails the test.
  */
 function apiHosts(): string[] {
   const manifest = JSON.parse(readFileSync(path.join(DIST, 'manifest.json'), 'utf8')) as { host_permissions: string[] }
   return manifest.host_permissions
     .map((pattern) => new URL(pattern.replace('*.', '')).hostname)
-    .filter((host) => !PAGE_HOSTS.includes(host))
+    .filter((host) => !PAGE_HOSTS.includes(host) && ALLOWED_HOSTS.includes(host))
 }
 
 function corsHeaders(request: Request): Record<string, string> {
@@ -78,7 +88,8 @@ const test = base.extend<Fixtures>({
       if (clerkFixture) {
         return route.fulfill({ path: path.join(FIXTURES, clerkFixture), headers: corsHeaders(request) })
       }
-      blocked.push(`${request.method()} ${request.url()}`)
+      const offList = ALLOWED_HOSTS.includes(url.hostname) ? '' : ' (host not in allowed-hosts.json)'
+      blocked.push(`${request.method()} ${request.url()}${offList}`)
       return route.abort()
     })
     await use(context)

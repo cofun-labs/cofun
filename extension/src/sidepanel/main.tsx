@@ -66,6 +66,9 @@ function App() {
     <ClerkProvider
       publishableKey={PUBLISHABLE_KEY}
       syncHost={SYNC_HOST}
+      // Clerk's SDK reports its own usage to clerk-telemetry.com on development instances. The
+      // extension contacts only the hosts in allowed-hosts.json (see PRIVACY.md), so it is off.
+      telemetry={false}
       afterSignOutUrl={PANEL_URL}
       signInFallbackRedirectUrl={PANEL_URL}
       signUpFallbackRedirectUrl={PANEL_URL}

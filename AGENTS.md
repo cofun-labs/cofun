@@ -77,6 +77,10 @@ Copilot for Notion: a Chrome extension that opens an AI side panel next to Notio
 
 This is an open-source repository. **Never commit account identifiers or secrets**: Cloudflare account IDs, API tokens, Clerk secret keys, or the extension's private signing key (`extension/keys/`, git-ignored). Values that are public by design are fine: the Clerk publishable key, the Clerk JWT public key, the extension's public key and ID, and domain names.
 
+## Privacy
+
+[PRIVACY.md](PRIVACY.md) tells users what data leaves the browser and where it goes, and it is the Chrome Web Store privacy policy. **A change to what data leaves the browser, or to where it goes, updates `PRIVACY.md` in the same PR**: a new host, new data sent to an existing host, or a change to what the worker stores or logs. The hosts the extension may contact are listed in `extension/allowed-hosts.json`; a test and the smoke test check the manifest, `extension/.env`, and the extension's content security policy against it, so a new host must be added there, with what goes to it, and described in `PRIVACY.md`.
+
 ## Architecture
 
 - `extension/`: Chrome MV3 side panel. Vite + React + TypeScript. Clerk sign-in through Sync Host. `vite.config.ts` generates `manifest.json` from `.env`. The agent loop runs in the side panel on `@earendil-works/pi-agent-core`; only `src/agent.ts` imports pi, and tools live in `src/tools.ts`.

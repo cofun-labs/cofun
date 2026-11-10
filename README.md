@@ -31,6 +31,8 @@
 - [x] Read a page's comment threads, and add comments on the page or on a block
 - [x] Mention workspace members by name in pages and comments
 
+[PRIVACY.md](PRIVACY.md) says what data the extension reads, where it sends it, and what is kept.
+
 ## Tech choices
 
 | Area | Choice | Why |
@@ -71,6 +73,7 @@ The agent edits pages, creates pages and rows, changes properties, adds comments
 extension/                Chrome extension
   vite.config.ts          build config; writes manifest.json into the build
   manifest.ts             builds manifest.json from .env; a test pins its permissions
+  allowed-hosts.json      the hosts the extension may contact; a test checks the manifest and .env against it
   sidepanel.html
   src/background.ts       opens the side panel from the toolbar icon; enabled only on Notion tabs
   src/agent.ts            agent loop (pi) against the worker; the only module that imports pi
@@ -105,6 +108,7 @@ docs/
 .github/dependabot.yml    weekly dependency updates
 scripts/
   sync-github-settings.sh applies the rulesets and repository options with gh
+PRIVACY.md                what data the extension reads, where it goes, and what is kept
 AGENTS.md                 development workflow and conventions (CLAUDE.md links here)
 ```
 

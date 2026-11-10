@@ -1,7 +1,8 @@
 // Builds the extension's manifest.json from env values. vite.config.ts writes the result into the
 // build, and worker/test/manifest.test.ts pins its permissions: Chrome disables an installed
 // extension on update when the new version adds a permission warning, so a permission must never
-// change unnoticed.
+// change unnoticed. worker/test/allowed-hosts.test.ts checks every host it names against
+// allowed-hosts.json.
 
 /** The env values the manifest is built from (see .env). */
 export interface ManifestEnv {
@@ -9,7 +10,12 @@ export interface ManifestEnv {
   VITE_CLERK_SYNC_HOST: string
   CLERK_COOKIE_DOMAIN?: string
   CRX_PUBLIC_KEY?: string
+  /** Worker base URL. Optional here so the manifest can be built without it; the build requires it. */
+  VITE_API_URL?: string
 }
+
+/** Clerk serves user avatars and provider icons from here, for every instance. */
+export const CLERK_IMAGE_HOST = 'img.clerk.com'
 
 /** Clerk's Frontend API host is encoded in the publishable key: pk_test_<base64("host$")>. */
 export function clerkFrontendApi(publishableKey: string): string | undefined {
@@ -31,6 +37,28 @@ export function clerkCookiePermission(syncHost: string, cookieDomain?: string): 
   if (cookieDomain) return `${protocol}//*.${cookieDomain.replace(/^\./, '')}/*`
   if (labels.length < 2 || /^[\d.]+$/.test(hostname) || hostname.includes(':')) return `${protocol}//${hostname}/*`
   return `${protocol}//*.${labels.slice(-2).join('.')}/*`
+}
+
+/**
+ * The policy for the extension's own pages (the side panel and the service worker). Chrome's
+ * default only limits scripts; this one also limits where they may send requests and load images
+ * from, so the browser itself enforces allowed-hosts.json: the worker, Clerk's Frontend API, and
+ * Clerk's image host. Notion calls are not made from these pages (they run in the Notion tab).
+ */
+export function contentSecurityPolicy(env: ManifestEnv): string {
+  const clerkHost = clerkFrontendApi(env.VITE_CLERK_PUBLISHABLE_KEY ?? '')
+  const connect = [
+    ...new Set([
+      ...(env.VITE_API_URL ? [new URL(env.VITE_API_URL).origin] : []),
+      ...(clerkHost ? [`https://${clerkHost}`] : []),
+    ]),
+  ]
+  return [
+    "script-src 'self'",
+    "object-src 'self'",
+    ["connect-src 'self'", ...connect].join(' '),
+    `img-src 'self' data: blob: https://${CLERK_IMAGE_HOST}`,
+  ].join('; ')
 }
 
 /** The manifest for the given env and package version. */
@@ -58,6 +86,7 @@ export function buildManifest(env: ManifestEnv, version: string) {
       // cookies whose domain the extension has host permission for.
       clerkCookiePermission(env.VITE_CLERK_SYNC_HOST, env.CLERK_COOKIE_DOMAIN),
     ],
+    content_security_policy: { extension_pages: contentSecurityPolicy(env) },
     background: { service_worker: 'background.js', type: 'module' },
     // No side_panel.default_path: without it, a tab has no panel unless background.ts
     // sets one, so the panel stays off on other sites even before background.ts runs.
