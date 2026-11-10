@@ -929,15 +929,20 @@ export const editPage: ToolSpec = {
     // rewritten, a name it already mentions is that same person.
     const users = loaded.recordMap.notion_user
     const blocks = loaded.recordMap.block ?? {}
+    // The text a block being rewritten holds: a table's is in its rows' cells.
+    const textOf = (id: string): unknown[] => {
+      const block = blocks[id] as Block | undefined
+      if (block?.type !== 'table') return (block?.properties?.title as unknown[] | undefined) ?? []
+      return (block.content ?? []).flatMap((row) =>
+        Object.values((blocks[row] as Block | undefined)?.properties ?? {}).flatMap((v) => (Array.isArray(v) ? v : [])),
+      )
+    }
     const found = await findPeople(
       tab.client,
       loaded.spaceId,
       writes.map((e) => ({
         names: personNames(blockTitles(e.blocks)),
-        known:
-          e.action === 'replace'
-            ? peopleIn((blocks[e.target] as Block | undefined)?.properties?.title, users)
-            : undefined,
+        known: e.action === 'replace' ? peopleIn(textOf(e.target), users) : undefined,
       })),
     )
     writes.forEach((e, n) => {

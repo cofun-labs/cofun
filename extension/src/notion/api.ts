@@ -937,10 +937,8 @@ function notionId(id: string): string {
 
 /**
  * Builders for the operations a transaction is made of, so Notion's wire format for writes lives
- * here with the rest of the API. All act on blocks in one workspace.
- */
-/**
- * Operations on blocks. With `userId` (the tab's signed-in user), blocks created, changed, and
+ * here with the rest of the API. All act on blocks in one workspace. With `userId` (the tab's
+ * signed-in user), blocks created, changed, and
  * deleted name that user as their creator and last editor, as Notion's own editor does; Notion
  * doesn't fill those in itself.
  */

@@ -1757,3 +1757,25 @@ describe('third review of #148', () => {
     ])
   })
 })
+
+describe('fourth review of #148', () => {
+  it('[UC-NOTION-002-S16] rewrites a table whose unchanged cell mentions a guest, without looking them up by name', async () => {
+    const GUEST = '0f0f0f0f-0000-4000-8000-000000000005'
+    const ws = workspace(
+      [1],
+      [
+        block(1, 'table', undefined, { content: [id(2), id(3)], format: { table_block_column_order: ['a', 'b'] } }),
+        block(2, 'table_row', undefined, { properties: { a: [['Who']], b: [['N']] } }, id(1)),
+        block(3, 'table_row', undefined, { properties: { a: [['‣', [['u', GUEST]]]], b: [['1']] } }, id(1)),
+      ],
+    )
+    ws.put('notion_user', { id: GUEST, name: 'Grace Guest' })
+    // The guest isn't a member of the workspace, so a lookup by name wouldn't find them.
+    ws.visibleUsers = [USER]
+    open(ws)
+    const shown = body(await read())
+    expect(shown).toContain('| @[Grace Guest] | 1 |')
+    await edit([{ action: 'replace', block: '^00000001', markdown: shown.replace('| 1 |', '| 2 |') }])
+    expect(ws.records.get(id(3))!.properties).toEqual({ a: [['‣', [['u', GUEST]]]], b: [['2']] })
+  })
+})
