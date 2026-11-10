@@ -82,12 +82,14 @@ const PAGE_MENTION = /\[((?:\\.|[^\]\\])+)\]\([0-9a-f]{32}\)/gi
 /**
  * A text value's or a title's Markdown on one line as the preview shows it: plain text, with
  * people, pages, and dates as their names and no marks. Markdown that can't be written is shown as
- * it is.
+ * it is. `cell: false` is for Markdown from outside a table (a value as the agent saw it), where a
+ * backslash before a `|` in code is text.
  */
-export function shownMarkdown(markdown: string): string {
+export function shownMarkdown(markdown: string, { cell = true } = {}): string {
   try {
     // A mentioned page shows by the title its link gives; the rich text keeps only its id.
-    return oneLine(cellText(markdown.replace(PAGE_MENTION, '$1')).map(shownRun).join(''))
+    const linked = markdown.replace(PAGE_MENTION, '$1')
+    return oneLine((cell ? cellText(linked) : inline(linked)).map(shownRun).join(''))
   } catch (err) {
     if (err instanceof MarkdownError) return oneLine(markdown)
     throw err
@@ -105,12 +107,13 @@ function shownRun([text, marks = []]: RichText[number]): string {
 }
 
 /**
- * Whether two text values or titles, as Markdown, are stored as the same rich text: the same text
- * with the same formatting, links, mentions, and line breaks.
+ * Whether a text value or title as the agent saw it (`seen`, Markdown from outside a table) and one
+ * the model gives (`given`, read as a table cell's) are stored as the same rich text: the same
+ * text with the same formatting, links, mentions, and line breaks.
  */
-export function sameMarkdown(a: string, b: string): boolean {
+export function sameMarkdown(seen: string, given: string): boolean {
   try {
-    return JSON.stringify(cellText(a.trim())) === JSON.stringify(cellText(b.trim()))
+    return JSON.stringify(inline(seen.trim())) === JSON.stringify(cellText(given.trim()))
   } catch (err) {
     if (err instanceof MarkdownError) return false
     throw err

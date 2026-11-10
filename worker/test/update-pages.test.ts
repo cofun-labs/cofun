@@ -292,7 +292,15 @@ describe('update_pages details', () => {
     const ws = mentionable()
     const tab = open(ws, `https://app.notion.com/${hex(DB)}`)
     const title = [['Write '], ['the', [['i']]], [' a|b [docs] with '], ['‣', [['u', ANN]]]]
-    const notes = [...NOTES, [' for $5 '], ['x|y', [['c']]], [' and '], ['red', [['h', 'red'], ['b']]]]
+    const notes = [
+      ...NOTES,
+      [' for $5 '],
+      ['x|y', [['c']]],
+      [' and '],
+      ['red', [['h', 'red'], ['b']]],
+      [' '],
+      ['⁍', [['e', 'a|b\\|c']]],
+    ]
     ws.edit(row(1), { properties: { title, 'a:a': [['Done']], 'g:g': notes } })
     const stored = structuredClone(props(ws, 1))
     const shown = shownCells(await query(tab, [ws.records.get(row(1)) as never]), row(1))
@@ -303,7 +311,7 @@ describe('update_pages details', () => {
         'Change 1 page',
         `Write the a|b [docs] with Ann ^${hex(row(1))}`,
         '    Title: Write the a|b [docs] with Ann (unchanged)',
-        '    Notes: Done by Ann, see the plan and Spec on 2026-11-20 for $5 x|y and red (unchanged)',
+        '    Notes: Done by Ann, see the plan and Spec on 2026-11-20 for $5 x|y and red a|b\\|c (unchanged)',
       ].join('\n'),
     )
     await update(pages)

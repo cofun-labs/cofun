@@ -125,7 +125,7 @@ export function taskDatabaseOps(
   const operations = op.createDatabase(ids, title, schema)
   for (const row of rows) {
     // Values the way the extension writes them, checked against the schema.
-    const properties: Record<string, unknown> = { title: propertyValue(schema.title, row.name) }
+    const properties: Record<string, unknown> = { title: [[row.name]] }
     if (row.status) properties[STATUS] = propertyValue(schema[STATUS], row.status)
     if (row.due) properties[DUE] = propertyValue(schema[DUE], row.due)
     operations.push(op.create(newId(), 'page', ids.collection, { properties, parent_table: 'collection' }))

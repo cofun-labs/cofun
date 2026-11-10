@@ -1298,7 +1298,9 @@ export const updatePages: ToolSpec = {
       lines.push(id ? `${known ? `${oneLine(known)} ` : ''}^${hexId(id)}` : oneLine(given) || '(no page given)')
       if (typeof u?.title === 'string') {
         const title = shownMarkdown(u.title)
-        const old = seen ? change(shownMarkdown(seen.title), title, sameMarkdown(seen.title, oneLine(u.title))) : ''
+        const old = seen
+          ? change(shownMarkdown(seen.title, { cell: false }), title, sameMarkdown(seen.title, oneLine(u.title)))
+          : ''
         lines.push(`    Title: ${title}${old}`)
       }
       if (typeof u?.icon === 'string') lines.push(`    Icon: ${oneLine(u.icon)}`)
@@ -1466,7 +1468,7 @@ function previewValue(seen: SeenRow | undefined, name: string, input: PropertyIn
   const property = (def.name ?? name).trim().toLowerCase()
   const old = seen.values.find((v) => v.name.toLowerCase() === property)?.value
   if (old === undefined) return now || '(empty)'
-  if (markdown !== undefined) return now + change(shownMarkdown(old), now, sameMarkdown(old, markdown))
+  if (markdown !== undefined) return now + change(shownMarkdown(old, { cell: false }), now, sameMarkdown(old, markdown))
   // As storedText shows it: plain text, without query_database's Markdown marks, links, or the @
   // before a date; options without spaces.
   let was = oneLine(shownText(old))
