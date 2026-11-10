@@ -62,8 +62,6 @@ export const RATE_LIMITED = 'Notion turned this request away (too many requests,
 export const BUSY_UNKNOWN =
   'Notion said it was too busy, without saying whether the change was saved, so it may or may not have been. Read the page again before retrying.'
 export const NOT_SENT = 'Not sent: Notion turned an earlier request away (too many requests, or too busy).'
-/** How long nothing is sent after Notion turns a request away, when it doesn't say (Retry-After). */
-export const COOLDOWN_MS = 60_000
 /** The longest wait a Retry-After can ask for; a longer one is cut to this. */
 export const COOLDOWN_MAX_MS = 10 * 60_000
 
@@ -79,15 +77,16 @@ export function waitText(ms: number): string {
 }
 
 /**
- * For the user, when Notion turns requests away: the question stops, and nothing more is sent
- * for `ms`. The agent adds a line when changes may already have been made.
+ * For the user, when Notion turns requests away: the question stops. With `ms`, the wait Notion
+ * asked for, during which nothing more is sent; without, Notion didn't say, and a minute is only
+ * advice. The agent adds a line when changes may already have been made.
  */
-export function limitedStop(ms: number): string {
-  return `Notion is turning requests away right now (too many requests, or too busy), so Notion Copilot stopped. Wait ${waitText(ms)}, then ask again.`
+export function limitedStop(ms?: number): string {
+  return `Notion is turning requests away right now (too many requests, or too busy), so Notion Copilot stopped. Wait ${ms ? waitText(ms) : 'a minute'}, then ask again.`
 }
 
-/** `limitedStop` for the wait when Notion doesn't say how long. */
-export const LIMITED_STOP = limitedStop(COOLDOWN_MS)
+/** `limitedStop` when Notion doesn't say how long to wait. */
+export const LIMITED_STOP = limitedStop()
 
 /** For the user, when a question would send while the wait after Notion turned requests away is on. */
 export function coolingStop(ms: number): string {
@@ -345,8 +344,10 @@ export interface CooldownStore {
 }
 
 /**
- * The wait after Notion turns a request away: until it is over, no client sends anything, so
- * asking again right away doesn't press the account further. A side panel has one for all its
+ * The wait Notion asks for when it turns a request away (Retry-After): until it is over, no
+ * client sends anything, so asking again sooner doesn't press the account further. When Notion
+ * doesn't say how long, there is no wait: the question has stopped, and only the user asking
+ * again sends anything. A side panel has one for all its
  * clients, and with a `store` every side panel keeps to the same wait: another Notion tab's, and
  * one opened or reloaded later (see tab.ts). `now` is the clock, which tests set. The end is a
  * time of day, the only clock side panels share: a clock set forward ends the wait early.
@@ -410,12 +411,17 @@ export class NotionCooldown {
     })
   }
 
-  /** Starts the wait, as long as Notion's Retry-After asks (at most COOLDOWN_MAX_MS), or COOLDOWN_MS. */
+  /**
+   * Starts the wait Notion's Retry-After asks for (at most COOLDOWN_MAX_MS). Without one that is
+   * understood, no wait starts.
+   */
   start(retryAfter?: string): void {
     // First cuts an end kept from before that is too far ahead, so the new wait is not lost behind it.
     this.left()
     const now = this.now()
-    this.until = Math.max(this.until, now + waitFor(retryAfter, now))
+    const wait = waitFor(retryAfter, now)
+    if (!wait) return
+    this.until = Math.max(this.until, now + wait)
     this.save()
   }
 
@@ -448,22 +454,22 @@ const HTTP_DATE =
   /^(Mon|Tue|Wed|Thu|Fri|Sat|Sun), \d{2} (Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) \d{4} \d{2}:\d{2}:\d{2} GMT$/
 
 /**
- * The wait after Notion turns a request away: COOLDOWN_MS, or longer when Retry-After (in whole
- * seconds or as an HTTP date) asks for longer, up to COOLDOWN_MAX_MS. It never asks for less: the
- * user was told to wait. Anything else in Retry-After is not guessed at (Date.parse alone would
- * make a date of much that isn't one) and gets COOLDOWN_MS.
+ * The wait Retry-After asks for, in whole seconds or as an HTTP date, up to COOLDOWN_MAX_MS; 0
+ * when there is none, it has passed, or it is anything else: that is not guessed at (Date.parse
+ * alone would make a date of much that isn't one).
  */
 function waitFor(retryAfter: string | undefined, now: number): number {
   const text = retryAfter?.trim() ?? ''
   const ms = /^\d+$/.test(text) ? Number(text) * 1000 : HTTP_DATE.test(text) ? Date.parse(text) - now : Number.NaN
-  return Number.isNaN(ms) ? COOLDOWN_MS : Math.min(Math.max(ms, COOLDOWN_MS), COOLDOWN_MAX_MS)
+  return Number.isNaN(ms) ? 0 : Math.min(Math.max(ms, 0), COOLDOWN_MAX_MS)
 }
 
 export class NotionClient {
   /**
    * Notion turned a request away: this client sends nothing more after it (requests already in
    * flight, such as parallel batches, still get their answers). A client serves one tool call; the
-   * agent ending the question keeps later tools from sending, and the cooldown later questions.
+   * agent ending the question keeps later tools from sending, and the cooldown later questions
+   * when Notion said how long to wait.
    */
   private limited = false
 
@@ -1004,7 +1010,7 @@ export class NotionClient {
     if (turnedAway) {
       this.limited = true
       this.cooldown?.start(res.retryAfter)
-      const stopsQuestion = limitedStop(this.waitLeft())
+      const stopsQuestion = limitedStop(this.cooldown?.left())
       // A 529 to a write may come after Notion applied it, so its outcome stays unknown. A 429
       // means Notion turned it away before doing anything with it.
       // Starting a copy is a write too.
@@ -1021,17 +1027,10 @@ export class NotionClient {
    * the wait isn't over.
    */
   private checkNotLimited(): void {
-    if (this.limited) throw new NotionError('rate_limited', NOT_SENT, { stopsQuestion: limitedStop(this.waitLeft()) })
+    if (this.limited)
+      throw new NotionError('rate_limited', NOT_SENT, { stopsQuestion: limitedStop(this.cooldown?.left()) })
     const left = this.cooldown?.left() ?? 0
     if (left) throw new NotionError('rate_limited', NOT_SENT, { stopsQuestion: coolingStop(left) })
-  }
-
-  /**
-   * The wait left after Notion turned this client's request away. Without a cooldown, or once it
-   * is over while this client still refuses to send, the usual one.
-   */
-  private waitLeft(): number {
-    return this.cooldown?.left() || COOLDOWN_MS
   }
 }
 
