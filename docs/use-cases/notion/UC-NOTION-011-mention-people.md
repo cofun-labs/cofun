@@ -16,14 +16,14 @@ Key constraint:
 
 | ID | Priority | Status | Scenario |
 | --- | --- | --- | --- |
-| UC-NOTION-011-S01 | P0 | 🚧 | Given a workspace with a member named Kim Lee; when the AI writes a line on a page that mentions Kim Lee; then the page has a mention of that member, and reading the page shows it the way the AI wrote it. |
-| UC-NOTION-011-S02 | P1 | 🚧 | Given a page with a mention of a member; when the AI changes other text in that block; then the block still mentions that member. |
-| UC-NOTION-011-S03 | P1 | 🚧 | Given a workspace with a member named Kim Lee; when the AI creates a page or adds a comment that mentions Kim Lee; then the new page or comment mentions that member. |
-| UC-NOTION-011-S04 | P0 | 🚧 | Given no member with the name the AI wrote; when it writes the mention; then nothing is written, and the AI is told the members with a similar name. |
-| UC-NOTION-011-S05 | P0 | 🚧 | Given two members with the same name; when the AI mentions that name; then nothing is written, and the AI is told the name is ambiguous. |
+| UC-NOTION-011-S01 | P0 | ✅ | Given a workspace with a member named Kim Lee; when the AI writes a line on a page that mentions Kim Lee; then the page has a mention of that member, and reading the page shows it the way the AI wrote it. |
+| UC-NOTION-011-S02 | P1 | ✅ | Given a page with a mention of a member; when the AI changes other text in that block; then the block still mentions that member. |
+| UC-NOTION-011-S03 | P1 | ✅ | Given a workspace with a member named Kim Lee; when the AI creates a page or adds a comment that mentions Kim Lee; then the new page or comment mentions that member. |
+| UC-NOTION-011-S04 | P0 | ✅ | Given no member with the name the AI wrote; when it writes the mention; then nothing is written, and the AI is told the members with a similar name. |
+| UC-NOTION-011-S05 | P0 | ✅ | Given two members with the same name; when the AI mentions that name; then nothing is written, and the AI is told the name is ambiguous. |
 
 ### ai-e2e
 
 | ID | Priority | Status | Scenario |
 | --- | --- | --- | --- |
-| UC-NOTION-011-S06 | P1 | 🚧 | Given the side panel open on a page; when the user asks the AI to add a to-do for themselves by name; then after a reload Notion shows the to-do with a mention of the user. |
+| UC-NOTION-011-S06 | P1 | ✅ | Given the side panel open on a page; when the user asks the AI to add a to-do for themselves by name; then after a reload Notion shows the to-do with a mention of the user. |
