@@ -2,7 +2,7 @@
 // extension/src/tools.ts), against a fake Notion workspace that applies them the way Notion does.
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { duplicatePage, editPage, forgetReads, movePage, readPage, trashPage } from '../../extension/src/tools'
-import { FakeNotionTab, FakeWorkspace, PAGE, PAGE_URL, SPACE, notionError, restoreGlobals } from './notion-tab'
+import { FakeNotionTab, FakeWorkspace, PAGE, PAGE_URL, SPACE, USER, notionError, restoreGlobals } from './notion-tab'
 import { DUPLICATE_POLLING, LIMITED_STOP, UNEXPECTED_STOP } from '../../extension/src/notion/api'
 
 // Notion's timing for checks on a copy, shortened so the tests run quickly; the number of checks stays.
@@ -98,6 +98,19 @@ describe('UC-NOTION-010 reorganize pages', () => {
     expect(contentOf(ws, PROJECTS)).toEqual([NOTE])
     expect(ws.records.get(PLAN)).toMatchObject({ parent_id: ARCHIVE, alive: true, content: [TEXT, DRAFT] })
     expect(ws.transactions).toHaveLength(1)
+  })
+
+  it('names the signed-in user as the last editor of moved and trashed pages, and where they went', async () => {
+    const ws = workspace()
+    open(ws)
+    await movePage.run({ pages: [hex(PLAN)], to: ARCHIVE })
+    expect(ws.records.get(PLAN)).toMatchObject({ last_edited_by_id: USER, last_edited_by_table: 'notion_user' })
+    expect(ws.records.get(ARCHIVE)).toMatchObject({ last_edited_by_id: USER, last_edited_by_table: 'notion_user' })
+    await trashPage.run({ pages: [NOTE] })
+    expect(ws.records.get(NOTE)).toMatchObject({
+      alive: false,
+      ...{ last_edited_by_id: USER, last_edited_by_table: 'notion_user' },
+    })
   })
 
   it('[UC-NOTION-010-S01] moves several pages in one change, in the order given', async () => {

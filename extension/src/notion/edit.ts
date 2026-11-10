@@ -884,17 +884,18 @@ function clip(text: string, max = 80): string {
 }
 
 /**
- * The operations creating a page at the end of `parent`, titled `title`, holding `blocks`. With no
- * parent, the page is created unplaced, for a later operation to put it somewhere.
+ * The operations creating a page at the end of `parent`, titled `title`, holding `blocks`, made by
+ * `userId`. With no parent, the page is created unplaced, for a later operation to put it somewhere.
  */
 export function planNewPage(
   parent: { id: string; table: 'block' | 'collection' } | undefined,
   spaceId: string,
   title: string,
   blocks: NewBlock[],
+  userId: string | undefined,
   { now = Date.now(), newId = () => crypto.randomUUID(), properties = {} as Record<string, unknown> } = {},
 ): { operations: Operation[]; pageId: string } {
-  const op = blockOps(spaceId, now)
+  const op = blockOps(spaceId, now, userId)
   const operations: Operation[] = []
   const pageId = newId()
   // A database row's parent is the database's collection, which lists its rows itself.

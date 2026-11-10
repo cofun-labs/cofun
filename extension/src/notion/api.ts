@@ -370,6 +370,12 @@ export class NotionClient {
    */
   private limited = false
 
+  /**
+   * The Notion user this client's requests go as (the tab's signed-in user), from Notion's latest
+   * answer; undefined before the first one. Writes name it as the creator or last editor.
+   */
+  userId?: string
+
   /** `usage`: the question this client's requests count toward, if any; `cooldown`: the wait it keeps to. */
   constructor(
     private readonly send: NotionTransport,
@@ -795,7 +801,7 @@ export class NotionClient {
    */
   async trashPages(space: string, pages: { id: string; parentId: string; parentTable: 'block' | 'space' }[]) {
     const spaceId = notionId(space)
-    const op = blockOps(spaceId, Date.now())
+    const op = blockOps(spaceId, Date.now(), this.userId)
     const operations: Operation[] = []
     for (const p of pages) {
       // A page in a page is listed in its `content`; a top-level page in its workspace's `pages`.
@@ -894,6 +900,7 @@ export class NotionClient {
       else if (write && this.usage) this.usage.wrote = true
       throw err
     }
+    if (res.userId) this.userId = res.userId
     const turnedAway = res.error === undefined && !res.redirected && LIMITED.has(res.status)
     // Only a 429 says the write was not applied; anything else may have changed data, so err on that side.
     if (write && this.usage && !(turnedAway && res.status === 429)) this.usage.wrote = true
@@ -1072,7 +1079,7 @@ function notionId(id: string): string {
  * deleted name that user as their creator and last editor, as Notion's own editor does; Notion
  * doesn't fill those in itself.
  */
-export function blockOps(spaceId: string, now: number, userId?: string) {
+export function blockOps(spaceId: string, now: number, userId: string | undefined) {
   const pointer = (id: string): Pointer => ({ table: 'block', id, spaceId })
   const editedBy = userId ? { last_edited_by_id: userId, last_edited_by_table: 'notion_user' } : {}
   const createdBy = userId ? { created_by_id: userId, created_by_table: 'notion_user', ...editedBy } : {}
@@ -1177,8 +1184,17 @@ export function blockOps(spaceId: string, now: number, userId?: string) {
           ...(parentId === undefined ? {} : { parent_id: parentId, parent_table: 'block' }),
           created_time: now,
           last_edited_time: now,
+          ...createdBy,
         }),
-        set('collection', ids.collection, { parent_id: ids.page, parent_table: 'block', name: [[name]], schema }),
+        set('collection', ids.collection, {
+          parent_id: ids.page,
+          parent_table: 'block',
+          name: [[name]],
+          schema,
+          created_time: now,
+          last_edited_time: now,
+          ...createdBy,
+        }),
         set('collection_view', ids.view, {
           type: 'table',
           name: 'Table',
@@ -1219,8 +1235,9 @@ export interface SchemaOption {
  * against it, 2026-11). Rows keep an option's text, not its id: renaming an option takes a change
  * to each row that has it too (blockOps' setProperties), as Notion's client does.
  */
-export function collectionOps(spaceId: string, collectionId: string) {
+export function collectionOps(spaceId: string, collectionId: string, userId: string | undefined) {
   const pointer: Pointer = { table: 'collection', id: collectionId, spaceId }
+  const editedBy = userId ? { last_edited_by_id: userId, last_edited_by_table: 'notion_user' } : {}
   const schema = (path: string[], command: string, args: unknown): Operation => ({
     pointer,
     path: ['schema', ...path],
@@ -1262,9 +1279,9 @@ export function collectionOps(spaceId: string, collectionId: string) {
     removeOption(key: string, optionId: string): Operation {
       return schema([key, 'options'], 'keyedObjectListRemove', { remove: { id: optionId } })
     },
-    /** Marks the database as edited now. */
+    /** Marks the database as edited now, by the signed-in user. */
     touch(now: number): Operation {
-      return { pointer, path: [], command: 'update', args: { last_edited_time: now } }
+      return { pointer, path: [], command: 'update', args: { last_edited_time: now, ...editedBy } }
     },
   }
 }
