@@ -1742,23 +1742,29 @@ export const getSelection: ToolSpec = {
     // Blocks selected as blocks that reach the first or last block Notion drew may go on past it,
     // when the page has blocks there that weren't drawn.
     const order = [...md.refs.keys()]
-    const picked = order.filter((b) => selection.blockIds.some((raw) => toUuid(raw) === b))
-    const holds = (outer: string, b: string) => {
+    const selectedIds = new Set(selection.blockIds.map(toUuid))
+    const picked = order.filter((b) => selectedIds.has(b))
+    const pickedSet = new Set(picked)
+    // The page's blocks that hold `b`, nearest first.
+    const holders = (b: string): string[] => {
+      const out: string[] = []
       for (
         let p = loaded.recordMap.block?.[b]?.parent_id;
         p && md.refs.has(p);
         p = loaded.recordMap.block?.[p]?.parent_id
       )
-        if (p === outer) return true
-      return false
+        out.push(p)
+      return out
     }
     const first = picked[0]
     const last = picked.at(-1)
+    const aboveFirst = new Set(first ? holders(first) : [])
     const goesOn =
-      (selection.reaches?.start && first && order.slice(0, order.indexOf(first)).some((b) => !holds(b, first))) ||
+      (selection.reaches?.start && first && order.slice(0, order.indexOf(first)).some((b) => !aboveFirst.has(b))) ||
       (selection.reaches?.end &&
         last &&
-        (!loaded.complete || order.slice(order.indexOf(last) + 1).some((b) => !picked.some((p) => holds(p, b)))))
+        (!loaded.complete ||
+          order.slice(order.indexOf(last) + 1).some((b) => !holders(b).some((p) => pickedSet.has(p)))))
     // A block of several lines (a table, code) gets its reference on a line of its own.
     const lineOf = (b: string) => {
       const own = md.lines.get(b)!

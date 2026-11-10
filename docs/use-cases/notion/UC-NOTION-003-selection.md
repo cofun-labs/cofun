@@ -25,4 +25,4 @@ Key constraint:
 | ID | Priority | Status | Scenario |
 | --- | --- | --- | --- |
 | UC-NOTION-003-S04 | P0 | ✅ | Given a paragraph selected in a Notion page; when the user asks in the side panel to rewrite it and agrees; then only that paragraph changes. |
-| UC-NOTION-003-S07 | P1 | 🚧 | Given blocks selected as blocks in a Notion page; when the user asks in the side panel to rewrite them and agrees; then only those blocks change. |
+| UC-NOTION-003-S07 | P1 | ✅ | Given blocks selected as blocks in a Notion page; when the user asks in the side panel to rewrite them and agrees; then only those blocks change. |
