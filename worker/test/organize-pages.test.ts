@@ -373,6 +373,18 @@ describe('duplicating pages', () => {
     expect(await duplicatePage.run({ page: INSIDE })).toContain(`right after it in ^${hex(ARCHIVE)}.`)
   })
 
+  it('gives up early on a copy that keeps reporting an error, with what Notion said', async () => {
+    const ws = workspace()
+    ws.stuckTask = 'Invalid input.'
+    const tab = open(ws)
+    const err = await notionError(duplicatePage.run({ page: PLAN }))
+    expect(err.code).toBe('outcome_unknown')
+    expect(err.message).toContain('Notion reports an error while copying the page: Invalid input.')
+    expect(err.message).toContain('it may still appear')
+    // The first check sees the task just started; three more report the error.
+    expect(tab.sent.filter((r) => r.url.endsWith('/getTasks'))).toHaveLength(4)
+  })
+
   it('says so when Notion fails to copy the page', async () => {
     const ws = workspace()
     ws.failTask = true

@@ -179,6 +179,8 @@ export class FakeWorkspace {
   tasks = new Map<string, { polls: number; result: Record<string, unknown> }>()
   /** Makes the next duplicate fail on Notion's side. */
   failTask = false
+  /** Makes the next duplicate keep running with this error, as a misrouted task does in Notion. */
+  stuckTask?: string
   /** deleteContentRecords requests, as sent. */
   contentDeletes: { records: { id: string }[]; permanentlyDelete: unknown }[] = []
   /** The table of each record that isn't a block (discussions, comments, users), by id. */
@@ -274,6 +276,11 @@ export class FakeWorkspace {
       // Notion routes the task by its workspace; without it the task fails, as it does in Notion.
       if (request.source.spaceId !== this.spaceId || request.destination.parent.spaceId !== this.spaceId) {
         this.tasks.set(taskId, { polls: 0, result: { state: 'in_progress', error: 'Invalid input.' } })
+        return { status: 200, json: { taskId } }
+      }
+      if (this.stuckTask) {
+        this.tasks.set(taskId, { polls: 0, result: { state: 'in_progress', error: this.stuckTask } })
+        this.stuckTask = undefined
         return { status: 200, json: { taskId } }
       }
       if (this.failTask) {

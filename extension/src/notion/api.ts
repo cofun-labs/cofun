@@ -165,6 +165,8 @@ export interface LoadedPage {
 const TASK_POLL_MS = 500
 const TASK_TIMEOUT_MS = 60_000
 const FIRST_POLL_MS = 200
+/** How many checks in a row may report an error on a running copy before giving up on it. */
+const TASK_ERROR_POLLS = 3
 
 const CHUNK_LIMIT = 100
 /** Records asked for in one syncRecordValuesMain request at most. */
@@ -438,6 +440,8 @@ export class NotionClient {
     }
     if (typeof taskId !== 'string') throw new NotionError('notion_error', 'Notion did not start copying the page.')
     const deadline = Date.now() + timeoutMs
+    // Polls in a row on which Notion said the task hit an error while still running.
+    let erroring = 0
     // Once Notion has the task, it copies the page whatever happens here: stopping or failing to
     // hear back leaves the outcome unknown, never undone.
     for (let poll = 0; ; poll++) {
@@ -472,6 +476,14 @@ export class NotionClient {
         const why = typeof task.error === 'string' ? task.error : JSON.stringify(task.error ?? 'no details')
         throw new NotionError('notion_error', `Notion could not copy the page: ${why}`)
       }
+      // A task still running with an error may be retried by Notion, so it's not a failure for sure;
+      // but one that keeps reporting it is unlikely to finish soon: say so instead of waiting it out.
+      erroring = task?.state === 'in_progress' && typeof task.error === 'string' && task.error ? erroring + 1 : 0
+      if (erroring >= TASK_ERROR_POLLS)
+        throw new NotionError(
+          'outcome_unknown',
+          `Notion reports an error while copying the page: ${String(task!.error)} ${DUPLICATE_UNKNOWN}`,
+        )
       if (Date.now() >= deadline) throw new NotionError('outcome_unknown', DUPLICATE_UNKNOWN)
     }
   }
