@@ -42,8 +42,8 @@ export type NotionEndpoint =
 export interface NotionResponse {
   status: number
   json: unknown
-  /** Whether the tab has a signed-in Notion user (the `notion_user_id` cookie). */
-  signedIn: boolean
+  /** The tab's signed-in Notion user (the `notion_user_id` cookie), if it has one. */
+  userId?: string
   error?: string
   /** Notion answered with a redirect (likely to a sign-in page), which was not followed. */
   redirected?: boolean
@@ -137,6 +137,8 @@ export interface LoadedPage {
   recordMap: RecordMap
   /** False if the page had more chunks than `maxChunks`. */
   complete: boolean
+  /** The Notion user it was loaded as: the tab's signed-in user. */
+  userId?: string
 }
 
 const CHUNK_LIMIT = 100
@@ -154,23 +156,25 @@ export class NotionClient {
     const recordMap: RecordMap = {}
     let cursor: unknown = { stack: [] }
     let spaceId: string | undefined
+    let user: string | undefined
     // Chunks overlap (the page and some parents repeat); merging de-duplicates them by id.
     for (let chunkNumber = 0; chunkNumber < Math.max(1, maxChunks); chunkNumber++) {
-      const { json, signedIn } = await this.request<{ cursor?: { stack?: unknown[] }; recordMap?: unknown }>(
+      const { json, userId } = await this.request<{ cursor?: { stack?: unknown[] }; recordMap?: unknown }>(
         'loadPageChunk',
         { page: { id: pageId }, limit: CHUNK_LIMIT, cursor, chunkNumber, verticalColumns: false },
         spaceId,
       )
       mergeRecordMaps(recordMap, normalizeRecordMap(json.recordMap))
       const page = recordMap.block?.[pageId] as Block | undefined
-      if (!page) throw missingRecord(signedIn)
+      user = userId
+      if (!page) throw missingRecord(userId)
       if (page.alive === false) throw new NotionError('no_access', IN_TRASH)
       if (!page.space_id) throw new NotionError('notion_error', 'Notion returned the page without its workspace.')
       spaceId = page.space_id
-      if (!json.cursor?.stack?.length) return { page, spaceId, recordMap, complete: true }
+      if (!json.cursor?.stack?.length) return { page, spaceId, recordMap, complete: true, userId: user }
       cursor = json.cursor
     }
-    return { page: recordMap.block![pageId] as Block, spaceId: spaceId!, recordMap, complete: false }
+    return { page: recordMap.block![pageId] as Block, spaceId: spaceId!, recordMap, complete: false, userId: user }
   }
 
   /** Loads specific records of any table. Every requested record must come back. */
@@ -182,13 +186,13 @@ export class NotionClient {
       spaceId: p.spaceId ? notionId(p.spaceId) : undefined,
     }))
     const spaces = new Set(requested.flatMap((p) => (p.spaceId ? [p.spaceId] : [])))
-    const { json, signedIn } = await this.request<{ recordMap?: unknown }>(
+    const { json, userId } = await this.request<{ recordMap?: unknown }>(
       'syncRecordValuesMain',
       { requests: requested.map((pointer) => ({ pointer, version: -1 })) },
       spaces.size === 1 ? [...spaces][0] : undefined,
     )
     const recordMap = normalizeRecordMap(json.recordMap)
-    if (requested.some((p) => !recordMap[p.table]?.[p.id])) throw missingRecord(signedIn)
+    if (requested.some((p) => !recordMap[p.table]?.[p.id])) throw missingRecord(userId)
     if (requested.some((p) => recordMap[p.table]![p.id].alive === false)) throw new NotionError('no_access', IN_TRASH)
     return recordMap
   }
@@ -366,9 +370,9 @@ export class NotionClient {
     endpoint: NotionEndpoint,
     body: unknown,
     spaceId?: string,
-  ): Promise<{ json: T; signedIn: boolean }> {
+  ): Promise<{ json: T; userId?: string }> {
     const res = await this.send(endpoint, body, { spaceId })
-    return { json: checkResponse(res) as T, signedIn: res.signedIn }
+    return { json: checkResponse(res) as T, userId: res.userId }
   }
 }
 
@@ -378,7 +382,7 @@ export function checkResponse(res: NotionResponse): Record<string, unknown> {
     throw new NotionError('notion_error', `Could not reach Notion: ${res.error}`, { unanswered: true })
   }
   if (res.redirected) {
-    if (!res.signedIn) throw new NotionError('signed_out', SIGNED_OUT)
+    if (!res.userId) throw new NotionError('signed_out', SIGNED_OUT)
     throw new NotionError('notion_error', 'Notion redirected the request instead of answering it.')
   }
   const isObject = !!res.json && typeof res.json === 'object' && !Array.isArray(res.json)
@@ -402,8 +406,8 @@ export function checkResponse(res: NotionResponse): Record<string, unknown> {
  * Notion answers 200 with an empty recordMap, not an error, for a record the user can't see,
  * including when no one is signed in.
  */
-function missingRecord(signedIn: boolean): NotionError {
-  return signedIn ? new NotionError('no_access', NO_ACCESS) : new NotionError('signed_out', SIGNED_OUT)
+function missingRecord(userId: string | undefined): NotionError {
+  return userId ? new NotionError('no_access', NO_ACCESS) : new NotionError('signed_out', SIGNED_OUT)
 }
 
 /**
@@ -524,6 +528,61 @@ export function blockOps(spaceId: string, now: number) {
     /** Marks a block as edited now; Notion doesn't do it itself. */
     touch(id: string): Operation {
       return { pointer: pointer(id), path: [], command: 'update', args: { last_edited_time: now } }
+    },
+  }
+}
+
+/**
+ * Builders for comments: a comment lives in a discussion (a thread), which hangs off a block or a
+ * page. The records are the ones Notion's web client writes for a comment on a page (checked
+ * against it, 2026-11); on a block the same records show as a comment on the whole block. Notion's
+ * own comments on a block's text also mark that text, a CRDT edit this never makes.
+ */
+export function commentOps(spaceId: string, now: number) {
+  return {
+    /** A new thread on `blockId` (a page is a block too) holding one comment by `userId`. */
+    newThread(blockId: string, discussionId: string, commentId: string, userId: string, text: unknown[]): Operation[] {
+      return [
+        {
+          pointer: { table: 'discussion', id: discussionId, spaceId },
+          path: [],
+          command: 'set',
+          args: {
+            id: discussionId,
+            version: 1,
+            type: 'default',
+            parent_id: blockId,
+            parent_table: 'block',
+            resolved: false,
+            space_id: spaceId,
+            comments: [commentId],
+          },
+        },
+        {
+          pointer: { table: 'comment', id: commentId, spaceId },
+          path: [],
+          command: 'set',
+          args: {
+            id: commentId,
+            version: 1,
+            parent_id: discussionId,
+            parent_table: 'discussion',
+            alive: true,
+            space_id: spaceId,
+            text,
+            created_time: now,
+            last_edited_time: now,
+            created_by_id: userId,
+            created_by_table: 'notion_user',
+          },
+        },
+        {
+          pointer: { table: 'block', id: blockId, spaceId },
+          path: ['discussions'],
+          command: 'listAfter',
+          args: { id: discussionId },
+        },
+      ]
     },
   }
 }

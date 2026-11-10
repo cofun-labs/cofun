@@ -26,6 +26,7 @@
 - [x] Create pages with content
 - [x] Change titles, icons, and database properties, and add database rows
 - [x] Work on what the user selected in the page
+- [x] Read a page's comment threads, and add comments on the page or on a block
 
 ## Tech choices
 
@@ -59,7 +60,7 @@ Conversations are saved in the extension's IndexedDB, one database per Clerk use
 
 ### Writes without approval
 
-The agent edits pages, creates pages and rows, and changes properties without asking first. No tool deletes pages yet; the one that will (#74) is to ask for the user's approval each time. Each change shows on its tool card in the side panel, and a page's history in Notion can undo edits. The trade-off: the agent reads text the user doesn't control (shared pages, guest content, search results), and an instruction hidden in that text can make it write as the user without anyone being asked. It could change many pages in one call, or copy content the user can see into a page someone else can read. Page history can undo the changes, but not the copy.
+The agent edits pages, creates pages and rows, changes properties, and adds comments without asking first. No tool deletes pages yet; the one that will (#74) is to ask for the user's approval each time. Each change shows on its tool card in the side panel, and a page's history in Notion can undo edits. The trade-off: the agent reads text the user doesn't control (shared pages, guest content, search results), and an instruction hidden in that text can make it write as the user without anyone being asked. It could change many pages in one call, or copy content the user can see into a page or a comment someone else can read; a comment also notifies the people following the page or the thread. Page history can undo the changes, but not the copy.
 
 ## Layout
 
@@ -76,6 +77,7 @@ extension/                Chrome extension
   src/notion/markdown.ts  Notion pages as Markdown for the model, with a reference on each block
   src/notion/blocks.ts    Markdown from the model back into Notion blocks
   src/notion/edit.ts      checks edits against the page as the agent read it, and plans the transaction
+  src/notion/comments.ts  a page's comment threads for the model, quoted so they read as data
   src/notion/props.ts     page titles and database property values, checked against the database's schema
   src/notion/tree.ts      pages as the sidebar lists them, level by level, without content
   src/notion/tab.ts       runs Notion requests in the user's Notion tab (chrome.scripting)
