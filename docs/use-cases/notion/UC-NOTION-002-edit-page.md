@@ -6,7 +6,7 @@ A signed-in user asks the AI to change a Notion page: rewrite a paragraph, put a
 
 The change is made right away, all at once or not at all, and the side panel shows what changed, piece by piece with the new text and what a deletion removed, so the user can bring it back from the page's history in Notion if they need to. Rewriting a piece as the same kind of content keeps what is nested under it. Deleting a piece deletes what is nested under it too, so a piece with a child page or database under it, or with nested content the AI wasn't shown, is not deleted.
 
-As with reading (UC-NOTION-001), when Notion turns an edit away because it is limiting requests, the edit is not tried again and the question stops.
+As with reading (UC-NOTION-001), when Notion turns an edit away because it is limiting requests, the edit is not tried again and the question stops. The user is told whether the edit was made: not made, made, or, when Notion is too busy to say, maybe made, with a reminder to check the page.
 
 Key constraints:
 
@@ -26,6 +26,8 @@ Key constraints:
 | UC-NOTION-002-S06 | P1 | ✅ | Given a piece with content nested under it; when the AI rewrites the piece as the same kind of content; then the nested content stays. |
 | UC-NOTION-002-S07 | P1 | ✅ | Given an edit Notion refuses; then nothing on the page changes and the AI is told the edit failed. |
 | UC-NOTION-002-S11 | P1 | ✅ | Given Notion turns an edit away because it is limiting requests; then nothing on the page changes, the edit is not tried again, the question stops, and the user is told to wait before asking again. |
+| UC-NOTION-002-S12 | P1 | ✅ | Given Notion is too busy to say whether an edit was saved; then nothing is tried again, the question stops, and the user is told the edit may or may not have been made and to check the page. |
+| UC-NOTION-002-S13 | P2 | ✅ | Given an edit Notion saved; when Notion then turns away the AI's next request; then the question stops, and the user is told the edit was made. |
 
 ### ai-e2e
 

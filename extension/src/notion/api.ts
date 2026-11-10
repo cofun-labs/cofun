@@ -277,7 +277,7 @@ export class NotionClient {
       // A few batches at a time, so a long list doesn't flood the user's tab with requests.
       const out: RecordMap = {}
       for (let at = 0; at < batches.length; at += RECORDS_PARALLEL) {
-        const maps = await Promise.all(batches.slice(at, at + RECORDS_PARALLEL).map((b) => this.findRecords(b)))
+        const maps = await settleAll(batches.slice(at, at + RECORDS_PARALLEL).map((b) => this.findRecords(b)))
         for (const map of maps) mergeRecordMaps(out, map)
       }
       return out
@@ -420,6 +420,17 @@ export class NotionClient {
     }
     return { json: checkResponse(res) as T, userId: res.userId }
   }
+}
+
+/**
+ * Like Promise.all, but waits for every request, so a failure that stops the question is never
+ * hidden behind another one that came first.
+ */
+async function settleAll<T>(promises: Promise<T>[]): Promise<T[]> {
+  const settled = await Promise.allSettled(promises)
+  const failures = settled.flatMap((s) => (s.status === 'rejected' ? [s.reason as unknown] : []))
+  if (failures.length) throw failures.find((e) => e instanceof NotionError && e.stopsQuestion) ?? failures[0]
+  return settled.map((s) => (s as PromiseFulfilledResult<T>).value)
 }
 
 /** The JSON of a successful response, or a NotionError explaining the failure. */

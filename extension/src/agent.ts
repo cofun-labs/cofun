@@ -108,6 +108,8 @@ const DECLINED = 'Not run: the user declined this action. Do not retry it; ask t
 const UNASKED = "Not run: this action needs the user's confirmation, and they could not be asked."
 // What the model gets back for a call the user stopped: whether it may have done something matters
 // for a tool that changes a page.
+/** For the model: the reason itself is in the failed tool's result. */
+const STOPPED_BY_ERROR = "Not run: an earlier tool's error stopped the question."
 const STOPPED_BEFORE = 'Not run: the user stopped the question before this action started.'
 const STOPPED_DURING =
   'Stopped by the user while this action was running; it may have partly happened. Check before trying it again.'
@@ -228,7 +230,7 @@ export class CopilotAgent {
       // A tool's error stopped the question: nothing more runs.
       if (this.stopReason) {
         refused.add(toolCall.id)
-        return { block: true, reason: `Not run: the question stopped. ${this.stopReason}`, terminate: true }
+        return { block: true, reason: STOPPED_BY_ERROR, terminate: true }
       }
       if (steps >= this.maxSteps) {
         hitLimit = true

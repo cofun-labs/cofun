@@ -239,7 +239,7 @@ describe('edit_page details', () => {
     )
   })
 
-  it('says the edit was saved, and stops the question, when Notion turns the read-back away', async () => {
+  it('[UC-NOTION-002-S13] says the edit was saved, and stops the question, when Notion turns the read-back away', async () => {
     const ws = workspace([1], [block(1, 'text', 'Intro')])
     const tab = open(ws)
     await read()

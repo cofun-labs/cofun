@@ -547,12 +547,24 @@ describe('when Notion turns requests away', () => {
     expect(tab.workspace.transactions).toEqual([])
   })
 
-  it('says the outcome of a change is unknown when Notion is too busy, which may come after it was applied', async () => {
+  it('[UC-NOTION-002-S12] says the outcome of a change is unknown when Notion is too busy, which may come after it was applied', async () => {
     const tab = new FakeNotionTab(PAGE_URL).limit('saveTransactionsFanout', 1, 529).install()
     const err = await notionError((await activeNotionTab()).client.submitTransaction(SPACE, [rename], 'rename page'))
     // The user is told the change may have been saved, since the question stops before the AI can say so.
     expect([err.code, err.message, err.stopsQuestion]).toEqual(['outcome_unknown', BUSY_UNKNOWN, BUSY_STOP_UNKNOWN])
     expect(tab.sent).toHaveLength(1)
+  })
+
+  it('reports a refusal ahead of another failure that came first in parallel lookups', async () => {
+    // 200 records go as 2 batches at once: Notion fails the first and turns the second away.
+    const ids = Array.from({ length: 200 }, (_, i) => `1d1d1d1d-0000-4000-8000-${String(i).padStart(12, '0')}`)
+    new FakeNotionTab(PAGE_URL)
+      .respondText('syncRecordValuesMain', 503, 'busy')
+      .limit('syncRecordValuesMain', 1)
+      .install()
+    const { client } = await activeNotionTab()
+    const err = await notionError(client.findRecords(ids.map((id) => ({ table: 'block', id }))))
+    expect([err.code, err.stopsQuestion]).toEqual(['rate_limited', LIMITED_STOP])
   })
 
   it('treats other errors as before: the question goes on', async () => {
