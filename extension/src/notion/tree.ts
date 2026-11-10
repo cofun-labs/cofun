@@ -1,6 +1,9 @@
 // Listing pages as Notion's sidebar shows them: titles and ids, level by level, without content.
+// Like Notion's own sidebar, it finds which children are pages by looking up the blocks a page
+// holds, so it asks for as few of them as it can: in order, only until the list is full, each at
+// most once, and only so many lookups per list.
 import { mergeRecordMaps, type NotionClient, type NotionRecord, type RecordMap } from './api'
-import { LAYOUT_TYPES, PAGE_TYPES, hexId } from './markdown'
+import { LAYOUT_TYPES, PAGE_TYPES, collectionId, hexId } from './markdown'
 
 export interface TreeNode {
   id: string
@@ -9,142 +12,216 @@ export interface TreeNode {
   children: TreeNode[]
 }
 
-/**
- * Builds the tree under `roots` (page ids, in order), `depth` levels deep, with at most `limit`
- * entries. Each level costs one request (plus one per layout level, and one for database names).
- */
-export async function pageTree(
-  client: NotionClient,
-  roots: string[],
-  depth: number,
-  limit: number,
-  /** Records already loaded; more are added as the tree is built. */
-  records: RecordMap = {},
-): Promise<{
-  nodes: TreeNode[]
-  truncated: boolean
-  /** Where in `roots` the next top-level entries start, when more of them are pages than were listed. */
-  next?: number
-}> {
-  let count = 0
-  let truncated = false
-  // Roots are looked up a limit's worth at a time, until enough of them turn out to be pages.
-  const top: TreeNode[] = []
-  // Where in `roots` each top-level node came from: an id can be in a list twice.
-  const at: number[] = []
-  for (let from = 0; from < roots.length && top.length <= limit; from += limit) {
-    const slice = roots.slice(from, from + limit)
-    const unknown = slice.filter((id) => !records.block?.[id])
-    if (unknown.length)
-      mergeRecordMaps(records, await client.findRecords(unknown.map((id) => ({ table: 'block', id }))))
-    top.push(...(await nodesFor(client, slice, records)))
-    slice.forEach((id, i) => {
-      if (PAGE_TYPES.has(String(records.block?.[id]?.type))) at.push(from + i)
-    })
-  }
-  const nodes = take(top)
-  const next = top.length > nodes.length && nodes.length ? at[nodes.length - 1] + 1 : undefined
-  let level = nodes
-  // A level is expanded only while there is room for more entries.
-  let d = 1
-  for (; d < depth && level.length && !truncated && count < limit; d++) {
-    // Children of pages only: a database's rows aren't sidebar pages. Children are listed in their
-    // parents' order, so only as many parents are looked into as there is room left for entries;
-    // the list says it may be cut off when others could have pages under them.
-    const pages = level.filter((n) => !n.database)
-    const parents = pages.slice(0, limit - count)
-    if (pages.slice(parents.length).some((n) => contentOf(records, n.id).length)) truncated = true
-    const childIds = await pageChildren(
-      client,
-      parents.map((n) => n.id),
-      records,
-    )
-    // Every child of this level at once, so database names cost one request per level.
-    const all = await nodesFor(
-      client,
-      parents.flatMap((p) => childIds.get(p.id) ?? []),
-      records,
-    )
-    const byId = new Map(all.map((n) => [n.id, n]))
-    const next: TreeNode[] = []
-    for (const parent of parents) {
-      const kids = (childIds.get(parent.id) ?? []).map((id) => byId.get(id)).filter((n): n is TreeNode => !!n)
-      parent.children = take(kids.map((n) => ({ ...n, children: [] })))
-      next.push(...parent.children)
-    }
-    level = next
-  }
-  // Full before the asked depth: pages on the last level shown may have pages under them that
-  // weren't listed, so the list is cut off.
-  if (!truncated && d < depth && level.some((n) => !n.database && contentOf(records, n.id).length)) truncated = true
-  return { nodes, truncated, next }
+/** Ids one lookup asks for at most: one request. */
+const LOOKUP_BATCH = 100
+/** How deep layout blocks (columns) are looked through. */
+const LAYOUT_HOPS = 3
 
-  function take(list: TreeNode[]): TreeNode[] {
-    const room = Math.max(0, limit - count)
-    if (list.length > room) truncated = true
-    const kept = list.slice(0, room)
-    count += kept.length
-    return kept
+/**
+ * What one tool call learned from Notion, shared by the lists it builds: the records found, and
+ * the ids already asked for, so ones that didn't come back (no access, in the trash) aren't asked
+ * for again.
+ */
+export class PageLookups {
+  private readonly asked = new Set<string>()
+
+  constructor(
+    readonly client: NotionClient,
+    readonly records: RecordMap = {},
+  ) {}
+
+  block(id: string): NotionRecord | undefined {
+    return this.records.block?.[id]
+  }
+
+  /** Whether a lookup could still tell something about this block. */
+  unknown(id: string): boolean {
+    return !this.records.block?.[id] && !this.asked.has(id)
+  }
+
+  /** Looks up, in one request, the blocks among `ids` not known or asked for yet. */
+  async blocks(ids: string[]): Promise<void> {
+    await this.find('block', ids.filter((id) => this.unknown(id)).slice(0, LOOKUP_BATCH))
+  }
+
+  /** Looks up the collections that name the databases among `blocks`. */
+  async collections(blocks: NotionRecord[]): Promise<void> {
+    const ids = blocks.map(collectionId).filter((id): id is string => !!id && !this.records.collection?.[id])
+    await this.find('collection', ids)
+  }
+
+  private async find(table: 'block' | 'collection', ids: string[]): Promise<void> {
+    const wanted = [...new Set(ids)].filter((id) => !this.asked.has(id))
+    if (!wanted.length) return
+    for (const id of wanted) this.asked.add(id)
+    mergeRecordMaps(this.records, await this.client.findRecords(wanted.map((id) => ({ table, id }))))
   }
 }
 
-/** The sidebar pages among `ids`, as nodes, using and adding to `records`. */
-async function nodesFor(client: NotionClient, ids: string[], records: RecordMap): Promise<TreeNode[]> {
-  const blocks = (ids: string[]) => ids.map((id) => records.block?.[id]).filter((b): b is NotionRecord => !!b)
-  const pages = blocks(ids).filter((b) => PAGE_TYPES.has(String(b.type)))
+export interface PageTree {
+  nodes: TreeNode[]
+  /** Where in `ids` the entries not listed start, when the top level stopped before its end. */
+  next?: number
+  /** Whether pages are known to follow `next`, rather than maybe. */
+  nextKnown: boolean
+  /**
+   * Pages under the listed ones that the list leaves out: `cut` when some are known to be left
+   * out, `unchecked` when some listed pages weren't looked into.
+   */
+  deeper?: 'cut' | 'unchecked'
+}
+
+/**
+ * Builds the tree under `ids` (the blocks of the top level, in order: layout blocks are looked
+ * through), `depth` levels deep, with at most `limit` entries. At most `lookups` block lookups
+ * (one request each) are made; where it stops for lack of them, the result says what wasn't
+ * looked into.
+ */
+export async function pageTree(
+  cache: PageLookups,
+  ids: string[],
+  { depth, limit, lookups }: { depth: number; limit: number; lookups: number },
+): Promise<PageTree> {
+  const budget = { left: lookups }
+  const top = await walk(cache, [ids], limit, budget)
+  const nodes = await nodesFor(cache, top.pages[0])
+  let count = nodes.length
+  const stopped = top.rest !== 'none'
+  let deeper: PageTree['deeper']
+  let level = nodes
+  for (let d = 1; d < depth; d++) {
+    // Children of pages only: a database's rows aren't sidebar pages.
+    const parents = level.filter((n) => !n.database && contentOf(cache, n.id).length)
+    if (!parents.length) break
+    if (count >= limit) {
+      deeper ??= 'unchecked'
+      break
+    }
+    const found = await walk(
+      cache,
+      parents.map((p) => contentOf(cache, p.id)),
+      limit - count,
+      budget,
+    )
+    // Every child of this level at once, so database names cost one request per level.
+    const byId = new Map((await nodesFor(cache, found.pages.flat())).map((n) => [n.id, n]))
+    level = []
+    parents.forEach((parent, i) => {
+      parent.children = found.pages[i].map((id) => ({ ...byId.get(id)!, children: [] }))
+      level.push(...parent.children)
+    })
+    count += level.length
+    if (found.rest === 'pages') deeper = 'cut'
+    else if (found.rest === 'unchecked') deeper ??= 'unchecked'
+  }
+  return {
+    nodes,
+    next: stopped ? top.resume : undefined,
+    nextKnown: top.rest === 'pages',
+    ...(deeper ? { deeper } : {}),
+  }
+}
+
+/**
+ * The first `room` pages among the entries of `lists` (one per parent, in the parents' order),
+ * looking through layout blocks. Blocks are looked up only as the walk reaches them, a batch at a
+ * time. Once the room is full, one more lookup at most tells whether more pages follow.
+ */
+async function walk(
+  cache: PageLookups,
+  lists: string[][],
+  room: number,
+  budget: { left: number },
+): Promise<{
+  /** The page ids found, per list. */
+  pages: string[][]
+  /** What follows the last page found: nothing, more pages, or blocks not looked up. */
+  rest: 'none' | 'pages' | 'unchecked'
+  /** Where in the first list the walk stopped: the block it stopped at, or the layout holding it. */
+  resume: number
+}> {
+  const pages = lists.map((): string[] => [])
+  let found = 0
+  let settling = false
+  for (let l = 0; l < lists.length; l++) {
+    // Each list is walked depth first, so a layout block's entries stand in its place.
+    const stack = [{ ids: lists[l], at: 0, hop: 0 }]
+    while (stack.length) {
+      const frame = stack[stack.length - 1]
+      if (frame.at >= frame.ids.length) {
+        stack.pop()
+        continue
+      }
+      const id = frame.ids[frame.at]
+      const stop = (rest: 'pages' | 'unchecked') => ({
+        pages,
+        rest,
+        resume: l ? 0 : stack.length > 1 ? stack[0].at - 1 : stack[0].at,
+      })
+      if (cache.unknown(id)) {
+        if (budget.left <= 0 || settling) return stop('unchecked')
+        settling = found >= room
+        budget.left--
+        await cache.blocks(upcoming(cache, stack, lists.slice(l + 1)))
+      }
+      const block = cache.block(id)
+      if (block && PAGE_TYPES.has(String(block.type))) {
+        if (found >= room) return stop('pages')
+        pages[l].push(id)
+        found++
+      }
+      frame.at++
+      if (block && LAYOUT_TYPES.has(String(block.type)) && frame.hop < LAYOUT_HOPS)
+        stack.push({ ids: contentOf(cache, id), at: 0, hop: frame.hop + 1 })
+    }
+  }
+  return { pages, rest: 'none', resume: 0 }
+}
+
+/**
+ * The blocks to look up next, at most a batch of them: those not known yet, in the order the walk
+ * reaches them (what is left of each frame, then the lists after it), looking through layout
+ * blocks already known.
+ */
+function upcoming(
+  cache: PageLookups,
+  stack: { ids: string[]; at: number; hop: number }[],
+  lists: string[][],
+): string[] {
+  const out = new Set<string>()
+  const visit = (ids: string[], hop: number): boolean => {
+    for (const id of ids) {
+      if (out.size >= LOOKUP_BATCH) return false
+      const block = cache.block(id)
+      if (!block) {
+        if (cache.unknown(id)) out.add(id)
+      } else if (LAYOUT_TYPES.has(String(block.type)) && hop < LAYOUT_HOPS && !visit(contentOf(cache, id), hop + 1))
+        return false
+    }
+    return true
+  }
+  for (let f = stack.length - 1; f >= 0; f--) if (!visit(stack[f].ids.slice(stack[f].at), stack[f].hop)) break
+  for (const list of lists) if (out.size >= LOOKUP_BATCH || !visit(list, 0)) break
+  return [...out]
+}
+
+/** The sidebar pages among `ids`, as nodes, in order. */
+async function nodesFor(cache: PageLookups, ids: string[]): Promise<TreeNode[]> {
+  const pages = ids.map((id) => cache.block(id)).filter((b): b is NotionRecord => !!b && PAGE_TYPES.has(String(b.type)))
   // Databases are named by their collection.
-  const collections = pages.map((b) => collectionId(b)).filter((id): id is string => !!id && !records.collection?.[id])
-  if (collections.length)
-    mergeRecordMaps(records, await client.findRecords(collections.map((id) => ({ table: 'collection', id }))))
+  await cache.collections(pages.filter((b) => b.type !== 'page'))
   return pages.map((b) => {
     const database = b.type !== 'page'
-    const collection = database ? records.collection?.[collectionId(b) ?? ''] : undefined
+    const collection = database ? cache.records.collection?.[collectionId(b) ?? ''] : undefined
     const title = runsText(database ? collection?.name : (b.properties as { title?: unknown } | undefined)?.title)
     return { id: b.id, title: title || (database ? 'Untitled database' : 'Untitled'), database, children: [] }
   })
 }
 
-/** The ids of blocks directly under each parent, looking through layout blocks, in order. */
-export async function pageChildren(
-  client: NotionClient,
-  parents: string[],
-  records: RecordMap,
-): Promise<Map<string, string[]>> {
-  const out = new Map<string, string[]>()
-  // Each parent's list as it is resolved; layout blocks are replaced by what they hold.
-  let pending = new Map(parents.map((p) => [p, contentOf(records, p)]))
-  for (let hop = 0; hop < 3 && pending.size; hop++) {
-    const missing = [...new Set([...pending.values()].flat())].filter((id) => !records.block?.[id])
-    if (missing.length)
-      mergeRecordMaps(records, await client.findRecords(missing.map((id) => ({ table: 'block', id }))))
-    const again = new Map<string, string[]>()
-    for (const [parent, ids] of pending) {
-      const flat: string[] = []
-      let layouts = false
-      for (const id of ids) {
-        const block = records.block?.[id]
-        if (block && LAYOUT_TYPES.has(String(block.type))) {
-          flat.push(...contentOf(records, id))
-          layouts = true
-        } else flat.push(id)
-      }
-      if (layouts) again.set(parent, flat)
-      else out.set(parent, flat)
-    }
-    pending = again
-  }
-  for (const [parent, ids] of pending) out.set(parent, ids)
-  return out
-}
-
-function contentOf(records: RecordMap, id: string): string[] {
-  const content = records.block?.[id]?.content
+/** The ids of the blocks a known block holds, in order. */
+export function contentOf(cache: PageLookups, id: string): string[] {
+  const content = cache.block(id)?.content
   return Array.isArray(content) ? content.filter((c): c is string => typeof c === 'string') : []
-}
-
-function collectionId(block: NotionRecord): string | undefined {
-  const pointer = (block.format as { collection_pointer?: { id?: string } } | undefined)?.collection_pointer
-  return (block.collection_id as string | undefined) ?? pointer?.id
 }
 
 export function runsText(value: unknown): string {

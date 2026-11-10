@@ -1,11 +1,16 @@
-// The list_pages tool (extension/src/tools.ts) against a fake Notion tab that answers in the
-// shapes Notion's getSpaces and syncRecordValuesMain return.
+// The list_pages tool (extension/src/tools.ts) against a fake Notion tab: a fake workspace answers
+// block lookups (syncRecordValuesMain) the way Notion does, and getSpaces and getTeamsV2 answer
+// with queued responses in Notion's shapes.
 import { afterEach, describe, expect, it } from 'vitest'
-import { LIST_LIMIT, SECTION_LIMIT, listPages } from '../../extension/src/tools'
-import { FakeNotionTab, PAGE, PAGE_URL, SPACE, USER, notionError, restoreGlobals } from './notion-tab'
+import { LIST_LIMIT, LIST_LOOKUPS, SECTION_LIMIT, forgetReads, listPages } from '../../extension/src/tools'
+import { FakeNotionTab, FakeWorkspace, PAGE, PAGE_URL, SPACE, USER, notionError, restoreGlobals } from './notion-tab'
 import { LIMITED_STOP, NO_USER_MAP } from '../../extension/src/notion/api'
 
-afterEach(restoreGlobals)
+afterEach(() => {
+  restoreGlobals()
+  // The open page's workspace is remembered across calls.
+  forgetReads()
+})
 
 const hex = (id: string) => id.replace(/-/g, '')
 const id = (n: number) => `a0a0a0a0-0000-4000-8000-${n.toString(16).padStart(12, '0')}`
@@ -21,19 +26,35 @@ const page = (n: number, title: string, content: string[] = []) => ({
   properties: { title: [[title]] },
   content,
 })
-/** syncRecordValuesMain's answer holding `blocks` (and collections). */
-function records(blocks: Rec[], collections: Rec[] = []) {
-  return {
-    recordMap: {
-      __version__: 3,
-      block: Object.fromEntries(blocks.map((b) => [b.id, wrapped(b)])),
-      ...(collections.length ? { collection: Object.fromEntries(collections.map((c) => [c.id, wrapped(c)])) } : {}),
-    },
-  }
+/** Pages with these ids, titled `${title} ${i}`, each holding `content(i)`. */
+const pages = (ids: string[], title: string, content: (i: number) => string[] = () => []) =>
+  ids.map((m, i) => ({ ...page(0, `${title} ${i}`, content(i)), id: m }))
+const text = (ids: string[]) => ids.map((m) => ({ id: m, type: 'text', properties: { title: [['Some text']] } }))
+const range = (from: number, count: number) => Array.from({ length: count }, (_, i) => id(from + i))
+/** A page holding `words` text blocks and then one subpage, with those blocks. */
+const wordy = (pageId: string, title: string, words: string[], sub: number) => [
+  { ...page(0, title, [...words, id(sub)]), id: pageId },
+  ...text(words),
+  page(sub, 'Sub'),
+]
+
+/**
+ * A Notion tab on the open page, whose block lookups a workspace holding `blocks` (and the open
+ * page) answers. Ids not in it come back missing, as Notion leaves out blocks the user can't open.
+ */
+function notion(blocks: Rec[], { collections = [] as Rec[], cookie = undefined as string | undefined } = {}) {
+  const tab = new FakeNotionTab(PAGE_URL, ...(cookie === undefined ? [] : [cookie]))
+  const workspace = new FakeWorkspace(
+    [{ id: PAGE, type: 'page', properties: { title: [['Fixture page']] } }, ...blocks],
+    SPACE,
+  )
+  for (const c of collections) workspace.collections.set(c.id as string, { version: 1, ...c } as never)
+  tab.workspace = workspace
+  return tab
 }
-const OPEN_PAGE = records([{ id: PAGE, type: 'page', properties: { title: [['Fixture page']] } }])
 
 const run = async (args: Rec = {}) => (await listPages.run(args)) as string
+const listed = (result: string) => result.split('\n').filter((l) => l.trimStart().startsWith('- '))
 
 const VIEW = 'b0b0b0b0-0000-4000-8000-000000000001'
 /** getSpaces' answer for the tab's user: the workspace (teamspaces on) and their view of it. */
@@ -68,27 +89,32 @@ function teams(list: Rec[]) {
   }
 }
 const endpoints = (tab: FakeNotionTab) => tab.sent.map((r) => r.url.split('/api/v3/')[1])
+/** The record lookups sent, each as the ids it asked for. */
+const lookups = (tab: FakeNotionTab) =>
+  tab.sent
+    .filter((r) => r.url.endsWith('/syncRecordValuesMain'))
+    .map((r) => (r.body.requests as { pointer: { id: string } }[]).map((q) => q.pointer.id))
+/** The lookups a section of the overview may make, by its limit. */
+const sectionLookups = Math.ceil((LIST_LOOKUPS * SECTION_LIMIT) / LIST_LIMIT)
 
 describe('UC-NOTION-005 browse the workspace', () => {
   it('[UC-NOTION-005-S01] lists the top level by section, with titles and ids and no content', async () => {
-    const tab = new FakeNotionTab(PAGE_URL)
-      .respond('syncRecordValuesMain', 200, OPEN_PAGE)
+    const tab = notion(
+      [
+        page(1, 'Notes', [id(9)]),
+        { id: id(2), type: 'collection_view_page', collection_id: COLLECTION },
+        page(3, 'Shared plan'),
+        page(5, 'Company home'),
+        page(4, 'Eng handbook'),
+      ],
+      { collections: [{ id: COLLECTION, name: [['Tasks']] }] },
+    )
       .respond(
         'getSpaces',
         200,
         spaces({ pages: [id(5)] }, { private_pages: [id(1), id(2)], shared_pages_manual_sort: [id(3)] }),
       )
       .respond('getTeamsV2', 200, teams([team(1, 'Engineering', [id(4)])]))
-      // One lookup per section, plus the database's name.
-      .respond(
-        'syncRecordValuesMain',
-        200,
-        records([page(1, 'Notes', [id(9)]), { id: id(2), type: 'collection_view_page', collection_id: COLLECTION }]),
-      )
-      .respond('syncRecordValuesMain', 200, records([], [{ id: COLLECTION, name: [['Tasks']] }]))
-      .respond('syncRecordValuesMain', 200, records([page(3, 'Shared plan')]))
-      .respond('syncRecordValuesMain', 200, records([page(5, 'Company home')]))
-      .respond('syncRecordValuesMain', 200, records([page(4, 'Eng handbook')]))
       .install()
 
     expect(await run()).toBe(
@@ -109,13 +135,13 @@ describe('UC-NOTION-005 browse the workspace', () => {
         `- 📄 Eng handbook ^${hex(id(4))}`,
       ].join('\n'),
     )
-    // No page content was loaded.
+    // No page content was loaded, nor the blocks under the listed pages.
     expect(endpoints(tab)).not.toContain('loadPageChunk')
+    expect(lookups(tab).flat()).not.toContain(id(9))
   })
 
   it('[UC-NOTION-005-S05] lists the teamspaces the user joined, in the order Notion gives them, without archived ones', async () => {
-    const tab = new FakeNotionTab(PAGE_URL)
-      .respond('syncRecordValuesMain', 200, OPEN_PAGE)
+    const tab = notion([page(1, 'Notes'), page(21, 'Brand'), page(22, 'Icons'), page(11, 'Eng handbook')])
       .respond('getSpaces', 200, spaces({}, { private_pages: [id(1)] }))
       .respond(
         'getTeamsV2',
@@ -126,9 +152,6 @@ describe('UC-NOTION-005 browse the workspace', () => {
           team(1, 'Engineering', [id(11)]),
         ]),
       )
-      .respond('syncRecordValuesMain', 200, records([page(1, 'Notes')]))
-      .respond('syncRecordValuesMain', 200, records([page(21, 'Brand'), page(22, 'Icons')]))
-      .respond('syncRecordValuesMain', 200, records([page(11, 'Eng handbook')]))
       .install()
 
     expect(await run()).toBe(
@@ -146,30 +169,23 @@ describe('UC-NOTION-005 browse the workspace', () => {
         `- 📄 Eng handbook ^${hex(id(11))}`,
       ].join('\n'),
     )
-    // Only teamspaces the user joined are asked for, and the archived one's pages never are.
     const asked = tab.sent.find((r) => r.url.endsWith('/getTeamsV2'))!
     expect(asked.body).toEqual({ spaceId: SPACE, teamTypes: ['Joined'] })
-    expect(asked.headers['x-notion-space-id']).toBe(SPACE)
+    // The archived teamspace's pages were never looked up.
     expect(JSON.stringify(tab.sent.map((r) => r.body))).not.toContain(id(31))
   })
 
   it('[UC-NOTION-005-S02] lists the pages under a page, as deep as asked and no deeper', async () => {
-    const root = page(10, 'Projects', [id(11), id(12), id(13)])
-    const level1 = [
+    const tab = notion([
+      page(10, 'Projects', [id(11), id(12), id(13)]),
       page(11, 'Alpha', [id(21)]),
       { id: id(12), type: 'text', properties: { title: [['Just text']] } },
       { id: id(13), type: 'column_list', content: [id(14)] },
-    ]
-    const column = { id: id(14), type: 'column', content: [id(15)] }
-    const beta = page(15, 'Beta')
-    const level2 = [page(21, 'Alpha notes', [id(31)])]
-    const tab = new FakeNotionTab(PAGE_URL)
-      .respond('syncRecordValuesMain', 200, records([root]))
-      .respond('syncRecordValuesMain', 200, records(level1))
-      .respond('syncRecordValuesMain', 200, records([column]))
-      .respond('syncRecordValuesMain', 200, records([beta]))
-      .respond('syncRecordValuesMain', 200, records(level2))
-      .install()
+      { id: id(14), type: 'column', content: [id(15)] },
+      page(15, 'Beta'),
+      page(21, 'Alpha notes', [id(31)]),
+      page(31, 'Too deep'),
+    ]).install()
 
     expect(await run({ page: hex(id(10)), depth: 2 })).toBe(
       [
@@ -185,78 +201,42 @@ describe('UC-NOTION-005 browse the workspace', () => {
   })
 
   it('[UC-NOTION-005-S03] says when the list was cut off', async () => {
-    const many = Array.from({ length: LIST_LIMIT + 20 }, (_, i) => id(100 + i))
-    const root = page(10, 'Big', many)
-    new FakeNotionTab(PAGE_URL)
-      .respond('syncRecordValuesMain', 200, records([root]))
-      // The children are looked up 100 at a time.
-      .respond(
-        'syncRecordValuesMain',
-        200,
-        records(many.slice(0, 100).map((m, i) => ({ ...page(0, `Page ${i}`), id: m }))),
-      )
-      .respond(
-        'syncRecordValuesMain',
-        200,
-        records(many.slice(100).map((m, i) => ({ ...page(0, `Page ${100 + i}`), id: m }))),
-      )
-      .install()
+    const many = range(100, LIST_LIMIT + 20)
+    notion([page(10, 'Big', many), ...pages(many, 'Page')]).install()
     const result = await run({ page: hex(id(10)) })
-    expect(result.split('\n').filter((l) => l.startsWith('- '))).toHaveLength(LIST_LIMIT)
+    expect(listed(result)).toHaveLength(LIST_LIMIT)
     expect(result).toContain(`(Cut off: more entries follow. List them with \`offset: ${LIST_LIMIT}\`.)`)
   })
 
   it('[UC-NOTION-005-S06] lists the entries after the ones a cut-off list showed', async () => {
     // A text block among the children counts as an entry, so the offset lines up with the page's own list.
-    const many = [id(99), ...Array.from({ length: LIST_LIMIT + 20 }, (_, i) => id(100 + i))]
-    const root = page(10, 'Big', many)
-    const blocks = [
-      { id: id(99), type: 'text', properties: { title: [['Intro']] } },
-      ...many.slice(1).map((m, i) => ({ ...page(0, `Page ${i}`), id: m })),
-    ]
-    const tab = () =>
-      new FakeNotionTab(PAGE_URL)
-        .respond('syncRecordValuesMain', 200, records([root]))
-        // The children are looked up 100 at a time, to see through columns.
-        .respond('syncRecordValuesMain', 200, records(blocks.slice(0, 100)))
-        .respond('syncRecordValuesMain', 200, records(blocks.slice(100)))
-        .install()
-    tab()
+    const many = [id(99), ...range(100, LIST_LIMIT + 20)]
+    const blocks = [page(10, 'Big', many), ...text([id(99)]), ...pages(many.slice(1), 'Page')]
+    notion(blocks).install()
     const first = await run({ page: hex(id(10)) })
     const next = LIST_LIMIT + 1
     expect(first).toContain(`List them with \`offset: ${next}\`.`)
-    tab()
+    notion(blocks).install()
     const result = await run({ page: hex(id(10)), offset: next })
     expect(result.split('\n')[0]).toBe(`Pages under “Big” ^${hex(id(10))}, from entry ${next}:`)
-    expect(result.split('\n').filter((l) => l.startsWith('- '))).toEqual(
-      many.slice(next).map((m, i) => `- 📄 Page ${LIST_LIMIT + i} ^${hex(m)}`),
-    )
+    expect(listed(result)).toEqual(many.slice(next).map((m, i) => `- 📄 Page ${LIST_LIMIT + i} ^${hex(m)}`))
     expect(result).not.toContain('Cut off')
   })
 
   it('[UC-NOTION-005-S06] lists one top-level section from where it was cut off', async () => {
-    const many = Array.from({ length: SECTION_LIMIT + 10 }, (_, i) => id(200 + i))
+    const many = range(200, SECTION_LIMIT + 10)
     const workspace = () =>
-      new FakeNotionTab(PAGE_URL)
-        .respond('syncRecordValuesMain', 200, OPEN_PAGE)
+      notion([page(1, 'Notes'), ...pages(many, 'Eng')])
         .respond('getSpaces', 200, spaces({}, { private_pages: [id(1)] }))
         .respond('getTeamsV2', 200, teams([team(1, 'Engineering', many)]))
+        .install()
     workspace()
-      .respond('syncRecordValuesMain', 200, records([page(1, 'Notes')]))
-      .respond('syncRecordValuesMain', 200, records(many.map((m, i) => ({ ...page(0, `Eng ${i}`), id: m }))))
-      .install()
     const first = await run()
     expect(first).toContain(
       `(Cut off: more entries follow. List them with \`section: "Teamspace: Engineering"\` and \`offset: ${SECTION_LIMIT}\`.)`,
     )
 
     workspace()
-      .respond(
-        'syncRecordValuesMain',
-        200,
-        records(many.slice(SECTION_LIMIT).map((m, i) => ({ ...page(0, `Eng ${SECTION_LIMIT + i}`), id: m }))),
-      )
-      .install()
     const rest = await run({ section: 'Teamspace: Engineering', offset: SECTION_LIMIT })
     expect(rest).toBe(
       [
@@ -266,19 +246,29 @@ describe('UC-NOTION-005 browse the workspace', () => {
       ].join('\n'),
     )
   })
+
+  it('[UC-NOTION-005-S08] says what it did not look into when the list fills up before the asked depth', async () => {
+    // Exactly full at the top level, and every page holds blocks: whether they hold pages isn't looked up.
+    const kids = range(300, LIST_LIMIT)
+    const tab = notion([page(10, 'Exactly full', kids), ...pages(kids, 'Child', () => [id(900)])]).install()
+    const result = await run({ page: hex(id(10)), depth: 2 })
+    expect(listed(result)).toHaveLength(LIST_LIMIT)
+    expect(result.split('\n').at(-1)).toBe(
+      '(Not looked into: what is under some of the pages shown, to keep this list short and its requests to Notion ' +
+        'few. To see what is under a listed page, list it by its id.)',
+    )
+    expect(result).not.toContain('Cut off')
+    expect(lookups(tab).flat()).not.toContain(id(900))
+  })
 })
 
 describe('list_pages sections', () => {
   it('gives each top-level section its own limit, so a long one hides no other', async () => {
-    const many = Array.from({ length: SECTION_LIMIT + 10 }, (_, i) => id(200 + i))
+    const many = range(200, SECTION_LIMIT + 10)
     // A shared page that is also private is listed under Private only.
-    const getSpaces = spaces({}, { private_pages: many, shared_pages_manual_sort: [id(3), many[0]] })
-    new FakeNotionTab(PAGE_URL)
-      .respond('syncRecordValuesMain', 200, OPEN_PAGE)
-      .respond('getSpaces', 200, getSpaces)
+    notion([...pages(many, 'Private'), page(3, 'Shared plan')])
+      .respond('getSpaces', 200, spaces({}, { private_pages: many, shared_pages_manual_sort: [id(3), many[0]] }))
       .respond('getTeamsV2', 200, teams([]))
-      .respond('syncRecordValuesMain', 200, records(many.map((m, i) => ({ ...page(0, `Private ${i}`), id: m }))))
-      .respond('syncRecordValuesMain', 200, records([page(3, 'Shared plan')]))
       .install()
     const result = await run()
     expect(result).toContain(
@@ -308,8 +298,7 @@ describe('list_pages arguments', () => {
   })
 
   it('names the sections there are when asked for one that is not', async () => {
-    new FakeNotionTab(PAGE_URL)
-      .respond('syncRecordValuesMain', 200, OPEN_PAGE)
+    notion([])
       .respond('getSpaces', 200, spaces({}, { private_pages: [id(1)] }))
       .respond('getTeamsV2', 200, teams([team(1, 'Engineering', [id(11)])]))
       .install()
@@ -320,8 +309,7 @@ describe('list_pages arguments', () => {
 
   it('tells apart teamspaces named like a built-in section or like each other', async () => {
     const workspace = () =>
-      new FakeNotionTab(PAGE_URL)
-        .respond('syncRecordValuesMain', 200, OPEN_PAGE)
+      notion([page(1, 'Notes'), page(11, 'Team notes'), page(21, 'First'), page(31, 'Second'), page(41, 'Third')])
         .respond('getSpaces', 200, spaces({}, { private_pages: [id(1)] }))
         .respond(
           'getTeamsV2',
@@ -333,165 +321,226 @@ describe('list_pages arguments', () => {
             team(4, 'Design (1)', [id(41)]),
           ]),
         )
-    workspace().install()
+        .install()
+    workspace()
     await expect(run({ section: 'nope' })).rejects.toThrow(
       'The sections are: Private, Shared, Workspace, Teamspace: Private, Teamspace: Design (1), Teamspace: Design (2), ' +
         'Teamspace: Design (1) (1).',
     )
-    const listed = async (section: string, page: Rec) => {
+    const section = async (name: string) => {
       workspace()
-        .respond('syncRecordValuesMain', 200, records([page]))
-        .install()
-      return (await run({ section })).split('\n').slice(2)
+      return (await run({ section: name })).split('\n').slice(2)
     }
-    expect(await listed('Private', page(1, 'Notes'))).toEqual([`- 📄 Notes ^${hex(id(1))}`])
-    expect(await listed('Teamspace: Private', page(11, 'Team notes'))).toEqual([`- 📄 Team notes ^${hex(id(11))}`])
-    expect(await listed('teamspace: design (2)', page(31, 'Second'))).toEqual([`- 📄 Second ^${hex(id(31))}`])
-    expect(await listed('Teamspace: Design (1) (1)', page(41, 'Third'))).toEqual([`- 📄 Third ^${hex(id(41))}`])
+    expect(await section('Private')).toEqual([`- 📄 Notes ^${hex(id(1))}`])
+    expect(await section('Teamspace: Private')).toEqual([`- 📄 Team notes ^${hex(id(11))}`])
+    expect(await section('teamspace: design (2)')).toEqual([`- 📄 Second ^${hex(id(31))}`])
+    expect(await section('Teamspace: Design (1) (1)')).toEqual([`- 📄 Third ^${hex(id(41))}`])
     // A teamspace's own name picks it, even when another teamspace's label looks the same.
-    expect(await listed('Design (1)', page(41, 'Third'))).toEqual([`- 📄 Third ^${hex(id(41))}`])
+    expect(await section('Design (1)')).toEqual([`- 📄 Third ^${hex(id(41))}`])
     // A name two teamspaces share names neither.
-    workspace().install()
+    workspace()
     await expect(run({ section: 'Design' })).rejects.toThrow('No section “Design”.')
   })
 
   it('tells apart teamspaces whose names differ only in case', async () => {
     const workspace = () =>
-      new FakeNotionTab(PAGE_URL)
-        .respond('syncRecordValuesMain', 200, OPEN_PAGE)
+      notion([page(11, 'Upper'), page(21, 'Lower')])
         .respond('getSpaces', 200, spaces({}, {}))
         .respond('getTeamsV2', 200, teams([team(1, 'Design', [id(11)]), team(2, 'design', [id(21)])]))
-    workspace().install()
+        .install()
+    workspace()
     await expect(run({ section: 'nope' })).rejects.toThrow(
       'The sections are: Private, Shared, Workspace, Teamspace: Design (1), Teamspace: design (2).',
     )
     workspace()
-      .respond('syncRecordValuesMain', 200, records([page(21, 'Lower')]))
-      .install()
     expect((await run({ section: 'Teamspace: design (2)' })).split('\n').slice(2)).toEqual([
       `- 📄 Lower ^${hex(id(21))}`,
     ])
   })
 
   it('says a page with nothing under it has no pages', async () => {
-    new FakeNotionTab(PAGE_URL).respond('syncRecordValuesMain', 200, records([page(10, 'Empty')])).install()
+    notion([page(10, 'Empty')]).install()
     expect(await run({ page: hex(id(10)) })).toBe(`Pages under “Empty” ^${hex(id(10))}:\n\n(no pages)`)
   })
 })
 
 describe('list_pages at the limit', () => {
-  it('looks into only as many parents as there is room left for', async () => {
-    const kids = Array.from({ length: LIST_LIMIT - 2 }, (_, i) => id(300 + i))
-    const root = page(10, 'Nearly full', kids)
-    const tab = new FakeNotionTab(PAGE_URL)
-      .respond('syncRecordValuesMain', 200, records([root]))
-      .respond(
-        'syncRecordValuesMain',
-        200,
-        records(kids.map((k, i) => ({ ...page(0, `Child ${i}`, [id(1000 + i)]), id: k }))),
-      )
-      .respond('syncRecordValuesMain', 200, records([page(1000, 'Grandchild 0'), page(1001, 'Grandchild 1')]))
-      .install()
+  it('looks under the listed pages only until the list is full', async () => {
+    // Each child holds a lot of text before its one subpage, so every child looked into costs lookups.
+    const kids = range(300, LIST_LIMIT - 2)
+    const tab = notion([
+      page(10, 'Nearly full', kids),
+      ...kids.flatMap((k, i) => wordy(k, `Child ${i}`, range(10_000 + i * 200, 150), 1000 + i)),
+    ]).install()
     const result = await run({ page: hex(id(10)), depth: 2 })
-    // Only the first two children's blocks were asked for.
-    const asked = (tab.sent.at(-1)!.body as { requests: { pointer: { id: string } }[] }).requests
-    expect(asked.map((r) => r.pointer.id)).toEqual([id(1000), id(1001)])
-    expect(result.split('\n').filter((l) => l.trimStart().startsWith('- '))).toHaveLength(LIST_LIMIT)
-    expect(result).toContain('To see what is under a listed page, list it by its id.')
+    expect(listed(result)).toHaveLength(LIST_LIMIT)
+    expect(result).toContain(
+      `(Cut off: this list shows at most ${LIST_LIMIT} pages, so some pages under the ones shown are left out.`,
+    )
+    // The page itself, its children, the first two children's 302 blocks in batches of 100, and one
+    // more to tell that more pages follow: not the blocks of all 98 children.
+    expect(lookups(tab)).toHaveLength(7)
   })
 
   it('gives the next offset by position when the list holds an id twice', async () => {
     // The first child is listed again later; the offset still points past the last one shown.
-    const kids = Array.from({ length: LIST_LIMIT + 5 }, (_, i) => id(700 + i))
+    const kids = range(700, LIST_LIMIT + 5)
     kids[LIST_LIMIT - 1] = kids[0]
-    const root = page(10, 'Twice', kids)
-    new FakeNotionTab(PAGE_URL)
-      .respond('syncRecordValuesMain', 200, records([root]))
-      .respond(
-        'syncRecordValuesMain',
-        200,
-        records([...new Set(kids)].slice(0, 99).map((k, i) => ({ ...page(0, `Child ${i}`), id: k }))),
-      )
-      .respond(
-        'syncRecordValuesMain',
-        200,
-        records([...new Set(kids)].slice(99).map((k) => ({ ...page(0, 'More'), id: k }))),
-      )
-      .install()
+    notion([page(10, 'Twice', kids), ...pages([...new Set(kids)], 'Child')]).install()
     expect(await run({ page: hex(id(10)) })).toContain(`List them with \`offset: ${LIST_LIMIT}\`.)`)
   })
 
-  it('says pages under the ones shown are left out too when the top level is cut off deeper than one level', async () => {
-    const kids = Array.from({ length: LIST_LIMIT + 1 }, (_, i) => id(300 + i))
-    const root = page(10, 'Too many', kids)
-    new FakeNotionTab(PAGE_URL)
-      .respond('syncRecordValuesMain', 200, records([root]))
-      .respond(
-        'syncRecordValuesMain',
-        200,
-        records(kids.slice(0, 100).map((k, i) => ({ ...page(0, `Child ${i}`), id: k }))),
-      )
-      .respond('syncRecordValuesMain', 200, records(kids.slice(100).map((k) => ({ ...page(0, 'Last'), id: k }))))
-      .install()
+  it('says pages under the ones shown may be left out too when the top level is cut off deeper than one level', async () => {
+    const kids = range(300, LIST_LIMIT + 1)
+    notion([page(10, 'Too many', kids), ...pages(kids, 'Child', () => [id(900)])]).install()
     expect(await run({ page: hex(id(10)), depth: 2 })).toContain(
       `List them with \`offset: ${LIST_LIMIT}\`. Pages under the ones shown may be left out too. To see what is under a listed page, list it by its id.)`,
     )
   })
 
-  it("gives a section's own limit when the section fills up before the asked depth", async () => {
-    const kids = Array.from({ length: SECTION_LIMIT }, (_, i) => id(500 + i))
-    new FakeNotionTab(PAGE_URL)
-      .respond('syncRecordValuesMain', 200, OPEN_PAGE)
-      .respond('getSpaces', 200, spaces({}, { private_pages: kids }))
-      .respond('getTeamsV2', 200, teams([]))
-      .respond(
-        'syncRecordValuesMain',
-        200,
-        records(kids.map((k, i) => ({ ...page(0, `Child ${i}`, [id(900)]), id: k }))),
-      )
-      .install()
-    expect(await run({ depth: 2 })).toContain(`(Cut off: this list shows at most ${SECTION_LIMIT} pages,`)
+  it('says nothing is left out when the pages shown hold nothing', async () => {
+    const kids = range(300, LIST_LIMIT)
+    notion([page(10, 'Flat', kids), ...pages(kids, 'Child')]).install()
+    const result = await run({ page: hex(id(10)), depth: 3 })
+    expect(listed(result)).toHaveLength(LIST_LIMIT)
+    expect(result).not.toContain('(')
   })
 
-  it('[UC-NOTION-005-S03] says the list was cut off when it fills up before the asked depth', async () => {
-    const kids = Array.from({ length: LIST_LIMIT }, (_, i) => id(300 + i))
-    const root = page(10, 'Exactly full', kids)
-    new FakeNotionTab(PAGE_URL)
-      .respond('syncRecordValuesMain', 200, records([root]))
-      .respond(
-        'syncRecordValuesMain',
-        200,
-        records(kids.slice(0, 100).map((k, i) => ({ ...page(0, `Child ${i}`, [id(900)]), id: k }))),
-      )
+  it("gives a section's own limit when pages under it are cut off", async () => {
+    const kids = range(500, 30)
+    notion([
+      ...pages(kids, 'Child', (i) => [id(2000 + i * 2), id(2001 + i * 2)]),
+      ...pages(range(2000, 60), 'Grandchild'),
+    ])
+      .respond('getSpaces', 200, spaces({}, { private_pages: kids }))
+      .respond('getTeamsV2', 200, teams([]))
       .install()
+    const result = await run({ depth: 2 })
+    expect(listed(result)).toHaveLength(SECTION_LIMIT)
+    expect(result).toContain(
+      `(Cut off: this list shows at most ${SECTION_LIMIT} pages, so some pages under the ones shown are left out.`,
+    )
+  })
+})
+
+describe('list_pages requests to Notion', () => {
+  it('looks up each block at most once, even ones the user cannot open', async () => {
+    // Children the user can't open (missing from the workspace), some inside columns, at every level.
+    const kids = range(100, 10)
+    const blocks: Rec[] = [page(10, 'Root', [...range(5000, 20), ...kids])]
+    kids.forEach((k, i) => {
+      const [list, column, sub] = [id(200 + i), id(300 + i), id(400 + i)]
+      blocks.push(
+        { ...page(0, `Child ${i}`, [...range(6000 + i * 20, 10), list]), id: k },
+        { id: list, type: 'column_list', content: [column] },
+        { id: column, type: 'column', content: [...range(7000 + i * 20, 5), sub] },
+        { ...page(0, `Sub ${i}`, range(8000 + i * 20, 5)), id: sub },
+      )
+    })
+    const tab = notion(blocks).install()
+    const result = await run({ page: hex(id(10)), depth: 3 })
+    expect(listed(result)).toHaveLength(20)
+    const asked = lookups(tab).flat()
+    expect(asked.length).toBe(new Set(asked).size)
+    // The page, its blocks, then each level's blocks: the column lists and columns cost one more each.
+    expect(lookups(tab)).toHaveLength(7)
+  })
+
+  it(`stops after ${LIST_LOOKUPS} lookups and says what it did not look into`, async () => {
+    // Every child holds a lot of text before its one subpage.
+    const kids = range(100, 10)
+    const tab = notion([
+      page(10, 'Wordy', kids),
+      ...kids.flatMap((k, i) => wordy(k, `Child ${i}`, range(10_000 + i * 400, 300), 1000 + i)),
+    ]).install()
     const result = await run({ page: hex(id(10)), depth: 2 })
-    expect(result.split('\n').filter((l) => l.startsWith('- '))).toHaveLength(LIST_LIMIT)
-    // Every child is listed, so the way to the rest is through them, not an offset.
-    expect(result).toContain('To see what is under a listed page, list it by its id.')
-    expect(result).not.toContain('offset')
+    // The page itself, then the lookups one list may make.
+    expect(lookups(tab)).toHaveLength(1 + LIST_LOOKUPS)
+    expect(listed(result).length).toBeLessThan(20)
+    expect(result).toContain('(Not looked into: what is under some of the pages shown,')
+  })
+
+  it("picks up where a list ran out of lookups in a page's own blocks", async () => {
+    const words = range(10_000, LIST_LOOKUPS * 100 + 50)
+    const kids = range(100, 3)
+    const blocks = [page(10, 'Long', [...words, ...kids]), ...text(words), ...pages(kids, 'Child')]
+    notion(blocks).install()
+    const first = await run({ page: hex(id(10)) })
+    expect(first).toContain(`(Cut off: more entries may follow. List them with \`offset: ${LIST_LOOKUPS * 100}\`.)`)
+    notion(blocks).install()
+    const rest = await run({ page: hex(id(10)), offset: LIST_LOOKUPS * 100 })
+    expect(listed(rest)).toEqual(kids.map((k, i) => `- 📄 Child ${i} ^${hex(k)}`))
+  })
+
+  it("shares the lookups across the overview's sections by their limits", async () => {
+    // Every private page holds a lot of text before its one subpage.
+    const own = range(100, 40)
+    const tab = notion([
+      ...own.flatMap((k, i) => wordy(k, `Private ${i}`, range(10_000 + i * 400, 300), 1000 + i)),
+      page(3, 'Shared plan'),
+    ])
+      .respond('getSpaces', 200, spaces({}, { private_pages: own, shared_pages_manual_sort: [id(3)] }))
+      .respond('getTeamsV2', 200, teams([]))
+      .install()
+    const result = await run({ depth: 2 })
+    // The open page, then Private's share (its limit is half the list's), then one for Shared.
+    expect(lookups(tab)).toHaveLength(1 + sectionLookups + 1)
+    expect(result).toContain(`Shared\n- 📄 Shared plan ^${hex(id(3))}`)
+  })
+
+  it('names a section it ran out of lookups for as not listed', async () => {
+    // None of Private's pages can be opened, so looking for one runs out of lookups.
+    const tab = notion([page(3, 'Shared plan')])
+      .respond('getSpaces', 200, spaces({}, { private_pages: range(10_000, 2000), shared_pages_manual_sort: [id(3)] }))
+      .respond('getTeamsV2', 200, teams([]))
+      .install()
+    const result = await run()
+    expect(result).toContain('Not listed, to keep the list short: Private. List one with `section`.')
+    expect(result).toContain(`Shared\n- 📄 Shared plan ^${hex(id(3))}`)
+    expect(lookups(tab)).toHaveLength(1 + sectionLookups + 1)
+  })
+
+  it("asks for the open page's workspace once", async () => {
+    const tab = notion([page(1, 'Notes')])
+      .respond('getSpaces', 200, spaces({}, { private_pages: [id(1)] }))
+      .respond('getTeamsV2', 200, teams([]))
+      .respond('getSpaces', 200, spaces({}, { private_pages: [id(1)] }))
+      .respond('getTeamsV2', 200, teams([]))
+      .install()
+    await run()
+    await run()
+    expect(lookups(tab).filter((ids) => ids.includes(PAGE))).toHaveLength(1)
+  })
+
+  it('stops the question when Notion turns a lookup away, and sends nothing more', async () => {
+    const kids = range(100, 3)
+    const root = page(10, 'Root', kids)
+    const tab = notion([root, ...pages(kids, 'Child', () => [id(900)])])
+      .respond('syncRecordValuesMain', 200, { recordMap: { __version__: 3, block: { [root.id]: wrapped(root) } } })
+      .limit('syncRecordValuesMain', 1)
+      .install()
+    expect((await notionError(run({ page: hex(id(10)), depth: 2 }))).stopsQuestion).toBe(LIMITED_STOP)
+    expect(lookups(tab)).toHaveLength(2)
   })
 })
 
 describe('list_pages workspace', () => {
   it("reads the tab's own user's view when several signed-in users share the workspace", async () => {
     const OTHER = '0e0e0e0e-0000-4000-8000-000000000099'
-    new FakeNotionTab(PAGE_URL)
-      .respond('syncRecordValuesMain', 200, OPEN_PAGE)
+    notion([page(1, 'Mine'), page(2, 'Theirs')])
       // The other account comes first, as Notion may list it.
       .respond('getSpaces', 200, {
         ...spaces({}, { private_pages: [id(2)] }, OTHER),
         ...spaces({}, { private_pages: [id(1)] }),
       })
       .respond('getTeamsV2', 200, teams([]))
-      .respond('syncRecordValuesMain', 200, records([page(1, 'Mine')]))
       .install()
     expect(await run()).toContain(`Private\n- 📄 Mine ^${hex(id(1))}`)
   })
 
   it("says so when Notion's answer has nothing for the tab's own user", async () => {
     const OTHER = '0e0e0e0e-0000-4000-8000-000000000099'
-    new FakeNotionTab(PAGE_URL)
-      .respond('syncRecordValuesMain', 200, OPEN_PAGE)
+    notion([])
       .respond('getSpaces', 200, spaces({}, { private_pages: [id(2)] }, OTHER))
       .install()
     const err = await notionError(run())
@@ -500,43 +549,34 @@ describe('list_pages workspace', () => {
   })
 
   it('says the tab is signed out when it has no Notion user, and reads no account', async () => {
-    new FakeNotionTab(PAGE_URL, 'notion_browser_id=b')
-      .respond('syncRecordValuesMain', 200, OPEN_PAGE)
+    notion([], { cookie: 'notion_browser_id=b' })
       .respond('getSpaces', 200, spaces({}, { private_pages: [id(1)] }))
       .install()
     expect((await notionError(run())).code).toBe('signed_out')
   })
 
   it('finds the tab user when Notion keys it without hyphens', async () => {
-    const answer = spaces({}, { private_pages: [id(1)] }, USER.replace(/-/g, ''))
-    new FakeNotionTab(PAGE_URL)
-      .respond('syncRecordValuesMain', 200, OPEN_PAGE)
-      .respond('getSpaces', 200, answer)
+    notion([page(1, 'Mine')])
+      .respond('getSpaces', 200, spaces({}, { private_pages: [id(1)] }, USER.replace(/-/g, '')))
       .respond('getTeamsV2', 200, teams([]))
-      .respond('syncRecordValuesMain', 200, records([page(1, 'Mine')]))
       .install()
     expect(await run()).toContain(`Private\n- 📄 Mine ^${hex(id(1))}`)
   })
 
   it('finds the tab user by an undashed cookie id', async () => {
-    new FakeNotionTab(PAGE_URL, `notion_user_id=${USER.replace(/-/g, '')}`)
-      .respond('syncRecordValuesMain', 200, OPEN_PAGE)
+    notion([page(1, 'Mine')], { cookie: `notion_user_id=${USER.replace(/-/g, '')}` })
       .respond('getSpaces', 200, spaces({}, { private_pages: [id(1)] }))
       .respond('getTeamsV2', 200, teams([]))
-      .respond('syncRecordValuesMain', 200, records([page(1, 'Mine')]))
       .install()
     expect(await run()).toContain(`Private\n- 📄 Mine ^${hex(id(1))}`)
   })
 
   it('keeps a page in its first section only, even where that section is cut off before it', async () => {
-    const many = Array.from({ length: SECTION_LIMIT + 1 }, (_, i) => id(600 + i))
+    const many = range(600, SECTION_LIMIT + 1)
     const last = many.at(-1)!
-    new FakeNotionTab(PAGE_URL)
-      .respond('syncRecordValuesMain', 200, OPEN_PAGE)
+    notion([...pages(many, 'Private'), page(3, 'Shared plan')])
       .respond('getSpaces', 200, spaces({}, { private_pages: many, shared_pages_manual_sort: [last, id(3)] }))
       .respond('getTeamsV2', 200, teams([]))
-      .respond('syncRecordValuesMain', 200, records(many.map((m, i) => ({ ...page(0, `Private ${i}`), id: m }))))
-      .respond('syncRecordValuesMain', 200, records([page(3, 'Shared plan')]))
       .install()
     const result = await run()
     // The last private page is cut from Private and isn't moved to Shared; Private's offset reaches it.
@@ -545,11 +585,9 @@ describe('list_pages workspace', () => {
   })
 
   it('asks for teamspaces when the workspace does not say whether it has them', async () => {
-    new FakeNotionTab(PAGE_URL)
-      .respond('syncRecordValuesMain', 200, OPEN_PAGE)
+    notion([page(11, 'Eng handbook')])
       .respond('getSpaces', 200, spaces({ settings: {} }, {}))
       .respond('getTeamsV2', 200, teams([team(1, 'Engineering', [id(11)])]))
-      .respond('syncRecordValuesMain', 200, records([page(11, 'Eng handbook')]))
       .install()
     expect(await run()).toContain(`Teamspace: Engineering\n- 📄 Eng handbook ^${hex(id(11))}`)
   })
@@ -557,11 +595,9 @@ describe('list_pages workspace', () => {
   it('leaves out teams that getTeamsV2 lists as anything but joined', async () => {
     const answer = teams([team(1, 'Engineering', [id(11)]), team(2, 'Elsewhere', [id(21)])])
     answer.teams[1].type = 'Archived'
-    new FakeNotionTab(PAGE_URL)
-      .respond('syncRecordValuesMain', 200, OPEN_PAGE)
+    notion([page(11, 'Eng handbook'), page(21, 'Elsewhere page')])
       .respond('getSpaces', 200, spaces({}, {}))
       .respond('getTeamsV2', 200, answer)
-      .respond('syncRecordValuesMain', 200, records([page(11, 'Eng handbook')]))
       .install()
     const result = await run()
     expect(result).toContain('Teamspace: Engineering')
@@ -570,31 +606,24 @@ describe('list_pages workspace', () => {
 
   it('lists a section alone as the overview does, without pages an earlier section has', async () => {
     // The private page is also in Shared. Shared leaves it out, alone and in the overview, so their offsets agree.
-    const shared = [id(1), ...Array.from({ length: SECTION_LIMIT + 5 }, (_, i) => id(400 + i))]
-    const blocks = shared.slice(1).map((m, i) => ({ ...page(0, `Shared ${i}`), id: m }))
+    const shared = [id(1), ...range(400, SECTION_LIMIT + 5)]
+    const blocks = pages(shared.slice(1), 'Shared')
     const workspace = () =>
-      new FakeNotionTab(PAGE_URL)
-        .respond('syncRecordValuesMain', 200, OPEN_PAGE)
+      notion([page(1, 'Notes'), ...blocks])
         .respond('getSpaces', 200, spaces({}, { private_pages: [id(1)], shared_pages_manual_sort: shared }))
         .respond('getTeamsV2', 200, teams([]))
+        .install()
     workspace()
-      .respond('syncRecordValuesMain', 200, records([page(1, 'Notes')]))
-      .respond('syncRecordValuesMain', 200, records(blocks))
-      .install()
     expect(await run()).toContain(`List them with \`section: "Shared"\` and \`offset: ${SECTION_LIMIT}\`.)`)
     workspace()
-      .respond('syncRecordValuesMain', 200, records(blocks.slice(SECTION_LIMIT)))
-      .install()
     const rest = (await run({ section: 'Shared', offset: SECTION_LIMIT })).split('\n').slice(2)
     expect(rest).toEqual(blocks.slice(SECTION_LIMIT).map((b, i) => `- 📄 Shared ${SECTION_LIMIT + i} ^${hex(b.id)}`))
   })
 
   it('still lists the other sections when the teamspaces fail to load', async () => {
-    new FakeNotionTab(PAGE_URL)
-      .respond('syncRecordValuesMain', 200, OPEN_PAGE)
+    notion([page(1, 'Notes')])
       .respond('getSpaces', 200, spaces({}, { private_pages: [id(1)] }))
       .respond('getTeamsV2', 400, { name: 'ValidationError', debugMessage: 'Invalid input.' })
-      .respond('syncRecordValuesMain', 200, records([page(1, 'Notes')]))
       .install()
     expect(await run()).toBe(
       [
@@ -609,25 +638,28 @@ describe('list_pages workspace', () => {
   })
 
   it('stops the question when Notion turns the teamspaces away, and sends nothing more', async () => {
-    const tab = new FakeNotionTab(PAGE_URL)
-      .respond('syncRecordValuesMain', 200, OPEN_PAGE)
+    const tab = notion([page(1, 'Notes')])
       .respond('getSpaces', 200, spaces({}, { private_pages: [id(1)] }))
       .limit('getTeamsV2', 1)
       .install()
     expect((await notionError(run())).stopsQuestion).toBe(LIMITED_STOP)
-    expect(tab.sent.map((r) => r.url.split('/api/v3/')[1])).toEqual(['syncRecordValuesMain', 'getSpaces', 'getTeamsV2'])
+    expect(endpoints(tab)).toEqual(['syncRecordValuesMain', 'getSpaces', 'getTeamsV2'])
   })
 
   it('asks for no teamspaces in a workspace that has them turned off', async () => {
-    const getSpaces = spaces({ settings: { is_teams_enabled: false } }, { private_pages: [id(1)] })
-    const tab = new FakeNotionTab(PAGE_URL)
-      .respond('syncRecordValuesMain', 200, OPEN_PAGE)
-      .respond('getSpaces', 200, getSpaces)
-      .respond('syncRecordValuesMain', 200, records([page(1, 'Notes')]))
+    const tab = notion([page(1, 'Notes')])
+      .respond('getSpaces', 200, spaces({ settings: { is_teams_enabled: false } }, { private_pages: [id(1)] }))
       .install()
     expect(await run()).toBe(
       ['Pages in the workspace “Fixture workspace”:', '', 'Private', `- 📄 Notes ^${hex(id(1))}`].join('\n'),
     )
     expect(endpoints(tab)).not.toContain('getTeamsV2')
+  })
+
+  it('says so when the open page is in the trash', async () => {
+    const tab = new FakeNotionTab(PAGE_URL)
+    tab.workspace = new FakeWorkspace([{ id: PAGE, type: 'page', alive: false }], SPACE)
+    tab.install()
+    await expect(run()).rejects.toThrow('The open page is in the trash. Open another page of the workspace.')
   })
 })

@@ -52,6 +52,12 @@ export function blockRefs(ids: string[]): Map<string, string> {
 export const PAGE_TYPES = new Set(['page', 'collection_view_page', 'collection_view'])
 /** Blocks that only lay out their children; their children are shown in their place. */
 export const LAYOUT_TYPES = new Set(['column_list', 'column'])
+/** The collection a database block shows; a linked view names it in its format instead. */
+export function collectionId(block: NotionRecord): string | undefined {
+  const pointer = (block.format as { collection_pointer?: { id?: unknown } } | undefined)?.collection_pointer
+  const id = block.collection_id ?? pointer?.id
+  return typeof id === 'string' ? id : undefined
+}
 const MEDIA_TYPES = new Set(['image', 'video', 'audio', 'pdf', 'file'])
 /** Paragraph text that Markdown would read as another kind of block, or whose leading spaces it would drop. */
 const LOOKS_LIKE_BLOCK = /^(?:\s|#{1,3}\s|[-*+]\s|\d+[.)]\s|>|▸|`{3}|\$\$|\||\\|📄 |🗃 |↗ |(?:-{3,}|\*{3,}|_{3,})$)/
@@ -339,9 +345,7 @@ class Context {
   }
 
   databaseName(block: Block): string {
-    // Linked views name their database in the format instead.
-    const pointer = block.format?.collection_pointer as { id?: string } | undefined
-    const id = (block.collection_id as string | undefined) ?? pointer?.id
+    const id = collectionId(block)
     const collection = id ? this.recordMap.collection?.[id] : undefined
     return this.plain(collection?.name) || 'Untitled database'
   }
