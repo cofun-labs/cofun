@@ -79,6 +79,37 @@ describe('CanaryLock', () => {
     expect(results.filter((r) => r.status === 'busy')).toHaveLength(3)
   })
 
+  it('lets only one of many sessions take over a stale lock, round after round', async () => {
+    // Takeovers in the same millisecond once picked the same name to move the lock to, and failed.
+    for (let round = 0; round < 20; round++) {
+      await rm(dir, { recursive: true, force: true })
+      await new CanaryLock(dir).acquire('issue-96', 'forgotten')
+      const old = new Date(Date.now() - STALE_MS - 60_000)
+      await utimes(dir, old, old)
+      const owners = Array.from({ length: 12 }, (_, i) => `issue-${i + 1}`)
+      const results = await Promise.all(owners.map((o) => new CanaryLock(dir).acquire(o, 'e2e')))
+      expect(results.filter((r) => r.status === 'acquired')).toHaveLength(1)
+    }
+  })
+
+  it('waits while another session takes over, and clears a guard left by one that died doing it', async () => {
+    await new CanaryLock(dir).acquire('issue-96', 'forgotten')
+    const old = new Date(Date.now() - STALE_MS - 60_000)
+    await utimes(dir, old, old)
+    const guard = `${dir}.takeover`
+    await mkdir(guard)
+    // Another session is taking over the stale lock right now.
+    expect(await new CanaryLock(dir).acquire('issue-1', 'e2e')).toMatchObject({ status: 'busy' })
+    // That session died two minutes ago, leaving its guard behind.
+    const left = new Date(Date.now() - 2 * 60_000)
+    await utimes(guard, left, left)
+    expect(await new CanaryLock(dir).acquire('issue-1', 'e2e')).toEqual({
+      status: 'acquired',
+      tookOver: expect.stringMatching(/^issue-96 \|/),
+    })
+    expect(existsSync(guard)).toBe(false)
+  })
+
   it('releases only its own lock', async () => {
     const lock = new CanaryLock(dir)
     await lock.acquire('issue-106', 'e2e')
