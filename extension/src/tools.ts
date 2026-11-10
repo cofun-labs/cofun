@@ -235,7 +235,7 @@ async function resolveDatabase(client: NotionTab['client'], block: NotionRecord)
   }
 }
 
-/** How many rows and databases the agent saw are remembered, for approvals; the oldest go first. */
+/** How many rows and databases the agent saw are remembered, for previews; the oldest go first. */
 const SEEN_KEPT = 500
 /** The rows query_database showed, by row id: their title and values as shown. */
 const seenRows = new Map<string, { title: string; values: { name: string; value: string }[] }>()
@@ -341,7 +341,7 @@ export const queryDatabase: ToolSpec = {
         (part < parts ? `. Read part ${part + 1} for more.` : '.'),
       ...(hasMore ? [`Only the first ${QUERY_LOAD} rows of the database were read; filters apply to those.`] : []),
     ]
-    // What the agent saw of each row, so an approval to change one can show its old values.
+    // What the agent saw of each row, so a change to one can show its old values.
     for (const r of shown) keep(seenRows, r.id, { title: r.values[0]?.value ?? '', values: r.values })
     if (!shown.length) return [...header, '', '(no rows)'].join('\n')
     const table = [
@@ -679,14 +679,13 @@ export const editPage: ToolSpec = {
     required: ['page', 'edits'],
     additionalProperties: false,
   },
-  needsConfirmation: true,
   preview: (args) => {
     const given = givenPage(args)
     if (!given) return undefined
     return previewEdits(args.edits, pageReads.get(pageArg(given) ?? ''), given)
   },
   run: async (args, signal) => {
-    // The page is named in the call, so what the user approves is the page that gets changed.
+    // The page is named in the call, so the page the preview names is the page that gets changed.
     const given = givenPage(args)
     if (!given) throw new EditError('Give `page`: the id read_page shows after "Page:".')
     const id = pageArg(given)
@@ -761,7 +760,7 @@ function remember(read: PageRead) {
   if (pageReads.size > READS_KEPT) pageReads.delete(pageReads.keys().next().value!)
 }
 
-/** A page title on one line, as Notion keeps it, so it can't break up the approval's lines. */
+/** A page title on one line, as Notion keeps it, so it can't break up the preview's lines. */
 function titleArg(value: unknown): string {
   return typeof value === 'string' ? oneLine(plainText(value)) : ''
 }
@@ -789,7 +788,7 @@ export const createPage: ToolSpec = {
     'Creates a Notion page with a title and Markdown content (the same Markdown as edit_page). `parent` is a page ' +
     "(the open page's URL, or another page), and the new page goes at its end; or a " +
     'database, and the new page is a row of it, with `properties` set by name (values as query_database shows ' +
-    "them; options must exist). Returns the new page's id and URL. The user is asked to approve it.",
+    "them; options must exist). Returns the new page's id and URL.",
   parameters: {
     type: 'object',
     properties: {
@@ -801,10 +800,9 @@ export const createPage: ToolSpec = {
     required: ['title', 'parent'],
     additionalProperties: false,
   },
-  needsConfirmation: true,
   preview: (args) => {
     const title = titleArg(args.title)
-    // The page exactly as `run` will resolve it, so the user approves where the page goes.
+    // The page exactly as `run` will resolve it, so the user sees where the page went.
     const given = typeof args.parent === 'string' ? args.parent.trim() : ''
     const id = given ? pageArg(given) : undefined
     // By name when the agent has read it, so the user can tell which page or database it is.
@@ -898,7 +896,7 @@ export const createPage: ToolSpec = {
   },
 }
 
-/** How many pages one update_pages call changes at most, so one approval stays readable. */
+/** How many pages one update_pages call changes at most, so its preview stays readable. */
 export const UPDATE_MAX = 50
 
 export const updatePages: ToolSpec = {
@@ -906,8 +904,8 @@ export const updatePages: ToolSpec = {
   description:
     "Changes pages' titles, icons (an emoji), or database properties (for rows, by name, values as " +
     'query_database shows them; options must exist; empty clears a value), several pages in one call: "mark ' +
-    'these five tasks done" is one call. Get row ids from query_database. The user is asked to approve the ' +
-    'changes; nothing is written if any value is refused.',
+    'these five tasks done" is one call. Get row ids from query_database. Nothing is written if any value is ' +
+    'refused.',
   parameters: {
     type: 'object',
     properties: {
@@ -931,7 +929,6 @@ export const updatePages: ToolSpec = {
     required: ['pages'],
     additionalProperties: false,
   },
-  needsConfirmation: true,
   preview: (args) => {
     const updates = Array.isArray(args.pages) ? (args.pages as Record<string, unknown>[]) : []
     const lines = [`Change ${updates.length} page${updates.length === 1 ? '' : 's'}`]
@@ -1016,7 +1013,7 @@ export const updatePages: ToolSpec = {
         for (const key of recentReads.keys()) if (key.endsWith(`:${id}`)) recentReads.delete(key)
       }
     }
-    // A read's title shows in later approvals; keep it current.
+    // A read's title shows in later previews; keep it current.
     for (const u of updates) {
       const read = pageReads.get(u.id)
       if (read && u.title !== undefined) read.title = u.title
