@@ -69,7 +69,8 @@ The agent edits pages, creates pages and rows, changes properties, adds comments
 
 ```
 extension/                Chrome extension
-  vite.config.ts          build config; generates manifest.json from .env
+  vite.config.ts          build config; writes manifest.json into the build
+  manifest.ts             builds manifest.json from .env; a test pins its permissions
   sidepanel.html
   src/background.ts       opens the side panel from the toolbar icon; enabled only on Notion tabs
   src/agent.ts            agent loop (pi) against the worker; the only module that imports pi
