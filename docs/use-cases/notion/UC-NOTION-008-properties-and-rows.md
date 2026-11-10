@@ -22,4 +22,4 @@ Key constraint:
 
 | ID | Priority | Status | Scenario |
 | --- | --- | --- | --- |
-| UC-NOTION-008-S08 | P0 | 🚧 | Given the side panel open on a task database; when the user asks to mark some of the tasks done; then those rows show done after a reload, without the user being asked, and the others are unchanged. |
+| UC-NOTION-008-S08 | P0 | ✅ | Given the side panel open on a task database; when the user asks to mark some of the tasks done; then those rows show done after a reload, without the user being asked, and the others are unchanged. |
