@@ -686,6 +686,57 @@ describe('when Notion is limiting requests', () => {
     expect(sent.filter((e) => e === 'syncRecordValuesMain')).toHaveLength(1)
   })
 
+  it('stops backing off when another request gave up meanwhile', async () => {
+    // Notion's answers are given by hand, one call at a time.
+    const limited: NotionResponse = { status: 429, json: {}, signedIn: true }
+    const record = { spaceId: SPACE, value: { role: 'editor', value: { id: PAGE, version: 1, alive: true } } }
+    const found: NotionResponse = { status: 200, json: { recordMap: { block: { [PAGE]: record } } }, signedIn: true }
+    const calls: { endpoint: string; answer?: (res: NotionResponse) => void }[] = []
+    const send: NotionTransport = (endpoint) => new Promise((answer) => calls.push({ endpoint, answer }))
+    /** Answers the next unanswered call to `endpoint`, once it has gone out. */
+    const answer = async (endpoint: string, res: NotionResponse) => {
+      for (;;) {
+        const call = calls.find((c) => c.endpoint === endpoint && c.answer)
+        if (call) {
+          const reply = call.answer!
+          call.answer = undefined
+          return reply(res)
+        }
+        await new Promise((resolve) => setTimeout(resolve, 1))
+      }
+    }
+    let holdWait = false
+    let endWait = () => {}
+    let waiting = false
+    const wait: Wait = () => {
+      if (!holdWait) return Promise.resolve()
+      waiting = true
+      return new Promise((resolve) => (endWait = resolve))
+    }
+    const notion = new NotionClient(send, { wait })
+    const read = () => notion.getRecords([{ table: 'block', id: PAGE }])
+    // A slow search is refused each time it goes out; meanwhile reads back off and get through.
+    const search = notionError(notion.search(SPACE, 'x', 10))
+    for (let round = 0; round < 3; round++) {
+      const reading = read()
+      await answer('syncRecordValuesMain', limited) // the read backs off
+      await answer('search', limited) // the search holds
+      await answer('syncRecordValuesMain', found)
+      await reading
+    }
+    // A fourth read backs off; while it waits, the search is refused a fourth time and gives up.
+    holdWait = true
+    const reading = notionError(read())
+    await answer('syncRecordValuesMain', limited)
+    while (!waiting) await new Promise((resolve) => setTimeout(resolve, 1))
+    await answer('search', limited)
+    expect((await search).code).toBe('rate_limited')
+    const before = calls.length
+    endWait()
+    expect((await reading).code).toBe('rate_limited')
+    expect(calls).toHaveLength(before)
+  })
+
   it('stops a request held behind another one as soon as the user stops', async () => {
     const limited: NotionResponse = { status: 429, json: {}, signedIn: true }
     const sent: string[] = []

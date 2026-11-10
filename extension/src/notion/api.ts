@@ -458,6 +458,8 @@ export class NotionClient {
       if (refusals > RETRIES || this.waited + ms > MAX_WAIT_MS) throw this.giveUp()
       this.waited += ms
       await this.wait(ms, this.signal)
+      // Another request may have given up meanwhile.
+      if (this.gaveUp) throw new NotionError('rate_limited', RATE_LIMITED)
       res = await this.send(endpoint, body, { spaceId })
     }
     return { json: checkResponse(res) as T, signedIn: res.signedIn }
