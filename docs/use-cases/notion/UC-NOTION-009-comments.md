@@ -29,5 +29,5 @@ Key constraints:
 
 | ID | Priority | Status | Scenario |
 | --- | --- | --- | --- |
-| UC-NOTION-009-S06 | P0 | 🚧 | Given the side panel open on a page with comments; when the user asks what the comments say; then the reply matches the comments, and says which are resolved. |
-| UC-NOTION-009-S07 | P0 | 🚧 | Given the side panel open on a page; when the user asks for a review comment on one paragraph; then after a reload Notion shows the comment on that paragraph, and the page's text is unchanged. |
+| UC-NOTION-009-S06 | P0 | ✅ | Given the side panel open on a page with comments; when the user asks what the comments say; then the reply matches the comments, and says which are resolved. |
+| UC-NOTION-009-S07 | P0 | ✅ | Given the side panel open on a page; when the user asks for a review comment on one paragraph; then after a reload Notion shows the comment on that paragraph, and the page's text is unchanged. |
