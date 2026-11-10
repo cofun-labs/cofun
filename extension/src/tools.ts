@@ -600,8 +600,9 @@ export const listPages: ToolSpec = {
       return label
     })
     // A page can be in more than one list (a shared page often stays in the owner's private
-    // pages, where the sidebar shows it); it is listed in the first, so a section listed alone
-    // matches the overview, entry for entry.
+    // pages, where the sidebar shows it); it belongs to the first only, even where that list is
+    // cut off before it, so a section listed alone matches the overview, entry for entry, and
+    // their offsets agree.
     const earlier = new Set<string>()
     const sections: [string, string[]][] = (
       [

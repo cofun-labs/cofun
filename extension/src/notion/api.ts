@@ -26,6 +26,8 @@ export const NO_NOTION_TAB = 'No Notion page is open in this window.'
 export const SIGNED_OUT = 'Not signed in to Notion in this tab. Sign in to Notion and try again.'
 export const NO_ACCESS = "The Notion page doesn't exist, or the signed-in Notion account has no access to it."
 export const IN_TRASH = 'The Notion page or block is in the trash.'
+export const NO_USER_MAP =
+  "Notion's list of workspaces has nothing for the account signed in to this tab. Reload the Notion tab and try again."
 export const OUTCOME_UNKNOWN =
   'Notion did not answer, so the change may or may not have been saved. Read the page again before retrying.'
 
@@ -280,7 +282,9 @@ export class NotionClient {
     // One record map per signed-in user, keyed by user id; only the tab's active user's counts. No
     // fallback to the others: another account's map would list that account's private pages, and
     // every later request runs as the active user anyway.
-    const maps = userId ? [normalizeRecordMap(json[userId])] : Object.values(json).map(normalizeRecordMap)
+    const own = userId ? (json[userId] ?? json[toUuid(userId) ?? '']) : undefined
+    if (userId && !own) throw new NotionError('notion_error', NO_USER_MAP)
+    const maps = own ? [normalizeRecordMap(own)] : Object.values(json).map(normalizeRecordMap)
     const map = maps.find((m) => m.space?.[space])
     if (!map) throw new NotionError('no_access', NO_ACCESS)
     const record = map.space![space]

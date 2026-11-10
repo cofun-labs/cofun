@@ -2,7 +2,8 @@
 // shapes Notion's getSpaces and syncRecordValuesMain return.
 import { afterEach, describe, expect, it } from 'vitest'
 import { LIST_LIMIT, SECTION_LIMIT, listPages } from '../../extension/src/tools'
-import { FakeNotionTab, PAGE, PAGE_URL, SPACE, USER, restoreGlobals } from './notion-tab'
+import { FakeNotionTab, PAGE, PAGE_URL, SPACE, USER, notionError, restoreGlobals } from './notion-tab'
+import { NO_USER_MAP } from '../../extension/src/notion/api'
 
 afterEach(restoreGlobals)
 
@@ -112,7 +113,7 @@ describe('UC-NOTION-005 browse the workspace', () => {
     expect(endpoints(tab)).not.toContain('loadPageChunk')
   })
 
-  it('[UC-NOTION-005-S05] lists the teamspaces the user joined, in the sidebar order, without archived ones', async () => {
+  it('[UC-NOTION-005-S05] lists the teamspaces the user joined, in the order Notion gives them, without archived ones', async () => {
     const tab = new FakeNotionTab(PAGE_URL)
       .respond('syncRecordValuesMain', 200, OPEN_PAGE)
       .respond('getSpaces', 200, spaces({}, { private_pages: [id(1)] }))
@@ -464,6 +465,43 @@ describe('list_pages workspace', () => {
       .respond('syncRecordValuesMain', 200, records([page(1, 'Mine')]))
       .install()
     expect(await run()).toContain(`Private\n- 📄 Mine ^${hex(id(1))}`)
+  })
+
+  it("says so when Notion's answer has nothing for the tab's own user", async () => {
+    const OTHER = '0e0e0e0e-0000-4000-8000-000000000099'
+    new FakeNotionTab(PAGE_URL)
+      .respond('syncRecordValuesMain', 200, OPEN_PAGE)
+      .respond('getSpaces', 200, spaces({}, { private_pages: [id(2)] }, OTHER))
+      .install()
+    const err = await notionError(run())
+    expect(err.code).toBe('notion_error')
+    expect(err.message).toBe(NO_USER_MAP)
+  })
+
+  it('finds the tab user by an undashed cookie id', async () => {
+    new FakeNotionTab(PAGE_URL, `notion_user_id=${USER.replace(/-/g, '')}`)
+      .respond('syncRecordValuesMain', 200, OPEN_PAGE)
+      .respond('getSpaces', 200, spaces({}, { private_pages: [id(1)] }))
+      .respond('getTeamsV2', 200, teams([]))
+      .respond('syncRecordValuesMain', 200, records([page(1, 'Mine')]))
+      .install()
+    expect(await run()).toContain(`Private\n- 📄 Mine ^${hex(id(1))}`)
+  })
+
+  it('keeps a page in its first section only, even where that section is cut off before it', async () => {
+    const many = Array.from({ length: SECTION_LIMIT + 1 }, (_, i) => id(600 + i))
+    const last = many.at(-1)!
+    new FakeNotionTab(PAGE_URL)
+      .respond('syncRecordValuesMain', 200, OPEN_PAGE)
+      .respond('getSpaces', 200, spaces({}, { private_pages: many, shared_pages_manual_sort: [last, id(3)] }))
+      .respond('getTeamsV2', 200, teams([]))
+      .respond('syncRecordValuesMain', 200, records(many.map((m, i) => ({ ...page(0, `Private ${i}`), id: m }))))
+      .respond('syncRecordValuesMain', 200, records([page(3, 'Shared plan')]))
+      .install()
+    const result = await run()
+    // The last private page is cut from Private and isn't moved to Shared; Private's offset reaches it.
+    expect(result).toContain(`List them with \`section: "Private"\` and \`offset: ${SECTION_LIMIT}\`.)`)
+    expect(result.split('Shared\n')[1]).toBe(`- 📄 Shared plan ^${hex(id(3))}`)
   })
 
   it('asks for teamspaces when the workspace does not say whether it has them', async () => {
