@@ -83,16 +83,12 @@ function nestedDeeperThan(value: unknown, max: number): boolean {
 // thing wrong with it, in the words below: the client is told what the part needs, not zod's own
 // description of the mismatch.
 
-/**
- * `schema`, refused with `message` whatever is wrong inside it, unless a part inside it has already
- * said what is wrong.
- */
+/** `schema`, refused with `message` whatever is wrong inside it. */
 function part<S extends z.ZodType>(schema: S, message: string) {
   return z.unknown().transform((value, ctx): z.output<S> => {
     const parsed = schema.safeParse(value)
     if (parsed.success) return parsed.data
-    const inner = parsed.error.issues[0]
-    ctx.addIssue({ code: 'custom', message: inner.code === 'custom' ? inner.message : message })
+    ctx.addIssue({ code: 'custom', message })
     return z.NEVER
   })
 }
@@ -117,7 +113,12 @@ const Body = part(
   'body must be a JSON object',
 )
 
-const Id = z.string().min(1).max(MAX_ID_CHARS)
+/**
+ * A tool call's id: 1 to 256 characters as JavaScript counts them. Not `.max()`: zod counts a string
+ * over the limit by code point, which would let an id of emoji be twice as long.
+ */
+const isId = (id: string) => id.length > 0 && id.length <= MAX_ID_CHARS
+const Id = z.string().refine(isId)
 const ToolName = z.string().regex(TOOL_NAME)
 
 const ToolCalls = part(
@@ -169,10 +170,7 @@ const Message = part(z.looseObject({}), 'each message must be an object').pipe(
       AssistantMessage,
       z.object({
         role: z.literal('tool'),
-        tool_call_id: z
-          .string({ error: TOOL_MESSAGE })
-          .min(1, { error: TOOL_MESSAGE })
-          .max(MAX_ID_CHARS, { error: TOOL_MESSAGE }),
+        tool_call_id: z.string({ error: TOOL_MESSAGE }).refine(isId, { error: TOOL_MESSAGE }),
         content: z.string({ error: TOOL_MESSAGE }),
       }),
     ],
@@ -491,7 +489,7 @@ export function createApp({ now = () => new Date() }: AppOptions = {}) {
     const reply = replyInfo(out)
     usage.promptTokens = tokenCount(reply?.usage?.prompt_tokens)
     usage.completionTokens = tokenCount(reply?.usage?.completion_tokens)
-    usage.finishReason = finishReason(reply?.choices[0]?.finish_reason)
+    usage.finishReason = finishReason(reply?.finish_reason)
     // The reply as the model gave it. Build the response first: if that throws, the request is
     // recorded once, as internal.
     const res = c.newResponse(JSON.stringify(out), 200, { 'content-type': 'application/json' })

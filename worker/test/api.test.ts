@@ -494,6 +494,36 @@ describe('usage records', () => {
     expect(records().map((r) => r.outcome)).toEqual(['ok'])
   })
 
+  it('reads the fields of a reply loosely: a field of another shape counts as missing', async () => {
+    const replies: [unknown, Record<string, unknown>][] = [
+      [
+        { choices: { 0: { finish_reason: 'length' } }, usage: [] },
+        { finishReason: 'length', promptTokens: 0 },
+      ],
+      [
+        { choices: 'stop', usage: 'x' },
+        { finishReason: '', promptTokens: 0 },
+      ],
+      [
+        { choices: [null, { finish_reason: 'stop' }], usage: { prompt_tokens: 7 } },
+        { finishReason: '', promptTokens: 7 },
+      ],
+      [['stop'], { finishReason: '', promptTokens: 0 }],
+    ]
+    for (const [reply, recorded] of replies) {
+      env.USAGE = usage = new FakeUsageDataset()
+      env.AI = {
+        async run() {
+          return reply
+        },
+      }
+      const res = await chat(token)
+      // The reply itself goes to the client as the model gave it.
+      expect([res.status, await json(res)]).toEqual([200, reply])
+      expect(records()[0]).toMatchObject({ outcome: 'ok', ...recorded })
+    }
+  })
+
   it('a non-streamed reply without usage is still recorded', async () => {
     env.AI = {
       async run() {
@@ -764,6 +794,15 @@ describe('tool calling', () => {
         'each tool call needs an id, type "function", and a function with a name and string arguments',
       ],
       [{ messages: [{ role: 'tool', content: 'r' }] }, 'tool messages need a tool_call_id and string content'],
+      // An id is at most 256 characters as JavaScript counts them, emoji (two each) included.
+      [
+        { messages: [{ role: 'assistant', tool_calls: [{ ...call, id: '😀'.repeat(128) + 'x' }] }] },
+        'each tool call needs an id, type "function", and a function with a name and string arguments',
+      ],
+      [
+        { messages: [{ role: 'tool', tool_call_id: '😀'.repeat(128) + 'x', content: 'r' }] },
+        'tool messages need a tool_call_id and string content',
+      ],
       [
         { messages: [{ role: 'tool', tool_call_id: 'c1', content: 'r' }] },
         'each tool message must answer a call from the assistant message before it',
