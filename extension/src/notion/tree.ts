@@ -60,7 +60,7 @@ export class PageLookups {
 
 export interface PageTree {
   nodes: TreeNode[]
-  /** Where in `ids` the entries not listed start, when the top level stopped before its end. */
+  /** The entry of the top level the ones not listed start at, when it stopped before its end. */
   next?: number
   /** Whether pages are known to follow `next`, rather than maybe. */
   nextKnown: boolean
@@ -73,17 +73,18 @@ export interface PageTree {
 
 /**
  * Builds the tree under `ids` (the blocks of the top level, in order: layout blocks are looked
- * through), `depth` levels deep, with at most `limit` entries. At most `lookups` block lookups
- * (one request each) are made; where it stops for lack of them, the result says what wasn't
- * looked into.
+ * through, so their blocks are entries in their place), `depth` levels deep, with at most `limit`
+ * entries, from entry `skip` of the top level on. Besides the lookups that skipping takes, at most
+ * `lookups` block lookups (one request each) are made; where it stops for lack of them, the result
+ * says what wasn't looked into.
  */
 export async function pageTree(
   cache: PageLookups,
   ids: string[],
-  { depth, limit, lookups }: { depth: number; limit: number; lookups: number },
+  { depth, limit, lookups, skip = 0 }: { depth: number; limit: number; lookups: number; skip?: number },
 ): Promise<PageTree> {
   const budget = { left: lookups }
-  const top = await walk(cache, [ids], limit, budget)
+  const top = await walk(cache, [ids], limit, budget, skip)
   const nodes = await nodesFor(cache, top.pages[0])
   let count = nodes.length
   const stopped = top.rest !== 'none'
@@ -124,20 +125,22 @@ export async function pageTree(
 
 /**
  * The first `room` pages among the entries of `lists` (one per parent, in the parents' order),
- * looking through layout blocks. Blocks are looked up only as the walk reaches them, a batch at a
- * time. Once the room is full, one more lookup at most tells whether more pages follow.
+ * looking through layout blocks, from entry `skip` of the first list on. Blocks are looked up only
+ * as the walk reaches them, a batch at a time. Once the room is full, one more lookup at most
+ * tells whether more pages follow.
  */
 async function walk(
   cache: PageLookups,
   lists: string[][],
   room: number,
   budget: { left: number },
+  skip = 0,
 ): Promise<{
   /** The page ids found, per list. */
   pages: string[][]
   /** What follows the last page found: nothing, more pages, or blocks not looked up. */
   rest: 'none' | 'pages' | 'unchecked'
-  /** Where in the first list the walk stopped: the block it stopped at, or the layout holding it. */
+  /** The entry of the first list the walk stopped at. */
   resume: number
 }> {
   const pages = lists.map((): string[] => [])
@@ -146,6 +149,8 @@ async function walk(
   for (let l = 0; l < lists.length; l++) {
     // Each list is walked depth first, so a layout block's entries stand in its place.
     const stack = [{ ids: lists[l], at: 0, hop: 0 }]
+    let entry = 0
+    const stop = (rest: 'pages' | 'unchecked') => ({ pages, rest, resume: l ? 0 : entry })
     while (stack.length) {
       const frame = stack[stack.length - 1]
       if (frame.at >= frame.ids.length) {
@@ -153,26 +158,30 @@ async function walk(
         continue
       }
       const id = frame.ids[frame.at]
-      const stop = (rest: 'pages' | 'unchecked') => ({
-        pages,
-        rest,
-        resume: l ? 0 : stack.length > 1 ? stack[0].at - 1 : stack[0].at,
-      })
+      // Skipped entries are looked up only to see through layouts, and don't count against the
+      // lookups, so every next list gets further than the one before.
+      const skipping = l === 0 && entry < skip
       if (cache.unknown(id)) {
-        if (budget.left <= 0 || settling) return stop('unchecked')
-        settling = found >= room
-        budget.left--
+        if (!skipping) {
+          if (budget.left <= 0 || settling) return stop('unchecked')
+          settling = found >= room
+          budget.left--
+        }
         await cache.blocks(upcoming(cache, stack, lists.slice(l + 1)))
       }
       const block = cache.block(id)
-      if (block && PAGE_TYPES.has(String(block.type))) {
+      frame.at++
+      if (block && LAYOUT_TYPES.has(String(block.type)) && frame.hop < LAYOUT_HOPS) {
+        stack.push({ ids: contentOf(cache, id), at: 0, hop: frame.hop + 1 })
+        continue
+      }
+      // Anything else is an entry, listed or not.
+      if (!skipping && block && PAGE_TYPES.has(String(block.type))) {
         if (found >= room) return stop('pages')
         pages[l].push(id)
         found++
       }
-      frame.at++
-      if (block && LAYOUT_TYPES.has(String(block.type)) && frame.hop < LAYOUT_HOPS)
-        stack.push({ ids: contentOf(cache, id), at: 0, hop: frame.hop + 1 })
+      entry++
     }
   }
   return { pages, rest: 'none', resume: 0 }

@@ -223,6 +223,36 @@ describe('UC-NOTION-005 browse the workspace', () => {
     expect(result).not.toContain('Cut off')
   })
 
+  it('[UC-NOTION-005-S06] picks up inside columns that hold more pages than one list shows', async () => {
+    // Two pages before the columns, and more pages in them than one list shows.
+    const inside = range(100, LIST_LIMIT + 50)
+    const blocks = [
+      page(10, 'Columns', [id(1), id(2), id(3)]),
+      page(1, 'First'),
+      page(2, 'Second'),
+      { id: id(3), type: 'column_list', content: [id(4)] },
+      { id: id(4), type: 'column', content: inside },
+      ...pages(inside, 'Page'),
+    ]
+    const seen: string[] = []
+    let offset = 0
+    for (let call = 0; call < 3; call++) {
+      notion(blocks).install()
+      const result = await run({ page: hex(id(10)), ...(offset ? { offset } : {}) })
+      seen.push(...listed(result))
+      const next = result.match(/`offset: (\d+)`/)
+      if (!next) break
+      expect(Number(next[1])).toBeGreaterThan(offset)
+      offset = Number(next[1])
+    }
+    // Every page once, in order, across the calls.
+    expect(seen).toEqual([
+      `- 📄 First ^${hex(id(1))}`,
+      `- 📄 Second ^${hex(id(2))}`,
+      ...inside.map((m, i) => `- 📄 Page ${i} ^${hex(m)}`),
+    ])
+  })
+
   it('[UC-NOTION-005-S06] lists one top-level section from where it was cut off', async () => {
     const many = range(200, SECTION_LIMIT + 10)
     const workspace = () =>

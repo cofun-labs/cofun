@@ -520,8 +520,8 @@ export const LIST_LIMIT = 100
 /** How many pages each top-level section shows. */
 export const SECTION_LIMIT = 50
 /**
- * How many block lookups (one request each) one list makes at most, to find which blocks are
- * pages; the overview's sections share them by their limits.
+ * How many block lookups (one request each) one list makes to find which blocks are pages, besides
+ * those that skipping to `offset` takes. In the overview, each section gets a share by its limit.
  */
 export const LIST_LOOKUPS = 20
 
@@ -594,17 +594,18 @@ export const listPages: ToolSpec = {
         )
       }
       const cache = new PageLookups(tab.client, records)
-      const tree = await pageTree(cache, contentOf(cache, rootId).slice(offset), {
+      const tree = await pageTree(cache, contentOf(cache, rootId), {
         depth,
         limit: LIST_LIMIT,
         lookups: LIST_LOOKUPS,
+        skip: offset,
       })
       const title = runsText((root.properties as { title?: unknown } | undefined)?.title) || 'Untitled'
       return [
         `Pages under “${title}” ^${hexId(rootId)}${offset ? `, from entry ${offset}` : ''}:`,
         '',
         ...(tree.nodes.length ? treeLines(tree.nodes) : ['(no pages)']),
-        ...cutOff(tree, offset, LIST_LIMIT),
+        ...cutOff(tree, LIST_LIMIT),
       ].join('\n')
     }
 
@@ -655,12 +656,12 @@ export const listPages: ToolSpec = {
         )
       }
       const [label, all] = section
-      const tree = await pageTree(cache, all.slice(offset), { depth, limit: LIST_LIMIT, lookups: LIST_LOOKUPS })
+      const tree = await pageTree(cache, all, { depth, limit: LIST_LIMIT, lookups: LIST_LOOKUPS, skip: offset })
       return [
         `${label}, in the workspace “${space.name}”${offset ? `, from entry ${offset}` : ''}:`,
         '',
         ...(tree.nodes.length ? treeLines(tree.nodes) : ['(no pages)']),
-        ...cutOff(tree, offset, LIST_LIMIT, label),
+        ...cutOff(tree, LIST_LIMIT, label),
       ].join('\n')
     }
 
@@ -686,7 +687,7 @@ export const listPages: ToolSpec = {
       }
       any = true
       left -= countNodes(tree.nodes)
-      out.push('', label, ...treeLines(tree.nodes), ...cutOff(tree, 0, limit, label))
+      out.push('', label, ...treeLines(tree.nodes), ...cutOff(tree, limit, label))
     }
     if (skipped.length)
       out.push('', `Not listed, to keep the list short: ${skipped.join(', ')}. List one with \`section\`.`)
@@ -697,11 +698,11 @@ export const listPages: ToolSpec = {
 }
 
 /**
- * What a list left out and how to see it: the entries after `next` (offset from `offset`) when
- * its top level stopped, and pages under the listed ones. `limit` is how many pages the list could
+ * What a list left out and how to see it: the entries from `next` on when its top level stopped,
+ * and pages under the listed ones. `limit` is how many pages the list could
  * show, and `section` the section's label.
  */
-function cutOff(tree: PageTree, offset: number, limit: number, section?: string): string[] {
+function cutOff(tree: PageTree, limit: number, section?: string): string[] {
   const deeper = 'To see what is under a listed page, list it by its id.'
   if (tree.next !== undefined) {
     const where = section ? `\`section: ${JSON.stringify(section)}\` and ` : ''
@@ -709,7 +710,7 @@ function cutOff(tree: PageTree, offset: number, limit: number, section?: string)
       ? ` Pages under the ones shown ${tree.deeper === 'cut' ? 'are' : 'may be'} left out too. ${deeper}`
       : ''
     return [
-      `(Cut off: more entries ${tree.nextKnown ? 'follow' : 'may follow'}. List them with ${where}\`offset: ${offset + tree.next}\`.${under})`,
+      `(Cut off: more entries ${tree.nextKnown ? 'follow' : 'may follow'}. List them with ${where}\`offset: ${tree.next}\`.${under})`,
     ]
   }
   if (tree.deeper === 'cut')
