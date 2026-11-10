@@ -426,7 +426,9 @@ describe('UC-NOTION-003 work on the selection', () => {
 })
 
 describe('get_selection arguments', () => {
-  it('takes no arguments', async () => {
+  it('takes no arguments, and asks Notion nothing when given one', async () => {
+    const tab = new FakeNotionTab(PAGE_URL).install()
     await expect(run({ page: 'x' })).rejects.toThrow('Unrecognized key: "page"')
+    expect(tab.sent).toEqual([])
   })
 })
