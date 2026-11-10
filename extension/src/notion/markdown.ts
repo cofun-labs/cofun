@@ -421,7 +421,8 @@ class Context {
       }
     }
     const has = (m: string) => marks.some(([mark]) => mark === m)
-    if (has('c')) out = wrap(out, '`')
+    // A mention in backticks would read back as code, not a mention.
+    if (has('c') && !has('u')) out = wrap(out, '`')
     if (has('b')) out = wrap(out, '**')
     if (has('i')) out = wrap(out, '*')
     if (has('s')) out = wrap(out, '~~')

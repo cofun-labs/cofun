@@ -512,9 +512,9 @@ function runsText(value: unknown): string {
 
 function hasUnwritableMarks(value: unknown, users: Record<string, NotionRecord> = {}): boolean {
   const named = (id: unknown) => typeof users[String(id)]?.name === 'string' && !!users[String(id)].name
-  // read_page shows a mention without its link, so a linked mention isn't written back whole.
+  // read_page shows a mention without its link or code, so such a mention isn't written back whole.
   const writable = (m: unknown[], marks: unknown[][]) =>
-    m[0] === 'u' ? named(m[1]) && !marks.some((o) => o[0] === 'a') : WRITABLE_MARKS.has(String(m[0]))
+    m[0] === 'u' ? named(m[1]) && !marks.some((o) => o[0] === 'a' || o[0] === 'c') : WRITABLE_MARKS.has(String(m[0]))
   return (
     Array.isArray(value) &&
     value.some(

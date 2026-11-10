@@ -339,6 +339,16 @@ describe('mention details', () => {
     expect((ws.content(PAGE).at(-1)!.properties as Rec).title).toEqual([['Inline math \\(x\\)']])
   })
 
+  it('shows a mention in inline code as a mention, and says rewriting it drops the code', async () => {
+    const ws = workspace([block(1, 'text', [['Call '], ['‣', [['u', KIM], ['c']]]])])
+    open(ws)
+    expect(await read()).toBe('Call @[Kim Lee] ^00000001')
+    expect(await edit([{ action: 'replace', block: '^00000001', markdown: 'Call @[Kim Lee] now' }])).toContain(
+      'are now plain text',
+    )
+    expect(title(ws, id(1))).toEqual([['Call '], ['‣', [['u', KIM]]], [' now']])
+  })
+
   it('says when rewriting a block drops the link on a mention, which read_page does not show', async () => {
     const ws = workspace([
       block(1, 'text', [
