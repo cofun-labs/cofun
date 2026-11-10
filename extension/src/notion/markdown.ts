@@ -510,9 +510,6 @@ class Context {
   }
 
   private run(text: string, marks: [string, unknown?][], table = false): string {
-    // Names and link targets aren't Markdown-escaped; in a table their pipes (and so backslashes,
-    // which would undo a pipe's escape) still must be.
-    const pipes = (raw: string) => (table ? tableEscape(raw) : raw)
     // A link target is read as it is, a table cell's `\|` aside, so only its pipes are escaped.
     const target = (href: string) => (table ? href.split('|').join('\\|') : href)
     const code = marks.some(([m]) => m === 'c')
@@ -526,7 +523,8 @@ class Context {
     for (const [mark, arg] of marks) {
       switch (mark) {
         case 'p':
-          return `[${pipes(this.pageTitle(String(arg)))}](${hexId(String(arg))})`
+          // The title is Markdown-escaped, pipes included, so `[WIP] Plan` or `C:\temp` stays one link.
+          return `[${escapeMarkdown(this.pageTitle(String(arg)))}](${hexId(String(arg))})`
         case 'lm': {
           // A link mention (a web page shown as a preview) is a link to that page.
           const { href, title } = (arg ?? {}) as { href?: unknown; title?: unknown }
@@ -628,11 +626,6 @@ export function codeSpan(text: string): string {
       return `${fence}${pad}${line}${pad}${fence}`
     })
     .join('\n')
-}
-
-/** Text that isn't Markdown-escaped, for a table cell: a `|` can't end the cell, nor `\` undo that. */
-function tableEscape(raw: string): string {
-  return raw.replace(/[\\|]/g, '\\$&')
 }
 
 /** Puts Markdown marks around text, keeping surrounding spaces outside them (`**a** `, not `**a **`). */
