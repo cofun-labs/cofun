@@ -1120,3 +1120,86 @@ describe('round 16', () => {
     expect(withoutRefs(body(await read()))).toBe(['- Left, as a list', 'Right'].join('\n'))
   })
 })
+
+describe('round trips of what read_page shows more faithfully', () => {
+  it('round-trips inline code with backticks, spaces, or <br> in it', async () => {
+    const title = [['Run '], ['a `b` c', [['c']]], [' or '], ['x<br>y', [['c']]], [' and '], ['`q', [['c']]]]
+    const ws = workspace([1], [block(1, 'text', undefined, { properties: { title } })])
+    open(ws)
+    const shown = body(await read())
+    expect(shown).toBe('Run ``a `b` c`` or `x<br>y` and `` `q `` ^00000001')
+    // A one-word change keeps the code as it was.
+    await edit([{ action: 'replace', block: '^00000001', markdown: shown.replace('Run', 'Try') }])
+    expect(ws.records.get(id(1))!.properties).toEqual({ title: [['Try '], ...title.slice(1)] })
+  })
+
+  it('keeps a line break in inline code a line break', () => {
+    expect(parseMarkdown('Run `line 1`<br>`line 2`')).toEqual([
+      { type: 'text', title: [['Run '], ['line 1', [['c']]], ['\n'], ['line 2', [['c']]]], children: [] },
+    ])
+  })
+
+  it('refuses a code caption and the lines that stand for synced blocks or blocks not loaded', () => {
+    // The caption line right after a fence belongs to the code block; anywhere else it is refused.
+    expect(parseMarkdown('```js\nx\n```\n[caption: Example code] ^00000001')).toEqual([
+      { type: 'code', title: [['x']], language: 'js', caption: 'Example code', children: [] },
+    ])
+    expect(() => parseMarkdown('Intro\n[caption: Example code]')).toThrow(
+      "A [caption: …] line belongs right after a code block's closing fence.",
+    )
+    for (const line of ['[synced block]', '[synced copy]', '[synced copy, not loaded]', '[3 blocks not loaded]']) {
+      expect(() => parseMarkdown(`${line} ^00000001`)).toThrow("stands for content edit_page can't create")
+    }
+  })
+
+  it('rewrites a code block with a caption, keeping the caption', async () => {
+    const ws = workspace(
+      [1],
+      [
+        block(1, 'code', undefined, {
+          properties: { title: [['a = 1']], language: [['Python']], caption: [['Example']] },
+        }),
+      ],
+    )
+    open(ws)
+    const shown = body(await read())
+    expect(shown).toBe(['```python', 'a = 1', '```', '[caption: Example] ^00000001'].join('\n'))
+    // A new or changed caption can't be written; nothing is sent.
+    await expect(
+      edit([{ action: 'replace', block: '^00000001', markdown: shown.replace('Example', 'Other') }]),
+    ).rejects.toThrow("^00000001: code block captions can't be changed yet.")
+    await expect(
+      edit([{ action: 'insert', position: 'end', markdown: '```js\nb\n```\n[caption: New]' }]),
+    ).rejects.toThrow("Code block captions can't be written yet.")
+    expect(ws.transactions).toEqual([])
+    // The block copied back with its caption line, one line changed: the caption stays.
+    await edit([{ action: 'replace', block: '^00000001', markdown: shown.replace('a = 1', 'a = 2') }])
+    expect(ws.records.get(id(1))!.properties).toEqual({
+      title: [['a = 2']],
+      language: [['Python']],
+      caption: [['Example']],
+    })
+    await read()
+    await edit([{ action: 'replace', block: '^00000001', markdown: '```python\na = 3\n```' }])
+    expect(ws.records.get(id(1))!.properties).toMatchObject({ title: [['a = 3']], caption: [['Example']] })
+  })
+})
+
+describe('lookups of mentioned people in edits', () => {
+  it('are sent only when the new Markdown mentions someone', async () => {
+    const stranger = '0f0f0f0f-0000-4000-8000-000000000003'
+    const ws = workspace(
+      [1, 2],
+      [
+        block(1, 'text', undefined, { properties: { title: [['Ask '], ['‣', [['u', stranger]]]] } }),
+        block(2, 'text', 'Two'),
+      ],
+    )
+    const tab = open(ws)
+    await read()
+    const lookups = () => tab.sent.filter((r) => r.url.endsWith('/syncRecordValuesMain')).length
+    const before = lookups()
+    await edit([{ action: 'delete', block: '^00000002' }])
+    expect(lookups()).toBe(before)
+  })
+})

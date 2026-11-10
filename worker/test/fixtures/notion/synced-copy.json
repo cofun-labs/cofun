@@ -1,0 +1,223 @@
+{
+  "cursor": {
+    "stack": []
+  },
+  "recordMap": {
+    "__version__": 3,
+    "block": {
+      "f1f1f1f1-0000-4000-8000-00000000011b": {
+        "spaceId": "5a5a5a5a-0000-4000-8000-000000000001",
+        "value": {
+          "value": {
+            "id": "f1f1f1f1-0000-4000-8000-00000000011b",
+            "version": 8,
+            "type": "page",
+            "properties": {
+              "title": [["Fixture synced copy"]]
+            },
+            "content": [
+              "f1f1f1f1-0000-4000-8000-00000000011c",
+              "f1f1f1f1-0000-4000-8000-00000000011d",
+              "f1f1f1f1-0000-4000-8000-00000000011e"
+            ],
+            "permissions": [
+              {
+                "role": "editor",
+                "type": "user_permission",
+                "user_id": "0e0e0e0e-0000-4000-8000-000000000002"
+              }
+            ],
+            "created_time": 1794284069725,
+            "last_edited_time": 1794284069725,
+            "parent_id": "5a5a5a5a-0000-4000-8000-000000000001",
+            "parent_table": "space",
+            "alive": true,
+            "space_id": "5a5a5a5a-0000-4000-8000-000000000001",
+            "crdt_format_version": 1,
+            "nav_parent_table": "space",
+            "nav_parent_id": "5a5a5a5a-0000-4000-8000-000000000001"
+          },
+          "role": "editor"
+        }
+      },
+      "f1f1f1f1-0000-4000-8000-00000000011c": {
+        "value": {
+          "value": {
+            "id": "f1f1f1f1-0000-4000-8000-00000000011c",
+            "version": 3,
+            "type": "text",
+            "properties": {
+              "title": [["Before the copy"]]
+            },
+            "created_time": 1794284069725,
+            "last_edited_time": 1794284069725,
+            "parent_id": "f1f1f1f1-0000-4000-8000-00000000011b",
+            "parent_table": "block",
+            "alive": true,
+            "space_id": "5a5a5a5a-0000-4000-8000-000000000001",
+            "crdt_format_version": 1,
+            "nav_parent_table": "block",
+            "nav_parent_id": "f1f1f1f1-0000-4000-8000-00000000011b"
+          },
+          "role": "editor"
+        }
+      },
+      "f1f1f1f1-0000-4000-8000-00000000011d": {
+        "value": {
+          "value": {
+            "id": "f1f1f1f1-0000-4000-8000-00000000011d",
+            "version": 2,
+            "type": "transclusion_reference",
+            "format": {
+              "transclusion_reference_pointer": {
+                "id": "f1f1f1f1-0000-4000-8000-000000000111",
+                "table": "block",
+                "spaceId": "5a5a5a5a-0000-4000-8000-000000000001"
+              }
+            },
+            "created_time": 1794284069725,
+            "last_edited_time": 1794284069725,
+            "parent_id": "f1f1f1f1-0000-4000-8000-00000000011b",
+            "parent_table": "block",
+            "alive": true,
+            "space_id": "5a5a5a5a-0000-4000-8000-000000000001",
+            "crdt_format_version": 1,
+            "nav_parent_table": "block",
+            "nav_parent_id": "f1f1f1f1-0000-4000-8000-00000000011b"
+          },
+          "role": "editor"
+        }
+      },
+      "f1f1f1f1-0000-4000-8000-00000000011e": {
+        "value": {
+          "value": {
+            "id": "f1f1f1f1-0000-4000-8000-00000000011e",
+            "version": 3,
+            "type": "text",
+            "properties": {
+              "title": [["After the copy"]]
+            },
+            "created_time": 1794284069725,
+            "last_edited_time": 1794284069725,
+            "parent_id": "f1f1f1f1-0000-4000-8000-00000000011b",
+            "parent_table": "block",
+            "alive": true,
+            "space_id": "5a5a5a5a-0000-4000-8000-000000000001",
+            "crdt_format_version": 1,
+            "nav_parent_table": "block",
+            "nav_parent_id": "f1f1f1f1-0000-4000-8000-00000000011b"
+          },
+          "role": "editor"
+        }
+      },
+      "f1f1f1f1-0000-4000-8000-000000000111": {
+        "spaceId": "5a5a5a5a-0000-4000-8000-000000000001",
+        "value": {
+          "value": {
+            "id": "f1f1f1f1-0000-4000-8000-000000000111",
+            "version": 4,
+            "type": "transclusion_container",
+            "content": ["f1f1f1f1-0000-4000-8000-000000000112", "f1f1f1f1-0000-4000-8000-000000000113"],
+            "created_time": 1794284069725,
+            "last_edited_time": 1794284069725,
+            "parent_id": "1a1a1a1a-0000-4000-8000-000000000010",
+            "parent_table": "block",
+            "alive": true,
+            "space_id": "5a5a5a5a-0000-4000-8000-000000000001",
+            "crdt_format_version": 1,
+            "nav_parent_table": "block",
+            "nav_parent_id": "1a1a1a1a-0000-4000-8000-000000000010"
+          },
+          "role": "editor"
+        }
+      },
+      "1a1a1a1a-0000-4000-8000-000000000010": {
+        "spaceId": "5a5a5a5a-0000-4000-8000-000000000001",
+        "value": {
+          "value": {
+            "id": "1a1a1a1a-0000-4000-8000-000000000010",
+            "version": 16,
+            "type": "page",
+            "properties": {
+              "title": [["Fixture rich page"]]
+            },
+            "content": [
+              "f1f1f1f1-0000-4000-8000-000000000101",
+              "f1f1f1f1-0000-4000-8000-000000000102",
+              "f1f1f1f1-0000-4000-8000-000000000103",
+              "f1f1f1f1-0000-4000-8000-000000000104",
+              "f1f1f1f1-0000-4000-8000-000000000105",
+              "f1f1f1f1-0000-4000-8000-000000000106",
+              "f1f1f1f1-0000-4000-8000-000000000108",
+              "f1f1f1f1-0000-4000-8000-000000000109",
+              "f1f1f1f1-0000-4000-8000-00000000010c",
+              "f1f1f1f1-0000-4000-8000-000000000111",
+              "f1f1f1f1-0000-4000-8000-000000000114"
+            ],
+            "permissions": [
+              {
+                "role": "editor",
+                "type": "user_permission",
+                "user_id": "0e0e0e0e-0000-4000-8000-000000000002"
+              }
+            ],
+            "created_time": 1794284069725,
+            "last_edited_time": 1794284069725,
+            "parent_id": "5a5a5a5a-0000-4000-8000-000000000001",
+            "parent_table": "space",
+            "alive": true,
+            "space_id": "5a5a5a5a-0000-4000-8000-000000000001",
+            "crdt_format_version": 1,
+            "nav_parent_table": "space",
+            "nav_parent_id": "5a5a5a5a-0000-4000-8000-000000000001"
+          },
+          "role": "editor"
+        }
+      },
+      "f1f1f1f1-0000-4000-8000-000000000112": {
+        "value": {
+          "value": {
+            "id": "f1f1f1f1-0000-4000-8000-000000000112",
+            "version": 3,
+            "type": "text",
+            "properties": {
+              "title": [["Synced line one"]]
+            },
+            "created_time": 1794284069725,
+            "last_edited_time": 1794284069725,
+            "parent_id": "f1f1f1f1-0000-4000-8000-000000000111",
+            "parent_table": "block",
+            "alive": true,
+            "space_id": "5a5a5a5a-0000-4000-8000-000000000001",
+            "crdt_format_version": 1,
+            "nav_parent_table": "block",
+            "nav_parent_id": "1a1a1a1a-0000-4000-8000-000000000010"
+          },
+          "role": "editor"
+        }
+      },
+      "f1f1f1f1-0000-4000-8000-000000000113": {
+        "value": {
+          "value": {
+            "id": "f1f1f1f1-0000-4000-8000-000000000113",
+            "version": 3,
+            "type": "bulleted_list",
+            "properties": {
+              "title": [["Synced item"]]
+            },
+            "created_time": 1794284069725,
+            "last_edited_time": 1794284069725,
+            "parent_id": "f1f1f1f1-0000-4000-8000-000000000111",
+            "parent_table": "block",
+            "alive": true,
+            "space_id": "5a5a5a5a-0000-4000-8000-000000000001",
+            "crdt_format_version": 1,
+            "nav_parent_table": "block",
+            "nav_parent_id": "1a1a1a1a-0000-4000-8000-000000000010"
+          },
+          "role": "editor"
+        }
+      }
+    }
+  }
+}

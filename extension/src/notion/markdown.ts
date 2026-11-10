@@ -1,7 +1,7 @@
 // Notion pages as Markdown, the form the model reads them in. Each block ends with a reference
 // (` ^<ref>`, like an Obsidian block reference) so tools that change the page can point at it.
 // Child pages, databases, and links to pages carry the full page id, which read_page accepts.
-import type { Block, LoadedPage, NotionRecord, RecordMap } from './api'
+import type { Block, LoadedPage, NotionRecord, Pointer, RecordMap } from './api'
 
 /** A run of text and its decorations, as Notion stores rich text: `[text, [[mark, value?], …]?]`. */
 type Run = [string, [string, unknown?][]?]
@@ -84,6 +84,54 @@ export function pageToMarkdown({ page, recordMap }: LoadedPage): PageMarkdown {
   }
 }
 
+/** The most people and pages `unnamedMentions` asks for: one request's worth. */
+const UNNAMED_MAX = 100
+
+/**
+ * People and pages a page shows as mentions (in its text, and in the row properties it shows)
+ * whose records `loadPage` didn't return, so they would show as `@someone` and `[page](id)`.
+ * Loading them shows their names. Only for a page: a database shows no text of its own.
+ */
+export function unnamedMentions({ page, recordMap, spaceId }: LoadedPage): Pointer[] {
+  if (page.type !== 'page') return []
+  const blocks = (recordMap.block ?? {}) as Record<string, Block>
+  const ctx = new Context(recordMap, blocks)
+  const users = new Set<string>()
+  const pages = new Map<string, string>()
+  const scan = (value: unknown) => {
+    for (const [, marks = []] of runs(value)) {
+      for (const [mark, arg, space] of marks as [string, unknown?, unknown?][]) {
+        if (mark === 'u' && typeof arg === 'string') users.add(arg)
+        if (mark === 'p' && typeof arg === 'string') pages.set(arg, typeof space === 'string' ? space : spaceId)
+      }
+    }
+  }
+  // What synced copies show is drawn too, from their originals (a copy inside its own original,
+  // once).
+  const shown = ctx.descendants(page)
+  for (let n = 0; n < shown.length; n++) {
+    const block = blocks[shown[n]]
+    for (const value of Object.values(block?.properties ?? {})) scan(value)
+    const original = block?.type === 'transclusion_reference' ? ctx.original(block) : undefined
+    if (original && !shown.includes(original.id)) shown.push(original.id, ...ctx.descendants(original))
+  }
+  // A row's properties show only with its database, which names them.
+  const schema = (
+    page.parent_table === 'collection' ? recordMap.collection?.[String(page.parent_id)]?.schema : undefined
+  ) as Schema | undefined
+  for (const [key, { type }] of Object.entries(schema ?? {})) {
+    if (type === 'created_by' || type === 'last_edited_by') {
+      const user = page[`${type}_id`]
+      if (typeof user === 'string') users.add(user)
+    } else if (type !== 'title') scan(page.properties?.[key])
+  }
+  const pointers: Pointer[] = [
+    ...[...users].filter((id) => !recordMap.notion_user?.[id]).map((id) => ({ table: 'notion_user' as const, id })),
+    ...[...pages].filter(([id]) => !blocks[id]).map(([id, space]) => ({ table: 'block' as const, id, spaceId: space })),
+  ]
+  return pointers.slice(0, UNNAMED_MAX)
+}
+
 /** Rich text from outside a page's blocks (a comment, say) as Markdown, with mentions named from `recordMap`. */
 export function richMarkdown(recordMap: RecordMap, value: unknown): string {
   return new Context(recordMap, (recordMap.block ?? {}) as Record<string, Block>).rich(value)
@@ -132,13 +180,21 @@ class Context {
   topLevel = false
   /** Line owners of the blocks drawn inside each block being drawn. */
   private ownerFrames: string[][] = []
+  /**
+   * The originals of the synced copies being drawn, outermost first. Their blocks live where the
+   * original is, so they are drawn without references: tools can't change them from this page.
+   */
+  private within: string[] = []
 
   constructor(
     private readonly recordMap: RecordMap,
     private readonly blocks: Record<string, Block>,
   ) {}
 
-  /** Ids of the blocks the page shows, in order: children, but not the content of child pages. */
+  /**
+   * Ids of the blocks the page shows, in order: children, but not the content of child pages, nor
+   * what a synced copy shows (those blocks are the original's, on its page).
+   */
   descendants(parent: Block): string[] {
     const out: string[] = []
     for (const id of parent.content ?? []) {
@@ -150,24 +206,45 @@ class Context {
     return out
   }
 
+  /** The original a synced copy shows, if it was loaded. */
+  original(block: Block): Block | undefined {
+    const pointer = block.format?.transclusion_reference_pointer as { id?: unknown } | undefined
+    const original = typeof pointer?.id === 'string' ? this.blocks[pointer.id] : undefined
+    return original && original.alive !== false ? original : undefined
+  }
+
   /** The children of `parent`, each rendered with its own children. */
   children(parent: Block, depth: number): string[][] {
     const out: string[][] = []
+    const content = parent.content ?? []
     let number = 0
-    for (const id of parent.content ?? []) {
+    for (let at = 0; at < content.length; at++) {
+      const id = content[at]
       const block = this.blocks[id]
       if (block?.alive === false) continue
-      number = block?.type === 'numbered_list' ? number + 1 : 0
+      // A list counts from where its first item says (Notion's "start at"), or from 1.
+      const start = Number(block?.format?.list_start_index)
+      number =
+        block?.type === 'numbered_list' ? (number ? number + 1 : Number.isInteger(start) && start > 0 ? start : 1) : 0
       if (block && LAYOUT_TYPES.has(block.type)) {
         out.push(...this.children(block, depth))
         continue
+      }
+      // Blocks that weren't loaded (the rest of a page too long to load, usually) are one line
+      // together, carrying the first one's reference.
+      let missing = 0
+      if (!block) {
+        while (at + missing < content.length && !this.blocks[content[at + missing]]) missing++
+        at += missing - 1
       }
       // Which block each line belongs to: the lines blocks nested in this one draw are collected
       // while it is drawn.
       const top = this.topLevel
       this.topLevel = false
       this.ownerFrames.push([])
-      const lines = block ? this.block(block, depth, number) : [`${indent(depth)}[block not loaded]${this.ref(id)}`]
+      const lines = block
+        ? this.block(block, depth, number)
+        : [`${indent(depth)}[${missing === 1 ? 'block' : `${missing} blocks`} not loaded]${this.ref(id)}`]
       const nestedOwners = this.ownerFrames.pop()!
       this.topLevel = top
       if (lines.length) {
@@ -175,7 +252,7 @@ class Context {
         // The block's own Markdown: its lines up to the one carrying its reference, without its
         // children, its reference, or the indentation of its depth.
         const ref = this.ref(id).trim()
-        const end = lines.findIndex((l) => l.endsWith(` ${ref}`) || l.trim() === ref)
+        const end = ref ? lines.findIndex((l) => l.endsWith(` ${ref}`) || l.trim() === ref) : 0
         const owners = [...Array<string>(end < 0 ? 1 : end + 1).fill(id), ...nestedOwners]
         while (owners.length < lines.length) owners.push(id)
         owners.length = lines.length
@@ -232,14 +309,14 @@ class Context {
         const language = this.plain(block.properties?.language).toLowerCase()
         const code = this.plain(block.properties?.title)
         // The fence is longer than any run of backticks in the code, so the code can't close it.
-        const longest = Math.max(0, ...(code.match(/`+/g) ?? []).map((run) => run.length))
-        const fence = '`'.repeat(Math.max(3, longest + 1))
+        const fence = '`'.repeat(Math.max(3, longestRun(code) + 1))
+        const caption = this.rich(block.properties?.caption).replace(/\n/g, '<br>')
         return [
           `${pad}${fence}${language === 'plain text' ? '' : language}`,
           ...code.split('\n').map((l) => `${pad}${l}`),
           `${pad}${fence}`,
           // On its own line: text after a closing fence would stop it from closing the block.
-          `${pad}${ref.trim()}`,
+          ...(caption ? [`${pad}[caption: ${caption}]${ref}`] : refLine(pad, ref)),
           ...children(),
         ]
       }
@@ -265,7 +342,22 @@ class Context {
         return line('↗ ', `[${this.pageTitle(target)}](${hexId(target)})`)
       }
       case 'table':
-        return [...this.table(block, pad), `${pad}${ref.trim()}`]
+        return [...this.table(block, pad), ...refLine(pad, ref)]
+      case 'transclusion_container':
+        // The original of a synced block: its content is this page's, and shows on other pages too.
+        return line('', '[synced block]')
+      case 'transclusion_reference': {
+        // A copy of a synced block shows its original's content, which lives where the original is:
+        // drawn without references, so an edit on this page can't change another page.
+        const original = this.original(block)
+        if (!original || this.within.includes(original.id)) return line('', '[synced copy, not loaded]')
+        this.within.push(original.id)
+        try {
+          return [...withRef(pad, '', '[synced copy]', ref), ...this.children(original, depth + 1).flat()]
+        } finally {
+          this.within.pop()
+        }
+      }
       default:
         if (MEDIA_TYPES.has(block.type)) {
           const caption = this.rich(block.properties?.caption) || this.plain(block.properties?.title)
@@ -313,20 +405,35 @@ class Context {
   }
 
   /**
-   * A database row's properties, in the order of the database's schema, skipping empty ones and the title.
+   * A database row's properties, skipping empty ones and the title, in the order of the database's
+   * first view (as Notion shows its columns), then any the view doesn't list in the schema's order.
    * Without its database (the user may see the row but not the database), there are none to show.
    */
   properties(page: Block): string[] {
     if (page.parent_table !== 'collection' || !page.parent_id) return []
     const collection = this.recordMap.collection?.[page.parent_id]
-    const schema = (collection?.schema ?? {}) as Record<string, { name?: string; type?: string }>
+    const schema = (collection?.schema ?? {}) as Schema
+    const keys = Object.keys(schema)
+    const order = this.viewOrder(collection).filter((key) => key in schema)
     const out: string[] = []
-    for (const [key, { name, type }] of Object.entries(schema)) {
+    for (const key of new Set([...order, ...keys])) {
+      const { name, type } = schema[key]
       if (key === 'title' || type === 'title') continue
       const shown = this.property(page, key, type)
       if (shown) out.push(`${name ?? key}: ${shown}`)
     }
     return out
+  }
+
+  /** The properties in the order the first view of a database lists them, if that view was loaded. */
+  private viewOrder(collection: NotionRecord | undefined): string[] {
+    const database = collection?.parent_table === 'block' ? this.blocks[String(collection.parent_id)] : undefined
+    const viewId = (database?.view_ids as unknown[] | undefined)?.[0]
+    const view = typeof viewId === 'string' ? this.recordMap.collection_view?.[viewId] : undefined
+    // Each kind of view keeps its own list: `table_properties`, `board_properties`, and so on.
+    const listed = (view?.format as Record<string, unknown> | undefined)?.[`${String(view?.type)}_properties`]
+    if (!Array.isArray(listed)) return []
+    return listed.flatMap((p: { property?: unknown }) => (typeof p?.property === 'string' ? [p.property] : []))
   }
 
   property(page: Block, key: string, type: string | undefined, { table = false } = {}): string {
@@ -368,7 +475,7 @@ class Context {
   }
 
   private ref(id: string): string {
-    return ` ^${this.refs.get(id) ?? hexId(id)}`
+    return this.within.length ? '' : ` ^${this.refs.get(id) ?? hexId(id)}`
   }
 
   private fullRef(id: string): string {
@@ -415,6 +522,12 @@ class Context {
       switch (mark) {
         case 'p':
           return `[${pipes(this.pageTitle(String(arg)))}](${hexId(String(arg))})`
+        case 'lm': {
+          // A link mention (a web page shown as a preview) is a link to that page.
+          const { href, title } = (arg ?? {}) as { href?: unknown; title?: unknown }
+          if (typeof href !== 'string' || !href) break
+          return `[${escapeMarkdown(typeof title === 'string' && title ? title : href)}](${pipes(href)})`
+        }
         case 'u':
           // Its bold, italic, and strikethrough still apply, as for text (a link can't: `[@[Name]](url)`
           // wouldn't read back). The name is Markdown-escaped, so its pipes are too.
@@ -439,7 +552,7 @@ class Context {
     }
     const has = (m: string) => marks.some(([mark]) => mark === m)
     // A mention in backticks would read back as code, not a mention.
-    if (has('c') && !has('u')) out = wrap(out, '`')
+    if (has('c') && !has('u')) out = codeSpan(out)
     if (has('b')) out = wrap(out, '**')
     if (has('i')) out = wrap(out, '*')
     if (has('s')) out = wrap(out, '~~')
@@ -481,6 +594,33 @@ function withRef(pad: string, prefix: string, text: string, ref: string, breaks:
   return lines
 }
 
+/** A reference on a line of its own, after a block whose last line can't carry it; none for none. */
+function refLine(pad: string, ref: string): string[] {
+  return ref ? [`${pad}${ref.trim()}`] : []
+}
+
+/** The length of the longest run of backticks in `text`. */
+function longestRun(text: string): number {
+  return Math.max(0, ...(text.match(/`+/g) ?? []).map((run) => run.length))
+}
+
+/**
+ * Inline code: in more backticks than it has in a row, so it can't close early, with a space inside
+ * each end when it starts or ends with a backtick, or with spaces on both ends (Markdown drops one
+ * there). A line break ends the code and starts it again on the next line, so `<br>` stays text.
+ */
+export function codeSpan(text: string): string {
+  return text
+    .split('\n')
+    .map((line) => {
+      if (!line) return ''
+      const fence = '`'.repeat(longestRun(line) + 1)
+      const pad = /^`|`$/.test(line) || (/^ [\s\S]* $/.test(line) && line.trim()) ? ' ' : ''
+      return `${fence}${pad}${line}${pad}${fence}`
+    })
+    .join('\n')
+}
+
 /** Text that isn't Markdown-escaped, for a table cell: a `|` can't end the cell, nor `\` undo that. */
 function tableEscape(raw: string): string {
   return raw.replace(/[\\|]/g, '\\$&')
@@ -502,7 +642,9 @@ function formatDate(arg: unknown): string {
 /**
  * Groups sections into parts of at most `max` characters, breaking only between sections, unless
  * one section alone is longer: then it is broken between lines (and a line longer than `max`, into
- * pieces). `members` lists the sections each part shows, whole or in part.
+ * pieces). A code block open at such a break is closed at the end of the part and opened again at
+ * the start of the next, and a piece of a quoted line is quoted too. `members` lists the sections
+ * each part shows, whole or in part.
  */
 export function splitSections(
   sections: string[],
@@ -536,13 +678,34 @@ export function splitSections(
     if ((started ? current.length + 1 : 0) + section.length <= max) return add(section, n, 0, count)
     push()
     if (section.length <= max) return add(section, n, 0, count)
+    /** The code block open at the current line: its opening fence line, and the line closing it. */
+    let code: { open: string; close: string; prefix: string } | undefined
     section.split('\n').forEach((whole, i) => {
-      for (let at = 0; at < Math.max(whole.length, 1); at += max) {
-        const line = whole.slice(at, at + max)
-        if (started && current.length + 1 + line.length > max) push()
+      const closes = !!code && whole.trimEnd() === code.close
+      const fence = code ? undefined : /^(\s*(?:>\s?)*)(`{3,})[^`]*$/.exec(whole)
+      const opens = fence ? { open: whole, close: `${fence[1]}${fence[2]}`, prefix: fence[1] } : undefined
+      // Room kept for closing an open code block at the end of a part and opening it again.
+      const reserve = code && !closes ? code.open.length + code.close.length + 2 : 0
+      const prefix = code ? code.prefix : (/^\s*(?:>\s?)+/.exec(whole)?.[0] ?? '')
+      const size = Math.max(1, max - reserve - prefix.length)
+      for (let at = 0; at < Math.max(whole.length, 1); at += at ? size : size + prefix.length) {
+        const line = at ? prefix + whole.slice(at, at + size) : whole.slice(0, size + prefix.length)
+        // Room for the fence that closes the block this line leaves open.
+        const open = closes ? undefined : (code ?? opens)
+        const room = open ? open.close.length + 1 : 0
+        if (started && current.length + 1 + line.length + room > max) {
+          if (code) current += `\n${code.close}`
+          push()
+          if (code) {
+            current = code.open
+            started = true
+          }
+        }
         // A blank line that starts a part is still a line.
         add(line, n, i, i + 1)
       }
+      if (closes) code = undefined
+      else code ??= opens
     })
   })
   push()

@@ -55,6 +55,7 @@ import {
   hexId,
   pageToMarkdown,
   rowValues,
+  unnamedMentions,
   splitSections,
   titleFirst,
   type Schema,
@@ -133,8 +134,15 @@ export const readPage: ToolSpec = {
     if (!PAGE_TYPES.has(loaded.page.type)) {
       throw new Error('That id is a block inside a page, not a page. Read the page it is on instead.')
     }
+    if (!mentionsLoaded.has(loaded)) {
+      await loadMentioned(tab, loaded)
+      mentionsLoaded.add(loaded)
+    }
     const md = pageToMarkdown(loaded)
-    const { parts, members } = splitSections(md.sections, PART_CHARS)
+    // A row's properties come first, as front matter, and count toward the size of the first part.
+    const front = md.properties.length ? [['---', ...md.properties, '---'].join('\n')] : []
+    const owners = [...front.map(() => []), ...md.owners]
+    const { parts, members } = splitSections([...front, ...md.sections], PART_CHARS)
     if (part > parts.length) {
       throw new Error(`This page has ${parts.length} part${parts.length === 1 ? '' : 's'}; there is no part ${part}.`)
     }
@@ -161,15 +169,15 @@ export const readPage: ToolSpec = {
         ? ["This is a database row, but its database can't be opened, so its properties are not shown."]
         : []),
     ]
-    const properties = part === 1 && md.properties.length ? ['---', ...md.properties, '---'] : []
-    const body = parts[part - 1] || (md.kind === 'page' ? '(This page is empty.)' : '')
+    const body = parts[part - 1]
+    const empty = md.kind === 'page' && !md.sections.length ? ['(This page is empty.)'] : []
     // What edit_page checks edits against: only the blocks this read showed, as they were. Part 1
     // starts a new read; later parts add to it.
     // The blocks this part drew, as the renderer reports them: never inferred from page text.
-    const drawn = new Set(members[part - 1].flatMap(({ section, from, to }) => md.owners[section].slice(from, to)))
+    const drawn = new Set(members[part - 1].flatMap(({ section, from, to }) => owners[section].slice(from, to)))
     const seen = pageRead(loaded, md, (b) => drawn.has(b))
     remember(part === 1 ? seen : mergeReads(pageReads.get(loaded.page.id), seen))
-    return [...header, '', ...properties, ...(body ? [body] : [])].join('\n')
+    return [...header, '', ...(body ? [body] : []), ...(part === 1 ? empty : [])].join('\n')
   },
 }
 
@@ -224,22 +232,39 @@ async function loadForPart(tab: NotionTab, id: string, part: number): Promise<Lo
   return part > 1 ? { ...result, reloaded: true } : result
 }
 
-/** Loads a page, and for a database row also its database, which names the row's properties. */
+/**
+ * Loads a page, and for a database row also its database, which names the row's properties. People
+ * and pages it mentions that the page's load left out are loaded too, so they show by name.
+ */
 async function loadWithDatabase(tab: NotionTab, id: string): Promise<Loaded> {
   const loaded = await tab.client.loadPage(id)
   const { page, spaceId, recordMap } = loaded
-  if (page.parent_table !== 'collection' || !page.parent_id || recordMap.collection?.[page.parent_id]) {
-    return { loaded, databaseMissing: false }
-  }
-  try {
-    mergeRecordMaps(recordMap, await tab.client.getRecords([{ table: 'collection', id: page.parent_id, spaceId }]))
-    return { loaded, databaseMissing: false }
-  } catch (err) {
-    // A row can be shared with someone who can't open its database; the row itself still reads.
-    if (err instanceof NotionError && (err.code === 'no_access' || err.code === 'in_trash')) {
-      return { loaded, databaseMissing: true }
+  let databaseMissing = false
+  if (page.parent_table === 'collection' && page.parent_id && !recordMap.collection?.[page.parent_id]) {
+    try {
+      mergeRecordMaps(recordMap, await tab.client.getRecords([{ table: 'collection', id: page.parent_id, spaceId }]))
+    } catch (err) {
+      // A row can be shared with someone who can't open its database; the row itself still reads.
+      if (!(err instanceof NotionError && (err.code === 'no_access' || err.code === 'in_trash'))) throw err
+      databaseMissing = true
     }
-    throw err
+  }
+  return { loaded, databaseMissing }
+}
+
+/** Loads whose mentioned people and pages were looked up, so later parts don't look again. */
+const mentionsLoaded = new WeakSet<LoadedPage>()
+
+/** Adds the people and pages `loaded` mentions but doesn't hold to it; ones out of reach stay unnamed. */
+async function loadMentioned(tab: NotionTab, loaded: LoadedPage): Promise<void> {
+  const missing = unnamedMentions(loaded)
+  if (!missing.length) return
+  try {
+    mergeRecordMaps(loaded.recordMap, await tab.client.findRecords(missing))
+  } catch (err) {
+    // Only names: records the account can't open (a page in another workspace, say) stay unnamed,
+    // as when Notion leaves them out. Anything else, a rate limit included, still stops the read.
+    if (!(err instanceof NotionError && (err.code === 'no_access' || err.code === 'in_trash'))) throw err
   }
 }
 
@@ -876,9 +901,12 @@ export const editPage: ToolSpec = {
     }
     // The edit is checked against the page first, so a refused edit costs no member lookup.
     planEdit(loaded, read, edits)
+    const writes = edits.filter((e) => e.action !== 'delete')
+    // Names read_page showed for people the page mentions, so a name a rewritten block already
+    // mentions is matched to that person. Only needed when the new Markdown mentions someone.
+    if (writes.some((e) => personNames(blockTitles(e.blocks)).length)) await loadMentioned(tab, loaded)
     // People the new Markdown mentions, matched before anything is written. In a block being
     // rewritten, a name it already mentions is that same person.
-    const writes = edits.filter((e) => e.action !== 'delete')
     const users = loaded.recordMap.notion_user
     const blocks = loaded.recordMap.block ?? {}
     const found = await findPeople(

@@ -1,8 +1,8 @@
 // The read_page tool (extension/src/tools.ts) against a fake Notion tab, with pages built in the
 // shape Notion's loadPageChunk returns them (see fixtures/notion/ for recorded examples).
 import { afterEach, describe, expect, it } from 'vitest'
-import { blockRefs, splitIntoParts } from '../../extension/src/notion/markdown'
-import { PART_CHARS, readPage } from '../../extension/src/tools'
+import { blockRefs, codeSpan, splitIntoParts } from '../../extension/src/notion/markdown'
+import { PART_CHARS, editPage, readPage } from '../../extension/src/tools'
 import { FakeNotionTab, PAGE, PAGE_URL, SPACE, USER, fixture, restoreGlobals } from './notion-tab'
 
 afterEach(restoreGlobals)
@@ -12,6 +12,12 @@ const PAGE_HEX = hex(PAGE)
 /** A block id whose last 8 hex digits are `n`, so references are easy to read. */
 const id = (n: number) => `b0b0b0b0-0000-4000-8000-${n.toString(16).padStart(12, '0')}`
 const COLLECTION = 'c0c0c0c0-0000-4000-8000-000000000001'
+/** Pages of the recorded fixtures (rich-page is PAGE). */
+const RECORDED = {
+  row: 'f1f1f1f1-0000-4000-8000-000000000115',
+  relatedRow: 'f1f1f1f1-0000-4000-8000-000000000116',
+  syncedCopy: 'f1f1f1f1-0000-4000-8000-00000000011b',
+}
 
 type Fields = Record<string, unknown>
 type Records = Record<string, Record<string, unknown>>
@@ -182,13 +188,65 @@ describe('UC-NOTION-001 read a page', () => {
     )
   })
 
+  it('[UC-NOTION-001-S01] reads a recorded page with mentions, a callout, code, a table, columns, and a synced block', async () => {
+    new FakeNotionTab(PAGE_URL).respond('loadPageChunk', 200, fixture('rich-page')).install()
+    expect(body(await read())).toBe(
+      [
+        '# Overview ^00000101',
+        `Ask @[Fixture User] about [Write the plan](${hex(RECORDED.row)}) by @2026-11-20, see ` +
+          '[Example Domain](https://example.com/) and run ``a `b` c``. ^00000102',
+        // The list starts where its first item says.
+        '5. Fifth ^00000103',
+        '6. Sixth ^00000104',
+        '> Line one',
+        '> Line two ^00000105',
+        '> [!💡] Heads up ^00000106',
+        '> Inside the callout ^00000107',
+        '```typescript',
+        'const a = 1',
+        'console.log(a)',
+        '```',
+        '[caption: Example code] ^00000108',
+        '| Name | Owner |',
+        '| --- | --- |',
+        '| Plan | @[Fixture User] |',
+        '^00000109',
+        'Left column ^0000010e',
+        'Right column ^00000110',
+        '[synced block] ^00000111',
+        '  Synced line one ^00000112',
+        '  - Synced item ^00000113',
+        'After the synced block ^00000114',
+      ].join('\n'),
+    )
+  })
+
+  it('[UC-NOTION-001-S01] shows what a synced copy shows: the content of its original', async () => {
+    new FakeNotionTab(PAGE_URL).respond('loadPageChunk', 200, fixture('synced-copy')).install()
+    // The copied blocks are the original's, on another page: they have no references here.
+    expect(body(await read({ page: RECORDED.syncedCopy }))).toBe(
+      [
+        'Before the copy ^0000011c',
+        '[synced copy] ^0000011d',
+        '  Synced line one',
+        '  - Synced item',
+        'After the copy ^0000011e',
+      ].join('\n'),
+    )
+    // So edit_page can't change them from this page; the copy itself it can delete.
+    const edit = (block: string) =>
+      editPage.run({ page: RECORDED.syncedCopy, edits: [{ action: 'replace', block, markdown: 'Changed' }] })
+    await expect(edit('^00000112')).rejects.toThrow('^00000112 is not a block of the page as you last read it.')
+    await expect(edit(hex('f1f1f1f1-0000-4000-8000-000000000112'))).rejects.toThrow('is not a block of the page')
+  })
+
   it('[UC-NOTION-001-S02] marks content it cannot show, and keeps everything after it', async () => {
     openPage(
       chunk([id(1), id(2), id(3)], {
         block: {
           ...block(id(1), 'text', 'Before'),
-          ...block(id(2), 'transclusion_container', undefined, { content: [id(4)] }),
-          ...block(id(4), 'text', 'Synced text', {}, id(2)),
+          ...block(id(2), 'breadcrumb', undefined, { content: [id(4)] }),
+          ...block(id(4), 'text', 'Nested text', {}, id(2)),
           ...block(id(3), 'text', 'After'),
         },
       }),
@@ -196,8 +254,8 @@ describe('UC-NOTION-001 read a page', () => {
     expect(body(await read())).toBe(
       [
         'Before ^00000001',
-        '[unsupported block: transclusion_container] ^00000002',
-        '  Synced text ^00000004',
+        '[unsupported block: breadcrumb] ^00000002',
+        '  Nested text ^00000004',
         'After ^00000003',
       ].join('\n'),
     )
@@ -282,6 +340,32 @@ describe('UC-NOTION-001 read a page', () => {
     )
     expect(tab.sent.at(-1)!.body).toEqual({
       requests: [{ pointer: { table: 'collection', id: COLLECTION, spaceId: SPACE }, version: -1 }],
+    })
+  })
+
+  it('[UC-NOTION-001-S04] reads a recorded database row, its properties in the order its view shows them and by name', async () => {
+    // The row's load leaves out the person and the related row it names: they are loaded together.
+    const tab = new FakeNotionTab(PAGE_URL)
+      .respond('loadPageChunk', 200, fixture('database-row'))
+      .respond('syncRecordValuesMain', 200, fixture('database-row-mentions'))
+      .install()
+    expect(body(await read({ page: RECORDED.row }))).toBe(
+      [
+        '---',
+        'Notes: Some notes',
+        `Related: [Review it](${hex(RECORDED.relatedRow)})`,
+        'Owner: @[Fixture User]',
+        'Status: Doing',
+        '---',
+        'Row body ^00000117',
+      ].join('\n'),
+    )
+    expect(tab.sent.map((r) => r.url.split('/').at(-1))).toEqual(['loadPageChunk', 'syncRecordValuesMain'])
+    expect(tab.sent[1].body).toEqual({
+      requests: [
+        { pointer: { table: 'notion_user', id: USER }, version: -1 },
+        { pointer: { table: 'block', id: RECORDED.relatedRow, spaceId: SPACE }, version: -1 },
+      ],
     })
   })
 
@@ -601,5 +685,207 @@ describe('more converter and argument details', () => {
       }),
     )
     expect(body(await read())).toBe(`See [plan](/${hex(target)}) and [site](https://example.com/x) ^00000001`)
+  })
+})
+
+describe('faithful details', () => {
+  it('folds blocks that were not loaded into one line', async () => {
+    // As when a page is too long to load in full: the blocks after the first two weren't returned.
+    openPage(
+      chunk([1, 2, 3, 4, 5].map(id), {
+        block: { ...block(id(1), 'text', 'Loaded'), ...block(id(2), 'toggle', 'Open', { content: [id(6)] }) },
+      }),
+    )
+    expect(body(await read())).toBe(
+      [
+        'Loaded ^00000001',
+        '▸ Open ^00000002',
+        '  [block not loaded] ^00000006',
+        '[3 blocks not loaded] ^00000003',
+      ].join('\n'),
+    )
+  })
+
+  it('draws inline code so backticks, spaces, and line breaks in it read back', async () => {
+    expect(codeSpan('a `b` c')).toBe('``a `b` c``')
+    expect(codeSpan('`x')).toBe('`` `x ``')
+    expect(codeSpan(' padded ')).toBe('`  padded  `')
+    expect(codeSpan(' ')).toBe('` `')
+    openPage(
+      chunk([id(1)], {
+        block: block(id(1), 'text', [['Run '], ['x<br>y', [['c']]], [' or '], ['line 1\nline 2', [['c']]]]),
+      }),
+    )
+    expect(body(await read())).toBe('Run `x<br>y` or `line 1`<br>`line 2` ^00000001')
+  })
+
+  it('shows a link mention without a title as its address', async () => {
+    openPage(
+      chunk([id(1)], {
+        block: block(id(1), 'text', [['See '], ['‣', [['lm', { href: 'https://example.com/a_(b)' }]]]]),
+      }),
+    )
+    expect(body(await read())).toBe('See [https://example.com/a\\_(b)](https://example.com/a_(b)) ^00000001')
+  })
+
+  it('leaves people and pages it cannot load unnamed', async () => {
+    const stranger = '0f0f0f0f-0000-4000-8000-000000000003'
+    const elsewhere = '3b3b3b3b-0000-4000-8000-000000000033'
+    const tab = openPage(
+      chunk([id(1)], {
+        block: block(id(1), 'text', [['‣', [['u', stranger]]], [' and '], ['‣', [['p', elsewhere]]]]),
+      }),
+    ).respond('syncRecordValuesMain', 200, fixture('empty-record-map'))
+    expect(body(await read())).toBe(`@someone and [page](${hex(elsewhere)}) ^00000001`)
+    expect(tab.sent).toHaveLength(2)
+  })
+
+  it('counts a row’s properties toward the first part', async () => {
+    const collection = {
+      [COLLECTION]: wrapped({
+        id: COLLECTION,
+        schema: { title: { name: 'Name', type: 'title' }, 'n:n': { name: 'Notes', type: 'text' } },
+      }),
+    }
+    const ids = Array.from({ length: 40 }, (_, i) => id(i + 1))
+    const row = chunk(
+      ids,
+      { block: Object.assign({}, ...ids.map((b, i) => block(b, 'text', `P${i} ${'w'.repeat(60)}`))), collection },
+      {
+        parent_id: COLLECTION,
+        parent_table: 'collection',
+        properties: { title: [['Row']], 'n:n': [['n'.repeat(PART_CHARS - 1000)]] },
+      },
+    )
+    openPage(row).respond('syncRecordValuesMain', 200, stillOpen(row))
+    const first = await read()
+    expect(first).toContain('Part 1 of 2. Read part 2 for more.')
+    expect(body(first).length).toBeLessThanOrEqual(PART_CHARS)
+    expect(body(first).startsWith('---\nNotes: nnn')).toBe(true)
+    const second = body(await read({ part: 2 }))
+    expect(second).not.toContain('Notes:')
+    expect(`${body(first)}\n${second}`.match(/^P\d+ /gm)).toHaveLength(40)
+  })
+
+  it('closes and opens again a code block or a quote that one part cuts', async () => {
+    const code = Array.from({ length: 600 }, (_, i) => `line ${i} ${'c'.repeat(40)}`).join('\n')
+    const page = chunk([id(1), id(2)], {
+      block: {
+        ...block(id(1), 'code', undefined, { properties: { title: [[code]], language: [['Python']] } }),
+        ...block(id(2), 'quote', 'q'.repeat(PART_CHARS * 2)),
+      },
+    })
+    const tab = openPage(page)
+    for (let i = 0; i < 10; i++) tab.respond('syncRecordValuesMain', 200, stillOpen(page))
+    const first = await read()
+    const parts = Number(/^Part 1 of (\d+)\./m.exec(first)?.[1])
+    const texts = [body(first)]
+    for (let part = 2; part <= parts; part++) texts.push(body(await read({ part })))
+    for (const text of texts) expect(text.length).toBeLessThanOrEqual(PART_CHARS)
+    // Every part that shows code shows it inside a fence of its own.
+    const withCode = texts.filter((t) => t.includes('line '))
+    expect(withCode.length).toBeGreaterThan(1)
+    for (const text of withCode) {
+      const lines = text.split('\n')
+      expect(lines[0]).toBe('```python')
+      expect(lines.filter((l) => l === '```')).toHaveLength(1)
+    }
+    // Each piece of the long quoted line is quoted.
+    const quoted = texts.flatMap((t) => t.split('\n')).filter((l) => l.includes('qqq'))
+    expect(quoted.length).toBeGreaterThan(1)
+    for (const line of quoted) expect(line.startsWith('> ')).toBe(true)
+    expect(quoted.map((l) => l.slice(2)).join('')).toBe(`${'q'.repeat(PART_CHARS * 2)} ^00000002`)
+  })
+
+  it('cuts a code block into parts between fences of its own', () => {
+    expect(splitIntoParts(['```js\nl1\nl2\nl3\n```\n^ref'], 16)).toEqual([
+      '```js\nl1\nl2\n```',
+      '```js\nl3\n```',
+      '^ref',
+    ])
+    // A code block isn't opened where there is no room left to close it.
+    expect(splitIntoParts(['aaaaaaaaaa\n```\nb\n```'], 15)).toEqual(['aaaaaaaaaa', '```\nb\n```'])
+    // A cut line in a quote is quoted on in the next part.
+    expect(splitIntoParts(['> aaaaaaaa'], 6)).toEqual(['> aaaa', '> aaaa'])
+  })
+})
+
+describe('lookups of mentioned people and pages', () => {
+  it('are not sent for a row whose database it cannot open, nor for an id of a block', async () => {
+    const stranger = '0f0f0f0f-0000-4000-8000-000000000003'
+    const row = chunk(
+      [id(1)],
+      { block: block(id(1), 'text', 'Row body') },
+      { parent_id: COLLECTION, parent_table: 'collection', properties: { 'g:h': [['‣', [['u', stranger]]]] } },
+    )
+    const tab = openPage(row).respond('syncRecordValuesMain', 200, fixture('empty-record-map'))
+    expect(body(await read())).toBe('Row body ^00000001')
+    // Only the database was asked for; the hidden person was not.
+    expect(tab.sent.map((r) => r.url.split('/').at(-1))).toEqual(['loadPageChunk', 'syncRecordValuesMain'])
+
+    const notAPage = openPage({
+      cursor: { stack: [] },
+      recordMap: {
+        __version__: 3,
+        block: block(PAGE, 'text', [['‣', [['u', stranger]]]], {}, id(9)),
+      },
+    })
+    await expect(read()).rejects.toThrow('That id is a block inside a page, not a page.')
+    expect(notAPage.sent).toHaveLength(1)
+  })
+
+  it('still read the page when Notion refuses them, leaving those mentions unnamed', async () => {
+    const elsewhere = '3b3b3b3b-0000-4000-8000-000000000033'
+    const ws = '9a9a9a9a-0000-4000-8000-000000000099'
+    openPage(chunk([id(1)], { block: block(id(1), 'text', [['See '], ['‣', [['p', elsewhere, ws]]]]) })).respond(
+      'syncRecordValuesMain',
+      403,
+      {},
+    )
+    expect(body(await read())).toBe(`See [page](${hex(elsewhere)}) ^00000001`)
+    // A rate limit still stops the read.
+    openPage(chunk([id(1)], { block: block(id(1), 'text', [['‣', [['p', elsewhere, ws]]]]) })).respond(
+      'syncRecordValuesMain',
+      429,
+      {},
+    )
+    await expect(read()).rejects.toMatchObject({ code: 'rate_limited' })
+  })
+
+  it('include mentions inside what a synced copy shows', async () => {
+    const stranger = '0f0f0f0f-0000-4000-8000-000000000003'
+    const original = 'f2f2f2f2-0000-4000-8000-000000000001'
+    const tab = openPage(
+      chunk([id(1)], {
+        block: {
+          ...block(id(1), 'transclusion_reference', undefined, {
+            format: { transclusion_reference_pointer: { id: original, table: 'block', spaceId: SPACE } },
+          }),
+          ...block(original, 'transclusion_container', undefined, { content: [id(2)] }, id(9)),
+          ...block(id(2), 'text', [['Ask '], ['‣', [['u', stranger]]]], {}, original),
+        },
+      }),
+    ).respond('syncRecordValuesMain', 200, {
+      recordMap: { __version__: 3, notion_user: { [stranger]: wrapped({ id: stranger, name: 'Other User' }) } },
+    })
+    expect(body(await read())).toBe(['[synced copy] ^00000001', '  Ask @[Other User]'].join('\n'))
+    expect(tab.sent[1].body).toEqual({ requests: [{ pointer: { table: 'notion_user', id: stranger }, version: -1 }] })
+  })
+
+  it('still says a row with no content is empty', async () => {
+    const collection = {
+      [COLLECTION]: wrapped({
+        id: COLLECTION,
+        schema: { title: { name: 'Name', type: 'title' }, 's:s': { name: 'Status', type: 'select' } },
+      }),
+    }
+    openPage(
+      chunk(
+        [],
+        { collection },
+        { parent_id: COLLECTION, parent_table: 'collection', properties: { title: [['Row']], 's:s': [['Doing']] } },
+      ),
+    )
+    expect(body(await read())).toBe(['---', 'Status: Doing', '---', '(This page is empty.)'].join('\n'))
   })
 })
