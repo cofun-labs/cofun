@@ -6,7 +6,7 @@ A signed-in user asks the AI about a Notion page: the one open next to the side 
 
 Child pages and databases on the page appear by name, and the AI can open them in turn, but their content is not part of the page. Each piece of the page is marked, so the AI can refer to it exactly.
 
-The AI reads as the user's own Notion account: it can read only what that account can open. A long page is read in parts, so one read never crowds out the conversation. When Notion turns the AI's requests away (it is limiting requests, or too busy), nothing is tried again: the question stops there, nothing more is sent to Notion, and the user is told to wait before asking again, so the account isn't pushed further.
+The AI reads as the user's own Notion account: it can read only what that account can open. A long page is read in parts, so one read never crowds out the conversation. When Notion turns the AI's requests away (it is limiting requests, or too busy), nothing is tried again: the question stops there, nothing more is sent to Notion, and the user is told to wait before asking again, so the account isn't pushed further. The same holds for everything the AI does in Notion, such as finding, listing, creating, commenting, and editing (UC-NOTION-002).
 
 Key constraints:
 
