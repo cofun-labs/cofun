@@ -18,6 +18,7 @@ import {
 } from './notion/api'
 import { isNotion, pageIdFromUrl, pageLink, pathPageIdFromUrl, toUuid } from './notion/hosts'
 import {
+  EDIT_ARGS,
   EditError,
   forget,
   mergeReads,
@@ -893,33 +894,8 @@ export function forgetReads(): void {
   pageWorkspaces.clear()
 }
 
-/** Which entry of `edits` an issue is about, as the model is told: "Edit 1". */
-const editAt = (issue: { path?: PropertyKey[] }) => `Edit ${entryAt(issue)}`
 const EDITS_LIST = '`edits` must be a list with at least one edit.'
 const GIVE_PAGE = 'Give `page`: the id read_page shows after "Page:".'
-
-const EDIT_ITEM = z.strictObject({
-  action: z.enum(['insert', 'replace', 'delete'], {
-    error: (issue) => `${editAt(issue)}: \`action\` must be "insert", "replace", or "delete".`,
-  }),
-  block: z
-    .string()
-    .describe(
-      'Reference of the block, as read_page shows it (e.g. ^1a2b3c4d). For insert: the block to insert after, ' +
-        'or inside.',
-    )
-    .optional(),
-  position: z
-    .enum(['after', 'inside', 'start', 'end'], {
-      error: (issue) => `${editAt(issue)}: \`position\` must be "after", "inside", "start", or "end".`,
-    })
-    .describe(
-      'For insert: after `block` (the default when `block` is given); inside `block`, nested in it before what ' +
-        'it already holds; or at the start or end of the page.',
-    )
-    .optional(),
-  markdown: z.string().describe('For insert and replace: the new content, as Markdown.').optional(),
-})
 
 export const editPage = defineTool({
   changesData: true,
@@ -938,7 +914,7 @@ export const editPage = defineTool({
     'refused: read it again and redo the edit.',
   args: z.strictObject({
     page: z.string({ error: GIVE_PAGE }).describe('Id of the page to edit, as read_page shows it after "Page:".'),
-    edits: z.array(EDIT_ITEM, { error: EDITS_LIST }).min(1, { error: EDITS_LIST }),
+    edits: z.array(EDIT_ARGS, { error: EDITS_LIST }).min(1, { error: EDITS_LIST }),
   }),
   preview: (args) => {
     const given = filled(args.page)

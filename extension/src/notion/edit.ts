@@ -1,5 +1,6 @@
 // Planning an edit_page call: checking the edits against the page as the agent read it and as it
 // is now, and turning them into one Notion transaction. Nothing here talks to Notion.
+import { z } from '../zod'
 import { blockOps, type Block, type LoadedPage, type NotionRecord, type Operation } from './api'
 import {
   COLOR,
@@ -161,13 +162,36 @@ export class EditError extends Error {
 
 export const READ_AGAIN = 'Read the page again with read_page, then redo the edit on what it shows now.'
 
-/** One edit as the model asks for it; which fields an action needs is checked by parseEdits. */
-export interface EditArgs {
-  action: 'insert' | 'replace' | 'delete'
-  block?: string
-  position?: 'after' | 'inside' | 'start' | 'end'
-  markdown?: string
-}
+/** Which entry of `edits` an issue is about, as the model is told: "Edit 1". */
+const editAt = (issue: { path?: PropertyKey[] }) => `Edit ${Number(issue.path?.[1]) + 1}`
+
+/**
+ * One edit as the model asks for it, and as it is described to the model; which fields an action
+ * needs is checked by parseEdits.
+ */
+export const EDIT_ARGS = z.strictObject({
+  action: z.enum(['insert', 'replace', 'delete'], {
+    error: (issue) => `${editAt(issue)}: \`action\` must be "insert", "replace", or "delete".`,
+  }),
+  block: z
+    .string()
+    .describe(
+      'Reference of the block, as read_page shows it (e.g. ^1a2b3c4d). For insert: the block to insert after, ' +
+        'or inside.',
+    )
+    .optional(),
+  position: z
+    .enum(['after', 'inside', 'start', 'end'], {
+      error: (issue) => `${editAt(issue)}: \`position\` must be "after", "inside", "start", or "end".`,
+    })
+    .describe(
+      'For insert: after `block` (the default when `block` is given); inside `block`, nested in it before what ' +
+        'it already holds; or at the start or end of the page.',
+    )
+    .optional(),
+  markdown: z.string().describe('For insert and replace: the new content, as Markdown.').optional(),
+})
+type EditArgs = z.output<typeof EDIT_ARGS>
 
 /** `people`: the user id of each person the edit's Markdown mentions, by the name it gives. */
 export type Edit =
