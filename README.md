@@ -26,7 +26,7 @@
 ## Get started
 
 1. **Install** the extension from the Chrome Web Store. _(Not published yet; the link will be here.)_
-2. **Open a Notion page** and click the Copilot for Notion icon in Chrome's toolbar. The side panel opens next to the page.
+2. **Open a Notion page** and click the Copilot for Notion icon in Chrome's toolbar (if it's hidden, pin it from the puzzle-piece Extensions menu). The side panel opens next to the page.
 3. **Sign in.** The panel opens a sign-in page in a new tab (Google is supported); once you're signed in, the panel picks it up.
 4. **Ask.** A few things to try:
    - _Summarize this page in five bullet points._
@@ -41,7 +41,7 @@ There is nothing to connect on the Notion side: no integration to create, no tok
 ## How it works
 
 <p align="center">
-  <img src="docs/assets/how-it-works.svg" alt="The side panel reads and edits pages through your own Notion tab, and sends your question to the Copilot server, which passes it to an AI model" width="880" />
+  <img src="docs/assets/how-it-works.svg" alt="The side panel reads and edits pages through your own Notion tab, and sends your question and what it read to the Copilot server, which passes them to an AI model" width="880" />
 </p>
 
 - **It works as you, in your own Notion tab.** Pages are read and changed from inside the Notion tab you already have open, with the session you're already signed in with. Copilot can reach what you can reach, and nothing else. The trade-off: it uses the same internal API as Notion's own web app, which is not a public API and may change.
@@ -50,11 +50,11 @@ There is nothing to connect on the Notion side: no integration to create, no tok
 
 ## Privacy and safety
 
-**What leaves your browser.** Your questions, and the content of the pages Copilot reads to answer them, go to the Copilot server and on to the AI model. The server doesn't keep them: for each request it records who asked, sizes, token counts, and the outcome, never the text of a prompt or a reply. [PRIVACY.md](PRIVACY.md) has the full account: what is read, which hosts it goes to, and what is kept.
+**What leaves your browser.** Your questions, and what Copilot reads to answer them (pages, database rows, comments, search results), go to the Copilot server and on to the AI model, which runs on Cloudflare Workers AI. The server doesn't keep them: for each request it records who asked, sizes, token counts, and the outcome, never the text of a prompt or a reply. [PRIVACY.md](PRIVACY.md) has the full account: what is read, which hosts it goes to, and what is kept.
 
 **What stays on your device.** Conversations are saved in Chrome on your device, per account, and kept after you sign out so you can pick up again. They are not encrypted: anyone who can use your Chrome profile can read them, including the page content Copilot read.
 
-**It edits without asking first.** Copilot edits pages, creates pages and rows, changes properties, adds comments, and moves and duplicates pages as soon as it decides to. Moving pages to the trash is the one thing it asks you about, every time. Each change is shown in the side panel as it happens, and Notion's page history can undo edits.
+**It edits without asking first.** Copilot edits pages, creates pages and rows, changes properties (it can remove a database property, with its values in every row), adds comments, and moves and duplicates pages as soon as it decides to. Moving pages to the trash is the one thing it asks you about, every time. Each change is shown in the side panel as it happens, and Notion's page history can undo edits.
 
 **Be careful with pages you don't control.** Copilot reads text written by other people: shared pages, guest content, search results. An instruction hidden in that text could make it act as you without anyone being asked, for example by copying something private into a page or a comment that others can read. Comments and mentions also notify people. Page history can undo a change, but not what someone read in the meantime. [More on this trade-off](docs/architecture.md#writes-without-approval).
 

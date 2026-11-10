@@ -92,7 +92,7 @@ docs/
   use-cases/              use cases by domain; tests reference their scenario IDs
 .oxlintrc.json            lint rules, including the extension's module boundaries
 .github/rulesets/         GitHub branch rulesets (export format)
-.github/workflows/        CI, CodeQL, dependency review, workflow lint, and Claude review
+.github/workflows/        CI, CodeQL, dependency review, workflow lint, Claude review, and Claude on request
 .github/dependabot.yml    weekly dependency updates
 scripts/
   sync-github-settings.sh applies the rulesets and repository options with gh
