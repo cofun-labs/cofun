@@ -570,6 +570,10 @@ describe('when Notion is limiting requests', () => {
     const err = await notionError(notion.getRecords([{ table: 'block', id: PAGE }]))
     expect(err.code).toBe('rate_limited')
     expect(waits).toEqual([10_000, 10_000, 10_000])
+    // Having given up, the client sends nothing more.
+    const sent = tab.sent.length
+    expect((await notionError(notion.loadPage(PAGE))).code).toBe('rate_limited')
+    expect(tab.sent).toHaveLength(sent)
   })
 
   it('waits as long as Retry-After says, in seconds or until a date', async () => {
@@ -647,10 +651,32 @@ describe('when Notion is limiting requests', () => {
 
   it('stops waiting as soon as the user stops, and sends nothing more', async () => {
     const tab = new FakeNotionTab(PAGE_URL).limit('loadPageChunk', 1, { 'retry-after': '20' }).install()
-    const { client: notion } = await activeNotionTab(AbortSignal.timeout(20))
+    const stop = new AbortController()
+    const { client: notion } = await activeNotionTab(stop.signal)
     const started = Date.now()
-    await expect(notion.loadPage(PAGE)).rejects.toMatchObject({ name: 'TimeoutError' })
+    const loading = notion.loadPage(PAGE)
+    // Stop once Notion refused the first request, so the client is in its (real) 20 s wait.
+    while (tab.sent.length === 0) await new Promise((resolve) => setTimeout(resolve, 1))
+    await new Promise((resolve) => setTimeout(resolve, 5))
+    stop.abort()
+    await expect(loading).rejects.toMatchObject({ name: 'AbortError' })
     expect(Date.now() - started).toBeLessThan(1_000)
     expect(tab.sent).toHaveLength(1)
+  })
+
+  it('backs off once for a burst Notion refuses together, and the others send after it is answered', async () => {
+    // 400 records go as 4 batches at once; Notion refuses all 4, and the first one's resend too.
+    const ids = Array.from({ length: 400 }, (_, i) => `1c1c1c1c-0000-4000-8000-${String(i).padStart(12, '0')}`)
+    const tab = new FakeNotionTab(PAGE_URL).limit('syncRecordValuesMain', 5, { 'retry-after': '10' }).install()
+    tab.workspace = new FakeWorkspace(
+      ids.map((id) => ({ id, type: 'page' })),
+      SPACE,
+    )
+    const waits: number[] = []
+    const records = await client(waits).findRecords(ids.map((id) => ({ table: 'block', id })))
+    expect(Object.keys(records.block ?? {})).toHaveLength(400)
+    // One request backs off, its waits counted once; the other three hold until it is answered.
+    expect(waits).toEqual([10_000, 10_000])
+    expect(tab.sent).toHaveLength(9)
   })
 })

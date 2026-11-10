@@ -35,7 +35,7 @@ export const IN_TRASH = 'The Notion page or block is in the trash.'
 export const OUTCOME_UNKNOWN =
   'Notion did not answer, so the change may or may not have been saved. Read the page again before retrying.'
 export const RATE_LIMITED =
-  'Notion is limiting requests from this account right now, so this was not done. Do not try again or work around it with other tools: tell the user to wait a minute before asking again.'
+  'Notion is turning requests away right now (too many requests, or too busy), so this was not done. Do not try again or work around it with other tools: tell the user to wait a minute before asking again.'
 
 /** The endpoints under /api/v3/ the client uses. */
 export type NotionEndpoint =
@@ -179,10 +179,13 @@ export interface NotionClientOptions {
 export class NotionClient {
   private readonly signal?: AbortSignal
   private readonly wait: Wait
-  /** Settles when the current backoff ends; every request of this client waits for it. */
-  private pause: Promise<unknown> = Promise.resolve()
+  /** While one request backs off, the client's other requests hold until Notion answers it. */
+  private held: Promise<void> = Promise.resolve()
+  private backingOff = false
   /** How long this client's backoffs took in all, in ms. */
   private waited = 0
+  /** A backoff ran out: the client sends nothing more. */
+  private gaveUp = false
 
   constructor(
     private readonly send: NotionTransport,
@@ -407,27 +410,56 @@ export class NotionClient {
 
   /**
    * Every request to Notion goes through here. `spaceId`, when known, goes along as
-   * `x-notion-space-id`. When Notion says to slow down, waits (as long as Notion asks, and longer
-   * with each try) and tries again a few times; then, or once the client waited too long in all,
-   * gives up with `rate_limited`.
+   * `x-notion-space-id`. When Notion says to slow down, one request backs off at a time, and the
+   * client's other requests hold until Notion answers it, so they neither go on as a burst nor
+   * all come back at once.
    */
   private async request<T>(
     endpoint: NotionEndpoint,
     body: unknown,
     spaceId?: string,
   ): Promise<{ json: T; signedIn: boolean }> {
-    for (let retry = 0; ; retry++) {
-      // While one request backs off, the others of this client wait too, so a burst doesn't go on.
-      await this.pause
+    for (;;) {
+      await this.held
+      if (this.gaveUp) throw new NotionError('rate_limited', RATE_LIMITED)
       this.signal?.throwIfAborted()
       const res = await this.send(endpoint, body, { spaceId })
       if (!slowDown(endpoint, res)) return { json: checkResponse(res) as T, signedIn: res.signedIn }
-      const ms = retryDelay(res.retryAfter, retry)
-      if (retry >= RETRIES || this.waited + ms > MAX_WAIT_MS) throw new NotionError('rate_limited', RATE_LIMITED)
-      this.waited += ms
-      // A backoff that is already running and ends later is kept.
-      this.pause = Promise.all([this.pause, this.wait(ms, this.signal)])
+      // Another request is backing off already: hold until Notion answers it, then send again.
+      if (this.backingOff) continue
+      this.backingOff = true
+      let release = () => {}
+      this.held = new Promise((resolve) => (release = resolve))
+      try {
+        return await this.backOff<T>(endpoint, body, spaceId, res)
+      } finally {
+        this.backingOff = false
+        release()
+      }
     }
+  }
+
+  /**
+   * Waits (as long as Notion asks, and longer with each try) and sends again, a few times at most;
+   * then, or once the client waited too long in all, gives up with `rate_limited`.
+   */
+  private async backOff<T>(
+    endpoint: NotionEndpoint,
+    body: unknown,
+    spaceId: string | undefined,
+    res: NotionResponse,
+  ): Promise<{ json: T; signedIn: boolean }> {
+    for (let retry = 0; slowDown(endpoint, res); retry++) {
+      const ms = retryDelay(res.retryAfter, retry)
+      if (retry >= RETRIES || this.waited + ms > MAX_WAIT_MS) {
+        this.gaveUp = true
+        throw new NotionError('rate_limited', RATE_LIMITED)
+      }
+      this.waited += ms
+      await this.wait(ms, this.signal)
+      res = await this.send(endpoint, body, { spaceId })
+    }
+    return { json: checkResponse(res) as T, signedIn: res.signedIn }
   }
 }
 
