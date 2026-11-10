@@ -480,6 +480,17 @@ describe('trashing pages', () => {
     expect(preview).toContain(`    ^${hex(PROJECTS)} (with 2 pages or databases inside) "Projects"`)
   })
 
+  it('keeps the checked names and refusals when a page holds too much to count', async () => {
+    const ws = workspace()
+    const many = Array.from({ length: 501 }, (_, n) => id(1000 + n))
+    ws.edit(NOTE, { content: many })
+    open(ws)
+    const preview = (await trashPage.preview!({ pages: [NOTE, ROW] })) as string
+    expect(preview).toContain(`    ^${hex(NOTE)} "Note"`)
+    expect(preview).toContain(`[a database row: this call will fail, and nothing will be trashed] ^${hex(ROW)}`)
+    expect(preview).not.toContain('Could not check')
+  })
+
   it('lists each page once in the preview, as it is trashed once', async () => {
     const ws = workspace()
     open(ws)

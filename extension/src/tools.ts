@@ -1442,6 +1442,38 @@ export const duplicatePage: ToolSpec = {
   },
 }
 
+/** How many children trash_page's preview looks at at most, and how long it waits for them. */
+const COUNT_CHILDREN_MAX = 500
+const COUNT_WAIT_MS = 1_000
+
+/**
+ * How many pages or databases sit right inside each page, for the trash preview; best effort:
+ * nothing when the pages hold too many blocks to look at, or Notion takes too long.
+ */
+async function childCounts(tab: NotionTab, pages: NotionRecord[]): Promise<Map<string, number>> {
+  const childIds = pages.flatMap((b) => (Array.isArray(b.content) ? (b.content as string[]) : []))
+  if (!childIds.length || childIds.length > COUNT_CHILDREN_MAX) return new Map()
+  let timer: ReturnType<typeof setTimeout> | undefined
+  try {
+    const children = await Promise.race([
+      tab.client.findRecords(childIds.map((id) => ({ table: 'block' as const, id }))).then((r) => r.block ?? {}),
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error('timed out')), COUNT_WAIT_MS)
+      }),
+    ])
+    return new Map(
+      pages.map((b) => [
+        b.id,
+        ((b.content as string[] | undefined) ?? []).filter((c) => PAGE_TYPES.has(String(children[c]?.type))).length,
+      ]),
+    )
+  } catch {
+    return new Map()
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
 /** Why trash_page refuses a page, in a few words; undefined if it doesn't. */
 function trashRefusal(page: NotionRecord): string | undefined {
   if (cannotReorganize(page, 'trashed')) {
@@ -1487,24 +1519,18 @@ export const trashPage: ToolSpec = {
       const lookup = (async () => {
         const tab = await activeNotionTab()
         const blocks = (await tab.client.findRecords(ids.map((id) => ({ table: 'block' as const, id })))).block ?? {}
-        // What each page holds right inside it, so the user sees what goes with it.
-        const childIds = Object.values(blocks).flatMap((b) => (Array.isArray(b.content) ? (b.content as string[]) : []))
-        const children =
-          (await tab.client.findRecords(childIds.map((id) => ({ table: 'block' as const, id })))).block ?? {}
-        const inside = new Map(
-          Object.values(blocks).map((b) => [
-            b.id,
-            ((b.content as string[] | undefined) ?? []).filter((c) => PAGE_TYPES.has(String(children[c]?.type))).length,
-          ]),
-        )
-        return { blocks, inside, databases: await databaseNames(tab, Object.values(blocks)) }
+        return { tab, blocks, databases: await databaseNames(tab, Object.values(blocks)) }
       })()
       // A slow Notion must not hold up the question to the user.
       const late = new Promise<never>((_, reject) => {
         timer = setTimeout(() => reject(new Error('timed out')), PREVIEW_LOOKUP_MS)
       })
-      ;({ blocks: found, inside, databases: names } = await Promise.race([lookup, late]))
+      const result = await Promise.race([lookup, late])
+      ;({ blocks: found, databases: names } = result)
       checked = true
+      clearTimeout(timer)
+      // Names and refusals are settled; what each page holds is only shown if it comes quickly.
+      inside = await childCounts(result.tab, Object.values(found))
     } catch {
       // Without Notion, the names the agent saw are all there is.
     } finally {
