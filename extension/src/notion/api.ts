@@ -268,6 +268,8 @@ const TASK_ERROR_POLLS = 3
 const CHUNK_LIMIT = 100
 /** Blocks a page lists but didn't send (closed toggles) that one read looks up at most. */
 export const NESTED_MAX = 300
+/** How many levels of nesting one read walks to find them: at most one lookup per level, or a few per level when many are missing. */
+export const NESTED_LEVELS = 8
 /** Blocks whose children belong to another page: a page read doesn't look inside them. */
 const NESTED_STOP = new Set(['page', 'collection_view_page', 'collection_view'])
 /** Records asked for in one syncRecordValuesMain request at most. */
@@ -334,25 +336,29 @@ export class NotionClient {
   /**
    * Loads the blocks a loaded page lists but loadPageChunk left out: Notion sends a closed
    * toggle's (or toggle heading's) children only once they were opened. Looks up the missing
-   * ids level by level, as Notion's client does when a toggle opens, up to `NESTED_MAX` blocks,
-   * and never inside child pages or databases. What is still missing shows as not loaded.
+   * ids level by level, as Notion's client does when a toggle opens, up to `NESTED_MAX` blocks and
+   * `NESTED_LEVELS` levels, and never inside child pages or databases. What is still missing shows as not loaded.
    */
   private async loadNested(pageId: string, spaceId: string, recordMap: RecordMap): Promise<void> {
-    const asked = new Set<string>()
+    // Every id is visited once, so a block listed twice, or a loop in `content`, can't repeat.
+    const seen = new Set([pageId])
+    let asked = 0
     let level = [pageId]
-    while (level.length && asked.size < NESTED_MAX) {
+    for (let depth = 0; level.length && depth < NESTED_LEVELS && asked < NESTED_MAX; depth++) {
       const missing: string[] = []
       const next: string[] = []
       for (const id of level) {
         const block = recordMap.block?.[id] as Block | undefined
         if (!block || (id !== pageId && NESTED_STOP.has(String(block.type)))) continue
         for (const child of block.content ?? []) {
+          if (seen.has(child)) continue
+          seen.add(child)
           if (recordMap.block?.[child]) next.push(child)
-          else if (!asked.has(child)) missing.push(child)
+          else missing.push(child)
         }
       }
-      const ask = missing.slice(0, NESTED_MAX - asked.size)
-      for (const id of ask) asked.add(id)
+      const ask = missing.slice(0, NESTED_MAX - asked)
+      asked += ask.length
       if (ask.length) {
         mergeRecordMaps(recordMap, await this.findRecords(ask.map((id) => ({ table: 'block', id, spaceId }))))
         next.push(...ask.filter((id) => recordMap.block?.[id]))

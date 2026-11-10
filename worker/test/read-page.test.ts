@@ -713,16 +713,9 @@ describe('faithful details', () => {
     ])
   })
 
-  it('looks up at most NESTED_MAX left-out blocks, and none inside child pages', async () => {
+  it('looks up at most NESTED_MAX left-out blocks', async () => {
     const many = Array.from({ length: NESTED_MAX + 50 }, (_, n) => id(1000 + n))
-    const tab = openPage(
-      chunk([id(1), id(2)], {
-        block: {
-          ...block(id(1), 'toggle', 'Long', { content: many }),
-          ...block(id(2), 'page', 'Child page', { content: [id(3)] }),
-        },
-      }),
-    )
+    const tab = openPage(chunk([id(1)], { block: block(id(1), 'toggle', 'Long', { content: many }) }))
     for (let n = 0; n < NESTED_MAX / 100; n++)
       tab.respond('syncRecordValuesMain', 200, { recordMap: { __version__: 3 } })
     await read()
@@ -730,7 +723,33 @@ describe('faithful details', () => {
       .filter((r) => r.url.endsWith('syncRecordValuesMain'))
       .flatMap((r) => (r.body.requests as { pointer: { id: string } }[]).map((q) => q.pointer.id))
     expect(asked).toHaveLength(NESTED_MAX)
-    expect(asked).not.toContain(id(3))
+  })
+
+  it('never looks inside child pages or databases, and visits each block once', async () => {
+    // A child page's blocks aren't the page's; and a block two toggles list is asked for once.
+    const tab = openPage(
+      chunk([id(1), id(2), id(3)], {
+        block: {
+          ...block(id(1), 'page', 'Child page', { content: [id(10)] }),
+          ...block(id(2), 'toggle', 'One', { content: [id(4)] }),
+          ...block(id(3), 'toggle', 'Two', { content: [id(4)] }),
+        },
+      }),
+    ).respond('syncRecordValuesMain', 200, { recordMap: { __version__: 3 } })
+    await read()
+    const asked = tab.sent
+      .filter((r) => r.url.endsWith('syncRecordValuesMain'))
+      .flatMap((r) => (r.body.requests as { pointer: { id: string } }[]).map((q) => q.pointer.id))
+    expect(asked).toEqual([id(4)])
+  })
+
+  it('stops the read when Notion turns a toggle lookup away', async () => {
+    openPage(chunk([id(1)], { block: block(id(1), 'toggle', 'Closed', { content: [id(2)] }) })).respond(
+      'syncRecordValuesMain',
+      429,
+      {},
+    )
+    await expect(read()).rejects.toMatchObject({ code: 'rate_limited' })
   })
 
   it('folds blocks that were not loaded into one line', async () => {
