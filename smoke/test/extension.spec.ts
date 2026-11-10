@@ -44,7 +44,10 @@ interface Fixtures {
   background: Worker
   /** Requests the fixtures don't answer. They are blocked, and a test expects none. */
   blocked: string[]
-  /** What the service worker logged with console.error, which is how background.ts reports failures. */
+  /**
+   * What the service worker logged with console.error, which is how background.ts reports
+   * failures. Collected by the background fixture, from as early as Playwright sees the worker.
+   */
   backgroundErrors: string[]
 }
 
@@ -81,8 +84,19 @@ const test = base.extend<Fixtures>({
     await use(context)
     await context.close()
   },
-  background: async ({ context }, use) => {
+  // Playwright reads a fixture's dependencies from this destructuring pattern, so it can't be `_`.
+  // oxlint-disable-next-line no-empty-pattern
+  backgroundErrors: async ({}, use) => {
+    await use([])
+  },
+  background: async ({ context, backgroundErrors }, use) => {
     const background = context.serviceWorkers()[0] ?? (await context.waitForEvent('serviceworker'))
+    // Listen from the first moment Playwright has the worker, so failures during start-up are
+    // seen too. A message logged before that moment can still be missed; start-up's results are
+    // also checked directly (the flag below, and the panel behavior in the first test).
+    background.on('console', (message) => {
+      if (message.type() === 'error') backgroundErrors.push(message.text())
+    })
     // background.ts sets this flag once its start-up has run without failing. Tests wait for it
     // before opening tabs: start-up applies the tab list it read earlier, and applied late that
     // would turn the panel off again on a tab a test has just opened.
@@ -90,13 +104,6 @@ const test = base.extend<Fixtures>({
       .poll(() => background.evaluate(() => chrome.storage.session.get('panelInit')))
       .toEqual({ panelInit: true })
     await use(background)
-  },
-  backgroundErrors: async ({ background }, use) => {
-    const errors: string[] = []
-    background.on('console', (message) => {
-      if (message.type() === 'error') errors.push(message.text())
-    })
-    await use(errors)
   },
 })
 
