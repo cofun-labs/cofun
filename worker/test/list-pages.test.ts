@@ -396,6 +396,21 @@ describe('list_pages at the limit', () => {
     )
   })
 
+  it("gives a section's own limit when the section fills up before the asked depth", async () => {
+    const kids = Array.from({ length: SECTION_LIMIT }, (_, i) => id(500 + i))
+    new FakeNotionTab(PAGE_URL)
+      .respond('syncRecordValuesMain', 200, OPEN_PAGE)
+      .respond('getSpaces', 200, spaces({}, { private_pages: kids }))
+      .respond('getTeamsV2', 200, teams([]))
+      .respond(
+        'syncRecordValuesMain',
+        200,
+        records(kids.map((k, i) => ({ ...page(0, `Child ${i}`, [id(900)]), id: k }))),
+      )
+      .install()
+    expect(await run({ depth: 2 })).toContain(`(Cut off: this list shows at most ${SECTION_LIMIT} pages,`)
+  })
+
   it('[UC-NOTION-005-S03] says the list was cut off when it fills up before the asked depth', async () => {
     const kids = Array.from({ length: LIST_LIMIT }, (_, i) => id(300 + i))
     const root = page(10, 'Exactly full', kids)

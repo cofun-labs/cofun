@@ -578,7 +578,7 @@ export const listPages: ToolSpec = {
         `Pages under “${title}” ^${hexId(rootId)}${offset ? `, from entry ${offset}` : ''}:`,
         '',
         ...(treeLines(nodes).length ? treeLines(nodes) : ['(no pages)']),
-        ...(truncated ? [cutOff(next === undefined ? undefined : offset + next, depth)] : []),
+        ...(truncated ? [cutOff(next === undefined ? undefined : offset + next, depth, LIST_LIMIT)] : []),
       ].join('\n')
     }
 
@@ -633,7 +633,7 @@ export const listPages: ToolSpec = {
         `${label}, in the workspace “${space.name}”${offset ? `, from entry ${offset}` : ''}:`,
         '',
         ...(treeLines(nodes).length ? treeLines(nodes) : ['(no pages)']),
-        ...(truncated ? [cutOff(next === undefined ? undefined : offset + next, depth, label)] : []),
+        ...(truncated ? [cutOff(next === undefined ? undefined : offset + next, depth, LIST_LIMIT, label)] : []),
       ].join('\n')
     }
 
@@ -655,7 +655,7 @@ export const listPages: ToolSpec = {
       any = true
       left -= countNodes(nodes)
       out.push('', label, ...treeLines(nodes))
-      if (truncated) out.push(cutOff(next, depth, label))
+      if (truncated) out.push(cutOff(next, depth, limit, label))
     }
     if (skipped.length)
       out.push('', `Not listed, to keep the list short: ${skipped.join(', ')}. List one with \`section\`.`)
@@ -667,12 +667,13 @@ export const listPages: ToolSpec = {
 
 /**
  * Why a list may be incomplete and how to see the rest: from `next` on when its top level was cut
- * off, and through a listed page for pages under the ones shown. `section` is the section's label.
+ * off, and through a listed page for pages under the ones shown. `limit` is how many pages the list
+ * could show, and `section` the section's label.
  */
-function cutOff(next: number | undefined, depth: number, section?: string): string {
+function cutOff(next: number | undefined, depth: number, limit: number, section?: string): string {
   const deeper = 'To see what is under a listed page, list it by its id.'
   if (next === undefined)
-    return `(Cut off: a list shows at most ${LIST_LIMIT} pages, so pages under the last ones shown may be left out. ${deeper})`
+    return `(Cut off: this list shows at most ${limit} pages, so pages under the last ones shown may be left out. ${deeper})`
   const where = section ? `\`section: ${JSON.stringify(section)}\` and ` : ''
   // A full top level leaves no room for the levels under it.
   const under = depth > 1 ? ` Pages under the ones shown may be left out too. ${deeper}` : ''
