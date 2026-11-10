@@ -263,9 +263,10 @@ export function planSchemaChanges(
   collectionId: string,
   schema: Schema,
   changes: SchemaChange[],
+  userId: string | undefined,
   { newId = () => crypto.randomUUID(), random = Math.random, now = Date.now() }: SchemaOptions & { now?: number } = {},
 ): SchemaPlan {
-  const op = collectionOps(spaceId, collectionId)
+  const op = collectionOps(spaceId, collectionId, userId)
   const defs = structuredClone(schema) as Defs
   const operations: Operation[] = []
   const lines: string[] = []
@@ -363,8 +364,9 @@ export function renameInRows(
   rows: string[],
   recordMap: RecordMap,
   renames: OptionRename[],
+  userId: string | undefined,
 ): { operations: Operation[]; rows: string[] } {
-  const op = blockOps(spaceId, Date.now())
+  const op = blockOps(spaceId, Date.now(), userId)
   const operations: Operation[] = []
   const changed: string[] = []
   // Each renamed option's name before the call, mapped to its name after it, by property. A row's

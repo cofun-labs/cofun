@@ -11,7 +11,7 @@ import {
   updateDatabaseSchema,
 } from '../../extension/src/tools'
 import { newSchema } from '../../extension/src/notion/schema'
-import { FakeNotionTab, FakeWorkspace, PAGE, PAGE_URL, SPACE, restoreGlobals } from './notion-tab'
+import { FakeNotionTab, FakeWorkspace, PAGE, PAGE_URL, SPACE, USER, restoreGlobals } from './notion-tab'
 
 afterEach(() => {
   restoreGlobals()
@@ -197,6 +197,31 @@ describe('UC-NOTION-012 create and change databases', () => {
     const collection = ws.records.get(ws.records.get(dbId)!.collection_id as string)!
     expect(Object.values(collection.schema as object).map((d: Def) => d.name)).toEqual(['Name', 'Done'])
     expect(ws.records.get(PAGE)!.content).toEqual([TEXT])
+  })
+
+  it('names the signed-in user as the creator of a new database, and last editor of a changed one', async () => {
+    const ws = workspace()
+    open(ws)
+    await createDatabase.run({ parent: PAGE_URL, title: 'Content calendar' })
+    const db = ws.records.get((ws.records.get(PAGE)!.content as string[]).at(-1)!)!
+    expect(db).toMatchObject({
+      created_by_id: USER,
+      created_by_table: 'notion_user',
+      last_edited_by_id: USER,
+      last_edited_by_table: 'notion_user',
+    })
+    expect(ws.records.get(db.collection_id as string)).toMatchObject({
+      created_by_id: USER,
+      created_by_table: 'notion_user',
+      last_edited_by_id: USER,
+      last_edited_by_table: 'notion_user',
+    })
+    expect(ws.records.get(PAGE)).toMatchObject({ last_edited_by_id: USER, last_edited_by_table: 'notion_user' })
+    await change([{ action: 'add_property', property: 'Owner', type: 'person' }])
+    expect(ws.collections.get(COLLECTION) ?? ws.records.get(COLLECTION)).toMatchObject({
+      last_edited_by_id: USER,
+      last_edited_by_table: 'notion_user',
+    })
   })
 
   it('[UC-NOTION-012-S02] adds and renames properties and adds options in one change, keeping every value', async () => {

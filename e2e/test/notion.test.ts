@@ -44,6 +44,11 @@ describe('privatePageOps', () => {
       space_id: SPACE.spaceId,
       created_time: NOW,
       last_edited_time: NOW,
+      // Made by the workspace's user, as Notion's own client records it.
+      created_by_id: SPACE.userId,
+      created_by_table: 'notion_user',
+      last_edited_by_id: SPACE.userId,
+      last_edited_by_table: 'notion_user',
       properties: { title: [['E2E test']] },
     })
     const created = rest.filter((op) => op.command === 'set').map((op) => op.args as Record<string, unknown>)

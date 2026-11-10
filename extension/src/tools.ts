@@ -1165,7 +1165,7 @@ export const createPage: ToolSpec = {
       throw new NotionError('notion_error', 'Notion returned the page without its workspace.')
     const [people] = await findPeople(tab.client, spaceId, [{ names: personNames(blockTitles(blocks)) }])
     blocks = blocksWithPeople(blocks, people)
-    const { operations, pageId } = planNewPage(target, spaceId, title, blocks, { properties })
+    const { operations, pageId } = planNewPage(target, spaceId, title, blocks, tab.client.userId, { properties })
     signal?.throwIfAborted()
     // The parent's list changes: cached parts of it would hide the new page, and after an unknown
     // outcome the agent must see whether it was created before it tries again.
@@ -1279,7 +1279,7 @@ export const updatePages: ToolSpec = {
     const collections = collectionIds.length
       ? (await tab.client.getRecords(collectionIds.map((id) => ({ table: 'collection', id, spaceId })))).collection!
       : {}
-    const op = blockOps(spaceId, Date.now())
+    const op = blockOps(spaceId, Date.now(), tab.client.userId)
     const operations: Operation[] = []
     const summary: string[] = []
     for (const u of updates) {
@@ -1504,7 +1504,7 @@ export const createDatabase: ToolSpec = {
     if (typeof spaceId !== 'string' || !spaceId)
       throw new NotionError('notion_error', 'Notion returned the page without its workspace.')
     const ids = { page: crypto.randomUUID(), collection: crypto.randomUUID(), view: crypto.randomUUID() }
-    const op = blockOps(spaceId, Date.now())
+    const op = blockOps(spaceId, Date.now(), tab.client.userId)
     const operations = [
       ...op.createDatabase(ids, title, schema, parentId),
       op.listAfter(parentId, ids.page),
@@ -1621,7 +1621,7 @@ export const updateDatabaseSchema: ToolSpec = {
     const db = await resolveDatabase(tab.client, block)
     let plan
     try {
-      plan = planSchemaChanges(db.spaceId, db.collectionId, db.schema, changes)
+      plan = planSchemaChanges(db.spaceId, db.collectionId, db.schema, changes, tab.client.userId)
     } catch (err) {
       schemaRefusal(err)
     }
@@ -1646,7 +1646,7 @@ export const updateDatabaseSchema: ToolSpec = {
         )
       let rows
       try {
-        rows = renameInRows(db.spaceId, rowIds, recordMap, plan.renames)
+        rows = renameInRows(db.spaceId, rowIds, recordMap, plan.renames, tab.client.userId)
       } catch (err) {
         schemaRefusal(err)
       }
@@ -1854,7 +1854,7 @@ export const movePage: ToolSpec = {
     // A page inside another page that moves goes along inside it, where it is.
     const nested = nestedIn(above, ids)
     const moving = ids.filter((id) => !nested.has(id))
-    const op = blockOps(String(dest.space_id), Date.now())
+    const op = blockOps(String(dest.space_id), Date.now(), tab.client.userId)
     const parents = new Set(moving.map((id) => String(records[id].parent_id)))
     signal?.throwIfAborted()
     try {

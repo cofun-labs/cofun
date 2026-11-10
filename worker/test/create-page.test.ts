@@ -3,7 +3,8 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { LIMITED_STOP } from '../../extension/src/notion/api'
 import { createPage, forgetReads, readPage } from '../../extension/src/tools'
-import { FakeNotionTab, FakeWorkspace, PAGE, PAGE_URL, SPACE, notionError, restoreGlobals } from './notion-tab'
+import { toUuid } from '../../extension/src/notion/hosts'
+import { FakeNotionTab, FakeWorkspace, PAGE, PAGE_URL, SPACE, USER, notionError, restoreGlobals } from './notion-tab'
 
 afterEach(() => {
   restoreGlobals()
@@ -73,6 +74,27 @@ describe('UC-NOTION-007 create a page', () => {
     expect(page.slice(page.indexOf('\n\n') + 2).replace(/ \^[0-9a-f]+$/gm, '')).toBe(
       ['# Plan', '- Ship beta', '  - Fix Safari', '- [ ] Write post'].join('\n'),
     )
+  })
+
+  it('names the signed-in user as the creator of the page and its content, and last editor of its parent', async () => {
+    const ws = workspace()
+    open(ws)
+    const result = await create({ title: 'Launch notes', parent: PAGE_URL, markdown: '# Plan\n- Ship beta' })
+    const created = ws.records.get(toUuid(/\^([0-9a-f]{32})/.exec(result)![1])!)!
+    expect(created).toMatchObject({
+      created_by_id: USER,
+      created_by_table: 'notion_user',
+      last_edited_by_id: USER,
+      last_edited_by_table: 'notion_user',
+    })
+    for (const child of ws.content(created.id as string))
+      expect(child).toMatchObject({
+        created_by_id: USER,
+        created_by_table: 'notion_user',
+        last_edited_by_id: USER,
+        last_edited_by_table: 'notion_user',
+      })
+    expect(ws.records.get(PAGE)).toMatchObject({ last_edited_by_id: USER, last_edited_by_table: 'notion_user' })
   })
 
   it('[UC-NOTION-007-S02] creates it in another page when asked', async () => {

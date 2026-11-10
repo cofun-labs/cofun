@@ -3,7 +3,7 @@
 // Notion does.
 import { afterEach, describe, expect, it } from 'vitest'
 import { UPDATE_MAX, createPage, forgetReads, queryDatabase, readPage, updatePages } from '../../extension/src/tools'
-import { FakeNotionTab, FakeWorkspace, PAGE, PAGE_URL, SPACE, restoreGlobals } from './notion-tab'
+import { FakeNotionTab, FakeWorkspace, PAGE, PAGE_URL, SPACE, USER, restoreGlobals } from './notion-tab'
 
 afterEach(() => {
   restoreGlobals()
@@ -115,6 +115,14 @@ describe('UC-NOTION-008 change properties and rows', () => {
       'e:e': [['Yes']],
     })
     expect(props(ws, 1)).toEqual(rowRecord(1, 'Write docs', 'Done').properties)
+  })
+
+  it('names the signed-in user as the last editor of the pages it changes', async () => {
+    const ws = workspace()
+    open(ws)
+    await update([{ page: hex(row(2)), properties: { Status: 'done' } }])
+    expect(ws.records.get(row(2))).toMatchObject({ last_edited_by_id: USER, last_edited_by_table: 'notion_user' })
+    expect(ws.records.get(row(1))).not.toHaveProperty('last_edited_by_id')
   })
 
   it('[UC-NOTION-008-S06] sets dates, lists of options, text, and titles and icons, and clears values', async () => {

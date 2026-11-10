@@ -72,12 +72,15 @@ export function privatePageOps(
   space: PrivateSpace,
   title: string,
   blocks: NewBlock[],
-  options: Parameters<typeof planNewPage>[4] = {},
+  options: Parameters<typeof planNewPage>[5] = {},
 ): { operations: Operation[]; pageId: string } {
   // The extension's own planner, with no parent: moveToPrivate puts the page in the workspace and
   // in the user's Private section.
-  const { operations, pageId } = planNewPage(undefined, space.spaceId, title, blocks, options)
-  return { operations: [...operations, blockOps(space.spaceId, Date.now()).moveToPrivate(pageId, space)], pageId }
+  const { operations, pageId } = planNewPage(undefined, space.spaceId, title, blocks, space.userId, options)
+  return {
+    operations: [...operations, blockOps(space.spaceId, Date.now(), space.userId).moveToPrivate(pageId, space)],
+    pageId,
+  }
 }
 
 export const STATUSES = ['Not started', 'In progress', 'Done']
@@ -108,7 +111,7 @@ export function taskDatabaseOps(
   rows: TaskRow[],
   { now = Date.now(), newId = () => crypto.randomUUID() } = {},
 ): { operations: Operation[]; pageId: string } {
-  const op = blockOps(space.spaceId, now)
+  const op = blockOps(space.spaceId, now, space.userId)
   const ids = { page: newId(), collection: newId(), view: newId() }
   const schema = {
     title: { name: 'Name', type: 'title' },
