@@ -51,6 +51,7 @@ Copilot for Notion: a Chrome extension that opens an AI side panel next to Notio
    - Verifies every requirement in the Issue or PR body is implemented
    - Verifies the diff matches the BDD scenarios, every `api-test` scenario has a test, and no implementation details were written into use cases
    - Confirms there are no unrelated changes
+   - Confirms no value from outside is used through a type assertion (see "Untrusted values" below); lint can't check this
    - Judges whether the approach is correct and reasonable
    - Names the head commit it reviewed, and reads the PR's head again before submitting; if the head changed, it reviews the new head first
    - Submits the review with `gh pr review --comment` (GitHub blocks approving your own PR)
@@ -91,6 +92,14 @@ This is an open-source repository. **Never commit account identifiers or secrets
 - `worker/`: Cloudflare Worker with Hono. Serves `/login`, verifies Clerk session JWTs locally, and proxies OpenAI-compatible `/v1/chat/completions` to Workers AI through AI Gateway.
 - Notion tools call Notion's own internal endpoints (`/api/v3/…`) as the signed-in Notion user, through `src/notion/api.ts`: the only module that knows Notion's endpoints and request shapes. Requests run inside the user's Notion tab (`src/notion/tab.ts`, `chrome.scripting` in the ISOLATED world), so they go to that tab's own host with its session. Tools never `fetch` Notion URLs themselves. Do not use `chrome.debugger`: it shows a permanent "debugging this browser" banner.
 - **These module boundaries are lint errors** (`.oxlintrc.json`, run by `pnpm lint` and so by `pnpm check`): only `src/agent.ts` imports pi; `fetch` is used only in `src/notion/tab.ts` (Notion) and `src/agent.ts` (the worker); `chrome.scripting` is used only in `src/notion/tab.ts`; `chrome.debugger` is used nowhere; and `src/notion/` imports nothing from `src/agent.ts`, `src/tools.ts`, `src/sessions.ts`, or `src/sidepanel/`. When a boundary changes, change the rule and this section together. Never silence one with an `oxlint-disable` comment.
+
+## Untrusted values
+
+A value the code does not control is `unknown` until it has been validated where it arrives: what the model sends, what Notion answers, the body of a network request or response, and what is read back from storage. **Never give such a value a type with a type assertion (`as`).** Parse it with a zod schema and use the type the schema gives.
+
+- One schema is the single source: the type, the runtime check, and any description of the shape given to someone else (such as the JSON Schema of a tool's arguments) all come from it, so they can't drift.
+- Validate once, at the boundary. Code behind it takes the parsed type and does not check again.
+- A value that fails says what is wrong, specifically enough for whoever sent it to correct it.
 
 ## Calling Notion: stop, don't work around
 

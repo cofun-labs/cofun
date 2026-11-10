@@ -57,6 +57,7 @@ extension/                Chrome extension
   src/background.ts       opens the side panel from the toolbar icon; enabled only on Notion tabs
   src/agent.ts            agent loop (pi) against the worker; the only module that imports pi
   src/tools.ts            tools the agent runs in the extension
+  src/tool.ts             defines a tool from one zod schema of its arguments
   src/sessions.ts         saved sessions (IndexedDB, per user)
   src/notion/hosts.ts     Notion hosts, and the page id in a Notion URL
   src/notion/api.ts       Notion's internal API: endpoints, request shapes, record maps, errors

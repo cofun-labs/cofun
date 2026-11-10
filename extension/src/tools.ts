@@ -1,7 +1,9 @@
 // Tools the agent can run in the extension.
 // The worker's tests import this file too, and their tsconfig has no chrome types.
 /// <reference types="chrome" />
+import { z } from 'zod'
 import type { ToolSpec } from './agent'
+import { defineTool } from './tool'
 import {
   NotionError,
   SIGNED_OUT,
@@ -109,24 +111,25 @@ const TITLE_CHARS = 200
 /** How much of a page one read returns, so a long page doesn't fill the conversation. */
 export const PART_CHARS = 12_000
 
-export const readPage: ToolSpec = {
+const PART_FROM_1 = '`part` must be a whole number from 1.'
+/** Which part of a long result to return: a whole number from 1, the first part when left out. */
+const partArg = (description: string) =>
+  z.int({ error: PART_FROM_1 }).min(1, { error: PART_FROM_1 }).describe(description).optional()
+
+export const readPage = defineTool({
   name: 'read_page',
   description:
     'Reads a Notion page as Markdown: the page open in the current tab, or another page by URL or id. ' +
     'Each block ends with a reference such as ^1a2b3c4d. Child pages, databases, and links to pages end with ' +
     'the page id, which this tool accepts. A long page comes in parts; ask for the next one with `part`.',
-  parameters: {
-    type: 'object',
-    properties: {
-      page: { type: 'string', description: 'URL or id of the page to read. Leave out to read the open page.' },
-      part: { type: 'integer', minimum: 1, description: 'Which part of a long page to read, starting at 1.' },
-    },
-    additionalProperties: false,
-  },
-  run: async (args) => {
+  args: z.strictObject({
+    page: z.string().describe('URL or id of the page to read. Leave out to read the open page.').optional(),
+    part: partArg('Which part of a long page to read, starting at 1.'),
+  }),
+  run: async ({ page, part = 1 }) => {
     const since = generation
-    // Models often fill optional arguments with null or an empty string; those mean "not given".
-    const pageText = typeof args.page === 'string' && args.page.trim() ? args.page : undefined
+    // Models often fill optional arguments with an empty string; that means "not given".
+    const pageText = page?.trim() ? page : undefined
     const tab = await activeNotionTab()
     const id = pageText === undefined ? tab.pageId : pageArg(pageText)
     if (!id) {
@@ -136,8 +139,6 @@ export const readPage: ToolSpec = {
           : `Not a Notion page URL or id: ${pageText}`,
       )
     }
-    const part = args.part === undefined || args.part === null || args.part === '' ? 1 : Number(args.part)
-    if (!Number.isInteger(part) || part < 1) throw new Error('`part` must be a whole number from 1.')
 
     const { loaded, databaseMissing, reloaded } = await loadForPart(tab, id, part)
     if (!PAGE_TYPES.has(loaded.page.type)) {
@@ -195,7 +196,7 @@ export const readPage: ToolSpec = {
     remember(part === 1 ? seen : mergeReads(pageReads.get(loaded.page.id), seen), since)
     return [...header, '', ...(body ? [body] : []), ...(part === 1 ? empty : [])].join('\n')
   },
-}
+})
 
 /**
  * A page id from what the model gave: a Notion URL (with or without `https://`), an id, a page
@@ -358,7 +359,34 @@ function keep<T>(map: Map<string, T>, key: string, value: T) {
   if (map.size > SEEN_KEPT) map.delete(map.keys().next().value!)
 }
 
-export const queryDatabase: ToolSpec = {
+/** Which condition of `filter` an issue is about, as the model is told: "Filter 1". */
+const filterAt = (issue: { path?: PropertyKey[] }) => `Filter ${Number(issue.path?.[1]) + 1}`
+
+const QUERY_ARGS = z.strictObject({
+  database: z.string().describe('Id or URL of the database. Leave out for the open page.').optional(),
+  filter: z
+    .array(
+      z.strictObject({
+        property: z.string().describe('Property name, as the result lists it.'),
+        op: z.enum(FILTER_OPS, {
+          error: (issue) => `${filterAt(issue)}: \`op\` must be one of ${FILTER_OPS.join(', ')}.`,
+        }),
+        value: z.string().describe('What to compare with; not needed for is_empty and is_not_empty.').optional(),
+      }),
+      { error: '`filter` must be a list of conditions.' },
+    )
+    .optional(),
+  sort: z
+    .strictObject({
+      property: z.string(),
+      direction: z.enum(['ascending', 'descending']).optional(),
+    })
+    .optional(),
+  part: partArg('Which part of a long result, starting at 1.'),
+})
+type QueryArgs = z.output<typeof QUERY_ARGS>
+
+export const queryDatabase = defineTool({
   name: 'query_database',
   description:
     "Reads the rows of a Notion database as a table: its properties (name and type) and each row's values, " +
@@ -369,40 +397,10 @@ export const queryDatabase: ToolSpec = {
     'Yes/No; multi-select by whole options: `contains` "A, B" keeps rows with both, `is` rows with exactly ' +
     "those); `sort` orders them as Notion's own sort does. Formulas and rollups can't be used. Long results come in parts; ask for " +
     'the next with `part`.',
-  parameters: {
-    type: 'object',
-    properties: {
-      database: { type: 'string', description: 'Id or URL of the database. Leave out for the open page.' },
-      filter: {
-        type: 'array',
-        items: {
-          type: 'object',
-          properties: {
-            property: { type: 'string', description: 'Property name, as the result lists it.' },
-            op: { type: 'string', enum: [...FILTER_OPS] },
-            value: { type: 'string', description: 'What to compare with; not needed for is_empty and is_not_empty.' },
-          },
-          required: ['property', 'op'],
-          additionalProperties: false,
-        },
-      },
-      sort: {
-        type: 'object',
-        properties: {
-          property: { type: 'string' },
-          direction: { type: 'string', enum: ['ascending', 'descending'] },
-        },
-        required: ['property'],
-        additionalProperties: false,
-      },
-      part: { type: 'integer', minimum: 1, description: 'Which part of a long result, starting at 1.' },
-    },
-    additionalProperties: false,
-  },
-  run: async (args) => {
-    const given = typeof args.database === 'string' && args.database.trim() ? args.database : undefined
-    const part = args.part === undefined || args.part === null || args.part === '' ? 1 : Number(args.part)
-    if (!Number.isInteger(part) || part < 1) throw new Error('`part` must be a whole number from 1.')
+  args: QUERY_ARGS,
+  run: async ({ database, filter, sort: sortBy, part = 1 }) => {
+    // An empty `database` means "not given", as models often fill optional arguments.
+    const given = database?.trim() ? database : undefined
     const tab = await activeNotionTab()
     const id = given ? pageArg(given) : tab.pageId
     if (given && !id) throw new Error(`Not a Notion database URL or id: ${given}`)
@@ -430,8 +428,8 @@ export const queryDatabase: ToolSpec = {
     if (!viewId) throw new Error("This database's rows can't be read: it has no view.")
     keep(seenDatabases, dbId, name)
 
-    const filters = parseFilters(args.filter, schema)
-    const sort = parseSort(args.sort, schema)
+    const filters = parseFilters(filter, schema)
+    const sort = parseSort(sortBy, schema)
     // Notion orders the rows, as its own sort does (a select by its options, empty values last), so
     // when there are more than one read loads, the ones read are the first in that order.
     const { rowIds, hasMore, recordMap } = await tab.client.queryCollection(collectionId, viewId, spaceId, QUERY_LOAD, {
@@ -508,7 +506,7 @@ export const queryDatabase: ToolSpec = {
     ]
     return [...header, '', ...table].join('\n')
   },
-}
+})
 
 interface Filter {
   property: string
@@ -517,51 +515,46 @@ interface Filter {
   value: string
 }
 
-function parseFilters(raw: unknown, schema: Schema): Filter[] {
-  if (raw === undefined || raw === null) return []
-  if (!Array.isArray(raw)) throw new Error('`filter` must be a list of conditions.')
-  return raw.map((f, n) => {
-    const { property, op, value } = (f ?? {}) as Record<string, unknown>
+function parseFilters(filters: QueryArgs['filter'] = [], schema: Schema): Filter[] {
+  return filters.map(({ property, op, value = '' }, n) => {
     const where = `Filter ${n + 1}`
     const [key, def] = usableProperty(schema, property, where)
-    if (!FILTER_OPS.includes(op as FilterOp))
-      throw new Error(`${where}: \`op\` must be one of ${FILTER_OPS.join(', ')}.`)
     const needsValue = op !== 'is_empty' && op !== 'is_not_empty'
     // A multi-select value is a list of options; a list of only commas names none.
-    const named = def.type === 'multi_select' ? String(value ?? '').replace(/,/g, '') : value
-    if (needsValue && (typeof value !== 'string' || typeof named !== 'string' || !named.trim())) {
-      throw new Error(`${where} needs \`value\`.`)
-    }
+    const named = def.type === 'multi_select' ? value.replace(/,/g, '') : value
+    if (needsValue && !named.trim()) throw new Error(`${where} needs \`value\`.`)
     return {
       property: def.name ?? key,
       type: def.type ?? 'text',
-      op: op as FilterOp,
-      value: needsValue ? String(value).trim() : '',
+      op,
+      value: needsValue ? value.trim() : '',
     }
   })
 }
 
-function parseSort(raw: unknown, schema: Schema): { property: string; key: string; sign: 1 | -1 } | undefined {
-  if (raw === undefined || raw === null) return undefined
-  const { property, direction } = (raw ?? {}) as Record<string, unknown>
-  const [key, def] = usableProperty(schema, property, '`sort`')
-  return { property: def.name ?? key, key, sign: direction === 'descending' ? -1 : 1 }
+function parseSort(
+  sort: QueryArgs['sort'],
+  schema: Schema,
+): { property: string; key: string; sign: 1 | -1 } | undefined {
+  if (!sort) return undefined
+  const [key, def] = usableProperty(schema, sort.property, '`sort`')
+  return { property: def.name ?? key, key, sign: sort.direction === 'descending' ? -1 : 1 }
 }
 
 /**
  * The schema entry, as [key, definition], for a property a filter or sort names (any case). Formulas
  * and rollups are computed by Notion when it shows a database; this tool can't read them.
  */
-function usableProperty(schema: Schema, name: unknown, where: string): [string, Schema[string]] {
-  const want = typeof name === 'string' ? name.trim().toLowerCase() : undefined
+function usableProperty(schema: Schema, name: string, where: string): [string, Schema[string]] {
+  const want = name.trim().toLowerCase()
   const found = titleFirst(schema).find(([key, s]) => (s.name ?? key).toLowerCase() === want)
   if (!found) {
-    throw new Error(`${where}: no property named "${String(name)}". The properties are: ${rowValuesHeader(schema)}.`)
+    throw new Error(`${where}: no property named "${name}". The properties are: ${rowValuesHeader(schema)}.`)
   }
   const { type } = found[1]
   if (type === 'formula' || type === 'rollup') {
     throw new Error(
-      `${where}: "${String(name)}" is a ${type}, which Notion computes and this tool can't read, so it can't be used.`,
+      `${where}: "${name}" is a ${type}, which Notion computes and this tool can't read, so it can't be used.`,
     )
   }
   return found
