@@ -1,7 +1,15 @@
 // Moving, duplicating, and trashing pages (move_page, duplicate_page, and trash_page in
 // extension/src/tools.ts), against a fake Notion workspace that applies them the way Notion does.
 import { afterEach, describe, expect, it } from 'vitest'
-import { PREVIEW_LOOKUP_MS, duplicatePage, forgetReads, movePage, readPage, trashPage } from '../../extension/src/tools'
+import {
+  PREVIEW_LOOKUP_MS,
+  duplicatePage,
+  editPage,
+  forgetReads,
+  movePage,
+  readPage,
+  trashPage,
+} from '../../extension/src/tools'
 import { FakeNotionTab, FakeWorkspace, PAGE, PAGE_URL, SPACE, notionError, restoreGlobals } from './notion-tab'
 
 afterEach(() => {
@@ -241,6 +249,39 @@ describe('moving pages', () => {
     expect(contentOf(ws, PLAN)).toEqual([TEXT, DRAFT])
   })
 
+  it('forgets its read of the page a moved page sat in, even inside a column', async () => {
+    const ws = workspace()
+    const [COLUMNS, COLUMN, INSIDE] = [id(30), id(31), id(32)]
+    ws.records.set(COLUMNS, {
+      id: COLUMNS,
+      version: 1,
+      alive: true,
+      space_id: SPACE,
+      type: 'column_list',
+      parent_id: ARCHIVE,
+      parent_table: 'block',
+      content: [COLUMN],
+    })
+    ws.records.set(COLUMN, {
+      id: COLUMN,
+      version: 1,
+      alive: true,
+      space_id: SPACE,
+      type: 'column',
+      parent_id: COLUMNS,
+      parent_table: 'block',
+      content: [INSIDE],
+    })
+    ws.records.set(INSIDE, { ...page(INSIDE, 'In a column', COLUMN), version: 1, alive: true, space_id: SPACE })
+    ws.edit(ARCHIVE, { content: [COLUMNS] })
+    open(ws)
+    await readPage.run({ page: hex(ARCHIVE) })
+    await movePage.run({ pages: [INSIDE], to: NOTE })
+    await expect(
+      editPage.run({ page: hex(ARCHIVE), edits: [{ action: 'insert', position: 'end', markdown: 'Hi' }] }),
+    ).rejects.toThrow('Read the page with read_page first')
+  })
+
   it('names the pages it has seen in the preview', async () => {
     const ws = workspace()
     open(ws)
@@ -372,7 +413,7 @@ describe('trashing pages', () => {
     open(ws)
     await trashPage.run({ pages: [NOTE] })
     expect(await trashPage.preview!({ pages: [NOTE] })).toContain(
-      `    [not found in Notion: nothing will be trashed] ^${hex(NOTE)}`,
+      `    [not found in Notion: this call will fail, and nothing will be trashed] ^${hex(NOTE)}`,
     )
   })
 

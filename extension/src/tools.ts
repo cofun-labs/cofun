@@ -1306,7 +1306,7 @@ export const movePage: ToolSpec = {
         'Notion Copilot: move_page',
       )
     } finally {
-      forgetPages([destId, ...parents, ...ids])
+      forgetPages([destId, ...parents, ...ids, ...[...above.values()].flat()])
     }
     return [
       `Moved ${moving.length} page${moving.length === 1 ? '' : 's'} to the end of ^${hexId(destId)}: ${moving.map((id) => `^${hexId(id)}`).join(', ')}.`,
@@ -1415,6 +1415,8 @@ export const duplicatePage: ToolSpec = {
       throw new EditError(
         `^${hexId(id)} is at the top of the sidebar: duplicate it in Notion, or move it into a page first.`,
       )
+    // The pages the copy lands in, from its parent up, whose cached reads it makes stale.
+    const above = (await pagesAbove(tab, { [id]: page }, [id])).get(id)!
     signal?.throwIfAborted()
     try {
       const copy = await tab.client.duplicatePage(String(page.space_id), id, page.parent_id, { signal })
@@ -1433,7 +1435,7 @@ export const duplicatePage: ToolSpec = {
         )
       throw err
     } finally {
-      forgetPages([page.parent_id])
+      forgetPages([page.parent_id, ...above])
     }
   },
 }
@@ -1495,7 +1497,8 @@ export const trashPage: ToolSpec = {
         // tool says. A page Notion doesn't have (already trashed, or out of reach) makes the call fail.
         if (!p.id) return `    ${JSON.stringify(oneLine(p.given) || '(no page given)')}`
         const name = title ?? knownTitle(p.id)
-        const marker = checked && !block ? '[not found in Notion: nothing will be trashed] ' : ''
+        const marker =
+          checked && !block ? '[not found in Notion: this call will fail, and nothing will be trashed] ' : ''
         return `    ${marker}^${hexId(p.id)}${name ? ` ${JSON.stringify(oneLine(name))}` : ''}`
       }),
       // The user agrees from these names: say when they are not Notion's current ones.
@@ -1519,14 +1522,15 @@ export const trashPage: ToolSpec = {
     if (spaces.size > 1)
       throw new EditError('These pages are in different workspaces: trash each workspace’s pages in its own call.')
     // A page inside another page being trashed stays inside it, so restoring that page brings it back too.
-    const nested = nestedIn(await pagesAbove(tab, records, ids), ids)
+    const above = await pagesAbove(tab, records, ids)
+    const nested = nestedIn(above, ids)
     const trashing = pages.filter((p) => !nested.has(p.id))
     signal?.throwIfAborted()
     try {
       // After a lost answer, a retry names the pages already in the trash and trashes nothing.
       await tab.client.trashPages([...spaces][0], trashing)
     } finally {
-      forgetPages([...ids, ...pages.map((p) => p.parentId)])
+      forgetPages([...ids, ...[...above.values()].flat()])
     }
     return [
       `Moved ${ids.length} page${ids.length === 1 ? '' : 's'} to Notion's trash: ${ids.map((id) => `^${hexId(id)}`).join(', ')}.`,
