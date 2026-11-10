@@ -172,12 +172,16 @@ function propertyDef(spec: Record<string, unknown>, newId: () => string): Proper
   return { name, type }
 }
 
-/** A key for a new property that `defs` doesn't use, like the four characters Notion's client picks. */
+/**
+ * A key for a new property that `defs` doesn't use, like the four characters Notion's client picks.
+ * Never all digits: JavaScript puts such keys first in an object, so the property would move ahead
+ * of the others.
+ */
 function newKey(defs: Defs, random: () => number): string {
   const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789'
   for (;;) {
     const key = Array.from({ length: 4 }, () => chars[Math.floor(random() * chars.length)]).join('')
-    if (!(key in defs) && key !== 'title') return key
+    if (!(key in defs) && key !== 'title' && !/^\d+$/.test(key)) return key
   }
 }
 

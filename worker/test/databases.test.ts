@@ -10,6 +10,7 @@ import {
   queryDatabase,
   updateDatabaseSchema,
 } from '../../extension/src/tools'
+import { newSchema } from '../../extension/src/notion/schema'
 import { FakeNotionTab, FakeWorkspace, PAGE, PAGE_URL, SPACE, restoreGlobals } from './notion-tab'
 
 afterEach(() => {
@@ -388,6 +389,23 @@ describe('UC-NOTION-012 create and change databases', () => {
 })
 
 describe('create_database and update_database_schema', () => {
+  it('never gives a new property an all-digit key, which would move it first', () => {
+    // A key of four digits comes first, then letters: ABCD for the first property, EFGH for the second.
+    const at = (c: string) => '0123456789ABCDEFGH'.indexOf(c)
+    const picks = [...'1111ABCD2222EFGH'].map((c) => (c >= 'A' ? at(c) - 10 : 52 + at(c)) + 0.5)
+    const random = () => picks.shift()! / 62
+    const schema = newSchema(
+      'Name',
+      [
+        { name: 'A', type: 'text' },
+        { name: 'B', type: 'text' },
+      ],
+      { random },
+    )
+    expect(Object.keys(schema)).toEqual(['title', 'ABCD', 'EFGH'])
+    expect(Object.values(schema).map((d) => d.name)).toEqual(['Name', 'A', 'B'])
+  })
+
   it('refuses a database or a block as the parent, and bad properties, before writing', async () => {
     const ws = workspace()
     open(ws)
