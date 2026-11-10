@@ -217,7 +217,7 @@ describe('search_pages, more results', () => {
       })
       .install()
     await expect(search({ query: 'x' })).rejects.toThrow(
-      'The open page is in the trash. Open another page of the workspace to search it.',
+      'The open page is in the trash. Open another page of the workspace.',
     )
   })
 })

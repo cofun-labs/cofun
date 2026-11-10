@@ -39,6 +39,7 @@ import {
 import {
   LAYOUT_TYPES,
   PAGE_TYPES,
+  collectionId,
   hexId,
   pageToMarkdown,
   rowValues,
@@ -46,7 +47,7 @@ import {
   type Schema,
 } from './notion/markdown'
 import { activeNotionTab, selectionIn, type NotionTab } from './notion/tab'
-import { pageChildren, pageTree, runsText, treeLines } from './notion/tree'
+import { PageLookups, contentOf, pageTree, runsText, treeLines, type PageTree } from './notion/tree'
 
 /**
  * The title and URL of the Notion page open in the side panel's window, if one is.
@@ -225,17 +226,14 @@ type FilterOp = (typeof FILTER_OPS)[number]
 
 /** A database's data source: its collection, the workspace it lives in, its schema, and its views. */
 async function resolveDatabase(client: NotionTab['client'], block: NotionRecord) {
-  const pointer = (block.format as { collection_pointer?: { id?: string; spaceId?: string } } | undefined)
-    ?.collection_pointer
-  const collectionId = (block.collection_id as string | undefined) ?? pointer?.id
-  if (!collectionId) throw new Error('This database has no data source.')
+  const pointer = (block.format as { collection_pointer?: { spaceId?: string } } | undefined)?.collection_pointer
+  const id = collectionId(block)
+  if (!id) throw new Error('This database has no data source.')
   // A linked view's database may live in another workspace; its pointer says which.
   const spaceId = String(block.collection_id ? block.space_id : (pointer?.spaceId ?? block.space_id))
-  const collection = (await client.getRecords([{ table: 'collection', id: collectionId, spaceId }])).collection![
-    collectionId
-  ]
+  const collection = (await client.getRecords([{ table: 'collection', id, spaceId }])).collection![id]
   return {
-    collectionId,
+    collectionId: id,
     spaceId,
     schema: (collection.schema ?? {}) as Schema,
     name: runsText(collection.name) || 'Untitled database',
@@ -521,6 +519,11 @@ export const LIST_MAX_DEPTH = 3
 export const LIST_LIMIT = 100
 /** How many pages each top-level section shows. */
 export const SECTION_LIMIT = 50
+/**
+ * How many block lookups (one request each) one list makes to find which blocks are pages, besides
+ * those that skipping to `offset` takes. In the overview, each section gets a share by its limit.
+ */
+export const LIST_LOOKUPS = 20
 
 export const listPages: ToolSpec = {
   name: 'list_pages',
@@ -590,22 +593,25 @@ export const listPages: ToolSpec = {
             : 'That id is a block inside a page, not a page.',
         )
       }
-      const children = (await pageChildren(tab.client, [rootId], records)).get(rootId) ?? []
-      const { nodes, truncated, next } = await pageTree(tab.client, children.slice(offset), depth, LIST_LIMIT, records)
+      const cache = new PageLookups(tab.client, records)
+      const tree = await pageTree(cache, contentOf(cache, rootId), {
+        depth,
+        limit: LIST_LIMIT,
+        lookups: LIST_LOOKUPS,
+        skip: offset,
+      })
       const title = runsText((root.properties as { title?: unknown } | undefined)?.title) || 'Untitled'
       return [
         `Pages under “${title}” ^${hexId(rootId)}${offset ? `, from entry ${offset}` : ''}:`,
         '',
-        ...(treeLines(nodes).length ? treeLines(nodes) : ['(no pages)']),
-        ...(truncated ? [cutOff(next === undefined ? undefined : offset + next, depth, LIST_LIMIT)] : []),
+        ...(tree.nodes.length ? treeLines(tree.nodes) : ['(no pages)']),
+        ...cutOff(tree, LIST_LIMIT),
       ].join('\n')
     }
 
     if (!tab.pageId) throw new Error('Open a page of the workspace to list it.')
-    const opened = await tab.client.getRecords([{ table: 'block', id: tab.pageId }])
-    const spaceId = (opened.block?.[tab.pageId] as { space_id?: string } | undefined)?.space_id
-    if (!spaceId) throw new Error('Could not tell which workspace the open page is in.')
-    const space = await tab.client.getSpace(spaceId)
+    const space = await tab.client.getSpace(await workspaceOf(tab))
+    const cache = new PageLookups(tab.client)
     // Every label is unique, ignoring case, so `section` can name any one of them: teamspaces whose
     // names match are numbered until their label is free.
     const lower = (label: string) => label.toLowerCase()
@@ -650,12 +656,12 @@ export const listPages: ToolSpec = {
         )
       }
       const [label, all] = section
-      const { nodes, truncated, next } = await pageTree(tab.client, all.slice(offset), depth, LIST_LIMIT)
+      const tree = await pageTree(cache, all, { depth, limit: LIST_LIMIT, lookups: LIST_LOOKUPS, skip: offset })
       return [
         `${label}, in the workspace “${space.name}”${offset ? `, from entry ${offset}` : ''}:`,
         '',
-        ...(treeLines(nodes).length ? treeLines(nodes) : ['(no pages)']),
-        ...(truncated ? [cutOff(next === undefined ? undefined : offset + next, depth, LIST_LIMIT, label)] : []),
+        ...(tree.nodes.length ? treeLines(tree.nodes) : ['(no pages)']),
+        ...cutOff(tree, LIST_LIMIT, label),
       ].join('\n')
     }
 
@@ -672,12 +678,16 @@ export const listPages: ToolSpec = {
         continue
       }
       const limit = Math.min(SECTION_LIMIT, left)
-      const { nodes, truncated, next } = await pageTree(tab.client, ids, depth, limit)
-      if (!nodes.length) continue
+      const lookups = Math.ceil((LIST_LOOKUPS * limit) / LIST_LIMIT)
+      const tree = await pageTree(cache, ids, { depth, limit, lookups })
+      if (!tree.nodes.length) {
+        // Out of lookups before finding any of its pages: it can still be listed alone.
+        if (tree.next !== undefined) skipped.push(label)
+        continue
+      }
       any = true
-      left -= countNodes(nodes)
-      out.push('', label, ...treeLines(nodes))
-      if (truncated) out.push(cutOff(next, depth, limit, label))
+      left -= countNodes(tree.nodes)
+      out.push('', label, ...treeLines(tree.nodes), ...cutOff(tree, limit, label))
     }
     if (skipped.length)
       out.push('', `Not listed, to keep the list short: ${skipped.join(', ')}. List one with \`section\`.`)
@@ -688,18 +698,30 @@ export const listPages: ToolSpec = {
 }
 
 /**
- * Why a list may be incomplete and how to see the rest: from `next` on when its top level was cut
- * off, and through a listed page for pages under the ones shown. `limit` is how many pages the list
- * could show, and `section` the section's label.
+ * What a list left out and how to see it: the entries from `next` on when its top level stopped,
+ * and pages under the listed ones. `limit` is how many pages the list could
+ * show, and `section` the section's label.
  */
-function cutOff(next: number | undefined, depth: number, limit: number, section?: string): string {
+function cutOff(tree: PageTree, limit: number, section?: string): string[] {
   const deeper = 'To see what is under a listed page, list it by its id.'
-  if (next === undefined)
-    return `(Cut off: this list shows at most ${limit} pages, so pages under the last ones shown may be left out. ${deeper})`
-  const where = section ? `\`section: ${JSON.stringify(section)}\` and ` : ''
-  // A full top level leaves no room for the levels under it.
-  const under = depth > 1 ? ` Pages under the ones shown may be left out too. ${deeper}` : ''
-  return `(Cut off: more entries follow. List them with ${where}\`offset: ${next}\`.${under})`
+  if (tree.next !== undefined) {
+    const where = section ? `\`section: ${JSON.stringify(section)}\` and ` : ''
+    const under = tree.deeper
+      ? ` Pages under the ones shown ${tree.deeper === 'cut' ? 'are' : 'may be'} left out too. ${deeper}`
+      : ''
+    return [
+      `(Cut off: more entries ${tree.nextKnown ? 'follow' : 'may follow'}. List them with ${where}\`offset: ${tree.next}\`.${under})`,
+    ]
+  }
+  if (tree.deeper === 'cut')
+    return [
+      `(Cut off: this list shows at most ${limit} pages, so some pages under the ones shown are left out. ${deeper})`,
+    ]
+  if (tree.deeper === 'unchecked')
+    return [
+      `(Not looked into: what is under some of the pages shown, to keep this list short and its requests to Notion few. ${deeper})`,
+    ]
+  return []
 }
 
 function countNodes(nodes: { children: unknown[] }[]): number {
@@ -715,6 +737,7 @@ export function forgetReads(): void {
   recentReads.clear()
   seenRows.clear()
   seenDatabases.clear()
+  pageWorkspaces.clear()
 }
 
 const EDIT_ITEM = {
@@ -1808,7 +1831,7 @@ function highlightTag(results: { highlight?: Record<string, unknown> }[]): strin
   return ranked[0]?.[0]
 }
 
-/** Workspace ids of pages, so searching from the same page doesn't look it up again. */
+/** Workspace ids of pages, so searching or listing from the same page doesn't look it up again. */
 const pageWorkspaces = new Map<string, string>()
 
 async function workspaceOf(tab: NotionTab): Promise<string> {
@@ -1821,7 +1844,7 @@ async function workspaceOf(tab: NotionTab): Promise<string> {
     spaceId = (opened.block?.[pageId] as { space_id?: string } | undefined)?.space_id
   } catch (err) {
     if (err instanceof NotionError && err.message === IN_TRASH) {
-      throw new Error('The open page is in the trash. Open another page of the workspace to search it.')
+      throw new Error('The open page is in the trash. Open another page of the workspace.')
     }
     throw err
   }
@@ -1835,10 +1858,7 @@ async function databaseNames(tab: NotionTab, blocks: (NotionRecord | undefined)[
   const databases = blocks.filter(
     (b): b is NotionRecord => !!b && (b.type === 'collection_view_page' || b.type === 'collection_view'),
   )
-  const collectionOf = (b: NotionRecord) =>
-    (b.collection_id as string | undefined) ??
-    (b.format as { collection_pointer?: { id?: string } } | undefined)?.collection_pointer?.id
-  const ids = [...new Set(databases.map(collectionOf).filter((id): id is string => !!id))]
+  const ids = [...new Set(databases.map(collectionId).filter((id): id is string => !!id))]
   const names = new Map<string, string>()
   if (!ids.length) return names
   // One lookup per database, so one that can't be opened (say, a linked view of another
@@ -1860,7 +1880,7 @@ async function databaseNames(tab: NotionTab, blocks: (NotionRecord | undefined)[
   }
   const byCollection = new Map(found.flatMap((f) => (f.status === 'fulfilled' ? [f.value] : [])))
   for (const b of databases) {
-    const name = runsText(byCollection.get(collectionOf(b) ?? '')?.name)
+    const name = runsText(byCollection.get(collectionId(b) ?? '')?.name)
     if (name) names.set(b.id, name)
   }
   return names
