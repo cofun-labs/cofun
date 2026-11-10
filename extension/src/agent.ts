@@ -306,7 +306,7 @@ export class CopilotAgent {
         running = undefined
         this.stopReason ??= stop
         refused.add(toolCall.id)
-        return { block: true, reason: STOPPED_BY_ERROR, terminate: true }
+        return { block: true, reason: STOPPED_IN_PREVIEW, terminate: true }
       }
       onUpdate({ type: 'tool_ready', id: toolCall.id, args, preview })
       const call: ToolCallRequest = { id: toolCall.id, name: toolCall.name, args, preview }

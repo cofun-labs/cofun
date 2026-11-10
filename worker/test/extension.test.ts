@@ -492,6 +492,10 @@ describe('extension agent against the worker', () => {
     expect(tab.sent).toHaveLength(1)
     expect(ai.calls).toHaveLength(1)
     expect(ws.records.get(OLD)!.alive).toBe(true)
+    // The conversation keeps why the call didn't run: Notion turned it away while it was prepared.
+    expect(updates.find((u) => u.type === 'tool_end')).toMatchObject({
+      result: expect.stringContaining('turned the request away while it was being prepared'),
+    })
   })
 
   it('a question stopped after a page was moved tells the user that change was made', async () => {
