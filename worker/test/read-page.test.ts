@@ -334,18 +334,6 @@ describe('UC-NOTION-001 read a page', () => {
   })
 })
 
-describe('read_page when Notion is limiting requests', () => {
-  // The waits and tries are tested in notion.test.ts, with the wait injected; here, what the AI is told.
-  it('[UC-NOTION-001-S08] tells the AI to have the user wait when Notion keeps refusing', async () => {
-    // Notion asks for a longer wait than a tool call holds, so the tool gives up at once.
-    const tab = new FakeNotionTab(PAGE_URL).limit('loadPageChunk', 1, { 'retry-after': '120' }).install()
-    await expect(read()).rejects.toThrow(
-      'Notion is turning requests away right now (too many requests, or too busy), so this was not done. Do not try again or work around it with other tools: tell the user to wait a minute before asking again.',
-    )
-    expect(tab.sent).toHaveLength(1)
-  })
-})
-
 describe('read_page arguments', () => {
   it('opens a page by URL or by id, with or without dashes', async () => {
     const page = chunk([id(1)], { block: block(id(1), 'text', 'Hi') })

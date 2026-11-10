@@ -16,15 +16,18 @@ export type NotionErrorCode =
 export class NotionError extends Error {
   /** The request may have reached Notion, but no answer came back (timeout, tab closed mid-request). */
   readonly unanswered: boolean
+  /** Set when the question must stop here: what the user is told. The agent runs nothing more. */
+  readonly stopsQuestion?: string
 
   constructor(
     readonly code: NotionErrorCode,
     message: string,
-    options?: { cause?: unknown; unanswered?: boolean },
+    options?: { cause?: unknown; unanswered?: boolean; stopsQuestion?: string },
   ) {
     super(message, options)
     this.name = 'NotionError'
     this.unanswered = options?.unanswered ?? false
+    this.stopsQuestion = options?.stopsQuestion
   }
 }
 
@@ -34,8 +37,10 @@ export const NO_ACCESS = "The Notion page doesn't exist, or the signed-in Notion
 export const IN_TRASH = 'The Notion page or block is in the trash.'
 export const OUTCOME_UNKNOWN =
   'Notion did not answer, so the change may or may not have been saved. Read the page again before retrying.'
-export const RATE_LIMITED =
-  'Notion is turning requests away right now (too many requests, or too busy), so this was not done. Do not try again or work around it with other tools: tell the user to wait a minute before asking again.'
+export const RATE_LIMITED = 'Notion turned this request away (too many requests, or too busy), so it was not done.'
+/** For the user, when Notion turns requests away: the question stops, and nothing more is sent. */
+export const LIMITED_STOP =
+  'Notion is limiting requests right now, so Notion Copilot stopped. Wait a minute, then ask again.'
 
 /** The endpoints under /api/v3/ the client uses. */
 export type NotionEndpoint =
@@ -55,8 +60,6 @@ export interface NotionResponse {
   error?: string
   /** Notion answered with a redirect (likely to a sign-in page), which was not followed. */
   redirected?: boolean
-  /** The response's `Retry-After` header, if it had one. */
-  retryAfter?: string
 }
 
 /** Sends one request to Notion as the user of a Notion tab (see tab.ts). */
@@ -155,47 +158,14 @@ const RECORDS_BATCH = 100
 /** Record lookups sent at once at most. */
 const RECORDS_PARALLEL = 4
 
-/** Waits `ms`, or rejects with the signal's reason as soon as it aborts. */
-export type Wait = (ms: number, signal?: AbortSignal) => Promise<void>
-
-/** Statuses with which Notion says it is getting too many requests. */
-const SLOW_DOWN = new Set([429, 529])
-/** Tries after the first one when Notion says to slow down. */
-const RETRIES = 3
-/** The first wait when Notion doesn't say how long; it doubles with each try. */
-const BACKOFF_MS = 1_000
-/**
- * The longest one client (one tool call) waits in all, across its requests. A longer limit isn't
- * worth holding a tool call for; the user is told to wait instead.
- */
-const MAX_WAIT_MS = 30_000
-
-export interface NotionClientOptions {
-  /** Stops waiting and sending (the user stopped the question). */
-  signal?: AbortSignal
-  wait?: Wait
-}
+/** Statuses with which Notion says it gets too many requests (429) or is too busy (529). */
+const LIMITED = new Set([429, 529])
 
 export class NotionClient {
-  private readonly signal?: AbortSignal
-  private readonly wait: Wait
-  /** While one request backs off, the client's other requests hold until Notion answers it. */
-  private held: Promise<void> = Promise.resolve()
-  private backingOff = false
-  /** How long this client's backoffs took in all, in ms. */
-  private waited = 0
-  /** A backoff ran out: the client sends nothing more. */
-  private gaveUp = false
-  /** Backoffs so far; each waits twice as long as the last (or as long as Notion asks, if longer). */
-  private backoffs = 0
+  /** Notion turned a request away for coming too fast: the client sends nothing more. */
+  private limited = false
 
-  constructor(
-    private readonly send: NotionTransport,
-    { signal, wait = sleep }: NotionClientOptions = {},
-  ) {
-    this.signal = signal
-    this.wait = wait
-  }
+  constructor(private readonly send: NotionTransport) {}
 
   /** Loads a page with its content, following loadPageChunk's cursor until the page is complete. */
   async loadPage(id: string, { maxChunks = 50 } = {}): Promise<LoadedPage> {
@@ -368,7 +338,7 @@ export class NotionClient {
     } catch (err) {
       // Notion may have applied it; a blind retry could apply it twice (say, a duplicated block).
       if (err instanceof NotionError && err.unanswered) {
-        throw new NotionError('outcome_unknown', OUTCOME_UNKNOWN, { cause: err })
+        throw new NotionError('outcome_unknown', OUTCOME_UNKNOWN, { cause: err, stopsQuestion: err.stopsQuestion })
       }
       throw err
     }
@@ -412,119 +382,31 @@ export class NotionClient {
 
   /**
    * Every request to Notion goes through here. `spaceId`, when known, goes along as
-   * `x-notion-space-id`. When Notion says to slow down, one request backs off at a time, and the
-   * client's other requests hold until Notion takes that one again, so they don't go on while
-   * Notion is refusing. A request is refused a few times at most, and the client waits 30 s at
-   * most in all; then it gives up with `rate_limited` and sends nothing more.
+   * `x-notion-space-id`. When Notion turns a request away for coming too fast, nothing is retried:
+   * the client sends nothing more, and the question stops (see CLAUDE.md, calling Notion).
    */
   private async request<T>(
     endpoint: NotionEndpoint,
     body: unknown,
     spaceId?: string,
   ): Promise<{ json: T; signedIn: boolean }> {
-    for (let refusals = 0; ;) {
-      await orAbort(this.held, this.signal)
-      if (this.gaveUp) throw new NotionError('rate_limited', RATE_LIMITED)
-      this.signal?.throwIfAborted()
-      const res = await this.send(endpoint, body, { spaceId })
-      if (!slowDown(endpoint, res)) return { json: checkResponse(res) as T, signedIn: res.signedIn }
-      // A request still in flight when the client gave up doesn't start over.
-      if (this.gaveUp) throw new NotionError('rate_limited', RATE_LIMITED)
-      if (++refusals > RETRIES) throw this.giveUp()
-      // Another request is backing off already: hold until Notion answers it, then send again.
-      if (this.backingOff) continue
-      this.backingOff = true
-      let release = () => {}
-      this.held = new Promise((resolve) => (release = resolve))
-      try {
-        return await this.backOff<T>(endpoint, body, spaceId, res, refusals)
-      } finally {
-        this.backingOff = false
-        release()
+    if (this.limited) throw new NotionError('rate_limited', RATE_LIMITED, { stopsQuestion: LIMITED_STOP })
+    const res = await this.send(endpoint, body, { spaceId })
+    if (res.error === undefined && !res.redirected && LIMITED.has(res.status)) {
+      this.limited = true
+      // A 529 to a write may come after Notion applied it, so its outcome stays unknown. A 429
+      // means Notion turned it away before doing anything with it.
+      if (endpoint === 'saveTransactionsFanout' && res.status === 529) {
+        throw new NotionError('notion_error', 'Notion returned an error (529): too busy.', {
+          unanswered: true,
+          stopsQuestion: LIMITED_STOP,
+        })
       }
-    }
-  }
-
-  /** Waits and sends again until Notion takes the request, while the client's others hold. */
-  private async backOff<T>(
-    endpoint: NotionEndpoint,
-    body: unknown,
-    spaceId: string | undefined,
-    res: NotionResponse,
-    refusals: number,
-  ): Promise<{ json: T; signedIn: boolean }> {
-    for (; slowDown(endpoint, res); refusals++) {
-      const ms = retryDelay(res.retryAfter, this.backoffs++)
-      if (refusals > RETRIES || this.waited + ms > MAX_WAIT_MS) throw this.giveUp()
-      this.waited += ms
-      await this.wait(ms, this.signal)
-      // Another request may have given up meanwhile.
-      if (this.gaveUp) throw new NotionError('rate_limited', RATE_LIMITED)
-      res = await this.send(endpoint, body, { spaceId })
+      throw new NotionError('rate_limited', RATE_LIMITED, { stopsQuestion: LIMITED_STOP })
     }
     return { json: checkResponse(res) as T, signedIn: res.signedIn }
   }
-
-  private giveUp(): NotionError {
-    this.gaveUp = true
-    return new NotionError('rate_limited', RATE_LIMITED)
-  }
 }
-
-/** `promise`, or a rejection with the signal's reason as soon as it aborts. */
-function orAbort<T>(promise: Promise<T>, signal: AbortSignal | undefined): Promise<T> {
-  if (!signal) return promise
-  return new Promise((resolve, reject) => {
-    if (signal.aborted) return reject(signal.reason)
-    const onAbort = () => reject(signal.reason)
-    signal.addEventListener('abort', onAbort, { once: true })
-    promise.then(resolve, reject).finally(() => signal.removeEventListener('abort', onAbort))
-  })
-}
-
-/**
- * Whether Notion said to slow down, so the request can be sent again, body unchanged (a write
- * keeps its requestId and transaction id). A 429 means Notion turned the request away before
- * doing anything with it, writes included: that is what the status means, and these internal
- * endpoints have no documentation that says otherwise. A 529 to a write may come after Notion
- * applied it, so it stays a server error, and the change's outcome stays unknown.
- */
-function slowDown(endpoint: NotionEndpoint, res: NotionResponse): boolean {
-  if (res.error !== undefined || res.redirected) return false
-  return endpoint === 'saveTransactionsFanout' ? res.status === 429 : SLOW_DOWN.has(res.status)
-}
-
-/**
- * How long the client's backoff number `n` (from 0) waits: what `Retry-After` says (seconds or a
- * date), but never less than the backoff, so a zero, a past date, or a misread header can't send
- * the tries back to back.
- */
-function retryDelay(retryAfter: string | undefined, n: number): number {
-  const backoff = BACKOFF_MS * 2 ** n
-  const value = retryAfter?.trim()
-  if (!value) return backoff
-  // Seconds, or an HTTP date (it names the day and month); Date.parse alone would also read, say, "1.5".
-  const asked = /^\d+$/.test(value)
-    ? Number(value) * 1_000
-    : /[a-z]/i.test(value)
-      ? Date.parse(value) - Date.now()
-      : NaN
-  return Number.isNaN(asked) ? backoff : Math.max(asked, backoff)
-}
-
-const sleep: Wait = (ms, signal) =>
-  new Promise((resolve, reject) => {
-    if (signal?.aborted) return reject(signal.reason)
-    const onAbort = () => {
-      clearTimeout(timer)
-      reject(signal!.reason)
-    }
-    const timer = setTimeout(() => {
-      signal?.removeEventListener('abort', onAbort)
-      resolve()
-    }, ms)
-    signal?.addEventListener('abort', onAbort, { once: true })
-  })
 
 /** The JSON of a successful response, or a NotionError explaining the failure. */
 export function checkResponse(res: NotionResponse): Record<string, unknown> {

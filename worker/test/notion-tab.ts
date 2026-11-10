@@ -45,7 +45,7 @@ export class FakeNotionTab {
   sent: SentRequest[] = []
   injections: { tabId: number; world?: string }[] = []
   /** Responses per endpoint, in order. */
-  responses: Record<string, { status: number; text: string; headers?: Record<string, string> }[]> = {}
+  responses: Record<string, { status: number; text: string }[]> = {}
   /** Where the page is when the script runs; defaults to the tab's URL. */
   pageUrl?: string
   closed = false
@@ -68,24 +68,19 @@ export class FakeNotionTab {
     readonly cookie = `notion_browser_id=b; notion_user_id=${USER}; notion_users=%5B%22${USER}%22%5D`,
   ) {}
 
-  respond(endpoint: string, status: number, json: unknown, headers?: Record<string, string>): this {
-    return this.respondText(endpoint, status, JSON.stringify(json), headers)
+  respond(endpoint: string, status: number, json: unknown): this {
+    return this.respondText(endpoint, status, JSON.stringify(json))
   }
 
-  respondText(endpoint: string, status: number, text: string, headers?: Record<string, string>): this {
-    ;(this.responses[endpoint] ??= []).push({ status, text, headers })
+  respondText(endpoint: string, status: number, text: string): this {
+    ;(this.responses[endpoint] ??= []).push({ status, text })
     return this
   }
 
-  /** Notion refusing `times` requests to `endpoint` for coming too fast, as Notion's rate limit does. */
-  limit(endpoint: string, times: number, headers?: Record<string, string>, status = 429): this {
+  /** Notion turning `times` requests to `endpoint` away: too many requests (429), or too busy (529). */
+  limit(endpoint: string, times: number, status = 429): this {
     for (let i = 0; i < times; i++) {
-      this.respond(
-        endpoint,
-        status,
-        { isNotionError: true, name: 'RateLimitedError', message: 'Rate limited' },
-        headers,
-      )
+      this.respond(endpoint, status, { isNotionError: true, name: 'RateLimitedError', message: 'Rate limited' })
     }
     return this
   }
@@ -140,15 +135,14 @@ export class FakeNotionTab {
     const endpoint = url.split('/api/v3/')[1]
     const queued = this.responses[endpoint]?.shift()
     const served = queued ?? this.workspace?.answer(endpoint, JSON.parse(init.body as string))
-    const next =
-      served && 'json' in served ? { status: served.status, text: JSON.stringify(served.json), headers: {} } : served
+    const next = served && 'json' in served ? { status: served.status, text: JSON.stringify(served.json) } : served
     if (!next) throw new Error(`Unexpected request to ${url}`)
     if (this.redirects) {
       // A browser following a 307 sends the same body again, to wherever the redirect points.
       if (init.redirect !== 'manual') this.sent.push({ ...this.sent.at(-1)!, url: 'https://app.notion.com/login' })
       return Object.defineProperties(new Response(null), { type: { value: 'opaqueredirect' }, status: { value: 0 } })
     }
-    return new Response(next.text, { status: next.status, headers: next.headers })
+    return new Response(next.text, { status: next.status })
   }
 }
 

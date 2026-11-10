@@ -29,7 +29,10 @@ export interface ToolSpec {
   description: string
   /** JSON Schema of the arguments object. */
   parameters: object
-  /** Runs the tool. Throw to report a failure to the model. */
+  /**
+   * Runs the tool. Throw to report a failure to the model. An error with a `stopsQuestion` string
+   * (on it or a cause) also stops the question: nothing more runs, and the user is told that string.
+   */
   run: (args: Record<string, unknown>, signal?: AbortSignal) => Promise<unknown>
   /** The tool does what is hard to undo, such as deleting a page, so the user must agree each time before it runs. */
   needsConfirmation?: boolean
@@ -128,6 +131,8 @@ export class CopilotAgent {
   private readonly statuses = new WeakMap<AgentMessage, ToolStatus>()
   /** What the model is told with each question, by its user message; see AgentConfig.context. */
   private readonly contexts = new WeakMap<AgentMessage, string>()
+  /** Set by a tool whose error stops the question (see `stopsQuestion`): what the user is told. */
+  private stopReason?: string
 
   constructor(private readonly config: AgentConfig) {
     this.maxSteps = config.maxSteps ?? DEFAULT_MAX_STEPS
@@ -201,6 +206,7 @@ export class CopilotAgent {
     if (epoch !== this.epoch) return { result: { status: 'stopped' }, kept: false }
 
     const before = agent.state.messages.length
+    this.stopReason = undefined
     let steps = 0
     let hitLimit = false
     let failure: Failure | undefined
@@ -219,6 +225,11 @@ export class CopilotAgent {
     // On the last step, refuse the tools the model asks for instead of running them: the question
     // ends here, so the model would never see their results, and a tool could change a page.
     agent.beforeToolCall = async ({ toolCall, args }, signal) => {
+      // A tool's error stopped the question: nothing more runs.
+      if (this.stopReason) {
+        refused.add(toolCall.id)
+        return { block: true, reason: `Not run: the question stopped. ${this.stopReason}`, terminate: true }
+      }
       if (steps >= this.maxSteps) {
         hitLimit = true
         refused.add(toolCall.id)
@@ -248,6 +259,7 @@ export class CopilotAgent {
     // The model gets no more turns once the steps are used up. beforeToolCall above only sees calls
     // that pi could prepare; unknown tools and invalid arguments get error results without it.
     agent.finishTurn = async ({ toolResults }) => {
+      if (this.stopReason) return { action: 'end' }
       if (steps < this.maxSteps || toolResults.length === 0) return
       hitLimit = true
       return { action: 'end' }
@@ -301,6 +313,7 @@ export class CopilotAgent {
     // Also stopped when the abort landed after a model reply that asked for tools, e.g. while a tool
     // finished. A stop after the final answer keeps it: the user has already read it.
     stopped ||= epoch !== this.epoch && !answered
+    if (!stopped && this.stopReason) failure ??= { text: this.stopReason }
     if (failure || stopped) {
       const kept = usedTools(agent.state.messages.slice(before))
       agent.state.messages = [...agent.state.messages.slice(0, before), ...kept]
@@ -438,6 +451,17 @@ export class CopilotAgent {
     })
   }
 
+  /**
+   * For a tool starting now: stops the running question with a reason for the user. A tool still
+   * running from a question that was stopped or reset does nothing to the next one.
+   */
+  private stopper(): (reason: string) => void {
+    const epoch = this.epoch
+    return (reason) => {
+      if (epoch === this.epoch) this.stopReason ??= reason
+    }
+  }
+
   private async getAgent(): Promise<Agent> {
     if (this.agent) return this.agent
     const model = (this.model ??= await this.loadModel())
@@ -451,7 +475,7 @@ export class CopilotAgent {
       initialState: {
         systemPrompt: this.config.systemPrompt,
         model,
-        tools: this.config.tools.map(toAgentTool),
+        tools: this.config.tools.map((t) => toAgentTool(t, () => this.stopper())),
         messages: this.fromHistory(this.initial, model),
       },
       streamFn: (m, context, options) => streamSimple(m as Model<'openai-completions'>, context, options),
@@ -616,14 +640,34 @@ function askUser(
   })
 }
 
-function toAgentTool(spec: ToolSpec): AgentTool {
+/**
+ * The reason a tool's error stops the question, if it does: a `stopsQuestion` string on the error
+ * or on one of its causes (a tool may wrap the error it got).
+ */
+function stopsQuestion(err: unknown): string | undefined {
+  for (let e = err, depth = 0; e && typeof e === 'object' && depth < 5; e = (e as Error).cause, depth++) {
+    const reason = (e as { stopsQuestion?: unknown }).stopsQuestion
+    if (typeof reason === 'string') return reason
+  }
+  return undefined
+}
+
+function toAgentTool(spec: ToolSpec, stopper: () => (reason: string) => void): AgentTool {
   return {
     name: spec.name,
     label: spec.name,
     description: spec.description,
     parameters: spec.parameters,
     execute: async (_id, params, signal) => {
-      const result = await spec.run(params as Record<string, unknown>, signal)
+      const stop = stopper()
+      let result: unknown
+      try {
+        result = await spec.run(params as Record<string, unknown>, signal)
+      } catch (err) {
+        const reason = stopsQuestion(err)
+        if (reason) stop(reason)
+        throw err
+      }
       // JSON.stringify(undefined) is undefined; tool results must be strings.
       const text = typeof result === 'string' ? result : (JSON.stringify(result) ?? '')
       return { content: [{ type: 'text', text }], details: undefined }

@@ -9,6 +9,7 @@ import {
   type ToolCallRequest,
   type ToolSpec,
 } from '../../extension/src/agent'
+import { LIMITED_STOP, RATE_LIMITED } from '../../extension/src/notion/api'
 import { editPage, openPageNote, readPage } from '../../extension/src/tools'
 import { createApp, type Env } from '../src/app'
 import { FakeClerk } from './clerk'
@@ -313,6 +314,67 @@ describe('extension agent against the worker', () => {
     expect(toolStatuses(updates)).toEqual(['done', 'done'])
     const [first] = ws.content(PAGE)
     expect(first.properties).toEqual({ title: [['Summary: hi']] })
+  })
+
+  it('[UC-NOTION-001-S08] the question stops when Notion turns a read away, and nothing more is sent', async () => {
+    const tab = new FakeNotionTab(PAGE_URL).limit('loadPageChunk', 1).install()
+    // The model would read again, and then try another way.
+    ai.script = [
+      { toolCalls: [{ name: 'read_page', arguments: '{}' }] },
+      { toolCalls: [{ name: 'read_page', arguments: '{}' }] },
+      { reply: 'Trying another way.' },
+    ]
+    const agent = makeAgent({ tools: [readPage] })
+    const { result, updates } = await ask(agent, 'Summarize this page')
+    expect(result).toEqual({ status: 'error', message: LIMITED_STOP })
+    expect(toolStatuses(updates)).toEqual(['failed'])
+    // Not retried, and the model was not asked again.
+    expect(tab.sent).toHaveLength(1)
+    expect(ai.calls).toHaveLength(1)
+
+    // The next question knows what happened.
+    ai.script = [{ reply: 'Ok.' }]
+    expect((await ask(agent, 'And now?')).result).toEqual({ status: 'done' })
+    expect(sentMessages(1).find((m) => m.role === 'tool')).toMatchObject({
+      content: expect.stringContaining(RATE_LIMITED),
+    })
+  })
+
+  it('[UC-NOTION-002-S11] the question stops when Notion turns an edit away, and nothing changes', async () => {
+    const ws = editablePage()
+    const tab = new FakeNotionTab(PAGE_URL).limit('saveTransactionsFanout', 1)
+    tab.workspace = ws
+    tab.install()
+    const before = structuredClone([...ws.records])
+    const { result } = await ask(makeAgent({ tools: [readPage, editPage] }), 'Put a summary at the top')
+    expect(result).toEqual({ status: 'error', message: LIMITED_STOP })
+    expect(ws.transactions).toEqual([])
+    expect([...ws.records]).toEqual(before)
+    // The read, the edit's own check of the page, and the refused change; the model was not asked again.
+    expect(tab.sent.map((r) => r.url.split('/api/v3/')[1])).toEqual([
+      'loadPageChunk',
+      'loadPageChunk',
+      'saveTransactionsFanout',
+    ])
+    expect(ai.calls).toHaveLength(2)
+  })
+
+  it('tools the model asked for after a refused one, in the same reply, do not run', async () => {
+    const tab = new FakeNotionTab(PAGE_URL).limit('loadPageChunk', 1).install()
+    const { tool, runs } = pageTool()
+    ai.script = [
+      {
+        toolCalls: [
+          { name: 'read_page', arguments: '{}' },
+          { name: 'lookup_page', arguments: '{}' },
+        ],
+      },
+    ]
+    const { result, updates } = await ask(makeAgent({ tools: [readPage, tool] }), 'Summarize this page')
+    expect(result).toEqual({ status: 'error', message: LIMITED_STOP })
+    expect(toolStatuses(updates)).toEqual(['failed', 'skipped'])
+    expect(runs).toEqual([])
+    expect(tab.sent).toHaveLength(1)
   })
 
   it('[UC-AGENT-001-S05] a model that keeps calling tools is stopped at the step limit', async () => {
