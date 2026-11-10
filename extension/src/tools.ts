@@ -818,6 +818,8 @@ export const editPage: ToolSpec = {
           : 'That id is a block inside a page, not a page.',
       )
     }
+    // The edit is checked against the page first, so a refused edit costs no member lookup.
+    planEdit(loaded, read, edits)
     // People the new Markdown mentions, matched before anything is written. In a block being
     // rewritten, a name it already mentions is that same person.
     const writes = edits.filter((e) => e.action !== 'delete')

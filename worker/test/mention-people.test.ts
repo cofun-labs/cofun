@@ -232,6 +232,31 @@ describe('mention details', () => {
     expect(endpoints(tab)).not.toContain('getVisibleUsers')
   })
 
+  it('lists no members for a letter or two, and at most ten in one refusal', async () => {
+    const many: [string, string][] = Array.from({ length: 30 }, (_, n) => [person(100 + n), `Sam ${n}`])
+    const ws = workspace([block(1, 'text', [['Intro']])], [...many, [KIM, 'Kim Lee']])
+    open(ws)
+    await read()
+    const err = (await edit([{ action: 'insert', position: 'end', markdown: '@[a] @[e] @[Sam] @[Sam Kim]' }]).catch(
+      (e: Error) => e,
+    )) as Error
+    const lines = err.message.split('\n')
+    expect(lines.find((l) => l.startsWith('@[a]'))).toContain('No member has a similar name')
+    expect(lines.find((l) => l.startsWith('@[e]'))).toContain('No member has a similar name')
+    expect(err.message.match(/“Sam \d+”/g)).toHaveLength(10)
+    expect(err.message).toContain(', and others.')
+    expect(lines.find((l) => l.startsWith('@[Sam Kim]'))).toContain('mention fewer people at once')
+  })
+
+  it('asks Notion for no members when the edit is refused anyway', async () => {
+    const ws = workspace([block(1, 'text', [['Intro']])])
+    const tab = open(ws)
+    await read()
+    ws.edit(id(1), { properties: { title: [['Changed in Notion']] } })
+    await expect(edit([{ action: 'replace', block: '^00000001', markdown: '@[Kim Lee] intro' }])).rejects.toThrow()
+    expect(endpoints(tab)).not.toContain('getVisibleUsers')
+  })
+
   it('looks up only the people the user can see', async () => {
     const ws = workspace([block(1, 'text', [['Intro']])])
     ws.visibleUsers = [ALEX, USER]

@@ -3,8 +3,8 @@
 import type { NotionClient, NotionRecord } from './api'
 import { EditError } from './edit'
 
-/** How many members a refusal lists at most. */
-const LISTED = 20
+/** How many members one refusal lists at most, over all its names. */
+const LISTED = 10
 
 /** A name as people are matched by: case, spacing, and Unicode forms don't matter. */
 function key(name: string): string {
@@ -52,11 +52,12 @@ export async function findPeople(
   for (const { names, known } of sets) for (const name of names) if (!known?.has(key(name))) unknown.add(name)
   const people = unknown.size ? await client.workspacePeople(spaceId) : []
   const found = new Map<string, string>()
+  const listed = { left: LISTED }
   for (const name of unknown) {
     const matches = people.filter((p) => key(p.name) === key(name))
     if (matches.length === 1) found.set(name, matches[0].id)
     else if (matches.length > 1) ambiguous(name, `${matches.length} workspace members are named “${matches[0].name}”`)
-    else problems.push(`@[${name}]: no workspace member has that name. ${candidates(name, people)}`)
+    else problems.push(`@[${name}]: no workspace member has that name. ${candidates(name, people, listed)}`)
   }
   const out = sets.map(({ names, known }) => {
     const ids = new Map<string, string>()
@@ -73,21 +74,26 @@ export async function findPeople(
 }
 
 /**
- * Members whose name is like `name`, for the agent to pick from. Never the whole list: a refusal
- * mustn't let text in a page have the agent list the workspace's people.
+ * Members who share a whole word of their name with `name`, for the agent to pick from, at most
+ * `listed.left` more of them. Never the whole list, nor members matched by a letter or two: a
+ * refusal mustn't let text in a page have the agent list the workspace's people.
  */
-function candidates(name: string, people: { name: string }[]): string {
-  const wanted = key(name)
-  const words = wanted.split(' ').filter((w) => w.length > 1)
-  const like = people.filter((p) => {
-    const k = key(p.name)
-    return k.includes(wanted) || wanted.includes(k) || k.split(' ').some((w) => words.includes(w))
-  })
-  const list = (ps: { name: string }[]) => {
-    const names = [...new Set(ps.map((p) => p.name))].sort((a, b) => a.localeCompare(b))
-    const shown = names.slice(0, LISTED).map((n) => `“${n}”`)
-    return shown.join(', ') + (names.length > LISTED ? `, and ${names.length - LISTED} more` : '')
-  }
-  if (like.length) return `Members with a similar name: ${list(like)}.`
-  return 'No member has a similar name: check the name with the user.'
+function candidates(name: string, people: { name: string }[], listed: { left: number }): string {
+  const words = new Set(key(name).split(' '))
+  const like = [
+    ...new Set(
+      people
+        .filter((p) =>
+          key(p.name)
+            .split(' ')
+            .some((w) => words.has(w)),
+        )
+        .map((p) => p.name),
+    ),
+  ].sort((a, b) => a.localeCompare(b))
+  const shown = like.slice(0, listed.left)
+  listed.left -= shown.length
+  if (!like.length) return 'No member has a similar name: check the name with the user.'
+  if (!shown.length) return 'Some members have a similar name; mention fewer people at once to see them.'
+  return `Members with a similar name: ${shown.map((n) => `“${n}”`).join(', ')}${like.length > shown.length ? ', and others' : ''}.`
 }
