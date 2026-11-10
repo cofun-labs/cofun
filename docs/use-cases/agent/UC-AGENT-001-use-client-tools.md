@@ -40,7 +40,6 @@ Key constraints:
 | UC-AGENT-001-S17 | P1 | ✅ | Given a question that reads a Notion page; when it ends; then the agent reports how many Notion requests it made, and the saved session keeps that count. |
 | UC-AGENT-001-S18 | P1 | ✅ | Given a question that has made as many Notion requests as it may; when the next request would go over that; then the agent asks the user and sends nothing more until they answer, and when they go on, the question continues. |
 | UC-AGENT-001-S19 | P1 | ✅ | Given a question that has made as many Notion requests as it may; when the user chooses to stop; then nothing more is sent, the question ends, and the AI is told not to work around the limit. |
-| UC-AGENT-001-S16 | P0 | ✅ | Given the side panel open on a Notion page; when the user asks which page they are on; then the agent answers with the page's title without using a tool. |
 | UC-AGENT-001-S08 | P1 | ✅ | Given the agent used a tool to answer; when the user looks at the reply; then it shows which tool ran, with what input, whether it worked, and, on request, what it returned. |
 | UC-AGENT-001-S11 | P1 | ✅ | Given a tool that needs confirmation; when the agent wants to use it; then the side panel asks the user first, showing what the tool will do, and the tool runs only after they agree. |
 | UC-AGENT-001-S20 | P1 | ✅ | Given the side panel open on a Notion page; when the user asks a question that reads the page; then the reply shows how many Notion requests it made, also after the session is reopened. |
@@ -49,4 +48,5 @@ Key constraints:
 
 | ID | Priority | Status | Scenario |
 | --- | --- | --- | --- |
+| UC-AGENT-001-S16 | P0 | ✅ | Given the side panel open on a Notion page; when the user asks which page they are on; then the agent answers with the page's title without using a tool. |
 | UC-AGENT-001-S21 | P2 | 🚧 | Given a question that has made as many Notion requests as it may; when it needs another; then the side panel asks the user whether to continue, and the question goes on only after they agree. |

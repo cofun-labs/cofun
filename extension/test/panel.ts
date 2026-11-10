@@ -75,10 +75,11 @@ export class FakeBrowser {
 
   /**
    * Opens the side panel: loads sidepanel.html into the document and runs the script it names, so
-   * the panel starts as it does in Chrome. Opening it again is a new document with new modules;
+   * the panel starts as it does in Chrome. Opening it again closes the one before: a new document with new modules;
    * what the browser keeps (IndexedDB, chrome.storage, the sign-in) stays.
    */
   async openPanel(): Promise<void> {
+    await closePanel()
     vi.resetModules()
     const page = new DOMParser().parseFromString(
       readFileSync(fileURLToPath(import.meta.resolve('../sidepanel.html')), 'utf8'),
@@ -98,9 +99,15 @@ export class FakeBrowser {
   }
 }
 
-/** Puts back what a FakeBrowser replaced. Call it after each test. */
-export function closeBrowser(): void {
+/** Closes the open panel, if there is one, as Chrome does when its page goes away. */
+async function closePanel(): Promise<void> {
+  await act(async () => void window.dispatchEvent(new Event('pagehide')))
   document.body.innerHTML = ''
+}
+
+/** Closes the panel and puts back what a FakeBrowser replaced. Call it after each test. */
+export async function closeBrowser(): Promise<void> {
+  await closePanel()
   restoreGlobals()
   delete globals.indexedDB
   vi.useRealTimers()

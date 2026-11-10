@@ -93,8 +93,11 @@ function App() {
   )
 }
 
-createRoot(document.getElementById('root')!).render(
+const root = createRoot(document.getElementById('root')!)
+root.render(
   <StrictMode>
     <App />
   </StrictMode>,
 )
+// Closing the panel ends its work: a question still running stops with the chat (see Chat).
+window.addEventListener('pagehide', () => root.unmount(), { once: true })

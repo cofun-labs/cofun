@@ -84,7 +84,9 @@ describe('asking the AI', () => {
     await answered()
   })
 
-  it('[UC-AGENT-001-S16] asked which page is open, the agent answers with its title without using a tool', async () => {
+  // UC-AGENT-001-S16 itself stays ai-e2e: whether the model answers from the note, without a tool, is its
+  // own judgment. This is the panel's part of it.
+  it('a question goes to the model with a note naming the open page, and the panel shows only what the user typed', async () => {
     const { browser, user } = await openPanel()
     browser.ai.script.push({ reply: 'You are on "Fixture page".' })
 
@@ -92,14 +94,12 @@ describe('asking the AI', () => {
 
     expect(await screen.findByText('You are on "Fixture page".')).toBeVisible()
     await answered()
-    // The answer can only come from what the model was told with the question.
     const sent = browser.sentToModel().at(-1)!
     expect(sent.content).toContain(`[The Notion page open in the current tab: "Fixture page", ${PAGE_URL}]`)
     expect(sent.content).toContain('Which page am I on?')
     // What the user typed is shown, not the note the extension added.
     expect(screen.queryByText(/The Notion page open in the current tab/)).not.toBeInTheDocument()
-    // No tool ran, and nothing was asked of Notion.
-    expect(screen.queryByText('Arguments')).not.toBeInTheDocument()
+    // Telling the model which page is open asks nothing of Notion.
     expect(browser.tab.sent).toEqual([])
   })
 
