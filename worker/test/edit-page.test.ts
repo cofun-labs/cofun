@@ -248,7 +248,7 @@ describe('edit_page details', () => {
     tab.limit('loadPageChunk', 1)
     const err = await notionError(edit([{ action: 'insert', position: 'end', markdown: 'Second' }]))
     // Marked as having changed the page, so the user is told to check before asking again.
-    expect([err.stopsQuestion, err.mayHaveChanged]).toEqual([LIMITED_STOP, true])
+    expect([err.stopsQuestion, err.mayHaveChanged]).toEqual([`The edit was saved. ${LIMITED_STOP}`, true])
     expect(err.message.split('\n')[0]).toBe(
       'The edit was saved. Reading the page back afterwards was refused, so read it again before changing it.',
     )

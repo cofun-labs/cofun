@@ -284,12 +284,15 @@ describe('duplicating pages', () => {
     expect(ws.tasks.size).toBe(0)
   })
 
-  it('keeps checking on the copy when one check fails', async () => {
+  it('stops the question without checking again when a check on the copy fails', async () => {
     const ws = workspace()
     const tab = open(ws)
     tab.respond('getTasks', 502, { name: 'BadGateway' })
-    await duplicatePage.run({ page: PLAN })
-    expect(contentOf(ws, PROJECTS)).toHaveLength(3)
+    const err = await notionError(duplicatePage.run({ page: PLAN }))
+    expect([err.code, err.mayHaveChanged]).toEqual(['outcome_unknown', true])
+    expect(err.message).toContain('it may still appear')
+    expect(err.stopsQuestion).toBe(`${UNEXPECTED_STOP} Notion returned an error (502 BadGateway): no details.`)
+    expect(tab.sent.filter((r) => r.url.endsWith('/getTasks'))).toHaveLength(1)
   })
 
   it('stops checking at once when Notion refuses the check, and says the copy may still appear', async () => {

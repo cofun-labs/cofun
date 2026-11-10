@@ -700,16 +700,12 @@ export class NotionClient {
         task = json.results?.[0]
       } catch (err) {
         if (err instanceof NotionError && err.code === 'outcome_unknown') throw err
-        // A failed check says nothing about the copy, which goes on regardless. Only a check that may
-        // clear up (no answer, or a server error) is worth repeating, as one of the checks allowed.
-        const transient = err instanceof NotionError && err.unanswered
-        // Turned away for coming too fast, nothing more is asked: the question stops.
-        if (!transient || Date.now() >= deadline)
-          throw new NotionError('outcome_unknown', DUPLICATE_UNKNOWN, {
-            cause: err,
-            stopsQuestion: err instanceof NotionError ? err.stopsQuestion : undefined,
-          })
-        continue
+        // A failed check says nothing about the copy, which goes on regardless. It isn't checked
+        // again: the question stops, and the user is told the copy may still appear.
+        throw new NotionError('outcome_unknown', DUPLICATE_UNKNOWN, {
+          cause: err,
+          stopsQuestion: err instanceof NotionError ? err.stopsQuestion : undefined,
+        })
       }
       if (task?.state === 'success') {
         const [copy] = Array.isArray(task.status?.targetIds) ? task.status.targetIds : []
