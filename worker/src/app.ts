@@ -71,6 +71,14 @@ function isObject(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === 'object' && !Array.isArray(value)
 }
 
+/**
+ * Whether a value can be read as a stream. Judged by the method the worker calls, not by class: the
+ * AI binding's stream need not be an instance of this module's `ReadableStream`.
+ */
+function isStream(value: unknown): value is ReadableStream<Uint8Array> {
+  return !!value && typeof value === 'object' && 'getReader' in value && typeof value.getReader === 'function'
+}
+
 /** Whether a JSON value nests objects or arrays more than `max` levels deep. Stops at `max`, so it can't overflow. */
 function nestedDeeperThan(value: unknown, max: number): boolean {
   if (!value || typeof value !== 'object') return false
@@ -477,7 +485,7 @@ export function createApp({ now = () => new Date() }: AppOptions = {}) {
 
     if (stream === true) {
       // Workers AI already streams OpenAI-style SSE; pass it through, reading usage on the way.
-      if (!(out instanceof ReadableStream)) throw new Error('the model returned no stream')
+      if (!isStream(out)) throw new Error('the model returned no stream')
       const metered = meterStream(out, (outcome, summary) => {
         Object.assign(usage, summary)
         record(outcome)
