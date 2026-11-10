@@ -58,6 +58,7 @@ extension/                Chrome extension
   src/agent.ts            agent loop (pi) against the worker; the only module that imports pi
   src/tools.ts            tools the agent runs in the extension
   src/tool.ts             defines a tool from one zod schema of its arguments
+  src/zod.ts              zod, set up for the extension's content security policy; the only module that imports it
   src/sessions.ts         saved sessions (IndexedDB, per user)
   src/notion/hosts.ts     Notion hosts, and the page id in a Notion URL
   src/notion/api.ts       Notion's internal API: endpoints, request shapes, record maps, errors

@@ -41,6 +41,26 @@
     {
       "files": ["extension/src/**"],
       "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": [
+                  "@earendil-works/pi-agent-core",
+                  "@earendil-works/pi-agent-core/**",
+                  "@earendil-works/pi-ai",
+                  "@earendil-works/pi-ai/**"
+                ],
+                "message": "Only extension/src/agent.ts imports pi. Import what you need from agent.ts, or add it there."
+              },
+              {
+                "regex": "^zod(/|$)",
+                "message": "Import z from extension/src/zod.ts: it sets zod up for the extension's content security policy before any schema is built."
+              }
+            ]
+          }
+        ],
         "no-restricted-globals": [
           "error",
           {
@@ -98,6 +118,10 @@
               {
                 "regex": "^(\\.\\./)+(agent|tools|sessions|sidepanel)(\\.|/|$)",
                 "message": "extension/src/notion/ imports nothing from agent.ts, tools.ts, sessions.ts, or sidepanel/: those modules depend on the Notion layer, not the other way round."
+              },
+              {
+                "regex": "^zod(/|$)",
+                "message": "Import z from extension/src/zod.ts: it sets zod up for the extension's content security policy before any schema is built."
               }
             ]
           }
@@ -108,7 +132,17 @@
       // The one module that imports pi, and the one that calls the worker.
       "files": ["extension/src/agent.ts"],
       "rules": {
-        "no-restricted-imports": "off",
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "regex": "^zod(/|$)",
+                "message": "Import z from extension/src/zod.ts: it sets zod up for the extension's content security policy before any schema is built."
+              }
+            ]
+          }
+        ],
         "no-restricted-globals": "off",
         "no-restricted-properties": [
           "error",
@@ -136,6 +170,28 @@
             "object": "chrome",
             "property": "debugger",
             "message": "Never use chrome.debugger: it shows a permanent \"debugging this browser\" banner. Notion requests run through chrome.scripting in extension/src/notion/tab.ts."
+          }
+        ]
+      }
+    },
+    {
+      // The one module that imports zod. Its other restrictions (the extension/src block) still hold.
+      "files": ["extension/src/zod.ts"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": [
+                  "@earendil-works/pi-agent-core",
+                  "@earendil-works/pi-agent-core/**",
+                  "@earendil-works/pi-ai",
+                  "@earendil-works/pi-ai/**"
+                ],
+                "message": "Only extension/src/agent.ts imports pi. Import what you need from agent.ts, or add it there."
+              }
+            ]
           }
         ]
       }

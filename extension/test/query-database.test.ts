@@ -260,10 +260,10 @@ describe('query_database arguments', () => {
       'Filter 2: `op` must be one of is, is_not, contains, not_contains, is_empty, is_not_empty, before, after.',
     )
     await expect(query({ filter: [{ op: 'is_empty' }] })).rejects.toThrow(
-      '`filter.0.property`: Invalid input: expected string, received undefined',
+      "Filter 1 needs `property`: a property's name.",
     )
     await expect(query({ filter: [{ property: 'Status', op: 'is', value: 5 }] })).rejects.toThrow(
-      '`filter.0.value`: Invalid input: expected string, received number',
+      'Filter 1: `value` must be text.',
     )
     await expect(query({ sort: { direction: 'descending' } })).rejects.toThrow(
       '`sort.property`: Invalid input: expected string, received undefined',
@@ -273,6 +273,10 @@ describe('query_database arguments', () => {
     )
     await expect(query({ database: 5 })).rejects.toThrow('`database`: Invalid input: expected string, received number')
     await expect(query({ limit: 10 })).rejects.toThrow('Unrecognized key: "limit"')
+    // An argument inside a list is named as the model would write it.
+    await expect(query({ filter: [{ property: 'Status', op: 'is_empty', values: 'x' }] })).rejects.toThrow(
+      '`filter[0]`: Unrecognized key: "values"',
+    )
     // Everything wrong with a call is said at once.
     await expect(query({ part: 0, sort: {} })).rejects.toThrow(
       '`sort.property`: Invalid input: expected string, received undefined\n`part` must be a whole number from 1.',

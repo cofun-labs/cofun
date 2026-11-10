@@ -1,9 +1,9 @@
 // Tools the agent can run in the extension.
 // The worker's tests import this file too, and their tsconfig has no chrome types.
 /// <reference types="chrome" />
-import { z } from 'zod'
 import type { ToolSpec } from './agent'
 import { defineTool } from './tool'
+import { z } from './zod'
 import {
   NotionError,
   SIGNED_OUT,
@@ -367,11 +367,16 @@ const QUERY_ARGS = z.strictObject({
   filter: z
     .array(
       z.strictObject({
-        property: z.string().describe('Property name, as the result lists it.'),
+        property: z
+          .string({ error: (issue) => `${filterAt(issue)} needs \`property\`: a property's name.` })
+          .describe('Property name, as the result lists it.'),
         op: z.enum(FILTER_OPS, {
           error: (issue) => `${filterAt(issue)}: \`op\` must be one of ${FILTER_OPS.join(', ')}.`,
         }),
-        value: z.string().describe('What to compare with; not needed for is_empty and is_not_empty.').optional(),
+        value: z
+          .string({ error: (issue) => `${filterAt(issue)}: \`value\` must be text.` })
+          .describe('What to compare with; not needed for is_empty and is_not_empty.')
+          .optional(),
       }),
       { error: '`filter` must be a list of conditions.' },
     )
