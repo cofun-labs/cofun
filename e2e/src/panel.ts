@@ -168,19 +168,22 @@ export async function ownPanel(browser: Browser, state: State): Promise<Target> 
 }
 
 export interface AskResult {
-  status: 'done' | 'needs_answer'
+  /** `outside`: --allow was given, but the call waiting for approval reaches beyond the tool's pages. */
+  status: 'done' | 'needs_answer' | 'outside'
   parts: ReplyPart[]
 }
 
 /**
  * Sends `question` (or, without one, keeps watching the last reply) and waits until the reply is
- * done or asks for an approval nobody said how to answer.
+ * done, asks for an approval nobody said how to answer, or asks for one --allow may not give.
  */
 export async function ask(
   panel: Target,
   question: string | undefined,
   answer: Answer | undefined,
   timeoutMs: number,
+  /** Whether --allow may approve the call with this text (its changes and arguments). */
+  mayAllow: (callText: string) => Promise<boolean> = async () => false,
 ): Promise<AskResult> {
   let snap = await panel.evaluate(readPanel, [])
   if (!snap.ready) throw new E2eError('Copilot is signed out in the side panel. Sign in by hand, then try again.')
@@ -212,6 +215,9 @@ export async function ask(
       throw new E2eError('A tool call waits for approval, but the side panel shows no Allow or Deny for it.')
     }
     if (typeof step === 'object') {
+      if (step.click === 'allow' && !(await mayAllow(waitingCall(snap.parts)))) {
+        return { status: 'outside', parts: snap.parts }
+      }
       await clickButton(panel, '#messages .msg.assistant:last-child .tool-confirm button', label(step.click))
     } else if (snap.replies < expected && Date.now() - started > 5_000) {
       throw new E2eError('The question was not sent.')
@@ -227,6 +233,12 @@ export class TimeoutError extends E2eError {
   constructor(readonly snapshot: PanelSnapshot) {
     super('Timed out waiting for the reply; run pnpm e2e ask without a question to keep waiting.')
   }
+}
+
+/** The text of the tool call waiting for approval: its changes and arguments. */
+function waitingCall(parts: ReplyPart[]): string {
+  const call = parts.findLast((p) => p.type === 'tool' && p.status === 'confirm')
+  return call?.type === 'tool' ? call.sections.map((s) => s.text).join('\n') : ''
 }
 
 function label(answer: Answer): string {

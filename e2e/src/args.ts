@@ -42,7 +42,8 @@ Commands:
                                Only on a page or database this tool created
   ask [question]               Send the question in the side panel, wait for the reply, and print it
                                with each tool call; without a question, keep waiting for the last reply
-      --allow | --deny         Answer every approval prompt this way (otherwise stop at the first one)
+      --allow | --deny         Answer every approval prompt this way (otherwise stop at the first one).
+                               --allow approves only calls inside pages this tool created
       --timeout <seconds>      How long to wait for the reply (default ${DEFAULT_TIMEOUT_S})
       --json                   Print the reply as JSON
   page <title> [markdown…]     Create a throwaway private page; each argument is a line of Markdown
@@ -56,6 +57,11 @@ Commands:
 
 Options:
   --owner <name>               Lock owner (default: $E2E_OWNER, else the git branch)
+
+Environment:
+  E2E_NOTION_URL               A page in the workspace page and db create in (default: the workspace
+                               of the page the tool's tab shows, or the account's only workspace)
+  E2E_CDP_PORT                 Canary's DevTools port (default 9228)
 
 Exit codes: 0 done, 1 failed, 2 usage error, 3 Canary busy (prints the holder),
 4 a reply is waiting for approval (run "pnpm e2e ask --allow" or "--deny").`

@@ -12,7 +12,8 @@ import {
   settledStatus,
   withExtensionsPage,
 } from './extension'
-import { createDatabase, createPage, pageUrl, parseRow, privateSpace, tabNotion, trash } from './notion'
+import { type TabNotion, createDatabase, createPage, pageUrl, parseRow, privateSpace, tabNotion, trash } from './notion'
+import { withinOwnPages } from './scope'
 import { E2eError } from './errors'
 import { beforeInterruptExit } from './exit'
 import { DEFAULT_NOTION_URL, TimeoutError, isOwnPage, ask, notionTab, openPanel, ownNotionTab, ownPanel } from './panel'
@@ -133,12 +134,33 @@ async function browserCommand(
     }
     case 'ask': {
       const panel = await ownPanel(browser, state)
+      // --allow approves only calls inside the pages this tool created, checked in Notion.
+      let notion: Promise<TabNotion> | undefined
+      const mayAllow = async (callText: string) => {
+        const tab = await ownNotionTab(browser, state)
+        if (!tab) return false
+        notion ??= browser.attach(tab).then(tabNotion)
+        const { client } = await notion
+        return withinOwnPages(callText, state.created, async ({ table, id }) => {
+          const record = (await client.findRecords([{ table: table as 'block' | 'collection', id }]))[
+            table as 'block' | 'collection'
+          ]?.[id]
+          return record?.parent_id && record.parent_table
+            ? { table: record.parent_table, id: record.parent_id }
+            : undefined
+        })
+      }
       try {
-        const result = await ask(panel, command.question, command.answer, command.timeoutMs)
+        const result = await ask(panel, command.question, command.answer, command.timeoutMs, mayAllow)
         if (command.json) console.log(JSON.stringify(result, null, 2))
         else console.log(formatReply(result.parts))
         if (result.status === 'done') return 0
-        console.error('\nWaiting for approval: run pnpm e2e ask --allow or pnpm e2e ask --deny.')
+        console.error(
+          result.status === 'outside'
+            ? '\nNot approving: this call reaches beyond the pages pnpm e2e created. Deny it with pnpm e2e ask ' +
+                '--deny, or decide in the side panel yourself.'
+            : '\nWaiting for approval: run pnpm e2e ask --allow or pnpm e2e ask --deny.',
+        )
         return EXIT_NEEDS_ANSWER
       } catch (err) {
         if (err instanceof TimeoutError) {
@@ -150,7 +172,8 @@ async function browserCommand(
     }
     case 'page':
     case 'db': {
-      const tab = await notionTab(browser, state, undefined, DEFAULT_NOTION_URL)
+      // E2E_NOTION_URL, when set, picks the workspace: a page in it.
+      const tab = await notionTab(browser, state, process.env.E2E_NOTION_URL, DEFAULT_NOTION_URL)
       const notion = await tabNotion(tab)
       const { url, userId } = await tab.evaluate(() => {
         const id = /(?:^|;\s*)notion_user_id=([^;]+)/.exec(document.cookie)?.[1]
