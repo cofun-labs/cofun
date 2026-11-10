@@ -27,7 +27,7 @@ import { editPage, movePage, openPageNote, readPage, trashPage } from '../../ext
 import { createApp, type Env } from '../src/app'
 import { FakeClerk } from './clerk'
 import { FakeAiBinding, FakeQuotaNamespace, FakeUsageDataset } from './fakes'
-import { FakeNotionTab, FakeWorkspace, PAGE, PAGE_URL, SPACE, fixture } from './notion-tab'
+import { FakeNotionTab, FakeStorage, FakeWorkspace, PAGE, PAGE_URL, SPACE, fixture } from './notion-tab'
 
 const EXT = 'chrome-extension://abcdefghijklmnopabcdefghijklmnop'
 const MODEL = '@cf/test/model'
@@ -106,7 +106,10 @@ function makeAgent(
 
 /** A stand-in for the chrome.tabs API with one active tab. */
 function withActiveTab(tab: { url?: string; title?: string } | undefined) {
-  ;(globalThis as { chrome?: unknown }).chrome = { tabs: { query: async () => (tab ? [tab] : []) } }
+  ;(globalThis as { chrome?: unknown }).chrome = {
+    tabs: { query: async () => (tab ? [tab] : []) },
+    storage: new FakeStorage(),
+  }
 }
 
 /** Asks one question and collects what the side panel would show. */
