@@ -82,6 +82,15 @@ This is an open-source repository. **Never commit account identifiers or secrets
 - `worker/`: Cloudflare Worker with Hono. Serves `/login`, verifies Clerk session JWTs locally, and proxies OpenAI-compatible `/v1/chat/completions` to Workers AI through AI Gateway.
 - Notion tools call Notion's own internal endpoints (`/api/v3/…`) as the signed-in Notion user, through `src/notion/api.ts`: the only module that knows Notion's endpoints and request shapes. Requests run inside the user's Notion tab (`src/notion/tab.ts`, `chrome.scripting` in the ISOLATED world), so they go to that tab's own host with its session. Tools never `fetch` Notion URLs themselves. Do not use `chrome.debugger`: it shows a permanent "debugging this browser" banner.
 
+## Calling Notion: stop, don't work around
+
+Tools call Notion's internal API as the user's own account, so **stability comes first**: Notion must never see this extension as automated abuse. Every Notion feature follows these rules:
+
+- **Retry only when it is clearly safe and would fix the problem.** A retry must not be able to apply a change twice, and the cause must be one a retry can fix. When in doubt, don't retry: safety first. Never fall back to another endpoint or another way of getting the same result.
+- **Stop on what we don't understand.** A failure we can't identify, or a response we didn't expect, stops the work and is reported. Don't guess a workaround.
+- **Rate limits stop the question, with no retry.** When Notion turns a request away (429, or 529), the client sends nothing more, the agent ends the question, and the user is told to wait. A tool error does this by carrying `stopsQuestion` (see `NotionError` in `src/notion/api.ts`). Code that catches Notion errors must rethrow one that carries `stopsQuestion`, never swallow it. A tool that changes the user's data sets `changesData` (see `ToolSpec` in `src/agent.ts`), and an error after a change that may have landed sets `mayHaveChanged`, so a question that stops tells the user to check before asking again.
+- Handle only failures whose meaning is known, such as signed out, no access, or a page that changed since it was read.
+
 ## Testing
 
 - Backend tests are REST integration tests: they call the Hono app over HTTP and assert on status codes and JSON bodies.

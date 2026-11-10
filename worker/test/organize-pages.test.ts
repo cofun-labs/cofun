@@ -11,6 +11,7 @@ import {
   trashPage,
 } from '../../extension/src/tools'
 import { FakeNotionTab, FakeWorkspace, PAGE, PAGE_URL, SPACE, notionError, restoreGlobals } from './notion-tab'
+import { LIMITED_STOP } from '../../extension/src/notion/api'
 
 afterEach(() => {
   restoreGlobals()
@@ -557,5 +558,55 @@ describe('trashing pages', () => {
         "They stay in Notion's trash, where they can be restored.",
       ].join('\n'),
     )
+  })
+})
+
+describe('when Notion turns requests away', () => {
+  it('marks all three tools as changing data', () => {
+    expect([movePage, duplicatePage, trashPage].map((t) => t.changesData)).toEqual([true, true, true])
+  })
+
+  it('a copy Notion is too busy to start stops the question, and nothing more is sent', async () => {
+    const ws = workspace()
+    const tab = open(ws).limit('enqueueTask', 1, 529)
+    const err = await notionError(duplicatePage.run({ page: PLAN }))
+    expect(err.code).toBe('outcome_unknown')
+    expect(err.stopsQuestion).toBe(LIMITED_STOP)
+    expect(err.mayHaveChanged).toBe(true)
+    expect(tab.sent.filter((r) => r.url.endsWith('/getTasks'))).toEqual([])
+  })
+
+  it('a check on a copy that is turned away stops the question without asking again', async () => {
+    const ws = workspace()
+    const tab = open(ws).limit('getTasks', 1)
+    const err = await notionError(duplicatePage.run({ page: PLAN }))
+    expect(err.code).toBe('outcome_unknown')
+    expect(err.stopsQuestion).toBe(LIMITED_STOP)
+    expect(err.message).toContain('it may still appear')
+    expect(tab.sent.filter((r) => r.url.endsWith('/getTasks'))).toHaveLength(1)
+  })
+
+  it('stops the question when Notion turns away the call after trashing, saying the pages are trashed', async () => {
+    const ws = workspace()
+    open(ws).limit('deleteContentRecords', 1)
+    const err = await notionError(trashPage.run({ pages: [NOTE] }))
+    expect(err.message).toBe("The pages were moved to Notion's trash.")
+    expect(err.stopsQuestion).toBe(LIMITED_STOP)
+    expect(err.mayHaveChanged).toBe(true)
+    expect(ws.records.get(NOTE)!.alive).toBe(false)
+  })
+
+  it('a trash preview turned away says so, and the run then stops without sending anything', async () => {
+    const ws = workspace()
+    const tab = open(ws).limit('syncRecordValuesMain', 1)
+    const preview = await trashPage.preview!({ pages: [NOTE] })
+    expect(preview).toContain(
+      'Notion is turning requests away right now: this call will stop, and nothing will be trashed.',
+    )
+    const sent = tab.sent.length
+    const err = await notionError(trashPage.run({ pages: [NOTE] }))
+    expect(err.stopsQuestion).toBe(LIMITED_STOP)
+    expect(tab.sent).toHaveLength(sent)
+    expect(ws.records.get(NOTE)!.alive).toBe(true)
   })
 })

@@ -1,12 +1,21 @@
 // The extension's Notion API client (extension/src/notion/), against a fake Notion tab that serves
 // sanitized fixtures of Notion's responses.
 import { afterEach, describe, expect, it } from 'vitest'
-import { NotionError, normalizeRecordMap, type Operation } from '../../extension/src/notion/api'
+import {
+  BUSY_UNKNOWN,
+  LIMITED_STOP,
+  NOT_SENT,
+  NotionError,
+  RATE_LIMITED,
+  normalizeRecordMap,
+  type Operation,
+} from '../../extension/src/notion/api'
 import { pageIdFromUrl } from '../../extension/src/notion/hosts'
 import { activeNotionTab } from '../../extension/src/notion/tab'
 import {
   BLOCKS,
   FakeNotionTab,
+  FakeWorkspace,
   PAGE,
   PAGE_URL,
   SPACE,
@@ -502,5 +511,69 @@ describe('record maps', () => {
         },
       }),
     ).toEqual({ block: { b1: record, b2: { ...record, id: 'b2' } } })
+  })
+})
+
+describe('when Notion turns requests away', () => {
+  const page = { id: PAGE, type: 'page', properties: { title: [['Fixture page']] } }
+  const rename: Operation = {
+    pointer: { table: 'block', id: PAGE, spaceId: SPACE },
+    path: ['properties'],
+    command: 'updateBlockPropertyValue',
+    args: { primitiveOp: { command: 'update', args: { title: [['Renamed']] } } },
+  }
+
+  it('stops at the first refusal of a read, says so, and sends nothing more', async () => {
+    for (const status of [429, 529]) {
+      const tab = new FakeNotionTab(PAGE_URL).limit('loadPageChunk', 1, status).install()
+      tab.workspace = new FakeWorkspace([page], SPACE)
+      const { client } = await activeNotionTab()
+      const err = await notionError(client.loadPage(PAGE))
+      expect([err.code, err.message, err.stopsQuestion]).toEqual(['rate_limited', RATE_LIMITED, LIMITED_STOP])
+      // Not retried, and the same client sends nothing more, though Notion would answer now.
+      const later = await notionError(client.getRecords([{ table: 'block', id: PAGE }]))
+      expect([later.code, later.message, later.stopsQuestion]).toEqual(['rate_limited', NOT_SENT, LIMITED_STOP])
+      expect(tab.sent).toHaveLength(1)
+    }
+  })
+
+  it('[UC-NOTION-002-S11] does not send a change again that Notion turned away, and nothing changes', async () => {
+    const tab = new FakeNotionTab(PAGE_URL).limit('saveTransactionsFanout', 1).install()
+    tab.workspace = new FakeWorkspace([page], SPACE)
+    const err = await notionError((await activeNotionTab()).client.submitTransaction(SPACE, [rename], 'rename page'))
+    expect([err.code, err.stopsQuestion]).toEqual(['rate_limited', LIMITED_STOP])
+    expect(tab.sent).toHaveLength(1)
+    expect(tab.workspace.transactions).toEqual([])
+  })
+
+  it('[UC-NOTION-002-S12] says the outcome of a change is unknown when Notion is too busy, which may come after it was applied', async () => {
+    const tab = new FakeNotionTab(PAGE_URL).limit('saveTransactionsFanout', 1, 529).install()
+    const err = await notionError((await activeNotionTab()).client.submitTransaction(SPACE, [rename], 'rename page'))
+    // The user is told the change may have been saved, since the question stops before the AI can say so.
+    expect([err.code, err.message, err.stopsQuestion, err.mayHaveChanged]).toEqual([
+      'outcome_unknown',
+      BUSY_UNKNOWN,
+      LIMITED_STOP,
+      true,
+    ])
+    expect(tab.sent).toHaveLength(1)
+  })
+
+  it('reports a refusal ahead of another failure that came first in parallel lookups', async () => {
+    // 200 records go as 2 batches at once: Notion fails the first and turns the second away.
+    const ids = Array.from({ length: 200 }, (_, i) => `1d1d1d1d-0000-4000-8000-${String(i).padStart(12, '0')}`)
+    new FakeNotionTab(PAGE_URL)
+      .respondText('syncRecordValuesMain', 503, 'busy')
+      .limit('syncRecordValuesMain', 1)
+      .install()
+    const { client } = await activeNotionTab()
+    const err = await notionError(client.findRecords(ids.map((id) => ({ table: 'block', id }))))
+    expect([err.code, err.stopsQuestion]).toEqual(['rate_limited', LIMITED_STOP])
+  })
+
+  it('treats other errors as before: the question goes on', async () => {
+    new FakeNotionTab(PAGE_URL).respondText('loadPageChunk', 503, 'busy').install()
+    const err = await notionError((await activeNotionTab()).client.loadPage(PAGE))
+    expect([err.code, err.stopsQuestion]).toEqual(['notion_error', undefined])
   })
 })

@@ -3,7 +3,7 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { LIST_LIMIT, SECTION_LIMIT, listPages } from '../../extension/src/tools'
 import { FakeNotionTab, PAGE, PAGE_URL, SPACE, USER, notionError, restoreGlobals } from './notion-tab'
-import { NO_USER_MAP } from '../../extension/src/notion/api'
+import { LIMITED_STOP, NO_USER_MAP } from '../../extension/src/notion/api'
 
 afterEach(restoreGlobals)
 
@@ -606,6 +606,16 @@ describe('list_pages workspace', () => {
         '(Teamspaces could not be listed: Notion returned an error (400 ValidationError): Invalid input.)',
       ].join('\n'),
     )
+  })
+
+  it('stops the question when Notion turns the teamspaces away, and sends nothing more', async () => {
+    const tab = new FakeNotionTab(PAGE_URL)
+      .respond('syncRecordValuesMain', 200, OPEN_PAGE)
+      .respond('getSpaces', 200, spaces({}, { private_pages: [id(1)] }))
+      .limit('getTeamsV2', 1)
+      .install()
+    expect((await notionError(run())).stopsQuestion).toBe(LIMITED_STOP)
+    expect(tab.sent.map((r) => r.url.split('/api/v3/')[1])).toEqual(['syncRecordValuesMain', 'getSpaces', 'getTeamsV2'])
   })
 
   it('asks for no teamspaces in a workspace that has them turned off', async () => {

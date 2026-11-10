@@ -1,8 +1,9 @@
 // The search_pages tool (extension/src/tools.ts) against a fake Notion tab answering with search
 // results in the shape Notion's /api/v3/search returns (see the #64 spike).
 import { afterEach, describe, expect, it } from 'vitest'
+import { LIMITED_STOP } from '../../extension/src/notion/api'
 import { readPage, searchPages } from '../../extension/src/tools'
-import { FakeNotionTab, PAGE, PAGE_URL, SPACE, restoreGlobals } from './notion-tab'
+import { FakeNotionTab, PAGE, PAGE_URL, SPACE, notionError, restoreGlobals } from './notion-tab'
 
 afterEach(restoreGlobals)
 
@@ -252,6 +253,56 @@ describe('search_pages, partial lookups', () => {
     const result = await search({ query: 'x' })
     expect(result).toContain(`1. 🗃 Roadmap ^${hex(dbA)}`)
     expect(result).toContain(`2. 🗃 Untitled database ^${hex(dbB)}`)
+  })
+
+  it('stops the question when Notion turns a database lookup away, instead of leaving the name out', async () => {
+    // A page of its own: the workspace of an open page is looked up once.
+    const here = 'f6f6f6f6-0000-4000-8000-000000000001'
+    const A = 'c1c1c1c1-0000-4000-8000-000000000001'
+    const dbA = 'f4f4f4f4-0000-4000-8000-00000000000a'
+    new FakeNotionTab(`https://app.notion.com/${hex(here)}`)
+      .respond('syncRecordValuesMain', 200, {
+        recordMap: { __version__: 3, block: { [here]: wrapped({ id: here, type: 'page' }) } },
+      })
+      .respond('search', 200, {
+        results: [{ id: dbA }],
+        total: 1,
+        recordMap: {
+          __version__: 3,
+          block: { [dbA]: wrapped({ id: dbA, type: 'collection_view_page', collection_id: A }) },
+        },
+      })
+      .limit('syncRecordValuesMain', 1)
+      .install()
+    expect((await notionError(search({ query: 'x' }))).stopsQuestion).toBe(LIMITED_STOP)
+  })
+
+  it('looks up database names a few at a time, and sends no more once Notion turned one away', async () => {
+    const here = 'f7f7f7f7-0000-4000-8000-000000000001'
+    const dbs = Array.from({ length: 6 }, (_, i) => `f7f7f7f7-0000-4000-8000-0000000000a${i}`)
+    const tab = new FakeNotionTab(`https://app.notion.com/${hex(here)}`)
+      .respond('syncRecordValuesMain', 200, {
+        recordMap: { __version__: 3, block: { [here]: wrapped({ id: here, type: 'page' }) } },
+      })
+      .respond('search', 200, {
+        results: dbs.map((id) => ({ id })),
+        total: dbs.length,
+        recordMap: {
+          __version__: 3,
+          block: Object.fromEntries(
+            dbs.map((id, i) => [
+              id,
+              wrapped({ id, type: 'collection_view_page', collection_id: `c7c7c7c7-0000-4000-8000-0000000000a${i}` }),
+            ]),
+          ),
+        },
+      })
+      .limit('syncRecordValuesMain', 1)
+    for (let i = 0; i < 3; i++) tab.respond('syncRecordValuesMain', 200, { recordMap: { __version__: 3 } })
+    tab.install()
+    expect((await notionError(search({ query: 'x' }))).stopsQuestion).toBe(LIMITED_STOP)
+    // The open page's workspace, then the first four lookups; the last two are never sent.
+    expect(tab.sent.filter((r) => r.url.endsWith('/syncRecordValuesMain'))).toHaveLength(5)
   })
 
   it("removes no tag when the response has none in Notion's shape", async () => {

@@ -4,7 +4,8 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { inline, parseMarkdown } from '../../extension/src/notion/blocks'
 import { mergeReads, type PageRead } from '../../extension/src/notion/edit'
 import { editPage, forgetReads, readPage } from '../../extension/src/tools'
-import { FakeNotionTab, FakeWorkspace, PAGE, PAGE_URL, SPACE, USER, restoreGlobals } from './notion-tab'
+import { LIMITED_STOP } from '../../extension/src/notion/api'
+import { FakeNotionTab, FakeWorkspace, PAGE, PAGE_URL, SPACE, USER, notionError, restoreGlobals } from './notion-tab'
 
 afterEach(restoreGlobals)
 
@@ -236,6 +237,22 @@ describe('edit_page details', () => {
         "What it replaced or deleted can be brought back from the page's history in Notion.",
       ].join('\n'),
     )
+  })
+
+  it('[UC-NOTION-002-S13] says the edit was saved, and stops the question, when Notion turns the read-back away', async () => {
+    const ws = workspace([1], [block(1, 'text', 'Intro')])
+    const tab = open(ws)
+    await read()
+    // The edit checks the page, saves, and then reads it back: that last read is turned away.
+    tab.respond('loadPageChunk', 200, ws.answer('loadPageChunk', { page: { id: PAGE } })!.json)
+    tab.limit('loadPageChunk', 1)
+    const err = await notionError(edit([{ action: 'insert', position: 'end', markdown: 'Second' }]))
+    // Marked as having changed the page, so the user is told to check before asking again.
+    expect([err.stopsQuestion, err.mayHaveChanged]).toEqual([LIMITED_STOP, true])
+    expect(err.message.split('\n')[0]).toBe(
+      'The edit was saved. Reading the page back afterwards was refused, so read it again before changing it.',
+    )
+    expect(ws.transactions).toHaveLength(1)
   })
 
   it('keeps editing possible after an edit, with the new blocks’ references', async () => {

@@ -79,6 +79,14 @@ export class FakeNotionTab {
     return this
   }
 
+  /** Notion turning `times` requests to `endpoint` away: too many requests (429), or too busy (529). */
+  limit(endpoint: string, times: number, status = 429): this {
+    for (let i = 0; i < times; i++) {
+      this.respond(endpoint, status, { isNotionError: true, name: 'RateLimitedError', message: 'Rate limited' })
+    }
+    return this
+  }
+
   install(): this {
     globals.chrome = {
       tabs: {

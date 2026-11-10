@@ -1,8 +1,9 @@
 // The create_page tool (extension/src/tools.ts) against a fake Notion workspace that applies
 // transactions the way Notion does.
 import { afterEach, describe, expect, it } from 'vitest'
+import { LIMITED_STOP } from '../../extension/src/notion/api'
 import { createPage, forgetReads, readPage } from '../../extension/src/tools'
-import { FakeNotionTab, FakeWorkspace, PAGE, PAGE_URL, SPACE, restoreGlobals } from './notion-tab'
+import { FakeNotionTab, FakeWorkspace, PAGE, PAGE_URL, SPACE, notionError, restoreGlobals } from './notion-tab'
 
 afterEach(() => {
   restoreGlobals()
@@ -154,6 +155,16 @@ describe('create_page details', () => {
     )
     // It was saved: the read the agent is pointed to shows it.
     expect(await readPage.run({ page: hex(PAGE) })).toContain('Once')
+  })
+
+  it('stops the question when Notion is too busy to say whether the page was created', async () => {
+    const ws = workspace()
+    const tab = open(ws)
+    tab.limit('saveTransactionsFanout', 1, 529)
+    const err = await notionError(create({ title: 'Once', parent: PAGE_URL }))
+    expect(err.code).toBe('outcome_unknown')
+    expect(err.message).toContain(`Read ^${hex(PAGE)} and check for “Once” before trying again.`)
+    expect([err.stopsQuestion, err.mayHaveChanged]).toEqual([LIMITED_STOP, true])
   })
 
   it('refuses an empty title and Markdown it can’t write, before asking Notion anything', async () => {

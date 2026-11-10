@@ -4,6 +4,7 @@
 import type { ToolSpec } from './agent'
 import {
   IN_TRASH,
+  NOT_SENT,
   NotionError,
   SIGNED_OUT,
   blockOps,
@@ -715,6 +716,7 @@ export function forgetReads(): void {
   recentReads.clear()
   seenRows.clear()
   seenDatabases.clear()
+  trashStop = undefined
 }
 
 const EDIT_ITEM = {
@@ -738,6 +740,7 @@ const EDIT_ITEM = {
 }
 
 export const editPage: ToolSpec = {
+  changesData: true,
   name: 'edit_page',
   description:
     'Changes a Notion page you have read with read_page: insert Markdown after a block or at the start or end of the ' +
@@ -815,8 +818,20 @@ export const editPage: ToolSpec = {
       )
       const refs = plan.created.map((c) => next.refs.get(c)).filter(Boolean)
       if (refs.length) newRefs = `New blocks: ${refs.map((r) => `^${r}`).join(', ')}.`
-    } catch {
-      // The edit is saved; blocks it changed will be refused until the page is read again.
+    } catch (err) {
+      // The edit is saved; blocks it changed will be refused until the page is read again. A
+      // failure that stops the question is passed on, marked as having changed the page.
+      if (err instanceof NotionError && err.stopsQuestion) {
+        remember(next)
+        throw new NotionError(
+          'notion_error',
+          [
+            'The edit was saved. Reading the page back afterwards was refused, so read it again before changing it.',
+            ...plan.summary,
+          ].join('\n'),
+          { cause: err, stopsQuestion: err.stopsQuestion, mayHaveChanged: true },
+        )
+      }
     }
     remember(next)
     return [...plan.summary, newRefs, 'Read the page again to see the result.'].filter(Boolean).join('\n')
@@ -861,6 +876,7 @@ const PROPERTIES_ARG = {
 }
 
 export const createPage: ToolSpec = {
+  changesData: true,
   name: 'create_page',
   description:
     'Creates a Notion page with a title and Markdown content (the same Markdown as edit_page). `parent` is a page ' +
@@ -954,10 +970,10 @@ export const createPage: ToolSpec = {
         pageReads.delete(parentId)
         throw new NotionError(
           'outcome_unknown',
-          `Notion did not answer, so the page may or may not have been created. ` +
+          `Notion did not confirm it, so the page may or may not have been created. ` +
             `${target.table === 'collection' ? 'Query' : 'Read'} ^${hexId(parentId)} and check for “${title}” ` +
             'before trying again.',
-          { cause: err },
+          { cause: err, stopsQuestion: err.stopsQuestion },
         )
       }
       throw err
@@ -978,6 +994,7 @@ export const createPage: ToolSpec = {
 export const UPDATE_MAX = 50
 
 export const updatePages: ToolSpec = {
+  changesData: true,
   name: 'update_pages',
   description:
     "Changes pages' titles, icons (an emoji), or database properties (for rows, by name, values as " +
@@ -1228,6 +1245,7 @@ function forgetPages(ids: Iterable<string>) {
 
 export const movePage: ToolSpec = {
   name: 'move_page',
+  changesData: true,
   description:
     'Moves pages, or databases that are pages of their own, to the end of another page, with everything in them, ' +
     'as Notion\'s "Move to" does. Several pages can go in one call. A page can\'t go into itself or a page ' +
@@ -1385,6 +1403,7 @@ function nestedIn(above: Map<string, string[]>, ids: string[]): Map<string, stri
 
 export const duplicatePage: ToolSpec = {
   name: 'duplicate_page',
+  changesData: true,
   description:
     'Duplicates a page, or a database that is a page of its own, with everything in it (content, pages, and ' +
     "databases inside), as Notion's Duplicate does: the copy goes right after the page, and Notion adds a number " +
@@ -1433,7 +1452,7 @@ export const duplicatePage: ToolSpec = {
         throw new NotionError(
           'outcome_unknown',
           `${err.message} List the pages of ^${hexId(near)} to see whether the copy is there.`,
-          { cause: err },
+          { cause: err, stopsQuestion: err.stopsQuestion },
         )
       throw err
     } finally {
@@ -1441,6 +1460,11 @@ export const duplicatePage: ToolSpec = {
     }
   },
 }
+
+/** A refusal from Notion seen by trash_page's preview, which the run that follows stops on. */
+let trashStop: { error: NotionError; at: number } | undefined
+/** How long a refusal seen by the preview stops the run that follows. */
+const TRASH_STOP_MS = 60_000
 
 /** How many children trash_page's preview looks at at most, and how long it waits for them. */
 const COUNT_CHILDREN_MAX = 500
@@ -1467,7 +1491,9 @@ async function childCounts(tab: NotionTab, pages: NotionRecord[]): Promise<Map<s
         ((b.content as string[] | undefined) ?? []).filter((c) => PAGE_TYPES.has(String(children[c]?.type))).length,
       ]),
     )
-  } catch {
+  } catch (err) {
+    // Only what stops the question goes on; a slow or failed count just leaves the counts out.
+    if (err instanceof NotionError && err.stopsQuestion) throw err
     return new Map()
   } finally {
     clearTimeout(timer)
@@ -1487,6 +1513,7 @@ function trashRefusal(page: NotionRecord): string | undefined {
 
 export const trashPage: ToolSpec = {
   name: 'trash_page',
+  changesData: true,
   description:
     "Moves pages, or databases that are pages of their own, to Notion's trash, with everything in them. The user " +
     "is asked first, each time. Nothing is deleted for good: the pages can be restored from Notion's trash. " +
@@ -1531,11 +1558,14 @@ export const trashPage: ToolSpec = {
       clearTimeout(timer)
       // Names and refusals are settled; what each page holds is only shown if it comes quickly.
       inside = await childCounts(result.tab, Object.values(found))
-    } catch {
-      // Without Notion, the names the agent saw are all there is.
+    } catch (err) {
+      // Without Notion, the names the agent saw are all there is. Turned away, nothing more may be
+      // sent: the run that follows stops the question instead of trying again.
+      if (err instanceof NotionError && err.stopsQuestion) trashStop = { error: err, at: Date.now() }
     } finally {
       clearTimeout(timer)
     }
+    const turnedAway = !!trashStop && Date.now() - trashStop.at < TRASH_STOP_MS
     return [
       `Move ${pages.length} page${pages.length === 1 ? '' : 's'} to the trash, with everything in ${pages.length === 1 ? 'it' : 'them'}`,
       ...pages.map((p) => {
@@ -1558,10 +1588,18 @@ export const trashPage: ToolSpec = {
       }),
       // The user agrees from these names: say when they are not Notion's current ones.
       ...(checked ? [] : ['Could not check the current names in Notion: these are the names last seen, if any.']),
+      ...(turnedAway
+        ? ['Notion is turning requests away right now: this call will stop, and nothing will be trashed.']
+        : []),
       "They stay in Notion's trash, where they can be restored.",
     ].join('\n')
   },
   run: async (args, signal) => {
+    // The preview was turned away: send nothing more, and stop the question.
+    const stop = trashStop
+    trashStop = undefined
+    if (stop && Date.now() - stop.at < TRASH_STOP_MS)
+      throw new NotionError('rate_limited', NOT_SENT, { cause: stop.error, stopsQuestion: stop.error.stopsQuestion })
     const ids = pageList(args.pages)
     const tab = await activeNotionTab()
     const records = await loadPages(tab, ids)
@@ -1792,12 +1830,22 @@ async function databaseNames(tab: NotionTab, blocks: (NotionRecord | undefined)[
   const names = new Map<string, string>()
   if (!ids.length) return names
   // One lookup per database, so one that can't be opened (say, a linked view of another
-  // workspace's database) leaves only its own name out.
-  const found = await Promise.allSettled(
-    ids.map((id) =>
-      tab.client.getRecords([{ table: 'collection', id }]).then((r) => [id, r.collection?.[id]] as const),
-    ),
-  )
+  // workspace's database) leaves only its own name out. A few at a time, so a burst doesn't go
+  // out after Notion turned one away.
+  const found: PromiseSettledResult<readonly [string, NotionRecord | undefined]>[] = []
+  for (let at = 0; at < ids.length; at += LOOKUPS_PARALLEL) {
+    const settled = await Promise.allSettled(
+      ids
+        .slice(at, at + LOOKUPS_PARALLEL)
+        .map((id) =>
+          tab.client.getRecords([{ table: 'collection', id }]).then((r) => [id, r.collection?.[id]] as const),
+        ),
+    )
+    // A failure that stops the question is not a database left unnamed.
+    for (const f of settled)
+      if (f.status === 'rejected' && f.reason instanceof NotionError && f.reason.stopsQuestion) throw f.reason
+    found.push(...settled)
+  }
   const byCollection = new Map(found.flatMap((f) => (f.status === 'fulfilled' ? [f.value] : [])))
   for (const b of databases) {
     const name = runsText(byCollection.get(collectionOf(b) ?? '')?.name)
@@ -1805,6 +1853,9 @@ async function databaseNames(tab: NotionTab, blocks: (NotionRecord | undefined)[
   }
   return names
 }
+
+/** Database name lookups sent at once at most. */
+const LOOKUPS_PARALLEL = 4
 
 function withoutTag(text: string | undefined, tag: string | undefined): string {
   const out = tag ? (text ?? '').split(`<${tag}>`).join('').split(`</${tag}>`).join('') : (text ?? '')
@@ -1912,6 +1963,7 @@ function blockArg(value: unknown): string | undefined {
 }
 
 export const addComment: ToolSpec = {
+  changesData: true,
   name: 'add_comment',
   description:
     "Adds a comment to a Notion page, as a new thread under the user's name: on the page itself, or on one of " +
@@ -1997,9 +2049,9 @@ export const addComment: ToolSpec = {
       if (err instanceof NotionError && err.code === 'outcome_unknown') {
         throw new NotionError(
           'outcome_unknown',
-          `Notion did not answer, so the comment may or may not have been added. Read the comments of ` +
+          `Notion did not confirm it, so the comment may or may not have been added. Read the comments of ` +
             `^${hexId(loaded.page.id)} with read_comments before trying again.`,
-          { cause: err },
+          { cause: err, stopsQuestion: err.stopsQuestion },
         )
       }
       throw err
