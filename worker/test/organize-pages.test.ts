@@ -73,8 +73,8 @@ const contentOf = (ws: FakeWorkspace, parent: string) => ws.records.get(parent)!
 const titleOf = (ws: FakeWorkspace, pageId: string) =>
   (ws.records.get(pageId)!.properties as { title: string[][] }).title[0][0]
 
-describe('UC-NOTION-009 reorganize pages', () => {
-  it('[UC-NOTION-009-S01] moves a page with its content to the end of another page, without asking', async () => {
+describe('UC-NOTION-010 reorganize pages', () => {
+  it('[UC-NOTION-010-S01] moves a page with its content to the end of another page, without asking', async () => {
     const ws = workspace()
     open(ws)
     expect(movePage.needsConfirmation).toBeFalsy()
@@ -86,7 +86,7 @@ describe('UC-NOTION-009 reorganize pages', () => {
     expect(ws.transactions).toHaveLength(1)
   })
 
-  it('[UC-NOTION-009-S01] moves several pages in one change, in the order given', async () => {
+  it('[UC-NOTION-010-S01] moves several pages in one change, in the order given', async () => {
     const ws = workspace()
     open(ws)
     await movePage.run({ pages: [NOTE, PLAN], to: `${PAGE_URL.replace(hex(PAGE), hex(ARCHIVE))}` })
@@ -95,7 +95,7 @@ describe('UC-NOTION-009 reorganize pages', () => {
     expect(ws.transactions).toHaveLength(1)
   })
 
-  it('[UC-NOTION-009-S04] refuses to move a page into itself or a page inside it', async () => {
+  it('[UC-NOTION-010-S04] refuses to move a page into itself or a page inside it', async () => {
     const ws = workspace()
     open(ws)
     await expect(movePage.run({ pages: [PLAN], to: PLAN })).rejects.toThrow("can't be moved into itself")
@@ -108,7 +108,7 @@ describe('UC-NOTION-009 reorganize pages', () => {
     expect(ws.records.get(PLAN)!.parent_id).toBe(PROJECTS)
   })
 
-  it('[UC-NOTION-009-S03] duplicates a page with its content right after it, without asking', async () => {
+  it('[UC-NOTION-010-S03] duplicates a page with its content right after it, without asking', async () => {
     const ws = workspace()
     open(ws)
     expect(duplicatePage.needsConfirmation).toBeFalsy()
@@ -128,7 +128,7 @@ describe('UC-NOTION-009 reorganize pages', () => {
     expect(ws.records.get(PLAN)).toMatchObject({ content: [TEXT, DRAFT], properties: { title: [['Launch plan']] } })
   })
 
-  it('[UC-NOTION-009-S02] trashing asks first, and names each page as Notion has it now', async () => {
+  it('[UC-NOTION-010-S02] trashing asks first, and names each page as Notion has it now', async () => {
     const ws = workspace()
     open(ws)
     expect(trashPage.needsConfirmation).toBe(true)
@@ -146,7 +146,7 @@ describe('UC-NOTION-009 reorganize pages', () => {
     )
   })
 
-  it('[UC-NOTION-009-S02] puts the pages in the trash, out of their parents, where they can be restored', async () => {
+  it('[UC-NOTION-010-S02] puts the pages in the trash, out of their parents, where they can be restored', async () => {
     const ws = workspace()
     open(ws)
     const result = await trashPage.run({ pages: [hex(NOTE), DB] })

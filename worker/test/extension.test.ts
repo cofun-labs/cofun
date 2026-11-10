@@ -315,7 +315,7 @@ describe('extension agent against the worker', () => {
     expect(first.properties).toEqual({ title: [['Summary: hi']] })
   })
 
-  it('[UC-NOTION-009-S02] the agent trashes a page only after the user agrees to what the preview names', async () => {
+  it('[UC-NOTION-010-S02] the agent trashes a page only after the user agrees to what the preview names', async () => {
     const OLD = 'b0b0b0b0-0000-4000-8000-000000000001'
     const ws = new FakeWorkspace(
       [
