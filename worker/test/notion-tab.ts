@@ -171,13 +171,17 @@ type NotionRecordLike = Record<string, unknown> & { id: string; version: number 
 export class FakeWorkspace {
   records = new Map<string, NotionRecordLike>()
   /** Transactions applied, in order. */
-  transactions: { operations: { pointer: { id: string }; path: string[]; command: string; args: unknown }[] }[] = []
+  transactions: {
+    operations: { pointer: { id: string; table?: string }; path: string[]; command: string; args: unknown }[]
+  }[] = []
   /** Makes the next transaction fail with Notion's validation error, applying nothing. */
   reject = false
   /** Makes the next transaction apply, then answer with a server error, as a lost answer would. */
   failAfterApply = false
   /** Databases' data sources (their schemas), by collection id. */
   collections = new Map<string, NotionRecordLike>()
+  /** The table of each record that isn't a block (discussions, comments, users), by id. */
+  tables = new Map<string, string>()
 
   constructor(
     blocks: Record<string, unknown>[],
@@ -188,6 +192,18 @@ export class FakeWorkspace {
         b.id as string,
         { version: 1, alive: true, space_id: spaceId, ...b } as unknown as NotionRecordLike,
       )
+  }
+
+  /** Adds a record of another table than `block`: a discussion, a comment, or a user. */
+  put(table: string, record: Record<string, unknown>): this {
+    this.records.set(record.id as string, { version: 1, ...record } as NotionRecordLike)
+    this.tables.set(record.id as string, table)
+    return this
+  }
+
+  /** The records of a table other than `block`. */
+  table(name: string): NotionRecordLike[] {
+    return [...this.tables].filter(([, t]) => t === name).map(([id]) => this.records.get(id)!)
   }
 
   /** A user editing the page in Notion: changes a record's fields, and its version. */
@@ -211,31 +227,40 @@ export class FakeWorkspace {
       if (!this.records.has(pageId))
         return { status: 200, json: { cursor: { stack: [] }, recordMap: { __version__: 3 } } }
       const block: Record<string, unknown> = {}
+      // Like Notion, the page's chunk carries the discussions on its blocks and their comments.
+      const discussion: Record<string, unknown> = {}
+      const comment: Record<string, unknown> = {}
       const visit = (id: string) => {
         const r = this.records.get(id)
         if (!r || block[id]) return
         block[id] = wrap(r)
+        for (const d of (r.discussions as string[]) ?? []) {
+          const thread = this.records.get(d)
+          if (!thread) continue
+          discussion[d] = wrap(thread)
+          for (const c of (thread.comments as string[]) ?? []) {
+            const found = this.records.get(c)
+            if (found) comment[c] = wrap(found)
+          }
+        }
         for (const c of (r.content as string[]) ?? []) visit(c)
       }
       visit(pageId)
-      return { status: 200, json: { cursor: { stack: [] }, recordMap: { __version__: 3, block } } }
+      const comments = Object.keys(discussion).length ? { discussion, comment } : {}
+      return { status: 200, json: { cursor: { stack: [] }, recordMap: { __version__: 3, block, ...comments } } }
     }
     if (endpoint === 'syncRecordValuesMain') {
-      const block: Record<string, unknown> = {}
-      const collection: Record<string, unknown> = {}
+      const out: Record<string, Record<string, unknown>> = { block: {} }
       for (const { pointer } of body.requests as { pointer: { id: string; table: string } }[]) {
-        if (pointer.table === 'collection') {
-          const c = this.collections.get(pointer.id)
-          if (c) collection[pointer.id] = wrap(c)
-          continue
-        }
-        const r = this.records.get(pointer.id)
-        if (r) block[pointer.id] = wrap(r)
+        const r =
+          pointer.table === 'collection'
+            ? this.collections.get(pointer.id)
+            : (this.tables.get(pointer.id) ?? 'block') === pointer.table
+              ? this.records.get(pointer.id)
+              : undefined
+        if (r) (out[pointer.table] ??= {})[pointer.id] = wrap(r)
       }
-      return {
-        status: 200,
-        json: { recordMap: { __version__: 3, block, ...(Object.keys(collection).length ? { collection } : {}) } },
-      }
+      return { status: 200, json: { recordMap: { __version__: 3, ...out } } }
     }
     if (endpoint === 'saveTransactionsFanout') {
       if (this.reject) {
@@ -263,6 +288,10 @@ export class FakeWorkspace {
           next.get(id)!.version = (before?.version ?? 0) + 1
         }
         this.records = next
+        for (const op of tx.operations) {
+          const table = op.pointer.table ?? 'block'
+          if (op.command === 'set' && !op.path.length && table !== 'block') this.tables.set(op.pointer.id, table)
+        }
         this.transactions.push(tx)
       }
       if (this.failAfterApply) {

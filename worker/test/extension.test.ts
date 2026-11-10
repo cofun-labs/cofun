@@ -255,6 +255,7 @@ describe('extension agent against the worker', () => {
       content: [
         'Page: Fixture page ^1a1a1a1a000040008000000000000010',
         'URL: https://app.notion.com/1a1a1a1a000040008000000000000010',
+        'This page has 1 comment thread: read it with read_comments.',
         '',
         'Hello **bold** ^00000011',
         '- [ ] Ship it ^00000012',
