@@ -98,8 +98,7 @@ export async function notionRequest(
       // Notion's API never redirects; following one would send the body (a write, say) elsewhere.
       redirect: 'manual',
     })
-    if (res.type === 'opaqueredirect')
-      return { status: res.status, json: null, signedIn: !!userId, userId, redirected: true }
+    if (res.type === 'opaqueredirect') return { status: res.status, json: null, userId, redirected: true }
     const text = await res.text()
     let json: unknown = null
     try {
@@ -107,9 +106,9 @@ export async function notionRequest(
     } catch {
       // Not JSON (e.g. an HTML error page); the status says enough.
     }
-    return { status: res.status, json, signedIn: !!userId, userId }
+    return { status: res.status, json, userId }
   } catch (err) {
-    return { status: 0, json: null, signedIn: !!userId, error: err instanceof Error ? err.message : String(err) }
+    return { status: 0, json: null, userId, error: err instanceof Error ? err.message : String(err) }
   }
 }
 
