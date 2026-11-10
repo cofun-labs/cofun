@@ -325,11 +325,17 @@ describe('list_pages arguments', () => {
         .respond(
           'getTeamsV2',
           200,
-          teams([team(1, 'Private', [id(11)]), team(2, 'Design', [id(21)]), team(3, 'Design', [id(31)])]),
+          teams([
+            team(1, 'Private', [id(11)]),
+            team(2, 'Design', [id(21)]),
+            team(3, 'Design', [id(31)]),
+            team(4, 'Design (1)', [id(41)]),
+          ]),
         )
     workspace().install()
     await expect(run({ section: 'nope' })).rejects.toThrow(
-      'The sections are: Private, Shared, Workspace, Teamspace: Private, Teamspace: Design (1), Teamspace: Design (2).',
+      'The sections are: Private, Shared, Workspace, Teamspace: Private, Teamspace: Design (1), Teamspace: Design (2), ' +
+        'Teamspace: Design (1) (1).',
     )
     const listed = async (section: string, page: Rec) => {
       workspace()
@@ -340,6 +346,7 @@ describe('list_pages arguments', () => {
     expect(await listed('Private', page(1, 'Notes'))).toEqual([`- 📄 Notes ^${hex(id(1))}`])
     expect(await listed('Teamspace: Private', page(11, 'Team notes'))).toEqual([`- 📄 Team notes ^${hex(id(11))}`])
     expect(await listed('teamspace: design (2)', page(31, 'Second'))).toEqual([`- 📄 Second ^${hex(id(31))}`])
+    expect(await listed('Teamspace: Design (1) (1)', page(41, 'Third'))).toEqual([`- 📄 Third ^${hex(id(41))}`])
     // A bare name shared by two teamspaces names neither.
     workspace().install()
     await expect(run({ section: 'Design' })).rejects.toThrow('No section “Design”.')
@@ -448,22 +455,25 @@ describe('list_pages workspace', () => {
     expect(result).not.toContain('Elsewhere')
   })
 
-  it('gives the next offset in the section own list when earlier sections already listed some of its pages', async () => {
-    // The first private page is also in Shared, so the shared list left after it starts one entry in.
+  it('lists a section alone as the overview does, without pages an earlier section has', async () => {
+    // The private page is also in Shared. Shared leaves it out, alone and in the overview, so their offsets agree.
     const shared = [id(1), ...Array.from({ length: SECTION_LIMIT + 5 }, (_, i) => id(400 + i))]
-    new FakeNotionTab(PAGE_URL)
-      .respond('syncRecordValuesMain', 200, OPEN_PAGE)
-      .respond('getSpaces', 200, spaces({}, { private_pages: [id(1)], shared_pages_manual_sort: shared }))
-      .respond('getTeamsV2', 200, teams([]))
+    const blocks = shared.slice(1).map((m, i) => ({ ...page(0, `Shared ${i}`), id: m }))
+    const workspace = () =>
+      new FakeNotionTab(PAGE_URL)
+        .respond('syncRecordValuesMain', 200, OPEN_PAGE)
+        .respond('getSpaces', 200, spaces({}, { private_pages: [id(1)], shared_pages_manual_sort: shared }))
+        .respond('getTeamsV2', 200, teams([]))
+    workspace()
       .respond('syncRecordValuesMain', 200, records([page(1, 'Notes')]))
-      .respond(
-        'syncRecordValuesMain',
-        200,
-        records(shared.slice(1).map((m, i) => ({ ...page(0, `Shared ${i}`), id: m }))),
-      )
+      .respond('syncRecordValuesMain', 200, records(blocks))
       .install()
-    // Shared shows entries 1 to 50 of its own list, so the rest starts at entry 51.
-    expect(await run()).toContain(`List them with \`section: "Shared"\` and \`offset: ${SECTION_LIMIT + 1}\`.)`)
+    expect(await run()).toContain(`List them with \`section: "Shared"\` and \`offset: ${SECTION_LIMIT}\`.)`)
+    workspace()
+      .respond('syncRecordValuesMain', 200, records(blocks.slice(SECTION_LIMIT)))
+      .install()
+    const rest = (await run({ section: 'Shared', offset: SECTION_LIMIT })).split('\n').slice(2)
+    expect(rest).toEqual(blocks.slice(SECTION_LIMIT).map((b, i) => `- 📄 Shared ${SECTION_LIMIT + i} ^${hex(b.id)}`))
   })
 
   it('still lists the other sections when the teamspaces fail to load', async () => {

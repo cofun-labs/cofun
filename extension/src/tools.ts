@@ -587,20 +587,32 @@ export const listPages: ToolSpec = {
     const spaceId = (opened.block?.[tab.pageId] as { space_id?: string } | undefined)?.space_id
     if (!spaceId) throw new Error('Could not tell which workspace the open page is in.')
     const space = await tab.client.getSpace(spaceId)
-    // A page can be in more than one list (a shared page often stays in the owner's private
-    // pages, where the sidebar shows it); it is listed in the first.
     // Every label is unique, so `section` can name any one of them: teamspaces sharing a name are numbered.
-    const teamLabels = space.teams.map((t) => `Teamspace: ${t.name}`)
-    const sections: [string, string[]][] = [
-      ['Private', space.privatePages],
-      ['Shared', space.sharedPages],
-      ['Workspace', space.workspacePages],
-      ...space.teams.map((t, i): [string, string[]] => {
-        const same = teamLabels.filter((l) => l === teamLabels[i]).length
-        const nth = teamLabels.slice(0, i).filter((l) => l === teamLabels[i]).length + 1
-        return [same > 1 ? `${teamLabels[i]} (${nth})` : teamLabels[i], t.pages]
-      }),
-    ]
+    const bases = space.teams.map((t) => `Teamspace: ${t.name}`)
+    const used = new Set<string>()
+    const labels = bases.map((base) => {
+      let label = base
+      for (let n = 1; used.has(label) || (label === base && bases.filter((b) => b === base).length > 1); n++)
+        label = `${base} (${n})`
+      used.add(label)
+      return label
+    })
+    // A page can be in more than one list (a shared page often stays in the owner's private
+    // pages, where the sidebar shows it); it is listed in the first, so a section listed alone
+    // matches the overview, entry for entry.
+    const earlier = new Set<string>()
+    const sections: [string, string[]][] = (
+      [
+        ['Private', space.privatePages],
+        ['Shared', space.sharedPages],
+        ['Workspace', space.workspacePages],
+        ...space.teams.map((t, i): [string, string[]] => [labels[i], t.pages]),
+      ] as [string, string[]][]
+    ).map(([label, all]) => {
+      const ids = all.filter((id) => !earlier.has(id))
+      for (const id of all) earlier.add(id)
+      return [label, ids]
+    })
     const teamsNote = space.teamsError ? [`(Teamspaces could not be listed: ${space.teamsError})`] : []
 
     if (wanted) {
@@ -627,13 +639,11 @@ export const listPages: ToolSpec = {
 
     // Each section has its own share of the limit, so a long one can't hide the others, and all of
     // them together stay within the overall limit.
-    const seen = new Set<string>()
     const out = [`Pages in the workspace “${space.name}”:`]
     const skipped: string[] = []
     let any = false
     let left = LIST_LIMIT
-    for (const [label, all] of sections) {
-      const ids = all.filter((id) => !seen.has(id))
+    for (const [label, ids] of sections) {
       if (!ids.length) continue
       if (left <= 0) {
         skipped.push(label)
@@ -645,10 +655,7 @@ export const listPages: ToolSpec = {
       any = true
       left -= countNodes(nodes)
       out.push('', label, ...treeLines(nodes))
-      // Only pages actually listed count as listed, so one cut from this section can show in a later one.
-      for (const id of nodeIds(nodes)) seen.add(id)
-      // The offset counts entries of the section's own list, as the section listed alone has it.
-      if (truncated) out.push(cutOff(next === undefined ? undefined : all.indexOf(ids[next - 1]) + 1, depth, label))
+      if (truncated) out.push(cutOff(next, depth, label))
     }
     if (skipped.length)
       out.push('', `Not listed, to keep the list short: ${skipped.join(', ')}. List one with \`section\`.`)
