@@ -195,6 +195,54 @@
           }
         ]
       }
+    },
+    {
+      // The worker imports zod through the module that sets it up, like the extension.
+      "files": ["worker/src/**"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": [
+                  "@earendil-works/pi-agent-core",
+                  "@earendil-works/pi-agent-core/**",
+                  "@earendil-works/pi-ai",
+                  "@earendil-works/pi-ai/**"
+                ],
+                "message": "Only extension/src/agent.ts imports pi. Import what you need from agent.ts, or add it there."
+              },
+              {
+                "regex": "^zod(/|$)",
+                "message": "Import zod from worker/src/zod.ts (import * as z from './zod'): it sets zod up before any schema is built."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      // The one module of the worker that imports zod.
+      "files": ["worker/src/zod.ts"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": [
+                  "@earendil-works/pi-agent-core",
+                  "@earendil-works/pi-agent-core/**",
+                  "@earendil-works/pi-ai",
+                  "@earendil-works/pi-ai/**"
+                ],
+                "message": "Only extension/src/agent.ts imports pi. Import what you need from agent.ts, or add it there."
+              }
+            ]
+          }
+        ]
+      }
     }
   ]
 }
