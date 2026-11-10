@@ -10,7 +10,8 @@ Copilot for Notion: a Chrome extension that opens an AI side panel next to Notio
 
 **All changes follow the BDD workflow (see [docs/bdd.md](docs/bdd.md)) and are usually issue-driven:**
 
-1. **Create an Issue first**, unless the user explicitly asks you to open a PR directly; then skip the Issue and put its Goal, Approach, and Checklist in the PR body instead. Add a priority label (`P0`, `P1`, or `P2`) and describe:
+1. **Create an Issue first**, unless the user explicitly asks you to open a PR directly; then skip the Issue and put its Goal, Approach, and Checklist in the PR body instead. Add a priority label and describe:
+   - Priority: `P0` (must do now), `P1` (should do soon), `P2` (can wait), or `later`. A `later` issue is only recorded and is not developed until it is re-prioritized. Use `later` for work whose value is low for its cost now, or that would add more complexity than the product needs.
    - Goal: the problem being solved or the feature being added
    - Approach: how it will be implemented
    - This checklist, which must be complete before merge:
@@ -52,7 +53,7 @@ Copilot for Notion: a Chrome extension that opens an AI side panel next to Notio
    - Judges whether the approach is correct and reasonable
    - Submits the review with `gh pr review --comment` (GitHub blocks approving your own PR)
 
-8. **Handle PR comments.** Fix every blocking comment or answer it with a clear reason no change is needed. Non-blocking suggestions can be fixed now or turned into a follow-up Issue. Push fixes to the same branch and reply to each comment with the fix commit, the verification, or the follow-up Issue. Then resolve each review thread: GitHub blocks merging until every thread is resolved. `gh` has no command for it, so use `gh api graphql` with the `resolveReviewThread` mutation, or the web UI.
+8. **Handle PR comments.** Fix every blocking comment: a bug users can hit, data loss, or a risk to the user's Notion account (see "Calling Notion" below). Answer every other comment with a clear reason no change is needed, and resolve it without pushing: each push restarts CI and review. Open a follow-up Issue only for a user-visible bug, data loss, or account safety; anything else that is worth recording gets a `later` Issue, or is just answered in the thread. Push fixes to the same branch and reply to each comment with the fix commit, the verification, or the follow-up Issue. Then resolve each review thread: GitHub blocks merging until every thread is resolved. `gh` has no command for it, so use `gh api graphql` with the `resolveReviewThread` mutation, or the web UI.
 
 9. **Hand off for merge.** Check that every checklist item in the Issue or PR body is done, then tell the user the PR is ready to merge. **Never merge a PR on your own**, and never enable auto-merge. Only when the user explicitly asks, run `gh pr merge {PR}`. `main` uses a merge queue: this adds the PR to the queue, which runs CI again on top of the latest `main` and squash-merges it if CI passes. Wait until the PR shows as merged; if the queue removes it, fix the failure and tell the user before queueing it again. GitHub deletes the branch, and `Closes #ID` closes the Issue, if there is one.
 
