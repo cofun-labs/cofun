@@ -96,7 +96,7 @@ describe('allowed hosts', () => {
 
   it('limits the extension pages to the listed hosts', () => {
     expect(buildManifest(hosted(), '1.2.3').content_security_policy.extension_pages).toBe(
-      "script-src 'self'; object-src 'self'; " +
+      "default-src 'self'; script-src 'self'; object-src 'self'; style-src 'self' 'unsafe-inline'; " +
         "connect-src 'self' https://notion-copilot.kitfun.cc https://saving-yeti-9519.clerk.accounts.dev; " +
         "img-src 'self' data: blob: https://img.clerk.com",
     )

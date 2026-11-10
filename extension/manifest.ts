@@ -41,8 +41,8 @@ export function clerkCookiePermission(syncHost: string, cookieDomain?: string): 
 
 /**
  * The policy for the extension's own pages (the side panel and the service worker). Chrome's
- * default only limits scripts; this one also limits where they may send requests and load images
- * from, so the browser itself enforces allowed-hosts.json: the worker, Clerk's Frontend API, and
+ * default only limits scripts; this one limits every kind of load to the extension itself, except
+ * requests and images, which may also go to the hosts named here, so the browser itself enforces allowed-hosts.json: the worker, Clerk's Frontend API, and
  * Clerk's image host. Notion calls are not made from these pages (they run in the Notion tab).
  */
 export function contentSecurityPolicy(env: ManifestEnv): string {
@@ -54,8 +54,12 @@ export function contentSecurityPolicy(env: ManifestEnv): string {
     ]),
   ]
   return [
+    // Everything not named below (frames, fonts, media, workers) loads from the extension only.
+    "default-src 'self'",
     "script-src 'self'",
     "object-src 'self'",
+    // Clerk's components add their styles as inline <style> elements.
+    "style-src 'self' 'unsafe-inline'",
     ["connect-src 'self'", ...connect].join(' '),
     `img-src 'self' data: blob: https://${CLERK_IMAGE_HOST}`,
   ].join('; ')

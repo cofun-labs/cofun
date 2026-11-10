@@ -45,7 +45,7 @@ The worker is the code in [`worker/`](worker/), running on Cloudflare Workers.
 ## What stays on your device
 
 - **Your conversations.** Sessions are saved in the extension's IndexedDB storage in your Chrome profile, one database per signed-in account. They include tool results, such as the content of Notion pages the assistant read. They are not sent to our servers, except that continuing a conversation sends it to the worker again as described above. They are **not encrypted** and they **stay after you sign out**, so that you can pick up again: anyone with access to your Chrome profile can read them. Deleting a session in the side panel removes it; removing the extension removes them all.
-- **Small settings.** The extension's local storage holds the time until which it waits after Notion turned a request away, and a flag that the extension has started in this browser session.
+- **Small settings.** The extension's local storage (`chrome.storage.local`) holds the time until which it waits after Notion turned a request away. Its session storage (`chrome.storage.session`), which Chrome clears when the browser closes, holds a flag that the extension has started.
 
 ## What is never collected
 
