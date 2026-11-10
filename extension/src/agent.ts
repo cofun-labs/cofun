@@ -698,7 +698,8 @@ function toAgentTool(spec: ToolSpec, reporter: () => Reporter): AgentTool {
       } catch (err) {
         const reason = stopsQuestion(err)
         if (reason) report.stop(reason)
-        if (spec.changesData && causes(err).some((e) => e.mayHaveChanged === true)) report.changed()
+        // An error that says data may have changed counts on its own, flag or not.
+        if (causes(err).some((e) => e.mayHaveChanged === true)) report.changed()
         throw err
       }
       if (spec.changesData) report.changed()

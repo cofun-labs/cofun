@@ -426,10 +426,10 @@ describe('extension agent against the worker', () => {
       mayHaveChanged: false,
       stopsQuestion: 'Wait a minute.',
     })
+    // Without changesData: the error alone says data may have changed.
     const writing: ToolSpec = {
       ...renameTool().tool,
       needsConfirmation: false,
-      changesData: true,
       run: async () => Promise.reject(wrapped),
     }
     ai.script = [{ toolCalls: [RENAME_CALL] }]
