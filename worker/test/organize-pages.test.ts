@@ -207,7 +207,12 @@ describe('UC-NOTION-010 reorganize pages', () => {
 describe('moving pages', () => {
   it('refuses rows, blocks, teamspace top-level pages, and other workspaces, and moves only into a page', async () => {
     const ws = workspace()
-    ws.records.set(id(20), { ...page(id(20), 'Elsewhere', SPACE), id: id(20), version: 1, space_id: 'other' })
+    ws.records.set(id(20), {
+      ...page(id(20), 'Elsewhere', SPACE),
+      parent_table: 'space',
+      version: 1,
+      space_id: 'other',
+    })
     open(ws)
     await expect(movePage.run({ pages: [ROW], to: ARCHIVE })).rejects.toThrow('is a database row')
     await expect(movePage.run({ pages: [TEXT], to: ARCHIVE })).rejects.toThrow('is a block inside a page')
@@ -250,36 +255,14 @@ describe('moving pages', () => {
     expect(contentOf(ws, PLAN)).toEqual([TEXT, DRAFT])
   })
 
-  it('forgets its read of the page a moved page sat in, even inside a column', async () => {
+  it('forgets its read of every page above a moved page', async () => {
     const ws = workspace()
-    const [COLUMNS, COLUMN, INSIDE] = [id(30), id(31), id(32)]
-    ws.records.set(COLUMNS, {
-      id: COLUMNS,
-      version: 1,
-      alive: true,
-      space_id: SPACE,
-      type: 'column_list',
-      parent_id: ARCHIVE,
-      parent_table: 'block',
-      content: [COLUMN],
-    })
-    ws.records.set(COLUMN, {
-      id: COLUMN,
-      version: 1,
-      alive: true,
-      space_id: SPACE,
-      type: 'column',
-      parent_id: COLUMNS,
-      parent_table: 'block',
-      content: [INSIDE],
-    })
-    ws.records.set(INSIDE, { ...page(INSIDE, 'In a column', COLUMN), version: 1, alive: true, space_id: SPACE })
-    ws.edit(ARCHIVE, { content: [COLUMNS] })
     open(ws)
-    await readPage.run({ page: hex(ARCHIVE) })
-    await movePage.run({ pages: [INSIDE], to: NOTE })
+    // PLAN sits in PROJECTS, which sits in PAGE: PAGE's read is stale after the move too.
+    await readPage.run({ page: hex(PAGE) })
+    await movePage.run({ pages: [DRAFT], to: ARCHIVE })
     await expect(
-      editPage.run({ page: hex(ARCHIVE), edits: [{ action: 'insert', position: 'end', markdown: 'Hi' }] }),
+      editPage.run({ page: hex(PAGE), edits: [{ action: 'insert', position: 'end', markdown: 'Hi' }] }),
     ).rejects.toThrow('Read the page with read_page first')
   })
 
@@ -343,35 +326,6 @@ describe('duplicating pages', () => {
     const err = await notionError(running)
     expect(err.code).toBe('outcome_unknown')
     expect(Date.now() - started).toBeLessThan(2_000)
-  })
-
-  it('names the page a copy lands in, not the column it sits in', async () => {
-    const ws = workspace()
-    const [COLUMNS, COLUMN, INSIDE] = [id(40), id(41), id(42)]
-    ws.records.set(COLUMNS, {
-      id: COLUMNS,
-      version: 1,
-      alive: true,
-      space_id: SPACE,
-      type: 'column_list',
-      parent_id: ARCHIVE,
-      parent_table: 'block',
-      content: [COLUMN],
-    })
-    ws.records.set(COLUMN, {
-      id: COLUMN,
-      version: 1,
-      alive: true,
-      space_id: SPACE,
-      type: 'column',
-      parent_id: COLUMNS,
-      parent_table: 'block',
-      content: [INSIDE],
-    })
-    ws.records.set(INSIDE, { ...page(INSIDE, 'In a column', COLUMN), version: 1, alive: true, space_id: SPACE })
-    ws.edit(ARCHIVE, { content: [COLUMNS] })
-    open(ws)
-    expect(await duplicatePage.run({ page: INSIDE })).toContain(`right after it in ^${hex(ARCHIVE)}.`)
   })
 
   it('gives up early on a copy that keeps reporting an error, with what Notion said', async () => {
@@ -608,5 +562,60 @@ describe('when Notion turns requests away', () => {
     expect(err.stopsQuestion).toBe(LIMITED_STOP)
     expect(tab.sent).toHaveLength(sent)
     expect(ws.records.get(NOTE)!.alive).toBe(true)
+  })
+})
+
+describe('pages inside a column or another block', () => {
+  function inColumn() {
+    const ws = workspace()
+    const [COLUMNS, COLUMN, INSIDE] = [id(40), id(41), id(42)]
+    const block = (bid: string, type: string, parent: string, content: string[]) => ({
+      id: bid,
+      version: 1,
+      alive: true,
+      space_id: SPACE,
+      type,
+      parent_id: parent,
+      parent_table: 'block',
+      content,
+    })
+    ws.records.set(COLUMNS, block(COLUMNS, 'column_list', ARCHIVE, [COLUMN]))
+    ws.records.set(COLUMN, block(COLUMN, 'column', COLUMNS, [INSIDE]))
+    ws.records.set(INSIDE, { ...page(INSIDE, 'In a column', COLUMN), version: 1, alive: true, space_id: SPACE })
+    ws.edit(ARCHIVE, { content: [COLUMNS] })
+    return { ws, INSIDE, COLUMN }
+  }
+
+  it('are not moved, copied, or trashed, since how Notion handles their block is not checked', async () => {
+    const { ws, INSIDE, COLUMN } = inColumn()
+    open(ws)
+    const why = `^${hex(INSIDE)} is inside a column, not right in a page`
+    await expect(movePage.run({ pages: [INSIDE], to: NOTE })).rejects.toThrow(`${why}: move it in Notion.`)
+    await expect(duplicatePage.run({ page: INSIDE })).rejects.toThrow(`${why}: duplicate it in Notion.`)
+    await expect(trashPage.run({ pages: [INSIDE] })).rejects.toThrow(`${why}: trash it in Notion.`)
+    expect(ws.transactions).toEqual([])
+    expect(ws.tasks.size).toBe(0)
+    expect(ws.records.get(COLUMN)!.content).toEqual([INSIDE])
+  })
+
+  it('are marked on the trash card before the user agrees', async () => {
+    const { ws, INSIDE } = inColumn()
+    open(ws)
+    expect(await trashPage.preview!({ pages: [INSIDE] })).toContain(
+      `    [inside a column, not right in a page: this call will fail, and nothing will be trashed] ^${hex(INSIDE)} "In a column"`,
+    )
+  })
+})
+
+describe('a trash preview turned away', () => {
+  it('stops only its own run, not a later call whose preview reached Notion', async () => {
+    const ws = workspace()
+    const tab = open(ws).limit('syncRecordValuesMain', 1)
+    expect(await trashPage.preview!({ pages: [NOTE] })).toContain('Notion is turning requests away')
+    // The user declined that call; the next one's preview reaches Notion, and its run goes ahead.
+    expect(await trashPage.preview!({ pages: [NOTE] })).not.toContain('Notion is turning requests away')
+    await trashPage.run({ pages: [NOTE] })
+    expect(ws.records.get(NOTE)!.alive).toBe(false)
+    expect(tab.sent.some((r) => r.url.endsWith('/saveTransactionsFanout'))).toBe(true)
   })
 })

@@ -1234,6 +1234,40 @@ function cannotReorganize(block: NotionRecord, verb: string): string | undefined
   return undefined
 }
 
+/**
+ * The block each page sits in, for pages whose parent is a block, by page id; a parent that can't
+ * be opened is left out.
+ */
+async function blockParents(
+  tab: NotionTab,
+  records: Record<string, NotionRecord>,
+  pages: NotionRecord[],
+): Promise<Record<string, NotionRecord | undefined>> {
+  const wanted = [...new Set(pages.flatMap((p) => (p.parent_table === 'block' && p.parent_id ? [p.parent_id] : [])))]
+  const missing = wanted.filter((id) => !records[id])
+  const found = missing.length
+    ? ((await tab.client.findRecords(missing.map((id) => ({ table: 'block' as const, id })))).block ?? {})
+    : {}
+  return Object.fromEntries(
+    pages.map((p) => [
+      p.id,
+      p.parent_table === 'block' && p.parent_id ? (records[p.parent_id] ?? found[p.parent_id]) : undefined,
+    ]),
+  )
+}
+
+/**
+ * Why a page's place can't be changed here, in a few words: it must sit right in a page, not in a
+ * column, toggle, or other block, where Notion's handling is not checked.
+ */
+function placeRefusal(page: NotionRecord, parent: NotionRecord | undefined): string | undefined {
+  if (page.parent_table !== 'block') return undefined
+  if (!parent) return "in a block that can't be opened"
+  if (parent.type !== 'page')
+    return `inside ${typeof parent.type === 'string' ? `a ${parent.type.replace(/_/g, ' ')}` : 'a block'}, not right in a page`
+  return undefined
+}
+
 /** Forgets what the agent cached of these pages, which a move, copy, or trash changed. */
 function forgetPages(ids: Iterable<string>) {
   for (const id of ids) {
@@ -1290,9 +1324,16 @@ export const movePage: ToolSpec = {
           : `^${hexId(destId)} is a block inside a page: pages can only be moved into a page.`,
       )
     }
+    const moveParents = await blockParents(
+      tab,
+      records,
+      ids.map((id) => records[id]),
+    )
     for (const id of ids) {
       const why = cannotReorganize(records[id], 'moved')
       if (why) throw new EditError(why)
+      const place = placeRefusal(records[id], moveParents[id])
+      if (place) throw new EditError(`^${hexId(id)} is ${place}: move it in Notion.`)
       // How Notion takes a page out of a teamspace's list is not checked yet.
       if (records[id].parent_table === 'team')
         throw new EditError(`^${hexId(id)} is at the top of a teamspace: move it in Notion.`)
@@ -1435,6 +1476,9 @@ export const duplicatePage: ToolSpec = {
       throw new EditError(
         `^${hexId(id)} is at the top of the sidebar: duplicate it in Notion, or move it into a page first.`,
       )
+    // The copy goes where the page is, so that must be right in a page too.
+    const place = placeRefusal(page, (await blockParents(tab, { [id]: page }, [page]))[id])
+    if (place) throw new EditError(`^${hexId(id)} is ${place}: duplicate it in Notion.`)
     // The pages the copy lands in, from the nearest up, whose cached reads it makes stale.
     const above = (await pagesAbove(tab, { [id]: page }, [id])).get(id)!
     const near = above[0] ?? page.parent_id
@@ -1501,14 +1545,14 @@ async function childCounts(tab: NotionTab, pages: NotionRecord[]): Promise<Map<s
 }
 
 /** Why trash_page refuses a page, in a few words; undefined if it doesn't. */
-function trashRefusal(page: NotionRecord): string | undefined {
+function trashRefusal(page: NotionRecord, parent: NotionRecord | undefined): string | undefined {
   if (cannotReorganize(page, 'trashed')) {
     if (page.parent_table === 'collection') return 'a database row'
     return 'not a page'
   }
-  if ((page.parent_table !== 'block' && page.parent_table !== 'space') || !page.parent_id)
-    return 'at the top of a teamspace'
-  return undefined
+  if (!page.parent_id) return 'without a parent Notion names'
+  if (page.parent_table !== 'block' && page.parent_table !== 'space') return 'at the top of a teamspace'
+  return placeRefusal(page, parent)
 }
 
 export const trashPage: ToolSpec = {
@@ -1538,22 +1582,27 @@ export const trashPage: ToolSpec = {
     const pages = previewIds(args.pages)
     const ids = pages.flatMap((p) => (p.id ? [p.id] : []))
     let found: Record<string, NotionRecord> = {}
+    let parents: Record<string, NotionRecord | undefined> = {}
     let names = new Map<string, string>()
     let inside = new Map<string, number>()
     let checked = false
     let timer: ReturnType<typeof setTimeout> | undefined
+    // Each call's preview decides for its own run: a refusal seen for an earlier call (one the user
+    // declined, say) doesn't carry over.
+    trashStop = undefined
     try {
       const lookup = (async () => {
         const tab = await activeNotionTab()
         const blocks = (await tab.client.findRecords(ids.map((id) => ({ table: 'block' as const, id })))).block ?? {}
-        return { tab, blocks, databases: await databaseNames(tab, Object.values(blocks)) }
+        const parents = await blockParents(tab, blocks, Object.values(blocks))
+        return { tab, blocks, parents, databases: await databaseNames(tab, Object.values(blocks)) }
       })()
       // A slow Notion must not hold up the question to the user.
       const late = new Promise<never>((_, reject) => {
         timer = setTimeout(() => reject(new Error('timed out')), PREVIEW_LOOKUP_MS)
       })
       const result = await Promise.race([lookup, late])
-      ;({ blocks: found, databases: names } = result)
+      ;({ blocks: found, parents, databases: names } = result)
       checked = true
       clearTimeout(timer)
       // Names and refusals are settled; what each page holds is only shown if it comes quickly.
@@ -1578,7 +1627,7 @@ export const trashPage: ToolSpec = {
         if (!p.id) return `    ${JSON.stringify(oneLine(p.given) || '(no page given)')}`
         const name = title ?? knownTitle(p.id)
         // Pages the call will refuse are marked, so the user doesn't agree to what can't happen.
-        const refused = !checked ? undefined : !block ? 'not found in Notion' : trashRefusal(block)
+        const refused = !checked ? undefined : !block ? 'not found in Notion' : trashRefusal(block, parents[block.id])
         const marker = refused ? `[${refused}: this call will fail, and nothing will be trashed] ` : ''
         const count = inside.get(p.id) ?? 0
         const holds = count
@@ -1603,11 +1652,17 @@ export const trashPage: ToolSpec = {
     const ids = pageList(args.pages)
     const tab = await activeNotionTab()
     const records = await loadPages(tab, ids)
+    const trashParents = await blockParents(
+      tab,
+      records,
+      ids.map((id) => records[id]),
+    )
     const pages = ids.map((id) => {
       const page = records[id]
       const why = cannotReorganize(page, 'trashed')
       if (why) throw new EditError(why)
-      if (trashRefusal(page)) throw new EditError(`^${hexId(id)} is at the top of a teamspace: trash it in Notion.`)
+      const refused = trashRefusal(page, trashParents[id])
+      if (refused) throw new EditError(`^${hexId(id)} is ${refused}: trash it in Notion.`)
       return { id, parentId: page.parent_id!, parentTable: page.parent_table as 'block' | 'space' }
     })
     const spaces = new Set(ids.map((id) => String(records[id].space_id)))
