@@ -866,8 +866,27 @@ function unitsOf(text: RichText): Unit[] {
   })
 }
 
-/** How many pairs of pieces keepUnshown compares at most between what two texts share at their ends. */
+/** How many pairs of items placesOf compares at most between what two lists share at their ends. */
 const COMPARED_MAX = 1_000_000
+
+/**
+ * Where each item of `old` is in `now`, or -1 for one that isn't there: what the two share at the
+ * start and at the end, and between those the longest run of items they share in order. None when
+ * the two are too long to compare item by item.
+ */
+function placesOf(old: string[], now: string[]): number[] | undefined {
+  let head = 0
+  while (head < old.length && head < now.length && old[head] === now[head]) head++
+  let tail = 0
+  while (tail < Math.min(old.length, now.length) - head && old.at(-1 - tail) === now.at(-1 - tail)) tail++
+  const between = [old, now].map((all) => all.slice(head, all.length - tail))
+  if (between[0].length * between[1].length > COMPARED_MAX) return undefined
+  const where = old.map((_, n) => (n < head ? n : n >= old.length - tail ? n + now.length - old.length : -1))
+  for (const { a, b } of align(between[0], between[1])) {
+    if (a !== undefined && b !== undefined && between[0][a] === between[1][b]) where[head + a] = head + b
+  }
+  return where
+}
 
 /** Something a new value would remove from the stored one without its Markdown showing it. */
 export interface Unshown {
@@ -908,21 +927,17 @@ export function keepUnshown(
   })
   const old = shown.flatMap((s) => s.units ?? [])
   const now = unitsOf(value)
-  // Where each piece of the old text is in the new one, or -1: what the two share at the start and
-  // at the end, and between those the longest run of pieces they share in order.
-  let head = 0
-  while (head < old.length && head < now.length && old[head].key === now[head].key) head++
-  let tail = 0
-  while (tail < Math.min(old.length, now.length) - head && old.at(-1 - tail)!.key === now.at(-1 - tail)!.key) tail++
-  const where = old.map((_, n) => (n < head ? n : n >= old.length - tail ? n + now.length - old.length : -1))
-  const between = [old, now].map((all) => all.slice(head, all.length - tail).map((u) => u.key))
-  // Texts too long to compare piece by piece keep only what their start and end share.
-  if (between[0].length * between[1].length <= COMPARED_MAX) {
-    for (const { a, b } of align(between[0], between[1])) {
-      if (a !== undefined && b !== undefined && between[0][a] === between[1][b]) where[head + a] = head + b
-    }
-  }
+  // Where each piece of the old text is in the new one: as it was shown, and whatever its formatting.
+  const where = placesOf(
+    old.map((u) => u.key),
+    now.map((u) => u.key),
+  )
   const plain = now.map((u) => u.plain)
+  const wherePlain = placesOf(
+    old.map((u) => u.plain),
+    plain,
+  )
+  const linkOf = (unit: Unit | undefined) => unit?.marks.find((m) => m[0] === 'a')?.[1]
   const kept: { at: number; length: number; run: unknown }[] = []
   const lost: Unshown[] = []
   let start = 0
@@ -933,14 +948,29 @@ export function keepUnshown(
     const what = unshownIn(marks)
     // A run with no text shows nothing, and has nothing to keep.
     if (!what.length || units?.length === 0) return
-    // Kept where the new text has the whole run as it was shown, in one piece.
-    if (units?.every((_, k) => where[at + k] >= 0 && where[at + k] === where[at] + k)) {
-      kept.push({ at: where[at], length: units.length, run })
+    if (!units) {
+      lost.push({ what, on: markdown })
       return
     }
-    // Text that is still there, but not as it was shown: only the Markdown says what it holds now.
-    const still = (part: string[]) => plain.some((_, k) => part.every((p, m) => plain[k + m] === p))
-    if (!units || still(units.map((u) => u.plain))) lost.push({ what, on: markdown })
+    // Kept where the new text has the whole run as it was shown, in one piece. A link preview is
+    // shown as a link: one that now has more text is no longer the link that was shown.
+    const to = where?.[at] ?? -1
+    const whole = !!where && units.every((_, k) => where[at + k] >= 0 && where[at + k] === to + k)
+    const link = marks.some((m) => m[0] === 'lm') ? linkOf(units[0]) : undefined
+    const longer = link !== undefined && [now[to - 1], now[to + units.length]].some((u) => linkOf(u) === link)
+    if (whole && !longer) {
+      kept.push({ at: to, length: units.length, run })
+      return
+    }
+    // Some of its text is still there, but not all of it as it was shown: only the Markdown says
+    // what it holds now, whatever its formatting. Text that is gone altogether takes what was on
+    // it along. Where the texts were too long to compare, the run's text anywhere in the new one
+    // counts as still there.
+    const part = units.map((u) => u.plain)
+    const still = wherePlain
+      ? units.some((_, k) => wherePlain[at + k] >= 0)
+      : plain.some((_, k) => part.every((p, m) => plain[k + m] === p))
+    if (still) lost.push({ what, on: markdown })
   })
   if (lost.length) return { rich: value, lost }
   const rich: unknown[] = []

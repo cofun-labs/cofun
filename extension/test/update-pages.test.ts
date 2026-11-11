@@ -468,8 +468,12 @@ describe('update_pages details', () => {
       [' today'],
     ])
     // Text that is gone takes what was on it along; the rest stays.
-    await update([{ page: hex(row(1)), properties: { Notes: 'Our key plan is ready' } }])
-    expect(prop(ws, 1, 'g:g')).toEqual([['Our '], UNSHOWN.underline, [' plan is ready']])
+    await update([{ page: hex(row(1)), properties: { Notes: 'Our key' } }])
+    expect(prop(ws, 1, 'g:g')).toEqual([['Our '], UNSHOWN.underline])
+    // So does one of two equal words, when it is the one that goes.
+    ws.edit(row(2), { properties: { title: [['Fix login']], 'g:g': [['the', [['_']]], [' cat and the dog']] } })
+    await update([{ page: hex(row(2)), properties: { Notes: 'cat and the dog' } }])
+    expect(prop(ws, 2, 'g:g')).toEqual([['cat and the dog']])
     await update([{ page: hex(row(1)), properties: { Notes: '' } }])
     expect(prop(ws, 1, 'g:g')).toEqual([])
   })
@@ -490,6 +494,19 @@ describe('update_pages details', () => {
       `**[Spec](${hex(SPEC)})**`,
       `the workspace of a mentioned page on “[page](${hex(SPEC)})”`,
     ],
+    [
+      'a color on a mention',
+      [
+        '‣',
+        [
+          ['p', SPEC],
+          ['h', 'red'],
+        ],
+      ],
+      `**[Spec](${hex(SPEC)})**`,
+      `a color on a mention on “[page](${hex(SPEC)})”`,
+    ],
+    ['a mark it doesn’t know', ['odd', [['zz', 1]]], '**odd**', 'formatting of a kind that is not known on “odd”'],
   ])(
     '[UC-NOTION-008-S14] writes nothing when a change would remove %s from text that stays',
     async (_kind, run, markdown, lost) => {
@@ -526,10 +543,54 @@ describe('update_pages details', () => {
     expect(prop(ws, 1, 'g:g')).toEqual([['cost and '], ['cost', [['m', THREAD]]], [' and less']])
     await update([{ page: hex(row(1)), properties: { Notes: 'The cost and cost or less' } }])
     expect(prop(ws, 1, 'g:g')).toEqual([['The cost and '], ['cost', [['m', THREAD]]], [' or less']])
-    // Text split inside what the comment is on is no longer the text as it was shown.
-    await expect(
-      update([{ page: hex(row(1)), properties: { Notes: 'The cost and co-cost or less' } }]),
-    ).rejects.toThrow('Notes holds a comment on the text on “cost”')
+    // Text changed inside what the comment is on is no longer the text as it was shown.
+    for (const notes of ['The cost and co-st or less', 'The cost and cos or less', 'The cost and **co**st or less']) {
+      await expect(update([{ page: hex(row(1)), properties: { Notes: notes } }])).rejects.toThrow(
+        'Notes holds a comment on the text on “cost”',
+      )
+    }
+    expect(ws.transactions).toHaveLength(2)
+  })
+
+  it('refuses an edit inside text that holds a comment or an underline, when part of that text stays', async () => {
+    const ws = mentionable()
+    open(ws)
+    for (const [mark, lost, was, now] of [
+      [['m', THREAD], 'a comment on the text', 'helo world', 'hello world'],
+      [['m', THREAD], 'a comment on the text', 'hello world', 'hello big world'],
+      [['_'], 'an underline', 'hello world', 'hello there'],
+    ] as const) {
+      ws.edit(row(1), { properties: { title: [['Write docs']], 'g:g': [['see '], [was, [mark]], [' end']] } })
+      await expect(update([{ page: hex(row(1)), properties: { Notes: `see ${now} end` } }])).rejects.toThrow(
+        `Notes holds ${lost} on “${was}”`,
+      )
+    }
+    expect(ws.transactions).toEqual([])
+  })
+
+  it('refuses a link preview whose link text grows, instead of leaving a second link beside it', async () => {
+    const ws = mentionable()
+    open(ws)
+    ws.edit(row(1), { properties: { title: [['Write docs']], 'g:g': [['See '], UNSHOWN.preview] } })
+    for (const text of ['Fix the builds', 'Re: Fix the build']) {
+      await expect(
+        update([{ page: hex(row(1)), properties: { Notes: `See [${text}](https://x.example/pr/7)` } }]),
+      ).rejects.toThrow('Notes holds a link preview')
+    }
+    expect(ws.transactions).toEqual([])
+    // Another link to the same page next to it is a link of its own.
+    await update([
+      {
+        page: hex(row(1)),
+        properties: { Notes: 'See [Fix the build](https://x.example/pr/7) and [more](https://x.example/pr/7)' },
+      },
+    ])
+    expect(prop(ws, 1, 'g:g')).toEqual([
+      ['See '],
+      UNSHOWN.preview,
+      [' and '],
+      ['more', [['a', 'https://x.example/pr/7']]],
+    ])
   })
 
   it('refuses instead of guessing where an underline went in a text too long to compare', async () => {

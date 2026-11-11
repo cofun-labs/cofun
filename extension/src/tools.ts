@@ -1314,7 +1314,7 @@ export const updatePages = defineTool({
             'person whose name could not be read, shown as @someone. Writing @someone back would replace that ' +
             'mention with text: leave this value as it is, or name the person as @[Name]. Nothing was written.',
         )
-      return { values, texts, names: personNames(Object.values(values)), block }
+      return { values, texts, names: personNames(Object.values(values)), block, schema }
     })
     // People the new values mention, matched before anything is written. A name the old value
     // already mentions is that same person, so a value written back as read keeps its mentions.
@@ -1351,8 +1351,7 @@ export const updatePages = defineTool({
     const operations: Operation[] = []
     const summary: string[] = []
     updates.forEach((u, n) => {
-      const { texts, block } = changes[n]
-      const schema = (collections[String(block.parent_id)]?.schema ?? {}) as Schema
+      const { texts, block, schema } = changes[n]
       const values = Object.fromEntries(
         Object.entries(changes[n].values).map(([key, value]) => {
           const rich = withPeople(value, found[n])
