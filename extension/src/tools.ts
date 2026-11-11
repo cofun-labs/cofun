@@ -25,7 +25,9 @@ import {
   forget,
   mergeReads,
   parseEdits,
+  holdsUnshown,
   keepDates,
+  keepUnshown,
   pageRead,
   planEdit,
   previewEdits,
@@ -1312,11 +1314,15 @@ export const updatePages = defineTool({
             'person whose name could not be read, shown as @someone. Writing @someone back would replace that ' +
             'mention with text: leave this value as it is, or name the person as @[Name]. Nothing was written.',
         )
-      return { values, texts, names: personNames(Object.values(values)), block }
+      return { values, texts, names: personNames(Object.values(values)), block, schema }
     })
     // People the new values mention, matched before anything is written. A name the old value
     // already mentions is that same person, so a value written back as read keeps its mentions.
-    const mentioning = changes.filter((c) => c.names.length)
+    // The same names tell what an old value shows of the people it mentions, where it holds something
+    // its Markdown doesn't show.
+    const mentioning = changes.filter(
+      (c) => c.names.length || c.texts.some((key) => holdsUnshown(c.block.properties?.[key])),
+    )
     const users = [
       ...new Set(mentioning.flatMap((c) => c.texts.flatMap((key) => mentioned(c.block.properties?.[key])))),
     ]
@@ -1345,12 +1351,24 @@ export const updatePages = defineTool({
     const operations: Operation[] = []
     const summary: string[] = []
     updates.forEach((u, n) => {
-      const { texts, block } = changes[n]
+      const { texts, block, schema } = changes[n]
       const values = Object.fromEntries(
         Object.entries(changes[n].values).map(([key, value]) => {
           const rich = withPeople(value, found[n])
+          if (!texts.includes(key)) return [key, rich]
+          const old = block.properties?.[key]
           // A date mention keeps what the old text stored with it, which query_database doesn't show.
-          return [key, texts.includes(key) ? keepDates(rich, [block.properties?.[key]]) : rich]
+          // So does the rest of the text, where the new value still has it as it was shown.
+          const kept = keepUnshown(keepDates(rich, [old]), old, named.notion_user)
+          if (kept.lost.length)
+            throw new EditError(
+              `^${hexId(u.id)}: ${key === 'title' ? 'the title' : (schema[key]?.name ?? key)} holds ` +
+                `${kept.lost.map((l) => `${l.what.join(' and ')} on “${clip(oneLine(l.on), 60)}”`).join('; ')}. ` +
+                'Reading the value doesn’t show that, and this change would remove it. Write that text exactly as ' +
+                'it was shown to keep it, or leave the value as it is and tell the user to change it in Notion. ' +
+                'Nothing was written.',
+            )
+          return [key, kept.rich]
         }),
       )
       if (Object.keys(values).length) operations.push(op.setProperties(u.id, values))

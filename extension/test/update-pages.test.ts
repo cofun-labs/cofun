@@ -106,6 +106,7 @@ function shownCells(table: string, id: string): Record<string, string> {
 }
 const update = async (pages: unknown) => (await updatePages.run({ pages })) as string
 const props = (ws: FakeWorkspace, n: number) => ws.records.get(row(n))!.properties
+const prop = (ws: FakeWorkspace, n: number, key: string) => (props(ws, n) as Record<string, unknown>)[key]
 
 describe('UC-NOTION-008 change properties and rows', () => {
   it('[UC-NOTION-008-S06] sets a property on several rows in one change, and only on those', async () => {
@@ -380,6 +381,293 @@ describe('update_pages details', () => {
     ])
     expect(props(ws, 1)).toMatchObject({ 'g:g': [['Ask '], ['‣', [['u', ANN]]]] })
     expect(props(ws, 2)).toMatchObject({ 'g:g': [['@someone said, '], ['‣', [['u', ANN]]]] })
+  })
+
+  /** A comment thread anchored on text, a web page shown as a preview, and another workspace. */
+  const THREAD = 'd1d1d1d1-0000-4000-8000-000000000001'
+  const PREVIEW = { href: 'https://x.example/pr/7', title: 'Fix the build', icon_url: 'https://x.example/icon.png' }
+  const OTHER_SPACE = '5a5a5a5a-0000-4000-8000-000000000009'
+  /** Each thing query_database's Markdown doesn't show, on its own run. */
+  const UNSHOWN = {
+    underline: ['key', [['_']]],
+    comment: ['budget', [['m', THREAD]]],
+    preview: ['‣', [['lm', PREVIEW]]],
+    linkedPerson: [
+      '‣',
+      [
+        ['u', ANN],
+        ['a', 'https://x.example/ann'],
+      ],
+    ],
+    pageSpace: ['‣', [['p', SPEC, OTHER_SPACE]]],
+  }
+  const HIDDEN = [
+    ['The '],
+    UNSHOWN.underline,
+    [' '],
+    UNSHOWN.comment,
+    [' is in '],
+    UNSHOWN.preview,
+    [', ask '],
+    UNSHOWN.linkedPerson,
+    [' about '],
+    UNSHOWN.pageSpace,
+    [' soon'],
+  ]
+
+  it('[UC-NOTION-008-S13] stores a text value and a title written back as shown with what the Markdown does not show', async () => {
+    const ws = mentionable()
+    const tab = open(ws, `https://app.notion.com/${hex(DB)}`)
+    const title = [['Write '], ['the', [['_'], ['b']]], [' docs']]
+    ws.edit(row(1), { properties: { title, 'a:a': [['Done']], 'g:g': HIDDEN } })
+    const stored = structuredClone(props(ws, 1))
+    const shown = shownCells(await query(tab, [ws.records.get(row(1)) as never]), row(1))
+    expect(shown.Notes).toBe(
+      `The key budget is in [Fix the build](https://x.example/pr/7), ask @[Ann] about [Spec](${hex(SPEC)}) soon`,
+    )
+    expect(shown.Task).toBe('Write **the** docs')
+    const pages = [{ page: hex(row(1)), title: shown.Task, properties: { Notes: shown.Notes } }]
+    expect((await updatePages.preview!({ pages }))?.split('\n').slice(2)).toEqual([
+      '    Title: Write the docs (unchanged)',
+      '    Notes: The key budget is in Fix the build, ask Ann about Spec soon (unchanged)',
+    ])
+    await update(pages)
+    expect(props(ws, 1)).toEqual(stored)
+  })
+
+  it('[UC-NOTION-008-S13] keeps what the Markdown does not show on the text a change leaves as it was', async () => {
+    const ws = mentionable()
+    open(ws)
+    ws.edit(row(1), { properties: { title: [['Write docs']], 'g:g': HIDDEN } })
+    // Changes at the start, in the middle, and at the end, around every run that holds something.
+    await update([
+      {
+        page: hex(row(1)),
+        properties: {
+          Notes:
+            `Our key budget is **now** in [Fix the build](https://x.example/pr/7), ask @[Ann] or ` +
+            `@[Ann] about [Spec](${hex(SPEC)}) today`,
+        },
+      },
+    ])
+    expect(prop(ws, 1, 'g:g')).toEqual([
+      ['Our '],
+      UNSHOWN.underline,
+      [' '],
+      UNSHOWN.comment,
+      [' is '],
+      ['now', [['b']]],
+      [' in '],
+      UNSHOWN.preview,
+      [', ask '],
+      UNSHOWN.linkedPerson,
+      [' or '],
+      ['‣', [['u', ANN]]],
+      [' about '],
+      UNSHOWN.pageSpace,
+      [' today'],
+    ])
+    // Text that is gone takes what was on it along; the rest stays.
+    await update([{ page: hex(row(1)), properties: { Notes: 'Our key' } }])
+    expect(prop(ws, 1, 'g:g')).toEqual([['Our '], UNSHOWN.underline])
+    // So does one of two equal words, when it is the one that goes.
+    ws.edit(row(2), { properties: { title: [['Fix login']], 'g:g': [['the', [['_']]], [' cat and the dog']] } })
+    await update([{ page: hex(row(2)), properties: { Notes: 'cat and the dog' } }])
+    expect(prop(ws, 2, 'g:g')).toEqual([['cat and the dog']])
+    await update([{ page: hex(row(1)), properties: { Notes: '' } }])
+    expect(prop(ws, 1, 'g:g')).toEqual([])
+  })
+
+  it.each([
+    ['an underline', UNSHOWN.underline, '**key**', 'an underline on “key”'],
+    ['a comment on the text', UNSHOWN.comment, '*budget*', 'a comment on the text on “budget”'],
+    [
+      'a link preview',
+      UNSHOWN.preview,
+      '**[Fix the build](https://x.example/pr/7)**',
+      'a link preview (it would become an ordinary link) on “[Fix the build](https://x.example/pr/7)”',
+    ],
+    ['a link on a person', UNSHOWN.linkedPerson, '**@[Ann]**', 'a link on a mention of a person on “@[Ann]”'],
+    [
+      'a mentioned page’s workspace',
+      UNSHOWN.pageSpace,
+      `**[Spec](${hex(SPEC)})**`,
+      `the workspace of a mentioned page on “[…](${hex(SPEC)})”`,
+    ],
+    [
+      'a color on a mention',
+      [
+        '‣',
+        [
+          ['p', SPEC],
+          ['h', 'red'],
+        ],
+      ],
+      `**[Spec](${hex(SPEC)})**`,
+      `a color on a mention on “[…](${hex(SPEC)})”`,
+    ],
+    ['a mark it doesn’t know', ['odd', [['zz', 1]]], '**odd**', 'formatting of a kind that is not known on “odd”'],
+  ])(
+    '[UC-NOTION-008-S14] writes nothing when a change would remove %s from text that stays',
+    async (_kind, run, markdown, lost) => {
+      const ws = mentionable()
+      open(ws)
+      const notes = [['See '], run, [' first']]
+      ws.edit(row(1), { properties: { title: [['Write docs']], 'g:g': notes } })
+      ws.edit(row(3), { properties: { title: [['Ship '], run] } })
+      // The same text with other formatting: only the Markdown could say what it should hold now.
+      await expect(
+        update([
+          { page: hex(row(2)), properties: { Status: 'Done' } },
+          { page: hex(row(1)), properties: { Notes: `See ${markdown} first` } },
+        ]),
+      ).rejects.toThrow(
+        `^${hex(row(1))}: Notes holds ${lost}. Reading the value doesn’t show that, and this change would remove it.`,
+      )
+      await expect(update([{ page: hex(row(3)), title: `Ship ${markdown} now` }])).rejects.toThrow(
+        `^${hex(row(3))}: the title holds ${lost}.`,
+      )
+      expect(ws.transactions).toEqual([])
+      expect(prop(ws, 1, 'g:g')).toEqual(notes)
+      expect(prop(ws, 2, 'a:a')).toEqual([['In progress']])
+    },
+  )
+
+  it('keeps a comment on text that two edits surround, and on the right one of two equal words', async () => {
+    const ws = mentionable()
+    open(ws)
+    ws.edit(row(1), {
+      properties: { title: [['Write docs']], 'g:g': [['cost and '], ['cost', [['m', THREAD]]], [' and more']] },
+    })
+    await update([{ page: hex(row(1)), properties: { Notes: 'cost and cost and less' } }])
+    expect(prop(ws, 1, 'g:g')).toEqual([['cost and '], ['cost', [['m', THREAD]]], [' and less']])
+    await update([{ page: hex(row(1)), properties: { Notes: 'The cost and cost or less' } }])
+    expect(prop(ws, 1, 'g:g')).toEqual([['The cost and '], ['cost', [['m', THREAD]]], [' or less']])
+    // Text changed inside what the comment is on is no longer the text as it was shown.
+    for (const notes of ['The cost and co-st or less', 'The cost and cos or less', 'The cost and **co**st or less']) {
+      await expect(update([{ page: hex(row(1)), properties: { Notes: notes } }])).rejects.toThrow(
+        'Notes holds a comment on the text on “cost”',
+      )
+    }
+    expect(ws.transactions).toHaveLength(2)
+  })
+
+  it('refuses an edit inside text that holds a comment or an underline, when part of that text stays', async () => {
+    const ws = mentionable()
+    open(ws)
+    for (const [mark, lost, was, now] of [
+      [['m', THREAD], 'a comment on the text', 'helo world', 'hello world'],
+      [['m', THREAD], 'a comment on the text', 'hello world', 'hello big world'],
+      [['_'], 'an underline', 'hello world', 'hello there'],
+      [['m', THREAD], 'a comment on the text', 'the quarterly budget review', 'the budget'],
+      [['_'], 'an underline', 'quarterly budget review', 'our budget'],
+    ] as const) {
+      ws.edit(row(1), { properties: { title: [['Write docs']], 'g:g': [['see '], [was, [mark]], [' end']] } })
+      await expect(update([{ page: hex(row(1)), properties: { Notes: `see ${now} end` } }])).rejects.toThrow(
+        `Notes holds ${lost} on “${was}”`,
+      )
+    }
+    expect(ws.transactions).toEqual([])
+  })
+
+  it('reads only what is a run in a stored value, and still keeps what the Markdown does not show', async () => {
+    const ws = mentionable()
+    open(ws)
+    ws.edit(row(1), {
+      properties: { title: [['Write docs']], 'g:g': [['odd'], [' '], ['key', [['_']]], 7, [' end']] },
+    })
+    await update([{ page: hex(row(1)), properties: { Notes: 'odd key end' } }])
+    expect(prop(ws, 1, 'g:g')).toEqual([['odd '], ['key', [['_']]], [' end']])
+  })
+
+  it('writes a word that replaces one holding a comment or an underline, and refuses one that only moved', async () => {
+    const ws = mentionable()
+    open(ws)
+    const set = (notes: unknown, title: unknown = [['Write docs']]) =>
+      ws.edit(row(1), { properties: { title, 'g:g': notes } })
+    // The old word is gone, so what was on it goes with it.
+    for (const [notes, markdown] of [
+      [[['Status: '], ['blocked', [['m', THREAD]]], [' on review']], 'Status: done on review'],
+      [[['see '], ['hello', [['_']]], [' end']], 'see goodbye end'],
+      [[['Draft', [['_']]]], 'Final'],
+      [[['Budget review', [['m', THREAD]]]], 'Hiring'],
+      [[['Ask about the '], ['budget', [['m', THREAD]]], [' today.']], 'Tell Bob to get us the numbers by Friday.'],
+    ] as const) {
+      set(notes)
+      await update([{ page: hex(row(1)), properties: { Notes: markdown } }])
+      expect(prop(ws, 1, 'g:g')).toEqual([[markdown]])
+    }
+    set([], [['Q3 '], ['plan', [['_']]]])
+    await update([{ page: hex(row(1)), title: 'Q4 roadmap' }])
+    expect(prop(ws, 1, 'title')).toEqual([['Q4 roadmap']])
+    // The same word somewhere else is still there, without what was on it.
+    const written = ws.transactions.length
+    for (const [notes, markdown, lost] of [
+      [[['hello', [['_']]], [' world foo bar']], 'world foo bar hello', 'an underline on “hello”'],
+      [[['ab', [['m', THREAD]]], [' cd']], 'cd ab', 'a comment on the text on “ab”'],
+      [[['alpha', [['_']]], [' and beta']], 'beta and alpha', 'an underline on “alpha”'],
+      [[['Design', [['m', THREAD]]], [' then Build']], 'Build then Design', 'a comment on the text on “Design”'],
+      [[['design '], ['draft', [['_']]], [' invoice']], 'draft design invoice', 'an underline on “draft”'],
+      [
+        [['Review '], ['spec', [['m', THREAD]]], [' then ship']],
+        'Ship, then review spec',
+        'a comment on the text on “spec”',
+      ],
+    ] as const) {
+      set(notes)
+      await expect(update([{ page: hex(row(1)), properties: { Notes: markdown } }])).rejects.toThrow(
+        `Notes holds ${lost}`,
+      )
+    }
+    expect(ws.transactions).toHaveLength(written)
+  })
+
+  it('stores two link previews of one page side by side as they were', async () => {
+    const ws = mentionable()
+    open(ws)
+    const notes = [UNSHOWN.preview, UNSHOWN.preview]
+    ws.edit(row(1), { properties: { title: [['Write docs']], 'g:g': notes } })
+    const link = '[Fix the build](https://x.example/pr/7)'
+    await update([{ page: hex(row(1)), properties: { Notes: link + link } }])
+    expect(prop(ws, 1, 'g:g')).toEqual(notes)
+  })
+
+  it('refuses a link preview whose link text grows, instead of leaving a second link beside it', async () => {
+    const ws = mentionable()
+    open(ws)
+    ws.edit(row(1), { properties: { title: [['Write docs']], 'g:g': [['See '], UNSHOWN.preview] } })
+    for (const text of ['Fix the builds', 'Re: Fix the build']) {
+      await expect(
+        update([{ page: hex(row(1)), properties: { Notes: `See [${text}](https://x.example/pr/7)` } }]),
+      ).rejects.toThrow('Notes holds a link preview')
+    }
+    expect(ws.transactions).toEqual([])
+    // Another link to the same page next to it is a link of its own.
+    await update([
+      {
+        page: hex(row(1)),
+        properties: { Notes: 'See [Fix the build](https://x.example/pr/7) and [more](https://x.example/pr/7)' },
+      },
+    ])
+    expect(prop(ws, 1, 'g:g')).toEqual([
+      ['See '],
+      UNSHOWN.preview,
+      [' and '],
+      ['more', [['a', 'https://x.example/pr/7']]],
+    ])
+  })
+
+  it('refuses instead of guessing where an underline went in a text too long to compare', async () => {
+    const ws = mentionable()
+    open(ws)
+    const filler = 'lorem ipsum '.repeat(100)
+    ws.edit(row(1), {
+      properties: { title: [['Write docs']], 'g:g': [[`A ${filler}`], ['key', [['_']]], [` ${filler}end`]] },
+    })
+    await expect(
+      update([{ page: hex(row(1)), properties: { Notes: `B ${filler}key ${filler}done` } }]),
+    ).rejects.toThrow('Notes holds an underline on “key”')
+    expect(ws.transactions).toEqual([])
   })
 
   it('does not call a text value unchanged when writing it back removes its line breaks', async () => {
