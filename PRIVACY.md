@@ -42,7 +42,7 @@ The worker is the code in [`worker/`](worker/), running on Cloudflare Workers.
 - **It passes the conversation to the model and streams the reply back.** The model runs on Cloudflare's [Workers AI](https://developers.cloudflare.com/workers-ai/), reached through Cloudflare's AI Gateway. The gateway's log collection and cache are turned off for these requests, so it does not keep your messages or the replies; it keeps request analytics (counts, tokens, cost) tagged with your Clerk user id. The worker itself does not store or log the conversation. Cloudflare processes it to run the model; see [Cloudflare's privacy policy](https://www.cloudflare.com/privacypolicy/).
 - **It counts your requests.** A daily counter per Clerk user id (the day and the number of requests) enforces the daily quota.
 - **It writes one usage record per chat request.** The record holds your Clerk user id, the model, whether the reply was streamed, the outcome, the finish reason, the number of messages, the size of the input in characters, the token counts, and the duration. It never holds message or reply text. Records are kept in Cloudflare Workers Analytics Engine, which deletes them after 90 days.
-- **Cloudflare keeps the worker's logs.** These are the request logs Cloudflare records for every Worker (such as the time, URL, and status of a request) and the errors the worker prints when a request fails. The worker does not write the conversation to them. Of an error it did not expect, a failed model call included, it logs only the error's name and the first 200 characters of its message, never the whole error: if the model provider's message quoted part of a request, no more than those characters could reach the logs.
+- **Cloudflare keeps the worker's logs.** These are the request logs Cloudflare records for every Worker (such as the time, URL, and status of a request) and the errors the worker prints when a request fails. The worker does not write the conversation to them. When a model call fails, or a request fails in a way the worker did not expect, it logs only the first 60 characters of the error's name and the first 200 characters of its message, never the whole error: if the model provider's error quoted part of a request, no more than that could reach the logs. When the request counter or the usage record fails, it logs that error whole; neither is ever given the conversation.
 
 ## What stays on your device
 
@@ -53,7 +53,7 @@ The worker is the code in [`worker/`](worker/), running on Cloudflare Workers.
 ## What is never collected
 
 - No analytics, advertising, or tracking in the extension. It loads no remote code.
-- The worker does not store Notion content, messages, or replies, and does not write them to its logs (of an unexpected error it logs only the name and the first 200 characters of the message, as described above).
+- The worker does not store Notion content, messages, or replies, and does not write them to its logs (of a failed model call or an unexpected failure it logs only a short, bounded part of the error, as described above).
 - No Notion credentials or cookies are sent to the worker or to Clerk.
 - No browsing history: tab URLs are only checked for being Notion, and nothing from other sites is read, stored, or sent.
 - We do not sell your data, and we do not use it for anything other than providing the assistant.
