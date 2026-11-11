@@ -965,19 +965,25 @@ export function keepUnshown(
     const to = where?.[at] ?? -1
     const whole = !!where && units.every((_, k) => where[at + k] >= 0 && where[at + k] === to + k)
     const link = marks.some((m) => m[0] === 'lm') ? linkOf(units[0]) : undefined
-    const longer = link !== undefined && [now[to - 1], now[to + units.length]].some((u) => linkOf(u) === link)
+    const longer =
+      link !== undefined &&
+      [to - 1, to + units.length].some((k) => linkOf(now[k]) === link && !(where ?? []).includes(k))
     if (whole && !longer) {
       kept.push({ at: to, length: units.length, n })
       return
     }
-    // Some of its text is still there, but not all of it as it was shown: only the Markdown says
-    // what it holds now, whatever its formatting. Text that is gone altogether takes what was on
-    // it along. Where the texts were too long to compare, the run's text anywhere in the new one
-    // counts as still there.
+    // Not there whole as it was shown: only the Markdown says what the text holds now, so the
+    // write is refused while the text is still there, whatever its formatting. It is when at
+    // least half of it is where it was, or all of it is in what the new text adds (it moved).
+    // Other text goes with what was on it. Where the texts were too long to compare, the run's
+    // text anywhere in the new one counts.
     const part = units.map((u) => u.plain)
+    const inked = part.some((p) => p.trim()) ? (k: number) => !!part[k].trim() : () => true
+    const there = (k: number) => part.every((p, m) => plain[k + m] === p && !(wherePlain ?? []).includes(k + m))
     const still = wherePlain
-      ? units.some((_, k) => wherePlain[at + k] >= 0)
-      : plain.some((_, k) => part.every((p, m) => plain[k + m] === p))
+      ? part.filter((_, k) => inked(k) && wherePlain[at + k] >= 0).length * 2 >=
+          part.filter((_, k) => inked(k)).length || plain.some((_, k) => there(k))
+      : plain.some((_, k) => there(k))
     if (still) lost.push({ what, on: markdown })
   })
   if (lost.length) return { rich: value, lost }

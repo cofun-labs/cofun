@@ -578,6 +578,49 @@ describe('update_pages details', () => {
     expect(prop(ws, 1, 'g:g')).toEqual([['odd '], ['key', [['_']]], [' end']])
   })
 
+  it('writes a word that replaces one holding a comment or an underline, and refuses one that only moved', async () => {
+    const ws = mentionable()
+    open(ws)
+    const set = (notes: unknown, title: unknown = [['Write docs']]) =>
+      ws.edit(row(1), { properties: { title, 'g:g': notes } })
+    // The old word is gone, so what was on it goes with it.
+    for (const [notes, markdown] of [
+      [[['Status: '], ['blocked', [['m', THREAD]]], [' on review']], 'Status: done on review'],
+      [[['see '], ['hello', [['_']]], [' end']], 'see goodbye end'],
+      [[['Draft', [['_']]]], 'Final'],
+      [[['Budget review', [['m', THREAD]]]], 'Hiring'],
+    ] as const) {
+      set(notes)
+      await update([{ page: hex(row(1)), properties: { Notes: markdown } }])
+      expect(prop(ws, 1, 'g:g')).toEqual([[markdown]])
+    }
+    set([], [['Q3 '], ['plan', [['_']]]])
+    await update([{ page: hex(row(1)), title: 'Q4 roadmap' }])
+    expect(prop(ws, 1, 'title')).toEqual([['Q4 roadmap']])
+    // The same word somewhere else is still there, without what was on it.
+    const written = ws.transactions.length
+    for (const [notes, markdown, lost] of [
+      [[['hello', [['_']]], [' world foo bar']], 'world foo bar hello', 'an underline on “hello”'],
+      [[['ab', [['m', THREAD]]], [' cd']], 'cd ab', 'a comment on the text on “ab”'],
+    ] as const) {
+      set(notes)
+      await expect(update([{ page: hex(row(1)), properties: { Notes: markdown } }])).rejects.toThrow(
+        `Notes holds ${lost}`,
+      )
+    }
+    expect(ws.transactions).toHaveLength(written)
+  })
+
+  it('stores two link previews of one page side by side as they were', async () => {
+    const ws = mentionable()
+    open(ws)
+    const notes = [UNSHOWN.preview, UNSHOWN.preview]
+    ws.edit(row(1), { properties: { title: [['Write docs']], 'g:g': notes } })
+    const link = '[Fix the build](https://x.example/pr/7)'
+    await update([{ page: hex(row(1)), properties: { Notes: link + link } }])
+    expect(prop(ws, 1, 'g:g')).toEqual(notes)
+  })
+
   it('refuses a link preview whose link text grows, instead of leaving a second link beside it', async () => {
     const ws = mentionable()
     open(ws)
