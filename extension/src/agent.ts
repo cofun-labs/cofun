@@ -783,6 +783,26 @@ function causes(err: unknown): Record<string, unknown>[] {
   return out
 }
 
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  !!value && typeof value === 'object' && !Array.isArray(value)
+
+/**
+ * The arguments a JSON Schema requires that a call gives as null, as the model would write them:
+ * `text`, `pages[0].page`. Follows `properties` and `items`; an optional argument given as null is
+ * left to pi, which drops it.
+ */
+function requiredNulls(schema: unknown, value: unknown, path = ''): string[] {
+  if (!isRecord(schema)) return []
+  if (Array.isArray(value)) return value.flatMap((item, n) => requiredNulls(schema.items, item, `${path}[${n}]`))
+  if (!isRecord(value) || !isRecord(schema.properties)) return []
+  const required = Array.isArray(schema.required) ? schema.required : []
+  return Object.entries(schema.properties).flatMap(([key, property]) => {
+    const at = path ? `${path}.${key}` : key
+    if (value[key] === null) return required.includes(key) ? [at] : []
+    return requiredNulls(property, value[key], at)
+  })
+}
+
 interface Reporter {
   stop(reason: string): void
   changed(): void
@@ -794,6 +814,10 @@ interface Reporter {
  * and checks the result against `parameters`. A call that does not fit never reaches the tool or
  * `beforeToolCall`: the model gets pi's list of what is wrong with each argument. The tool gets the
  * converted copy, which it parses itself when it is defined with `defineTool` (tool.ts).
+ *
+ * One conversion is stopped before pi makes it: a null for a required argument. pi would turn it
+ * into the text "null", 0, or false and run the tool with that, so a page could be titled "null".
+ * Such a call is refused like any other that does not fit, and the model is told which argument.
  */
 function toAgentTool(spec: ToolSpec, reporter: () => Reporter): AgentTool {
   return {
@@ -801,6 +825,16 @@ function toAgentTool(spec: ToolSpec, reporter: () => Reporter): AgentTool {
     label: spec.name,
     description: spec.description,
     parameters: spec.parameters,
+    prepareArguments: (args) => {
+      const missing = requiredNulls(spec.parameters, args)
+      if (missing.length) {
+        throw new Error(
+          `Not run: ${missing.map((path) => `\`${path}\``).join(', ')} ${missing.length === 1 ? 'is' : 'are'} ` +
+            'required, and null is not a value. Give the call again with a value, or ask the user for one.',
+        )
+      }
+      return args
+    },
     execute: async (_id, params, signal) => {
       const report = reporter()
       let result: unknown

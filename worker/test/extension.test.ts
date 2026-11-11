@@ -292,6 +292,71 @@ describe('extension agent against the worker', () => {
     })
   })
 
+  it('a null for a required argument is refused, not run as the text "null"', async () => {
+    const runs: unknown[] = []
+    const tool = defineTool({
+      name: 'post_notes',
+      description: 'Posts notes.',
+      args: z.strictObject({
+        text: z.string(),
+        urgent: z.boolean(),
+        count: z.number(),
+        notes: z.array(z.strictObject({ page: z.string(), title: z.string().optional() })),
+        tag: z.string().optional(),
+      }),
+      preview: () => `Post; ${runs.length} run(s) so far`,
+      run: async (args) => {
+        runs.push(args)
+        return 'Posted.'
+      },
+    })
+    const good = { text: 'Hi', urgent: false, count: 2, notes: [{ page: 'a' }] }
+    ai.script = [
+      { toolCalls: [{ name: 'post_notes', arguments: JSON.stringify({ ...good, text: null }) }] },
+      {
+        toolCalls: [
+          {
+            name: 'post_notes',
+            arguments: JSON.stringify({
+              text: null,
+              urgent: null,
+              count: null,
+              notes: [{ page: 'a' }, { page: null }],
+            }),
+          },
+        ],
+      },
+      // A null where the argument may be left out is still dropped, and the call runs.
+      {
+        toolCalls: [
+          {
+            name: 'post_notes',
+            arguments: JSON.stringify({ ...good, tag: null, notes: [{ page: 'a', title: null }] }),
+          },
+        ],
+      },
+      { reply: 'Done' },
+    ]
+    const { result, updates } = await ask(makeAgent({ tools: [tool] }), 'Post the notes')
+
+    expect(result).toEqual({ status: 'done' })
+    expect(runs).toEqual([good])
+    // Refused before the preview, like any call whose arguments don't fit.
+    expect(updates.filter((u) => u.type === 'tool_ready')).toHaveLength(1)
+    expect(sentMessages(1).at(-1)).toEqual({
+      role: 'tool',
+      tool_call_id: 'chatcmpl-tool-0',
+      content:
+        'Not run: `text` is required, and null is not a value. Give the call again with a value, or ask the user for one.',
+    })
+    expect(sentMessages(2).at(-1)).toMatchObject({
+      content:
+        'Not run: `text`, `urgent`, `count`, `notes[1].page` are required, and null is not a value. ' +
+        'Give the call again with a value, or ask the user for one.',
+    })
+    expect(sentMessages(3).at(-1)).toMatchObject({ role: 'tool', content: 'Posted.' })
+  })
+
   it("read_page gets the model's arguments as its schema reads them, and a call that does not fit never runs", async () => {
     const tab = new FakeNotionTab(PAGE_URL)
       .respond('loadPageChunk', 200, fixture('load-page-chunk-0'))
