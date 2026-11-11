@@ -6,7 +6,9 @@ import { FAKE_USAGE, FakeAiBinding, FakeQuotaNamespace, FakeUsageDataset } from 
 const MODEL = '@cf/test/model'
 const EXT = 'chrome-extension://abcdefghijklmnopabcdefghijklmnop'
 let clock = new Date('2026-11-08T12:00:00Z')
-const app = createApp({ now: () => clock })
+/** Every error line the worker logged in the current test. */
+let logged: string[] = []
+const app = createApp({ now: () => clock, logError: (line) => logged.push(line) })
 
 let clerk: FakeClerk
 let otherClerk: FakeClerk
@@ -23,6 +25,7 @@ beforeAll(async () => {
 
 beforeEach(async () => {
   ai = new FakeAiBinding()
+  logged = []
   clock = new Date('2026-11-08T12:00:00Z')
   env = {
     AI: ai,
@@ -386,7 +389,7 @@ describe("UC-CHAT-002 Keep a record of each user's chat usage", () => {
   it('[UC-CHAT-002-S02] a stream that breaks off leaves a record of how it ended', async () => {
     ai.streamFailWith = new Error('connection reset')
     const res = await chat(token, { messages: hi, stream: true })
-    await expect(res.text()).rejects.toThrow('connection reset')
+    await expect(res.text()).rejects.toThrow('the model stream failed')
     expect(records().map((r) => r.outcome)).toEqual(['stream_error'])
   })
 
@@ -417,6 +420,76 @@ describe("UC-CHAT-002 Keep a record of each user's chat usage", () => {
         return gateway?.collectLog === false && gateway.skipCache === true
       }),
     ).toBe(true)
+  })
+})
+
+// Standalone tests for what the worker writes to its logs when a request fails.
+describe('error logs', () => {
+  const SECRET = 'zebra-7f3a-confidential'
+  const messages = [{ role: 'user', content: `page ${SECRET}` }]
+
+  /** An error as a provider might return it: the request quoted past the start of the message, and in other fields. */
+  function quotingError() {
+    const err = new Error(`${'x'.repeat(200)} while reading ${JSON.stringify(messages)}`, {
+      cause: new Error(`cause ${SECRET}`),
+    })
+    return Object.assign(err, { request: { messages } })
+  }
+
+  it('a failed model call logs only the name and the start of the message', async () => {
+    const err = (ai.failWith = quotingError())
+    err.name = 'ProviderError'
+    expect((await chat(token, { messages })).status).toBe(502)
+    expect(logged).toEqual([`model call failed: ProviderError: ${'x'.repeat(200)}`])
+    expect(logged.join()).not.toContain(SECRET)
+  })
+
+  it('an unexpected error logs only the name and the start of the message', async () => {
+    env.AI = {
+      async run() {
+        return {
+          toJSON() {
+            throw quotingError()
+          },
+        }
+      },
+    }
+    expect((await chat(token, { messages })).status).toBe(500)
+    expect(logged).toEqual([`request failed: Error: ${'x'.repeat(200)}`])
+    expect(logged.join()).not.toContain(SECRET)
+  })
+
+  it('a stream that fails partway logs the same summary and ends with an error that quotes nothing', async () => {
+    ai.streamFailWith = quotingError()
+    const res = await chat(token, { messages, stream: true })
+    const failure: unknown = await res.text().catch((err: unknown) => err)
+    expect(String(failure)).toBe('Error: the model stream failed')
+    expect(Object.keys(Object(failure))).toEqual([])
+    expect(Object(failure).cause).toBeUndefined()
+    expect(logged).toEqual([`model stream failed: Error: ${'x'.repeat(200)}`])
+  })
+
+  it('a long error name is cut too', async () => {
+    const err = (ai.failWith = new Error('capacity'))
+    err.name = `${'n'.repeat(60)}${SECRET}`
+    await chat(token, { messages })
+    expect(logged).toEqual([`model call failed: ${'n'.repeat(60)}: capacity`])
+  })
+
+  it('a thrown value that is not an error logs only its type', async () => {
+    env.AI = {
+      async run() {
+        throw { message: `quoted ${SECRET}` }
+      },
+    }
+    expect((await chat(token, { messages })).status).toBe(502)
+    expect(logged).toEqual(['model call failed: non-error value of type object'])
+  })
+
+  it('a request that is refused logs nothing', async () => {
+    expect((await chat(undefined, { messages })).status).toBe(401)
+    expect((await chat(token, { messages: [] })).status).toBe(400)
+    expect(logged).toEqual([])
   })
 })
 
