@@ -9,8 +9,8 @@ import {
   SIGNED_OUT,
   blockOps,
   commentOps,
+  fieldsOf,
   mergeRecordMaps,
-  pointerIn,
   textList,
   type Block,
   type LoadedPage,
@@ -325,11 +325,13 @@ type FilterOp = (typeof FILTER_OPS)[number]
 
 /** A database's data source: its collection, the workspace it lives in, its schema, and its views. */
 async function resolveDatabase(client: NotionTab['client'], block: Block) {
-  const pointer = pointerIn(block.format, 'collection_pointer')
   const id = collectionId(block)
   if (!id) throw new Error('This database has no data source.')
-  // A linked view's database may live in another workspace; its pointer says which.
-  const spaceId = String(block.collection_id ? block.space_id : (pointer?.spaceId ?? block.space_id))
+  // A linked view's database may live in another workspace; its pointer says which. The pointer's
+  // workspace is taken as it came, not read loosely: this id goes on requests and writes, and one
+  // that is not a Notion id is refused there rather than replaced by the block's own workspace.
+  const pointed = fieldsOf(block.format?.collection_pointer)?.spaceId
+  const spaceId = String(block.collection_id ? block.space_id : (pointed ?? block.space_id))
   const collection = (await client.getRecords([{ table: 'collection', id, spaceId }])).collection![id]
   return {
     collectionId: id,
@@ -2303,9 +2305,7 @@ export const searchPages = defineTool({
       found.results.map((r) => found.recordMap.block?.[r.id]),
     )
     const lines = found.results.map((r, n) => {
-      const block = found.recordMap.block?.[r.id] as
-        | { type?: string; properties?: { title?: unknown }; last_edited_time?: number }
-        | undefined
+      const block = found.recordMap.block?.[r.id]
       const database = block?.type === 'collection_view_page' || block?.type === 'collection_view'
       const title =
         plain(r.highlight?.title) ||
