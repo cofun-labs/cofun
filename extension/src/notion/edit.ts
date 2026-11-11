@@ -7,13 +7,14 @@ import {
   HEADING_TYPES,
   MarkdownError,
   TEXT_TYPES,
+  inline,
   notionLanguage,
   parseMarkdown,
   withPeople,
   type NewBlock,
   type RichText,
 } from './blocks'
-import { PAGE_TYPES, formatDate, hexId, type PageMarkdown } from './markdown'
+import { PAGE_TYPES, formatDate, hexId, richMarkdown, type PageMarkdown } from './markdown'
 
 /**
  * What the agent saw of a page: the references it was shown, and the version of each block it saw.
@@ -281,6 +282,8 @@ export interface Plan {
 const WRITABLE_MARKS = new Set(['b', 'i', 's', 'c', 'a', 'p', 'd', 'e'])
 /** Marks read_page shows a run by alone, dropping its color. */
 const ALONE_MARKS = new Set(['p', 'lm', 'd', 'e'])
+/** Every mark this code knows the meaning of; read_page shows some of them only in part, or not at all. */
+const SHOWN_MARKS = new Set([...WRITABLE_MARKS, 'u', 'h', 'lm', '_', 'm'])
 
 /** What becomes of formatting edit_page can't write back when text is rewritten. */
 const LOST =
@@ -810,6 +813,158 @@ function lossyRich(stored: unknown, shown: RichText | undefined, users: Record<s
     Object.entries(users).flatMap(([id, u]) => (typeof u.name === 'string' && u.name ? [[u.name, id] as const] : [])),
   )
   return canonical(keepDates(withPeople(shown, ids, { keep: true }), [stored])) !== canonical(stored as RichText)
+}
+
+/** Marks of runs that each stand for one thing (a page, a person, a date, an equation). */
+const ONE_THING = ['p', 'u', 'd', 'e']
+
+/** A run of stored rich text, when it is one: its text and its marks. */
+function storedRun(run: unknown): { text: string; marks: unknown[][] } | undefined {
+  if (!Array.isArray(run) || typeof run[0] !== 'string') return undefined
+  return { text: run[0], marks: Array.isArray(run[1]) ? run[1].filter((m) => Array.isArray(m)) : [] }
+}
+
+/**
+ * What a run of stored rich text holds that its Markdown doesn't show, so that writing the Markdown
+ * back would remove it; each is named as a refusal tells the model.
+ */
+function unshownIn(marks: unknown[][]): string[] {
+  const has = (mark: string) => marks.some((m) => m[0] === mark)
+  return [
+    ...(has('_') ? ['an underline'] : []),
+    ...(has('m') ? ['a comment on the text'] : []),
+    ...(has('lm') ? ['a link preview (it would become an ordinary link)'] : []),
+    ...(has('u') && has('a') ? ['a link on a mention of a person'] : []),
+    ...(has('u') && has('c') ? ['code formatting on a mention of a person'] : []),
+    ...(marks.some((m) => m[0] === 'p' && m.length > 2) ? ['the workspace of a mentioned page'] : []),
+    ...(has('h') && marks.some((m) => ALONE_MARKS.has(String(m[0]))) ? ['a color on a mention'] : []),
+    ...(marks.some((m) => !SHOWN_MARKS.has(String(m[0]))) ? ['formatting of a kind that is not known'] : []),
+  ]
+}
+
+/** Whether stored rich text holds something its Markdown doesn't show (see keepUnshown). */
+export function holdsUnshown(stored: unknown): boolean {
+  return Array.isArray(stored) && stored.some((run) => unshownIn(storedRun(run)?.marks ?? []).length > 0)
+}
+
+/** One piece of rich text to compare: a character, or a whole mention or equation. */
+interface Unit {
+  text: string
+  marks: [string, unknown?][]
+  /** The piece with its formatting. */
+  key: string
+  /** The piece alone: the character, or what is mentioned. */
+  plain: string
+}
+
+function unitsOf(text: RichText): Unit[] {
+  return text.flatMap(([run, marks = []]): Unit[] => {
+    const format = JSON.stringify(marks.map((m) => JSON.stringify(m)).sort())
+    const thing = marks.find((m) => ONE_THING.includes(m[0]))
+    if (thing) return [{ text: run, marks, key: run + format, plain: JSON.stringify(thing) }]
+    return [...run].map((char) => ({ text: char, marks, key: char + format, plain: char }))
+  })
+}
+
+/** How many pairs of pieces keepUnshown compares at most between what two texts share at their ends. */
+const COMPARED_MAX = 1_000_000
+
+/** Something a new value would remove from the stored one without its Markdown showing it. */
+export interface Unshown {
+  /** What would go, each as unshownIn names it. */
+  what: string[]
+  /** The Markdown of the text it is on, as it was shown. */
+  on: string
+}
+
+/**
+ * `value`, about to replace the `stored` rich text of a text property or a title, with what the
+ * stored text holds that its Markdown doesn't show (underline, a comment on the text, a link
+ * preview, a link on a mention of a person, a mentioned page's workspace) kept wherever `value`
+ * still has that text as it was shown. `lost` lists what can't be kept: the text is still in
+ * `value`, but not as it was shown, so only the model's Markdown says what it should now be. Text
+ * `value` no longer has goes with what was on it, as the Markdown says. `users` names the people
+ * the stored text mentions.
+ */
+export function keepUnshown(
+  value: RichText,
+  stored: unknown,
+  users: Record<string, NotionRecord> = {},
+): { rich: RichText; lost: Unshown[] } {
+  if (!holdsUnshown(stored) || !value.length) return { rich: value, lost: [] }
+  const runs = (stored as unknown[]).flatMap((run) => (storedRun(run) ? [{ run, ...storedRun(run)! }] : []))
+  // Each stored run as its Markdown reads back, in the form `value` is in: people by id, dates as stored.
+  const shown = runs.map(({ run, marks }) => {
+    const markdown = richMarkdown({ notion_user: users }, [run])
+    const person = marks.find((m) => m[0] === 'u')?.[1]
+    const name = typeof person === 'string' ? users[person]?.name : undefined
+    const ids = new Map(typeof name === 'string' && typeof person === 'string' ? [[name.trim(), person]] : [])
+    try {
+      return { markdown, units: unitsOf(keepDates(withPeople(inline(markdown), ids, { keep: true }), [stored])) }
+    } catch (err) {
+      if (!(err instanceof MarkdownError)) throw err
+      return { markdown, units: undefined }
+    }
+  })
+  const old = shown.flatMap((s) => s.units ?? [])
+  const now = unitsOf(value)
+  // Where each piece of the old text is in the new one, or -1: what the two share at the start and
+  // at the end, and between those the longest run of pieces they share in order.
+  let head = 0
+  while (head < old.length && head < now.length && old[head].key === now[head].key) head++
+  let tail = 0
+  while (tail < Math.min(old.length, now.length) - head && old.at(-1 - tail)!.key === now.at(-1 - tail)!.key) tail++
+  const where = old.map((_, n) => (n < head ? n : n >= old.length - tail ? n + now.length - old.length : -1))
+  const between = [old, now].map((all) => all.slice(head, all.length - tail).map((u) => u.key))
+  // Texts too long to compare piece by piece keep only what their start and end share.
+  if (between[0].length * between[1].length <= COMPARED_MAX) {
+    for (const { a, b } of align(between[0], between[1])) {
+      if (a !== undefined && b !== undefined && between[0][a] === between[1][b]) where[head + a] = head + b
+    }
+  }
+  const plain = now.map((u) => u.plain)
+  const kept: { at: number; length: number; run: unknown }[] = []
+  const lost: Unshown[] = []
+  let start = 0
+  runs.forEach(({ run, marks }, n) => {
+    const { markdown, units } = shown[n]
+    const at = start
+    start += units?.length ?? 0
+    const what = unshownIn(marks)
+    // A run with no text shows nothing, and has nothing to keep.
+    if (!what.length || units?.length === 0) return
+    // Kept where the new text has the whole run as it was shown, in one piece.
+    if (units?.every((_, k) => where[at + k] >= 0 && where[at + k] === where[at] + k)) {
+      kept.push({ at: where[at], length: units.length, run })
+      return
+    }
+    // Text that is still there, but not as it was shown: only the Markdown says what it holds now.
+    const still = (part: string[]) => plain.some((_, k) => part.every((p, m) => plain[k + m] === p))
+    if (!units || still(units.map((u) => u.plain))) lost.push({ what, on: markdown })
+  })
+  if (lost.length) return { rich: value, lost }
+  const rich: unknown[] = []
+  let open: { run: [string, [string, unknown?][]?]; unit: Unit } | undefined
+  const add = (unit: Unit) => {
+    // Characters with the same marks are one run again; a mention or an equation is its own.
+    if (open && open.unit.marks === unit.marks && !unit.marks.some((m) => ONE_THING.includes(m[0]))) {
+      open.run[0] += unit.text
+      return
+    }
+    open = { run: unit.marks.length ? [unit.text, unit.marks] : [unit.text], unit }
+    rich.push(open.run)
+  }
+  let n = 0
+  for (const k of kept.sort((a, b) => a.at - b.at)) {
+    while (n < k.at) add(now[n++])
+    rich.push(k.run)
+    open = undefined
+    n = k.at + k.length
+  }
+  while (n < now.length) add(now[n++])
+  const out = rich as RichText
+  // A value written back as it was shown is the stored one, run for run.
+  return { rich: canonical(out) === canonical(stored as RichText) ? (stored as RichText) : out, lost: [] }
 }
 
 /** Rich text in one form: marks sorted, runs with the same marks merged (mentions and equations kept apart). */
