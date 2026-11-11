@@ -440,6 +440,27 @@ describe('edit_page safety', () => {
     expect(ws.records.get(id(n))).toMatchObject({ alive: false })
   })
 
+  it('reads a block Notion sent without a version, and refuses to edit it: a change to it could not be seen', async () => {
+    for (const version of [undefined, '7', null]) {
+      const ws = workspace(
+        [1, 2],
+        [block(1, 'text', 'Intro'), block(2, 'text', 'Draft', { version }), block(3, 'text', 'Inside', {}, id(2))],
+      )
+      ws.records.get(id(2))!.content = [id(3)]
+      const tab = open(ws)
+      expect(body(await read())).toContain('Draft ^00000002')
+      const refusal =
+        "^00000002 can't be edited: Notion sent it without a version, so it can't be checked for changes since you read the page."
+      await expect(edit([{ action: 'replace', block: '^00000002', markdown: 'Rewritten' }])).rejects.toThrow(refusal)
+      await expect(edit([{ action: 'delete', block: '^00000002' }])).rejects.toThrow(refusal)
+      await expect(edit([{ action: 'insert', block: '^00000002', markdown: 'After' }])).rejects.toThrow(refusal)
+      // The blocks around it, which have versions, can still be edited.
+      await edit([{ action: 'replace', block: '^00000001', markdown: 'New intro' }])
+      expect(ws.transactions).toHaveLength(1)
+      expect(tab.sent.filter((r) => r.url.endsWith('/saveTransactionsFanout'))).toHaveLength(1)
+    }
+  })
+
   it('[UC-NOTION-002-S02] refuses to delete a block when something nested under it changed', async () => {
     const ws = workspace([1], [block(1, 'toggle', 'T', { content: [id(2)] }), block(2, 'text', 'Inside', {}, id(1))])
     open(ws)

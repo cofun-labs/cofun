@@ -561,10 +561,10 @@ describe('record maps', () => {
     expect(map).toEqual({
       block: {
         ok: { id: 'ok', version: 7, type: 'text', alive: true, content: ['a', 'b'], extra: { kept: [1, null] } },
-        // No version reads as 0 and no type as none; the other fields are left out.
-        odd: { id: 'odd', version: 0, type: '', content: ['a', 'b'] },
+        // No type reads as none; a version that is not a number is left out like the other fields.
+        odd: { id: 'odd', type: '', content: ['a', 'b'] },
         text: { id: 'text', version: 1, type: 'text' },
-        bare: { id: 'bare', version: 0, type: '' },
+        bare: { id: 'bare', type: '' },
       },
       collection: { c: { id: 'c', version: 2, schema: 'kept as it is' } },
     })

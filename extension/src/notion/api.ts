@@ -219,8 +219,9 @@ const fields = z.record(z.string(), z.unknown()).optional().catch(undefined)
 
 const RECORD = {
   id: z.string(),
-  // Every record has one; a record without is read as never changed, which is how it compared before.
-  version: z.number().catch(0),
+  // Every record has one. One that came without is kept without: edit_page can't tell whether such
+  // a block changed since it was read, and refuses to edit it.
+  version: z.number().optional().catch(undefined),
   alive: z.boolean().optional().catch(undefined),
   space_id: text,
   parent_id: text,
@@ -1212,7 +1213,7 @@ export function mergeRecordMaps(target: RecordMap, source: RecordMap): RecordMap
 
 function mergeRecords<R extends NotionRecord>(into: Record<string, R>, records: Record<string, R>) {
   for (const [id, record] of Object.entries(records)) {
-    if (!into[id] || record.version >= into[id].version) into[id] = record
+    if (!into[id] || (record.version ?? 0) >= (into[id].version ?? 0)) into[id] = record
   }
 }
 
