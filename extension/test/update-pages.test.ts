@@ -705,32 +705,42 @@ describe('update_pages details', () => {
     expect(props(ws, 1)).toEqual(stored)
   })
 
-  it('keeps an inline equation in a text value an equation: its line break shows as a space, and a <br> in it is LaTeX', async () => {
+  it('keeps an inline equation in a text value an equation: its line break shows as a space', async () => {
     const ws = mentionable()
     const tab = open(ws, `https://app.notion.com/${hex(DB)}`)
-    const notes = [
-      ['x '],
-      ['⁍', [['e', 'a\nb']]],
-      ['\n'],
-      ['⁍', [['e', 'c<br>`d']]],
-      [' '],
-      ['e<br>f', [['c']]],
-      ['\n'],
-    ]
+    const notes = [['x '], ['⁍', [['e', 'a\nb']]], ['\nend\n']]
     ws.edit(row(1), { properties: { title: [['Write docs']], 'a:a': [['Done']], 'g:g': notes } })
     const shown = shownCells(await query(tab, [ws.records.get(row(1)) as never]), row(1))
-    expect(shown.Notes).toBe('x $a b$<br>$c<br>`d$ `e<br>f`<br>')
+    expect(shown.Notes).toBe('x $a b$<br>end<br>')
     const pages = [{ page: hex(row(1)), properties: { Notes: shown.Notes } }]
-    // The first equation goes onto one line, which reads the same: the preview shows a change.
-    expect((await updatePages.preview!({ pages }))?.split('\n')[2]).toBe(
-      '    Notes: x a b c<br>`d e<br>f (was x $a b$ c<br>`d e<br>f)',
-    )
+    // The equation goes onto one line, which reads the same: the preview shows a change.
+    expect((await updatePages.preview!({ pages }))?.split('\n')[2]).toBe('    Notes: x a b end (was x $a b$ end)')
     await update(pages)
-    expect(prop(ws, 1, 'g:g')).toEqual([['x '], ['⁍', [['e', 'a b']]], ...notes.slice(2)])
+    expect(prop(ws, 1, 'g:g')).toEqual([['x '], ['⁍', [['e', 'a b']]], ['\nend\n']])
     // Written back again, it is as it is stored, the line break at its end included.
     const again = shownCells(await query(tab, [ws.records.get(row(1)) as never]), row(1))
     expect(again.Notes).toBe(shown.Notes)
-    expect((await updatePages.preview!({ pages }))?.split('\n')[2]).toBe('    Notes: x a b c<br>`d e<br>f (unchanged)')
+    expect((await updatePages.preview!({ pages }))?.split('\n')[2]).toBe('    Notes: x a b end (unchanged)')
+  })
+
+  it.each([
+    [[['Cost 5$\nTax 1$\nTotal 6$']], 'Cost 5$<br>Tax 1$<br>Total 6\\$'],
+    [[['Paid in US$\nor CA$ only']], 'Paid in US$<br>or CA$ only'],
+    [[['x$\n'], ['code$', [['c']]], [' y']], 'x$<br>`code$` y'],
+  ])('stores dollar signs at the ends of a text value’s lines as text: %j', async (notes, cell) => {
+    const ws = mentionable()
+    const tab = open(ws, `https://app.notion.com/${hex(DB)}`)
+    ws.edit(row(1), { properties: { title: [['Write docs']], 'a:a': [['Done']], 'g:g': notes } })
+    const stored = structuredClone(props(ws, 1))
+    const shown = shownCells(await query(tab, [ws.records.get(row(1)) as never]), row(1))
+    expect(shown.Notes).toBe(cell)
+    const pages = [{ page: hex(row(1)), properties: { Notes: shown.Notes } }]
+    expect((await updatePages.preview!({ pages }))?.split('\n')[2]).toMatch(/ \(unchanged\)$/)
+    await update(pages)
+    expect(props(ws, 1)).toEqual(stored)
+    // Lines the model writes itself end in dollar signs as text too.
+    await update([{ page: hex(row(1)), properties: { Notes: 'Cost: 5$<br>Tax: 1$' } }])
+    expect(prop(ws, 1, 'g:g')).toEqual([['Cost: 5$\nTax: 1$']])
   })
 
   it('reads <br> as a line break in a text value the model writes, in a new row too, and shows it as a space', async () => {

@@ -73,13 +73,12 @@ export function richValue(markdown: string, name = 'The title', { lines = false 
  * A table cell's Markdown as rich text. query_database's table writes every `|` as `\|`, in code
  * and equations too, where a backslash is otherwise text: `\|` is read as `|`, as in edit_page's tables.
  * With `lines` (a text value's cell), a `<br>` is a line break, as the table shows one and as
- * read_page shows one inside a block (see `breaks`): `\<br>`, and a `<br>` in inline code or in
- * an inline equation, are text.
+ * read_page shows one inside a block (see `breaks`): `\<br>`, and a `<br>` in inline code, are text.
  * A title's cell has none: a `<br>` there is text.
  */
 function cellText(markdown: string, lines: boolean): RichText {
   const text = markdown.replace(/\\\|/g, '|')
-  return inline(lines ? breaks(text, { equations: true }) : text)
+  return inline(lines ? breaks(text) : text)
 }
 
 /** A link to a page as query_database shows a mention of one: `[Title](<32 hex digits>)`. */
