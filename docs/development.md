@@ -43,7 +43,7 @@ Variables in `wrangler.jsonc`:
 
 | Variable | Description |
 |---|---|
-| `CLERK_PUBLISHABLE_KEY` | Clerk publishable key, used by the sign-in page |
+| `CLERK_PUBLISHABLE_KEY` | Clerk publishable key, used by the sign-in page. The hosted worker uses the production instance (`pk_live_…`, Frontend API `clerk.kitfun.cc`) |
 | `AI_GATEWAY_ID` | AI Gateway id; leave empty to call Workers AI directly |
 | `MODEL` | The only model clients can use |
 | `DAILY_REQUEST_LIMIT` | Chat requests each user may make per UTC day; counted in the `UserQuota` Durable Object (one per user) |
@@ -100,8 +100,8 @@ In `chrome://extensions`, turn on Developer mode, click "Load unpacked", and pic
 
 | Variable | Description |
 |---|---|
-| `VITE_CLERK_PUBLISHABLE_KEY` | Clerk publishable key |
-| `VITE_CLERK_SYNC_HOST` | URL of the sign-in page (the worker's domain) |
+| `VITE_CLERK_PUBLISHABLE_KEY` | Clerk publishable key, of the same instance as the worker's. It names the Frontend API host, which the manifest allows |
+| `VITE_CLERK_SYNC_HOST` | URL of the sign-in page (the worker's domain). With a development instance's key (`pk_test_…`) Clerk syncs the session from this host; with a production instance's key (`pk_live_…`) it syncs from the Frontend API host instead |
 | `VITE_API_URL` | Worker base URL, including `/v1` |
 | `CRX_PUBLIC_KEY` | Extension signing public key; pins the extension ID |
 | `CLERK_COOKIE_DOMAIN` | Optional. The registrable domain Clerk sets its cookies on, e.g. `example.co.uk`. Defaults to the last two labels of the sign-in page's host |
@@ -116,4 +116,11 @@ base64 -i extension/keys/pub.der | tr -d '\n'                          # CRX_PUB
 shasum -a 256 extension/keys/pub.der | cut -c1-32 | tr '0-9a-f' 'a-p'  # extension ID
 ```
 
-In the Clerk dashboard, enable the Native API (Native applications page) so the Chrome extension can sign in.
+In the Clerk dashboard, enable the Native API (Native applications page) so the Chrome extension can sign in. Development and production instances have separate settings, keys, and users: do it on the instance whose keys you use.
+
+A production instance also needs:
+
+- Its DNS records in place, so the Frontend API answers at `clerk.<your domain>`. The sign-in page must be on the same registrable domain, because that is where Clerk sets its cookies.
+- Your own OAuth credentials for each social sign-in (Clerk's shared ones work only on development instances).
+- The extension's origin (`chrome-extension://<extension id>`) in the instance's `allowed_origins`, set through Clerk's Backend API as [Clerk's Sync Host guide](https://clerk.com/docs/guides/sessions/sync-host) describes.
+- `CLERK_JWT_KEY` taken from that instance: the PEM form of the key at `https://clerk.<your domain>/.well-known/jwks.json`.

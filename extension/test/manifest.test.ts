@@ -3,12 +3,12 @@
 // change to them must change this file in the same pull request, where a reviewer sees it.
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
-import { buildManifest, clerkFrontendApi, type ManifestEnv } from '../manifest'
+import { buildManifest, type ManifestEnv } from '../manifest'
 
 const NOTION = ['https://www.notion.so/*', 'https://app.notion.com/*']
 const CLERK_HOST = 'clerk.example.com'
-/** A publishable key as Clerk builds it: the Frontend API host and a `$`, in base64. */
-const PUBLISHABLE_KEY = `pk_live_${Buffer.from(`${CLERK_HOST}$`).toString('base64')}`
+/** A publishable key as Clerk builds it: the Frontend API host and a `$`, in base64 without padding. */
+const PUBLISHABLE_KEY = `pk_live_${Buffer.from(`${CLERK_HOST}$`).toString('base64').replace(/=+$/, '')}`
 
 function manifest(env: Partial<ManifestEnv> & Pick<ManifestEnv, 'VITE_CLERK_SYNC_HOST'>) {
   return buildManifest({ VITE_CLERK_PUBLISHABLE_KEY: PUBLISHABLE_KEY, ...env }, '1.2.3')
@@ -35,7 +35,7 @@ describe('extension manifest', () => {
     expect(json.host_permissions).toEqual([
       'https://www.notion.so/*',
       'https://app.notion.com/*',
-      'https://saving-yeti-9519.clerk.accounts.dev/*',
+      'https://clerk.kitfun.cc/*',
       'https://notion-copilot.kitfun.cc/*',
       'https://*.kitfun.cc/*',
     ])
@@ -49,7 +49,7 @@ describe('extension manifest', () => {
     const json = buildManifest({ ...env, VITE_CLERK_SYNC_HOST: env.VITE_CLERK_SYNC_HOST! }, '1.2.3')
     expect(json.content_security_policy.extension_pages).toBe(
       "default-src 'self'; script-src 'self'; object-src 'self'; style-src 'self' 'unsafe-inline'; " +
-        "connect-src 'self' https://notion-copilot.kitfun.cc https://saving-yeti-9519.clerk.accounts.dev; " +
+        "connect-src 'self' https://notion-copilot.kitfun.cc https://clerk.kitfun.cc; " +
         "img-src 'self' data: blob: https://img.clerk.com",
     )
   })
@@ -154,7 +154,6 @@ describe('extension manifest', () => {
   })
 
   it('leaves out the Clerk host when the publishable key names none', () => {
-    expect(clerkFrontendApi('')).toBeUndefined()
     expect(
       manifest({ VITE_CLERK_SYNC_HOST: 'https://notion-copilot.kitfun.cc', VITE_CLERK_PUBLISHABLE_KEY: '' })
         .host_permissions,

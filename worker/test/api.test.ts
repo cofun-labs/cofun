@@ -156,6 +156,18 @@ describe('worker API', () => {
     expect(html).toContain('src="https://example.clerk.accounts.dev/npm/@clerk/ui@1/dist/ui.browser.js"')
   })
 
+  it("sign-in page loads Clerk from a production instance's Frontend API", async () => {
+    // A production key: `clerk.example.com$` in base64, without the padding, as Clerk writes it.
+    env.CLERK_PUBLISHABLE_KEY = 'pk_live_Y2xlcmsuZXhhbXBsZS5jb20k'
+    let html = await (await req('GET', '/login')).text()
+    expect(html).toContain('data-clerk-publishable-key="pk_live_Y2xlcmsuZXhhbXBsZS5jb20k"')
+    expect(html).toContain('src="https://clerk.example.com/npm/@clerk/clerk-js@6/dist/clerk.browser.js"')
+    // `clerk.kitfun.cc$` would end in `==`, which the key leaves out.
+    env.CLERK_PUBLISHABLE_KEY = 'pk_live_Y2xlcmsua2l0ZnVuLmNjJA'
+    html = await (await req('GET', '/login')).text()
+    expect(html).toContain('src="https://clerk.kitfun.cc/npm/@clerk/ui@1/dist/ui.browser.js"')
+  })
+
   it('sign-in page turns Clerk SDK telemetry off', async () => {
     env.CLERK_PUBLISHABLE_KEY = 'pk_test_ZXhhbXBsZS5jbGVyay5hY2NvdW50cy5kZXYk'
     const html = await (await req('GET', '/login')).text()

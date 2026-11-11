@@ -1,10 +1,14 @@
 /**
- * The sign-in page the extension opens in a tab. Clerk's session cookie lands on
- * this domain, and the extension picks it up through Clerk's Sync Host.
+ * The sign-in page the extension opens in a tab. Signing in here sets Clerk's cookies
+ * (on this host, its parent domain, and on a production instance the Frontend API host),
+ * and the extension picks the session up through Clerk's Sync Host.
  * Social logins (Google etc.) work here because this is a normal web page.
  */
 
-/** Clerk's Frontend API host is encoded in the publishable key: pk_test_<base64("host$")>. */
+/**
+ * Clerk's Frontend API host is encoded in the publishable key: pk_test_ (a development instance)
+ * or pk_live_ (a production instance), then base64 of the host and a "$", without padding.
+ */
 function clerkFrontendApi(publishableKey: string): string {
   return atob(publishableKey.split('_')[2] ?? '').replace(/\$$/, '')
 }
@@ -47,8 +51,9 @@ export function loginPage(publishableKey: string): string {
     // Keep the whole flow on this page. Without signInUrl/signUpUrl, Clerk sends
     // steps it can't finish here (OAuth sign-up continuation, Protect checks) to
     // its hosted Account Portal, which can't redirect back to this domain.
-    // Clerk's SDK reports its own usage to clerk-telemetry.com on development
-    // instances. PRIVACY.md lists where this page's data goes, so it is off.
+    // Clerk's SDK reports its own usage to clerk-telemetry.com when the instance
+    // is a development one. PRIVACY.md lists where this page's data goes, so it
+    // is off whatever the instance.
     await window.Clerk.load({
       telemetry: false,
       ui: { ClerkUI: window.__internal_ClerkUICtor },
