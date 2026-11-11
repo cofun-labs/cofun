@@ -505,10 +505,14 @@ export function createApp({ now = () => new Date(), logError = (line) => console
     if (stream === true) {
       // Workers AI already streams OpenAI-style SSE; pass it through, reading usage on the way.
       if (!isStream(out)) throw new Error('the model returned no stream')
-      const metered = meterStream(out, (outcome, summary) => {
-        Object.assign(usage, summary)
-        record(outcome)
-      })
+      const metered = meterStream(
+        out,
+        (outcome, summary) => {
+          Object.assign(usage, summary)
+          record(outcome)
+        },
+        (err) => logError(`model stream failed: ${errorSummary(err)}`),
+      )
       return new Response(metered, {
         headers: { 'content-type': 'text/event-stream', 'cache-control': 'no-cache' },
       })

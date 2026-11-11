@@ -107,10 +107,15 @@ interface StreamSummary {
  * A stream that ends without `data: [DONE]` was cut short and is reported as `incomplete`; one
  * that carried an error event is reported as `provider_error`, like a failed non-streamed call.
  * Only the current incomplete line is held back for parsing; the reply itself is never buffered.
+ *
+ * When reading the source fails, the error goes to `failed` and the returned stream ends with an
+ * error written here: the source's own error may carry anything, a quote of the request included,
+ * and an error left on a response body is outside what the worker decides to log.
  */
 export function meterStream(
   source: ReadableStream<Uint8Array>,
   done: (outcome: string, summary: StreamSummary) => void,
+  failed: (err: unknown) => void,
 ): ReadableStream<Uint8Array> {
   const reader = source.getReader()
   const decoder = new TextDecoder()
@@ -159,7 +164,8 @@ export function meterStream(
         // Once the client has cancelled, the stream is closed and must not be touched.
         if (finished) return
         finish(sawError ? 'provider_error' : 'stream_error')
-        controller.error(err)
+        failed(err)
+        controller.error(new Error('the model stream failed'))
         return
       }
       if (finished) return

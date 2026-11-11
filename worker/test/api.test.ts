@@ -389,7 +389,7 @@ describe("UC-CHAT-002 Keep a record of each user's chat usage", () => {
   it('[UC-CHAT-002-S02] a stream that breaks off leaves a record of how it ended', async () => {
     ai.streamFailWith = new Error('connection reset')
     const res = await chat(token, { messages: hi, stream: true })
-    await expect(res.text()).rejects.toThrow('connection reset')
+    await expect(res.text()).rejects.toThrow('the model stream failed')
     expect(records().map((r) => r.outcome)).toEqual(['stream_error'])
   })
 
@@ -457,6 +457,16 @@ describe('error logs', () => {
     expect((await chat(token, { messages })).status).toBe(500)
     expect(logged).toEqual([`request failed: Error: ${'x'.repeat(200)}`])
     expect(logged.join()).not.toContain(SECRET)
+  })
+
+  it('a stream that fails partway logs the same summary and ends with an error that quotes nothing', async () => {
+    ai.streamFailWith = quotingError()
+    const res = await chat(token, { messages, stream: true })
+    const failure: unknown = await res.text().catch((err: unknown) => err)
+    expect(String(failure)).toBe('Error: the model stream failed')
+    expect(Object.keys(Object(failure))).toEqual([])
+    expect(Object(failure).cause).toBeUndefined()
+    expect(logged).toEqual([`model stream failed: Error: ${'x'.repeat(200)}`])
   })
 
   it('a long error name is cut too', async () => {
