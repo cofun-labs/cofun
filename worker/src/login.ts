@@ -47,7 +47,10 @@ export function loginPage(publishableKey: string): string {
     // Keep the whole flow on this page. Without signInUrl/signUpUrl, Clerk sends
     // steps it can't finish here (OAuth sign-up continuation, Protect checks) to
     // its hosted Account Portal, which can't redirect back to this domain.
+    // Clerk's SDK reports its own usage to clerk-telemetry.com on development
+    // instances. PRIVACY.md lists where this page's data goes, so it is off.
     await window.Clerk.load({
+      telemetry: false,
       ui: { ClerkUI: window.__internal_ClerkUICtor },
       signInUrl: location.pathname,
       signUpUrl: location.pathname,
