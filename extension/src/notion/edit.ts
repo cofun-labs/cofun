@@ -964,10 +964,8 @@ export function keepUnshown(
     now.map((u) => u.key),
   )
   const plain = now.map((u) => u.plain)
-  const wherePlain = placesOf(
-    old.map((u) => u.plain),
-    plain,
-  )
+  const oldPlain = old.map((u) => u.plain)
+  const wherePlain = placesOf(oldPlain, plain)
   const linkOf = (unit: Unit | undefined) => unit?.marks.find((m) => m[0] === 'a')?.[1]
   const kept: { at: number; length: number; n: number }[] = []
   const lost: Unshown[] = []
@@ -997,17 +995,14 @@ export function keepUnshown(
     }
     // Not there whole as it was shown: only the Markdown says what the text holds now, so the
     // write is refused while the text is still there, whatever its formatting: a word of it or
-    // at least half of it is where it was, or all of it is in what the new text adds (it moved).
+    // at least half of it is where it was, or the new text has all of it as often as the old one
+    // did (it moved; one of two equal words that goes leaves fewer).
     // Other text goes with what was on it. Where the texts were too long to compare, the run's
     // text anywhere in the new one counts.
     const part = units.map((u) => u.plain)
-    const there = (k: number) => part.every((p, m) => plain[k + m] === p && !(wherePlain ?? []).includes(k + m))
-    if (
-      wherePlain
-        ? stays(part, wherePlain.slice(at, at + part.length)) || plain.some((_, k) => there(k))
-        : plain.some((_, k) => there(k))
-    )
-      lost.push({ what, on: markdown })
+    const times = (all: string[]) => all.filter((_, k) => part.every((p, m) => all[k + m] === p)).length
+    const moved = times(plain) >= (wherePlain ? times(oldPlain) : 1)
+    if (moved || (wherePlain && stays(part, wherePlain.slice(at, at + part.length)))) lost.push({ what, on: markdown })
   })
   if (lost.length) return { rich: value, lost }
   // The new value as it is written, and the same in a form to compare with the stored one.

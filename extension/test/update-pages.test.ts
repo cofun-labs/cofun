@@ -605,6 +605,14 @@ describe('update_pages details', () => {
     for (const [notes, markdown, lost] of [
       [[['hello', [['_']]], [' world foo bar']], 'world foo bar hello', 'an underline on “hello”'],
       [[['ab', [['m', THREAD]]], [' cd']], 'cd ab', 'a comment on the text on “ab”'],
+      [[['alpha', [['_']]], [' and beta']], 'beta and alpha', 'an underline on “alpha”'],
+      [[['Design', [['m', THREAD]]], [' then Build']], 'Build then Design', 'a comment on the text on “Design”'],
+      [[['design '], ['draft', [['_']]], [' invoice']], 'draft design invoice', 'an underline on “draft”'],
+      [
+        [['Review '], ['spec', [['m', THREAD]]], [' then ship']],
+        'Ship, then review spec',
+        'a comment on the text on “spec”',
+      ],
     ] as const) {
       set(notes)
       await expect(update([{ page: hex(row(1)), properties: { Notes: markdown } }])).rejects.toThrow(
