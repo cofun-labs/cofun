@@ -525,6 +525,95 @@ describe('record maps', () => {
       }),
     ).toEqual({ block: { b1: record, b2: { ...record, id: 'b2' } } })
   })
+
+  it('read a field that is not what is expected as missing, and pass on every other field as it came', () => {
+    const wrap = (value: unknown) => ({ spaceId: SPACE, value: { role: 'editor', value } })
+    const map = normalizeRecordMap({
+      block: {
+        ok: wrap({ id: 'ok', version: 7, type: 'text', alive: true, content: ['a', 'b'], extra: { kept: [1, null] } }),
+        odd: wrap({
+          id: 'odd',
+          version: '7',
+          type: 5,
+          alive: 'yes',
+          space_id: 9,
+          parent_id: null,
+          parent_table: ['block'],
+          properties: 'none',
+          format: [],
+          content: ['a', 7, null, 'b'],
+        }),
+        text: wrap({ id: 'text', version: 1, type: 'text', content: 'ab' }),
+        bare: wrap({ id: 'bare' }),
+        list: wrap(['id']),
+        idless: wrap({ version: 1, type: 'text' }),
+        nothing: null,
+      },
+      collection: { c: wrap({ id: 'c', version: 2, schema: 'kept as it is', alive: 0 }) },
+      // A table this client reads nothing from, and what is not a table.
+      custom_emoji: { e: wrap({ id: 'e', version: 1 }) },
+      space: 'none',
+      team: ['t'],
+    })
+    expect(map).toEqual({
+      block: {
+        ok: { id: 'ok', version: 7, type: 'text', alive: true, content: ['a', 'b'], extra: { kept: [1, null] } },
+        // No version reads as 0 and no type as none; the other fields are left out.
+        odd: { id: 'odd', version: 0, type: '', content: ['a', 'b'] },
+        text: { id: 'text', version: 1, type: 'text' },
+        bare: { id: 'bare', version: 0, type: '' },
+      },
+      collection: { c: { id: 'c', version: 2, schema: 'kept as it is' } },
+    })
+  })
+})
+
+describe('answers this client reads loosely', () => {
+  const client = async () => (await activeNotionTab()).client
+  const database = { collectionId: PAGE, viewId: PAGE, spaceId: SPACE }
+
+  it('lists no rows when queryCollection answers in another shape', async () => {
+    for (const answer of [{}, { result: 'none' }, { result: { reducerResults: [] } }, { result: null, recordMap: 5 }]) {
+      new FakeNotionTab(PAGE_URL).respond('queryCollection', 200, answer).install()
+      const { collectionId, viewId, spaceId } = database
+      expect(await (await client()).queryCollection(collectionId, viewId, spaceId, 10)).toEqual({
+        rowIds: [],
+        hasMore: false,
+        recordMap: {},
+      })
+    }
+    const group = { blockIds: ['r1', 5, null, 'r2'], hasMore: 'yes' }
+    new FakeNotionTab(PAGE_URL)
+      .respond('queryCollection', 200, { result: { reducerResults: { collection_group_results: group } } })
+      .install()
+    const rows = await (await client()).queryCollection(database.collectionId, database.viewId, database.spaceId, 10)
+    expect([rows.rowIds, rows.hasMore]).toEqual([['r1', 'r2'], false])
+  })
+
+  it('finds nothing when search answers no list, and keeps only hits with an id', async () => {
+    new FakeNotionTab(PAGE_URL).respond('search', 200, { results: 'none', total: 'many' }).install()
+    expect(await (await client()).search(SPACE, 'x', 5)).toEqual({ results: [], total: 0, recordMap: {} })
+    const hits = [
+      {
+        id: 'a',
+        score: 1.5,
+        highlight: { text: 'found', title: 7, other: 'kept' },
+        highlightBlockId: 9,
+        spaceId: SPACE,
+      },
+      { id: 5 },
+      null,
+      'b',
+      { id: 'c', highlight: 'none', score: 'high' },
+    ]
+    new FakeNotionTab(PAGE_URL).respond('search', 200, { results: hits, total: 2 }).install()
+    expect(await (await client()).search(SPACE, 'x', 5)).toEqual({
+      // What the schema doesn't name passes through, on the hit and inside its highlight.
+      results: [{ id: 'a', score: 1.5, highlight: { text: 'found', other: 'kept' }, spaceId: SPACE }, { id: 'c' }],
+      total: 2,
+      recordMap: {},
+    })
+  })
 })
 
 describe('when Notion turns requests away', () => {

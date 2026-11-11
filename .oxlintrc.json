@@ -116,8 +116,8 @@
                 "message": "Only extension/src/agent.ts imports pi. Import what you need from agent.ts, or add it there."
               },
               {
-                "regex": "^(\\.\\./)+(agent|tools|sessions|sidepanel)(\\.|/|$)",
-                "message": "extension/src/notion/ imports nothing from agent.ts, tools.ts, sessions.ts, or sidepanel/: those modules depend on the Notion layer, not the other way round."
+                "regex": "^(\\.\\./)+(agent|tool|tools|sessions|sidepanel)(\\.|/|$)",
+                "message": "extension/src/notion/ imports nothing from agent.ts, tool.ts, tools.ts, sessions.ts, or sidepanel/: those modules depend on the Notion layer, not the other way round."
               },
               {
                 "regex": "^zod(/|$)",
