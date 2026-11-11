@@ -789,7 +789,7 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
 /**
  * The arguments a JSON Schema requires that a call gives as null, as the model would write them:
  * `text`, `pages[0].page`. Follows `properties` and `items`; an optional argument given as null is
- * left to pi, which drops it.
+ * left to pi, which drops it, and so is one whose own schema says null is a value.
  */
 function requiredNulls(schema: unknown, value: unknown, path = ''): string[] {
   if (!isRecord(schema)) return []
@@ -798,9 +798,17 @@ function requiredNulls(schema: unknown, value: unknown, path = ''): string[] {
   const required = Array.isArray(schema.required) ? schema.required : []
   return Object.entries(schema.properties).flatMap(([key, property]) => {
     const at = path ? `${path}.${key}` : key
-    if (value[key] === null) return required.includes(key) ? [at] : []
+    if (value[key] === null) return required.includes(key) && !admitsNull(property) ? [at] : []
     return requiredNulls(property, value[key], at)
   })
+}
+
+/** Whether a JSON Schema takes null as a value: by its type, a constant, or a branch of a union. */
+function admitsNull(schema: unknown): boolean {
+  if (!isRecord(schema)) return false
+  const { type } = schema
+  if (type === 'null' || (Array.isArray(type) && type.includes('null')) || schema.const === null) return true
+  return [schema.anyOf, schema.oneOf].some((branches) => Array.isArray(branches) && branches.some(admitsNull))
 }
 
 interface Reporter {

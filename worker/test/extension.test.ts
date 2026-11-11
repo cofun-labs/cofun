@@ -303,6 +303,8 @@ describe('extension agent against the worker', () => {
         count: z.number(),
         notes: z.array(z.strictObject({ page: z.string(), title: z.string().optional() })),
         tag: z.string().optional(),
+        // Required, and null is a value for it: its own schema says so.
+        due: z.string().nullable(),
       }),
       preview: () => `Post; ${runs.length} run(s) so far`,
       run: async (args) => {
@@ -310,7 +312,7 @@ describe('extension agent against the worker', () => {
         return 'Posted.'
       },
     })
-    const good = { text: 'Hi', urgent: false, count: 2, notes: [{ page: 'a' }] }
+    const good = { text: 'Hi', urgent: false, count: 2, notes: [{ page: 'a' }], due: null }
     ai.script = [
       { toolCalls: [{ name: 'post_notes', arguments: JSON.stringify({ ...good, text: null }) }] },
       {
@@ -318,6 +320,7 @@ describe('extension agent against the worker', () => {
           {
             name: 'post_notes',
             arguments: JSON.stringify({
+              due: null,
               text: null,
               urgent: null,
               count: null,
