@@ -1217,6 +1217,16 @@ describe('round trips of what read_page shows more faithfully', () => {
     ])
   })
 
+  it('keeps bold, italic, and strikethrough over a line break', () => {
+    expect(parseMarkdown('**a<br>b** *c<br>d* ~~e<br>f~~')).toEqual([
+      {
+        type: 'text',
+        title: [['a\nb', [['b']]], [' '], ['c\nd', [['i']]], [' '], ['e\nf', [['s']]]],
+        children: [],
+      },
+    ])
+  })
+
   it('refuses a code caption and the lines that stand for synced blocks or blocks not loaded', () => {
     // The caption line right after a fence belongs to the code block; anywhere else it is refused.
     expect(parseMarkdown('```js\nx\n```\n[caption: Example code] ^00000001')).toEqual([

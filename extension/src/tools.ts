@@ -524,7 +524,11 @@ export const queryDatabase = defineTool({
       `| ${[...columns, 'Row'].join(' | ')} |`,
       `|${[...columns, 'Row'].map(() => ' --- ').join('|')}|`,
       ...shown.map((r) => {
-        const cells = rowValues(recordMap, r.block, schema, { table: true }).map((v) => v.value.replace(/\n/g, ' '))
+        // A cell is one line. A text value's line break is shown as it is written back (`<br>`, as
+        // read_page shows one inside a block); other values, the title among them, are one line.
+        const cells = rowValues(recordMap, r.block, schema, { table: true }).map((v) =>
+          v.value.replace(/\n/g, v.type === 'text' ? '<br>' : ' '),
+        )
         return `| ${[...cells, `^${hexId(r.id)}`].join(' | ')} |`
       }),
     ]
@@ -1086,7 +1090,8 @@ const PROPERTIES_ARG = z
     'Database properties by name: text, a number, Yes/No for checkboxes, an option name (a list for ' +
       'multi-select), or a date as YYYY-MM-DD (a range as "YYYY-MM-DD → YYYY-MM-DD"). Empty clears a value. ' +
       'The title goes in `title`, not here. Setting a date replaces any time or reminder it had. ' +
-      `A text property is ${INLINE_MARKDOWN}. In other values, Markdown escapes are undone.`,
+      `A text property is ${INLINE_MARKDOWN}; a line break in it is \`<br>\`. In other values, Markdown ` +
+      'escapes are undone.',
   )
   .optional()
 
@@ -1440,7 +1445,7 @@ function previewValue(seen: SeenRow | undefined, name: string, input: PropertyIn
     const value = propertyValue(def, input)
     // Text is Markdown: shown as the user reads it, and compared as it is stored.
     markdown = def.type === 'text' && typeof input === 'string' && value.length ? input.trim() : undefined
-    now = markdown === undefined ? storedText(def, value) : shownMarkdown(markdown)
+    now = markdown === undefined ? storedText(def, value) : shownMarkdown(markdown, { lines: true })
   } catch (err) {
     if (err instanceof PropertyError) return shownInput(input)
     throw err
@@ -1448,7 +1453,8 @@ function previewValue(seen: SeenRow | undefined, name: string, input: PropertyIn
   const property = (def.name ?? name).trim().toLowerCase()
   const old = seen.values.find((v) => v.name.toLowerCase() === property)?.value
   if (old === undefined) return now || '(empty)'
-  if (markdown !== undefined) return now + change(shownMarkdown(old, { cell: false }), now, sameMarkdown(old, markdown))
+  if (markdown !== undefined)
+    return now + change(shownMarkdown(old, { cell: false }), now, sameMarkdown(old, markdown, { lines: true }))
   // As storedText shows it: plain text, without query_database's Markdown marks, links, or the @
   // before a date; options without spaces.
   let was = oneLine(shownText(old))

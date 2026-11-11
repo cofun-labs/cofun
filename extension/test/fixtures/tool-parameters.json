@@ -146,7 +146,7 @@
       },
       "properties": {
         "type": "object",
-        "description": "Database properties by name: text, a number, Yes/No for checkboxes, an option name (a list for multi-select), or a date as YYYY-MM-DD (a range as \"YYYY-MM-DD → YYYY-MM-DD\"). Empty clears a value. The title goes in `title`, not here. Setting a date replaces any time or reminder it had. A text property is inline Markdown as query_database and read_page show text (bold, links, `[Title](page id)`, `@[Name]`, `@2026-11-20`): put a backslash before a character that must stay literal, and write a backslash itself as \\\\. In other values, Markdown escapes are undone.",
+        "description": "Database properties by name: text, a number, Yes/No for checkboxes, an option name (a list for multi-select), or a date as YYYY-MM-DD (a range as \"YYYY-MM-DD → YYYY-MM-DD\"). Empty clears a value. The title goes in `title`, not here. Setting a date replaces any time or reminder it had. A text property is inline Markdown as query_database and read_page show text (bold, links, `[Title](page id)`, `@[Name]`, `@2026-11-20`): put a backslash before a character that must stay literal, and write a backslash itself as \\\\; a line break in it is `<br>`. In other values, Markdown escapes are undone.",
         "additionalProperties": {
           "anyOf": [
             {
@@ -198,7 +198,7 @@
             },
             "properties": {
               "type": "object",
-              "description": "Database properties by name: text, a number, Yes/No for checkboxes, an option name (a list for multi-select), or a date as YYYY-MM-DD (a range as \"YYYY-MM-DD → YYYY-MM-DD\"). Empty clears a value. The title goes in `title`, not here. Setting a date replaces any time or reminder it had. A text property is inline Markdown as query_database and read_page show text (bold, links, `[Title](page id)`, `@[Name]`, `@2026-11-20`): put a backslash before a character that must stay literal, and write a backslash itself as \\\\. In other values, Markdown escapes are undone.",
+              "description": "Database properties by name: text, a number, Yes/No for checkboxes, an option name (a list for multi-select), or a date as YYYY-MM-DD (a range as \"YYYY-MM-DD → YYYY-MM-DD\"). Empty clears a value. The title goes in `title`, not here. Setting a date replaces any time or reminder it had. A text property is inline Markdown as query_database and read_page show text (bold, links, `[Title](page id)`, `@[Name]`, `@2026-11-20`): put a backslash before a character that must stay literal, and write a backslash itself as \\\\; a line break in it is `<br>`. In other values, Markdown escapes are undone.",
               "additionalProperties": {
                 "anyOf": [
                   {
