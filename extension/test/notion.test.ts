@@ -16,7 +16,10 @@ import {
   RATE_LIMITED,
   UNEXPECTED_STOP,
   UNKNOWN_STOP,
+  fieldsOf,
   normalizeRecordMap,
+  pointerIn,
+  textList,
   type Operation,
 } from '../src/notion/api'
 import { pageIdFromUrl } from '../src/notion/hosts'
@@ -565,6 +568,27 @@ describe('record maps', () => {
       },
       collection: { c: { id: 'c', version: 2, schema: 'kept as it is' } },
     })
+  })
+})
+
+describe('fields inside a record', () => {
+  it('are read loosely: a pointer part that is not text is missing, and a list keeps its texts', () => {
+    const format = {
+      collection_pointer: { id: 'c1', spaceId: 's1', table: 'collection' },
+      alias_pointer: { id: 5, spaceId: ['s'] },
+      copy: 'c1',
+    }
+    expect(pointerIn(format, 'collection_pointer')).toEqual({ id: 'c1', spaceId: 's1' })
+    expect(pointerIn(format, 'alias_pointer')).toEqual({})
+    expect(pointerIn(format, 'copy')).toBeUndefined()
+    expect(pointerIn(format, 'missing')).toBeUndefined()
+    expect(pointerIn(undefined, 'collection_pointer')).toBeUndefined()
+
+    expect(textList(['a', 5, null, 'b', ['c']])).toEqual(['a', 'b'])
+    for (const value of [undefined, null, 'ab', { 0: 'a' }, 7]) expect(textList(value)).toEqual([])
+
+    expect(fieldsOf({ table_properties: [] })).toEqual({ table_properties: [] })
+    for (const value of [undefined, null, 'ab', ['a'], 7]) expect(fieldsOf(value)).toBeUndefined()
   })
 })
 

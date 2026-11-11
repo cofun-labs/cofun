@@ -1150,6 +1150,27 @@ function unwrap<S extends z.ZodType>(schema: S, entry: unknown): z.output<S> | u
   return undefined
 }
 
+/** A pointer to another record, as a block's format holds one. */
+const PointerField = z.object({ id: text, spaceId: text })
+
+/** The pointer a block's format holds under `name`, as far as it is read; a part that is not text is missing. */
+export function pointerIn(
+  format: Record<string, unknown> | undefined,
+  name: string,
+): z.output<typeof PointerField> | undefined {
+  return PointerField.safeParse(format?.[name]).data
+}
+
+/** The texts in a list field of a record, in order: ids, or property keys. None when it is not a list. */
+export function textList(value: unknown): string[] {
+  return ids(value)
+}
+
+/** A record's field that holds fields of its own, such as a view's format; undefined when it holds none. */
+export function fieldsOf(value: unknown): Record<string, unknown> | undefined {
+  return isObject(value) ? value : undefined
+}
+
 /** The first of a list Notion answered with, as `list[0]` reads it. */
 function first(list: unknown): unknown {
   return Array.isArray(list) ? list[0] : isObject(list) ? list['0'] : undefined

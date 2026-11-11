@@ -1,7 +1,16 @@
 // Notion pages as Markdown, the form the model reads them in. Each block ends with a reference
 // (` ^<ref>`, like an Obsidian block reference) so tools that change the page can point at it.
 // Child pages, databases, and links to pages carry the full page id, which read_page accepts.
-import type { Block, LoadedPage, NotionRecord, Pointer, RecordMap } from './api'
+import {
+  fieldsOf,
+  pointerIn,
+  textList,
+  type Block,
+  type LoadedPage,
+  type NotionRecord,
+  type Pointer,
+  type RecordMap,
+} from './api'
 import { COLOR } from './blocks'
 
 /** A run of text and its decorations, as Notion stores rich text: `[text, [[mark, value?], …]?]`. */
@@ -59,9 +68,8 @@ export const PAGE_TYPES = new Set(['page', 'collection_view_page', 'collection_v
 /** Blocks that only lay out their children; their children are shown in their place. */
 export const LAYOUT_TYPES = new Set(['column_list', 'column'])
 /** The collection a database block shows; a linked view names it in its format instead. */
-export function collectionId(block: NotionRecord): string | undefined {
-  const pointer = (block.format as { collection_pointer?: { id?: unknown } } | undefined)?.collection_pointer
-  const id = block.collection_id ?? pointer?.id
+export function collectionId(block: Block): string | undefined {
+  const id = block.collection_id ?? pointerIn(block.format, 'collection_pointer')?.id
   return typeof id === 'string' ? id : undefined
 }
 const MEDIA_TYPES = new Set(['image', 'video', 'audio', 'pdf', 'file'])
@@ -69,7 +77,7 @@ const MEDIA_TYPES = new Set(['image', 'video', 'audio', 'pdf', 'file'])
 const LOOKS_LIKE_BLOCK = /^(?:\s|#{1,3}\s|[-*+]\s|\d+[.)]\s|>|▸|`{3}|\$\$|\||\\|📄 |🗃 |↗ |(?:-{3,}|\*{3,}|_{3,})$)/
 
 export function pageToMarkdown({ page, recordMap }: LoadedPage): PageMarkdown {
-  const blocks = (recordMap.block ?? {}) as Record<string, Block>
+  const blocks = recordMap.block ?? {}
   const ctx = new Context(recordMap, blocks)
   const isDatabase = page.type === 'collection_view_page' || page.type === 'collection_view'
   const title = isDatabase ? ctx.databaseName(page) : ctx.plain(page.properties?.title)
@@ -101,7 +109,7 @@ const UNNAMED_MAX = 100
  */
 export function unnamedMentions({ page, recordMap, spaceId }: LoadedPage): Pointer[] {
   if (page.type !== 'page') return []
-  const blocks = (recordMap.block ?? {}) as Record<string, Block>
+  const blocks = recordMap.block ?? {}
   const ctx = new Context(recordMap, blocks)
   const users = new Set<string>()
   const pages = new Map<string, string>()
@@ -172,7 +180,7 @@ export function unnamedRowMentions(
 
 /** Rich text from outside a page's blocks (a comment, say) as Markdown, with mentions named from `recordMap`. */
 export function richMarkdown(recordMap: RecordMap, value: unknown): string {
-  return new Context(recordMap, (recordMap.block ?? {}) as Record<string, Block>).rich(value)
+  return new Context(recordMap, recordMap.block ?? {}).rich(value)
 }
 
 /** A Notion user's name as `recordMap` has it, or "someone". */
@@ -204,7 +212,7 @@ export function rowValues(
   schema: Schema,
   { table = false } = {},
 ): { name: string; type: string; value: string }[] {
-  const ctx = new Context(recordMap, (recordMap.block ?? {}) as Record<string, Block>)
+  const ctx = new Context(recordMap, recordMap.block ?? {})
   return titleFirst(schema).map(([key, s]) => ({
     name: s.name ?? key,
     type: s.type ?? 'text',
@@ -249,8 +257,8 @@ class Context {
 
   /** The original a synced copy shows, if it was loaded. */
   original(block: Block): Block | undefined {
-    const pointer = block.format?.transclusion_reference_pointer as { id?: unknown } | undefined
-    const original = typeof pointer?.id === 'string' ? this.blocks[pointer.id] : undefined
+    const pointer = pointerIn(block.format, 'transclusion_reference_pointer')
+    const original = pointer?.id !== undefined ? this.blocks[pointer.id] : undefined
     return original && original.alive !== false ? original : undefined
   }
 
@@ -378,7 +386,7 @@ class Context {
       case 'collection_view_page':
         return [`${pad}🗃 ${this.databaseName(block)} (database)${this.fullRef(block.id)}`]
       case 'alias': {
-        const target = (block.format?.alias_pointer as { id?: string } | undefined)?.id
+        const target = pointerIn(block.format, 'alias_pointer')?.id
         if (!target) return line('', '[link to a page]')
         return line('↗ ', `[${this.pageTitle(target)}](${hexId(target)})`)
       }
@@ -424,7 +432,7 @@ class Context {
   }
 
   private table(block: Block, pad: string): string[] {
-    const columns = (block.format?.table_block_column_order as string[] | undefined) ?? []
+    const columns = textList(block.format?.table_block_column_order)
     const rows = (block.content ?? []).map((id) => this.blocks[id]).filter((r) => r?.alive !== false)
     if (!columns.length || !rows.length) return [`${pad}[empty table]`]
     // A cell can't hold a raw `|` or a line break; backslashes are escaped first so the escaping
@@ -470,12 +478,15 @@ class Context {
   /** The properties in the order the first view of a database lists them, if that view was loaded. */
   private viewOrder(collection: NotionRecord | undefined): string[] {
     const database = collection?.parent_table === 'block' ? this.blocks[String(collection.parent_id)] : undefined
-    const viewId = (database?.view_ids as unknown[] | undefined)?.[0]
+    const [viewId]: unknown[] = Array.isArray(database?.view_ids) ? database.view_ids : []
     const view = typeof viewId === 'string' ? this.recordMap.collection_view?.[viewId] : undefined
     // Each kind of view keeps its own list: `table_properties`, `board_properties`, and so on.
-    const listed = (view?.format as Record<string, unknown> | undefined)?.[`${String(view?.type)}_properties`]
+    const listed = fieldsOf(view?.format)?.[`${String(view?.type)}_properties`]
     if (!Array.isArray(listed)) return []
-    return listed.flatMap((p: { property?: unknown }) => (typeof p?.property === 'string' ? [p.property] : []))
+    return listed.flatMap((p: unknown) => {
+      const property = fieldsOf(p)?.property
+      return typeof property === 'string' ? [property] : []
+    })
   }
 
   property(page: Block, key: string, def: Schema[string], { table = false } = {}): string {
