@@ -594,7 +594,13 @@ describe('answers this client reads loosely', () => {
     new FakeNotionTab(PAGE_URL).respond('search', 200, { results: 'none', total: 'many' }).install()
     expect(await (await client()).search(SPACE, 'x', 5)).toEqual({ results: [], total: 0, recordMap: {} })
     const hits = [
-      { id: 'a', score: 1.5, highlight: { text: 'found', title: 7 }, highlightBlockId: 9, spaceId: SPACE },
+      {
+        id: 'a',
+        score: 1.5,
+        highlight: { text: 'found', title: 7, other: 'kept' },
+        highlightBlockId: 9,
+        spaceId: SPACE,
+      },
       { id: 5 },
       null,
       'b',
@@ -602,7 +608,8 @@ describe('answers this client reads loosely', () => {
     ]
     new FakeNotionTab(PAGE_URL).respond('search', 200, { results: hits, total: 2 }).install()
     expect(await (await client()).search(SPACE, 'x', 5)).toEqual({
-      results: [{ id: 'a', score: 1.5, highlight: { text: 'found' } }, { id: 'c' }],
+      // What the schema doesn't name passes through, on the hit and inside its highlight.
+      results: [{ id: 'a', score: 1.5, highlight: { text: 'found', other: 'kept' }, spaceId: SPACE }, { id: 'c' }],
       total: 2,
       recordMap: {},
     })

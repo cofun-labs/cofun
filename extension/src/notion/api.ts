@@ -295,10 +295,11 @@ export interface WorkspaceTree {
 }
 
 /** One search hit as Notion returns it. Highlights mark matched words with a random tag per response. */
-const SearchHit = z.object({
+const SearchHit = z.looseObject({
   id: z.string(),
   score: z.number().optional().catch(undefined),
-  highlight: z.object({ title: text, text: text, pathText: text }).optional().catch(undefined),
+  // Loose too: the tag Notion marks matches with is found across every text a highlight holds.
+  highlight: z.looseObject({ title: text, text: text, pathText: text }).optional().catch(undefined),
   highlightBlockId: text,
 })
 type RawSearchResult = z.output<typeof SearchHit>
