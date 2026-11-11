@@ -2,6 +2,7 @@
 // endpoints and request shapes. Tools call the typed methods of NotionClient, never fetch.
 // The shapes come from the #64 spike (verified against Notion's web client, 2026-11).
 // The worker's tests import this file too, so it uses no chrome APIs (see tab.ts for those).
+import { z } from '../zod'
 import { toUuid } from './hosts'
 
 /** Why a Notion call failed, for the model and the user. */
@@ -190,37 +191,57 @@ export type NotionTransport = (
   options: { spaceId?: string },
 ) => Promise<NotionResponse>
 
-type Table =
-  | 'block'
-  | 'collection'
-  | 'collection_view'
-  | 'discussion'
-  | 'comment'
-  | 'notion_user'
-  | 'space'
-  | 'space_view'
-  | 'team'
+const OTHER_TABLES = [
+  'collection',
+  'collection_view',
+  'discussion',
+  'comment',
+  'notion_user',
+  'space',
+  'space_view',
+  'team',
+] as const
+/** The tables whose records are read as plain records; a block has fields of its own. */
+type OtherTable = (typeof OTHER_TABLES)[number]
+type Table = 'block' | OtherTable
+
+// What Notion answers, as far as this client reads it. Notion's internal API adds fields often and
+// leaves others out, so the schemas are loose: fields they don't name pass through untouched, and a
+// field that is not what is expected counts as missing (see #214 for stopping the question instead).
+const text = z.string().optional().catch(undefined)
+/** A list field's ids: the texts in it, in order; anything else in the list is left out. */
+const idList = z
+  .array(z.unknown())
+  .transform((list) => list.filter((item): item is string => typeof item === 'string'))
+  .optional()
+  .catch(undefined)
+const fields = z.record(z.string(), z.unknown()).optional().catch(undefined)
+
+const RECORD = {
+  id: z.string(),
+  // Every record has one; a record without is read as never changed, which is how it compared before.
+  version: z.number().catch(0),
+  alive: z.boolean().optional().catch(undefined),
+  space_id: text,
+  parent_id: text,
+  parent_table: text,
+}
+const NotionRecordSchema = z.looseObject(RECORD)
+const BlockSchema = z.looseObject({
+  ...RECORD,
+  // A block without a type is no known type: every comparison with one fails, as before.
+  type: z.string().catch(''),
+  properties: fields,
+  content: idList,
+  format: fields,
+})
 
 /** One record, unwrapped from Notion's `{ spaceId, value: { role, value } }`. */
-export interface NotionRecord {
-  id: string
-  version: number
-  alive?: boolean
-  space_id?: string
-  parent_id?: string
-  parent_table?: string
-  [field: string]: unknown
-}
-
-export interface Block extends NotionRecord {
-  type: string
-  properties?: Record<string, unknown>
-  content?: string[]
-  format?: Record<string, unknown>
-}
+export type NotionRecord = z.output<typeof NotionRecordSchema>
+export type Block = z.output<typeof BlockSchema>
 
 /** Records by table, then by id. */
-export type RecordMap = Partial<Record<Table, Record<string, NotionRecord>>>
+export type RecordMap = { block?: Record<string, Block> } & Partial<Record<OtherTable, Record<string, NotionRecord>>>
 
 export interface Pointer {
   table: Table
@@ -274,12 +295,13 @@ export interface WorkspaceTree {
 }
 
 /** One search hit as Notion returns it. Highlights mark matched words with a random tag per response. */
-interface RawSearchResult {
-  id: string
-  score?: number
-  highlight?: { title?: string; text?: string; pathText?: string }
-  highlightBlockId?: string
-}
+const SearchHit = z.object({
+  id: z.string(),
+  score: z.number().optional().catch(undefined),
+  highlight: z.object({ title: text, text: text, pathText: text }).optional().catch(undefined),
+  highlightBlockId: text,
+})
+type RawSearchResult = z.output<typeof SearchHit>
 
 export interface SearchResults {
   results: RawSearchResult[]
@@ -495,25 +517,26 @@ export class NotionClient {
     let user: string | undefined
     // Chunks overlap (the page and some parents repeat); merging de-duplicates them by id.
     for (let chunkNumber = 0; chunkNumber < Math.max(1, maxChunks); chunkNumber++) {
-      const { json, userId } = await this.request<{ cursor?: { stack?: unknown[] }; recordMap?: unknown }>(
+      const { json, userId } = await this.request(
         'loadPageChunk',
         { page: { id: pageId }, limit: CHUNK_LIMIT, cursor, chunkNumber, verticalColumns: false },
         spaceId,
       )
       mergeRecordMaps(recordMap, normalizeRecordMap(json.recordMap))
-      const page = recordMap.block?.[pageId] as Block | undefined
+      const page = recordMap.block?.[pageId]
       user = userId
       if (!page) throw missingRecord(userId)
       if (page.alive === false) throw new NotionError('in_trash', IN_TRASH)
       if (!page.space_id) throw new NotionError('notion_error', 'Notion returned the page without its workspace.')
       spaceId = page.space_id
-      if (!json.cursor?.stack?.length) {
+      // The cursor goes back to Notion as it came; only whether it holds more is read.
+      if (!PageCursor.safeParse(json.cursor).data?.stack.length) {
         await this.loadNested(pageId, spaceId, recordMap)
         return { page, spaceId, recordMap, complete: true, userId: user }
       }
       cursor = json.cursor
     }
-    return { page: recordMap.block![pageId] as Block, spaceId: spaceId!, recordMap, complete: false, userId: user }
+    return { page: recordMap.block![pageId], spaceId: spaceId!, recordMap, complete: false, userId: user }
   }
 
   /**
@@ -531,8 +554,8 @@ export class NotionClient {
       const missing: string[] = []
       const next: string[] = []
       for (const id of level) {
-        const block = recordMap.block?.[id] as Block | undefined
-        if (!block || (id !== pageId && NESTED_STOP.has(String(block.type)))) continue
+        const block = recordMap.block?.[id]
+        if (!block || (id !== pageId && NESTED_STOP.has(block.type))) continue
         for (const child of block.content ?? []) {
           if (seen.has(child)) continue
           seen.add(child)
@@ -559,7 +582,7 @@ export class NotionClient {
       spaceId: p.spaceId ? notionId(p.spaceId) : undefined,
     }))
     const spaces = new Set(requested.flatMap((p) => (p.spaceId ? [p.spaceId] : [])))
-    const { json, userId } = await this.request<{ recordMap?: unknown }>(
+    const { json, userId } = await this.request(
       'syncRecordValuesMain',
       { requests: requested.map((pointer) => ({ pointer, version: -1 })) },
       spaces.size === 1 ? [...spaces][0] : undefined,
@@ -584,10 +607,7 @@ export class NotionClient {
     { sort }: { sort?: { property: string; direction: 'ascending' | 'descending' } } = {},
   ): Promise<{ rowIds: string[]; hasMore: boolean; recordMap: RecordMap }> {
     const space = notionId(spaceId)
-    const { json } = await this.request<{
-      result?: { reducerResults?: { collection_group_results?: { blockIds?: unknown; hasMore?: unknown } } }
-      recordMap?: unknown
-    }>(
+    const { json } = await this.request(
       'queryCollection',
       {
         source: { type: 'collection', id: notionId(collectionId), spaceId: space },
@@ -603,11 +623,12 @@ export class NotionClient {
       },
       space,
     )
-    const group = json.result?.reducerResults?.collection_group_results
-    const rowIds = Array.isArray(group?.blockIds)
-      ? group.blockIds.filter((id): id is string => typeof id === 'string')
-      : []
-    return { rowIds, hasMore: group?.hasMore === true, recordMap: normalizeRecordMap(json.recordMap) }
+    const group = QueryResult.safeParse(json).data?.result.reducerResults.collection_group_results
+    return {
+      rowIds: ids(group?.blockIds),
+      hasMore: group?.hasMore === true,
+      recordMap: normalizeRecordMap(json.recordMap),
+    }
   }
 
   /** Like getRecords, but records that are missing, out of reach, or in the trash are just left out. */
@@ -631,7 +652,7 @@ export class NotionClient {
       spaceId: p.spaceId ? notionId(p.spaceId) : undefined,
     }))
     const spaces = new Set(requested.flatMap((p) => (p.spaceId ? [p.spaceId] : [])))
-    const { json } = await this.request<{ recordMap?: unknown }>(
+    const { json } = await this.request(
       'syncRecordValuesMain',
       { requests: requested.map((pointer) => ({ pointer, version: -1 })) },
       spaces.size === 1 ? [...spaces][0] : undefined,
@@ -645,16 +666,14 @@ export class NotionClient {
 
   /** Every signed-in user's views of their workspaces, from each user's root record. */
   async spaceViews(): Promise<SpaceView[]> {
-    const { json } = await this.request<Record<string, unknown>>('getSpaces', {})
+    const { json } = await this.request('getSpaces', {})
     const views: SpaceView[] = []
     for (const [userId, raw] of Object.entries(json)) {
-      const root = (normalizeRecordMap(raw) as Record<string, Record<string, NotionRecord> | undefined>).user_root?.[
-        userId
-      ]
+      const root = unwrap(NotionRecordSchema, UserRoots.safeParse(raw).data?.user_root[userId])
       const pointers = Array.isArray(root?.space_view_pointers) ? root.space_view_pointers : []
-      for (const p of pointers as { id?: unknown; spaceId?: unknown }[]) {
-        if (typeof p.id === 'string' && typeof p.spaceId === 'string')
-          views.push({ userId, spaceId: p.spaceId, spaceViewId: p.id })
+      for (const pointer of pointers) {
+        const p = SpaceViewPointer.safeParse(pointer).data
+        if (p) views.push({ userId, spaceId: p.spaceId, spaceViewId: p.id })
       }
     }
     return views
@@ -667,7 +686,7 @@ export class NotionClient {
    */
   async getSpace(spaceId: string): Promise<WorkspaceTree> {
     const space = notionId(spaceId)
-    const { json, userId } = await this.request<Record<string, unknown>>('getSpaces', {}, space)
+    const { json, userId } = await this.request('getSpaces', {}, space)
     // One record map per signed-in user, keyed by user id; only the tab's active user's counts. No
     // fallback to the others: another account's map would list that account's private pages, and
     // every later request runs as the active user anyway.
@@ -679,7 +698,7 @@ export class NotionClient {
     if (!map.space?.[space]) throw new NotionError('no_access', NO_ACCESS)
     const record = map.space[space]
     const view = Object.values(map.space_view ?? {}).find((v) => v.space_id === space)
-    const settings = record.settings as { is_teams_enabled?: unknown } | undefined
+    const settings = SpaceSettings.safeParse(record.settings).data
     let teams: WorkspaceTree['teams'] = []
     let teamsError: string | undefined
     // Teamspaces come from a request of their own, unless the workspace has them turned off; if it
@@ -708,15 +727,12 @@ export class NotionClient {
    * top-level pages. getSpaces doesn't hold them; Notion's sidebar loads them like this.
    */
   private async joinedTeams(space: string): Promise<WorkspaceTree['teams']> {
-    const { json } = await this.request<{ teams?: unknown; recordMap?: unknown }>(
-      'getTeamsV2',
-      { spaceId: space, teamTypes: ['Joined'] },
-      space,
-    )
+    const { json } = await this.request('getTeamsV2', { spaceId: space, teamTypes: ['Joined'] }, space)
     const records = normalizeRecordMap(json.recordMap).team ?? {}
-    const teams = Array.isArray(json.teams) ? (json.teams as { id?: unknown; type?: unknown }[]) : []
-    return teams.flatMap((t) => {
-      const team = typeof t.id === 'string' && t.type === 'Joined' ? records[t.id] : undefined
+    const teams = Array.isArray(json.teams) ? json.teams : []
+    return teams.flatMap((listed: unknown) => {
+      const joined = JoinedTeam.safeParse(listed).data
+      const team = joined ? records[joined.id] : undefined
       // Archived teamspaces leave the sidebar.
       if (!team || team.alive === false || team.archived_by || team.space_id !== space) return []
       return [
@@ -743,14 +759,15 @@ export class NotionClient {
   }
 
   private async loadPeople(space: string): Promise<{ id: string; name: string }[] | null> {
-    const { json } = await this.request<{ users?: unknown }>('getVisibleUsers', { spaceId: space }, space)
+    const { json } = await this.request('getVisibleUsers', { spaceId: space }, space)
     if (!Array.isArray(json.users))
       throw new NotionError('notion_error', 'Notion returned no list of workspace members.')
     const userIds = [
       ...new Set(
-        (json.users as { userId?: unknown }[]).flatMap((u) =>
-          typeof u?.userId === 'string' ? [notionId(u.userId)] : [],
-        ),
+        json.users.flatMap((listed: unknown) => {
+          const user = VisibleUser.safeParse(listed).data
+          return user ? [notionId(user.userId)] : []
+        }),
       ),
     ]
     if (userIds.length > PEOPLE_MAX) return null
@@ -816,7 +833,7 @@ export class NotionClient {
       // Without the workspace on the request, Notion routes the task where the page isn't, and it fails.
       // Stopped while it is sent, the task may have reached Notion: the outcome is unknown.
       const { json } = await cutShort(
-        this.request<{ taskId?: unknown }>(
+        this.request(
           'enqueueTask',
           {
             task: {
@@ -856,15 +873,15 @@ export class NotionClient {
         throw new NotionError('outcome_unknown', DUPLICATE_UNKNOWN)
       })
       delay = Math.min(delay * 2, maxMs)
-      let task: { state?: unknown; error?: unknown; status?: { targetIds?: unknown } } | undefined
+      let task: z.output<typeof Task> | undefined
       try {
         // A stalled check gives way to Stop and to the deadline.
         const { json } = await cutShort(
-          this.request<{ results?: (typeof task)[] }>('getTasks', { taskIds: [taskId] }, spaceId),
+          this.request('getTasks', { taskIds: [taskId] }, spaceId),
           Math.max(0, deadline - Date.now()),
           signal,
         )
-        task = json.results?.[0]
+        task = Task.safeParse(first(json.results)).data
       } catch (err) {
         if (err instanceof NotionError && err.code === 'outcome_unknown') throw err
         // A failed check says nothing about the copy, which goes on regardless. It isn't checked
@@ -943,7 +960,7 @@ export class NotionClient {
    */
   async search(spaceId: string, query: string, limit: number): Promise<SearchResults> {
     const space = notionId(spaceId)
-    const { json } = await this.request<{ results?: RawSearchResult[]; total?: number; recordMap?: unknown }>(
+    const { json } = await this.request(
       'search',
       {
         type: 'BlocksInSpace',
@@ -968,7 +985,10 @@ export class NotionClient {
       },
       space,
     )
-    const results = (json.results ?? []).filter((r) => typeof r?.id === 'string')
+    const results = (Array.isArray(json.results) ? json.results : []).flatMap((hit: unknown) => {
+      const parsed = SearchHit.safeParse(hit)
+      return parsed.success ? [parsed.data] : []
+    })
     const total = typeof json.total === 'number' && Number.isFinite(json.total) ? json.total : results.length
     return { results, total: Math.max(total, results.length), recordMap: normalizeRecordMap(json.recordMap) }
   }
@@ -979,11 +999,11 @@ export class NotionClient {
    * the client sends nothing more, and the question stops (see CLAUDE.md, calling Notion). Each
    * request sent counts toward the question's usage, and may first wait for the user at its budget.
    */
-  private async request<T>(
+  private async request(
     endpoint: NotionEndpoint,
     body: unknown,
     spaceId?: string,
-  ): Promise<{ json: T; userId?: string }> {
+  ): Promise<{ json: Record<string, unknown>; userId?: string }> {
     this.checkNotLimited()
     await this.usage?.admit()
     // Notion may have turned another request away while this one waited for the user: not sent, so not counted.
@@ -1019,7 +1039,7 @@ export class NotionClient {
       }
       throw new NotionError('rate_limited', RATE_LIMITED, { stopsQuestion })
     }
-    return { json: checkResponse(res) as T, userId: res.userId }
+    return { json: checkResponse(res), userId: res.userId }
   }
 
   /**
@@ -1061,11 +1081,11 @@ export function checkResponse(res: NotionResponse): Record<string, unknown> {
     if (!res.userId) throw new NotionError('signed_out', SIGNED_OUT)
     throw new NotionError('notion_error', 'Notion redirected the request instead of answering it.')
   }
-  const isObject = !!res.json && typeof res.json === 'object' && !Array.isArray(res.json)
-  const json = (isObject ? res.json : {}) as Record<string, unknown>
+  const answered = isObject(res.json)
+  const json = isObject(res.json) ? res.json : {}
   if (res.status >= 200 && res.status < 300) {
     // Every endpoint answers with a JSON object; anything else (say, an HTML page) is not a success.
-    if (!isObject) throw new NotionError('notion_error', `Notion returned an unexpected response (${res.status}).`)
+    if (!answered) throw new NotionError('notion_error', `Notion returned an unexpected response (${res.status}).`)
     return json
   }
   if (res.status === 401 || json.name === 'UnauthorizedError') throw new NotionError('signed_out', SIGNED_OUT)
@@ -1088,41 +1108,90 @@ function missingRecord(userId: string | undefined): NotionError {
 
 /**
  * Unwraps Notion's recordMap. Each entry is `{ spaceId, value: { role, value: <record> } }`; older
- * responses had `{ role, value: <record> }`. Entries without a record are left out.
+ * responses had `{ role, value: <record> }`. Entries without a record are left out, as are tables
+ * this client reads nothing from.
  */
 export function normalizeRecordMap(raw: unknown): RecordMap {
-  const out: Record<string, Record<string, NotionRecord>> = {}
-  if (!raw || typeof raw !== 'object') return out
-  for (const [table, entries] of Object.entries(raw)) {
-    if (table === '__version__' || !entries || typeof entries !== 'object') continue
-    for (const [id, entry] of Object.entries(entries as Record<string, unknown>)) {
-      const record = unwrap(entry)
+  const out: RecordMap = {}
+  const tables = isObject(raw) ? raw : {}
+  for (const [id, entry] of entriesOf(tables.block)) {
+    const block = unwrap(BlockSchema, entry)
+    if (block) (out.block ??= {})[id] = block
+  }
+  for (const table of OTHER_TABLES) {
+    for (const [id, entry] of entriesOf(tables[table])) {
+      const record = unwrap(NotionRecordSchema, entry)
       if (record) (out[table] ??= {})[id] = record
     }
   }
-  return out as RecordMap
+  return out
 }
 
-function unwrap(entry: unknown): NotionRecord | undefined {
-  const outer = (entry as { value?: unknown } | null)?.value
-  const inner = (outer as { value?: unknown } | null | undefined)?.value
+function isObject(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === 'object' && !Array.isArray(value)
+}
+
+/** A table's entries by id; none when the table is not there. */
+function entriesOf(table: unknown): [string, unknown][] {
+  return table && typeof table === 'object' ? Object.entries(table) : []
+}
+
+const Wrapped = z.object({ value: z.unknown().optional() })
+
+/** The record inside an entry of a record map, as `schema` reads it; undefined when it holds none. */
+function unwrap<S extends z.ZodType>(schema: S, entry: unknown): z.output<S> | undefined {
+  const outer = Wrapped.safeParse(entry).data?.value
+  const inner = Wrapped.safeParse(outer).data?.value
   for (const candidate of [inner, outer]) {
-    if (candidate && typeof candidate === 'object' && typeof (candidate as NotionRecord).id === 'string') {
-      return candidate as NotionRecord
-    }
+    const record = schema.safeParse(candidate)
+    if (record.success) return record.data
   }
   return undefined
 }
 
+/** The first of a list Notion answered with, as `list[0]` reads it. */
+function first(list: unknown): unknown {
+  return Array.isArray(list) ? list[0] : isObject(list) ? list['0'] : undefined
+}
+
+/** Whether a page chunk's cursor holds more of the page. */
+const PageCursor = z.object({ stack: z.array(z.unknown()) })
+/** Where queryCollection lists the rows it found. */
+const QueryResult = z.object({
+  result: z.object({
+    reducerResults: z.object({
+      collection_group_results: z.object({ blockIds: z.unknown().optional(), hasMore: z.unknown().optional() }),
+    }),
+  }),
+})
+/** One signed-in user's part of getSpaces: their root record, by user id. */
+const UserRoots = z.object({ user_root: z.record(z.string(), z.unknown()) })
+const SpaceViewPointer = z.object({ id: z.string(), spaceId: z.string() })
+const SpaceSettings = z.object({ is_teams_enabled: z.unknown().optional() })
+/** A teamspace getTeamsV2 lists as joined. */
+const JoinedTeam = z.object({ id: z.string(), type: z.literal('Joined') })
+const VisibleUser = z.object({ userId: z.string() })
+/** A task as getTasks reports it. */
+const Task = z.object({
+  state: z.unknown().optional(),
+  error: z.unknown().optional(),
+  status: z.object({ targetIds: z.unknown().optional() }).optional().catch(undefined),
+})
+
 /** Adds `source` to `target`, keeping the newer version of a record both have. */
 export function mergeRecordMaps(target: RecordMap, source: RecordMap): RecordMap {
-  for (const [table, records] of Object.entries(source) as [Table, Record<string, NotionRecord>][]) {
-    const into = (target[table] ??= {})
-    for (const [id, record] of Object.entries(records)) {
-      if (!into[id] || (record.version ?? 0) >= (into[id].version ?? 0)) into[id] = record
-    }
+  if (source.block) mergeRecords((target.block ??= {}), source.block)
+  for (const table of OTHER_TABLES) {
+    const records = source[table]
+    if (records) mergeRecords((target[table] ??= {}), records)
   }
   return target
+}
+
+function mergeRecords<R extends NotionRecord>(into: Record<string, R>, records: Record<string, R>) {
+  for (const [id, record] of Object.entries(records)) {
+    if (!into[id] || record.version >= into[id].version) into[id] = record
+  }
 }
 
 export interface DuplicateOptions {
