@@ -631,13 +631,18 @@ class Context {
    * whose name isn't known shows as `@someone`, which is plain text when written back.
    */
   private mention(id: string): string {
-    const user = this.recordMap.notion_user?.[id] as (NotionRecord & { name?: string }) | undefined
-    return user?.name ? `@[${escapeMarkdown(user.name)}]` : '@someone'
+    const name = this.knownName(id)
+    return name ? `@[${escapeMarkdown(name)}]` : '@someone'
   }
 
   userName(id: string): string {
-    const user = this.recordMap.notion_user?.[id] as (NotionRecord & { name?: string }) | undefined
-    return user?.name || 'someone'
+    return this.knownName(id) || 'someone'
+  }
+
+  /** A person's name, when their record was loaded and has one that is text. */
+  private knownName(id: string): string | undefined {
+    const name = this.recordMap.notion_user?.[id]?.name
+    return typeof name === 'string' ? name : undefined
   }
 }
 
