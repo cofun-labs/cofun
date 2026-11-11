@@ -101,7 +101,9 @@ A value the code does not control is `unknown` until it has been validated where
 - Validate at the boundary, and only there: code behind it takes the parsed type and does not check again.
 - A value that fails says what is wrong, specifically enough for whoever sent it to correct it.
 
-Existing code is being moved to this rule step by step (#184). Until that is done, a change must not add a type assertion on such a value, and the review checks the lines a PR touches.
+One exception, on purpose: what is nested inside a Notion record. A record is parsed where it arrives, but a database's property definitions and the runs and marks of rich text are read where they are used, with checks written by hand, and the type assertions already there stay. These values are written back to Notion as they came, so a parser must not rebuild them, and a schema that only ever says "missing" adds nothing to a check. New code that reads them checks what it reads and asserts nothing wider than it checked.
+
+Everywhere else the rule holds, and the review checks the lines a PR touches.
 
 ## Calling Notion: stop, don't work around
 
