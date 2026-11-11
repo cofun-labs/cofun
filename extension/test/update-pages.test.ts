@@ -492,7 +492,7 @@ describe('update_pages details', () => {
       'a mentioned page’s workspace',
       UNSHOWN.pageSpace,
       `**[Spec](${hex(SPEC)})**`,
-      `the workspace of a mentioned page on “[page](${hex(SPEC)})”`,
+      `the workspace of a mentioned page on “[…](${hex(SPEC)})”`,
     ],
     [
       'a color on a mention',
@@ -504,7 +504,7 @@ describe('update_pages details', () => {
         ],
       ],
       `**[Spec](${hex(SPEC)})**`,
-      `a color on a mention on “[page](${hex(SPEC)})”`,
+      `a color on a mention on “[…](${hex(SPEC)})”`,
     ],
     ['a mark it doesn’t know', ['odd', [['zz', 1]]], '**odd**', 'formatting of a kind that is not known on “odd”'],
   ])(
@@ -566,6 +566,16 @@ describe('update_pages details', () => {
       )
     }
     expect(ws.transactions).toEqual([])
+  })
+
+  it('reads only what is a run in a stored value, and still keeps what the Markdown does not show', async () => {
+    const ws = mentionable()
+    open(ws)
+    ws.edit(row(1), {
+      properties: { title: [['Write docs']], 'g:g': [['odd'], [' '], ['key', [['_']]], 7, [' end']] },
+    })
+    await update([{ page: hex(row(1)), properties: { Notes: 'odd key end' } }])
+    expect(prop(ws, 1, 'g:g')).toEqual([['odd '], ['key', [['_']]], [' end']])
   })
 
   it('refuses a link preview whose link text grows, instead of leaving a second link beside it', async () => {

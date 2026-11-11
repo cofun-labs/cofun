@@ -909,12 +909,20 @@ export function keepUnshown(
   value: RichText,
   stored: unknown,
   users: Record<string, NotionRecord> = {},
-): { rich: RichText; lost: Unshown[] } {
-  if (!holdsUnshown(stored) || !value.length) return { rich: value, lost: [] }
-  const runs = (stored as unknown[]).flatMap((run) => (storedRun(run) ? [{ run, ...storedRun(run)! }] : []))
+): { rich: unknown[]; lost: Unshown[] } {
+  if (!Array.isArray(stored) || !holdsUnshown(stored) || !value.length) return { rich: value, lost: [] }
+  // Only what is a run is read; a kept run is written back as it is stored.
+  const runs = stored.flatMap((run: unknown) => {
+    const read = storedRun(run)
+    return read ? [{ run, ...read }] : []
+  })
   // Each stored run as its Markdown reads back, in the form `value` is in: people by id, dates as stored.
-  const shown = runs.map(({ run, marks }) => {
-    const markdown = richMarkdown({ notion_user: users }, [run])
+  const shown = runs.map(({ text, marks }) => {
+    // A mentioned page's title isn't at hand, and the Markdown names the page by its id anyway.
+    const markdown = richMarkdown({ notion_user: users }, [[text, marks]]).replace(
+      /^\[page\](?=\([0-9a-f]{32}\)$)/,
+      '[…]',
+    )
     const person = marks.find((m) => m[0] === 'u')?.[1]
     const name = typeof person === 'string' ? users[person]?.name : undefined
     const ids = new Map(typeof name === 'string' && typeof person === 'string' ? [[name.trim(), person]] : [])
@@ -938,7 +946,7 @@ export function keepUnshown(
     plain,
   )
   const linkOf = (unit: Unit | undefined) => unit?.marks.find((m) => m[0] === 'a')?.[1]
-  const kept: { at: number; length: number; run: unknown }[] = []
+  const kept: { at: number; length: number; n: number }[] = []
   const lost: Unshown[] = []
   let start = 0
   runs.forEach(({ run, marks }, n) => {
@@ -959,7 +967,7 @@ export function keepUnshown(
     const link = marks.some((m) => m[0] === 'lm') ? linkOf(units[0]) : undefined
     const longer = link !== undefined && [now[to - 1], now[to + units.length]].some((u) => linkOf(u) === link)
     if (whole && !longer) {
-      kept.push({ at: to, length: units.length, run })
+      kept.push({ at: to, length: units.length, n })
       return
     }
     // Some of its text is still there, but not all of it as it was shown: only the Markdown says
@@ -973,38 +981,43 @@ export function keepUnshown(
     if (still) lost.push({ what, on: markdown })
   })
   if (lost.length) return { rich: value, lost }
+  // The new value as it is written, and the same in a form to compare with the stored one.
   const rich: unknown[] = []
+  const read: [string, unknown[][]][] = []
   let open: { run: [string, [string, unknown?][]?]; unit: Unit } | undefined
   const add = (unit: Unit) => {
     // Characters with the same marks are one run again; a mention or an equation is its own.
     if (open && open.unit.marks === unit.marks && !unit.marks.some((m) => ONE_THING.includes(m[0]))) {
       open.run[0] += unit.text
+      read.at(-1)![0] += unit.text
       return
     }
     open = { run: unit.marks.length ? [unit.text, unit.marks] : [unit.text], unit }
     rich.push(open.run)
+    read.push([unit.text, unit.marks])
   }
   let n = 0
   for (const k of kept.sort((a, b) => a.at - b.at)) {
     while (n < k.at) add(now[n++])
-    rich.push(k.run)
+    rich.push(runs[k.n].run)
+    read.push([runs[k.n].text, runs[k.n].marks])
     open = undefined
     n = k.at + k.length
   }
   while (n < now.length) add(now[n++])
-  const out = rich as RichText
-  // A value written back as it was shown is the stored one, run for run.
-  return { rich: canonical(out) === canonical(stored as RichText) ? (stored as RichText) : out, lost: [] }
+  // A value written back as it was shown is the stored one, run for run, when all of it was read.
+  const same = runs.length === stored.length && canonical(read) === canonical(runs.map((r) => [r.text, r.marks]))
+  return { rich: same ? stored : rich, lost: [] }
 }
 
 /** Rich text in one form: marks sorted, runs with the same marks merged (mentions and equations kept apart). */
-function canonical(text: RichText): string {
+function canonical(text: readonly (readonly [string, unknown[][]?])[]): string {
   const out: [string, string][] = []
   for (const run of text) {
     if (!Array.isArray(run) || typeof run[0] !== 'string' || !run[0]) continue
     const marks = (run[1] ?? []).map((m) => JSON.stringify(m)).sort()
     const key = JSON.stringify(marks)
-    const alone = (run[1] ?? []).some((m) => ['p', 'u', 'd', 'e'].includes(m[0]))
+    const alone = (run[1] ?? []).some((m) => ['p', 'u', 'd', 'e'].includes(String(m[0])))
     const last = out.at(-1)
     if (last && last[1] === key && !alone) last[0] += run[0]
     else out.push([run[0], key])
