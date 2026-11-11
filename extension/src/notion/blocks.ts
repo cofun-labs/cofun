@@ -311,7 +311,7 @@ export function inline(text: string, marks: Mark[] = []): RichText {
       // `$x^2$` is an inline equation, its LaTeX as it is. As in Pandoc, `$` opens one only before
       // a non-space and closes it only after one, and not before a letter or digit, so prices and
       // `$HOME/$USER` stay text.
-      re: /\$(?=\S)((?:\\.|[^$\\\n])+?)(?<=\S)\$(?!\w)/,
+      re: EQUATION,
       run: (m) => [['⁍', [...marks, ['e', m[1]]]]],
     },
     {
@@ -518,13 +518,20 @@ export function notionLanguage(language: string): string {
   return LANGUAGES[key] ?? ALIASES[key] ?? language.trim()
 }
 
+/** An inline equation as `inline` reads one (see there). */
+const EQUATION = /\$(?=\S)((?:\\.|[^$\\\n])+?)(?<=\S)\$(?!\w)/
+
 /**
  * read_page's <br> for a line break inside a block; an escaped \\<br> is the literal text, and so is
- * a <br> inside inline code (read_page ends the code before a line break).
+ * a <br> inside inline code (read_page ends the code before a line break). With `equations` (a
+ * database's text value, whose table shows an equation on one line), so is one inside an inline
+ * equation: it is LaTeX, and whichever of code and an equation starts first holds the other.
  */
-export function breaks(text: string): string {
-  // A backtick behind an odd number of backslashes is a literal backtick, not the start of code.
-  const code = new RegExp(`(?<!(?:^|[^\\\\])(?:\\\\\\\\)*\\\\)${CODE_SPAN.source}`, 'g')
+export function breaks(text: string, { equations = false } = {}): string {
+  // A backtick behind an odd number of backslashes is a literal backtick, not the start of code;
+  // the same goes for a dollar sign.
+  const kept = equations ? `(?:${CODE_SPAN.source}|${EQUATION.source})` : CODE_SPAN.source
+  const code = new RegExp(`(?<!(?:^|[^\\\\])(?:\\\\\\\\)*\\\\)${kept}`, 'g')
   let out = ''
   let at = 0
   for (const m of text.matchAll(code)) {

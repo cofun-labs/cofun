@@ -705,6 +705,34 @@ describe('update_pages details', () => {
     expect(props(ws, 1)).toEqual(stored)
   })
 
+  it('keeps an inline equation in a text value an equation: its line break shows as a space, and a <br> in it is LaTeX', async () => {
+    const ws = mentionable()
+    const tab = open(ws, `https://app.notion.com/${hex(DB)}`)
+    const notes = [
+      ['x '],
+      ['⁍', [['e', 'a\nb']]],
+      ['\n'],
+      ['⁍', [['e', 'c<br>`d']]],
+      [' '],
+      ['e<br>f', [['c']]],
+      ['\n'],
+    ]
+    ws.edit(row(1), { properties: { title: [['Write docs']], 'a:a': [['Done']], 'g:g': notes } })
+    const shown = shownCells(await query(tab, [ws.records.get(row(1)) as never]), row(1))
+    expect(shown.Notes).toBe('x $a b$<br>$c<br>`d$ `e<br>f`<br>')
+    const pages = [{ page: hex(row(1)), properties: { Notes: shown.Notes } }]
+    // The first equation goes onto one line, which reads the same: the preview shows a change.
+    expect((await updatePages.preview!({ pages }))?.split('\n')[2]).toBe(
+      '    Notes: x a b c<br>`d e<br>f (was x $a b$ c<br>`d e<br>f)',
+    )
+    await update(pages)
+    expect(prop(ws, 1, 'g:g')).toEqual([['x '], ['⁍', [['e', 'a b']]], ...notes.slice(2)])
+    // Written back again, it is as it is stored, the line break at its end included.
+    const again = shownCells(await query(tab, [ws.records.get(row(1)) as never]), row(1))
+    expect(again.Notes).toBe(shown.Notes)
+    expect((await updatePages.preview!({ pages }))?.split('\n')[2]).toBe('    Notes: x a b c<br>`d e<br>f (unchanged)')
+  })
+
   it('reads <br> as a line break in a text value the model writes, in a new row too, and shows it as a space', async () => {
     const ws = mentionable()
     const tab = open(ws, `https://app.notion.com/${hex(DB)}`)
