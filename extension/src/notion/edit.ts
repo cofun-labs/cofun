@@ -26,7 +26,8 @@ export interface PageRead {
   ids: Map<string, string>
   /** Reference by block id. */
   refs: Map<string, string>
-  versions: Map<string, number>
+  /** The version of each block as it was read; undefined for a block Notion sent without one. */
+  versions: Map<string, number | undefined>
   /** The line each block showed as, for previews. */
   lines: Map<string, string>
   /** The blocks nested under each block, at any depth, as the page was read. */
@@ -48,7 +49,7 @@ export function pageRead(
   const blocks = loaded.recordMap.block ?? {}
   const seen = include
   const refs = new Map([...md.refs].filter(([id]) => seen(id)))
-  const versions = new Map<string, number>()
+  const versions = new Map<string, number | undefined>()
   const nested = new Map<string, string[]>()
   for (const id of [loaded.page.id, ...refs.keys()]) {
     if (blocks[id] && (id === loaded.page.id || whole(id))) versions.set(id, blocks[id].version)
@@ -313,7 +314,15 @@ export function planEdit(
         `${what} wasn't shown to you in full: read each part of the page it is in, then redo the edit.`,
       )
     }
-    if (block.version !== read.versions.get(id)) {
+    const was = read.versions.get(id)
+    // Without a version on both sides there is nothing to compare: the block may have changed, and
+    // an edit could overwrite that. Reading again would show the same, so don't ask for that.
+    if (was === undefined || block.version === undefined) {
+      throw new EditError(
+        `${what} can't be edited: Notion sent it without a version, so it can't be checked for changes since you read the page.`,
+      )
+    }
+    if (block.version !== was) {
       throw new EditError(`${what} was changed since you read the page. ${READ_AGAIN}`)
     }
   }
