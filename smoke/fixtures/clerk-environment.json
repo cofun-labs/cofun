@@ -5,7 +5,7 @@
   "display_config": {
     "object": "display_config",
     "id": "display_config_smoke",
-    "instance_environment_type": "development"
+    "instance_environment_type": "production"
   },
   "user_settings": {},
   "organization_settings": {}

@@ -6,7 +6,7 @@ How Copilot for Notion is built, and why. For setup and deployment see [developm
 ┌──────────────────────── Chrome ─────────────────────────┐
 │ Notion tab            │ Side panel (React)              │──Bearer <Clerk session JWT>──▶ Worker ──▶ AI Gateway ──▶ Workers AI
 │  /api/v3 as the user ◀──chrome.scripting── agent + tools│                                (verifies JWT)
-├───────────────────────┴─────────────────────────────────┤      ▲ reads the session cookie (Clerk Sync Host)
+├───────────────────────┴─────────────────────────────────┤      ▲ reads the Clerk cookies signing in sets (Clerk Sync Host)
 │ Sign-in tab: notion-copilot.kitfun.cc/login             │──────┘  this page is served by the same worker
 └─────────────────────────────────────────────────────────┘
 ```
@@ -30,7 +30,7 @@ The agent loop and its tools run in the side panel. The worker only checks who i
 ## Auth flow
 
 1. The user clicks "Sign in" in the side panel. The extension opens `https://notion-copilot.kitfun.cc/login` in a new tab; the worker serves this page with Clerk's sign-in UI.
-2. After sign-in, Clerk's session cookie lives on that domain. The extension is configured with `syncHost` and uses the `cookies` permission to read that session. Clerk doesn't refresh an already-open side panel, so the extension watches those cookies and reloads the panel when they change.
+2. Sign-in runs against Clerk's production instance, whose Frontend API is `clerk.kitfun.cc`. After sign-in, Clerk's client cookie (`__client`) lives on that host, and a cookie that says whether anyone is signed in (`__client_uat`) on the parent domain `kitfun.cc`. The extension is configured with `syncHost` and uses the `cookies` permission to read that session: from the Frontend API host on a production instance, and from the sign-in page's host on a development instance, which keeps its client cookie there (`src/clerk.ts`). Clerk doesn't refresh an already-open side panel, so the extension watches those cookies and reloads the panel when they change.
 3. Before each request, the extension gets a short-lived session JWT with `getToken()` and sends it as `Authorization: Bearer`.
 4. The worker verifies the JWT locally with Clerk's JWT public key (signature, expiry). If the token has an `azp` (the web origin that requested it), it must be an allowed origin, which stops other websites from using a session they obtained in the browser. Tokens the extension gets through Clerk's Native API carry no `azp`. No network call to Clerk is needed.
 5. The worker counts the request against the user's daily quota (a Durable Object per user, reset at 00:00 UTC) and refuses it once the quota is used up.
@@ -59,6 +59,7 @@ extension/                Chrome extension
   src/agent.ts            agent loop (pi) against the worker; the only module that imports pi
   src/tools.ts            tools the agent runs in the extension
   src/tool.ts             defines a tool from one zod schema of its arguments
+  src/clerk.ts            Clerk's Frontend API host and Sync Host, read from the publishable key
   src/zod.ts              zod, set up for the extension's content security policy; the only module that imports it
   src/sessions.ts         saved sessions (IndexedDB, per user)
   src/notion/hosts.ts     Notion hosts, and the page id in a Notion URL

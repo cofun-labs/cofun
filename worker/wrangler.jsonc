@@ -27,7 +27,7 @@
 
   "vars": {
     // Clerk publishable key, for the sign-in page. Public.
-    "CLERK_PUBLISHABLE_KEY": "pk_test_c2F2aW5nLXlldGktOTUxOS5jbGVyay5hY2NvdW50cy5kZXYk",
+    "CLERK_PUBLISHABLE_KEY": "pk_live_Y2xlcmsua2l0ZnVuLmNjJA",
     // AI Gateway id (dashboard: AI > AI Gateway). Empty = call Workers AI directly.
     "AI_GATEWAY_ID": "kitfun-ai",
     // The only model clients can use.
@@ -38,7 +38,7 @@
     // Origins allowed to call (the token's azp claim). Comma-separated.
     "CLERK_AUTHORIZED_PARTIES": "chrome-extension://fafkdcopddmegenpemnmjbnolhlbbfpf,https://notion-copilot.kitfun.cc",
     // Clerk JWT public key (PEM). Public; also served at https://<frontend-api>/.well-known/jwks.json
-    "CLERK_JWT_KEY": "-----BEGIN PUBLIC KEY-----\nMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAsLZwSCtPrYWWDu2H4iuf\nvhTJozTiacKiCvb82l3U6FPM8t2bLLNwkRuGHgAoJIYhNT5k1h+ytthVaG5ETGkt\nAKO9bqy1YhRk963j81IOwDA0fanVLKkXoGU1a5aQOwSWHwzTYaLMACb9r5MH8lVL\nHZ8ky/XwaPzHwXu5Ox7egX1fCjR9hwLrvMvFpc/0jjEvMisByUthKlbtEhGayvIO\nznkPst08XXm20f+6clp9GgdyPY1vw70+Et7tOHeVzeyByWaE9htMQvM74NsZCUsM\nr4K2d/x8wQTWmjU3zGzrLInx2CkFeiWyzZ3IwvRUCsnqVxFx2WwG3+ME7l2IfGx/\naQIDAQAB\n-----END PUBLIC KEY-----\n"
+    "CLERK_JWT_KEY": "-----BEGIN PUBLIC KEY-----\nMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAvmcyRgQuBYHuMrpM4d5N\nwQ9Y7i59S80hLM7Qd68gIpszm0Mi7eOIMmxTOVIePX4jsjf+ByfPl6qluXsPGik/\nwtr1ti37UUADTdC1qjn3jabY22UebFXgxp6Fq6XHJKelmHQBm77OwzZMPzPgmnwK\nM9nJuxXpsGtNH3a8xzC8Ql8UOJE5eWvgXKcu48b/Awja7J+yGQe7OklbaJL71FrJ\nPGUDS7bLVHvJP8/xTd3eii+LdqN5o7RDqwDu1wesJ9g2f8ykLfd55ykVZURr8R3w\n6Z46/wXqoufUn4CdRwsY19zNQlhruUMSGsRLn9PiYOfL1aBHZZzR/tLRndIFq9lY\nqQIDAQAB\n-----END PUBLIC KEY-----\n"
   }
 
 }

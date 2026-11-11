@@ -3,6 +3,7 @@
 // on update when the new version adds a permission warning, so a permission must never
 // change unnoticed. It also pins the content security policy, which names the hosts
 // the extension's pages may contact (see PRIVACY.md).
+import { clerkFrontendApi } from './src/clerk.ts'
 
 /** The env values the manifest is built from (see .env). */
 export interface ManifestEnv {
@@ -19,13 +20,6 @@ const ICONS = { 16: 'icons/icon-16.png', 32: 'icons/icon-32.png', 48: 'icons/ico
 
 /** Clerk serves user avatars and provider icons from here, for every instance. */
 const CLERK_IMAGE_HOST = 'img.clerk.com'
-
-/** Clerk's Frontend API host is encoded in the publishable key: pk_test_<base64("host$")>. */
-export function clerkFrontendApi(publishableKey: string): string | undefined {
-  const encoded = publishableKey.split('_')[2]
-  if (!encoded) return undefined
-  return Buffer.from(encoded, 'base64').toString('utf8').replace(/\$$/, '')
-}
 
 /**
  * Host permission covering the domain Clerk sets __client_uat on: the sign-in
@@ -87,8 +81,10 @@ export function buildManifest(env: ManifestEnv, version: string) {
     host_permissions: [
       'https://www.notion.so/*',
       'https://app.notion.com/*',
+      // Clerk's Frontend API. On a production instance the cookies permission also reads Clerk's
+      // client cookie from this host (Sync Host).
       ...(clerkHost ? [`https://${clerkHost}/*`] : []),
-      // Sign-in page; the cookies permission reads its Clerk session (Sync Host).
+      // Sign-in page. On a development instance Clerk's client cookie is on this host instead.
       `${new URL(env.VITE_CLERK_SYNC_HOST).origin}/*`,
       // Clerk sets __client_uat on the parent domain (e.g. .kitfun.cc). The side
       // panel watches it to notice sign-in and sign-out, and Chrome only reports
