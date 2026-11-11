@@ -41,6 +41,8 @@ export interface Env {
 export interface AppOptions {
   /** Clock used for the daily quota. Tests pass their own to move between days. */
   now?: () => Date
+  /** Where error lines go: Workers Logs by default. Tests pass their own to read what was logged. */
+  logError?: (line: string) => void
 }
 
 type Vars = { userId: string }
@@ -54,6 +56,22 @@ class HttpError extends Error {
   ) {
     super(message)
   }
+}
+
+const MAX_LOGGED_NAME_CHARS = 60
+const MAX_LOGGED_MESSAGE_CHARS = 200
+
+/**
+ * What the logs keep of an error the worker did not write: its name and the start of its message,
+ * never the object. Such an error may carry anything, a quote of the request included, in its
+ * message, its stack (which repeats the message), its cause, or other fields; this bounds how much
+ * of that can reach Workers Logs.
+ */
+function errorSummary(err: unknown): string {
+  if (!(err instanceof Error)) return `non-error value of type ${typeof err}`
+  const name = String(err.name).slice(0, MAX_LOGGED_NAME_CHARS)
+  const message = String(err.message).slice(0, MAX_LOGGED_MESSAGE_CHARS)
+  return `${name}: ${message}`
 }
 
 const MAX_MESSAGES = 200
@@ -318,7 +336,7 @@ function parseModelInputs(body: z.output<typeof Body>): { inputs: ModelInputs; c
   return { inputs, chars }
 }
 
-export function createApp({ now = () => new Date() }: AppOptions = {}) {
+export function createApp({ now = () => new Date(), logError = (line) => console.error(line) }: AppOptions = {}) {
   const app = new Hono<{ Bindings: Env; Variables: Vars }>()
 
   // The extension calls from a chrome-extension:// origin. Auth is a bearer token, not cookies.
@@ -326,7 +344,7 @@ export function createApp({ now = () => new Date() }: AppOptions = {}) {
 
   app.onError((err, c) => {
     if (err instanceof HttpError) return c.json({ error: { code: err.code, message: err.message } }, err.status)
-    console.error(err)
+    logError(`request failed: ${errorSummary(err)}`)
     return c.json({ error: { code: 'internal', message: 'internal error' } }, 500)
   })
 
@@ -478,8 +496,9 @@ export function createApp({ now = () => new Date() }: AppOptions = {}) {
     try {
       out = await c.env.AI.run(c.env.MODEL, inputs, options)
     } catch (err) {
-      // Details go to Workers Logs, not to the client.
-      console.error('model call failed', err)
+      // A summary goes to Workers Logs, not to the client. Never log the error itself: nothing
+      // shows that what the provider returns can't quote the request.
+      logError(`model call failed: ${errorSummary(err)}`)
       throw new HttpError(502, 'provider_error', 'the model is unavailable, try again later')
     }
 
