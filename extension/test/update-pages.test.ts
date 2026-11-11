@@ -559,6 +559,8 @@ describe('update_pages details', () => {
       [['m', THREAD], 'a comment on the text', 'helo world', 'hello world'],
       [['m', THREAD], 'a comment on the text', 'hello world', 'hello big world'],
       [['_'], 'an underline', 'hello world', 'hello there'],
+      [['m', THREAD], 'a comment on the text', 'the quarterly budget review', 'the budget'],
+      [['_'], 'an underline', 'quarterly budget review', 'our budget'],
     ] as const) {
       ws.edit(row(1), { properties: { title: [['Write docs']], 'g:g': [['see '], [was, [mark]], [' end']] } })
       await expect(update([{ page: hex(row(1)), properties: { Notes: `see ${now} end` } }])).rejects.toThrow(
@@ -589,6 +591,7 @@ describe('update_pages details', () => {
       [[['see '], ['hello', [['_']]], [' end']], 'see goodbye end'],
       [[['Draft', [['_']]]], 'Final'],
       [[['Budget review', [['m', THREAD]]]], 'Hiring'],
+      [[['Ask about the '], ['budget', [['m', THREAD]]], [' today.']], 'Tell Bob to get us the numbers by Friday.'],
     ] as const) {
       set(notes)
       await update([{ page: hex(row(1)), properties: { Notes: markdown } }])

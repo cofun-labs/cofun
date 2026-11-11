@@ -888,6 +888,29 @@ function placesOf(old: string[], now: string[]): number[] | undefined {
   return where
 }
 
+/**
+ * Whether text is still where it was, given its pieces and where each is in the new text (-1 for
+ * one that isn't): a whole word of it, or at least half of it (spaces aside). A piece counts only
+ * beside a neighbour that is beside it in the new text too, so that letters a rewrite happens to
+ * share with the old text don't.
+ */
+function stays(part: string[], to: number[]): boolean {
+  if (part.length === 1) return to[0] >= 0
+  const joined = (k: number) => to[k] >= 0 && to[k + 1] === to[k] + 1
+  const placed = part.map((_, k) => joined(k) || (k > 0 && joined(k - 1)))
+  const inked = part.map((p) => !!p.trim())
+  const count = (list: boolean[]) => list.filter((yes, k) => yes && inked[k]).length
+  if (count(placed) * 2 >= count(inked.map(() => true))) return true
+  // A word: pieces between spaces, all of them beside each other in the new text.
+  let start = 0
+  for (let k = 0; k <= part.length; k++) {
+    if (k < part.length && inked[k]) continue
+    if (k - start > 1 && part.slice(start, k - 1).every((_, m) => joined(start + m))) return true
+    start = k + 1
+  }
+  return false
+}
+
 /** Something a new value would remove from the stored one without its Markdown showing it. */
 export interface Unshown {
   /** What would go, each as unshownIn names it. */
@@ -973,18 +996,18 @@ export function keepUnshown(
       return
     }
     // Not there whole as it was shown: only the Markdown says what the text holds now, so the
-    // write is refused while the text is still there, whatever its formatting. It is when at
-    // least half of it is where it was, or all of it is in what the new text adds (it moved).
+    // write is refused while the text is still there, whatever its formatting: a word of it or
+    // at least half of it is where it was, or all of it is in what the new text adds (it moved).
     // Other text goes with what was on it. Where the texts were too long to compare, the run's
     // text anywhere in the new one counts.
     const part = units.map((u) => u.plain)
-    const inked = part.some((p) => p.trim()) ? (k: number) => !!part[k].trim() : () => true
     const there = (k: number) => part.every((p, m) => plain[k + m] === p && !(wherePlain ?? []).includes(k + m))
-    const still = wherePlain
-      ? part.filter((_, k) => inked(k) && wherePlain[at + k] >= 0).length * 2 >=
-          part.filter((_, k) => inked(k)).length || plain.some((_, k) => there(k))
-      : plain.some((_, k) => there(k))
-    if (still) lost.push({ what, on: markdown })
+    if (
+      wherePlain
+        ? stays(part, wherePlain.slice(at, at + part.length)) || plain.some((_, k) => there(k))
+        : plain.some((_, k) => there(k))
+    )
+      lost.push({ what, on: markdown })
   })
   if (lost.length) return { rich: value, lost }
   // The new value as it is written, and the same in a form to compare with the stored one.
