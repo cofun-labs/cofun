@@ -787,20 +787,40 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
   !!value && typeof value === 'object' && !Array.isArray(value)
 
 /**
- * The arguments a JSON Schema requires that a call gives as null, as the model would write them:
- * `text`, `pages[0].page`. Follows `properties` and `items`; an optional argument given as null is
- * left to pi, which drops it, and so is one whose own schema says null is a value.
+ * Where a call gives null and the JSON Schema takes no null, as the model would write it: a required
+ * argument (`text`, `pages[0].page`) or an entry of a list (`options[1]`). Follows `properties`,
+ * `additionalProperties`, and `items`. An optional argument given as null is left to pi, which drops
+ * it, and a null is fine wherever the schema says it is a value.
  */
-function requiredNulls(schema: unknown, value: unknown, path = ''): string[] {
+function misplacedNulls(schema: unknown, value: unknown, path = ''): string[] {
   if (!isRecord(schema)) return []
-  if (Array.isArray(value)) return value.flatMap((item, n) => requiredNulls(schema.items, item, `${path}[${n}]`))
-  if (!isRecord(value) || !isRecord(schema.properties)) return []
+  if (Array.isArray(value)) {
+    const items = listItems(schema)
+    return value.flatMap((item, n) => {
+      const at = `${path}[${n}]`
+      if (item === null) return items !== undefined && !admitsNull(items) ? [at] : []
+      return misplacedNulls(items, item, at)
+    })
+  }
+  if (!isRecord(value)) return []
+  const properties = isRecord(schema.properties) ? schema.properties : {}
   const required = Array.isArray(schema.required) ? schema.required : []
-  return Object.entries(schema.properties).flatMap(([key, property]) => {
+  return Object.entries(value).flatMap(([key, item]) => {
     const at = path ? `${path}.${key}` : key
-    if (value[key] === null) return required.includes(key) && !admitsNull(property) ? [at] : []
-    return requiredNulls(property, value[key], at)
+    const property = Object.hasOwn(properties, key) ? properties[key] : schema.additionalProperties
+    if (item === null) return required.includes(key) && !admitsNull(property) ? [at] : []
+    return misplacedNulls(property, item, at)
   })
+}
+
+/** What a JSON Schema says the entries of a list are: its own `items`, or those of the list branch of a union. */
+function listItems(schema: Record<string, unknown>): unknown {
+  if (schema.items !== undefined) return schema.items
+  for (const branches of [schema.anyOf, schema.oneOf]) {
+    const list = Array.isArray(branches) ? branches.find((b) => isRecord(b) && b.items !== undefined) : undefined
+    if (isRecord(list)) return list.items
+  }
+  return undefined
 }
 
 /** Whether a JSON Schema takes null as a value: by its type, a constant, or a branch of a union. */
@@ -823,9 +843,10 @@ interface Reporter {
  * `beforeToolCall`: the model gets pi's list of what is wrong with each argument. The tool gets the
  * converted copy, which it parses itself when it is defined with `defineTool` (tool.ts).
  *
- * One conversion is stopped before pi makes it: a null for a required argument. pi would turn it
- * into the text "null", 0, or false and run the tool with that, so a page could be titled "null".
- * Such a call is refused like any other that does not fit, and the model is told which argument.
+ * One conversion is stopped before pi makes it: a null where the schema takes none, for a required
+ * argument or an entry of a list. pi would turn it into the text "null", 0, or false and run the tool
+ * with that, so a page could be titled "null". Such a call is refused like any other that does not
+ * fit, and the model is told where the nulls are.
  */
 function toAgentTool(spec: ToolSpec, reporter: () => Reporter): AgentTool {
   return {
@@ -834,11 +855,11 @@ function toAgentTool(spec: ToolSpec, reporter: () => Reporter): AgentTool {
     description: spec.description,
     parameters: spec.parameters,
     prepareArguments: (args) => {
-      const missing = requiredNulls(spec.parameters, args)
-      if (missing.length) {
+      const nulls = misplacedNulls(spec.parameters, args)
+      if (nulls.length) {
         throw new Error(
-          `Not run: ${missing.map((path) => `\`${path}\``).join(', ')} ${missing.length === 1 ? 'is' : 'are'} ` +
-            'required, and null is not a value. Give the call again with a value, or ask the user for one.',
+          `Not run: null is not a value for ${nulls.map((path) => `\`${path}\``).join(', ')}. ` +
+            'Give the call again with a value there, or ask the user for one.',
         )
       }
       return args

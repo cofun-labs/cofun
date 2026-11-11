@@ -292,7 +292,7 @@ describe('extension agent against the worker', () => {
     })
   })
 
-  it('a null for a required argument is refused, not run as the text "null"', async () => {
+  it('a null where the schema takes none is refused, not run as the text "null"', async () => {
     const runs: unknown[] = []
     const tool = defineTool({
       name: 'post_notes',
@@ -305,6 +305,9 @@ describe('extension agent against the worker', () => {
         tag: z.string().optional(),
         // Required, and null is a value for it: its own schema says so.
         due: z.string().nullable(),
+        tags: z.array(z.string()).optional(),
+        // Values by name, as `properties` of create_page takes them: null clears one.
+        fields: z.record(z.string(), z.union([z.string(), z.array(z.string()), z.null()])).optional(),
       }),
       preview: () => `Post; ${runs.length} run(s) so far`,
       run: async (args) => {
@@ -329,6 +332,15 @@ describe('extension agent against the worker', () => {
           },
         ],
       },
+      // A null entry of a list of texts, at the top and inside values by name.
+      {
+        toolCalls: [
+          {
+            name: 'post_notes',
+            arguments: JSON.stringify({ ...good, tags: ['a', null], fields: { Status: null, Tags: [null, 'b'] } }),
+          },
+        ],
+      },
       // A null where the argument may be left out is still dropped, and the call runs.
       {
         toolCalls: [
@@ -350,14 +362,19 @@ describe('extension agent against the worker', () => {
       role: 'tool',
       tool_call_id: 'chatcmpl-tool-0',
       content:
-        'Not run: `text` is required, and null is not a value. Give the call again with a value, or ask the user for one.',
+        'Not run: null is not a value for `text`. Give the call again with a value there, or ask the user for one.',
     })
     expect(sentMessages(2).at(-1)).toMatchObject({
       content:
-        'Not run: `text`, `urgent`, `count`, `notes[1].page` are required, and null is not a value. ' +
-        'Give the call again with a value, or ask the user for one.',
+        'Not run: null is not a value for `text`, `urgent`, `count`, `notes[1].page`. ' +
+        'Give the call again with a value there, or ask the user for one.',
     })
-    expect(sentMessages(3).at(-1)).toMatchObject({ role: 'tool', content: 'Posted.' })
+    expect(sentMessages(3).at(-1)).toMatchObject({
+      content:
+        'Not run: null is not a value for `tags[1]`, `fields.Tags[0]`. ' +
+        'Give the call again with a value there, or ask the user for one.',
+    })
+    expect(sentMessages(4).at(-1)).toMatchObject({ role: 'tool', content: 'Posted.' })
   })
 
   it("read_page gets the model's arguments as its schema reads them, and a call that does not fit never runs", async () => {
