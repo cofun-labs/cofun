@@ -1,7 +1,7 @@
 // Planning an edit_page call: checking the edits against the page as the agent read it and as it
 // is now, and turning them into one Notion transaction. Nothing here talks to Notion.
 import { z } from '../zod'
-import { blockOps, type Block, type LoadedPage, type NotionRecord, type Operation } from './api'
+import { blockOps, textList, type Block, type LoadedPage, type NotionRecord, type Operation } from './api'
 import {
   COLOR,
   HEADING_TYPES,
@@ -45,7 +45,7 @@ export function pageRead(
   include: (id: string) => boolean,
   whole: (id: string) => boolean = () => true,
 ): PageRead {
-  const blocks = (loaded.recordMap.block ?? {}) as Record<string, Block>
+  const blocks = loaded.recordMap.block ?? {}
   const seen = include
   const refs = new Map([...md.refs].filter(([id]) => seen(id)))
   const versions = new Map<string, number>()
@@ -298,7 +298,7 @@ export function planEdit(
   edits: Edit[],
   { now = Date.now(), newId = () => crypto.randomUUID() } = {},
 ): Plan {
-  const blocks = (loaded.recordMap.block ?? {}) as Record<string, Block>
+  const blocks = loaded.recordMap.block ?? {}
   const { page, spaceId } = loaded
   const ref = (id: string) => `^${read.refs.get(id) ?? hexId(id)}`
   const check = (id: string, what = ref(id)) => {
@@ -441,7 +441,7 @@ export function planEdit(
    */
   const rewriteTable = (table: Block, rows: string[], nb: NewBlock, people: Map<string, string>): string => {
     const tableRef = ref(table.id)
-    const columns = (table.format?.table_block_column_order as string[] | undefined) ?? []
+    const columns = textList(table.format?.table_block_column_order)
     const shown = rows.length ? shownRows(table) : []
     if (!shown || shown.length !== rows.length || shown.some((r) => r.length !== columns.length)) {
       throw new EditError(`${tableRef} isn't as read_page showed it. ${READ_AGAIN}`)
@@ -772,7 +772,7 @@ function lossyTable(
   shown: string | undefined,
   users: Record<string, NotionRecord> = {},
 ): boolean {
-  const columns = (table.format?.table_block_column_order as string[] | undefined) ?? []
+  const columns = textList(table.format?.table_block_column_order)
   let rows: RichText[][] | undefined
   try {
     rows = parseMarkdown(shown ?? '')[0]?.rows

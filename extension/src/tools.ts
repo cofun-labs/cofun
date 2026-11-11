@@ -10,6 +10,8 @@ import {
   blockOps,
   commentOps,
   mergeRecordMaps,
+  pointerIn,
+  textList,
   type Block,
   type LoadedPage,
   type NotionRecord,
@@ -322,8 +324,8 @@ const FILTER_OPS = ['is', 'is_not', 'contains', 'not_contains', 'is_empty', 'is_
 type FilterOp = (typeof FILTER_OPS)[number]
 
 /** A database's data source: its collection, the workspace it lives in, its schema, and its views. */
-async function resolveDatabase(client: NotionTab['client'], block: NotionRecord) {
-  const pointer = (block.format as { collection_pointer?: { spaceId?: string } } | undefined)?.collection_pointer
+async function resolveDatabase(client: NotionTab['client'], block: Block) {
+  const pointer = pointerIn(block.format, 'collection_pointer')
   const id = collectionId(block)
   if (!id) throw new Error('This database has no data source.')
   // A linked view's database may live in another workspace; its pointer says which.
@@ -334,7 +336,7 @@ async function resolveDatabase(client: NotionTab['client'], block: NotionRecord)
     spaceId,
     schema: (collection.schema ?? {}) as Schema,
     name: runsText(collection.name) || 'Untitled database',
-    views: Array.isArray(block.view_ids) ? (block.view_ids as string[]) : [],
+    views: textList(block.view_ids),
   }
 }
 
@@ -453,7 +455,7 @@ export const queryDatabase = defineTool({
     const { rowIds, hasMore, recordMap } = await tab.client.queryCollection(collectionId, viewId, spaceId, QUERY_LOAD, {
       sort: sort && { property: sort.key, direction: sort.sign === 1 ? 'ascending' : 'descending' },
     })
-    const listed = rowIds.map((r) => recordMap.block?.[r] as Block | undefined)
+    const listed = rowIds.map((r) => recordMap.block?.[r])
     // Rows Notion listed but sent no record for can't be shown or filtered; they are counted instead.
     const missing = listed.filter((r) => !r).length
     // Notion leaves out the pages a relation points to: looked up, they show and filter by name.
@@ -749,7 +751,7 @@ export const listPages = defineTool({
         lookups: LIST_LOOKUPS,
         skip: offset,
       })
-      const title = runsText((root.properties as { title?: unknown } | undefined)?.title) || 'Untitled'
+      const title = runsText(root.properties?.title) || 'Untitled'
       return [
         `Pages under “${title}” ^${hexId(rootId)}${offset ? `, from entry ${offset}` : ''}:`,
         '',
@@ -954,10 +956,11 @@ export const editPage = defineTool({
     const blocks = loaded.recordMap.block ?? {}
     // The text a block being rewritten holds: a table's is in its rows' cells.
     const textOf = (id: string): unknown[] => {
-      const block = blocks[id] as Block | undefined
-      if (block?.type !== 'table') return (block?.properties?.title as unknown[] | undefined) ?? []
+      const block = blocks[id]
+      const title = block?.properties?.title
+      if (block?.type !== 'table') return Array.isArray(title) ? title : []
       return (block.content ?? []).flatMap((row) =>
-        Object.values((blocks[row] as Block | undefined)?.properties ?? {}).flatMap((v) => (Array.isArray(v) ? v : [])),
+        Object.values(blocks[row]?.properties ?? {}).flatMap((v) => (Array.isArray(v) ? v : [])),
       )
     }
     const found = await findPeople(
@@ -1293,7 +1296,7 @@ export const updatePages = defineTool({
       ? (await tab.client.getRecords(collectionIds.map((id) => ({ table: 'collection', id, spaceId })))).collection!
       : {}
     const changes = updates.map((u) => {
-      const block = blocks[u.id] as Block
+      const block = blocks[u.id]
       const schema = (collections[String(block.parent_id)]?.schema ?? {}) as Schema
       const values = u.props.length ? toProperties(schema, u.props) : {}
       if (u.title !== undefined) values.title = u.title.rich
@@ -1328,7 +1331,10 @@ export const updatePages = defineTool({
       changes.map((c) => ({
         names: c.names,
         known: peopleIn(
-          c.texts.flatMap((key) => (c.block.properties?.[key] as unknown[] | undefined) ?? []),
+          c.texts.flatMap((key): unknown[] => {
+            const runs = c.block.properties?.[key]
+            return Array.isArray(runs) ? runs : []
+          }),
           named.notion_user,
         ),
       })),
@@ -1899,7 +1905,7 @@ export const movePage = defineTool({
  * The pages by id, all of them or an error. One already in the trash, or out of reach, is named,
  * so the agent can tell which (say, after a lost answer, which pages were trashed already).
  */
-async function loadPages(tab: NotionTab, ids: string[]): Promise<Record<string, NotionRecord>> {
+async function loadPages(tab: NotionTab, ids: string[]): Promise<Record<string, Block>> {
   try {
     return (await tab.client.getRecords(ids.map((id) => ({ table: 'block' as const, id })))).block!
   } catch (err) {
@@ -1928,7 +1934,7 @@ async function pagesAbove(
 ): Promise<Map<string, string[]>> {
   const known = new Map<string, NotionRecord>(Object.entries(records))
   const above = new Map(ids.map((id) => [id, [] as string[]]))
-  let walks = ids.map((id) => ({ id, at: records[id] as NotionRecord | undefined }))
+  let walks = ids.map((id): { id: string; at: NotionRecord | undefined } => ({ id, at: records[id] }))
   for (let depth = 0; depth < ANCESTORS_MAX && walks.length; depth++) {
     const next = walks.flatMap((w) => {
       // A row's parent is its database's data source, which sits in the database block.
@@ -2032,16 +2038,13 @@ const COUNT_CHILDREN_MAX = 500
  * How many pages or databases sit right inside each page, for the trash preview: nothing when the
  * pages hold too many blocks to look at, or Notion says they can't be opened.
  */
-async function childCounts(tab: NotionTab, pages: NotionRecord[]): Promise<Map<string, number>> {
-  const childIds = pages.flatMap((b) => (Array.isArray(b.content) ? (b.content as string[]) : []))
+async function childCounts(tab: NotionTab, pages: Block[]): Promise<Map<string, number>> {
+  const childIds = pages.flatMap((b) => b.content ?? [])
   if (!childIds.length || childIds.length > COUNT_CHILDREN_MAX) return new Map()
   try {
     const children = (await tab.client.findRecords(childIds.map((id) => ({ table: 'block' as const, id })))).block ?? {}
     return new Map(
-      pages.map((b) => [
-        b.id,
-        ((b.content as string[] | undefined) ?? []).filter((c) => PAGE_TYPES.has(String(children[c]?.type))).length,
-      ]),
+      pages.map((b) => [b.id, (b.content ?? []).filter((c) => PAGE_TYPES.has(children[c]?.type ?? '')).length]),
     )
   } catch (err) {
     // Only what stops the question goes on; a count Notion says can't be made is left out.
@@ -2074,7 +2077,7 @@ export const trashPage = defineTool({
   preview: async (args) => {
     const pages = previewIds(args.pages)
     const ids = pages.flatMap((p) => (p.id ? [p.id] : []))
-    let found: Record<string, NotionRecord> = {}
+    let found: Record<string, Block> = {}
     let parents: Record<string, NotionRecord | undefined> = {}
     let names = new Map<string, string>()
     let inside = new Map<string, number>()
@@ -2096,9 +2099,7 @@ export const trashPage = defineTool({
       `Move ${pages.length} page${pages.length === 1 ? '' : 's'} to the trash, with everything in ${pages.length === 1 ? 'it' : 'them'}`,
       ...pages.map((p) => {
         const block = p.id ? found[p.id] : undefined
-        const title = block
-          ? names.get(block.id) || runsText((block.properties as { title?: unknown } | undefined)?.title) || 'Untitled'
-          : undefined
+        const title = block ? names.get(block.id) || runsText(block.properties?.title) || 'Untitled' : undefined
         // A page's editors choose its title: it goes last and in quotes, so it can't pass for what the
         // tool says. A page Notion doesn't have (already trashed, or out of reach) makes the call fail.
         if (!p.id) return `    ${JSON.stringify(oneLine(p.given) || '(no page given)')}`
@@ -2132,7 +2133,12 @@ export const trashPage = defineTool({
       if (why) throw new EditError(why)
       const refused = trashRefusal(page, trashParents[id])
       if (refused) throw new EditError(`^${hexId(id)} is ${refused}: trash it in Notion.`)
-      return { id, parentId: page.parent_id!, parentTable: page.parent_table as 'block' | 'space' }
+      // trashRefusal let only these two through.
+      return {
+        id,
+        parentId: page.parent_id!,
+        parentTable: page.parent_table === 'space' ? ('space' as const) : ('block' as const),
+      }
     })
     const spaces = new Set(ids.map((id) => String(records[id].space_id)))
     if (spaces.size > 1)
@@ -2371,7 +2377,7 @@ async function workspaceOf(tab: NotionTab): Promise<string> {
   let spaceId: string | undefined
   try {
     const opened = await tab.client.getRecords([{ table: 'block', id: pageId }])
-    spaceId = (opened.block?.[pageId] as { space_id?: string } | undefined)?.space_id
+    spaceId = opened.block?.[pageId]?.space_id
   } catch (err) {
     if (err instanceof NotionError && err.code === 'in_trash') {
       throw new Error('The open page is in the trash. Open another page of the workspace.')
@@ -2387,9 +2393,9 @@ async function workspaceOf(tab: NotionTab): Promise<string> {
 }
 
 /** Names of the databases among `blocks`, by block id; databases that can't be looked up are left out. */
-async function databaseNames(tab: NotionTab, blocks: (NotionRecord | undefined)[]): Promise<Map<string, string>> {
+async function databaseNames(tab: NotionTab, blocks: (Block | undefined)[]): Promise<Map<string, string>> {
   const databases = blocks.filter(
-    (b): b is NotionRecord => !!b && (b.type === 'collection_view_page' || b.type === 'collection_view'),
+    (b): b is Block => !!b && (b.type === 'collection_view_page' || b.type === 'collection_view'),
   )
   const ids = [...new Set(databases.map(collectionId).filter((id): id is string => !!id))]
   const names = new Map<string, string>()

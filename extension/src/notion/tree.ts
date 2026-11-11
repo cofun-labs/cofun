@@ -2,7 +2,7 @@
 // Like Notion's own sidebar, it finds which children are pages by looking up the blocks a page
 // holds, so it asks for as few of them as it can: in order, only until the list is full, each at
 // most once, and only so many lookups per list.
-import { mergeRecordMaps, type NotionClient, type NotionRecord, type RecordMap } from './api'
+import { mergeRecordMaps, type Block, type NotionClient, type RecordMap } from './api'
 import { LAYOUT_TYPES, PAGE_TYPES, collectionId, hexId } from './markdown'
 
 export interface TreeNode {
@@ -30,7 +30,7 @@ export class PageLookups {
     readonly records: RecordMap = {},
   ) {}
 
-  block(id: string): NotionRecord | undefined {
+  block(id: string): Block | undefined {
     return this.records.block?.[id]
   }
 
@@ -45,7 +45,7 @@ export class PageLookups {
   }
 
   /** Looks up the collections that name the databases among `blocks`. */
-  async collections(blocks: NotionRecord[]): Promise<void> {
+  async collections(blocks: Block[]): Promise<void> {
     const ids = blocks.map(collectionId).filter((id): id is string => !!id && !this.records.collection?.[id])
     await this.find('collection', ids)
   }
@@ -216,13 +216,13 @@ function upcoming(
 
 /** The sidebar pages among `ids`, as nodes, in order. */
 async function nodesFor(cache: PageLookups, ids: string[]): Promise<TreeNode[]> {
-  const pages = ids.map((id) => cache.block(id)).filter((b): b is NotionRecord => !!b && PAGE_TYPES.has(String(b.type)))
+  const pages = ids.map((id) => cache.block(id)).filter((b): b is Block => !!b && PAGE_TYPES.has(b.type))
   // Databases are named by their collection.
   await cache.collections(pages.filter((b) => b.type !== 'page'))
   return pages.map((b) => {
     const database = b.type !== 'page'
     const collection = database ? cache.records.collection?.[collectionId(b) ?? ''] : undefined
-    const title = runsText(database ? collection?.name : (b.properties as { title?: unknown } | undefined)?.title)
+    const title = runsText(database ? collection?.name : b.properties?.title)
     return { id: b.id, title: title || (database ? 'Untitled database' : 'Untitled'), database, children: [] }
   })
 }

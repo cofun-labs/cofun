@@ -418,7 +418,7 @@ export function renameInRows(
     const row = recordMap.block?.[id]
     // A row that didn't come back can't be renamed with the others: it would lose its value.
     if (!row) throw new SchemaError("Notion didn't return every row, so the options can't be renamed in all of them.")
-    const props = (row.properties ?? {}) as Record<string, unknown>
+    const props = row.properties ?? {}
     const values: Record<string, unknown[]> = {}
     for (const [key, { type, names }] of byKey) {
       const text = (props[key] as [string?][] | undefined)?.[0]?.[0]
