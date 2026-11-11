@@ -32,7 +32,7 @@ As with any web service, Cloudflare (which runs the worker) and Clerk see your I
 
 ### The sign-in page
 
-"Sign in" opens `https://notion-copilot.kitfun.cc/login` in a normal tab. That page runs Clerk's sign-in code, loaded from Clerk's Frontend API. What you enter there (an email address, or a Google sign-in) goes to Clerk and to the sign-in provider you choose, not to our worker. Clerk holds your account: your email address, name, and avatar as the sign-in provider gives them. While the service uses a Clerk development instance, Clerk's code on that page may also report usage of Clerk's SDK to Clerk's telemetry service; inside the extension that telemetry is turned off. See [Clerk's privacy policy](https://clerk.com/legal/privacy).
+"Sign in" opens `https://notion-copilot.kitfun.cc/login` in a normal tab. That page runs Clerk's sign-in code, loaded from Clerk's Frontend API. What you enter there (an email address, or a Google sign-in) goes to Clerk and to the sign-in provider you choose, not to our worker. Clerk holds your account: your email address, name, and avatar as the sign-in provider gives them. See [Clerk's privacy policy](https://clerk.com/legal/privacy).
 
 ## What the worker does with it
 

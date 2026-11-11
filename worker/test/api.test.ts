@@ -156,6 +156,13 @@ describe('worker API', () => {
     expect(html).toContain('src="https://example.clerk.accounts.dev/npm/@clerk/ui@1/dist/ui.browser.js"')
   })
 
+  it('sign-in page turns Clerk SDK telemetry off', async () => {
+    env.CLERK_PUBLISHABLE_KEY = 'pk_test_ZXhhbXBsZS5jbGVyay5hY2NvdW50cy5kZXYk'
+    const html = await (await req('GET', '/login')).text()
+    const options = /window\.Clerk\.load\(\{([^]*?)\}\)/.exec(html)?.[1]
+    expect(options).toMatch(/^\s*telemetry: false,$/m)
+  })
+
   it('root URL redirects to the sign-in page', async () => {
     const res = await req('GET', '/')
     expect(res.status).toBe(302)
