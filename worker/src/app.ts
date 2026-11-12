@@ -4,6 +4,7 @@ import { cors } from 'hono/cors'
 import type { ContentfulStatusCode } from 'hono/utils/http-status'
 import * as z from './zod'
 import { adminPage } from './admin'
+import { readAccounts, readOverview, type Period } from './overview'
 import { loginPage } from './login'
 import {
   FREE_CREDITS,
@@ -13,6 +14,7 @@ import {
   type Account,
   type Balance,
   type Database,
+  type GrantsCursor,
   type Standing,
 } from './credits'
 import { costOf, estimateCachedTokens, estimateTokens, priceOf, type Tokens } from './pricing'
@@ -135,6 +137,61 @@ const GrantBody = part(z.looseObject({}), 'body must be a JSON object').pipe(
   }),
 )
 
+/** The longest period the overview covers, and the most accounts one list shows: one request never reads more of the tables than this. */
+const MAX_PERIOD_DAYS = 92
+const MAX_ACCOUNTS = 200
+const DEFAULT_ACCOUNTS = 50
+/** No clock is further from UTC than 14 hours. */
+const MAX_UTC_OFFSET = 14 * 60
+
+/** A calendar date of this century written YYYY-MM-DD, as the UTC midnight that starts it. */
+const CalendarDate = z
+  .string()
+  .regex(/^20\d{2}-\d{2}-\d{2}$/)
+  .transform((date, ctx) => {
+    const ms = Date.parse(`${date}T00:00:00Z`)
+    // A date that does not exist (02-30) is either not parsed or moved to another day.
+    if (!Number.isNaN(ms) && new Date(ms).toISOString().startsWith(date)) return ms
+    ctx.addIssue({ code: 'custom', message: 'not a date' })
+    return z.NEVER
+  })
+
+/** A whole number as a query parameter carries it. */
+const WholeNumber = z
+  .string()
+  .regex(/^-?\d{1,6}$/)
+  .transform(Number)
+
+/**
+ * The period an admin asks for, as query parameters: its first and last day, both counted in full,
+ * and how many minutes the admin's clock is ahead of UTC (0 when not given: UTC days). The worker
+ * does not know the admin's time zone, so the page sends its own offset.
+ */
+const PeriodQuery = z
+  .object({
+    from: part(CalendarDate, 'from must be a date like 2026-11-12'),
+    to: part(CalendarDate, 'to must be a date like 2026-11-12'),
+    utcOffset: part(
+      WholeNumber.pipe(z.int().min(-MAX_UTC_OFFSET).max(MAX_UTC_OFFSET)),
+      `utcOffset must be a whole number of minutes from -${MAX_UTC_OFFSET} to ${MAX_UTC_OFFSET}`,
+    ).optional(),
+  })
+  .transform(({ from, to, utcOffset = 0 }, ctx): Period => {
+    const days = (to - from) / DAY_MS + 1
+    if (days < 1) ctx.addIssue({ code: 'custom', message: 'to must not be before from' })
+    else if (days > MAX_PERIOD_DAYS) {
+      ctx.addIssue({ code: 'custom', message: `the period must be at most ${MAX_PERIOD_DAYS} days` })
+    }
+    // Midnight on the admin's clock is that much before (or after) midnight UTC.
+    const offsetMs = utcOffset * 60_000
+    return { from: from - offsetMs, to: to + DAY_MS - offsetMs, utcOffset }
+  })
+
+const AccountsLimit = part(
+  WholeNumber.pipe(z.int().min(1).max(MAX_ACCOUNTS)),
+  `limit must be a whole number from 1 to ${MAX_ACCOUNTS}`,
+).optional()
+
 /** How many recent days of spending a user is shown, today included. */
 const USAGE_DAYS = 30
 const MINUTE_MS = 60 * 1000
@@ -156,6 +213,29 @@ const UtcOffset = part(
 
 /** A day counted from 1970-01-01, as a date: YYYY-MM-DD. */
 const dateOf = (day: number) => new Date(day * DAY_MS).toISOString().slice(0, 10)
+
+/** The day a period of usage ends before, as the side panel sends it: a date, as a day counted from 1970-01-01. */
+const UsageBefore = part(
+  CalendarDate.transform((ms) => ms / DAY_MS).optional(),
+  'before must be a date like 2026-11-12',
+)
+
+/**
+ * Where a page of grants starts, as the page before it gave it in `next`: a time in ms, and how
+ * many grants of that millisecond were shown already. Both bounded, so the query is.
+ */
+const GrantsBefore = part(
+  z
+    .string()
+    .regex(/^\d{1,15}\.\d{1,4}$/)
+    .transform((cursor): GrantsCursor => {
+      const [at, skip] = cursor.split('.').map(Number)
+      return { at, skip }
+    })
+    .optional(),
+  'before must be the next of an earlier page',
+)
+const cursorText = ({ at, skip }: GrantsCursor) => `${at}.${skip}`
 
 /**
  * A user's credits as the side panel shows them. Amounts stay in micro-credits; the panel rounds
@@ -526,6 +606,33 @@ export function createApp({
     return c.json(accountJson(userId, account))
   })
 
+  /** Runs a read across accounts, or refuses the request when it fails. */
+  async function onOverview<T>(read: () => Promise<T>): Promise<T> {
+    try {
+      return await read()
+    } catch (err) {
+      logError(`admin overview failed: ${errorSummary(err)}`)
+      throw new HttpError(503, 'credits_unavailable', 'Credits are unavailable, try again in a moment.')
+    }
+  }
+
+  // What was granted and spent in a period across every account, in all and per day.
+  app.get('/v1/admin/overview', async (c) => {
+    const period = parse(PeriodQuery, c.req.query())
+    const overview = await onOverview(() => readOverview(c.env.DB, period))
+    return c.json({ period, ...overview })
+  })
+
+  // The accounts with a grant or a model call in a period, the biggest spenders first.
+  app.get('/v1/admin/accounts', async (c) => {
+    const period = parse(PeriodQuery, c.req.query())
+    const limit = parse(AccountsLimit, c.req.query('limit')) ?? DEFAULT_ACCOUNTS
+    // The balances are as of this moment, like an account's own lookup.
+    const at = now().getTime()
+    const accounts = await onOverview(() => readAccounts(c.env.DB, period, at, limit))
+    return c.json({ period, at, ...accounts })
+  })
+
   app.post('/v1/admin/accounts/:userId/grants', async (c) => {
     const userId = parse(UserId, c.req.param('userId'))
     const { credits, days } = parse(GrantBody, await c.req.json().catch(() => undefined))
@@ -551,15 +658,54 @@ export function createApp({
   // the user's next question, and is reported as not started until then.
   app.get('/v1/credits', async (c) => {
     const offsetMs = parse(UtcOffset, c.req.query('utc_offset')) * MINUTE_MS
-    const ledger = new Ledger(c.env.DB, c.get('userId'))
-    let standing: Standing
+    const period = { days: USAGE_DAYS, offsetMs }
+    return c.json(creditsJson(await onOwnLedger(c, (ledger) => ledger.look(now().getTime(), period))))
+  })
+
+  /** Runs a read of the caller's own credits, or refuses the request when it fails. */
+  async function onOwnLedger<T>(c: Ctx, read: (ledger: Ledger) => Promise<T>): Promise<T> {
     try {
-      standing = await ledger.look(now().getTime(), { days: USAGE_DAYS, offsetMs })
+      return await read(new Ledger(c.env.DB, c.get('userId')))
     } catch (err) {
       logError(`credit read failed: ${errorSummary(err)}`)
       throw new HttpError(503, 'credits_unavailable', 'Credits are unavailable, try again in a moment.')
     }
-    return c.json(creditsJson(standing))
+  }
+
+  // The history of the signed-in user's credits, read by the side panel only when the user opens
+  // it, a page at a time, so the read above stays small. Both only read, for the caller only.
+
+  // Every grant the user was given, newest first, the expired ones included, with what is left of
+  // each (for an expired one: what went unspent). Never the admin who made a grant by hand.
+  app.get('/v1/credits/grants', async (c) => {
+    const from = parse(GrantsBefore, c.req.query('before'))
+    const { grants, next } = await onOwnLedger(c, (ledger) => ledger.grantsPage(from))
+    return c.json({
+      grants: grants.map(({ source, amount, left, grantedAt, expiresAt }) => ({
+        source,
+        amount,
+        left,
+        grantedAt,
+        expiresAt,
+      })),
+      next: next ? cursorText(next) : null,
+    })
+  })
+
+  // Credits used per day over one period as long as the one /v1/credits reports, by the same days:
+  // the most recent one, or the one that ends before `before`. `earlier` is the `before` that
+  // leads to the user's usage before this period, skipping the days they made no call.
+  app.get('/v1/credits/usage', async (c) => {
+    const offsetMs = parse(UtcOffset, c.req.query('utc_offset')) * MINUTE_MS
+    const before = parse(UsageBefore, c.req.query('before'))
+    const period = { days: USAGE_DAYS, offsetMs, ...(before === undefined ? {} : { before }) }
+    const { first, last, usage, earlier } = await onOwnLedger(c, (ledger) => ledger.usage(now().getTime(), period))
+    return c.json({
+      from: dateOf(first),
+      to: dateOf(last),
+      byDay: usage.map(({ day, microCredits }) => ({ day: dateOf(day), microCredits })),
+      earlier: earlier === undefined ? null : dateOf(earlier),
+    })
   })
 
   // OpenAI-compatible chat completions. The model is fixed by the server.

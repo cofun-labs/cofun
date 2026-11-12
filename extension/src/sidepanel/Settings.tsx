@@ -1,41 +1,89 @@
-import { useEffect, useRef } from 'react'
-import { creditsText, dayText, daysText, when, wholeCredits, type Credits, type CreditsState } from '../credits'
+import { useEffect, useRef, useState } from 'react'
+import {
+  creditsText,
+  dayText,
+  daysText,
+  sourceText,
+  when,
+  wholeCredits,
+  type Credits,
+  type CreditsState,
+} from '../credits'
 import { Avatar, useAccount } from './Account'
+import { History, type HistoryReads } from './History'
 import { Icon } from './icons'
 
-/** The settings page: the account, the plan, the credits with their dates, and usage per day. */
+/**
+ * The settings page: the account, the plan, the credits with their dates, and usage per day. The
+ * history of the credits opens from the credits, in place of the page, and leads back to it.
+ */
 export function Settings({
   credits,
   onRetry,
+  history,
   onClose,
 }: {
   credits: CreditsState
   /** Reads the credits again, after a read that failed. */
   onRetry: () => void
+  /** Reads the history of the credits, when the user opens it. */
+  history: HistoryReads
   onClose: () => void
 }) {
   const account = useAccount()
+  const [historyOpen, setHistoryOpen] = useState(false)
+  const backRef = useRef<HTMLButtonElement>(null)
+  const historyRef = useRef<HTMLButtonElement>(null)
 
-  // Escape goes back to the chat, wherever the focus is. Not when something above the page took
-  // the key for itself: the account menu, open over the page, closes on Escape and stops there.
-  const close = useRef(onClose)
-  close.current = onClose
+  // Back, and Escape wherever the focus is: from the history to the page, from the page to the
+  // chat. Not when something above the page took the key for itself: the account menu, open over
+  // the page, closes on Escape and stops there.
+  const back = useRef(onClose)
+  back.current = historyOpen ? () => setHistoryOpen(false) : onClose
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && !e.defaultPrevented) close.current()
+      if (e.key === 'Escape' && !e.defaultPrevented) back.current()
     }
     document.addEventListener('keydown', onKeyDown)
     return () => document.removeEventListener('keydown', onKeyDown)
   }, [])
 
+  // The focus follows: to Back when the history opens, and to what opened it when it closes.
+  const shown = useRef(historyOpen)
+  useEffect(() => {
+    if (shown.current === historyOpen) return
+    shown.current = historyOpen
+    ;(historyOpen ? backRef : historyRef).current?.focus()
+  }, [historyOpen])
+
+  const head = (
+    <div className="sheet-head">
+      <button
+        ref={backRef}
+        className="icon-button"
+        aria-label="Back"
+        title="Back"
+        autoFocus
+        onClick={() => back.current()}
+      >
+        <Icon name="back" />
+      </button>
+      <h2 id="settings-title">{historyOpen ? 'Credit history' : 'Settings'}</h2>
+    </div>
+  )
+
+  if (historyOpen) {
+    return (
+      <section id="settings" aria-labelledby="settings-title">
+        {head}
+        <History reads={history} />
+      </section>
+    )
+  }
+
   return (
     <section id="settings" aria-labelledby="settings-title">
-      <div className="sheet-head">
-        <button className="icon-button" aria-label="Back" title="Back" autoFocus onClick={onClose}>
-          <Icon name="back" />
-        </button>
-        <h2 id="settings-title">Settings</h2>
-      </div>
+      {head}
 
       <section className="card" aria-labelledby="settings-account">
         <h3 id="settings-account">Account</h3>
@@ -67,6 +115,10 @@ export function Settings({
           </>
         )}
         {credits.status === 'ready' && <Balance credits={credits.credits} />}
+        {/* Read only when it is opened, so it is there to open whether or not the credits could be read. */}
+        <button ref={historyRef} type="button" className="link" onClick={() => setHistoryOpen(true)}>
+          Credit history
+        </button>
       </section>
 
       {credits.status === 'ready' && (
@@ -95,7 +147,7 @@ function Balance({ credits: { balance, free, grants } }: { credits: Credits }) {
       <ul className="grants" aria-label="Your credits">
         {grants.map((grant, i) => (
           <li key={i}>
-            <span>{grant.source === 'free' ? 'Free weekly credits' : 'Added credits'}</span>
+            <span>{sourceText(grant.source)}</span>
             <span className="account-detail">
               {grant.left > 0
                 ? `${wholeCredits(grant.left)} left, expire ${when(grant.expiresAt)}`
