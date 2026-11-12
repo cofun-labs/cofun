@@ -114,7 +114,7 @@ export interface Charge {
 // (`grants.repaid`). In every statement below, ?1 is the user id and ?2 the time.
 
 /** What the user ?1 owes. */
-const DEBT = `((SELECT coalesce(sum(owed), 0) FROM charges WHERE user_id = ?1)
+const DEBT = `((SELECT coalesce(sum(owed), 0) FROM charges WHERE user_id = ?1 AND owed > 0)
   - (SELECT coalesce(sum(repaid), 0) FROM grants WHERE user_id = ?1))`
 
 /**

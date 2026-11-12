@@ -46,7 +46,10 @@ CREATE TABLE charges (
   owed INTEGER NOT NULL CHECK (owed >= 0 AND owed <= micro_credits)
 );
 
--- A user's charges over a period, and what they owe.
+-- A user's charges over a period.
 CREATE INDEX charges_by_user ON charges (user_id, at);
+-- What a user owes, read on every chat request: only the few charges that left something owed, so
+-- the read does not grow with the user's history.
+CREATE INDEX charges_owed ON charges (user_id, owed) WHERE owed > 0;
 -- Totals spent over a period, across users.
 CREATE INDEX charges_by_time ON charges (at);

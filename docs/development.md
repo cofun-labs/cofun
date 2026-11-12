@@ -28,7 +28,7 @@ If you change a setting in the GitHub dashboard, copy it back into these files.
 
 ## Worker
 
-Merging to `main` deploys the worker through Cloudflare Workers Builds. To deploy by hand:
+Merging to `main` deploys the worker through Cloudflare Workers Builds. To deploy by hand (`pnpm run deploy` applies the [database](#credits-database) migrations first, like the build's deploy command):
 
 ```bash
 cd worker
