@@ -162,10 +162,10 @@ describe('worker API', () => {
     let html = await (await req('GET', '/login')).text()
     expect(html).toContain('data-clerk-publishable-key="pk_live_Y2xlcmsuZXhhbXBsZS5jb20k"')
     expect(html).toContain('src="https://clerk.example.com/npm/@clerk/clerk-js@6/dist/clerk.browser.js"')
-    // `clerk.kitfun.cc$` would end in `==`, which the key leaves out.
-    env.CLERK_PUBLISHABLE_KEY = 'pk_live_Y2xlcmsua2l0ZnVuLmNjJA'
+    // `clerk.sample.cc$` would end in `==`, which the key leaves out.
+    env.CLERK_PUBLISHABLE_KEY = 'pk_live_Y2xlcmsuc2FtcGxlLmNjJA'
     html = await (await req('GET', '/login')).text()
-    expect(html).toContain('src="https://clerk.kitfun.cc/npm/@clerk/ui@1/dist/ui.browser.js"')
+    expect(html).toContain('src="https://clerk.sample.cc/npm/@clerk/ui@1/dist/ui.browser.js"')
   })
 
   it('sign-in page turns Clerk SDK telemetry off', async () => {
@@ -197,7 +197,7 @@ describe('worker API', () => {
           id: 'gw-test',
           collectLog: false,
           skipCache: true,
-          metadata: { app: 'notion-copilot', user: 'user_alice' },
+          metadata: { app: 'notico', user: 'user_alice' },
         },
       },
     })

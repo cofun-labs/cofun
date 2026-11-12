@@ -23,7 +23,7 @@ const CLERK_IMAGE_HOST = 'img.clerk.com'
 
 /**
  * Host permission covering the domain Clerk sets __client_uat on: the sign-in
- * page's registrable domain (e.g. notion-copilot.kitfun.cc -> *.kitfun.cc).
+ * page's registrable domain (e.g. notico-api.cofun.cc -> *.cofun.cc).
  * The last two labels are a guess that fits hosts like example.com; set
  * CLERK_COOKIE_DOMAIN for suffixes such as example.co.uk. IPs and single-label
  * hosts (localhost) get a permission for the host itself.
@@ -86,7 +86,7 @@ export function buildManifest(env: ManifestEnv, version: string) {
       ...(clerkHost ? [`https://${clerkHost}/*`] : []),
       // Sign-in page. On a development instance Clerk's client cookie is on this host instead.
       `${new URL(env.VITE_CLERK_SYNC_HOST).origin}/*`,
-      // Clerk sets __client_uat on the parent domain (e.g. .kitfun.cc). The side
+      // Clerk sets __client_uat on the parent domain (e.g. .cofun.cc). The side
       // panel watches it to notice sign-in and sign-out, and Chrome only reports
       // cookies whose domain the extension has host permission for.
       clerkCookiePermission(env.VITE_CLERK_SYNC_HOST, env.CLERK_COOKIE_DOMAIN),

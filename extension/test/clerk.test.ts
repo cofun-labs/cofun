@@ -13,9 +13,9 @@ describe('Clerk publishable key', () => {
   it('names the Frontend API host, with or without base64 padding', () => {
     expect(clerkFrontendApi(PRODUCTION_KEY)).toBe('clerk.example.com')
     expect(clerkFrontendApi(DEVELOPMENT_KEY)).toBe('calm-fox-1.clerk.accounts.dev')
-    // `clerk.kitfun.cc$` is 16 bytes, so its base64 would end in `==`: Clerk leaves that out.
-    expect(clerkFrontendApi('pk_live_Y2xlcmsua2l0ZnVuLmNjJA')).toBe('clerk.kitfun.cc')
-    expect(clerkFrontendApi('pk_live_Y2xlcmsua2l0ZnVuLmNjJA==')).toBe('clerk.kitfun.cc')
+    // `clerk.sample.cc$` is 16 bytes, so its base64 would end in `==`: Clerk leaves that out.
+    expect(clerkFrontendApi('pk_live_Y2xlcmsuc2FtcGxlLmNjJA')).toBe('clerk.sample.cc')
+    expect(clerkFrontendApi('pk_live_Y2xlcmsuc2FtcGxlLmNjJA==')).toBe('clerk.sample.cc')
   })
 
   it('names no host when it is empty or not a publishable key', () => {

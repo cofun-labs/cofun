@@ -37,13 +37,13 @@ npx wrangler login
 CLOUDFLARE_ACCOUNT_ID=<account id> pnpm run deploy
 ```
 
-The worker runs on the custom domain `notion-copilot.kitfun.cc` (see `routes` in `wrangler.jsonc`). The domain's zone must belong to the deploying Cloudflare account.
+The worker runs on the custom domain `notico-api.cofun.cc` (see `routes` in `wrangler.jsonc`). The domain's zone must belong to the deploying Cloudflare account.
 
 Variables in `wrangler.jsonc`:
 
 | Variable | Description |
 |---|---|
-| `CLERK_PUBLISHABLE_KEY` | Clerk publishable key, used by the sign-in page. The hosted worker uses the production instance (`pk_live_…`, Frontend API `clerk.kitfun.cc`) |
+| `CLERK_PUBLISHABLE_KEY` | Clerk publishable key, used by the sign-in page. The hosted worker uses the production instance (`pk_live_…`, Frontend API `clerk.cofun.cc`) |
 | `AI_GATEWAY_ID` | AI Gateway id; leave empty to call Workers AI directly |
 | `MODEL` | The only model clients can use |
 | `DAILY_REQUEST_LIMIT` | Chat requests each user may make per UTC day; counted in the `UserQuota` Durable Object (one per user) |
@@ -52,7 +52,7 @@ Variables in `wrangler.jsonc`:
 
 ### Usage records
 
-Every chat request that passes auth leaves one data point in the `notion_copilot_usage` Analytics Engine dataset (binding `USAGE`), written when the reply ends, is refused, or fails. Records hold sizes, token counts, and the outcome, never message or reply text. Analytics Engine deletes them after 90 days.
+Every chat request that passes auth leaves one data point in the `notico_api_usage` Analytics Engine dataset (binding `USAGE`), written when the reply ends, is refused, or fails. Records hold sizes, token counts, and the outcome, never message or reply text. Analytics Engine deletes them after 90 days.
 
 | Column | Value |
 |---|---|
@@ -71,7 +71,7 @@ SELECT index1 AS user, toStartOfDay(timestamp) AS day,
        sum(_sample_interval * double3) AS prompt_tokens,
        sum(_sample_interval * double4) AS completion_tokens,
        sumIf(_sample_interval, blob2 != 'ok' AND blob2 != 'cancelled') AS failed
-FROM notion_copilot_usage
+FROM notico_api_usage
 WHERE timestamp > NOW() - INTERVAL '7' DAY
 GROUP BY user, day
 ORDER BY day DESC, requests DESC
@@ -79,7 +79,7 @@ ORDER BY day DESC, requests DESC
 
 ### Workers Builds settings
 
-In the Cloudflare dashboard: Workers & Pages → `notion-copilot` → Settings → Builds → connect `kitfun/notion-copilot`.
+In the Cloudflare dashboard: Workers & Pages → `notico-api` → Settings → Builds → connect `cofun-labs/notico`.
 
 | Setting | Value |
 |---|---|
