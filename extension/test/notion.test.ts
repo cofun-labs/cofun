@@ -67,7 +67,10 @@ describe('the open page', () => {
     for (const url of ['https://mail.example.com/inbox', 'https://www.notion.so.evil.example/x', undefined]) {
       const tab = new FakeNotionTab(url).install()
       const err = await notionError(activeNotionTab())
-      expect([err.code, err.message]).toEqual(['no_notion_tab', 'No Notion page is open in this window.'])
+      expect([err.code, err.message]).toEqual([
+        'no_notion_tab',
+        expect.stringContaining('The current tab is not a Notion page'),
+      ])
       expect(tab.injections).toEqual([])
     }
   })

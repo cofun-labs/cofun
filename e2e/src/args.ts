@@ -8,6 +8,7 @@ export type Command =
   | { name: 'help' }
   | { name: 'reload' }
   | { name: 'panel'; url?: string }
+  | { name: 'elsewhere' }
   | { name: 'ask'; question?: string; answer?: Answer; timeoutMs: number; json: boolean }
   | { name: 'page'; title: string; markdown: string }
   | { name: 'db'; title: string; rows: string[] }
@@ -40,6 +41,9 @@ Commands:
   panel [url]                  Open the side panel for the Notion tab this tool opened, first going to
                                url if given (a tab is opened if there is none yet); starts a new chat.
                                Only on a page or database this tool created
+  elsewhere                    Bring a tab on another site (example.com) to the front, opening it if
+                               there is none; the side panel stays open with its chat, or opens
+                               with a new one if none was open. The Notion tools can't run there
   ask [question]               Send the question in the side panel, wait for the reply, and print it
                                with each tool call; without a question, keep waiting for the last reply
       --allow | --deny         Answer every approval prompt this way (otherwise stop at the first one)
@@ -50,7 +54,7 @@ Commands:
   db <title> [row…]            Create a throwaway private task database (Name, Status, Due); each row
                                is "name|status|YYYY-MM-DD", status and date optional
   trash <id>                   Move a page or database this tool created to the trash
-  close                        Close the Notion tab this tool opened (and its side panel)
+  close                        Close the tabs this tool opened
   lock acquire [purpose]       Hold the Canary lock across several commands
   lock refresh|release|status
 
@@ -117,6 +121,7 @@ export function parseArgs(argv: string[]): Parsed {
     case 'help':
       return { command: { name: 'help' }, owner }
     case 'reload':
+    case 'elsewhere':
     case 'close':
       most(0)
       return { command: { name }, owner }

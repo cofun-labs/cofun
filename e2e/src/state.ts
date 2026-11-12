@@ -8,7 +8,9 @@ import { dirname, join } from 'node:path'
 export interface State {
   /** CDP target id of the Notion tab this tool opened. */
   notionTarget?: string
-  /** CDP target id of the side panel open for that tab. */
+  /** CDP target id of the tab on another site this tool opened. */
+  otherTarget?: string
+  /** CDP target id of the side panel this tool opened. */
   panelTarget?: string
   /** Ids of pages and databases this tool created and hasn't trashed. */
   created: string[]
@@ -28,6 +30,7 @@ export async function loadState(path: string): Promise<State> {
     const raw = JSON.parse(await readFile(path, 'utf8')) as Partial<State>
     return {
       notionTarget: typeof raw.notionTarget === 'string' ? raw.notionTarget : undefined,
+      otherTarget: typeof raw.otherTarget === 'string' ? raw.otherTarget : undefined,
       panelTarget: typeof raw.panelTarget === 'string' ? raw.panelTarget : undefined,
       created: Array.isArray(raw.created) ? raw.created.filter((id) => typeof id === 'string') : [],
     }

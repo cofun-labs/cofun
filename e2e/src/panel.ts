@@ -1,4 +1,4 @@
-// The Notion tab this tool opens, the side panel next to it, and asking questions there.
+// The tabs this tool opens (one on Notion, one on another site), the side panel, and asking questions there.
 import { isNotion, pageIdFromUrl } from '../../extension/src/notion/hosts'
 import type { Answer } from './args'
 import { type Browser, type Target, sleep, until } from './cdp'
@@ -8,6 +8,8 @@ import { type PanelSnapshot, type ReplyPart, nextStep, readPanel } from './reply
 import type { State } from './state'
 
 const PANEL_URL = `chrome-extension://${EXTENSION_ID}/sidepanel.html`
+/** The other site `elsewhere` opens: a page that asks for nothing and holds nothing of anyone's. */
+export const OTHER_URL = 'https://example.com/'
 /** Where `page` and `db` open a Notion tab when this tool has none yet. */
 export const DEFAULT_NOTION_URL = process.env.E2E_NOTION_URL ?? 'https://app.notion.com/'
 
@@ -62,14 +64,46 @@ export async function notionTab(
   return tab
 }
 
+/** The tool's tab on another site, opened if there is none, once it has loaded. */
+export async function otherTab(browser: Browser, state: State): Promise<Target> {
+  let id = (await browser.find(state.otherTarget))?.targetId
+  if (!id) state.otherTarget = id = await browser.open(OTHER_URL)
+  const tab = await browser.attach(id)
+  const url = await until(
+    // A new tab starts on about:blank, already loaded, before it goes to its URL.
+    () =>
+      tab.evaluate(
+        () => (document.readyState !== 'loading' && location.href !== 'about:blank' ? location.href : undefined),
+        [],
+      ),
+    { ms: 30_000, onTimeout: () => new E2eError('The tab on the other site did not finish loading.') },
+  )
+  if (!url.startsWith(OTHER_URL)) throw new E2eError(`The tab on the other site is not on ${OTHER_URL} any more.`)
+  return tab
+}
+
+/** The URL of the tab the panel works on: the active tab of its window. */
+export function currentTabUrl(panel: Target): Promise<string | undefined> {
+  return panel.evaluate(() => chrome.tabs.query({ active: true, currentWindow: true }).then(([t]) => t?.url), [])
+}
+
 /** Whether a Notion URL shows a page this tool created, so the agent works only on throwaway pages. */
 export function isOwnPage(url: string, created: string[]): boolean {
   const id = pageIdFromUrl(url)
   return !!id && created.includes(id)
 }
 
-/** Opens the side panel for the tool's Notion tab, starts a new chat, and returns the panel. */
-export async function openPanel(browser: Browser, state: State, notion: Target): Promise<Target> {
+/**
+ * Brings `notion`, one of the tool's tabs (on Notion or not), to the front and opens the side panel
+ * there; a panel already open in the window stays as it is. Starts a new chat unless `keepChat`.
+ * Returns the panel.
+ */
+export async function openPanel(
+  browser: Browser,
+  state: State,
+  notion: Target,
+  { keepChat = false } = {},
+): Promise<Target> {
   // The panel works on the active tab of its window.
   await browser.activate(notion.targetId)
 
@@ -104,7 +138,7 @@ export async function openPanel(browser: Browser, state: State, notion: Target):
               chrome.tabs.query({ title: m }).then((found) => (found.length ? found.map((t) => t.id!) : undefined)),
             [marker],
           ),
-        { ms: 5_000, onTimeout: () => new E2eError('Could not find the Notion tab among the browser’s tabs.') },
+        { ms: 5_000, onTimeout: () => new E2eError('Could not find the tab among the browser’s tabs.') },
       )
     } finally {
       await notion.evaluate(
@@ -114,7 +148,7 @@ export async function openPanel(browser: Browser, state: State, notion: Target):
         [marker, title],
       )
     }
-    if (tabs.length !== 1) throw new E2eError('Several tabs carry the marker of the Notion tab.')
+    if (tabs.length !== 1) throw new E2eError('Several tabs carry the marker of the tab.')
     tabId = tabs[0]
     await helper.evaluate((id: number) => chrome.sidePanel.open({ tabId: id }), [tabId], { userGesture: true })
   } finally {
@@ -122,7 +156,7 @@ export async function openPanel(browser: Browser, state: State, notion: Target):
   }
 
   // The panel is the shown extension page whose window's active tab is ours (a hidden one may be
-  // another tab's).
+  // another window's).
   const panel = await until(
     async () => {
       for (const t of await browser.targets()) {
@@ -157,7 +191,7 @@ export async function openPanel(browser: Browser, state: State, notion: Target):
   )
   if (!snap.ready) throw new E2eError('Notico is signed out in the side panel. Sign in by hand, then try again.')
   if (snap.busy) throw new E2eError('A reply is still running in the side panel; wait for it with pnpm e2e ask.')
-  if (snap.replies > 0) await clickButton(panel, '.toolbar button', 'New chat')
+  if (snap.replies > 0 && !keepChat) await clickButton(panel, '.toolbar button', 'New chat')
   return panel
 }
 

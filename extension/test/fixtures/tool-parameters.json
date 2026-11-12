@@ -406,6 +406,11 @@
     "required": ["pages"],
     "additionalProperties": false
   },
+  "get_current_tab": {
+    "type": "object",
+    "properties": {},
+    "additionalProperties": false
+  },
   "get_selection": {
     "type": "object",
     "properties": {},

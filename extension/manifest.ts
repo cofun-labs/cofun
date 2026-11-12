@@ -74,9 +74,10 @@ export function buildManifest(env: ManifestEnv, version: string) {
     ...(env.CRX_PUBLIC_KEY ? { key: env.CRX_PUBLIC_KEY } : {}),
     icons: ICONS,
     // scripting: Notion calls run in the user's Notion tab (src/notion/tab.ts).
-    // tabs: background.ts and src/notion/tab.ts read tab URLs to tell Notion tabs from others. Host
-    // permissions would expose a Notion tab's URL too, but not once the user limits the extension's
-    // site access; with tabs the panel still opens there and says which access is missing.
+    // tabs: the side panel reads the current tab's URL and title, to tell a Notion tab from others
+    // (src/notion/tab.ts) and for the get_current_tab tool (src/tools.ts). Host permissions would
+    // expose a Notion tab's URL too, but not once the user limits the extension's site access; with
+    // tabs the tools still find the tab there and say which access is missing.
     permissions: ['sidePanel', 'storage', 'tabs', 'cookies', 'scripting'],
     host_permissions: [
       'https://www.notion.so/*',
@@ -93,8 +94,9 @@ export function buildManifest(env: ManifestEnv, version: string) {
     ],
     content_security_policy: { extension_pages: contentSecurityPolicy(env) },
     background: { service_worker: 'background.js', type: 'module' },
-    // No side_panel.default_path: without it, a tab has no panel unless background.ts
-    // sets one, so the panel stays off on other sites even before background.ts runs.
+    // One panel per window, on every tab: it stays open, with its conversation, as the user
+    // switches tabs. The Notion tools work only while the current tab is on Notion.
+    side_panel: { default_path: 'sidepanel.html' },
     action: { default_title: 'Open Notico', default_icon: ICONS },
   }
 }

@@ -28,12 +28,12 @@
 - **Databases:** Create databases, add rows, fill in properties, and add, rename, or remove properties and select options.
 - **Organize:** Move pages under another page, duplicate them, or move them to Notion's trash (it asks you first).
 - **Collaborate:** Add comments on a page or on a block, and mention workspace members by name.
-- **Stay in context:** It knows which page is open and what you selected in it. Past conversations are saved, searchable, and can be picked up again.
+- **Stay in context:** It knows which page is open and what you selected in it. The panel stays open, with your conversation, as you switch tabs. Past conversations are saved, searchable, and can be picked up again.
 
 ## Get started
 
 1. **Install** the extension from the Chrome Web Store. _(Not published yet; the link will be here.)_
-2. **Open a Notion page** and click the Notico icon in Chrome's toolbar (if it's hidden, pin it from the puzzle-piece Extensions menu). The side panel opens next to the page.
+2. **Open a Notion page** and click the Notico icon in Chrome's toolbar (if it's hidden, pin it from the puzzle-piece Extensions menu). The side panel opens next to the page. It opens on any other tab too, and you can chat there, but reading and changing Notion works only while the tab you're on is a Notion page.
 3. **Sign in.** The panel opens a sign-in page in a new tab (Google is supported); once you're signed in, the panel picks it up.
 4. **Ask.** A few things to try:
    - _Summarize this page in five bullet points._
@@ -57,7 +57,7 @@ There is nothing to connect on the Notion side: no integration to create, no tok
 
 ## Privacy and safety
 
-**What leaves your browser.** Your questions, and what Notico reads to answer them (pages, database rows, comments, search results), go to the Notico server and on to the AI model, which runs on Cloudflare Workers AI. The server doesn't keep them: for each request it records who asked, sizes, token counts, and the outcome, never the text of a prompt or a reply. [PRIVACY.md](PRIVACY.md) has the full account: what is read, which hosts it goes to, and what is kept.
+**What leaves your browser.** Your questions, and what Notico reads to answer them (pages, database rows, comments, search results), go to the Notico server and on to the AI model, which runs on Cloudflare Workers AI. On a tab that isn't Notion, Notico never reads the page; it sends that tab's address and title only when a question needs them. The server doesn't keep any of this: for each request it records who asked, sizes, token counts, and the outcome, never the text of a prompt or a reply. [PRIVACY.md](PRIVACY.md) has the full account: what is read, which hosts it goes to, and what is kept.
 
 **What stays on your device.** Conversations are saved in Chrome on your device, per account, and kept after you sign out so you can pick up again. They are not encrypted: anyone who can use your Chrome profile can read them, including the page content Notico read.
 

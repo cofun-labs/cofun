@@ -58,7 +58,11 @@ export function countNotionRequests(ask?: (question: string) => Promise<boolean>
   return (usage = new NotionUsage(ask))
 }
 
-/** The active tab of the side panel's window, if it is on Notion; otherwise a `no_notion_tab` error. */
+/**
+ * The active tab of the side panel's window, if it is on Notion; otherwise a `no_notion_tab` error.
+ * The panel is open on every tab, so this is where a Notion tool finds out it can't run. Only the
+ * active tab counts: a Notion page open in another tab is never used instead.
+ */
 export async function activeNotionTab(): Promise<NotionTab> {
   // The question that asked for the tab, even if another one starts while the tab is looked up.
   const counted = usage
@@ -69,6 +73,8 @@ export async function activeNotionTab(): Promise<NotionTab> {
   const client = new NotionClient(tabTransport(tab.id), counted, notionCooldown)
   return { tabId: tab.id, url: tab.url, pageId: pageIdFromUrl(tab.url), client }
 }
+
+const TAB_RELOADED = 'The Notion tab reloaded or went to another page before Notion answered this request.'
 
 const NO_SITE_ACCESS =
   "Notico is not allowed to access this Notion site. Allow it in the extension's site access settings and try again"
@@ -108,7 +114,8 @@ export function tabTransport(tabId: number): NotionTransport {
       })
     }
     // No result: the tab reloaded or navigated while the request was in flight.
-    if (!result) throw new NotionError('no_notion_tab', NO_NOTION_TAB, { unanswered: true })
+    // It may still be on Notion, so this doesn't send the user to a Notion page as NO_NOTION_TAB does.
+    if (!result) throw new NotionError('no_notion_tab', TAB_RELOADED, { unanswered: true })
     // The tab was no longer on Notion, so nothing was sent.
     if ('notOnNotion' in result) throw new NotionError('no_notion_tab', NO_NOTION_TAB)
     return result

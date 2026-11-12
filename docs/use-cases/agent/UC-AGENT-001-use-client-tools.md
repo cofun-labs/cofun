@@ -4,7 +4,7 @@
 
 A signed-in user asks the AI something it can only answer with information or actions the extension has, such as what a Notion page says. The extension offers the AI a set of tools. Instead of guessing, the AI asks the extension to run one; the extension runs it and sends back the result, and the AI uses that result to answer. The AI may use several tools, one after another, before it answers.
 
-With each question, the AI is also told which Notion page is open in the current tab, or that none is, so it knows what "this page" means without using a tool. The user may move to another page between questions; each question is told the page open when it was asked.
+With each question, the AI is also told which Notion page is open in the current tab, or that the current tab is not a Notion page, so it knows what "this page" means without using a tool. The user may move to another page between questions; each question is told the page open when it was asked.
 
 Each question gets a bounded number of steps, so a model that keeps calling tools cannot run on forever, and the user can stop the agent at any time.
 
@@ -36,7 +36,7 @@ Key constraints:
 | UC-AGENT-001-S12 | P1 | ✅ | Given the agent working on a question; when the user stops it; then the model call and any running tool stop, and the conversation keeps the tools the agent used so far and how each ended, including one stopped while it waited for the user's confirmation, but not the unfinished reply or tools it had not reached yet. |
 | UC-AGENT-001-S13 | P1 | ✅ | Given a question that fails after the agent used a tool; when the user asks the next question; then the AI is given that tool's request and result. |
 | UC-AGENT-001-S14 | P1 | ✅ | Given a question that is stopped or fails before the agent used any tool; when the user asks the next question; then that question is left out of the conversation. |
-| UC-AGENT-001-S15 | P1 | ✅ | Given a Notion page open in the current tab; when the user asks a question, moves to another site, and asks again; then the AI is told with the first question which page was open, and with the second that no Notion page is, also when the session is reopened later. |
+| UC-AGENT-001-S15 | P1 | ✅ | Given a Notion page open in the current tab; when the user asks a question, moves to another site, and asks again; then the AI is told with the first question which page was open, and with the second that the current tab is not a Notion page, also when the session is reopened later. |
 | UC-AGENT-001-S17 | P1 | ✅ | Given a question that reads a Notion page; when it ends; then the agent reports how many Notion requests it made, and the saved session keeps that count. |
 | UC-AGENT-001-S18 | P1 | ✅ | Given a question that has made as many Notion requests as it may; when the next request would go over that; then the agent asks the user and sends nothing more until they answer, and when they go on, the question continues. |
 | UC-AGENT-001-S19 | P1 | ✅ | Given a question that has made as many Notion requests as it may; when the user chooses to stop; then nothing more is sent, the question ends, and the AI is told not to work around the limit. |
