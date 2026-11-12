@@ -103,6 +103,7 @@ extension/                Chrome extension
   src/notion/tab.ts       runs Notion requests in the user's Notion tab (chrome.scripting)
   src/sidepanel/          React UI (main.tsx: sign-in, Chat.tsx: chat, Sessions.tsx: saved sessions,
                           ToolCall.tsx: one tool call and its changes, Header.tsx: the top bar,
+                          Markdown.tsx: a reply's text as formatted Markdown,
                           Account.tsx: the avatar and its menu, Settings.tsx: the settings page,
                           History.tsx: the history of the user's credits,
                           icons.tsx: the Cofun mark and the icons, style.css: the look)

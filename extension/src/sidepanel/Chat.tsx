@@ -8,6 +8,7 @@ import { currentNotionPage, forgetReads, openPageNote, TOOLS } from '../tools'
 import { AccountMenu } from './Account'
 import { Header } from './Header'
 import { Icon, Mark } from './icons'
+import { Markdown } from './Markdown'
 import { Sessions } from './Sessions'
 import { Settings } from './Settings'
 import { ToolCall, type ShownTool } from './ToolCall'
@@ -494,7 +495,7 @@ export function Chat({ userId }: { userId: string }) {
                     p.type === 'text' ? (
                       p.text.trim() && (
                         <div key={j} className="text">
-                          {p.text.trim()}
+                          <Markdown text={p.text.trim()} />
                         </div>
                       )
                     ) : (

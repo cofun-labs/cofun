@@ -2,7 +2,7 @@
 
 ## Behavior
 
-A signed-in user asks the AI something in the side panel and reads the reply as it streams in. A session with no question yet offers a few example questions; picking one puts it in the message box, where the user can change it before sending.
+A signed-in user asks the AI something in the side panel and reads the reply as it streams in, formatted the way the AI wrote it: headings, emphasis, lists, tables, code, quotes, and links. The user's own question is shown as typed. A session with no question yet offers a few example questions; picking one puts it in the message box, where the user can change it before sending.
 
 Using the AI costs credits, so one account cannot run up unbounded model usage. A credit is a thousandth of a US dollar, and each call to the model costs what its tokens cost the service, with nothing added. Input the model reads from its cache costs less than new input, and is charged at that lower price. A question the AI answers with tools (see UC-AGENT-001) makes one model call for each round trip, and costs the sum of them.
 
@@ -11,6 +11,7 @@ Every signed-in user gets 200 free credits a week. They arrive when the user ask
 Key constraints:
 
 - The server chooses the model. Clients cannot use another one.
+- A reply is text the AI wrote, and cannot make the side panel run or load anything: HTML in it is shown as text, images in it are not loaded, and only web links in it can be followed.
 - A user with no credits left cannot reach the model again until their next free credits arrive.
 - A model call that starts with credits left is answered in full, even when it costs more than what was left. What it overspent is taken out of the next credits the user gets.
 - Credits that have expired cannot be spent.
@@ -33,6 +34,9 @@ Key constraints:
 | UC-CHAT-001-S15 | P1 | ✅ | Given a model call whose input was partly read from the model's cache; when it is charged; then the cached part costs the cached price and the rest the full price. |
 | UC-CHAT-001-S03 | P0 | ✅ | Given a signed-in user with the side panel open on Notion; when they send a message; then the message appears and the reply streams in below it. |
 | UC-CHAT-001-S08 | P2 | ✅ | Given a session with no question yet; when the user picks one of the example questions; then it is in the message box, not sent, and the user can change it before sending. |
+| UC-CHAT-001-S16 | P1 | ✅ | Given a reply written in Markdown; when it is shown in the side panel; then it reads formatted (headings, emphasis, lists, tables, code, quotes, links), and the user's question is shown as typed. |
+| UC-CHAT-001-S17 | P0 | ✅ | Given a reply with HTML and non-web links in it; when it is shown; then the HTML is shown as text, and only its web links can be followed. |
+| UC-CHAT-001-S18 | P0 | ✅ | Given a reply with an image in it; when it is shown; then the image is not loaded, and its description links to it instead. |
 
 ### ai-e2e
 

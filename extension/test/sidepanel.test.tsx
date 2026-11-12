@@ -166,6 +166,129 @@ describe('asking the AI', () => {
   })
 })
 
+describe('a formatted reply', () => {
+  it('[UC-CHAT-001-S16] the reply is shown formatted, and the question as typed', async () => {
+    const { browser, user } = await openPanel()
+    browser.ai.script.push({
+      reply: [
+        '## Shopping',
+        'You need **milk** and `eggs`, *today*:',
+        '1. milk\n   - whole\n2. eggs',
+        '- [x] bread',
+        '> Buy early.',
+        '---',
+        '| Item | Count |\n| --- | --- |\n| milk | 2 |',
+        '```\nlist = [milk, eggs]\n```',
+        'See [the store](https://shop.example.com/list).',
+      ].join('\n\n'),
+    })
+
+    await ask(user, 'What do I **need**?')
+    const heading = await screen.findByRole('heading', { level: 2, name: 'Shopping' })
+    await answered()
+
+    // The question stays as the user typed it.
+    expect(screen.getByText('What do I **need**?')).toBeVisible()
+    expect(heading).toBeVisible()
+    expect(screen.getByText('milk', { selector: 'strong' })).toBeVisible()
+    expect(screen.getByText('eggs', { selector: 'code' })).toBeVisible()
+    expect(screen.getByText('today', { selector: 'em' })).toBeVisible()
+    expect(screen.getByRole('separator')).toBeInTheDocument()
+    const lists = screen.getAllByRole('list')
+    expect(within(lists[0]).getByText('whole')).toBeVisible()
+    expect(screen.getByRole('checkbox', { name: '' })).toBeChecked()
+    expect(screen.getByText('Buy early.').closest('blockquote')).not.toBeNull()
+    const table = screen.getByRole('table')
+    expect(within(table).getByRole('columnheader', { name: 'Count' })).toBeVisible()
+    expect(within(table).getByRole('cell', { name: '2' })).toBeVisible()
+    expect(screen.getByText('list = [milk, eggs]').closest('pre')).not.toBeNull()
+    const link = screen.getByRole('link', { name: 'the store' })
+    expect(link).toHaveAttribute('href', 'https://shop.example.com/list')
+    expect(link).toHaveAttribute('target', '_blank')
+    // None of the Markdown's own characters are left on screen.
+    expect(screen.queryByText(/\*\*milk\*\*|## Shopping|\| Item/)).not.toBeInTheDocument()
+  })
+
+  it('[UC-CHAT-001-S16] a single line break in a reply stays a line break', async () => {
+    const { browser, user } = await openPanel()
+    browser.ai.script.push({ reply: 'Owner: Ana\nDue: Friday' })
+
+    await ask(user, 'Who owns it?')
+    const owner = await screen.findByText(/Owner: Ana/)
+    await answered()
+
+    expect(owner.querySelector('br')).not.toBeNull()
+  })
+
+  it('a reply still coming in is formatted as it streams, an unclosed code block included', async () => {
+    const { browser, user } = await openPanel()
+    const resume = pausedReply(browser, 'Run:\n\n```\nnpm test now\n```\n\nThen wait.')
+
+    await ask(user, 'How do I test?')
+
+    // The first two words are in: the code block has started and is not closed yet.
+    const code = await screen.findByText(/^npm/)
+    expect(code.closest('pre')).not.toBeNull()
+    expect(screen.queryByText(/```/)).not.toBeInTheDocument()
+
+    resume()
+    expect(await screen.findByText('Then wait.')).toBeVisible()
+    await answered()
+    expect(screen.getByText('npm test now').closest('pre')).not.toBeNull()
+  })
+
+  it('[UC-CHAT-001-S17] HTML in a reply is shown as text, and only web links can be followed', async () => {
+    const { browser, user } = await openPanel()
+    browser.ai.script.push({
+      reply: 'Look: <b onclick="alert(1)">bold</b>\n\n[run](javascript:alert(1)) and [mail](mailto:a@example.com)',
+    })
+
+    await ask(user, 'Show me')
+    await screen.findByText(/Look:/)
+    await answered()
+
+    const reply = screen.getByText(/Look:/)
+    expect(reply).toHaveTextContent('Look: <b onclick="alert(1)">bold</b>')
+    expect(reply.querySelector('b')).toBeNull()
+    // Links that are not http or https are shown as their text, not as links.
+    expect(screen.getByText('run')).toBeVisible()
+    expect(screen.getByText('mail')).toBeVisible()
+    expect(screen.queryAllByRole('link')).toEqual([])
+  })
+
+  it('[UC-CHAT-001-S18] an image in a reply is not loaded: its description links to it instead', async () => {
+    const { browser, user } = await openPanel()
+    browser.ai.script.push({ reply: 'Here is the chart: ![Sales by month](https://images.example.com/chart.png)' })
+
+    await ask(user, 'Show the chart')
+    await screen.findByText(/Here is the chart/)
+    await answered()
+
+    expect(within(screen.getByText(/Here is the chart/)).queryByRole('img')).toBeNull()
+    // Nothing on the page asks for the image's address.
+    expect(document.querySelector('[src*="images.example.com"]')).toBeNull()
+    expect(screen.getByRole('link', { name: 'Sales by month' })).toHaveAttribute(
+      'href',
+      'https://images.example.com/chart.png',
+    )
+  })
+
+  it('[UC-CHAT-001-S18] an image inside a link is shown as its description, and the link goes where it says', async () => {
+    const { browser, user } = await openPanel()
+    browser.ai.script.push({
+      reply: 'Status: [![Build passing](https://img.example.com/b.svg)](https://ci.example.com)',
+    })
+
+    await ask(user, 'Show the status')
+    await screen.findByText(/Status:/)
+    await answered()
+
+    expect(screen.getAllByRole('link')).toHaveLength(1)
+    expect(screen.getByRole('link', { name: 'Build passing' })).toHaveAttribute('href', 'https://ci.example.com')
+    expect(document.querySelector('[src*="img.example.com"]')).toBeNull()
+  })
+})
+
 describe('on a tab that is not Notion', () => {
   const INBOX = 'https://mail.example.com/inbox?token=secret'
 
