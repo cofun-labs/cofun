@@ -90,7 +90,10 @@ export function readPanel(): PanelSnapshot {
         status: [...el.classList].find((c) => c !== 'tool') ?? 'unknown',
         sections,
       })
-    } else if (el.matches('.text')) parts.push({ type: 'text', text })
+    }
+    // The reply's text is formatted Markdown: read it as laid out, so paragraphs and list items keep their lines.
+    else if (el.matches('.text'))
+      parts.push({ type: 'text', text: el instanceof HTMLElement ? el.innerText.trim() : text })
     else if (el.matches('.error')) parts.push({ type: 'error', text })
     // "…" only says the model is still working.
     else if (el.matches('.note') && text !== '…') parts.push({ type: 'note', text })

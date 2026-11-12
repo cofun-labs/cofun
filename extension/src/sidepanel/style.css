@@ -273,6 +273,140 @@ header .title {
   align-self: stretch;
 }
 
+/* The reply's Markdown, formatted to fit the panel: compact headings, and wide tables and code
+   blocks scroll sideways inside the reply instead of widening it. */
+.reply .text {
+  min-width: 0;
+  white-space: normal;
+}
+
+.text > :first-child {
+  margin-top: 0;
+}
+
+.text > :last-child {
+  margin-bottom: 0;
+}
+
+.text p,
+.text ul,
+.text ol,
+.text blockquote,
+.text pre,
+.text .table-scroll {
+  margin: 0 0 8px;
+}
+
+.text h1,
+.text h2,
+.text h3,
+.text h4,
+.text h5,
+.text h6 {
+  margin: 14px 0 6px;
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.35;
+}
+
+.text h1 {
+  font-size: 17px;
+}
+
+.text h2 {
+  font-size: 15.5px;
+}
+
+.text ul,
+.text ol {
+  padding-left: 22px;
+}
+
+.text li + li,
+.text li > ul,
+.text li > ol {
+  margin-top: 2px;
+}
+
+.text li > ul,
+.text li > ol {
+  margin-bottom: 0;
+}
+
+/* A task list: the checkbox stands in for the bullet. */
+.text li:has(> input[type='checkbox']) {
+  list-style: none;
+}
+
+.text li > input[type='checkbox'] {
+  margin: 0 6px 0 -18px;
+  vertical-align: -1px;
+}
+
+.text blockquote {
+  padding-left: 12px;
+  border-left: 3px solid var(--border);
+  color: var(--muted);
+}
+
+.text hr {
+  margin: 12px 0;
+  border: none;
+  border-top: 1px solid var(--border);
+}
+
+.text a {
+  color: var(--accent-text);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.text code {
+  padding: 1px 4px;
+  border-radius: 4px;
+  background: var(--tint);
+  font:
+    12.5px/1.5 ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    monospace;
+}
+
+.text pre {
+  overflow-x: auto;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--tint);
+}
+
+.text pre code {
+  padding: 0;
+  background: none;
+  white-space: pre;
+}
+
+.text .table-scroll {
+  overflow-x: auto;
+}
+
+.text table {
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.text th,
+.text td {
+  padding: 4px 8px;
+  border: 1px solid var(--border);
+  text-align: left;
+  vertical-align: top;
+}
+
+.text th {
+  background: var(--tint);
+  font-weight: 600;
+}
+
 .reply .error {
   align-self: stretch;
   padding: 8px 12px;
