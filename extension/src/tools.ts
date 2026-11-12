@@ -165,6 +165,45 @@ function named(result: string | undefined, line: RegExp): string | undefined {
   return name || undefined
 }
 
+/** What a backslash keeps literal in a title, as read_page escapes it (see `inline` in notion/blocks.ts). */
+const ESCAPED = '\\`*_~[]^|#><$@'
+
+/**
+ * A page title as read_page shows it (inline Markdown, see `inline` in notion/blocks.ts) as the user
+ * sees it in Notion: marks dropped, a link or mention as its text, code and escaped characters as
+ * they are. For the side panel only; what the model reads keeps the Markdown.
+ */
+function plainTitle(markdown: string): string {
+  const md = markdown.replace(/<\/?span\b[^>]*>/g, '')
+  const word = (c: string | undefined) => !!c && /[\p{L}\p{N}]/u.test(c)
+  let out = ''
+  for (let i = 0; i < md.length; i++) {
+    const c = md[i]
+    if (c === '\\' && ESCAPED.includes(md[i + 1] ?? '')) {
+      out += md[++i]
+    } else if (c === '`' && md.indexOf('`', i + 1) > i) {
+      const end = md.indexOf('`', i + 1)
+      out += md.slice(i + 1, end)
+      i = end
+    } else if (c === '[' || (c === '@' && md[i + 1] === '[')) {
+      // `[Title](id)` and `@[Name]`: the text between the brackets, its own Markdown read too.
+      const start = c === '@' ? i + 2 : i + 1
+      let end = start
+      while (end < md.length && md[end] !== ']') end += md[end] === '\\' ? 2 : 1
+      if (end >= md.length) {
+        out += c
+        continue
+      }
+      out += plainTitle(md.slice(start, end))
+      const target = md[end + 1] === '(' ? md.indexOf(')', end + 2) : -1
+      i = target > end ? target : end
+    } else if (c === '*' || c === '~' || (c === '_' && !(word(md[i - 1]) && word(md[i + 1])))) {
+      // A mark.
+    } else out += c
+  }
+  return out
+}
+
 /** A name a result gives in quotes as `quote` writes it (JSON), read back. */
 function quoted(result: string | undefined, line: RegExp): string | undefined {
   const text = named(result, line)
@@ -208,8 +247,12 @@ export const readPage = defineTool({
   describe: (args, result) =>
     on(
       READ,
-      named(result, /^Page: (.+) \^[0-9a-f]+(?:\n|$)/),
-      args?.page ? 'a page' : 'the open page',
+      // A database's name is plain text already; the header (up to the first blank line) says which it is.
+      result?.split('\n\n')[0].includes('\nThis page is a database:')
+        ? named(result, /^Page: (.+) \^[0-9a-f]+(?:\n|$)/)
+        : plainTitle(named(result, /^Page: (.+) \^[0-9a-f]+(?:\n|$)/) ?? '') || undefined,
+      // Arguments that don't parse may have named another page.
+      !args || args.page ? 'a page' : 'the open page',
       args?.part && args.part > 1 ? `part ${args.part} of` : undefined,
     ),
   args: z.strictObject({
@@ -498,7 +541,7 @@ export const queryDatabase = defineTool({
     on(
       READ,
       named(result, /^Database: (.+) \^[0-9a-f]+(?:\n|$)/),
-      args?.database ? 'a database' : 'the open database',
+      !args || args.database ? 'a database' : 'the open database',
       'rows of',
     ),
   args: QUERY_ARGS,
@@ -799,7 +842,7 @@ export const listPages = defineTool({
   describe: (args) =>
     args?.page
       ? { verb: LIST, what: 'the pages under a page' }
-      : on(LIST, args?.section, 'the pages in the sidebar', 'the pages in'),
+      : on(LIST, args?.section, 'the sidebar', 'the pages in'),
   args: z.strictObject({
     page: z.string().describe('URL or id of a page to list the pages under. Leave out for the top level.').optional(),
     section: z
@@ -1194,7 +1237,10 @@ export const createPage = defineTool({
     'database, and the new page is a row of it, with `properties` set by name (values as query_database shows ' +
     "them; options must exist). Returns the new page's id and URL.",
   touched: (_args, result) => ({ changed: idIn(result, /^(?:Added the row|Created the page) “.*” \^([0-9a-f]{32}) /) }),
-  describe: (args) => on(CREATE, args?.title.trim() || undefined, 'a page', 'the page'),
+  describe: (args) => {
+    const name = plainTitle(args?.title ?? '').trim()
+    return name ? { verb: CREATE, what: 'the page', name } : { verb: CREATE, what: 'a page' }
+  },
   args: z.strictObject({
     title: z.string({ error: TITLE_EMPTY }).describe(`The new page's title, on one line: ${INLINE_MARKDOWN}.`),
     markdown: z.string().describe("The page's content, as Markdown. Leave out for an empty page.").optional(),
@@ -1614,7 +1660,10 @@ export const createDatabase = defineTool({
     'another page): a title column (`title_property`, "Name" if left out), then `properties` in order, with ' +
     "options for selects. Add rows afterwards with create_page. Returns the new database's id and URL.",
   touched: (_args, result) => ({ changed: idIn(result, /^Created the database “.*” \^([0-9a-f]{32}) /) }),
-  describe: (args) => on(CREATE, args?.title.trim() || undefined, 'a database', 'the database'),
+  describe: (args) => {
+    const name = args?.title.trim()
+    return name ? { verb: CREATE, what: 'the database', name } : { verb: CREATE, what: 'a database' }
+  },
   args: z.strictObject({
     parent: z.string({ error: DATABASE_PARENT }).describe('URL or id of the page to create it in.'),
     title: z.string({ error: TITLE_EMPTY }).describe(`The database's name. ${BACKSLASH}`),
@@ -2597,7 +2646,7 @@ export const readComments = defineTool({
     on(
       READ,
       quoted(result, /^Comments on the page (".*") \^[0-9a-f]+/m),
-      args?.page ? 'a page' : 'the open page',
+      !args || args.page ? 'a page' : 'the open page',
       'the comments on',
     ),
   args: z.strictObject({

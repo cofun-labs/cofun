@@ -111,7 +111,8 @@ export const ToolCall = memo(function ToolCall({
           <span className="tool-mark" role="img" aria-label={LABEL[tool.status]}>
             <Icon name={MARK[tool.status]} />
           </span>{' '}
-          <Phrase action={action} status={tool.status} />
+          {/* A call asking its own question (such as whether to go on) is already running: the chip says so. */}
+          <Phrase action={action} status={tool.status === 'confirm' && tool.question ? 'running' : tool.status} />
         </summary>
         <div className="tool-body">
           {tool.preview && (
