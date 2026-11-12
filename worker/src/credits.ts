@@ -99,22 +99,32 @@ export interface ManualGrant {
   by: string
 }
 
-/** A model call to charge: when it ended, the model, its tokens, and what it cost in micro-credits. */
-export interface Charge {
+/**
+ * A model call that ended, to record with what it cost: when it started and ended, how it ended,
+ * its tokens (`estimated` when the call was cut short before the model reported them), and its cost
+ * in micro-credits, 0 when it cost nothing.
+ */
+export interface ModelCall {
   model: string
+  startedAt: number
+  endedAt: number
+  stream: boolean
+  outcome: string
+  finishReason: string
   promptTokens: number
   cachedTokens: number
   completionTokens: number
+  estimated: boolean
   cost: number
 }
 
 // How the tables hold a ledger (worker/migrations/): `grants` has one row per grant with what is
-// left of it, and `charges` one row per model call that was charged. What a user owes is not a
-// number of its own: it is what charges did not cover (`charges.owed`) less what grants paid back
-// (`grants.repaid`). In every statement below, ?1 is the user id and ?2 the time.
+// left of it, and `model_calls` one row per model call with what it cost. What a user owes is not a
+// number of its own: it is what calls cost beyond the grants (`model_calls.owed`) less what grants
+// paid back (`grants.repaid`). In every statement below, ?1 is the user id and ?2 the time.
 
 /** What the user ?1 owes. */
-const DEBT = `((SELECT coalesce(sum(owed), 0) FROM charges WHERE user_id = ?1 AND owed > 0)
+const DEBT = `((SELECT coalesce(sum(owed), 0) FROM model_calls WHERE user_id = ?1 AND owed > 0)
   - (SELECT coalesce(sum(repaid), 0) FROM grants WHERE user_id = ?1))`
 
 /**
@@ -146,18 +156,21 @@ FROM grants WHERE user_id = ?1 ORDER BY granted_at, id`
 const READ_DEBT = `SELECT ${DEBT} AS debt`
 
 /**
- * The record of a charge, with the part of its cost the grants that still count do not cover: what
- * the user owes. It runs before SPEND, in the same batch, so both see the same grants. ?3 is the
- * model, ?4 to ?6 the prompt, cached, and completion tokens, ?7 the cost.
+ * The record of a model call, with the part of its cost the grants that still count do not cover:
+ * what the user owes. It runs before SPEND, in the same batch, so both see the same grants. ?2 is
+ * when the call ended, ?3 the model, ?4 when it started, ?5 whether it streamed, ?6 its outcome, ?7
+ * its finish reason, ?8 to ?10 the prompt, cached, and completion tokens, ?11 whether they are
+ * estimated, ?12 the cost.
  */
-const RECORD_CHARGE = `INSERT INTO charges (user_id, at, model, prompt_tokens, cached_tokens, completion_tokens, micro_credits, owed)
-SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?7, max(0, ?7 - coalesce(sum(left), 0))
+const RECORD_CALL = `INSERT INTO model_calls (user_id, ended_at, model, started_at, stream, outcome, finish_reason,
+  prompt_tokens, cached_tokens, completion_tokens, estimated, micro_credits, owed)
+SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, max(0, ?12 - coalesce(sum(left), 0))
 FROM grants WHERE user_id = ?1 AND expires_at > ?2`
 
 /**
  * Takes the cost ?3 from the grants that still count, from the one that expires first: each takes
- * what the grants before it did not cover, up to what it has left. A relative update, so charges
- * that arrive together each take their own cost and none is lost.
+ * what the grants before it did not cover, up to what it has left. A relative update, so calls that
+ * end together each take their own cost and none is lost.
  */
 const SPEND = `UPDATE grants SET left = grants.left - spend.take
 FROM (
@@ -195,19 +208,30 @@ export class Ledger {
   }
 
   /**
-   * Charges a model call that ended: takes its cost from the user, from the grant that expires
-   * first, and keeps the call's record. What the grants don't cover is owed, and comes out of the
-   * next grant. A call that cost nothing is not charged, and leaves no record.
+   * Records a model call that ended, and takes what it cost from the user, from the grant that
+   * expires first, in one batch: both are written, or neither. What the grants don't cover is
+   * owed, and comes out of the next grant. The time is when the call ended.
    */
-  async charge(now: number, { model, promptTokens, cachedTokens, completionTokens, cost }: Charge): Promise<void> {
-    for (const n of [promptTokens, cachedTokens, completionTokens, cost]) {
-      if (!Number.isSafeInteger(n) || n < 0) throw new Error('a charge needs non-negative integers')
+  async endCall(call: ModelCall): Promise<void> {
+    const { promptTokens, cachedTokens, completionTokens, cost, startedAt, endedAt } = call
+    for (const n of [promptTokens, cachedTokens, completionTokens, cost, startedAt, endedAt]) {
+      if (!Number.isSafeInteger(n) || n < 0) throw new Error('a model call needs non-negative integers')
     }
-    if (cost === 0) return
-    await this.db.batch([
-      this.statement(RECORD_CHARGE, now, model, promptTokens, cachedTokens, completionTokens, cost),
-      this.statement(SPEND, now, cost),
-    ])
+    const record = this.statement(
+      RECORD_CALL,
+      endedAt,
+      call.model,
+      startedAt,
+      call.stream ? 1 : 0,
+      call.outcome,
+      call.finishReason,
+      promptTokens,
+      cachedTokens,
+      completionTokens,
+      call.estimated ? 1 : 0,
+      cost,
+    )
+    await this.db.batch(cost === 0 ? [record] : [record, this.statement(SPEND, endedAt, cost)])
   }
 
   /**

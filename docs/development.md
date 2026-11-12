@@ -108,7 +108,7 @@ ORDER BY day DESC, requests DESC
 
 ### Credits database
 
-Grants and charges are kept in the D1 database `notico-db` (binding `DB`), on the account that deploys the worker. `wrangler.jsonc` names it and does not hold its id: on deploy, wrangler finds the database by name on that account, so the id never has to be committed. The schema is the migration files in `worker/migrations/`, applied in order on every deploy (see the deploy command below). A new migration is a new file with the next number; never change one that was applied.
+Grants and model calls (with what each cost) are kept in the D1 database `notico-db` (binding `DB`), on the account that deploys the worker. `wrangler.jsonc` names it and does not hold its id: on deploy, wrangler finds the database by name on that account, so the id never has to be committed. The schema is the migration files in `worker/migrations/`, applied in order on every deploy (see the deploy command below). A new migration is a new file with the next number; never change one that was applied.
 
 Create the database once, on the account that deploys the worker (with several accounts in one login, choose one with `CLOUDFLARE_ACCOUNT_ID`; don't commit it):
 
@@ -123,37 +123,40 @@ cd worker
 pnpm exec wrangler d1 migrations apply notico-db --remote
 ```
 
-Query it with `cf d1 query <database id> --sql "…"`, or in the dashboard (Storage & databases → D1 → `notico-db` → Console). Amounts are micro-credits (divide by 1,000,000 for credits) and times are ms since the epoch. Rows are never deleted. Credits granted and spent per day, across all users:
+Query it with `cf d1 query <database id> --sql "…"`, or in the dashboard (Storage & databases → D1 → `notico-db` → Console). Amounts are micro-credits (divide by 1,000,000 for credits) and times are ms since the epoch. Rows are never deleted. Credits granted and spent per day, with calls and tokens, across all users:
 
 ```sql
-SELECT day, sum(granted) / 1e6 AS credits_granted, sum(spent) / 1e6 AS credits_spent, sum(calls) AS calls
+SELECT day, sum(granted) / 1e6 AS credits_granted, sum(spent) / 1e6 AS credits_spent,
+       sum(calls) AS calls, sum(prompt_tokens) AS prompt_tokens, sum(completion_tokens) AS completion_tokens
 FROM (
-  SELECT date(granted_at / 1000, 'unixepoch') AS day, amount AS granted, 0 AS spent, 0 AS calls FROM grants
+  SELECT date(granted_at / 1000, 'unixepoch') AS day, amount AS granted, 0 AS spent, 0 AS calls,
+         0 AS prompt_tokens, 0 AS completion_tokens FROM grants
   UNION ALL
-  SELECT date(at / 1000, 'unixepoch'), 0, micro_credits, 1 FROM charges
+  SELECT date(started_at / 1000, 'unixepoch'), 0, micro_credits, 1, prompt_tokens, completion_tokens FROM model_calls
 )
 GROUP BY day ORDER BY day DESC LIMIT 30
 ```
 
-Spent per user over the last 7 days, with tokens and what is still owed:
+Calls and credits spent per user over the last 7 days, with how many calls failed:
 
 ```sql
 SELECT user_id, count(*) AS calls, sum(micro_credits) / 1e6 AS credits_spent,
        sum(prompt_tokens) AS prompt_tokens, sum(cached_tokens) AS cached_tokens,
-       sum(completion_tokens) AS completion_tokens
-FROM charges
-WHERE at > (unixepoch() - 7 * 86400) * 1000
+       sum(completion_tokens) AS completion_tokens,
+       sum(outcome NOT IN ('ok', 'cancelled')) AS failed
+FROM model_calls
+WHERE started_at > (unixepoch() - 7 * 86400) * 1000
 GROUP BY user_id ORDER BY credits_spent DESC
 ```
 
-Granted per user and source, and what each user owes now (`sum(owed)` of their charges less `sum(repaid)` of their grants):
+Granted per user and source, and what each user owes now (`sum(owed)` of their model calls less `sum(repaid)` of their grants):
 
 ```sql
 SELECT user_id, source, count(*) AS grants, sum(amount) / 1e6 AS credits_granted, sum(left) / 1e6 AS credits_left
 FROM grants GROUP BY user_id, source ORDER BY user_id, source;
 
 SELECT u.user_id,
-       ((SELECT coalesce(sum(owed), 0) FROM charges c WHERE c.user_id = u.user_id)
+       ((SELECT coalesce(sum(owed), 0) FROM model_calls c WHERE c.user_id = u.user_id)
         - (SELECT coalesce(sum(repaid), 0) FROM grants g WHERE g.user_id = u.user_id)) / 1e6 AS credits_owed
 FROM (SELECT DISTINCT user_id FROM grants) u ORDER BY credits_owed DESC;
 ```

@@ -341,43 +341,69 @@ describe('UC-CHAT-001 credits', () => {
     expect(replies.map((res) => res.status)).toEqual(Array(8).fill(200))
     await Promise.all(replies.map((res) => res.text()))
     expect(db.rows('grants')).toHaveLength(1)
-    expect(db.rows('charges')).toHaveLength(8)
+    expect(db.rows('model_calls').map((r) => r.micro_credits)).toEqual(Array(8).fill(FAKE_COST))
     expect(db.rows('grants')[0]).toMatchObject({ amount: 200_000_000, left: 200_000_000 - 8 * FAKE_COST })
   })
 
-  it('each charged model call leaves a record with its model and tokens', async () => {
+  it('each model call leaves a record of how it ended, its tokens, and what it cost', async () => {
     ai.usage = { prompt_tokens: 1000, completion_tokens: 5, prompt_tokens_details: { cached_tokens: 900 } }
     await chat(token)
     later(1000)
     await (await chat(token, { messages: hi, stream: true })).text()
-    const charge = {
+    const call = {
       user_id: 'user_alice',
       model: MODEL,
+      outcome: 'ok',
+      finish_reason: 'stop',
       prompt_tokens: 1000,
       cached_tokens: 900,
       completion_tokens: 5,
+      estimated: 0,
+      micro_credits: 100 * 300 + 900 * 6 + 5 * 1200,
+      owed: 0,
     }
-    const cost = 100 * 300 + 900 * 6 + 5 * 1200
-    expect(db.rows('charges')).toEqual([
-      { id: 1, ...charge, at: Date.parse('2026-11-08T12:00:00Z'), micro_credits: cost, owed: 0 },
-      { id: 2, ...charge, at: Date.parse('2026-11-08T12:00:01Z'), micro_credits: cost, owed: 0 },
+    const start = Date.parse('2026-11-08T12:00:00Z')
+    expect(db.rows('model_calls')).toEqual([
+      { id: 1, ...call, started_at: start, ended_at: start, stream: 0 },
+      { id: 2, ...call, started_at: start + 1000, ended_at: start + 1000, stream: 1 },
     ])
   })
 
-  it('a call that cost nothing leaves no charge', async () => {
+  it('model calls that failed or cost nothing are recorded, and charge nothing', async () => {
     ai.failWith = new Error('capacity')
     await chat(token)
     ai.failWith = undefined
     ai.rawSse = ''
     await (await chat(token, { messages: hi, stream: true })).text()
-    expect(db.rows('charges')).toEqual([])
+    ai.rawSse = undefined
+    ai.streamFailWith = new Error('connection reset')
+    await (await chat(token, { messages: hi, stream: true })).text().catch(() => {})
+    expect(db.rows('model_calls').map((r) => [r.outcome, r.stream, r.prompt_tokens, r.micro_credits])).toEqual([
+      ['provider_error', 0, 0, 0],
+      ['incomplete', 1, 0, 0],
+      ['stream_error', 1, 0, 0],
+    ])
+    expect(db.rows('grants')[0]).toMatchObject({ left: 200_000_000 })
+    // A request refused before the model was called is no model call.
+    await chat(token, { messages: [] })
+    expect(db.rows('model_calls')).toHaveLength(3)
   })
 
-  it('the part of a charge the grants did not cover is recorded as owed, and the next grant pays it back', async () => {
+  it('a stream cut short is recorded with the estimate it was charged by', async () => {
+    const res = await chat(token, { messages: hi, stream: true })
+    const reader = res.body!.getReader()
+    for (let i = 0; i < 5; i++) await reader.read()
+    await reader.cancel()
+    expect(db.rows('model_calls')).toEqual([
+      expect.objectContaining({ outcome: 'cancelled', estimated: 1, prompt_tokens: 1, completion_tokens: 2 }),
+    ])
+  })
+
+  it('the part of a cost the grants did not cover is recorded as owed, and the next grant pays it back', async () => {
     repliesCost(150)
     await chat(token)
     await chat(token)
-    expect(db.rows('charges').map((r) => [r.micro_credits, r.owed])).toEqual([
+    expect(db.rows('model_calls').map((r) => [r.micro_credits, r.owed])).toEqual([
       [150_000_000, 0],
       [150_000_000, 100_000_000],
     ])
@@ -390,7 +416,7 @@ describe('UC-CHAT-001 credits', () => {
     ])
   })
 
-  it('grants and charges of several users are kept apart in one database', async () => {
+  it('grants and model calls of several users are kept apart in one database', async () => {
     const bob = await clerk.sessionToken({ userId: 'user_bob', azp: EXT })
     repliesCost(150)
     await chat(token)
@@ -401,7 +427,7 @@ describe('UC-CHAT-001 credits', () => {
       ['user_alice', 0],
       ['user_bob', 170_000_000],
     ])
-    expect(db.rows('charges').map((r) => [r.user_id, r.owed])).toEqual([
+    expect(db.rows('model_calls').map((r) => [r.user_id, r.owed])).toEqual([
       ['user_alice', 0],
       ['user_alice', 100_000_000],
       ['user_bob', 0],
@@ -556,14 +582,16 @@ describe('UC-CHAT-001 credits', () => {
     expect(ai.calls).toHaveLength(0)
   })
 
-  it('a charge that fails still sends the reply, and the record says nothing was charged', async () => {
-    db.failOn = { sql: 'INSERT INTO charges', error: new Error('D1_ERROR: Network connection lost.') }
+  it('a model call whose record fails still sends the reply, is not charged, and the usage record says so', async () => {
+    db.failOn = { sql: 'INSERT INTO model_calls', error: new Error('D1_ERROR: Network connection lost.') }
     expect((await chat(token)).status).toBe(200)
     expect(await (await chat(token, { messages: hi, stream: true })).text()).toContain('[DONE]')
     expect(records().map((r) => [r.outcome, r.microCredits])).toEqual([
       ['ok', 0],
       ['ok', 0],
     ])
+    expect(db.rows('grants')[0]).toMatchObject({ left: 200_000_000 })
+    expect(logged).toEqual(Array(2).fill('model call record failed: Error: D1_ERROR: Network connection lost.'))
   })
 
   it('a model with no price is a configuration error, not a free call', async () => {

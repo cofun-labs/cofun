@@ -33,7 +33,7 @@ export interface Env {
   CLERK_JWT_KEY?: string
   /** Comma-separated origins allowed to call, e.g. chrome-extension://<id>. Checked against the token's azp claim. */
   CLERK_AUTHORIZED_PARTIES?: string
-  /** Every user's credits: their grants and charges (D1 database, schema in migrations/). */
+  /** Every user's credits: their grants, and their model calls with what each cost (D1 database, schema in migrations/). */
   DB: Database
   /** Per-request usage records (Workers Analytics Engine dataset). Never holds message content. */
   USAGE: UsageDataset
@@ -578,24 +578,40 @@ export function createApp({
     }
 
     /**
-     * Charges the call, once: takes what it cost from the user's credits, keeps the record of the
-     * call with its tokens, and puts the cost in the usage record. A charge that fails is logged and
-     * the reply still goes out: the model has already answered.
+     * Ends the call, once: records it in the database with how it ended and its tokens, takes what
+     * it cost from the user's credits, and puts the cost in the usage record. Every call that
+     * reached the model is recorded, failed ones too; one that failed costs nothing. A record that
+     * fails is logged and the reply still goes out: the model has already answered.
      */
-    let charged = false
-    const chargeFor = async (tokens: Tokens) => {
-      if (charged) return
-      charged = true
+    const startedAt = now().getTime()
+    let ended = false
+    const endCall = async (outcome: string, tokens: Tokens, finish: string, estimated: boolean) => {
+      if (ended) return
+      ended = true
       const cost = costOf(price, tokens)
       try {
-        await ledger.charge(now().getTime(), { model: c.env.MODEL, ...tokens, cost })
+        await ledger.endCall({
+          model: c.env.MODEL,
+          startedAt,
+          endedAt: Math.max(startedAt, now().getTime()),
+          stream: stream === true,
+          outcome,
+          finishReason: finish,
+          ...tokens,
+          estimated,
+          cost,
+        })
         usage.microCredits = cost
       } catch (err) {
-        logError(`credit charge failed: ${errorSummary(err)}`)
+        logError(`model call record failed: ${errorSummary(err)}`)
       }
     }
+    const nothing: Tokens = { promptTokens: 0, cachedTokens: 0, completionTokens: 0 }
 
-    const call = callModel()
+    const call = callModel().catch(async (err: unknown) => {
+      await endCall(err instanceof HttpError ? err.code : 'internal', nothing, '', false)
+      throw err
+    })
     // The model is called and the call charged even if the client goes away meanwhile: a request
     // dropped right after it was sent must not be a free call.
     c.executionCtx.waitUntil(call.catch(() => {}))
@@ -652,8 +668,9 @@ export function createApp({
           // it reported or carried anything is a call that failed without usage: it costs nothing.
           // (A reply the user stopped that early is still charged its prompt: the model was reading it.)
           const cutShort = outcome === 'cancelled' || outcome === 'incomplete' || outcome === 'stream_error'
-          const nothing = outcome !== 'cancelled' && !promptTokens && !completionTokens && !summary.replyChars
-          if (cutShort && !summary.ended && !nothing) {
+          const empty = outcome !== 'cancelled' && !promptTokens && !completionTokens && !summary.replyChars
+          const estimated = cutShort && !summary.ended && !empty
+          if (estimated) {
             tokens.promptTokens ||= estimateTokens(chars)
             tokens.cachedTokens = estimateCachedTokens(tokens.promptTokens)
             tokens.completionTokens = Math.max(tokens.completionTokens, estimateTokens(summary.replyChars))
@@ -662,7 +679,7 @@ export function createApp({
           usage.cachedTokens = tokens.cachedTokens
           usage.completionTokens = tokens.completionTokens
           usage.finishReason = summary.finishReason
-          await chargeFor(tokens)
+          await endCall(outcome, tokens, summary.finishReason, estimated)
           record(outcome)
         }
         const metered = meterStream(
@@ -686,7 +703,7 @@ export function createApp({
       // The reply as the model gave it. Build the response first: if that throws, the request is
       // recorded once, as internal, and nothing is charged.
       const res = c.newResponse(JSON.stringify(out), 200, { 'content-type': 'application/json' })
-      await chargeFor(tokens)
+      await endCall('ok', tokens, usage.finishReason, false)
       record('ok')
       return res
     }

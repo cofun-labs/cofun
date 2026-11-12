@@ -225,7 +225,7 @@ export class FakeD1Database implements Database {
   }
 
   /** Every row of `table`, for tests that look at what was written. */
-  rows(table: 'grants' | 'charges'): Record<string, unknown>[] {
+  rows(table: 'grants' | 'model_calls'): Record<string, unknown>[] {
     return this.sqlite.prepare(`SELECT * FROM ${table} ORDER BY id`).all()
   }
 
