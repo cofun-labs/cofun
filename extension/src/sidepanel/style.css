@@ -480,16 +480,9 @@ header .title {
 
 /* The session list: covers the chat below the header */
 
-.sheet-layer {
+#sessions {
   position: absolute;
   inset: 0;
-  display: flex;
-  flex-direction: column;
-}
-
-#sessions {
-  flex: 1;
-  min-height: 0;
   display: flex;
   flex-direction: column;
   gap: 10px;
