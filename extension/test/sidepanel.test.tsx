@@ -293,6 +293,21 @@ describe('a formatted reply', () => {
       'https://images.example.com/chart.png',
     )
   })
+
+  it('[UC-CHAT-001-S18] an image inside a link is shown as its description, and the link goes where it says', async () => {
+    const { browser, user } = await openPanel()
+    browser.ai.script.push({
+      reply: 'Status: [![Build passing](https://img.example.com/b.svg)](https://ci.example.com)',
+    })
+
+    await ask(user, 'Show the status')
+    await screen.findByText(/Status:/)
+    await answered()
+
+    expect(screen.getAllByRole('link')).toHaveLength(1)
+    expect(screen.getByRole('link', { name: 'Build passing' })).toHaveAttribute('href', 'https://ci.example.com')
+    expect(document.querySelector('[src*="img.example.com"]')).toBeNull()
+  })
 })
 
 describe('on a tab that is not Notion', () => {
