@@ -1,5 +1,6 @@
 import { memo } from 'react'
 import type { ToolStatus } from '../agent'
+import { Icon, type IconName } from './icons'
 
 /** A tool call as the panel shows it. */
 export interface ShownTool {
@@ -16,14 +17,14 @@ export interface ShownTool {
   question?: string
 }
 
-const MARK: Record<ShownTool['status'], string> = {
-  running: '⋯',
-  confirm: '?',
-  done: '✓',
-  failed: '✗',
-  skipped: '–',
-  stopped: '■',
-  declined: '⊘',
+const MARK: Record<ShownTool['status'], IconName> = {
+  running: 'dots',
+  confirm: 'ask',
+  done: 'check',
+  failed: 'close',
+  skipped: 'minus',
+  stopped: 'square',
+  declined: 'slash',
 }
 
 const LABEL: Record<ShownTool['status'], string> = {
@@ -67,7 +68,7 @@ export const ToolCall = memo(function ToolCall({
       <details className={`tool ${tool.status}`} open={tool.status === 'confirm'}>
         <summary title={LABEL[tool.status]}>
           <span className="tool-mark" role="img" aria-label={LABEL[tool.status]}>
-            {MARK[tool.status]}
+            <Icon name={MARK[tool.status]} />
           </span>{' '}
           <span className="tool-name">{tool.name}</span>
           {input && <span className="tool-input"> {input}</span>}
@@ -101,10 +102,12 @@ export const ToolCall = memo(function ToolCall({
       {asking && tool.question && (
         <div className="tool-confirm" role="group" aria-label={tool.question}>
           <span>{tool.question}</span>
-          <button className="primary" onClick={() => onAnswer(true)}>
-            Continue
-          </button>
-          <button onClick={() => onAnswer(false)}>Stop</button>
+          <div className="tool-answers">
+            <button onClick={() => onAnswer(false)}>Stop</button>
+            <button className="primary" onClick={() => onAnswer(true)}>
+              Continue
+            </button>
+          </div>
         </div>
       )}
       {asking && !tool.question && (
@@ -112,10 +115,12 @@ export const ToolCall = memo(function ToolCall({
           <span>
             Allow <span className="tool-name">{tool.name}</span> to run?
           </span>
-          <button className="primary" onClick={() => onAnswer(true)}>
-            Allow
-          </button>
-          <button onClick={() => onAnswer(false)}>Deny</button>
+          <div className="tool-answers">
+            <button onClick={() => onAnswer(false)}>Deny</button>
+            <button className="primary" onClick={() => onAnswer(true)}>
+              Allow
+            </button>
+          </div>
         </div>
       )}
     </>

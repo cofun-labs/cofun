@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { Icon } from './icons'
 import { filterSessions, sessionPages, type SessionInfo, type SessionStore } from '../sessions'
 
 /** The list of saved sessions: search, filter by page, open, and delete. */
@@ -7,6 +8,7 @@ export function Sessions({
   currentId,
   saved,
   onOpen,
+  onClose,
   onDeleted,
 }: {
   store: SessionStore
@@ -15,6 +17,7 @@ export function Sessions({
   saved: number
   /** Resolves false when the session no longer exists. */
   onOpen: (id: string) => Promise<boolean>
+  onClose: () => void
   /** Called before the session is deleted. */
   onDeleted: (id: string) => void
 }) {
@@ -73,7 +76,20 @@ export function Sessions({
   const shown = sessions ? filterSessions(sessions, { query, page: activePage }) : []
 
   return (
-    <main id="sessions">
+    <section
+      id="sessions"
+      role="dialog"
+      aria-label="Sessions"
+      onKeyDown={(e) => {
+        if (e.key === 'Escape') onClose()
+      }}
+    >
+      <div className="sheet-head">
+        <h2>Sessions</h2>
+        <button className="icon-button" aria-label="Close" title="Close" autoFocus onClick={onClose}>
+          <Icon name="close" />
+        </button>
+      </div>
       <div className="session-filters">
         <input type="search" placeholder="Search sessions" value={query} onChange={(e) => setQuery(e.target.value)} />
         {pages.length > 0 && (
@@ -102,17 +118,18 @@ export function Sessions({
               </span>
             </button>
             <button
-              className="session-delete"
+              className={confirming === s.id ? 'session-delete confirming' : 'session-delete'}
               onClick={() => void remove(s.id)}
               onBlur={() => setConfirming(undefined)}
               title="Delete session"
+              aria-label={confirming === s.id ? undefined : 'Delete session'}
             >
-              {confirming === s.id ? 'Delete?' : '×'}
+              {confirming === s.id ? 'Delete?' : <Icon name="close" />}
             </button>
           </li>
         ))}
       </ul>
-    </main>
+    </section>
   )
 }
 

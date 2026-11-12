@@ -1,20 +1,38 @@
+/* The Cofun look: blue as the one accent, on neutrals that lean toward it. System fonts only: the
+   extension contacts no host for fonts (see PRIVACY.md). */
 :root {
-  --bg: #ffffff;
-  --fg: #1f1f1f;
-  --muted: #6b6b6b;
-  --border: #e5e5e5;
-  --user-bg: #f1f1ef;
+  --bg: #fbfcfe;
+  --fg: #14213a;
+  --muted: #5d6b85;
+  --border: #dde5f0;
+  --tint: #eaf3fd;
+  /* The mark, icons, and outlines. */
   --accent: #2383e2;
-  --error: #d44c47;
+  /* Behind white text: a little darker than the accent, so the text stays readable. */
+  --accent-fill: #1d74cf;
+  --on-accent: #ffffff;
+  --ok: #1f8a5b;
+  --error: #c4352f;
+  --error-bg: #fdecea;
+  --scrim: rgb(8 14 26 / 0.45);
+  --shadow: rgb(35 131 226 / 0.12);
+  color-scheme: light dark;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #191919;
-    --fg: #e6e6e6;
-    --muted: #9b9b9b;
-    --border: #2f2f2f;
-    --user-bg: #2a2a2a;
+    --bg: #0f1622;
+    --fg: #e8eef8;
+    --muted: #93a1b8;
+    --border: #24324a;
+    --tint: #17283f;
+    --accent: #4a9eea;
+    --accent-fill: #2573c9;
+    --ok: #4cc38a;
+    --error: #f0766b;
+    --error-bg: #3a1d1f;
+    --scrim: rgb(0 0 0 / 0.55);
+    --shadow: rgb(0 0 0 / 0.3);
   }
 }
 
@@ -44,69 +62,163 @@ body {
   flex-direction: column;
 }
 
-header {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  min-height: 44px;
-  padding: 6px 12px;
-  border-bottom: 1px solid var(--border);
+[hidden] {
+  display: none !important;
 }
 
-header .title {
-  font-weight: 600;
-  flex: 1;
+p,
+h2 {
+  margin: 0;
 }
 
 button {
   font: inherit;
-  padding: 4px 10px;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  background: transparent;
   color: inherit;
+  border: none;
+  background: transparent;
+  padding: 0;
   cursor: pointer;
 }
 
-button.primary {
-  background: var(--accent);
-  color: #fff;
-  border-color: var(--accent);
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
-.signed-out {
+.icon {
+  display: block;
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* A pill button: the tinted one is the quiet choice, `.primary` the one to press. */
+button.primary,
+.signed-out button,
+.tool-answers button {
+  padding: 7px 18px;
+  border-radius: 999px;
+  font-weight: 600;
+  background: var(--tint);
+  color: var(--accent);
+}
+
+button.primary {
+  background: var(--accent-fill);
+  color: var(--on-accent);
+}
+
+.icon-button {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--tint);
+  color: var(--accent);
+}
+
+/* Header */
+
+header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 52px;
+  padding: 0 12px;
+}
+
+.brand-tile {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  flex: none;
+  border-radius: 9px;
+  background: var(--accent-fill);
+  color: var(--on-accent);
+}
+
+.brand-tile svg {
+  width: 16px;
+  height: 16px;
+}
+
+header .title {
+  flex: 1;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+/* Signed out, and the start of a session */
+
+.signed-out,
+.empty {
   flex: 1;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   gap: 8px;
+  padding: 12px;
+  text-align: center;
   color: var(--muted);
 }
 
-[hidden] {
-  display: none !important;
+.signed-out button {
+  margin-top: 8px;
 }
 
-.toolbar {
+.hero-mark {
+  width: 64px;
+  height: 64px;
+  margin-bottom: 6px;
+  color: var(--accent);
+}
+
+.empty-title {
+  color: var(--fg);
+  font-size: 19px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.examples {
   display: flex;
-  justify-content: space-between;
-  padding: 6px 12px 0;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 12px;
 }
 
-textarea {
-  font: inherit;
-  color: inherit;
-  background: transparent;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  padding: 6px 8px;
+.examples button {
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: var(--tint);
+  color: var(--accent);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+/* The chat, with the session list over it when open */
+
+.stage {
+  flex: 1;
+  min-height: 0;
+  position: relative;
+  display: flex;
+  flex-direction: column;
 }
 
 #messages {
   flex: 1;
   overflow-y: auto;
-  padding: 12px;
+  padding: 8px 12px;
   display: flex;
   flex-direction: column;
   gap: 10px;
@@ -114,156 +226,417 @@ textarea {
 
 .msg {
   white-space: pre-wrap;
-  word-wrap: break-word;
+  overflow-wrap: anywhere;
 }
+
 .msg.user {
   align-self: flex-end;
-  background: var(--user-bg);
-  padding: 6px 10px;
-  border-radius: 10px;
-  max-width: 85%;
+  max-width: 84%;
+  padding: 8px 12px;
+  border-radius: 16px 16px 4px 16px;
+  background: var(--accent-fill);
+  color: var(--on-accent);
 }
+
 .msg.assistant {
-  align-self: stretch;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.avatar {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  flex: none;
+  margin-top: 2px;
+  border-radius: 50%;
+  background: var(--tint);
+  color: var(--accent);
+}
+
+.avatar svg {
+  width: 14px;
+  height: 14px;
+}
+
+.reply {
+  flex: 1;
+  min-width: 0;
   display: flex;
   flex-direction: column;
+  align-items: flex-start;
   gap: 6px;
 }
-.msg .error {
+
+.reply .text {
+  padding: 9px 12px;
+  border-radius: 4px 16px 16px 16px;
+  background: var(--tint);
+}
+
+.reply .error {
+  align-self: stretch;
+  padding: 8px 12px;
+  border-radius: 12px;
+  background: var(--error-bg);
   color: var(--error);
 }
-.tool,
+
 .note {
   color: var(--muted);
-  font-size: 0.9em;
+  font-size: 12px;
 }
+
+.note.working {
+  padding: 4px 12px;
+  border-radius: 4px 16px 16px 16px;
+  background: var(--tint);
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.15em;
+  animation: working 1.2s ease-in-out infinite;
+}
+
+@keyframes working {
+  50% {
+    opacity: 0.45;
+  }
+}
+
+/* A tool call: a chip that opens to what it changed, was given, and returned */
+
+.tool {
+  max-width: 100%;
+  color: var(--muted);
+  font-size: 12.5px;
+}
+
+.tool[open] {
+  align-self: stretch;
+}
+
 .tool summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 100%;
+  padding: 2px 10px 2px 7px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
   cursor: pointer;
+  list-style: none;
   white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
-.tool-name {
-  font-family: ui-monospace, monospace;
+
+.tool summary::-webkit-details-marker {
+  display: none;
 }
+
+.tool[open] summary {
+  border-color: var(--accent);
+  color: var(--fg);
+}
+
+.tool-mark {
+  flex: none;
+  color: var(--ok);
+}
+
+.tool-mark .icon {
+  width: 13px;
+  height: 13px;
+}
+
+.tool.running .tool-mark,
+.tool.confirm .tool-mark {
+  color: var(--accent);
+}
+
+.tool.running .tool-mark {
+  animation: working 1.2s ease-in-out infinite;
+}
+
+.tool.skipped .tool-mark,
+.tool.stopped .tool-mark,
+.tool.declined .tool-mark {
+  color: var(--muted);
+}
+
 .tool.failed .tool-mark,
 .tool.failed .tool-name {
   color: var(--error);
 }
-.tool-confirm {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 6px;
-  padding: 6px 8px;
-  border: 1px solid var(--border);
-  border-radius: 6px;
+
+.tool-name {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
 }
-.tool-confirm > span {
-  flex: 1;
+
+.tool-input {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
+
 .tool-body {
-  margin: 4px 0 0 1.2em;
-}
-.tool-label {
-  margin-top: 4px;
-}
-.tool pre {
-  margin: 2px 0 0;
-  padding: 4px 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 6px;
+  padding: 8px 10px;
   border: 1px solid var(--border);
-  border-radius: 4px;
+  border-radius: 12px;
+}
+
+.tool pre {
+  margin: 0;
   max-height: 12em;
   overflow: auto;
   white-space: pre-wrap;
-  font-size: 0.95em;
+  overflow-wrap: anywhere;
+  color: var(--fg);
+  font:
+    12px/1.5 ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    monospace;
 }
-.empty {
+
+.tool-confirm {
+  align-self: stretch;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  border: 1.5px solid var(--accent);
+  border-radius: 16px;
+  font-weight: 700;
+}
+
+.tool-answers {
+  display: flex;
+  gap: 8px;
+}
+
+.tool-answers button {
+  flex: 1;
+}
+
+/* Composer */
+
+#composer {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  margin: 8px 12px 14px;
+  padding: 6px 6px 6px 16px;
+  border: 1px solid var(--border);
+  border-radius: 24px;
+  background: var(--bg);
+  box-shadow: 0 2px 10px var(--shadow);
+}
+
+#composer:focus-within {
+  border-color: var(--accent);
+}
+
+#composer textarea {
+  flex: 1;
+  min-width: 0;
+  align-self: center;
+  max-height: 9em;
+  padding: 0;
+  border: none;
+  outline: none;
+  resize: none;
+  /* Grows with what is typed, up to the height above. */
+  field-sizing: content;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+}
+
+#composer textarea::placeholder {
   color: var(--muted);
-  text-align: center;
-  margin-top: 40px;
+}
+
+#composer .send {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--accent-fill);
+  color: var(--on-accent);
+}
+
+#composer .send .icon {
+  stroke-width: 1.8;
+}
+
+/* The session list: a sheet over the chat */
+
+.sheet-layer {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+}
+
+.scrim {
+  position: absolute;
+  inset: 0;
+  background: var(--scrim);
 }
 
 #sessions {
-  flex: 1;
-  overflow-y: auto;
-  padding: 12px;
+  position: relative;
+  height: 82%;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 10px;
+  padding: 14px 12px 12px;
+  border-radius: 20px 20px 0 0;
+  background: var(--bg);
+  animation: sheet-up 0.18s ease-out;
 }
+
+@keyframes sheet-up {
+  from {
+    transform: translateY(24px);
+    opacity: 0;
+  }
+}
+
+.sheet-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.sheet-head h2 {
+  font-size: 16px;
+  font-weight: 700;
+}
+
 .session-filters {
   display: flex;
   gap: 6px;
 }
+
 .session-filters input,
 .session-filters select {
-  font: inherit;
-  color: inherit;
-  background: transparent;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  padding: 4px 8px;
   min-width: 0;
+  padding: 6px 12px;
+  border: none;
+  border-radius: 999px;
+  background: var(--tint);
+  color: inherit;
+  font: inherit;
+  font-size: 13px;
 }
+
 .session-filters input {
   flex: 1;
 }
+
+.session-filters input::placeholder {
+  color: var(--muted);
+}
+
 .session-filters select {
   max-width: 45%;
 }
+
 #sessions .error {
+  padding: 8px 12px;
+  border-radius: 12px;
+  background: var(--error-bg);
   color: var(--error);
 }
+
+#sessions .empty {
+  flex: none;
+  padding: 32px 12px;
+}
+
 .session-list {
-  list-style: none;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
   margin: 0;
   padding: 0;
+  list-style: none;
 }
+
 .session-list li {
   display: flex;
   align-items: center;
-  border-radius: 6px;
+  gap: 4px;
+  padding-right: 8px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
 }
+
 .session-list li.current {
-  background: var(--user-bg);
+  border-color: var(--accent);
+  background: var(--tint);
 }
-.session-list button {
-  border: none;
-}
+
 .session-open {
   flex: 1;
   min-width: 0;
   display: flex;
   flex-direction: column;
+  padding: 8px 4px 8px 12px;
+  border-radius: 14px;
   text-align: left;
-  padding: 6px 8px;
 }
+
 .session-title,
 .session-meta {
-  white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  white-space: nowrap;
 }
+
+.session-title {
+  font-weight: 600;
+}
+
 .session-meta {
   color: var(--muted);
-  font-size: 0.85em;
+  font-size: 12px;
 }
+
 .session-delete {
+  display: grid;
+  place-items: center;
+  min-width: 24px;
+  height: 24px;
+  flex: none;
+  border-radius: 999px;
   color: var(--muted);
 }
 
-#composer {
-  display: flex;
-  gap: 6px;
-  padding: 10px 12px;
-  border-top: 1px solid var(--border);
+.session-delete.confirming {
+  padding: 0 10px;
+  background: var(--error);
+  color: var(--bg);
+  font-size: 12px;
+  font-weight: 600;
 }
 
-#composer textarea {
-  flex: 1;
-  resize: none;
-}
-#composer button {
-  align-self: flex-end;
+@media (prefers-reduced-motion: reduce) {
+  .note.working,
+  .tool.running .tool-mark,
+  #sessions {
+    animation: none;
+  }
 }

@@ -85,6 +85,24 @@ describe('asking the AI', () => {
     await answered()
   })
 
+  it('[UC-CHAT-001-S08] an example question goes into the message box, not to the model, and can be changed before sending', async () => {
+    const { browser, user } = await openPanel()
+    browser.ai.script.push({ reply: 'It is a fixture.' })
+
+    await user.click(screen.getByRole('button', { name: 'Summarize this page' }))
+
+    expect(composer()).toHaveValue('Summarize this page')
+    expect(browser.ai.calls).toEqual([])
+
+    await user.type(composer(), ' in one line{Enter}')
+
+    expect(await screen.findByText('Summarize this page in one line')).toBeVisible()
+    await answered()
+    expect(browser.sentToModel().at(-1)!.content).toContain('Summarize this page in one line')
+    // The examples are for a session with no question yet.
+    expect(screen.queryByRole('button', { name: 'Summarize this page' })).not.toBeInTheDocument()
+  })
+
   // UC-AGENT-001-S16 itself stays ai-e2e: whether the model answers from the note, without a tool, is its
   // own judgment. This is the panel's part of it.
   it('a question goes to the model with a note naming the open page, and the panel shows only what the user typed', async () => {
@@ -405,7 +423,7 @@ describe('sessions', () => {
     ])
 
     // A question asked now starts a session of its own: nothing of the earlier ones goes to the model.
-    await user.click(screen.getByRole('button', { name: 'Back' }))
+    await user.click(screen.getByRole('button', { name: 'Close' }))
     browser.ai.script.push({ reply: 'Hello.' })
     await ask(user, 'Hi')
     await screen.findByText('Hello.')

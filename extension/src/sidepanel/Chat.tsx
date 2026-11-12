@@ -1,9 +1,11 @@
-import { useAuth } from '@clerk/chrome-extension'
+import { useAuth, UserButton } from '@clerk/chrome-extension'
 import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from 'react'
 import { CopilotAgent, type AgentUpdate, type ConfirmTool, type HistoryMessage } from '../agent'
 import { countNotionRequests } from '../notion/tab'
 import { SessionStore, titleFor, type Session } from '../sessions'
 import { currentNotionPage, forgetReads, openPageNote, TOOLS } from '../tools'
+import { Header } from './Header'
+import { Icon, Mark } from './icons'
 import { Sessions } from './Sessions'
 import { ToolCall, type ShownTool } from './ToolCall'
 
@@ -40,6 +42,9 @@ const SYSTEM_PROMPT =
   'When the user asks about "this page" or its content, read the open page first and answer from what it says. ' +
   'When the answer is likely on another page, search for it, read what you find, and say which page you used. ' +
   'Read child pages or other pages only when the question needs them. Be concise.'
+
+/** Offered while the session has no question yet; picking one puts it in the message box. */
+const EXAMPLES = ['Summarize this page', 'List the action items', 'Find related pages', 'Suggest improvements']
 
 /** A reply in the order it happened: text the model wrote and the tools it ran in between. */
 type Part = { type: 'text'; text: string } | { type: 'tool'; tool: ShownTool }
@@ -84,6 +89,7 @@ export function Chat({ userId }: { userId: string }) {
   // Stop was pressed; the question is still winding down, so nothing is pending any more.
   const [stopping, setStopping] = useState(false)
   const listRef = useRef<HTMLElement>(null)
+  const inputRef = useRef<HTMLTextAreaElement>(null)
   // Answers for tool calls waiting for the user's OK, by call id.
   const pending = useRef(new Map<string, (allow: boolean) => void>())
   const [view, setView] = useState<'chat' | 'sessions'>('chat')
@@ -111,7 +117,6 @@ export function Chat({ userId }: { userId: string }) {
   })
   const agent = agentRef.current
 
-  // Also on returning from the list: a hidden chat can't scroll while a reply streams in.
   useEffect(() => {
     if (view === 'chat') listRef.current?.scrollTo({ top: listRef.current.scrollHeight })
   }, [messages, view])
@@ -369,88 +374,133 @@ export function Chat({ userId }: { userId: string }) {
     }
   }
 
+  const listOpen = view === 'sessions'
+
   return (
     <>
-      <div className="toolbar">
-        <button onClick={() => setView(view === 'chat' ? 'sessions' : 'chat')}>
-          {view === 'chat' ? 'Sessions' : 'Back'}
+      <Header>
+        <button
+          className="icon-button"
+          aria-label="Sessions"
+          title="Sessions"
+          aria-expanded={listOpen}
+          onClick={() => setView(listOpen ? 'chat' : 'sessions')}
+        >
+          <Icon name="history" />
         </button>
-        <button onClick={() => switchTo()}>New chat</button>
-      </div>
+        <button className="icon-button" aria-label="New chat" title="New chat" onClick={() => switchTo()}>
+          <Icon name="compose" />
+        </button>
+        <UserButton />
+      </Header>
 
-      {view === 'sessions' && (
-        <Sessions
-          store={store}
-          currentId={current?.id}
-          saved={saved}
-          onOpen={open}
-          onDeleted={(id) => {
-            deleted.current.add(id)
-            // The open session is being deleted: stop its reply, so it isn't saved back.
-            if (id !== current?.id) return
-            switchTo()
-            setView('sessions')
-          }}
-        />
-      )}
-
-      <main id="messages" ref={listRef} hidden={view !== 'chat'}>
-        {messages.length === 0 && <div className="empty">Ask anything to get started.</div>}
-        {messages.map((m, i) =>
-          m.role === 'user' ? (
-            <div key={i} className="msg user">
-              {m.content}
+      <div className="stage">
+        {/* The chat stays on screen behind the session list, out of reach until the list closes. */}
+        <main id="messages" ref={listRef} inert={listOpen}>
+          {messages.length === 0 && (
+            <div className="empty">
+              <Mark className="hero-mark" />
+              <p className="empty-title">Ask anything to get started.</p>
+              <p>Notico reads, finds, and edits your Notion pages.</p>
+              <div className="examples" role="group" aria-label="Example questions">
+                {EXAMPLES.map((example) => (
+                  <button
+                    key={example}
+                    type="button"
+                    onClick={() => {
+                      setInput(example)
+                      inputRef.current?.focus()
+                    }}
+                  >
+                    {example}
+                  </button>
+                ))}
+              </div>
             </div>
-          ) : (
-            <div key={i} className="msg assistant">
-              {m.parts.map((p, j) =>
-                // Models often send blank lines around a tool call; they would show as empty rows.
-                p.type === 'text' ? (
-                  p.text.trim() && (
-                    <div key={j} className="text">
-                      {p.text.trim()}
+          )}
+          {messages.map((m, i) =>
+            m.role === 'user' ? (
+              <div key={i} className="msg user">
+                {m.content}
+              </div>
+            ) : (
+              <div key={i} className="msg assistant">
+                <span className="avatar">
+                  <Mark />
+                </span>
+                <div className="reply">
+                  {m.parts.map((p, j) =>
+                    // Models often send blank lines around a tool call; they would show as empty rows.
+                    p.type === 'text' ? (
+                      p.text.trim() && (
+                        <div key={j} className="text">
+                          {p.text.trim()}
+                        </div>
+                      )
+                    ) : (
+                      // Parts are only appended, so the index is a stable key; tool ids may repeat.
+                      <ToolCall
+                        key={j}
+                        tool={p.tool}
+                        onAnswer={p.tool.status === 'confirm' ? pending.current.get(p.tool.id) : undefined}
+                      />
+                    ),
+                  )}
+                  {m.error && <div className="error">{m.error}</div>}
+                  {busy && !stopping && i === messages.length - 1 && waitingForModel(m.parts) && (
+                    <div className="note working">…</div>
+                  )}
+                  {m.stopped && <div className="note">Stopped</div>}
+                  {m.note && <div className="note">{m.note}</div>}
+                  {m.copied && (
+                    <div className="note">
+                      This session was also continued in another window, so this conversation is saved as a separate
+                      session.
                     </div>
-                  )
-                ) : (
-                  // Parts are only appended, so the index is a stable key; tool ids may repeat.
-                  <ToolCall
-                    key={j}
-                    tool={p.tool}
-                    onAnswer={p.tool.status === 'confirm' ? pending.current.get(p.tool.id) : undefined}
-                  />
-                ),
-              )}
-              {m.error && <div className="error">{m.error}</div>}
-              {busy && !stopping && i === messages.length - 1 && waitingForModel(m.parts) && (
-                <div className="note">…</div>
-              )}
-              {m.stopped && <div className="note">Stopped</div>}
-              {m.note && <div className="note">{m.note}</div>}
-              {m.copied && (
-                <div className="note">
-                  This session was also continued in another window, so this conversation is saved as a separate
-                  session.
+                  )}
+                  {m.requests !== undefined && <div className="note">Notion requests: {m.requests}</div>}
                 </div>
-              )}
-              {m.requests !== undefined && <div className="note">Notion requests: {m.requests}</div>}
-            </div>
-          ),
-        )}
-      </main>
+              </div>
+            ),
+          )}
+        </main>
 
-      <form id="composer" onSubmit={onSubmit} hidden={view !== 'chat'}>
-        <textarea
-          rows={3}
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          onKeyDown={onKeyDown}
-          placeholder="Ask something… (Enter to send, Shift+Enter for newline)"
-          aria-label="Message"
-        />
-        <button className="primary" type="submit">
-          {busy ? 'Stop' : 'Send'}
-        </button>
-      </form>
+        <form id="composer" onSubmit={onSubmit} inert={listOpen}>
+          <textarea
+            ref={inputRef}
+            rows={1}
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyDown={onKeyDown}
+            placeholder="Ask something…"
+            title="Enter to send, Shift+Enter for a new line"
+            aria-label="Message"
+          />
+          <button className="send" type="submit" aria-label={busy ? 'Stop' : 'Send'} title={busy ? 'Stop' : 'Send'}>
+            <Icon name={busy ? 'square' : 'send'} />
+          </button>
+        </form>
+
+        {listOpen && (
+          <div className="sheet-layer">
+            <div className="scrim" onClick={() => setView('chat')} />
+            <Sessions
+              store={store}
+              currentId={current?.id}
+              saved={saved}
+              onOpen={open}
+              onClose={() => setView('chat')}
+              onDeleted={(id) => {
+                deleted.current.add(id)
+                // The open session is being deleted: stop its reply, so it isn't saved back.
+                if (id !== current?.id) return
+                switchTo()
+                setView('sessions')
+              }}
+            />
+          </div>
+        )}
+      </div>
     </>
   )
 }

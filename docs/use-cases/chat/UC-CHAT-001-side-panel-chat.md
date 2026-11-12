@@ -2,7 +2,7 @@
 
 ## Behavior
 
-A signed-in user asks the AI something in the side panel and reads the reply as it streams in. Each user gets a daily quota of requests, so one account cannot run up unbounded model usage. Every call to the model is one request: a question the AI answers with tools (see UC-AGENT-001) uses one request for each round trip to the model, not one for the whole question.
+A signed-in user asks the AI something in the side panel and reads the reply as it streams in. A session with no question yet offers a few example questions; picking one puts it in the message box, where the user can change it before sending. Each user gets a daily quota of requests, so one account cannot run up unbounded model usage. Every call to the model is one request: a question the AI answers with tools (see UC-AGENT-001) uses one request for each round trip to the model, not one for the whole question.
 
 Key constraints:
 
@@ -23,6 +23,7 @@ Key constraints:
 | UC-CHAT-001-S06 | P1 | ✅ | Given a question the agent answers with one tool; when the user asks it; then it uses two requests from today's quota, one for each model call. |
 | UC-CHAT-001-S07 | P1 | ✅ | Given a user whose quota runs out after the agent used a tool; when the agent asks the model again; then the question ends with a message saying when the quota resets, and no model is called. |
 | UC-CHAT-001-S03 | P0 | ✅ | Given a signed-in user with the side panel open on Notion; when they send a message; then the message appears and the reply streams in below it. |
+| UC-CHAT-001-S08 | P2 | ✅ | Given a session with no question yet; when the user picks one of the example questions; then it is in the message box, not sent, and the user can change it before sending. |
 
 ### ai-e2e
 
