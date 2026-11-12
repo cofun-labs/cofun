@@ -30,6 +30,8 @@ let clerk: Promise<FakeClerk> | undefined
 export class FakeBrowser {
   /** The model behind the worker; script its replies, and read what it was sent. */
   readonly ai = new FakeAiBinding()
+  /** The worker's database: the signed-in user's credits. A test may make it fail. */
+  readonly db = new FakeD1Database()
   /** URLs the panel opened in new tabs. */
   readonly openedTabs: string[] = []
 
@@ -43,12 +45,17 @@ export class FakeBrowser {
     vi.useFakeTimers({ toFake: ['Date'], now: START })
     const issuer = await (clerk ??= FakeClerk.create())
     const userId = options.signedInAs
-    const session = userId && { userId, getToken: () => issuer.sessionToken({ userId, azp: EXTENSION }) }
+    const session = userId && {
+      userId,
+      name: 'Alice Example',
+      email: 'alice@example.com',
+      getToken: () => issuer.sessionToken({ userId, azp: EXTENSION }),
+    }
     const browser = new FakeBrowser(tab, session || undefined)
 
     const env: Env = {
       AI: browser.ai,
-      DB: new FakeD1Database(),
+      DB: browser.db,
       USAGE: new FakeUsageDataset(),
       MODEL,
       CLERK_JWT_KEY: issuer.publicKeyPem,

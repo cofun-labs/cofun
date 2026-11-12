@@ -536,7 +536,7 @@ describe('signing in and out', () => {
     await screen.findByText('Three milestones.')
     await answered()
 
-    await user.click(screen.getByRole('button', { name: 'Open user menu' }))
+    await user.click(screen.getByRole('button', { name: 'Account' }))
     await user.click(screen.getByRole('menuitem', { name: 'Sign out' }))
 
     expect(await screen.findByText('Sign in to use Notico.')).toBeVisible()
@@ -544,7 +544,7 @@ describe('signing in and out', () => {
     // The chat is gone: nothing to type into, and the conversation is off the screen.
     expect(screen.queryByRole('textbox')).not.toBeInTheDocument()
     expect(screen.queryByText('Three milestones.')).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Open user menu' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Account' })).not.toBeInTheDocument()
   })
 
   it('a signed-out panel offers only to sign in, on the sign-in page', async () => {

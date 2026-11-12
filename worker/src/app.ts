@@ -5,7 +5,16 @@ import type { ContentfulStatusCode } from 'hono/utils/http-status'
 import * as z from './zod'
 import { adminPage } from './admin'
 import { loginPage } from './login'
-import { FREE_CREDITS, Ledger, MICRO_CREDITS, type Account, type Balance, type Database } from './credits'
+import {
+  FREE_CREDITS,
+  FREE_PERIOD_MS,
+  Ledger,
+  MICRO_CREDITS,
+  type Account,
+  type Balance,
+  type Database,
+  type Standing,
+} from './credits'
 import { costOf, estimateCachedTokens, estimateTokens, priceOf, type Tokens } from './pricing'
 import {
   finishReason,
@@ -125,6 +134,42 @@ const GrantBody = part(z.looseObject({}), 'body must be a JSON object').pipe(
     days: part(z.int().min(1).max(MAX_GRANT_DAYS), `days must be a whole number from 1 to ${MAX_GRANT_DAYS}`),
   }),
 )
+
+/** How many recent days of spending a user is shown, today included. */
+const USAGE_DAYS = 30
+const MINUTE_MS = 60 * 1000
+
+/**
+ * How far the user's clock is ahead of UTC, in minutes, as the side panel sends it: the worker does
+ * not know the user's time zone, and a day of usage should be the user's own day. Bounded to the
+ * offsets that exist (UTC-12:00 to UTC+14:00). Without it, days are UTC days.
+ */
+const UtcOffset = part(
+  z
+    .string()
+    .regex(/^-?\d{1,3}$/)
+    .transform(Number)
+    .pipe(z.int().min(-720).max(840))
+    .default(0),
+  'utc_offset must be a whole number of minutes from -720 to 840',
+)
+
+/** A day counted from 1970-01-01, as a date: YYYY-MM-DD. */
+const dateOf = (day: number) => new Date(day * DAY_MS).toISOString().slice(0, 10)
+
+/**
+ * A user's credits as the side panel shows them. Amounts stay in micro-credits; the panel rounds
+ * them. Only what is the user's to see: a grant made by hand does not name the admin who made it.
+ */
+const creditsJson = ({ balance, free, grants, usage }: Standing) => ({
+  balance,
+  free: free.started ? free : { ...free, lastsMs: FREE_PERIOD_MS },
+  grants: grants.map(({ source, left, expiresAt }) => ({ source, left, expiresAt })),
+  usage: {
+    days: USAGE_DAYS,
+    byDay: usage.map(({ day, microCredits }) => ({ day: dateOf(day), microCredits })),
+  },
+})
 
 function isObject(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === 'object' && !Array.isArray(value)
@@ -500,6 +545,22 @@ export function createApp({
   })
 
   app.get('/v1/me', (c) => c.json({ userId: c.get('userId'), model: c.env.MODEL }))
+
+  // The signed-in user's own credits, for the side panel: what is left, when it expires and when
+  // more arrive, and what was spent per day. It only reads: the weekly free grant still waits for
+  // the user's next question, and is reported as not started until then.
+  app.get('/v1/credits', async (c) => {
+    const offsetMs = parse(UtcOffset, c.req.query('utc_offset')) * MINUTE_MS
+    const ledger = new Ledger(c.env.DB, c.get('userId'))
+    let standing: Standing
+    try {
+      standing = await ledger.look(now().getTime(), { days: USAGE_DAYS, offsetMs })
+    } catch (err) {
+      logError(`credit read failed: ${errorSummary(err)}`)
+      throw new HttpError(503, 'credits_unavailable', 'Credits are unavailable, try again in a moment.')
+    }
+    return c.json(creditsJson(standing))
+  })
 
   // OpenAI-compatible chat completions. The model is fixed by the server.
   // Every request that passed auth leaves one usage record, however it ends.

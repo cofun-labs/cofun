@@ -1,12 +1,15 @@
-import { useAuth, UserButton } from '@clerk/chrome-extension'
+import { useAuth } from '@clerk/chrome-extension'
 import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from 'react'
 import { CopilotAgent, type AgentUpdate, type ConfirmTool, type HistoryMessage } from '../agent'
+import type { CreditsState } from '../credits'
 import { countNotionRequests } from '../notion/tab'
 import { SessionStore, titleFor, type Session } from '../sessions'
 import { currentNotionPage, forgetReads, openPageNote, TOOLS } from '../tools'
+import { AccountMenu } from './Account'
 import { Header } from './Header'
 import { Icon, Mark } from './icons'
 import { Sessions } from './Sessions'
+import { Settings } from './Settings'
 import { ToolCall, type ShownTool } from './ToolCall'
 
 const API_URL = import.meta.env.VITE_API_URL as string
@@ -57,6 +60,8 @@ type Shown =
       parts: Part[]
       /** Why the question failed; shown below what the agent already did. */
       error?: string
+      /** The question was refused for lack of credits: the error leads to the settings page. */
+      outOfCredits?: boolean
       stopped?: boolean
       note?: string
       /** Another window continued the session too, so this conversation was saved as a new session. */
@@ -93,7 +98,11 @@ export function Chat({ userId }: { userId: string }) {
   const listButtonRef = useRef<HTMLButtonElement>(null)
   // Answers for tool calls waiting for the user's OK, by call id.
   const pending = useRef(new Map<string, (allow: boolean) => void>())
-  const [view, setView] = useState<'chat' | 'sessions'>('chat')
+  const accountButtonRef = useRef<HTMLButtonElement>(null)
+  const [view, setView] = useState<'chat' | 'sessions' | 'settings'>('chat')
+  const [credits, setCredits] = useState<CreditsState>({ status: 'loading' })
+  // Reads can overlap (a question ends while the settings page loads); only the newest one counts.
+  const creditReads = useRef(0)
   // Opening the panel starts a new session; it gets an id when its first question is sent.
   const [current, setCurrent] = useState<Current>()
   const [saved, setSaved] = useState(0)
@@ -125,6 +134,41 @@ export function Chat({ userId }: { userId: string }) {
 
   // The panel unmounts on sign-out; don't leave a question running tools in the background.
   useEffect(() => () => agentRef.current?.stop(), [])
+
+  /**
+   * Reads the user's credits from the worker: when the panel loads, after each question, and when
+   * the account menu or the settings page opens. The read after a question keeps the menu current
+   * without a wait; the one on opening catches what that read can miss: a reply the user stopped is
+   * charged after the panel has gone on, and another window may have spent credits. A read that
+   * fails never touches the chat: the menu and the settings page say the credits are unavailable.
+   */
+  async function readCredits() {
+    const read = ++creditReads.current
+    let next: CreditsState
+    try {
+      next = { status: 'ready', credits: await agent.credits() }
+    } catch {
+      next = { status: 'unavailable' }
+    }
+    if (read === creditReads.current) setCredits(next)
+  }
+
+  useEffect(() => {
+    void readCredits()
+    // An unmounted panel takes no answer.
+    return () => void creditReads.current++
+  }, [])
+
+  function openSettings() {
+    setView('settings')
+    void readCredits()
+  }
+
+  /** Closes the settings page and puts the focus back on the avatar that led to it. */
+  function closeSettings() {
+    setView('chat')
+    accountButtonRef.current?.focus()
+  }
 
   async function send() {
     const text = input.trim()
@@ -257,13 +301,16 @@ export function Chat({ userId }: { userId: string }) {
       if (result.status === 'stopped') {
         updateTools((t) => (t.status === 'running' || t.status === 'confirm' ? { ...t, status: 'stopped' } : t))
         updateReply((m) => ({ ...m, stopped: true }))
-      } else if (result.status === 'error') updateReply((m) => ({ ...m, error: result.message }))
+      } else if (result.status === 'error')
+        updateReply((m) => ({ ...m, error: result.message, outOfCredits: result.code === 'out_of_credits' }))
       else if (result.status === 'step_limit')
         updateReply((m) => ({ ...m, note: `Stopped after ${result.steps} steps. Ask again to continue.` }))
     } finally {
       // A question can end without the panel answering, e.g. on unmount.
       // Only this question's own answers: after a New chat, the next question may reuse an id.
       for (const [callId, answer] of asked) if (pending.current.get(callId) === answer) pending.current.delete(callId)
+      // Whatever session is open now: the question spent this user's credits.
+      void readCredits()
       // Another session that opened meanwhile already unlocked the composer, and the agent holds
       // that session now.
       if (chatId.current === id) {
@@ -377,6 +424,9 @@ export function Chat({ userId }: { userId: string }) {
   }
 
   const listOpen = view === 'sessions'
+  const settingsOpen = view === 'settings'
+  // The chat stays on screen, or mounted, behind the session list and the settings page, out of reach until they close.
+  const covered = listOpen || settingsOpen
 
   /** Closes the session list and puts the focus back on the button that opened it. */
   function closeList() {
@@ -400,12 +450,16 @@ export function Chat({ userId }: { userId: string }) {
         <button className="icon-button" aria-label="New chat" title="New chat" onClick={() => switchTo()}>
           <Icon name="compose" />
         </button>
-        <UserButton />
+        <AccountMenu
+          credits={credits}
+          onOpen={() => void readCredits()}
+          onSettings={openSettings}
+          buttonRef={accountButtonRef}
+        />
       </Header>
 
       <div className="stage">
-        {/* The chat stays mounted under the session list, keeping its place, out of reach until the list closes. */}
-        <main id="messages" ref={listRef} inert={listOpen}>
+        <main id="messages" ref={listRef} inert={covered}>
           {messages.length === 0 && (
             <div className="empty">
               <Mark className="hero-mark" />
@@ -455,7 +509,19 @@ export function Chat({ userId }: { userId: string }) {
                       />
                     ),
                   )}
-                  {m.error && <div className="error">{m.error}</div>}
+                  {m.error && (
+                    <div className="error">
+                      {m.error}
+                      {m.outOfCredits && (
+                        <>
+                          {' '}
+                          <button type="button" className="link" onClick={openSettings}>
+                            See your credits
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  )}
                   {busy && !stopping && i === messages.length - 1 && waitingForModel(m.parts) && (
                     <div className="note working">…</div>
                   )}
@@ -474,7 +540,7 @@ export function Chat({ userId }: { userId: string }) {
           )}
         </main>
 
-        <form id="composer" onSubmit={onSubmit} inert={listOpen}>
+        <form id="composer" onSubmit={onSubmit} inert={covered}>
           <textarea
             ref={inputRef}
             rows={1}
@@ -505,6 +571,12 @@ export function Chat({ userId }: { userId: string }) {
               setView('sessions')
             }}
           />
+        )}
+
+        {settingsOpen && (
+          <div className="page-layer">
+            <Settings credits={credits} onRetry={() => void readCredits()} onClose={closeSettings} />
+          </div>
         )}
       </div>
     </>
