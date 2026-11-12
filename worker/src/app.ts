@@ -464,23 +464,25 @@ export function createApp({
   /** An account as the admin page shows it. Amounts stay in micro-credits; the page rounds them. */
   const accountJson = (userId: string, account: Account) => ({ userId, ...account })
 
-  /** Runs one call on a user's ledger, or refuses the request when the ledger can't be reached. */
+  /** Runs one call on a user's ledger, or refuses the request with `message` when the call fails. */
   async function onLedger(
     c: Ctx,
     userId: string,
+    message: string,
     call: (ledger: ReturnType<CreditsNamespace['getByName']>) => Promise<Account>,
   ) {
     try {
       return await call(c.env.CREDITS.getByName(userId))
     } catch (err) {
       logError(`admin ledger call failed: ${errorSummary(err)}`)
-      throw new HttpError(503, 'credits_unavailable', 'Credits are unavailable, try again in a moment.')
+      throw new HttpError(503, 'credits_unavailable', message)
     }
   }
 
   app.get('/v1/admin/accounts/:userId', async (c) => {
     const userId = parse(UserId, c.req.param('userId'))
-    const account = await onLedger(c, userId, (ledger) => ledger.read(now().getTime()))
+    const unavailable = 'Credits are unavailable, try again in a moment.'
+    const account = await onLedger(c, userId, unavailable, (ledger) => ledger.read(now().getTime()))
     return c.json(accountJson(userId, account))
   })
 
@@ -489,7 +491,10 @@ export function createApp({
     const { credits, days } = parse(GrantBody, await c.req.json().catch(() => undefined))
     const at = now().getTime()
     const grant = { amount: credits * MICRO_CREDITS, expiresAt: at + days * DAY_MS, by: c.get('userId') }
-    const account = await onLedger(c, userId, (ledger) => ledger.grant(at, grant))
+    // A call that fails may still have written the grant, and granting again would give it twice:
+    // the admin is told to look before trying again, not to try again.
+    const unknown = 'The grant may or may not have been made. Look the account up before granting again.'
+    const account = await onLedger(c, userId, unknown, (ledger) => ledger.grant(at, grant))
     // The record of who granted what to whom. Ids, numbers, and a time only: both ids are bounded
     // (the target by its shape, the admin's by the cut here), and nothing else of the request is logged.
     const admin = grant.by.slice(0, MAX_ID_CHARS)

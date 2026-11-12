@@ -124,7 +124,8 @@ export function adminPage(publishableKey: string): string {
     el('lookup').onsubmit = (event) => {
       event.preventDefault()
       const userId = el('user-id').value.trim()
-      run(() => api('GET', '/v1/admin/accounts/' + encodeURIComponent(userId)), '')
+      // A lookup that fails leaves no account on the page: the one shown before is not the one asked for.
+      run(() => api('GET', '/v1/admin/accounts/' + encodeURIComponent(userId)), '', true)
     }
     el('grant').onsubmit = (event) => {
       event.preventDefault()
@@ -153,13 +154,14 @@ export function adminPage(publishableKey: string): string {
   }
 
   /** Runs a call that answers with an account, and shows the account or what went wrong. */
-  async function run(call, done) {
+  async function run(call, done, clearOnFailure) {
     say('Working…')
     try {
       showAccount(await call())
       say(done)
       return true
     } catch (err) {
+      if (clearOnFailure) showAccount(null)
       say(err instanceof Error ? err.message : 'The request failed.', true)
       return false
     }

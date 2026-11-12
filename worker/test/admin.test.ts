@@ -315,9 +315,17 @@ describe('admin API', () => {
 
   it('an unavailable ledger refuses the lookup and the grant, and nothing is logged as granted', async () => {
     credits.failWith = new Error('Durable Object is overloaded')
-    for (const res of [await lookUp('user_alice'), await grant('user_alice', { credits: 100, days: 30 })]) {
+    const answers: [Response, string][] = [
+      [await lookUp('user_alice'), 'Credits are unavailable, try again in a moment.'],
+      // A grant that failed may have been written all the same: the admin is told to look, not to try again.
+      [
+        await grant('user_alice', { credits: 100, days: 30 }),
+        'The grant may or may not have been made. Look the account up before granting again.',
+      ],
+    ]
+    for (const [res, message] of answers) {
       expect(res.status).toBe(503)
-      expect((await json(res)).error.code).toBe('credits_unavailable')
+      expect(await json(res)).toEqual({ error: { code: 'credits_unavailable', message } })
     }
     expect(adminLog).toEqual([])
     expect(logged).toEqual([
