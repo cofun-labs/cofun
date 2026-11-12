@@ -1,11 +1,23 @@
 import type { AiBinding } from '../src/app'
-import { consume, type QuotaCounter, type QuotaNamespace, type QuotaStorage } from '../src/quota'
+import { balance, charge, type CreditLedger, type CreditsNamespace, type LedgerStorage } from '../src/credits'
 import type { UsageDataset } from '../src/usage'
 
 type Call = { model: string; inputs: Record<string, unknown>; options?: Record<string, unknown> }
 
-/** Token counts the fake model reports for every reply. */
+/** A model the worker has prices for: the tests are charged the real prices. */
+export const MODEL = '@cf/deepseek-ai/deepseek-v4.1-flash-1017'
+
+/** Token counts the fake model reports for a reply, unless a test sets its own. */
 export const FAKE_USAGE = { prompt_tokens: 12, completion_tokens: 5, total_tokens: 17 }
+
+/** What a reply reporting FAKE_USAGE costs, in micro-credits: 12 input tokens at 300 and 5 output tokens at 1200. */
+export const FAKE_COST = 9600
+
+/** Token counts for a reply that costs `credits`, all of it new input: 300 micro-credits a token. */
+export const usageCosting = (credits: number) => {
+  const prompt_tokens = Math.round((credits * 1_000_000) / 300)
+  return { prompt_tokens, completion_tokens: 0, total_tokens: prompt_tokens }
+}
 
 /** A tool call the fake model makes: which tool, and its arguments as a JSON string. */
 export interface FakeToolCall {
@@ -40,6 +52,8 @@ export class FakeAiBinding implements AiBinding {
    * a turn with tool calls asks the client to run them, one without answers with its text.
    */
   script: FakeTurn[] = []
+  /** The token counts every reply reports. */
+  usage: Record<string, unknown> = FAKE_USAGE
   private nextToolCallId = 0
 
   constructor(private reply = 'Hello from Workers AI') {}
@@ -58,7 +72,7 @@ export class FakeAiBinding implements AiBinding {
         object: 'chat.completion',
         model,
         choices: [{ index: 0, message: { role: 'assistant', content: reply }, finish_reason: 'stop' }],
-        usage: FAKE_USAGE,
+        usage: this.usage,
       }
     }
 
@@ -68,7 +82,7 @@ export class FakeAiBinding implements AiBinding {
     events.push({ choices: [{ index: 0, delta: {}, finish_reason: 'stop' }] })
     // Like OpenAI, usage comes in a last chunk with no choices, only when asked for.
     const streamOptions = inputs.stream_options as { include_usage?: boolean } | undefined
-    if (streamOptions?.include_usage) events.push({ choices: [], usage: FAKE_USAGE })
+    if (streamOptions?.include_usage) events.push({ choices: [], usage: this.usage })
     return sliced(new TextEncoder().encode(toSse(events)), this.streamFailWith, this.pause)
   }
 
@@ -99,7 +113,7 @@ export class FakeAiBinding implements AiBinding {
             finish_reason: 'tool_calls',
           },
         ],
-        usage: FAKE_USAGE,
+        usage: this.usage,
       }
     }
 
@@ -111,9 +125,9 @@ export class FakeAiBinding implements AiBinding {
       {
         choices: [{ index: 0, delta: { role: 'assistant', content: '' }, finish_reason: null }],
         usage: {
-          prompt_tokens: FAKE_USAGE.prompt_tokens,
+          prompt_tokens: this.usage.prompt_tokens,
           completion_tokens: 0,
-          total_tokens: FAKE_USAGE.prompt_tokens,
+          total_tokens: this.usage.prompt_tokens,
         },
       },
       ...(reply ? reply.split(' ').map((w) => chunk({ content: w + ' ' })) : []),
@@ -140,7 +154,7 @@ export class FakeAiBinding implements AiBinding {
     const streamOptions = inputs.stream_options as { include_usage?: boolean } | undefined
     if (streamOptions?.include_usage) {
       events.push({ choices: [], usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 } })
-      events.push({ response: '', usage: FAKE_USAGE })
+      events.push({ response: '', usage: this.usage })
     }
     return sliced(new TextEncoder().encode(toSse(events)), this.streamFailWith, this.pause)
   }
@@ -166,35 +180,51 @@ function sliced(
 }
 
 /** In-memory storage with the same get/put shape as Durable Object storage. */
-class MemoryStorage implements QuotaStorage {
+class MemoryStorage implements LedgerStorage {
   private data = new Map<string, unknown>()
-  async get<T>(key: string) {
-    return this.data.get(key) as T | undefined
+  async get(key: string) {
+    return structuredClone(this.data.get(key))
   }
-  async put<T>(key: string, value: T) {
+  async put(key: string, value: unknown) {
     this.data.set(key, structuredClone(value))
   }
 }
 
 /**
- * Stands in for the UserQuota Durable Object namespace (env.QUOTA): one counter per name,
- * running the worker's real counting logic over in-memory storage.
+ * Stands in for the UserCredits Durable Object namespace (env.CREDITS): one ledger per name,
+ * running the worker's real ledger logic over in-memory storage.
  */
-export class FakeQuotaNamespace implements QuotaNamespace {
+export class FakeCreditsNamespace implements CreditsNamespace {
   private storages = new Map<string, MemoryStorage>()
-  /** When set, every counter call fails with this error, like an unavailable Durable Object. */
+  /** When set, every ledger call fails with this error, like an unavailable Durable Object. */
   failWith?: Error
+  /** When set, charges fail with this error while balance checks still work. */
+  chargeFailWith?: Error
 
-  getByName(name: string): QuotaCounter {
+  getByName(name: string): CreditLedger {
     let storage = this.storages.get(name)
     if (!storage) this.storages.set(name, (storage = new MemoryStorage()))
     return {
-      consume: async (day, limit) => {
+      balance: async (now) => {
         if (this.failWith) throw this.failWith
-        return consume(storage, day, limit)
+        return balance(storage, now)
+      },
+      charge: async (now, cost) => {
+        if (this.failWith ?? this.chargeFailWith) throw this.failWith ?? this.chargeFailWith
+        return charge(storage, now, cost)
       },
     }
   }
+}
+
+/**
+ * Stands in for a request's execution context: the worker hands it the work that must finish even
+ * when the client has gone. The work runs either way; nothing here waits for it.
+ */
+export class FakeExecutionContext {
+  props = {}
+  waitUntil(_promise: Promise<unknown>): void {}
+  passThroughOnException(): void {}
 }
 
 type DataPoint = Parameters<UsageDataset['writeDataPoint']>[0]

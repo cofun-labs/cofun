@@ -1,9 +1,17 @@
 import { beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import { createApp, type Env } from '../src/app'
 import { FakeClerk } from './clerk'
-import { FAKE_USAGE, FakeAiBinding, FakeQuotaNamespace, FakeUsageDataset } from './fakes'
+import {
+  FAKE_COST,
+  FAKE_USAGE,
+  FakeAiBinding,
+  FakeCreditsNamespace,
+  FakeExecutionContext,
+  FakeUsageDataset,
+  MODEL,
+  usageCosting,
+} from './fakes'
 
-const MODEL = '@cf/test/model'
 const EXT = 'chrome-extension://abcdefghijklmnopabcdefghijklmnop'
 let clock = new Date('2026-11-08T12:00:00Z')
 /** Every error line the worker logged in the current test. */
@@ -13,7 +21,7 @@ const app = createApp({ now: () => clock, logError: (line) => logged.push(line) 
 let clerk: FakeClerk
 let otherClerk: FakeClerk
 let ai: FakeAiBinding
-let quota: FakeQuotaNamespace
+let credits: FakeCreditsNamespace
 let usage: FakeUsageDataset
 let env: Env
 let token: string
@@ -29,9 +37,8 @@ beforeEach(async () => {
   clock = new Date('2026-11-08T12:00:00Z')
   env = {
     AI: ai,
-    QUOTA: (quota = new FakeQuotaNamespace()),
+    CREDITS: (credits = new FakeCreditsNamespace()),
     USAGE: (usage = new FakeUsageDataset()),
-    DAILY_REQUEST_LIMIT: '100',
     MODEL,
     AI_GATEWAY_ID: 'gw-test',
     CLERK_JWT_KEY: clerk.publicKeyPem,
@@ -45,7 +52,8 @@ const json = (res: Response): Promise<any> => res.json()
 function req(method: string, path: string, bearer?: string, body?: unknown) {
   const headers: Record<string, string> = { 'content-type': 'application/json' }
   if (bearer) headers.authorization = `Bearer ${bearer}`
-  return app.request(path, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) }, env)
+  const init = { method, headers, body: body === undefined ? undefined : JSON.stringify(body) }
+  return app.request(path, init, env, new FakeExecutionContext())
 }
 
 const hi = [{ role: 'user', content: 'hi' }]
@@ -239,83 +247,189 @@ describe('worker API', () => {
   })
 })
 
-describe('UC-CHAT-001 daily quota', () => {
-  beforeEach(() => {
-    env.DAILY_REQUEST_LIMIT = '2'
-  })
-
-  it("[UC-CHAT-001-S04] a user over today's quota is refused and the model is not called", async () => {
-    expect((await chat(token)).status).toBe(200)
-    expect((await chat(token)).status).toBe(200)
-    const res = await chat(token)
-    expect(res.status).toBe(429)
+describe('UC-CHAT-001 credits', () => {
+  const WEEK_MS = 7 * 24 * 60 * 60 * 1000
+  /** Every reply from now on costs this many credits. A user starts with 200. */
+  const repliesCost = (credits: number) => {
+    ai.usage = usageCosting(credits)
+  }
+  const later = (ms: number) => {
+    clock = new Date(clock.getTime() + ms)
+  }
+  const refused = async (res: Response) => {
+    expect(res.status).toBe(402)
     const { error } = await json(res)
-    expect(error.code).toBe('rate_limited')
-    expect(error.message).toContain('00:00 UTC')
+    expect(error.code).toBe('out_of_credits')
+    return String(error.message)
+  }
+
+  it('[UC-CHAT-001-S09] a user with no credits left is refused, told when credits arrive, and the model is not called', async () => {
+    repliesCost(150)
+    expect((await chat(token)).status).toBe(200)
+    // 50 credits are left: the call goes ahead, and takes the balance below zero.
+    expect((await chat(token)).status).toBe(200)
+    const message = await refused(await chat(token))
+    // The week started with the first request, at 12:00 on 2026-11-08.
+    expect(message).toBe('You have no credits left. Your next 200 free credits arrive on 2026-11-15 at 12:00 UTC.')
     expect(ai.calls).toHaveLength(2)
   })
 
-  it('[UC-CHAT-001-S05] the quota resets at 00:00 UTC', async () => {
-    clock = new Date('2026-11-08T23:59:59Z')
-    await chat(token)
-    await chat(token)
-    expect((await chat(token)).status).toBe(429)
-    clock = new Date('2026-11-09T00:00:00Z')
+  it('[UC-CHAT-001-S10] a new week brings new free credits', async () => {
+    repliesCost(200)
+    expect((await chat(token)).status).toBe(200)
+    later(WEEK_MS - 1000)
+    await refused(await chat(token))
+    later(1000)
     expect((await chat(token)).status).toBe(200)
   })
 
-  it('each user has their own quota', async () => {
+  it('[UC-CHAT-001-S13] what a call overspent is taken out of the next free credits', async () => {
+    repliesCost(150)
     await chat(token)
     await chat(token)
-    expect((await chat(token)).status).toBe(429)
+    await refused(await chat(token))
+    // 100 credits overspent, so the new week has 100 to spend, not 200.
+    later(WEEK_MS)
+    repliesCost(90)
+    expect((await chat(token)).status).toBe(200)
+    repliesCost(20)
+    expect((await chat(token)).status).toBe(200)
+    expect(await refused(await chat(token))).toContain('2026-11-22 at 12:00 UTC')
+  })
+
+  it('[UC-CHAT-001-S14] credits left when the week ends are gone', async () => {
+    repliesCost(50)
+    await chat(token)
+    // 150 credits were left. The new week has 200, not 350.
+    later(WEEK_MS)
+    repliesCost(150)
+    expect((await chat(token)).status).toBe(200)
+    expect((await chat(token)).status).toBe(200)
+    await refused(await chat(token))
+  })
+
+  it('[UC-CHAT-001-S15] input read from the cache costs the cached price', async () => {
+    // As the hosted model reported a second call with the same long prompt.
+    ai.usage = { prompt_tokens: 5639, completion_tokens: 6, prompt_tokens_details: { cached_tokens: 5568 } }
+    await chat(token)
+    await (await chat(token, { messages: hi, stream: true })).text()
+    const cost = 71 * 300 + 5568 * 6 + 6 * 1200
+    expect(records().map((r) => [r.promptTokens, r.cachedTokens, r.microCredits])).toEqual([
+      [5639, 5568, cost],
+      [5639, 5568, cost],
+    ])
+  })
+
+  it('a call is charged what its tokens cost', async () => {
+    await chat(token)
+    expect(records()[0]).toMatchObject({ cachedTokens: 0, microCredits: FAKE_COST })
+  })
+
+  it('each user has their own credits', async () => {
+    repliesCost(200)
+    await chat(token)
+    await refused(await chat(token))
     const bob = await clerk.sessionToken({ userId: 'user_bob', azp: EXT })
     expect((await chat(bob)).status).toBe(200)
   })
 
-  it('rejected requests do not use up the quota', async () => {
+  it('a user who comes back after a month gets one grant, not one for each week away', async () => {
+    repliesCost(150)
+    await chat(token)
+    later(30 * 24 * 60 * 60 * 1000)
+    expect((await chat(token)).status).toBe(200)
+    expect((await chat(token)).status).toBe(200)
+    expect(await refused(await chat(token))).toContain('2026-12-15 at 12:00 UTC')
+  })
+
+  it('requests that are refused, and model calls that fail, cost nothing', async () => {
+    repliesCost(200)
     await chat(undefined)
     await chat(token, { messages: [] })
     await chat(token, { messages: hi, model: 'other' })
+    ai.failWith = new Error('capacity')
+    expect((await chat(token)).status).toBe(502)
+    ai.failWith = undefined
+    expect(records().map((r) => r.microCredits)).toEqual([0, 0, 0])
+    // All 200 credits are still there: one call goes ahead and uses them up.
     expect((await chat(token)).status).toBe(200)
-    expect((await chat(token)).status).toBe(200)
+    await refused(await chat(token))
   })
 
-  it('a request stamped with an earlier day does not reset the quota', async () => {
-    clock = new Date('2026-11-09T00:00:01Z')
+  it('a request stamped a little before the week began gets no second grant', async () => {
+    repliesCost(200)
     await chat(token)
-    await chat(token)
-    // Another instance whose clock still reads the previous day.
-    clock = new Date('2026-11-08T23:59:59Z')
-    expect((await chat(token)).status).toBe(429)
-    clock = new Date('2026-11-09T00:00:02Z')
-    expect((await chat(token)).status).toBe(429)
+    // Another instance whose clock is a second behind.
+    later(-1000)
+    await refused(await chat(token))
   })
 
-  it('an unavailable quota counter refuses the request without calling the model', async () => {
-    quota.failWith = new Error('Durable Object reset because its code was updated')
+  it('a reply the user stops is charged an estimate of what it used', async () => {
+    const res = await chat(token, { messages: hi, stream: true })
+    const reader = res.body!.getReader()
+    // 80 bytes: the first piece of the reply, "Hello ", and the start of the next.
+    for (let i = 0; i < 5; i++) await reader.read()
+    await reader.cancel()
+    // No chunk reported the prompt, so it is estimated from the input: 2 characters, 1 token. The
+    // reply is estimated from the 6 characters that were streamed: 2 tokens.
+    expect(records()).toEqual([
+      expect.objectContaining({
+        outcome: 'cancelled',
+        promptTokens: 1,
+        cachedTokens: 0,
+        completionTokens: 2,
+        microCredits: 300 + 2 * 1200,
+      }),
+    ])
+  })
+
+  it('a stream cut short is charged the prompt it reported in full, and the reply by its size', async () => {
+    // Workers AI gives the prompt in its first chunk; how much of it was cached only comes at the end.
+    ai.rawSse =
+      'data: {"choices":[{"delta":{"content":""}}],"usage":{"prompt_tokens":1000,"completion_tokens":0}}\n\n' +
+      'data: {"choices":[{"delta":{"content":"abcdef","reasoning_content":"ghi"}}],"usage":{"prompt_tokens":0,"completion_tokens":2}}\n\n' +
+      'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"name":"abc","arguments":"{}x"}}]}}]}\n\n'
+    await (await chat(token, { messages: hi, stream: true })).text()
+    expect(records()[0]).toMatchObject({
+      outcome: 'incomplete',
+      promptTokens: 1000,
+      cachedTokens: 0,
+      completionTokens: 5,
+      microCredits: 1000 * 300 + 5 * 1200,
+    })
+  })
+
+  it('a stream that carries a model error and no usage costs nothing', async () => {
+    ai.rawSse = 'data: {"error":{"message":"model overloaded"}}\n\n'
+    await (await chat(token, { messages: hi, stream: true })).text()
+    expect(records()[0]).toMatchObject({ outcome: 'provider_error', microCredits: 0 })
+  })
+
+  it('an unavailable ledger refuses the request without calling the model', async () => {
+    credits.failWith = new Error('Durable Object reset because its code was updated')
     const res = await chat(token)
     expect(res.status).toBe(503)
     const { error } = await json(res)
-    expect(error.code).toBe('quota_unavailable')
+    expect(error.code).toBe('credits_unavailable')
     expect(error.message).not.toContain('Durable Object')
     expect(ai.calls).toHaveLength(0)
   })
 
-  it('a limit of 0 turns chat off without promising a reset', async () => {
-    env.DAILY_REQUEST_LIMIT = '0'
-    const res = await chat(token)
-    expect(res.status).toBe(503)
-    const { error } = await json(res)
-    expect(error.code).toBe('chat_disabled')
-    expect(error.message).not.toContain('00:00 UTC')
-    expect(ai.calls).toHaveLength(0)
+  it('a charge that fails still sends the reply, and the record says nothing was charged', async () => {
+    credits.chargeFailWith = new Error('Durable Object reset')
+    expect((await chat(token)).status).toBe(200)
+    expect(await (await chat(token, { messages: hi, stream: true })).text()).toContain('[DONE]')
+    expect(records().map((r) => [r.outcome, r.microCredits])).toEqual([
+      ['ok', 0],
+      ['ok', 0],
+    ])
   })
 
-  it('chat is off without a valid daily limit', async () => {
-    for (const bad of [undefined, '', 'abc', '-1']) {
-      env.DAILY_REQUEST_LIMIT = bad
-      expect((await chat(token)).status).toBe(503)
-    }
+  it('a model with no price is a configuration error, not a free call', async () => {
+    env.MODEL = '@cf/test/unpriced'
+    const res = await chat(token)
+    expect(res.status).toBe(503)
+    expect((await json(res)).error.code).toBe('not_configured')
     expect(ai.calls).toHaveLength(0)
   })
 })
@@ -324,7 +438,8 @@ describe('UC-CHAT-001 daily quota', () => {
 function usageRecord(point: FakeUsageDataset['points'][number]) {
   const [userId] = point.indexes ?? []
   const [model, outcome, finishReason, mode] = point.blobs ?? []
-  const [messages, inputChars, promptTokens, completionTokens, durationMs] = point.doubles ?? []
+  const [messages, inputChars, promptTokens, completionTokens, durationMs, cachedTokens, microCredits] =
+    point.doubles ?? []
   return {
     userId,
     model,
@@ -336,6 +451,8 @@ function usageRecord(point: FakeUsageDataset['points'][number]) {
     promptTokens,
     completionTokens,
     durationMs,
+    cachedTokens,
+    microCredits,
   }
 }
 const records = () => usage.points.map(usageRecord)
@@ -362,6 +479,8 @@ describe("UC-CHAT-002 Keep a record of each user's chat usage", () => {
         promptTokens: FAKE_USAGE.prompt_tokens,
         completionTokens: FAKE_USAGE.completion_tokens,
         durationMs: expect.any(Number),
+        cachedTokens: 0,
+        microCredits: FAKE_COST,
       },
     ])
     expect(records()[0].durationMs).toBeGreaterThanOrEqual(0)
@@ -380,27 +499,27 @@ describe("UC-CHAT-002 Keep a record of each user's chat usage", () => {
         inputChars: 13,
         promptTokens: FAKE_USAGE.prompt_tokens,
         completionTokens: FAKE_USAGE.completion_tokens,
+        microCredits: FAKE_COST,
       }),
     ])
   })
 
   it('[UC-CHAT-002-S02] refused and failed requests leave a record of how they ended', async () => {
-    env.DAILY_REQUEST_LIMIT = '1'
     await chat(token, { messages: [] })
-    await chat(token)
-    await chat(token)
-    env.DAILY_REQUEST_LIMIT = '100'
     ai.failWith = new Error('capacity')
     await chat(token)
     ai.failWith = undefined
-    quota.failWith = new Error('Durable Object reset')
+    ai.usage = usageCosting(200)
+    await chat(token)
+    await chat(token)
+    credits.failWith = new Error('Durable Object reset')
     await chat(token)
     expect(records().map((r) => r.outcome)).toEqual([
       'bad_request',
-      'ok',
-      'rate_limited',
       'provider_error',
-      'quota_unavailable',
+      'ok',
+      'out_of_credits',
+      'credits_unavailable',
     ])
     expect(records().every((r) => r.userId === 'user_alice')).toBe(true)
   })

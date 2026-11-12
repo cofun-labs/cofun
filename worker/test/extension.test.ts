@@ -27,8 +27,16 @@ import { defineTool } from '../../extension/src/tool'
 import { editPage, movePage, openPageNote, readPage, trashPage } from '../../extension/src/tools'
 import { z } from '../../extension/src/zod'
 import { createApp, type Env } from '../src/app'
+import { priceOf } from '../src/pricing'
 import { FakeClerk } from './clerk'
-import { FakeAiBinding, FakeQuotaNamespace, FakeUsageDataset } from './fakes'
+import {
+  FakeAiBinding,
+  FakeCreditsNamespace,
+  FakeExecutionContext,
+  FakeUsageDataset,
+  MODEL,
+  usageCosting,
+} from './fakes'
 import {
   FakeNotionTab,
   FakeStorage,
@@ -40,9 +48,10 @@ import {
 } from '../../extension/test/notion-tab'
 
 const EXT = 'chrome-extension://abcdefghijklmnopabcdefghijklmnop'
-const MODEL = '@cf/test/model'
 let clock = new Date('2026-11-08T12:00:00Z')
-const app = createApp({ now: () => clock })
+/** The model a deploy switches to in the tests of a model change. It costs what the first one does. */
+const NEXT_MODEL = '@cf/test/next-model'
+const app = createApp({ now: () => clock, priceOf: (model) => priceOf(model === NEXT_MODEL ? MODEL : model) })
 let clerk: FakeClerk
 let env: Env
 let ai: FakeAiBinding
@@ -54,7 +63,7 @@ beforeAll(async () => {
   clerk = await FakeClerk.create()
   // The extension calls fetch(); route it into the worker app.
   globalThis.fetch = ((input: RequestInfo | URL, init?: RequestInit) =>
-    app.request(new Request(input, init), undefined, env)) as typeof fetch
+    app.request(new Request(input, init), undefined, env, new FakeExecutionContext())) as typeof fetch
 })
 
 afterAll(() => {
@@ -66,9 +75,8 @@ beforeEach(async () => {
   clock = new Date('2026-11-08T12:00:00Z')
   env = {
     AI: (ai = new FakeAiBinding('你好 来自 worker')),
-    QUOTA: new FakeQuotaNamespace(),
+    CREDITS: new FakeCreditsNamespace(),
     USAGE: new FakeUsageDataset(),
-    DAILY_REQUEST_LIMIT: '100',
     MODEL,
     CLERK_JWT_KEY: clerk.publicKeyPem,
     CLERK_AUTHORIZED_PARTIES: EXT,
@@ -1411,12 +1419,12 @@ describe('extension agent against the worker', () => {
   it('a panel left open across a model change looks the model up again', async () => {
     const agent = makeAgent()
     expect((await ask(agent, 'first')).result).toEqual({ status: 'done' })
-    env.MODEL = '@cf/test/next-model'
-    // The worker refuses the old model name before the model or the quota is used; the agent retries once.
+    env.MODEL = NEXT_MODEL
+    // The worker refuses the old model name before the model is called or credits are checked; the agent retries once.
     const { result, reply } = await ask(agent, 'second')
     expect(result).toEqual({ status: 'done' })
     expect(reply).toBe('你好 来自 worker ')
-    expect(ai.calls.map((c) => c.model)).toEqual([MODEL, '@cf/test/next-model'])
+    expect(ai.calls.map((c) => c.model)).toEqual([MODEL, NEXT_MODEL])
     expect(sentMessages(1).map((m) => m.content)).toEqual(['You are Notico.', 'first', '你好 来自 worker ', 'second'])
   })
 
@@ -1457,7 +1465,7 @@ describe('extension agent against the worker', () => {
     const changing: ToolSpec = {
       ...tool,
       run: async (args) => {
-        env.MODEL = '@cf/test/next-model'
+        env.MODEL = NEXT_MODEL
         return tool.run(args)
       },
     }
@@ -1470,7 +1478,7 @@ describe('extension agent against the worker', () => {
     // The new model was looked up, so asking again works straight away.
     ai.script = []
     expect((await ask(agent, 'Thanks')).result).toEqual({ status: 'done' })
-    expect(ai.calls.at(-1)!.model).toBe('@cf/test/next-model')
+    expect(ai.calls.at(-1)!.model).toBe(NEXT_MODEL)
   })
 
   it('[UC-SESSION-001-S01] a reopened session sends its earlier conversation, tool calls included', async () => {
@@ -1573,23 +1581,23 @@ describe('extension agent against the worker', () => {
     expect(result).toEqual({ status: 'error', message: 'invalid or expired session' })
   })
 
-  it('[UC-CHAT-001-S04] shows when the daily quota resets, and drops the refused question', async () => {
-    env.DAILY_REQUEST_LIMIT = '1'
+  const WEEK_MS = 7 * 24 * 60 * 60 * 1000
+  const OUT_OF_CREDITS = 'You have no credits left. Your next 200 free credits arrive on 2026-11-15 at 12:00 UTC.'
+
+  it('[UC-CHAT-001-S09] shows when the next free credits arrive, and drops the refused question', async () => {
+    // A user starts with 200 credits.
+    ai.usage = usageCosting(200)
     const agent = makeAgent()
     expect((await ask(agent, 'first')).result).toEqual({ status: 'done' })
-    const { result } = await ask(agent, 'second')
-    expect(result).toMatchObject({
-      status: 'error',
-      message: expect.stringContaining('The quota resets at 00:00 UTC.'),
-    })
+    expect((await ask(agent, 'second')).result).toEqual({ status: 'error', message: OUT_OF_CREDITS })
 
-    env.DAILY_REQUEST_LIMIT = '100'
+    clock = new Date(clock.getTime() + WEEK_MS)
     await ask(agent, 'third')
     expect(sentMessages(1).map((m) => m.content)).toEqual(['You are Notico.', 'first', '你好 来自 worker ', 'third'])
   })
 
-  it('[UC-CHAT-001-S06] a question answered with one tool uses two requests from the quota', async () => {
-    env.DAILY_REQUEST_LIMIT = '3'
+  it('[UC-CHAT-001-S11] a question answered with one tool costs the credits of both model calls', async () => {
+    ai.usage = usageCosting(90)
     const { tool, runs } = pageTool()
     const agent = makeAgent({ tools: [tool] })
     ai.script = [{ toolCalls: [{ name: 'lookup_page', arguments: '{}' }] }]
@@ -1597,20 +1605,16 @@ describe('extension agent against the worker', () => {
     expect(runs).toHaveLength(1)
     expect(ai.calls).toHaveLength(2)
 
-    // Exactly two counted: one request is left for a plain question, and then none.
+    // Both calls were charged: 20 of the 200 credits are left, enough to start one more call and no more.
     expect((await ask(agent, 'hi')).result).toEqual({ status: 'done' })
     expect(ai.calls).toHaveLength(3)
-    const { result } = await ask(agent, 'again')
-    expect(result).toMatchObject({
-      status: 'error',
-      message: expect.stringContaining('The quota resets at 00:00 UTC.'),
-    })
+    expect((await ask(agent, 'again')).result).toEqual({ status: 'error', message: OUT_OF_CREDITS })
     expect(ai.calls).toHaveLength(3)
   })
 
-  /** Asks a question whose tool round trip runs into a quota of one request. */
-  async function askIntoQuota() {
-    env.DAILY_REQUEST_LIMIT = '1'
+  /** Asks a question whose first model call, the one asking for a tool, uses up the user's credits. */
+  async function askIntoNoCredits() {
+    ai.usage = usageCosting(200)
     const { tool, runs } = pageTool()
     const agent = makeAgent({ tools: [tool] })
     ai.script = [{ toolCalls: [{ name: 'lookup_page', arguments: '{}' }] }]
@@ -1618,22 +1622,19 @@ describe('extension agent against the worker', () => {
     return { agent, runs, result }
   }
 
-  it('[UC-CHAT-001-S07] a quota that runs out after a tool ran ends the question with the reset message', async () => {
-    const { runs, result } = await askIntoQuota()
-    expect(result).toMatchObject({
-      status: 'error',
-      message: expect.stringContaining('The quota resets at 00:00 UTC.'),
-    })
+  it('[UC-CHAT-001-S12] credits that run out after a tool ran end the question, saying when credits arrive', async () => {
+    const { runs, result } = await askIntoNoCredits()
+    expect(result).toEqual({ status: 'error', message: OUT_OF_CREDITS })
     expect(runs).toHaveLength(1)
     // The request that would have sent the result back was refused before the model.
     expect(ai.calls).toHaveLength(1)
   })
 
-  it('keeps a tool used before the quota ran out for the next question', async () => {
-    // UC-AGENT-001-S13 covers a model failure; this guards the same rule when the quota refuses the request.
-    const { agent, runs } = await askIntoQuota()
-    // The next day the quota allows it again.
-    clock = new Date('2026-11-09T00:00:00Z')
+  it('keeps a tool used before the credits ran out for the next question', async () => {
+    // UC-AGENT-001-S13 covers a model failure; this guards the same rule when the request is refused for credits.
+    const { agent, runs } = await askIntoNoCredits()
+    // A week later the user has credits again.
+    clock = new Date(clock.getTime() + WEEK_MS)
     expect((await ask(agent, 'And now?')).result).toEqual({ status: 'done' })
     // The kept tool is part of the conversation; it does not run again.
     expect(runs).toHaveLength(1)
@@ -1965,7 +1966,7 @@ describe('Notion requests per question', () => {
     const changing: ToolSpec = {
       ...look,
       run: async (args) => {
-        env.MODEL = '@cf/test/next-model'
+        env.MODEL = NEXT_MODEL
         return look.run(args)
       },
     }

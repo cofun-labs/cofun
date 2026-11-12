@@ -1,12 +1,16 @@
 import { DurableObject } from 'cloudflare:workers'
 import { createApp } from './app'
-import { consume, type QuotaNamespace } from './quota'
+import { balance, charge, type Balance, type CreditsNamespace } from './credits'
 import type { UsageDataset } from './usage'
 
-/** Daily request counter for one user, addressed by Clerk user id. */
-export class UserQuota extends DurableObject {
-  consume(day: string, limit: number): Promise<boolean> {
-    return consume(this.ctx.storage, day, limit)
+/** Credit ledger for one user, addressed by Clerk user id. */
+export class UserCredits extends DurableObject {
+  balance(now: number): Promise<Balance> {
+    return balance(this.ctx.storage, now)
+  }
+
+  charge(now: number, cost: number): Promise<Balance> {
+    return charge(this.ctx.storage, now, cost)
   }
 }
 
@@ -14,7 +18,7 @@ export default createApp()
 
 // Compile-time check: the real bindings satisfy the interfaces the app is written against.
 type BindingFitsApp =
-  DurableObjectNamespace<UserQuota> extends QuotaNamespace
+  DurableObjectNamespace<UserCredits> extends CreditsNamespace
     ? AnalyticsEngineDataset extends UsageDataset
       ? true
       : never

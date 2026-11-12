@@ -4,13 +4,15 @@ import { cors } from 'hono/cors'
 import type { ContentfulStatusCode } from 'hono/utils/http-status'
 import * as z from './zod'
 import { loginPage } from './login'
-import type { QuotaNamespace } from './quota'
+import { FREE_CREDITS, type CreditsNamespace } from './credits'
+import { costOf, estimateTokens, priceOf, type Tokens } from './pricing'
 import {
   finishReason,
   meterStream,
   recordUsage,
   replyInfo,
-  tokenCount,
+  tokensOf,
+  type StreamSummary,
   type UsageDataset,
   type UsageRecord,
 } from './usage'
@@ -30,17 +32,17 @@ export interface Env {
   CLERK_JWT_KEY?: string
   /** Comma-separated origins allowed to call, e.g. chrome-extension://<id>. Checked against the token's azp claim. */
   CLERK_AUTHORIZED_PARTIES?: string
-  /** Per-user daily request counters (Durable Object namespace). */
-  QUOTA: QuotaNamespace
-  /** Chat requests each user may make per UTC day. */
-  DAILY_REQUEST_LIMIT?: string | number
+  /** Per-user credit ledgers (Durable Object namespace). */
+  CREDITS: CreditsNamespace
   /** Per-request usage records (Workers Analytics Engine dataset). Never holds message content. */
   USAGE: UsageDataset
 }
 
 export interface AppOptions {
-  /** Clock used for the daily quota. Tests pass their own to move between days. */
+  /** Clock used for credits: when they are granted and when they expire. Tests pass their own to move through the weeks. */
   now?: () => Date
+  /** What a model's tokens cost: the price table by default. Tests pass their own to price a model it does not list. */
+  priceOf?: typeof priceOf
   /** Where error lines go: Workers Logs by default. Tests pass their own to read what was logged. */
   logError?: (line: string) => void
 }
@@ -72,6 +74,13 @@ function errorSummary(err: unknown): string {
   const name = String(err.name).slice(0, MAX_LOGGED_NAME_CHARS)
   const message = String(err.message).slice(0, MAX_LOGGED_MESSAGE_CHARS)
   return `${name}: ${message}`
+}
+
+/** A time as the out-of-credits message gives it: to the minute, in UTC, since the worker does not know the user's time zone. */
+function utcMinute(ms: number): string {
+  // Rounded up, so the time named is never before the credits arrive.
+  const iso = new Date(Math.ceil(ms / 60_000) * 60_000).toISOString()
+  return `${iso.slice(0, 10)} at ${iso.slice(11, 16)} UTC`
 }
 
 const MAX_MESSAGES = 200
@@ -336,7 +345,11 @@ function parseModelInputs(body: z.output<typeof Body>): { inputs: ModelInputs; c
   return { inputs, chars }
 }
 
-export function createApp({ now = () => new Date(), logError = (line) => console.error(line) }: AppOptions = {}) {
+export function createApp({
+  now = () => new Date(),
+  priceOf: priceFor = priceOf,
+  logError = (line) => console.error(line),
+}: AppOptions = {}) {
   const app = new Hono<{ Bindings: Env; Variables: Vars }>()
 
   // The extension calls from a chrome-extension:// origin. Auth is a bearer token, not cookies.
@@ -406,7 +419,9 @@ export function createApp({ now = () => new Date(), logError = (line) => console
       messages: 0,
       inputChars: 0,
       promptTokens: 0,
+      cachedTokens: 0,
       completionTokens: 0,
+      microCredits: 0,
       finishReason: '',
       durationMs: 0,
     }
@@ -444,28 +459,41 @@ export function createApp({ now = () => new Date(), logError = (line) => console
       throw new HttpError(400, 'unsupported_model', `unsupported model; use ${c.env.MODEL} or omit it`)
     }
 
-    // Count the request once it is valid, before the model is called. A failed model call
-    // still counts: the quota caps attempts, so retry loops can't get around it.
-    const rawLimit = String(c.env.DAILY_REQUEST_LIMIT ?? '').trim()
-    if (!/^\d+$/.test(rawLimit)) {
-      throw new HttpError(503, 'not_configured', 'DAILY_REQUEST_LIMIT must be a non-negative integer')
-    }
-    const limit = Number(rawLimit)
-    if (limit === 0) throw new HttpError(503, 'chat_disabled', 'Chat is turned off for now. Try again later.')
-    const today = now().toISOString().slice(0, 10)
-    let allowed: boolean
+    const price = priceFor(c.env.MODEL)
+    if (!price) throw new HttpError(503, 'not_configured', 'MODEL has no price')
+
+    // Charged after use: a call goes ahead while the balance is above zero, and its cost is taken
+    // when the reply ends. The last call may take the balance below zero; the next grant pays that
+    // back first. The check comes once the request is valid and before the model is called.
+    const ledger = c.env.CREDITS.getByName(c.get('userId'))
+    let credits: Awaited<ReturnType<typeof ledger.balance>>
     try {
-      allowed = await c.env.QUOTA.getByName(c.get('userId')).consume(today, limit)
+      credits = await ledger.balance(now().getTime())
     } catch (err) {
-      console.error('quota check failed', err)
-      throw new HttpError(503, 'quota_unavailable', 'Usage tracking is unavailable, try again in a moment.')
+      console.error('credit check failed', err)
+      throw new HttpError(503, 'credits_unavailable', 'Credits are unavailable, try again in a moment.')
     }
-    if (!allowed) {
+    if (credits.balance <= 0) {
       throw new HttpError(
-        429,
-        'rate_limited',
-        `You have used all ${limit} requests for today. The quota resets at 00:00 UTC.`,
+        402,
+        'out_of_credits',
+        `You have no credits left. Your next ${FREE_CREDITS} free credits arrive on ${utcMinute(credits.nextGrantAt)}.`,
       )
+    }
+
+    /**
+     * Takes what the call cost from the user's credits, and puts it in the usage record. A charge
+     * that fails is logged and the reply still goes out: the model has already answered.
+     */
+    const chargeFor = async (tokens: Tokens) => {
+      const cost = costOf(price, tokens)
+      if (cost === 0) return
+      try {
+        await ledger.charge(now().getTime(), cost)
+        usage.microCredits = cost
+      } catch (err) {
+        console.error('credit charge failed', err)
+      }
     }
 
     // Pass only the fields the model needs; drop anything else a client added.
@@ -505,11 +533,33 @@ export function createApp({ now = () => new Date(), logError = (line) => console
     if (stream === true) {
       // Workers AI already streams OpenAI-style SSE; pass it through, reading usage on the way.
       if (!isStream(out)) throw new Error('the model returned no stream')
+      const settle = async (outcome: string, summary: StreamSummary) => {
+        const { promptTokens, cachedTokens, completionTokens } = summary
+        const tokens: Tokens = { promptTokens, cachedTokens, completionTokens }
+        // A reply the user stopped, or a stream that broke off, costs what it used. Its totals come
+        // in the stream's last chunks, which never arrived, so they are estimated, never below what
+        // the stream did report: the prompt from the size of the input when no chunk gave it, the
+        // reply from the characters that were streamed. Nothing says how much of the prompt was
+        // read from the cache, so all of it is charged as new input.
+        if (outcome === 'cancelled' || outcome === 'incomplete' || outcome === 'stream_error') {
+          tokens.promptTokens ||= estimateTokens(chars)
+          tokens.cachedTokens = 0
+          tokens.completionTokens = Math.max(tokens.completionTokens, estimateTokens(summary.replyChars))
+        }
+        usage.promptTokens = tokens.promptTokens
+        usage.cachedTokens = tokens.cachedTokens
+        usage.completionTokens = tokens.completionTokens
+        usage.finishReason = summary.finishReason
+        await chargeFor(tokens)
+        record(outcome)
+      }
       const metered = meterStream(
         out,
         (outcome, summary) => {
-          Object.assign(usage, summary)
-          record(outcome)
+          const settled = settle(outcome, summary)
+          // A client that went away must not take the charge with it.
+          c.executionCtx.waitUntil(settled)
+          return settled
         },
         (err) => logError(`model stream failed: ${errorSummary(err)}`),
       )
@@ -518,12 +568,13 @@ export function createApp({ now = () => new Date(), logError = (line) => console
       })
     }
     const reply = replyInfo(out)
-    usage.promptTokens = tokenCount(reply?.usage?.prompt_tokens)
-    usage.completionTokens = tokenCount(reply?.usage?.completion_tokens)
+    const tokens = tokensOf(reply?.usage)
+    Object.assign(usage, tokens)
     usage.finishReason = finishReason(reply?.finish_reason)
     // The reply as the model gave it. Build the response first: if that throws, the request is
-    // recorded once, as internal.
+    // recorded once, as internal, and nothing is charged.
     const res = c.newResponse(JSON.stringify(out), 200, { 'content-type': 'application/json' })
+    await chargeFor(tokens)
     record('ok')
     return res
   }
