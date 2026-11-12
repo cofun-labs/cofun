@@ -9,11 +9,11 @@
  * Clerk's Frontend API host is encoded in the publishable key: pk_test_ (a development instance)
  * or pk_live_ (a production instance), then base64 of the host and a "$", without padding.
  */
-function clerkFrontendApi(publishableKey: string): string {
+export function clerkFrontendApi(publishableKey: string): string {
   return atob(publishableKey.split('_')[2] ?? '').replace(/\$$/, '')
 }
 
-const esc = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`)
+export const esc = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`)
 
 export function loginPage(publishableKey: string): string {
   const fapi = clerkFrontendApi(publishableKey)

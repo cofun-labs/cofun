@@ -49,6 +49,34 @@ Variables in `wrangler.jsonc`:
 | `CLERK_AUTHORIZED_PARTIES` | Allowed origins, comma-separated: `chrome-extension://<extension id>` and the sign-in page |
 | `CLERK_JWT_KEY` | Clerk JWT public key (PEM). Public; also available at `https://<frontend-api>/.well-known/jwks.json` |
 
+### Admin page
+
+`https://<worker domain>/admin` lets an admin look up one account's credits by Clerk user id (Clerk dashboard → Users shows it) and grant it credits by hand. See [Credits](architecture.md#credits) for how it is protected. There is no list of all accounts: the usage records below answer that.
+
+Who is an admin is set in Clerk, on the instance whose keys the worker uses. Two settings, both in the Clerk dashboard:
+
+1. **Sessions → Customize session token → Claims**: add the `role` claim, next to any claims already there, and save. The worker reads exactly this claim name.
+
+   ```json
+   {
+     "role": "{{user.public_metadata.role}}"
+   }
+   ```
+
+2. **Users → the admin's user → Metadata → Public → Edit**: set the role. The worker accepts exactly the string `admin`.
+
+   ```json
+   {
+     "role": "admin"
+   }
+   ```
+
+Without the first, no token carries a role and nobody is an admin; without the second, that user is not one. A user's new role reaches the worker with their next session token, within about a minute. To remove an admin, remove the `role` from their public metadata. Users cannot change their own public metadata: only the dashboard and Clerk's Backend API (with the secret key) write it. Never put the role in unsafe metadata, which users can write themselves.
+
+The worker's own origin (`https://<worker domain>`) must be in `CLERK_AUTHORIZED_PARTIES`: admin requests are accepted only with a session token issued to that origin. To use the page with `wrangler dev`, add the local origin (`http://localhost:8787`) there, in `worker/.dev.vars`.
+
+Each grant made by hand is written to Workers Logs as one line: `manual grant: admin=<user id> user=<user id> credits=<n> expires=<time>`.
+
 ### Usage records
 
 Every chat request that passes auth leaves one data point in the `notico_api_usage` Analytics Engine dataset (binding `USAGE`), written when the reply ends, is refused, or fails. Records hold sizes, token counts, the credits charged, and the outcome, never message or reply text. Analytics Engine deletes them after 90 days. They are for analysis and for checking the credit ledger; users are charged from the ledger (the `UserCredits` Durable Object, one per user; see [Credits](architecture.md#credits)), never from these records.

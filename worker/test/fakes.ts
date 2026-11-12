@@ -1,5 +1,13 @@
 import type { AiBinding } from '../src/app'
-import { charge, reserve, type CreditLedger, type CreditsNamespace, type LedgerStorage } from '../src/credits'
+import {
+  charge,
+  grant,
+  read,
+  reserve,
+  type CreditLedger,
+  type CreditsNamespace,
+  type LedgerStorage,
+} from '../src/credits'
 import type { UsageDataset } from '../src/usage'
 
 type Call = { model: string; inputs: Record<string, unknown>; options?: Record<string, unknown> }
@@ -212,6 +220,14 @@ export class FakeCreditsNamespace implements CreditsNamespace {
       charge: async (now, cost, hold) => {
         if (this.failWith ?? this.chargeFailWith) throw this.failWith ?? this.chargeFailWith
         return charge(storage, now, cost, hold)
+      },
+      read: async (now) => {
+        if (this.failWith) throw this.failWith
+        return read(storage, now)
+      },
+      grant: async (now, manual) => {
+        if (this.failWith) throw this.failWith
+        return grant(storage, now, manual)
       },
     }
   }

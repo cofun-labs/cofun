@@ -3,8 +3,9 @@ import { Hono, type Context } from 'hono'
 import { cors } from 'hono/cors'
 import type { ContentfulStatusCode } from 'hono/utils/http-status'
 import * as z from './zod'
+import { adminPage } from './admin'
 import { loginPage } from './login'
-import { FREE_CREDITS, type CreditsNamespace } from './credits'
+import { FREE_CREDITS, MICRO_CREDITS, type Account, type CreditsNamespace } from './credits'
 import { costOf, estimateCachedTokens, estimateTokens, priceOf, type Tokens } from './pricing'
 import {
   finishReason,
@@ -45,9 +46,12 @@ export interface AppOptions {
   priceOf?: typeof priceOf
   /** Where error lines go: Workers Logs by default. Tests pass their own to read what was logged. */
   logError?: (line: string) => void
+  /** Where the record of what admins did goes: Workers Logs by default. Tests pass their own to read it. */
+  logAdmin?: (line: string) => void
 }
 
-type Vars = { userId: string }
+/** `claims` is the verified session token's payload, as Clerk wrote it: read it through a schema. */
+type Vars = { userId: string; claims: unknown }
 type Ctx = Context<{ Bindings: Env; Variables: Vars }>
 
 class HttpError extends Error {
@@ -93,6 +97,34 @@ const MAX_SCHEMA_DEPTH = 64
 /** OpenAI's rule for function names. */
 const TOOL_NAME = /^[a-zA-Z0-9_-]{1,64}$/
 const badRequest = (message: string) => new HttpError(400, 'bad_request', message)
+
+/**
+ * What a session token must say for its user to be an admin. `role` is a custom claim: the Clerk
+ * instance's session token is customized to carry `"role": "{{user.public_metadata.role}}"`, and
+ * an admin is a user whose public metadata in Clerk has `"role": "admin"`. Only Clerk's dashboard
+ * and Backend API can write public metadata, so users cannot give themselves the role. `azp` is
+ * the origin the token was issued to: admin requests come only from the admin page, which this
+ * worker serves, so a token issued to the extension or to any other origin is not an admin's.
+ */
+const AdminClaims = z.object({ role: z.literal('admin'), azp: z.string() })
+
+/** The most credits one grant by hand can give, and the longest it can last: a typo must not grant a fortune, or credits that never expire. */
+const MAX_GRANT_CREDITS = 50_000
+const MAX_GRANT_DAYS = 366
+const DAY_MS = 24 * 60 * 60 * 1000
+
+/** A Clerk user id, as far as its shape goes: the worker cannot ask Clerk whether the user exists. */
+const UserId = part(z.string().regex(/^user_[A-Za-z0-9]{1,64}$/), 'the user id must look like user_… (a Clerk user id)')
+
+const GrantBody = part(z.looseObject({}), 'body must be a JSON object').pipe(
+  z.object({
+    credits: part(
+      z.int().min(1).max(MAX_GRANT_CREDITS),
+      `credits must be a whole number from 1 to ${MAX_GRANT_CREDITS}`,
+    ),
+    days: part(z.int().min(1).max(MAX_GRANT_DAYS), `days must be a whole number from 1 to ${MAX_GRANT_DAYS}`),
+  }),
+)
 
 function isObject(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === 'object' && !Array.isArray(value)
@@ -349,6 +381,7 @@ export function createApp({
   now = () => new Date(),
   priceOf: priceFor = priceOf,
   logError = (line) => console.error(line),
+  logAdmin = (line) => console.log(line),
 }: AppOptions = {}) {
   const app = new Hono<{ Bindings: Env; Variables: Vars }>()
 
@@ -371,6 +404,16 @@ export function createApp({
     c.header('content-security-policy', "frame-ancestors 'none'")
     c.header('x-frame-options', 'DENY')
     return c.html(loginPage(c.env.CLERK_PUBLISHABLE_KEY))
+  })
+
+  // Admin page: look up an account's credits and grant credits by hand. The page holds no data;
+  // everything it shows comes from /v1/admin/*, which checks the session and the admin role.
+  app.get('/admin', (c) => {
+    if (!c.env.CLERK_PUBLISHABLE_KEY) throw new HttpError(503, 'not_configured', 'CLERK_PUBLISHABLE_KEY is not set')
+    // No other site may frame it, so none can trick an admin into clicking through a grant.
+    c.header('content-security-policy', "frame-ancestors 'none'")
+    c.header('x-frame-options', 'DENY')
+    return c.html(adminPage(c.env.CLERK_PUBLISHABLE_KEY))
   })
 
   // ---- Clerk session auth for /v1/* ----
@@ -402,7 +445,63 @@ export function createApp({
       throw new HttpError(401, 'unauthorized', 'invalid or expired session')
     }
     c.set('userId', claims.sub)
+    c.set('claims', claims)
     await next()
+  })
+
+  // ---- Admin: /v1/admin/* needs a session whose token says its user is an admin ----
+
+  app.use('/v1/admin/*', async (c, next) => {
+    // One refusal for every reason, and for every path, existing or not: someone who is not an
+    // admin learns nothing about what is here.
+    const claims = AdminClaims.safeParse(c.get('claims'))
+    if (!claims.success || claims.data.azp !== new URL(c.req.url).origin) {
+      throw new HttpError(403, 'forbidden', 'This account is not an admin.')
+    }
+    await next()
+  })
+
+  /** An account as the admin page shows it. Amounts stay in micro-credits; the page rounds them. */
+  const accountJson = (userId: string, account: Account) => ({ userId, ...account })
+
+  /** Runs one call on a user's ledger, or refuses the request with `message` when the call fails. */
+  async function onLedger(
+    c: Ctx,
+    userId: string,
+    message: string,
+    call: (ledger: ReturnType<CreditsNamespace['getByName']>) => Promise<Account>,
+  ) {
+    try {
+      return await call(c.env.CREDITS.getByName(userId))
+    } catch (err) {
+      logError(`admin ledger call failed: ${errorSummary(err)}`)
+      throw new HttpError(503, 'credits_unavailable', message)
+    }
+  }
+
+  app.get('/v1/admin/accounts/:userId', async (c) => {
+    const userId = parse(UserId, c.req.param('userId'))
+    const unavailable = 'Credits are unavailable, try again in a moment.'
+    const account = await onLedger(c, userId, unavailable, (ledger) => ledger.read(now().getTime()))
+    return c.json(accountJson(userId, account))
+  })
+
+  app.post('/v1/admin/accounts/:userId/grants', async (c) => {
+    const userId = parse(UserId, c.req.param('userId'))
+    const { credits, days } = parse(GrantBody, await c.req.json().catch(() => undefined))
+    const at = now().getTime()
+    const grant = { amount: credits * MICRO_CREDITS, expiresAt: at + days * DAY_MS, by: c.get('userId') }
+    // A call that fails may still have written the grant, and granting again would give it twice:
+    // the admin is told to look before trying again, not to try again.
+    const unknown = 'The grant may or may not have been made. Look the account up before granting again.'
+    const account = await onLedger(c, userId, unknown, (ledger) => ledger.grant(at, grant))
+    // The record of who granted what to whom. Ids, numbers, and a time only: both ids are bounded
+    // (the target by its shape, the admin's by the cut here), and nothing else of the request is logged.
+    const admin = grant.by.slice(0, MAX_ID_CHARS)
+    logAdmin(
+      `manual grant: admin=${admin} user=${userId} credits=${credits} expires=${new Date(grant.expiresAt).toISOString()}`,
+    )
+    return c.json(accountJson(userId, account))
   })
 
   app.get('/v1/me', (c) => c.json({ userId: c.get('userId'), model: c.env.MODEL }))
