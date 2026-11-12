@@ -1001,3 +1001,17 @@ describe('lookups of mentioned people and pages', () => {
     expect(body(await read())).toBe(['---', 'Status: Doing', '---', '(This page is empty.)'].join('\n'))
   })
 })
+
+describe('how the side panel describes a read', () => {
+  const id = 'a'.repeat(32)
+
+  it('names the page by its title as the user sees it, without its Markdown', () => {
+    const result = `Page: **Q3** plan with @[Alice] for [Launch](${id}) to\\_do ^${id}\nURL: x`
+    expect(readPage.describe({}, result)).toMatchObject({ name: 'Q3 plan with Alice for Launch to_do' })
+  })
+
+  it('says "a page", not the open page, when its arguments do not parse', () => {
+    expect(readPage.describe({ page: 5 }, undefined)).toMatchObject({ what: 'a page' })
+    expect(readPage.describe({}, undefined)).toMatchObject({ what: 'the open page' })
+  })
+})

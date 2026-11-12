@@ -165,6 +165,21 @@ function named(result: string | undefined, line: RegExp): string | undefined {
   return name || undefined
 }
 
+/**
+ * A page title as read_page shows it (inline Markdown: `**bold**`, `[Title](id)`, `@[Name]`, and a
+ * backslash before a literal character) as the user sees it in Notion.
+ */
+function plainTitle(markdown: string | undefined): string | undefined {
+  if (!markdown) return undefined
+  const text = markdown.replace(/@\[([^\]]*)\]/g, '$1').replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
+  let out = ''
+  for (let i = 0; i < text.length; i++) {
+    if (text[i] === '\\' && i + 1 < text.length) out += text[++i]
+    else if (!'*_~`'.includes(text[i])) out += text[i]
+  }
+  return out.trim() || undefined
+}
+
 /** A name a result gives in quotes as `quote` writes it (JSON), read back. */
 function quoted(result: string | undefined, line: RegExp): string | undefined {
   const text = named(result, line)
@@ -191,8 +206,9 @@ export const readPage = defineTool({
   describe: (args, result) =>
     on(
       READ,
-      named(result, /^Page: (.+) \^[0-9a-f]+(?:\n|$)/),
-      args?.page ? 'a page' : 'the open page',
+      plainTitle(named(result, /^Page: (.+) \^[0-9a-f]+(?:\n|$)/)),
+      // Arguments that don't parse may have named another page.
+      !args || args.page ? 'a page' : 'the open page',
       args?.part && args.part > 1 ? `part ${args.part} of` : undefined,
     ),
   args: z.strictObject({
@@ -480,7 +496,7 @@ export const queryDatabase = defineTool({
     on(
       READ,
       named(result, /^Database: (.+) \^[0-9a-f]+(?:\n|$)/),
-      args?.database ? 'a database' : 'the open database',
+      !args || args.database ? 'a database' : 'the open database',
       'rows of',
     ),
   args: QUERY_ARGS,
@@ -2566,7 +2582,7 @@ export const readComments = defineTool({
     on(
       READ,
       quoted(result, /^Comments on the page (".*") \^[0-9a-f]+/m),
-      args?.page ? 'a page' : 'the open page',
+      !args || args.page ? 'a page' : 'the open page',
       'the comments on',
     ),
   args: z.strictObject({
