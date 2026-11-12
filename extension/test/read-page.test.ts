@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { NESTED_MAX } from '../src/notion/api'
 import { inline } from '../src/notion/blocks'
 import { blockRefs, codeSpan, splitIntoParts } from '../src/notion/markdown'
-import { PART_CHARS, createPage, editPage, listPages, readPage } from '../src/tools'
+import { PART_CHARS, createDatabase, createPage, editPage, listPages, readPage } from '../src/tools'
 import { FakeNotionTab, PAGE, PAGE_URL, SPACE, USER, fixture, restoreGlobals } from './notion-tab'
 
 afterEach(restoreGlobals)
@@ -1030,6 +1030,13 @@ describe('how the side panel describes a read', () => {
     expect(createPage.describe({ title: '**Q3** plan', parent: PAGE }, undefined)).toMatchObject({
       what: 'the page',
       name: 'Q3 plan',
+    })
+    // Without a title, the noun is said once.
+    expect(createPage.describe({}, undefined)).toEqual({ verb: expect.anything(), what: 'a page' })
+    expect(createDatabase.describe({}, undefined)).toEqual({ verb: expect.anything(), what: 'a database' })
+    expect(createDatabase.describe({ title: 'Tasks', parent: PAGE }, undefined)).toMatchObject({
+      what: 'the database',
+      name: 'Tasks',
     })
   })
 

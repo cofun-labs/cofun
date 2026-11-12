@@ -1216,7 +1216,10 @@ export const createPage = defineTool({
     "(the open page's URL, or another page), and the new page goes at its end; or a " +
     'database, and the new page is a row of it, with `properties` set by name (values as query_database shows ' +
     "them; options must exist). Returns the new page's id and URL.",
-  describe: (args) => on(CREATE, plainTitle(args?.title ?? '').trim() || undefined, 'a page', 'the page'),
+  describe: (args) => {
+    const name = plainTitle(args?.title ?? '').trim()
+    return name ? { verb: CREATE, what: 'the page', name } : { verb: CREATE, what: 'a page' }
+  },
   args: z.strictObject({
     title: z.string({ error: TITLE_EMPTY }).describe(`The new page's title, on one line: ${INLINE_MARKDOWN}.`),
     markdown: z.string().describe("The page's content, as Markdown. Leave out for an empty page.").optional(),
@@ -1634,7 +1637,10 @@ export const createDatabase = defineTool({
     "Creates a Notion database (a table) as a page at the end of `parent`, a page (the open page's URL, or " +
     'another page): a title column (`title_property`, "Name" if left out), then `properties` in order, with ' +
     "options for selects. Add rows afterwards with create_page. Returns the new database's id and URL.",
-  describe: (args) => on(CREATE, args?.title.trim() || undefined, 'a database', 'the database'),
+  describe: (args) => {
+    const name = args?.title.trim()
+    return name ? { verb: CREATE, what: 'the database', name } : { verb: CREATE, what: 'a database' }
+  },
   args: z.strictObject({
     parent: z.string({ error: DATABASE_PARENT }).describe('URL or id of the page to create it in.'),
     title: z.string({ error: TITLE_EMPTY }).describe(`The database's name. ${BACKSLASH}`),
