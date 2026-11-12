@@ -511,13 +511,15 @@ export function createApp({
       }
     }
 
-    try {
-      return await callModel()
-    } catch (err) {
+    const call = callModel().catch(async (err: unknown) => {
       // A call that failed costs nothing, and what was set aside for it is free again.
       await chargeFor({ promptTokens: 0, cachedTokens: 0, completionTokens: 0 })
       throw err
-    }
+    })
+    // The model is called and the call charged even if the client goes away meanwhile: a request
+    // dropped right after it was sent must not be a free call.
+    c.executionCtx.waitUntil(call.catch(() => {}))
+    return await call
 
     async function callModel(): Promise<Response> {
       // Pass only the fields the model needs; drop anything else a client added.
