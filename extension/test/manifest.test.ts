@@ -36,7 +36,7 @@ describe('extension manifest', () => {
       'https://www.notion.so/*',
       'https://app.notion.com/*',
       'https://clerk.cofun.cc/*',
-      'https://api.cofun.cc/*',
+      'https://notico-api.cofun.cc/*',
       'https://*.cofun.cc/*',
     ])
   })
@@ -49,7 +49,7 @@ describe('extension manifest', () => {
     const json = buildManifest({ ...env, VITE_CLERK_SYNC_HOST: env.VITE_CLERK_SYNC_HOST! }, '1.2.3')
     expect(json.content_security_policy.extension_pages).toBe(
       "default-src 'self'; script-src 'self'; object-src 'self'; style-src 'self' 'unsafe-inline'; " +
-        "connect-src 'self' https://api.cofun.cc https://clerk.cofun.cc; " +
+        "connect-src 'self' https://notico-api.cofun.cc https://clerk.cofun.cc; " +
         "img-src 'self' data: blob: https://img.clerk.com",
     )
   })
@@ -66,7 +66,7 @@ describe('extension manifest', () => {
 
   it('asks for exactly these permissions, whatever the env', () => {
     const envs: ManifestEnv[] = [
-      { VITE_CLERK_SYNC_HOST: 'https://api.cofun.cc' },
+      { VITE_CLERK_SYNC_HOST: 'https://notico-api.cofun.cc' },
       { VITE_CLERK_SYNC_HOST: 'https://app.example.co.uk', CLERK_COOKIE_DOMAIN: 'example.co.uk' },
       { VITE_CLERK_SYNC_HOST: 'http://localhost:8787', CRX_PUBLIC_KEY: 'public-key' },
     ]
@@ -76,7 +76,7 @@ describe('extension manifest', () => {
   })
 
   it('asks for no optional permissions and injects no content scripts', () => {
-    const json: Record<string, unknown> = manifest({ VITE_CLERK_SYNC_HOST: 'https://api.cofun.cc' })
+    const json: Record<string, unknown> = manifest({ VITE_CLERK_SYNC_HOST: 'https://notico-api.cofun.cc' })
     expect(Object.keys(json).sort()).toEqual(
       [
         'action',
@@ -94,7 +94,7 @@ describe('extension manifest', () => {
   })
 
   it('lists icons that exist in the build at the size they are listed for', () => {
-    const json = manifest({ VITE_CLERK_SYNC_HOST: 'https://api.cofun.cc' })
+    const json = manifest({ VITE_CLERK_SYNC_HOST: 'https://notico-api.cofun.cc' })
     expect(Object.keys(json.icons)).toEqual(['16', '32', '48', '128'])
     expect(json.action.default_icon).toEqual(json.icons)
     for (const [size, file] of Object.entries(json.icons)) {
@@ -107,10 +107,10 @@ describe('extension manifest', () => {
   })
 
   it("covers Notion, Clerk, the sign-in page, and the sign-in page's parent domain", () => {
-    expect(manifest({ VITE_CLERK_SYNC_HOST: 'https://api.cofun.cc' }).host_permissions).toEqual([
+    expect(manifest({ VITE_CLERK_SYNC_HOST: 'https://notico-api.cofun.cc' }).host_permissions).toEqual([
       ...NOTION,
       `https://${CLERK_HOST}/*`,
-      'https://api.cofun.cc/*',
+      'https://notico-api.cofun.cc/*',
       'https://*.cofun.cc/*',
     ])
   })
@@ -155,12 +155,13 @@ describe('extension manifest', () => {
 
   it('leaves out the Clerk host when the publishable key names none', () => {
     expect(
-      manifest({ VITE_CLERK_SYNC_HOST: 'https://api.cofun.cc', VITE_CLERK_PUBLISHABLE_KEY: '' }).host_permissions,
-    ).toEqual([...NOTION, 'https://api.cofun.cc/*', 'https://*.cofun.cc/*'])
+      manifest({ VITE_CLERK_SYNC_HOST: 'https://notico-api.cofun.cc', VITE_CLERK_PUBLISHABLE_KEY: '' })
+        .host_permissions,
+    ).toEqual([...NOTION, 'https://notico-api.cofun.cc/*', 'https://*.cofun.cc/*'])
   })
 
   it('pins the extension ID with the public key, when one is set', () => {
-    const env = { VITE_CLERK_SYNC_HOST: 'https://api.cofun.cc' }
+    const env = { VITE_CLERK_SYNC_HOST: 'https://notico-api.cofun.cc' }
     expect(manifest(env)).not.toHaveProperty('key')
     expect(manifest({ ...env, CRX_PUBLIC_KEY: 'public-key' })).toMatchObject({ key: 'public-key', version: '1.2.3' })
   })

@@ -23,7 +23,7 @@ const CLERK_IMAGE_HOST = 'img.clerk.com'
 
 /**
  * Host permission covering the domain Clerk sets __client_uat on: the sign-in
- * page's registrable domain (e.g. api.cofun.cc -> *.cofun.cc).
+ * page's registrable domain (e.g. notico-api.cofun.cc -> *.cofun.cc).
  * The last two labels are a guess that fits hosts like example.com; set
  * CLERK_COOKIE_DOMAIN for suffixes such as example.co.uk. IPs and single-label
  * hosts (localhost) get a permission for the host itself.

@@ -37,7 +37,7 @@ npx wrangler login
 CLOUDFLARE_ACCOUNT_ID=<account id> pnpm run deploy
 ```
 
-The worker runs on the custom domain `api.cofun.cc` (see `routes` in `wrangler.jsonc`). The domain's zone must belong to the deploying Cloudflare account.
+The worker runs on the custom domain `notico-api.cofun.cc` (see `routes` in `wrangler.jsonc`). The domain's zone must belong to the deploying Cloudflare account.
 
 Variables in `wrangler.jsonc`:
 
@@ -52,7 +52,7 @@ Variables in `wrangler.jsonc`:
 
 ### Usage records
 
-Every chat request that passes auth leaves one data point in the `cofun_api_usage` Analytics Engine dataset (binding `USAGE`), written when the reply ends, is refused, or fails. Records hold sizes, token counts, and the outcome, never message or reply text. Analytics Engine deletes them after 90 days.
+Every chat request that passes auth leaves one data point in the `notico_api_usage` Analytics Engine dataset (binding `USAGE`), written when the reply ends, is refused, or fails. Records hold sizes, token counts, and the outcome, never message or reply text. Analytics Engine deletes them after 90 days.
 
 | Column | Value |
 |---|---|
@@ -71,7 +71,7 @@ SELECT index1 AS user, toStartOfDay(timestamp) AS day,
        sum(_sample_interval * double3) AS prompt_tokens,
        sum(_sample_interval * double4) AS completion_tokens,
        sumIf(_sample_interval, blob2 != 'ok' AND blob2 != 'cancelled') AS failed
-FROM cofun_api_usage
+FROM notico_api_usage
 WHERE timestamp > NOW() - INTERVAL '7' DAY
 GROUP BY user, day
 ORDER BY day DESC, requests DESC
@@ -79,7 +79,7 @@ ORDER BY day DESC, requests DESC
 
 ### Workers Builds settings
 
-In the Cloudflare dashboard: Workers & Pages → `cofun-api` → Settings → Builds → connect `cofun-labs/notico`.
+In the Cloudflare dashboard: Workers & Pages → `notico-api` → Settings → Builds → connect `cofun-labs/notico`.
 
 | Setting | Value |
 |---|---|

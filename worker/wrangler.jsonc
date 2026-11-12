@@ -1,12 +1,12 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "cofun-api",
+  "name": "notico-api",
   "main": "src/index.ts",
   "compatibility_date": "2026-11-01",
   "compatibility_flags": ["nodejs_compat"],
 
   // Serves the API and the sign-in page (Clerk Sync Host). The zone must be on the deploying account.
-  "routes": [{ "pattern": "api.cofun.cc", "custom_domain": true }],
+  "routes": [{ "pattern": "notico-api.cofun.cc", "custom_domain": true }],
   "workers_dev": false,
 
   // Workers Logs: keep console output and per-request invocation logs in the dashboard.
@@ -23,7 +23,7 @@
 
   // Per-request usage records (sizes, token counts, outcome; never message content).
   // Workers Analytics Engine keeps them for 90 days. The dataset is created on first write.
-  "analytics_engine_datasets": [{ "binding": "USAGE", "dataset": "cofun_api_usage" }],
+  "analytics_engine_datasets": [{ "binding": "USAGE", "dataset": "notico_api_usage" }],
 
   "vars": {
     // Clerk publishable key, for the sign-in page. Public.
@@ -36,7 +36,7 @@
     // to be tuned later.
     "DAILY_REQUEST_LIMIT": "10000",
     // Origins allowed to call (the token's azp claim). Comma-separated.
-    "CLERK_AUTHORIZED_PARTIES": "chrome-extension://fafkdcopddmegenpemnmjbnolhlbbfpf,https://api.cofun.cc",
+    "CLERK_AUTHORIZED_PARTIES": "chrome-extension://fafkdcopddmegenpemnmjbnolhlbbfpf,https://notico-api.cofun.cc",
     // Clerk JWT public key (PEM). Public; also served at https://<frontend-api>/.well-known/jwks.json
     "CLERK_JWT_KEY": "-----BEGIN PUBLIC KEY-----\nMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAvmcyRgQuBYHuMrpM4d5N\nwQ9Y7i59S80hLM7Qd68gIpszm0Mi7eOIMmxTOVIePX4jsjf+ByfPl6qluXsPGik/\nwtr1ti37UUADTdC1qjn3jabY22UebFXgxp6Fq6XHJKelmHQBm77OwzZMPzPgmnwK\nM9nJuxXpsGtNH3a8xzC8Ql8UOJE5eWvgXKcu48b/Awja7J+yGQe7OklbaJL71FrJ\nPGUDS7bLVHvJP8/xTd3eii+LdqN5o7RDqwDu1wesJ9g2f8ykLfd55ykVZURr8R3w\n6Z46/wXqoufUn4CdRwsY19zNQlhruUMSGsRLn9PiYOfL1aBHZZzR/tLRndIFq9lY\nqQIDAQAB\n-----END PUBLIC KEY-----\n"
   }
