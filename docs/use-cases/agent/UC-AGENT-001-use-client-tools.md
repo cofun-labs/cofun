@@ -18,7 +18,7 @@ Key constraints:
 
 - Tools run in the extension, never on the server. The server only carries the AI's request to run a tool and the result back.
 - A tool that moves the user's pages to the trash never runs without the user's confirmation, which they are asked for each time; other changes are made right away, and the side panel shows them. If they decline, the tool does not run and the agent goes on without it; if they stop the agent while it waits, the tool does not run and the question ends.
-- Tool definitions, tool requests, and tool results are part of the conversation: the same size limits, quota, and usage records apply, and none of their content is kept by the service. Each round trip to the model counts as one request against the daily quota (UC-CHAT-001).
+- Tool definitions, tool requests, and tool results are part of the conversation: the same size limits, credits, and usage records apply, and none of their content is kept by the service. Each round trip to the model is charged credits for what it cost (UC-CHAT-001).
 
 ## Scenarios
 

@@ -2,7 +2,7 @@
 
 ## Behavior
 
-The operator needs to know how each user uses chat (how many requests, how many tokens, how often they fail) to watch cost and tune the daily quota. Every chat request from a signed-in user leaves a usage record for that user, whether it got a reply, was refused, or failed. The records describe each request by its size and outcome only.
+The operator needs to know how each user uses chat (how many requests, how many tokens, how many credits, how often they fail) to watch cost and check it against what users were charged. Every chat request from a signed-in user leaves a usage record for that user, whether it got a reply, was refused, or failed. The records describe each request by its size, cost, and outcome only. They are never what a user is charged from: credits are charged as UC-CHAT-001 describes.
 
 Key constraint:
 

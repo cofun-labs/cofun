@@ -218,7 +218,7 @@ export class CopilotAgent {
     const epoch = this.epoch
     const { result, kept, code } = await this.askOnce(text, onUpdate, epoch, confirm)
     // The worker's model changed since this panel looked it up (a deploy). The worker refuses the
-    // request before using any quota, so look the model up again. Retry once if the question left
+    // request before any credits are spent, so look the model up again. Retry once if the question left
     // nothing behind; a retry runs the whole question again, so after it used a tool (which is now
     // in the conversation), ask the user to repeat it instead.
     if (code === 'unsupported_model' && epoch === this.epoch) {

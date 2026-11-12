@@ -8,7 +8,13 @@ import { IDBFactory } from 'fake-indexeddb'
 import { vi } from 'vitest'
 import { createApp, type Env } from '../../worker/src/app'
 import { FakeClerk } from '../../worker/test/clerk'
-import { FakeAiBinding, FakeQuotaNamespace, FakeUsageDataset } from '../../worker/test/fakes'
+import {
+  FakeAiBinding,
+  FakeCreditsNamespace,
+  FakeExecutionContext,
+  FakeUsageDataset,
+  MODEL,
+} from '../../worker/test/fakes'
 import type { FakeSession } from './clerk'
 import { restoreGlobals, type FakeNotionTab } from './notion-tab'
 
@@ -48,16 +54,15 @@ export class FakeBrowser {
 
     const env: Env = {
       AI: browser.ai,
-      QUOTA: new FakeQuotaNamespace(),
+      CREDITS: new FakeCreditsNamespace(),
       USAGE: new FakeUsageDataset(),
-      DAILY_REQUEST_LIMIT: '100',
-      MODEL: '@cf/test/model',
+      MODEL,
       CLERK_JWT_KEY: issuer.publicKeyPem,
       CLERK_AUTHORIZED_PARTIES: EXTENSION,
     }
     // The panel calls fetch(); route it into the worker app.
     globals.fetch = (input: RequestInfo | URL, init?: RequestInit) =>
-      app.request(new Request(input, init), undefined, env)
+      app.request(new Request(input, init), undefined, env, new FakeExecutionContext())
     // A new browser profile: no saved sessions.
     globals.indexedDB = new IDBFactory()
 

@@ -19,7 +19,11 @@ export interface UsageRecord {
   messages: number
   inputChars: number
   promptTokens: number
+  /** The part of `promptTokens` the model read from its prompt cache. */
+  cachedTokens: number
   completionTokens: number
+  /** What the user was charged for the request, in micro-credits. 0 when nothing was charged. */
+  microCredits: number
   /** `stop`, `length`, `content_filter`, `tool_calls`, `other`, or empty when unknown. */
   finishReason: string
   /**
@@ -38,7 +42,7 @@ export function finishReason(value: unknown): string {
 }
 
 /** A token count from the model, or 0 when missing or malformed. */
-export function tokenCount(value: unknown): number {
+function tokenCount(value: unknown): number {
   return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? Math.floor(value) : 0
 }
 
@@ -47,14 +51,18 @@ export function tokenCount(value: unknown): number {
  * fields are read, loosely: a field that is not what is expected counts as missing, and anything
  * else in the reply is passed on unread.
  */
-const Choice = z.object({ finish_reason: z.unknown().optional() }).catch({})
+const Choice = z.object({ finish_reason: z.unknown().optional(), delta: z.unknown().optional() }).catch({})
+
+const Usage = z.object({
+  prompt_tokens: z.unknown().optional(),
+  completion_tokens: z.unknown().optional(),
+  // Workers AI reports the cached part of the prompt here, as OpenAI does.
+  prompt_tokens_details: z.object({ cached_tokens: z.unknown().optional() }).optional().catch(undefined),
+})
 
 const ReplyInfo = z.object({
   error: z.unknown().optional(),
-  usage: z
-    .object({ prompt_tokens: z.unknown().optional(), completion_tokens: z.unknown().optional() })
-    .optional()
-    .catch(undefined),
+  usage: Usage.optional().catch(undefined),
   // The first choice, as `choices[0]` reads it: from a list, or from an object with a field named 0.
   choices: z.union([z.array(Choice), z.record(z.string(), Choice)]).catch([]),
 })
@@ -68,7 +76,42 @@ export function replyInfo(value: unknown) {
   if (!parsed.success) return undefined
   const { error, usage, choices } = parsed.data
   const first = Array.isArray(choices) ? choices[0] : choices['0']
-  return { error, usage, finish_reason: first?.finish_reason }
+  return { error, usage, finish_reason: first?.finish_reason, delta: first?.delta }
+}
+
+/** The token counts a reply or chunk reports, 0 for each one it does not. The cached part is never more than the prompt. */
+export function tokensOf(usage: z.output<typeof Usage> | undefined) {
+  const promptTokens = tokenCount(usage?.prompt_tokens)
+  return {
+    promptTokens,
+    cachedTokens: Math.min(tokenCount(usage?.prompt_tokens_details?.cached_tokens), promptTokens),
+    completionTokens: tokenCount(usage?.completion_tokens),
+  }
+}
+
+/** A piece of a streamed reply, as far as its size goes: the text, the reasoning, and the tool calls it adds. */
+const Piece = z.string().optional().catch(undefined)
+const Delta = z.object({
+  content: Piece,
+  reasoning_content: Piece,
+  tool_calls: z
+    .array(z.object({ function: z.object({ name: Piece, arguments: Piece }).optional().catch(undefined) }).catch({}))
+    .optional()
+    .catch(undefined),
+})
+
+/** How many characters a streamed chunk adds to the reply. Only the count is kept, never the text. */
+function deltaChars(value: unknown): number {
+  const delta = Delta.safeParse(value).data
+  if (!delta) return 0
+  const calls = delta.tool_calls ?? []
+  return [
+    delta.content,
+    delta.reasoning_content,
+    ...calls.flatMap((call) => [call.function?.name, call.function?.arguments]),
+  ]
+    .map((piece) => piece?.length ?? 0)
+    .reduce((sum, n) => sum + n, 0)
 }
 
 /**
@@ -77,7 +120,8 @@ export function replyInfo(value: unknown) {
  * - index1: user id
  * - blob1: model, blob2: outcome, blob3: finish reason, blob4: `stream` or `sync`
  * - double1: messages, double2: input characters, double3: prompt tokens,
- *   double4: completion tokens, double5: duration in ms
+ *   double4: completion tokens, double5: duration in ms, double6: cached prompt tokens,
+ *   double7: micro-credits charged
  *
  * Analytics Engine adds the timestamp itself.
  */
@@ -86,7 +130,15 @@ export function recordUsage(dataset: UsageDataset, r: UsageRecord): void {
     dataset.writeDataPoint({
       indexes: [r.userId],
       blobs: [r.model, r.outcome, r.finishReason, r.stream ? 'stream' : 'sync'],
-      doubles: [r.messages, r.inputChars, r.promptTokens, r.completionTokens, r.durationMs],
+      doubles: [
+        r.messages,
+        r.inputChars,
+        r.promptTokens,
+        r.completionTokens,
+        r.durationMs,
+        r.cachedTokens,
+        r.microCredits,
+      ],
     })
   } catch (err) {
     // A lost usage record must never fail the user's request.
@@ -95,15 +147,21 @@ export function recordUsage(dataset: UsageDataset, r: UsageRecord): void {
 }
 
 /** What the final chunks of an OpenAI-style stream say about the reply. */
-interface StreamSummary {
+export interface StreamSummary {
   promptTokens: number
+  cachedTokens: number
   completionTokens: number
   finishReason: string
+  /** Characters of reply the stream carried: what a cut-short reply's tokens are estimated from. */
+  replyChars: number
+  /** Whether the stream said it was done (`data: [DONE]`): its totals, if it sends any, have arrived. */
+  ended: boolean
 }
 
 /**
  * Passes an OpenAI-style SSE stream through unchanged, chunk by chunk, while reading the token
- * usage and finish reason from it. Calls `done` once, when the stream ends, fails, or is cancelled.
+ * usage and finish reason from it. Calls `done` once, when the stream ends, fails, or is cancelled,
+ * and waits for it before the returned stream ends, so a reader that saw the end knows it has run.
  * A stream that ends without `data: [DONE]` was cut short and is reported as `incomplete`; one
  * that carried an error event is reported as `provider_error`, like a failed non-streamed call.
  * Only the current incomplete line is held back for parsing; the reply itself is never buffered.
@@ -114,26 +172,36 @@ interface StreamSummary {
  */
 export function meterStream(
   source: ReadableStream<Uint8Array>,
-  done: (outcome: string, summary: StreamSummary) => void,
+  done: (outcome: string, summary: StreamSummary) => void | Promise<void>,
   failed: (err: unknown) => void,
 ): ReadableStream<Uint8Array> {
   const reader = source.getReader()
   const decoder = new TextDecoder()
-  const summary: StreamSummary = { promptTokens: 0, completionTokens: 0, finishReason: '' }
+  const summary: StreamSummary = {
+    promptTokens: 0,
+    cachedTokens: 0,
+    completionTokens: 0,
+    finishReason: '',
+    replyChars: 0,
+    ended: false,
+  }
   let partial = ''
   let finished = false
   let sawDone = false
   let sawError = false
-  const finish = (outcome: string) => {
+  // Set once the client has cancelled: the returned stream is closed then and must not be touched,
+  // also not by a read that was waiting on `done` when the cancel came.
+  let cancelled = false
+  const finish = async (outcome: string) => {
     if (finished) return
     finished = true
-    done(outcome, summary)
+    await done(outcome, summary)
   }
 
   const scan = (line: string) => {
     if (!line.startsWith('data:')) return
     const data = line.slice(5).trim()
-    if (data === '[DONE]') sawDone = true
+    if (data === '[DONE]') sawDone = summary.ended = true
     if (!data || data === '[DONE]') return
     let parsed: unknown
     try {
@@ -148,9 +216,12 @@ export function meterStream(
     // OpenAI sends usage once, in the last chunk. Workers AI also adds per-chunk counts and a
     // zeroed chunk before its final totals, so keep the largest count seen.
     if (event.usage) {
-      summary.promptTokens = Math.max(summary.promptTokens, tokenCount(event.usage.prompt_tokens))
-      summary.completionTokens = Math.max(summary.completionTokens, tokenCount(event.usage.completion_tokens))
+      const tokens = tokensOf(event.usage)
+      summary.promptTokens = Math.max(summary.promptTokens, tokens.promptTokens)
+      summary.cachedTokens = Math.max(summary.cachedTokens, tokens.cachedTokens)
+      summary.completionTokens = Math.max(summary.completionTokens, tokens.completionTokens)
     }
+    summary.replyChars += deltaChars(event.delta)
     const reason = event.finish_reason
     if (reason) summary.finishReason = finishReason(reason)
   }
@@ -163,16 +234,16 @@ export function meterStream(
       } catch (err) {
         // Once the client has cancelled, the stream is closed and must not be touched.
         if (finished) return
-        finish(sawError ? 'provider_error' : 'stream_error')
         failed(err)
-        controller.error(new Error('the model stream failed'))
+        await finish(sawError ? 'provider_error' : 'stream_error')
+        if (!cancelled) controller.error(new Error('the model stream failed'))
         return
       }
       if (finished) return
       if (result.done) {
         scan(partial + decoder.decode())
-        finish(sawError ? 'provider_error' : sawDone ? 'ok' : 'incomplete')
-        controller.close()
+        await finish(sawError ? 'provider_error' : sawDone ? 'ok' : 'incomplete')
+        if (!cancelled) controller.close()
         return
       }
       const lines = (partial + decoder.decode(result.value, { stream: true })).split('\n')
@@ -182,8 +253,11 @@ export function meterStream(
     },
     async cancel(reason) {
       // A client that reads an error event stops reading at once, so the error decides the outcome.
-      finish(sawError ? 'provider_error' : 'cancelled')
+      // Stop the model first, then settle: what the reply cost is known either way.
+      cancelled = true
+      const settled = finish(sawError ? 'provider_error' : 'cancelled')
       await reader.cancel(reason)
+      await settled
     },
   })
 }

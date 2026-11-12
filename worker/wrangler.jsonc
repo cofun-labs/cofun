@@ -17,11 +17,15 @@
   // Workers AI: models run on Cloudflare, no external API keys.
   "ai": { "binding": "AI" },
 
-  // Per-user daily request counters, one Durable Object per Clerk user id.
-  "durable_objects": { "bindings": [{ "name": "QUOTA", "class_name": "UserQuota" }] },
-  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["UserQuota"] }],
+  // Per-user credit ledgers (grants, what is left of them, and when they expire), one Durable
+  // Object per Clerk user id. v2 drops UserQuota, the daily request counters credits replaced.
+  "durable_objects": { "bindings": [{ "name": "CREDITS", "class_name": "UserCredits" }] },
+  "migrations": [
+    { "tag": "v1", "new_sqlite_classes": ["UserQuota"] },
+    { "tag": "v2", "new_sqlite_classes": ["UserCredits"], "deleted_classes": ["UserQuota"] },
+  ],
 
-  // Per-request usage records (sizes, token counts, outcome; never message content).
+  // Per-request usage records (sizes, token counts, credits charged, outcome; never message content).
   // Workers Analytics Engine keeps them for 90 days. The dataset is created on first write.
   "analytics_engine_datasets": [{ "binding": "USAGE", "dataset": "notico_api_usage" }],
 
@@ -30,11 +34,8 @@
     "CLERK_PUBLISHABLE_KEY": "pk_live_Y2xlcmsuY29mdW4uY2Mk",
     // AI Gateway id (dashboard: AI > AI Gateway). Empty = call Workers AI directly.
     "AI_GATEWAY_ID": "cofun-ai-gateway",
-    // The only model clients can use.
+    // The only model clients can use. Its token prices must be listed in src/pricing.ts.
     "MODEL": "@cf/deepseek-ai/deepseek-v4.1-flash-1017",
-    // Chat requests each user may make per UTC day. Raised for now while access is invite-only;
-    // to be tuned later.
-    "DAILY_REQUEST_LIMIT": "10000",
     // Origins allowed to call (the token's azp claim). Comma-separated.
     "CLERK_AUTHORIZED_PARTIES": "chrome-extension://fafkdcopddmegenpemnmjbnolhlbbfpf,https://notico-api.cofun.cc",
     // Clerk JWT public key (PEM). Public; also served at https://<frontend-api>/.well-known/jwks.json
