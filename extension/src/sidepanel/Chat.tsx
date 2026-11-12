@@ -4,7 +4,7 @@ import { CopilotAgent, type AgentUpdate, type ConfirmTool, type HistoryMessage }
 import type { CreditsState } from '../credits'
 import { countNotionRequests } from '../notion/tab'
 import { SessionStore, titleFor, type Session } from '../sessions'
-import { currentNotionPage, forgetReads, openPageNote, TOOLS } from '../tools'
+import { currentNotionPage, forgetReads, openPageNote, TOOLS, touchedBy } from '../tools'
 import { AccountMenu } from './Account'
 import { Header } from './Header'
 import { Icon, Mark } from './icons'
@@ -531,7 +531,7 @@ export function Chat({ userId }: { userId: string }) {
                       session.
                     </div>
                   )}
-                  {m.requests !== undefined && <div className="note">Notion requests: {m.requests}</div>}
+                  <Summary reply={m} />
                 </div>
               </div>
             ),
@@ -643,4 +643,23 @@ function newestOpenCall(parts: Part[], id: string): number {
     j--
   }
   return j
+}
+
+const counted = (n: number, noun: string) => `${n} ${noun}${n === 1 ? '' : 's'}`
+
+/**
+ * What a question touched, under its reply: the distinct pages and databases its tools read and
+ * changed (only calls that worked), and the Notion requests it made. A part that is zero is left
+ * out; a reply that touched nothing in Notion has no line.
+ */
+function Summary({ reply }: { reply: Extract<Shown, { role: 'assistant' }> }) {
+  const calls = reply.parts.flatMap((p) => (p.type === 'tool' && p.tool.status === 'done' ? [p.tool] : []))
+  const { read, changed } = touchedBy(calls)
+  const requests = reply.requests ?? 0
+  const said = [
+    read && `Read ${counted(read, 'page')}`,
+    changed && `Changed ${counted(changed, 'page')}`,
+    requests && counted(requests, 'Notion request'),
+  ].filter(Boolean)
+  return said.length ? <div className="note">{said.join(' · ')}</div> : null
 }

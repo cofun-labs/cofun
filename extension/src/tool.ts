@@ -24,8 +24,19 @@ export interface Action {
   after?: string
 }
 
+/** The pages and databases a call read or changed, by id (32 hex digits, no dashes). */
+export interface Touched {
+  read?: string[]
+  changed?: string[]
+}
+
 /** A tool as the extension has it: what the agent runs, and how the side panel describes a call. */
 export interface Tool extends ToolSpec {
+  /**
+   * What a call that worked read and changed, from its arguments and what it returned, so the side
+   * panel can sum them for a question, also in a saved session.
+   */
+  touched: (args: unknown, result: string) => Touched
   /**
    * A call in words, from the arguments the model gave (which may not parse) and, once it has run,
    * what it returned. Also used for calls in saved sessions.
@@ -43,6 +54,12 @@ export interface ToolDefinition<S extends ArgsSchema> extends Omit<ToolSpec, 'pa
    * the result, so a call that hasn't run, or that failed, falls back to general words.
    */
   describe: (args: z.output<S> | undefined, result: string | undefined) => Action
+  /**
+   * The pages and databases a call that worked read and changed (see `Tool.touched`), from its
+   * arguments, or undefined when they don't parse, and what it returned. Searching and listing pages
+   * read none; a change counts the pages it changed or made.
+   */
+  touched: (args: z.output<S> | undefined, result: string) => Touched
   /**
    * The arguments. Describe what the model should know with `.describe()`, and give `error` where
    * the model needs more than zod's own words to correct its call.
@@ -63,9 +80,20 @@ export interface ToolDefinition<S extends ArgsSchema> extends Omit<ToolSpec, 'pa
  * nothing (only what JSON Schema can't say, such as a whole number too large to be exact): it is
  * what turns the value into its type, and what a caller without the runtime gets.
  */
-export function defineTool<S extends ArgsSchema>({ args, run, preview, describe, ...rest }: ToolDefinition<S>): Tool {
+export function defineTool<S extends ArgsSchema>({
+  args,
+  run,
+  preview,
+  describe,
+  touched,
+  ...rest
+}: ToolDefinition<S>): Tool {
   return {
     ...rest,
+    touched: (given, result) => {
+      const parsed = parseArgs(args, given)
+      return touched(parsed.ok ? parsed.args : undefined, result)
+    },
     describe: (given, result) => {
       const parsed = parseArgs(args, given)
       return describe(parsed.ok ? parsed.args : undefined, result)

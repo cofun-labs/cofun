@@ -441,6 +441,24 @@ describe('a tool that needs confirmation', () => {
     expect(screen.queryByRole('group', { name: 'Allow this? Move 1 page to the trash' })).not.toBeInTheDocument()
   })
 
+  it('[UC-AGENT-001-S24] a reply says how many pages it changed, and a change the user declined does not count', async () => {
+    const first = await askToTrash()
+    first.browser.ai.script.push({ reply: 'Done.' })
+    await first.user.click(within(first.prompt).getByRole('button', { name: 'Allow' }))
+    await screen.findByText('Done.')
+    await answered()
+    expect(screen.getByText(/^Changed 1 page · \d+ Notion requests?$/)).toBeVisible()
+  })
+
+  it('[UC-AGENT-001-S24] a change the user declined is not counted as changed', async () => {
+    const { browser, user, prompt } = await askToTrash()
+    browser.ai.script.push({ reply: 'Left it.' })
+    await user.click(within(prompt).getByRole('button', { name: 'Deny' }))
+    await screen.findByText('Left it.')
+    await answered()
+    expect(screen.queryByText(/Changed \d+ page/)).not.toBeInTheDocument()
+  })
+
   it('[UC-AGENT-001-S11] does not run the tool when the user declines, and the agent goes on without it', async () => {
     const { browser, user, workspace, prompt } = await askToTrash()
     browser.ai.script.push({ reply: 'I left the old notes where they are.' })
@@ -508,20 +526,48 @@ describe('sessions', () => {
     ])
   })
 
-  it('[UC-AGENT-001-S20] a reply shows how many Notion requests it made, also after the session is reopened', async () => {
+  it('[UC-AGENT-001-S20][UC-AGENT-001-S23] a reply shows how many pages it read and Notion requests it made, also after the session is reopened', async () => {
     const { browser, user } = await openPanel()
     await askAboutPage(browser, user)
 
     const made = browser.tab.sent.length
     expect(made).toBeGreaterThan(0)
-    expect(screen.getByText(`Notion requests: ${made}`)).toBeVisible()
+    const line = `Read 1 page · ${made} Notion request${made === 1 ? '' : 's'}`
+    expect(screen.getByText(line)).toBeVisible()
 
     await browser.openPanel()
     await openSession(user, /What does this page say\?/)
 
-    expect(await screen.findByText(`Notion requests: ${made}`)).toBeVisible()
+    expect(await screen.findByText(line)).toBeVisible()
     // Showing a saved session asks nothing of Notion.
     expect(browser.tab.sent).toHaveLength(made)
+  })
+
+  it('[UC-AGENT-001-S23] a page read twice for a question counts once', async () => {
+    const { browser, user } = await openPanel(workspaceTab().tab)
+    browser.ai.script.push(
+      { toolCalls: [{ name: 'read_page', arguments: JSON.stringify({}) }] },
+      { toolCalls: [{ name: 'read_page', arguments: JSON.stringify({ page: NOTE }) }] },
+      { toolCalls: [{ name: 'read_page', arguments: JSON.stringify({ page: PAGE_URL }) }] },
+      { reply: 'Read them.' },
+    )
+
+    await ask(user, 'Read this page and its child, then this page again')
+    await screen.findByText('Read them.')
+    await answered()
+
+    expect(screen.getByText(/^Read 2 pages · \d+ Notion requests?$/)).toBeVisible()
+  })
+
+  it('a reply that used no Notion tool has no line under it', async () => {
+    const { browser, user } = await openPanel()
+    browser.ai.script.push({ reply: 'Hello.' })
+
+    await ask(user, 'Hi')
+    await screen.findByText('Hello.')
+    await answered()
+
+    expect(screen.queryByText(/Notion request|Read \d+ page|Changed \d+ page/)).not.toBeInTheDocument()
   })
 
   it('[UC-SESSION-001-S07] opening the side panel starts a new, empty session, with the earlier ones in the list', async () => {

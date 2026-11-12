@@ -201,6 +201,8 @@ describe('UC-NOTION-008 change properties and rows', () => {
     })) as string
     const created = /\^([0-9a-f]{32})/.exec(result)![1]
     expect(result.split('\n')[0]).toBe(`Added the row “Renew domain” ^${created} to the database ^${hex(DB)}.`)
+    // The side panel counts what the call touched from this result.
+    expect(createPage.touched({}, result)).toEqual({ changed: [created] })
     const record = [...ws.records.values()].find((r) => hex(r.id) === created)!
     expect(record).toMatchObject({
       type: 'page',

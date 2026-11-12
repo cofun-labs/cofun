@@ -180,6 +180,10 @@ describe('UC-NOTION-009 read and add comments', () => {
     const ws = workspace()
     open(ws)
     expect(await add({ text: 'Nice page' })).toBe(`Added a comment on the page of "Fixture page" ^${hex(PAGE)}.`)
+    // The side panel counts what the call touched from this result.
+    expect(addComment.touched({}, `Added a comment on the page of "Fixture page" ^${hex(PAGE)}.`)).toEqual({
+      changed: [hex(PAGE)],
+    })
     const [thread] = ws.table('discussion')
     expect(thread.parent_id).toBe(PAGE)
     expect(ws.records.get(PAGE)!.discussions).toEqual([thread.id])
@@ -251,6 +255,10 @@ describe('read_comments', () => {
     comment(ws, 100, 200, [['On the child']])
     open(ws)
     expect(await read()).toBe(`Comments on the page "Fixture page" ^${hex(PAGE)}: none.`)
+    // The side panel counts what the call touched from this result.
+    expect(readComments.touched({}, `Comments on the page "Fixture page" ^${hex(PAGE)}: none.`)).toEqual({
+      read: [hex(PAGE)],
+    })
   })
 
   it('looks up discussions, comments, and authors the page load did not bring', async () => {

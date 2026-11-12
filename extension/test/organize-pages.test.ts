@@ -156,6 +156,8 @@ describe('UC-NOTION-010 reorganize pages', () => {
       `Duplicated ^${hex(PLAN)} as ^${hex(copy)}, right after it in ^${hex(PROJECTS)}.\n` +
         `URL: https://app.notion.com/p/${hex(copy)}`,
     )
+    // The side panel counts what the call touched from this result.
+    expect(duplicatePage.touched({}, result)).toEqual({ changed: [hex(copy)] })
     expect(titleOf(ws, copy)).toBe('Launch plan (1)')
     // The copy has its own blocks, with the same content, child pages included.
     const [text, draft] = contentOf(ws, copy)
