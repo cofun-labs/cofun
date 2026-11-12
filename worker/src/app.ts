@@ -5,7 +5,7 @@ import type { ContentfulStatusCode } from 'hono/utils/http-status'
 import * as z from './zod'
 import { loginPage } from './login'
 import { FREE_CREDITS, type CreditsNamespace } from './credits'
-import { costOf, estimateTokens, priceOf, type Tokens } from './pricing'
+import { costOf, estimateCachedTokens, estimateTokens, priceOf, type Tokens } from './pricing'
 import {
   finishReason,
   meterStream,
@@ -561,10 +561,10 @@ export function createApp({
           const { promptTokens, cachedTokens, completionTokens } = summary
           const tokens: Tokens = { promptTokens, cachedTokens, completionTokens }
           // A reply the user stopped, or a stream that broke off, costs what it used. Its totals come
-          // in the stream's last chunks, which never arrived, so they are estimated, never below what
-          // the stream did report: the prompt from the size of the input when no chunk gave it, the
-          // reply from the characters that were streamed. Nothing says how much of the prompt was
-          // read from the cache, so all of it is charged as new input.
+          // in the stream's last chunks, which never arrived, so they are estimated: the prompt from
+          // the size of the input when no chunk gave it, the reply from the characters that were
+          // streamed (never below what the stream did report), and the part of the prompt read from
+          // the cache as a fixed share of it, since nothing says how much it was.
           // Two cases cost what the stream reported and no more. One that ran to its end has its
           // totals, even when the client stopped reading right there. And one that broke off before
           // it reported or carried anything is a call that failed without usage: it costs nothing.
@@ -573,7 +573,7 @@ export function createApp({
           const nothing = outcome !== 'cancelled' && !promptTokens && !completionTokens && !summary.replyChars
           if (cutShort && !summary.ended && !nothing) {
             tokens.promptTokens ||= estimateTokens(chars)
-            tokens.cachedTokens = 0
+            tokens.cachedTokens = estimateCachedTokens(tokens.promptTokens)
             tokens.completionTokens = Math.max(tokens.completionTokens, estimateTokens(summary.replyChars))
           }
           usage.promptTokens = tokens.promptTokens

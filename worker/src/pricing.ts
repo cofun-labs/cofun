@@ -49,3 +49,14 @@ const CHARS_PER_TOKEN = 3
 export function estimateTokens(chars: number): number {
   return Math.ceil(chars / CHARS_PER_TOKEN)
 }
+
+/**
+ * How much of a prompt counts as read from the cache when the model never said: a stream gives the
+ * cached count only in its last chunk, which a cut-short stream never sent. An agent resends its
+ * instructions, tools, and the conversation on every call, so most of a prompt usually is cached.
+ */
+const ESTIMATED_CACHED_SHARE = 0.9
+
+export function estimateCachedTokens(promptTokens: number): number {
+  return Math.floor(promptTokens * ESTIMATED_CACHED_SHARE)
+}

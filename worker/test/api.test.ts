@@ -449,8 +449,9 @@ describe('UC-CHAT-001 credits', () => {
     // 80 bytes: the first piece of the reply, "Hello ", and the start of the next.
     for (let i = 0; i < 5; i++) await reader.read()
     await reader.cancel()
-    // No chunk reported the prompt, so it is estimated from the input: 2 characters, 1 token. The
-    // reply is estimated from the 6 characters that were streamed: 2 tokens.
+    // No chunk reported the prompt, so it is estimated from the input: 2 characters, 1 token, of
+    // which 90%, rounded down, counts as cached: none. The reply is estimated from the 6 characters
+    // that were streamed: 2 tokens.
     expect(records()).toEqual([
       expect.objectContaining({
         outcome: 'cancelled',
@@ -462,7 +463,7 @@ describe('UC-CHAT-001 credits', () => {
     ])
   })
 
-  it('a stream cut short is charged the prompt it reported in full, and the reply by its size', async () => {
+  it('a stream cut short is charged the prompt it reported, 90% of it as cached, and the reply by its size', async () => {
     // Workers AI gives the prompt in its first chunk; how much of it was cached only comes at the end.
     ai.rawSse =
       'data: {"choices":[{"delta":{"content":""}}],"usage":{"prompt_tokens":1000,"completion_tokens":0}}\n\n' +
@@ -472,9 +473,9 @@ describe('UC-CHAT-001 credits', () => {
     expect(records()[0]).toMatchObject({
       outcome: 'incomplete',
       promptTokens: 1000,
-      cachedTokens: 0,
+      cachedTokens: 900,
       completionTokens: 5,
-      microCredits: 1000 * 300 + 5 * 1200,
+      microCredits: 100 * 300 + 900 * 6 + 5 * 1200,
     })
   })
 
