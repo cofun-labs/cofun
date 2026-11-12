@@ -31,7 +31,7 @@ describe('nextStep', () => {
   })
 
   it('gives up on a call waiting for approval that has no buttons to answer it', () => {
-    const waiting = { type: 'tool' as const, name: 'edit_page', status: 'confirm', sections: [] }
+    const waiting = { type: 'tool' as const, name: 'edit_page', says: 'Edit a page?', status: 'confirm', sections: [] }
     expect(nextStep(snap({ replies: 2, busy: true, parts: [waiting] }), 2, 'allow')).toBe('unanswerable')
   })
 
@@ -47,6 +47,7 @@ describe('formatReply', () => {
       {
         type: 'tool',
         name: 'create_page',
+        says: 'Created the page Goals',
         status: 'done',
         sections: [
           { label: 'Arguments', text: '{\n  "title": "Goals"\n}' },
@@ -60,7 +61,7 @@ describe('formatReply', () => {
       [
         'I will make the page.',
         '',
-        '[tool] create_page: done',
+        '[tool] create_page: done (Created the page Goals)',
         '  Arguments:',
         '    {',
         '      "title": "Goals"',

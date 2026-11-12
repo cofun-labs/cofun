@@ -448,7 +448,7 @@ header .title {
   }
 }
 
-/* A tool call: a chip that opens to what it changed, was given, and returned */
+/* A tool call: a chip saying what it did, which opens to what it changed, the tool, and what it was given and returned */
 
 .tool {
   max-width: 100%;
@@ -509,14 +509,15 @@ header .title {
   color: var(--error);
 }
 
-.tool-name {
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-}
-
-.tool-input {
+/* What the call did, in words, on one line. */
+.tool-phrase {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.tool-phrase em {
+  color: var(--fg);
 }
 
 .tool-body {
