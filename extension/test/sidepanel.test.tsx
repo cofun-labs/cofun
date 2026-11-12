@@ -441,7 +441,7 @@ describe('a tool that needs confirmation', () => {
     expect(screen.queryByRole('group', { name: 'Allow this? Move 1 page to the trash' })).not.toBeInTheDocument()
   })
 
-  it('[UC-AGENT-001-S24] a reply says how many pages it changed, and a change the user declined does not count', async () => {
+  it('[UC-AGENT-001-S24] a reply says how many pages it changed', async () => {
     const first = await askToTrash()
     first.browser.ai.script.push({ reply: 'Done.' })
     await first.user.click(within(first.prompt).getByRole('button', { name: 'Allow' }))
