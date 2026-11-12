@@ -1,5 +1,6 @@
-import type { ComponentProps } from 'react'
+import { memo, useId, type ComponentProps } from 'react'
 import ReactMarkdown, { type Components } from 'react-markdown'
+import remarkBreaks from 'remark-breaks'
 import remarkGfm from 'remark-gfm'
 
 /** Only these links are made clickable; anything else in a reply is shown as text. */
@@ -13,11 +14,13 @@ function webUrl(url: string | undefined): string | undefined {
   }
 }
 
-function Link({ href, children, id }: ComponentProps<'a'>) {
-  // A footnote and its way back are links within the reply.
+function Link({ href, children, ...rest }: ComponentProps<'a'>) {
+  // A footnote and its way back are links within the reply. Their other attributes (an id, and what
+  // a screen reader says, such as "Back to reference 1") come from the Markdown renderer, not the
+  // model: Markdown links carry none.
   if (href?.startsWith('#'))
     return (
-      <a href={href} id={id}>
+      <a href={href} {...rest}>
         {children}
       </a>
     )
@@ -55,15 +58,23 @@ const COMPONENTS: Components = {
   table: ({ node: _node, ...props }) => <Table {...props} />,
 }
 
+// A single line break in a reply stays a line break, as the model wrote it, not a space.
+const PLUGINS = [remarkGfm, remarkBreaks]
+
 /**
  * The text of a reply, formatted from the Markdown the model wrote. The model's text is untrusted:
  * raw HTML in it is shown as text, never rendered (there is no HTML plugin), and the output is
  * React elements, never `innerHTML`.
+ *
+ * Memoized: the panel re-renders on every keystroke and every streamed word, and a reply whose
+ * text has not changed need not be parsed again.
  */
-export function Markdown({ text }: { text: string }) {
+export const Markdown = memo(function Markdown({ text }: { text: string }) {
+  // Each reply's footnotes get ids of their own, so one reply's links can't jump into another's.
+  const prefix = `${useId()}-`
   return (
-    <ReactMarkdown remarkPlugins={[remarkGfm]} components={COMPONENTS}>
+    <ReactMarkdown remarkPlugins={PLUGINS} remarkRehypeOptions={{ clobberPrefix: prefix }} components={COMPONENTS}>
       {text}
     </ReactMarkdown>
   )
-}
+})
