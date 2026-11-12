@@ -51,8 +51,10 @@ export function Sessions({
   close.current = onClose
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
-      // In the search box, Escape first clears what was typed.
-      if (e.key === 'Escape' && !(e.target instanceof HTMLInputElement && e.target.value)) close.current()
+      // Not when something above the list took the key for itself: the account menu, open over the
+      // list, closes on Escape and stops there. In the search box, Escape first clears what was typed.
+      if (e.key !== 'Escape' || e.defaultPrevented) return
+      if (!(e.target instanceof HTMLInputElement && e.target.value)) close.current()
     }
     document.addEventListener('keydown', onKeyDown)
     return () => document.removeEventListener('keydown', onKeyDown)

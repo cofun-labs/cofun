@@ -86,7 +86,10 @@ function Balance({ credits: { balance, free, grants } }: { credits: Credits }) {
       <p className="settings-value">{balance > 0 ? `${creditsText(balance)} left` : 'No credits left'}</p>
       {balance < 0 && (
         <p className="account-detail">
-          You overspent {creditsText(-balance)}. They come out of the next credits you get.
+          {free.started
+            ? `You overspent ${creditsText(-balance)}. They come out of the next credits you get.`
+            : // The balance already counts the free credits to come: this is what they leave unpaid.
+              `After your next free credits you still owe ${creditsText(-balance)}. They come out of the credits after those.`}
         </p>
       )}
       <ul className="grants" aria-label="Your credits">

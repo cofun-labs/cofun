@@ -189,6 +189,19 @@ describe('the account menu', () => {
     )
   })
 
+  it('opened over the session list, Escape closes only the menu, and the next Escape the list', async () => {
+    const { user } = await openPanel()
+    await user.click(screen.getByRole('button', { name: 'Sessions' }))
+    await openMenu(user)
+
+    await user.keyboard('{Escape}')
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument()
+    expect(screen.getByRole('dialog', { name: 'Sessions' })).toBeVisible()
+
+    await user.keyboard('{Escape}')
+    expect(screen.queryByRole('dialog', { name: 'Sessions' })).not.toBeInTheDocument()
+  })
+
   it('closes when the user clicks elsewhere', async () => {
     const { user } = await openPanel()
     await openMenu(user)
