@@ -12,7 +12,7 @@ Key constraints:
 
 - The server chooses the model. Clients cannot use another one.
 - A user with no credits left cannot reach the model again until their next free credits arrive.
-- A model call that starts with credits left is answered in full, even when it costs more than what was left. What it overspent is taken out of the next credits the user gets. Sending many calls at once does not get around this: together they can overspend by no more than one call could.
+- A model call that starts with credits left is answered in full, even when it costs more than what was left. What it overspent is taken out of the next credits the user gets.
 - Credits that have expired cannot be spent.
 - When credits run out partway through a question, the question ends there, like any other failed question (UC-AGENT-001).
 
@@ -31,7 +31,6 @@ Key constraints:
 | UC-CHAT-001-S13 | P1 | ✅ | Given a user whose last model call cost more than the credits they had left; when their next free credits arrive; then what they overspent is taken out of those credits first. |
 | UC-CHAT-001-S14 | P1 | ✅ | Given a user with credits left when their week ends; when they ask the AI afterwards; then the leftover is gone and only the new week's credits can be spent. |
 | UC-CHAT-001-S15 | P1 | ✅ | Given a model call whose input was partly read from the model's cache; when it is charged; then the cached part costs the cached price and the rest the full price. |
-| UC-CHAT-001-S16 | P1 | ✅ | Given a user with few credits left; when they send several model calls at once; then only as many go ahead as their credits can cover, and the rest are refused without calling the model. |
 | UC-CHAT-001-S03 | P0 | ✅ | Given a signed-in user with the side panel open on Notion; when they send a message; then the message appears and the reply streams in below it. |
 | UC-CHAT-001-S08 | P2 | ✅ | Given a session with no question yet; when the user picks one of the example questions; then it is in the message box, not sent, and the user can change it before sending. |
 

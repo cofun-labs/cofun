@@ -28,7 +28,7 @@ If you change a setting in the GitHub dashboard, copy it back into these files.
 
 ## Worker
 
-Merging to `main` deploys the worker through Cloudflare Workers Builds. To deploy by hand:
+Merging to `main` deploys the worker through Cloudflare Workers Builds. To deploy by hand (`pnpm run deploy` applies the [database](#credits-database) migrations first, like the build's deploy command):
 
 ```bash
 cd worker
@@ -79,13 +79,13 @@ Each grant made by hand is written to Workers Logs as one line: `manual grant: a
 
 ### Usage records
 
-Every chat request that passes auth leaves one data point in the `notico_api_usage` Analytics Engine dataset (binding `USAGE`), written when the reply ends, is refused, or fails. Records hold sizes, token counts, the credits charged, and the outcome, never message or reply text. Analytics Engine deletes them after 90 days. They are for analysis and for checking the credit ledger; users are charged from the ledger (the `UserCredits` Durable Object, one per user; see [Credits](architecture.md#credits)), never from these records.
+Every chat request that passes auth leaves one data point in the `notico_api_usage` Analytics Engine dataset (binding `USAGE`), written when the reply ends, is refused, or fails. Records hold sizes, token counts, the credits charged, and the outcome, never message or reply text. Analytics Engine deletes them after 90 days. They are for watching the service: they describe every request, refused and failed ones too. Users are charged from the credits database below (see [Credits](architecture.md#credits)), never from these records.
 
 | Column | Value |
 |---|---|
 | `index1` | Clerk user id |
 | `blob1` | model |
-| `blob2` | outcome: `ok`, `incomplete` (stream ended early), `cancelled`, `stream_error`, or the error code returned (`out_of_credits`, `credits_in_use`, `provider_error`, `credits_unavailable`, `bad_request`, …). A stream whose model reports an error is `provider_error` |
+| `blob2` | outcome: `ok`, `incomplete` (stream ended early), `cancelled`, `stream_error`, or the error code returned (`out_of_credits`, `provider_error`, `credits_unavailable`, `bad_request`, …). A stream whose model reports an error is `provider_error` |
 | `blob3` | finish reason: `stop`, `length`, `content_filter`, `tool_calls`, `other`, or empty |
 | `blob4` | `stream` or `sync` |
 | `double1` … `double5` | messages, input characters (message text, tool calls, and tool definitions), prompt tokens, completion tokens, duration in ms (until the request was refused, the reply was sent, or a stream ended; for streams it includes the time the client spends reading) |
@@ -106,6 +106,61 @@ GROUP BY user, day
 ORDER BY day DESC, requests DESC
 ```
 
+### Credits database
+
+Grants and model calls (with what each cost) are kept in the D1 database `notico-db` (binding `DB`), on the account that deploys the worker. `wrangler.jsonc` names it and does not hold its id: on deploy, wrangler finds the database by name on that account, so the id never has to be committed. The schema is the migration files in `worker/migrations/`, applied in order on every deploy (see the deploy command below). A new migration is a new file with the next number; never change one that was applied.
+
+Create the database once, on the account that deploys the worker (with several accounts in one login, choose one with `CLOUDFLARE_ACCOUNT_ID`; don't commit it):
+
+```bash
+cf d1 create --name notico-db
+```
+
+Apply the migrations by hand, for example before the first deploy (wrangler finds the database by name; [`cf d1 migrations apply`](https://developers.cloudflare.com/d1/reference/migrations/) does the same with the database id, which `cf d1 list --name notico-db` shows):
+
+```bash
+cd worker
+pnpm exec wrangler d1 migrations apply notico-db --remote
+```
+
+Query it with `cf d1 query <database id> --sql "…"`, or in the dashboard (Storage & databases → D1 → `notico-db` → Console). Amounts are micro-credits (divide by 1,000,000 for credits) and times are ms since the epoch. Rows are never deleted. Credits granted and spent per day, with calls and tokens, across all users:
+
+```sql
+SELECT day, sum(granted) / 1e6 AS credits_granted, sum(spent) / 1e6 AS credits_spent,
+       sum(calls) AS calls, sum(prompt_tokens) AS prompt_tokens, sum(completion_tokens) AS completion_tokens
+FROM (
+  SELECT date(granted_at / 1000, 'unixepoch') AS day, amount AS granted, 0 AS spent, 0 AS calls,
+         0 AS prompt_tokens, 0 AS completion_tokens FROM grants
+  UNION ALL
+  SELECT date(started_at / 1000, 'unixepoch'), 0, micro_credits, 1, prompt_tokens, completion_tokens FROM model_calls
+)
+GROUP BY day ORDER BY day DESC LIMIT 30
+```
+
+Calls and credits spent per user over the last 7 days, with how many calls failed:
+
+```sql
+SELECT user_id, count(*) AS calls, sum(micro_credits) / 1e6 AS credits_spent,
+       sum(prompt_tokens) AS prompt_tokens, sum(cached_tokens) AS cached_tokens,
+       sum(completion_tokens) AS completion_tokens,
+       sum(outcome NOT IN ('ok', 'cancelled')) AS failed
+FROM model_calls
+WHERE started_at > (unixepoch() - 7 * 86400) * 1000
+GROUP BY user_id ORDER BY credits_spent DESC
+```
+
+Granted per user and source, and what each user owes now (`sum(owed)` of their model calls less `sum(repaid)` of their grants):
+
+```sql
+SELECT user_id, source, count(*) AS grants, sum(amount) / 1e6 AS credits_granted, sum(left) / 1e6 AS credits_left
+FROM grants GROUP BY user_id, source ORDER BY user_id, source;
+
+SELECT u.user_id,
+       ((SELECT coalesce(sum(owed), 0) FROM model_calls c WHERE c.user_id = u.user_id)
+        - (SELECT coalesce(sum(repaid), 0) FROM grants g WHERE g.user_id = u.user_id)) / 1e6 AS credits_owed
+FROM (SELECT DISTINCT user_id FROM grants) u ORDER BY credits_owed DESC;
+```
+
 ### Workers Builds settings
 
 In the Cloudflare dashboard: Workers & Pages → `notico-api` → Settings → Builds → connect `cofun-labs/notico`.
@@ -114,8 +169,10 @@ In the Cloudflare dashboard: Workers & Pages → `notico-api` → Settings → B
 |---|---|
 | Root directory | `worker` |
 | Build command | `pnpm install --frozen-lockfile && pnpm test` |
-| Deploy command | `npx wrangler deploy` |
+| Deploy command | `npx wrangler d1 migrations apply notico-db --remote && npx wrangler deploy` |
 | Production branch | `main` |
+
+The deploy command applies the migrations not yet applied to `notico-db`, then deploys, so new code never runs on an old schema. Wrangler skips its confirmation in CI, and a migration that fails is rolled back and stops the deploy. The build's API token (Workers & Pages → `notico-api` → Settings → Builds → API token) needs **D1: Edit** on the account, both to apply the migrations and to find `notico-db` by name. A token that Workers Builds creates has it (checked on one created in November 2026); a token made by hand needs it added. The worker's tests use Node's built-in `node:sqlite`, so the build needs Node.js 24 (the Workers Builds default).
 
 ## Extension
 
