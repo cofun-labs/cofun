@@ -159,7 +159,7 @@ const LOOK = verb('look at', 'looking at', 'looked at')
 /** "1 page", "3 pages". */
 const count = (n: number, noun: string) => `${n} ${noun}${n === 1 ? '' : 's'}`
 
-/** The first line of a result that matches `line`, its first group: a name the result gives. */
+/** The first group of `line` in a result: a name the result gives. Anchor it to the result's first line. */
 function named(result: string | undefined, line: RegExp): string | undefined {
   const name = result?.match(line)?.[1]?.trim()
   return name || undefined
@@ -191,7 +191,7 @@ export const readPage = defineTool({
   describe: (args, result) =>
     on(
       READ,
-      named(result, /^Page: (.+) \^[0-9a-f]+$/m),
+      named(result, /^Page: (.+) \^[0-9a-f]+(?:\n|$)/),
       args?.page ? 'a page' : 'the open page',
       args?.part && args.part > 1 ? `part ${args.part} of` : undefined,
     ),
@@ -479,7 +479,7 @@ export const queryDatabase = defineTool({
   describe: (args, result) =>
     on(
       READ,
-      named(result, /^Database: (.+) \^[0-9a-f]+$/m),
+      named(result, /^Database: (.+) \^[0-9a-f]+(?:\n|$)/),
       args?.database ? 'a database' : 'the open database',
       'rows of',
     ),
@@ -1691,7 +1691,12 @@ export const updateDatabaseSchema = defineTool({
     "can't change its type, and status options can't be changed. Give the database by id or URL, or leave it " +
     'out when the open page is a database. Nothing changes if any change is refused.',
   describe: (_args, result) =>
-    on(CHANGE, quoted(result, /^Changed the properties of (".*") \^[0-9a-f]+:$/m), 'a database', 'the properties of'),
+    on(
+      CHANGE,
+      named(result, /^Changed the properties of “(.+)” \^[0-9a-f]+:(?:\n|$)/),
+      'a database',
+      'the properties of',
+    ),
   args: z.strictObject({
     database: z.string().describe('Id or URL of the database. Leave out for the open page.').optional(),
     changes: z

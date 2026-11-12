@@ -253,6 +253,8 @@ describe('UC-NOTION-012 create and change databases', () => {
           'Owner (person), Channel (select)',
       ].join('\n'),
     )
+    // The side panel names the database from this result.
+    expect(updateDatabaseSchema.describe({}, String(result))).toMatchObject({ name: 'Content' })
   })
 
   it('[UC-NOTION-012-S02] changes the open database without asking, in few Notion requests', async () => {
