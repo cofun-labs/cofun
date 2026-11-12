@@ -230,6 +230,17 @@ describe('a formatted reply', () => {
     expect(screen.queryByText(/\*\*milk\*\*|## Shopping|\| Item/)).not.toBeInTheDocument()
   })
 
+  it('[UC-CHAT-001-S16] a single line break in a reply stays a line break', async () => {
+    const { browser, user } = await openPanel()
+    browser.ai.script.push({ reply: 'Owner: Ana\nDue: Friday' })
+
+    await ask(user, 'Who owns it?')
+    const owner = await screen.findByText(/Owner: Ana/)
+    await answered()
+
+    expect(owner.querySelector('br')).not.toBeNull()
+  })
+
   it('a reply still coming in is formatted as it streams, an unclosed code block included', async () => {
     const { browser, user } = await openPanel()
     const resume = pausedReply(browser, 'Run:\n\n```\nnpm test now\n```\n\nThen wait.')

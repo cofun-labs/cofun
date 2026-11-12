@@ -292,9 +292,13 @@ header .title {
 .text ul,
 .text ol,
 .text blockquote,
-.text pre,
+.text pre {
+  margin: 0 0 8px;
+}
+
 .text .table-scroll {
   margin: 0 0 8px;
+  overflow-x: auto;
 }
 
 /* Read out, not shown: the heading Markdown gives a reply's footnotes. */
@@ -398,10 +402,6 @@ header .title {
   padding: 0;
   background: none;
   white-space: pre;
-}
-
-.text .table-scroll {
-  overflow-x: auto;
 }
 
 .text table {
