@@ -653,9 +653,11 @@ const counted = (n: number, noun: string) => `${n} ${noun}${n === 1 ? '' : 's'}`
  * out; a reply that touched nothing in Notion has no line.
  */
 function Summary({ reply }: { reply: Extract<Shown, { role: 'assistant' }> }) {
+  // The line is for a question that has ended: its request count arrives then.
+  if (reply.requests === undefined) return null
   const calls = reply.parts.flatMap((p) => (p.type === 'tool' && p.tool.status === 'done' ? [p.tool] : []))
   const { read, changed } = touchedBy(calls)
-  const requests = reply.requests ?? 0
+  const { requests } = reply
   const said = [
     read && `Read ${counted(read, 'page')}`,
     changed && `Changed ${counted(changed, 'page')}`,
