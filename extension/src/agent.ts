@@ -4,7 +4,7 @@
 import { Agent, type AgentEvent, type AgentMessage, type AgentTool } from '@earendil-works/pi-agent-core'
 import type { AssistantMessage, Model, ToolCall, ToolResultMessage } from '@earendil-works/pi-ai'
 import { streamSimple } from '@earendil-works/pi-ai/api/openai-completions'
-import { Credits } from './credits'
+import { Credits, GrantsPage, UsagePeriod } from './credits'
 import { z } from './zod'
 
 export interface AgentConfig {
@@ -140,6 +140,12 @@ const DEFAULT_MAX_STEPS = 10
 const DEFAULT_HISTORY = { messages: 100, chars: 150_000 }
 
 const SIGN_IN = 'Please sign in first.'
+
+/**
+ * How far the user's clock is ahead of UTC, in minutes: the worker totals usage per day, and a day
+ * should be the user's own.
+ */
+const utcOffset = () => String(-new Date().getTimezoneOffset())
 // What the model gets back for a call the user declined; it should not just try again.
 const DECLINED = 'Not run: the user declined this action. Do not retry it; ask the user how to proceed instead.'
 // The same when there was nobody to ask: the model must not claim the user said no.
@@ -621,18 +627,42 @@ export class CopilotAgent {
    * when they can't be read, or when the answer is not what the panel expects.
    */
   async credits(): Promise<Credits> {
+    return this.read('credits', { utc_offset: utcOffset() }, Credits)
+  }
+
+  /**
+   * One page of every grant the user was given, newest first: the first page, or the one that
+   * `before` (the `next` of the page before it) starts. Read only when the user opens the history.
+   */
+  async creditGrants(before?: string): Promise<GrantsPage> {
+    return this.read('credits/grants', { before }, GrantsPage)
+  }
+
+  /**
+   * Credits used per day over one period: the most recent one, or the one that ends before the day
+   * `before` (the `earlier` of the period after it). Read only when the user opens the history.
+   */
+  async creditUsage(before?: string): Promise<UsagePeriod> {
+    return this.read('credits/usage', { utc_offset: utcOffset(), before }, UsagePeriod)
+  }
+
+  /**
+   * Something of the signed-in user's own that the worker reports, checked against `schema`.
+   * Reading changes nothing. Throws when it can't be read, or is not what the panel expects.
+   */
+  private async read<S extends z.ZodType>(
+    path: string,
+    query: Record<string, string | undefined>,
+    schema: S,
+  ): Promise<z.output<S>> {
     const token = await this.config.getToken()
     if (!token) throw new Error(SIGN_IN)
-    const baseUrl = this.config.apiUrl.replace(/\/+$/, '')
-    // How far the user's clock is ahead of UTC, in minutes: the worker totals usage per day, and a
-    // day should be the user's own.
-    const utcOffset = -new Date().getTimezoneOffset()
-    const res = await fetch(`${baseUrl}/credits?utc_offset=${utcOffset}`, {
-      headers: { authorization: `Bearer ${token}` },
-    })
+    const url = new URL(`${this.config.apiUrl.replace(/\/+$/, '')}/${path}`)
+    for (const [name, value] of Object.entries(query)) if (value !== undefined) url.searchParams.set(name, value)
+    const res = await fetch(url, { headers: { authorization: `Bearer ${token}` } })
     const body: unknown = await res.json().catch(() => undefined)
     if (!res.ok) throw new Error(ErrorReply.safeParse(body).data?.error?.message ?? `HTTP ${res.status}`)
-    return Credits.parse(body)
+    return schema.parse(body)
   }
 
   /** The worker fixes the model; ask it which one, so requests name it. */

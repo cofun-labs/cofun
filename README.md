@@ -45,7 +45,7 @@
 
 There is nothing to connect on the Notion side: no integration to create, no token to paste.
 
-**Credits.** Asking the AI costs credits, and every account gets free credits each week. Your avatar at the top of the panel shows how many are left and when they expire; its Settings page also shows how many you used each day.
+**Credits.** Asking the AI costs credits, and every account gets free credits each week. Your avatar at the top of the panel shows how many are left and when they expire; its Settings page also shows how many you used each day, and leads to the history of your credits: every lot you were given and what you used further back.
 
 ## How it works
 

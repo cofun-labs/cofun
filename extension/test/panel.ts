@@ -13,6 +13,8 @@ import type { FakeSession } from './clerk'
 import { restoreGlobals, type FakeNotionTab } from './notion-tab'
 
 const EXTENSION = 'chrome-extension://abcdefghijklmnopabcdefghijklmnop'
+/** Where the worker answers (VITE_API_URL in vitest.config.ts): the origin its admin page signs in on. */
+const WORKER = 'https://api.copilot.test'
 /** When every test starts. Tests move the clock themselves (`vi.setSystemTime`); nothing waits for real time. */
 export const START = new Date('2026-11-08T12:00:00Z')
 
@@ -35,10 +37,30 @@ export class FakeBrowser {
   /** URLs the panel opened in new tabs. */
   readonly openedTabs: string[] = []
 
+  /** Asks the worker something outside the panel; set when the browser starts. */
+  private worker!: (request: Request) => Response | Promise<Response>
+  private issuer!: FakeClerk
+
   private constructor(
     readonly tab: FakeNotionTab,
     private readonly session: FakeSession | undefined,
   ) {}
+
+  /**
+   * An operator grants `userId` credits by hand, for `days` days: on the worker's admin route, as
+   * the admin page does. Nothing in the panel takes part.
+   */
+  async grantCredits(userId: string, credits: number, days: number): Promise<void> {
+    const admin = await this.issuer.sessionToken({ userId: 'user_root', azp: WORKER, claims: { role: 'admin' } })
+    const res = await this.worker(
+      new Request(`${WORKER}/v1/admin/accounts/${userId}/grants`, {
+        method: 'POST',
+        headers: { authorization: `Bearer ${admin}`, 'content-type': 'application/json' },
+        body: JSON.stringify({ credits, days }),
+      }),
+    )
+    if (!res.ok) throw new Error(`grant refused: ${res.status} ${await res.text()}`)
+  }
 
   /** Starts a browser on `tab`, signed in to Notico as `signedInAs` or signed out. */
   static async start(tab: FakeNotionTab, options: { signedInAs?: string } = {}): Promise<FakeBrowser> {
@@ -59,11 +81,12 @@ export class FakeBrowser {
       USAGE: new FakeUsageDataset(),
       MODEL,
       CLERK_JWT_KEY: issuer.publicKeyPem,
-      CLERK_AUTHORIZED_PARTIES: EXTENSION,
+      CLERK_AUTHORIZED_PARTIES: `${EXTENSION}, ${WORKER}`,
     }
+    browser.issuer = issuer
+    browser.worker = (request) => app.request(request, undefined, env, new FakeExecutionContext())
     // The panel calls fetch(); route it into the worker app.
-    globals.fetch = (input: RequestInfo | URL, init?: RequestInit) =>
-      app.request(new Request(input, init), undefined, env, new FakeExecutionContext())
+    globals.fetch = (input: RequestInfo | URL, init?: RequestInit) => browser.worker(new Request(input, init))
     // A new browser profile: no saved sessions.
     globals.indexedDB = new IDBFactory()
 

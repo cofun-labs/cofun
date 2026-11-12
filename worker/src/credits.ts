@@ -75,6 +75,7 @@ const BalanceRow = z.object({ balance: z.int(), free_until: z.int().nullable() }
 const UsageRow = z
   .object({ day: z.int(), micro_credits: z.int().min(0) })
   .transform((row) => ({ day: row.day, microCredits: row.micro_credits }))
+const LastCallRow = z.object({ at: z.int().nullable() })
 
 /** The one row a statement returns, checked against `schema`. */
 function only<S extends z.ZodType>(schema: S, result: { results: unknown[] } | undefined): z.output<S> {
@@ -89,11 +90,53 @@ export interface Balance {
   nextGrantAt: number
 }
 
-/** Which days to total a user's spending over: the `days` most recent days of a clock `offsetMs` ahead of UTC, today included. */
+/**
+ * Which days to total a user's spending over: `days` days of a clock `offsetMs` ahead of UTC. They
+ * end with today, or with the day before `before` (a day counted from 1970-01-01 on that clock) to
+ * look further back.
+ */
 export interface UsagePeriod {
   days: number
   offsetMs: number
+  before?: number
 }
+
+/** What a user's model calls cost on one day. `day` counts days since 1970-01-01 on the period's clock. */
+interface DayUsage {
+  day: number
+  microCredits: number
+}
+
+/**
+ * The days of a period, and the moments they span. The one definition of a user's own day: a moment
+ * belongs to the day `floor((moment + offsetMs) / a day)`, here and in READ_USAGE.
+ */
+function daysOf(now: number, { days, offsetMs, before }: UsagePeriod) {
+  const dayOf = (at: number) => Math.floor((at + offsetMs) / DAY_MS)
+  const last = before === undefined ? dayOf(now) : before - 1
+  const first = last - (days - 1)
+  return { first, last, from: first * DAY_MS - offsetMs, to: (last + 1) * DAY_MS - offsetMs, dayOf }
+}
+
+/** A user's spending over one period, and where to look for what came before it. */
+interface UsageHistory {
+  /** The first and last day of the period, both counted in full. */
+  first: number
+  last: number
+  /** What the calls cost per day, newest first; days that cost nothing are left out. */
+  usage: DayUsage[]
+  /** The day after the user's latest call before the period: the `before` of the period to read next. Absent when there is no earlier call. */
+  earlier?: number
+}
+
+/** Where a page of a user's grants starts: the grants given at `at` or before, without the `skip` newest of them, which an earlier page showed. */
+export interface GrantsCursor {
+  at: number
+  skip: number
+}
+
+/** How many grants one page of a user's history holds. */
+const GRANTS_PAGE = 20
 
 /**
  * A user's credits as they see them. Amounts are in micro-credits. Unlike an `Account`, it looks
@@ -110,8 +153,8 @@ export interface Standing {
   free: { started: true; until: number } | { started: false; toCome: number }
   /** The grants that still count, in the order they are spent. */
   grants: Grant[]
-  /** What the user's model calls cost per day, newest first. `day` counts days since 1970-01-01 on the period's clock; days that cost nothing are left out. */
-  usage: { day: number; microCredits: number }[]
+  /** What the user's model calls cost per day, newest first; days that cost nothing are left out. */
+  usage: DayUsage[]
 }
 
 /** A user's account at one moment. Amounts are in micro-credits. */
@@ -207,14 +250,31 @@ const READ_CURRENT_GRANTS = `SELECT source, amount, left, granted_at, expires_at
 FROM grants WHERE user_id = ?1 AND expires_at > ?2 ORDER BY expires_at, id`
 
 /**
- * What the user's model calls cost per day since ?2, newest first. A call belongs to the day it
- * started on, on a clock ?3 ms ahead of UTC. Totalled from the calls themselves each time (the
- * `model_calls_by_user` index bounds it to the period): no totals are stored. The cast keeps the
- * day a whole number however the database binds ?3.
+ * What the user's model calls cost per day from ?2 up to ?3, newest first. A call belongs to the
+ * day it started on, on a clock ?4 ms ahead of UTC. Totalled from the calls themselves each time
+ * (the `model_calls_by_user` index bounds it to the period): no totals are stored. The cast keeps
+ * the day a whole number however the database binds ?4.
  */
-const READ_USAGE = `SELECT CAST((started_at + ?3) / ${DAY_MS} AS INTEGER) AS day, sum(micro_credits) AS micro_credits
-FROM model_calls WHERE user_id = ?1 AND started_at >= ?2
+const READ_USAGE = `SELECT CAST((started_at + ?4) / ${DAY_MS} AS INTEGER) AS day, sum(micro_credits) AS micro_credits
+FROM model_calls WHERE user_id = ?1 AND started_at >= ?2 AND started_at < ?3
 GROUP BY day HAVING sum(micro_credits) > 0 ORDER BY day DESC`
+
+/**
+ * When the user's latest call before ?2 started, or null: one step into the `model_calls_by_user`
+ * index. Calls that cost nothing count too: leaving them out would mean reading back through every
+ * one of them, so a period found this way can turn out to have cost nothing.
+ */
+const READ_LAST_CALL_BEFORE = `SELECT max(started_at) AS at FROM model_calls WHERE user_id = ?1 AND started_at < ?2`
+
+/**
+ * One page of the user's grants, newest first: those given at ?2 or before, without the first ?3
+ * of them, and one more than a page holds, to tell whether more follow. The
+ * `grants_by_user_granted` index gives them in this order, so a page reads only its own rows. The
+ * casts keep the numbers whole however the database binds them.
+ */
+const READ_GRANTS_PAGE = `SELECT source, amount, left, granted_at, expires_at, granted_by
+FROM grants WHERE user_id = ?1 AND granted_at <= ?2
+ORDER BY granted_at DESC, id DESC LIMIT ${GRANTS_PAGE + 1} OFFSET CAST(?3 AS INTEGER)`
 
 const READ_GRANTS = `SELECT source, amount, left, granted_at, expires_at, granted_by
 FROM grants WHERE user_id = ?1 ORDER BY granted_at, id`
@@ -278,14 +338,12 @@ export class Ledger {
    * count, and what they spent per day over `period`. Looking changes nothing: it never gives the
    * weekly free grant, so it does not start the user's week.
    */
-  async look(now: number, { days, offsetMs }: UsagePeriod): Promise<Standing> {
-    // The first moment of the earliest day, on the period's clock.
-    const today = Math.floor((now + offsetMs) / DAY_MS)
-    const from = (today - (days - 1)) * DAY_MS - offsetMs
+  async look(now: number, period: UsagePeriod): Promise<Standing> {
+    const { from, to } = daysOf(now, period)
     const [balanceRow, grantRows, usageRows] = await this.db.batch([
       this.statement(READ_BALANCE, now, FREE_GRANT),
       this.statement(READ_CURRENT_GRANTS, now),
-      this.statement(READ_USAGE, from, offsetMs),
+      this.statement(READ_USAGE, from, to, period.offsetMs),
     ])
     const { balance, free_until: until } = only(BalanceRow, balanceRow)
     const grants = z.array(GrantRow).parse(grantRows?.results ?? [])
@@ -296,6 +354,50 @@ export class Ledger {
       free: until === null ? { started: false, toCome: balance - left } : { started: true, until },
       grants,
       usage: z.array(UsageRow).parse(usageRows?.results ?? []),
+    }
+  }
+
+  /**
+   * What the user's model calls cost per day over `period`, and where their usage before it is.
+   * Reading changes nothing.
+   */
+  async usage(now: number, period: UsagePeriod): Promise<UsageHistory> {
+    const { first, last, from, to, dayOf } = daysOf(now, period)
+    const [usageRows, lastCallRow] = await this.db.batch([
+      this.statement(READ_USAGE, from, to, period.offsetMs),
+      this.statement(READ_LAST_CALL_BEFORE, from),
+    ])
+    const { at } = only(LastCallRow, lastCallRow)
+    return {
+      first,
+      last,
+      usage: z.array(UsageRow).parse(usageRows?.results ?? []),
+      ...(at === null ? {} : { earlier: dayOf(at) + 1 }),
+    }
+  }
+
+  /**
+   * One page of every grant the user was given, newest first, the expired ones included: the first
+   * page, or the one `from` starts. `next` starts the page after it, and is absent on the last
+   * one. Reading changes nothing.
+   *
+   * A page starts at a time, not at a grant: two grants can be given in the same millisecond, so
+   * the cursor also counts how many grants of that millisecond earlier pages showed.
+   */
+  async grantsPage(from?: GrantsCursor): Promise<{ grants: Grant[]; next?: GrantsCursor }> {
+    const { results } = await this.statement(
+      READ_GRANTS_PAGE,
+      from?.at ?? Number.MAX_SAFE_INTEGER,
+      from?.skip ?? 0,
+    ).all()
+    const rows = z.array(GrantRow).parse(results)
+    const grants = rows.slice(0, GRANTS_PAGE)
+    const following = rows[GRANTS_PAGE]
+    if (!following) return { grants }
+    const shown = grants.filter((grant) => grant.grantedAt === following.grantedAt).length
+    return {
+      grants,
+      next: { at: following.grantedAt, skip: shown + (from?.at === following.grantedAt ? from.skip : 0) },
     }
   }
 

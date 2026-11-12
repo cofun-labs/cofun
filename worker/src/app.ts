@@ -14,6 +14,7 @@ import {
   type Account,
   type Balance,
   type Database,
+  type GrantsCursor,
   type Standing,
 } from './credits'
 import { costOf, estimateCachedTokens, estimateTokens, priceOf, type Tokens } from './pricing'
@@ -212,6 +213,29 @@ const UtcOffset = part(
 
 /** A day counted from 1970-01-01, as a date: YYYY-MM-DD. */
 const dateOf = (day: number) => new Date(day * DAY_MS).toISOString().slice(0, 10)
+
+/** The day a period of usage ends before, as the side panel sends it: a date, as a day counted from 1970-01-01. */
+const UsageBefore = part(
+  CalendarDate.transform((ms) => ms / DAY_MS).optional(),
+  'before must be a date like 2026-11-12',
+)
+
+/**
+ * Where a page of grants starts, as the page before it gave it in `next`: a time in ms, and how
+ * many grants of that millisecond were shown already. Both bounded, so the query is.
+ */
+const GrantsBefore = part(
+  z
+    .string()
+    .regex(/^\d{1,15}\.\d{1,4}$/)
+    .transform((cursor): GrantsCursor => {
+      const [at, skip] = cursor.split('.').map(Number)
+      return { at, skip }
+    })
+    .optional(),
+  'before must be the next of an earlier page',
+)
+const cursorText = ({ at, skip }: GrantsCursor) => `${at}.${skip}`
 
 /**
  * A user's credits as the side panel shows them. Amounts stay in micro-credits; the panel rounds
@@ -634,15 +658,54 @@ export function createApp({
   // the user's next question, and is reported as not started until then.
   app.get('/v1/credits', async (c) => {
     const offsetMs = parse(UtcOffset, c.req.query('utc_offset')) * MINUTE_MS
-    const ledger = new Ledger(c.env.DB, c.get('userId'))
-    let standing: Standing
+    const period = { days: USAGE_DAYS, offsetMs }
+    return c.json(creditsJson(await onOwnLedger(c, (ledger) => ledger.look(now().getTime(), period))))
+  })
+
+  /** Runs a read of the caller's own credits, or refuses the request when it fails. */
+  async function onOwnLedger<T>(c: Ctx, read: (ledger: Ledger) => Promise<T>): Promise<T> {
     try {
-      standing = await ledger.look(now().getTime(), { days: USAGE_DAYS, offsetMs })
+      return await read(new Ledger(c.env.DB, c.get('userId')))
     } catch (err) {
       logError(`credit read failed: ${errorSummary(err)}`)
       throw new HttpError(503, 'credits_unavailable', 'Credits are unavailable, try again in a moment.')
     }
-    return c.json(creditsJson(standing))
+  }
+
+  // The history of the signed-in user's credits, read by the side panel only when the user opens
+  // it, a page at a time, so the read above stays small. Both only read, for the caller only.
+
+  // Every grant the user was given, newest first, the expired ones included, with what is left of
+  // each (for an expired one: what went unspent). Never the admin who made a grant by hand.
+  app.get('/v1/credits/grants', async (c) => {
+    const from = parse(GrantsBefore, c.req.query('before'))
+    const { grants, next } = await onOwnLedger(c, (ledger) => ledger.grantsPage(from))
+    return c.json({
+      grants: grants.map(({ source, amount, left, grantedAt, expiresAt }) => ({
+        source,
+        amount,
+        left,
+        grantedAt,
+        expiresAt,
+      })),
+      next: next ? cursorText(next) : null,
+    })
+  })
+
+  // Credits used per day over one period as long as the one /v1/credits reports, by the same days:
+  // the most recent one, or the one that ends before `before`. `earlier` is the `before` that
+  // leads to the user's usage before this period, skipping the days they made no call.
+  app.get('/v1/credits/usage', async (c) => {
+    const offsetMs = parse(UtcOffset, c.req.query('utc_offset')) * MINUTE_MS
+    const before = parse(UsageBefore, c.req.query('before'))
+    const period = { days: USAGE_DAYS, offsetMs, ...(before === undefined ? {} : { before }) }
+    const { first, last, usage, earlier } = await onOwnLedger(c, (ledger) => ledger.usage(now().getTime(), period))
+    return c.json({
+      from: dateOf(first),
+      to: dateOf(last),
+      byDay: usage.map(({ day, microCredits }) => ({ day: dateOf(day), microCredits })),
+      earlier: earlier === undefined ? null : dateOf(earlier),
+    })
   })
 
   // OpenAI-compatible chat completions. The model is fixed by the server.
