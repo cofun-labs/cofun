@@ -631,7 +631,7 @@ export class CopilotAgent {
       headers: { authorization: `Bearer ${token}` },
     })
     const body: unknown = await res.json().catch(() => undefined)
-    if (!res.ok) throw new Error(MeReply.safeParse(body).data?.error?.message ?? `HTTP ${res.status}`)
+    if (!res.ok) throw new Error(ErrorReply.safeParse(body).data?.error?.message ?? `HTTP ${res.status}`)
     return Credits.parse(body)
   }
 
@@ -945,8 +945,11 @@ function resultText(result: { content?: { type: string; text?: string }[] } | un
 // text counts as missing, so a reply the agent can't read ends in the fallback, never in a wrong value.
 const text = z.string().optional().catch(undefined)
 
+/** A refusal from the worker, as far as its message. */
+const ErrorReply = z.object({ error: z.object({ message: text }).optional().catch(undefined) })
+
 /** The worker's answer to `/me`: the model it uses, or why it refused. */
-const MeReply = z.object({ model: text, error: z.object({ message: text }).optional().catch(undefined) })
+const MeReply = ErrorReply.extend({ model: text })
 
 /** An error as the worker words it. */
 const ErrorFields = z.object({ code: text, message: text })

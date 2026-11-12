@@ -16,12 +16,13 @@ export function Settings({
 }) {
   const account = useAccount()
 
-  // Escape goes back to the chat, wherever the focus is.
+  // Escape goes back to the chat, wherever the focus is. Not when something above the page took
+  // the key for itself: the account menu, open over the page, closes on Escape and stops there.
   const close = useRef(onClose)
   close.current = onClose
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') close.current()
+      if (e.key === 'Escape' && !e.defaultPrevented) close.current()
     }
     document.addEventListener('keydown', onKeyDown)
     return () => document.removeEventListener('keydown', onKeyDown)

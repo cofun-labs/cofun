@@ -154,6 +154,19 @@ describe('the account menu', () => {
     expect(accountButton()).toHaveFocus()
   })
 
+  it('opened over the settings page, Escape closes only the menu, and the next Escape the page', async () => {
+    const { user } = await openPanel()
+    await openSettings(user)
+    await openMenu(user)
+
+    await user.keyboard('{Escape}')
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Settings' })).toBeVisible()
+
+    await user.keyboard('{Escape}')
+    expect(screen.queryByRole('heading', { name: 'Settings' })).not.toBeInTheDocument()
+  })
+
   it('closes when the user clicks elsewhere', async () => {
     const { user } = await openPanel()
     await openMenu(user)

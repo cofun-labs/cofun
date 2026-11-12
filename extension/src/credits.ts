@@ -80,9 +80,10 @@ export function creditsSummary({ balance, free, grants }: Credits): { left: stri
   const spendable = grants.filter((grant) => grant.left > 0)
   if (!free.started) {
     // Free credits that have not started, alone or beside credits that have.
-    const detail = spendable.length
-      ? `${creditsText(free.toCome)} of them start with your next question`
-      : `Valid for ${daysText(free.lastsMs)} from your next question`
+    const detail =
+      spendable.length && free.toCome > 0
+        ? `${creditsText(free.toCome)} of them start with your next question`
+        : `Valid for ${daysText(free.lastsMs)} from your next question`
     return { left, detail }
   }
   const [first] = spendable
