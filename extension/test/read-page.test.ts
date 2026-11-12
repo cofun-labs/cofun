@@ -1010,6 +1010,22 @@ describe('how the side panel describes a read', () => {
     expect(readPage.describe({}, result)).toMatchObject({ name: 'Q3 plan with Alice for Launch to_do' })
   })
 
+  it.each([
+    ['snake_case notes', 'snake_case notes'],
+    ['`a*b` and \\*stars\\*', 'a*b and *stars*'],
+    ['~~old~~ *new* plan', 'old new plan'],
+    ['[\\[WIP\\] Plan](' + 'b'.repeat(32) + ')', '[WIP] Plan'],
+    ['<span color="red">Red</span> title', 'Red title'],
+    ['C:\\temp', 'C:\\temp'],
+  ])('shows the title %s as %s', (markdown, shown) => {
+    expect(readPage.describe({}, `Page: ${markdown} ^${id}`)).toMatchObject({ name: shown })
+  })
+
+  it("shows a database's name as it is: it is plain text", () => {
+    const result = `Page: snake_*db* C:\\temp ^${id}\nURL: x\nThis page is a database: read its rows with query_database.`
+    expect(readPage.describe({}, result)).toMatchObject({ name: 'snake_*db* C:\\temp' })
+  })
+
   it('says "a page", not the open page, when its arguments do not parse', () => {
     expect(readPage.describe({ page: 5 }, undefined)).toMatchObject({ what: 'a page' })
     expect(readPage.describe({}, undefined)).toMatchObject({ what: 'the open page' })

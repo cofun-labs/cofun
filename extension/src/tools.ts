@@ -165,19 +165,43 @@ function named(result: string | undefined, line: RegExp): string | undefined {
   return name || undefined
 }
 
+/** What a backslash keeps literal in a title, as read_page escapes it (see `inline` in notion/blocks.ts). */
+const ESCAPED = '\\`*_~[]^|#><$@'
+
 /**
- * A page title as read_page shows it (inline Markdown: `**bold**`, `[Title](id)`, `@[Name]`, and a
- * backslash before a literal character) as the user sees it in Notion.
+ * A page title as read_page shows it (inline Markdown, see `inline` in notion/blocks.ts) as the user
+ * sees it in Notion: marks dropped, a link or mention as its text, code and escaped characters as
+ * they are. For the side panel only; what the model reads keeps the Markdown.
  */
-function plainTitle(markdown: string | undefined): string | undefined {
-  if (!markdown) return undefined
-  const text = markdown.replace(/@\[([^\]]*)\]/g, '$1').replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
+function plainTitle(markdown: string): string {
+  const md = markdown.replace(/<\/?span\b[^>]*>/g, '')
+  const word = (c: string | undefined) => !!c && /[\p{L}\p{N}]/u.test(c)
   let out = ''
-  for (let i = 0; i < text.length; i++) {
-    if (text[i] === '\\' && i + 1 < text.length) out += text[++i]
-    else if (!'*_~`'.includes(text[i])) out += text[i]
+  for (let i = 0; i < md.length; i++) {
+    const c = md[i]
+    if (c === '\\' && ESCAPED.includes(md[i + 1] ?? '')) {
+      out += md[++i]
+    } else if (c === '`' && md.indexOf('`', i + 1) > i) {
+      const end = md.indexOf('`', i + 1)
+      out += md.slice(i + 1, end)
+      i = end
+    } else if (c === '[' || (c === '@' && md[i + 1] === '[')) {
+      // `[Title](id)` and `@[Name]`: the text between the brackets, its own Markdown read too.
+      const start = c === '@' ? i + 2 : i + 1
+      let end = start
+      while (end < md.length && md[end] !== ']') end += md[end] === '\\' ? 2 : 1
+      if (end >= md.length) {
+        out += c
+        continue
+      }
+      out += plainTitle(md.slice(start, end))
+      const target = md[end + 1] === '(' ? md.indexOf(')', end + 2) : -1
+      i = target > end ? target : end
+    } else if (c === '*' || c === '~' || (c === '_' && !(word(md[i - 1]) && word(md[i + 1])))) {
+      // A mark.
+    } else out += c
   }
-  return out.trim() || undefined
+  return out
 }
 
 /** A name a result gives in quotes as `quote` writes it (JSON), read back. */
@@ -206,7 +230,10 @@ export const readPage = defineTool({
   describe: (args, result) =>
     on(
       READ,
-      plainTitle(named(result, /^Page: (.+) \^[0-9a-f]+(?:\n|$)/)),
+      // A database's name is plain text already.
+      result?.includes('\nThis page is a database:')
+        ? named(result, /^Page: (.+) \^[0-9a-f]+(?:\n|$)/)
+        : plainTitle(named(result, /^Page: (.+) \^[0-9a-f]+(?:\n|$)/) ?? '') || undefined,
       // Arguments that don't parse may have named another page.
       !args || args.page ? 'a page' : 'the open page',
       args?.part && args.part > 1 ? `part ${args.part} of` : undefined,
