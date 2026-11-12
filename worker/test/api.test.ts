@@ -52,7 +52,7 @@ const hi = [{ role: 'user', content: 'hi' }]
 const chat = (bearer: string | undefined, body: unknown = { messages: hi }) =>
   req('POST', '/v1/chat/completions', bearer, body)
 
-describe('UC-AUTH-001 Sign in to use Copilot', () => {
+describe('UC-AUTH-001 Sign in to use Notico', () => {
   it('[UC-AUTH-001-S01] request without a session is refused', async () => {
     const res = await chat(undefined)
     expect(res.status).toBe(401)

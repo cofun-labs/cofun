@@ -232,7 +232,7 @@ export class CopilotAgent {
       if (this.agent) this.agent.state.model = this.model
       // The question stays in the conversation with the tools it used, so the model can pick up
       // where it left off; asking the same question again could run those tools twice.
-      if (kept) return { status: 'error', message: 'Copilot was just updated. Ask it to continue.', ...counted }
+      if (kept) return { status: 'error', message: 'Notico was just updated. Ask it to continue.', ...counted }
       return (await this.askOnce(text, onUpdate, epoch, confirm)).result
     }
     return result

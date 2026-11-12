@@ -68,9 +68,9 @@ export function buildManifest(env: ManifestEnv, version: string) {
   const clerkHost = clerkFrontendApi(env.VITE_CLERK_PUBLISHABLE_KEY ?? '')
   return {
     manifest_version: 3,
-    name: 'Copilot for Notion',
+    name: 'Notico: AI copilot for Notion',
     version,
-    description: 'A side panel AI helper for Notion pages.',
+    description: 'An AI side panel that reads and edits your Notion pages with you.',
     ...(env.CRX_PUBLIC_KEY ? { key: env.CRX_PUBLIC_KEY } : {}),
     icons: ICONS,
     // scripting: Notion calls run in the user's Notion tab (src/notion/tab.ts).
@@ -95,6 +95,6 @@ export function buildManifest(env: ManifestEnv, version: string) {
     background: { service_worker: 'background.js', type: 'module' },
     // No side_panel.default_path: without it, a tab has no panel unless background.ts
     // sets one, so the panel stays off on other sites even before background.ts runs.
-    action: { default_title: 'Open Copilot for Notion', default_icon: ICONS },
+    action: { default_title: 'Open Notico', default_icon: ICONS },
   }
 }

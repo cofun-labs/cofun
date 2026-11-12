@@ -989,7 +989,7 @@ export const editPage = defineTool({
     if (!plan.operations.length) return plan.summary.join('\n')
     signal?.throwIfAborted()
     try {
-      await tab.client.submitTransaction(loaded.spaceId, plan.operations, 'Notion Copilot: edit_page')
+      await tab.client.submitTransaction(loaded.spaceId, plan.operations, 'Notico: edit_page')
     } catch (err) {
       // The edit may have been saved: a retry from the same read could apply it twice, so the
       // page must be read again first, which also shows whether it landed.
@@ -1190,7 +1190,7 @@ export const createPage = defineTool({
     // The parent's list changes: cached parts of it would hide the new page, and after an unknown
     // outcome the agent must see whether it was created before it tries again.
     try {
-      await tab.client.submitTransaction(spaceId, operations, 'Notion Copilot: create_page')
+      await tab.client.submitTransaction(spaceId, operations, 'Notico: create_page')
     } catch (err) {
       // A retry would create a second page if this one was saved: the agent must look first.
       if (err instanceof NotionError && err.code === 'outcome_unknown') {
@@ -1389,7 +1389,7 @@ export const updatePages = defineTool({
     signal?.throwIfAborted()
     try {
       // Setting values again does no harm, so after a lost answer the agent may simply retry.
-      await tab.client.submitTransaction(spaceId, operations, 'Notion Copilot: update_pages')
+      await tab.client.submitTransaction(spaceId, operations, 'Notico: update_pages')
     } catch (err) {
       // Whether a rename landed is unknown: the page's read, and the title it shows, go too.
       if (err instanceof NotionError && err.code === 'outcome_unknown') for (const id of ids) pageReads.delete(id)
@@ -1583,7 +1583,7 @@ export const createDatabase = defineTool({
     ]
     signal?.throwIfAborted()
     try {
-      await tab.client.submitTransaction(spaceId, operations, 'Notion Copilot: create_database')
+      await tab.client.submitTransaction(spaceId, operations, 'Notico: create_database')
     } catch (err) {
       // A retry would create a second database if this one was saved: the agent must look first.
       if (err instanceof NotionError && err.code === 'outcome_unknown') {
@@ -1706,7 +1706,7 @@ export const updateDatabaseSchema = defineTool({
     }
     signal?.throwIfAborted()
     try {
-      await tab.client.submitTransaction(db.spaceId, operations, 'Notion Copilot: update_database_schema')
+      await tab.client.submitTransaction(db.spaceId, operations, 'Notico: update_database_schema')
     } catch (err) {
       // A retry would add a property a second time if this change was saved: the agent must look first.
       if (err instanceof NotionError && err.code === 'outcome_unknown')
@@ -1915,7 +1915,7 @@ export const movePage = defineTool({
       await tab.client.submitTransaction(
         String(dest.space_id),
         [op.moveInto(destId, moving), op.touch(destId), ...moving.map((id) => op.touch(id))],
-        'Notion Copilot: move_page',
+        'Notico: move_page',
       )
     } finally {
       forgetPages([destId, ...parents, ...ids, ...[...above.values()].flat()])
@@ -2627,7 +2627,7 @@ export const addComment = defineTool({
     const where = target === loaded.page.id ? 'the page' : `the block ^${md.refs.get(target)}`
     signal?.throwIfAborted()
     try {
-      await tab.client.submitTransaction(loaded.spaceId, operations, 'Notion Copilot: add_comment')
+      await tab.client.submitTransaction(loaded.spaceId, operations, 'Notico: add_comment')
     } catch (err) {
       // A retry would add the comment twice if this one was saved: the agent must look first.
       if (err instanceof NotionError && err.code === 'outcome_unknown') {

@@ -10,7 +10,7 @@ import { closeBrowser, FakeBrowser, START } from './panel'
 
 afterEach(closeBrowser)
 
-/** A browser signed in to Copilot, with the side panel open on `tab`. */
+/** A browser signed in to Notico, with the side panel open on `tab`. */
 async function openPanel(tab: FakeNotionTab = pageTab()) {
   const browser = await FakeBrowser.start(tab, { signedInAs: 'user_alice' })
   await browser.openPanel()
@@ -348,7 +348,7 @@ describe('signing in and out', () => {
     await user.click(screen.getByRole('button', { name: 'Open user menu' }))
     await user.click(screen.getByRole('menuitem', { name: 'Sign out' }))
 
-    expect(await screen.findByText('Sign in to use Copilot for Notion.')).toBeVisible()
+    expect(await screen.findByText('Sign in to use Notico.')).toBeVisible()
     expect(screen.getByRole('button', { name: 'Sign in' })).toBeVisible()
     // The chat is gone: nothing to type into, and the conversation is off the screen.
     expect(screen.queryByRole('textbox')).not.toBeInTheDocument()
@@ -361,7 +361,7 @@ describe('signing in and out', () => {
     await browser.openPanel()
     const user = userEvent.setup()
 
-    expect(screen.getByText('Sign in to use Copilot for Notion.')).toBeVisible()
+    expect(screen.getByText('Sign in to use Notico.')).toBeVisible()
     expect(screen.queryByRole('textbox')).not.toBeInTheDocument()
 
     await user.click(screen.getByRole('button', { name: 'Sign in' }))
