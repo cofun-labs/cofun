@@ -4,6 +4,7 @@
 import { Agent, type AgentEvent, type AgentMessage, type AgentTool } from '@earendil-works/pi-agent-core'
 import type { AssistantMessage, Model, ToolCall, ToolResultMessage } from '@earendil-works/pi-ai'
 import { streamSimple } from '@earendil-works/pi-ai/api/openai-completions'
+import { Credits } from './credits'
 import { z } from './zod'
 
 export interface AgentConfig {
@@ -130,7 +131,8 @@ export type AskResult = (
   | { status: 'done' }
   | { status: 'stopped' }
   | { status: 'step_limit'; steps: number }
-  | { status: 'error'; message: string }
+  /** `code`: the worker's error code when it refused the question, e.g. `out_of_credits`. */
+  | { status: 'error'; message: string; code?: string }
 ) & { requests?: number }
 
 const DEFAULT_MAX_STEPS = 10
@@ -407,7 +409,9 @@ export class CopilotAgent {
     if (failure || stopped) {
       const kept = usedTools(agent.state.messages.slice(before))
       agent.state.messages = [...agent.state.messages.slice(0, before), ...kept]
-      const result: AskResult = stopped ? { status: 'stopped' } : { status: 'error', message: failure!.text }
+      const result: AskResult = stopped
+        ? { status: 'stopped' }
+        : { status: 'error', message: failure!.text, ...(failure!.code ? { code: failure!.code } : {}) }
       return { result: { ...result, ...counted }, kept: kept.length > 0, code: stopped ? undefined : failure?.code }
     }
     const result: AskResult = hitLimit ? { status: 'step_limit', steps } : { status: 'done' }
@@ -610,6 +614,25 @@ export class CopilotAgent {
     const context = this.contexts.get(message)
     if (!context || message.role !== 'user') return message
     return { ...message, content: `${context}\n\n${textOf(message.content)}` }
+  }
+
+  /**
+   * The signed-in user's credits, as the worker reports them. Reading them changes nothing. Throws
+   * when they can't be read, or when the answer is not what the panel expects.
+   */
+  async credits(): Promise<Credits> {
+    const token = await this.config.getToken()
+    if (!token) throw new Error(SIGN_IN)
+    const baseUrl = this.config.apiUrl.replace(/\/+$/, '')
+    // How far the user's clock is ahead of UTC, in minutes: the worker totals usage per day, and a
+    // day should be the user's own.
+    const utcOffset = -new Date().getTimezoneOffset()
+    const res = await fetch(`${baseUrl}/credits?utc_offset=${utcOffset}`, {
+      headers: { authorization: `Bearer ${token}` },
+    })
+    const body: unknown = await res.json().catch(() => undefined)
+    if (!res.ok) throw new Error(MeReply.safeParse(body).data?.error?.message ?? `HTTP ${res.status}`)
+    return Credits.parse(body)
   }
 
   /** The worker fixes the model; ask it which one, so requests name it. */

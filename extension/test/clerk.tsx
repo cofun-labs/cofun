@@ -3,11 +3,13 @@
 // file, so the panel's own code runs unchanged. The prop types come from the real package, so a
 // prop the panel passes that Clerk does not take is still a type error.
 import type * as Clerk from '@clerk/chrome-extension'
-import { useState, useSyncExternalStore, type ComponentProps, type ReactNode } from 'react'
+import { useSyncExternalStore, type ComponentProps, type ReactNode } from 'react'
 
-/** A signed-in user: `getToken` returns a fresh session token, as Clerk's does. */
+/** A signed-in user, with their name and email as Clerk holds them: `getToken` returns a fresh session token, as Clerk's does. */
 export interface FakeSession {
   userId: string
+  name: string
+  email: string
   getToken: () => Promise<string | null>
 }
 
@@ -63,19 +65,24 @@ export function useAuth() {
   }
 }
 
-/** Like Clerk's: a button that opens the user's menu, which has "Sign out". */
-export function UserButton() {
-  const [open, setOpen] = useState(false)
-  return (
-    <>
-      <button aria-label="Open user menu" aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen(!open)} />
-      {open && (
-        <div role="menu">
-          <button role="menuitem" onClick={() => fakeClerk.signOut()}>
-            Sign out
-          </button>
-        </div>
-      )}
-    </>
-  )
+type ClerkUser = NonNullable<ReturnType<typeof Clerk.useUser>['user']>
+/** The part of Clerk's user the panel reads. */
+type FakeUser = Pick<ClerkUser, 'fullName' | 'imageUrl'> & {
+  primaryEmailAddress: Pick<NonNullable<ClerkUser['primaryEmailAddress']>, 'emailAddress'> | null
+}
+
+export function useUser(): { isLoaded: boolean; isSignedIn: boolean; user: FakeUser | null } {
+  const current = useSession()
+  return {
+    isLoaded: true,
+    isSignedIn: current !== undefined,
+    user: current
+      ? {
+          fullName: current.name,
+          // Clerk serves avatars from its image host; the tests load no images.
+          imageUrl: `https://img.clerk.com/${current.userId}`,
+          primaryEmailAddress: { emailAddress: current.email },
+        }
+      : null,
+  }
 }

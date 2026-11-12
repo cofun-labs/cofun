@@ -886,21 +886,21 @@ describe('extension agent against the worker', () => {
         expect((await ask(makeAgent(), 'hi')).result, JSON.stringify(body)).toEqual({ status: 'error', message })
       }
       // A failed model request: the worker's own words when it gives them as text, wrapped or not.
-      const failures: [unknown, string][] = [
-        [{ error: { code: 'bad_request', message: 'wrapped words' } }, 'wrapped words'],
-        [{ code: 'bad_request', message: 'unwrapped words' }, 'unwrapped words'],
+      const failures: [unknown, string, string?][] = [
+        [{ error: { code: 'bad_request', message: 'wrapped words' } }, 'wrapped words', 'bad_request'],
+        [{ code: 'bad_request', message: 'unwrapped words' }, 'unwrapped words', 'bad_request'],
         // Otherwise what the SDK made of the body, as it is.
         [{ error: { message: 5 } }, '{"message":5}'],
         [{ error: 'boom' }, '"boom"'],
         [['boom'], '["boom"]'],
       ]
-      for (const [body, message] of failures) {
+      for (const [body, message, code] of failures) {
         globalThis.fetch = ((input: RequestInfo | URL, init?: RequestInit) =>
           String(input instanceof Request ? input.url : input).endsWith('/me')
             ? routed(input, init)
             : Promise.resolve(answer(400, body))) as typeof fetch
         const { result } = await ask(makeAgent(), 'hi')
-        expect(result, JSON.stringify(body)).toEqual({ status: 'error', message })
+        expect(result, JSON.stringify(body)).toEqual({ status: 'error', message, ...(code ? { code } : {}) })
       }
     } finally {
       globalThis.fetch = routed
@@ -1582,7 +1582,11 @@ describe('extension agent against the worker', () => {
     ai.usage = usageCosting(200)
     const agent = makeAgent()
     expect((await ask(agent, 'first')).result).toEqual({ status: 'done' })
-    expect((await ask(agent, 'second')).result).toEqual({ status: 'error', message: OUT_OF_CREDITS })
+    expect((await ask(agent, 'second')).result).toEqual({
+      status: 'error',
+      message: OUT_OF_CREDITS,
+      code: 'out_of_credits',
+    })
 
     clock = new Date(clock.getTime() + WEEK_MS)
     await ask(agent, 'third')
@@ -1601,7 +1605,11 @@ describe('extension agent against the worker', () => {
     // Both calls were charged: 20 of the 200 credits are left, enough to start one more call and no more.
     expect((await ask(agent, 'hi')).result).toEqual({ status: 'done' })
     expect(ai.calls).toHaveLength(3)
-    expect((await ask(agent, 'again')).result).toEqual({ status: 'error', message: OUT_OF_CREDITS })
+    expect((await ask(agent, 'again')).result).toEqual({
+      status: 'error',
+      message: OUT_OF_CREDITS,
+      code: 'out_of_credits',
+    })
     expect(ai.calls).toHaveLength(3)
   })
 
@@ -1617,7 +1625,7 @@ describe('extension agent against the worker', () => {
 
   it('[UC-CHAT-001-S12] credits that run out after a tool ran end the question, saying when credits arrive', async () => {
     const { runs, result } = await askIntoNoCredits()
-    expect(result).toEqual({ status: 'error', message: OUT_OF_CREDITS })
+    expect(result).toEqual({ status: 'error', message: OUT_OF_CREDITS, code: 'out_of_credits' })
     expect(runs).toHaveLength(1)
     // The request that would have sent the result back was refused before the model.
     expect(ai.calls).toHaveLength(1)
