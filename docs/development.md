@@ -169,7 +169,7 @@ In the Cloudflare dashboard: Workers & Pages → `notico-api` → Settings → B
 | Deploy command | `npx wrangler d1 migrations apply notico-db --remote && npx wrangler deploy` |
 | Production branch | `main` |
 
-The deploy command applies the migrations not yet applied to `notico-db`, then deploys, so new code never runs on an old schema. Wrangler skips its confirmation in CI, and a migration that fails is rolled back and stops the deploy. The build's API token needs **D1: Edit** on the account (the token Workers Builds creates has Workers permissions only): Workers & Pages → `notico-api` → Settings → Builds → API token, or edit the token under My Profile → API Tokens. The worker's tests use Node's built-in `node:sqlite`, so the build needs Node.js 24 (the Workers Builds default).
+The deploy command applies the migrations not yet applied to `notico-db`, then deploys, so new code never runs on an old schema. Wrangler skips its confirmation in CI, and a migration that fails is rolled back and stops the deploy. The build's API token (Workers & Pages → `notico-api` → Settings → Builds → API token) needs **D1: Edit** on the account, both to apply the migrations and to find `notico-db` by name. A token that Workers Builds creates has it (checked on one created in November 2026); a token made by hand needs it added. The worker's tests use Node's built-in `node:sqlite`, so the build needs Node.js 24 (the Workers Builds default).
 
 ## Extension
 
