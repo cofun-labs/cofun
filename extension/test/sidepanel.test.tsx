@@ -85,6 +85,24 @@ describe('asking the AI', () => {
     await answered()
   })
 
+  it('[UC-CHAT-001-S08] an example question goes into the message box, not to the model, and can be changed before sending', async () => {
+    const { browser, user } = await openPanel()
+    browser.ai.script.push({ reply: 'It is a fixture.' })
+
+    await user.click(screen.getByRole('button', { name: 'Summarize this page' }))
+
+    expect(composer()).toHaveValue('Summarize this page')
+    expect(browser.ai.calls).toEqual([])
+
+    await user.type(composer(), ' in one line{Enter}')
+
+    expect(await screen.findByText('Summarize this page in one line')).toBeVisible()
+    await answered()
+    expect(browser.sentToModel().at(-1)!.content).toContain('Summarize this page in one line')
+    // The examples are for a session with no question yet.
+    expect(screen.queryByRole('button', { name: 'Summarize this page' })).not.toBeInTheDocument()
+  })
+
   // UC-AGENT-001-S16 itself stays ai-e2e: whether the model answers from the note, without a tool, is its
   // own judgment. This is the panel's part of it.
   it('a question goes to the model with a note naming the open page, and the panel shows only what the user typed', async () => {
@@ -405,12 +423,41 @@ describe('sessions', () => {
     ])
 
     // A question asked now starts a session of its own: nothing of the earlier ones goes to the model.
-    await user.click(screen.getByRole('button', { name: 'Back' }))
+    await user.click(screen.getByRole('button', { name: 'Close' }))
     browser.ai.script.push({ reply: 'Hello.' })
     await ask(user, 'Hi')
     await screen.findByText('Hello.')
     await answered()
     expect(browser.sentToModel().map((m) => m.role)).toEqual(['system', 'user'])
+  })
+
+  it('the session list closes from its Close button, the Sessions button, or Escape, back to the chat', async () => {
+    const { user } = await openPanel()
+    const toggle = screen.getByRole('button', { name: 'Sessions' })
+    const list = () => screen.queryByRole('dialog', { name: 'Sessions' })
+
+    await user.click(toggle)
+    expect(list()).toBeVisible()
+    expect(toggle).toHaveAttribute('aria-expanded', 'true')
+    await user.click(screen.getByRole('button', { name: 'Close' }))
+    expect(list()).not.toBeInTheDocument()
+    expect(toggle).toHaveFocus()
+
+    await user.click(toggle)
+    await user.click(toggle)
+    expect(list()).not.toBeInTheDocument()
+    expect(toggle).toHaveAttribute('aria-expanded', 'false')
+
+    // In the search box, Escape first clears what was typed, then closes the list.
+    await user.click(toggle)
+    await user.type(screen.getByRole('searchbox'), 'road')
+    await user.keyboard('{Escape}')
+    expect(list()).toBeVisible()
+    await user.clear(screen.getByRole('searchbox'))
+    await user.keyboard('{Escape}')
+    expect(list()).not.toBeInTheDocument()
+    expect(toggle).toHaveFocus()
+    expect(composer()).toBeVisible()
   })
 
   it('[UC-SESSION-001-S08] switching sessions stops a reply still coming in, and it lands in neither session', async () => {

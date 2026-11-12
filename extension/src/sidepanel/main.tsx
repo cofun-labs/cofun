@@ -1,8 +1,10 @@
-import { ClerkProvider, Show, useAuth, UserButton } from '@clerk/chrome-extension'
+import { ClerkProvider, Show, useAuth } from '@clerk/chrome-extension'
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { clerkSyncHost } from '../clerk'
 import { Chat } from './Chat'
+import { Header } from './Header'
+import { Mark } from './icons'
 import './style.css'
 
 const PUBLISHABLE_KEY = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY as string
@@ -59,7 +61,13 @@ function openSignIn() {
 // Each account gets its own chat and sessions; keyed so a change of account starts over.
 function SignedInChat() {
   const { userId } = useAuth()
-  return userId ? <Chat key={userId} userId={userId} /> : null
+  return userId ? <Chat key={userId} userId={userId} /> : <Header />
+}
+
+// Until Clerk knows whether anyone is signed in, neither screen shows; the panel is not left blank.
+function WhileLoading() {
+  const { isLoaded } = useAuth()
+  return isLoaded ? null : <Header />
 }
 
 function App() {
@@ -75,15 +83,12 @@ function App() {
       signInFallbackRedirectUrl={PANEL_URL}
       signUpFallbackRedirectUrl={PANEL_URL}
     >
-      <header>
-        <span className="title">Notico</span>
-        <Show when="signed-in">
-          <UserButton />
-        </Show>
-      </header>
+      <WhileLoading />
 
       <Show when="signed-out">
+        <Header />
         <div className="signed-out">
+          <Mark className="hero-mark" />
           <p>Sign in to use Notico.</p>
           <button className="primary" onClick={openSignIn}>
             Sign in

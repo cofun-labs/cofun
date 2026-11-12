@@ -76,7 +76,8 @@ extension/                Chrome extension
   src/notion/tree.ts      pages as the sidebar lists them, level by level, without content
   src/notion/tab.ts       runs Notion requests in the user's Notion tab (chrome.scripting)
   src/sidepanel/          React UI (main.tsx: sign-in, Chat.tsx: chat, Sessions.tsx: saved sessions,
-                          ToolCall.tsx: one tool call and its changes)
+                          ToolCall.tsx: one tool call and its changes, Header.tsx: the top bar,
+                          icons.tsx: the Cofun mark and the icons, style.css: the look)
   test/                   tests of the extension's client code (fake Notion tab with sanitized
                           fixtures), and of the side panel's UI: the whole panel in jsdom
                           (*.test.tsx)
