@@ -7,9 +7,11 @@ export type ReplyPart =
   | {
       type: 'tool'
       name: string
+      /** What the card says the call did, in words: "Read To Do List". */
+      says: string
       /** running, confirm (waiting for approval), done, failed, declined, stopped, skipped. */
       status: string
-      /** The tool card's sections: Changes, Arguments, Result or Error. */
+      /** The tool card's sections: Changes, Arguments, Result or Error (the tool's name is `name`). */
       sections: { label: string; text: string }[]
     }
   | { type: 'error'; text: string }
@@ -50,7 +52,7 @@ export function formatReply(parts: ReplyPart[]): string {
   for (const part of parts) {
     if (part.type === 'text') out.push(part.text)
     else if (part.type === 'tool') {
-      const lines = [`[tool] ${part.name}: ${part.status}`]
+      const lines = [`[tool] ${part.name}: ${part.status} (${part.says})`]
       for (const s of part.sections) lines.push(`  ${s.label}:`, indent(s.text, '    '))
       out.push(lines.join('\n'))
     } else out.push(`[${part.type}] ${part.text}`)
@@ -82,11 +84,13 @@ export function readPanel(): PanelSnapshot {
       let label: string | undefined
       for (const child of el.querySelector('.tool-body')?.children ?? []) {
         if (child.matches('.tool-label')) label = (child.textContent ?? '').trim()
-        else if (child.matches('pre') && label) sections.push({ label, text: child.textContent ?? '' })
+        else if (child.matches('pre') && label && label !== 'Tool')
+          sections.push({ label, text: child.textContent ?? '' })
       }
       parts.push({
         type: 'tool',
         name: (el.querySelector('.tool-name')?.textContent ?? '').trim(),
+        says: (el.querySelector('.tool-phrase')?.textContent ?? '').trim(),
         status: [...el.classList].find((c) => c !== 'tool') ?? 'unknown',
         sections,
       })

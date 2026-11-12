@@ -122,7 +122,7 @@ describe('asking the AI', () => {
     expect(browser.tab.sent).toEqual([])
   })
 
-  it('[UC-AGENT-001-S08] a reply shows the tool that ran, its input, that it worked, and on request its result', async () => {
+  it('[UC-AGENT-001-S22] a reply says in words what a tool did and on what, and on request the tool, its input, and its result', async () => {
     const { browser, user } = await openPanel()
     browser.ai.script.push(
       { toolCalls: [{ name: 'read_page', arguments: JSON.stringify({ part: 1 }) }] },
@@ -133,21 +133,25 @@ describe('asking the AI', () => {
     const answer = await screen.findByText('It is a fixture.')
     await answered()
 
-    const tool = screen.getByText('read_page')
-    expect(tool).toBeVisible()
-    expect(screen.getByText('part: 1')).toBeVisible()
+    // What it did, by the name of the page it read.
+    const page = screen.getByText('Fixture page', { selector: 'em' })
+    const tool = page.closest('summary')!
+    expect(tool).toHaveTextContent(/^Read Fixture page$/)
     expect(screen.getByRole('img', { name: 'Done' })).toBeVisible()
     // In the order it happened: the tool ran before the answer.
     expect(comesBefore(tool, answer)).toBe(true)
+    // Its own terms stay folded away until the user asks for them.
+    expect(screen.getByText('read_page')).not.toBeVisible()
 
-    // What it returned stays folded away until the user asks for it.
-    expect(screen.getByText('Result')).not.toBeVisible()
     await user.click(tool)
+    expect(screen.getByText('read_page')).toBeVisible()
+    expect(screen.getByText('Arguments')).toBeVisible()
+    expect(screen.getByText(/"part": 1/)).toBeVisible()
     expect(screen.getByText('Result')).toBeVisible()
     expect(screen.getByText(/Hello \*\*bold\*\*/)).toBeVisible()
   })
 
-  it('[UC-AGENT-001-S08] a tool that failed shows as failed, with its error on request', async () => {
+  it('[UC-AGENT-001-S22] a tool that failed says so in words, with its error on request', async () => {
     const { browser, user } = await openPanel()
     browser.ai.script.push(
       { toolCalls: [{ name: 'read_page', arguments: JSON.stringify({ page: 'my notes' }) }] },
@@ -158,11 +162,28 @@ describe('asking the AI', () => {
     await screen.findByText('I could not read it.')
     await answered()
 
-    expect(screen.getByText('page: "my notes"')).toBeVisible()
+    const tool = screen.getByText("Couldn't read a page")
+    expect(tool).toBeVisible()
     expect(screen.getByRole('img', { name: 'Failed' })).toBeVisible()
-    await user.click(screen.getByText('read_page'))
+    await user.click(tool)
     expect(screen.getByText('Error')).toBeVisible()
     expect(screen.getByText('Not a Notion page URL or id: my notes')).toBeVisible()
+  })
+
+  it('a call with no arguments shows none', async () => {
+    const { browser, user } = await openPanel()
+    browser.ai.script.push(
+      { toolCalls: [{ name: 'get_selection', arguments: '{}' }] },
+      { reply: 'Nothing is selected.' },
+    )
+
+    await ask(user, 'What did I select?')
+    await answered()
+
+    // The fake tab has nothing selected to give, so the call fails; it has no arguments either way.
+    await user.click(screen.getByText("Couldn't read the selection"))
+    expect(screen.getByText('get_selection')).toBeVisible()
+    expect(screen.queryByText('Arguments')).not.toBeInTheDocument()
   })
 })
 
@@ -409,7 +430,7 @@ describe('a tool that needs confirmation', () => {
     const { browser, user } = await openPanel(tab)
     browser.ai.script.push({ toolCalls: [{ name: 'trash_page', arguments: JSON.stringify({ pages: [NOTE] }) }] })
     await ask(user, 'Delete the old notes')
-    const prompt = await screen.findByRole('group', { name: 'Allow trash_page to run?' })
+    const prompt = await screen.findByRole('group', { name: 'Allow this? Move 1 page to the trash' })
     return { browser, user, workspace, prompt }
   }
 
@@ -418,7 +439,7 @@ describe('a tool that needs confirmation', () => {
     browser.ai.script.push({ reply: 'The old notes are in the trash.' })
 
     // The user sees which page would go, by the name Notion has for it now.
-    expect(screen.getByText(/Move 1 page to the trash/)).toBeVisible()
+    expect(screen.getByText(/Move 1 page to the trash, with everything in it/)).toBeVisible()
     expect(screen.getByText(/"Old notes"/)).toBeVisible()
     expect(screen.getByRole('img', { name: 'Waiting for your OK' })).toBeVisible()
     // Nothing has changed, and the model has not been asked again.
@@ -432,7 +453,7 @@ describe('a tool that needs confirmation', () => {
     await answered()
     expect(workspace.records.get(NOTE)).toMatchObject({ alive: false })
     expect(screen.getByRole('img', { name: 'Done' })).toBeVisible()
-    expect(screen.queryByRole('group', { name: 'Allow trash_page to run?' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('group', { name: 'Allow this? Move 1 page to the trash' })).not.toBeInTheDocument()
   })
 
   it('[UC-AGENT-001-S11] does not run the tool when the user declines, and the agent goes on without it', async () => {
@@ -478,7 +499,7 @@ describe('sessions', () => {
     await openSession(user, /What does this page say\?/)
 
     const question = await screen.findByText('What does this page say?')
-    const tool = screen.getByText('read_page')
+    const tool = screen.getByText('Fixture page', { selector: 'em' }).closest('summary')!
     const answer = screen.getByText('It is a fixture.')
     expect(comesBefore(question, tool)).toBe(true)
     expect(comesBefore(tool, answer)).toBe(true)

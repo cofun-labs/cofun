@@ -3,10 +3,46 @@
 import type { ToolSpec } from './agent'
 import { z } from './zod'
 
+/** A verb in the forms a tool call's description needs: "read", "reading", "read". */
+export interface Verb {
+  base: string
+  ing: string
+  past: string
+}
+
+/**
+ * What a tool call does, in the user's words: the verb, then what it acts on. `name` is the name of
+ * the thing, shown set apart, when the call knows it: "Searched for *roadmap draft*" is
+ * `{ verb: SEARCH, what: 'for', name: 'roadmap draft' }`, and "Moved 2 pages to the trash" is
+ * `{ verb: MOVE, what: '2 pages to the trash' }`.
+ */
+export interface Action {
+  verb: Verb
+  what?: string
+  name?: string
+  /** Words after the name: "Moved *Notes* to the trash". */
+  after?: string
+}
+
+/** A tool as the extension has it: what the agent runs, and how the side panel describes a call. */
+export interface Tool extends ToolSpec {
+  /**
+   * A call in words, from the arguments the model gave (which may not parse) and, once it has run,
+   * what it returned. Also used for calls in saved sessions.
+   */
+  describe: (args: unknown, result?: string) => Action
+}
+
 /** A tool's arguments: an object schema, so the model is sent `type: "object"`. */
 type ArgsSchema = z.ZodObject
 
 export interface ToolDefinition<S extends ArgsSchema> extends Omit<ToolSpec, 'parameters' | 'run' | 'preview'> {
+  /**
+   * The call in the user's words (see `Tool.describe`): from its arguments, or undefined when they
+   * don't parse, and what it returned once it has run. A name it gives comes from the arguments or
+   * the result, so a call that hasn't run, or that failed, falls back to general words.
+   */
+  describe: (args: z.output<S> | undefined, result: string | undefined) => Action
   /**
    * The arguments. Describe what the model should know with `.describe()`, and give `error` where
    * the model needs more than zod's own words to correct its call.
@@ -27,9 +63,13 @@ export interface ToolDefinition<S extends ArgsSchema> extends Omit<ToolSpec, 'pa
  * nothing (only what JSON Schema can't say, such as a whole number too large to be exact): it is
  * what turns the value into its type, and what a caller without the runtime gets.
  */
-export function defineTool<S extends ArgsSchema>({ args, run, preview, ...rest }: ToolDefinition<S>): ToolSpec {
+export function defineTool<S extends ArgsSchema>({ args, run, preview, describe, ...rest }: ToolDefinition<S>): Tool {
   return {
     ...rest,
+    describe: (given, result) => {
+      const parsed = parseArgs(args, given)
+      return describe(parsed.ok ? parsed.args : undefined, result)
+    },
     parameters: parametersOf(args),
     run: async (given: unknown, signal) => {
       const parsed = parseArgs(args, given)

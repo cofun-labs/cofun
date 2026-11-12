@@ -297,6 +297,7 @@ describe('extension agent against the worker', () => {
     const runs: unknown[] = []
     const tool = defineTool({
       name: 'post_notes',
+      describe: () => ({ verb: { base: 'post', ing: 'posting', past: 'posted' }, what: 'notes' }),
       description: 'Posts notes.',
       args: z.strictObject({
         text: z.string(),
@@ -1216,6 +1217,7 @@ describe('extension agent against the worker', () => {
     const runs: unknown[] = []
     const tool = defineTool({
       name: 'tag_pages',
+      describe: () => ({ verb: { base: 'tag', ing: 'tagging', past: 'tagged' }, what: 'pages' }),
       description: 'Tags pages.',
       args: z.object({ pages: z.array(z.object({ page: z.string().optional() })) }),
       preview: (args) => `Tag ${args.pages.length} page(s); ${runs.length} run(s) so far`,
