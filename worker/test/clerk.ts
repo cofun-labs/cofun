@@ -16,9 +16,15 @@ export class FakeClerk {
     return new FakeClerk(privateKey, await exportSPKI(publicKey))
   }
 
-  async sessionToken(opts: { userId: string; azp?: string; expiresInSec?: number }): Promise<string> {
+  /** `claims` are the custom claims a Clerk instance's session token is set up to carry, such as `role`. */
+  async sessionToken(opts: {
+    userId: string
+    azp?: string
+    expiresInSec?: number
+    claims?: Record<string, unknown>
+  }): Promise<string> {
     const now = Math.floor(Date.now() / 1000)
-    return new SignJWT({ sid: 'sess_test', ...(opts.azp ? { azp: opts.azp } : {}) })
+    return new SignJWT({ sid: 'sess_test', ...(opts.azp ? { azp: opts.azp } : {}), ...opts.claims })
       .setProtectedHeader({ alg: 'RS256', kid: 'ins_test' })
       .setSubject(opts.userId)
       .setIssuer('https://clerk.test.dev')
