@@ -90,6 +90,7 @@ export function Chat({ userId }: { userId: string }) {
   const [stopping, setStopping] = useState(false)
   const listRef = useRef<HTMLElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
+  const listButtonRef = useRef<HTMLButtonElement>(null)
   // Answers for tool calls waiting for the user's OK, by call id.
   const pending = useRef(new Map<string, (allow: boolean) => void>())
   const [view, setView] = useState<'chat' | 'sessions'>('chat')
@@ -376,15 +377,22 @@ export function Chat({ userId }: { userId: string }) {
 
   const listOpen = view === 'sessions'
 
+  /** Closes the session list and puts the focus back on the button that opened it. */
+  function closeList() {
+    setView('chat')
+    listButtonRef.current?.focus()
+  }
+
   return (
     <>
       <Header>
         <button
+          ref={listButtonRef}
           className="icon-button"
           aria-label="Sessions"
           title="Sessions"
           aria-expanded={listOpen}
-          onClick={() => setView(listOpen ? 'chat' : 'sessions')}
+          onClick={() => (listOpen ? closeList() : setView('sessions'))}
         >
           <Icon name="history" />
         </button>
@@ -483,13 +491,13 @@ export function Chat({ userId }: { userId: string }) {
 
         {listOpen && (
           <div className="sheet-layer">
-            <div className="scrim" onClick={() => setView('chat')} />
+            <div className="scrim" onClick={closeList} />
             <Sessions
               store={store}
               currentId={current?.id}
               saved={saved}
               onOpen={open}
-              onClose={() => setView('chat')}
+              onClose={closeList}
               onDeleted={(id) => {
                 deleted.current.add(id)
                 // The open session is being deleted: stop its reply, so it isn't saved back.

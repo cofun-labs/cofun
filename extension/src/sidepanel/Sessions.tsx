@@ -81,7 +81,8 @@ export function Sessions({
       role="dialog"
       aria-label="Sessions"
       onKeyDown={(e) => {
-        if (e.key === 'Escape') onClose()
+        // In the search box, Escape first clears what was typed.
+        if (e.key === 'Escape' && !(e.target instanceof HTMLInputElement && e.target.value)) onClose()
       }}
     >
       <div className="sheet-head">

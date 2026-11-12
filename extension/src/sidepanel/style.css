@@ -8,6 +8,8 @@
   --tint: #eaf3fd;
   /* The mark, icons, and outlines. */
   --accent: #2383e2;
+  /* Text on the tint: the accent is too light to read there. */
+  --accent-text: #1766bd;
   /* Behind white text: a little darker than the accent, so the text stays readable. */
   --accent-fill: #1d74cf;
   --on-accent: #ffffff;
@@ -27,6 +29,7 @@
     --border: #24324a;
     --tint: #17283f;
     --accent: #4a9eea;
+    --accent-text: #4a9eea;
     --accent-fill: #2573c9;
     --ok: #4cc38a;
     --error: #f0766b;
@@ -104,7 +107,7 @@ button.primary,
   border-radius: 999px;
   font-weight: 600;
   background: var(--tint);
-  color: var(--accent);
+  color: var(--accent-text);
 }
 
 button.primary {
@@ -200,7 +203,7 @@ header .title {
   padding: 6px 12px;
   border-radius: 999px;
   background: var(--tint);
-  color: var(--accent);
+  color: var(--accent-text);
   font-size: 13px;
   font-weight: 500;
 }

@@ -431,6 +431,35 @@ describe('sessions', () => {
     expect(browser.sentToModel().map((m) => m.role)).toEqual(['system', 'user'])
   })
 
+  it('the session list closes from its Close button, the Sessions button, or Escape, back to the chat', async () => {
+    const { user } = await openPanel()
+    const toggle = screen.getByRole('button', { name: 'Sessions' })
+    const list = () => screen.queryByRole('dialog', { name: 'Sessions' })
+
+    await user.click(toggle)
+    expect(list()).toBeVisible()
+    expect(toggle).toHaveAttribute('aria-expanded', 'true')
+    await user.click(screen.getByRole('button', { name: 'Close' }))
+    expect(list()).not.toBeInTheDocument()
+    expect(toggle).toHaveFocus()
+
+    await user.click(toggle)
+    await user.click(toggle)
+    expect(list()).not.toBeInTheDocument()
+    expect(toggle).toHaveAttribute('aria-expanded', 'false')
+
+    // In the search box, Escape first clears what was typed, then closes the list.
+    await user.click(toggle)
+    await user.type(screen.getByRole('searchbox'), 'road')
+    await user.keyboard('{Escape}')
+    expect(list()).toBeVisible()
+    await user.clear(screen.getByRole('searchbox'))
+    await user.keyboard('{Escape}')
+    expect(list()).not.toBeInTheDocument()
+    expect(toggle).toHaveFocus()
+    expect(composer()).toBeVisible()
+  })
+
   it('[UC-SESSION-001-S08] switching sessions stops a reply still coming in, and it lands in neither session', async () => {
     const { browser, user } = await openPanel()
     browser.ai.script.push({ reply: 'Three milestones.' })
