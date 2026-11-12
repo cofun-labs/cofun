@@ -550,23 +550,20 @@ export function Chat({ userId }: { userId: string }) {
         </form>
 
         {listOpen && (
-          <div className="sheet-layer">
-            <div className="scrim" onClick={closeList} />
-            <Sessions
-              store={store}
-              currentId={current?.id}
-              saved={saved}
-              onOpen={open}
-              onClose={closeList}
-              onDeleted={(id) => {
-                deleted.current.add(id)
-                // The open session is being deleted: stop its reply, so it isn't saved back.
-                if (id !== current?.id) return
-                switchTo()
-                setView('sessions')
-              }}
-            />
-          </div>
+          <Sessions
+            store={store}
+            currentId={current?.id}
+            saved={saved}
+            onOpen={open}
+            onClose={closeList}
+            onDeleted={(id) => {
+              deleted.current.add(id)
+              // The open session is being deleted: stop its reply, so it isn't saved back.
+              if (id !== current?.id) return
+              switchTo()
+              setView('sessions')
+            }}
+          />
         )}
 
         {settingsOpen && (

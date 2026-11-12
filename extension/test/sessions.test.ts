@@ -2,15 +2,7 @@
 import 'fake-indexeddb/auto'
 import { beforeEach, describe, expect, it } from 'vitest'
 import type { HistoryMessage } from '../src/agent'
-import {
-  filterSessions,
-  pageKey,
-  sessionPages,
-  SessionStore,
-  titleFor,
-  type Session,
-  type SessionInfo,
-} from '../src/sessions'
+import { filterSessions, SessionStore, titleFor, type Session, type SessionInfo } from '../src/sessions'
 
 const ROADMAP = { title: 'Q4 Roadmap', url: 'https://www.notion.so/team/Q4-Roadmap-0a1b2c3d4e5f60718293a4b5c6d7e8f9' }
 const NOTES_ID = '1111aaaa2222bbbb3333cccc4444dddd'
@@ -59,28 +51,17 @@ describe('saved sessions', () => {
     expect(await store.get('a')).toEqual({ ...a, messages, updatedAt: 4000 })
   })
 
-  it('[UC-SESSION-001-S04] search by title and filter by the page a session started on', async () => {
+  it('[UC-SESSION-001-S12] search lists only the sessions whose title contains the query, ignoring case', async () => {
     await store.save(session('a', 'Summarize this page', 1000, ROADMAP))
     await store.save(session('b', 'Summarize the decisions', 2000, NOTES))
-    // The same page opened in side peek from a database, on the other Notion host.
-    await store.save(
-      session('c', 'Draft an agenda', 3000, {
-        ...NOTES,
-        url: `https://app.notion.com/p/Projects-9999eeee8888ffff7777aaaa6666bbbb?p=${NOTES_ID}&pm=s`,
-      }),
-    )
+    await store.save(session('c', 'Draft an agenda', 3000, NOTES))
     const all = await store.list()
     const ids = (sessions: SessionInfo[]) => sessions.map((s) => s.id)
 
-    expect(ids(filterSessions(all, { query: 'SUMMARIZE' }))).toEqual(['b', 'a'])
-    // The page in side peek on the other host counts as the same page.
-    const pages = sessionPages(all)
-    expect(pages.map((p) => p.title)).toEqual(['Meeting notes', 'Q4 Roadmap'])
-    const notes = pages[0].key
-    expect(notes).toBe(NOTES_ID)
-    expect(ids(filterSessions(all, { page: notes }))).toEqual(['c', 'b'])
-    expect(ids(filterSessions(all, { query: 'summarize', page: notes }))).toEqual(['b'])
-    expect(ids(filterSessions(all, { query: '  ' }))).toEqual(['c', 'b', 'a'])
+    expect(ids(filterSessions(all, 'SUMMARIZE'))).toEqual(['b', 'a'])
+    expect(ids(filterSessions(all, ' the decisions '))).toEqual(['b'])
+    expect(ids(filterSessions(all, 'Meeting notes'))).toEqual([])
+    expect(ids(filterSessions(all, '  '))).toEqual(['c', 'b', 'a'])
   })
 
   it('[UC-SESSION-001-S05] a deleted session is no longer listed and cannot be reopened', async () => {
@@ -179,23 +160,6 @@ describe('saved sessions', () => {
     await store.save(bad)
     await expect(store.save({ ...bad, title: 'Changed', messages, updatedAt: 2000 }, 1000)).rejects.toThrow()
     expect(await store.get('a')).toEqual(bad)
-  })
-
-  it('a page is the same page after a rename, on the other Notion host, and in side peek', () => {
-    const id = '41233b11f78380158c48f4e72c4b0430'
-    const keys = [
-      `https://www.notion.so/team/To-Do-List-${id}`,
-      `https://www.notion.so/team/Tasks-${id}?pvs=4`,
-      `https://app.notion.com/p/To-Do-List-${id}`,
-      `https://www.notion.so/team/${id}`,
-      `https://www.notion.so/team/Projects-1111aaaa2222bbbb3333cccc4444dddd?p=${id}&pm=s`,
-      `https://app.notion.com/p/41233b11-f783-8015-8c48-f4e72c4b0430`,
-    ].map(pageKey)
-    expect(new Set(keys)).toEqual(new Set([id]))
-    // The database a page peeks from is another page.
-    expect(pageKey('https://www.notion.so/team/Projects-1111aaaa2222bbbb3333cccc4444dddd')).not.toBe(id)
-    // A URL without a page id falls back to the URL without its query.
-    expect(pageKey('https://www.notion.so/team?pvs=4')).toBe('https://www.notion.so/team')
   })
 
   it('an open store does not block a schema upgrade', async () => {

@@ -16,7 +16,6 @@
   --ok: #1f8a5b;
   --error: #c4352f;
   --error-bg: #fdecea;
-  --scrim: rgb(8 14 26 / 0.45);
   --shadow: rgb(35 131 226 / 0.12);
   color-scheme: light dark;
 }
@@ -34,7 +33,6 @@
     --ok: #4cc38a;
     --error: #f0766b;
     --error-bg: #3a1d1f;
-    --scrim: rgb(0 0 0 / 0.55);
     --shadow: rgb(0 0 0 / 0.3);
   }
 }
@@ -135,6 +133,7 @@ header {
   gap: 8px;
   min-height: 52px;
   padding: 0 12px;
+  border-bottom: 1px solid var(--border);
 }
 
 .brand-tile {
@@ -480,37 +479,22 @@ header .title {
   stroke-width: 1.8;
 }
 
-/* The session list: a sheet over the chat */
-
-.sheet-layer {
-  position: absolute;
-  inset: 0;
-  display: flex;
-  flex-direction: column;
-  justify-content: flex-end;
-}
-
-.scrim {
-  position: absolute;
-  inset: 0;
-  background: var(--scrim);
-}
+/* The session list: covers the chat below the header */
 
 #sessions {
-  position: relative;
-  height: 82%;
+  position: absolute;
+  inset: 0;
   display: flex;
   flex-direction: column;
   gap: 10px;
   padding: 14px 12px 12px;
-  border-radius: 20px 20px 0 0;
   background: var(--bg);
-  animation: sheet-up 0.18s ease-out;
+  animation: sheet-up 0.15s ease-out;
 }
 
 @keyframes sheet-up {
   from {
-    transform: translateY(24px);
+    transform: translateY(8px);
     opacity: 0;
   }
 }
@@ -526,33 +510,40 @@ header .title {
   font-weight: 700;
 }
 
-.session-filters {
+/* The search field: quiet until focused, then outlined like the composer. */
+.session-search {
   display: flex;
-  gap: 6px;
-}
-
-.session-filters input,
-.session-filters select {
-  min-width: 0;
-  padding: 6px 12px;
-  border: none;
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px;
+  border: 1px solid transparent;
   border-radius: 999px;
   background: var(--tint);
-  color: inherit;
+  color: var(--muted);
+  transition:
+    border-color 0.12s,
+    background-color 0.12s;
+}
+
+.session-search:focus-within {
+  border-color: var(--accent);
+  background: var(--bg);
+}
+
+.session-search input {
+  flex: 1;
+  min-width: 0;
+  padding: 7px 0;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: var(--fg);
   font: inherit;
   font-size: 13px;
 }
 
-.session-filters input {
-  flex: 1;
-}
-
-.session-filters input::placeholder {
+.session-search input::placeholder {
   color: var(--muted);
-}
-
-.session-filters select {
-  max-width: 45%;
 }
 
 #sessions .error {
@@ -573,24 +564,58 @@ header .title {
   overflow-y: auto;
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  margin: 0;
+  gap: 1px;
+  margin: 0 -4px;
   padding: 0;
   list-style: none;
 }
 
+/* Rows are flat until hovered; the open session carries the accent. */
 .session-list li {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 4px;
-  padding-right: 8px;
-  border: 1px solid var(--border);
-  border-radius: 14px;
+  padding-right: 6px;
+  border-radius: 12px;
+  transition: background-color 0.12s;
+}
+
+.session-list li:hover {
+  background: color-mix(in srgb, var(--tint) 40%, transparent);
 }
 
 .session-list li.current {
-  border-color: var(--accent);
   background: var(--tint);
+}
+
+/* A hairline between rows, dropped next to a row that has its own background. */
+.session-list li + li::after {
+  content: '';
+  position: absolute;
+  top: -1px;
+  left: 14px;
+  right: 14px;
+  height: 1px;
+  background: var(--border);
+}
+
+.session-list li:hover::after,
+.session-list li.current::after,
+.session-list li:hover + li::after,
+.session-list li.current + li::after {
+  display: none;
+}
+
+.session-list li.current::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 10px;
+  bottom: 10px;
+  width: 3px;
+  border-radius: 0 3px 3px 0;
+  background: var(--accent);
 }
 
 .session-open {
@@ -598,8 +623,9 @@ header .title {
   min-width: 0;
   display: flex;
   flex-direction: column;
-  padding: 8px 4px 8px 12px;
-  border-radius: 14px;
+  gap: 2px;
+  padding: 9px 4px 9px 14px;
+  border-radius: 12px;
   text-align: left;
 }
 
@@ -611,22 +637,52 @@ header .title {
 }
 
 .session-title {
+  font-weight: 500;
+  line-height: 1.35;
+}
+
+.session-list li.current .session-title {
+  color: var(--accent-text);
   font-weight: 600;
 }
 
 .session-meta {
   color: var(--muted);
   font-size: 12px;
+  line-height: 1.3;
 }
 
+/* A trash can, shown on the row the pointer or focus is on; a second click confirms. */
 .session-delete {
   display: grid;
   place-items: center;
-  min-width: 24px;
-  height: 24px;
+  min-width: 28px;
+  height: 28px;
   flex: none;
   border-radius: 999px;
   color: var(--muted);
+  opacity: 0;
+  transition:
+    opacity 0.12s,
+    color 0.12s,
+    background-color 0.12s;
+}
+
+.session-list li:hover .session-delete,
+.session-list li:focus-within .session-delete,
+.session-delete.confirming {
+  opacity: 1;
+}
+
+@media (hover: none) {
+  .session-delete {
+    opacity: 1;
+  }
+}
+
+.session-delete:hover {
+  background: var(--error-bg);
+  color: var(--error);
 }
 
 .session-delete.confirming {

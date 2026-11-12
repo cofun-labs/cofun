@@ -25,6 +25,13 @@ const SHAPES = {
   send: <path d="M8 13V3.5M4 7l4-4 4 4" />,
   back: <path d="M9.5 3.5L5 8l4.5 4.5" />,
   close: <path d="M4.5 4.5l7 7M11.5 4.5l-7 7" />,
+  search: (
+    <>
+      <circle cx="7" cy="7" r="4.5" />
+      <path d="M10.3 10.3l3.2 3.2" />
+    </>
+  ),
+  trash: <path d="M3 4.5h10M6.5 4.5V3h3v1.5M4.5 4.5l.6 8.1a1 1 0 0 0 1 .9h3.8a1 1 0 0 0 1-.9l.6-8.1M6.8 7v4M9.2 7v4" />,
   check: <path d="M3.5 8.5l3 3 6-7" />,
   ask: (
     <>
