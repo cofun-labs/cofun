@@ -598,7 +598,9 @@ class Context {
         case 'd':
           return `@${formatDate(arg)}`
         case 'e':
-          return `$${raw(String(arg))}$`
+          // A table cell is one line, and its `<br>` would be read as LaTeX: there a line break in
+          // an equation is a space, which LaTeX reads the same.
+          return `$${raw(table ? String(arg).replace(/\n/g, ' ') : String(arg))}$`
         case 'h':
           if (typeof arg === 'string' && COLOR.test(arg)) color = arg
           break

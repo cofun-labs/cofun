@@ -1,6 +1,6 @@
 // Values for a page's title and a database row's properties, from what the model gives to what
 // Notion stores, checked against the database's schema before anything is written.
-import { MarkdownError, inline, type RichText } from './blocks'
+import { MarkdownError, breaks, inline, type RichText } from './blocks'
 import { formatDate, type Schema } from './markdown'
 
 /** A property value as the model gives it: text, a number, Yes/No, a list of options, or empty. */
@@ -58,10 +58,11 @@ export function plainText(text: string): string {
  * Markdown as query_database and read_page show a text value or a title, as the rich text Notion
  * stores: the inline Markdown edit_page writes (see `inline`), read as a table cell's. People are
  * still names (see `withPeople`). Markdown that can't be written (an unknown color) is refused.
+ * `lines` is for a text value, which may hold line breaks (see `cellText`); a title is one line.
  */
-export function richValue(markdown: string, name = 'The title'): RichText {
+export function richValue(markdown: string, name = 'The title', { lines = false } = {}): RichText {
   try {
-    return cellText(markdown)
+    return cellText(markdown, lines)
   } catch (err) {
     if (err instanceof MarkdownError) throw new PropertyError(`${name}: ${err.message}`)
     throw err
@@ -71,9 +72,13 @@ export function richValue(markdown: string, name = 'The title'): RichText {
 /**
  * A table cell's Markdown as rich text. query_database's table writes every `|` as `\|`, in code
  * and equations too, where a backslash is otherwise text: `\|` is read as `|`, as in edit_page's tables.
+ * With `lines` (a text value's cell), a `<br>` is a line break, as the table shows one and as
+ * read_page shows one inside a block (see `breaks`): `\<br>`, and a `<br>` in inline code, are text.
+ * A title's cell has none: a `<br>` there is text.
  */
-function cellText(markdown: string): RichText {
-  return inline(markdown.replace(/\\\|/g, '|'))
+function cellText(markdown: string, lines: boolean): RichText {
+  const text = markdown.replace(/\\\|/g, '|')
+  return inline(lines ? breaks(text) : text)
 }
 
 /** A link to a page as query_database shows a mention of one: `[Title](<32 hex digits>)`. */
@@ -83,13 +88,14 @@ const PAGE_MENTION = /\[((?:\\.|[^\]\\])+)\]\([0-9a-f]{32}\)/gi
  * A text value's or a title's Markdown on one line as the preview shows it: plain text, with
  * people, pages, and dates as their names and no marks. Markdown that can't be written is shown as
  * it is. `cell: false` is for Markdown from outside a table (a value as the agent saw it), where a
- * backslash before a `|` in code is text.
+ * backslash before a `|` in code is text. `lines` is for a text value's cell, where a `<br>` is a
+ * line break (see `cellText`), shown as a space.
  */
-export function shownMarkdown(markdown: string, { cell = true } = {}): string {
+export function shownMarkdown(markdown: string, { cell = true, lines = false } = {}): string {
   try {
     // A mentioned page shows by the title its link gives; the rich text keeps only its id.
     const linked = markdown.replace(PAGE_MENTION, '$1')
-    return oneLine((cell ? cellText(linked) : inline(linked)).map(shownRun).join(''))
+    return oneLine((cell ? cellText(linked, lines) : inline(linked)).map(shownRun).join(''))
   } catch (err) {
     if (err instanceof MarkdownError) return oneLine(markdown)
     throw err
@@ -109,11 +115,14 @@ function shownRun([text, marks = []]: RichText[number]): string {
 /**
  * Whether a text value or title as the agent saw it (`seen`, Markdown from outside a table) and one
  * the model gives (`given`, read as a table cell's) are stored as the same rich text: the same
- * text with the same formatting, links, mentions, and line breaks.
+ * text with the same formatting, links, mentions, and line breaks. `lines` is for a text value,
+ * whose cell shows a line break as `<br>` (see `cellText`).
  */
-export function sameMarkdown(seen: string, given: string): boolean {
+export function sameMarkdown(seen: string, given: string, { lines = false } = {}): boolean {
   try {
-    return JSON.stringify(inline(seen.trim())) === JSON.stringify(cellText(given.trim()))
+    // A value is written without the spaces around it, but with a line break at its end.
+    const stored = lines ? seen.replace(/^[ \t]+|[ \t]+$/g, '') : seen.trim()
+    return JSON.stringify(inline(stored)) === JSON.stringify(cellText(given.trim(), lines))
   } catch (err) {
     if (err instanceof MarkdownError) return false
     throw err
@@ -153,7 +162,7 @@ export function propertyValue(def: PropertyDef, input: PropertyInput): RichText 
       return richValue(oneLine(text), name)
     case 'text':
       if (typeof text !== 'string' && typeof text !== 'number') throw new PropertyError(`${name} must be text.`)
-      return typeof text === 'string' ? richValue(text, name) : [[String(text)]]
+      return typeof text === 'string' ? richValue(text, name, { lines: true }) : [[String(text)]]
     case 'url':
     case 'email':
     case 'phone_number':

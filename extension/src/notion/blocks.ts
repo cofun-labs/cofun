@@ -375,11 +375,12 @@ export function inline(text: string, marks: Mark[] = []): RichText {
         return inline(m[1], [...marks, ['a', m[2]]])
       },
     },
-    { re: /\*\*\*(.+?)\*\*\*/, run: (m) => inline(m[1], [...marks, ['b'], ['i']]) },
-    { re: /\*\*(.+?)\*\*/, run: (m) => inline(m[1], [...marks, ['b']]) },
-    { re: /~~(.+?)~~/, run: (m) => inline(m[1], [...marks, ['s']]) },
-    { re: /(?<![*\w])\*(?![\s*])(.+?)(?<![\s*])\*(?![*\w])/, run: (m) => inline(m[1], [...marks, ['i']]) },
-    { re: /(?<![_\w])_(?![\s_])(.+?)(?<![\s_])_(?![_\w])/, run: (m) => inline(m[1], [...marks, ['i']]) },
+    // Bold, italic, and strikethrough may hold a line break (a `<br>` in what read_page shows).
+    { re: /\*\*\*([\s\S]+?)\*\*\*/, run: (m) => inline(m[1], [...marks, ['b'], ['i']]) },
+    { re: /\*\*([\s\S]+?)\*\*/, run: (m) => inline(m[1], [...marks, ['b']]) },
+    { re: /~~([\s\S]+?)~~/, run: (m) => inline(m[1], [...marks, ['s']]) },
+    { re: /(?<![*\w])\*(?![\s*])([\s\S]+?)(?<![\s*])\*(?![*\w])/, run: (m) => inline(m[1], [...marks, ['i']]) },
+    { re: /(?<![_\w])_(?![\s_])([\s\S]+?)(?<![\s_])_(?![_\w])/, run: (m) => inline(m[1], [...marks, ['i']]) },
   ]
   const out: RichText = []
   let rest = text
@@ -521,7 +522,7 @@ export function notionLanguage(language: string): string {
  * read_page's <br> for a line break inside a block; an escaped \\<br> is the literal text, and so is
  * a <br> inside inline code (read_page ends the code before a line break).
  */
-function breaks(text: string): string {
+export function breaks(text: string): string {
   // A backtick behind an odd number of backslashes is a literal backtick, not the start of code.
   const code = new RegExp(`(?<!(?:^|[^\\\\])(?:\\\\\\\\)*\\\\)${CODE_SPAN.source}`, 'g')
   let out = ''
