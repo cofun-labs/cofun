@@ -17,7 +17,7 @@ export type ReplyPart =
 
 /** What the side panel shows at one moment. */
 export interface PanelSnapshot {
-  /** The composer is there: Copilot is signed in and the chat is showing. */
+  /** The composer is there: Notico is signed in and the chat is showing. */
   ready: boolean
   /** The Send button reads Stop: a reply is still coming. */
   busy: boolean

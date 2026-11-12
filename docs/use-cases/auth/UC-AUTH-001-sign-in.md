@@ -1,4 +1,4 @@
-# UC-AUTH-001: Sign in to use Copilot
+# UC-AUTH-001: Sign in to use Notico
 
 ## Behavior
 

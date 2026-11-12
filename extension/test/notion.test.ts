@@ -127,7 +127,7 @@ describe('requests', () => {
     tab.injectionError = 'Cannot access contents of the page. Extension manifest must request permission.'
     const err = await notionError(client.loadPage(PAGE))
     expect(err.code).toBe('notion_error')
-    expect(err.message).toMatch(/^Notion Copilot is not allowed to access this Notion site\./)
+    expect(err.message).toMatch(/^Notico is not allowed to access this Notion site\./)
     expect(err.unanswered).toBe(false)
     // A change that was never sent is not an unknown outcome.
     const write = await notionError(client.submitTransaction(SPACE, [], 'test'))

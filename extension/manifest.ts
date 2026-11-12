@@ -68,9 +68,9 @@ export function buildManifest(env: ManifestEnv, version: string) {
   const clerkHost = clerkFrontendApi(env.VITE_CLERK_PUBLISHABLE_KEY ?? '')
   return {
     manifest_version: 3,
-    name: 'Copilot for Notion',
+    name: 'Notico: AI copilot for Notion',
     version,
-    description: 'A side panel AI helper for Notion pages.',
+    description: 'An AI side panel that reads and edits your Notion pages with you.',
     ...(env.CRX_PUBLIC_KEY ? { key: env.CRX_PUBLIC_KEY } : {}),
     icons: ICONS,
     // scripting: Notion calls run in the user's Notion tab (src/notion/tab.ts).
@@ -97,6 +97,6 @@ export function buildManifest(env: ManifestEnv, version: string) {
     // One panel per window, on every tab: it stays open, with its conversation, as the user
     // switches tabs. The Notion tools work only while the current tab is on Notion.
     side_panel: { default_path: 'sidepanel.html' },
-    action: { default_title: 'Open Copilot for Notion', default_icon: ICONS },
+    action: { default_title: 'Open Notico', default_icon: ICONS },
   }
 }

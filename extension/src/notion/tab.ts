@@ -77,7 +77,7 @@ export async function activeNotionTab(): Promise<NotionTab> {
 const TAB_RELOADED = 'The Notion tab reloaded or went to another page before Notion answered this request.'
 
 const NO_SITE_ACCESS =
-  "Notion Copilot is not allowed to access this Notion site. Allow it in the extension's site access settings and try again"
+  "Notico is not allowed to access this Notion site. Allow it in the extension's site access settings and try again"
 
 /** How long one Notion request may take before it fails, so a stalled request can't hang a tool. */
 const REQUEST_TIMEOUT_MS = 30_000

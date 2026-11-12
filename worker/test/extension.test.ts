@@ -105,7 +105,7 @@ function makeAgent(
   return new CopilotAgent({
     apiUrl: 'https://nk.example.dev/v1/',
     getToken: options.getToken ?? (async () => token),
-    systemPrompt: options.systemPrompt ?? 'You are Notion Copilot.',
+    systemPrompt: options.systemPrompt ?? 'You are Notico.',
     tools: options.tools ?? [pageTool().tool],
     maxSteps: options.maxSteps,
     history: options.history,
@@ -170,7 +170,7 @@ describe('extension agent against the worker', () => {
       expect.objectContaining({ type: 'function', function: expect.objectContaining({ name: 'lookup_page' }) }),
     ])
     expect(sentMessages(0)).toEqual([
-      { role: 'system', content: 'You are Notion Copilot.' },
+      { role: 'system', content: 'You are Notico.' },
       { role: 'user', content: 'hi' },
     ])
   })
@@ -934,7 +934,7 @@ describe('extension agent against the worker', () => {
     await ask(agent, 'first')
     await ask(agent, 'second')
     expect(sentMessages(1).map((m) => [m.role, m.content])).toEqual([
-      ['system', 'You are Notion Copilot.'],
+      ['system', 'You are Notico.'],
       ['user', 'first'],
       ['assistant', '你好 来自 worker '],
       ['user', 'second'],
@@ -947,7 +947,7 @@ describe('extension agent against the worker', () => {
     await ask(agent, 'second')
     await ask(agent, 'third')
     expect(sentMessages(2).map((m) => [m.role, m.content])).toEqual([
-      ['system', 'You are Notion Copilot.'],
+      ['system', 'You are Notico.'],
       ['user', 'second'],
       ['assistant', '你好 来自 worker '],
       ['user', 'third'],
@@ -989,12 +989,7 @@ describe('extension agent against the worker', () => {
     release()
     expect((await first).result).toEqual({ status: 'done' })
     await ask(agent, 'third')
-    expect(sentMessages(1).map((m) => m.content)).toEqual([
-      'You are Notion Copilot.',
-      'first',
-      '你好 来自 worker ',
-      'third',
-    ])
+    expect(sentMessages(1).map((m) => m.content)).toEqual(['You are Notico.', 'first', '你好 来自 worker ', 'third'])
   })
 
   it('trimming never separates tool results from their call', async () => {
@@ -1083,7 +1078,7 @@ describe('extension agent against the worker', () => {
     ai.failWith = undefined
     expect((await ask(agent, 'Did it work?')).result).toEqual({ status: 'done' })
     expect(sentMessages(2)).toEqual([
-      { role: 'system', content: 'You are Notion Copilot.' },
+      { role: 'system', content: 'You are Notico.' },
       { role: 'user', content: 'Rename this page to Q4 Plan' },
       {
         role: 'assistant',
@@ -1124,7 +1119,7 @@ describe('extension agent against the worker', () => {
       expect(a.history()).toEqual([])
       await ask(a, 'hi')
       expect(ai.calls.at(-1)!.inputs.messages).toEqual([
-        { role: 'system', content: 'You are Notion Copilot.' },
+        { role: 'system', content: 'You are Notico.' },
         { role: 'user', content: 'hi' },
       ])
     }
@@ -1422,12 +1417,7 @@ describe('extension agent against the worker', () => {
     expect(result).toEqual({ status: 'done' })
     expect(reply).toBe('你好 来自 worker ')
     expect(ai.calls.map((c) => c.model)).toEqual([MODEL, '@cf/test/next-model'])
-    expect(sentMessages(1).map((m) => m.content)).toEqual([
-      'You are Notion Copilot.',
-      'first',
-      '你好 来自 worker ',
-      'second',
-    ])
+    expect(sentMessages(1).map((m) => m.content)).toEqual(['You are Notico.', 'first', '你好 来自 worker ', 'second'])
   })
 
   it('new chat works at once even if the old question has a tool that never finishes', async () => {
@@ -1459,7 +1449,7 @@ describe('extension agent against the worker', () => {
     release()
     expect(await a).toEqual({ status: 'stopped' })
     await ask(agent, 'C')
-    expect(sentMessages(1).map((m) => m.content)).toEqual(['You are Notion Copilot.', 'B', '你好 来自 worker ', 'C'])
+    expect(sentMessages(1).map((m) => m.content)).toEqual(['You are Notico.', 'B', '你好 来自 worker ', 'C'])
   })
 
   it('a model change after a tool ran is reported, not retried', async () => {
@@ -1474,7 +1464,7 @@ describe('extension agent against the worker', () => {
     ai.script = [{ toolCalls: [{ name: 'lookup_page', arguments: '{}' }] }, { reply: 'Q4 Roadmap' }]
     const agent = makeAgent({ tools: [changing] })
     const { result } = await ask(agent, 'Which page am I on?')
-    expect(result).toEqual({ status: 'error', message: 'Copilot was just updated. Ask it to continue.' })
+    expect(result).toEqual({ status: 'error', message: 'Notico was just updated. Ask it to continue.' })
     // The tool ran once; running the question again would run it again.
     expect(runs).toHaveLength(1)
     // The new model was looked up, so asking again works straight away.
@@ -1506,7 +1496,7 @@ describe('extension agent against the worker', () => {
     const { result } = await ask(resumed, 'And its URL?')
     expect(result).toEqual({ status: 'done' })
     expect(sentMessages(2)).toEqual([
-      { role: 'system', content: 'You are Notion Copilot.' },
+      { role: 'system', content: 'You are Notico.' },
       { role: 'user', content: 'Which page am I on?' },
       {
         role: 'assistant',
@@ -1532,7 +1522,7 @@ describe('extension agent against the worker', () => {
     await agent.reset()
     expect(agent.history()).toEqual([])
     await ask(agent, 'hi')
-    expect(sentMessages(1).map((m) => m.content)).toEqual(['You are Notion Copilot.', 'hi'])
+    expect(sentMessages(1).map((m) => m.content)).toEqual(['You are Notico.', 'hi'])
 
     // Switching from one saved session to another leaves the first one behind.
     await agent.reset(earlier)
@@ -1541,7 +1531,7 @@ describe('extension agent against the worker', () => {
       { role: 'assistant', parts: [{ type: 'text', text: 'ok' }] },
     ])
     await ask(agent, 'more')
-    expect(sentMessages(2).map((m) => m.content)).toEqual(['You are Notion Copilot.', 'other', 'ok', 'more'])
+    expect(sentMessages(2).map((m) => m.content)).toEqual(['You are Notico.', 'other', 'ok', 'more'])
   })
 
   it('a saved session keeps how each tool call ended', async () => {
@@ -1595,12 +1585,7 @@ describe('extension agent against the worker', () => {
 
     env.DAILY_REQUEST_LIMIT = '100'
     await ask(agent, 'third')
-    expect(sentMessages(1).map((m) => m.content)).toEqual([
-      'You are Notion Copilot.',
-      'first',
-      '你好 来自 worker ',
-      'third',
-    ])
+    expect(sentMessages(1).map((m) => m.content)).toEqual(['You are Notico.', 'first', '你好 来自 worker ', 'third'])
   })
 
   it('[UC-CHAT-001-S06] a question answered with one tool uses two requests from the quota', async () => {
@@ -1653,7 +1638,7 @@ describe('extension agent against the worker', () => {
     // The kept tool is part of the conversation; it does not run again.
     expect(runs).toHaveLength(1)
     expect(sentMessages(1)).toEqual([
-      { role: 'system', content: 'You are Notion Copilot.' },
+      { role: 'system', content: 'You are Notico.' },
       { role: 'user', content: 'Which page am I on?' },
       {
         role: 'assistant',
@@ -1986,7 +1971,7 @@ describe('Notion requests per question', () => {
     }
     ai.script = [{ toolCalls: [LOOK_UP] }, { reply: 'Done.' }]
     const { result } = await ask(makeAgent({ tools: [changing], meter: countNotionRequests }), 'Look it up')
-    expect(result).toEqual({ status: 'error', message: 'Copilot was just updated. Ask it to continue.', requests: 2 })
+    expect(result).toEqual({ status: 'error', message: 'Notico was just updated. Ask it to continue.', requests: 2 })
   })
 
   for (const endpoint of ['enqueueTask', 'deleteContentRecords'] as const) {

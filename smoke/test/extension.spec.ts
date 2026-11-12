@@ -160,7 +160,7 @@ test('the side panel page shows the signed-out state', async ({ context, backgro
 
   await page.goto(`chrome-extension://${new URL(background.url()).host}/sidepanel.html`)
 
-  await expect(page.getByText('Copilot for Notion', { exact: true })).toBeVisible()
+  await expect(page.getByText('Notico', { exact: true })).toBeVisible()
   await expect(page.getByRole('button', { name: 'Sign in' })).toBeVisible()
   // The button alone proves little: it also shows when Clerk fails to load. So check that Clerk
   // itself is ready, with the signed-out client from the fixture, after asking only once.

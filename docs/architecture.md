@@ -1,6 +1,6 @@
 # Architecture
 
-How Copilot for Notion is built, and why. For setup and deployment see [development.md](development.md); for the workflow and coding rules see [AGENTS.md](../AGENTS.md).
+How Notico is built, and why. For setup and deployment see [development.md](development.md); for the workflow and coding rules see [AGENTS.md](../AGENTS.md).
 
 ```
 ┌──────────────────────── Chrome ─────────────────────────┐
