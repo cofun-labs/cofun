@@ -492,7 +492,6 @@ export function Chat({ userId }: { userId: string }) {
 
         {listOpen && (
           <div className="sheet-layer">
-            <div className="scrim" onClick={closeList} />
             <Sessions
               store={store}
               currentId={current?.id}

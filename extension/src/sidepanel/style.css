@@ -16,7 +16,6 @@
   --ok: #1f8a5b;
   --error: #c4352f;
   --error-bg: #fdecea;
-  --scrim: rgb(8 14 26 / 0.45);
   --shadow: rgb(35 131 226 / 0.12);
   color-scheme: light dark;
 }
@@ -34,7 +33,6 @@
     --ok: #4cc38a;
     --error: #f0766b;
     --error-bg: #3a1d1f;
-    --scrim: rgb(0 0 0 / 0.55);
     --shadow: rgb(0 0 0 / 0.3);
   }
 }
@@ -479,37 +477,29 @@ header .title {
   stroke-width: 1.8;
 }
 
-/* The session list: a sheet over the chat */
+/* The session list: covers the chat below the header */
 
 .sheet-layer {
   position: absolute;
   inset: 0;
   display: flex;
   flex-direction: column;
-  justify-content: flex-end;
-}
-
-.scrim {
-  position: absolute;
-  inset: 0;
-  background: var(--scrim);
 }
 
 #sessions {
-  position: relative;
-  height: 82%;
+  flex: 1;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   gap: 10px;
   padding: 14px 12px 12px;
-  border-radius: 20px 20px 0 0;
   background: var(--bg);
-  animation: sheet-up 0.18s ease-out;
+  animation: sheet-up 0.15s ease-out;
 }
 
 @keyframes sheet-up {
   from {
-    transform: translateY(24px);
+    transform: translateY(8px);
     opacity: 0;
   }
 }
@@ -597,7 +587,7 @@ header .title {
 }
 
 .session-list li:hover {
-  background: color-mix(in srgb, var(--tint) 60%, transparent);
+  background: color-mix(in srgb, var(--tint) 40%, transparent);
 }
 
 .session-list li.current {
