@@ -230,8 +230,8 @@ export const readPage = defineTool({
   describe: (args, result) =>
     on(
       READ,
-      // A database's name is plain text already.
-      result?.includes('\nThis page is a database:')
+      // A database's name is plain text already; the header (up to the first blank line) says which it is.
+      result?.split('\n\n')[0].includes('\nThis page is a database:')
         ? named(result, /^Page: (.+) \^[0-9a-f]+(?:\n|$)/)
         : plainTitle(named(result, /^Page: (.+) \^[0-9a-f]+(?:\n|$)/) ?? '') || undefined,
       // Arguments that don't parse may have named another page.
@@ -823,7 +823,7 @@ export const listPages = defineTool({
   describe: (args) =>
     args?.page
       ? { verb: LIST, what: 'the pages under a page' }
-      : on(LIST, args?.section, 'the pages in the sidebar', 'the pages in'),
+      : on(LIST, args?.section, 'the sidebar', 'the pages in'),
   args: z.strictObject({
     page: z.string().describe('URL or id of a page to list the pages under. Leave out for the top level.').optional(),
     section: z
@@ -1216,7 +1216,7 @@ export const createPage = defineTool({
     "(the open page's URL, or another page), and the new page goes at its end; or a " +
     'database, and the new page is a row of it, with `properties` set by name (values as query_database shows ' +
     "them; options must exist). Returns the new page's id and URL.",
-  describe: (args) => on(CREATE, args?.title.trim() || undefined, 'a page', 'the page'),
+  describe: (args) => on(CREATE, plainTitle(args?.title ?? '').trim() || undefined, 'a page', 'the page'),
   args: z.strictObject({
     title: z.string({ error: TITLE_EMPTY }).describe(`The new page's title, on one line: ${INLINE_MARKDOWN}.`),
     markdown: z.string().describe("The page's content, as Markdown. Leave out for an empty page.").optional(),

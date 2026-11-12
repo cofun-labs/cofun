@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { NESTED_MAX } from '../src/notion/api'
 import { inline } from '../src/notion/blocks'
 import { blockRefs, codeSpan, splitIntoParts } from '../src/notion/markdown'
-import { PART_CHARS, editPage, readPage } from '../src/tools'
+import { PART_CHARS, createPage, editPage, listPages, readPage } from '../src/tools'
 import { FakeNotionTab, PAGE, PAGE_URL, SPACE, USER, fixture, restoreGlobals } from './notion-tab'
 
 afterEach(restoreGlobals)
@@ -1019,6 +1019,18 @@ describe('how the side panel describes a read', () => {
     ['C:\\temp', 'C:\\temp'],
   ])('shows the title %s as %s', (markdown, shown) => {
     expect(readPage.describe({}, `Page: ${markdown} ^${id}`)).toMatchObject({ name: shown })
+  })
+
+  it('says what other tools did in words that read right', () => {
+    expect(listPages.describe({}, undefined)).toEqual({ verb: expect.anything(), what: 'the pages in the sidebar' })
+    expect(listPages.describe({ section: 'Private' }, undefined)).toMatchObject({
+      what: 'the pages in',
+      name: 'Private',
+    })
+    expect(createPage.describe({ title: '**Q3** plan', parent: PAGE }, undefined)).toMatchObject({
+      what: 'the page',
+      name: 'Q3 plan',
+    })
   })
 
   it("shows a database's name as it is: it is plain text", () => {
