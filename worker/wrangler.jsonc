@@ -17,12 +17,17 @@
   // Workers AI: models run on Cloudflare, no external API keys.
   "ai": { "binding": "AI" },
 
-  // Per-user credit ledgers (grants, what is left of them, and when they expire), one Durable
-  // Object per Clerk user id. v2 drops UserQuota, the daily request counters credits replaced.
-  "durable_objects": { "bindings": [{ "name": "CREDITS", "class_name": "UserCredits" }] },
+  // Every user's credits: grants and charges, with the schema in migrations/ (see docs/development.md).
+  // The database is found by its name on the deploying account, so its id is not kept here.
+  "d1_databases": [{ "binding": "DB", "database_name": "notico-db", "migrations_dir": "migrations" }],
+
+  // Durable Object classes this worker had. v2 dropped UserQuota, the daily request counters credits
+  // replaced; v3 drops UserCredits, the per-user credit ledgers D1 replaced. Deleting a class deletes
+  // its data.
   "migrations": [
     { "tag": "v1", "new_sqlite_classes": ["UserQuota"] },
     { "tag": "v2", "new_sqlite_classes": ["UserCredits"], "deleted_classes": ["UserQuota"] },
+    { "tag": "v3", "deleted_classes": ["UserCredits"] },
   ],
 
   // Per-request usage records (sizes, token counts, credits charged, outcome; never message content).

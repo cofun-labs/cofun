@@ -5,7 +5,7 @@ import type { ContentfulStatusCode } from 'hono/utils/http-status'
 import * as z from './zod'
 import { adminPage } from './admin'
 import { loginPage } from './login'
-import { FREE_CREDITS, MICRO_CREDITS, type Account, type CreditsNamespace } from './credits'
+import { FREE_CREDITS, Ledger, MICRO_CREDITS, type Account, type Balance, type Database } from './credits'
 import { costOf, estimateCachedTokens, estimateTokens, priceOf, type Tokens } from './pricing'
 import {
   finishReason,
@@ -33,8 +33,8 @@ export interface Env {
   CLERK_JWT_KEY?: string
   /** Comma-separated origins allowed to call, e.g. chrome-extension://<id>. Checked against the token's azp claim. */
   CLERK_AUTHORIZED_PARTIES?: string
-  /** Per-user credit ledgers (Durable Object namespace). */
-  CREDITS: CreditsNamespace
+  /** Every user's credits: their grants and charges (D1 database, schema in migrations/). */
+  DB: Database
   /** Per-request usage records (Workers Analytics Engine dataset). Never holds message content. */
   USAGE: UsageDataset
 }
@@ -465,14 +465,9 @@ export function createApp({
   const accountJson = (userId: string, account: Account) => ({ userId, ...account })
 
   /** Runs one call on a user's ledger, or refuses the request with `message` when the call fails. */
-  async function onLedger(
-    c: Ctx,
-    userId: string,
-    message: string,
-    call: (ledger: ReturnType<CreditsNamespace['getByName']>) => Promise<Account>,
-  ) {
+  async function onLedger(c: Ctx, userId: string, message: string, call: (ledger: Ledger) => Promise<Account>) {
     try {
-      return await call(c.env.CREDITS.getByName(userId))
+      return await call(new Ledger(c.env.DB, userId))
     } catch (err) {
       logError(`admin ledger call failed: ${errorSummary(err)}`)
       throw new HttpError(503, 'credits_unavailable', message)
@@ -563,39 +558,29 @@ export function createApp({
 
     // Charged after use: a call goes ahead while the user has credits, and its cost is taken when
     // the reply ends. The last call may take the balance below zero; the next grant pays that back
-    // first. Until it ends, the most the call can cost is set aside, so calls sent at once can't all
-    // start on the same credits: the overdraft stays below one call's cost. The most a call can
-    // cost: every character of input a token of new input, and every token of reply it may write.
+    // first. Calls sent at once all start on the same balance, so together they can overspend by
+    // more than one call: accepted, since one call costs little and what was overspent is owed.
     const maxTokens = max_tokens ?? MAX_TOKENS
-    const most = costOf(price, { promptTokens: chars, cachedTokens: 0, completionTokens: maxTokens })
-    const ledger = c.env.CREDITS.getByName(c.get('userId'))
-    let reserved: Awaited<ReturnType<typeof ledger.reserve>>
+    const ledger = new Ledger(c.env.DB, c.get('userId'))
+    let balance: Balance
     try {
-      reserved = await ledger.reserve(now().getTime(), most)
+      balance = await ledger.open(now().getTime())
     } catch (err) {
       logError(`credit check failed: ${errorSummary(err)}`)
       throw new HttpError(503, 'credits_unavailable', 'Credits are unavailable, try again in a moment.')
     }
-    if ('refused' in reserved) {
-      if (reserved.refused === 'held') {
-        throw new HttpError(
-          429,
-          'credits_in_use',
-          'Your remaining credits are set aside for replies that are still being written. Try again when they are done.',
-        )
-      }
+    if (balance.balance <= 0) {
       throw new HttpError(
         402,
         'out_of_credits',
-        `You have no credits left. Your next ${FREE_CREDITS} free credits arrive on ${utcMinute(reserved.nextGrantAt)}.`,
+        `You have no credits left. Your next ${FREE_CREDITS} free credits arrive on ${utcMinute(balance.nextGrantAt)}.`,
       )
     }
-    const { hold } = reserved
 
     /**
-     * Ends the call in the ledger, once: takes what it cost from the user's credits, gives back what
-     * was set aside for it, and puts the cost in the usage record. A charge that fails is logged
-     * and the reply still goes out: the model has already answered.
+     * Charges the call, once: takes what it cost from the user's credits, keeps the record of the
+     * call with its tokens, and puts the cost in the usage record. A charge that fails is logged and
+     * the reply still goes out: the model has already answered.
      */
     let charged = false
     const chargeFor = async (tokens: Tokens) => {
@@ -603,18 +588,14 @@ export function createApp({
       charged = true
       const cost = costOf(price, tokens)
       try {
-        await ledger.charge(now().getTime(), cost, hold)
+        await ledger.charge(now().getTime(), { model: c.env.MODEL, ...tokens, cost })
         usage.microCredits = cost
       } catch (err) {
         logError(`credit charge failed: ${errorSummary(err)}`)
       }
     }
 
-    const call = callModel().catch(async (err: unknown) => {
-      // A call that failed costs nothing, and what was set aside for it is free again.
-      await chargeFor({ promptTokens: 0, cachedTokens: 0, completionTokens: 0 })
-      throw err
-    })
+    const call = callModel()
     // The model is called and the call charged even if the client goes away meanwhile: a request
     // dropped right after it was sent must not be a free call.
     c.executionCtx.waitUntil(call.catch(() => {}))

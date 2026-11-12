@@ -1,13 +1,8 @@
 import type { AiBinding } from '../src/app'
-import {
-  charge,
-  grant,
-  read,
-  reserve,
-  type CreditLedger,
-  type CreditsNamespace,
-  type LedgerStorage,
-} from '../src/credits'
+import { readdirSync, readFileSync } from 'node:fs'
+import { join } from 'node:path'
+import { DatabaseSync } from 'node:sqlite'
+import type { Database, Statement } from '../src/credits'
 import type { UsageDataset } from '../src/usage'
 
 type Call = { model: string; inputs: Record<string, unknown>; options?: Record<string, unknown> }
@@ -187,49 +182,78 @@ function sliced(
   })
 }
 
-/** In-memory storage with the same get/put shape as Durable Object storage. */
-class MemoryStorage implements LedgerStorage {
-  private data = new Map<string, unknown>()
-  async get(key: string) {
-    return structuredClone(this.data.get(key))
+/** The schema as deployed: every migration file, in order. */
+const MIGRATIONS = join(import.meta.dirname, '../migrations')
+
+/**
+ * Stands in for the D1 binding (env.DB) with the slice of its interface the worker uses, over a
+ * real SQLite database in memory with the deployed schema: the worker's own SQL is what runs. Like
+ * D1, a batch is one transaction, and batches run one at a time.
+ */
+export class FakeD1Database implements Database {
+  readonly sqlite = new DatabaseSync(':memory:')
+  /** When set, every statement fails with this error, like an unreachable database. */
+  failWith?: Error
+  /** When set, statements whose SQL contains `sql` fail with `error`, and nothing else does. */
+  failOn?: { sql: string; error: Error }
+
+  constructor() {
+    const files = readdirSync(MIGRATIONS)
+      .filter((name) => name.endsWith('.sql'))
+      .toSorted()
+    for (const file of files) this.sqlite.exec(readFileSync(join(MIGRATIONS, file), 'utf8'))
   }
-  async put(key: string, value: unknown) {
-    this.data.set(key, structuredClone(value))
+
+  prepare(query: string): FakeStatement {
+    return new FakeStatement(this, query, [])
+  }
+
+  async batch(statements: Statement[]): Promise<{ results: unknown[] }[]> {
+    const own = statements.map((statement) => {
+      if (!(statement instanceof FakeStatement)) throw new Error('not a statement of this database')
+      return statement
+    })
+    this.sqlite.exec('BEGIN')
+    try {
+      const results = own.map((statement) => statement.runNow())
+      this.sqlite.exec('COMMIT')
+      return results
+    } catch (err) {
+      this.sqlite.exec('ROLLBACK')
+      throw err
+    }
+  }
+
+  /** Every row of `table`, for tests that look at what was written. */
+  rows(table: 'grants' | 'charges'): Record<string, unknown>[] {
+    return this.sqlite.prepare(`SELECT * FROM ${table} ORDER BY id`).all()
+  }
+
+  failure(query: string): Error | undefined {
+    if (this.failWith) return this.failWith
+    if (this.failOn && query.includes(this.failOn.sql)) return this.failOn.error
   }
 }
 
-/**
- * Stands in for the UserCredits Durable Object namespace (env.CREDITS): one ledger per name,
- * running the worker's real ledger logic over in-memory storage.
- */
-export class FakeCreditsNamespace implements CreditsNamespace {
-  private storages = new Map<string, MemoryStorage>()
-  /** When set, every ledger call fails with this error, like an unavailable Durable Object. */
-  failWith?: Error
-  /** When set, charges fail with this error while a call can still be reserved. */
-  chargeFailWith?: Error
+class FakeStatement implements Statement {
+  constructor(
+    private readonly db: FakeD1Database,
+    private readonly query: string,
+    private readonly values: (string | number | null)[],
+  ) {}
 
-  getByName(name: string): CreditLedger {
-    let storage = this.storages.get(name)
-    if (!storage) this.storages.set(name, (storage = new MemoryStorage()))
-    return {
-      reserve: async (now, most) => {
-        if (this.failWith) throw this.failWith
-        return reserve(storage, now, most)
-      },
-      charge: async (now, cost, hold) => {
-        if (this.failWith ?? this.chargeFailWith) throw this.failWith ?? this.chargeFailWith
-        return charge(storage, now, cost, hold)
-      },
-      read: async (now) => {
-        if (this.failWith) throw this.failWith
-        return read(storage, now)
-      },
-      grant: async (now, manual) => {
-        if (this.failWith) throw this.failWith
-        return grant(storage, now, manual)
-      },
-    }
+  bind(...values: (string | number | null)[]): FakeStatement {
+    return new FakeStatement(this.db, this.query, values)
+  }
+
+  async all(): Promise<{ results: unknown[] }> {
+    return this.runNow()
+  }
+
+  runNow(): { results: unknown[] } {
+    const failure = this.db.failure(this.query)
+    if (failure) throw failure
+    return { results: this.db.sqlite.prepare(this.query).all(...this.values) }
   }
 }
 

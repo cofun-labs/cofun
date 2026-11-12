@@ -8,13 +8,7 @@ import { IDBFactory } from 'fake-indexeddb'
 import { vi } from 'vitest'
 import { createApp, type Env } from '../../worker/src/app'
 import { FakeClerk } from '../../worker/test/clerk'
-import {
-  FakeAiBinding,
-  FakeCreditsNamespace,
-  FakeExecutionContext,
-  FakeUsageDataset,
-  MODEL,
-} from '../../worker/test/fakes'
+import { FakeAiBinding, FakeD1Database, FakeExecutionContext, FakeUsageDataset, MODEL } from '../../worker/test/fakes'
 import type { FakeSession } from './clerk'
 import { restoreGlobals, type FakeNotionTab } from './notion-tab'
 
@@ -54,7 +48,7 @@ export class FakeBrowser {
 
     const env: Env = {
       AI: browser.ai,
-      CREDITS: new FakeCreditsNamespace(),
+      DB: new FakeD1Database(),
       USAGE: new FakeUsageDataset(),
       MODEL,
       CLERK_JWT_KEY: issuer.publicKeyPem,

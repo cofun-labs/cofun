@@ -4,7 +4,7 @@ import { FakeClerk } from './clerk'
 import {
   FAKE_COST,
   FakeAiBinding,
-  FakeCreditsNamespace,
+  FakeD1Database,
   FakeExecutionContext,
   FakeUsageDataset,
   MODEL,
@@ -29,7 +29,7 @@ const app = createApp({
 
 let clerk: FakeClerk
 let ai: FakeAiBinding
-let credits: FakeCreditsNamespace
+let db: FakeD1Database
 let env: Env
 /** An operator, signed in on the admin page. */
 let admin: string
@@ -47,7 +47,7 @@ beforeEach(async () => {
   clock = START
   env = {
     AI: ai,
-    CREDITS: (credits = new FakeCreditsNamespace()),
+    DB: (db = new FakeD1Database()),
     USAGE: new FakeUsageDataset(),
     MODEL,
     CLERK_JWT_KEY: clerk.publicKeyPem,
@@ -92,7 +92,6 @@ describe("UC-ADMIN-001 Look at an account's credits and grant credits by hand", 
       userId: 'user_alice',
       balance: 200 * CREDIT - FAKE_COST,
       debt: 0,
-      held: 0,
       grants: [
         {
           source: 'free',
@@ -213,7 +212,7 @@ describe("UC-ADMIN-001 Look at an account's credits and grant credits by hand", 
 
   it('[UC-ADMIN-001-S06] looking up and granting leave the free week to start when the user next asks', async () => {
     // An account the worker has not seen has nothing, and looking at it gives it nothing.
-    expect(await account('user_alice')).toEqual({ userId: 'user_alice', balance: 0, debt: 0, held: 0, grants: [] })
+    expect(await account('user_alice')).toEqual({ userId: 'user_alice', balance: 0, debt: 0, grants: [] })
     await grant('user_alice', { credits: 50, days: 30 })
     expect((await account('user_alice')).grants.map((g: any) => g.source)).toEqual(['manual'])
 
@@ -298,23 +297,8 @@ describe('admin API', () => {
     expect(adminLog).toEqual([])
   })
 
-  it('calls still running show as held credits', async () => {
-    let release = () => {}
-    ai.pause = { after: 16, until: new Promise<void>((resolve) => (release = resolve)) }
-    const res = await req('POST', '/v1/chat/completions', alice, {
-      messages: [{ role: 'user', content: 'hi' }],
-      stream: true,
-      max_tokens: 100,
-    })
-    // 2 characters of input at 300 micro-credits each, and 100 tokens of reply at 1200.
-    expect((await account('user_alice')).held).toBe(2 * 300 + 100 * 1200)
-    release()
-    await res.text()
-    expect((await account('user_alice')).held).toBe(0)
-  })
-
-  it('an unavailable ledger refuses the lookup and the grant, and nothing is logged as granted', async () => {
-    credits.failWith = new Error('Durable Object is overloaded')
+  it('an unreachable database refuses the lookup and the grant, and nothing is logged as granted', async () => {
+    db.failWith = new Error('D1_ERROR: Network connection lost.')
     const answers: [Response, string][] = [
       [await lookUp('user_alice'), 'Credits are unavailable, try again in a moment.'],
       // A grant that failed may have been written all the same: the admin is told to look, not to try again.
@@ -329,8 +313,8 @@ describe('admin API', () => {
     }
     expect(adminLog).toEqual([])
     expect(logged).toEqual([
-      'admin ledger call failed: Error: Durable Object is overloaded',
-      'admin ledger call failed: Error: Durable Object is overloaded',
+      'admin ledger call failed: Error: D1_ERROR: Network connection lost.',
+      'admin ledger call failed: Error: D1_ERROR: Network connection lost.',
     ])
   })
 

@@ -29,14 +29,7 @@ import { z } from '../../extension/src/zod'
 import { createApp, type Env } from '../src/app'
 import { priceOf } from '../src/pricing'
 import { FakeClerk } from './clerk'
-import {
-  FakeAiBinding,
-  FakeCreditsNamespace,
-  FakeExecutionContext,
-  FakeUsageDataset,
-  MODEL,
-  usageCosting,
-} from './fakes'
+import { FakeAiBinding, FakeD1Database, FakeExecutionContext, FakeUsageDataset, MODEL, usageCosting } from './fakes'
 import {
   FakeNotionTab,
   FakeStorage,
@@ -75,7 +68,7 @@ beforeEach(async () => {
   clock = new Date('2026-11-08T12:00:00Z')
   env = {
     AI: (ai = new FakeAiBinding('你好 来自 worker')),
-    CREDITS: new FakeCreditsNamespace(),
+    DB: new FakeD1Database(),
     USAGE: new FakeUsageDataset(),
     MODEL,
     CLERK_JWT_KEY: clerk.publicKeyPem,
