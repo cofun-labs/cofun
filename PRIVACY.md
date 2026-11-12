@@ -20,11 +20,11 @@ The extension sends requests to these hosts and no others. The extension's conte
 | Host | What is sent | Why |
 |---|---|---|
 | `www.notion.so`, `app.notion.com` | Requests to Notion's own API, sent from inside your Notion tab with that tab's session: reads, and the changes you ask for | To read and edit your pages. This is the same service your Notion tab already talks to |
-| `notion-copilot.kitfun.cc` (our worker) | Your Clerk session token, and for each question the conversation so far: your messages, the assistant's replies, the tool calls and their results (which contain the Notion content the assistant read), the open page's title and URL, and the assistant's instructions | To get the AI model's reply |
-| `clerk.kitfun.cc` (Clerk's Frontend API) | Your Clerk session, to load your account and get session tokens | Sign-in |
+| `api.cofun.cc` (our worker) | Your Clerk session token, and for each question the conversation so far: your messages, the assistant's replies, the tool calls and their results (which contain the Notion content the assistant read), the open page's title and URL, and the assistant's instructions | To get the AI model's reply |
+| `clerk.cofun.cc` (Clerk's Frontend API) | Your Clerk session, to load your account and get session tokens | Sign-in |
 | `img.clerk.com` (Clerk's image host) | A request for your account's avatar image | To show who is signed in |
 
-The extension also holds a host permission for `*.kitfun.cc`. It uses it for nothing but reading one cookie, and sends no requests to any host under it other than the worker and Clerk's Frontend API above: Chrome only lets an extension see a cookie when it has permission for the cookie's domain, and Clerk sets the cookie that says whether you are signed in on the sign-in page's parent domain.
+The extension also holds a host permission for `*.cofun.cc`. It uses it for nothing but reading one cookie, and sends no requests to any host under it other than the worker and Clerk's Frontend API above: Chrome only lets an extension see a cookie when it has permission for the cookie's domain, and Clerk sets the cookie that says whether you are signed in on the sign-in page's parent domain.
 
 Notion content never goes to Clerk. Your Notion session is never sent anywhere but Notion: requests to Notion are made inside your Notion tab, and the worker and Clerk do not receive your Notion cookies or credentials. The extension reads your Notion user id from the tab to make changes as you.
 
@@ -32,7 +32,7 @@ As with any web service, Cloudflare (which runs the worker) and Clerk see your I
 
 ### The sign-in page
 
-"Sign in" opens `https://notion-copilot.kitfun.cc/login` in a normal tab. That page runs Clerk's sign-in code, loaded from Clerk's Frontend API (`clerk.kitfun.cc`). What you enter there (an email address, or a Google sign-in) goes to Clerk and to the sign-in provider you choose, not to our worker. Clerk holds your account: your email address, name, and avatar as the sign-in provider gives them. See [Clerk's privacy policy](https://clerk.com/legal/privacy).
+"Sign in" opens `https://api.cofun.cc/login` in a normal tab. That page runs Clerk's sign-in code, loaded from Clerk's Frontend API (`clerk.cofun.cc`). What you enter there (an email address, or a Google sign-in) goes to Clerk and to the sign-in provider you choose, not to our worker. Clerk holds your account: your email address, name, and avatar as the sign-in provider gives them. See [Clerk's privacy policy](https://clerk.com/legal/privacy).
 
 ## What the worker does with it
 

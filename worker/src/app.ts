@@ -487,7 +487,7 @@ export function createApp({ now = () => new Date(), logError = (line) => console
             id: c.env.AI_GATEWAY_ID,
             collectLog: false,
             skipCache: true,
-            metadata: { app: 'notion-copilot', user: c.get('userId') },
+            metadata: { app: 'notico', user: c.get('userId') },
           },
         }
       : undefined
