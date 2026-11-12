@@ -42,10 +42,13 @@ function CreditsLines({ state }: { state: CreditsState }) {
  */
 export function AccountMenu({
   credits,
+  onOpen,
   onSettings,
   buttonRef,
 }: {
   credits: CreditsState
+  /** Called each time the menu opens, so the credits in it can be read again. */
+  onOpen: () => void
   onSettings: () => void
   /** The avatar button, so whoever closes the settings page can put the focus back on it. */
   buttonRef: Ref<HTMLButtonElement>
@@ -108,20 +111,24 @@ export function AccountMenu({
         title="Account"
         aria-haspopup="menu"
         aria-expanded={open}
-        onClick={() => setOpen(!open)}
+        onClick={() => {
+          if (!open) onOpen()
+          setOpen(!open)
+        }}
       >
         <Avatar {...account} />
       </button>
       {open && (
         <div className="account-popover">
-          <div className="account-who">
+          <div className="account-who" id="account-who">
             <p className="account-name">{account.name}</p>
             {account.email && account.email !== account.name && <p className="account-detail">{account.email}</p>}
           </div>
-          <div className="account-balance">
+          <div className="account-balance" id="account-balance">
             <CreditsLines state={credits} />
           </div>
-          <div ref={menuRef} role="menu" aria-label="Account">
+          {/* Opening moves the focus to the first item: the description tells a screen reader who is signed in and the credits above it. */}
+          <div ref={menuRef} role="menu" aria-label="Account" aria-describedby="account-who account-balance">
             <button
               role="menuitem"
               tabIndex={-1}

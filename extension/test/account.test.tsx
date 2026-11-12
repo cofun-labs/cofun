@@ -129,7 +129,10 @@ describe('the account menu', () => {
 
   it('works with the keyboard', async () => {
     const { user } = await openPanel()
-    accountButton().focus()
+    // Closing the menu with Escape leaves the focus on the avatar: the keyboard takes over from there.
+    await user.click(accountButton())
+    await user.keyboard('{Escape}')
+    expect(accountButton()).toHaveFocus()
 
     await user.keyboard('{Enter}')
     expect(screen.getByRole('menuitem', { name: 'Settings' })).toHaveFocus()
@@ -165,6 +168,25 @@ describe('the account menu', () => {
 
     await user.keyboard('{Escape}')
     expect(screen.queryByRole('heading', { name: 'Settings' })).not.toBeInTheDocument()
+  })
+
+  it('reads the credits again each time it opens, and tells a screen reader who is signed in and the credits', async () => {
+    const browser = await FakeBrowser.start(pageTab(), { signedInAs: 'user_alice' })
+    // The read made when the panel loads fails.
+    browser.db.failOn = { sql: 'GROUP BY day', error: new Error('D1_ERROR: Network connection lost.') }
+    await browser.openPanel()
+    const user = userEvent.setup()
+    await openMenu(user)
+    expect(await screen.findByText('Credits unavailable')).toBeVisible()
+    await user.keyboard('{Escape}')
+
+    browser.db.failOn = undefined
+    await openMenu(user)
+
+    expect(await screen.findByText('200 credits left')).toBeVisible()
+    expect(screen.getByRole('menu', { name: 'Account' })).toHaveAccessibleDescription(
+      'Alice Example alice@example.com 200 credits left Valid for 7 days from your next question',
+    )
   })
 
   it('closes when the user clicks elsewhere', async () => {

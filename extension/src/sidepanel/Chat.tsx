@@ -137,7 +137,9 @@ export function Chat({ userId }: { userId: string }) {
 
   /**
    * Reads the user's credits from the worker: when the panel loads, after each question, and when
-   * the settings page opens, so the account menu is current whenever it is opened. A read that
+   * the account menu or the settings page opens. The read after a question keeps the menu current
+   * without a wait; the one on opening catches what that read can miss: a reply the user stopped is
+   * charged after the panel has gone on, and another window may have spent credits. A read that
    * fails never touches the chat: the menu and the settings page say the credits are unavailable.
    */
   async function readCredits() {
@@ -448,7 +450,12 @@ export function Chat({ userId }: { userId: string }) {
         <button className="icon-button" aria-label="New chat" title="New chat" onClick={() => switchTo()}>
           <Icon name="compose" />
         </button>
-        <AccountMenu credits={credits} onSettings={openSettings} buttonRef={accountButtonRef} />
+        <AccountMenu
+          credits={credits}
+          onOpen={() => void readCredits()}
+          onSettings={openSettings}
+          buttonRef={accountButtonRef}
+        />
       </Header>
 
       <div className="stage">
