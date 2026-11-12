@@ -1,4 +1,4 @@
-import { memo, useId, type ComponentProps } from 'react'
+import { createContext, memo, useContext, useId, type ComponentProps } from 'react'
 import ReactMarkdown, { type Components } from 'react-markdown'
 import remarkBreaks from 'remark-breaks'
 import remarkGfm from 'remark-gfm'
@@ -14,21 +14,24 @@ function webUrl(url: string | undefined): string | undefined {
   }
 }
 
+/** Set inside a link: a link can't hold another, so an image there is only its text. */
+const InLink = createContext(false)
+
 function Link({ href, children, ...rest }: ComponentProps<'a'>) {
   // A footnote and its way back are links within the reply. Their other attributes (an id, and what
   // a screen reader says, such as "Back to reference 1") come from the Markdown renderer, not the
-  // model: Markdown links carry none.
+  // model: a Markdown link can carry only a title, which is text.
   if (href?.startsWith('#'))
     return (
       <a href={href} {...rest}>
-        {children}
+        <InLink.Provider value>{children}</InLink.Provider>
       </a>
     )
   const url = webUrl(href)
   if (!url) return <span>{children}</span>
   return (
     <a href={url} target="_blank" rel="noopener noreferrer">
-      {children}
+      <InLink.Provider value>{children}</InLink.Provider>
     </a>
   )
 }
@@ -38,9 +41,10 @@ function Link({ href, children, ...rest }: ComponentProps<'a'>) {
  * extension contacts only the hosts in PRIVACY.md. Its alt text stands in, linked to the image.
  */
 function Image({ src, alt }: ComponentProps<'img'>) {
+  const inLink = useContext(InLink)
   const text = alt || 'Image'
   const url = webUrl(typeof src === 'string' ? src : undefined)
-  return url ? <Link href={url}>{text}</Link> : <span>{text}</span>
+  return url && !inLink ? <Link href={url}>{text}</Link> : <span>{text}</span>
 }
 
 /** Tables scroll sideways inside the reply instead of widening it. */
