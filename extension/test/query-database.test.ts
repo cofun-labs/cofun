@@ -352,7 +352,10 @@ describe('query_database open page', () => {
         recordMap: {},
       })
       .install()
-    expect(await query()).toContain(`Database: Tasks ^${hex(DB)}`)
+    const result = await query()
+    expect(result).toContain(`Database: Tasks ^${hex(DB)}`)
+    // The side panel counts what the call touched from this result.
+    expect(queryDatabase.touched({}, result)).toEqual({ read: [hex(DB)] })
     expect(tab.sent.at(-1)!.body).toMatchObject({ collectionView: { id: VIEW } })
   })
 

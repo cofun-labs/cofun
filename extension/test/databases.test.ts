@@ -163,6 +163,8 @@ describe('UC-NOTION-012 create and change databases', () => {
         `URL: https://app.notion.com/p/${hex(dbId)}`,
       ].join('\n'),
     )
+    // The side panel counts what the call touched from this result.
+    expect(createDatabase.touched({}, String(result))).toEqual({ changed: [hex(dbId)] })
 
     // It is a database the other tools can use: a row goes in with its options.
     await createPage.run({ parent: hex(dbId), title: 'Launch post', properties: { Stage: 'Draft' } })
@@ -255,6 +257,7 @@ describe('UC-NOTION-012 create and change databases', () => {
     )
     // The side panel names the database from this result.
     expect(updateDatabaseSchema.describe({}, String(result))).toMatchObject({ name: 'Content' })
+    expect(updateDatabaseSchema.touched({}, String(result))).toEqual({ changed: [hex(DB)] })
   })
 
   it('[UC-NOTION-012-S02] changes the open database without asking, in few Notion requests', async () => {
