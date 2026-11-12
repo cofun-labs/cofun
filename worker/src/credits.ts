@@ -28,11 +28,25 @@ const Grant = z.object({
 })
 
 /**
+ * Credits set aside for a model call that is still running: the most it can cost. A call is charged
+ * only when it ends, so without holds any number of calls sent at once would all start on the same
+ * balance. A hold is dropped when its call is charged, or after HOLD_MS if that charge never came.
+ */
+const Hold = z.object({ id: z.int(), amount: z.int().min(0), expiresAt: z.number() })
+const HOLD_MS = 15 * 60 * 1000
+
+/**
  * One user's ledger. The balance is not one number: it is what is left of the grants that have not
  * expired, less `debt`, what the user spent beyond them. There is debt only while no grant has
  * anything left, and a new grant pays it back first.
  */
-const Ledger = z.object({ grants: z.array(Grant), debt: z.int().min(0) })
+const Ledger = z.object({
+  grants: z.array(Grant),
+  debt: z.int().min(0),
+  holds: z.array(Hold),
+  /** The id the next hold gets. */
+  nextHold: z.int(),
+})
 type Ledger = z.output<typeof Ledger>
 
 /** What a user can spend now, in micro-credits (below zero after an overdraft), and when their next free grant can arrive. */
@@ -41,12 +55,27 @@ export interface Balance {
   nextGrantAt: number
 }
 
+/**
+ * Whether a model call may start. It may when the user has credits left that calls already running
+ * have not set aside; `hold` then names what was set aside for this one, to give back with its
+ * charge. Otherwise `refused` says why: `empty` when there are no credits, `held` when the credits
+ * that are left are all set aside for calls still running.
+ */
+export type Reservation = Balance & ({ hold: number } | { refused: 'empty' | 'held' })
+
 /** One user's credit ledger. Callers pass the time, in ms, so every decision uses the request's own clock. */
 export interface CreditLedger {
-  /** The user's balance at `now`, after giving them the weekly free grant if they have none. */
-  balance(now: number): Promise<Balance>
-  /** Takes `cost` micro-credits from the user, from the grant that expires first. Returns the balance after it. */
-  charge(now: number, cost: number): Promise<Balance>
+  /**
+   * Asks to start a model call that costs at most `most` micro-credits, after giving the user the
+   * weekly free grant if they have none. The balance may end below zero by less than one call's
+   * `most`, however many calls run at once.
+   */
+  reserve(now: number, most: number): Promise<Reservation>
+  /**
+   * Ends the call `hold` was reserved for: takes `cost` micro-credits from the user, from the grant
+   * that expires first, and drops the hold. A call that cost nothing passes 0.
+   */
+  charge(now: number, cost: number, hold: number): Promise<Balance>
 }
 
 /** Finds a user's ledger. In production this is the Durable Object namespace binding. */
@@ -66,8 +95,9 @@ const KEY = 'ledger'
  */
 function settle(stored: Ledger | undefined, now: number): { ledger: Ledger; changed: boolean } {
   const grants = (stored?.grants ?? []).filter((grant) => grant.expiresAt > now)
+  const holds = (stored?.holds ?? []).filter((hold) => hold.expiresAt > now)
   let debt = stored?.debt ?? 0
-  let changed = !stored || grants.length !== stored.grants.length
+  let changed = !stored || grants.length !== stored.grants.length || holds.length !== stored.holds.length
   // A grant with nothing left still marks the user's week: the next one arrives when it expires.
   if (!grants.some((grant) => grant.source === 'free')) {
     const repaid = Math.min(debt, FREE_GRANT)
@@ -81,7 +111,7 @@ function settle(stored: Ledger | undefined, now: number): { ledger: Ledger; chan
     })
     changed = true
   }
-  return { ledger: { grants, debt }, changed }
+  return { ledger: { grants, debt, holds, nextHold: stored?.nextHold ?? 1 }, changed }
 }
 
 function balanceOf(ledger: Ledger): Balance {
@@ -101,15 +131,25 @@ async function load(storage: LedgerStorage, now: number) {
  * The ledger's logic for one user, kept apart from the Durable Object class so tests can run it
  * over in-memory storage. A Durable Object handles one request at a time, so get-then-put is safe.
  */
-export async function balance(storage: LedgerStorage, now: number): Promise<Balance> {
+export async function reserve(storage: LedgerStorage, now: number, most: number): Promise<Reservation> {
+  if (!Number.isSafeInteger(most) || most < 0) throw new Error('a hold must be a non-negative integer')
   const { ledger, changed } = await load(storage, now)
-  if (changed) await storage.put(KEY, ledger)
-  return balanceOf(ledger)
+  const current = balanceOf(ledger)
+  const held = ledger.holds.reduce((sum, hold) => sum + hold.amount, 0)
+  if (current.balance - held <= 0) {
+    if (changed) await storage.put(KEY, ledger)
+    return { ...current, refused: current.balance <= 0 ? 'empty' : 'held' }
+  }
+  const hold = ledger.nextHold++
+  ledger.holds.push({ id: hold, amount: most, expiresAt: now + HOLD_MS })
+  await storage.put(KEY, ledger)
+  return { ...current, hold }
 }
 
-export async function charge(storage: LedgerStorage, now: number, cost: number): Promise<Balance> {
+export async function charge(storage: LedgerStorage, now: number, cost: number, hold: number): Promise<Balance> {
   if (!Number.isSafeInteger(cost) || cost < 0) throw new Error('a charge must be a non-negative integer')
-  const { ledger, changed } = await load(storage, now)
+  const { ledger } = await load(storage, now)
+  ledger.holds = ledger.holds.filter((kept) => kept.id !== hold)
   let rest = cost
   for (const grant of ledger.grants.toSorted((a, b) => a.expiresAt - b.expiresAt)) {
     const spent = Math.min(grant.left, rest)
@@ -118,6 +158,6 @@ export async function charge(storage: LedgerStorage, now: number, cost: number):
   }
   // The call was already answered: what the grants don't cover is owed, and comes out of the next grant.
   ledger.debt += rest
-  if (changed || cost > 0) await storage.put(KEY, ledger)
+  await storage.put(KEY, ledger)
   return balanceOf(ledger)
 }

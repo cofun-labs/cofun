@@ -1,5 +1,5 @@
 import type { AiBinding } from '../src/app'
-import { balance, charge, type CreditLedger, type CreditsNamespace, type LedgerStorage } from '../src/credits'
+import { charge, reserve, type CreditLedger, type CreditsNamespace, type LedgerStorage } from '../src/credits'
 import type { UsageDataset } from '../src/usage'
 
 type Call = { model: string; inputs: Record<string, unknown>; options?: Record<string, unknown> }
@@ -198,20 +198,20 @@ export class FakeCreditsNamespace implements CreditsNamespace {
   private storages = new Map<string, MemoryStorage>()
   /** When set, every ledger call fails with this error, like an unavailable Durable Object. */
   failWith?: Error
-  /** When set, charges fail with this error while balance checks still work. */
+  /** When set, charges fail with this error while a call can still be reserved. */
   chargeFailWith?: Error
 
   getByName(name: string): CreditLedger {
     let storage = this.storages.get(name)
     if (!storage) this.storages.set(name, (storage = new MemoryStorage()))
     return {
-      balance: async (now) => {
+      reserve: async (now, most) => {
         if (this.failWith) throw this.failWith
-        return balance(storage, now)
+        return reserve(storage, now, most)
       },
-      charge: async (now, cost) => {
+      charge: async (now, cost, hold) => {
         if (this.failWith ?? this.chargeFailWith) throw this.failWith ?? this.chargeFailWith
-        return charge(storage, now, cost)
+        return charge(storage, now, cost, hold)
       },
     }
   }

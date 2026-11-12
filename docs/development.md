@@ -57,7 +57,7 @@ Every chat request that passes auth leaves one data point in the `notico_api_usa
 |---|---|
 | `index1` | Clerk user id |
 | `blob1` | model |
-| `blob2` | outcome: `ok`, `incomplete` (stream ended early), `cancelled`, `stream_error`, or the error code returned (`out_of_credits`, `provider_error`, `credits_unavailable`, `bad_request`, …). A stream whose model reports an error is `provider_error` |
+| `blob2` | outcome: `ok`, `incomplete` (stream ended early), `cancelled`, `stream_error`, or the error code returned (`out_of_credits`, `credits_in_use`, `provider_error`, `credits_unavailable`, `bad_request`, …). A stream whose model reports an error is `provider_error` |
 | `blob3` | finish reason: `stop`, `length`, `content_filter`, `tool_calls`, `other`, or empty |
 | `blob4` | `stream` or `sync` |
 | `double1` … `double5` | messages, input characters (message text, tool calls, and tool definitions), prompt tokens, completion tokens, duration in ms (until the request was refused, the reply was sent, or a stream ended; for streams it includes the time the client spends reading) |

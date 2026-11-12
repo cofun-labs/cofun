@@ -154,6 +154,8 @@ export interface StreamSummary {
   finishReason: string
   /** Characters of reply the stream carried: what a cut-short reply's tokens are estimated from. */
   replyChars: number
+  /** Whether the stream said it was done (`data: [DONE]`): its totals, if it sends any, have arrived. */
+  ended: boolean
 }
 
 /**
@@ -181,6 +183,7 @@ export function meterStream(
     completionTokens: 0,
     finishReason: '',
     replyChars: 0,
+    ended: false,
   }
   let partial = ''
   let finished = false
@@ -198,7 +201,7 @@ export function meterStream(
   const scan = (line: string) => {
     if (!line.startsWith('data:')) return
     const data = line.slice(5).trim()
-    if (data === '[DONE]') sawDone = true
+    if (data === '[DONE]') sawDone = summary.ended = true
     if (!data || data === '[DONE]') return
     let parsed: unknown
     try {

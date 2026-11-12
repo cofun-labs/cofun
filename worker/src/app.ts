@@ -462,121 +462,152 @@ export function createApp({
     const price = priceFor(c.env.MODEL)
     if (!price) throw new HttpError(503, 'not_configured', 'MODEL has no price')
 
-    // Charged after use: a call goes ahead while the balance is above zero, and its cost is taken
-    // when the reply ends. The last call may take the balance below zero; the next grant pays that
-    // back first. The check comes once the request is valid and before the model is called.
+    // Charged after use: a call goes ahead while the user has credits, and its cost is taken when
+    // the reply ends. The last call may take the balance below zero; the next grant pays that back
+    // first. Until it ends, the most the call can cost is set aside, so calls sent at once can't all
+    // start on the same credits: the overdraft stays below one call's cost. The most a call can
+    // cost: every character of input a token of new input, and every token of reply it may write.
+    const maxTokens = max_tokens ?? MAX_TOKENS
+    const most = costOf(price, { promptTokens: chars, cachedTokens: 0, completionTokens: maxTokens })
     const ledger = c.env.CREDITS.getByName(c.get('userId'))
-    let credits: Awaited<ReturnType<typeof ledger.balance>>
+    let reserved: Awaited<ReturnType<typeof ledger.reserve>>
     try {
-      credits = await ledger.balance(now().getTime())
+      reserved = await ledger.reserve(now().getTime(), most)
     } catch (err) {
-      console.error('credit check failed', err)
+      logError(`credit check failed: ${errorSummary(err)}`)
       throw new HttpError(503, 'credits_unavailable', 'Credits are unavailable, try again in a moment.')
     }
-    if (credits.balance <= 0) {
+    if ('refused' in reserved) {
+      if (reserved.refused === 'held') {
+        throw new HttpError(
+          429,
+          'credits_in_use',
+          'Your remaining credits are set aside for replies that are still being written. Try again when they are done.',
+        )
+      }
       throw new HttpError(
         402,
         'out_of_credits',
-        `You have no credits left. Your next ${FREE_CREDITS} free credits arrive on ${utcMinute(credits.nextGrantAt)}.`,
+        `You have no credits left. Your next ${FREE_CREDITS} free credits arrive on ${utcMinute(reserved.nextGrantAt)}.`,
       )
     }
+    const { hold } = reserved
 
     /**
-     * Takes what the call cost from the user's credits, and puts it in the usage record. A charge
-     * that fails is logged and the reply still goes out: the model has already answered.
+     * Ends the call in the ledger, once: takes what it cost from the user's credits, gives back what
+     * was set aside for it, and puts the cost in the usage record. A charge that fails is logged
+     * and the reply still goes out: the model has already answered.
      */
+    let charged = false
     const chargeFor = async (tokens: Tokens) => {
+      if (charged) return
+      charged = true
       const cost = costOf(price, tokens)
-      if (cost === 0) return
       try {
-        await ledger.charge(now().getTime(), cost)
+        await ledger.charge(now().getTime(), cost, hold)
         usage.microCredits = cost
       } catch (err) {
-        console.error('credit charge failed', err)
+        logError(`credit charge failed: ${errorSummary(err)}`)
       }
     }
 
-    // Pass only the fields the model needs; drop anything else a client added.
-    const inputs: Record<string, unknown> = { ...modelInputs }
-    // Without an explicit limit, models fall back to their own default, which can be
-    // small enough to cut replies short.
-    inputs.max_tokens = max_tokens ?? MAX_TOKENS
-    if (stream === true) {
-      inputs.stream = true
-      // Ask for token usage in the final chunk, so streamed replies can be metered too.
-      inputs.stream_options = { include_usage: true }
-    }
-    // collectLog: false keeps prompts and replies out of the gateway logs, and skipCache: true
-    // keeps them out of its cache even if caching is turned on in the dashboard. The gateway's
-    // analytics (requests, tokens, cost, metadata) still work.
-    const options = c.env.AI_GATEWAY_ID
-      ? {
-          gateway: {
-            id: c.env.AI_GATEWAY_ID,
-            collectLog: false,
-            skipCache: true,
-            metadata: { app: 'notico', user: c.get('userId') },
-          },
-        }
-      : undefined
-
-    let out: unknown
     try {
-      out = await c.env.AI.run(c.env.MODEL, inputs, options)
+      return await callModel()
     } catch (err) {
-      // A summary goes to Workers Logs, not to the client. Never log the error itself: nothing
-      // shows that what the provider returns can't quote the request.
-      logError(`model call failed: ${errorSummary(err)}`)
-      throw new HttpError(502, 'provider_error', 'the model is unavailable, try again later')
+      // A call that failed costs nothing, and what was set aside for it is free again.
+      await chargeFor({ promptTokens: 0, cachedTokens: 0, completionTokens: 0 })
+      throw err
     }
 
-    if (stream === true) {
-      // Workers AI already streams OpenAI-style SSE; pass it through, reading usage on the way.
-      if (!isStream(out)) throw new Error('the model returned no stream')
-      const settle = async (outcome: string, summary: StreamSummary) => {
-        const { promptTokens, cachedTokens, completionTokens } = summary
-        const tokens: Tokens = { promptTokens, cachedTokens, completionTokens }
-        // A reply the user stopped, or a stream that broke off, costs what it used. Its totals come
-        // in the stream's last chunks, which never arrived, so they are estimated, never below what
-        // the stream did report: the prompt from the size of the input when no chunk gave it, the
-        // reply from the characters that were streamed. Nothing says how much of the prompt was
-        // read from the cache, so all of it is charged as new input.
-        if (outcome === 'cancelled' || outcome === 'incomplete' || outcome === 'stream_error') {
-          tokens.promptTokens ||= estimateTokens(chars)
-          tokens.cachedTokens = 0
-          tokens.completionTokens = Math.max(tokens.completionTokens, estimateTokens(summary.replyChars))
-        }
-        usage.promptTokens = tokens.promptTokens
-        usage.cachedTokens = tokens.cachedTokens
-        usage.completionTokens = tokens.completionTokens
-        usage.finishReason = summary.finishReason
-        await chargeFor(tokens)
-        record(outcome)
+    async function callModel(): Promise<Response> {
+      // Pass only the fields the model needs; drop anything else a client added.
+      const inputs: Record<string, unknown> = { ...modelInputs }
+      // Without an explicit limit, models fall back to their own default, which can be
+      // small enough to cut replies short.
+      inputs.max_tokens = maxTokens
+      if (stream === true) {
+        inputs.stream = true
+        // Ask for token usage in the final chunk, so streamed replies can be metered too.
+        inputs.stream_options = { include_usage: true }
       }
-      const metered = meterStream(
-        out,
-        (outcome, summary) => {
-          const settled = settle(outcome, summary)
-          // A client that went away must not take the charge with it.
-          c.executionCtx.waitUntil(settled)
-          return settled
-        },
-        (err) => logError(`model stream failed: ${errorSummary(err)}`),
-      )
-      return new Response(metered, {
-        headers: { 'content-type': 'text/event-stream', 'cache-control': 'no-cache' },
-      })
+      // collectLog: false keeps prompts and replies out of the gateway logs, and skipCache: true
+      // keeps them out of its cache even if caching is turned on in the dashboard. The gateway's
+      // analytics (requests, tokens, cost, metadata) still work.
+      const options = c.env.AI_GATEWAY_ID
+        ? {
+            gateway: {
+              id: c.env.AI_GATEWAY_ID,
+              collectLog: false,
+              skipCache: true,
+              metadata: { app: 'notico', user: c.get('userId') },
+            },
+          }
+        : undefined
+
+      let out: unknown
+      try {
+        out = await c.env.AI.run(c.env.MODEL, inputs, options)
+      } catch (err) {
+        // A summary goes to Workers Logs, not to the client. Never log the error itself: nothing
+        // shows that what the provider returns can't quote the request.
+        logError(`model call failed: ${errorSummary(err)}`)
+        throw new HttpError(502, 'provider_error', 'the model is unavailable, try again later')
+      }
+
+      if (stream === true) {
+        // Workers AI already streams OpenAI-style SSE; pass it through, reading usage on the way.
+        if (!isStream(out)) throw new Error('the model returned no stream')
+        const settle = async (outcome: string, summary: StreamSummary) => {
+          const { promptTokens, cachedTokens, completionTokens } = summary
+          const tokens: Tokens = { promptTokens, cachedTokens, completionTokens }
+          // A reply the user stopped, or a stream that broke off, costs what it used. Its totals come
+          // in the stream's last chunks, which never arrived, so they are estimated, never below what
+          // the stream did report: the prompt from the size of the input when no chunk gave it, the
+          // reply from the characters that were streamed. Nothing says how much of the prompt was
+          // read from the cache, so all of it is charged as new input.
+          // Two cases cost what the stream reported and no more. One that ran to its end has its
+          // totals, even when the client stopped reading right there. And one that broke off before
+          // it reported or carried anything is a call that failed without usage: it costs nothing.
+          // (A reply the user stopped that early is still charged its prompt: the model was reading it.)
+          const cutShort = outcome === 'cancelled' || outcome === 'incomplete' || outcome === 'stream_error'
+          const nothing = outcome !== 'cancelled' && !promptTokens && !completionTokens && !summary.replyChars
+          if (cutShort && !summary.ended && !nothing) {
+            tokens.promptTokens ||= estimateTokens(chars)
+            tokens.cachedTokens = 0
+            tokens.completionTokens = Math.max(tokens.completionTokens, estimateTokens(summary.replyChars))
+          }
+          usage.promptTokens = tokens.promptTokens
+          usage.cachedTokens = tokens.cachedTokens
+          usage.completionTokens = tokens.completionTokens
+          usage.finishReason = summary.finishReason
+          await chargeFor(tokens)
+          record(outcome)
+        }
+        const metered = meterStream(
+          out,
+          (outcome, summary) => {
+            const settled = settle(outcome, summary)
+            // A client that went away must not take the charge with it.
+            c.executionCtx.waitUntil(settled)
+            return settled
+          },
+          (err) => logError(`model stream failed: ${errorSummary(err)}`),
+        )
+        return new Response(metered, {
+          headers: { 'content-type': 'text/event-stream', 'cache-control': 'no-cache' },
+        })
+      }
+      const reply = replyInfo(out)
+      const tokens = tokensOf(reply?.usage)
+      Object.assign(usage, tokens)
+      usage.finishReason = finishReason(reply?.finish_reason)
+      // The reply as the model gave it. Build the response first: if that throws, the request is
+      // recorded once, as internal, and nothing is charged.
+      const res = c.newResponse(JSON.stringify(out), 200, { 'content-type': 'application/json' })
+      await chargeFor(tokens)
+      record('ok')
+      return res
     }
-    const reply = replyInfo(out)
-    const tokens = tokensOf(reply?.usage)
-    Object.assign(usage, tokens)
-    usage.finishReason = finishReason(reply?.finish_reason)
-    // The reply as the model gave it. Build the response first: if that throws, the request is
-    // recorded once, as internal, and nothing is charged.
-    const res = c.newResponse(JSON.stringify(out), 200, { 'content-type': 'application/json' })
-    await chargeFor(tokens)
-    record('ok')
-    return res
   }
 
   return app

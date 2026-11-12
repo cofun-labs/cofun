@@ -320,6 +320,85 @@ describe('UC-CHAT-001 credits', () => {
     ])
   })
 
+  it('[UC-CHAT-001-S16] calls sent at once go ahead only while credits cover them', async () => {
+    repliesCost(190)
+    await chat(token)
+    // 10 credits are left. A reply still being written has the most it can cost set aside, which
+    // is more than that, so a second call sent meanwhile is refused.
+    const first = await chat(token, { messages: hi, stream: true })
+    const second = await chat(token, { messages: hi, stream: true })
+    expect(second.status).toBe(429)
+    const { error } = await json(second)
+    expect(error.code).toBe('credits_in_use')
+    expect(error.message).toContain('Try again when they are done')
+    expect(ai.calls).toHaveLength(2)
+    // Once the first reply ends it is charged, and the user is out of credits.
+    await first.text()
+    await refused(await chat(token))
+    expect(ai.calls).toHaveLength(2)
+  })
+
+  it('with credits to cover them, calls sent at once all go ahead', async () => {
+    const replies = [
+      await chat(token, { messages: hi, stream: true }),
+      await chat(token, { messages: hi, stream: true }),
+    ]
+    expect(replies.map((res) => res.status)).toEqual([200, 200])
+    for (const res of replies) await res.text()
+    expect(records().map((r) => r.microCredits)).toEqual([FAKE_COST, FAKE_COST])
+  })
+
+  it('what was set aside for a call that failed is free again', async () => {
+    repliesCost(190)
+    await chat(token)
+    ai.failWith = new Error('capacity')
+    expect((await chat(token)).status).toBe(502)
+    ai.failWith = undefined
+    expect((await chat(token)).status).toBe(200)
+  })
+
+  it('what was set aside for a call whose charge was lost is free again after 15 minutes', async () => {
+    repliesCost(190)
+    await chat(token)
+    credits.chargeFailWith = new Error('Durable Object reset')
+    expect((await chat(token)).status).toBe(200)
+    credits.chargeFailWith = undefined
+    expect((await chat(token)).status).toBe(429)
+    later(15 * 60 * 1000)
+    expect((await chat(token)).status).toBe(200)
+  })
+
+  it('a stream that ended before the client stopped reading is charged its totals, not an estimate', async () => {
+    ai.usage = { prompt_tokens: 1000, completion_tokens: 5, prompt_tokens_details: { cached_tokens: 900 } }
+    const res = await chat(token, { messages: hi, stream: true })
+    const reader = res.body!.getReader()
+    const decoder = new TextDecoder()
+    let text = ''
+    while (!text.includes('[DONE]\n')) text += decoder.decode((await reader.read()).value, { stream: true })
+    await reader.cancel()
+    expect(records()).toEqual([
+      expect.objectContaining({
+        outcome: 'cancelled',
+        promptTokens: 1000,
+        cachedTokens: 900,
+        completionTokens: 5,
+        microCredits: 100 * 300 + 900 * 6 + 5 * 1200,
+      }),
+    ])
+  })
+
+  it('a stream that breaks off before it reports or carries anything costs nothing', async () => {
+    ai.rawSse = ''
+    await (await chat(token, { messages: hi, stream: true })).text()
+    ai.rawSse = undefined
+    ai.streamFailWith = new Error('connection reset')
+    await (await chat(token, { messages: hi, stream: true })).text().catch(() => {})
+    expect(records().map((r) => [r.outcome, r.promptTokens, r.microCredits])).toEqual([
+      ['incomplete', 0, 0],
+      ['stream_error', 0, 0],
+    ])
+  })
+
   it('a call is charged what its tokens cost', async () => {
     await chat(token)
     expect(records()[0]).toMatchObject({ cachedTokens: 0, microCredits: FAKE_COST })
