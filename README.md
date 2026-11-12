@@ -66,3 +66,7 @@ Copilot for Notion is an independent open-source project. It is not made or endo
 - [Development](docs/development.md): build and load the extension, run the checks, and deploy your own worker.
 - [AGENTS.md](AGENTS.md): the issue → PR → review → merge workflow and coding rules.
 - [BDD](docs/bdd.md) and [use cases](docs/use-cases): the product behavior contract and how it is tested.
+
+## License
+
+Copyright 2026 Cofun Labs. The code is licensed under the [Apache License 2.0](LICENSE). The license does not cover the Notico and Cofun names or their icons.
