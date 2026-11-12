@@ -17,7 +17,8 @@
   // Workers AI: models run on Cloudflare, no external API keys.
   "ai": { "binding": "AI" },
 
-  // Every user's credits: grants and charges, with the schema in migrations/ (see docs/development.md).
+  // Every user's credits: grants, and model calls with what each cost; the schema is in migrations/
+  // (see docs/development.md).
   // The database is found by its name on the deploying account, so its id is not kept here.
   "d1_databases": [{ "binding": "DB", "database_name": "notico-db", "migrations_dir": "migrations" }],
 

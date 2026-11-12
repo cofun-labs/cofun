@@ -19,7 +19,7 @@ The panel is open on every tab, but the tools work on the current tab only: the 
 
 Each fact is stored in one place, and everything else is worked out from it when it is read. A copy, a cache, or a stored total is added only when reading the source is too slow or costs too much, and then the code says which is the source and how the copy is kept right. Two stores that each hold part of the same fact drift apart, and then nobody can say which one is right.
 
-For example, a user's balance and what they owe are not stored: they are worked out from their grants and model calls each time. What a call cost is a column of the call's own row, not a second record. The one stored running value in the credits is what is left of each grant (`grants.left`): working it out would mean replaying every call in the order grants are spent, and it is written in the same transaction as the call that spends it.
+For example, a user's balance and what they owe are not stored: they are worked out from their grants and model calls each time. What a call cost is a column of the call's own row, not a second record. The one stored running value in the credits is what is left of each grant (`grants.left`): working it out would mean replaying every call in the order grants are spent, and it is written in the same transaction as the call that spends it. Data kept only for watching the service, such as the usage records in Analytics Engine, is not a copy in this sense: it describes requests in its own way (refused ones included), and nothing the service does reads it.
 
 ## Tech choices
 

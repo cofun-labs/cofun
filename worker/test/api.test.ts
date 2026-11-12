@@ -720,6 +720,9 @@ describe("UC-CHAT-002 Keep a record of each user's chat usage", () => {
     await chat(token, { messages, model: `${SECRET}-model` })
     expect(records()).toHaveLength(3)
     expect(JSON.stringify(usage.points)).not.toContain(SECRET)
+    // The database keeps every model call and grant without an end date: none of it holds the conversation.
+    expect(db.rows('model_calls')).toHaveLength(2)
+    expect(JSON.stringify([db.rows('grants'), db.rows('model_calls')])).not.toContain(SECRET)
     // The gateway is told not to keep prompts and replies in its logs or its cache.
     expect(
       ai.calls.every((call) => {
