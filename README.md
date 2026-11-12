@@ -69,4 +69,4 @@ Copilot for Notion is an independent open-source project. It is not made or endo
 
 ## License
 
-Copyright 2026 Cofun Labs. The code is licensed under the [Apache License 2.0](LICENSE). The license does not cover the Notico and Cofun names or their icons.
+Copyright 2026 Cofun Labs. The code is licensed under the [Apache License 2.0](LICENSE). It grants no rights to the Notico and Cofun names and logos as trademarks.
