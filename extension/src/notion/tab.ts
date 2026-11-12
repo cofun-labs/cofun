@@ -74,6 +74,8 @@ export async function activeNotionTab(): Promise<NotionTab> {
   return { tabId: tab.id, url: tab.url, pageId: pageIdFromUrl(tab.url), client }
 }
 
+const TAB_RELOADED = 'The Notion tab reloaded or went to another page before Notion answered this request.'
+
 const NO_SITE_ACCESS =
   "Notion Copilot is not allowed to access this Notion site. Allow it in the extension's site access settings and try again"
 
@@ -112,7 +114,8 @@ export function tabTransport(tabId: number): NotionTransport {
       })
     }
     // No result: the tab reloaded or navigated while the request was in flight.
-    if (!result) throw new NotionError('no_notion_tab', NO_NOTION_TAB, { unanswered: true })
+    // It may still be on Notion, so this doesn't send the user to a Notion page as NO_NOTION_TAB does.
+    if (!result) throw new NotionError('no_notion_tab', TAB_RELOADED, { unanswered: true })
     // The tab was no longer on Notion, so nothing was sent.
     if ('notOnNotion' in result) throw new NotionError('no_notion_tab', NO_NOTION_TAB)
     return result
