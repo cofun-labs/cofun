@@ -47,10 +47,13 @@ interface Grant {
   by?: string
 }
 
+/** Where a grant's credits came from, as `grants.source` holds it. */
+export const GrantSource = z.enum(['free', 'manual'])
+
 /** A row of `grants` as the ledger reads it. */
 const GrantRow = z
   .object({
-    source: z.enum(['free', 'manual']),
+    source: GrantSource,
     amount: z.int().min(0),
     left: z.int().min(0),
     granted_at: z.int(),
@@ -123,9 +126,21 @@ export interface ModelCall {
 // number of its own: it is what calls cost beyond the grants (`model_calls.owed`) less what grants
 // paid back (`grants.repaid`). In every statement below, ?1 is the user id and ?2 the time.
 
+/** What a user owes, as SQL. `user` is the SQL that names the user: a parameter, or a column of an outer query. */
+const debtOf = (user: string) =>
+  `((SELECT coalesce(sum(owed), 0) FROM model_calls WHERE user_id = ${user} AND owed > 0)
+  - (SELECT coalesce(sum(repaid), 0) FROM grants WHERE user_id = ${user}))`
+
+/**
+ * What a user can spend at the time `now`, as SQL: what is left of the grants that still count,
+ * less the debt. The one definition of a balance in SQL, for one user (below) and for a list of
+ * them (overview.ts). `user` and `now` are SQL: parameters, or columns of an outer query.
+ */
+export const balanceOf = (user: string, now: string) =>
+  `((SELECT coalesce(sum(left), 0) FROM grants WHERE user_id = ${user} AND expires_at > ${now}) - ${debtOf(user)})`
+
 /** What the user ?1 owes. */
-const DEBT = `((SELECT coalesce(sum(owed), 0) FROM model_calls WHERE user_id = ?1 AND owed > 0)
-  - (SELECT coalesce(sum(repaid), 0) FROM grants WHERE user_id = ?1))`
+const DEBT = debtOf('?1')
 
 /**
  * The weekly free grant, given lazily when a user shows up and has no free grant that still counts:
@@ -147,7 +162,7 @@ FROM (SELECT ${DEBT} AS debt)`
 
 /** What the user can spend (the grants that still count, less the debt), and when their free week ends. */
 const READ_BALANCE = `SELECT
-  (SELECT coalesce(sum(left), 0) FROM grants WHERE user_id = ?1 AND expires_at > ?2) - ${DEBT} AS balance,
+  ${balanceOf('?1', '?2')} AS balance,
   (SELECT max(expires_at) FROM grants WHERE user_id = ?1 AND source = 'free') AS next_grant_at`
 
 const READ_GRANTS = `SELECT source, amount, left, granted_at, expires_at, granted_by

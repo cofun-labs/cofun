@@ -51,7 +51,7 @@ Variables in `wrangler.jsonc`:
 
 ### Admin page
 
-`https://<worker domain>/admin` lets an admin look up one account's credits by Clerk user id (Clerk dashboard → Users shows it) and grant it credits by hand. See [Credits](architecture.md#credits) for how it is protected. There is no list of all accounts: the usage records below answer that.
+`https://<worker domain>/admin` shows an admin what was granted and spent across all accounts in a period of up to 92 days (in all, per day, and per account, the biggest spenders first), and lets them look up one account's credits by Clerk user id (Clerk dashboard → Users shows it) and grant it credits by hand. See [Credits](architecture.md#credits) for how it is protected and how the overview is read. Days are days on the clock of the computer the page is open on.
 
 Who is an admin is set in Clerk, on the instance whose keys the worker uses. Two settings, both in the Clerk dashboard:
 
@@ -123,7 +123,7 @@ cd worker
 pnpm exec wrangler d1 migrations apply notico-db --remote
 ```
 
-Query it with `cf d1 query <database id> --sql "…"`, or in the dashboard (Storage & databases → D1 → `notico-db` → Console). Amounts are micro-credits (divide by 1,000,000 for credits) and times are ms since the epoch. Rows are never deleted. Credits granted and spent per day, with calls and tokens, across all users:
+Query it with `cf d1 query <database id> --sql "…"`, or in the dashboard (Storage & databases → D1 → `notico-db` → Console). Amounts are micro-credits (divide by 1,000,000 for credits) and times are ms since the epoch. Rows are never deleted. The [admin page](#admin-page) shows what was granted and spent per day and per account; the queries below are for what it does not show, or for a longer time than it covers. D1 runs one query at a time, so a query over a whole table holds up charging while it runs: bound it by time where you can. Credits granted and spent per day, with calls and tokens, across all users:
 
 ```sql
 SELECT day, sum(granted) / 1e6 AS credits_granted, sum(spent) / 1e6 AS credits_spent,
