@@ -1,9 +1,9 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 880 300" role="img" aria-labelledby="title desc">
-  <title id="title">How Copilot for Notion works</title>
+  <title id="title">How Notico works</title>
   <desc id="desc">
-    Inside your browser, the Copilot side panel reads and edits pages through your own Notion tab,
+    Inside your browser, the Notico side panel reads and edits pages through your own Notion tab,
     which is already signed in as you. The side panel sends your question, together with what it
-    read to answer it, to the Copilot server, which checks who you are and passes the conversation
+    read to answer it, to the Notico server, which checks who you are and passes the conversation
     to an AI model. The server never talks to Notion.
   </desc>
   <style>
@@ -81,7 +81,7 @@
   <text class="muted" x="149.5" y="166" font-size="13">no integration to set up</text>
 
   <rect class="card" x="346.5" y="72.5" width="210" height="150" rx="10" />
-  <text x="451.5" y="120" font-size="16" font-weight="600">Copilot side panel</text>
+  <text x="451.5" y="120" font-size="16" font-weight="600">Notico side panel</text>
   <text class="muted" x="451.5" y="146" font-size="13">plans the steps, runs the tools</text>
   <text class="muted" x="451.5" y="166" font-size="13">keeps your chats on this device</text>
 
@@ -97,7 +97,7 @@
 
   <!-- Outside the browser -->
   <rect class="card" x="660.5" y="44.5" width="200" height="84" rx="10" />
-  <text x="760.5" y="80" font-size="16" font-weight="600">Copilot server</text>
+  <text x="760.5" y="80" font-size="16" font-weight="600">Notico server</text>
   <text class="muted" x="760.5" y="104" font-size="13">checks who you are</text>
 
   <rect class="card" x="660.5" y="178.5" width="200" height="84" rx="10" />

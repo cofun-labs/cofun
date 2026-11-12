@@ -155,7 +155,7 @@ export async function openPanel(browser: Browser, state: State, notion: Target):
     },
     { ms: 20_000, onTimeout: () => new E2eError('The side panel did not finish loading.') },
   )
-  if (!snap.ready) throw new E2eError('Copilot is signed out in the side panel. Sign in by hand, then try again.')
+  if (!snap.ready) throw new E2eError('Notico is signed out in the side panel. Sign in by hand, then try again.')
   if (snap.busy) throw new E2eError('A reply is still running in the side panel; wait for it with pnpm e2e ask.')
   if (snap.replies > 0) await clickButton(panel, '.toolbar button', 'New chat')
   return panel
@@ -184,7 +184,7 @@ export async function ask(
   timeoutMs: number,
 ): Promise<AskResult> {
   let snap = await panel.evaluate(readPanel, [])
-  if (!snap.ready) throw new E2eError('Copilot is signed out in the side panel. Sign in by hand, then try again.')
+  if (!snap.ready) throw new E2eError('Notico is signed out in the side panel. Sign in by hand, then try again.')
   let expected = snap.replies
   if (question !== undefined) {
     if (snap.busy) {

@@ -22,7 +22,7 @@ export function loginPage(publishableKey: string): string {
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Sign in · Copilot for Notion</title>
+<title>Sign in · Notico</title>
 <style>
   :root { --bg: #f7f7f5; --fg: #1f1f1f; --muted: #6b6b6b; }
   @media (prefers-color-scheme: dark) { :root { --bg: #191919; --fg: #e6e6e6; --muted: #9b9b9b; } }
@@ -35,10 +35,10 @@ export function loginPage(publishableKey: string): string {
 </style>
 </head>
 <body>
-<h1>Copilot for Notion</h1>
+<h1>Notico</h1>
 <div id="sign-in"></div>
 <div id="signed-in">
-  <p>You're signed in. Go back to Notion and open the Copilot side panel.</p>
+  <p>You're signed in. Go back to Notion and open the Notico side panel.</p>
   <button id="sign-out">Sign out</button>
 </div>
 <script defer crossorigin="anonymous" src="https://${esc(fapi)}/npm/@clerk/ui@1/dist/ui.browser.js"></script>

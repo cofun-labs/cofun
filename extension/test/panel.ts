@@ -25,7 +25,7 @@ let clerk: Promise<FakeClerk> | undefined
 
 /**
  * A browser with the extension installed and one tab: its chrome.* APIs, its IndexedDB, who is
- * signed in to Copilot, and the worker the panel talks to. Lives for one test.
+ * signed in to Notico, and the worker the panel talks to. Lives for one test.
  */
 export class FakeBrowser {
   /** The model behind the worker; script its replies, and read what it was sent. */
@@ -38,7 +38,7 @@ export class FakeBrowser {
     private readonly session: FakeSession | undefined,
   ) {}
 
-  /** Starts a browser on `tab`, signed in to Copilot as `signedInAs` or signed out. */
+  /** Starts a browser on `tab`, signed in to Notico as `signedInAs` or signed out. */
   static async start(tab: FakeNotionTab, options: { signedInAs?: string } = {}): Promise<FakeBrowser> {
     vi.useFakeTimers({ toFake: ['Date'], now: START })
     const issuer = await (clerk ??= FakeClerk.create())

@@ -83,7 +83,7 @@ export function waitText(ms: number): string {
  * advice. The agent adds a line when changes may already have been made.
  */
 export function limitedStop(ms?: number): string {
-  return `Notion is turning requests away right now (too many requests, or too busy), so Notion Copilot stopped. Wait ${ms ? waitText(ms) : 'a minute'}, then ask again.`
+  return `Notion is turning requests away right now (too many requests, or too busy), so Notico stopped. Wait ${ms ? waitText(ms) : 'a minute'}, then ask again.`
 }
 
 /** `limitedStop` when Notion doesn't say how long to wait. */
@@ -91,7 +91,7 @@ export const LIMITED_STOP = limitedStop()
 
 /** For the user, when a question would send while the wait after Notion turned requests away is on. */
 export function coolingStop(ms: number): string {
-  return `Notion turned requests away a moment ago, so Notion Copilot is waiting before it sends more. Ask again in ${waitText(ms)}.`
+  return `Notion turned requests away a moment ago, so Notico is waiting before it sends more. Ask again in ${waitText(ms)}.`
 }
 
 /** Notion requests a question may make before the user is asked whether to go on, and how many more each yes allows. */
@@ -101,7 +101,7 @@ export const OVER_BUDGET =
   'Not sent: this question reached its budget of Notion requests, and the user chose to stop. Do not work around the budget, ' +
   'for example with fewer or smaller requests; tell the user what was done so far instead.'
 /** For the user, before what failed, when Notion fails in a way that isn't understood. */
-export const UNEXPECTED_STOP = "Stopped after a Notion failure Notion Copilot doesn't understand:"
+export const UNEXPECTED_STOP = "Stopped after a Notion failure Notico doesn't understand:"
 /** For the user, when Notion doesn't say whether a change was saved. */
 export const UNKNOWN_STOP = 'Stopped: Notion did not say whether a change was saved.'
 /** For the user, when they stop a question at its budget. */
@@ -844,7 +844,7 @@ export class NotionClient {
                 source: { ids: [page], spaceId },
                 destination: { type: 'block', parent: { table: 'block', id: parent, spaceId }, siblingId: page },
                 options: { appendNumericTitleSuffix: true },
-                userAction: 'Notion Copilot: duplicate_page',
+                userAction: 'Notico: duplicate_page',
               },
               cellRouting: { spaceIds: [spaceId] },
             },
@@ -935,7 +935,7 @@ export class NotionClient {
       })
       operations.push(op.touch(p.id))
     }
-    await this.submitTransaction(spaceId, operations, 'Notion Copilot: trash_page')
+    await this.submitTransaction(spaceId, operations, 'Notico: trash_page')
     try {
       // What Notion's own client sends after trashing; `permanentlyDelete` stays false, always.
       await this.request(

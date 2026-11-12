@@ -8,7 +8,7 @@ import { type Browser, type Target, sleep, until } from './cdp'
 
 /** The extension's id, fixed by the public key in the manifest. */
 export const EXTENSION_ID = 'fafkdcopddmegenpemnmjbnolhlbbfpf'
-export const EXTENSION_NAME = 'Copilot for Notion'
+export const EXTENSION_NAME = 'Notico: AI copilot for Notion'
 
 export interface ExtensionStatus {
   developerMode: boolean
@@ -51,7 +51,7 @@ export function isOurManifest(text: string): boolean {
 /**
  * Why a new build must not replace the loaded one, or undefined if it may. The manifest `key` fixes
  * the extension id; a build with another key (or none) would load as another extension, without the
- * shared profile's storage and Copilot sign-in.
+ * shared profile's storage and Notico sign-in.
  */
 export function replaceProblem(loaded: string, built: string): string | undefined {
   const key = (text: string) => manifestOf(text)?.key

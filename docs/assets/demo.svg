@@ -1,8 +1,8 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 880 500" role="img" aria-labelledby="title desc">
-  <title id="title">Copilot for Notion turning a page's notes into action items</title>
+  <title id="title">Notico turning a page's notes into action items</title>
   <desc id="desc">
-    An illustration, not a screenshot. A Notion page is open with the Copilot side panel next to it.
-    The user asks to turn the notes into action items. Copilot reads the page, edits it, and an
+    An illustration, not a screenshot. A Notion page is open with the Notico side panel next to it.
+    The user asks to turn the notes into action items. Notico reads the page, edits it, and an
     "Action items" section with three to-dos appears in the page.
   </desc>
   <style>
@@ -119,7 +119,7 @@
     <text x="84" y="222">Pricing page still needs legal review.</text>
   </g>
 
-  <!-- The section Copilot adds -->
+  <!-- The section Notico adds -->
   <rect class="accent anim flash" x="50" y="246" width="470" height="118" rx="6" />
   <g class="anim rise block">
     <text x="64" y="272" font-size="16" font-weight="600">Action items</text>
@@ -134,7 +134,7 @@
   </g>
 
   <!-- Side panel -->
-  <text x="576" y="60" font-size="13" font-weight="600">Copilot for Notion</text>
+  <text x="576" y="60" font-size="13" font-weight="600">Notico</text>
   <line class="stroke" x1="560.5" y1="72.5" x2="879.5" y2="72.5" />
 
   <g class="anim rise question">
@@ -180,8 +180,8 @@
 
     <rect class="stroke" x="315.5" y="456.5" width="250" height="32" rx="16" />
     <rect class="accent anim step-2" x="315.5" y="456.5" width="250" height="32" rx="16" />
-    <text class="muted" x="440.5" y="477">2 · Copilot reads the page</text>
-    <text class="on-accent anim step-2" x="440.5" y="477">2 · Copilot reads the page</text>
+    <text class="muted" x="440.5" y="477">2 · Notico reads the page</text>
+    <text class="on-accent anim step-2" x="440.5" y="477">2 · Notico reads the page</text>
 
     <rect class="stroke" x="605.5" y="456.5" width="250" height="32" rx="16" />
     <rect class="accent anim step-3" x="605.5" y="456.5" width="250" height="32" rx="16" />
