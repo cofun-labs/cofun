@@ -78,7 +78,7 @@ export function adminPage(publishableKey: string): string {
     <h2>Per day</h2>
     <div class="scroll">
       <table id="per-day">
-        <thead><tr><th>Day</th><th>Granted, free</th><th>Granted, by hand</th><th>Spent</th><th>Calls</th><th>Failed</th><th>Prompt tokens</th><th>Cached</th><th>Completion tokens</th></tr></thead>
+        <thead><tr><th>Day</th><th>Granted, free</th><th>Granted, by hand</th><th>Spent</th><th>Calls</th><th>Failed</th><th>Cancelled</th><th>Prompt tokens</th><th>Cached</th><th>Completion tokens</th></tr></thead>
         <tbody></tbody>
       </table>
     </div>
@@ -285,7 +285,9 @@ export function adminPage(publishableKey: string): string {
     el('granted-free').textContent = credits(totals.granted.free)
     el('granted-manual').textContent = credits(totals.granted.manual)
     el('spent').textContent = credits(totals.spent)
-    el('calls').textContent = count(totals.calls) + ', ' + count(totals.failedCalls) + ' failed'
+    // A call the user stopped is a failed call, of the kind cancelled.
+    el('calls').textContent =
+      count(totals.calls) + ', ' + count(totals.failedCalls) + ' failed (' + count(totals.cancelledCalls) + ' of them cancelled)'
     el('tokens').textContent =
       count(totals.promptTokens) + ' prompt (' + count(totals.cachedTokens) + ' cached), ' +
       count(totals.completionTokens) + ' completion'
@@ -301,6 +303,7 @@ export function adminPage(publishableKey: string): string {
         credits(each.spent),
         count(each.calls),
         count(each.failedCalls),
+        count(each.cancelledCalls),
         count(each.promptTokens),
         count(each.cachedTokens),
         count(each.completionTokens),

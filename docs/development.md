@@ -137,13 +137,13 @@ FROM (
 GROUP BY day ORDER BY day DESC LIMIT 30
 ```
 
-Calls and credits spent per user over the last 7 days, with how many calls failed:
+Calls and credits spent per user over the last 7 days, with how many calls failed (every outcome but `ok`) and how many of those the user stopped:
 
 ```sql
 SELECT user_id, count(*) AS calls, sum(micro_credits) / 1e6 AS credits_spent,
        sum(prompt_tokens) AS prompt_tokens, sum(cached_tokens) AS cached_tokens,
        sum(completion_tokens) AS completion_tokens,
-       sum(outcome NOT IN ('ok', 'cancelled')) AS failed
+       sum(outcome <> 'ok') AS failed, sum(outcome = 'cancelled') AS cancelled
 FROM model_calls
 WHERE started_at > (unixepoch() - 7 * 86400) * 1000
 GROUP BY user_id ORDER BY credits_spent DESC

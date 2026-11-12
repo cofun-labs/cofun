@@ -112,6 +112,7 @@ const NOTHING = {
   spent: 0,
   calls: 0,
   failedCalls: 0,
+  cancelledCalls: 0,
   promptTokens: 0,
   cachedTokens: 0,
   completionTokens: 0,
@@ -155,6 +156,7 @@ describe('UC-ADMIN-002 See granted and spent credits as a whole', () => {
       spent: CACHED_COST,
       calls: 2,
       failedCalls: 1,
+      cancelledCalls: 0,
       promptTokens: 100,
       cachedTokens: 40,
       completionTokens: 10,
@@ -166,6 +168,7 @@ describe('UC-ADMIN-002 See granted and spent credits as a whole', () => {
         spent: 3 * FAKE_COST + CACHED_COST,
         calls: 5,
         failedCalls: 1,
+        cancelledCalls: 0,
         promptTokens: 136,
         cachedTokens: 40,
         completionTokens: 25,
@@ -182,6 +185,26 @@ describe('UC-ADMIN-002 See granted and spent credits as a whole', () => {
       totals: nov9,
       days: [{ day: '2026-11-09', ...nov9 }],
     })
+  })
+
+  it('[UC-ADMIN-002-S09] a call the user stopped counts as a failed call, and as a cancelled one', async () => {
+    await asks('alice')
+    // Bob stops reading his reply partway.
+    const bearer = await clerk.sessionToken({ userId: 'user_bob', azp: EXT })
+    const res = await req('POST', '/v1/chat/completions', bearer, {
+      messages: [{ role: 'user', content: 'hi' }],
+      stream: true,
+    })
+    const reader = res.body!.getReader()
+    await reader.read()
+    await reader.cancel()
+    // And a call of carol's fails at the model.
+    ai.failWith = new Error('the model is down')
+    expect((await ask('carol')).status).toBe(502)
+
+    const { totals, days } = await overview('2026-11-08', '2026-11-08')
+    expect(totals).toMatchObject({ calls: 3, failedCalls: 2, cancelledCalls: 1 })
+    expect(days[0]).toMatchObject({ day: '2026-11-08', calls: 3, failedCalls: 2, cancelledCalls: 1 })
   })
 
   it('[UC-ADMIN-002-S02] an operator sees the accounts of a period, the biggest spender first, with the balance their own record shows', async () => {

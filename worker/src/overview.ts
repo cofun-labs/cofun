@@ -33,8 +33,10 @@ interface Totals {
   spent: number
   /** Calls made to the model, however they ended. */
   calls: number
-  /** The calls that neither ended well nor were stopped by the user. */
+  /** The calls that did not end well, whatever the reason: every outcome but `ok`. */
   failedCalls: number
+  /** The failed calls the user stopped (the outcome `cancelled`). */
+  cancelledCalls: number
   promptTokens: number
   /** The part of the prompt tokens the model read from its cache. */
   cachedTokens: number
@@ -73,7 +75,8 @@ WHERE granted_at >= ?1 AND granted_at < ?2
 GROUP BY day, source`
 
 const CALLS_PER_DAY = `SELECT (started_at + CAST(?3 AS INTEGER)) / ${DAY_MS} AS day, count(*) AS calls,
-  sum(outcome NOT IN ('ok', 'cancelled')) AS failed_calls, sum(micro_credits) AS spent,
+  sum(outcome <> 'ok') AS failed_calls, sum(outcome = 'cancelled') AS cancelled_calls,
+  sum(micro_credits) AS spent,
   sum(prompt_tokens) AS prompt_tokens, sum(cached_tokens) AS cached_tokens,
   sum(completion_tokens) AS completion_tokens
 FROM model_calls INDEXED BY model_calls_by_time
@@ -114,6 +117,7 @@ const CallsRow = z.object({
   day: z.int(),
   calls: count,
   failed_calls: count,
+  cancelled_calls: count,
   spent: count,
   prompt_tokens: count,
   cached_tokens: count,
@@ -134,6 +138,7 @@ const nothing = (): Totals => ({
   spent: 0,
   calls: 0,
   failedCalls: 0,
+  cancelledCalls: 0,
   promptTokens: 0,
   cachedTokens: 0,
   completionTokens: 0,
@@ -145,6 +150,7 @@ function add(totals: Totals, more: Totals): void {
   totals.spent += more.spent
   totals.calls += more.calls
   totals.failedCalls += more.failedCalls
+  totals.cancelledCalls += more.cancelledCalls
   totals.promptTokens += more.promptTokens
   totals.cachedTokens += more.cachedTokens
   totals.completionTokens += more.completionTokens
@@ -172,6 +178,7 @@ export async function readOverview(db: Database, { from, to, utcOffset }: Period
     totals.spent = row.spent
     totals.calls = row.calls
     totals.failedCalls = row.failed_calls
+    totals.cancelledCalls = row.cancelled_calls
     totals.promptTokens = row.prompt_tokens
     totals.cachedTokens = row.cached_tokens
     totals.completionTokens = row.completion_tokens
