@@ -1,5 +1,5 @@
 import { useAuth } from '@clerk/chrome-extension'
-import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from 'react'
+import { memo, useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from 'react'
 import { CopilotAgent, type AgentUpdate, type ConfirmTool, type HistoryMessage } from '../agent'
 import type { CreditsState } from '../credits'
 import { countNotionRequests } from '../notion/tab'
@@ -650,9 +650,10 @@ const counted = (n: number, noun: string) => `${n} ${noun}${n === 1 ? '' : 's'}`
 /**
  * What a question touched, under its reply: the distinct pages and databases its tools read and
  * changed (only calls that worked), and the Notion requests it made. A part that is zero is left
- * out; a reply that touched nothing in Notion has no line.
+ * out; a reply that touched nothing in Notion has no line. Memoized: a reply that hasn't changed
+ * keeps its object, so its calls aren't read again on every render.
  */
-function Summary({ reply }: { reply: Extract<Shown, { role: 'assistant' }> }) {
+const Summary = memo(function Summary({ reply }: { reply: Extract<Shown, { role: 'assistant' }> }) {
   // The line is for a question that has ended: its request count arrives then.
   if (reply.requests === undefined) return null
   const calls = reply.parts.flatMap((p) => (p.type === 'tool' && p.tool.status === 'done' ? [p.tool] : []))
@@ -664,4 +665,4 @@ function Summary({ reply }: { reply: Extract<Shown, { role: 'assistant' }> }) {
     requests && counted(requests, 'Notion request'),
   ].filter(Boolean)
   return said.length ? <div className="note">{said.join(' · ')}</div> : null
-}
+})

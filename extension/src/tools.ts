@@ -1050,7 +1050,11 @@ export const editPage = defineTool({
     'heading); inside a quote or callout, nest with "> " and two spaces. ' +
     "Child pages, databases, and files can't be written. If the page changed since you read it, the edit is " +
     'refused: read it again and redo the edit.',
-  touched: (args) => ({ changed: idsOf(args && [args.page]) }),
+  // Edits that all matched what the page had wrote nothing, and changed nothing.
+  touched: (args, result) =>
+    result.split('\n').every((line) => line.endsWith('already had that content; nothing changed.'))
+      ? NONE
+      : { changed: idsOf(args && [args.page]) },
   describe: () => ({ verb: EDIT, what: 'a page' }),
   args: z.strictObject({
     page: z.string({ error: GIVE_PAGE }).describe('Id of the page to edit, as read_page shows it after "Page:".'),

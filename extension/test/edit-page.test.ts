@@ -1035,8 +1035,13 @@ describe('round 11', () => {
     expect(ws.records.get(id(1))!.version).toBe(1)
     // Nothing was sent at all: not even the page's edit time.
     expect(ws.transactions).toEqual([])
+    // The side panel counts no page as changed for it.
+    expect(editPage.touched({ page: hex(PAGE), edits: [{ action: 'delete', block: '^00000001' }] }, result)).toEqual({})
     // Still as read, so it can be edited right away.
-    await edit([{ action: 'replace', block: '^00000001', markdown: 'Intro, edited' }])
+    const edited = await edit([{ action: 'replace', block: '^00000001', markdown: 'Intro, edited' }])
+    expect(editPage.touched({ page: hex(PAGE), edits: [{ action: 'delete', block: '^00000001' }] }, edited)).toEqual({
+      changed: [hex(PAGE)],
+    })
   })
 
   it('says a block that was not loaded cannot be edited, without asking to read again', async () => {
