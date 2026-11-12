@@ -47,6 +47,18 @@ export function Sessions({
     void load()
   }, [saved])
 
+  // Escape closes the list wherever the focus is: deleting a session leaves it on nothing.
+  const close = useRef(onClose)
+  close.current = onClose
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      // In the search box, Escape first clears what was typed.
+      if (e.key === 'Escape' && !(e.target instanceof HTMLInputElement && e.target.value)) close.current()
+    }
+    document.addEventListener('keydown', onKeyDown)
+    return () => document.removeEventListener('keydown', onKeyDown)
+  }, [])
+
   async function remove(id: string) {
     if (confirming !== id) return setConfirming(id)
     setConfirming(undefined)
@@ -76,15 +88,7 @@ export function Sessions({
   const shown = sessions ? filterSessions(sessions, { query, page: activePage }) : []
 
   return (
-    <section
-      id="sessions"
-      role="dialog"
-      aria-label="Sessions"
-      onKeyDown={(e) => {
-        // In the search box, Escape first clears what was typed.
-        if (e.key === 'Escape' && !(e.target instanceof HTMLInputElement && e.target.value)) onClose()
-      }}
-    >
+    <section id="sessions" role="dialog" aria-label="Sessions">
       <div className="sheet-head">
         <h2>Sessions</h2>
         <button className="icon-button" aria-label="Close" title="Close" autoFocus onClick={onClose}>

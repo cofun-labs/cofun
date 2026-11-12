@@ -118,9 +118,10 @@ export function Chat({ userId }: { userId: string }) {
   })
   const agent = agentRef.current
 
+  // Only when the conversation changes: closing the session list leaves the chat where the user had scrolled it.
   useEffect(() => {
-    if (view === 'chat') listRef.current?.scrollTo({ top: listRef.current.scrollHeight })
-  }, [messages, view])
+    listRef.current?.scrollTo({ top: listRef.current.scrollHeight })
+  }, [messages])
 
   // The panel unmounts on sign-out; don't leave a question running tools in the background.
   useEffect(() => () => agentRef.current?.stop(), [])
