@@ -579,7 +579,15 @@ export function Chat({ userId }: { userId: string }) {
 
         {settingsOpen && (
           <div className="page-layer">
-            <Settings credits={credits} onRetry={() => void readCredits()} onClose={closeSettings} />
+            <Settings
+              credits={credits}
+              onRetry={() => void readCredits()}
+              history={{
+                grants: (before) => agent.creditGrants(before),
+                usage: (before) => agent.creditUsage(before),
+              }}
+              onClose={closeSettings}
+            />
           </div>
         )}
       </div>
