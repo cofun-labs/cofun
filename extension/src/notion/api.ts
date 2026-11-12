@@ -49,7 +49,8 @@ function unexpectedStop(code: NotionErrorCode, message: string): string | undefi
   return `${UNEXPECTED_STOP} ${/[.!?)]$/.test(text) ? text : `${text}.`}`
 }
 
-export const NO_NOTION_TAB = 'No Notion page is open in this window.'
+export const NO_NOTION_TAB =
+  'The current tab is not a Notion page, so the Notion tools cannot be used. Tell the user to switch to a Notion page and ask again.'
 export const SIGNED_OUT = 'Not signed in to Notion in this tab. Sign in to Notion and try again.'
 export const NO_ACCESS = "The Notion page doesn't exist, or the signed-in Notion account has no access to it."
 const IN_TRASH = 'The Notion page or block is in the trash.'

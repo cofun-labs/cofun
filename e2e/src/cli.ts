@@ -1,6 +1,7 @@
 // pnpm e2e: runs ai-e2e scenarios in the shared Chrome Canary. See USAGE in args.ts and docs/bdd.md.
 import { execFileSync } from 'node:child_process'
 import { resolve } from 'node:path'
+import { isNotion } from '../../extension/src/notion/hosts'
 import { type Command, USAGE, UsageError, parseArgs } from './args'
 import { Browser, Cdp, DEFAULT_PORT } from './cdp'
 import {
@@ -14,7 +15,19 @@ import {
 } from './extension'
 import { createDatabase, createPage, pageUrl, parseRow, privateSpace, tabNotion, trash } from './notion'
 import { E2eError } from './errors'
-import { DEFAULT_NOTION_URL, TimeoutError, isOwnPage, ask, notionTab, openPanel, ownNotionTab, ownPanel } from './panel'
+import {
+  DEFAULT_NOTION_URL,
+  OTHER_URL,
+  TimeoutError,
+  isOwnPage,
+  ask,
+  currentTabUrl,
+  notionTab,
+  openPanel,
+  otherTab,
+  ownNotionTab,
+  ownPanel,
+} from './panel'
 import { formatReply } from './reply'
 import { CanaryLock, checkOwner } from './lock'
 import { type State, loadState, saveState, statePath } from './state'
@@ -128,13 +141,27 @@ async function browserCommand(
       console.log('Side panel open on the Notion tab, with a new chat.')
       return 0
     }
+    case 'elsewhere': {
+      const before = (await browser.find(state.panelTarget))?.targetId
+      const panel = await openPanel(browser, state, await otherTab(browser, state), { keepChat: true })
+      console.log(
+        panel.targetId === before
+          ? `The side panel stayed open, with its chat, on the tab at ${OTHER_URL}.`
+          : `Side panel open on the tab at ${OTHER_URL}.`,
+      )
+      return 0
+    }
     case 'ask': {
       const panel = await ownPanel(browser, state)
-      // The tab may have moved since panel checked it (by hand, or page/db going to E2E_NOTION_URL).
-      const notionId = await ownNotionTab(browser, state)
-      const notionUrl = notionId && (await (await browser.attach(notionId)).evaluate(() => location.href, []))
-      if (!notionUrl || !isOwnPage(notionUrl, state.created)) {
-        throw new E2eError('The Notion tab is no longer on a page pnpm e2e created: run pnpm e2e panel <url> again.')
+      // The panel works on the active tab of its window, which may have changed since panel or
+      // elsewhere checked it (by hand, or page/db going to E2E_NOTION_URL). On Notion the agent may
+      // only meet a throwaway page; elsewhere its Notion tools can't run at all.
+      const url = await currentTabUrl(panel)
+      if (!url || (isNotion(url) ? !isOwnPage(url, state.created) : !url.startsWith(OTHER_URL))) {
+        throw new E2eError(
+          'The current tab is neither on a page pnpm e2e created nor the tab pnpm e2e elsewhere opened: ' +
+            'run pnpm e2e panel <url> or pnpm e2e elsewhere again.',
+        )
       }
       try {
         const result = await ask(panel, command.question, command.answer, command.timeoutMs)
@@ -188,10 +215,11 @@ async function browserCommand(
       return 0
     }
     case 'close': {
-      const id = await ownNotionTab(browser, state)
-      if (id) await browser.close(id)
-      state.notionTarget = state.panelTarget = undefined
-      console.log(id ? 'Closed the Notion tab.' : 'No Notion tab opened by pnpm e2e is open.')
+      const ids = [await ownNotionTab(browser, state), (await browser.find(state.otherTarget))?.targetId]
+      const open = ids.filter((id): id is string => !!id)
+      for (const id of open) await browser.close(id)
+      state.notionTarget = state.otherTarget = state.panelTarget = undefined
+      console.log(open.length ? 'Closed the tabs pnpm e2e opened.' : 'No tab opened by pnpm e2e is open.')
       return 0
     }
     default:

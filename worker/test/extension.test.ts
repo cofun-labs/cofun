@@ -211,7 +211,7 @@ describe('extension agent against the worker', () => {
     await ask(agent, 'And now?')
 
     const roadmap = '[The Notion page open in the current tab: "Q4 Roadmap", https://www.notion.so/Q4-Roadmap-abc123]'
-    const none = '[No Notion page is open in the current tab.]'
+    const none = '[The current tab is not a Notion page.]'
     expect(sentMessages(0).at(-1)).toEqual({ role: 'user', content: `${roadmap}\n\nSummarize this` })
     // Read again for the next question; the earlier one keeps the page it was asked on.
     expect(sentMessages(1).filter((m) => m.role === 'user')).toEqual([
@@ -1706,7 +1706,7 @@ describe('the open page note', () => {
       undefined,
     ]) {
       withActiveTab(tab)
-      expect(await openPageNote()).toBe('[No Notion page is open in the current tab.]')
+      expect(await openPageNote()).toBe('[The current tab is not a Notion page.]')
     }
   })
 })

@@ -35,7 +35,7 @@ A scenario earns its place only if deleting it would let an implementation pass 
 | Strategy | Use for | Verified by |
 |---|---|---|
 | `api-test` | Anything observable through the worker's HTTP API, the extension's client code, or the side panel's UI | A vitest integration test whose name starts with the scenario ID, in `worker/test/` (the worker's HTTP API) or `extension/test/` (the extension's client code in `*.test.ts`, the side panel's UI in `*.test.tsx`) |
-| `ai-e2e` | Paths that need real Chrome or real accounts: the side panel opening on Notion tabs, Clerk sign-in, real Notion pages, the real model | An agent drives Chrome with the extension loaded; the PR description or a comment records the run, with the Notion requests each tested question made (the side panel shows the count with the reply) |
+| `ai-e2e` | Paths that need real Chrome or real accounts: the side panel opening and staying open across tabs, Clerk sign-in, real Notion pages, the real model | An agent drives Chrome with the extension loaded; the PR description or a comment records the run, with the Notion requests each tested question made (the side panel shows the count with the reply) |
 
 Pick the cheapest strategy that observes the result directly. `ai-e2e` is not a place to park scenarios that could be `api-test`.
 
@@ -61,14 +61,15 @@ pnpm e2e page "e2e S04" "## Meeting notes" "We ship on Friday." "## Next steps" 
 pnpm e2e panel <url printed by page>         # open the side panel on that page, with a new chat
 pnpm e2e ask "Turn the Meeting notes section into its own child page." --allow
 pnpm e2e trash <id printed by page>          # move the throwaway page to the trash
-pnpm e2e close                               # close the Notion tab the tool opened
+pnpm e2e close                               # close the tabs the tool opened
 pnpm e2e lock release
 ```
 
 - **One browser, shared.** Several sessions use the same Canary, guarded by one lock (`~/.cache/notion-copilot/canary.lock`, shared with the maintainer's `canary-lock.sh`). Hold it for the whole run with `lock acquire` and `lock release`: between commands, another session could otherwise reload the extension (closing your panel) or start a chat in it. A command run without it takes the lock just for itself. The owner is `--owner`, `$E2E_OWNER`, or the git branch; run one command at a time per owner. A busy lock exits with code 3 and the holder's name: work on something else and try later, never wait in a loop. A lock not refreshed for 30 minutes counts as abandoned.
 - **Reload first.** Canary loads one extension folder for everyone; `reload` builds this checkout over it, so start every run with it and don't assume another session's build is still there.
 - **Hands off the browser's state.** The tool never signs in or out of Notion or Copilot and never changes browser settings. If Developer mode is off, the extension is disabled, or a sign-in is missing, it says so and stops; fix it by hand.
-- **Only its own tabs and pages.** It works in a Notion tab it opened, `panel` opens only on pages and databases it created, and `trash` only takes those (`page` makes a private page from Markdown lines; `db` makes a private task database with Name, Status, and Due). Use throwaway pages, never the workspace's own.
+- **Only its own tabs and pages.** It works in the tabs it opened (one on Notion, and one on another site for `elsewhere`), `panel` opens only on pages and databases it created, `ask` refuses any other current tab, and `trash` only takes those (`page` makes a private page from Markdown lines; `db` makes a private task database with Name, Status, and Due). Use throwaway pages, never the workspace's own.
+- **Off Notion.** `elsewhere` brings a tab on another site (`example.com`) to the front, and says whether the side panel stayed open with its chat or had to be opened; `panel` goes back to the Notion tab, with a new chat. Use it for scenarios about the panel on a tab that is not Notion.
 - **Approvals.** `ask` answers approval prompts with `--allow` or `--deny`. `--allow` approves every prompt, whatever it changes. The agent asks for approval only before some changes (such as deleting a page) and makes the others on its own, so the tool can't keep it on the throwaway pages: word every question so it stays on them, and never ask it to change other pages. Without either it stops at the first prompt with exit code 4 and prints what the tool would change; run `pnpm e2e ask --allow` (no question) to answer and keep waiting.
 - **What `ask` prints.** The reply in order: the model's text and each tool call with its status, arguments, and result. `--json` prints the same as JSON.
 

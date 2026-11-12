@@ -148,6 +148,120 @@ describe('asking the AI', () => {
   })
 })
 
+describe('on a tab that is not Notion', () => {
+  const INBOX = 'https://mail.example.com/inbox?token=secret'
+
+  /** The side panel open on a tab showing another site. */
+  function openElsewhere() {
+    const tab = new FakeNotionTab(INBOX)
+    tab.title = 'Inbox (3)'
+    return openPanel(tab)
+  }
+
+  /** What the model was sent as the results of the tools it called. */
+  const toolResults = (browser: FakeBrowser) =>
+    browser
+      .sentToModel()
+      .filter((m) => m.role === 'tool')
+      .map((m) => m.content)
+
+  it('[UC-PANEL-001-S03] a question is answered, and the model is told only that the tab is not a Notion page', async () => {
+    const { browser, user } = await openElsewhere()
+    browser.ai.script.push({ reply: 'A haiku has three lines.' })
+
+    await ask(user, 'How many lines does a haiku have?')
+
+    expect(await screen.findByText('A haiku has three lines.')).toBeVisible()
+    await answered()
+    const sent = browser.sentToModel()
+    expect(sent.at(-1)!.content).toBe('[The current tab is not a Notion page.]\n\nHow many lines does a haiku have?')
+    // Nothing of the tab itself: not its address, and not its title.
+    const everything = JSON.stringify(sent)
+    expect(everything).not.toContain('mail.example.com')
+    expect(everything).not.toContain('Inbox')
+    expect(browser.tab.injections).toEqual([])
+  })
+
+  it('[UC-PANEL-001-S04] a Notion tool fails there, telling the model to send the user to a Notion page, and Notion is not asked', async () => {
+    const { browser, user } = await openElsewhere()
+    browser.ai.script.push(
+      { toolCalls: [{ name: 'read_page', arguments: JSON.stringify({}) }] },
+      { reply: 'Switch to a Notion page and ask again.' },
+    )
+
+    await ask(user, 'Summarize this page')
+
+    expect(await screen.findByText('Switch to a Notion page and ask again.')).toBeVisible()
+    await answered()
+    expect(screen.getByRole('img', { name: 'Failed' })).toBeVisible()
+    expect(toolResults(browser)).toEqual([
+      expect.stringMatching(/The current tab is not a Notion page.*Tell the user to switch to a Notion page/),
+    ])
+    // Nothing ran in the tab, so nothing was sent anywhere from it.
+    expect(browser.tab.injections).toEqual([])
+    expect(browser.tab.sent).toEqual([])
+  })
+
+  it('[UC-PANEL-001-S05] the model gets the address and title of a tab on another site when it asks for them', async () => {
+    const { browser, user } = await openElsewhere()
+    browser.ai.script.push(
+      { toolCalls: [{ name: 'get_current_tab', arguments: JSON.stringify({}) }] },
+      { reply: 'You are in your inbox.' },
+    )
+
+    await ask(user, 'Which site am I on?')
+
+    expect(await screen.findByText('You are in your inbox.')).toBeVisible()
+    await answered()
+    expect(screen.getByRole('img', { name: 'Done' })).toBeVisible()
+    expect(toolResults(browser)).toEqual([JSON.stringify({ title: 'Inbox (3)', url: INBOX })])
+    // Only what Chrome says about the tab: nothing ran in it.
+    expect(browser.tab.injections).toEqual([])
+  })
+
+  it('[UC-PANEL-001-S06] the model gets the address and title of a Notion tab the same way', async () => {
+    const { browser, user } = await openPanel()
+    browser.ai.script.push(
+      { toolCalls: [{ name: 'get_current_tab', arguments: JSON.stringify({}) }] },
+      { reply: 'You are on the fixture page.' },
+    )
+
+    await ask(user, 'Give me a link to this tab')
+
+    expect(await screen.findByText('You are on the fixture page.')).toBeVisible()
+    await answered()
+    expect(toolResults(browser)).toEqual([JSON.stringify({ title: 'Fixture page', url: PAGE_URL })])
+    expect(browser.tab.sent).toEqual([])
+  })
+
+  // UC-PANEL-001-S07 itself stays ai-e2e: that Chrome keeps the panel open across tabs. This is
+  // the panel's part of it.
+  it('a conversation started on a Notion page goes on after the user switches to another site', async () => {
+    const { browser, user } = await openPanel()
+    browser.ai.script.push({ reply: 'It is a fixture.' }, { reply: 'You left Notion.' })
+
+    await ask(user, 'What is this page?')
+    await screen.findByText('It is a fixture.')
+    await answered()
+    browser.tab.url = INBOX
+    browser.tab.title = 'Inbox (3)'
+    await ask(user, 'And now?')
+
+    expect(await screen.findByText('You left Notion.')).toBeVisible()
+    await answered()
+    expect(screen.getByText('What is this page?')).toBeVisible()
+    expect(
+      browser
+        .sentToModel()
+        .filter((m) => m.role === 'user')
+        .map((m) => m.content),
+    ).toEqual([
+      `[The Notion page open in the current tab: "Fixture page", ${PAGE_URL}]\n\nWhat is this page?`,
+      '[The current tab is not a Notion page.]\n\nAnd now?',
+    ])
+  })
+})
+
 describe('a tool that needs confirmation', () => {
   async function askToTrash() {
     const { tab, workspace } = workspaceTab()

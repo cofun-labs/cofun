@@ -58,7 +58,11 @@ export function countNotionRequests(ask?: (question: string) => Promise<boolean>
   return (usage = new NotionUsage(ask))
 }
 
-/** The active tab of the side panel's window, if it is on Notion; otherwise a `no_notion_tab` error. */
+/**
+ * The active tab of the side panel's window, if it is on Notion; otherwise a `no_notion_tab` error.
+ * The panel is open on every tab, so this is where a Notion tool finds out it can't run. Only the
+ * active tab counts: a Notion page open in another tab is never used instead.
+ */
 export async function activeNotionTab(): Promise<NotionTab> {
   // The question that asked for the tab, even if another one starts while the tab is looked up.
   const counted = usage

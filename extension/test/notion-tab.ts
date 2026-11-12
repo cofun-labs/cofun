@@ -95,8 +95,12 @@ export class FakeNotionTab {
   /** Signals the page's requests were sent with, to check each has a timeout. */
   signals: (AbortSignal | null | undefined)[] = []
 
+  /** The tab's title, as chrome.tabs reports it. */
+  title = 'Fixture page'
+
   constructor(
-    readonly url: string | undefined,
+    /** Where the tab is; a test moves the user to another tab by changing it. */
+    public url: string | undefined,
     readonly cookie = `notion_browser_id=b; notion_user_id=${USER}; notion_users=%5B%22${USER}%22%5D`,
   ) {}
 
@@ -137,7 +141,7 @@ export class FakeNotionTab {
     globals.chrome = {
       storage: this.storage,
       tabs: {
-        query: async () => (this.url === undefined ? [] : [{ id: 7, url: this.url, title: 'Fixture page' }]),
+        query: async () => (this.url === undefined ? [] : [{ id: 7, url: this.url, title: this.title }]),
         get: async (tabId: number) => {
           if (this.closed) throw new Error(`No tab with id: ${tabId}.`)
           return { id: tabId, url: this.pageUrl ?? this.url }

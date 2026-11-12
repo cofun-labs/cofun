@@ -92,22 +92,20 @@ const test = base.extend<Fixtures>({
   background: async ({ context, backgroundErrors }, use) => {
     const background = context.serviceWorkers()[0] ?? (await context.waitForEvent('serviceworker'))
     // Listen from the first moment Playwright has the worker, so failures during start-up are
-    // seen too. A message logged before that moment can still be missed; start-up's results are
-    // also checked directly (the flag below, and the panel behavior in the first test).
+    // seen too. A message logged before that moment can still be missed; start-up's result is
+    // also checked directly (the panel behavior below).
     background.on('console', (message) => {
       if (message.type() === 'error') backgroundErrors.push(message.text())
     })
-    // background.ts sets this flag once its start-up has run without failing. Tests wait for it
-    // before opening tabs: start-up applies the tab list it read earlier, and applied late that
-    // would turn the panel off again on a tab a test has just opened.
+    // All background.ts does at start-up; wait for it, so a test never looks before it ran.
     await expect
-      .poll(() => background.evaluate(() => chrome.storage.session.get('panelInit')))
-      .toEqual({ panelInit: true })
+      .poll(() => background.evaluate(() => chrome.sidePanel.getPanelBehavior()))
+      .toEqual({ openPanelOnActionClick: true })
     await use(background)
   },
 })
 
-/** The side panel options background.ts has set for the tab showing `url`. */
+/** The side panel options of the tab showing `url`. */
 function panelOptions(background: Worker, url: string): Promise<chrome.sidePanel.PanelOptions | undefined> {
   return background.evaluate(async (tabUrl) => {
     const tabs = await chrome.tabs.query({})
@@ -125,28 +123,24 @@ test('the service worker starts and sets up the side panel', async ({ background
   expect(blocked).toEqual([])
 })
 
-test('the side panel is enabled on Notion tabs and on no other site', async ({
+test('the side panel is enabled on every tab, Notion or not', async ({
   context,
   background,
   backgroundErrors,
   blocked,
 }) => {
-  for (const url of NOTION_URLS) {
+  for (const url of [...NOTION_URLS, OTHER_URL]) {
     const page = await context.newPage()
     await page.goto(url)
     await expect.poll(() => panelOptions(background, url), url).toMatchObject({ enabled: true, path: 'sidepanel.html' })
   }
 
-  // A new tab on another site is off by default, so this alone would pass without background.ts
-  // looking at the tab. The step after it is the one that needs the panel turned off.
-  const page = await context.newPage()
-  await page.goto(OTHER_URL)
-  await expect.poll(() => panelOptions(background, OTHER_URL), OTHER_URL).toMatchObject({ enabled: false })
-
-  // Leaving Notion in the same tab turns the panel off again.
+  // Leaving Notion in the same tab keeps the panel.
   const notionPage = context.pages().find((candidate) => candidate.url() === NOTION_URLS[0])!
   await notionPage.goto(`${OTHER_URL}next`)
-  await expect.poll(() => panelOptions(background, `${OTHER_URL}next`)).toMatchObject({ enabled: false })
+  await expect
+    .poll(() => panelOptions(background, `${OTHER_URL}next`))
+    .toMatchObject({ enabled: true, path: 'sidepanel.html' })
   expect(backgroundErrors).toEqual([])
   expect(blocked).toEqual([])
 })

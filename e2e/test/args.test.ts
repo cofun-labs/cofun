@@ -22,6 +22,11 @@ describe('parseArgs', () => {
     expect(() => parseArgs(['panel', 'https://example.com/'])).toThrow(UsageError)
   })
 
+  it('takes elsewhere without arguments', () => {
+    expect(parseArgs(['elsewhere']).command).toEqual({ name: 'elsewhere' })
+    expect(() => parseArgs(['elsewhere', 'https://example.org/'])).toThrow('Too many arguments')
+  })
+
   it('reads ask with its answer, timeout, and output options', () => {
     expect(parseArgs(['ask', 'Make a child page', '--allow', '--timeout', '60', '--json']).command).toEqual({
       name: 'ask',

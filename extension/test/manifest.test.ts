@@ -88,6 +88,7 @@ describe('extension manifest', () => {
         'manifest_version',
         'name',
         'permissions',
+        'side_panel',
         'version',
       ].sort(),
     )

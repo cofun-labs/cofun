@@ -13,11 +13,13 @@ How Copilot for Notion is built, and why. For setup and deployment see [developm
 
 The agent loop and its tools run in the side panel. The worker only checks who is asking and passes the conversation to the model; it never talks to Notion. Notion requests are made inside the user's own Notion tab, with that tab's session.
 
+The panel is open on every tab, but the tools work on the current tab only: the active tab of the panel's window, looked up again for each question and each tool call, since the user can switch tabs at any time. Each question tells the model whether that tab is a Notion page (and which), and nothing else about a tab on another site. The Notion tools are offered everywhere; when the current tab is not on Notion they fail with `no_notion_tab`, which tells the model to send the user to a Notion page, and they never use a Notion page open in another tab instead. `get_current_tab` gives the model the current tab's URL and title on any site when a question needs them; no tool reads another site's content.
+
 ## Tech choices
 
 | Area | Choice | Why |
 |---|---|---|
-| Extension | Chrome MV3 + [Side Panel API](https://developer.chrome.com/docs/extensions/reference/api/sidePanel) | Sits next to the page without covering Notion; enabled only on Notion tabs |
+| Extension | Chrome MV3 + [Side Panel API](https://developer.chrome.com/docs/extensions/reference/api/sidePanel) | Sits next to the page without covering Notion. One panel per window, on every tab (the manifest's `side_panel.default_path`), so the conversation stays as the user switches tabs |
 | Extension build | Vite + React + TypeScript | Clerk's extension SDK is React-based; Vite needs little config and no extension framework |
 | Sign-in | [Clerk](https://clerk.com) (`@clerk/chrome-extension`) with [Sync Host](https://clerk.com/docs/references/chrome-extension/sync-host) | Ready-made sign-in UI and sessions; the backend only verifies JWTs with a public key. Social logins need a redirect, which Chrome side panels don't support, so users sign in on a normal web page and the session syncs into the extension |
 | Backend | Cloudflare Workers + Hono | Model access stays server-side; the AI binding needs no API token |
@@ -55,7 +57,7 @@ extension/                Chrome extension
   manifest.ts             builds manifest.json from .env; a test pins its permissions and content security policy
   icons/icon.svg          the extension icon; `pnpm icons` exports it into public/icons, which the manifest lists
   sidepanel.html
-  src/background.ts       opens the side panel from the toolbar icon; enabled only on Notion tabs
+  src/background.ts       opens the side panel from the toolbar icon, on any tab
   src/agent.ts            agent loop (pi) against the worker; the only module that imports pi
   src/tools.ts            tools the agent runs in the extension
   src/tool.ts             defines a tool from one zod schema of its arguments
