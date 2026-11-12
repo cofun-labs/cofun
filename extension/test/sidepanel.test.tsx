@@ -172,10 +172,11 @@ describe('a formatted reply', () => {
     browser.ai.script.push({
       reply: [
         '## Shopping',
-        'You need **milk** and `eggs`:',
+        'You need **milk** and `eggs`, *today*:',
         '1. milk\n   - whole\n2. eggs',
         '- [x] bread',
         '> Buy early.',
+        '---',
         '| Item | Count |\n| --- | --- |\n| milk | 2 |',
         '```\nlist = [milk, eggs]\n```',
         'See [the store](https://shop.example.com/list).',
@@ -191,6 +192,8 @@ describe('a formatted reply', () => {
     expect(heading).toBeVisible()
     expect(screen.getByText('milk', { selector: 'strong' })).toBeVisible()
     expect(screen.getByText('eggs', { selector: 'code' })).toBeVisible()
+    expect(screen.getByText('today', { selector: 'em' })).toBeVisible()
+    expect(screen.getByRole('separator')).toBeInTheDocument()
     const lists = screen.getAllByRole('list')
     expect(within(lists[0]).getByText('whole')).toBeVisible()
     expect(screen.getByRole('checkbox', { name: '' })).toBeChecked()

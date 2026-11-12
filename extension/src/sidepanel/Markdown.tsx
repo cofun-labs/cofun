@@ -13,7 +13,14 @@ function webUrl(url: string | undefined): string | undefined {
   }
 }
 
-function Link({ href, children }: ComponentProps<'a'>) {
+function Link({ href, children, id }: ComponentProps<'a'>) {
+  // A footnote and its way back are links within the reply.
+  if (href?.startsWith('#'))
+    return (
+      <a href={href} id={id}>
+        {children}
+      </a>
+    )
   const url = webUrl(href)
   if (!url) return <span>{children}</span>
   return (
