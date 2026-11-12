@@ -19,7 +19,14 @@ export default defineConfig({
         resolve: {
           alias: { '@clerk/chrome-extension': fileURLToPath(new URL('./test/clerk.tsx', import.meta.url)) },
         },
-        test: { name: 'ui', include: ['test/**/*.test.tsx'], environment: 'jsdom', env },
+        // The panel shows times on the user's own clock and tells the worker how far it is from UTC.
+        // The tests pin a clock that is not UTC, and not a whole number of hours from it.
+        test: {
+          name: 'ui',
+          include: ['test/**/*.test.tsx'],
+          environment: 'jsdom',
+          env: { ...env, TZ: 'Asia/Kolkata' },
+        },
       },
     ],
   },

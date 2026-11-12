@@ -1,6 +1,5 @@
 // Saved sessions, kept on this device in IndexedDB. They never go to the worker.
 import type { HistoryMessage } from './agent'
-import { pageIdFromUrl } from './notion/hosts'
 
 /** What the session list shows; the conversation itself is loaded only when a session opens. */
 export interface SessionInfo {
@@ -148,34 +147,8 @@ export function titleFor(messages: HistoryMessage[]): string {
   return chars.length > TITLE_LENGTH ? `${chars.slice(0, TITLE_LENGTH - 1).join('')}…` : chars.join('')
 }
 
-/**
- * Identifies a Notion page by its id, so a renamed page, the other Notion host, or a page opened in
- * side peek (`?p=<id>`) still counts as the same page. Falls back to the URL without its query.
- */
-export function pageKey(url: string): string {
-  const id = pageIdFromUrl(url)
-  if (id) return id.replace(/-/g, '')
-  try {
-    const u = new URL(url)
-    return `${u.origin}${u.pathname}`
-  } catch {
-    return url
-  }
-}
-
-/** The pages sessions started on, once each, with the newest title seen for each. */
-export function sessionPages(sessions: SessionInfo[]): { key: string; title: string }[] {
-  const pages = new Map<string, string>()
-  for (const s of sessions) if (s.page && !pages.has(pageKey(s.page.url))) pages.set(pageKey(s.page.url), s.page.title)
-  return [...pages].map(([key, title]) => ({ key, title }))
-}
-
-/** Sessions whose title contains `query` (ignoring case) and, if `page` is set, that started on that page. */
-export function filterSessions<T extends SessionInfo>(sessions: T[], filter: { query?: string; page?: string }): T[] {
-  const query = filter.query?.trim().toLowerCase()
-  return sessions.filter(
-    (s) =>
-      (!query || s.title.toLowerCase().includes(query)) &&
-      (!filter.page || (s.page !== undefined && pageKey(s.page.url) === filter.page)),
-  )
+/** Sessions whose title contains `query`, ignoring case. */
+export function filterSessions<T extends SessionInfo>(sessions: T[], query: string): T[] {
+  const q = query.trim().toLowerCase()
+  return q ? sessions.filter((s) => s.title.toLowerCase().includes(q)) : sessions
 }

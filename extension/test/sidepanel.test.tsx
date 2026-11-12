@@ -2,7 +2,7 @@
 // only type, click, and read what is on screen. Besides the screen they look at the edges alone:
 // what the model was sent, and what Notion was asked to do.
 import '@testing-library/jest-dom/vitest'
-import { screen, within } from '@testing-library/react'
+import { screen, waitFor, within } from '@testing-library/react'
 import userEvent, { type UserEvent } from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { FakeNotionTab, FakeWorkspace, PAGE, PAGE_URL, SPACE, pageTab } from './notion-tab'
@@ -460,6 +460,36 @@ describe('sessions', () => {
     expect(composer()).toBeVisible()
   })
 
+  it('the session list is searched by title, and deleting a session takes a second click', async () => {
+    const { browser, user } = await openPanel()
+    browser.ai.script.push({ reply: 'Three milestones.' }, { reply: 'Alice.' })
+    await ask(user, 'What is on the roadmap?')
+    await screen.findByText('Three milestones.')
+    await answered()
+    vi.setSystemTime(new Date(START.getTime() + 60_000))
+    await user.click(screen.getByRole('button', { name: 'New chat' }))
+    await ask(user, 'Who owns the launch?')
+    await screen.findByText('Alice.')
+    await answered()
+
+    await user.click(screen.getByRole('button', { name: 'Sessions' }))
+    const rows = () => screen.queryAllByRole('button', { name: /Fixture page/ }).map((b) => b.textContent)
+    await screen.findAllByRole('button', { name: /Fixture page/ })
+    // Only search by title: there is no other filter.
+    expect(screen.queryByRole('combobox')).not.toBeInTheDocument()
+    await user.type(screen.getByRole('searchbox', { name: 'Search sessions' }), 'ROADMAP')
+    expect(rows()).toEqual([expect.stringMatching(/^What is on the roadmap\?/)])
+    await user.clear(screen.getByRole('searchbox'))
+    expect(rows()).toHaveLength(2)
+
+    // The first click only asks; the second deletes.
+    const [first] = screen.getAllByRole('button', { name: 'Delete session' })
+    await user.click(first)
+    expect(rows()).toHaveLength(2)
+    await user.click(screen.getByRole('button', { name: 'Delete?' }))
+    await waitFor(() => expect(rows()).toEqual([expect.stringMatching(/^What is on the roadmap\?/)]))
+  })
+
   it('[UC-SESSION-001-S08] switching sessions stops a reply still coming in, and it lands in neither session', async () => {
     const { browser, user } = await openPanel()
     browser.ai.script.push({ reply: 'Three milestones.' })
@@ -506,7 +536,7 @@ describe('signing in and out', () => {
     await screen.findByText('Three milestones.')
     await answered()
 
-    await user.click(screen.getByRole('button', { name: 'Open user menu' }))
+    await user.click(screen.getByRole('button', { name: 'Account' }))
     await user.click(screen.getByRole('menuitem', { name: 'Sign out' }))
 
     expect(await screen.findByText('Sign in to use Notico.')).toBeVisible()
@@ -514,7 +544,7 @@ describe('signing in and out', () => {
     // The chat is gone: nothing to type into, and the conversation is off the screen.
     expect(screen.queryByRole('textbox')).not.toBeInTheDocument()
     expect(screen.queryByText('Three milestones.')).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Open user menu' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Account' })).not.toBeInTheDocument()
   })
 
   it('a signed-out panel offers only to sign in, on the sign-in page', async () => {

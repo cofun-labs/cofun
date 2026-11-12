@@ -9,7 +9,8 @@ export const MICRO_CREDITS = 1_000_000
 /** What every user gets free each week, and how long it lasts. */
 export const FREE_CREDITS = 200
 const FREE_GRANT = FREE_CREDITS * MICRO_CREDITS
-const FREE_PERIOD_MS = 7 * 24 * 60 * 60 * 1000
+export const FREE_PERIOD_MS = 7 * 24 * 60 * 60 * 1000
+const DAY_MS = 24 * 60 * 60 * 1000
 
 /** A value bound to a statement. */
 type Value = string | number | null
@@ -70,7 +71,10 @@ const GrantRow = z
   }))
 
 const DebtRow = z.object({ debt: z.int().min(0) })
-const BalanceRow = z.object({ balance: z.int(), next_grant_at: z.int().nullable() })
+const BalanceRow = z.object({ balance: z.int(), free_until: z.int().nullable() })
+const UsageRow = z
+  .object({ day: z.int(), micro_credits: z.int().min(0) })
+  .transform((row) => ({ day: row.day, microCredits: row.micro_credits }))
 
 /** The one row a statement returns, checked against `schema`. */
 function only<S extends z.ZodType>(schema: S, result: { results: unknown[] } | undefined): z.output<S> {
@@ -83,6 +87,31 @@ function only<S extends z.ZodType>(schema: S, result: { results: unknown[] } | u
 export interface Balance {
   balance: number
   nextGrantAt: number
+}
+
+/** Which days to total a user's spending over: the `days` most recent days of a clock `offsetMs` ahead of UTC, today included. */
+export interface UsagePeriod {
+  days: number
+  offsetMs: number
+}
+
+/**
+ * A user's credits as they see them. Amounts are in micro-credits. Unlike an `Account`, it looks
+ * ahead: for a user with no free grant that still counts, it says what their next call starts with.
+ */
+export interface Standing {
+  /** What the user's next call starts with: exactly the balance `open` gives at the same moment. */
+  balance: number
+  /**
+   * The weekly free grant. One that still counts ends at `until`, and the next one can arrive from
+   * then on. With none, the next call brings one: `toCome` is what it adds to spend, its amount
+   * less what the user owes, and it is already part of `balance`. Nothing is written until that call.
+   */
+  free: { started: true; until: number } | { started: false; toCome: number }
+  /** The grants that still count, in the order they are spent. */
+  grants: Grant[]
+  /** What the user's model calls cost per day, newest first. `day` counts days since 1970-01-01 on the period's clock; days that cost nothing are left out. */
+  usage: { day: number; microCredits: number }[]
 }
 
 /** A user's account at one moment. Amounts are in micro-credits. */
@@ -160,10 +189,32 @@ const GIVE_MANUAL_GRANT = `INSERT INTO grants (user_id, source, amount, repaid, 
 SELECT ?1, 'manual', ?3, min(?3, debt), ?3 - min(?3, debt), ?2, ?4, ?5
 FROM (SELECT ${DEBT} AS debt)`
 
-/** What the user can spend (the grants that still count, less the debt), and when their free week ends. */
-const READ_BALANCE = `SELECT
-  ${balanceOf('?1', '?2')} AS balance,
-  (SELECT max(expires_at) FROM grants WHERE user_id = ?1 AND source = 'free') AS next_grant_at`
+/**
+ * What the user's next call starts with, and until when their free week runs (null when no free
+ * grant still counts). With a free grant that counts, the balance is what is stored: the grants
+ * that still count, less the debt. With none, it is that plus the free grant ?3 the next call
+ * brings: a grant pays back debt out of its amount, so the balance after it is the balance before
+ * it plus its amount, whatever is owed. `open` reads this right after giving the grant and `look`
+ * reads it without, so what a user is shown and what their next call gets are one definition.
+ */
+const READ_BALANCE = `SELECT stored + CASE WHEN free_until IS NULL THEN ?3 ELSE 0 END AS balance, free_until
+FROM (SELECT
+  ${balanceOf('?1', '?2')} AS stored,
+  (SELECT max(expires_at) FROM grants WHERE user_id = ?1 AND source = 'free' AND expires_at > ?2) AS free_until)`
+
+/** The grants that still count, in the order they are spent. */
+const READ_CURRENT_GRANTS = `SELECT source, amount, left, granted_at, expires_at, granted_by
+FROM grants WHERE user_id = ?1 AND expires_at > ?2 ORDER BY expires_at, id`
+
+/**
+ * What the user's model calls cost per day since ?2, newest first. A call belongs to the day it
+ * started on, on a clock ?3 ms ahead of UTC. Totalled from the calls themselves each time (the
+ * `model_calls_by_user` index bounds it to the period): no totals are stored. The cast keeps the
+ * day a whole number however the database binds ?3.
+ */
+const READ_USAGE = `SELECT CAST((started_at + ?3) / ${DAY_MS} AS INTEGER) AS day, sum(micro_credits) AS micro_credits
+FROM model_calls WHERE user_id = ?1 AND started_at >= ?2
+GROUP BY day HAVING sum(micro_credits) > 0 ORDER BY day DESC`
 
 const READ_GRANTS = `SELECT source, amount, left, granted_at, expires_at, granted_by
 FROM grants WHERE user_id = ?1 ORDER BY granted_at, id`
@@ -214,12 +265,38 @@ export class Ledger {
   async open(now: number): Promise<Balance> {
     const [, balance] = await this.db.batch([
       this.statement(GIVE_FREE_GRANT, now, FREE_GRANT, FREE_PERIOD_MS),
-      this.statement(READ_BALANCE, now),
+      this.statement(READ_BALANCE, now, FREE_GRANT),
     ])
     const row = only(BalanceRow, balance)
     // The batch has just made sure there is a free grant.
-    if (row.next_grant_at === null) throw new Error('no free grant after granting one')
-    return { balance: row.balance, nextGrantAt: row.next_grant_at }
+    if (row.free_until === null) throw new Error('no free grant after granting one')
+    return { balance: row.balance, nextGrantAt: row.free_until }
+  }
+
+  /**
+   * The user's credits as they see them: what their next call starts with, the grants that still
+   * count, and what they spent per day over `period`. Looking changes nothing: it never gives the
+   * weekly free grant, so it does not start the user's week.
+   */
+  async look(now: number, { days, offsetMs }: UsagePeriod): Promise<Standing> {
+    // The first moment of the earliest day, on the period's clock.
+    const today = Math.floor((now + offsetMs) / DAY_MS)
+    const from = (today - (days - 1)) * DAY_MS - offsetMs
+    const [balanceRow, grantRows, usageRows] = await this.db.batch([
+      this.statement(READ_BALANCE, now, FREE_GRANT),
+      this.statement(READ_CURRENT_GRANTS, now),
+      this.statement(READ_USAGE, from, offsetMs),
+    ])
+    const { balance, free_until: until } = only(BalanceRow, balanceRow)
+    const grants = z.array(GrantRow).parse(grantRows?.results ?? [])
+    const left = grants.reduce((sum, grant) => sum + grant.left, 0)
+    return {
+      balance,
+      // Without a free grant, what the balance holds beyond the grants is what the next one adds.
+      free: until === null ? { started: false, toCome: balance - left } : { started: true, until },
+      grants,
+      usage: z.array(UsageRow).parse(usageRows?.results ?? []),
+    }
   }
 
   /**

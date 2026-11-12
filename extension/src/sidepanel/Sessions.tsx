@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { Icon } from './icons'
-import { filterSessions, sessionPages, type SessionInfo, type SessionStore } from '../sessions'
+import { filterSessions, type SessionInfo, type SessionStore } from '../sessions'
 
-/** The list of saved sessions: search, filter by page, open, and delete. */
+/** The list of saved sessions: search by title, open, and delete. */
 export function Sessions({
   store,
   currentId,
@@ -24,7 +24,6 @@ export function Sessions({
   const [sessions, setSessions] = useState<SessionInfo[] | null>(null)
   const [error, setError] = useState<string>()
   const [query, setQuery] = useState('')
-  const [page, setPage] = useState('')
   // Deleting takes a second click on the same row, so a stray click loses nothing.
   const [confirming, setConfirming] = useState<string>()
 
@@ -52,8 +51,10 @@ export function Sessions({
   close.current = onClose
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
-      // In the search box, Escape first clears what was typed.
-      if (e.key === 'Escape' && !(e.target instanceof HTMLInputElement && e.target.value)) close.current()
+      // Not when something above the list took the key for itself: the account menu, open over the
+      // list, closes on Escape and stops there. In the search box, Escape first clears what was typed.
+      if (e.key !== 'Escape' || e.defaultPrevented) return
+      if (!(e.target instanceof HTMLInputElement && e.target.value)) close.current()
     }
     document.addEventListener('keydown', onKeyDown)
     return () => document.removeEventListener('keydown', onKeyDown)
@@ -82,10 +83,7 @@ export function Sessions({
     }
   }
 
-  const pages = sessions ? sessionPages(sessions) : []
-  // Deleting the last session on the chosen page removes that choice; show every page again.
-  const activePage = pages.some((p) => p.key === page) ? page : ''
-  const shown = sessions ? filterSessions(sessions, { query, page: activePage }) : []
+  const shown = sessions ? filterSessions(sessions, query) : []
 
   return (
     <section id="sessions" role="dialog" aria-label="Sessions">
@@ -95,19 +93,16 @@ export function Sessions({
           <Icon name="close" />
         </button>
       </div>
-      <div className="session-filters">
-        <input type="search" placeholder="Search sessions" value={query} onChange={(e) => setQuery(e.target.value)} />
-        {pages.length > 0 && (
-          <select value={activePage} onChange={(e) => setPage(e.target.value)} aria-label="Notion page">
-            <option value="">All pages</option>
-            {pages.map((p) => (
-              <option key={p.key} value={p.key}>
-                {p.title || p.key}
-              </option>
-            ))}
-          </select>
-        )}
-      </div>
+      <label className="session-search">
+        <Icon name="search" />
+        <input
+          type="search"
+          placeholder="Search sessions"
+          aria-label="Search sessions"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+        />
+      </label>
       {error && <div className="error">{error}</div>}
       {sessions && shown.length === 0 && (
         <div className="empty">{sessions.length === 0 ? 'No sessions yet.' : 'No matching sessions.'}</div>
@@ -115,7 +110,11 @@ export function Sessions({
       <ul className="session-list">
         {shown.map((s) => (
           <li key={s.id} className={s.id === currentId ? 'current' : undefined}>
-            <button className="session-open" onClick={() => void openSession(s.id)}>
+            <button
+              className="session-open"
+              aria-current={s.id === currentId || undefined}
+              onClick={() => void openSession(s.id)}
+            >
               <span className="session-title">{s.title || 'Untitled'}</span>
               <span className="session-meta">
                 {s.page && <>{s.page.title || 'Untitled page'} · </>}
@@ -129,7 +128,7 @@ export function Sessions({
               title="Delete session"
               aria-label={confirming === s.id ? undefined : 'Delete session'}
             >
-              {confirming === s.id ? 'Delete?' : <Icon name="close" />}
+              {confirming === s.id ? 'Delete?' : <Icon name="trash" />}
             </button>
           </li>
         ))}
