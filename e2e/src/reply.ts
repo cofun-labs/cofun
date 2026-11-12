@@ -19,7 +19,7 @@ export type ReplyPart =
 export interface PanelSnapshot {
   /** The composer is there: Notico is signed in and the chat is showing. */
   ready: boolean
-  /** The Send button reads Stop: a reply is still coming. */
+  /** The Send button is named Stop: a reply is still coming. */
   busy: boolean
   /** Replies shown, including one still coming. */
   replies: number
@@ -74,7 +74,8 @@ export function readPanel(): PanelSnapshot {
   const replies = [...document.querySelectorAll('#messages .msg.assistant')]
   const last = replies.at(-1)
   const parts: ReplyPart[] = []
-  for (const el of last ? [...last.children] : []) {
+  // The reply's pieces sit in `.reply`, beside the avatar.
+  for (const el of last?.querySelector('.reply')?.children ?? []) {
     const text = (el.textContent ?? '').trim()
     if (el.matches('details.tool')) {
       const sections: { label: string; text: string }[] = []
@@ -96,7 +97,7 @@ export function readPanel(): PanelSnapshot {
   }
   return {
     ready: !!document.querySelector('#composer textarea'),
-    busy: submit?.textContent === 'Stop',
+    busy: submit?.getAttribute('aria-label') === 'Stop',
     replies: replies.length,
     asking: !!last?.querySelector('.tool-confirm'),
     parts,

@@ -191,7 +191,7 @@ export async function openPanel(
   )
   if (!snap.ready) throw new E2eError('Notico is signed out in the side panel. Sign in by hand, then try again.')
   if (snap.busy) throw new E2eError('A reply is still running in the side panel; wait for it with pnpm e2e ask.')
-  if (snap.replies > 0 && !keepChat) await clickButton(panel, '.toolbar button', 'New chat')
+  if (snap.replies > 0 && !keepChat) await clickButton(panel, 'header button', 'New chat')
   return panel
 }
 
@@ -271,7 +271,10 @@ function label(answer: Answer): string {
 async function clickButton(page: Target, selector: string, text: string): Promise<void> {
   const clicked = await page.evaluate(
     (sel: string, t: string) => {
-      const button = [...document.querySelectorAll<HTMLButtonElement>(sel)].find((b) => b.textContent?.trim() === t)
+      // By its accessible name: icon buttons have a label and no text.
+      const button = [...document.querySelectorAll<HTMLButtonElement>(sel)].find(
+        (b) => (b.getAttribute('aria-label') ?? b.textContent ?? '').trim() === t,
+      )
       button?.click()
       return !!button
     },
