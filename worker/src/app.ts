@@ -4,6 +4,7 @@ import { cors } from 'hono/cors'
 import type { ContentfulStatusCode } from 'hono/utils/http-status'
 import * as z from './zod'
 import { adminPage } from './admin'
+import { readAccounts, readOverview, type Period } from './overview'
 import { loginPage } from './login'
 import {
   FREE_CREDITS,
@@ -134,6 +135,61 @@ const GrantBody = part(z.looseObject({}), 'body must be a JSON object').pipe(
     days: part(z.int().min(1).max(MAX_GRANT_DAYS), `days must be a whole number from 1 to ${MAX_GRANT_DAYS}`),
   }),
 )
+
+/** The longest period the overview covers, and the most accounts one list shows: one request never reads more of the tables than this. */
+const MAX_PERIOD_DAYS = 92
+const MAX_ACCOUNTS = 200
+const DEFAULT_ACCOUNTS = 50
+/** No clock is further from UTC than 14 hours. */
+const MAX_UTC_OFFSET = 14 * 60
+
+/** A calendar date of this century written YYYY-MM-DD, as the UTC midnight that starts it. */
+const CalendarDate = z
+  .string()
+  .regex(/^20\d{2}-\d{2}-\d{2}$/)
+  .transform((date, ctx) => {
+    const ms = Date.parse(`${date}T00:00:00Z`)
+    // A date that does not exist (02-30) is either not parsed or moved to another day.
+    if (!Number.isNaN(ms) && new Date(ms).toISOString().startsWith(date)) return ms
+    ctx.addIssue({ code: 'custom', message: 'not a date' })
+    return z.NEVER
+  })
+
+/** A whole number as a query parameter carries it. */
+const WholeNumber = z
+  .string()
+  .regex(/^-?\d{1,6}$/)
+  .transform(Number)
+
+/**
+ * The period an admin asks for, as query parameters: its first and last day, both counted in full,
+ * and how many minutes the admin's clock is ahead of UTC (0 when not given: UTC days). The worker
+ * does not know the admin's time zone, so the page sends its own offset.
+ */
+const PeriodQuery = z
+  .object({
+    from: part(CalendarDate, 'from must be a date like 2026-11-12'),
+    to: part(CalendarDate, 'to must be a date like 2026-11-12'),
+    utcOffset: part(
+      WholeNumber.pipe(z.int().min(-MAX_UTC_OFFSET).max(MAX_UTC_OFFSET)),
+      `utcOffset must be a whole number of minutes from -${MAX_UTC_OFFSET} to ${MAX_UTC_OFFSET}`,
+    ).optional(),
+  })
+  .transform(({ from, to, utcOffset = 0 }, ctx): Period => {
+    const days = (to - from) / DAY_MS + 1
+    if (days < 1) ctx.addIssue({ code: 'custom', message: 'to must not be before from' })
+    else if (days > MAX_PERIOD_DAYS) {
+      ctx.addIssue({ code: 'custom', message: `the period must be at most ${MAX_PERIOD_DAYS} days` })
+    }
+    // Midnight on the admin's clock is that much before (or after) midnight UTC.
+    const offsetMs = utcOffset * 60_000
+    return { from: from - offsetMs, to: to + DAY_MS - offsetMs, utcOffset }
+  })
+
+const AccountsLimit = part(
+  WholeNumber.pipe(z.int().min(1).max(MAX_ACCOUNTS)),
+  `limit must be a whole number from 1 to ${MAX_ACCOUNTS}`,
+).optional()
 
 /** How many recent days of spending a user is shown, today included. */
 const USAGE_DAYS = 30
@@ -524,6 +580,33 @@ export function createApp({
     const unavailable = 'Credits are unavailable, try again in a moment.'
     const account = await onLedger(c, userId, unavailable, (ledger) => ledger.read(now().getTime()))
     return c.json(accountJson(userId, account))
+  })
+
+  /** Runs a read across accounts, or refuses the request when it fails. */
+  async function onOverview<T>(read: () => Promise<T>): Promise<T> {
+    try {
+      return await read()
+    } catch (err) {
+      logError(`admin overview failed: ${errorSummary(err)}`)
+      throw new HttpError(503, 'credits_unavailable', 'Credits are unavailable, try again in a moment.')
+    }
+  }
+
+  // What was granted and spent in a period across every account, in all and per day.
+  app.get('/v1/admin/overview', async (c) => {
+    const period = parse(PeriodQuery, c.req.query())
+    const overview = await onOverview(() => readOverview(c.env.DB, period))
+    return c.json({ period, ...overview })
+  })
+
+  // The accounts with a grant or a model call in a period, the biggest spenders first.
+  app.get('/v1/admin/accounts', async (c) => {
+    const period = parse(PeriodQuery, c.req.query())
+    const limit = parse(AccountsLimit, c.req.query('limit')) ?? DEFAULT_ACCOUNTS
+    // The balances are as of this moment, like an account's own lookup.
+    const at = now().getTime()
+    const accounts = await onOverview(() => readAccounts(c.env.DB, period, at, limit))
+    return c.json({ period, at, ...accounts })
   })
 
   app.post('/v1/admin/accounts/:userId/grants', async (c) => {
