@@ -488,9 +488,6 @@ export function Chat({ userId }: { userId: string }) {
               </div>
             ) : (
               <div key={i} className="msg assistant">
-                <span className="avatar">
-                  <Mark />
-                </span>
                 <div className="reply">
                   {m.parts.map((p, j) =>
                     // Models often send blank lines around a tool call; they would show as empty rows.
@@ -551,7 +548,13 @@ export function Chat({ userId }: { userId: string }) {
             title="Enter to send, Shift+Enter for a new line"
             aria-label="Message"
           />
-          <button className="send" type="submit" aria-label={busy ? 'Stop' : 'Send'} title={busy ? 'Stop' : 'Send'}>
+          <button
+            // Blue only when pressing it does something: there is a question to send, or a reply to stop.
+            className={busy || input.trim() ? 'send ready' : 'send'}
+            type="submit"
+            aria-label={busy ? 'Stop' : 'Send'}
+            title={busy ? 'Stop' : 'Send'}
+          >
             <Icon name={busy ? 'square' : 'send'} />
           </button>
         </form>

@@ -1,14 +1,18 @@
-/* The Cofun look: blue as the one accent, on neutrals that lean toward it. System fonts only: the
-   extension contacts no host for fonts (see PRIVACY.md). */
+/* The Cofun look: blue has one meaning, the brand and the one action to take now (the mark, the
+   user's question, the primary action, the selected session); everything else is neutral. System
+   fonts only: the extension contacts no host for fonts (see PRIVACY.md). */
 :root {
   --bg: #fbfcfe;
   --fg: #14213a;
   --muted: #5d6b85;
-  --border: #dde5f0;
-  --tint: #eaf3fd;
+  --border: #e3e5e9;
+  /* Quiet surfaces: secondary buttons, hover, the search field. */
+  --tint: #f0f1f4;
+  /* The selected row: the one tinted surface. */
+  --selected: #eaf3fd;
   /* The mark, icons, and outlines. */
   --accent: #2383e2;
-  /* Text on the tint: the accent is too light to read there. */
+  /* Text on the selected tint: the accent is too light to read there. */
   --accent-text: #1766bd;
   /* Behind white text: a little darker than the accent, so the text stays readable. */
   --accent-fill: #1d74cf;
@@ -16,7 +20,7 @@
   --ok: #1f8a5b;
   --error: #c4352f;
   --error-bg: #fdecea;
-  --shadow: rgb(35 131 226 / 0.12);
+  --shadow: rgb(20 33 58 / 0.08);
   color-scheme: light dark;
 }
 
@@ -25,8 +29,9 @@
     --bg: #0f1622;
     --fg: #e8eef8;
     --muted: #93a1b8;
-    --border: #24324a;
-    --tint: #17283f;
+    --border: #2a303b;
+    --tint: #1d222b;
+    --selected: #17283f;
     --accent: #4a9eea;
     --accent-text: #4a9eea;
     --accent-fill: #2573c9;
@@ -98,7 +103,7 @@ button {
   stroke-linejoin: round;
 }
 
-/* A pill button: the tinted one is the quiet choice, `.primary` the one to press. */
+/* A pill button: the grey one is the quiet choice, `.primary` the one to press. */
 button.primary,
 .signed-out button,
 .tool-answers button {
@@ -106,7 +111,7 @@ button.primary,
   border-radius: 999px;
   font-weight: 600;
   background: var(--tint);
-  color: var(--accent-text);
+  color: var(--fg);
 }
 
 button.primary {
@@ -121,8 +126,17 @@ button.primary {
   height: 32px;
   flex: none;
   border-radius: 50%;
+  color: var(--muted);
+  transition:
+    background-color 0.12s,
+    color 0.12s;
+}
+
+.icon-button:hover,
+.icon-button:focus-visible,
+.icon-button[aria-expanded='true'] {
   background: var(--tint);
-  color: var(--accent);
+  color: var(--fg);
 }
 
 /* Header */
@@ -203,7 +217,7 @@ header .title {
   padding: 6px 12px;
   border-radius: 999px;
   background: var(--tint);
-  color: var(--accent-text);
+  color: var(--fg);
   font-size: 13px;
   font-weight: 500;
 }
@@ -232,6 +246,11 @@ header .title {
   overflow-wrap: anywhere;
 }
 
+/* More room before each new question than between a question and its reply, so turns read apart. */
+.msg.assistant + .msg.user {
+  margin-top: 14px;
+}
+
 .msg.user {
   align-self: flex-end;
   max-width: 84%;
@@ -241,42 +260,17 @@ header .title {
   color: var(--on-accent);
 }
 
-.msg.assistant {
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
-}
-
-.avatar {
-  display: grid;
-  place-items: center;
-  width: 24px;
-  height: 24px;
-  flex: none;
-  margin-top: 2px;
-  border-radius: 50%;
-  background: var(--tint);
-  color: var(--accent);
-}
-
-.avatar svg {
-  width: 14px;
-  height: 14px;
-}
-
 .reply {
-  flex: 1;
-  min-width: 0;
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: 6px;
+  gap: 8px;
+  padding: 0 2px;
 }
 
+/* The reply is plain text across the panel; only the question is in a bubble. */
 .reply .text {
-  padding: 9px 12px;
-  border-radius: 4px 16px 16px 16px;
-  background: var(--tint);
+  align-self: stretch;
 }
 
 .reply .error {
@@ -293,9 +287,6 @@ header .title {
 }
 
 .note.working {
-  padding: 4px 12px;
-  border-radius: 4px 16px 16px 16px;
-  background: var(--tint);
   font-size: 14px;
   font-weight: 700;
   letter-spacing: 0.15em;
@@ -337,8 +328,8 @@ header .title {
   display: none;
 }
 
+.tool summary:hover,
 .tool[open] summary {
-  border-color: var(--accent);
   color: var(--fg);
 }
 
@@ -352,23 +343,20 @@ header .title {
   height: 13px;
 }
 
-.tool.running .tool-mark,
-.tool.confirm .tool-mark {
-  color: var(--accent);
-}
-
+/* Only the status icon carries color: green when done, red when failed. */
 .tool.running .tool-mark {
+  color: var(--muted);
   animation: working 1.2s ease-in-out infinite;
 }
 
+.tool.confirm .tool-mark,
 .tool.skipped .tool-mark,
 .tool.stopped .tool-mark,
 .tool.declined .tool-mark {
   color: var(--muted);
 }
 
-.tool.failed .tool-mark,
-.tool.failed .tool-name {
+.tool.failed .tool-mark {
   color: var(--error);
 }
 
@@ -412,7 +400,7 @@ header .title {
   flex-direction: column;
   gap: 10px;
   padding: 12px;
-  border: 1.5px solid var(--accent);
+  border: 1px solid var(--border);
   border-radius: 16px;
   font-weight: 700;
 }
@@ -441,7 +429,7 @@ header .title {
 }
 
 #composer:focus-within {
-  border-color: var(--accent);
+  border-color: var(--muted);
 }
 
 #composer textarea {
@@ -471,6 +459,14 @@ header .title {
   height: 34px;
   flex: none;
   border-radius: 50%;
+  background: var(--tint);
+  color: var(--muted);
+  transition:
+    background-color 0.12s,
+    color 0.12s;
+}
+
+#composer .send.ready {
   background: var(--accent-fill);
   color: var(--on-accent);
 }
@@ -526,7 +522,7 @@ header .title {
 }
 
 .session-search:focus-within {
-  border-color: var(--accent);
+  border-color: var(--muted);
   background: var(--bg);
 }
 
@@ -570,7 +566,7 @@ header .title {
   list-style: none;
 }
 
-/* Rows are flat until hovered; the open session carries the accent. */
+/* Rows are flat until hovered; the open session is the one tinted row. */
 .session-list li {
   position: relative;
   display: flex;
@@ -582,11 +578,11 @@ header .title {
 }
 
 .session-list li:hover {
-  background: color-mix(in srgb, var(--tint) 40%, transparent);
+  background: var(--tint);
 }
 
 .session-list li.current {
-  background: var(--tint);
+  background: var(--selected);
 }
 
 /* A hairline between rows, dropped next to a row that has its own background. */
@@ -713,8 +709,8 @@ header .title {
   flex: none;
   overflow: hidden;
   border-radius: 50%;
-  background: var(--accent-fill);
-  color: var(--on-accent);
+  background: var(--tint);
+  color: var(--fg);
   font-weight: 700;
 }
 
@@ -772,7 +768,6 @@ header .title {
 .account-popover [role='menuitem']:hover,
 .account-popover [role='menuitem']:focus-visible {
   background: var(--tint);
-  color: var(--accent-text);
 }
 
 /* A button that reads as a link, inside a sentence. */

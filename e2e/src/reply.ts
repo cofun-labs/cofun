@@ -74,7 +74,7 @@ export function readPanel(): PanelSnapshot {
   const replies = [...document.querySelectorAll('#messages .msg.assistant')]
   const last = replies.at(-1)
   const parts: ReplyPart[] = []
-  // The reply's pieces sit in `.reply`, beside the avatar.
+  // The reply's pieces sit in `.reply`.
   for (const el of last?.querySelector('.reply')?.children ?? []) {
     const text = (el.textContent ?? '').trim()
     if (el.matches('details.tool')) {
