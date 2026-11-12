@@ -132,6 +132,7 @@ header {
   gap: 8px;
   min-height: 52px;
   padding: 0 12px;
+  border-bottom: 1px solid var(--border);
 }
 
 .brand-tile {
@@ -569,7 +570,7 @@ header .title {
   overflow-y: auto;
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 1px;
   margin: 0 -4px;
   padding: 0;
   list-style: none;
@@ -592,6 +593,24 @@ header .title {
 
 .session-list li.current {
   background: var(--tint);
+}
+
+/* A hairline between rows, dropped next to a row that has its own background. */
+.session-list li + li::after {
+  content: '';
+  position: absolute;
+  top: -1px;
+  left: 14px;
+  right: 14px;
+  height: 1px;
+  background: var(--border);
+}
+
+.session-list li:hover::after,
+.session-list li.current::after,
+.session-list li:hover + li::after,
+.session-list li.current + li::after {
+  display: none;
 }
 
 .session-list li.current::before {
