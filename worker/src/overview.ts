@@ -43,8 +43,18 @@ interface Totals {
   completionTokens: number
 }
 
+/** What one product's model calls cost in a period. Amounts are in micro-credits. */
+interface ProductSpending {
+  /** `notico`, another extension's name, or `unknown` for a caller that is no listed extension. */
+  product: string
+  spent: number
+  calls: number
+}
+
 export interface Overview {
   totals: Totals
+  /** The period's spending by the product the calls came from, the one that spent the most first. */
+  products: ProductSpending[]
   /** Every day of the period, oldest first, the days when nothing happened included. `day` is YYYY-MM-DD. */
   days: ({ day: string } & Totals)[]
 }
@@ -82,6 +92,12 @@ const CALLS_PER_DAY = `SELECT (started_at + CAST(?3 AS INTEGER)) / ${DAY_MS} AS 
 FROM model_calls INDEXED BY model_calls_by_time
 WHERE started_at >= ?1 AND started_at < ?2
 GROUP BY day`
+
+const SPENT_PER_PRODUCT = `SELECT product, sum(micro_credits) AS spent, count(*) AS calls
+FROM model_calls INDEXED BY model_calls_by_time
+WHERE started_at >= ?1 AND started_at < ?2
+GROUP BY product
+ORDER BY spent DESC, calls DESC, product`
 
 /**
  * The accounts with a grant or a model call in the period, the biggest spenders first, at most ?4
@@ -123,6 +139,7 @@ const CallsRow = z.object({
   cached_tokens: count,
   completion_tokens: count,
 })
+const ProductRow = z.object({ product: z.string(), spent: count, calls: count })
 const AccountRow = z
   .object({ user_id: z.string(), granted: count, spent: count, calls: count, balance: z.int() })
   .transform((row): AccountSummary => ({
@@ -156,12 +173,13 @@ function add(totals: Totals, more: Totals): void {
   totals.completionTokens += more.completionTokens
 }
 
-/** What was granted and spent in the period, for each of its days and in all. Both tables are read at one moment. */
+/** What was granted and spent in the period, for each of its days, by product, and in all. Both tables are read at one moment. */
 export async function readOverview(db: Database, { from, to, utcOffset }: Period): Promise<Overview> {
   const offsetMs = utcOffset * 60_000
-  const [grantedRows, callsRows] = await db.batch([
+  const [grantedRows, callsRows, productRows] = await db.batch([
     db.prepare(GRANTED_PER_DAY).bind(from, to, offsetMs),
     db.prepare(CALLS_PER_DAY).bind(from, to, offsetMs),
+    db.prepare(SPENT_PER_PRODUCT).bind(from, to),
   ])
   // The period's days, by their number on the period's clock: `from` is a midnight on it.
   const first = (from + offsetMs) / DAY_MS
@@ -188,6 +206,7 @@ export async function readOverview(db: Database, { from, to, utcOffset }: Period
   for (const day of days.values()) add(totals, day)
   return {
     totals,
+    products: z.array(ProductRow).parse(productRows?.results ?? []),
     days: [...days].map(([day, of]) => ({ day: new Date(day * DAY_MS).toISOString().slice(0, 10), ...of })),
   }
 }

@@ -4,6 +4,8 @@
 
 The operator needs to know how the service's credits move as a whole, not one account at a time (UC-ADMIN-001). On the admin page they pick a period of days and see, for the whole period and for each of its days: the credits granted, by where they came from (the weekly free credits, or granted by hand), the credits spent, the number of calls made to the AI model with how many of them failed, and the tokens those calls used. Every call that did not end well is a failed call, the ones the user stopped included; those are also counted on their own, as cancelled.
 
+For the period they also see what was spent through each product (Notico, and each extension that follows it), with the number of model calls, the product that spent the most first. A call is counted under the product it was made from, which the service tells from the user's sign-in, not from anything the extension says about itself; a call that came from none of the products is counted on its own, as unknown. Credits are one balance per account, whichever products spend them.
+
 For the same period they see the accounts that were granted or spent credits in it: what each was granted and spent in the period, and its balance now, with the account that spent the most first. From there they open an account's own record (UC-ADMIN-001). An account is shown by its user id only.
 
 A day is a calendar day on the operator's own clock. A grant belongs to the day it was made, and a model call, with what it cost, to the day it started.
@@ -29,6 +31,7 @@ Key constraints:
 | UC-ADMIN-002-S07 | P1 | ✅ | Given an operator; when they ask for a period that is longer than allowed or ends before it starts; then it is refused. |
 | UC-ADMIN-002-S08 | P1 | ✅ | Given an account that has not used the AI this week; when an operator looks at the overview and the accounts; then no account changes, and the account's week of free credits still starts, in full, when the user next asks the AI. |
 | UC-ADMIN-002-S09 | P1 | ✅ | Given a model call the user stopped; when an operator looks at its period; then it counts as a failed call, and as a cancelled one. |
+| UC-ADMIN-002-S10 | P1 | ✅ | Given accounts that used the AI from different products, and calls that came from none of them; when an operator looks at a period; then they see what each product spent and its model calls, with the calls from no product counted as unknown, the one that spent the most first. |
 
 ### ai-e2e
 
