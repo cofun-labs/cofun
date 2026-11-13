@@ -40,6 +40,8 @@ As with any web service, Cloudflare (which runs the worker) and Clerk see your I
 
 The worker checks who you are, passes the conversation to the AI model and streams the reply back, keeps your credits, and keeps a usage record of each request: numbers, times, and ids, never what you asked or what the assistant answered. It does not store the conversation or the Notion content in it, and of a request that fails it logs at most a short, bounded part of the error. [Cofun's privacy page](../../PRIVACY.md#what-the-worker-does-with-it) has the full account: what is kept, for how long, and who can see it.
 
+The side panel's account menu and settings page show your credits (how many are left, when they expire, and when free ones arrive) and how many you used on each of the last 30 days. From the settings page you can open the history of your credits: every grant you were given and the credits you used on each day, as far back as you have used the assistant. The history is read from the worker only when you open it.
+
 ## What stays on your device
 
 - **Your conversations.** Sessions are saved in the extension's IndexedDB storage in your Chrome profile, one database per signed-in account. They include tool results, such as the content of Notion pages the assistant read, and the URL and title of a tab it looked up. They are not sent to our servers, except that continuing a conversation sends it to the worker again as described above. They are **not encrypted** and they **stay after you sign out**, so that you can pick up again: anyone with access to your Chrome profile can read them. Deleting a session in the side panel removes it; removing the extension removes them all.

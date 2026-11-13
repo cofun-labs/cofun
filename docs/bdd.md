@@ -35,7 +35,7 @@ A scenario earns its place only if deleting it would let an implementation pass 
 Each extension is a product with its own use cases, in its own directory: `docs/use-cases/notico/` for Notico. The directory, not the ID, tells which product a use case belongs to.
 
 - **A product's use cases are written in full for that product**, even where they repeat another product's: sign-in, chat, sessions, settings, and opening the side panel are each product's own, worded for its site. Use cases are not shared between products to save repeating them.
-- **A scenario a product repeats is verified by that product's own test**, named with that product's scenario ID, so a copy that drifts fails its own tests.
+- **A scenario a product repeats is verified by that product's own test**, named with that product's scenario ID, so a copy that drifts fails its own tests. This holds for what the product's own code makes happen (its client code, its side panel, its agent against the worker). A repeated scenario that only the worker decides, the same whichever extension asks (such as a credit rule), is not tested again: the copy names the scenario whose test in `worker/test/` verifies it.
 - **`docs/use-cases/shared/`** holds only behavior that involves the backend alone and no extension's UI, such as the operators' admin page and usage records. A shared use case is verified once, in `worker/test/`.
 
 ## Strategy
