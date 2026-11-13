@@ -59,7 +59,7 @@ There is nothing to connect on the Notion side: no integration to create, no tok
 
 ## Privacy and safety
 
-**What leaves your browser.** Your questions, and what Notico reads to answer them (pages, database rows, comments, search results), go to the Notico server and on to the AI model, which runs on Cloudflare Workers AI. On a tab that isn't Notion, Notico never reads the page; it sends that tab's address and title only when a question needs them. The server doesn't keep any of this: for each request it records who asked, sizes, token counts, and the outcome, never the text of a prompt or a reply. [PRIVACY.md](PRIVACY.md) has the full account: what is read, which hosts it goes to, and what is kept.
+**What leaves your browser.** Your questions, and what Notico reads to answer them (pages, database rows, comments, search results), go to our server (one for every [Cofun](../../README.md) extension) and on to the AI model, which runs on Cloudflare Workers AI. On a tab that isn't Notion, Notico never reads the page; it sends that tab's address and title only when a question needs them. The server doesn't keep any of this: for each request it records who asked, sizes, token counts, and the outcome, never the text of a prompt or a reply. [Notico's privacy page](PRIVACY.md) has the full account of what is read and which hosts it goes to, and [Cofun's](../../PRIVACY.md) of what the server keeps.
 
 **What stays on your device.** Conversations are saved in Chrome on your device, per account, and kept after you sign out so you can pick up again. They are not encrypted: anyone who can use your Chrome profile can read them, including the page content Notico read.
 
