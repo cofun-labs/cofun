@@ -21,8 +21,8 @@ The extension sends requests to these hosts and no others. The extension's conte
 | Host | What is sent | Why |
 |---|---|---|
 | `www.notion.so`, `app.notion.com` | Requests to Notion's own API, sent from inside your Notion tab with that tab's session: reads, and the changes you ask for | To read and edit your pages. This is the same service your Notion tab already talks to |
-| `notico-api.cofun.cc` (our worker) | Your Clerk session token, and for each question the conversation so far: your messages, the assistant's replies, the tool calls and their results (which contain the Notion content the assistant read), the open Notion page's title and URL, the current tab's title and URL on another site if the assistant looked them up, and the assistant's instructions | To get the AI model's reply |
-| `notico-api.cofun.cc` (our worker) | Your Clerk session token, how far your clock is from UTC, in minutes, and, when you look further back in your credit history, the date or the place in the list to go on from (both as part of the request's address) | To show you your own credits, how many you used each day, by the days of your own clock, and their history |
+| `api.cofun.cc` (our worker) | Your Clerk session token, and for each question the conversation so far: your messages, the assistant's replies, the tool calls and their results (which contain the Notion content the assistant read), the open Notion page's title and URL, the current tab's title and URL on another site if the assistant looked them up, and the assistant's instructions | To get the AI model's reply |
+| `api.cofun.cc` (our worker) | Your Clerk session token, how far your clock is from UTC, in minutes, and, when you look further back in your credit history, the date or the place in the list to go on from (both as part of the request's address) | To show you your own credits, how many you used each day, by the days of your own clock, and their history |
 | `clerk.cofun.cc` (Clerk's Frontend API) | Your Clerk session, to load your account and get session tokens | Sign-in |
 | `img.clerk.com` (Clerk's image host) | A request for your account's avatar image | To show who is signed in, in the side panel's account menu and settings page |
 
@@ -34,7 +34,7 @@ As with any web service, Cloudflare (which runs the worker) and Clerk see your I
 
 ### The sign-in page
 
-"Sign in" opens `https://notico-api.cofun.cc/login` in a normal tab. That page runs Clerk's sign-in code, loaded from Clerk's Frontend API (`clerk.cofun.cc`). What you enter there (an email address, or a Google sign-in) goes to Clerk and to the sign-in provider you choose, not to our worker. Clerk holds your account: your email address, name, and avatar as the sign-in provider gives them. See [Clerk's privacy policy](https://clerk.com/legal/privacy). The side panel shows your name, email address, and avatar from that account, and lets you sign out; it offers nothing to change the account.
+"Sign in" opens `https://api.cofun.cc/login` in a normal tab. That page runs Clerk's sign-in code, loaded from Clerk's Frontend API (`clerk.cofun.cc`). What you enter there (an email address, or a Google sign-in) goes to Clerk and to the sign-in provider you choose, not to our worker. Clerk holds your account: your email address, name, and avatar as the sign-in provider gives them. See [Clerk's privacy policy](https://clerk.com/legal/privacy). The side panel shows your name, email address, and avatar from that account, and lets you sign out; it offers nothing to change the account.
 
 ## What the worker does with it
 

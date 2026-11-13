@@ -37,7 +37,7 @@ npx wrangler login
 CLOUDFLARE_ACCOUNT_ID=<account id> pnpm run deploy
 ```
 
-The worker runs on the custom domain `notico-api.cofun.cc` (see `routes` in `wrangler.jsonc`). The domain's zone must belong to the deploying Cloudflare account.
+The worker runs on the custom domain `api.cofun.cc` (see `routes` in `wrangler.jsonc`). The domain's zone must belong to the deploying Cloudflare account.
 
 Variables in `wrangler.jsonc`:
 
@@ -79,7 +79,7 @@ Each grant made by hand is written to Workers Logs as one line: `manual grant: a
 
 ### Usage records
 
-Every chat request that passes auth leaves one data point in the `notico_api_usage` Analytics Engine dataset (binding `USAGE`), written when the reply ends, is refused, or fails. Records hold sizes, token counts, the credits charged, and the outcome, never message or reply text. Analytics Engine deletes them after 90 days. They are for watching the service: they describe every request, refused and failed ones too. Users are charged from the credits database below (see [Credits](architecture.md#credits)), never from these records.
+Every chat request that passes auth leaves one data point in the `cofun_api_usage` Analytics Engine dataset (binding `USAGE`), written when the reply ends, is refused, or fails. Records hold sizes, token counts, the credits charged, and the outcome, never message or reply text. Analytics Engine deletes them after 90 days. They are for watching the service: they describe every request, refused and failed ones too. Users are charged from the credits database below (see [Credits](architecture.md#credits)), never from these records.
 
 | Column | Value |
 |---|---|
@@ -100,7 +100,7 @@ SELECT index1 AS user, toStartOfDay(timestamp) AS day,
        sum(_sample_interval * double4) AS completion_tokens,
        sum(_sample_interval * double7) / 1000000 AS credits,
        sumIf(_sample_interval, blob2 != 'ok' AND blob2 != 'cancelled') AS failed
-FROM notico_api_usage
+FROM cofun_api_usage
 WHERE timestamp > NOW() - INTERVAL '7' DAY
 GROUP BY user, day
 ORDER BY day DESC, requests DESC
@@ -108,22 +108,22 @@ ORDER BY day DESC, requests DESC
 
 ### Credits database
 
-Grants and model calls (with what each cost) are kept in the D1 database `notico-db` (binding `DB`), on the account that deploys the worker. `wrangler.jsonc` names it and does not hold its id: on deploy, wrangler finds the database by name on that account, so the id never has to be committed. The schema is the migration files in `worker/migrations/`, applied in order on every deploy (see the deploy command below). A new migration is a new file with the next number; never change one that was applied.
+Grants and model calls (with what each cost) are kept in the D1 database `cofun-db` (binding `DB`), on the account that deploys the worker. `wrangler.jsonc` names it and does not hold its id: on deploy, wrangler finds the database by name on that account, so the id never has to be committed. The schema is the migration files in `worker/migrations/`, applied in order on every deploy (see the deploy command below). A new migration is a new file with the next number; never change one that was applied.
 
 Create the database once, on the account that deploys the worker (with several accounts in one login, choose one with `CLOUDFLARE_ACCOUNT_ID`; don't commit it):
 
 ```bash
-cf d1 create --name notico-db
+cf d1 create --name cofun-db
 ```
 
-Apply the migrations by hand, for example before the first deploy (wrangler finds the database by name; [`cf d1 migrations apply`](https://developers.cloudflare.com/d1/reference/migrations/) does the same with the database id, which `cf d1 list --name notico-db` shows):
+Apply the migrations by hand, for example before the first deploy (wrangler finds the database by name; [`cf d1 migrations apply`](https://developers.cloudflare.com/d1/reference/migrations/) does the same with the database id, which `cf d1 list --name cofun-db` shows):
 
 ```bash
 cd worker
-pnpm exec wrangler d1 migrations apply notico-db --remote
+pnpm exec wrangler d1 migrations apply cofun-db --remote
 ```
 
-Query it with `cf d1 query <database id> --sql "…"`, or in the dashboard (Storage & databases → D1 → `notico-db` → Console). Amounts are micro-credits (divide by 1,000,000 for credits) and times are ms since the epoch. Rows are never deleted. The [admin page](#admin-page) shows what was granted and spent per day and per account; the queries below are for what it does not show, or for a longer time than it covers. D1 runs one query at a time, so a query over a whole table holds up charging while it runs: bound it by time where you can. Credits granted and spent per day, with calls and tokens, across all users:
+Query it with `cf d1 query <database id> --sql "…"`, or in the dashboard (Storage & databases → D1 → `cofun-db` → Console). Amounts are micro-credits (divide by 1,000,000 for credits) and times are ms since the epoch. Rows are never deleted. The [admin page](#admin-page) shows what was granted and spent per day and per account; the queries below are for what it does not show, or for a longer time than it covers. D1 runs one query at a time, so a query over a whole table holds up charging while it runs: bound it by time where you can. Credits granted and spent per day, with calls and tokens, across all users:
 
 ```sql
 SELECT day, sum(granted) / 1e6 AS credits_granted, sum(spent) / 1e6 AS credits_spent,
@@ -163,16 +163,16 @@ FROM (SELECT DISTINCT user_id FROM grants) u ORDER BY credits_owed DESC;
 
 ### Workers Builds settings
 
-In the Cloudflare dashboard: Workers & Pages → `notico-api` → Settings → Builds → connect `cofun-labs/notico`.
+In the Cloudflare dashboard: Workers & Pages → `cofun-api` → Settings → Builds → connect `cofun-labs/notico`.
 
 | Setting | Value |
 |---|---|
 | Root directory | `worker` |
 | Build command | `pnpm install --frozen-lockfile && pnpm test` |
-| Deploy command | `npx wrangler d1 migrations apply notico-db --remote && npx wrangler deploy` |
+| Deploy command | `npx wrangler d1 migrations apply cofun-db --remote && npx wrangler deploy` |
 | Production branch | `main` |
 
-The deploy command applies the migrations not yet applied to `notico-db`, then deploys, so new code never runs on an old schema. Wrangler skips its confirmation in CI, and a migration that fails is rolled back and stops the deploy. The build's API token (Workers & Pages → `notico-api` → Settings → Builds → API token) needs **D1: Edit** on the account, both to apply the migrations and to find `notico-db` by name. A token that Workers Builds creates has it (checked on one created in November 2026); a token made by hand needs it added. The worker's tests use Node's built-in `node:sqlite`, so the build needs Node.js 24 (the Workers Builds default).
+The deploy command applies the migrations not yet applied to `cofun-db`, then deploys, so new code never runs on an old schema. Wrangler skips its confirmation in CI, and a migration that fails is rolled back and stops the deploy. The build's API token (Workers & Pages → `cofun-api` → Settings → Builds → API token) needs **D1: Edit** on the account, both to apply the migrations and to find `cofun-db` by name. A token that Workers Builds creates has it (checked on one created in November 2026); a token made by hand needs it added. The worker's tests use Node's built-in `node:sqlite`, so the build needs Node.js 24 (the Workers Builds default).
 
 ## Extension
 

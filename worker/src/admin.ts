@@ -15,7 +15,7 @@ export function adminPage(publishableKey: string): string {
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <meta name="robots" content="noindex" />
-<title>Admin · Notico</title>
+<title>Admin · Cofun</title>
 <style>
   :root { --bg: #f7f7f5; --fg: #1f1f1f; --muted: #6b6b6b; --line: #d9d9d6; --bad: #b3261e; }
   @media (prefers-color-scheme: dark) { :root { --bg: #191919; --fg: #e6e6e6; --muted: #9b9b9b; --line: #3a3a3a; --bad: #f2b8b5; } }
@@ -48,7 +48,7 @@ export function adminPage(publishableKey: string): string {
 </style>
 </head>
 <body>
-<h1>Notico admin</h1>
+<h1>Cofun admin</h1>
 <div id="sign-in"></div>
 <div id="app">
   <div class="top">
