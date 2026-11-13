@@ -62,7 +62,10 @@ export class FakeStorage {
     },
   }
 
-  onChanged = { addListener: (listener: StorageListener) => void this.listeners.push(listener) }
+  onChanged = {
+    addListener: (listener: StorageListener) => void this.listeners.push(listener),
+    removeListener: (listener: StorageListener) => void (this.listeners = this.listeners.filter((l) => l !== listener)),
+  }
 }
 
 /**

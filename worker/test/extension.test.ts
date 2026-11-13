@@ -22,6 +22,7 @@ import {
   UNKNOWN_STOP,
   budgetQuestion,
 } from '../../extensions/notico/src/notion/api'
+import { HOSTED_ONLY, type ModelSettings } from '../../extensions/notico/src/models'
 import { activeNotionTab, countNotionRequests, notionCooldown } from '../../extensions/notico/src/notion/tab'
 import { defineTool } from '../../extensions/notico/src/tool'
 import { editPage, movePage, openPageNote, readPage, trashPage } from '../../extensions/notico/src/tools'
@@ -101,6 +102,7 @@ function makeAgent(
     getToken?: () => Promise<string | null>
     context?: () => Promise<string | undefined>
     meter?: AgentConfig['meter']
+    model?: AgentConfig['model']
   } = {},
 ) {
   return new CopilotAgent({
@@ -112,6 +114,7 @@ function makeAgent(
     history: options.history,
     context: options.context,
     meter: options.meter,
+    model: options.model,
   })
 }
 
@@ -1423,6 +1426,26 @@ describe('extension agent against the worker', () => {
     expect(reply).toBe('你好 来自 worker ')
     expect(ai.calls.map((c) => c.model)).toEqual([MODEL, NEXT_MODEL])
     expect(sentMessages(1).map((m) => m.content)).toEqual(['You are Notico.', 'first', '你好 来自 worker ', 'second'])
+  })
+
+  it('a retry after a model change stays with the model the question started with', async () => {
+    // The user switches to their own model while the question is being retried.
+    const own: ModelSettings = {
+      use: 'openrouter',
+      openRouter: {
+        key: 'sk-or-test',
+        model: { id: 'openai/gpt-6.1-sol', name: 'GPT', contextLength: 200_000, price: { input: 1, output: 1 } },
+      },
+    }
+    let reads = 0
+    const agent = makeAgent({ model: async () => (reads++ < 2 ? HOSTED_ONLY : own) })
+    expect((await ask(agent, 'first')).result).toEqual({ status: 'done' })
+    env.MODEL = NEXT_MODEL
+    const { result } = await ask(agent, 'second')
+    expect(result).toEqual({ status: 'done' })
+    // The retry went to the worker again, and the choice was read once per question.
+    expect(ai.calls.map((c) => c.model)).toEqual([MODEL, NEXT_MODEL])
+    expect(reads).toBe(2)
   })
 
   it('new chat works at once even if the old question has a tool that never finishes', async () => {

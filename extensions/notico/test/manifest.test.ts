@@ -49,19 +49,19 @@ describe('extension manifest', () => {
     const json = buildManifest({ ...env, VITE_CLERK_SYNC_HOST: env.VITE_CLERK_SYNC_HOST! }, '1.2.3')
     expect(json.content_security_policy.extension_pages).toBe(
       "default-src 'self'; script-src 'self'; object-src 'self'; style-src 'self' 'unsafe-inline'; " +
-        "connect-src 'self' https://api.cofun.cc https://clerk.cofun.cc; " +
+        "connect-src 'self' https://api.cofun.cc https://clerk.cofun.cc https://openrouter.ai; " +
         "img-src 'self' data: blob: https://img.clerk.com",
     )
   })
 
-  it('allows requests only to the configured worker and Clerk host, whatever the env', () => {
+  it('allows requests only to the configured worker, Clerk host, and OpenRouter, whatever the env', () => {
     const csp = (env: Partial<ManifestEnv>) =>
       manifest({ VITE_CLERK_SYNC_HOST: 'https://app.example.com', ...env }).content_security_policy.extension_pages
     expect(csp({ VITE_API_URL: 'http://localhost:8787/v1' })).toContain(
-      `connect-src 'self' http://localhost:8787 https://${CLERK_HOST};`,
+      `connect-src 'self' http://localhost:8787 https://${CLERK_HOST} https://openrouter.ai;`,
     )
-    // Without a worker URL or a Clerk host, requests stay inside the extension.
-    expect(csp({ VITE_CLERK_PUBLISHABLE_KEY: '' })).toContain("connect-src 'self';")
+    // Without a worker URL or a Clerk host, requests go only to OpenRouter, for a user's own model.
+    expect(csp({ VITE_CLERK_PUBLISHABLE_KEY: '' })).toContain("connect-src 'self' https://openrouter.ai;")
   })
 
   it('asks for exactly these permissions, whatever the env', () => {
