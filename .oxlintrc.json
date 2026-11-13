@@ -71,6 +71,10 @@
               {
                 "regex": "^\\.\\./[^./]",
                 "message": "An extension never imports another extension: each one in extensions/<name>/ keeps its own copy of what it needs."
+              },
+              {
+                "regex": "^(\\.\\./)+extensions/",
+                "message": "An extension never imports another extension: each one in extensions/<name>/ keeps its own copy of what it needs."
               }
             ]
           }
@@ -96,6 +100,10 @@
               },
               {
                 "regex": "^\\.\\./\\.\\./[^./]",
+                "message": "An extension never imports another extension: each one in extensions/<name>/ keeps its own copy of what it needs."
+              },
+              {
+                "regex": "^(\\.\\./)+extensions/",
                 "message": "An extension never imports another extension: each one in extensions/<name>/ keeps its own copy of what it needs."
               }
             ]
@@ -125,6 +133,10 @@
               },
               {
                 "regex": "^(\\.\\./)+[^./][^/]*/(src|test)(/|$)",
+                "message": "An extension never imports another extension: each one in extensions/<name>/ keeps its own copy of what it needs."
+              },
+              {
+                "regex": "^(\\.\\./)+extensions/",
                 "message": "An extension never imports another extension: each one in extensions/<name>/ keeps its own copy of what it needs."
               }
             ]
@@ -197,6 +209,10 @@
               {
                 "regex": "^(\\.\\./)+[^./][^/]*/(src|test)(/|$)",
                 "message": "An extension never imports another extension: each one in extensions/<name>/ keeps its own copy of what it needs."
+              },
+              {
+                "regex": "^(\\.\\./)+extensions/",
+                "message": "An extension never imports another extension: each one in extensions/<name>/ keeps its own copy of what it needs."
               }
             ]
           }
@@ -217,6 +233,10 @@
               },
               {
                 "regex": "^(\\.\\./)+[^./][^/]*/(src|test)(/|$)",
+                "message": "An extension never imports another extension: each one in extensions/<name>/ keeps its own copy of what it needs."
+              },
+              {
+                "regex": "^(\\.\\./)+extensions/",
                 "message": "An extension never imports another extension: each one in extensions/<name>/ keeps its own copy of what it needs."
               }
             ]
@@ -273,6 +293,10 @@
               },
               {
                 "regex": "^(\\.\\./)+[^./][^/]*/(src|test)(/|$)",
+                "message": "An extension never imports another extension: each one in extensions/<name>/ keeps its own copy of what it needs."
+              },
+              {
+                "regex": "^(\\.\\./)+extensions/",
                 "message": "An extension never imports another extension: each one in extensions/<name>/ keeps its own copy of what it needs."
               }
             ]
