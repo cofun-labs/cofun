@@ -129,13 +129,15 @@ jobs:
       - name: Run the extension smoke test
         run: pnpm --filter notion-copilot-smoke smoke
 
-      # The store wants manifest.json at the root of the zip.
+      # The store wants manifest.json at the root of the zip. The variable is not named ZIP:
+      # Info-ZIP's zip reads $ZIP as default options, so it would write the archive into dist.
       - name: Zip the build
         env:
-          ZIP: ${{ steps.inputs.outputs.zip }}
+          ARCHIVE: ${{ steps.inputs.outputs.zip }}
         run: |
           cd "extensions/$EXTENSION/dist"
-          zip -r -X -q "$GITHUB_WORKSPACE/$ZIP" .
+          zip -r -X -q "$GITHUB_WORKSPACE/$ARCHIVE" .
+          ls -l "$GITHUB_WORKSPACE/$ARCHIVE"
 
       # The zip the release gets, and the one a later store upload job takes.
       - name: Upload the zip
@@ -158,7 +160,7 @@ jobs:
       VERSION: ${{ inputs.version }}
       SHA: ${{ needs.build.outputs.sha }}
       TAG: ${{ needs.build.outputs.tag }}
-      ZIP: ${{ needs.build.outputs.zip }}
+      ARCHIVE: ${{ needs.build.outputs.zip }}
 
     steps:
       - name: Download the zip
@@ -173,6 +175,6 @@ jobs:
 
       - name: Create the draft release
         run: |
-          gh release create "$TAG" "$ZIP" --repo "$REPO" --draft --verify-tag \
+          gh release create "$TAG" "$ARCHIVE" --repo "$REPO" --draft --verify-tag \
             --title "$EXTENSION $VERSION" \
             --notes "Chrome Web Store build of $EXTENSION $VERSION, from $SHA."
