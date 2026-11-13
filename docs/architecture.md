@@ -99,7 +99,7 @@ extensions/notico/        Notico, the extension for Notion
   icons/icon.svg          the extension icon; `pnpm icons` exports it into public/icons, which the manifest lists
   sidepanel.html
   src/background.ts       opens the side panel from the toolbar icon, on any tab
-  src/agent.ts            agent loop (pi) against the worker; the only module that imports pi
+  src/agent.ts            agent loop (pi), and the model provider it asks (the hosted one: the worker); the only module that imports pi
   src/tools.ts            tools the agent runs in the extension
   src/tool.ts             defines a tool from one zod schema of its arguments
   src/clerk.ts            Clerk's Frontend API host and Sync Host, read from the publishable key
