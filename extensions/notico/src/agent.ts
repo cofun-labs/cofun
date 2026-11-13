@@ -1,8 +1,9 @@
-// The side panel's agent: asks the worker's model, runs the tools it calls in the extension, and
-// sends the results back until the model answers. This is the only module that imports the agent
-// runtime (pi); the rest of the extension uses the types below.
+// The side panel's agent: asks the model, runs the tools it calls in the extension, and sends the
+// results back until the model answers. Where the model runs is a provider (see ModelProvider); the
+// hosted one is our worker. This is the only module that imports the agent runtime (pi); the rest of
+// the extension uses the types below.
 import { Agent, type AgentEvent, type AgentMessage, type AgentTool } from '@earendil-works/pi-agent-core'
-import type { AssistantMessage, Model, ToolCall, ToolResultMessage } from '@earendil-works/pi-ai'
+import type { AssistantMessage, ClientIdentity, Model, ToolCall, ToolResultMessage } from '@earendil-works/pi-ai'
 import { streamSimple } from '@earendil-works/pi-ai/api/openai-completions'
 import { Credits, GrantsPage, UsagePeriod } from './credits'
 import { z } from './zod'
@@ -21,7 +22,7 @@ export interface AgentConfig {
   context?: () => Promise<string | undefined>
   /** Model calls allowed per question. */
   maxSteps?: number
-  /** How much of a long conversation to send. Defaults stay well under the worker's limits. */
+  /** How much of a long conversation to send. Defaults stay well under the provider's limits. */
   history?: { messages: number; chars: number }
   /**
    * Called as each question starts, to count the requests its tools make to the user's data (to
@@ -136,8 +137,6 @@ export type AskResult = (
 ) & { requests?: number }
 
 const DEFAULT_MAX_STEPS = 10
-// The worker allows 200 messages and 200,000 characters, tools included.
-const DEFAULT_HISTORY = { messages: 100, chars: 150_000 }
 
 const SIGN_IN = 'Please sign in first.'
 
@@ -168,6 +167,8 @@ const STOPPED_DURING =
 export class CopilotAgent {
   private agent?: Agent
   private model?: Model<'openai-completions'>
+  /** Where model requests go. */
+  private readonly provider: ModelProvider
   private readonly maxSteps: number
   /** Names of the tools that need the user's OK before each run. */
   private readonly confirmed: Set<string>
@@ -192,6 +193,7 @@ export class CopilotAgent {
   private changed = false
 
   constructor(private readonly config: AgentConfig) {
+    this.provider = hostedProvider(config)
     this.maxSteps = config.maxSteps ?? DEFAULT_MAX_STEPS
     this.confirmed = new Set(config.tools.filter((t) => t.needsConfirmation).map((t) => t.name))
     this.tools = new Map(config.tools.map((t) => [t.name, t]))
@@ -224,16 +226,16 @@ export class CopilotAgent {
     confirm?: ConfirmTool,
   ): Promise<AskResult> {
     const epoch = this.epoch
-    const { result, kept, code } = await this.askOnce(text, onUpdate, epoch, confirm)
-    // The worker's model changed since this panel looked it up (a deploy). The worker refuses the
-    // request before any credits are spent, so look the model up again. Retry once if the question left
-    // nothing behind; a retry runs the whole question again, so after it used a tool (which is now
-    // in the conversation), ask the user to repeat it instead.
-    if (code === 'unsupported_model' && epoch === this.epoch) {
+    const { result, kept, failure } = await this.askOnce(text, onUpdate, epoch, confirm)
+    // The provider's model changed since this panel looked it up (for the hosted one, a deploy, which
+    // refuses the request before any credits are spent), so look the model up again. Retry once if
+    // the question left nothing behind; a retry runs the whole question again, so after it used a
+    // tool (which is now in the conversation), ask the user to repeat it instead.
+    if (failure && this.provider.modelChanged(failure) && epoch === this.epoch) {
       // What the first try sent counts even when the question goes no further.
       const counted = result.requests === undefined ? {} : { requests: result.requests }
       try {
-        this.model = await this.loadModel()
+        this.model = await this.provider.loadModel()
       } catch (err) {
         return { status: 'error', message: (err as Error).message, ...counted }
       }
@@ -246,13 +248,13 @@ export class CopilotAgent {
     return result
   }
 
-  /** `kept`: the question is part of the conversation now, answered or not. */
+  /** `kept`: the question is part of the conversation now, answered or not. `failure`: why the model request failed. */
   private async askOnce(
     text: string,
     onUpdate: (update: AgentUpdate) => void,
     epoch: number,
     confirm?: ConfirmTool,
-  ): Promise<{ result: AskResult; kept: boolean; code?: string }> {
+  ): Promise<{ result: AskResult; kept: boolean; failure?: Failure }> {
     let agent: Agent
     try {
       agent = await this.getAgent()
@@ -382,7 +384,7 @@ export class CopilotAgent {
       }
       if (event.type === 'message_end' && event.message.role === 'assistant') {
         const m = event.message as AssistantMessage
-        if (m.stopReason === 'error') failure = parseError(m.errorMessage)
+        if (m.stopReason === 'error') failure = this.provider.parseError(m.errorMessage)
         if (m.stopReason === 'aborted') stopped = true
         const final = !m.content.some((block) => block.type === 'toolCall')
         if (final && (m.stopReason === 'stop' || m.stopReason === 'length')) answered = true
@@ -395,7 +397,7 @@ export class CopilotAgent {
       if (context) this.contexts.set(question, context)
       await agent.prompt(question)
     } catch (err) {
-      failure ??= parseError((err as Error).message)
+      failure ??= this.provider.parseError((err as Error).message)
     } finally {
       unsubscribe()
       agent.beforeToolCall = undefined
@@ -418,7 +420,7 @@ export class CopilotAgent {
       const result: AskResult = stopped
         ? { status: 'stopped' }
         : { status: 'error', message: failure!.text, ...(failure!.code ? { code: failure!.code } : {}) }
-      return { result: { ...result, ...counted }, kept: kept.length > 0, code: stopped ? undefined : failure?.code }
+      return { result: { ...result, ...counted }, kept: kept.length > 0, failure: stopped ? undefined : failure }
     }
     const result: AskResult = hitLimit ? { status: 'step_limit', steps } : { status: 'done' }
     return { result: { ...result, ...counted }, kept: true }
@@ -580,10 +582,10 @@ export class CopilotAgent {
 
   private async getAgent(): Promise<Agent> {
     if (this.agent) return this.agent
-    const model = (this.model ??= await this.loadModel())
+    const model = (this.model ??= await this.provider.loadModel())
     // Another question (after a New chat) may have set up the agent while this one waited.
     if (this.agent) return this.agent
-    // The tool definitions go with every request and count toward the worker's size limit.
+    // The tool definitions go with every request and count toward the provider's size limit.
     const toolChars = JSON.stringify(
       this.config.tools.map((t) => ({ name: t.name, description: t.description, parameters: t.parameters })),
     ).length
@@ -595,20 +597,14 @@ export class CopilotAgent {
         messages: this.fromHistory(this.initial, model),
       },
       streamFn: (m, context, options) => streamSimple(m as Model<'openai-completions'>, context, options),
-      // A fresh Clerk token for every model request; they expire within minutes.
-      getApiKey: async () => {
-        const token = await this.config.getToken()
-        if (!token) throw new Error(SIGN_IN)
-        return token
-      },
-      // No provider attribution headers; the worker is our own.
-      identity: { attribution: null },
+      getApiKey: () => this.provider.apiKey(),
+      identity: this.provider.identity,
       // Notion tools will change pages; run them one at a time, in the order the model asked.
       toolExecution: 'sequential',
       transformContext: async (messages) =>
         recent(
           messages.map((m) => this.withContext(m)),
-          this.config.history ?? DEFAULT_HISTORY,
+          this.config.history ?? this.provider.history,
           toolChars,
         ),
     })
@@ -664,36 +660,74 @@ export class CopilotAgent {
     if (!res.ok) throw new Error(ErrorReply.safeParse(body).data?.error?.message ?? `HTTP ${res.status}`)
     return schema.parse(body)
   }
+}
 
-  /** The worker fixes the model; ask it which one, so requests name it. */
-  private async loadModel(): Promise<Model<'openai-completions'>> {
-    const token = await this.config.getToken()
-    if (!token) throw new Error(SIGN_IN)
-    const baseUrl = this.config.apiUrl.replace(/\/+$/, '')
-    const res = await fetch(`${baseUrl}/me`, { headers: { authorization: `Bearer ${token}` } })
-    const body = MeReply.safeParse(await res.json().catch(() => undefined)).data
-    const model = body?.model
-    if (!res.ok || !model) throw new Error(body?.error?.message ?? `HTTP ${res.status}`)
-    return {
-      id: model,
-      name: model,
-      api: 'openai-completions',
-      provider: 'notion-copilot',
-      baseUrl,
-      reasoning: false,
-      input: ['text'],
-      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-      contextWindow: 128_000,
-      maxTokens: 16_384,
-      // What the worker accepts: system (not developer) messages, max_tokens, no store field.
-      compat: {
-        supportsDeveloperRole: false,
-        supportsReasoningEffort: false,
-        supportsStore: false,
-        supportsStrictMode: false,
-        maxTokensField: 'max_tokens',
-      },
-    }
+/**
+ * Where the agent's model requests go, and what is particular to the service behind them: which
+ * model to name, how each request is authenticated, how its errors read, and its size limits. The
+ * agent loop itself knows none of this.
+ */
+interface ModelProvider {
+  /** The model requests name. Looked up as a conversation starts, and again when `modelChanged`. */
+  loadModel(): Promise<Model<'openai-completions'>>
+  /** The key for one model request. Throws, with what the user should do, when there is none. */
+  apiKey(): Promise<string>
+  /** How much of a long conversation to send, unless AgentConfig.history says otherwise. */
+  history: { messages: number; chars: number }
+  /** What pi tells the service about the client. */
+  identity: ClientIdentity
+  /** A failed model request's error, in the service's own words when it gives them. */
+  parseError(message: string | undefined): Failure
+  /** The request failed because the model it named is no longer served: look it up again. */
+  modelChanged(failure: Failure): boolean
+}
+
+/**
+ * Our worker. It fixes the model, so the agent asks it which one; each request carries a fresh Clerk
+ * session token (they expire within minutes).
+ */
+function hostedProvider({ apiUrl, getToken }: Pick<AgentConfig, 'apiUrl' | 'getToken'>): ModelProvider {
+  const baseUrl = apiUrl.replace(/\/+$/, '')
+  const token = async () => {
+    const value = await getToken()
+    if (!value) throw new Error(SIGN_IN)
+    return value
+  }
+  return {
+    async loadModel() {
+      const res = await fetch(`${baseUrl}/me`, { headers: { authorization: `Bearer ${await token()}` } })
+      const body = MeReply.safeParse(await res.json().catch(() => undefined)).data
+      const model = body?.model
+      if (!res.ok || !model) throw new Error(body?.error?.message ?? `HTTP ${res.status}`)
+      return {
+        id: model,
+        name: model,
+        api: 'openai-completions',
+        provider: 'notion-copilot',
+        baseUrl,
+        reasoning: false,
+        input: ['text'],
+        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+        contextWindow: 128_000,
+        maxTokens: 16_384,
+        // What the worker accepts: system (not developer) messages, max_tokens, no store field.
+        compat: {
+          supportsDeveloperRole: false,
+          supportsReasoningEffort: false,
+          supportsStore: false,
+          supportsStrictMode: false,
+          maxTokensField: 'max_tokens',
+        },
+      }
+    },
+    apiKey: token,
+    // The worker allows 200 messages and 200,000 characters, tools included.
+    history: { messages: 100, chars: 150_000 },
+    // No provider attribution headers; the worker is our own.
+    identity: { attribution: null },
+    parseError,
+    // The worker's model changed since the panel looked it up (a deploy).
+    modelChanged: (failure) => failure.code === 'unsupported_model',
   }
 }
 
@@ -1007,6 +1041,6 @@ function parseError(message: string | undefined): Failure {
 
 interface Failure {
   text: string
-  /** The worker's error code, e.g. `unsupported_model`. */
+  /** The service's error code, e.g. the worker's `unsupported_model`. */
   code?: string
 }
