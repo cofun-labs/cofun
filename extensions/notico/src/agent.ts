@@ -758,8 +758,7 @@ function hostedProvider({ apiUrl, getToken }: Pick<AgentConfig, 'apiUrl' | 'getT
       }
     },
     apiKey: token,
-    // The worker allows 200 messages and 200,000 characters, tools included.
-    history: { messages: 100, chars: 150_000 },
+    history: HOSTED_HISTORY,
     // No provider attribution headers; the worker is our own.
     identity: { attribution: null },
     parseError,
@@ -767,6 +766,9 @@ function hostedProvider({ apiUrl, getToken }: Pick<AgentConfig, 'apiUrl' | 'getT
     modelChanged: (failure) => failure.code === 'unsupported_model',
   }
 }
+
+// The worker allows 200 messages and 200,000 characters, tools included.
+const HOSTED_HISTORY = { messages: 100, chars: 150_000 }
 
 /** OpenRouter's API, which answers requests from the extension's pages. */
 const OPENROUTER = 'https://openrouter.ai/api/v1'
@@ -780,9 +782,11 @@ function openRouterProvider({ key, model }: { key: string; model: OpenRouterMode
   return {
     loadModel: async () => openRouterModel(model),
     apiKey: async () => key,
-    // A token is about four characters: send at most half the model's context, which leaves room
-    // for its reply, and no more than the hosted limit by messages.
-    history: { messages: 100, chars: model.contextLength * 2 },
+    // What the hosted provider sends, at most: every round trip resends the history, and the user
+    // pays for it, so a model with a huge context must not make each question cost dollars. A
+    // smaller context lowers it (a token is about four characters: half the context, which leaves
+    // room for the reply).
+    history: { messages: 100, chars: Math.min(model.contextLength * 2, HOSTED_HISTORY.chars) },
     // OpenRouter's app attribution headers would name the extension to it; nothing needs them.
     identity: { attribution: null },
     parseError: openRouterError,
