@@ -58,7 +58,7 @@ Secrets, set with `pnpm exec wrangler secret put <name>` in `worker/` (or in the
 
 | Secret | Description |
 |---|---|
-| `STRIPE_SECRET_KEY` | The Stripe account's secret key (`sk_live_…`, or a restricted key with write access to Checkout Sessions), for making Checkout Sessions |
+| `STRIPE_SECRET_KEY` | The Stripe account's secret key (`sk_live_…`, or a restricted key with write access to Checkout Sessions), for making Checkout Sessions and reading what one sold |
 | `STRIPE_WEBHOOK_SECRET` | The signing secret of the webhook endpoint below (`whsec_…`) |
 
 ### Stripe
