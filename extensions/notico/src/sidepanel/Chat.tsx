@@ -160,6 +160,25 @@ export function Chat({ userId }: { userId: string }) {
     return () => void creditReads.current++
   }, [])
 
+  // After Checkout was opened, the user pays in another tab and comes back to the panel: each time
+  // the panel gets the focus again, it reads the credits, so a purchase shows without a reload. The
+  // payment may take a moment to go through, so every return reads them, not only the first.
+  const checkoutOpened = useRef(false)
+  useEffect(() => {
+    const onFocus = () => {
+      if (checkoutOpened.current) void readCredits()
+    }
+    window.addEventListener('focus', onFocus)
+    return () => window.removeEventListener('focus', onFocus)
+  }, [])
+
+  /** Opens Stripe's Checkout for the pack of `credits` in a new tab. */
+  async function buyCredits(credits: number) {
+    const url = await agent.checkout(credits)
+    checkoutOpened.current = true
+    await chrome.tabs.create({ url })
+  }
+
   function openSettings() {
     setView('settings')
     void readCredits()
@@ -514,7 +533,7 @@ export function Chat({ userId }: { userId: string }) {
                         <>
                           {' '}
                           <button type="button" className="link" onClick={openSettings}>
-                            See your credits
+                            Buy credits
                           </button>
                         </>
                       )}
@@ -586,6 +605,7 @@ export function Chat({ userId }: { userId: string }) {
                 grants: (before) => agent.creditGrants(before),
                 usage: (before) => agent.creditUsage(before),
               }}
+              buying={{ packs: () => agent.creditPacks(), buy: buyCredits }}
               onClose={closeSettings}
             />
           </div>

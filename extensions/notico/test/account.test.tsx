@@ -47,7 +47,7 @@ async function openSettings(user: UserEvent) {
 const section = (name: string) => screen.getByRole('region', { name })
 
 describe('the account menu', () => {
-  it('[UC-CHAT-003-S09] shows who is signed in, with Settings and Sign out, and nothing to manage the account', async () => {
+  it('[UC-CHAT-003-S12] shows who is signed in, with Settings and Sign out, and nothing to manage the account', async () => {
     const { user } = await openPanel()
 
     await openMenu(user)
@@ -213,14 +213,14 @@ describe('the account menu', () => {
 })
 
 describe('the settings page', () => {
-  it('[UC-CHAT-003-S09] shows the account and the plan', async () => {
+  it('[UC-CHAT-003-S12] shows the account, and no plan', async () => {
     const { user } = await openPanel()
 
     await openSettings(user)
 
     expect(within(section('Account')).getByText('Alice Example')).toBeVisible()
     expect(within(section('Account')).getByText('alice@example.com')).toBeVisible()
-    expect(within(section('Plan')).getByText('Free')).toBeVisible()
+    expect(screen.queryByRole('region', { name: 'Plan' })).not.toBeInTheDocument()
 
     // Back leads to the chat.
     await user.click(screen.getByRole('button', { name: 'Back' }))
@@ -311,12 +311,12 @@ describe('a question refused for lack of credits', () => {
 
     expect(
       await screen.findByText(
-        /You have no credits left\. Your next 200 free credits arrive on 2026-11-15 at 12:00 UTC\./,
+        /You have no credits left\. Your next 200 free credits arrive on 2026-11-15 at 12:00 UTC, or you can buy credits\./,
       ),
     ).toBeVisible()
     expect(browser.ai.calls).toHaveLength(1)
 
-    await user.click(screen.getByRole('button', { name: 'See your credits' }))
+    await user.click(screen.getByRole('button', { name: 'Buy credits' }))
 
     expect(await screen.findByRole('heading', { name: 'Settings' })).toBeVisible()
     expect(await within(section('Credits')).findByText('No credits left')).toBeVisible()

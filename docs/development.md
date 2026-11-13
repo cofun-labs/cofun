@@ -51,6 +51,36 @@ Variables in `wrangler.jsonc`:
 | `CLERK_AUTHORIZED_PARTIES` | Allowed origins, comma-separated: `chrome-extension://<extension id>` and the sign-in page |
 | `PRODUCTS` | Which product each extension is, by its origin (the token's `azp`), as a JSON object: `{"chrome-extension://<extension id>": "notico"}`. Model calls from any other caller are recorded as `unknown` |
 | `CLERK_JWT_KEY` | Clerk JWT public key (PEM). Public; also available at `https://<frontend-api>/.well-known/jwks.json` |
+| `STRIPE_PACKS` | The packs of credits on offer: which Stripe price sells how many credits, as a JSON object, `{"price_…": 5000}`. Each price must be a one-time price in US dollars of its credits at 1000 credits a dollar (the side panel shows the price worked out that way). The committed value is the live account's four packs |
+
+Secrets, set with `pnpm exec wrangler secret put <name>` in `worker/` (or in the dashboard: Workers & Pages → `cofun-api` → Settings → Variables and Secrets), never committed. Without them nothing can be bought: the side panel says buying credits is unavailable, and the webhook takes no event.
+
+| Secret | Description |
+|---|---|
+| `STRIPE_SECRET_KEY` | The Stripe account's secret key (`sk_live_…`, or a restricted key with write access to Checkout Sessions), for making Checkout Sessions |
+| `STRIPE_WEBHOOK_SECRET` | The signing secret of the webhook endpoint below (`whsec_…`) |
+
+### Stripe
+
+Credits are sold through Stripe's Checkout with [Managed Payments](https://docs.stripe.com/payments/managed-payments), Stripe being the merchant of record (see [Credits](architecture.md#credits)). On the Stripe account:
+
+1. **Products and prices.** One product per pack, each with one one-time price in USD, tax code `txcd_10105003` (AI as a Service, personal use; eligible for Managed Payments), tax not included in the price. Put each price id and its credits in `STRIPE_PACKS`.
+2. **Managed Payments** turned on (Settings → Managed Payments), and the business details, statement descriptor, and the website's terms and privacy links filled in as Cofun (`cofun.cc`).
+3. **The webhook endpoint** (Developers → Webhooks → Add destination): the URL `https://api.cofun.cc/stripe/webhook`, API version `2025-03-31.basil` (the one the worker makes sessions with), and these events: `checkout.session.completed`, `checkout.session.async_payment_succeeded`, `checkout.session.async_payment_failed`, `charge.refunded`, and `charge.dispute.created`. Its signing secret is `STRIPE_WEBHOOK_SECRET`.
+
+Each purchase is written to Workers Logs as `purchase: user=<user id> credits=<n> payment=<PaymentIntent id>`, and each one taken back as `purchase taken back: payment=<PaymentIntent id> reason=<refund|dispute>`.
+
+To try buying against the sandbox with `wrangler dev`, put the sandbox's secret key and packs in `worker/.dev.vars` (never committed), and forward the sandbox's events to the local worker with the [Stripe CLI](https://docs.stripe.com/stripe-cli), whose `listen` prints the signing secret to use as `STRIPE_WEBHOOK_SECRET`:
+
+```bash
+stripe listen --forward-to localhost:8787/stripe/webhook
+```
+
+The sandbox ("Kitfun sandbox") offers one more pack than live, US$1 for 1000 credits, for cheap end-to-end tests:
+
+```
+STRIPE_PACKS={"price_1UbKzrCAGhjancrjbw3S00uK":1000,"price_1UbKwwCAGhjancrjlo1Z5VCp":5000,"price_1UbKxlCAGhjancrjyh44u532":10000,"price_1UbKyLCAGhjancrjQPwqTguw":20000,"price_1UbKyvCAGhjancrjviY0wSP3":50000}
+```
 
 ### Admin page
 

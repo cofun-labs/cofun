@@ -130,7 +130,7 @@ Key constraint:
 
 ## IDs
 
-- Use case: `UC-{DOMAIN}-{NNN}`. Domains: `ADMIN`, `AGENT`, `AUTH`, `CHAT`, `NOTION`, `PANEL`, `SESSION`.
+- Use case: `UC-{DOMAIN}-{NNN}`. Domains: `ADMIN`, `AGENT`, `AUTH`, `BILLING`, `CHAT`, `NOTION`, `PANEL`, `SESSION`.
 - IDs are unique across the repository, whatever the product, since tests are found by them. A new product's use cases get IDs of their own: what is about its site gets a domain of its own (`UC-CONFLUENCE-001`), and a use case it repeats from another product takes the next free number in that domain (another product's sign-in would be `UC-AUTH-002`, never a second `UC-AUTH-001`).
 - Scenario: `{UC ID}-S{NN}`.
 - Once merged, IDs are never renumbered and deleted IDs are not reused. A scenario keeps its ID only for wording changes; changed behavior gets a new ID.

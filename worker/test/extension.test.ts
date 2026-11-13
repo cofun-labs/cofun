@@ -1579,7 +1579,8 @@ describe('extension agent against the worker', () => {
   })
 
   const WEEK_MS = 7 * 24 * 60 * 60 * 1000
-  const OUT_OF_CREDITS = 'You have no credits left. Your next 200 free credits arrive on 2026-11-15 at 12:00 UTC.'
+  const OUT_OF_CREDITS =
+    'You have no credits left. Your next 200 free credits arrive on 2026-11-15 at 12:00 UTC, or you can buy credits.'
 
   it('[UC-CHAT-001-S09] shows when the next free credits arrive, and drops the refused question', async () => {
     // A user starts with 200 credits.

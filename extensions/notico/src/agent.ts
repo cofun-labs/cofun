@@ -4,7 +4,7 @@
 import { Agent, type AgentEvent, type AgentMessage, type AgentTool } from '@earendil-works/pi-agent-core'
 import type { AssistantMessage, Model, ToolCall, ToolResultMessage } from '@earendil-works/pi-ai'
 import { streamSimple } from '@earendil-works/pi-ai/api/openai-completions'
-import { Credits, GrantsPage, UsagePeriod } from './credits'
+import { CheckoutPage, Credits, GrantsPage, Packs, UsagePeriod } from './credits'
 import { z } from './zod'
 
 export interface AgentConfig {
@@ -644,6 +644,28 @@ export class CopilotAgent {
    */
   async creditUsage(before?: string): Promise<UsagePeriod> {
     return this.read('credits/usage', { utc_offset: utcOffset(), before }, UsagePeriod)
+  }
+
+  /** The packs of credits on offer. Read when the settings page opens. */
+  async creditPacks(): Promise<Packs> {
+    return this.read('billing/packs', {}, Packs)
+  }
+
+  /**
+   * Starts buying the pack of `credits`: the worker makes a Stripe Checkout Session for it, for the
+   * signed-in user, and gives the URL of its page. Nothing is bought until the user pays there.
+   */
+  async checkout(credits: number): Promise<string> {
+    const token = await this.config.getToken()
+    if (!token) throw new Error(SIGN_IN)
+    const res = await fetch(`${this.config.apiUrl.replace(/\/+$/, '')}/billing/checkout`, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+      body: JSON.stringify({ credits }),
+    })
+    const body: unknown = await res.json().catch(() => undefined)
+    if (!res.ok) throw new Error(ErrorReply.safeParse(body).data?.error?.message ?? `HTTP ${res.status}`)
+    return CheckoutPage.parse(body).url
   }
 
   /**

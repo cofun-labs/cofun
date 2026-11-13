@@ -15,6 +15,7 @@ import {
   FakeUsageDataset,
   MODEL,
 } from '../../../worker/test/fakes'
+import { FakeStripe, signature, WEBHOOK_SECRET } from '../../../worker/test/stripe'
 import type { FakeSession } from './clerk'
 import { restoreGlobals, type FakeNotionTab } from './notion-tab'
 
@@ -42,9 +43,13 @@ export class FakeBrowser {
   readonly db = new FakeD1Database()
   /** URLs the panel opened in new tabs. */
   readonly openedTabs: string[] = []
+  /** Stripe behind the worker: the Checkout Sessions made, and the events it sends about them. */
+  readonly stripe = new FakeStripe()
 
   /** Asks the worker something outside the panel; set when the browser starts. */
   private worker!: (request: Request) => Response | Promise<Response>
+  /** The worker's configuration; a test may change it, such as taking buying credits away. */
+  env!: Env
   private issuer!: FakeClerk
 
   private constructor(
@@ -68,6 +73,22 @@ export class FakeBrowser {
     if (!res.ok) throw new Error(`grant refused: ${res.status} ${await res.text()}`)
   }
 
+  /**
+   * Stripe tells the worker's webhook about a payment, signed as Stripe signs it: by default that
+   * the latest Checkout Session was paid. Nothing in the panel takes part.
+   */
+  async stripeSends(event: Record<string, unknown> = this.stripe.sessionEvent()): Promise<void> {
+    const payload = JSON.stringify(event)
+    const res = await this.worker(
+      new Request(`${WORKER}/stripe/webhook`, {
+        method: 'POST',
+        headers: { 'stripe-signature': await signature(payload, Date.now()), 'content-type': 'application/json' },
+        body: payload,
+      }),
+    )
+    if (!res.ok) throw new Error(`event refused: ${res.status} ${await res.text()}`)
+  }
+
   /** Starts a browser on `tab`, signed in to Notico as `signedInAs` or signed out. */
   static async start(tab: FakeNotionTab, options: { signedInAs?: string } = {}): Promise<FakeBrowser> {
     vi.useFakeTimers({ toFake: ['Date'], now: START })
@@ -88,8 +109,12 @@ export class FakeBrowser {
       MODEL,
       CLERK_JWT_KEY: issuer.publicKeyPem,
       CLERK_AUTHORIZED_PARTIES: `${EXTENSION}, ${WORKER}`,
+      STRIPE: browser.stripe,
+      STRIPE_WEBHOOK_SECRET: WEBHOOK_SECRET,
+      STRIPE_PACKS: { price_one: 1000, price_five: 5000, price_ten: 10_000, price_twenty: 20_000, price_fifty: 50_000 },
     }
     browser.issuer = issuer
+    browser.env = env
     browser.worker = (request) => app.request(request, undefined, env, new FakeExecutionContext())
     // The panel calls fetch(); route it into the worker app.
     globals.fetch = (input: RequestInfo | URL, init?: RequestInit) => browser.worker(new Request(input, init))

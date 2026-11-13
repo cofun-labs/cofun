@@ -38,6 +38,15 @@
     // Which product each extension is, by its origin (the token's azp). Model calls from any other
     // caller are recorded as the product "unknown".
     "PRODUCTS": { "chrome-extension://moblfnjjebknafkgoifncombfnbfghom": "notico" },
+    // The packs of credits on offer: which Stripe price (on the live account) sells how many credits,
+    // at 1000 credits a US dollar. Price ids are not secret. STRIPE_SECRET_KEY and STRIPE_WEBHOOK_SECRET
+    // are worker secrets, never kept here (see docs/development.md).
+    "STRIPE_PACKS": {
+      "price_1UbL2eCT6MhL4FCm0k5RiqQk": 5000,
+      "price_1UbL3MCT6MhL4FCmBnIas1Di": 10000,
+      "price_1UbL3xCT6MhL4FCm5T56YbQo": 20000,
+      "price_1UbL4PCT6MhL4FCmNck3f2Gh": 50000
+    },
     // Clerk JWT public key (PEM). Public; also served at https://<frontend-api>/.well-known/jwks.json
     "CLERK_JWT_KEY": "-----BEGIN PUBLIC KEY-----\nMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAvmcyRgQuBYHuMrpM4d5N\nwQ9Y7i59S80hLM7Qd68gIpszm0Mi7eOIMmxTOVIePX4jsjf+ByfPl6qluXsPGik/\nwtr1ti37UUADTdC1qjn3jabY22UebFXgxp6Fq6XHJKelmHQBm77OwzZMPzPgmnwK\nM9nJuxXpsGtNH3a8xzC8Ql8UOJE5eWvgXKcu48b/Awja7J+yGQe7OklbaJL71FrJ\nPGUDS7bLVHvJP8/xTd3eii+LdqN5o7RDqwDu1wesJ9g2f8ykLfd55ykVZURr8R3w\n6Z46/wXqoufUn4CdRwsY19zNQlhruUMSGsRLn9PiYOfL1aBHZZzR/tLRndIFq9lY\nqQIDAQAB\n-----END PUBLIC KEY-----\n"
   }

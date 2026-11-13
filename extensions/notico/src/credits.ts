@@ -49,6 +49,11 @@ export const GrantsPage = z.object({
       left: z.int().min(0),
       grantedAt: z.int(),
       expiresAt: z.int(),
+      /**
+       * For a purchase that was taken back: why (`refund`, `dispute`, or one a newer worker names).
+       * It ended at `expiresAt`, and `left` is what was taken back.
+       */
+      revoked: z.string().optional(),
     }),
   ),
   /** Where the next page starts, to send back as it is; null on the last page. */
@@ -66,6 +71,24 @@ export const UsagePeriod = z.object({
   earlier: Day.nullable(),
 })
 export type UsagePeriod = z.infer<typeof UsagePeriod>
+
+/** The packs of credits on offer, smallest first, each with its price in US cents. */
+export const Packs = z.object({
+  packs: z.array(z.object({ credits: z.int().min(1), usdCents: z.int().min(1) })),
+})
+export type Packs = z.infer<typeof Packs>
+export type Pack = Packs['packs'][number]
+
+/** The Checkout page for a pack, which the panel opens in a new tab. Only Stripe's own pages are opened. */
+export const CheckoutPage = z.object({
+  url: z.url({ protocol: /^https$/, hostname: /^checkout\.stripe\.com$/ }),
+})
+
+/** A pack's price: "US$5", "US$12.50". */
+export function usdText(cents: number): string {
+  const dollars = cents / 100
+  return `US$${Number.isInteger(dollars) ? dollars.toLocaleString('en') : dollars.toLocaleString('en', { minimumFractionDigits: 2 })}`
+}
 
 /**
  * What the panel knows of the user's credits. `unavailable`: the last read failed, so no number is
@@ -92,13 +115,30 @@ export function creditsText(micro: number): string {
 
 /** A grant's source in words. One the panel does not know is plain "Credits". */
 export const sourceText = (source: string) =>
-  source === 'free' ? 'Free weekly credits' : source === 'manual' ? 'Added credits' : 'Credits'
+  source === 'free'
+    ? 'Free weekly credits'
+    : source === 'manual'
+      ? 'Added credits'
+      : source === 'purchase'
+        ? 'Purchased credits'
+        : 'Credits'
 
 const WHEN = new Intl.DateTimeFormat('en', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
+const WHEN_YEAR = new Intl.DateTimeFormat('en', {
+  year: 'numeric',
+  month: 'short',
+  day: 'numeric',
+  hour: 'numeric',
+  minute: '2-digit',
+})
 const DAY = new Intl.DateTimeFormat('en', { weekday: 'short', month: 'short', day: 'numeric', timeZone: 'UTC' })
 
-/** A moment on the user's own clock, to the minute: "Nov 15, 12:00 PM". */
-export const when = (ms: number) => WHEN.format(ms)
+/**
+ * A moment on the user's own clock, to the minute: "Nov 15, 12:00 PM", with the year when it is not
+ * this year's (purchased credits last a year): "Nov 8, 2027, 5:30 PM".
+ */
+export const when = (ms: number) =>
+  (new Date(ms).getFullYear() === new Date().getFullYear() ? WHEN : WHEN_YEAR).format(ms)
 
 /** A day of usage (`YYYY-MM-DD`, already the user's own day) as a date: "Sun, Nov 8". */
 export const dayText = (day: string) => DAY.format(new Date(`${day}T00:00:00Z`))
@@ -121,8 +161,12 @@ export const dayDateText = (day: string, weekday = false) =>
  * A grant's dates and what became of it, at the time `now`: the day it was given, then the day it
  * expires with what is left, or the day it expired with what went unspent.
  */
-export function grantDatesText({ grantedAt, expiresAt, left }: PastGrant, now: number): string {
+export function grantDatesText({ grantedAt, expiresAt, left, revoked }: PastGrant, now: number): string {
   const given = `Given ${dateText(grantedAt)}`
+  if (revoked !== undefined) {
+    const why = revoked === 'refund' ? 'refunded' : revoked === 'dispute' ? 'disputed' : 'taken back'
+    return `${given} · ${why} ${dateText(expiresAt)}${left > 0 ? `, ${creditsText(left)} taken back` : ''}`
+  }
   if (expiresAt > now) {
     return `${given} · ${left > 0 ? `${wholeCredits(left)} left, expire` : 'used up, until'} ${dateText(expiresAt)}`
   }

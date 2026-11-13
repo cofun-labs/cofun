@@ -6,6 +6,9 @@ import * as z from './zod'
 import { adminPage } from './admin'
 import { readAccounts, readOverview, type Period } from './overview'
 import { loginPage } from './login'
+import { billingPage } from './billing-page'
+import { handleEvent, packsOf, type Pack } from './billing'
+import { stripeOverHttp, verifiedEvent, type StripeApi } from './stripe'
 import {
   FREE_CREDITS,
   FREE_PERIOD_MS,
@@ -54,6 +57,17 @@ export interface Env {
   DB: Database
   /** Per-request usage records (Workers Analytics Engine dataset). Never holds message content. */
   USAGE: UsageDataset
+  /** Stripe's API. Tests pass a fake; deployed, it is Stripe's own API with STRIPE_SECRET_KEY. */
+  STRIPE?: StripeApi
+  /** The Stripe account's secret key (a worker secret, never committed). Without it nothing can be bought. */
+  STRIPE_SECRET_KEY?: string
+  /** The signing secret of the Stripe webhook endpoint (a worker secret). Without it no event is accepted. */
+  STRIPE_WEBHOOK_SECRET?: string
+  /**
+   * The packs on offer: which Stripe price sells how many credits, `{"price_…": 5000}` (see `packsOf`
+   * in billing.ts). Each Stripe environment has its own prices.
+   */
+  STRIPE_PACKS?: unknown
 }
 
 export interface AppOptions {
@@ -65,6 +79,8 @@ export interface AppOptions {
   logError?: (line: string) => void
   /** Where the record of what admins did goes: Workers Logs by default. Tests pass their own to read it. */
   logAdmin?: (line: string) => void
+  /** Where the record of purchases granted and taken back goes: Workers Logs by default. Tests pass their own. */
+  logBilling?: (line: string) => void
 }
 
 /** `claims` is the verified session token's payload, as Clerk wrote it: read it through a schema. */
@@ -103,6 +119,9 @@ function utcMinute(ms: number): string {
   const iso = new Date(Math.ceil(ms / 60_000) * 60_000).toISOString()
   return `${iso.slice(0, 10)} at ${iso.slice(11, 16)} UTC`
 }
+
+/** The largest event the Stripe webhook reads. Stripe's events about a Checkout Session or a charge are a few kB. */
+const MAX_EVENT_BYTES = 256 * 1024
 
 const MAX_MESSAGES = 200
 const MAX_TOKENS = 16_384
@@ -543,6 +562,7 @@ export function createApp({
   priceOf: priceFor = priceOf,
   logError = (line) => console.error(line),
   logAdmin = (line) => console.log(line),
+  logBilling = (line) => console.log(line),
 }: AppOptions = {}) {
   const app = new Hono<{ Bindings: Env; Variables: Vars }>()
 
@@ -575,6 +595,38 @@ export function createApp({
     c.header('content-security-policy', "frame-ancestors 'none'")
     c.header('x-frame-options', 'DENY')
     return c.html(adminPage(c.env.CLERK_PUBLISHABLE_KEY))
+  })
+
+  // Where Stripe's Checkout sends the buyer back: a page that says what happened and leads back to
+  // the side panel. It holds nothing and changes nothing: credits are added by the webhook below.
+  app.get('/billing/paid', (c) => c.html(billingPage('paid')))
+  app.get('/billing/cancelled', (c) => c.html(billingPage('cancelled')))
+
+  // Stripe's webhook. No Clerk session: the event is trusted only when it carries Stripe's
+  // signature, made with the endpoint's signing secret. It answers 2xx once the event is handled or
+  // is one the worker does not act on; anything else makes Stripe send the event again later, which
+  // is safe, since a payment grants once and a purchase is taken back once.
+  app.post('/stripe/webhook', async (c) => {
+    const secret = c.env.STRIPE_WEBHOOK_SECRET
+    if (!secret) throw new HttpError(503, 'not_configured', 'STRIPE_WEBHOOK_SECRET is not set')
+    const length = Number(c.req.header('content-length') ?? 0)
+    if (length > MAX_EVENT_BYTES) throw new HttpError(413, 'too_large', 'event too large')
+    const payload = await c.req.text()
+    if (payload.length > MAX_EVENT_BYTES) throw new HttpError(413, 'too_large', 'event too large')
+    const event = await verifiedEvent(payload, c.req.header('stripe-signature'), secret, now().getTime())
+    if (event === undefined) throw new HttpError(400, 'bad_signature', 'not signed by Stripe')
+    let handled
+    try {
+      handled = await handleEvent(c.env.DB, now().getTime(), event)
+    } catch (err) {
+      // An event the worker could not handle: the database failed, or the event is not what the
+      // worker expects. Nothing is guessed; Stripe sends it again, and the log says why.
+      logError(`stripe event failed: ${errorSummary(err)}`)
+      throw new HttpError(500, 'internal', 'the event could not be handled')
+    }
+    if (handled.log) logBilling(handled.log)
+    if (handled.done === 'retry') throw new HttpError(409, 'not_yet', 'the payment has made no grant yet')
+    return c.json({ received: true, done: handled.done })
   })
 
   // ---- Clerk session auth for /v1/* ----
@@ -689,6 +741,50 @@ export function createApp({
 
   app.get('/v1/me', (c) => c.json({ userId: c.get('userId'), model: c.env.MODEL }))
 
+  /** The packs on offer, smallest first, and Stripe's API to sell them: or a refusal when buying is not set up. */
+  function billing(env: Env): { packs: Pack[]; stripe: StripeApi } {
+    const packs = packsOf(env.STRIPE_PACKS)
+    if ('error' in packs) throw new HttpError(503, 'not_configured', `STRIPE_PACKS is invalid: ${packs.error}`)
+    const stripe = env.STRIPE ?? (env.STRIPE_SECRET_KEY ? stripeOverHttp(env.STRIPE_SECRET_KEY) : undefined)
+    if (!stripe || !packs.packs.length) throw new HttpError(503, 'not_configured', 'buying credits is not set up')
+    return { packs: packs.packs, stripe }
+  }
+
+  // The packs of credits a signed-in user can buy, smallest first, with their price in US cents:
+  // 1000 credits a dollar, as everywhere. Checkout may show the price in the buyer's currency, with tax.
+  app.get('/v1/billing/packs', (c) => {
+    const { packs } = billing(c.env)
+    return c.json({ packs: packs.map(({ credits }) => ({ credits, usdCents: credits / 10 })) })
+  })
+
+  // Starts buying a pack: makes a Stripe Checkout Session for it, for the signed-in user, and gives
+  // the URL of its page, which the side panel opens in a new tab. Nothing is granted here: the
+  // webhook grants the credits once Stripe says the payment went through.
+  app.post('/v1/billing/checkout', async (c) => {
+    const { packs, stripe } = billing(c.env)
+    const offered = packs.map((pack) => pack.credits)
+    const { credits } = parse(
+      part(z.object({ credits: z.int() }), 'body must be {"credits": <a pack\'s credits>}'),
+      await c.req.json().catch(() => undefined),
+    )
+    const pack = packs.find((each) => each.credits === credits)
+    if (!pack) throw badRequest(`credits must be one of the packs on offer: ${offered.join(', ')}`)
+    const origin = new URL(c.req.url).origin
+    try {
+      const { url } = await stripe.createCheckout({
+        price: pack.price,
+        credits: pack.credits,
+        userId: c.get('userId'),
+        successUrl: `${origin}/billing/paid`,
+        cancelUrl: `${origin}/billing/cancelled`,
+      })
+      return c.json({ url })
+    } catch (err) {
+      logError(`checkout failed: ${errorSummary(err)}`)
+      throw new HttpError(502, 'payment_unavailable', 'Checkout is unavailable, try again in a moment.')
+    }
+  })
+
   // The signed-in user's own credits, for the side panel: what is left, when it expires and when
   // more arrive, and what was spent per day. It only reads: the weekly free grant still waits for
   // the user's next question, and is reported as not started until then.
@@ -717,12 +813,14 @@ export function createApp({
     const from = parse(GrantsBefore, c.req.query('before'))
     const { grants, next } = await onOwnLedger(c, (ledger) => ledger.grantsPage(from))
     return c.json({
-      grants: grants.map(({ source, amount, left, grantedAt, expiresAt }) => ({
+      grants: grants.map(({ source, amount, left, grantedAt, expiresAt, revoked }) => ({
         source,
         amount,
         left,
         grantedAt,
         expiresAt,
+        // A purchase taken back ended at `expiresAt`, and `left` is what was taken back.
+        ...(revoked ? { revoked } : {}),
       })),
       next: next ? cursorText(next) : null,
     })
@@ -819,7 +917,7 @@ export function createApp({
       throw new HttpError(
         402,
         'out_of_credits',
-        `You have no credits left. Your next ${FREE_CREDITS} free credits arrive on ${utcMinute(balance.nextGrantAt)}.`,
+        `You have no credits left. Your next ${FREE_CREDITS} free credits arrive on ${utcMinute(balance.nextGrantAt)}, or you can buy credits.`,
       )
     }
 

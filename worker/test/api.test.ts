@@ -271,7 +271,9 @@ describe('UC-CHAT-001 credits', () => {
     expect((await chat(token)).status).toBe(200)
     const message = await refused(await chat(token))
     // The week started with the first request, at 12:00 on 2026-11-08.
-    expect(message).toBe('You have no credits left. Your next 200 free credits arrive on 2026-11-15 at 12:00 UTC.')
+    expect(message).toBe(
+      'You have no credits left. Your next 200 free credits arrive on 2026-11-15 at 12:00 UTC, or you can buy credits.',
+    )
     expect(ai.calls).toHaveLength(2)
   })
 
