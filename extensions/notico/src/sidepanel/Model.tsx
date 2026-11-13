@@ -258,10 +258,17 @@ function OpenRouterSetup({
 
 const dollars = (n: number) => `$${n < 0.1 ? n.toFixed(3).replace(/0$/, '') : n.toFixed(2)}`
 
-/** What a model costs, per million tokens in and out. */
-function priceText({ price }: OpenRouterModel): string {
-  if (price.input === 0 && price.output === 0) return 'Free'
-  return `${dollars(price.input)} in · ${dollars(price.output)} out per million tokens`
+/** How much a model takes in at once, in tokens. */
+function contextText(tokens: number): string {
+  if (tokens >= 1_000_000) return `${Number((tokens / 1_000_000).toFixed(1))}M`
+  return `${Math.round(tokens / 1000)}K`
+}
+
+/** What a model costs, per million tokens in and out, and how much it takes in at once. */
+function priceText({ price, contextLength }: OpenRouterModel): string {
+  const context = `${contextText(contextLength)} context`
+  if (price.input === 0 && price.output === 0) return `Free · ${context}`
+  return `${dollars(price.input)} in · ${dollars(price.output)} out per million tokens · ${context}`
 }
 
 function checkText(check: ModelCheck | 'checking'): string {

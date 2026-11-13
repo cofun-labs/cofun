@@ -176,7 +176,7 @@ describe('choosing the model', () => {
     const results = screen.getByRole('list', { name: 'Search results' })
     const found = within(results).getAllByRole('radio')
     expect(found).toHaveLength(1)
-    expect(found[0]).toHaveAccessibleName('Google: Gemma 5 27B $0.10 in · $0.40 out per million tokens')
+    expect(found[0]).toHaveAccessibleName('Google: Gemma 5 27B $0.10 in · $0.40 out per million tokens · 200K context')
 
     await user.click(found[0])
     await user.type(screen.getByLabelText('OpenRouter API key'), KEY)

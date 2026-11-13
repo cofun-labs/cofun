@@ -234,6 +234,12 @@ export class CopilotAgent {
     confirm?: ConfirmTool,
   ): Promise<AskResult> {
     const epoch = this.epoch
+    // Once per question: a retry below goes to the same model, whatever the user chose meanwhile.
+    try {
+      await this.chooseProvider()
+    } catch (err) {
+      return { status: 'error', message: (err as Error).message }
+    }
     const { result, kept, failure } = await this.askOnce(text, onUpdate, epoch, confirm)
     // The provider's model changed since this panel looked it up (for the hosted one, a deploy, which
     // refuses the request before any credits are spent), so look the model up again. Retry once if
@@ -265,7 +271,6 @@ export class CopilotAgent {
   ): Promise<{ result: AskResult; kept: boolean; failure?: Failure }> {
     let agent: Agent
     try {
-      await this.chooseProvider()
       agent = await this.getAgent()
     } catch (err) {
       return { result: { status: 'error', message: (err as Error).message }, kept: false }
