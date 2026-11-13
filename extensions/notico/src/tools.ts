@@ -216,6 +216,9 @@ function quoted(result: string | undefined, line: RegExp): string | undefined {
   }
 }
 
+/** A name in quotes as `quote` writes it, for a pattern that reads it back with `quoted`. */
+const QUOTED = '"(?:[^"\\\\]|\\\\.)*"'
+
 /** The action on a thing by its name when known, else on what the fallback words say. */
 function on(verb: Verb, name: string | undefined, fallback: string, what?: string): Action {
   return name ? { verb, what, name } : { verb, what: what ? `${what} ${fallback}` : fallback }
@@ -1035,6 +1038,9 @@ export function forgetReads(): void {
 const EDITS_LIST = '`edits` must be a list with at least one edit.'
 const GIVE_PAGE = 'Give `page`: the id read_page shows after "Page:".'
 
+/** The first line of an edit_page result, which names the page. */
+const EDITED_PAGE = new RegExp(`^On the page (${QUOTED}) \\^[0-9a-f]+:$`, 'm')
+
 export const editPage = defineTool({
   changesData: true,
   name: 'edit_page',
@@ -1052,10 +1058,13 @@ export const editPage = defineTool({
     'refused: read it again and redo the edit.',
   // Edits that all matched what the page had wrote nothing, and changed nothing.
   touched: (args, result) =>
-    result.split('\n').every((line) => line.endsWith('already had that content; nothing changed.'))
+    result
+      .split('\n')
+      .slice(1)
+      .every((line) => line.endsWith('already had that content; nothing changed.'))
       ? NONE
       : { changed: idsOf(args && [args.page]) },
-  describe: () => ({ verb: EDIT, what: 'a page' }),
+  describe: (_args, result) => on(EDIT, quoted(result, EDITED_PAGE), 'a page'),
   args: z.strictObject({
     page: z.string({ error: GIVE_PAGE }).describe('Id of the page to edit, as read_page shows it after "Page:".'),
     edits: z.array(EDIT_ARGS, { error: EDITS_LIST }).min(1, { error: EDITS_LIST }),
@@ -1117,9 +1126,11 @@ export const editPage = defineTool({
       e.blocks = blocksWithPeople(e.blocks, found[n])
     })
     const plan = planEdit(loaded, read, edits)
+    // The first line names the page, for the agent and for the side panel.
+    const header = `On the page ${quote(read.title)} ^${hexId(id)}:`
     // The last point where nothing has been sent: a Stop pressed while the page loaded wins.
     // Every edit was a no-op: there is nothing to send, and the page stays as read.
-    if (!plan.operations.length) return plan.summary.join('\n')
+    if (!plan.operations.length) return [header, ...plan.summary].join('\n')
     signal?.throwIfAborted()
     try {
       await tab.client.submitTransaction(loaded.spaceId, plan.operations, 'Notico: edit_page')
@@ -1166,7 +1177,7 @@ export const editPage = defineTool({
       }
     }
     remember(next, since)
-    return [...plan.summary, newRefs, 'Read the page again to see the result.'].filter(Boolean).join('\n')
+    return [header, ...plan.summary, newRefs, 'Read the page again to see the result.'].filter(Boolean).join('\n')
   },
 })
 
@@ -2152,6 +2163,10 @@ function nestedIn(above: Map<string, string[]>, ids: string[]): Map<string, stri
 
 const DUPLICATE_PAGE = '`page` is required: the id or URL of the page to duplicate.'
 
+/** The first line of a duplicate_page result: the page duplicated, by name when known, and the copy. */
+const DUPLICATED_PAGE = new RegExp(`^Duplicated (${QUOTED}) \\^`, 'm')
+const DUPLICATED_AS = new RegExp(`^Duplicated (?:${QUOTED} )?\\^[0-9a-f]{32} as \\^([0-9a-f]{32}),`, 'm')
+
 export const duplicatePage = defineTool({
   name: 'duplicate_page',
   changesData: true,
@@ -2161,8 +2176,8 @@ export const duplicatePage = defineTool({
     "to its title. Returns the copy's id and URL. Database rows and pages at the top of the sidebar can't be " +
     'duplicated with this tool.',
   // The copy is the page it made.
-  touched: (_args, result) => ({ changed: idIn(result, /^Duplicated \^[0-9a-f]{32} as \^([0-9a-f]{32}),/m) }),
-  describe: () => ({ verb: DUPLICATE, what: 'a page' }),
+  touched: (_args, result) => ({ changed: idIn(result, DUPLICATED_AS) }),
+  describe: (_args, result) => on(DUPLICATE, quoted(result, DUPLICATED_PAGE), 'a page'),
   args: z.strictObject({
     page: z.string({ error: DUPLICATE_PAGE }).describe('Id or URL of the page to duplicate.'),
   }),
@@ -2196,8 +2211,10 @@ export const duplicatePage = defineTool({
     try {
       const copy = await tab.client.duplicatePage(String(page.space_id), id, page.parent_id, { signal })
       const hex = hexId(copy)
+      // A database's name is not in its block: only a name the agent has seen is given for one.
+      const title = knownTitle(id) || runsText(page.properties?.title)
       return [
-        `Duplicated ^${hexId(id)} as ^${hex}, right after it in ^${hexId(near)}.`,
+        `Duplicated ${title ? `${quote(title)} ` : ''}^${hexId(id)} as ^${hex}, right after it in ^${hexId(near)}.`,
         `URL: ${pageLink(tab.url, hex)}`,
       ].join('\n')
     } catch (err) {

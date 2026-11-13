@@ -70,7 +70,8 @@ describe('UC-NOTION-002 edit a page', () => {
       { action: 'delete', block: '00000003' },
       { action: 'insert', block: '^00000001', markdown: '- New item\n  - Nested' },
     ])
-    expect(result.split('\n').slice(0, 4)).toEqual([
+    expect(result.split('\n').slice(0, 5)).toEqual([
+      `On the page "Fixture page" ^${hex(PAGE)}:`,
       'Inserted 2 blocks at the start of the page.',
       'Replaced the text of ^00000002.',
       'Deleted ^00000003.',
@@ -1945,7 +1946,11 @@ describe('seventh review of #148', () => {
       { action: 'replace', block: '^00000001', markdown: '| B | C | A |\n| --- | --- | --- |\n| 2 | 3 | 1 |' },
     ])
     expect(result).toBe(
-      ['Rewrote the table ^00000001: columns moved.', 'Read the page again to see the result.'].join('\n'),
+      [
+        `On the page "Fixture page" ^${hex(PAGE)}:`,
+        'Rewrote the table ^00000001: columns moved.',
+        'Read the page again to see the result.',
+      ].join('\n'),
     )
     expect(ws.records.get(id(1))!.format).toEqual({ table_block_column_order: ['b', 'c', 'a'] })
     expect(ws.records.get(id(3))!.properties).toEqual({ a: [['1', [['m', 'thread']]]], b: [['2']], c: [['3']] })
