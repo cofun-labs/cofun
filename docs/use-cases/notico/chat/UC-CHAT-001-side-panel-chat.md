@@ -12,7 +12,7 @@ Key constraints:
 
 - The server chooses the hosted model. Clients cannot make it use another one.
 - A reply is text the AI wrote, and cannot make the side panel run or load anything: HTML in it is shown as text, images in it are not loaded, and only web links in it can be followed.
-- A user with no credits left cannot reach the model again until their next free credits arrive.
+- A user with no credits left cannot reach the model again until they get more credits: their next free credits, or credits they buy (UC-BILLING-001).
 - A model call that starts with credits left is answered in full, even when it costs more than what was left. What it overspent is taken out of the next credits the user gets.
 - Credits that have expired cannot be spent.
 - When credits run out partway through a question, the question ends there, like any other failed question (UC-AGENT-001).

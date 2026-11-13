@@ -4,10 +4,13 @@ import {
   dayText,
   daysText,
   sourceText,
+  usdText,
   when,
   wholeCredits,
   type Credits,
   type CreditsState,
+  type Pack,
+  type Packs,
 } from '../credits'
 import { Avatar, useAccount } from './Account'
 import { History, type HistoryReads } from './History'
@@ -15,10 +18,18 @@ import { Icon } from './icons'
 import { ModelCard } from './Model'
 import type { ModelSettings } from '../models'
 
+/** Buying credits, as the settings page needs it. */
+export interface Buying {
+  /** Reads the packs on offer. */
+  packs: () => Promise<Packs>
+  /** Opens Checkout for the pack of `quantity` in a new tab. Throws when it can't. */
+  buy: (quantity: number) => Promise<void>
+}
+
 /**
- * The settings page: the account, which model answers, the plan, the credits with their dates, and
- * usage per day. The
- * history of the credits opens from the credits, in place of the page, and leads back to it.
+ * The settings page: the account, which model answers, the packs of credits to buy, the
+ * credits with their dates, and usage per day. The history of the credits opens from the
+ * credits, in place of the page, and leads back to it.
  */
 export function Settings({
   credits,
@@ -26,6 +37,7 @@ export function Settings({
   history,
   model,
   onModelChange,
+  buying,
   onClose,
 }: {
   credits: CreditsState
@@ -36,6 +48,7 @@ export function Settings({
   /** Which model answers; undefined while it loads. */
   model?: ModelSettings
   onModelChange: (settings: ModelSettings) => void
+  buying: Buying
   onClose: () => void
 }) {
   const account = useAccount()
@@ -106,13 +119,6 @@ export function Settings({
 
       <ModelCard settings={model} onChange={onModelChange} />
 
-      {/* The plan's actions (upgrading, managing a subscription) belong in this section. */}
-      <section className="card" aria-labelledby="settings-plan">
-        <h3 id="settings-plan">Plan</h3>
-        <p className="settings-value">Free</p>
-        <p className="account-detail">Free credits every week.</p>
-      </section>
-
       <section className="card" aria-labelledby="settings-credits">
         <h3 id="settings-credits">Credits</h3>
         {credits.status === 'loading' && <p className="account-detail">Loading credits…</p>}
@@ -130,6 +136,8 @@ export function Settings({
           Credit history
         </button>
       </section>
+
+      <BuyCredits buying={buying} />
 
       {credits.status === 'ready' && (
         <section className="card" aria-labelledby="settings-usage">
@@ -182,6 +190,93 @@ function Balance({ credits: { balance, free, grants } }: { credits: Credits }) {
           : 'Your free credits start with your next question.'}
       </p>
     </>
+  )
+}
+
+/**
+ * The packs of credits on offer, read when the page opens. Choosing one opens Stripe's Checkout in a
+ * new tab; the credits arrive once the payment goes through, and the panel reads them again when the
+ * user comes back to it.
+ */
+function BuyCredits({ buying }: { buying: Buying }) {
+  const [packs, setPacks] = useState<{ status: 'loading' } | { status: 'ready'; packs: Pack[] } | { status: 'failed' }>(
+    { status: 'loading' },
+  )
+  const [checkout, setCheckout] = useState<'idle' | 'opening' | 'opened' | 'failed'>('idle')
+  const reads = useRef(0)
+
+  async function read() {
+    const mine = ++reads.current
+    setPacks({ status: 'loading' })
+    let next: typeof packs
+    try {
+      next = { status: 'ready', packs: (await buying.packs()).packs }
+    } catch {
+      next = { status: 'failed' }
+    }
+    if (mine === reads.current) setPacks(next)
+  }
+
+  useEffect(() => {
+    void read()
+    // A page that closed takes no answer.
+    return () => void reads.current++
+  }, [])
+
+  async function buy(quantity: number) {
+    setCheckout('opening')
+    try {
+      await buying.buy(quantity)
+      setCheckout('opened')
+    } catch {
+      setCheckout('failed')
+    }
+  }
+
+  return (
+    <section className="card" aria-labelledby="settings-buy">
+      <h3 id="settings-buy">Buy credits</h3>
+      {packs.status === 'loading' && <p className="account-detail">Loading…</p>}
+      {packs.status === 'failed' && (
+        <>
+          <p role="alert">Buying credits is unavailable right now.</p>
+          <button className="primary" onClick={() => void read()}>
+            Try again
+          </button>
+        </>
+      )}
+      {packs.status === 'ready' && (
+        <>
+          <p className="account-detail">
+            Credits pay for Notico's own model; questions answered by your own model on OpenRouter spend none. A
+            one-time purchase, not a subscription. Credits last one year and are spent after your free credits. Prices
+            are in US dollars; tax may be added at checkout.
+          </p>
+          <ul className="packs" aria-label="Packs of credits">
+            {packs.packs.map(({ quantity, credits, usdCents }) => (
+              <li key={quantity}>
+                <button
+                  type="button"
+                  className="pack"
+                  aria-label={`Buy ${wholeCredits(credits * 1_000_000)} credits for ${usdText(usdCents)}`}
+                  disabled={checkout === 'opening'}
+                  onClick={() => void buy(quantity)}
+                >
+                  <span>{wholeCredits(credits * 1_000_000)} credits</span>
+                  <span className="account-detail">{usdText(usdCents)}</span>
+                </button>
+              </li>
+            ))}
+          </ul>
+          {checkout === 'opened' && (
+            <p role="status" className="account-detail">
+              Checkout opened in a new tab. Your credits show here once the payment goes through.
+            </p>
+          )}
+          {checkout === 'failed' && <p role="alert">Checkout could not be opened. Try again in a moment.</p>}
+        </>
+      )}
+    </section>
   )
 }
 

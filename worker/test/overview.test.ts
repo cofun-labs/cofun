@@ -109,7 +109,7 @@ const accounts = async (from: string, to: string, more?: Record<string, string |
 const lookUp = async (userId: string) => json(await req('GET', `/v1/admin/accounts/${userId}`, admin))
 
 const NOTHING = {
-  granted: { free: 0, manual: 0 },
+  granted: { free: 0, manual: 0, purchase: 0 },
   spent: 0,
   calls: 0,
   failedCalls: 0,
@@ -146,14 +146,14 @@ describe('UC-ADMIN-002 See granted and spent credits as a whole', () => {
     await threeDays()
     const nov8 = {
       ...NOTHING,
-      granted: { free: 400 * CREDIT, manual: 0 },
+      granted: { free: 400 * CREDIT, manual: 0, purchase: 0 },
       spent: 3 * FAKE_COST,
       calls: 3,
       promptTokens: 36,
       completionTokens: 15,
     }
     const nov9 = {
-      granted: { free: 200 * CREDIT, manual: 100 * CREDIT },
+      granted: { free: 200 * CREDIT, manual: 100 * CREDIT, purchase: 0 },
       spent: CACHED_COST,
       calls: 2,
       failedCalls: 1,
@@ -165,7 +165,7 @@ describe('UC-ADMIN-002 See granted and spent credits as a whole', () => {
     expect(await overview('2026-11-08', '2026-11-10')).toEqual({
       period: { from: Date.parse('2026-11-08T00:00:00Z'), to: Date.parse('2026-11-11T00:00:00Z'), utcOffset: 0 },
       totals: {
-        granted: { free: 600 * CREDIT, manual: 100 * CREDIT },
+        granted: { free: 600 * CREDIT, manual: 100 * CREDIT, purchase: 0 },
         spent: 3 * FAKE_COST + CACHED_COST,
         calls: 5,
         failedCalls: 1,
@@ -352,13 +352,17 @@ describe('UC-ADMIN-002 See granted and spent credits as a whole', () => {
     at('2026-11-11T00:00:00.000Z')
     await asks('late')
 
-    const one = { ...NOTHING, granted: { free: 200 * CREDIT, manual: 0 }, spent: FAKE_COST, calls: 1, promptTokens: 12, completionTokens: 5 } // prettier-ignore
+    const one = { ...NOTHING, granted: { free: 200 * CREDIT, manual: 0, purchase: 0 }, spent: FAKE_COST, calls: 1, promptTokens: 12, completionTokens: 5 } // prettier-ignore
     const { totals, days } = await overview('2026-11-09', '2026-11-10')
     expect(days).toEqual([
       { day: '2026-11-09', ...one },
       { day: '2026-11-10', ...one },
     ])
-    expect(totals).toMatchObject({ granted: { free: 400 * CREDIT, manual: 0 }, spent: 2 * FAKE_COST, calls: 2 })
+    expect(totals).toMatchObject({
+      granted: { free: 400 * CREDIT, manual: 0, purchase: 0 },
+      spent: 2 * FAKE_COST,
+      calls: 2,
+    })
     expect((await accounts('2026-11-09', '2026-11-10')).accounts.map((a: any) => a.userId)).toEqual([
       'user_first',
       'user_last',

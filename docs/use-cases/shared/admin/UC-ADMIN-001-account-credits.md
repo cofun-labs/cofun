@@ -2,7 +2,7 @@
 
 ## Behavior
 
-The operator needs to help a single account: see what credits it has, and give it more. On an admin page they look an account up by its user id and see its balance and the record of every grant it was given: where the credits came from, how many, how many are left, when they were granted, and when they expire. Grants stay in that record after they expire.
+The operator needs to help a single account: see what credits it has, and give it more. On an admin page they look an account up by its user id and see its balance and the record of every grant it was given: where the credits came from (the weekly free credits, a grant by hand, or a purchase), how many, how many are left, when they were granted, and when they expire. Grants stay in that record after they expire.
 
 They can grant the account credits by hand, entering the number of credits and how many days they last each time. Credits granted by hand sit beside the weekly free credits every account gets (each product's chat use case describes them, such as Notico's UC-CHAT-001) and follow the same rules: the credits that expire first are spent first, what the account overspent is taken out of them first, and they cannot be spent after they expire.
 
@@ -25,6 +25,7 @@ Key constraints:
 | UC-ADMIN-001-S05 | P1 | ✅ | Given an account that overspent its credits; when an operator grants it credits; then what it overspent is taken out of them first. |
 | UC-ADMIN-001-S06 | P1 | ✅ | Given an account that has not used the AI this week; when an operator looks it up or grants it credits; then its week of free credits still starts, in full, when the user next asks the AI. |
 | UC-ADMIN-001-S07 | P1 | ✅ | Given an operator; when they enter more credits or more days than a grant may have; then the grant is refused and the account does not change. |
+| UC-ADMIN-001-S08 | P1 | ✅ | Given an account that bought credits; when an operator looks it up; then each purchase is in its record as a purchase, beside the other grants, and a refunded or disputed one shows what was taken back. |
 
 ### ai-e2e
 

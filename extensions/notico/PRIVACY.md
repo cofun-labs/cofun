@@ -23,6 +23,7 @@ The extension sends requests to these hosts and no others. The extension's conte
 | `www.notion.so`, `app.notion.com` | Requests to Notion's own API, sent from inside your Notion tab with that tab's session: reads, and the changes you ask for | To read and edit your pages. This is the same service your Notion tab already talks to |
 | `api.cofun.cc` (our worker) | Your Clerk session token, and for each question the conversation so far: your messages, the assistant's replies, the tool calls and their results (which contain the Notion content the assistant read), the open Notion page's title and URL, the current tab's title and URL on another site if the assistant looked them up, and the assistant's instructions | To get the AI model's reply |
 | `api.cofun.cc` (our worker) | Your Clerk session token, how far your clock is from UTC, in minutes, and, when you look further back in your credit history, the date or the place in the list to go on from (both as part of the request's address) | To show you your own credits, how many you used each day, by the days of your own clock, and their history |
+| `api.cofun.cc` (our worker) | Your Clerk session token, and when you buy credits, which pack you chose | To list the packs of credits on offer, and to start a checkout for the one you chose |
 | `openrouter.ai` (OpenRouter), only once you choose it in the settings | When you pick OpenRouter: a request for its public list of models, with nothing of yours in it. When you check a model, or ask a question with your own model chosen: your OpenRouter key, and the conversation so far, as listed for the worker above (Notion content the assistant read included) | To get the reply from the model you chose, under your own OpenRouter account. OpenRouter passes the conversation to the company that runs that model; [OpenRouter's privacy policy](https://openrouter.ai/privacy) says what they keep. These questions do not go to our worker and spend no credits |
 | `clerk.cofun.cc` (Clerk's Frontend API) | Your Clerk session, to load your account and get session tokens | Sign-in |
 | `img.clerk.com` (Clerk's image host) | A request for your account's avatar image | To show who is signed in, in the side panel's account menu and settings page |
@@ -32,6 +33,8 @@ The extension also holds a host permission for `*.cofun.cc`. It uses it for noth
 Notion content never goes to Clerk. Your OpenRouter key is sent only to OpenRouter, never to our worker or to Clerk. Your Notion session is never sent anywhere but Notion: requests to Notion are made inside your Notion tab, and the worker and Clerk do not receive your Notion cookies or credentials. The extension reads your Notion user id from the tab to make changes as you.
 
 As with any web service, Cloudflare (which runs the worker) and Clerk see your IP address when the extension connects to them.
+
+When you buy credits, the extension opens Stripe's Checkout page (`checkout.stripe.com`) in a normal tab, as a link would. The extension sends nothing to Stripe itself: what you enter on that page goes to Stripe, and never to the extension or the worker. [Cofun's privacy page](../../PRIVACY.md#buying-credits) says what Stripe and the worker exchange.
 
 ### The sign-in page
 

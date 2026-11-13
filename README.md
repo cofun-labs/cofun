@@ -23,7 +23,9 @@ Confluco, for Confluence, is next.
 ## One account for all of them
 
 - **The same account everywhere.** Every extension signs in on the same Cofun sign-in page (Google is supported), so it is one account wherever you use it.
-- **One balance of credits.** Asking the AI costs credits, and every account gets free credits each week. They are one balance across the extensions: what you use in one is gone from the others.
+- **One balance of credits.** Asking the AI with the hosted model costs credits (an extension that lets you answer with your own model on OpenRouter spends none), and they are one balance across the extensions: what you use in one is gone from the others. A credit is a thousandth of a US dollar, and a question costs what the AI model's tokens cost at the provider's price, with nothing added: a longer question, a longer answer, or more pages read cost more.
+- **Free credits every week.** Every account gets 200 free credits a week, buyers included. They last 7 days, starting with your first question of the week.
+- **More when you need them.** You can buy a pack of credits at a thousand credits a US dollar (US$5, US$10, US$20, or US$50), once: nothing renews, and there is no subscription. Bought credits last a year and are spent after your free ones. Payment is on Stripe's page, and Stripe sells the credits as the merchant of record, so tax may be added at checkout. Purchases are final, except for a billing error, where the law requires a refund, or a refund Stripe makes as the seller.
 - **One server, which never talks to the sites you work on.** The extensions share one server. It checks who you are, keeps your credits, and passes the conversation to the AI model, which runs on Cloudflare Workers AI. It never talks to Notion or any other site: the work on your pages happens in your browser, in your own tab.
 
 **Privacy.** The server never keeps what you asked or what the AI answered. [PRIVACY.md](PRIVACY.md) says what the server and sign-in do with your data, for every extension; each extension's own privacy page says what it reads in your browser and which hosts it talks to ([Notico's](extensions/notico/PRIVACY.md)).
