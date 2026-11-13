@@ -259,9 +259,10 @@
       }
     },
     {
-      // The one module that sends requests to the site. Its import restrictions (the site block)
-      // still hold.
-      "files": ["extensions/*/src/*/tab.ts"],
+      // The one module that sends requests to the site, named per site like the site block (a
+      // tab.ts elsewhere, such as in src/sidepanel/, is not exempt). Its import restrictions (the
+      // site block) still hold.
+      "files": ["extensions/*/src/notion/tab.ts"],
       "rules": {
         "no-restricted-globals": "off",
         "no-restricted-properties": [
