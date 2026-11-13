@@ -7,7 +7,7 @@ How Notico is built, and why. For setup and deployment see [development.md](deve
 │ Notion tab            │ Side panel (React)              │──Bearer <Clerk session JWT>──▶ Worker ──▶ AI Gateway ──▶ Workers AI
 │  /api/v3 as the user ◀──chrome.scripting── agent + tools│                                (verifies JWT)
 ├───────────────────────┴─────────────────────────────────┤      ▲ reads the Clerk cookies signing in sets (Clerk Sync Host)
-│ Sign-in tab: notico-api.cofun.cc/login                  │──────┘  this page is served by the same worker
+│ Sign-in tab: api.cofun.cc/login                         │──────┘  this page is served by the same worker
 └─────────────────────────────────────────────────────────┘
 ```
 
@@ -37,7 +37,7 @@ For example, a user's balance and what they owe are not stored: they are worked 
 
 ## Auth flow
 
-1. The user clicks "Sign in" in the side panel. The extension opens `https://notico-api.cofun.cc/login` in a new tab; the worker serves this page with Clerk's sign-in UI.
+1. The user clicks "Sign in" in the side panel. The extension opens `https://api.cofun.cc/login` in a new tab; the worker serves this page with Clerk's sign-in UI.
 2. Sign-in runs against Clerk's production instance, whose Frontend API is `clerk.cofun.cc`. After sign-in, Clerk's client cookie (`__client`) lives on that host, and a cookie that says whether anyone is signed in (`__client_uat`) on the parent domain `cofun.cc`. The extension is configured with `syncHost` and uses the `cookies` permission to read that session: from the Frontend API host on a production instance, and from the sign-in page's host on a development instance, which keeps its client cookie there (`src/clerk.ts`). Clerk doesn't refresh an already-open side panel, so the extension watches those cookies and reloads the panel when they change.
 3. Before each request, the extension gets a short-lived session JWT with `getToken()` and sends it as `Authorization: Bearer`.
 4. The worker verifies the JWT locally with Clerk's JWT public key (signature, expiry). If the token has an `azp` (the origin that requested it: `chrome-extension://<id>` for the extension, the worker's own origin for the admin page), it must be an allowed origin, which stops other websites from using a session they obtained in the browser. No network call to Clerk is needed.

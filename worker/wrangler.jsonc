@@ -1,12 +1,12 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "notico-api",
+  "name": "cofun-api",
   "main": "src/index.ts",
   "compatibility_date": "2026-11-01",
   "compatibility_flags": ["nodejs_compat"],
 
   // Serves the API and the sign-in page (Clerk Sync Host). The zone must be on the deploying account.
-  "routes": [{ "pattern": "notico-api.cofun.cc", "custom_domain": true }],
+  "routes": [{ "pattern": "api.cofun.cc", "custom_domain": true }],
   "workers_dev": false,
 
   // Workers Logs: keep console output and per-request invocation logs in the dashboard.
@@ -20,20 +20,11 @@
   // Every user's credits: grants, and model calls with what each cost; the schema is in migrations/
   // (see docs/development.md).
   // The database is found by its name on the deploying account, so its id is not kept here.
-  "d1_databases": [{ "binding": "DB", "database_name": "notico-db", "migrations_dir": "migrations" }],
-
-  // Durable Object classes this worker had. v2 dropped UserQuota, the daily request counters credits
-  // replaced; v3 drops UserCredits, the per-user credit ledgers D1 replaced. Deleting a class deletes
-  // its data.
-  "migrations": [
-    { "tag": "v1", "new_sqlite_classes": ["UserQuota"] },
-    { "tag": "v2", "new_sqlite_classes": ["UserCredits"], "deleted_classes": ["UserQuota"] },
-    { "tag": "v3", "deleted_classes": ["UserCredits"] },
-  ],
+  "d1_databases": [{ "binding": "DB", "database_name": "cofun-db", "migrations_dir": "migrations" }],
 
   // Per-request usage records (sizes, token counts, credits charged, outcome; never message content).
   // Workers Analytics Engine keeps them for 90 days. The dataset is created on first write.
-  "analytics_engine_datasets": [{ "binding": "USAGE", "dataset": "notico_api_usage" }],
+  "analytics_engine_datasets": [{ "binding": "USAGE", "dataset": "cofun_api_usage" }],
 
   "vars": {
     // Clerk publishable key, for the sign-in page. Public.
@@ -43,7 +34,7 @@
     // The only model clients can use. Its token prices must be listed in src/pricing.ts.
     "MODEL": "@cf/deepseek-ai/deepseek-v4.1-flash-1017",
     // Origins allowed to call (the token's azp claim). Comma-separated.
-    "CLERK_AUTHORIZED_PARTIES": "chrome-extension://fafkdcopddmegenpemnmjbnolhlbbfpf,https://notico-api.cofun.cc",
+    "CLERK_AUTHORIZED_PARTIES": "chrome-extension://fafkdcopddmegenpemnmjbnolhlbbfpf,https://api.cofun.cc",
     // Which product each extension is, by its origin (the token's azp). Model calls from any other
     // caller are recorded as the product "unknown".
     "PRODUCTS": { "chrome-extension://fafkdcopddmegenpemnmjbnolhlbbfpf": "notico" },
