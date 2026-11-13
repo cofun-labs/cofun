@@ -180,6 +180,8 @@ export interface ManualGrant {
  * in micro-credits, 0 when it cost nothing.
  */
 export interface ModelCall {
+  /** The product the call came from: see `productOf` in app.ts. */
+  product: string
   model: string
   startedAt: number
   endedAt: number
@@ -286,11 +288,11 @@ const READ_DEBT = `SELECT ${DEBT} AS debt`
  * what the user owes. It runs before SPEND, in the same batch, so both see the same grants. ?2 is
  * when the call ended, ?3 the model, ?4 when it started, ?5 whether it streamed, ?6 its outcome, ?7
  * its finish reason, ?8 to ?10 the prompt, cached, and completion tokens, ?11 whether they are
- * estimated, ?12 the cost.
+ * estimated, ?12 the cost, ?13 the product it came from.
  */
 const RECORD_CALL = `INSERT INTO model_calls (user_id, ended_at, model, started_at, stream, outcome, finish_reason,
-  prompt_tokens, cached_tokens, completion_tokens, estimated, micro_credits, owed)
-SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, max(0, ?12 - coalesce(sum(left), 0))
+  prompt_tokens, cached_tokens, completion_tokens, estimated, micro_credits, owed, product)
+SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, max(0, ?12 - coalesce(sum(left), 0)), ?13
 FROM grants WHERE user_id = ?1 AND expires_at > ?2`
 
 /**
@@ -424,6 +426,7 @@ export class Ledger {
       completionTokens,
       call.estimated ? 1 : 0,
       cost,
+      call.product,
     )
     await this.db.batch(cost === 0 ? [record] : [record, this.statement(SPEND, endedAt, cost)])
   }

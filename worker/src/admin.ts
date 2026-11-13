@@ -75,6 +75,14 @@ export function adminPage(publishableKey: string): string {
       <dt>Model calls</dt><dd id="calls"></dd>
       <dt>Tokens</dt><dd id="tokens"></dd>
     </dl>
+    <h2>Per product</h2>
+    <p id="no-products" class="muted">No model call was made in this period.</p>
+    <div class="scroll">
+      <table id="per-product">
+        <thead><tr><th>Product</th><th>Spent</th><th>Calls</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
     <h2>Per day</h2>
     <div class="scroll">
       <table id="per-day">
@@ -291,6 +299,15 @@ export function adminPage(publishableKey: string): string {
     el('tokens').textContent =
       count(totals.promptTokens) + ' prompt (' + count(totals.cachedTokens) + ' cached), ' +
       count(totals.completionTokens) + ' completion'
+
+    el('no-products').style.display = overview.products.length ? 'none' : 'block'
+    el('per-product').style.display = overview.products.length ? 'table' : 'none'
+    const products = el('per-product').tBodies[0]
+    products.replaceChildren()
+    for (const each of overview.products) {
+      const row = products.insertRow()
+      for (const text of [each.product, credits(each.spent), count(each.calls)]) row.insertCell().textContent = text
+    }
 
     const days = el('per-day').tBodies[0]
     days.replaceChildren()

@@ -44,6 +44,12 @@ export interface Env {
   CLERK_JWT_KEY?: string
   /** Comma-separated origins allowed to call, e.g. chrome-extension://<id>. Checked against the token's azp claim. */
   CLERK_AUTHORIZED_PARTIES?: string
+  /**
+   * Which product each extension is, by its origin: `{"chrome-extension://<id>": "notico"}`. A JSON
+   * object in wrangler.jsonc, so it arrives as an object; read through `Products`. A caller whose
+   * origin is not listed (the admin page, a token with no azp) is the product `unknown`.
+   */
+  PRODUCTS?: unknown
   /** Every user's credits: their grants, and their model calls with what each cost (D1 database, schema in migrations/). */
   DB: Database
   /** Per-request usage records (Workers Analytics Engine dataset). Never holds message content. */
@@ -118,6 +124,36 @@ const badRequest = (message: string) => new HttpError(400, 'bad_request', messag
  * worker serves, so a token issued to the extension or to any other origin is not an admin's.
  */
 const AdminClaims = z.object({ role: z.literal('admin'), azp: z.string() })
+
+/** The product of a model call whose caller is no listed extension. */
+const UNKNOWN_PRODUCT = 'unknown'
+
+/** The PRODUCTS var: extension origins, each with a product name of lowercase letters. */
+const Products = z.record(
+  z.string().regex(/^chrome-extension:\/\/[a-p]{32}$/, { error: 'keys must be chrome-extension://<extension id>' }),
+  z
+    .string()
+    .regex(/^[a-z]{1,32}$/, { error: 'product names are 1 to 32 lowercase letters' })
+    .refine((name) => name !== UNKNOWN_PRODUCT, { error: `${UNKNOWN_PRODUCT} is not a product name` }),
+)
+
+/** The origin a session token was issued to, when it names one. */
+const Azp = z.object({ azp: z.string().optional() })
+
+/**
+ * The product a model call comes from: the one PRODUCTS lists for the origin the session token was
+ * issued to (its `azp`, which Clerk signs, so a client cannot pick it), or `unknown`. Unknown callers
+ * are not refused: the product only sorts what was spent, credits are one balance across products.
+ */
+function productOf(env: Env, claims: unknown): string {
+  const products = Products.optional().safeParse(env.PRODUCTS)
+  if (!products.success) {
+    throw new HttpError(503, 'not_configured', `PRODUCTS is invalid: ${products.error.issues[0].message}`)
+  }
+  const listed = products.data ?? {}
+  const azp = Azp.safeParse(claims).data?.azp
+  return azp !== undefined && Object.hasOwn(listed, azp) ? listed[azp] : UNKNOWN_PRODUCT
+}
 
 /** The most credits one grant by hand can give, and the longest it can last: a typo must not grant a fortune, or credits that never expire. */
 const MAX_GRANT_CREDITS = 50_000
@@ -562,9 +598,9 @@ export function createApp({
     } catch {
       throw new HttpError(401, 'unauthorized', 'invalid or expired session')
     }
-    // Clerk sets azp to the origin that requested the token. Tokens the extension
-    // gets through Clerk's Native API have no origin, so they carry no azp.
-    // A token with an azp must come from an allowed origin.
+    // Clerk sets azp to the origin that requested the token: chrome-extension://<id> for an
+    // extension, this worker's origin for the admin page. A token with an azp must come from an
+    // allowed origin; one with none (no origin asked for it) is let through, as before.
     const azp = typeof claims.azp === 'string' ? claims.azp : undefined
     if (azp && !authorizedParties.includes(azp)) {
       throw new HttpError(401, 'unauthorized', 'invalid or expired session')
@@ -714,6 +750,7 @@ export function createApp({
     const started = Date.now()
     const usage: UsageRecord = {
       userId: c.get('userId'),
+      product: UNKNOWN_PRODUCT,
       model: c.env.MODEL,
       stream: false,
       outcome: '',
@@ -744,6 +781,8 @@ export function createApp({
    * Throws HttpError for refusals; the caller records those.
    */
   async function chatCompletion(c: Ctx, usage: UsageRecord, record: (outcome: string) => void): Promise<Response> {
+    const product = productOf(c.env, c.get('claims'))
+    usage.product = product
     const body = parse(Body, await c.req.json().catch(() => undefined))
     usage.stream = body.stream === true
     const { inputs: modelInputs, chars } = parseModelInputs(body)
@@ -798,6 +837,7 @@ export function createApp({
       const cost = costOf(price, tokens)
       try {
         await ledger.endCall({
+          product,
           model: c.env.MODEL,
           startedAt,
           endedAt: Math.max(startedAt, now().getTime()),
@@ -844,7 +884,7 @@ export function createApp({
               id: c.env.AI_GATEWAY_ID,
               collectLog: false,
               skipCache: true,
-              metadata: { app: 'notico', user: c.get('userId') },
+              metadata: { product, user: c.get('userId') },
             },
           }
         : undefined

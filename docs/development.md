@@ -47,11 +47,12 @@ Variables in `wrangler.jsonc`:
 | `AI_GATEWAY_ID` | AI Gateway id; leave empty to call Workers AI directly |
 | `MODEL` | The only model clients can use. Its token prices must be listed in `worker/src/pricing.ts`: without them every chat request is refused as `not_configured` |
 | `CLERK_AUTHORIZED_PARTIES` | Allowed origins, comma-separated: `chrome-extension://<extension id>` and the sign-in page |
+| `PRODUCTS` | Which product each extension is, by its origin (the token's `azp`), as a JSON object: `{"chrome-extension://<extension id>": "notico"}`. Model calls from any other caller are recorded as `unknown` |
 | `CLERK_JWT_KEY` | Clerk JWT public key (PEM). Public; also available at `https://<frontend-api>/.well-known/jwks.json` |
 
 ### Admin page
 
-`https://<worker domain>/admin` shows an admin what was granted and spent across all accounts in a period of up to 92 days (in all, per day, and per account, the biggest spenders first), and lets them look up one account's credits by Clerk user id (Clerk dashboard → Users shows it) and grant it credits by hand. See [Credits](architecture.md#credits) for how it is protected and how the overview is read. Days are days on the clock of the computer the page is open on.
+`https://<worker domain>/admin` shows an admin what was granted and spent across all accounts in a period of up to 92 days (in all, per day, per product, and per account, the biggest spenders first), and lets them look up one account's credits by Clerk user id (Clerk dashboard → Users shows it) and grant it credits by hand. See [Credits](architecture.md#credits) for how it is protected and how the overview is read. Days are days on the clock of the computer the page is open on.
 
 Who is an admin is set in Clerk, on the instance whose keys the worker uses. Two settings, both in the Clerk dashboard:
 
@@ -88,6 +89,7 @@ Every chat request that passes auth leaves one data point in the `notico_api_usa
 | `blob2` | outcome: `ok`, `incomplete` (stream ended early), `cancelled`, `stream_error`, or the error code returned (`out_of_credits`, `provider_error`, `credits_unavailable`, `bad_request`, …). A stream whose model reports an error is `provider_error` |
 | `blob3` | finish reason: `stop`, `length`, `content_filter`, `tool_calls`, `other`, or empty |
 | `blob4` | `stream` or `sync` |
+| `blob5` | product: `notico`, another extension's name, or `unknown` (see `PRODUCTS`) |
 | `double1` … `double5` | messages, input characters (message text, tool calls, and tool definitions), prompt tokens, completion tokens, duration in ms (until the request was refused, the reply was sent, or a stream ended; for streams it includes the time the client spends reading) |
 | `double6`, `double7` | cached prompt tokens (the part of the prompt tokens the model read from its cache), micro-credits charged (1 credit = 1,000,000; 0 when nothing was charged). For a reply that was stopped or broke off, the token counts are the estimate it was charged by |
 
