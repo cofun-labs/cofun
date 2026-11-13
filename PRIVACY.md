@@ -63,4 +63,4 @@ The worker is the code in [`worker/`](worker/), running on Cloudflare Workers.
 
 ## Changes and contact
 
-This file changes in the same pull request as any change to what data leaves the browser or where it goes; its [history](https://github.com/cofun-labs/notico/commits/main/PRIVACY.md) shows every change. Questions and reports: [open an issue](https://github.com/cofun-labs/notico/issues).
+This file changes in the same pull request as any change to what data leaves the browser or where it goes; its [history](https://github.com/cofun-labs/cofun/commits/main/PRIVACY.md) shows every change. Questions and reports: [open an issue](https://github.com/cofun-labs/cofun/issues).

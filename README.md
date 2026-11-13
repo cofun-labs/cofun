@@ -10,8 +10,8 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/cofun-labs/notico/actions/workflows/ci.yml?query=branch%3Amain"><img src="https://github.com/cofun-labs/notico/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI status" /></a>
-  <a href="LICENSE"><img src="https://img.shields.io/github/license/cofun-labs/notico" alt="License: Apache-2.0" /></a>
+  <a href="https://github.com/cofun-labs/cofun/actions/workflows/ci.yml?query=branch%3Amain"><img src="https://github.com/cofun-labs/cofun/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI status" /></a>
+  <a href="LICENSE"><img src="https://img.shields.io/github/license/cofun-labs/cofun" alt="License: Apache-2.0" /></a>
 </p>
 
 <p align="center">
