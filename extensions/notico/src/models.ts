@@ -53,6 +53,25 @@ export async function loadModelSettings(userId: string): Promise<ModelSettings> 
   return HOSTED_ONLY
 }
 
+/**
+ * Calls `onChange` with the account's settings whenever any side panel saves them: Chrome opens one
+ * panel per window, and a key removed in one must not stay in use, or be saved back, in another.
+ * Returns what stops watching.
+ */
+export function watchModelSettings(userId: string, onChange: (settings: ModelSettings) => void): () => void {
+  const key = storageKey(userId)
+  const listener = (changes: Record<string, { newValue?: unknown }>, area: string) => {
+    if (area !== 'local' || !(key in changes)) return
+    const { newValue } = changes[key]
+    const parsed = ModelSettings.safeParse(newValue)
+    if (newValue === undefined) onChange(HOSTED_ONLY)
+    else if (parsed.success) onChange(parsed.data)
+    else console.error('The saved model settings could not be read; using the hosted model', parsed.error)
+  }
+  chrome.storage.onChanged.addListener(listener)
+  return () => chrome.storage.onChanged.removeListener(listener)
+}
+
 export async function saveModelSettings(userId: string, settings: ModelSettings): Promise<void> {
   await chrome.storage.local.set({ [storageKey(userId)]: settings })
 }

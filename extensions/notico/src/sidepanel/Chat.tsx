@@ -2,7 +2,7 @@ import { useAuth } from '@clerk/chrome-extension'
 import { memo, useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from 'react'
 import { CopilotAgent, type AgentUpdate, type ConfirmTool, type HistoryMessage } from '../agent'
 import type { CreditsState } from '../credits'
-import { HOSTED_ONLY, loadModelSettings, saveModelSettings, type ModelSettings } from '../models'
+import { HOSTED_ONLY, loadModelSettings, saveModelSettings, watchModelSettings, type ModelSettings } from '../models'
 import { countNotionRequests } from '../notion/tab'
 import { SessionStore, titleFor, type Session } from '../sessions'
 import { currentNotionPage, forgetReads, openPageNote, TOOLS, touchedBy } from '../tools'
@@ -149,6 +149,11 @@ export function Chat({ userId }: { userId: string }) {
     void modelLoad.then((settings) => {
       modelRef.current ??= settings
       setModel(modelRef.current)
+    })
+    // What another window's panel saves, such as a key it removed, applies here too.
+    return watchModelSettings(userId, (settings) => {
+      modelRef.current = settings
+      setModel(settings)
     })
   }, [])
 

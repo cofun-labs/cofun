@@ -851,6 +851,8 @@ export async function openRouterModels(): Promise<OpenRouterModel[]> {
   })
 }
 
+const CHECK_TIMEOUT_MS = 30_000
+
 /** How a check of a key and model went. */
 export type ModelCheck = { status: 'ok' } | { status: 'no_tools' } | { status: 'failed'; message: string }
 
@@ -873,9 +875,12 @@ export async function checkModel(settings: { key: string; model: OpenRouterModel
   const stream = streamSimple(openRouterModel(settings.model), context, {
     apiKey: settings.key,
     identity: { attribution: null },
+    // A stalled model must not leave the check waiting forever.
+    signal: AbortSignal.timeout(CHECK_TIMEOUT_MS),
   })
   for await (const _event of stream);
   const reply = await stream.result()
+  if (reply.stopReason === 'aborted') return { status: 'failed', message: 'OpenRouter did not answer in time.' }
   if (reply.stopReason === 'error') return { status: 'failed', message: openRouterError(reply.errorMessage).text }
   return reply.content.some((block) => block.type === 'toolCall') ? { status: 'ok' } : { status: 'no_tools' }
 }

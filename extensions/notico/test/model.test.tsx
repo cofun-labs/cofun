@@ -1,7 +1,7 @@
 // Choosing which model answers (UC-AGENT-002), as a user does it on the settings page. Besides the
 // screen, the tests look at the edges: what OpenRouter and the worker were sent.
 import '@testing-library/jest-dom/vitest'
-import { screen, within } from '@testing-library/react'
+import { act, screen, within } from '@testing-library/react'
 import userEvent, { type UserEvent } from '@testing-library/user-event'
 import { afterEach, describe, expect, it } from 'vitest'
 import { pageTab, type FakeNotionTab } from './notion-tab'
@@ -203,6 +203,21 @@ describe('choosing the model', () => {
     browser.openRouter.keys.clear()
     await user.click(screen.getByRole('button', { name: 'Check key and model' }))
     expect(await screen.findByText(/OpenRouter rejected your key/)).toBeVisible()
+  })
+
+  it('a key removed in another window is not used, nor saved back, here', async () => {
+    const { browser, user } = await openPanel()
+    await setUpOpenRouter(browser, user)
+    // The side panel of another window removes the key.
+    const saved = Object.keys(browser.tab.storage.values).find((k) => k.startsWith('model:'))!
+    await act(() => browser.tab.storage.local.set({ [saved]: { use: 'hosted' } }))
+
+    await ask(user, 'Hello?')
+    expect(await screen.findByText(/Hello from Workers AI/)).toBeVisible()
+    expect(browser.openRouter.calls).toEqual([])
+    await openSettings(user)
+    expect(modelInUse()).toHaveTextContent('Notico (hosted)')
+    expect(JSON.stringify(browser.tab.storage.values)).not.toContain(KEY)
   })
 
   it('contacts OpenRouter only once the user picks it', async () => {
