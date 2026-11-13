@@ -5,6 +5,7 @@ import { readFileSync } from 'node:fs'
 import { experimental_readRawConfig } from 'wrangler'
 import { describe, expect, it } from 'vitest'
 import { createApp, type Env } from '../src/app'
+import { offerOf } from '../src/billing'
 import { FakeClerk } from './clerk'
 import { FakeAiBinding, FakeD1Database, FakeUsageDataset, MODEL } from './fakes'
 
@@ -57,5 +58,13 @@ describe("the deployed worker's address", () => {
       env,
     )
     expect(res.status).toBe(200)
+  })
+})
+
+describe("the deployed worker's packs of credits", () => {
+  it('are the live credit price, sold in quantities of 5, 10, 20, and 50', () => {
+    expect(offerOf(rawConfig.vars?.CREDIT_PRICE, rawConfig.vars?.CREDIT_PACKS)).toEqual({
+      offer: { price: 'price_1UbLSMCT6MhL4FCmD4mRe680', quantities: [5, 10, 20, 50] },
+    })
   })
 })

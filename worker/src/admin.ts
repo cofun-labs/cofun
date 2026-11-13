@@ -71,6 +71,7 @@ export function adminPage(publishableKey: string): string {
     <dl>
       <dt>Granted, free</dt><dd id="granted-free"></dd>
       <dt>Granted, by hand</dt><dd id="granted-manual"></dd>
+      <dt>Granted, bought</dt><dd id="granted-purchase"></dd>
       <dt>Spent</dt><dd id="spent"></dd>
       <dt>Model calls</dt><dd id="calls"></dd>
       <dt>Tokens</dt><dd id="tokens"></dd>
@@ -86,7 +87,7 @@ export function adminPage(publishableKey: string): string {
     <h2>Per day</h2>
     <div class="scroll">
       <table id="per-day">
-        <thead><tr><th>Day</th><th>Granted, free</th><th>Granted, by hand</th><th>Spent</th><th>Calls</th><th>Failed</th><th>Cancelled</th><th>Prompt tokens</th><th>Cached</th><th>Completion tokens</th></tr></thead>
+        <thead><tr><th>Day</th><th>Granted, free</th><th>Granted, by hand</th><th>Bought</th><th>Spent</th><th>Calls</th><th>Failed</th><th>Cancelled</th><th>Prompt tokens</th><th>Cached</th><th>Completion tokens</th></tr></thead>
         <tbody></tbody>
       </table>
     </div>
@@ -118,7 +119,7 @@ export function adminPage(publishableKey: string): string {
     <p id="no-grants" class="muted">No grants. This account has not used the AI yet, or the user id is not the one you meant.</p>
     <div class="scroll">
       <table id="grants">
-        <thead><tr><th>Source</th><th>Granted</th><th>Expires</th><th>Credits</th><th>Left</th><th>Granted by</th></tr></thead>
+        <thead><tr><th>Source</th><th>Granted</th><th>Expires</th><th>Credits</th><th>Left</th><th>Granted by, or payment</th></tr></thead>
         <tbody></tbody>
       </table>
     </div>
@@ -292,6 +293,7 @@ export function adminPage(publishableKey: string): string {
     const totals = overview.totals
     el('granted-free').textContent = credits(totals.granted.free)
     el('granted-manual').textContent = credits(totals.granted.manual)
+    el('granted-purchase').textContent = credits(totals.granted.purchase)
     el('spent').textContent = credits(totals.spent)
     // A call the user stopped is a failed call, of the kind cancelled.
     el('calls').textContent =
@@ -317,6 +319,7 @@ export function adminPage(publishableKey: string): string {
         each.day,
         credits(each.granted.free),
         credits(each.granted.manual),
+        credits(each.granted.purchase),
         credits(each.spent),
         count(each.calls),
         count(each.failedCalls),
@@ -369,13 +372,15 @@ export function adminPage(publishableKey: string): string {
       const expired = grant.expiresAt <= now
       const row = rows.insertRow()
       if (expired) row.className = 'expired'
+      // A purchase taken back ended when it was: what is left of it is what was taken back.
+      const ended = grant.revoked ? ' (' + grant.revoked + ', ' + credits(grant.left) + ' taken back)' : expired ? ' (expired)' : ''
       const cells = [
         grant.source,
         time(grant.grantedAt),
-        time(grant.expiresAt) + (expired ? ' (expired)' : ''),
+        time(grant.expiresAt) + ended,
         credits(grant.amount),
         credits(grant.left),
-        grant.by || '',
+        grant.by || grant.payment || '',
       ]
       for (const text of cells) row.insertCell().textContent = text
     }

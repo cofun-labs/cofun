@@ -38,18 +38,25 @@ export interface Database {
  * of what the user was given, with `left` what went unspent.
  */
 interface Grant {
-  /** Where the credits came from: the weekly free grant, or an admin who granted them by hand. */
-  source: 'free' | 'manual'
+  /** Where the credits came from: the weekly free grant, an admin who granted them by hand, or a purchase. */
+  source: z.output<typeof GrantSource>
   amount: number
   left: number
   grantedAt: number
   expiresAt: number
   /** For a grant made by hand: the Clerk user id of the admin who made it. */
   by?: string
+  /** For a purchase: the Stripe payment it came from. */
+  payment?: string
+  /** For a purchase that was taken back: why. It ended at `expiresAt`, and `left` is what was taken back. */
+  revoked?: z.output<typeof Revoked>
 }
 
 /** Where a grant's credits came from, as `grants.source` holds it. */
-export const GrantSource = z.enum(['free', 'manual'])
+export const GrantSource = z.enum(['free', 'manual', 'purchase'])
+
+/** Why a purchase was taken back, as `grants.revoked` holds it. */
+export const Revoked = z.enum(['refund', 'dispute'])
 
 /** A row of `grants` as the ledger reads it. */
 const GrantRow = z
@@ -60,6 +67,8 @@ const GrantRow = z
     granted_at: z.int(),
     expires_at: z.int(),
     granted_by: z.string().nullable(),
+    payment: z.string().nullable(),
+    revoked: Revoked.nullable(),
   })
   .transform((row): Grant => ({
     source: row.source,
@@ -68,7 +77,12 @@ const GrantRow = z
     grantedAt: row.granted_at,
     expiresAt: row.expires_at,
     ...(row.granted_by === null ? {} : { by: row.granted_by }),
+    ...(row.payment === null ? {} : { payment: row.payment }),
+    ...(row.revoked === null ? {} : { revoked: row.revoked }),
   }))
+
+/** The columns a grant is read with. */
+const GRANT_COLUMNS = 'source, amount, left, granted_at, expires_at, granted_by, payment, revoked'
 
 const DebtRow = z.object({ debt: z.int().min(0) })
 const BalanceRow = z.object({ balance: z.int(), free_until: z.int().nullable() })
@@ -76,6 +90,7 @@ const UsageRow = z
   .object({ day: z.int(), micro_credits: z.int().min(0) })
   .transform((row) => ({ day: row.day, microCredits: row.micro_credits }))
 const LastCallRow = z.object({ at: z.int().nullable() })
+const CountRow = z.object({ n: z.int().min(0) })
 
 /** The one row a statement returns, checked against `schema`. */
 function only<S extends z.ZodType>(schema: S, result: { results: unknown[] } | undefined): z.output<S> {
@@ -167,6 +182,13 @@ export interface Account {
   grants: Grant[]
 }
 
+/** Credits bought: how many micro-credits, until when, and the Stripe payment they were bought with. */
+export interface Purchase {
+  amount: number
+  expiresAt: number
+  payment: string
+}
+
 /** Credits granted by hand: how many micro-credits, until when, and the Clerk user id of the admin granting them. */
 export interface ManualGrant {
   amount: number
@@ -203,7 +225,7 @@ export interface ModelCall {
 /** What a user owes, as SQL. `user` is the SQL that names the user: a parameter, or a column of an outer query. */
 const debtOf = (user: string) =>
   `((SELECT coalesce(sum(owed), 0) FROM model_calls WHERE user_id = ${user} AND owed > 0)
-  - (SELECT coalesce(sum(repaid), 0) FROM grants WHERE user_id = ${user}))`
+  - (SELECT coalesce(sum(repaid), 0) FROM grants WHERE user_id = ${user} AND revoked IS NULL))`
 
 /**
  * What a user can spend at the time `now`, as SQL: what is left of the grants that still count,
@@ -235,6 +257,46 @@ SELECT ?1, 'manual', ?3, min(?3, debt), ?3 - min(?3, debt), ?2, ?4, ?5
 FROM (SELECT ${DEBT} AS debt)`
 
 /**
+ * Credits bought. ?3 is the amount, ?4 when it expires, ?5 the payment. A payment grants once: the
+ * unique index on `payment` makes the insert of a payment already granted do nothing, so a payment
+ * Stripe reports twice, or two reports handled at once, add one grant. (`WHERE true` is SQLite's
+ * way to put an upsert after a SELECT.)
+ */
+const GIVE_PURCHASE = `INSERT INTO grants (user_id, source, amount, repaid, left, granted_at, expires_at, payment)
+SELECT ?1, 'purchase', ?3, min(?3, debt), ?3 - min(?3, debt), ?2, ?4, ?5
+FROM (SELECT ${DEBT} AS debt)
+WHERE NOT EXISTS (SELECT 1 FROM revoked_payments WHERE payment = ?5)
+ON CONFLICT (payment) DO NOTHING`
+
+/**
+ * Records that the payment ?1 was refunded or disputed (?3) at ?2 before it made a grant, so it never
+ * makes one. Only when it has no grant: one that has is taken back instead (TAKE_BACK). A payment
+ * recorded already keeps its first reason.
+ */
+const REVOKE_PAYMENT = `INSERT INTO revoked_payments (payment, revoked, at)
+SELECT ?1, ?3, ?2 WHERE NOT EXISTS (SELECT 1 FROM grants WHERE payment = ?1)
+ON CONFLICT (payment) DO NOTHING`
+
+/** Whether the payment ?1 was refunded or disputed before it made a grant. */
+const COUNT_REVOKED_PAYMENT = `SELECT count(*) AS n FROM revoked_payments WHERE payment = ?1`
+
+/**
+ * Takes back what is left of the purchase made with the payment ?1, for the reason ?3. What it paid
+ * back of the user's debt is owed again: a grant taken back no longer counts in what grants repaid
+ * (see `debtOf`), since the money that paid it was returned. It ends at
+ * the time ?2 (never at or before the moment it was granted, which the table does not allow), and
+ * `left` stays as the record of what was taken back. One that expired already only records why.
+ * A purchase taken back once is not taken back again, so a second report changes nothing and the
+ * first reason stays.
+ */
+const TAKE_BACK = `UPDATE grants SET revoked = ?3,
+  expires_at = CASE WHEN expires_at > ?2 THEN max(?2, granted_at + 1) ELSE expires_at END
+WHERE payment = ?1 AND revoked IS NULL`
+
+/** How many grants the payment ?1 made: one, or none when it was not granted (yet). */
+const COUNT_PAYMENT = `SELECT count(*) AS n FROM grants WHERE payment = ?1`
+
+/**
  * What the user's next call starts with, and until when their free week runs (null when no free
  * grant still counts). With a free grant that counts, the balance is what is stored: the grants
  * that still count, less the debt. With none, it is that plus the free grant ?3 the next call
@@ -248,7 +310,7 @@ FROM (SELECT
   (SELECT max(expires_at) FROM grants WHERE user_id = ?1 AND source = 'free' AND expires_at > ?2) AS free_until)`
 
 /** The grants that still count, in the order they are spent. */
-const READ_CURRENT_GRANTS = `SELECT source, amount, left, granted_at, expires_at, granted_by
+const READ_CURRENT_GRANTS = `SELECT ${GRANT_COLUMNS}
 FROM grants WHERE user_id = ?1 AND expires_at > ?2 ORDER BY expires_at, id`
 
 /**
@@ -274,11 +336,11 @@ const READ_LAST_CALL_BEFORE = `SELECT max(started_at) AS at FROM model_calls WHE
  * `grants_by_user_granted` index gives them in this order, so a page reads only its own rows. The
  * casts keep the numbers whole however the database binds them.
  */
-const READ_GRANTS_PAGE = `SELECT source, amount, left, granted_at, expires_at, granted_by
+const READ_GRANTS_PAGE = `SELECT ${GRANT_COLUMNS}
 FROM grants WHERE user_id = ?1 AND granted_at <= ?2
 ORDER BY granted_at DESC, id DESC LIMIT ${GRANTS_PAGE + 1} OFFSET CAST(?3 AS INTEGER)`
 
-const READ_GRANTS = `SELECT source, amount, left, granted_at, expires_at, granted_by
+const READ_GRANTS = `SELECT ${GRANT_COLUMNS}
 FROM grants WHERE user_id = ?1 ORDER BY granted_at, id`
 
 const READ_DEBT = `SELECT ${DEBT} AS debt`
@@ -454,6 +516,28 @@ export class Ledger {
     return this.account(now, reads)
   }
 
+  /**
+   * Adds credits bought with a payment, beside the other grants. Like any grant it pays back debt
+   * first. A payment that was granted already adds nothing, and is not an error: Stripe reports a
+   * payment more than once. Nor does one that was refunded or disputed before it was granted. Says
+   * which of these it was.
+   */
+  async purchase(
+    now: number,
+    { amount, expiresAt, payment }: Purchase,
+  ): Promise<'granted' | 'granted already' | 'revoked before'> {
+    if (!Number.isSafeInteger(amount) || amount <= 0) throw new Error('a grant must be a positive integer')
+    if (!Number.isSafeInteger(expiresAt) || expiresAt <= now) throw new Error('a grant must expire after it is made')
+    const [before, , after, revoked] = await this.db.batch([
+      this.db.prepare(COUNT_PAYMENT).bind(payment),
+      this.statement(GIVE_PURCHASE, now, amount, expiresAt, payment),
+      this.db.prepare(COUNT_PAYMENT).bind(payment),
+      this.db.prepare(COUNT_REVOKED_PAYMENT).bind(payment),
+    ])
+    if (only(CountRow, after).n === 0 && only(CountRow, revoked).n > 0) return 'revoked before'
+    return only(CountRow, before).n === 0 ? 'granted' : 'granted already'
+  }
+
   private reads(): Statement[] {
     return [this.statement(READ_GRANTS), this.statement(READ_DEBT)]
   }
@@ -469,4 +553,31 @@ export class Ledger {
   private statement(query: string, ...values: Value[]): Statement {
     return this.db.prepare(query).bind(this.userId, ...values)
   }
+}
+
+/** How many of the payment ?1's grants have not been taken back. */
+const COUNT_KEPT = `SELECT count(*) AS n FROM grants WHERE payment = ?1 AND revoked IS NULL`
+
+/**
+ * Takes back what is left of the purchase made with `payment`, after a refund or a dispute: see
+ * TAKE_BACK. What was spent stays spent, and the user's other grants are untouched. A payment with
+ * no grant yet is recorded instead (REVOKE_PAYMENT), so a grant that comes later is never made: both
+ * happen in one batch, so a grant handled at the same moment either comes first and is taken back,
+ * or comes after and is not made. Says what it found: a purchase it took back now, one taken back
+ * already (nothing changes), or no grant.
+ */
+export async function takeBack(
+  db: Database,
+  now: number,
+  payment: string,
+  why: z.output<typeof Revoked>,
+): Promise<'taken back' | 'taken back already' | 'no grant'> {
+  const [kept, , , count] = await db.batch([
+    db.prepare(COUNT_KEPT).bind(payment),
+    db.prepare(TAKE_BACK).bind(payment, now, why),
+    db.prepare(REVOKE_PAYMENT).bind(payment, now, why),
+    db.prepare(COUNT_PAYMENT).bind(payment),
+  ])
+  if (only(CountRow, count).n === 0) return 'no grant'
+  return only(CountRow, kept).n > 0 ? 'taken back' : 'taken back already'
 }

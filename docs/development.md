@@ -51,6 +51,27 @@ Variables in `wrangler.jsonc`:
 | `CLERK_AUTHORIZED_PARTIES` | Allowed origins, comma-separated: `chrome-extension://<extension id>` and the sign-in page |
 | `PRODUCTS` | Which product each extension is, by its origin (the token's `azp`), as a JSON object: `{"chrome-extension://<extension id>": "notico"}`. Model calls from any other caller are recorded as `unknown` |
 | `CLERK_JWT_KEY` | Clerk JWT public key (PEM). Public; also available at `https://<frontend-api>/.well-known/jwks.json` |
+| `CREDIT_PRICE` | The id of the Stripe price of one unit of credits: 1,000 credits for US$1, one-time. The committed value is the live account's |
+| `CREDIT_PACKS` | The packs on sale, as quantities of `CREDIT_PRICE`: `[5, 10, 20, 50]` sells US$5, 10, 20, and 50 packs. A pack's credits are its quantity × 1000. Changing the packs on sale changes only this |
+
+Secrets, set with `pnpm exec wrangler secret put <name>` in `worker/` (or in the dashboard: Workers & Pages → `cofun-api` → Settings → Variables and Secrets), never committed. Without them nothing can be bought: the side panel says buying credits is unavailable, and the webhook takes no event.
+
+| Secret | Description |
+|---|---|
+| `STRIPE_SECRET_KEY` | The Stripe account's secret key (`sk_live_…`, or a restricted key with write access to Checkout Sessions), for making Checkout Sessions and reading what one sold |
+| `STRIPE_WEBHOOK_SECRET` | The signing secret of the webhook endpoint below (`whsec_…`) |
+
+### Stripe
+
+Credits are sold through Stripe's Checkout with [Managed Payments](https://docs.stripe.com/payments/managed-payments), Stripe being the merchant of record (see [Credits](architecture.md#credits)). On the Stripe account:
+
+1. **One product.** `1,000 Credits`, with one one-time price of US$1.00, tax code `txcd_10105003` (AI as a Service, personal use; eligible for Managed Payments), tax not included in the price. Its price id is `CREDIT_PRICE`; a pack is a quantity of it. Checkout shows "1,000 Credits × 10", with a line under it saying how many credits that gives. To change the unit price, make a new price and change `CREDIT_PRICE`; the side panel shows US$1 for each 1,000 credits. A Checkout opened before the change (open for up to 24 hours, or paid days later) keeps the price it was made with, and still grants its credits.
+2. **Managed Payments** turned on (Settings → Managed Payments), and the business details, statement descriptor, and the website's terms and privacy links filled in as Cofun (`cofun.cc`).
+3. **The webhook endpoint** (Developers → Webhooks → Add destination): the URL `https://api.cofun.cc/stripe/webhook`, API version `2025-08-27.basil` (a basil version, like the `2025-03-31.basil` the worker makes sessions with; the Dashboard no longer offers that one, and the fields the worker reads are the same in both), and these events: `checkout.session.completed`, `checkout.session.async_payment_succeeded`, `checkout.session.async_payment_failed`, `charge.refunded`, and `charge.dispute.created`. Its signing secret is `STRIPE_WEBHOOK_SECRET`.
+
+Each purchase is written to Workers Logs as `purchase: user=<user id> credits=<n> payment=<PaymentIntent id>`, and each one taken back as `purchase taken back: payment=<PaymentIntent id> reason=<refund|dispute>`.
+
+There is no test environment: the one worker is deployed on merge, with the live Stripe account. The worker's tests cover buying against a fake Stripe, with webhook events signed by a test secret. After a deploy that changes buying, the maintainer checks it once by hand: buy the US$5 pack with a real card, see the credits arrive in the side panel, refund the payment in the Stripe Dashboard, and see what was left taken back. It costs one payment's fees, so it is never part of `pnpm e2e`.
 
 ### Admin page
 

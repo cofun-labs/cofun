@@ -151,7 +151,7 @@ const AccountRow = z
   }))
 
 const nothing = (): Totals => ({
-  granted: { free: 0, manual: 0 },
+  granted: { free: 0, manual: 0, purchase: 0 },
   spent: 0,
   calls: 0,
   failedCalls: 0,
