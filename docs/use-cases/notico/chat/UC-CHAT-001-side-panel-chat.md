@@ -4,13 +4,13 @@
 
 A signed-in user asks the AI something in the side panel and reads the reply as it streams in, formatted the way the AI wrote it: headings, emphasis, lists, tables, code, quotes, and links. The user's own question is shown as typed. A session with no question yet offers a few example questions; picking one puts it in the message box, where the user can change it before sending.
 
-Using the AI costs credits, so one account cannot run up unbounded model usage. A credit is a thousandth of a US dollar, and each call to the model costs what its tokens cost the service, with nothing added. Input the model reads from its cache costs less than new input, and is charged at that lower price. A question the AI answers with tools (see UC-AGENT-001) makes one model call for each round trip, and costs the sum of them.
+Using Notico's hosted AI costs credits, so one account cannot run up unbounded model usage. A question answered by the user's own model spends none (see UC-AGENT-002). A credit is a thousandth of a US dollar, and each call to the model costs what its tokens cost the service, with nothing added. Input the model reads from its cache costs less than new input, and is charged at that lower price. A question the AI answers with tools (see UC-AGENT-001) makes one model call for each round trip, and costs the sum of them.
 
 Every signed-in user gets 200 free credits a week. They arrive when the user asks and has no current week of credits, and they expire 7 days later; a new week starts the next time the user asks after that, so unused credits never add up.
 
 Key constraints:
 
-- The server chooses the model. Clients cannot use another one.
+- The server chooses the hosted model. Clients cannot make it use another one.
 - A reply is text the AI wrote, and cannot make the side panel run or load anything: HTML in it is shown as text, images in it are not loaded, and only web links in it can be followed.
 - A user with no credits left cannot reach the model again until they get more credits: their next free credits, or credits they buy (UC-BILLING-001).
 - A model call that starts with credits left is answered in full, even when it costs more than what was left. What it overspent is taken out of the next credits the user gets.

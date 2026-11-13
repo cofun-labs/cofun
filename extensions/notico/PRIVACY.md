@@ -2,7 +2,7 @@
 
 Notico is a Chrome extension that opens an AI side panel in Chrome, which reads and edits your Notion pages with you. It is one of the [Cofun](../../README.md) extensions, which share one server and one sign-in. This page says what data Notico reads, where that data goes, and what is kept on your device. What the server and the sign-in do with it, the same for every Cofun extension, is on [Cofun's privacy page](../../PRIVACY.md); the two pages together are Notico's privacy policy. They describe the extension built from this folder with its committed configuration (`extensions/notico/.env`) and the worker deployed from `worker/`. If you build the extension against your own deployment, the hosts are the ones you configure.
 
-The short version: when you ask a question, the conversation, including the Notion content the assistant read to answer it, goes to our worker and from there to an AI model that runs on Cloudflare. We do not store that content on our servers. Your conversations are saved on your device only.
+The short version: when you ask a question, the conversation, including the Notion content the assistant read to answer it, goes to our worker and from there to an AI model that runs on Cloudflare. If you set up your own model on OpenRouter, it goes to OpenRouter instead, with your own key, and not to our worker. We do not store that content on our servers. Your conversations are saved on your device only.
 
 ## What the extension reads
 
@@ -23,13 +23,14 @@ The extension sends requests to these hosts and no others. The extension's conte
 | `www.notion.so`, `app.notion.com` | Requests to Notion's own API, sent from inside your Notion tab with that tab's session: reads, and the changes you ask for | To read and edit your pages. This is the same service your Notion tab already talks to |
 | `api.cofun.cc` (our worker) | Your Clerk session token, and for each question the conversation so far: your messages, the assistant's replies, the tool calls and their results (which contain the Notion content the assistant read), the open Notion page's title and URL, the current tab's title and URL on another site if the assistant looked them up, and the assistant's instructions | To get the AI model's reply |
 | `api.cofun.cc` (our worker) | Your Clerk session token, how far your clock is from UTC, in minutes, and, when you look further back in your credit history, the date or the place in the list to go on from (both as part of the request's address) | To show you your own credits, how many you used each day, by the days of your own clock, and their history |
+| `openrouter.ai` (OpenRouter), only once you choose it in the settings | When you pick OpenRouter: a request for its public list of models, with nothing of yours in it. When you check a model, or ask a question with your own model chosen: your OpenRouter key, and the conversation so far, as listed for the worker above (Notion content the assistant read included) | To get the reply from the model you chose, under your own OpenRouter account. OpenRouter passes the conversation to the company that runs that model; [OpenRouter's privacy policy](https://openrouter.ai/privacy) says what they keep. These questions do not go to our worker and spend no credits |
 | `clerk.cofun.cc` (Clerk's Frontend API) | Your Clerk session, to load your account and get session tokens | Sign-in |
 | `api.cofun.cc` (our worker) | Your Clerk session token, and when you buy credits, which pack you chose | To list the packs of credits on offer, and to start a checkout for the one you chose |
 | `img.clerk.com` (Clerk's image host) | A request for your account's avatar image | To show who is signed in, in the side panel's account menu and settings page |
 
 The extension also holds a host permission for `*.cofun.cc`. It uses it for nothing but reading one cookie, and sends no requests to any host under it other than the worker and Clerk's Frontend API above: Chrome only lets an extension see a cookie when it has permission for the cookie's domain, and Clerk sets the cookie that says whether you are signed in on the sign-in page's parent domain.
 
-Notion content never goes to Clerk. Your Notion session is never sent anywhere but Notion: requests to Notion are made inside your Notion tab, and the worker and Clerk do not receive your Notion cookies or credentials. The extension reads your Notion user id from the tab to make changes as you.
+Notion content never goes to Clerk. Your OpenRouter key is sent only to OpenRouter, never to our worker or to Clerk. Your Notion session is never sent anywhere but Notion: requests to Notion are made inside your Notion tab, and the worker and Clerk do not receive your Notion cookies or credentials. The extension reads your Notion user id from the tab to make changes as you.
 
 As with any web service, Cloudflare (which runs the worker) and Clerk see your IP address when the extension connects to them.
 
@@ -49,6 +50,7 @@ The side panel's account menu and settings page show your credits (how many are 
 
 - **Your conversations.** Sessions are saved in the extension's IndexedDB storage in your Chrome profile, one database per signed-in account. They include tool results, such as the content of Notion pages the assistant read, and the URL and title of a tab it looked up. They are not sent to our servers, except that continuing a conversation sends it to the worker again as described above. They are **not encrypted** and they **stay after you sign out**, so that you can pick up again: anyone with access to your Chrome profile can read them. Deleting a session in the side panel removes it; removing the extension removes them all.
 - **Your sign-in.** Clerk's code in the extension keeps its client token, which keeps you signed in, in the extension's local storage (`chrome.storage.local`). It is not encrypted either.
+- **Your own model, if you set one up.** Your OpenRouter key and the model you chose are kept in the extension's local storage (`chrome.storage.local`), for the account that set them up: another account signed in on the same Chrome profile does not use them. They are **not encrypted** and they **stay after you sign out**; anyone with access to your Chrome profile can read the key. Removing the key in the settings page deletes it; removing the extension deletes it too.
 - **Small settings.** The extension's local storage also holds the time until which it waits after Notion turned a request away.
 
 ## What is never collected

@@ -15,6 +15,8 @@ import {
 import { Avatar, useAccount } from './Account'
 import { History, type HistoryReads } from './History'
 import { Icon } from './icons'
+import { ModelCard } from './Model'
+import type { ModelSettings } from '../models'
 
 /** Buying credits, as the settings page needs it. */
 export interface Buying {
@@ -25,14 +27,16 @@ export interface Buying {
 }
 
 /**
- * The settings page: the account, the packs of credits to buy, the credits with their dates, and
- * usage per day. The history of the credits opens from the credits, in place of the page, and leads
- * back to it.
+ * The settings page: the account, which model answers, the packs of credits to buy, the
+ * credits with their dates, and usage per day. The history of the credits opens from the
+ * credits, in place of the page, and leads back to it.
  */
 export function Settings({
   credits,
   onRetry,
   history,
+  model,
+  onModelChange,
   buying,
   onClose,
 }: {
@@ -41,6 +45,9 @@ export function Settings({
   onRetry: () => void
   /** Reads the history of the credits, when the user opens it. */
   history: HistoryReads
+  /** Which model answers; undefined while it loads. */
+  model?: ModelSettings
+  onModelChange: (settings: ModelSettings) => void
   buying: Buying
   onClose: () => void
 }) {
@@ -109,6 +116,8 @@ export function Settings({
           </div>
         </div>
       </section>
+
+      <ModelCard settings={model} onChange={onModelChange} />
 
       <section className="card" aria-labelledby="settings-credits">
         <h3 id="settings-credits">Credits</h3>

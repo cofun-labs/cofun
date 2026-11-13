@@ -2,6 +2,7 @@ import { useAuth } from '@clerk/chrome-extension'
 import { memo, useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from 'react'
 import { CopilotAgent, type AgentUpdate, type ConfirmTool, type HistoryMessage } from '../agent'
 import type { CreditsState } from '../credits'
+import { HOSTED_ONLY, loadModelSettings, saveModelSettings, watchModelSettings, type ModelSettings } from '../models'
 import { countNotionRequests } from '../notion/tab'
 import { SessionStore, titleFor, type Session } from '../sessions'
 import { currentNotionPage, forgetReads, openPageNote, TOOLS, touchedBy } from '../tools'
@@ -117,10 +118,21 @@ export function Chat({ userId }: { userId: string }) {
   const saving = useRef(Promise.resolve())
   const tokenRef = useRef(getToken)
   tokenRef.current = getToken
+  // Which model answers: read once for this account, then changed on the settings page. Each
+  // question reads it as it starts, so a change applies from the next one on.
+  const [modelLoad] = useState(() =>
+    loadModelSettings(userId).catch((err: unknown) => {
+      console.error('Could not read the model settings', err)
+      return HOSTED_ONLY
+    }),
+  )
+  const [model, setModel] = useState<ModelSettings>()
+  const modelRef = useRef<ModelSettings>(undefined)
   const agentRef = useRef<CopilotAgent | null>(null)
   agentRef.current ??= new CopilotAgent({
     apiUrl: API_URL,
     getToken: () => tokenRef.current(),
+    model: async () => modelRef.current ?? (await modelLoad),
     systemPrompt: SYSTEM_PROMPT,
     tools: TOOLS,
     context: openPageNote,
@@ -132,6 +144,24 @@ export function Chat({ userId }: { userId: string }) {
   useEffect(() => {
     listRef.current?.scrollTo({ top: listRef.current.scrollHeight })
   }, [messages])
+
+  useEffect(() => {
+    void modelLoad.then((settings) => {
+      modelRef.current ??= settings
+      setModel(modelRef.current)
+    })
+    // What another window's panel saves, such as a key it removed, applies here too.
+    return watchModelSettings(userId, (settings) => {
+      modelRef.current = settings
+      setModel(settings)
+    })
+  }, [])
+
+  function changeModel(settings: ModelSettings) {
+    modelRef.current = settings
+    setModel(settings)
+    saveModelSettings(userId, settings).catch((err: unknown) => console.error('Could not save the model settings', err))
+  }
 
   // The panel unmounts on sign-out; don't leave a question running tools in the background.
   useEffect(() => () => agentRef.current?.stop(), [])
@@ -605,6 +635,8 @@ export function Chat({ userId }: { userId: string }) {
                 grants: (before) => agent.creditGrants(before),
                 usage: (before) => agent.creditUsage(before),
               }}
+              model={model}
+              onModelChange={changeModel}
               buying={{ packs: () => agent.creditPacks(), buy: buyCredits }}
               onClose={closeSettings}
             />

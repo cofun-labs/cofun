@@ -1092,3 +1092,90 @@ button.pack:disabled {
     animation: none;
   }
 }
+
+/* The settings page's Model section */
+
+.model-choice,
+.model-list {
+  align-self: stretch;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 6px 0 0;
+  padding: 0;
+  border: 0;
+}
+
+.model-choice legend,
+.model-list legend,
+.field {
+  color: var(--muted);
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.model-choice label,
+.model-list label {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.model-list ul {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.model-list li {
+  padding: 6px 8px;
+  border-radius: 12px;
+  background: var(--tint);
+}
+
+.model-list label > span {
+  display: flex;
+  flex-direction: column;
+}
+
+.model-name {
+  font-weight: 600;
+}
+
+.openrouter {
+  align-self: stretch;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.field input {
+  padding: 7px 10px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg);
+  color: inherit;
+  font: inherit;
+  font-weight: 400;
+}
+
+.model-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.check-problem {
+  color: var(--error);
+  font-size: 12.5px;
+}

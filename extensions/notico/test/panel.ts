@@ -18,6 +18,7 @@ import {
 import { FakeStripe, signature, WEBHOOK_SECRET } from '../../../worker/test/stripe'
 import type { FakeSession } from './clerk'
 import { restoreGlobals, type FakeNotionTab } from './notion-tab'
+import { FakeOpenRouter, OPENROUTER } from './openrouter'
 
 const EXTENSION = 'chrome-extension://abcdefghijklmnopabcdefghijklmnop'
 /** Where the worker answers (VITE_API_URL in vitest.config.ts): the origin its admin page signs in on. */
@@ -45,6 +46,10 @@ export class FakeBrowser {
   readonly openedTabs: string[] = []
   /** Stripe behind the worker: the Checkout Sessions made, and the events it sends about them. */
   readonly stripe = new FakeStripe()
+  /** OpenRouter, for a user's own model; script its model, and read what it was sent. */
+  readonly openRouter = new FakeOpenRouter()
+  /** Every request the panel sent the worker, as text: its URL, headers, and body. */
+  readonly sentToWorker: string[] = []
 
   /** Asks the worker something outside the panel; set when the browser starts. */
   private worker!: (request: Request) => Response | Promise<Response>
@@ -117,8 +122,14 @@ export class FakeBrowser {
     browser.issuer = issuer
     browser.env = env
     browser.worker = (request) => app.request(request, undefined, env, new FakeExecutionContext())
-    // The panel calls fetch(); route it into the worker app.
-    globals.fetch = (input: RequestInfo | URL, init?: RequestInit) => browser.worker(new Request(input, init))
+    // The panel calls fetch(); route it into the worker app, or to OpenRouter.
+    globals.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+      const request = new Request(input, init)
+      if (request.url.startsWith(`${OPENROUTER}/`)) return browser.openRouter.handle(request)
+      const headers = [...request.headers].map(([name, value]) => `${name}: ${value}`).join('\n')
+      browser.sentToWorker.push(`${request.url}\n${headers}\n${await request.clone().text()}`)
+      return browser.worker(request)
+    }
     // A new browser profile: no saved sessions.
     globals.indexedDB = new IDBFactory()
 
