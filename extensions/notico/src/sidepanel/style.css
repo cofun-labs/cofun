@@ -1236,6 +1236,7 @@ button.link {
   text-overflow: ellipsis;
 }
 
-.model-button[aria-expanded='false'] .icon {
+/* Up while closed, toward where the menu opens; down while it is open. */
+.model-button[aria-expanded='true'] .icon {
   transform: rotate(180deg);
 }
