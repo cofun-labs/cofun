@@ -1161,6 +1161,9 @@ button.link {
 }
 
 .model-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   max-width: 100%;
   overflow: hidden;
   padding: 3px 10px;
@@ -1223,14 +1226,9 @@ button.link {
   color: var(--muted);
 }
 
-.model-popover > p {
-  padding: 4px 10px;
-}
-
-.model-button {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
+.model-popover .model-state {
+  color: var(--muted);
+  font-size: 12.5px;
 }
 
 .model-button-name {

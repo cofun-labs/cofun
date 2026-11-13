@@ -130,8 +130,17 @@ export function ModelMenu({
                 {inUse?.id === model.id && <Icon name="check" />}
               </button>
             ))}
-          {saved && list?.status === 'loading' && <p className="account-detail">Loading OpenRouter's models…</p>}
-          {saved && list?.status === 'failed' && <p className="account-detail">{list.message}</p>}
+          {/* A menu holds only items: a state to read is one that can't be picked. */}
+          {saved && list?.status === 'loading' && (
+            <div role="menuitem" aria-disabled="true" tabIndex={-1} className="model-state">
+              Loading OpenRouter's models…
+            </div>
+          )}
+          {saved && list?.status === 'failed' && (
+            <div role="menuitem" aria-disabled="true" tabIndex={-1} className="model-state">
+              {list.message}
+            </div>
+          )}
           <button
             type="button"
             role="menuitem"
