@@ -5,7 +5,7 @@ import { readFileSync } from 'node:fs'
 import { experimental_readRawConfig } from 'wrangler'
 import { describe, expect, it } from 'vitest'
 import { createApp, type Env } from '../src/app'
-import { packsOf } from '../src/billing'
+import { offerOf } from '../src/billing'
 import { FakeClerk } from './clerk'
 import { FakeAiBinding, FakeD1Database, FakeUsageDataset, MODEL } from './fakes'
 
@@ -62,14 +62,9 @@ describe("the deployed worker's address", () => {
 })
 
 describe("the deployed worker's packs of credits", () => {
-  it('are the four packs of the live Stripe account, and read as valid packs', () => {
-    expect(packsOf(rawConfig.vars?.STRIPE_PACKS)).toEqual({
-      packs: [
-        { price: 'price_1UbL2eCT6MhL4FCm0k5RiqQk', credits: 5000 },
-        { price: 'price_1UbL3MCT6MhL4FCmBnIas1Di', credits: 10_000 },
-        { price: 'price_1UbL3xCT6MhL4FCm5T56YbQo', credits: 20_000 },
-        { price: 'price_1UbL4PCT6MhL4FCmNck3f2Gh', credits: 50_000 },
-      ],
+  it('are the live credit price, sold in quantities of 5, 10, 20, and 50', () => {
+    expect(offerOf(rawConfig.vars?.CREDIT_PRICE, rawConfig.vars?.CREDIT_PACKS)).toEqual({
+      offer: { price: 'price_1UbLSMCT6MhL4FCmD4mRe680', quantities: [5, 10, 20, 50] },
     })
   })
 })

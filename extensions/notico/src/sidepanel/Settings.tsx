@@ -20,8 +20,8 @@ import { Icon } from './icons'
 export interface Buying {
   /** Reads the packs on offer. */
   packs: () => Promise<Packs>
-  /** Opens Checkout for the pack of `credits` in a new tab. Throws when it can't. */
-  buy: (credits: number) => Promise<void>
+  /** Opens Checkout for the pack of `quantity` in a new tab. Throws when it can't. */
+  buy: (quantity: number) => Promise<void>
 }
 
 /**
@@ -214,10 +214,10 @@ function BuyCredits({ buying }: { buying: Buying }) {
     return () => void reads.current++
   }, [])
 
-  async function buy(credits: number) {
+  async function buy(quantity: number) {
     setCheckout('opening')
     try {
-      await buying.buy(credits)
+      await buying.buy(quantity)
       setCheckout('opened')
     } catch {
       setCheckout('failed')
@@ -243,14 +243,14 @@ function BuyCredits({ buying }: { buying: Buying }) {
             are in US dollars; tax may be added at checkout.
           </p>
           <ul className="packs" aria-label="Packs of credits">
-            {packs.packs.map(({ credits, usdCents }) => (
-              <li key={credits}>
+            {packs.packs.map(({ quantity, credits, usdCents }) => (
+              <li key={quantity}>
                 <button
                   type="button"
                   className="pack"
                   aria-label={`Buy ${wholeCredits(credits * 1_000_000)} credits for ${usdText(usdCents)}`}
                   disabled={checkout === 'opening'}
-                  onClick={() => void buy(credits)}
+                  onClick={() => void buy(quantity)}
                 >
                   <span>{wholeCredits(credits * 1_000_000)} credits</span>
                   <span className="account-detail">{usdText(usdCents)}</span>

@@ -18,8 +18,9 @@ const WORKER = 'http://localhost'
 const START = Date.parse('2026-11-08T12:00:00Z')
 const DAY_MS = 24 * 60 * 60 * 1000
 const CREDIT = 1_000_000
-/** The packs on offer, as the sandbox has them: the US$1 pack is there for cheap end-to-end tests. */
-const PACKS = { price_one: 1000, price_five: 5000, price_ten: 10_000, price_twenty: 20_000, price_fifty: 50_000 }
+/** What is on sale: the price of 1,000 credits for US$1, and the quantities of it sold as packs. */
+const PRICE = 'price_credits'
+const PACKS = [5, 10, 20, 50]
 
 let clock = new Date(START)
 let logged: string[] = []
@@ -58,7 +59,8 @@ beforeEach(async () => {
     CLERK_AUTHORIZED_PARTIES: `${EXT}, ${WORKER}`,
     STRIPE: (stripe = new FakeStripe()),
     STRIPE_WEBHOOK_SECRET: WEBHOOK_SECRET,
-    STRIPE_PACKS: PACKS,
+    CREDIT_PRICE: PRICE,
+    CREDIT_PACKS: PACKS,
   }
   alice = await clerk.sessionToken({ userId: 'user_alice', azp: EXT })
   bob = await clerk.sessionToken({ userId: 'user_bob', azp: EXT })
@@ -80,9 +82,12 @@ async function answer(res: Response | Promise<Response>, status = 200): Promise<
   return body
 }
 
-/** Starts buying the pack of `credits` as the user signed in with `bearer`, and gives the Checkout page's URL. */
+/**
+ * Starts buying the pack of `credits` as the user signed in with `bearer` (a quantity of 1,000
+ * credits), and gives the Checkout page's URL.
+ */
 async function checkout(bearer: string, credits: number): Promise<string> {
-  const { url } = await answer(req('POST', '/v1/billing/checkout', bearer, { credits }))
+  const { url } = await answer(req('POST', '/v1/billing/checkout', bearer, { quantity: credits / 1000 }))
   return url
 }
 
@@ -120,11 +125,10 @@ describe('UC-BILLING-001 buy credits: the packs and Checkout', () => {
   it('[UC-BILLING-001-S01] a signed-in user who chooses a pack gets the Checkout page for it, for their account', async () => {
     expect(await answer(req('GET', '/v1/billing/packs', alice))).toEqual({
       packs: [
-        { credits: 1000, usdCents: 100 },
-        { credits: 5000, usdCents: 500 },
-        { credits: 10_000, usdCents: 1000 },
-        { credits: 20_000, usdCents: 2000 },
-        { credits: 50_000, usdCents: 5000 },
+        { quantity: 5, credits: 5000, usdCents: 500 },
+        { quantity: 10, credits: 10_000, usdCents: 1000 },
+        { quantity: 20, credits: 20_000, usdCents: 2000 },
+        { quantity: 50, credits: 50_000, usdCents: 5000 },
       ],
     })
 
@@ -133,7 +137,8 @@ describe('UC-BILLING-001 buy credits: the packs and Checkout', () => {
     expect(stripe.sessions).toEqual([
       {
         id: 'cs_test_1',
-        price: 'price_five',
+        price: PRICE,
+        quantity: 5,
         credits: 5000,
         userId: 'user_alice',
         successUrl: `${WORKER}/billing/paid`,
@@ -145,52 +150,60 @@ describe('UC-BILLING-001 buy credits: the packs and Checkout', () => {
   })
 
   it('[UC-BILLING-001-S09] a pack that is not on offer is refused, and no Checkout Session is made', async () => {
-    for (const body of [{ credits: 7000 }, { credits: '5000' }, { pack: 'price_five' }, null]) {
+    for (const body of [
+      { quantity: 7 },
+      { quantity: 1 },
+      { quantity: 5.5 },
+      { quantity: '5' },
+      { credits: 5000 },
+      null,
+    ]) {
       const { error } = await answer(req('POST', '/v1/billing/checkout', alice, body), 400)
       expect(error.code).toBe('bad_request')
     }
-    const { error } = await answer(req('POST', '/v1/billing/checkout', alice, { credits: 7000 }), 400)
-    expect(error.message).toBe('credits must be one of the packs on offer: 1000, 5000, 10000, 20000, 50000')
+    const { error } = await answer(req('POST', '/v1/billing/checkout', alice, { quantity: 7 }), 400)
+    expect(error.message).toBe('quantity must be one of the packs on sale: 5, 10, 20, 50')
     expect(stripe.sessions).toEqual([])
   })
 
   it('needs a session, like every /v1 route', async () => {
     await answer(req('GET', '/v1/billing/packs'), 401)
-    await answer(req('POST', '/v1/billing/checkout', undefined, { credits: 5000 }), 401)
+    await answer(req('POST', '/v1/billing/checkout', undefined, { quantity: 5 }), 401)
     expect(stripe.sessions).toEqual([])
   })
 
   it('is not configured without packs or a Stripe key, or with packs that are wrong', async () => {
     const refused = async () => {
       const { error } = await answer(req('GET', '/v1/billing/packs', alice), 503)
-      await answer(req('POST', '/v1/billing/checkout', alice, { credits: 5000 }), 503)
+      await answer(req('POST', '/v1/billing/checkout', alice, { quantity: 5 }), 503)
       return error
     }
-    env.STRIPE_PACKS = undefined
-    expect((await refused()).code).toBe('not_configured')
-    env.STRIPE_PACKS = PACKS
+    env.CREDIT_PRICE = undefined
+    env.CREDIT_PACKS = undefined
+    expect((await refused()).message).toBe('buying credits is not set up')
+    env.CREDIT_PRICE = PRICE
+    env.CREDIT_PACKS = PACKS
     env.STRIPE = undefined
     expect((await refused()).message).toBe('buying credits is not set up')
     env.STRIPE = stripe
-    for (const packs of [
-      { prod_x: 5000 },
-      { price_a: 5000, price_b: 5000 },
-      { price_a: 5005 },
-      { price_a: 2_000_000 },
-      '{',
-    ]) {
-      env.STRIPE_PACKS = packs
-      expect((await refused()).message).toMatch(/^STRIPE_PACKS is invalid: /)
+    for (const price of [undefined, 'prod_x', '']) {
+      env.CREDIT_PRICE = price
+      expect((await refused()).message).toMatch(/^CREDIT_PRICE must be a Stripe price id/)
     }
-    // In .dev.vars a JSON var is text.
-    env.STRIPE_PACKS = JSON.stringify({ price_five: 5000 })
-    expect(await answer(req('GET', '/v1/billing/packs', alice))).toEqual({ packs: [{ credits: 5000, usdCents: 500 }] })
+    env.CREDIT_PRICE = PRICE
+    for (const packs of [undefined, [], [5, 5], [0], [2.5], [5000], '[5]', { five: 5 }]) {
+      env.CREDIT_PACKS = packs
+      expect((await refused()).message).toMatch(/^CREDIT_PACKS /)
+    }
+    // The order they are listed in does not matter: smallest first.
+    env.CREDIT_PACKS = [20, 5]
+    expect((await answer(req('GET', '/v1/billing/packs', alice))).packs.map((p: any) => p.quantity)).toEqual([5, 20])
     expect(stripe.sessions).toEqual([])
   })
 
   it('a Checkout Session that Stripe does not make is a refusal the user can try again after', async () => {
     stripe.failWith = new Error('Stripe answered 500: something broke')
-    const { error } = await answer(req('POST', '/v1/billing/checkout', alice, { credits: 5000 }), 502)
+    const { error } = await answer(req('POST', '/v1/billing/checkout', alice, { quantity: 5 }), 502)
     expect(error).toEqual({ code: 'payment_unavailable', message: 'Checkout is unavailable, try again in a moment.' })
     expect(logged).toEqual(['checkout failed: Error: Stripe answered 500: something broke'])
   })
@@ -398,6 +411,46 @@ describe('UC-BILLING-001 buy credits: the webhook', () => {
     expect(res.status).toBe(402)
   })
 
+  it('[UC-BILLING-001-S13] a payment for anything but the pack the checkout was made for adds nothing, and is logged', async () => {
+    for (const items of [
+      [{ price: 'price_other', quantity: 5 }],
+      [{ price: PRICE, quantity: 50 }],
+      [
+        { price: PRICE, quantity: 5 },
+        { price: PRICE, quantity: 5 },
+      ],
+      [],
+    ]) {
+      await checkout(alice, 5000)
+      const session = stripe.sessions.at(-1)!.id
+      stripe.paidFor.set(session, items)
+      expect(await answer(deliver(stripe.sessionEvent()))).toMatchObject({ done: 'ignored' })
+    }
+    // Metadata that says another quantity than the one paid for.
+    await checkout(alice, 5000)
+    const evt = stripe.sessionEvent()
+    const object = { ...(evt.data as any).object, metadata: { cofun_user_id: 'user_alice', cofun_quantity: '50' } }
+    expect(await answer(deliver({ ...evt, data: { object } }))).toMatchObject({ done: 'ignored' })
+
+    expect(db.rows('grants')).toEqual([])
+    expect(billingLog).toEqual([
+      'checkout session cs_test_1 paid for 5xprice_other, not 5xprice_credits: nothing granted',
+      'checkout session cs_test_2 paid for 50xprice_credits, not 5xprice_credits: nothing granted',
+      'checkout session cs_test_3 paid for 5xprice_credits,5xprice_credits, not 5xprice_credits: nothing granted',
+      'checkout session cs_test_4 paid for nothing, not 5xprice_credits: nothing granted',
+      'checkout session cs_test_5 paid for 5xprice_credits, not 50xprice_credits: nothing granted',
+    ])
+  })
+
+  it('takes no event while buying is not set up, so Stripe sends it again later', async () => {
+    await checkout(alice, 5000)
+    env.STRIPE = undefined
+    await answer(deliver(stripe.sessionEvent()), 503)
+    env.STRIPE = stripe
+    await answer(deliver(stripe.sessionEvent()))
+    expect(db.rows('grants')).toHaveLength(1)
+  })
+
   it('a refund whose payment has not been granted yet is sent again later, and then takes the purchase back', async () => {
     await checkout(alice, 5000)
     const { error } = await answer(deliver(refunded('pi_for_cs_test_1')), 409)
@@ -492,7 +545,7 @@ describe('UC-BILLING-001 buy credits: purchases in the history and on the admin 
 
   it('[UC-ADMIN-001-S08] an operator sees purchases in an account’s record, with their payment, and what a refund took back', async () => {
     await buy(alice, 5000, 'pi_kept')
-    await buy(alice, 1000, 'pi_refunded')
+    await buy(alice, 10_000, 'pi_refunded')
     clock = new Date(START + DAY_MS)
     await answer(deliver(refunded('pi_refunded')))
 
@@ -512,8 +565,8 @@ describe('UC-BILLING-001 buy credits: purchases in the history and on the admin 
         },
         {
           source: 'purchase',
-          amount: 1000 * CREDIT,
-          left: 1000 * CREDIT,
+          amount: 10_000 * CREDIT,
+          left: 10_000 * CREDIT,
           grantedAt: START,
           expiresAt: START + DAY_MS,
           payment: 'pi_refunded',
@@ -549,14 +602,15 @@ describe('Stripe over HTTP', () => {
     return { sent, send }
   }
   const request = {
-    price: 'price_five',
-    credits: 5000,
+    price: 'price_credits',
+    quantity: 10,
+    credits: 10_000,
     userId: 'user_alice',
     successUrl: 'https://api.example.test/billing/paid',
     cancelUrl: 'https://api.example.test/billing/cancelled',
   }
 
-  it('makes a one-time Checkout Session with Managed Payments, for the user and the pack', async () => {
+  it('makes a one-time Checkout Session with Managed Payments, for the user and the quantity of credits', async () => {
     const { sent, send } = fakeSend(200, { id: 'cs_1', url: 'https://checkout.stripe.com/c/pay/cs_1' })
 
     expect(await stripeOverHttp('sk_test_key', send).createCheckout(request)).toEqual({
@@ -574,13 +628,31 @@ describe('Stripe over HTTP', () => {
     expect(Object.fromEntries(new URLSearchParams(String(init.body)))).toEqual({
       mode: 'payment',
       'managed_payments[enabled]': 'true',
-      'line_items[0][price]': 'price_five',
-      'line_items[0][quantity]': '1',
+      'line_items[0][price]': 'price_credits',
+      'line_items[0][quantity]': '10',
       client_reference_id: 'user_alice',
       'metadata[cofun_user_id]': 'user_alice',
-      'metadata[cofun_credits]': '5000',
+      'metadata[cofun_quantity]': '10',
+      'custom_text[submit][message]': 'You get 10,000 credits for Cofun, valid for one year.',
       success_url: 'https://api.example.test/billing/paid',
       cancel_url: 'https://api.example.test/billing/cancelled',
+    })
+  })
+
+  it('reads what a Checkout Session sells', async () => {
+    const { sent, send } = fakeSend(200, {
+      object: 'list',
+      data: [{ id: 'li_1', object: 'item', price: { id: 'price_credits', unit_amount: 100 }, quantity: 10 }],
+      has_more: false,
+    })
+
+    expect(await stripeOverHttp('sk_test_key', send).lineItems('cs_1')).toEqual([
+      { price: 'price_credits', quantity: 10 },
+    ])
+    expect(sent[0].url).toBe('https://api.stripe.com/v1/checkout/sessions/cs_1/line_items?limit=100')
+    expect(sent[0].init).toEqual({
+      method: 'GET',
+      headers: { authorization: 'Bearer sk_test_key', 'stripe-version': '2025-03-31.basil' },
     })
   })
 
@@ -589,8 +661,13 @@ describe('Stripe over HTTP', () => {
     await expect(stripeOverHttp('sk', refused.send).createCheckout(request)).rejects.toThrow(
       'Stripe answered 400: No such price',
     )
+    await expect(stripeOverHttp('sk', refused.send).lineItems('cs_1')).rejects.toThrow('Stripe answered 400')
     const odd = fakeSend(200, { id: 'cs_1', url: 'javascript:alert(1)' })
     await expect(stripeOverHttp('sk', odd.send).createCheckout(request)).rejects.toThrow('without a URL')
+    const oddItems = fakeSend(200, { data: [{ price: null, quantity: 1 }], has_more: false })
+    await expect(stripeOverHttp('sk', oddItems.send).lineItems('cs_1')).rejects.toThrow('does not understand')
+    const many = fakeSend(200, { data: [], has_more: true })
+    await expect(stripeOverHttp('sk', many.send).lineItems('cs_1')).rejects.toThrow('more than 100 line items')
   })
 })
 

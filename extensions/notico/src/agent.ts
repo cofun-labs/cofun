@@ -652,16 +652,17 @@ export class CopilotAgent {
   }
 
   /**
-   * Starts buying the pack of `credits`: the worker makes a Stripe Checkout Session for it, for the
-   * signed-in user, and gives the URL of its page. Nothing is bought until the user pays there.
+   * Starts buying the pack of `quantity` (a pack's quantity, as `creditPacks` lists it): the worker
+   * makes a Stripe Checkout Session for it, for the signed-in user, and gives the URL of its page.
+   * Nothing is bought until the user pays there.
    */
-  async checkout(credits: number): Promise<string> {
+  async checkout(quantity: number): Promise<string> {
     const token = await this.config.getToken()
     if (!token) throw new Error(SIGN_IN)
     const res = await fetch(`${this.config.apiUrl.replace(/\/+$/, '')}/billing/checkout`, {
       method: 'POST',
       headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
-      body: JSON.stringify({ credits }),
+      body: JSON.stringify({ quantity }),
     })
     const body: unknown = await res.json().catch(() => undefined)
     if (!res.ok) throw new Error(ErrorReply.safeParse(body).data?.error?.message ?? `HTTP ${res.status}`)

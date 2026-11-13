@@ -172,9 +172,9 @@ export function Chat({ userId }: { userId: string }) {
     return () => window.removeEventListener('focus', onFocus)
   }, [])
 
-  /** Opens Stripe's Checkout for the pack of `credits` in a new tab. */
-  async function buyCredits(credits: number) {
-    const url = await agent.checkout(credits)
+  /** Opens Stripe's Checkout for the pack of `quantity` in a new tab. */
+  async function buyCredits(quantity: number) {
+    const url = await agent.checkout(quantity)
     checkoutOpened.current = true
     await chrome.tabs.create({ url })
   }

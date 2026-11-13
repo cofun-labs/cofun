@@ -10,11 +10,13 @@ import * as z from './zod'
  */
 const STRIPE_API_VERSION = '2025-03-31.basil'
 
-/** What a Checkout Session is made for: one pack, bought by one user. */
+/** What a Checkout Session is made for: a quantity of the credit price, bought by one user. */
 export interface CheckoutRequest {
-  /** The Stripe price of the pack. */
+  /** The Stripe price of one unit, 1,000 credits. */
   price: string
-  /** The pack's credits, kept on the session so the webhook grants the pack that was chosen. */
+  /** How many units: the pack. Kept on the session too, so the webhook can check what was paid for. */
+  quantity: number
+  /** The credits the pack gives, for the text Checkout shows. */
   credits: number
   /** The Clerk user id of the buyer. */
   userId: string
@@ -23,18 +25,27 @@ export interface CheckoutRequest {
   cancelUrl: string
 }
 
+/** A line item of a Checkout Session: which price, and how many of it. */
+export interface LineItem {
+  price: string
+  quantity: number
+}
+
 /** The slice of Stripe's API the worker uses. Tests pass a fake through `env.STRIPE`. */
 export interface StripeApi {
   /** Makes a Checkout Session for the pack, and gives the URL of its page. */
   createCheckout(request: CheckoutRequest): Promise<{ url: string }>
+  /** What a Checkout Session sells: its line items. Events about a session do not carry them. */
+  lineItems(sessionId: string): Promise<LineItem[]>
 }
 
 /**
- * Where a Checkout Session records whom it is for and what it grants. Metadata is written only by
- * the worker, with its secret key, and comes back in events Stripe signs, so the webhook can trust it.
+ * Where a Checkout Session records whom it is for and what quantity it sells. Metadata is written
+ * only by the worker, with its secret key, and comes back in events Stripe signs, so the webhook can
+ * trust it.
  */
 export const META_USER = 'cofun_user_id'
-export const META_CREDITS = 'cofun_credits'
+export const META_QUANTITY = 'cofun_quantity'
 
 /** The form body of a request to Stripe's API: nested parameters written `a[b][c]=…`. */
 function form(params: Record<string, string>): string {
@@ -42,6 +53,14 @@ function form(params: Record<string, string>): string {
 }
 
 const CreatedSession = z.object({ url: z.url({ protocol: /^https$/ }) })
+const LineItems = z.object({
+  data: z.array(
+    z
+      .object({ price: z.object({ id: z.string() }), quantity: z.int().min(0) })
+      .transform((item): LineItem => ({ price: item.price.id, quantity: item.quantity })),
+  ),
+  has_more: z.boolean(),
+})
 const StripeError = z.object({ error: z.object({ message: z.string() }) })
 
 /** How requests reach Stripe: `fetch` when deployed. Tests pass a fake that answers as Stripe would. */
@@ -49,37 +68,51 @@ export type Send = (url: string, init: RequestInit) => Promise<Response>
 
 /** Stripe's API over HTTP, with the account's secret key. */
 export function stripeOverHttp(secretKey: string, send: Send = (url, init) => fetch(url, init)): StripeApi {
+  const headers = { authorization: `Bearer ${secretKey}`, 'stripe-version': STRIPE_API_VERSION }
+
+  /** What Stripe answered, which must be a success. */
+  async function answer(res: Response): Promise<unknown> {
+    const body: unknown = await res.json().catch(() => undefined)
+    if (!res.ok) {
+      const message = StripeError.safeParse(body).data?.error.message ?? 'no error message'
+      throw new Error(`Stripe answered ${res.status}: ${message}`)
+    }
+    return body
+  }
+
   return {
-    async createCheckout({ price, credits, userId, successUrl, cancelUrl }) {
+    async createCheckout({ price, quantity, credits, userId, successUrl, cancelUrl }) {
       const res = await send('https://api.stripe.com/v1/checkout/sessions', {
         method: 'POST',
-        headers: {
-          authorization: `Bearer ${secretKey}`,
-          'content-type': 'application/x-www-form-urlencoded',
-          'stripe-version': STRIPE_API_VERSION,
-        },
+        headers: { ...headers, 'content-type': 'application/x-www-form-urlencoded' },
         body: form({
           // A one-time payment, with Stripe as the merchant of record. Managed Payments chooses the
           // payment methods and the currency the buyer sees (Adaptive Pricing), and adds the tax.
           mode: 'payment',
           'managed_payments[enabled]': 'true',
           'line_items[0][price]': price,
-          'line_items[0][quantity]': '1',
+          'line_items[0][quantity]': String(quantity),
           client_reference_id: userId,
           [`metadata[${META_USER}]`]: userId,
-          [`metadata[${META_CREDITS}]`]: String(credits),
+          [`metadata[${META_QUANTITY}]`]: String(quantity),
+          // Checkout names the product and its quantity ("1,000 Credits × 10"); this says what that gives.
+          'custom_text[submit][message]': `You get ${credits.toLocaleString('en')} credits for Cofun, valid for one year.`,
           success_url: successUrl,
           cancel_url: cancelUrl,
         }),
       })
-      const body: unknown = await res.json().catch(() => undefined)
-      if (!res.ok) {
-        const message = StripeError.safeParse(body).data?.error.message ?? 'no error message'
-        throw new Error(`Stripe answered ${res.status}: ${message}`)
-      }
-      const session = CreatedSession.safeParse(body)
+      const session = CreatedSession.safeParse(await answer(res))
       if (!session.success) throw new Error('Stripe answered a Checkout Session without a URL')
       return { url: session.data.url }
+    },
+
+    async lineItems(sessionId) {
+      const url = `https://api.stripe.com/v1/checkout/sessions/${encodeURIComponent(sessionId)}/line_items?limit=100`
+      const items = LineItems.safeParse(await answer(await send(url, { method: 'GET', headers })))
+      if (!items.success) throw new Error('Stripe answered line items the worker does not understand')
+      // The worker makes sessions of one line item; more than a page of them is not one of its sessions.
+      if (items.data.has_more) throw new Error(`checkout session ${sessionId} has more than 100 line items`)
+      return items.data.data
     },
   }
 }

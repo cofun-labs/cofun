@@ -3,7 +3,7 @@
 // opens; the tests stand for that by having Stripe tell the worker's webhook that the payment went
 // through. The tests' clock is 5:30 ahead of UTC (vitest.config.ts): 12:00 UTC is 5:30 PM.
 import '@testing-library/jest-dom/vitest'
-import { fireEvent, screen, within } from '@testing-library/react'
+import { fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent, { type UserEvent } from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { usageCosting } from '../../../worker/test/fakes'
@@ -40,7 +40,6 @@ describe('buying credits on the settings page', () => {
     const buy = within(section('Buy credits'))
     const packs = within(await buy.findByRole('list', { name: 'Packs of credits' })).getAllByRole('button')
     expect(packs.map((pack) => pack.getAttribute('aria-label'))).toEqual([
-      'Buy 1,000 credits for US$1',
       'Buy 5,000 credits for US$5',
       'Buy 10,000 credits for US$10',
       'Buy 20,000 credits for US$20',
@@ -53,7 +52,7 @@ describe('buying credits on the settings page', () => {
       'Checkout opened in a new tab. Your credits show here once the payment goes through.',
     )
     expect(browser.openedTabs).toEqual(['https://checkout.stripe.com/c/pay/cs_test_1'])
-    expect(browser.stripe.sessions).toMatchObject([{ userId: 'user_alice', credits: 5000, price: 'price_five' }])
+    expect(browser.stripe.sessions).toMatchObject([{ userId: 'user_alice', quantity: 5, price: 'price_credits' }])
   })
 
   it('[UC-BILLING-001-S10] coming back to the panel after paying shows the new credits', async () => {
@@ -86,7 +85,9 @@ describe('buying credits on the settings page', () => {
     await user.click(await screen.findByRole('button', { name: 'Buy 5,000 credits for US$5' }))
     await within(section('Buy credits')).findByRole('status')
     await browser.stripeSends(browser.stripe.sessionEvent({ payment: 'pi_kept' }))
-    await user.click(screen.getByRole('button', { name: 'Buy 1,000 credits for US$1' }))
+    await user.click(screen.getByRole('button', { name: 'Buy 10,000 credits for US$10' }))
+    // The second Checkout tab is open before the user pays in it.
+    await waitFor(() => expect(browser.openedTabs).toHaveLength(2))
     await browser.stripeSends(browser.stripe.sessionEvent({ payment: 'pi_refunded' }))
     vi.setSystemTime(new Date('2026-11-09T12:00:00Z'))
     await browser.stripeSends(refunded('pi_refunded'))
@@ -96,7 +97,7 @@ describe('buying credits on the settings page', () => {
     const given = await within(section('Credits you were given')).findByRole('list')
     const lots = within(given).getAllByRole('listitem')
     expect(lots.map((lot) => lot.textContent)).toEqual([
-      'Purchased credits1,000 creditsGiven Nov 8, 2026 · refunded Nov 9, 2026, 1,000 credits taken back',
+      'Purchased credits10,000 creditsGiven Nov 8, 2026 · refunded Nov 9, 2026, 10,000 credits taken back',
       'Purchased credits5,000 creditsGiven Nov 8, 2026 · 5,000 left, expire Nov 8, 2027',
     ])
   })
@@ -104,14 +105,16 @@ describe('buying credits on the settings page', () => {
   it('says when the packs cannot be read, and reads them again on request', async () => {
     const { browser, user } = await openPanel()
     // Buying is not set up on the worker for a moment.
-    const packs = browser.env.STRIPE_PACKS
-    browser.env.STRIPE_PACKS = undefined
+    const packs = browser.env.CREDIT_PACKS
+    browser.env.CREDIT_PACKS = undefined
+    browser.env.CREDIT_PRICE = undefined
     await openSettings(user)
 
     const buy = within(section('Buy credits'))
     expect(await buy.findByRole('alert')).toHaveTextContent('Buying credits is unavailable right now.')
 
-    browser.env.STRIPE_PACKS = packs
+    browser.env.CREDIT_PACKS = packs
+    browser.env.CREDIT_PRICE = 'price_credits'
     await user.click(buy.getByRole('button', { name: 'Try again' }))
     expect(await buy.findByRole('button', { name: 'Buy 5,000 credits for US$5' })).toBeVisible()
   })

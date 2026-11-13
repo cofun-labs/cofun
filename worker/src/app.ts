@@ -7,7 +7,7 @@ import { adminPage } from './admin'
 import { readAccounts, readOverview, type Period } from './overview'
 import { loginPage } from './login'
 import { billingPage } from './billing-page'
-import { handleEvent, packsOf, type Pack } from './billing'
+import { CREDITS_PER_UNIT, handleEvent, offerOf, type Offer } from './billing'
 import { stripeOverHttp, verifiedEvent, type StripeApi } from './stripe'
 import {
   FREE_CREDITS,
@@ -63,11 +63,10 @@ export interface Env {
   STRIPE_SECRET_KEY?: string
   /** The signing secret of the Stripe webhook endpoint (a worker secret). Without it no event is accepted. */
   STRIPE_WEBHOOK_SECRET?: string
-  /**
-   * The packs on offer: which Stripe price sells how many credits, `{"price_…": 5000}` (see `packsOf`
-   * in billing.ts). Each Stripe environment has its own prices.
-   */
-  STRIPE_PACKS?: unknown
+  /** The id of the Stripe price of 1,000 credits, US$1. A pack is a quantity of it. */
+  CREDIT_PRICE?: string
+  /** The quantities of CREDIT_PRICE on sale as packs: `[5, 10, 20, 50]` (see `offerOf` in billing.ts). */
+  CREDIT_PACKS?: unknown
 }
 
 export interface AppOptions {
@@ -615,9 +614,11 @@ export function createApp({
     if (payload.length > MAX_EVENT_BYTES) throw new HttpError(413, 'too_large', 'event too large')
     const event = await verifiedEvent(payload, c.req.header('stripe-signature'), secret, now().getTime())
     if (event === undefined) throw new HttpError(400, 'bad_signature', 'not signed by Stripe')
+    // Granting a purchase reads its line items from Stripe, so the webhook needs buying set up too.
+    const { offer, stripe } = billing(c.env)
     let handled
     try {
-      handled = await handleEvent(c.env.DB, now().getTime(), event)
+      handled = await handleEvent(c.env.DB, stripe, offer.price, now().getTime(), event)
     } catch (err) {
       // An event the worker could not handle: the database failed, or the event is not what the
       // worker expects. Nothing is guessed; Stripe sends it again, and the log says why.
@@ -741,39 +742,47 @@ export function createApp({
 
   app.get('/v1/me', (c) => c.json({ userId: c.get('userId'), model: c.env.MODEL }))
 
-  /** The packs on offer, smallest first, and Stripe's API to sell them: or a refusal when buying is not set up. */
-  function billing(env: Env): { packs: Pack[]; stripe: StripeApi } {
-    const packs = packsOf(env.STRIPE_PACKS)
-    if ('error' in packs) throw new HttpError(503, 'not_configured', `STRIPE_PACKS is invalid: ${packs.error}`)
+  /** What is on sale, and Stripe's API to sell it: or a refusal when buying is not set up. */
+  function billing(env: Env): { offer: Offer; stripe: StripeApi } {
+    const offered = offerOf(env.CREDIT_PRICE, env.CREDIT_PACKS)
+    if ('error' in offered) throw new HttpError(503, 'not_configured', `${offered.error}`)
     const stripe = env.STRIPE ?? (env.STRIPE_SECRET_KEY ? stripeOverHttp(env.STRIPE_SECRET_KEY) : undefined)
-    if (!stripe || !packs.packs.length) throw new HttpError(503, 'not_configured', 'buying credits is not set up')
-    return { packs: packs.packs, stripe }
+    if (!stripe || !offered.offer) throw new HttpError(503, 'not_configured', 'buying credits is not set up')
+    return { offer: offered.offer, stripe }
   }
 
-  // The packs of credits a signed-in user can buy, smallest first, with their price in US cents:
-  // 1000 credits a dollar, as everywhere. Checkout may show the price in the buyer's currency, with tax.
+  // The packs of credits a signed-in user can buy, smallest first: each a quantity of the credit
+  // price, US$1 for 1,000 credits, with its credits and its price in US cents. Checkout may show the
+  // price in the buyer's currency, with tax.
   app.get('/v1/billing/packs', (c) => {
-    const { packs } = billing(c.env)
-    return c.json({ packs: packs.map(({ credits }) => ({ credits, usdCents: credits / 10 })) })
+    const { offer } = billing(c.env)
+    return c.json({
+      packs: offer.quantities.map((quantity) => ({
+        quantity,
+        credits: quantity * CREDITS_PER_UNIT,
+        usdCents: quantity * 100,
+      })),
+    })
   })
 
   // Starts buying a pack: makes a Stripe Checkout Session for it, for the signed-in user, and gives
   // the URL of its page, which the side panel opens in a new tab. Nothing is granted here: the
   // webhook grants the credits once Stripe says the payment went through.
   app.post('/v1/billing/checkout', async (c) => {
-    const { packs, stripe } = billing(c.env)
-    const offered = packs.map((pack) => pack.credits)
-    const { credits } = parse(
-      part(z.object({ credits: z.int() }), 'body must be {"credits": <a pack\'s credits>}'),
+    const { offer, stripe } = billing(c.env)
+    const { quantity } = parse(
+      part(z.object({ quantity: z.int() }), 'body must be {"quantity": <a pack\'s quantity>}'),
       await c.req.json().catch(() => undefined),
     )
-    const pack = packs.find((each) => each.credits === credits)
-    if (!pack) throw badRequest(`credits must be one of the packs on offer: ${offered.join(', ')}`)
+    if (!offer.quantities.includes(quantity)) {
+      throw badRequest(`quantity must be one of the packs on sale: ${offer.quantities.join(', ')}`)
+    }
     const origin = new URL(c.req.url).origin
     try {
       const { url } = await stripe.createCheckout({
-        price: pack.price,
-        credits: pack.credits,
+        price: offer.price,
+        quantity,
+        credits: quantity * CREDITS_PER_UNIT,
         userId: c.get('userId'),
         successUrl: `${origin}/billing/paid`,
         cancelUrl: `${origin}/billing/cancelled`,

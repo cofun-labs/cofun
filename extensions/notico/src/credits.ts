@@ -72,9 +72,12 @@ export const UsagePeriod = z.object({
 })
 export type UsagePeriod = z.infer<typeof UsagePeriod>
 
-/** The packs of credits on offer, smallest first, each with its price in US cents. */
+/**
+ * The packs of credits on sale, smallest first, as the worker sells them: each a quantity of 1,000
+ * credits, with its credits and its price in US cents.
+ */
 export const Packs = z.object({
-  packs: z.array(z.object({ credits: z.int().min(1), usdCents: z.int().min(1) })),
+  packs: z.array(z.object({ quantity: z.int().min(1), credits: z.int().min(1), usdCents: z.int().min(1) })),
 })
 export type Packs = z.infer<typeof Packs>
 export type Pack = Packs['packs'][number]

@@ -111,7 +111,8 @@ export class FakeBrowser {
       CLERK_AUTHORIZED_PARTIES: `${EXTENSION}, ${WORKER}`,
       STRIPE: browser.stripe,
       STRIPE_WEBHOOK_SECRET: WEBHOOK_SECRET,
-      STRIPE_PACKS: { price_one: 1000, price_five: 5000, price_ten: 10_000, price_twenty: 20_000, price_fifty: 50_000 },
+      CREDIT_PRICE: 'price_credits',
+      CREDIT_PACKS: [5, 10, 20, 50],
     }
     browser.issuer = issuer
     browser.env = env

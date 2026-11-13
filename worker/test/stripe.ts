@@ -1,4 +1,4 @@
-import type { CheckoutRequest, StripeApi } from '../src/stripe'
+import type { CheckoutRequest, LineItem, StripeApi } from '../src/stripe'
 
 /** The signing secret the tests' webhook endpoint has. A test value, not a real secret. */
 export const WEBHOOK_SECRET = 'whsec_test_secret'
@@ -10,14 +10,27 @@ export const WEBHOOK_SECRET = 'whsec_test_secret'
 export class FakeStripe implements StripeApi {
   /** Every session the worker made, in order. */
   readonly sessions: (CheckoutRequest & { id: string })[] = []
-  /** When set, making a session fails with this error, like Stripe being unreachable. */
+  /** When set, making a session or reading its line items fails with this error, like Stripe being unreachable. */
   failWith?: Error
+  /**
+   * What a session's line items are, by session id, when not what the worker asked for: a session
+   * changed or made outside the worker.
+   */
+  readonly paidFor = new Map<string, LineItem[]>()
 
   async createCheckout(request: CheckoutRequest): Promise<{ url: string }> {
     if (this.failWith) throw this.failWith
     const id = `cs_test_${this.sessions.length + 1}`
     this.sessions.push({ ...request, id })
     return { url: `https://checkout.stripe.com/c/pay/${id}` }
+  }
+
+  async lineItems(sessionId: string): Promise<LineItem[]> {
+    if (this.failWith) throw this.failWith
+    const changed = this.paidFor.get(sessionId)
+    if (changed) return changed
+    const session = this.sessions.find((each) => each.id === sessionId)
+    return session ? [{ price: session.price, quantity: session.quantity }] : []
   }
 
   /**
@@ -45,8 +58,8 @@ export class FakeStripe implements StripeApi {
       payment_intent: options.payment ?? `pi_for_${session.id}`,
       client_reference_id: session.userId,
       currency: options.currency ?? 'usd',
-      amount_total: options.amountTotal ?? session.credits / 10,
-      metadata: { cofun_user_id: session.userId, cofun_credits: String(session.credits) },
+      amount_total: options.amountTotal ?? session.quantity * 100,
+      metadata: { cofun_user_id: session.userId, cofun_quantity: String(session.quantity) },
       success_url: session.successUrl,
       cancel_url: session.cancelUrl,
     })

@@ -10,7 +10,7 @@ Key constraints:
 
 - A pack's credits are added only to the account that started its checkout, and only once the payment provider reports that the payment went through.
 - One payment adds its credits once, however many times it is reported.
-- A user gets the credits of the pack they chose, whatever currency they paid in and whatever tax was added.
+- A user gets the credits of the pack they chose, whatever currency they paid in and whatever tax was added; a payment for anything else adds no credits.
 - Payment details are entered on the payment provider's page only, and never reach the side panel or the service.
 
 ## Scenarios
@@ -31,9 +31,8 @@ Key constraints:
 | UC-BILLING-001-S10 | P1 | ✅ | Given a user who paid in the tab the side panel opened; when they come back to the side panel; then it shows their new credits. |
 | UC-BILLING-001-S11 | P1 | ✅ | Given a user who bought credits; when they look at their credits and their history; then the purchase shows as such, with the day it expires, and a refunded purchase shows what was taken back. |
 | UC-BILLING-001-S12 | P1 | ✅ | Given a user with no credits left; when a question of theirs is refused; then the refusal offers to buy credits beside saying when the free ones return. |
+| UC-BILLING-001-S13 | P1 | ✅ | Given a payment for something other than the pack its checkout was made for; when it goes through; then no credits are added. |
 
 ### ai-e2e
 
-| ID | Priority | Status | Scenario |
-| --- | --- | --- | --- |
-| UC-BILLING-001-S13 | P1 | 🚧 | Given a signed-in user in Chrome, with the worker on the payment provider's test environment; when they buy the smallest pack with a test card; then the side panel shows the pack's credits when they come back to it. |
+(none)

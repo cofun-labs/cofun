@@ -51,7 +51,8 @@ Variables in `wrangler.jsonc`:
 | `CLERK_AUTHORIZED_PARTIES` | Allowed origins, comma-separated: `chrome-extension://<extension id>` and the sign-in page |
 | `PRODUCTS` | Which product each extension is, by its origin (the token's `azp`), as a JSON object: `{"chrome-extension://<extension id>": "notico"}`. Model calls from any other caller are recorded as `unknown` |
 | `CLERK_JWT_KEY` | Clerk JWT public key (PEM). Public; also available at `https://<frontend-api>/.well-known/jwks.json` |
-| `STRIPE_PACKS` | The packs of credits on offer: which Stripe price sells how many credits, as a JSON object, `{"price_…": 5000}`. Each price must be a one-time price in US dollars of its credits at 1000 credits a dollar (the side panel shows the price worked out that way). The committed value is the live account's four packs |
+| `CREDIT_PRICE` | The id of the Stripe price of one unit of credits: 1,000 credits for US$1, one-time. The committed value is the live account's |
+| `CREDIT_PACKS` | The packs on sale, as quantities of `CREDIT_PRICE`: `[5, 10, 20, 50]` sells US$5, 10, 20, and 50 packs. A pack's credits are its quantity × 1000. Changing the packs on sale changes only this |
 
 Secrets, set with `pnpm exec wrangler secret put <name>` in `worker/` (or in the dashboard: Workers & Pages → `cofun-api` → Settings → Variables and Secrets), never committed. Without them nothing can be bought: the side panel says buying credits is unavailable, and the webhook takes no event.
 
@@ -64,23 +65,13 @@ Secrets, set with `pnpm exec wrangler secret put <name>` in `worker/` (or in the
 
 Credits are sold through Stripe's Checkout with [Managed Payments](https://docs.stripe.com/payments/managed-payments), Stripe being the merchant of record (see [Credits](architecture.md#credits)). On the Stripe account:
 
-1. **Products and prices.** One product per pack, each with one one-time price in USD, tax code `txcd_10105003` (AI as a Service, personal use; eligible for Managed Payments), tax not included in the price. Put each price id and its credits in `STRIPE_PACKS`.
+1. **One product.** `1,000 Credits`, with one one-time price of US$1.00, tax code `txcd_10105003` (AI as a Service, personal use; eligible for Managed Payments), tax not included in the price. Its price id is `CREDIT_PRICE`; a pack is a quantity of it. Checkout shows "1,000 Credits × 10", with a line under it saying how many credits that gives. To change the unit price, make a new price and change `CREDIT_PRICE`; the side panel shows US$1 for each 1,000 credits.
 2. **Managed Payments** turned on (Settings → Managed Payments), and the business details, statement descriptor, and the website's terms and privacy links filled in as Cofun (`cofun.cc`).
 3. **The webhook endpoint** (Developers → Webhooks → Add destination): the URL `https://api.cofun.cc/stripe/webhook`, API version `2025-03-31.basil` (the one the worker makes sessions with), and these events: `checkout.session.completed`, `checkout.session.async_payment_succeeded`, `checkout.session.async_payment_failed`, `charge.refunded`, and `charge.dispute.created`. Its signing secret is `STRIPE_WEBHOOK_SECRET`.
 
 Each purchase is written to Workers Logs as `purchase: user=<user id> credits=<n> payment=<PaymentIntent id>`, and each one taken back as `purchase taken back: payment=<PaymentIntent id> reason=<refund|dispute>`.
 
-To try buying against the sandbox with `wrangler dev`, put the sandbox's secret key and packs in `worker/.dev.vars` (never committed), and forward the sandbox's events to the local worker with the [Stripe CLI](https://docs.stripe.com/stripe-cli), whose `listen` prints the signing secret to use as `STRIPE_WEBHOOK_SECRET`:
-
-```bash
-stripe listen --forward-to localhost:8787/stripe/webhook
-```
-
-The sandbox ("Kitfun sandbox") offers one more pack than live, US$1 for 1000 credits, for cheap end-to-end tests:
-
-```
-STRIPE_PACKS={"price_1UbKzrCAGhjancrjbw3S00uK":1000,"price_1UbKwwCAGhjancrjlo1Z5VCp":5000,"price_1UbKxlCAGhjancrjyh44u532":10000,"price_1UbKyLCAGhjancrjQPwqTguw":20000,"price_1UbKyvCAGhjancrjviY0wSP3":50000}
-```
+There is no test environment: the one worker is deployed on merge, with the live Stripe account. The worker's tests cover buying against a fake Stripe, with webhook events signed by a test secret. After a deploy that changes buying, the maintainer checks it once by hand: buy the US$5 pack with a real card, see the credits arrive in the side panel, refund the payment in the Stripe Dashboard, and see what was left taken back. It costs one payment's fees, so it is never part of `pnpm e2e`.
 
 ### Admin page
 
