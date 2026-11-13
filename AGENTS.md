@@ -1,8 +1,8 @@
-# Notico
+# Cofun
 
-Notico: a Chrome extension that opens an AI side panel next to Notion pages, backed by a Cloudflare Worker. The repository holds Cofun's extensions, one per folder in `extensions/` (Notico in `extensions/notico/`), and the worker they share.
+Cofun: Chrome extensions that each open an AI side panel next to one kind of page, backed by one Cloudflare Worker they share. The repository holds the extensions, one per folder in `extensions/` (Notico, for Notion, in `extensions/notico/`), and the worker.
 
-**Before starting work, read [docs/architecture.md](docs/architecture.md)** for the architecture, auth flow, and code layout; setup and deployment are in [docs/development.md](docs/development.md). [README.md](README.md) is written for the extension's users: what it does and how to use it, with little technical detail. This file covers the development workflow and coding conventions.
+**Before starting work, read [docs/architecture.md](docs/architecture.md)** for the architecture, auth flow, and code layout; setup and deployment are in [docs/development.md](docs/development.md). [README.md](README.md) introduces Cofun and its extensions, and each extension's `extensions/<name>/README.md` is written for that extension's users: what it does and how to use it, with little technical detail. This file covers the development workflow and coding conventions.
 
 ## Workflow
 
@@ -25,7 +25,7 @@ Notico: a Chrome extension that opens an AI side panel next to Notion pages, bac
      - [ ] All PR comments resolved
      ```
 
-2. **Update use cases before writing code**, only when the product behavior contract changes (see [docs/bdd.md](docs/bdd.md) for what belongs in a use case). In `docs/use-cases/{domain}/`:
+2. **Update use cases before writing code**, only when the product behavior contract changes (see [docs/bdd.md](docs/bdd.md) for what belongs in a use case). In `docs/use-cases/{product}/{domain}/` (an extension's folder name, or `shared` for behavior of the backend alone; see [docs/bdd.md](docs/bdd.md#products)):
    - Reuse an existing use case or scenario when it already expresses the contract. Bug fixes and refactors usually change no use case.
    - Edit the Behavior, add or remove scenarios, or merge/split use cases. Reuse a scenario ID only for wording changes; changed behavior gets a new ID.
    - Give each scenario a priority (P0/P1/P2), put it under its strategy (`api-test` or `ai-e2e`), and set its status (🚧 until verified, then ✅).
@@ -33,7 +33,7 @@ Notico: a Chrome extension that opens an AI side panel next to Notion pages, bac
 3. **Implement with tests.** Keep tests in sync with use cases:
    - Remove tests for deleted scenarios, add tests for new ones, rename tests when scenario IDs change.
    - P0 scenarios must be verified before merge; P1 should be; P2 can wait.
-   - `api-test` scenarios are vitest integration tests, named with the scenario ID: in `worker/test/` for the worker's HTTP API, in `extensions/notico/test/` for the extension's client code (`*.test.ts`) and the side panel's UI (`*.test.tsx`). `ai-e2e` scenarios are verified by an agent driving a real browser with `pnpm e2e`, and the run is recorded in the PR (see [Running an `ai-e2e` scenario](docs/bdd.md#running-an-ai-e2e-scenario)).
+   - `api-test` scenarios are vitest integration tests, named with the scenario ID: in `worker/test/` for the worker's HTTP API, in the extension's `extensions/<name>/test/` for its client code (`*.test.ts`) and the side panel's UI (`*.test.tsx`). `ai-e2e` scenarios are verified by an agent driving a real browser with `pnpm e2e`, and the run is recorded in the PR (see [Running an `ai-e2e` scenario](docs/bdd.md#running-an-ai-e2e-scenario)).
      ```typescript
      it('[UC-CHAT-001-S01] signed-in user gets a streamed reply', async () => {
      ```
@@ -84,7 +84,7 @@ This is an open-source repository. **Never commit account identifiers or secrets
 
 ## Privacy
 
-[PRIVACY.md](PRIVACY.md) tells users what data leaves the browser and where it goes, and it is the Chrome Web Store privacy policy. **A change to what data leaves the browser, or to where it goes, updates `PRIVACY.md` in the same PR**: a new host, new data sent to an existing host, or a change to what the worker stores or logs. The table of hosts in `PRIVACY.md` is the list of hosts the extension may contact. The extension's content security policy (`extensions/notico/manifest.ts`) enforces it for the extension's pages, and `extensions/notico/test/manifest.test.ts` pins that policy and the host permissions, so a new host changes the policy, that test, and the table together.
+Privacy is written in two parts, which together are an extension's Chrome Web Store privacy policy: [PRIVACY.md](PRIVACY.md) says what is the same for every extension (the sign-in, and what the worker receives, stores, and logs), and each extension's `extensions/<name>/PRIVACY.md` (Notico's: [extensions/notico/PRIVACY.md](extensions/notico/PRIVACY.md)) says what it reads in the browser, which hosts it sends data to, and what it keeps on the device. **A change to what data leaves the browser, or to where it goes, updates the privacy page it concerns in the same PR**: a new host or new data sent to an existing host updates the extension's page, and a change to what the worker stores or logs updates `PRIVACY.md`. The table of hosts in an extension's `PRIVACY.md` is the list of hosts that extension may contact. The extension's content security policy (`extensions/notico/manifest.ts`) enforces it for the extension's pages, and `extensions/notico/test/manifest.test.ts` pins that policy and the host permissions, so a new host changes the policy, that test, and the table together.
 
 ## Architecture
 

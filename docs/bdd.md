@@ -30,11 +30,19 @@ These can still be worth testing. Write them as **standalone tests**: same integ
 
 A scenario earns its place only if deleting it would let an implementation pass the remaining scenarios while breaking the product contract.
 
+## Products
+
+Each extension is a product with its own use cases, in its own directory: `docs/use-cases/notico/` for Notico. The directory, not the ID, tells which product a use case belongs to.
+
+- **A product's use cases are written in full for that product**, even where they repeat another product's: sign-in, chat, sessions, settings, and opening the side panel are each product's own, worded for its site. Use cases are not shared between products to save repeating them.
+- **A scenario a product repeats is verified by that product's own test**, named with that product's scenario ID, so a copy that drifts fails its own tests.
+- **`docs/use-cases/shared/`** holds only behavior that involves the backend alone and no extension's UI, such as the operators' admin page and usage records. A shared use case is verified once, in `worker/test/`.
+
 ## Strategy
 
 | Strategy | Use for | Verified by |
 |---|---|---|
-| `api-test` | Anything observable through the worker's HTTP API, the extension's client code, or the side panel's UI | A vitest integration test whose name starts with the scenario ID, in `worker/test/` (the worker's HTTP API) or `extensions/notico/test/` (the extension's client code in `*.test.ts`, the side panel's UI in `*.test.tsx`) |
+| `api-test` | Anything observable through the worker's HTTP API, the extension's client code, or the side panel's UI | A vitest integration test whose name starts with the scenario ID, in `worker/test/` (the worker's HTTP API) or the product's `extensions/<name>/test/` (the extension's client code in `*.test.ts`, the side panel's UI in `*.test.tsx`) |
 | `ai-e2e` | Paths that need real Chrome or real accounts: the side panel opening and staying open across tabs, Clerk sign-in, real Notion pages, the real model | An agent drives Chrome with the extension loaded; the PR description or a comment records the run, with the Notion requests each tested question made (the side panel shows the count with the reply) |
 
 Pick the cheapest strategy that observes the result directly. `ai-e2e` is not a place to park scenarios that could be `api-test`.
@@ -94,7 +102,7 @@ A guard or rejection branch should not rank above its use case's success path un
 
 ## File format
 
-`docs/use-cases/{domain}/UC-{DOMAIN}-{NNN}-{slug}.md`:
+`docs/use-cases/{product}/{domain}/UC-{DOMAIN}-{NNN}-{slug}.md`, where `{product}` is an extension's folder name under `extensions/` (`notico`) or `shared`:
 
 ```markdown
 # UC-CHAT-001: Ask the AI from the side panel
@@ -123,6 +131,7 @@ Key constraint:
 ## IDs
 
 - Use case: `UC-{DOMAIN}-{NNN}`. Domains: `ADMIN`, `AGENT`, `AUTH`, `CHAT`, `NOTION`, `PANEL`, `SESSION`.
+- IDs are unique across the repository, whatever the product, since tests are found by them. A new product's use cases get IDs of their own: what is about its site gets a domain of its own (`UC-CONFLUENCE-001`), and a use case it repeats from another product takes the next free number in that domain (another product's sign-in would be `UC-AUTH-002`, never a second `UC-AUTH-001`).
 - Scenario: `{UC ID}-S{NN}`.
 - Once merged, IDs are never renumbered and deleted IDs are not reused. A scenario keeps its ID only for wording changes; changed behavior gets a new ID.
 - Test names start with the ID: `it('[UC-CHAT-001-S01] signed-in user gets a streamed reply', ...)`. Several tests may cover one scenario.
