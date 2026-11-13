@@ -43,6 +43,7 @@ beforeEach(async () => {
     AI_GATEWAY_ID: 'gw-test',
     CLERK_JWT_KEY: clerk.publicKeyPem,
     CLERK_AUTHORIZED_PARTIES: `${EXT}, https://notion-copilot.example`,
+    PRODUCTS: { [EXT]: 'notico' },
   }
   token = await clerk.sessionToken({ userId: 'user_alice', azp: EXT })
 })
@@ -205,7 +206,7 @@ describe('worker API', () => {
           id: 'gw-test',
           collectLog: false,
           skipCache: true,
-          metadata: { app: 'notico', user: 'user_alice' },
+          metadata: { product: 'notico', user: 'user_alice' },
         },
       },
     })
@@ -361,6 +362,7 @@ describe('UC-CHAT-001 credits', () => {
       estimated: 0,
       micro_credits: 100 * 300 + 900 * 6 + 5 * 1200,
       owed: 0,
+      product: 'notico',
     }
     const start = Date.parse('2026-11-08T12:00:00Z')
     expect(db.rows('model_calls')).toEqual([
@@ -800,6 +802,65 @@ describe('error logs', () => {
     expect((await chat(undefined, { messages })).status).toBe(401)
     expect((await chat(token, { messages: [] })).status).toBe(400)
     expect(logged).toEqual([])
+  })
+})
+
+// Standalone tests for the product a model call is recorded under.
+describe('product of a model call', () => {
+  const OTHER = 'chrome-extension://ponmlkjihgfedcbaponmlkjihgfedcba'
+  const products = () => db.rows('model_calls').map((r) => r.product)
+  const usageProducts = () => usage.points.map((point) => point.blobs?.[4])
+
+  it('is the product listed for the origin the session token was issued to', async () => {
+    env.CLERK_AUTHORIZED_PARTIES += `, ${OTHER}`
+    env.PRODUCTS = { [EXT]: 'notico', [OTHER]: 'confluco' }
+    await chat(token)
+    await chat(await clerk.sessionToken({ userId: 'user_alice', azp: OTHER }))
+    expect(products()).toEqual(['notico', 'confluco'])
+    expect(usageProducts()).toEqual(['notico', 'confluco'])
+    expect(ai.calls.map((call) => call.options)).toMatchObject(
+      ['notico', 'confluco'].map((product) => ({ gateway: { metadata: { product } } })),
+    )
+  })
+
+  it('is never what the client says it is', async () => {
+    const res = await req('POST', '/v1/chat/completions?product=confluco', token, { messages: hi, product: 'confluco' })
+    expect(res.status).toBe(200)
+    expect(products()).toEqual(['notico'])
+    expect(ai.calls[0].inputs).not.toHaveProperty('product')
+  })
+
+  it('is unknown for an allowed caller that is no listed extension, or a token with no origin, and the call goes ahead', async () => {
+    const web = await clerk.sessionToken({ userId: 'user_alice', azp: 'https://notion-copilot.example' })
+    const native = await clerk.sessionToken({ userId: 'user_alice' })
+    expect((await chat(web)).status).toBe(200)
+    expect((await chat(native)).status).toBe(200)
+    expect(products()).toEqual(['unknown', 'unknown'])
+    expect(usageProducts()).toEqual(['unknown', 'unknown'])
+  })
+
+  it('is unknown for every caller when no products are configured', async () => {
+    delete env.PRODUCTS
+    expect((await chat(token)).status).toBe(200)
+    expect(products()).toEqual(['unknown'])
+  })
+
+  it('a products config that is not valid refuses the call before the model is asked, and says what is wrong', async () => {
+    for (const bad of [
+      'notico',
+      { [EXT]: 'Notico' },
+      { [EXT]: 'unknown' },
+      { 'https://notion-copilot.example': 'notico' },
+    ]) {
+      env.PRODUCTS = bad
+      const res = await chat(token)
+      expect(res.status).toBe(503)
+      const { error } = await json(res)
+      expect(error.code).toBe('not_configured')
+      expect(error.message).toMatch(/^PRODUCTS is invalid: /)
+    }
+    expect(ai.calls).toHaveLength(0)
+    expect(db.rows('model_calls')).toHaveLength(0)
   })
 })
 

@@ -12,6 +12,8 @@ export interface UsageDataset {
 export interface UsageRecord {
   /** Clerk user id (pseudonymous). */
   userId: string
+  /** The product the request came from: see `productOf` in app.ts. */
+  product: string
   model: string
   stream: boolean
   /** `ok`, `incomplete`, `cancelled`, `stream_error`, or the error code returned to the client. */
@@ -118,7 +120,8 @@ function deltaChars(value: unknown): number {
  * Writes one record. The column layout is what SQL queries rely on; append new columns, never reorder:
  *
  * - index1: user id
- * - blob1: model, blob2: outcome, blob3: finish reason, blob4: `stream` or `sync`
+ * - blob1: model, blob2: outcome, blob3: finish reason, blob4: `stream` or `sync`,
+ *   blob5: product (`notico`, another extension's name, or `unknown`)
  * - double1: messages, double2: input characters, double3: prompt tokens,
  *   double4: completion tokens, double5: duration in ms, double6: cached prompt tokens,
  *   double7: micro-credits charged
@@ -129,7 +132,7 @@ export function recordUsage(dataset: UsageDataset, r: UsageRecord): void {
   try {
     dataset.writeDataPoint({
       indexes: [r.userId],
-      blobs: [r.model, r.outcome, r.finishReason, r.stream ? 'stream' : 'sync'],
+      blobs: [r.model, r.outcome, r.finishReason, r.stream ? 'stream' : 'sync', r.product],
       doubles: [
         r.messages,
         r.inputChars,

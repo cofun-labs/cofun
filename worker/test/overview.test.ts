@@ -56,6 +56,7 @@ beforeEach(async () => {
     MODEL,
     CLERK_JWT_KEY: clerk.publicKeyPem,
     CLERK_AUTHORIZED_PARTIES: `${EXT}, ${WORKER}`,
+    PRODUCTS: { [EXT]: 'notico' },
   }
   admin = await clerk.sessionToken({ userId: 'user_root', azp: WORKER, claims: { role: 'admin' } })
 })
@@ -173,6 +174,7 @@ describe('UC-ADMIN-002 See granted and spent credits as a whole', () => {
         cachedTokens: 40,
         completionTokens: 25,
       },
+      products: [{ product: 'notico', spent: 3 * FAKE_COST + CACHED_COST, calls: 5 }],
       days: [
         { day: '2026-11-08', ...nov8 },
         { day: '2026-11-09', ...nov9 },
@@ -185,6 +187,40 @@ describe('UC-ADMIN-002 See granted and spent credits as a whole', () => {
       totals: nov9,
       days: [{ day: '2026-11-09', ...nov9 }],
     })
+  })
+
+  it('[UC-ADMIN-002-S10] an operator sees what each product spent, and what came from no known product', async () => {
+    const CONFLUCO = 'chrome-extension://ponmlkjihgfedcbaponmlkjihgfedcba'
+    env.CLERK_AUTHORIZED_PARTIES += `, ${CONFLUCO}`
+    env.PRODUCTS = { [EXT]: 'notico', [CONFLUCO]: 'confluco' }
+    const askFrom = async (name: string, azp?: string) => {
+      const bearer = await clerk.sessionToken({ userId: `user_${name}`, ...(azp ? { azp } : {}) })
+      const res = await req('POST', '/v1/chat/completions', bearer, { messages: [{ role: 'user', content: 'hi' }] })
+      expect(res.status).toBe(200)
+    }
+    // Alice uses both extensions, on two days.
+    await asks('alice')
+    await askFrom('alice', CONFLUCO)
+    await askFrom('bob', CONFLUCO)
+    // The same account, from the admin page and with a token that names no origin.
+    await askFrom('carol', WORKER)
+    await askFrom('carol')
+    later(DAY_MS)
+    await askFrom('alice', CONFLUCO)
+
+    // The one that spent the most first.
+    const { totals, products } = await overview('2026-11-08', '2026-11-09')
+    expect(products).toEqual([
+      { product: 'confluco', spent: 3 * FAKE_COST, calls: 3 },
+      { product: 'unknown', spent: 2 * FAKE_COST, calls: 2 },
+      { product: 'notico', spent: FAKE_COST, calls: 1 },
+    ])
+    // Every call counts under one product, so the products add up to the totals.
+    expect(products.reduce((sum: number, p: { spent: number }) => sum + p.spent, 0)).toBe(totals.spent)
+    expect(products.reduce((sum: number, p: { calls: number }) => sum + p.calls, 0)).toBe(totals.calls)
+
+    // A period with no calls has no products.
+    expect((await overview('2026-11-01', '2026-11-07')).products).toEqual([])
   })
 
   it('[UC-ADMIN-002-S09] a call the user stopped counts as a failed call, and as a cancelled one', async () => {
@@ -491,7 +527,7 @@ describe('admin overview API', () => {
     env.DB = recording
     await overview('2026-11-08', '2026-11-10', { utcOffset: 480 })
     await accounts('2026-11-08', '2026-11-10', { utcOffset: 480 })
-    expect(recording.queries).toHaveLength(3)
+    expect(recording.queries).toHaveLength(4)
 
     const plans = recording.queries.map((query) =>
       db.sqlite
@@ -503,9 +539,10 @@ describe('admin overview API', () => {
       // A scan of a CTE's own result is fine; a scan of a table is not.
       expect(plan.filter((step) => /^SCAN (grants|model_calls)\b/.test(step))).toEqual([])
     }
-    const [granted, calls, listed] = plans
+    const [granted, calls, byProduct, listed] = plans
     expect(granted).toContain('SEARCH grants USING INDEX grants_by_time (granted_at>? AND granted_at<?)')
     expect(calls).toContain('SEARCH model_calls USING INDEX model_calls_by_time (started_at>? AND started_at<?)')
+    expect(byProduct).toContain('SEARCH model_calls USING INDEX model_calls_by_time (started_at>? AND started_at<?)')
     expect(listed).toContain('SEARCH grants USING INDEX grants_by_time (granted_at>? AND granted_at<?)')
     expect(listed).toContain('SEARCH model_calls USING INDEX model_calls_by_time (started_at>? AND started_at<?)')
     // Every other read of the tables is one account's balance, through an index that starts with the user.
