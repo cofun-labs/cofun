@@ -192,6 +192,8 @@ export async function verifiedEvent(
 export const StripeEvent = z.object({
   id: z.string(),
   type: z.string(),
+  /** When Stripe made the event, in seconds: the same on every delivery of it. */
+  created: z.int(),
   data: z.object({ object: z.unknown() }),
 })
 

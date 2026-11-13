@@ -464,6 +464,18 @@ describe('UC-BILLING-001 buy credits: the webhook', () => {
     expect((await credits(alice)).grants).toEqual([])
   })
 
+  it('stops asking for a refund of a credit payment that never made a grant to be sent again, after an hour', async () => {
+    await checkout(alice, 5000)
+    stripe.paidFor.set('cs_test_1', [{ price: 'price_other', quantity: 5 }])
+    await answer(deliver(stripe.sessionEvent()))
+    const refund = refunded('pi_for_cs_test_1')
+
+    await answer(deliver(refund), 409)
+    clock = new Date(START + 2 * 60 * 60 * 1000)
+    expect(await answer(deliver(refund))).toMatchObject({ done: 'ignored' })
+    expect(billingLog.at(-1)).toBe('refund for payment=pi_for_cs_test_1, which never made a grant')
+  })
+
   it('a refund or dispute of a payment that was not for credits is acknowledged, and takes nothing', async () => {
     await buy(alice, 5000)
     for (const evt of [refunded('pi_from_the_dashboard'), disputed('pi_from_the_dashboard')]) {

@@ -80,9 +80,13 @@ export class FakeStripe implements StripeApi {
 
 let events = 0
 
-/** An event as Stripe sends it, about `object`. */
-export function event(type: string, object: Record<string, unknown>): Record<string, unknown> {
-  return { id: `evt_test_${++events}`, object: 'event', type, livemode: false, data: { object } }
+/** When the tests' events were made by default: when every test's clock starts. */
+const MADE_AT = Date.parse('2026-11-08T12:00:00Z')
+
+/** An event as Stripe sends it, about `object`, made at `at` (ms). */
+export function event(type: string, object: Record<string, unknown>, at = MADE_AT): Record<string, unknown> {
+  const created = Math.floor(at / 1000)
+  return { id: `evt_test_${++events}`, object: 'event', type, created, livemode: false, data: { object } }
 }
 
 /** `charge.refunded` for the payment `payment`. */

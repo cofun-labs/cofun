@@ -9,6 +9,13 @@ import { AboutPayment, CheckoutSession, META_QUANTITY, META_USER, StripeEvent, t
 /** The credits one unit of the credit price buys: its price, one US dollar, at 1000 credits a dollar. */
 export const CREDITS_PER_UNIT = 1000
 
+/**
+ * How long a refund or dispute of a credit payment with no grant is sent again for. The payment's own
+ * event arrives within minutes; past this the payment will never have a grant (its session was
+ * ignored, say for a wrong price), and retrying would only fail for days.
+ */
+const RETRY_FOR_MS = 60 * 60 * 1000
+
 /** The largest quantity a pack may be: a typo in the configuration must not put a fortune on sale. */
 const MAX_QUANTITY = 1000
 
@@ -138,7 +145,10 @@ export async function handleEvent(
         // to take back, and is acknowledged, or Stripe would retry it for days and could turn the
         // endpoint off.
         if (await stripe.isCreditPayment(payment)) {
-          return { done: 'retry', log: `${why} for payment=${payment}, which made no grant yet` }
+          if (now - event.created * 1000 <= RETRY_FOR_MS) {
+            return { done: 'retry', log: `${why} for payment=${payment}, which made no grant yet` }
+          }
+          return { done: 'ignored', log: `${why} for payment=${payment}, which never made a grant` }
         }
         return { done: 'ignored', log: `${why} for payment=${payment}, which was not for credits` }
       }
