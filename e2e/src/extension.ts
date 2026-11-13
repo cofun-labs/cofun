@@ -7,7 +7,7 @@ import { isAbsolute, join } from 'node:path'
 import { type Browser, type Target, sleep, until } from './cdp'
 
 /** The extension's id, fixed by the public key in the manifest. */
-export const EXTENSION_ID = 'fafkdcopddmegenpemnmjbnolhlbbfpf'
+export const EXTENSION_ID = 'moblfnjjebknafkgoifncombfnbfghom'
 export const EXTENSION_NAME = 'Notico: AI copilot for Notion'
 
 export interface ExtensionStatus {

@@ -193,10 +193,10 @@ In `chrome://extensions`, turn on Developer mode, click "Load unpacked", and pic
 | `VITE_CLERK_PUBLISHABLE_KEY` | Clerk publishable key, of the same instance as the worker's. It names the Frontend API host, which the manifest allows |
 | `VITE_CLERK_SYNC_HOST` | URL of the sign-in page (the worker's domain). With a development instance's key (`pk_test_…`) Clerk syncs the session from this host; with a production instance's key (`pk_live_…`) it syncs from the Frontend API host instead |
 | `VITE_API_URL` | Worker base URL, including `/v1` |
-| `CRX_PUBLIC_KEY` | Extension signing public key; pins the extension ID. The [store build](#releases) leaves it out |
+| `CRX_PUBLIC_KEY` | Extension public key; pins the extension ID. The committed one is the Chrome Web Store's, so a development build has the store's ID. The [store build](#releases) leaves it out |
 | `CLERK_COOKIE_DOMAIN` | Optional. The registrable domain Clerk sets its cookies on, e.g. `example.co.uk`. Defaults to the last two labels of the sign-in page's host |
 
-Generate your own signing key and extension ID:
+To run the extension against your own deployment under an ID of your own, generate a signing key and set its public half as `CRX_PUBLIC_KEY`:
 
 ```bash
 mkdir -p extensions/notico/keys
@@ -241,4 +241,4 @@ The store build is the normal build with two variables set, which you can also s
 CRX_STORE_BUILD=1 EXTENSION_VERSION=0.2.0 pnpm --filter ./extensions/notico build
 ```
 
-Uploading to the store is not automated yet ([#28](https://github.com/cofun-labs/cofun/issues/28)). The first version of an extension is uploaded by hand in the Chrome Web Store Developer Dashboard, from the draft release's zip, where its store listing and privacy fields are filled in too: the store's API can't create an item. The store assigns the extension its ID at that first upload, so the ID changes from the one our `CRX_PUBLIC_KEY` gives to the store's, and everything that names the ID moves to it (#28 lists where).
+Uploading to the store is not automated yet ([#28](https://github.com/cofun-labs/cofun/issues/28)). The first version of an extension is uploaded by hand in the Chrome Web Store Developer Dashboard, from the draft release's zip, where its store listing and privacy fields are filled in too: the store's API can't create an item. The store assigns the extension its ID at that first upload. Its public key (Package tab → View public key) then becomes the extension's `CRX_PUBLIC_KEY`, so development builds load under the same ID, and that ID goes into the worker's `CLERK_AUTHORIZED_PARTIES` and `PRODUCTS`, the Clerk instance's `allowed_origins`, and `EXTENSION_ID` in `e2e/src/extension.ts`.
