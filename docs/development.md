@@ -193,7 +193,7 @@ In `chrome://extensions`, turn on Developer mode, click "Load unpacked", and pic
 | `VITE_CLERK_PUBLISHABLE_KEY` | Clerk publishable key, of the same instance as the worker's. It names the Frontend API host, which the manifest allows |
 | `VITE_CLERK_SYNC_HOST` | URL of the sign-in page (the worker's domain). With a development instance's key (`pk_test_…`) Clerk syncs the session from this host; with a production instance's key (`pk_live_…`) it syncs from the Frontend API host instead |
 | `VITE_API_URL` | Worker base URL, including `/v1` |
-| `CRX_PUBLIC_KEY` | Extension signing public key; pins the extension ID |
+| `CRX_PUBLIC_KEY` | Extension signing public key; pins the extension ID. The [store build](#releases) leaves it out |
 | `CLERK_COOKIE_DOMAIN` | Optional. The registrable domain Clerk sets its cookies on, e.g. `example.co.uk`. Defaults to the last two labels of the sign-in page's host |
 
 Generate your own signing key and extension ID:
@@ -217,4 +217,28 @@ A production instance also needs:
 
 ### Another extension
 
-An extension of its own goes through the same steps, in its own folder: its own signing key and extension ID, its `.env`, and its origin (`chrome-extension://<extension id>`) added to the worker's `CLERK_AUTHORIZED_PARTIES` and `PRODUCTS`, and to the Clerk instance's `allowed_origins`.
+An extension of its own goes through the same steps, in its own folder: its own signing key and extension ID, its `.env`, and its origin (`chrome-extension://<extension id>`) added to the worker's `CLERK_AUTHORIZED_PARTIES` and `PRODUCTS`, and to the Clerk instance's `allowed_origins`. To release it, add its folder name to the `extension` choices in [`release.yml`](../.github/workflows/release.yml), once the smoke test covers it.
+
+## Releases
+
+An extension is released from `main` by the [Release workflow](../.github/workflows/release.yml), run by hand: Actions → Release → Run workflow, on `main`, with the extension and the version. Or:
+
+```bash
+gh workflow run release.yml --ref main -f extension=notico -f version=0.2.0
+```
+
+The version goes into the manifest and is not committed: `package.json` keeps its development version, and the tags record what was released. It must be 1 to 4 dot-separated integers from 0 to 65535, without leading zeros, and higher than the version last uploaded to the store, which rejects any other.
+
+The workflow needs no secrets. It checks out `main`, runs `pnpm check`, builds the extension for the store, runs the smoke test against that build, and zips `extensions/<name>/dist`. Then it tags the commit `<name>-v<version>` (for example `notico-v0.2.0`) and creates a **draft** GitHub Release with the zip (`<name>-<version>.zip`) attached; the zip is also kept as the run's artifact. A tag that exists already stops the run, so each version is built once. To throw a run's result away, delete the draft release and its tag:
+
+```bash
+gh release delete notico-v0.2.0 --cleanup-tag
+```
+
+The store build is the normal build with two variables set, which you can also set by hand to look at one: `EXTENSION_VERSION` replaces the version, and `CRX_STORE_BUILD=1` leaves `key` out of the manifest. The Chrome Web Store signs the item with a key of its own, which sets its ID.
+
+```bash
+CRX_STORE_BUILD=1 EXTENSION_VERSION=0.2.0 pnpm --filter ./extensions/notico build
+```
+
+Uploading to the store is not automated yet ([#28](https://github.com/cofun-labs/cofun/issues/28)). The first version of an extension is uploaded by hand in the Chrome Web Store Developer Dashboard, from the draft release's zip, where its store listing and privacy fields are filled in too: the store's API can't create an item. The store assigns the extension its ID at that first upload, so the ID changes from the one our `CRX_PUBLIC_KEY` gives to the store's, and everything that names the ID moves to it (#28 lists where).

@@ -63,15 +63,18 @@ function contentSecurityPolicy(env: ManifestEnv): string {
   ].join('; ')
 }
 
-/** The manifest for the given env and package version. */
-export function buildManifest(env: ManifestEnv, version: string) {
+/**
+ * The manifest for the given env and version. The store build (`store: true`, for the Chrome Web
+ * Store) leaves out `key`: the store signs the item with a key of its own, which sets its ID.
+ */
+export function buildManifest(env: ManifestEnv, version: string, { store = false }: { store?: boolean } = {}) {
   const clerkHost = clerkFrontendApi(env.VITE_CLERK_PUBLISHABLE_KEY ?? '')
   return {
     manifest_version: 3,
     name: 'Notico: AI copilot for Notion',
     version,
     description: 'An AI side panel that reads and edits your Notion pages with you.',
-    ...(env.CRX_PUBLIC_KEY ? { key: env.CRX_PUBLIC_KEY } : {}),
+    ...(env.CRX_PUBLIC_KEY && !store ? { key: env.CRX_PUBLIC_KEY } : {}),
     icons: ICONS,
     // scripting: Notion calls run in the user's Notion tab (src/notion/tab.ts).
     // tabs: the side panel reads the current tab's URL and title, to tell a Notion tab from others
