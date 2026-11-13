@@ -6,7 +6,7 @@ A signed-in user can have the AI answered by a model of their own choice, throug
 
 The hosted model stays the default, so nothing needs setting up. From the settings page the user enters their OpenRouter key and picks a model: a few recommended ones come first, and any other that can use tools can be found by name, each shown with its price. They can check that the key and the model work, and that the model can use tools, before they ask anything. The settings page always says which model answers.
 
-The user can switch between the hosted model and their own, or to another model on OpenRouter, at any time. The next question goes to the model chosen then, and the conversation goes on: it gets everything said and done so far. A question already running ends with the model it started with.
+The chat always shows which model answers, and the user can switch it there, between the hosted model and their own models, without leaving the chat; other models on OpenRouter are on the settings page. The user can switch at any time. The next question goes to the model chosen then, and the conversation goes on: it gets everything said and done so far. A question already running ends with the model it started with.
 
 The choice and the key are kept on this device for the account that set them up: another account signed in on the same browser does not see or use them, and they are still there the next time the user opens the side panel. The user can remove their key, and the hosted model answers again.
 
@@ -29,6 +29,7 @@ Key constraints:
 | UC-AGENT-002-S06 | P1 | ✅ | Given a user who set up their own model; when they open the side panel again later; then their own model still answers. |
 | UC-AGENT-002-S07 | P1 | ✅ | Given a user setting up OpenRouter; when they look for a model by name; then they see only models that can use tools, each with its price, and can pick one. |
 | UC-AGENT-002-S08 | P2 | ✅ | Given a user with a key and a model picked; when they check them; then they are told whether the model answered and whether it can use tools. |
+| UC-AGENT-002-S10 | P1 | ✅ | Given a user with their own model set up; when they switch to another model from the chat and ask a follow-up; then that model answers it with the conversation so far, without the user leaving the chat. |
 
 ### ai-e2e
 

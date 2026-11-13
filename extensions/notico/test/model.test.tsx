@@ -231,3 +231,84 @@ describe('choosing the model', () => {
     expect(browser.openRouter.requests).toEqual([{ path: '/api/v1/models', key: undefined }])
   })
 })
+
+describe('switching the model from the chat', () => {
+  const chip = (name: string) => screen.getByRole('button', { name: `Model: ${name}` })
+
+  it('[UC-AGENT-002-S10] a follow-up goes to the model picked from the chat, with the conversation so far', async () => {
+    const { browser, user } = await openPanel()
+    await setUpOpenRouter(browser, user)
+    browser.openRouter.ai.script.push({ reply: 'From Sol.' }, { reply: 'From Sonnet.' })
+    await ask(user, 'First question')
+    await screen.findByText('From Sol.')
+    await answered()
+
+    await user.click(chip('GPT-6.1 Sol'))
+    const menu = screen.getByRole('menu', { name: 'Model' })
+    expect(within(menu).getByRole('menuitemradio', { name: /^GPT-6.1 Sol/ })).toHaveAttribute('aria-checked', 'true')
+    await user.click(
+      await within(menu).findByRole('menuitemradio', { name: /^Claude Sonnet 5.5 Strong with tools · \$2 \/ \$10/ }),
+    )
+
+    // Still in the chat, now showing the new model.
+    expect(screen.queryByRole('menu', { name: 'Model' })).not.toBeInTheDocument()
+    expect(chip('Claude Sonnet 5.5')).toHaveFocus()
+    await ask(user, 'A follow-up')
+    expect(await screen.findByText('From Sonnet.')).toBeVisible()
+
+    const last = browser.openRouter.calls.at(-1)!
+    expect(last.model).toBe('anthropic/claude-sonnet-5.5')
+    expect(JSON.stringify(last.messages)).toContain('From Sol.')
+    expect(browser.ai.calls).toEqual([])
+  })
+
+  it('the hosted model can be picked from the chat, and the own model again after it', async () => {
+    const { browser, user } = await openPanel()
+    await setUpOpenRouter(browser, user)
+
+    await user.click(chip('GPT-6.1 Sol'))
+    await user.click(screen.getByRole('menuitemradio', { name: /^Notico \(hosted\)/ }))
+    await ask(user, 'Hello?')
+    expect(await screen.findByText(/Hello from Workers AI/)).toBeVisible()
+    await answered()
+    expect(browser.openRouter.calls).toEqual([])
+
+    // The key is kept: the own model is one pick away.
+    await user.click(chip('Notico (hosted)'))
+    await user.click(await screen.findByRole('menuitemradio', { name: /^GPT-6.1 Sol/ }))
+    expect(chip('GPT-6.1 Sol')).toBeVisible()
+  })
+
+  it('without a key, the menu offers the hosted model and leads to the settings page, contacting no one', async () => {
+    const { browser, user } = await openPanel()
+    await user.click(chip('Notico (hosted)'))
+    const menu = screen.getByRole('menu', { name: 'Model' })
+    expect(
+      within(menu)
+        .getAllByRole('menuitemradio')
+        .map((item) => item.textContent),
+    ).toEqual(['Notico (hosted) Spends credits'])
+    expect(browser.openRouter.requests).toEqual([])
+
+    await user.click(within(menu).getByRole('menuitem', { name: 'Set up your own model…' }))
+    expect(await screen.findByRole('heading', { name: 'Settings' })).toBeVisible()
+    expect(screen.getByRole('region', { name: 'Model' })).toBeVisible()
+  })
+
+  it('works from the keyboard: the arrows move through it, and Escape closes it on the button', async () => {
+    const { browser, user } = await openPanel()
+    await setUpOpenRouter(browser, user)
+
+    await user.click(chip('GPT-6.1 Sol'))
+    // The recommended models, in their order, once OpenRouter's list is in.
+    await screen.findByRole('menuitemradio', { name: /^Claude Sonnet 5.5/ })
+    expect(screen.getByRole('menuitemradio', { name: /^Notico \(hosted\)/ })).toHaveFocus()
+    await user.keyboard('{ArrowDown}')
+    expect(screen.getByRole('menuitemradio', { name: /^Claude Sonnet 5.5/ })).toHaveFocus()
+    await user.keyboard('{End}')
+    expect(screen.getByRole('menuitem', { name: 'More models…' })).toHaveFocus()
+    await user.keyboard('{Escape}')
+    expect(screen.queryByRole('menu', { name: 'Model' })).not.toBeInTheDocument()
+    expect(chip('GPT-6.1 Sol')).toHaveFocus()
+  })
+})

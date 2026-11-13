@@ -10,6 +10,7 @@ import { AccountMenu } from './Account'
 import { Header } from './Header'
 import { Icon, Mark } from './icons'
 import { Markdown } from './Markdown'
+import { ModelMenu } from './Model'
 import { Sessions } from './Sessions'
 import { Settings } from './Settings'
 import { ToolCall, type ShownTool } from './ToolCall'
@@ -567,6 +568,11 @@ export function Chat({ userId }: { userId: string }) {
             ),
           )}
         </main>
+
+        {/* Which model answers, and a switch to another: the next question goes to it. */}
+        <div className="composer-bar" inert={covered}>
+          <ModelMenu settings={model} onChange={changeModel} onMore={openSettings} />
+        </div>
 
         <form id="composer" onSubmit={onSubmit} inert={covered}>
           <textarea

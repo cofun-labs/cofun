@@ -24,6 +24,7 @@ const SHAPES = {
   ),
   send: <path d="M8 13V3.5M4 7l4-4 4 4" />,
   back: <path d="M9.5 3.5L5 8l4.5 4.5" />,
+  chevron: <path d="M4.5 10l3.5-3.5 3.5 3.5" />,
   close: <path d="M4.5 4.5l7 7M11.5 4.5l-7 7" />,
   search: (
     <>
