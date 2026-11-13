@@ -225,7 +225,7 @@ export interface ModelCall {
 /** What a user owes, as SQL. `user` is the SQL that names the user: a parameter, or a column of an outer query. */
 const debtOf = (user: string) =>
   `((SELECT coalesce(sum(owed), 0) FROM model_calls WHERE user_id = ${user} AND owed > 0)
-  - (SELECT coalesce(sum(repaid), 0) FROM grants WHERE user_id = ${user}))`
+  - (SELECT coalesce(sum(repaid), 0) FROM grants WHERE user_id = ${user} AND revoked IS NULL))`
 
 /**
  * What a user can spend at the time `now`, as SQL: what is left of the grants that still count,
@@ -268,7 +268,9 @@ FROM (SELECT ${DEBT} AS debt) WHERE true
 ON CONFLICT (payment) DO NOTHING`
 
 /**
- * Takes back what is left of the purchase made with the payment ?1, for the reason ?3: it ends at
+ * Takes back what is left of the purchase made with the payment ?1, for the reason ?3. What it paid
+ * back of the user's debt is owed again: a grant taken back no longer counts in what grants repaid
+ * (see `debtOf`), since the money that paid it was returned. It ends at
  * the time ?2 (never at or before the moment it was granted, which the table does not allow), and
  * `left` stays as the record of what was taken back. One that expired already only records why.
  * A purchase taken back once is not taken back again, so a second report changes nothing and the

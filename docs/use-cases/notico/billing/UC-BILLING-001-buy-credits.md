@@ -4,7 +4,7 @@
 
 A user who wants more than the free credits of each week (see UC-CHAT-001) buys a pack of credits, once: nothing renews, and there is no subscription. From the settings page in the side panel they pick one of the packs on offer, priced in US dollars at a thousand credits a dollar, and pay on the payment provider's own page, which opens in a new tab. Once the payment goes through, the pack's credits are added to their account; the side panel shows them when the user comes back to it, without signing in again.
 
-Purchased credits last one year from the purchase. They sit beside the weekly free credits, which every user keeps getting, buyers included, and follow the same rules as any credits: the ones that expire first are spent first (so free credits go before purchased ones), and what the account overspent is taken out of them first. A purchase that is refunded or disputed loses what is left of its credits; what was already spent stays spent.
+Purchased credits last one year from the purchase. They sit beside the weekly free credits, which every user keeps getting, buyers included, and follow the same rules as any credits: the ones that expire first are spent first (so free credits go before purchased ones), and what the account overspent is taken out of them first. A purchase that is refunded or disputed loses what is left of its credits; what was already spent stays spent, and what it paid back of an overspend is owed again.
 
 Key constraints:
 
@@ -32,6 +32,7 @@ Key constraints:
 | UC-BILLING-001-S11 | P1 | ✅ | Given a user who bought credits; when they look at their credits and their history; then the purchase shows as such, with the day it expires, and a refunded purchase shows what was taken back. |
 | UC-BILLING-001-S12 | P1 | ✅ | Given a user with no credits left; when a question of theirs is refused; then the refusal offers to buy credits beside saying when the free ones return. |
 | UC-BILLING-001-S13 | P1 | ✅ | Given a payment for something other than the pack its checkout was made for; when it goes through; then no credits are added. |
+| UC-BILLING-001-S14 | P1 | ✅ | Given a user whose purchase paid back what they had overspent; when the purchase is refunded or disputed; then they owe that again. |
 
 ### ai-e2e
 

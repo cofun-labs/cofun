@@ -37,6 +37,11 @@ export interface StripeApi {
   createCheckout(request: CheckoutRequest): Promise<{ url: string }>
   /** What a Checkout Session sells: its line items. Events about a session do not carry them. */
   lineItems(sessionId: string): Promise<LineItem[]>
+  /**
+   * Whether the payment `paymentIntent` was made through a Checkout Session the worker made for
+   * credits: one whose metadata names a user. Refunds and disputes name only the payment.
+   */
+  isCreditPayment(paymentIntent: string): Promise<boolean>
 }
 
 /**
@@ -60,6 +65,9 @@ const LineItems = z.object({
       .transform((item): LineItem => ({ price: item.price.id, quantity: item.quantity })),
   ),
   has_more: z.boolean(),
+})
+const SessionsOfPayment = z.object({
+  data: z.array(z.object({ metadata: z.record(z.string(), z.string()).nullable() })),
 })
 const StripeError = z.object({ error: z.object({ message: z.string() }) })
 
@@ -113,6 +121,13 @@ export function stripeOverHttp(secretKey: string, send: Send = (url, init) => fe
       // The worker makes sessions of one line item; more than a page of them is not one of its sessions.
       if (items.data.has_more) throw new Error(`checkout session ${sessionId} has more than 100 line items`)
       return items.data.data
+    },
+
+    async isCreditPayment(paymentIntent) {
+      const url = `https://api.stripe.com/v1/checkout/sessions?payment_intent=${encodeURIComponent(paymentIntent)}&limit=1`
+      const sessions = SessionsOfPayment.safeParse(await answer(await send(url, { method: 'GET', headers })))
+      if (!sessions.success) throw new Error('Stripe answered Checkout Sessions the worker does not understand')
+      return sessions.data.data.some((session) => session.metadata?.[META_USER] !== undefined)
     },
   }
 }

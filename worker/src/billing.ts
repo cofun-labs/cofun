@@ -133,7 +133,14 @@ export async function handleEvent(
       const payment = AboutPayment.parse(event.data.object).payment_intent
       if (!payment) return { done: 'ignored' }
       if (!(await takeBack(db, now, payment, why))) {
-        return { done: 'retry', log: `${why} for payment=${payment}, which made no grant` }
+        // No grant to take back. A payment for credits whose own event has not been handled yet is
+        // sent again later; any other payment (not made through the worker's Checkout) has nothing
+        // to take back, and is acknowledged, or Stripe would retry it for days and could turn the
+        // endpoint off.
+        if (await stripe.isCreditPayment(payment)) {
+          return { done: 'retry', log: `${why} for payment=${payment}, which made no grant yet` }
+        }
+        return { done: 'ignored', log: `${why} for payment=${payment}, which was not for credits` }
       }
       return { done: 'taken back', log: `purchase taken back: payment=${payment} reason=${why}` }
     }

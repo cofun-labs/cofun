@@ -455,13 +455,42 @@ describe('UC-BILLING-001 buy credits: the webhook', () => {
     await checkout(alice, 5000)
     const { error } = await answer(deliver(refunded('pi_for_cs_test_1')), 409)
     expect(error.code).toBe('not_yet')
-    expect(billingLog).toEqual(['refund for payment=pi_for_cs_test_1, which made no grant'])
+    expect(billingLog).toEqual(['refund for payment=pi_for_cs_test_1, which made no grant yet'])
 
     // The payment's own event arrives, then Stripe sends the refund again.
     await answer(deliver(stripe.sessionEvent()))
     clock = new Date(START + 60_000)
     await answer(deliver(refunded('pi_for_cs_test_1')))
     expect((await credits(alice)).grants).toEqual([])
+  })
+
+  it('a refund or dispute of a payment that was not for credits is acknowledged, and takes nothing', async () => {
+    await buy(alice, 5000)
+    for (const evt of [refunded('pi_from_the_dashboard'), disputed('pi_from_the_dashboard')]) {
+      expect(await answer(deliver(evt))).toMatchObject({ done: 'ignored' })
+    }
+    expect(billingLog.slice(1)).toEqual([
+      'refund for payment=pi_from_the_dashboard, which was not for credits',
+      'dispute for payment=pi_from_the_dashboard, which was not for credits',
+    ])
+    expect((await credits(alice)).balance).toBe(5200 * CREDIT)
+  })
+
+  it('[UC-BILLING-001-S14] what a purchase paid back of an overspend is owed again when the purchase is taken back', async () => {
+    // 10 credits overspent, which the purchase pays back first.
+    await ask(alice, 210)
+    await buy(alice, 5000)
+    expect((await credits(alice)).balance).toBe(4990 * CREDIT)
+
+    clock = new Date(START + DAY_MS)
+    await answer(deliver(disputed('pi_for_cs_test_1')))
+
+    expect((await credits(alice)).balance).toBe(-10 * CREDIT)
+    const account = await answer(req('GET', '/v1/admin/accounts/user_alice', admin))
+    expect(account.debt).toBe(10 * CREDIT)
+    // The next grant pays it back, like any debt.
+    await answer(req('POST', '/v1/admin/accounts/user_alice/grants', admin, { credits: 100, days: 30 }))
+    expect((await credits(alice)).balance).toBe(90 * CREDIT)
   })
 
   it('a purchase taken back the moment it was granted ends the millisecond after it began', async () => {
@@ -654,6 +683,16 @@ describe('Stripe over HTTP', () => {
       method: 'GET',
       headers: { authorization: 'Bearer sk_test_key', 'stripe-version': '2025-03-31.basil' },
     })
+  })
+
+  it('tells a payment made through a Checkout Session for credits from any other', async () => {
+    const ours = fakeSend(200, { object: 'list', data: [{ id: 'cs_1', metadata: { cofun_user_id: 'user_alice' } }] })
+    expect(await stripeOverHttp('sk_test_key', ours.send).isCreditPayment('pi_1')).toBe(true)
+    expect(ours.sent[0].url).toBe('https://api.stripe.com/v1/checkout/sessions?payment_intent=pi_1&limit=1')
+    const other = fakeSend(200, { object: 'list', data: [{ id: 'cs_2', metadata: {} }] })
+    expect(await stripeOverHttp('sk', other.send).isCreditPayment('pi_2')).toBe(false)
+    const none = fakeSend(200, { object: 'list', data: [] })
+    expect(await stripeOverHttp('sk', none.send).isCreditPayment('pi_3')).toBe(false)
   })
 
   it('fails with what Stripe said, and on an answer it does not expect', async () => {
