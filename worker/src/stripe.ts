@@ -4,9 +4,10 @@
 import * as z from './zod'
 
 /**
- * The API version requests are made with. Managed Payments needs 2025-03-31.basil or later; the
- * webhook endpoint is set up with the same version (docs/development.md), so events have the shapes
- * parsed below. The fields read here are the same in every later version.
+ * The API version requests are made with. Managed Payments needs 2025-03-31.basil or later. The
+ * webhook endpoint is set up with a later version of the same basil release, 2025-08-27.basil (the
+ * Dashboard no longer offers this one; docs/development.md), so events have the shapes parsed
+ * below: the fields read here are the same in every basil version.
  */
 const STRIPE_API_VERSION = '2025-03-31.basil'
 

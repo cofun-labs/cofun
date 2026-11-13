@@ -2,7 +2,7 @@
 
 ## Behavior
 
-A user who wants more than the free credits of each week (see UC-CHAT-001) buys a pack of credits, once: nothing renews, and there is no subscription. From the settings page in the side panel they pick one of the packs on offer, priced in US dollars at a thousand credits a dollar, and pay on the payment provider's own page, which opens in a new tab. Once the payment goes through, the pack's credits are added to their account; the side panel shows them when the user comes back to it, without signing in again.
+A user who wants more than the free credits of each week (see UC-CHAT-001) buys a pack of credits, once: nothing renews, and there is no subscription. Credits pay only for questions the hosted model answers; a question answered by the user's own model spends none (UC-AGENT-002). From the settings page in the side panel they pick one of the packs on offer, priced in US dollars at a thousand credits a dollar, and pay on the payment provider's own page, which opens in a new tab. Once the payment goes through, the pack's credits are added to their account; the side panel shows them when the user comes back to it, without signing in again.
 
 Purchased credits last one year from the purchase. They sit beside the weekly free credits, which every user keeps getting, buyers included, and follow the same rules as any credits: the ones that expire first are spent first (so free credits go before purchased ones), and what the account overspent is taken out of them first. A purchase that is refunded or disputed loses what is left of its credits; what was already spent stays spent, and what it paid back of an overspend is owed again.
 

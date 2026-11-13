@@ -248,7 +248,8 @@ function BuyCredits({ buying }: { buying: Buying }) {
       {packs.status === 'ready' && (
         <>
           <p className="account-detail">
-            A one-time purchase, not a subscription. Credits last one year and are spent after your free credits. Prices
+            Credits pay for Notico's own model; questions answered by your own model on OpenRouter spend none. A
+            one-time purchase, not a subscription. Credits last one year and are spent after your free credits. Prices
             are in US dollars; tax may be added at checkout.
           </p>
           <ul className="packs" aria-label="Packs of credits">
