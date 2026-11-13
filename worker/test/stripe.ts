@@ -71,7 +71,7 @@ export class FakeStripe implements StripeApi {
       client_reference_id: session.userId,
       currency: options.currency ?? 'usd',
       amount_total: options.amountTotal ?? session.quantity * 100,
-      metadata: { cofun_user_id: session.userId, cofun_quantity: String(session.quantity) },
+      metadata: { cofun_user_id: session.userId, cofun_quantity: String(session.quantity), cofun_price: session.price },
       success_url: session.successUrl,
       cancel_url: session.cancelUrl,
     })

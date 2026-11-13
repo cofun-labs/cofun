@@ -45,12 +45,13 @@ export interface StripeApi {
 }
 
 /**
- * Where a Checkout Session records whom it is for and what quantity it sells. Metadata is written
+ * Where a Checkout Session records whom it is for and what it sells: the quantity of which price. Metadata is written
  * only by the worker, with its secret key, and comes back in events Stripe signs, so the webhook can
  * trust it.
  */
 export const META_USER = 'cofun_user_id'
 export const META_QUANTITY = 'cofun_quantity'
+export const META_PRICE = 'cofun_price'
 
 /** The form body of a request to Stripe's API: nested parameters written `a[b][c]=…`. */
 function form(params: Record<string, string>): string {
@@ -103,6 +104,7 @@ export function stripeOverHttp(secretKey: string, send: Send = (url, init) => fe
           client_reference_id: userId,
           [`metadata[${META_USER}]`]: userId,
           [`metadata[${META_QUANTITY}]`]: String(quantity),
+          [`metadata[${META_PRICE}]`]: price,
           // Checkout names the product and its quantity ("1,000 Credits × 10"); this says what that gives.
           'custom_text[submit][message]': `You get ${credits.toLocaleString('en')} credits for Cofun, valid for one year.`,
           success_url: successUrl,

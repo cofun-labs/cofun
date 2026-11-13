@@ -4,7 +4,15 @@
 // year; a refund or a dispute takes back what is left of it. The routes are in app.ts.
 import * as z from './zod'
 import { Ledger, MICRO_CREDITS, takeBack, type Database } from './credits'
-import { AboutPayment, CheckoutSession, META_QUANTITY, META_USER, StripeEvent, type StripeApi } from './stripe'
+import {
+  AboutPayment,
+  CheckoutSession,
+  META_PRICE,
+  META_QUANTITY,
+  META_USER,
+  StripeEvent,
+  type StripeApi,
+} from './stripe'
 
 /** The credits one unit of the credit price buys: its price, one US dollar, at 1000 credits a dollar. */
 export const CREDITS_PER_UNIT = 1000
@@ -56,9 +64,13 @@ function purchaseExpiry(now: number): number {
   return at.getTime()
 }
 
-/** Whom a Checkout Session is for and what quantity it sells, as the worker wrote it when it made the session. */
+/**
+ * Whom a Checkout Session is for and what it sells (a quantity of the credit price it was made with),
+ * as the worker wrote it when it made the session.
+ */
 const Granting = z.object({
   [META_USER]: z.string().regex(/^user_[A-Za-z0-9]{1,64}$/),
+  [META_PRICE]: CreditPrice,
   [META_QUANTITY]: z
     .string()
     .regex(/^\d{1,4}$/)
@@ -77,15 +89,9 @@ export type Handled =
  * each step is safe to repeat: a payment grants once, and a purchase is taken back once. A refund or
  * a dispute can only follow a payment, but its event can arrive first; then it is answered with
  * `retry`, so Stripe sends it again once the payment's own event has been handled. Events the worker
- * does not act on are acknowledged and ignored. `price` is the credit price on sale.
+ * does not act on are acknowledged and ignored.
  */
-export async function handleEvent(
-  db: Database,
-  stripe: StripeApi,
-  price: string,
-  now: number,
-  payload: unknown,
-): Promise<Handled> {
+export async function handleEvent(db: Database, stripe: StripeApi, now: number, payload: unknown): Promise<Handled> {
   const event = StripeEvent.parse(payload)
   switch (event.type) {
     // A payment that went through at once, or one that completes later: Checkout says `unpaid` at
@@ -100,6 +106,7 @@ export async function handleEvent(
       if (!granting.success) return { done: 'ignored', log: `checkout session ${session.id} grants nothing` }
       const userId = granting.data[META_USER]
       const quantity = granting.data[META_QUANTITY]
+      const price = granting.data[META_PRICE]
       if (session.client_reference_id !== userId) {
         throw new Error(`checkout session ${session.id} names two users`)
       }
@@ -107,7 +114,9 @@ export async function handleEvent(
       // refund could name later, so the event fails and Stripe sends it again.
       if (!session.payment_intent) throw new Error(`checkout session ${session.id} is paid with no payment intent`)
       // The credits are what was paid for: the quantity of the credit price on the session's one
-      // line item, which must be the quantity the worker made the session for. Never worked out from
+      // line item, which must be the price and quantity the worker made the session for. The price is
+      // the session's own, not the one on sale now: a session made before CREDIT_PRICE changed (open
+      // for up to a day, or paid days later) still grants what it sold. Never worked out from
       // the amount charged, which is in the buyer's currency (Adaptive Pricing) and may include tax.
       // Anything else grants nothing: sending the event again would not change it, so it is logged
       // for an operator, not retried.

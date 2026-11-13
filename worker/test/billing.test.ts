@@ -429,7 +429,8 @@ describe('UC-BILLING-001 buy credits: the webhook', () => {
     // Metadata that says another quantity than the one paid for.
     await checkout(alice, 5000)
     const evt = stripe.sessionEvent()
-    const object = { ...(evt.data as any).object, metadata: { cofun_user_id: 'user_alice', cofun_quantity: '50' } }
+    const metadata = { cofun_user_id: 'user_alice', cofun_quantity: '50', cofun_price: PRICE }
+    const object = { ...(evt.data as any).object, metadata }
     expect(await answer(deliver({ ...evt, data: { object } }))).toMatchObject({ done: 'ignored' })
 
     expect(db.rows('grants')).toEqual([])
@@ -439,6 +440,16 @@ describe('UC-BILLING-001 buy credits: the webhook', () => {
       'checkout session cs_test_3 paid for 5xprice_credits,5xprice_credits, not 5xprice_credits: nothing granted',
       'checkout session cs_test_4 paid for nothing, not 5xprice_credits: nothing granted',
       'checkout session cs_test_5 paid for 5xprice_credits, not 50xprice_credits: nothing granted',
+    ])
+  })
+
+  it('a session made before the credit price changed still grants what it sold', async () => {
+    await checkout(alice, 5000)
+    // A later deploy sells credits at another price; the open session was made with the old one.
+    env.CREDIT_PRICE = 'price_new'
+    await answer(deliver(stripe.sessionEvent()))
+    expect((await credits(alice)).grants).toEqual([
+      { source: 'purchase', left: 5000 * CREDIT, expiresAt: yearAfter(START) },
     ])
   })
 
@@ -674,6 +685,7 @@ describe('Stripe over HTTP', () => {
       client_reference_id: 'user_alice',
       'metadata[cofun_user_id]': 'user_alice',
       'metadata[cofun_quantity]': '10',
+      'metadata[cofun_price]': 'price_credits',
       'custom_text[submit][message]': 'You get 10,000 credits for Cofun, valid for one year.',
       success_url: 'https://api.example.test/billing/paid',
       cancel_url: 'https://api.example.test/billing/cancelled',

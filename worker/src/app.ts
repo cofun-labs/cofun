@@ -615,10 +615,10 @@ export function createApp({
     const event = await verifiedEvent(payload, c.req.header('stripe-signature'), secret, now().getTime())
     if (event === undefined) throw new HttpError(400, 'bad_signature', 'not signed by Stripe')
     // Granting a purchase reads its line items from Stripe, so the webhook needs buying set up too.
-    const { offer, stripe } = billing(c.env)
+    const { stripe } = billing(c.env)
     let handled
     try {
-      handled = await handleEvent(c.env.DB, stripe, offer.price, now().getTime(), event)
+      handled = await handleEvent(c.env.DB, stripe, now().getTime(), event)
     } catch (err) {
       // An event the worker could not handle: the database failed, or the event is not what the
       // worker expects. Nothing is guessed; Stripe sends it again, and the log says why.
