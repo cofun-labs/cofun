@@ -7,7 +7,7 @@ import { loadState, saveState, statePath } from '../src/state'
 
 const enabled: ExtensionStatus = {
   developerMode: true,
-  extension: { state: 'ENABLED', location: 'UNPACKED', path: '/checkout/extension/dist', disableReasons: [] },
+  extension: { state: 'ENABLED', location: 'UNPACKED', path: '/checkout/extensions/notico/dist', disableReasons: [] },
 }
 
 describe('problem', () => {

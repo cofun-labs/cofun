@@ -1,6 +1,6 @@
 <!-- The extension icon: a page with a panel docked beside it, and the Cofun mark in the panel
      (an open ring with a dot just outside its gap). This is the source of
-     extension/public/icons/icon-{16,32,48,128}.png; export them again after editing
+     extensions/notico/public/icons/icon-{16,32,48,128}.png; export them again after editing
      with `pnpm icons`. The page and the panel sit on an 8-unit grid, which is one pixel at 16px. -->
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
   <rect x="8" y="16" width="112" height="96" rx="20" fill="#ffffff" />

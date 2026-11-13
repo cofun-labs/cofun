@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { NotionClient } from '../../extension/src/notion/api'
-import { parseMarkdown } from '../../extension/src/notion/blocks'
+import { NotionClient } from '../../extensions/notico/src/notion/api'
+import { parseMarkdown } from '../../extensions/notico/src/notion/blocks'
 import { findSpaceView, pageUrl, parseRow, privatePageOps, taskDatabaseOps, type PrivateSpace } from '../src/notion'
 
 const SPACE: PrivateSpace = {

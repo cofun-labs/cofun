@@ -1,4 +1,4 @@
-// The edit_page tool (extension/src/tools.ts) against a fake Notion workspace that applies
+// The edit_page tool (extensions/notico/src/tools.ts) against a fake Notion workspace that applies
 // transactions the way Notion does, so each test checks the page as it is after the edit.
 import { afterEach, describe, expect, it } from 'vitest'
 import { inline, parseMarkdown } from '../src/notion/blocks'

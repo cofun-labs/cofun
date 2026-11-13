@@ -1,4 +1,4 @@
-// The extension's Notion API client (extension/src/notion/), against a fake Notion tab that serves
+// The extension's Notion API client (extensions/notico/src/notion/), against a fake Notion tab that serves
 // sanitized fixtures of Notion's responses.
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {

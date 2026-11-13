@@ -1,4 +1,4 @@
-// The extension's manifest (extension/manifest.ts). Chrome disables an installed extension on
+// The extension's manifest (extensions/notico/manifest.ts). Chrome disables an installed extension on
 // update when the new version adds a permission warning, so the permissions are pinned here: a
 // change to them must change this file in the same pull request, where a reviewer sees it.
 import { readFileSync } from 'node:fs'
@@ -14,7 +14,7 @@ function manifest(env: Partial<ManifestEnv> & Pick<ManifestEnv, 'VITE_CLERK_SYNC
   return buildManifest({ VITE_CLERK_PUBLISHABLE_KEY: PUBLISHABLE_KEY, ...env }, '1.2.3')
 }
 
-/** The committed build config of the hosted extension (extension/.env), as `KEY=value` lines. */
+/** The committed build config of the hosted extension (extensions/notico/.env), as `KEY=value` lines. */
 function hostedEnv(): Record<string, string> {
   const text = readFileSync(new URL('../.env', import.meta.url), 'utf8')
   return Object.fromEntries(
@@ -26,7 +26,7 @@ function hostedEnv(): Record<string, string> {
 }
 
 describe('extension manifest', () => {
-  // What the published extension asks its users for. A change to extension/.env that changes
+  // What the published extension asks its users for. A change to extensions/notico/.env that changes
   // these (another Clerk instance, another sign-in host) must change this test too.
   it('ships with exactly these permissions and host permissions', () => {
     const env = hostedEnv()
@@ -42,7 +42,7 @@ describe('extension manifest', () => {
   })
 
   // Where the published extension's own pages may load from and send requests to: the hosts
-  // PRIVACY.md lists, enforced by the browser. A change to extension/.env or to the policy that
+  // PRIVACY.md lists, enforced by the browser. A change to extensions/notico/.env or to the policy that
   // adds a host must change this test and PRIVACY.md in the same pull request.
   it('ships with a content security policy that allows only these hosts', () => {
     const env = hostedEnv()

@@ -1,4 +1,4 @@
-// The read_comments and add_comment tools (extension/src/tools.ts) against a fake Notion workspace
+// The read_comments and add_comment tools (extensions/notico/src/tools.ts) against a fake Notion workspace
 // that holds discussions and comments the way Notion does.
 import { afterEach, describe, expect, it } from 'vitest'
 import { NotionError } from '../src/notion/api'

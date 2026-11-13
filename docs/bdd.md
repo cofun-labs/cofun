@@ -34,18 +34,18 @@ A scenario earns its place only if deleting it would let an implementation pass 
 
 | Strategy | Use for | Verified by |
 |---|---|---|
-| `api-test` | Anything observable through the worker's HTTP API, the extension's client code, or the side panel's UI | A vitest integration test whose name starts with the scenario ID, in `worker/test/` (the worker's HTTP API) or `extension/test/` (the extension's client code in `*.test.ts`, the side panel's UI in `*.test.tsx`) |
+| `api-test` | Anything observable through the worker's HTTP API, the extension's client code, or the side panel's UI | A vitest integration test whose name starts with the scenario ID, in `worker/test/` (the worker's HTTP API) or `extensions/notico/test/` (the extension's client code in `*.test.ts`, the side panel's UI in `*.test.tsx`) |
 | `ai-e2e` | Paths that need real Chrome or real accounts: the side panel opening and staying open across tabs, Clerk sign-in, real Notion pages, the real model | An agent drives Chrome with the extension loaded; the PR description or a comment records the run, with the Notion requests each tested question made (the side panel shows the count with the reply) |
 
 Pick the cheapest strategy that observes the result directly. `ai-e2e` is not a place to park scenarios that could be `api-test`.
 
 ## Testing the side panel's UI
 
-What the user sees and does in the side panel is an `api-test` too: `extension/test/*.test.tsx` run the panel in a DOM (jsdom), without a browser.
+What the user sees and does in the side panel is an `api-test` too: `extensions/notico/test/*.test.tsx` run the panel in a DOM (jsdom), without a browser.
 
-- **The whole panel runs.** A test opens the panel the way `sidepanel.html` does (`FakeBrowser` in `extension/test/panel.ts`), with the real agent, tools, and session store behind it and the real worker answering its model calls. Don't render a component on its own.
+- **The whole panel runs.** A test opens the panel the way `sidepanel.html` does (`FakeBrowser` in `extensions/notico/test/panel.ts`), with the real agent, tools, and session store behind it and the real worker answering its model calls. Don't render a component on its own.
 - **Only what a user can do and see.** Tests type, click, and read the screen, finding things by role, accessible name, label, or visible text. They never reach into component state, the agent, or the session store. When an element has no such handle, give it one that also helps a screen reader, not a test id.
-- **Fakes only at the edges:** `chrome.*` with a Notion tab (`FakeNotionTab`), Clerk (`extension/test/clerk.tsx`), IndexedDB (`fake-indexeddb`), and the model (`FakeAiBinding`). Besides the screen, a test may look at those edges: what the model was sent, and what Notion was asked to do.
+- **Fakes only at the edges:** `chrome.*` with a Notion tab (`FakeNotionTab`), Clerk (`extensions/notico/test/clerk.tsx`), IndexedDB (`fake-indexeddb`), and the model (`FakeAiBinding`). Besides the screen, a test may look at those edges: what the model was sent, and what Notion was asked to do.
 - **No real time.** The clock is fake and starts at a fixed time; a test that needs time to pass moves it. No sleeps, and no waiting for a timeout to pass. To catch the panel midway (a reply still streaming), hold the fake at the edge and release it.
 
 A fake model answers what the test scripts, so these tests show what the panel does with a reply, not what the real model says. A scenario whose point is the real model's judgment, or real Chrome, stays `ai-e2e`.

@@ -1,4 +1,4 @@
-// Loads the built extension (extension/dist) into Chromium and checks that it still works there.
+// Loads the built extension (extensions/notico/dist) into Chromium and checks that it still works there.
 // Nothing leaves the machine: Notion, the other site, and Clerk's Frontend API are answered from
 // fixtures/, and any other request fails the test. The extension's own code and its bundled
 // dependencies run unchanged.
@@ -6,7 +6,7 @@ import { chromium, expect, test as base, type BrowserContext, type Request, type
 import { existsSync, readFileSync } from 'node:fs'
 import path from 'node:path'
 
-const DIST = path.resolve(import.meta.dirname, '../../extension/dist')
+const DIST = path.resolve(import.meta.dirname, '../../extensions/notico/dist')
 const FIXTURES = path.resolve(import.meta.dirname, '../fixtures')
 
 const NOTION_URLS = ['https://www.notion.so/Smoke-Test-Page', 'https://app.notion.com/p/smoke-test-page']

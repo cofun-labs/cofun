@@ -1,5 +1,5 @@
 // The command line of `pnpm e2e`.
-import { isNotion, toUuid } from '../../extension/src/notion/hosts'
+import { isNotion, toUuid } from '../../extensions/notico/src/notion/hosts'
 
 export type Answer = 'allow' | 'deny'
 type LockAction = 'acquire' | 'refresh' | 'release' | 'status'

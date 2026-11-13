@@ -1,4 +1,4 @@
-// The create_page tool (extension/src/tools.ts) against a fake Notion workspace that applies
+// The create_page tool (extensions/notico/src/tools.ts) against a fake Notion workspace that applies
 // transactions the way Notion does.
 import { afterEach, describe, expect, it } from 'vitest'
 import { LIMITED_STOP } from '../src/notion/api'

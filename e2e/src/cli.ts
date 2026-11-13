@@ -1,7 +1,7 @@
 // pnpm e2e: runs ai-e2e scenarios in the shared Chrome Canary. See USAGE in args.ts and docs/bdd.md.
 import { execFileSync } from 'node:child_process'
 import { resolve } from 'node:path'
-import { isNotion } from '../../extension/src/notion/hosts'
+import { isNotion } from '../../extensions/notico/src/notion/hosts'
 import { type Command, USAGE, UsageError, parseArgs } from './args'
 import { Browser, Cdp, DEFAULT_PORT } from './cdp'
 import {
