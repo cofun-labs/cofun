@@ -402,9 +402,13 @@ describe('UC-BILLING-001 buy credits: the webhook', () => {
 
     // Reported again, or disputed after a refund, it is taken back once, for the first reason.
     clock = new Date(START + 2 * DAY_MS)
-    await answer(deliver(refunded('pi_refunded')))
-    await answer(deliver(disputed('pi_refunded')))
+    expect(await answer(deliver(refunded('pi_refunded')))).toMatchObject({ done: 'taken back already' })
+    expect(await answer(deliver(disputed('pi_refunded')))).toMatchObject({ done: 'taken back already' })
     expect(await purchases()).toEqual(history)
+    expect(billingLog.slice(4)).toEqual([
+      'purchase taken back already: payment=pi_refunded',
+      'purchase taken back already: payment=pi_refunded',
+    ])
 
     // What was spent stays spent: the next question finds no credits.
     const res = await req('POST', '/v1/chat/completions', alice, { messages: [{ role: 'user', content: 'hi' }] })
@@ -547,26 +551,32 @@ describe('UC-BILLING-001 buy credits: the webhook', () => {
     expect(db.rows('grants')).toEqual([])
   })
 
-  it('an event it cannot handle fails, so Stripe sends it again, and the log says why', async () => {
+  it('a paid session that can never grant is acknowledged and logged, not sent again', async () => {
     await checkout(alice, 5000)
     const evt = stripe.sessionEvent()
     // A session whose user and metadata disagree is not one the worker made.
     const mixed = { ...evt, data: { object: { ...(evt.data as any).object, client_reference_id: 'user_bob' } } }
-    await answer(deliver(mixed), 500)
+    expect(await answer(deliver(mixed))).toMatchObject({ done: 'ignored' })
     // A paid session with no payment to record.
     const noPayment = { ...evt, data: { object: { ...(evt.data as any).object, payment_intent: null } } }
-    await answer(deliver(noPayment), 500)
+    expect(await answer(deliver(noPayment))).toMatchObject({ done: 'ignored' })
+    expect(db.rows('grants')).toEqual([])
+    expect(billingLog).toEqual([
+      'checkout session cs_test_1 names two users: nothing granted',
+      'checkout session cs_test_1 is paid with no payment intent: nothing granted',
+    ])
+  })
+
+  it('an event it cannot handle fails, so Stripe sends it again, and the log says why', async () => {
+    await checkout(alice, 5000)
+    const evt = stripe.sessionEvent()
     // The database is unreachable: Stripe sends it again, and then it grants.
     db.failWith = new Error('D1_ERROR: Network connection lost.')
     await answer(deliver(evt), 500)
     db.failWith = undefined
     await answer(deliver(evt))
     expect(db.rows('grants')).toHaveLength(1)
-    expect(logged).toEqual([
-      'stripe event failed: Error: checkout session cs_test_1 names two users',
-      'stripe event failed: Error: checkout session cs_test_1 is paid with no payment intent',
-      'stripe event failed: Error: D1_ERROR: Network connection lost.',
-    ])
+    expect(logged).toEqual(['stripe event failed: Error: D1_ERROR: Network connection lost.'])
   })
 
   it('refuses an event too large to be Stripe’s', async () => {

@@ -536,20 +536,26 @@ export class Ledger {
   }
 }
 
+/** How many of the payment ?1's grants have not been taken back. */
+const COUNT_KEPT = `SELECT count(*) AS n FROM grants WHERE payment = ?1 AND revoked IS NULL`
+
 /**
  * Takes back what is left of the purchase made with `payment`, after a refund or a dispute: see
- * TAKE_BACK. What was spent stays spent, and the user's other grants are untouched. Says whether the
- * payment made a grant: false when it made none (yet), which leaves nothing to take back.
+ * TAKE_BACK. What was spent stays spent, and the user's other grants are untouched. Says what it
+ * found: a purchase it took back now, one taken back already (nothing changes), or no grant at all
+ * (none yet, or never), which leaves nothing to take back.
  */
 export async function takeBack(
   db: Database,
   now: number,
   payment: string,
   why: z.output<typeof Revoked>,
-): Promise<boolean> {
-  const [, count] = await db.batch([
+): Promise<'taken back' | 'taken back already' | 'no grant'> {
+  const [kept, , count] = await db.batch([
+    db.prepare(COUNT_KEPT).bind(payment),
     db.prepare(TAKE_BACK).bind(payment, now, why),
     db.prepare(COUNT_PAYMENT).bind(payment),
   ])
-  return only(CountRow, count).n > 0
+  if (only(CountRow, count).n === 0) return 'no grant'
+  return only(CountRow, kept).n > 0 ? 'taken back' : 'taken back already'
 }

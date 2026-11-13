@@ -80,7 +80,7 @@ const Granting = z.object({
 
 /** What the webhook did with an event, for the response and the log. */
 export type Handled =
-  | { done: 'granted' | 'granted already' | 'taken back' | 'ignored'; log?: string }
+  | { done: 'granted' | 'granted already' | 'taken back' | 'taken back already' | 'ignored'; log?: string }
   /** The event names a payment that made no grant (yet): Stripe sends it again later. */
   | { done: 'retry'; log: string }
 
@@ -107,12 +107,19 @@ export async function handleEvent(db: Database, stripe: StripeApi, now: number, 
       const userId = granting.data[META_USER]
       const quantity = granting.data[META_QUANTITY]
       const price = granting.data[META_PRICE]
+      // Neither of these changes when the event is sent again, so neither is retried: each grants
+      // nothing and is logged for an operator, who can grant the credits by hand.
       if (session.client_reference_id !== userId) {
-        throw new Error(`checkout session ${session.id} names two users`)
+        return { done: 'ignored', log: `checkout session ${session.id} names two users: nothing granted` }
       }
       // A paid session in payment mode has its PaymentIntent: without one there is nothing that a
-      // refund could name later, so the event fails and Stripe sends it again.
-      if (!session.payment_intent) throw new Error(`checkout session ${session.id} is paid with no payment intent`)
+      // refund could name later.
+      if (!session.payment_intent) {
+        return {
+          done: 'ignored',
+          log: `checkout session ${session.id} is paid with no payment intent: nothing granted`,
+        }
+      }
       // The credits are what was paid for: the quantity of the credit price on the session's one
       // line item, which must be the price and quantity the worker made the session for. The price is
       // the session's own, not the one on sale now: a session made before CREDIT_PRICE changed (open
@@ -148,7 +155,9 @@ export async function handleEvent(db: Database, stripe: StripeApi, now: number, 
       const why = event.type === 'charge.refunded' ? 'refund' : 'dispute'
       const payment = AboutPayment.parse(event.data.object).payment_intent
       if (!payment) return { done: 'ignored' }
-      if (!(await takeBack(db, now, payment, why))) {
+      const taken = await takeBack(db, now, payment, why)
+      if (taken === 'taken back already') return { done: taken, log: `purchase taken back already: payment=${payment}` }
+      if (taken === 'no grant') {
         // No grant to take back. A payment for credits whose own event has not been handled yet is
         // sent again later; any other payment (not made through the worker's Checkout) has nothing
         // to take back, and is acknowledged, or Stripe would retry it for days and could turn the
