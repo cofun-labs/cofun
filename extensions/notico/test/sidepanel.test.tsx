@@ -541,6 +541,38 @@ describe('sessions', () => {
     ])
   })
 
+  it('[UC-AGENT-001-S22] an edit names the page it changed, also after the session is reopened', async () => {
+    const { browser, user } = await openPanel(workspaceTab().tab)
+    browser.ai.script.push(
+      { toolCalls: [{ name: 'read_page', arguments: JSON.stringify({ page: PAGE }) }] },
+      {
+        toolCalls: [
+          {
+            name: 'edit_page',
+            arguments: JSON.stringify({
+              page: PAGE,
+              edits: [{ action: 'insert', position: 'end', markdown: 'A new line' }],
+            }),
+          },
+        ],
+      },
+      { reply: 'Added it.' },
+    )
+
+    await ask(user, 'Add a line')
+    await screen.findByText('Added it.')
+    await answered()
+
+    // Each tool call as the reply says it, in order.
+    const said = () => screen.getAllByText((_, el) => el?.tagName === 'SUMMARY').map((s) => s.textContent?.trim())
+    expect(said()).toEqual(['Read Fixture page', 'Edited Fixture page'])
+
+    await browser.openPanel()
+    await openSession(user, /Add a line/)
+    await screen.findByText('Added it.')
+    expect(said()).toEqual(['Read Fixture page', 'Edited Fixture page'])
+  })
+
   it('[UC-AGENT-001-S20][UC-AGENT-001-S23] a reply shows how many pages it read and Notion requests it made, also after the session is reopened', async () => {
     const { browser, user } = await openPanel()
     await askAboutPage(browser, user)
