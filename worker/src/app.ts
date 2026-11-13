@@ -633,7 +633,6 @@ export function createApp({
       throw new HttpError(500, 'internal', 'the event could not be handled')
     }
     if (handled.log) logBilling(handled.log)
-    if (handled.done === 'retry') throw new HttpError(409, 'not_yet', 'the payment has made no grant yet')
     return c.json({ received: true, done: handled.done })
   })
 

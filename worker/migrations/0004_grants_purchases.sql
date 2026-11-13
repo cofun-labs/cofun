@@ -48,3 +48,15 @@ CREATE INDEX grants_by_time ON grants (granted_at);
 CREATE INDEX grants_by_user_granted ON grants (user_id, granted_at);
 -- One grant per payment. Rows without a payment hold null, and nulls never clash.
 CREATE UNIQUE INDEX grants_by_payment ON grants (payment);
+
+-- Payments refunded or disputed before they made a grant: Stripe's events arrive in any order, and
+-- the payment's own event can arrive after its refund (say while the database was down). A payment
+-- listed here never makes a grant. Rows are never deleted: each is the record of a refund or dispute
+-- that had nothing to take back yet.
+CREATE TABLE revoked_payments (
+  -- The Stripe PaymentIntent id.
+  payment TEXT PRIMARY KEY,
+  revoked TEXT NOT NULL CHECK (revoked IN ('refund', 'dispute')),
+  -- When the refund or dispute was handled.
+  at INTEGER NOT NULL
+);

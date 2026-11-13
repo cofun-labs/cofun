@@ -264,8 +264,21 @@ FROM (SELECT ${DEBT} AS debt)`
  */
 const GIVE_PURCHASE = `INSERT INTO grants (user_id, source, amount, repaid, left, granted_at, expires_at, payment)
 SELECT ?1, 'purchase', ?3, min(?3, debt), ?3 - min(?3, debt), ?2, ?4, ?5
-FROM (SELECT ${DEBT} AS debt) WHERE true
+FROM (SELECT ${DEBT} AS debt)
+WHERE NOT EXISTS (SELECT 1 FROM revoked_payments WHERE payment = ?5)
 ON CONFLICT (payment) DO NOTHING`
+
+/**
+ * Records that the payment ?1 was refunded or disputed (?3) at ?2 before it made a grant, so it never
+ * makes one. Only when it has no grant: one that has is taken back instead (TAKE_BACK). A payment
+ * recorded already keeps its first reason.
+ */
+const REVOKE_PAYMENT = `INSERT INTO revoked_payments (payment, revoked, at)
+SELECT ?1, ?3, ?2 WHERE NOT EXISTS (SELECT 1 FROM grants WHERE payment = ?1)
+ON CONFLICT (payment) DO NOTHING`
+
+/** Whether the payment ?1 was refunded or disputed before it made a grant. */
+const COUNT_REVOKED_PAYMENT = `SELECT count(*) AS n FROM revoked_payments WHERE payment = ?1`
 
 /**
  * Takes back what is left of the purchase made with the payment ?1, for the reason ?3. What it paid
@@ -506,17 +519,23 @@ export class Ledger {
   /**
    * Adds credits bought with a payment, beside the other grants. Like any grant it pays back debt
    * first. A payment that was granted already adds nothing, and is not an error: Stripe reports a
-   * payment more than once. Says whether this call added the grant.
+   * payment more than once. Nor does one that was refunded or disputed before it was granted. Says
+   * which of these it was.
    */
-  async purchase(now: number, { amount, expiresAt, payment }: Purchase): Promise<boolean> {
+  async purchase(
+    now: number,
+    { amount, expiresAt, payment }: Purchase,
+  ): Promise<'granted' | 'granted already' | 'revoked before'> {
     if (!Number.isSafeInteger(amount) || amount <= 0) throw new Error('a grant must be a positive integer')
     if (!Number.isSafeInteger(expiresAt) || expiresAt <= now) throw new Error('a grant must expire after it is made')
-    const [before, , after] = await this.db.batch([
+    const [before, , after, revoked] = await this.db.batch([
       this.db.prepare(COUNT_PAYMENT).bind(payment),
       this.statement(GIVE_PURCHASE, now, amount, expiresAt, payment),
       this.db.prepare(COUNT_PAYMENT).bind(payment),
+      this.db.prepare(COUNT_REVOKED_PAYMENT).bind(payment),
     ])
-    return only(CountRow, before).n === 0 && only(CountRow, after).n === 1
+    if (only(CountRow, after).n === 0 && only(CountRow, revoked).n > 0) return 'revoked before'
+    return only(CountRow, before).n === 0 ? 'granted' : 'granted already'
   }
 
   private reads(): Statement[] {
@@ -541,9 +560,11 @@ const COUNT_KEPT = `SELECT count(*) AS n FROM grants WHERE payment = ?1 AND revo
 
 /**
  * Takes back what is left of the purchase made with `payment`, after a refund or a dispute: see
- * TAKE_BACK. What was spent stays spent, and the user's other grants are untouched. Says what it
- * found: a purchase it took back now, one taken back already (nothing changes), or no grant at all
- * (none yet, or never), which leaves nothing to take back.
+ * TAKE_BACK. What was spent stays spent, and the user's other grants are untouched. A payment with
+ * no grant yet is recorded instead (REVOKE_PAYMENT), so a grant that comes later is never made: both
+ * happen in one batch, so a grant handled at the same moment either comes first and is taken back,
+ * or comes after and is not made. Says what it found: a purchase it took back now, one taken back
+ * already (nothing changes), or no grant.
  */
 export async function takeBack(
   db: Database,
@@ -551,9 +572,10 @@ export async function takeBack(
   payment: string,
   why: z.output<typeof Revoked>,
 ): Promise<'taken back' | 'taken back already' | 'no grant'> {
-  const [kept, , count] = await db.batch([
+  const [kept, , , count] = await db.batch([
     db.prepare(COUNT_KEPT).bind(payment),
     db.prepare(TAKE_BACK).bind(payment, now, why),
+    db.prepare(REVOKE_PAYMENT).bind(payment, now, why),
     db.prepare(COUNT_PAYMENT).bind(payment),
   ])
   if (only(CountRow, count).n === 0) return 'no grant'

@@ -17,13 +17,6 @@ import {
 /** The credits one unit of the credit price buys: its price, one US dollar, at 1000 credits a dollar. */
 export const CREDITS_PER_UNIT = 1000
 
-/**
- * How long a refund or dispute of a credit payment with no grant is sent again for. The payment's own
- * event arrives within minutes; past this the payment will never have a grant (its session was
- * ignored, say for a wrong price), and retrying would only fail for days.
- */
-const RETRY_FOR_MS = 60 * 60 * 1000
-
 /** The largest quantity a pack may be: a typo in the configuration must not put a fortune on sale. */
 const MAX_QUANTITY = 1000
 
@@ -79,17 +72,17 @@ const Granting = z.object({
 })
 
 /** What the webhook did with an event, for the response and the log. */
-export type Handled =
-  | { done: 'granted' | 'granted already' | 'taken back' | 'taken back already' | 'ignored'; log?: string }
-  /** The event names a payment that made no grant (yet): Stripe sends it again later. */
-  | { done: 'retry'; log: string }
+export interface Handled {
+  done: 'granted' | 'granted already' | 'taken back' | 'taken back already' | 'recorded' | 'ignored'
+  log?: string
+}
 
 /**
  * Handles one event Stripe sent and signed. Events may arrive more than once and in any order, and
  * each step is safe to repeat: a payment grants once, and a purchase is taken back once. A refund or
- * a dispute can only follow a payment, but its event can arrive first; then it is answered with
- * `retry`, so Stripe sends it again once the payment's own event has been handled. Events the worker
- * does not act on are acknowledged and ignored.
+ * a dispute can only follow a payment, but its event can arrive first: then the refund is recorded
+ * against the payment, and the payment never makes a grant. Events the worker does not act on are
+ * acknowledged and ignored.
  */
 export async function handleEvent(db: Database, stripe: StripeApi, now: number, payload: unknown): Promise<Handled> {
   const event = StripeEvent.parse(payload)
@@ -142,9 +135,14 @@ export async function handleEvent(db: Database, stripe: StripeApi, now: number, 
         expiresAt: purchaseExpiry(now),
         payment: session.payment_intent,
       })
-      return added
-        ? { done: 'granted', log: `purchase: user=${userId} credits=${credits} payment=${session.payment_intent}` }
-        : { done: 'granted already' }
+      if (added === 'revoked before') {
+        return {
+          done: 'ignored',
+          log: `purchase: user=${userId} payment=${session.payment_intent} was refunded or disputed before it was granted: nothing granted`,
+        }
+      }
+      if (added === 'granted already') return { done: added }
+      return { done: 'granted', log: `purchase: user=${userId} credits=${credits} payment=${session.payment_intent}` }
     }
     // A refund, full or partial, takes back all that is left of the purchase: purchases are final,
     // and a refund is the exception (a billing error, the law, or Stripe as the seller of record).
@@ -158,17 +156,10 @@ export async function handleEvent(db: Database, stripe: StripeApi, now: number, 
       const taken = await takeBack(db, now, payment, why)
       if (taken === 'taken back already') return { done: taken, log: `purchase taken back already: payment=${payment}` }
       if (taken === 'no grant') {
-        // No grant to take back. A payment for credits whose own event has not been handled yet is
-        // sent again later; any other payment (not made through the worker's Checkout) has nothing
-        // to take back, and is acknowledged, or Stripe would retry it for days and could turn the
-        // endpoint off.
-        if (await stripe.isCreditPayment(payment)) {
-          if (now - event.created * 1000 <= RETRY_FOR_MS) {
-            return { done: 'retry', log: `${why} for payment=${payment}, which made no grant yet` }
-          }
-          return { done: 'ignored', log: `${why} for payment=${payment}, which never made a grant` }
-        }
-        return { done: 'ignored', log: `${why} for payment=${payment}, which was not for credits` }
+        // Nothing to take back: the payment's own event has not been handled yet, or the payment was
+        // never one that grants (another charge on the account, or a session that granted nothing).
+        // Either way it is recorded, so a grant that comes later is not made.
+        return { done: 'recorded', log: `${why} for payment=${payment}, which has no grant: recorded` }
       }
       return { done: 'taken back', log: `purchase taken back: payment=${payment} reason=${why}` }
     }

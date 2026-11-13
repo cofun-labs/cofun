@@ -25,17 +25,6 @@ export class FakeStripe implements StripeApi {
     return { url: `https://checkout.stripe.com/c/pay/${id}` }
   }
 
-  async isCreditPayment(paymentIntent: string): Promise<boolean> {
-    if (this.failWith) throw this.failWith
-    // A session's payment is the one its events name (see `sessionEvent`), unless a test gave it another.
-    return this.sessions.some(
-      (session) => paymentIntent === `pi_for_${session.id}` || this.payments.get(paymentIntent) === session.id,
-    )
-  }
-
-  /** Payments a test named itself, by PaymentIntent id, with the session they paid. */
-  private readonly payments = new Map<string, string>()
-
   async lineItems(sessionId: string): Promise<LineItem[]> {
     if (this.failWith) throw this.failWith
     const changed = this.paidFor.get(sessionId)
@@ -61,7 +50,6 @@ export class FakeStripe implements StripeApi {
   ): Record<string, unknown> {
     const session = this.sessions[options.session ?? this.sessions.length - 1]
     if (!session) throw new Error('no session was made')
-    if (options.payment) this.payments.set(options.payment, session.id)
     return event(options.type ?? 'checkout.session.completed', {
       id: session.id,
       object: 'checkout.session',
