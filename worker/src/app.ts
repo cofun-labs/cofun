@@ -556,6 +556,11 @@ function parseModelInputs(body: z.output<typeof Body>): { inputs: ModelInputs; c
   return { inputs, chars }
 }
 
+/** Stripe's API: the one tests pass, or Stripe's own with the secret key; none without a key. */
+function stripeOf(env: Env): StripeApi | undefined {
+  return env.STRIPE ?? (env.STRIPE_SECRET_KEY ? stripeOverHttp(env.STRIPE_SECRET_KEY) : undefined)
+}
+
 export function createApp({
   now = () => new Date(),
   priceOf: priceFor = priceOf,
@@ -614,8 +619,10 @@ export function createApp({
     if (payload.length > MAX_EVENT_BYTES) throw new HttpError(413, 'too_large', 'event too large')
     const event = await verifiedEvent(payload, c.req.header('stripe-signature'), secret, now().getTime())
     if (event === undefined) throw new HttpError(400, 'bad_signature', 'not signed by Stripe')
-    // Granting a purchase reads its line items from Stripe, so the webhook needs buying set up too.
-    const { stripe } = billing(c.env)
+    // Granting a purchase reads its line items from Stripe, so the webhook needs Stripe's API. It does
+    // not need anything on sale: past purchases are still granted, refunded, and disputed after sales stop.
+    const stripe = stripeOf(c.env)
+    if (!stripe) throw new HttpError(503, 'not_configured', 'STRIPE_SECRET_KEY is not set')
     let handled
     try {
       handled = await handleEvent(c.env.DB, stripe, now().getTime(), event)
@@ -746,7 +753,7 @@ export function createApp({
   function billing(env: Env): { offer: Offer; stripe: StripeApi } {
     const offered = offerOf(env.CREDIT_PRICE, env.CREDIT_PACKS)
     if ('error' in offered) throw new HttpError(503, 'not_configured', `${offered.error}`)
-    const stripe = env.STRIPE ?? (env.STRIPE_SECRET_KEY ? stripeOverHttp(env.STRIPE_SECRET_KEY) : undefined)
+    const stripe = stripeOf(env)
     if (!stripe || !offered.offer) throw new HttpError(503, 'not_configured', 'buying credits is not set up')
     return { offer: offered.offer, stripe }
   }

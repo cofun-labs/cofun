@@ -457,13 +457,32 @@ describe('UC-BILLING-001 buy credits: the webhook', () => {
     ])
   })
 
-  it('takes no event while buying is not set up, so Stripe sends it again later', async () => {
+  it('takes no event without Stripe’s API, so Stripe sends it again later', async () => {
     await checkout(alice, 5000)
     env.STRIPE = undefined
     await answer(deliver(stripe.sessionEvent()), 503)
     env.STRIPE = stripe
     await answer(deliver(stripe.sessionEvent()))
     expect(db.rows('grants')).toHaveLength(1)
+  })
+
+  it('still grants, refunds, and disputes past purchases after sales stop', async () => {
+    await checkout(alice, 5000)
+    await checkout(bob, 10_000)
+    // An operator takes the packs off sale.
+    env.CREDIT_PRICE = undefined
+    env.CREDIT_PACKS = undefined
+    await answer(req('GET', '/v1/billing/packs', alice), 503)
+
+    await answer(deliver(stripe.sessionEvent({ session: 0, payment: 'pi_alice' })))
+    await answer(deliver(stripe.sessionEvent({ session: 1, payment: 'pi_bob' })))
+    clock = new Date(START + DAY_MS)
+    await answer(deliver(refunded('pi_alice')))
+
+    expect((await credits(alice)).grants).toEqual([])
+    expect((await credits(bob)).grants).toEqual([
+      { source: 'purchase', left: 10_000 * CREDIT, expiresAt: yearAfter(START) },
+    ])
   })
 
   it('a refund whose payment has not been granted yet is sent again later, and then takes the purchase back', async () => {
