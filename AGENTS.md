@@ -1,6 +1,6 @@
 # Notico
 
-Notico: a Chrome extension that opens an AI side panel next to Notion pages, backed by a Cloudflare Worker.
+Notico: a Chrome extension that opens an AI side panel next to Notion pages, backed by a Cloudflare Worker. The repository holds Cofun's extensions, one per folder in `extensions/` (Notico in `extensions/notico/`), and the worker they share.
 
 **Before starting work, read [docs/architecture.md](docs/architecture.md)** for the architecture, auth flow, and code layout; setup and deployment are in [docs/development.md](docs/development.md). [README.md](README.md) is written for the extension's users: what it does and how to use it, with little technical detail. This file covers the development workflow and coding conventions.
 
@@ -33,7 +33,7 @@ Notico: a Chrome extension that opens an AI side panel next to Notion pages, bac
 3. **Implement with tests.** Keep tests in sync with use cases:
    - Remove tests for deleted scenarios, add tests for new ones, rename tests when scenario IDs change.
    - P0 scenarios must be verified before merge; P1 should be; P2 can wait.
-   - `api-test` scenarios are vitest integration tests, named with the scenario ID: in `worker/test/` for the worker's HTTP API, in `extension/test/` for the extension's client code (`*.test.ts`) and the side panel's UI (`*.test.tsx`). `ai-e2e` scenarios are verified by an agent driving a real browser with `pnpm e2e`, and the run is recorded in the PR (see [Running an `ai-e2e` scenario](docs/bdd.md#running-an-ai-e2e-scenario)).
+   - `api-test` scenarios are vitest integration tests, named with the scenario ID: in `worker/test/` for the worker's HTTP API, in `extensions/notico/test/` for the extension's client code (`*.test.ts`) and the side panel's UI (`*.test.tsx`). `ai-e2e` scenarios are verified by an agent driving a real browser with `pnpm e2e`, and the run is recorded in the PR (see [Running an `ai-e2e` scenario](docs/bdd.md#running-an-ai-e2e-scenario)).
      ```typescript
      it('[UC-CHAT-001-S01] signed-in user gets a streamed reply', async () => {
      ```
@@ -80,18 +80,19 @@ Notico: a Chrome extension that opens an AI side panel next to Notion pages, bac
 
 ## Public repository
 
-This is an open-source repository. **Never commit account identifiers or secrets**: Cloudflare account IDs, API tokens, Clerk secret keys, or the extension's private signing key (`extension/keys/`, git-ignored). Values that are public by design are fine: the Clerk publishable key, the Clerk JWT public key, the extension's public key and ID, and domain names.
+This is an open-source repository. **Never commit account identifiers or secrets**: Cloudflare account IDs, API tokens, Clerk secret keys, or an extension's private signing key (`extensions/<name>/keys/`, git-ignored). Values that are public by design are fine: the Clerk publishable key, the Clerk JWT public key, the extension's public key and ID, and domain names.
 
 ## Privacy
 
-[PRIVACY.md](PRIVACY.md) tells users what data leaves the browser and where it goes, and it is the Chrome Web Store privacy policy. **A change to what data leaves the browser, or to where it goes, updates `PRIVACY.md` in the same PR**: a new host, new data sent to an existing host, or a change to what the worker stores or logs. The table of hosts in `PRIVACY.md` is the list of hosts the extension may contact. The extension's content security policy (`extension/manifest.ts`) enforces it for the extension's pages, and `extension/test/manifest.test.ts` pins that policy and the host permissions, so a new host changes the policy, that test, and the table together.
+[PRIVACY.md](PRIVACY.md) tells users what data leaves the browser and where it goes, and it is the Chrome Web Store privacy policy. **A change to what data leaves the browser, or to where it goes, updates `PRIVACY.md` in the same PR**: a new host, new data sent to an existing host, or a change to what the worker stores or logs. The table of hosts in `PRIVACY.md` is the list of hosts the extension may contact. The extension's content security policy (`extensions/notico/manifest.ts`) enforces it for the extension's pages, and `extensions/notico/test/manifest.test.ts` pins that policy and the host permissions, so a new host changes the policy, that test, and the table together.
 
 ## Architecture
 
-- `extension/`: Chrome MV3 side panel. Vite + React + TypeScript. Clerk sign-in through Sync Host. `vite.config.ts` generates `manifest.json` from `.env`. The agent loop runs in the side panel on `@earendil-works/pi-agent-core`; only `src/agent.ts` imports pi, and tools live in `src/tools.ts`.
-- `worker/`: Cloudflare Worker with Hono. Serves `/login`, verifies Clerk session JWTs locally, and proxies OpenAI-compatible `/v1/chat/completions` to Workers AI through AI Gateway.
+- `extensions/<name>/`: one Chrome MV3 extension (side panel, agent, tools, and the layer for its site), built and published by itself. Notico (`extensions/notico/`) is the first. Each extension keeps its own copy of the side panel code and never imports another extension; the paths below are inside an extension's folder.
+- `extensions/notico/`: Chrome MV3 side panel for Notion. Vite + React + TypeScript. Clerk sign-in through Sync Host. `vite.config.ts` generates `manifest.json` from `.env`. The agent loop runs in the side panel on `@earendil-works/pi-agent-core`; only `src/agent.ts` imports pi, and tools live in `src/tools.ts`.
+- `worker/`: Cloudflare Worker with Hono, shared by every extension. Serves `/login`, verifies Clerk session JWTs locally, and proxies OpenAI-compatible `/v1/chat/completions` to Workers AI through AI Gateway.
 - Notion tools call Notion's own internal endpoints (`/api/v3/…`) as the signed-in Notion user, through `src/notion/api.ts`: the only module that knows Notion's endpoints and request shapes. Requests run inside the user's Notion tab (`src/notion/tab.ts`, `chrome.scripting` in the ISOLATED world), so they go to that tab's own host with its session. Tools never `fetch` Notion URLs themselves. Do not use `chrome.debugger`: it shows a permanent "debugging this browser" banner.
-- **These module boundaries are lint errors** (`.oxlintrc.json`, run by `pnpm lint` and so by `pnpm check`): only `src/agent.ts` imports pi; `fetch` is used only in `src/notion/tab.ts` (Notion) and `src/agent.ts` (the worker); `chrome.scripting` is used only in `src/notion/tab.ts`; `chrome.debugger` is used nowhere; `zod` is imported only by `src/zod.ts`, which sets it up for the extension's content security policy, and the rest of `src/` imports `z` from there (the worker does the same through `worker/src/zod.ts`); and `src/notion/` imports nothing from `src/agent.ts`, `src/tool.ts`, `src/tools.ts`, `src/sessions.ts`, or `src/sidepanel/`. When a boundary changes, change the rule and this section together. Never silence one with an `oxlint-disable` comment.
+- **These module boundaries are lint errors** (`.oxlintrc.json`, run by `pnpm lint` and so by `pnpm check`), written once for every `extensions/<name>/`, whose site layer is `src/<site>/` (`src/notion/` in Notico): only `src/agent.ts` imports pi; `fetch` is used only in `src/<site>/tab.ts` (the site) and `src/agent.ts` (the worker); `chrome.scripting` is used only in `src/<site>/tab.ts`; `chrome.debugger` is used nowhere; `zod` is imported only by `src/zod.ts`, which sets it up for the extension's content security policy, and the rest of `src/` imports `z` from there (the worker does the same through `worker/src/zod.ts`); the site layer imports nothing from `src/agent.ts`, `src/tool.ts`, `src/tools.ts`, `src/sessions.ts`, or `src/sidepanel/`; and an extension never imports another extension. When a boundary changes, change the rule and this section together. Never silence one with an `oxlint-disable` comment.
 
 ## Untrusted values
 
@@ -120,11 +121,11 @@ Tools call Notion's internal API as the user's own account, so **stability comes
 - **No mocking.** Do not use `vi.mock()` or spies. Replace external dependencies with fake objects that implement the same interface, and inject them through `env`:
   - `FakeAiBinding` (`worker/test/fakes.ts`) stands in for the Workers AI binding.
   - `FakeClerk` (`worker/test/clerk.ts`) signs real RS256 session tokens with a local key pair, which the worker verifies like real Clerk tokens.
-  - The one module replaced whole is Clerk's React SDK: the side panel imports its components directly, so the extension's vitest config resolves `@clerk/chrome-extension` to a fake (`extension/test/clerk.tsx`), for the UI tests only. Replace no other module this way.
-- Tests live with the package they cover. `extension/test/` tests the extension's client code against a fake Notion tab (`extension/test/notion-tab.ts`) that answers with sanitized fixtures (`extension/test/fixtures/notion/`). `worker/test/` tests the worker.
+  - The one module replaced whole is Clerk's React SDK: the side panel imports its components directly, so the extension's vitest config resolves `@clerk/chrome-extension` to a fake (`extensions/notico/test/clerk.tsx`), for the UI tests only. Replace no other module this way.
+- Tests live with the package they cover. Each extension has its own tests, fixtures, and fakes in `extensions/<name>/test/`. `extensions/notico/test/` tests Notico's client code against a fake Notion tab (`extensions/notico/test/notion-tab.ts`) that answers with sanitized fixtures (`extensions/notico/test/fixtures/notion/`). `worker/test/` tests the worker.
 - **UI tests run the whole side panel and act as a user.** Never test a component on its own. A test only types, clicks, and reads the screen, and finds things by role, accessible name, or visible text: never through component state, the agent, the session store, or a test id. If an element can't be found that way, improve its accessibility. Fakes stay at the edges, as above.
 - **Tests never wait for time to pass.** Use a fake clock with an explicit start time and move it; no sleeps, and no assertion that depends on how long something took. Waiting for the screen to change is fine.
-- `worker/test/extension.test.ts` runs the extension's own agent (`src/agent.ts`) against the worker so client and server cannot drift.
+- `worker/test/extension.test.ts` runs Notico's own agent (`extensions/notico/src/agent.ts`) against the worker so client and server cannot drift.
 - `smoke/` is the extension smoke test (`pnpm smoke`, also run in CI): Playwright loads the built extension into Chromium and checks that the service worker starts, the side panel is enabled on every tab, and the side panel page renders signed out. It catches builds that compile but break in Chrome, such as dependency bumps. Nothing leaves the machine: Notion pages and Clerk's Frontend API are answered from `smoke/fixtures/`. Its tests are standalone (no scenario IDs); what needs real Chrome or real accounts (the panel opening from the toolbar icon and staying open across tabs, Google sign-in, real Notion pages) stays `ai-e2e`.
 
 ## Commands
@@ -135,7 +136,7 @@ pnpm check        # lint, unused code check (knip), format check, typecheck, ext
 pnpm knip         # unused files, exports, and dependencies (knip.jsonc lists what is kept, and why)
 pnpm format:fix   # format all files
 pnpm test         # extension and worker tests, and the e2e tool's unit tests
-pnpm build        # build the extension into extension/dist
+pnpm build        # build every extension into extensions/<name>/dist
 pnpm smoke        # build the extension and run the smoke test in Chromium (also runs in CI)
 pnpm e2e --help   # drive the shared Chrome Canary for ai-e2e runs (maintainer's machine only)
 ```

@@ -1,5 +1,5 @@
 // The tabs this tool opens (one on Notion, one on another site), the side panel, and asking questions there.
-import { isNotion, pageIdFromUrl } from '../../extension/src/notion/hosts'
+import { isNotion, pageIdFromUrl } from '../../extensions/notico/src/notion/hosts'
 import type { Answer } from './args'
 import { type Browser, type Target, sleep, until } from './cdp'
 import { E2eError } from './errors'

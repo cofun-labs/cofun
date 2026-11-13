@@ -1,13 +1,13 @@
-// pnpm icons: renders the extension icon (extension/icons/icon.svg) into the PNGs the manifest
-// lists (extension/public/icons/), with Playwright's Chromium. Run it after editing the SVG and
+// pnpm icons: renders the extension icon (extensions/notico/icons/icon.svg) into the PNGs the manifest
+// lists (extensions/notico/public/icons/), with Playwright's Chromium. Run it after editing the SVG and
 // commit the PNGs.
 import { chromium } from '@playwright/test'
 import { mkdirSync, readFileSync } from 'node:fs'
 import path from 'node:path'
 
-const EXTENSION = path.resolve(import.meta.dirname, '../extension')
+const EXTENSION = path.resolve(import.meta.dirname, '../extensions/notico')
 const OUT = path.join(EXTENSION, 'public/icons')
-/** The sizes extension/manifest.ts lists. */
+/** The sizes extensions/notico/manifest.ts lists. */
 const SIZES = [16, 32, 48, 128]
 
 const svg = readFileSync(path.join(EXTENSION, 'icons/icon.svg'), 'utf8')

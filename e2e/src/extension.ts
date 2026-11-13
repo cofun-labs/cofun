@@ -58,7 +58,7 @@ export function replaceProblem(loaded: string, built: string): string | undefine
   if (key(built) === key(loaded)) return undefined
   return (
     "The build's manifest key differs from the loaded extension's, so reloading would change the " +
-    "extension id. Check CRX_PUBLIC_KEY in this checkout's extension/.env and .env.local."
+    "extension id. Check CRX_PUBLIC_KEY in this checkout's extensions/notico/.env and .env.local."
   )
 }
 
@@ -128,7 +128,7 @@ export function reloadExtension(page: Target): Promise<string | undefined> {
 }
 
 /**
- * Builds this checkout's extension, with this checkout's extension/.env, and puts it in `outDir`. It
+ * Builds this checkout's extension, with this checkout's extensions/notico/.env, and puts it in `outDir`. It
  * is built next to `outDir` first and replaces it only if it would load as the same extension.
  */
 export async function build(repoRoot: string, outDir: string): Promise<void> {
@@ -137,7 +137,7 @@ export async function build(repoRoot: string, outDir: string): Promise<void> {
   if (!isOurManifest(manifest)) {
     throw new Error(`${outDir} doesn't hold a build of ${EXTENSION_NAME}; not building over it.`)
   }
-  const extension = join(repoRoot, 'extension')
+  const extension = join(repoRoot, 'extensions', 'notico')
   if (
     !(await access(join(extension, 'node_modules', '.bin', 'vite')).then(
       () => true,

@@ -1,4 +1,4 @@
-// The search_pages tool (extension/src/tools.ts) against a fake Notion tab answering with search
+// The search_pages tool (extensions/notico/src/tools.ts) against a fake Notion tab answering with search
 // results in the shape Notion's /api/v3/search returns (see the #64 spike).
 import { afterEach, describe, expect, it } from 'vitest'
 import { LIMITED_STOP, NO_ACCESS } from '../src/notion/api'

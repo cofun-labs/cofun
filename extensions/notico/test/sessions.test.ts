@@ -1,4 +1,4 @@
-// The side panel's saved sessions (extension/src/sessions.ts), on an in-memory IndexedDB.
+// The side panel's saved sessions (extensions/notico/src/sessions.ts), on an in-memory IndexedDB.
 import 'fake-indexeddb/auto'
 import { beforeEach, describe, expect, it } from 'vitest'
 import type { HistoryMessage } from '../src/agent'

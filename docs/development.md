@@ -7,7 +7,7 @@ pnpm install
 pnpm check        # lint, unused code check (knip), format check, typecheck, extension build, and every package's tests
 pnpm knip         # unused files, exports, and dependencies (knip.jsonc lists what is kept, and why)
 pnpm smoke        # build the extension and load it into Chromium (first: pnpm --filter notion-copilot-smoke exec playwright install chromium)
-pnpm icons        # export extension/icons/icon.svg into extension/public/icons (needs the same Chromium); commit the PNGs
+pnpm icons        # export extensions/notico/icons/icon.svg into extensions/notico/public/icons (needs the same Chromium); commit the PNGs
 ```
 
 A lefthook pre-commit hook runs `pnpm check`. GitHub Actions runs it and `pnpm smoke` on every pull request.
@@ -179,12 +179,12 @@ The deploy command applies the migrations not yet applied to `cofun-db`, then de
 ## Extension
 
 ```bash
-pnpm build        # outputs extension/dist
+pnpm build        # outputs extensions/notico/dist
 ```
 
-In `chrome://extensions`, turn on Developer mode, click "Load unpacked", and pick `extension/dist`.
+In `chrome://extensions`, turn on Developer mode, click "Load unpacked", and pick `extensions/notico/dist`.
 
-`extension/.env` holds the public build config. To point at your own deployment, override values in `extension/.env.local`:
+`extensions/notico/.env` holds the public build config. To point at your own deployment, override values in `extensions/notico/.env.local`:
 
 | Variable | Description |
 |---|---|
@@ -197,11 +197,11 @@ In `chrome://extensions`, turn on Developer mode, click "Load unpacked", and pic
 Generate your own signing key and extension ID:
 
 ```bash
-mkdir -p extension/keys
-openssl genrsa -out extension/keys/crx-private.pem 2048
-openssl rsa -in extension/keys/crx-private.pem -pubout -outform DER > extension/keys/pub.der
-base64 -i extension/keys/pub.der | tr -d '\n'                          # CRX_PUBLIC_KEY
-shasum -a 256 extension/keys/pub.der | cut -c1-32 | tr '0-9a-f' 'a-p'  # extension ID
+mkdir -p extensions/notico/keys
+openssl genrsa -out extensions/notico/keys/crx-private.pem 2048
+openssl rsa -in extensions/notico/keys/crx-private.pem -pubout -outform DER > extensions/notico/keys/pub.der
+base64 -i extensions/notico/keys/pub.der | tr -d '\n'                          # CRX_PUBLIC_KEY
+shasum -a 256 extensions/notico/keys/pub.der | cut -c1-32 | tr '0-9a-f' 'a-p'  # extension ID
 ```
 
 In the Clerk dashboard, enable the Native API (Native applications page) so the Chrome extension can sign in. Development and production instances have separate settings, keys, and users: do it on the instance whose keys you use.

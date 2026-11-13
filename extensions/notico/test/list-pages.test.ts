@@ -1,4 +1,4 @@
-// The list_pages tool (extension/src/tools.ts) against a fake Notion tab: a fake workspace answers
+// The list_pages tool (extensions/notico/src/tools.ts) against a fake Notion tab: a fake workspace answers
 // block lookups (syncRecordValuesMain) the way Notion does, and getSpaces and getTeamsV2 answer
 // with queued responses in Notion's shapes.
 import { afterEach, describe, expect, it } from 'vitest'

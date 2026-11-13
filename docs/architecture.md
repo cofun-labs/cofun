@@ -31,7 +31,7 @@ For example, a user's balance and what they owe are not stored: they are worked 
 | Backend | Cloudflare Workers + Hono | Model access stays server-side; the AI binding needs no API token |
 | Model | Workers AI through AI Gateway | No third-party API keys; the gateway adds logs, caching, and per-user analytics |
 | API shape | OpenAI-compatible `/v1/chat/completions` | A common streaming format, so the extension doesn't change if the model or backend does |
-| Agent runtime | [`@earendil-works/pi-agent-core`](https://www.npmjs.com/package/@earendil-works/pi-agent-core), wrapped in `extension/src/agent.ts` | Tool loop, events, abort, and tool hooks in a small package; it runs in the side panel because tools act on the browser. Only `agent.ts` imports it, so it can be replaced |
+| Agent runtime | [`@earendil-works/pi-agent-core`](https://www.npmjs.com/package/@earendil-works/pi-agent-core), wrapped in `extensions/notico/src/agent.ts` | Tool loop, events, abort, and tool hooks in a small package; it runs in the side panel because tools act on the browser. Only `agent.ts` imports it, so it can be replaced |
 | Deploy | Cloudflare Workers Builds (Git integration) | Cloudflare pulls the repo and deploys on merge to `main`; no Cloudflare credentials stored on GitHub |
 | Notion read/write | Notion's own internal endpoints (`/api/v3/loadPageChunk` to read, `/api/v3/saveTransactionsFanout` to write), called from inside the user's Notion tab with `chrome.scripting` | Verified to read and write a real page, with edits persisting after reload. Requests are same-origin and carry the tab's own Notion session (sessions are per host: `app.notion.com` and `www.notion.so` don't share one), so no Notion integration token is needed. They run in an isolated world, out of the page's reach. No `chrome.debugger` (which shows a permanent "debugging this browser" banner). The trade-off: these are not public APIs and may change |
 
@@ -77,7 +77,9 @@ Using the hosted model costs credits. A credit is money: 1 US dollar = 1000 cred
 ## Layout
 
 ```
-extension/                Chrome extension
+extensions/               one folder per Chrome extension, each built and published by itself
+                          and never importing another; they share the worker
+extensions/notico/        Notico, the extension for Notion
   vite.config.ts          build config; writes manifest.json into the build
   manifest.ts             builds manifest.json from .env; a test pins its permissions and content security policy
   icons/icon.svg          the extension icon; `pnpm icons` exports it into public/icons, which the manifest lists
@@ -132,7 +134,7 @@ docs/
   assets/                 pictures used by README.md
   bdd.md                  how use cases and scenarios are written, and how to run ai-e2e scenarios
   use-cases/              use cases by domain; tests reference their scenario IDs
-.oxlintrc.json            lint rules, including the extension's module boundaries
+.oxlintrc.json            lint rules, including the extensions' module boundaries
 .github/rulesets/         GitHub branch rulesets (export format)
 .github/workflows/        CI, CodeQL, dependency review, workflow lint, Claude review, and Claude on request
 .github/dependabot.yml    weekly dependency updates

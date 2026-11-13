@@ -1,6 +1,6 @@
 # Privacy
 
-Notico is a Chrome extension that opens an AI side panel in Chrome, which reads and edits your Notion pages with you. This page says what data it reads, where that data goes, and what is kept. It describes the extension built from this repository with its committed configuration (`extension/.env`) and the worker deployed from `worker/`. If you build the extension against your own deployment, the hosts are the ones you configure.
+Notico is a Chrome extension that opens an AI side panel in Chrome, which reads and edits your Notion pages with you. This page says what data it reads, where that data goes, and what is kept. It describes the extension built from this repository with its committed configuration (`extensions/notico/.env`) and the worker deployed from `worker/`. If you build the extension against your own deployment, the hosts are the ones you configure.
 
 The short version: when you ask a question, the conversation, including the Notion content the assistant read to answer it, goes to our worker and from there to an AI model that runs on Cloudflare. We do not store that content on our servers. Your conversations are saved on your device only.
 

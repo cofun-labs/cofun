@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="extension/icons/icon.svg" alt="Notico icon" width="96" height="96" />
+  <img src="extensions/notico/icons/icon.svg" alt="Notico icon" width="96" height="96" />
 </p>
 
 <h1 align="center">Notico: AI copilot for Notion</h1>

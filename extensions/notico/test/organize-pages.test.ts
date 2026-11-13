@@ -1,5 +1,5 @@
 // Moving, duplicating, and trashing pages (move_page, duplicate_page, and trash_page in
-// extension/src/tools.ts), against a fake Notion workspace that applies them the way Notion does.
+// extensions/notico/src/tools.ts), against a fake Notion workspace that applies them the way Notion does.
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { duplicatePage, editPage, forgetReads, movePage, readPage, trashPage } from '../src/tools'
 import { FakeNotionTab, FakeWorkspace, PAGE, PAGE_URL, SPACE, USER, notionError, restoreGlobals } from './notion-tab'

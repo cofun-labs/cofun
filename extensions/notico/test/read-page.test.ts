@@ -1,4 +1,4 @@
-// The read_page tool (extension/src/tools.ts) against a fake Notion tab, with pages built in the
+// The read_page tool (extensions/notico/src/tools.ts) against a fake Notion tab, with pages built in the
 // shape Notion's loadPageChunk returns them (see fixtures/notion/ for recorded examples).
 import { afterEach, describe, expect, it } from 'vitest'
 import { NESTED_MAX } from '../src/notion/api'

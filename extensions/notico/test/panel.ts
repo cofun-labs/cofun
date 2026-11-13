@@ -6,9 +6,15 @@ import { fileURLToPath } from 'node:url'
 import { act } from '@testing-library/react'
 import { IDBFactory } from 'fake-indexeddb'
 import { vi } from 'vitest'
-import { createApp, type Env } from '../../worker/src/app'
-import { FakeClerk } from '../../worker/test/clerk'
-import { FakeAiBinding, FakeD1Database, FakeExecutionContext, FakeUsageDataset, MODEL } from '../../worker/test/fakes'
+import { createApp, type Env } from '../../../worker/src/app'
+import { FakeClerk } from '../../../worker/test/clerk'
+import {
+  FakeAiBinding,
+  FakeD1Database,
+  FakeExecutionContext,
+  FakeUsageDataset,
+  MODEL,
+} from '../../../worker/test/fakes'
 import type { FakeSession } from './clerk'
 import { restoreGlobals, type FakeNotionTab } from './notion-tab'
 

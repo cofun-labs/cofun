@@ -1,4 +1,4 @@
-// The query_database tool (extension/src/tools.ts) against a fake Notion tab answering in the
+// The query_database tool (extensions/notico/src/tools.ts) against a fake Notion tab answering in the
 // shapes Notion's syncRecordValuesMain and queryCollection return (see the #64 spike).
 import { afterEach, describe, expect, it } from 'vitest'
 import { QUERY_LOAD, QUERY_PART, localDate, queryDatabase } from '../src/tools'

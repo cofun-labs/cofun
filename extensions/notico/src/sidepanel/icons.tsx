@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react'
 
-/** The Cofun mark: an open ring with a dot just outside its gap (see `extension/icons/icon.svg`). */
+/** The Cofun mark: an open ring with a dot just outside its gap (see `extensions/notico/icons/icon.svg`). */
 export function Mark({ className }: { className?: string }) {
   return (
     <svg className={className} viewBox="-21 -21 42 42" aria-hidden="true" focusable="false">

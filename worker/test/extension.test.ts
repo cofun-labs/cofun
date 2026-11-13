@@ -1,4 +1,4 @@
-// Runs the extension's real agent (extension/src/agent.ts) against the worker,
+// Runs the extension's real agent (extensions/notico/src/agent.ts) against the worker,
 // so the two sides can't drift apart.
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
@@ -10,7 +10,7 @@ import {
   type HistoryMessage,
   type ToolCallRequest,
   type ToolSpec,
-} from '../../extension/src/agent'
+} from '../../extensions/notico/src/agent'
 import {
   BUDGET_STOP,
   LIMITED_STOP,
@@ -21,11 +21,11 @@ import {
   UNEXPECTED_STOP,
   UNKNOWN_STOP,
   budgetQuestion,
-} from '../../extension/src/notion/api'
-import { activeNotionTab, countNotionRequests, notionCooldown } from '../../extension/src/notion/tab'
-import { defineTool } from '../../extension/src/tool'
-import { editPage, movePage, openPageNote, readPage, trashPage } from '../../extension/src/tools'
-import { z } from '../../extension/src/zod'
+} from '../../extensions/notico/src/notion/api'
+import { activeNotionTab, countNotionRequests, notionCooldown } from '../../extensions/notico/src/notion/tab'
+import { defineTool } from '../../extensions/notico/src/tool'
+import { editPage, movePage, openPageNote, readPage, trashPage } from '../../extensions/notico/src/tools'
+import { z } from '../../extensions/notico/src/zod'
 import { createApp, type Env } from '../src/app'
 import { priceOf } from '../src/pricing'
 import { FakeClerk } from './clerk'
@@ -38,7 +38,7 @@ import {
   PAGE_URL,
   SPACE,
   fixture,
-} from '../../extension/test/notion-tab'
+} from '../../extensions/notico/test/notion-tab'
 
 const EXT = 'chrome-extension://abcdefghijklmnopabcdefghijklmnop'
 let clock = new Date('2026-11-08T12:00:00Z')

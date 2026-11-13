@@ -1,12 +1,21 @@
-// The extension's module boundaries (AGENTS.md: "Architecture" and "Calling Notion"), as lint errors.
+// The extensions' module boundaries (AGENTS.md: "Architecture" and "Calling Notion"), as lint errors.
 // Oxlint's default rules stay on: this file only adds rules.
+//
+// Each rule is written once for every extension, with extensions/*/ globs: an extension is
+// extensions/<name>/, and it reaches its site only through src/<site>/tab.ts (src/notion/tab.ts in
+// Notico).
 //
 // An override replaces a rule's whole configuration, it does not merge with the one before it. So
 // each block below repeats the restrictions that still hold for its files, and a later block wins.
+//
+// Oxlint's regexes have no lookahead (a pattern with one is ignored without a warning), so the rule
+// that an extension never imports another one is written per place: in src/, a relative path that
+// climbs to another folder's src/ or test/; in test/, a path that climbs two levels, to the
+// extensions/ folder (the worker, which tests run against, is three levels up).
 {
   "$schema": "./node_modules/oxlint/configuration_schema.json",
   "rules": {
-    // Everywhere in the repository, tests included. extension/src/agent.ts is exempted below.
+    // Everywhere in the repository, tests included. extensions/*/src/agent.ts is exempted below.
     "no-restricted-imports": [
       "error",
       {
@@ -18,7 +27,7 @@
               "@earendil-works/pi-ai",
               "@earendil-works/pi-ai/**"
             ],
-            "message": "Only extension/src/agent.ts imports pi. Import what you need from agent.ts, or add it there."
+            "message": "Only an extension's src/agent.ts imports pi. Import what you need from agent.ts, or add it there."
           }
         ]
       }
@@ -26,20 +35,21 @@
   },
   "overrides": [
     {
-      "files": ["extension/**"],
+      "files": ["extensions/**"],
       "rules": {
         "no-restricted-properties": [
           "error",
           {
             "object": "chrome",
             "property": "debugger",
-            "message": "Never use chrome.debugger: it shows a permanent \"debugging this browser\" banner. Notion requests run through chrome.scripting in extension/src/notion/tab.ts."
+            "message": "Never use chrome.debugger: it shows a permanent \"debugging this browser\" banner. Site requests run through chrome.scripting in the extension's src/<site>/tab.ts."
           }
         ]
       }
     },
     {
-      "files": ["extension/src/**"],
+      // An extension's tests, which sit directly in test/.
+      "files": ["extensions/*/test/**"],
       "rules": {
         "no-restricted-imports": [
           "error",
@@ -52,11 +62,40 @@
                   "@earendil-works/pi-ai",
                   "@earendil-works/pi-ai/**"
                 ],
-                "message": "Only extension/src/agent.ts imports pi. Import what you need from agent.ts, or add it there."
+                "message": "Only an extension's src/agent.ts imports pi. Import what you need from agent.ts, or add it there."
+              },
+              {
+                "regex": "^\\.\\./\\.\\./[^./]",
+                "message": "An extension never imports another extension: each one in extensions/<name>/ keeps its own copy of what it needs."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": ["extensions/*/src/**"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": [
+                  "@earendil-works/pi-agent-core",
+                  "@earendil-works/pi-agent-core/**",
+                  "@earendil-works/pi-ai",
+                  "@earendil-works/pi-ai/**"
+                ],
+                "message": "Only an extension's src/agent.ts imports pi. Import what you need from agent.ts, or add it there."
               },
               {
                 "regex": "^zod(/|$)",
-                "message": "Import z from extension/src/zod.ts: it sets zod up for the extension's content security policy before any schema is built."
+                "message": "Import z from the extension's src/zod.ts: it sets zod up for the extension's content security policy before any schema is built."
+              },
+              {
+                "regex": "^(\\.\\./)+[^./][^/]*/(src|test)(/|$)",
+                "message": "An extension never imports another extension: each one in extensions/<name>/ keeps its own copy of what it needs."
               }
             ]
           }
@@ -65,7 +104,7 @@
           "error",
           {
             "name": "fetch",
-            "message": "Only extension/src/notion/tab.ts sends requests to Notion, and only extension/src/agent.ts calls the worker. Tools call the typed methods of NotionClient (extension/src/notion/api.ts)."
+            "message": "Only an extension's src/<site>/tab.ts sends requests to its site, and only its src/agent.ts calls the worker. Tools call the typed methods of the site's client (src/notion/api.ts in Notico)."
           }
         ],
         "no-restricted-properties": [
@@ -73,34 +112,36 @@
           {
             "object": "chrome",
             "property": "debugger",
-            "message": "Never use chrome.debugger: it shows a permanent \"debugging this browser\" banner. Notion requests run through chrome.scripting in extension/src/notion/tab.ts."
+            "message": "Never use chrome.debugger: it shows a permanent \"debugging this browser\" banner. Site requests run through chrome.scripting in the extension's src/<site>/tab.ts."
           },
           {
             "object": "chrome",
             "property": "scripting",
-            "message": "Only extension/src/notion/tab.ts uses chrome.scripting: it is how requests run inside the user's Notion tab. Use the helpers tab.ts exports."
+            "message": "Only an extension's src/<site>/tab.ts uses chrome.scripting: it is how requests run inside the user's tab. Use the helpers tab.ts exports."
           },
           {
             "object": "globalThis",
             "property": "fetch",
-            "message": "Only extension/src/notion/tab.ts sends requests to Notion, and only extension/src/agent.ts calls the worker. Tools call the typed methods of NotionClient (extension/src/notion/api.ts)."
+            "message": "Only an extension's src/<site>/tab.ts sends requests to its site, and only its src/agent.ts calls the worker. Tools call the typed methods of the site's client (src/notion/api.ts in Notico)."
           },
           {
             "object": "window",
             "property": "fetch",
-            "message": "Only extension/src/notion/tab.ts sends requests to Notion, and only extension/src/agent.ts calls the worker. Tools call the typed methods of NotionClient (extension/src/notion/api.ts)."
+            "message": "Only an extension's src/<site>/tab.ts sends requests to its site, and only its src/agent.ts calls the worker. Tools call the typed methods of the site's client (src/notion/api.ts in Notico)."
           },
           {
             "object": "self",
             "property": "fetch",
-            "message": "Only extension/src/notion/tab.ts sends requests to Notion, and only extension/src/agent.ts calls the worker. Tools call the typed methods of NotionClient (extension/src/notion/api.ts)."
+            "message": "Only an extension's src/<site>/tab.ts sends requests to its site, and only its src/agent.ts calls the worker. Tools call the typed methods of the site's client (src/notion/api.ts in Notico)."
           }
         ]
       }
     },
     {
-      // The Notion layer knows nothing about the agent, the tools, sessions, or the UI.
-      "files": ["extension/src/notion/**"],
+      // The site layer knows nothing about the agent, the tools, sessions, or the UI. One site
+      // directory per extension: src/sidepanel/ sits next to it and is not one, so each site is
+      // named here.
+      "files": ["extensions/*/src/notion/**"],
       "rules": {
         "no-restricted-imports": [
           "error",
@@ -113,15 +154,19 @@
                   "@earendil-works/pi-ai",
                   "@earendil-works/pi-ai/**"
                 ],
-                "message": "Only extension/src/agent.ts imports pi. Import what you need from agent.ts, or add it there."
+                "message": "Only an extension's src/agent.ts imports pi. Import what you need from agent.ts, or add it there."
               },
               {
                 "regex": "^(\\.\\./)+(agent|tool|tools|sessions|sidepanel)(\\.|/|$)",
-                "message": "extension/src/notion/ imports nothing from agent.ts, tool.ts, tools.ts, sessions.ts, or sidepanel/: those modules depend on the Notion layer, not the other way round."
+                "message": "An extension's site layer (src/notion/ in Notico) imports nothing from agent.ts, tool.ts, tools.ts, sessions.ts, or sidepanel/: those modules depend on the site layer, not the other way round."
               },
               {
                 "regex": "^zod(/|$)",
-                "message": "Import z from extension/src/zod.ts: it sets zod up for the extension's content security policy before any schema is built."
+                "message": "Import z from the extension's src/zod.ts: it sets zod up for the extension's content security policy before any schema is built."
+              },
+              {
+                "regex": "^(\\.\\./)+[^./][^/]*/(src|test)(/|$)",
+                "message": "An extension never imports another extension: each one in extensions/<name>/ keeps its own copy of what it needs."
               }
             ]
           }
@@ -130,7 +175,7 @@
     },
     {
       // The one module that imports pi, and the one that calls the worker.
-      "files": ["extension/src/agent.ts"],
+      "files": ["extensions/*/src/agent.ts"],
       "rules": {
         "no-restricted-imports": [
           "error",
@@ -138,7 +183,11 @@
             "patterns": [
               {
                 "regex": "^zod(/|$)",
-                "message": "Import z from extension/src/zod.ts: it sets zod up for the extension's content security policy before any schema is built."
+                "message": "Import z from the extension's src/zod.ts: it sets zod up for the extension's content security policy before any schema is built."
+              },
+              {
+                "regex": "^(\\.\\./)+[^./][^/]*/(src|test)(/|$)",
+                "message": "An extension never imports another extension: each one in extensions/<name>/ keeps its own copy of what it needs."
               }
             ]
           }
@@ -149,19 +198,20 @@
           {
             "object": "chrome",
             "property": "debugger",
-            "message": "Never use chrome.debugger: it shows a permanent \"debugging this browser\" banner. Notion requests run through chrome.scripting in extension/src/notion/tab.ts."
+            "message": "Never use chrome.debugger: it shows a permanent \"debugging this browser\" banner. Site requests run through chrome.scripting in the extension's src/<site>/tab.ts."
           },
           {
             "object": "chrome",
             "property": "scripting",
-            "message": "Only extension/src/notion/tab.ts uses chrome.scripting: it is how requests run inside the user's Notion tab. Use the helpers tab.ts exports."
+            "message": "Only an extension's src/<site>/tab.ts uses chrome.scripting: it is how requests run inside the user's tab. Use the helpers tab.ts exports."
           }
         ]
       }
     },
     {
-      // The one module that sends requests to Notion. Its import restrictions (the notion/ block) still hold.
-      "files": ["extension/src/notion/tab.ts"],
+      // The one module that sends requests to the site. Its import restrictions (the site block)
+      // still hold.
+      "files": ["extensions/*/src/*/tab.ts"],
       "rules": {
         "no-restricted-globals": "off",
         "no-restricted-properties": [
@@ -169,14 +219,14 @@
           {
             "object": "chrome",
             "property": "debugger",
-            "message": "Never use chrome.debugger: it shows a permanent \"debugging this browser\" banner. Notion requests run through chrome.scripting in extension/src/notion/tab.ts."
+            "message": "Never use chrome.debugger: it shows a permanent \"debugging this browser\" banner. Site requests run through chrome.scripting in the extension's src/<site>/tab.ts."
           }
         ]
       }
     },
     {
-      // The one module that imports zod. Its other restrictions (the extension/src block) still hold.
-      "files": ["extension/src/zod.ts"],
+      // The one module that imports zod. Its other restrictions (the extensions/*/src block) still hold.
+      "files": ["extensions/*/src/zod.ts"],
       "rules": {
         "no-restricted-imports": [
           "error",
@@ -189,7 +239,11 @@
                   "@earendil-works/pi-ai",
                   "@earendil-works/pi-ai/**"
                 ],
-                "message": "Only extension/src/agent.ts imports pi. Import what you need from agent.ts, or add it there."
+                "message": "Only an extension's src/agent.ts imports pi. Import what you need from agent.ts, or add it there."
+              },
+              {
+                "regex": "^(\\.\\./)+[^./][^/]*/(src|test)(/|$)",
+                "message": "An extension never imports another extension: each one in extensions/<name>/ keeps its own copy of what it needs."
               }
             ]
           }
@@ -197,7 +251,7 @@
       }
     },
     {
-      // The worker imports zod through the module that sets it up, like the extension.
+      // The worker imports zod through the module that sets it up, like the extensions.
       "files": ["worker/src/**"],
       "rules": {
         "no-restricted-imports": [
@@ -211,7 +265,7 @@
                   "@earendil-works/pi-ai",
                   "@earendil-works/pi-ai/**"
                 ],
-                "message": "Only extension/src/agent.ts imports pi. Import what you need from agent.ts, or add it there."
+                "message": "Only an extension's src/agent.ts imports pi. Import what you need from agent.ts, or add it there."
               },
               {
                 "regex": "^zod(/|$)",
@@ -237,7 +291,7 @@
                   "@earendil-works/pi-ai",
                   "@earendil-works/pi-ai/**"
                 ],
-                "message": "Only extension/src/agent.ts imports pi. Import what you need from agent.ts, or add it there."
+                "message": "Only an extension's src/agent.ts imports pi. Import what you need from agent.ts, or add it there."
               }
             ]
           }

@@ -1,5 +1,5 @@
 // Changing page properties and adding database rows (update_pages and create_page in
-// extension/src/tools.ts), against a fake Notion workspace that applies transactions the way
+// extensions/notico/src/tools.ts), against a fake Notion workspace that applies transactions the way
 // Notion does.
 import { afterEach, describe, expect, it } from 'vitest'
 import { UPDATE_MAX, createPage, forgetReads, queryDatabase, readPage, updatePages } from '../src/tools'

@@ -11,12 +11,12 @@ import {
   type SpaceView,
   blockOps,
   checkResponse,
-} from '../../extension/src/notion/api'
-import { type NewBlock, parseMarkdown } from '../../extension/src/notion/blocks'
-import { planNewPage } from '../../extension/src/notion/edit'
-import { propertyValue } from '../../extension/src/notion/props'
-import { NOTION_HOSTS, pageIdFromUrl } from '../../extension/src/notion/hosts'
-import { notionRequest } from '../../extension/src/notion/tab'
+} from '../../extensions/notico/src/notion/api'
+import { type NewBlock, parseMarkdown } from '../../extensions/notico/src/notion/blocks'
+import { planNewPage } from '../../extensions/notico/src/notion/edit'
+import { propertyValue } from '../../extensions/notico/src/notion/props'
+import { NOTION_HOSTS, pageIdFromUrl } from '../../extensions/notico/src/notion/hosts'
+import { notionRequest } from '../../extensions/notico/src/notion/tab'
 import type { Target } from './cdp'
 import { E2eError } from './errors'
 

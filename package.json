@@ -9,7 +9,7 @@
     "format:fix": "oxfmt --write '**/*.{ts,tsx,json,css}'",
     "format:check": "oxfmt --check '**/*.{ts,tsx,json,css}'",
     "typecheck": "pnpm -r typecheck",
-    "build": "pnpm --filter notion-copilot-extension build",
+    "build": "pnpm -r --filter './extensions/*' build",
     "test": "pnpm -r test",
     "e2e": "pnpm --silent --filter notion-copilot-e2e e2e",
     "smoke": "pnpm build && pnpm --silent --filter notion-copilot-smoke smoke",
