@@ -1,19 +1,10 @@
 # Architecture
 
-How Notico is built, and why. For setup and deployment see [development.md](development.md); for the workflow and coding rules see [AGENTS.md](../AGENTS.md).
+How Cofun's extensions and the backend they share are built, and why. For setup and deployment see [development.md](development.md); for the workflow and coding rules see [AGENTS.md](../AGENTS.md).
 
-```
-┌──────────────────────── Chrome ─────────────────────────┐
-│ Notion tab            │ Side panel (React)              │──Bearer <Clerk session JWT>──▶ Worker ──▶ AI Gateway ──▶ Workers AI
-│  /api/v3 as the user ◀──chrome.scripting── agent + tools│                                (verifies JWT)
-├───────────────────────┴─────────────────────────────────┤      ▲ reads the Clerk cookies signing in sets (Clerk Sync Host)
-│ Sign-in tab: api.cofun.cc/login                         │──────┘  this page is served by the same worker
-└─────────────────────────────────────────────────────────┘
-```
+Each Cofun extension is an AI side panel for one kind of page, in its own folder under `extensions/` (Notico, for Notion, is the first), built and published by itself. All of them call one Cloudflare Worker (`worker/`), which signs users in, checks who is asking, keeps their credits, and passes the conversation to the model. The worker knows nothing about any site: it never talks to Notion or any other page's service. The agent and its tools run in the extension, next to the page they act on.
 
-The agent loop and its tools run in the side panel. The worker only checks who is asking and passes the conversation to the model; it never talks to Notion. Notion requests are made inside the user's own Notion tab, with that tab's session.
-
-The panel is open on every tab, but the tools work on the current tab only: the active tab of the panel's window, looked up again for each question and each tool call, since the user can switch tabs at any time. Each question tells the model whether that tab is a Notion page (and which), and nothing else about a tab on another site. The Notion tools are offered everywhere; when the current tab is not on Notion they fail with `no_notion_tab`, which tells the model to send the user to a Notion page, and they never use a Notion page open in another tab instead. `get_current_tab` gives the model the current tab's URL and title on any site when a question needs them; no tool reads another site's content.
+Each extension keeps its own copy of the side panel code (UI, agent, sign-in, settings, credits), and duplication between extensions is accepted: a fix or feature in one is applied to the others by hand, and `worker/test/extension.test.ts` runs an extension's own agent against the worker so the part that faces the worker cannot drift. One account and one balance of credits serve every extension.
 
 ## Single source of truth
 
@@ -21,41 +12,29 @@ Each fact is stored in one place, and everything else is worked out from it when
 
 For example, a user's balance and what they owe are not stored: they are worked out from their grants and model calls each time. What a call cost is a column of the call's own row, not a second record. The one stored running value in the credits is what is left of each grant (`grants.left`): working it out would mean replaying every call in the order grants are spent, and it is written in the same transaction as the call that spends it. Data kept only for watching the service, such as the usage records in Analytics Engine, is not a copy in this sense: it describes requests in its own way (refused ones included), and nothing the service does reads it.
 
-## Tech choices
+## Shared by every extension: the worker, sign-in, and credits
 
 | Area | Choice | Why |
 |---|---|---|
-| Extension | Chrome MV3 + [Side Panel API](https://developer.chrome.com/docs/extensions/reference/api/sidePanel) | Sits next to the page without covering Notion. One panel per window, on every tab (the manifest's `side_panel.default_path`), so the conversation stays as the user switches tabs |
-| Extension build | Vite + React + TypeScript | Clerk's extension SDK is React-based; Vite needs little config and no extension framework |
 | Sign-in | [Clerk](https://clerk.com) (`@clerk/chrome-extension`) with [Sync Host](https://clerk.com/docs/references/chrome-extension/sync-host) | Ready-made sign-in UI and sessions; the backend only verifies JWTs with a public key. Social logins need a redirect, which Chrome side panels don't support, so users sign in on a normal web page and the session syncs into the extension |
 | Backend | Cloudflare Workers + Hono | Model access stays server-side; the AI binding needs no API token |
 | Model | Workers AI through AI Gateway | No third-party API keys; the gateway adds logs, caching, and per-user analytics |
 | API shape | OpenAI-compatible `/v1/chat/completions` | A common streaming format, so the extension doesn't change if the model or backend does |
-| Agent runtime | [`@earendil-works/pi-agent-core`](https://www.npmjs.com/package/@earendil-works/pi-agent-core), wrapped in `extensions/notico/src/agent.ts` | Tool loop, events, abort, and tool hooks in a small package; it runs in the side panel because tools act on the browser. Only `agent.ts` imports it, so it can be replaced |
 | Deploy | Cloudflare Workers Builds (Git integration) | Cloudflare pulls the repo and deploys on merge to `main`; no Cloudflare credentials stored on GitHub |
-| Notion read/write | Notion's own internal endpoints (`/api/v3/loadPageChunk` to read, `/api/v3/saveTransactionsFanout` to write), called from inside the user's Notion tab with `chrome.scripting` | Verified to read and write a real page, with edits persisting after reload. Requests are same-origin and carry the tab's own Notion session (sessions are per host: `app.notion.com` and `www.notion.so` don't share one), so no Notion integration token is needed. They run in an isolated world, out of the page's reach. No `chrome.debugger` (which shows a permanent "debugging this browser" banner). The trade-off: these are not public APIs and may change |
 
-## Auth flow
+### Auth flow
 
-1. The user clicks "Sign in" in the side panel. The extension opens `https://api.cofun.cc/login` in a new tab; the worker serves this page with Clerk's sign-in UI.
-2. Sign-in runs against Clerk's production instance, whose Frontend API is `clerk.cofun.cc`. After sign-in, Clerk's client cookie (`__client`) lives on that host, and a cookie that says whether anyone is signed in (`__client_uat`) on the parent domain `cofun.cc`. The extension is configured with `syncHost` and uses the `cookies` permission to read that session: from the Frontend API host on a production instance, and from the sign-in page's host on a development instance, which keeps its client cookie there (`src/clerk.ts`). Clerk doesn't refresh an already-open side panel, so the extension watches those cookies and reloads the panel when they change.
+1. The user clicks "Sign in" in an extension's side panel. The extension opens `https://api.cofun.cc/login` in a new tab; the worker serves this page with Clerk's sign-in UI.
+2. Sign-in runs against Clerk's production instance, whose Frontend API is `clerk.cofun.cc`. After sign-in, Clerk's client cookie (`__client`) lives on that host, and a cookie that says whether anyone is signed in (`__client_uat`) on the parent domain `cofun.cc`. The extension is configured with `syncHost` and uses the `cookies` permission to read that session: from the Frontend API host on a production instance, and from the sign-in page's host on a development instance, which keeps its client cookie there (each extension's `src/clerk.ts`). Clerk doesn't refresh an already-open side panel, so the extension watches those cookies and reloads the panel when they change.
 3. Before each request, the extension gets a short-lived session JWT with `getToken()` and sends it as `Authorization: Bearer`.
 4. The worker verifies the JWT locally with Clerk's JWT public key (signature, expiry). If the token has an `azp` (the origin that requested it: `chrome-extension://<id>` for the extension, the worker's own origin for the admin page), it must be an allowed origin, which stops other websites from using a session they obtained in the browser. No network call to Clerk is needed.
 5. The worker checks the user's credits (see [Credits](#credits)) and refuses the request when none are left.
 6. The request goes through AI Gateway to Workers AI, tagged with the Clerk user id and the product for per-user analytics. The product is the one `PRODUCTS` (in `wrangler.jsonc`) lists for the token's `azp`, which Clerk signs, so a client cannot choose it; a caller that is no listed extension (the admin page, a token with no `azp`) is `unknown`, and is not refused, since credits are one balance across products and the product only sorts what was spent. Gateway log collection is off (`collectLog: false`), so the gateway keeps request analytics but not prompts or replies.
 7. When the reply ends, the worker records the model call and charges the user what its tokens cost, and writes one usage record for the request (see [Usage records](development.md#usage-records)).
 
-The extension ID is pinned with the manifest `key`, so Clerk and the worker can trust it.
+Each extension's ID is pinned with its manifest `key`, so Clerk and the worker can trust it.
 
-## Sessions
-
-Conversations are saved in the extension's IndexedDB, one database per Clerk user (`notion-copilot-sessions-<userId>`), and never sent to the worker beyond what the model needs for the current question. They stay after sign-out so the user can pick up again, and they are not encrypted: keeping accounts apart only means one account's panel never shows another's sessions. Anyone with access to the Chrome profile can read them, tool results included, such as the content of Notion pages the agent read (for example in DevTools).
-
-## Writes without approval
-
-The agent edits pages, creates pages and rows, changes properties, adds comments, and moves and duplicates pages without asking first. Moving pages to the trash is the one thing it asks the user's approval for, each time, showing each page by its current name; pages only ever go to Notion's trash, where they can be restored. Each change shows on its tool card in the side panel, and a page's history in Notion can undo edits. The trade-off: the agent reads text the user doesn't control (shared pages, guest content, search results), and an instruction hidden in that text can make it write as the user without anyone being asked. It could change many pages in one call, move a private page under a page others can read (a page takes its sharing from where it sits, so it is exposed as soon as it moves), or copy content the user can see into a page or a comment someone else can read; a comment also notifies the people following the page or the thread, and a mention notifies the person mentioned. When a mention's name matches no one, the agent is told the members with a similar name, so text in a page could have it probe for the names of the workspace's people. Page history and "Move to" can undo the changes, but not what someone read in the meantime.
-
-## Credits
+### Credits
 
 Using the hosted model costs credits. A credit is money: 1 US dollar = 1000 credits, and a model call costs what its tokens cost at the provider's list price, with no markup. Every signed-in user gets 200 free credits a week.
 
@@ -71,8 +50,41 @@ Using the hosted model costs credits. A credit is money: 1 US dollar = 1000 cred
 - **The overview** on the same page shows credits as a whole: what was granted and spent in a period the admin picks, in all, per day, per product, and per account (`worker/src/overview.ts`). It only reads, behind the same admin check, and stores nothing: every number is worked out from the `grants` and `model_calls` rows when asked for, and an account's balance comes from the same definition as the ledger's own. D1 runs one query at a time, so a slow overview query would hold up charging: every query is bounded by the period and reads through the tables' time indexes.
 - **A user's own credits** are read by the side panel from `GET /v1/credits`, behind the same session check as the chat, for the caller only: there is no way to name another account. It answers with the balance, the grants that still count (source, what is left, when it expires, never the admin who made a grant by hand), the state of the free week, and credits used per day for the last 30 days. It only reads (`Ledger.look`): the free week still starts with the user's next question. When no free grant counts, the balance it reports is what that question will start with, the stored balance plus the free grant, marked as not started; `Ledger.open` and `Ledger.look` read that number with the same statement (`READ_BALANCE`), one after giving the grant and one without, so what is shown and what is given cannot drift apart. Usage per day is totalled from `model_calls` on every read, bounded by the `model_calls_by_user` index; no totals are stored. A call belongs to the day it started on, on the user's clock: the panel sends how far its clock is ahead of UTC, in minutes (`utc_offset`, validated and bounded to the offsets that exist), since the worker does not know the user's time zone. The offset is the one in force when the panel asks, so around a daylight-saving change a call within an hour of midnight can land on the neighbouring day.
 - **The history of a user's credits** is read apart from that, by two sibling routes the panel calls only when the user opens the history, so the read it makes on every load and after every question stays small: `GET /v1/credits/grants` for every grant the user was given, newest first, the expired ones included (what is left of an expired grant is what went unspent), and `GET /v1/credits/usage` for credits used per day before the 30 days above, by the same definition of a day (`daysOf` in `credits.ts`). Both only read, for the caller only, and store nothing. Neither list has an end, so each is read a part at a time, and every read is bounded and served by an index: grants a page at a time, usage a period at a time, with each answer saying where the part before it starts.
-- **In the side panel**, the avatar in the header opens the panel's own account menu (`Account.tsx`): the name and email from Clerk, the credits left with the date that matters next, "Settings", and "Sign out". Clerk's `<UserButton />` and its account management are not used: Notico needs Clerk only for who the user is, and disconnecting the only sign-in method could leave a user unable to get back to their account and its credits. The settings page (`Settings.tsx`) shows the account, the plan ("Free"; a subscription will add its actions there), the balance with each lot of credits and its dates, and usage per day; from its credits the history opens in its place (`History.tsx`), read when it opens, and a read of it that fails says so there and touches nothing else. The panel reads the credits when it loads, after every question, and when the account menu or the settings page opens (a reply the user stopped is charged after the panel's read, and another window may have spent credits); amounts are shown as whole credits (what is left rounded down, what was used to the nearest). A read that fails never touches the chat: the menu and the page say the credits are unavailable, with no number, and the page offers to try again. A question refused with `out_of_credits` shows the worker's message with a link to the settings page.
 - **When the database fails.** If the balance can't be read (D1 unreachable), the request is refused (503 `credits_unavailable`) and the model is not called. If the call's record fails after the model answered, the reply still goes out, the failure is logged, the usage record says nothing was charged, and the call is not charged: the batch either wrote both the record and what it took from the grants, or neither.
+
+## Notico: the extension for Notion
+
+```
+┌──────────────────────── Chrome ─────────────────────────┐
+│ Notion tab            │ Side panel (React)              │──Bearer <Clerk session JWT>──▶ Worker ──▶ AI Gateway ──▶ Workers AI
+│  /api/v3 as the user ◀──chrome.scripting── agent + tools│                                (verifies JWT)
+├───────────────────────┴─────────────────────────────────┤      ▲ reads the Clerk cookies signing in sets (Clerk Sync Host)
+│ Sign-in tab: api.cofun.cc/login                         │──────┘  this page is served by the same worker
+└─────────────────────────────────────────────────────────┘
+```
+
+The agent loop and its tools run in the side panel. The worker only checks who is asking and passes the conversation to the model; it never talks to Notion. Notion requests are made inside the user's own Notion tab, with that tab's session.
+
+The panel is open on every tab, but the tools work on the current tab only: the active tab of the panel's window, looked up again for each question and each tool call, since the user can switch tabs at any time. Each question tells the model whether that tab is a Notion page (and which), and nothing else about a tab on another site. The Notion tools are offered everywhere; when the current tab is not on Notion they fail with `no_notion_tab`, which tells the model to send the user to a Notion page, and they never use a Notion page open in another tab instead. `get_current_tab` gives the model the current tab's URL and title on any site when a question needs them; no tool reads another site's content.
+
+| Area | Choice | Why |
+|---|---|---|
+| Extension | Chrome MV3 + [Side Panel API](https://developer.chrome.com/docs/extensions/reference/api/sidePanel) | Sits next to the page without covering Notion. One panel per window, on every tab (the manifest's `side_panel.default_path`), so the conversation stays as the user switches tabs |
+| Extension build | Vite + React + TypeScript | Clerk's extension SDK is React-based; Vite needs little config and no extension framework |
+| Agent runtime | [`@earendil-works/pi-agent-core`](https://www.npmjs.com/package/@earendil-works/pi-agent-core), wrapped in `extensions/notico/src/agent.ts` | Tool loop, events, abort, and tool hooks in a small package; it runs in the side panel because tools act on the browser. Only `agent.ts` imports it, so it can be replaced |
+| Notion read/write | Notion's own internal endpoints (`/api/v3/loadPageChunk` to read, `/api/v3/saveTransactionsFanout` to write), called from inside the user's Notion tab with `chrome.scripting` | Verified to read and write a real page, with edits persisting after reload. Requests are same-origin and carry the tab's own Notion session (sessions are per host: `app.notion.com` and `www.notion.so` don't share one), so no Notion integration token is needed. They run in an isolated world, out of the page's reach. No `chrome.debugger` (which shows a permanent "debugging this browser" banner). The trade-off: these are not public APIs and may change |
+
+### Sessions
+
+Conversations are saved in the extension's IndexedDB, one database per Clerk user (`notion-copilot-sessions-<userId>`), and never sent to the worker beyond what the model needs for the current question. They stay after sign-out so the user can pick up again, and they are not encrypted: keeping accounts apart only means one account's panel never shows another's sessions. Anyone with access to the Chrome profile can read them, tool results included, such as the content of Notion pages the agent read (for example in DevTools).
+
+### Writes without approval
+
+The agent edits pages, creates pages and rows, changes properties, adds comments, and moves and duplicates pages without asking first. Moving pages to the trash is the one thing it asks the user's approval for, each time, showing each page by its current name; pages only ever go to Notion's trash, where they can be restored. Each change shows on its tool card in the side panel, and a page's history in Notion can undo edits. The trade-off: the agent reads text the user doesn't control (shared pages, guest content, search results), and an instruction hidden in that text can make it write as the user without anyone being asked. It could change many pages in one call, move a private page under a page others can read (a page takes its sharing from where it sits, so it is exposed as soon as it moves), or copy content the user can see into a page or a comment someone else can read; a comment also notifies the people following the page or the thread, and a mention notifies the person mentioned. When a mention's name matches no one, the agent is told the members with a similar name, so text in a page could have it probe for the names of the workspace's people. Page history and "Move to" can undo the changes, but not what someone read in the meantime.
+
+### Credits in the side panel
+
+The avatar in the header opens the panel's own account menu (`Account.tsx`): the name and email from Clerk, the credits left with the date that matters next, "Settings", and "Sign out". Clerk's `<UserButton />` and its account management are not used: Notico needs Clerk only for who the user is, and disconnecting the only sign-in method could leave a user unable to get back to their account and its credits. The settings page (`Settings.tsx`) shows the account, the plan ("Free"; a subscription will add its actions there), the balance with each lot of credits and its dates, and usage per day; from its credits the history opens in its place (`History.tsx`), read when it opens, and a read of it that fails says so there and touches nothing else. The panel reads the credits when it loads, after every question, and when the account menu or the settings page opens (a reply the user stopped is charged after the panel's read, and another window may have spent credits); amounts are shown as whole credits (what is left rounded down, what was used to the nearest). A read that fails never touches the chat: the menu and the page say the credits are unavailable, with no number, and the page offers to try again. A question refused with `out_of_credits` shows the worker's message with a link to the settings page.
 
 ## Layout
 
@@ -80,6 +92,8 @@ Using the hosted model costs credits. A credit is money: 1 US dollar = 1000 cred
 extensions/               one folder per Chrome extension, each built and published by itself
                           and never importing another; they share the worker
 extensions/notico/        Notico, the extension for Notion
+  README.md               what Notico does and how to use it, for its users
+  PRIVACY.md              what Notico reads, the hosts it may contact, and what it keeps on the device
   vite.config.ts          build config; writes manifest.json into the build
   manifest.ts             builds manifest.json from .env; a test pins its permissions and content security policy
   icons/icon.svg          the extension icon; `pnpm icons` exports it into public/icons, which the manifest lists
@@ -131,16 +145,17 @@ smoke/                    pnpm smoke: loads the built extension into Chromium an
 docs/
   architecture.md         this file
   development.md          setup, deployment, and repository settings
-  assets/                 pictures used by README.md
+  assets/                 pictures used by Notico's README.md
   bdd.md                  how use cases and scenarios are written, and how to run ai-e2e scenarios
-  use-cases/              use cases by domain; tests reference their scenario IDs
+  use-cases/              use cases by product (notico/, and shared/ for the backend alone), then by domain;
+                          tests reference their scenario IDs
 .oxlintrc.json            lint rules, including the extensions' module boundaries
 .github/rulesets/         GitHub branch rulesets (export format)
 .github/workflows/        CI, CodeQL, dependency review, workflow lint, Claude review, and Claude on request
 .github/dependabot.yml    weekly dependency updates
 scripts/
   sync-github-settings.sh applies the rulesets and repository options with gh
-README.md                 what the extension does and how to use it
-PRIVACY.md                what data the extension reads, where it goes, and what is kept
+README.md                 Cofun and its extensions, for users
+PRIVACY.md                what the sign-in and the worker do with users' data, for every extension
 AGENTS.md                 development workflow and conventions (CLAUDE.md links here)
 ```

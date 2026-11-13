@@ -1,6 +1,6 @@
 # Development
 
-Requires Node.js 24 and pnpm.
+Requires Node.js 24 and pnpm. The repository is one pnpm workspace: the [worker](#worker), shared by every extension, and one folder per extension in `extensions/` ([Notico](#notico) is the first). The commands below cover all of them.
 
 ```bash
 pnpm install
@@ -27,6 +27,8 @@ scripts/sync-github-settings.sh
 If you change a setting in the GitHub dashboard, copy it back into these files.
 
 ## Worker
+
+The worker is one deployment for every extension: sign-in, the model, credits, and the admin page.
 
 Merging to `main` deploys the worker through Cloudflare Workers Builds. To deploy by hand (`pnpm run deploy` applies the [database](#credits-database) migrations first, like the build's deploy command):
 
@@ -176,10 +178,10 @@ In the Cloudflare dashboard: Workers & Pages → `cofun-api` → Settings → Bu
 
 The deploy command applies the migrations not yet applied to `cofun-db`, then deploys, so new code never runs on an old schema. Wrangler skips its confirmation in CI, and a migration that fails is rolled back and stops the deploy. The build's API token (Workers & Pages → `cofun-api` → Settings → Builds → API token) needs **D1: Edit** on the account, both to apply the migrations and to find `cofun-db` by name. A token that Workers Builds creates has it (checked on one created in November 2026); a token made by hand needs it added. The worker's tests use Node's built-in `node:sqlite`, so the build needs Node.js 24 (the Workers Builds default).
 
-## Extension
+## Notico
 
 ```bash
-pnpm build        # outputs extensions/notico/dist
+pnpm build        # builds every extension; Notico's goes to extensions/notico/dist
 ```
 
 In `chrome://extensions`, turn on Developer mode, click "Load unpacked", and pick `extensions/notico/dist`.
@@ -212,3 +214,7 @@ A production instance also needs:
 - Your own OAuth credentials for each social sign-in (Clerk's shared ones work only on development instances).
 - The extension's origin (`chrome-extension://<extension id>`) in the instance's `allowed_origins`, set through Clerk's Backend API as [Clerk's Sync Host guide](https://clerk.com/docs/guides/sessions/sync-host) describes.
 - `CLERK_JWT_KEY` taken from that instance: the PEM form of the key at `https://clerk.<your domain>/.well-known/jwks.json`.
+
+### Another extension
+
+An extension of its own goes through the same steps, in its own folder: its own signing key and extension ID, its `.env`, and its origin (`chrome-extension://<extension id>`) added to the worker's `CLERK_AUTHORIZED_PARTIES` and `PRODUCTS`, and to the Clerk instance's `allowed_origins`.
