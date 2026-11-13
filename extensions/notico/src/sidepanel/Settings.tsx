@@ -12,15 +12,20 @@ import {
 import { Avatar, useAccount } from './Account'
 import { History, type HistoryReads } from './History'
 import { Icon } from './icons'
+import { ModelCard } from './Model'
+import type { ModelSettings } from '../models'
 
 /**
- * The settings page: the account, the plan, the credits with their dates, and usage per day. The
+ * The settings page: the account, which model answers, the plan, the credits with their dates, and
+ * usage per day. The
  * history of the credits opens from the credits, in place of the page, and leads back to it.
  */
 export function Settings({
   credits,
   onRetry,
   history,
+  model,
+  onModelChange,
   onClose,
 }: {
   credits: CreditsState
@@ -28,6 +33,9 @@ export function Settings({
   onRetry: () => void
   /** Reads the history of the credits, when the user opens it. */
   history: HistoryReads
+  /** Which model answers; undefined while it loads. */
+  model?: ModelSettings
+  onModelChange: (settings: ModelSettings) => void
   onClose: () => void
 }) {
   const account = useAccount()
@@ -95,6 +103,8 @@ export function Settings({
           </div>
         </div>
       </section>
+
+      <ModelCard settings={model} onChange={onModelChange} />
 
       {/* The plan's actions (upgrading, managing a subscription) belong in this section. */}
       <section className="card" aria-labelledby="settings-plan">

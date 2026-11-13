@@ -1,18 +1,25 @@
 // The side panel's agent: asks the model, runs the tools it calls in the extension, and sends the
-// results back until the model answers. Where the model runs is a provider (see ModelProvider); the
-// hosted one is our worker. This is the only module that imports the agent runtime (pi); the rest of
+// results back until the model answers. Where the model runs is a provider (see ModelProvider): our
+// worker (the hosted one), or OpenRouter with the user's own key. This is the only module that imports the agent runtime (pi); the rest of
 // the extension uses the types below.
 import { Agent, type AgentEvent, type AgentMessage, type AgentTool } from '@earendil-works/pi-agent-core'
+import { normalizeContext } from '@earendil-works/pi-ai'
 import type { AssistantMessage, ClientIdentity, Model, ToolCall, ToolResultMessage } from '@earendil-works/pi-ai'
 import { streamSimple } from '@earendil-works/pi-ai/api/openai-completions'
 import { Credits, GrantsPage, UsagePeriod } from './credits'
+import { HOSTED_ONLY, type ModelSettings, type OpenRouterModel } from './models'
 import { z } from './zod'
 
 export interface AgentConfig {
   /** Base URL including /v1. */
   apiUrl: string
-  /** Returns a fresh Clerk session token. Called before every model request. */
+  /** Returns a fresh Clerk session token. Called before every request to the worker. */
   getToken: () => Promise<string | null>
+  /**
+   * Which model answers, read as each question starts, so a change applies from the next question
+   * on and the conversation goes on with it. The hosted model when not given.
+   */
+  model?: () => Promise<ModelSettings>
   systemPrompt: string
   tools: ToolSpec[]
   /**
@@ -167,8 +174,9 @@ const STOPPED_DURING =
 export class CopilotAgent {
   private agent?: Agent
   private model?: Model<'openai-completions'>
-  /** Where model requests go. */
-  private readonly provider: ModelProvider
+  /** Where model requests go, and the settings it was made from. */
+  private provider: ModelProvider
+  private providerFor?: ModelSettings
   private readonly maxSteps: number
   /** Names of the tools that need the user's OK before each run. */
   private readonly confirmed: Set<string>
@@ -257,6 +265,7 @@ export class CopilotAgent {
   ): Promise<{ result: AskResult; kept: boolean; failure?: Failure }> {
     let agent: Agent
     try {
+      await this.chooseProvider()
       agent = await this.getAgent()
     } catch (err) {
       return { result: { status: 'error', message: (err as Error).message }, kept: false }
@@ -580,11 +589,34 @@ export class CopilotAgent {
     }
   }
 
+  /**
+   * Uses the provider the settings name now. Another one than before drops the model, so the next
+   * request looks it up from the new provider; the conversation stays.
+   */
+  private async chooseProvider(): Promise<void> {
+    const settings = (await this.config.model?.()) ?? HOSTED_ONLY
+    const { openRouter } = settings
+    const choice = settings.use === 'openrouter' && openRouter ? settings : HOSTED_ONLY
+    const before = this.providerFor
+    if (before && JSON.stringify(before) === JSON.stringify(choice)) return
+    if (!before && choice === HOSTED_ONLY) {
+      this.providerFor = choice
+      return
+    }
+    this.providerFor = choice
+    this.provider = choice.openRouter ? openRouterProvider(choice.openRouter) : hostedProvider(this.config)
+    this.model = undefined
+  }
+
   private async getAgent(): Promise<Agent> {
-    if (this.agent) return this.agent
+    if (this.agent && this.model) return this.agent
     const model = (this.model ??= await this.provider.loadModel())
-    // Another question (after a New chat) may have set up the agent while this one waited.
-    if (this.agent) return this.agent
+    // The provider changed since the agent was set up: the conversation goes on with its model.
+    if (this.agent) {
+      this.agent.state.model = model
+      this.agent.identity = this.provider.identity
+      return this.agent
+    }
     // The tool definitions go with every request and count toward the provider's size limit.
     const toolChars = JSON.stringify(
       this.config.tools.map((t) => ({ name: t.name, description: t.description, parameters: t.parameters })),
@@ -729,6 +761,123 @@ function hostedProvider({ apiUrl, getToken }: Pick<AgentConfig, 'apiUrl' | 'getT
     // The worker's model changed since the panel looked it up (a deploy).
     modelChanged: (failure) => failure.code === 'unsupported_model',
   }
+}
+
+/** OpenRouter's API, which answers requests from the extension's pages. */
+const OPENROUTER = 'https://openrouter.ai/api/v1'
+
+/**
+ * OpenRouter with the user's own key, which goes to OpenRouter alone. Every model is asked through
+ * the OpenAI-compatible API, the `anthropic/*` ones included (pi's catalog lists those under
+ * Anthropic's own API, which would bring in another SDK); they use tools correctly this way (#46).
+ */
+function openRouterProvider({ key, model }: { key: string; model: OpenRouterModel }): ModelProvider {
+  return {
+    loadModel: async () => openRouterModel(model),
+    apiKey: async () => key,
+    // A token is about four characters: send at most half the model's context, which leaves room
+    // for its reply, and no more than the hosted limit by messages.
+    history: { messages: 100, chars: model.contextLength * 2 },
+    // OpenRouter's app attribution headers would name the extension to it; nothing needs them.
+    identity: { attribution: null },
+    parseError: openRouterError,
+    modelChanged: () => false,
+  }
+}
+
+/** OpenRouter's error, with a refused key said plainly: its own words for it ("User not found.") are not. */
+function openRouterError(message: string | undefined): Failure {
+  if (message && /^401\b/.test(message)) return { text: 'OpenRouter rejected your key. Check it on the settings page.' }
+  return parseError(message)
+}
+
+function openRouterModel(model: OpenRouterModel): Model<'openai-completions'> {
+  return {
+    id: model.id,
+    name: model.name,
+    api: 'openai-completions',
+    // pi tells OpenRouter's request shape (caching, session affinity) by this name.
+    provider: 'openrouter',
+    baseUrl: OPENROUTER,
+    reasoning: false,
+    input: ['text'],
+    cost: { input: model.price.input, output: model.price.output, cacheRead: 0, cacheWrite: 0 },
+    contextWindow: model.contextLength,
+    maxTokens: 16_384,
+  }
+}
+
+/** An entry of OpenRouter's model list, as far as the settings page reads it. */
+const ListedModel = z.object({
+  id: z.string().min(1),
+  name: z.string(),
+  context_length: z.number().int().positive(),
+  // Dollars per token, as text.
+  pricing: z.object({ prompt: z.string(), completion: z.string() }),
+  supported_parameters: z.array(z.string()).optional(),
+})
+
+/**
+ * Left out of the list: batch variants, which don't answer a chat as it goes, and OpenRouter's
+ * aliases (`~vendor/…-latest`), which hide which model answers and the vendor pi tells a model's
+ * request shape by (an alias of a Claude model would get no prompt caching).
+ */
+const leftOut = (id: string) => id.startsWith('~') || id.endsWith(':batch')
+
+const perMillion = (perToken: string) => {
+  const n = Number(perToken) * 1_000_000
+  return Number.isFinite(n) && n >= 0 ? n : undefined
+}
+
+/**
+ * The models on OpenRouter that can use tools, as OpenRouter lists them now (see `leftOut` for what
+ * is left out). The list is public, so the key is not sent. An entry that is not in the expected
+ * shape is skipped; a list that is not is an error.
+ */
+export async function openRouterModels(): Promise<OpenRouterModel[]> {
+  const res = await fetch(`${OPENROUTER}/models`)
+  if (!res.ok) throw new Error(`OpenRouter's model list could not be loaded (HTTP ${res.status}).`)
+  const body = z.object({ data: z.array(z.unknown()) }).safeParse(await res.json().catch(() => undefined))
+  if (!body.success) throw new Error("OpenRouter's model list is not in the shape Notico expects.")
+  return body.data.data.flatMap((entry): OpenRouterModel[] => {
+    const listed = ListedModel.safeParse(entry)
+    if (!listed.success) return []
+    const { id, name, context_length, pricing, supported_parameters } = listed.data
+    const input = perMillion(pricing.prompt)
+    const output = perMillion(pricing.completion)
+    if (!supported_parameters?.includes('tools') || leftOut(id) || input === undefined || output === undefined)
+      return []
+    return [{ id, name, contextLength: context_length, price: { input, output } }]
+  })
+}
+
+/** How a check of a key and model went. */
+export type ModelCheck = { status: 'ok' } | { status: 'no_tools' } | { status: 'failed'; message: string }
+
+/**
+ * Asks the model one short question with one tool, as the settings page's check: whether the key
+ * and the model work, and whether the model calls the tool. Costs the user a tiny request.
+ */
+export async function checkModel(settings: { key: string; model: OpenRouterModel }): Promise<ModelCheck> {
+  const context = normalizeContext({
+    systemPrompt: 'Use the tool to answer.',
+    messages: [{ role: 'user', content: 'What time is it? Use the tool.', timestamp: Date.now() }],
+    tools: [
+      {
+        name: 'get_time',
+        description: 'Get the current time.',
+        parameters: { type: 'object', properties: {}, additionalProperties: false },
+      },
+    ],
+  })
+  const stream = streamSimple(openRouterModel(settings.model), context, {
+    apiKey: settings.key,
+    identity: { attribution: null },
+  })
+  for await (const _event of stream);
+  const reply = await stream.result()
+  if (reply.stopReason === 'error') return { status: 'failed', message: openRouterError(reply.errorMessage).text }
+  return reply.content.some((block) => block.type === 'toolCall') ? { status: 'ok' } : { status: 'no_tools' }
 }
 
 /**

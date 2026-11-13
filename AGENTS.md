@@ -145,4 +145,4 @@ pnpm e2e --help   # drive the shared Chrome Canary for ai-e2e runs (maintainer's
 
 - **No backward compatibility.** Pick the cleanest solution; delete old code instead of deprecating it. `pnpm knip` fails on unused files, exports, and dependencies: delete what it finds, and list something in `knip.jsonc` only when it is a false positive or kept on purpose, with the reason.
 - **TypeScript everywhere.**
-- **The worker fixes the model.** Clients cannot choose another model.
+- **The worker fixes the hosted model.** Clients cannot make the worker use another model. A user's own model (OpenRouter, with their key) is asked from the extension directly, never through the worker.
