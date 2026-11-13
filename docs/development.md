@@ -163,7 +163,7 @@ FROM (SELECT DISTINCT user_id FROM grants) u ORDER BY credits_owed DESC;
 
 ### Workers Builds settings
 
-In the Cloudflare dashboard: Workers & Pages → `cofun-api` → Settings → Builds → connect `cofun-labs/notico`.
+In the Cloudflare dashboard: Workers & Pages → `cofun-api` → Settings → Builds → connect `cofun-labs/cofun`.
 
 | Setting | Value |
 |---|---|
