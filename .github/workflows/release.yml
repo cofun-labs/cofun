@@ -1,0 +1,178 @@
+name: Release
+
+# Builds one extension from main for the Chrome Web Store and puts the zip on a draft GitHub
+# Release, tagged <extension>-v<version>. Run by hand (Actions → Release → Run workflow); see
+# "Releases" in docs/development.md. Uploading the zip to the store is not automated yet (#28).
+on:
+  workflow_dispatch:
+    inputs:
+      extension:
+        description: Extension to release (its folder in extensions/)
+        type: choice
+        required: true
+        options:
+          - notico
+      version:
+        description: Version for the manifest, e.g. 0.2.0 (1 to 4 dot-separated integers, higher than the store's last)
+        type: string
+        required: true
+
+run-name: Release ${{ inputs.extension }} ${{ inputs.version }}
+
+permissions: {}
+
+# One release of an extension at a time. A run is never cancelled halfway through tagging.
+concurrency:
+  group: release-${{ inputs.extension }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build for the store
+    # Only the workflow as it is on main may release, so what runs was reviewed.
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      sha: ${{ steps.commit.outputs.sha }}
+      tag: ${{ steps.inputs.outputs.tag }}
+      zip: ${{ steps.inputs.outputs.zip }}
+    env:
+      EXTENSION: ${{ inputs.extension }}
+      VERSION: ${{ inputs.version }}
+
+    steps:
+      # Chrome's rule for a manifest version: 1 to 4 integers from 0 to 65535, without leading
+      # zeros, not all zero. The store also needs it to be higher than the last upload's, which
+      # only the store knows.
+      - name: Check the inputs
+        id: inputs
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          if ! [[ "$VERSION" =~ ^(0|[1-9][0-9]{0,4})(\.(0|[1-9][0-9]{0,4})){0,3}$ ]]; then
+            echo "::error::Version '$VERSION' is not 1 to 4 dot-separated integers without leading zeros."
+            exit 1
+          fi
+          IFS=. read -ra parts <<<"$VERSION"
+          nonzero=false
+          for part in "${parts[@]}"; do
+            if ((part > 65535)); then
+              echo "::error::Version '$VERSION' has a part above 65535."
+              exit 1
+            fi
+            if ((part > 0)); then nonzero=true; fi
+          done
+          if [ "$nonzero" != true ]; then
+            echo "::error::Version '$VERSION' is all zeros."
+            exit 1
+          fi
+          tag="$EXTENSION-v$VERSION"
+          if gh api "repos/$REPO/git/matching-refs/tags/$tag" --jq '.[].ref' | grep -qx "refs/tags/$tag"; then
+            echo "::error::Tag $tag already exists: that version was released before."
+            exit 1
+          fi
+          {
+            echo "tag=$tag"
+            echo "zip=$EXTENSION-$VERSION.zip"
+          } >>"$GITHUB_OUTPUT"
+
+      - name: Checkout main
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          persist-credentials: false
+
+      - name: Record the commit
+        id: commit
+        run: echo "sha=$(git rev-parse HEAD)" >>"$GITHUB_OUTPUT"
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+
+      # No dependency cache: what is released is built only from the lockfile.
+      - name: Setup Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          package-manager-cache: false
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run checks
+        run: pnpm check
+
+      # Replaces the build "Run checks" made: the version from the input, and no `key` in the
+      # manifest (the store sets the ID). package.json keeps its development version.
+      - name: Build for the store
+        env:
+          CRX_STORE_BUILD: "1"
+          EXTENSION_VERSION: ${{ inputs.version }}
+        run: pnpm --filter "./extensions/$EXTENSION" build
+
+      - name: Check the manifest
+        run: |
+          manifest="extensions/$EXTENSION/dist/manifest.json"
+          jq -e --arg v "$VERSION" '.version == $v and (has("key") | not)' "$manifest" >/dev/null || {
+            echo "::error::$manifest does not have version $VERSION and no key."
+            exit 1
+          }
+
+      # The smoke test loads extensions/notico/dist, the build just made. Another extension
+      # needs the smoke test to cover it before it is added to the inputs above.
+      - name: Install Chromium
+        run: pnpm --filter notion-copilot-smoke exec playwright install --no-shell chromium
+
+      - name: Run the extension smoke test
+        run: pnpm --filter notion-copilot-smoke smoke
+
+      # The store wants manifest.json at the root of the zip.
+      - name: Zip the build
+        env:
+          ZIP: ${{ steps.inputs.outputs.zip }}
+        run: |
+          cd "extensions/$EXTENSION/dist"
+          zip -r -X -q "$GITHUB_WORKSPACE/$ZIP" .
+
+      # The zip the release gets, and the one a later store upload job takes.
+      - name: Upload the zip
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ${{ steps.inputs.outputs.zip }}
+          path: ${{ steps.inputs.outputs.zip }}
+          if-no-files-found: error
+
+  release:
+    name: Tag and draft the release
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # creates the tag and the draft release
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPO: ${{ github.repository }}
+      EXTENSION: ${{ inputs.extension }}
+      VERSION: ${{ inputs.version }}
+      SHA: ${{ needs.build.outputs.sha }}
+      TAG: ${{ needs.build.outputs.tag }}
+      ZIP: ${{ needs.build.outputs.zip }}
+
+    steps:
+      - name: Download the zip
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: ${{ needs.build.outputs.zip }}
+
+      # A draft release creates its tag only when published, so the tag is made here, on the
+      # commit that was built. It fails if the tag exists, so a version is released only once.
+      - name: Tag the commit
+        run: gh api "repos/$REPO/git/refs" -f "ref=refs/tags/$TAG" -f "sha=$SHA" --silent
+
+      - name: Create the draft release
+        run: |
+          gh release create "$TAG" "$ZIP" --repo "$REPO" --draft --verify-tag \
+            --title "$EXTENSION $VERSION" \
+            --notes "Chrome Web Store build of $EXTENSION $VERSION, from $SHA."

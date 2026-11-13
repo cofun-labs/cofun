@@ -165,4 +165,18 @@ describe('extension manifest', () => {
     expect(manifest(env)).not.toHaveProperty('key')
     expect(manifest({ ...env, CRX_PUBLIC_KEY: 'public-key' })).toMatchObject({ key: 'public-key', version: '1.2.3' })
   })
+
+  // The Chrome Web Store signs the item with its own key, which sets the ID, so the zip uploaded
+  // there carries no `key`. Everything else is what local builds ship.
+  it('leaves out only the key in the store build', () => {
+    const env = hostedEnv()
+    const hosted = { ...env, VITE_CLERK_SYNC_HOST: env.VITE_CLERK_SYNC_HOST! }
+    expect(env.CRX_PUBLIC_KEY).toBeTruthy()
+    const local = buildManifest(hosted, '1.2.3')
+    const store = buildManifest(hosted, '1.2.3', { store: true })
+    expect(local).toHaveProperty('key', env.CRX_PUBLIC_KEY)
+    expect(store).not.toHaveProperty('key')
+    const { key: _, ...rest } = local
+    expect(store).toEqual(rest)
+  })
 })
