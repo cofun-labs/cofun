@@ -1,5 +1,5 @@
 {
-  "name": "notion-copilot-e2e",
+  "name": "cofun-e2e",
   "version": "0.1.0",
   "private": true,
   "description": "pnpm e2e: drives the shared Chrome Canary for ai-e2e scenarios, on the maintainer's machine",
