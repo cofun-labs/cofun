@@ -448,7 +448,7 @@ header .untitled {
   font-size: 12px;
 }
 
-/* Under a reply that has ended: Copy, the line saying what it touched in Notion, and its details. */
+/* Under a reply that has ended: Copy, what it cost, the line saying what it touched in Notion, and its details. */
 .reply-foot {
   position: relative;
   /* Across the reply, so the details popover anchored to it has the panel's width to fit in. */
@@ -462,6 +462,12 @@ header .untitled {
 /* Without Copy, the line starts where the reply's text does. */
 .reply-foot > .note:first-child {
   margin-left: 6px;
+}
+
+/* What the reply cost, then what it touched: one line, kept apart. */
+.reply-foot > .note + .note::before {
+  content: '·';
+  margin-right: 6px;
 }
 
 .reply-action[aria-expanded='true'] {
