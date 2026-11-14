@@ -1,4 +1,5 @@
 import type { AiBinding } from '../src/app'
+import type { RateLimiter } from '../src/http'
 import { readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
@@ -275,5 +276,20 @@ export class FakeUsageDataset implements UsageDataset {
 
   writeDataPoint(point: DataPoint): void {
     this.points.push(structuredClone(point))
+  }
+}
+
+/**
+ * Stands in for the rate limiting binding (env.CHAT_LIMIT): lets each key through `limit` times, and
+ * counts which keys asked. Time never passes for it: a test that needs the period over makes a new one.
+ */
+export class FakeRateLimiter implements RateLimiter {
+  keys: string[] = []
+
+  constructor(private readonly max = Infinity) {}
+
+  async limit({ key }: { key: string }): Promise<{ success: boolean }> {
+    this.keys.push(key)
+    return { success: this.keys.filter((k) => k === key).length <= this.max }
   }
 }
