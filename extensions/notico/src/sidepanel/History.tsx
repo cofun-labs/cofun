@@ -13,28 +13,44 @@ export type ReadGrants = (before?: string) => Promise<GrantsPage>
  */
 export function History({ read }: { read: ReadGrants }) {
   const [pages, setPages] = useState<GrantsPage[]>([])
-  const [status, setStatus] = useState<'reading' | 'ready' | 'failed'>('reading')
+  const [reading, setReading] = useState(true)
+  // Whether the last read failed: it then offers to try again, also while trying again.
+  const [failed, setFailed] = useState(false)
   // Only the newest read counts, and none once the history is gone.
   const reads = useRef(0)
   const next = pages.at(-1)?.next ?? null
+  // Where the focus goes when a read the button asked for ends and takes the button away: the first
+  // row it added, or the note that there are none. It stays focusable, or the focus would fall off it.
+  const [focusFrom, setFocusFrom] = useState<number>()
+  const focusRef = useRef<HTMLElement>(null)
+  const buttonRef = useRef<HTMLButtonElement>(null)
 
   async function more() {
     const mine = ++reads.current
-    setStatus('reading')
+    // The button stays, so the focus stays on it; it only does nothing until the read ends.
+    const asked = document.activeElement !== null && document.activeElement === buttonRef.current
+    setReading(true)
     try {
       const page = await read(next ?? undefined)
       if (mine !== reads.current) return
+      if (asked && page.next === null) setFocusFrom(pages.reduce((sum, page) => sum + page.grants.length, 0))
       setPages((pages) => [...pages, page])
-      setStatus('ready')
+      setFailed(false)
     } catch {
-      if (mine === reads.current) setStatus('failed')
+      if (mine !== reads.current) return
+      setFailed(true)
     }
+    setReading(false)
   }
 
   useEffect(() => {
     void more()
     return () => void reads.current++
   }, [])
+
+  useEffect(() => {
+    if (focusFrom !== undefined) focusRef.current?.focus()
+  }, [focusFrom])
 
   const given = pages.flatMap((page) => page.grants)
   // One moment for the whole list: what has expired by now.
@@ -47,7 +63,11 @@ export function History({ read }: { read: ReadGrants }) {
           {given.map((grant, i) => {
             const left = grantLeftText(grant, now)
             return (
-              <li key={i}>
+              <li
+                key={i}
+                ref={i === focusFrom ? (li) => void (focusRef.current = li) : undefined}
+                tabIndex={i === focusFrom ? -1 : undefined}
+              >
                 <span className="grow">
                   <span className="history-title">{grantTitle(grant)}</span>
                   <span className="account-detail">{grantDatesText(grant, now)}</span>
@@ -63,25 +83,29 @@ export function History({ read }: { read: ReadGrants }) {
           })}
         </ul>
       )}
-      {given.length === 0 && status === 'ready' && (
-        <p className="account-detail">No credits yet. Your free credits start with your next question.</p>
-      )}
-      {status === 'reading' && (
-        <p role="status" className="account-detail">
-          Loading…
+      {given.length === 0 && pages.length > 0 && !reading && (
+        <p
+          className="account-detail"
+          ref={focusFrom === 0 ? (p) => void (focusRef.current = p) : undefined}
+          tabIndex={focusFrom === 0 ? -1 : undefined}
+        >
+          No credits yet. Your free credits start with your next question.
         </p>
       )}
-      {status === 'failed' && (
-        <>
-          <p role="alert">Your credits could not be loaded.</p>
-          <button type="button" className="primary" onClick={() => void more()}>
-            Try again
-          </button>
-        </>
-      )}
-      {status === 'ready' && next !== null && (
-        <button type="button" className="history-more" onClick={() => void more()}>
-          Show earlier
+      {/* Always there, so a screen reader hears each read start. */}
+      <p role="status" className="account-detail history-status">
+        {reading ? 'Loading…' : ''}
+      </p>
+      {failed && !reading && <p role="alert">Your credits could not be loaded.</p>}
+      {(failed || next !== null) && (
+        <button
+          ref={buttonRef}
+          type="button"
+          className={failed ? 'primary' : 'history-more'}
+          aria-disabled={reading || undefined}
+          onClick={() => void (reading || more())}
+        >
+          {failed ? 'Try again' : 'Show earlier'}
         </button>
       )}
     </div>

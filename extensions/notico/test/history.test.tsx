@@ -197,6 +197,37 @@ describe('the credit history', () => {
     await waitFor(async () => expect(await lots()).toHaveLength(25))
   })
 
+  it('pages with the keyboard: the focus stays on the button while it reads on, and moves to the first new lot at the end', async () => {
+    const { browser, user } = await openPanel()
+    // 45 lots, told apart by how many credits each was: three pages.
+    for (let credits = 1; credits <= 45; credits++) {
+      await browser.grantCredits('user_alice', credits, 30)
+      vi.setSystemTime(START.getTime() + credits * HOUR_MS)
+    }
+    await openHistory(user)
+    expect(await lots()).toHaveLength(20)
+
+    screen.getByRole('button', { name: 'Show earlier' }).focus()
+    await user.keyboard('{Enter}')
+    await waitFor(async () => expect(await lots()).toHaveLength(40))
+    expect(screen.getByRole('button', { name: 'Show earlier' })).toHaveFocus()
+
+    // A read that fails leaves the focus on Try again.
+    browser.db.failOn = { sql: GRANTS_READ, error: DOWN }
+    await user.keyboard('{Enter}')
+    expect(await screen.findByRole('alert')).toHaveTextContent('Your credits could not be loaded.')
+    expect(screen.getByRole('button', { name: 'Try again' })).toHaveFocus()
+
+    // The last page takes the button away, and the focus goes to the first lot it added.
+    browser.db.failOn = undefined
+    await user.keyboard('{Enter}')
+    await waitFor(async () => expect(await lots()).toHaveLength(45))
+    expect(screen.queryByRole('button', { name: /Show earlier|Try again/ })).not.toBeInTheDocument()
+    const added = within(screen.getByRole('list', { name: 'Credits you were given' })).getAllByRole('listitem')[40]
+    expect(amounts([added!.textContent])).toEqual(['5'])
+    expect(added).toHaveFocus()
+  })
+
   it('works with the keyboard: it opens from the Credits page, and Escape leads back a step at a time', async () => {
     const { user } = await openPanel()
     await openCredits(user)
