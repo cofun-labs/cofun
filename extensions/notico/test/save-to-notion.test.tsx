@@ -163,6 +163,10 @@ describe('UC-NOTICO-SESSION-002 save a chat or a reply to Notion', () => {
       ['text', 'Alice owns them.'],
     ])
     expect(workspace.transactions).toHaveLength(1)
+
+    // Not while the chat list covers the chat.
+    await user.click(screen.getByRole('button', { name: 'Chats' }))
+    expect(screen.queryByRole('link', { name: 'Open the saved chat' })).not.toBeInTheDocument()
   })
 
   it('once another question is answered, the chat can be saved again, with it', async () => {

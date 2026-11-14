@@ -884,7 +884,8 @@ export function Chat({ userId }: { userId: string }) {
   return (
     <>
       <Header title={headerTitle || <span className="untitled">New chat</span>}>
-        {asked > 0 && (
+        {/* Not while the list or settings cover the chat: what it saves, and its toast, are behind them. */}
+        {asked > 0 && !covered && (
           <SaveButton
             what="chat"
             className="icon-button"
