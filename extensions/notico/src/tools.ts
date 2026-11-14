@@ -3016,9 +3016,17 @@ export function touchedBy(calls: { name: string; args: unknown; result: string }
 }
 
 /**
+ * The tools whose card names the very page the call read or changed. Others may name another page
+ * than the one they touched (duplicate_page names the original, and touches the copy), so their
+ * calls give no recent page.
+ */
+const NAMES_TOUCHED_PAGE = new Set(['read_page', 'query_database', 'edit_page', 'read_comments', 'add_comment'])
+
+/**
  * The pages a saved conversation went with, newest first: the pages its questions carried, and the
- * one page each call that worked read or changed, when the side panel names it (as on its card). Read
- * from the conversation alone: no Notion request. `origin` is the Notion host links are made on.
+ * one page each call that worked read or changed, when its card names that page (see
+ * NAMES_TOUCHED_PAGE). Read from the conversation alone: no Notion request. `origin` is the Notion
+ * host links are made on.
  */
 export function pagesIn(messages: HistoryMessage[], origin: string): OpenPage[] {
   const calls = new Map<string, unknown>()
@@ -3027,7 +3035,7 @@ export function pagesIn(messages: HistoryMessage[], origin: string): OpenPage[] 
     if (m.role === 'user') pages.push(...(m.pages ?? []))
     else if (m.role === 'assistant') {
       for (const part of m.parts) if (part.type === 'tool_call') calls.set(part.id, part.args)
-    } else if (m.status === 'done') {
+    } else if (m.status === 'done' && NAMES_TOUCHED_PAGE.has(m.name)) {
       const tool = TOOLS.find((t) => t.name === m.name)
       const args = calls.get(m.id)
       const touched = tool?.touched(args, m.result) ?? NONE
