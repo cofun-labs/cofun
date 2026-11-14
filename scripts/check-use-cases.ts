@@ -7,7 +7,7 @@ import { type SourceFile, checkUseCases } from './use-cases.ts'
 const ROOT = path.resolve(import.meta.dirname, '..')
 
 function read(patterns: string[]): SourceFile[] {
-  return globSync(patterns, { cwd: ROOT, exclude: (name) => name === 'node_modules' })
+  return globSync(patterns, { cwd: ROOT })
     .sort()
     .map((file) => ({ path: file, text: readFileSync(path.join(ROOT, file), 'utf8') }))
 }

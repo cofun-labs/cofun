@@ -33,10 +33,10 @@ Cofun: Chrome extensions that each open an AI side panel next to one kind of pag
      ```typescript
      it('[UC-CHAT-001-S01] signed-in user gets a streamed reply', async () => {
      ```
-   - `pnpm check` fails when an `api-test` scenario marked ✅ has no test named with its ID, and only warns about the rest ([Coverage check](docs/bdd.md#coverage-check)). A scenario's ID may change; rename its tests with it.
+   - `pnpm check` fails when an `api-test` scenario marked ✅ has no test named with its ID, or when it can't read a scenario row, and only warns about the rest ([Coverage check](docs/bdd.md#coverage-check)). A scenario's ID may change; rename its tests with it. When a scenario is deleted, delete its tests or take the ID out of their names.
    - Implementation details worth guarding (status codes, CORS, config errors, regressions) get standalone tests without a scenario ID.
 
-   Gaps that slip past a PR are found by the `/bdd-audit` skill, run before a release or after a large feature ([Coverage audit](docs/bdd.md#coverage-audit)), not by per-PR bookkeeping.
+   Gaps that slip past a PR are found by the `/bdd-audit` skill (`.agents/skills/bdd-audit/SKILL.md`, linked from `.claude/skills/` for Claude Code), run before a release or after a large feature ([Coverage audit](docs/bdd.md#coverage-audit)), not by per-PR bookkeeping.
 
 4. **Run pre-PR checks.** Run `pnpm check`, then review `git diff --stat origin/main...` and `git diff origin/main... -- docs/use-cases`. Confirm the diff matches the Issue (or the PR body, when there is no Issue) and every business rule it adds or changes has a scenario and a test.
 

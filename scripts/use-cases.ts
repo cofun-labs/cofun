@@ -36,7 +36,9 @@ const TEST_ID = /\[(UC-[A-Z]+-\d+-S\d+)\]/g
 function readRows(file: SourceFile, report: Report): Row[] {
   const rows: Row[] = []
   let strategy: Strategy | undefined
-  file.text.split('\n').forEach((line, index) => {
+  file.text.split('\n').forEach((raw, index) => {
+    // Markdown still reads a line with leading spaces as a table row or heading.
+    const line = raw.trim()
     const at = `${file.path}:${index + 1}`
     const heading = STRATEGY.exec(line)
     if (heading) {
@@ -50,7 +52,7 @@ function readRows(file: SourceFile, report: Report): Row[] {
     // A row the check can't read would escape it, so these fail rather than warn.
     const row = ROW.exec(line)
     if (!row) {
-      if (strategy && line.startsWith('|') && !TABLE_FRAME.test(line.trim())) {
+      if (strategy && line.startsWith('|') && !TABLE_FRAME.test(line)) {
         report.errors.push(`${at}: a row whose ID cell is not a scenario ID like UC-CHAT-001-S01`)
       }
       return
@@ -71,10 +73,14 @@ function readRows(file: SourceFile, report: Report): Row[] {
   return rows
 }
 
+/** A line that names an ID without testing it: a comment, or a skipped or to-do test. */
+const NOT_A_TEST = /^\s*(\/\/|\/?\*)|\.(skip|todo)\b/
+
 /** Every scenario ID a test file names in brackets, with where it is. */
 function readTestIds(file: SourceFile): Map<string, string[]> {
   const ids = new Map<string, string[]>()
   file.text.split('\n').forEach((line, index) => {
+    if (NOT_A_TEST.test(line)) return
     for (const match of line.matchAll(TEST_ID)) {
       const at = `${file.path}:${index + 1}`
       ids.set(match[1], [...(ids.get(match[1]) ?? []), at])

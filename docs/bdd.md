@@ -33,7 +33,7 @@ A scenario earns its place only if deleting it would let an implementation pass 
 Each extension is a product with its own use cases, in its own directory: `docs/use-cases/notico/` for Notico. The directory, not the ID, tells which product a use case belongs to.
 
 - **A product's use cases are written in full for that product**, even where they repeat another product's: sign-in, chat, sessions, settings, and opening the side panel are each product's own, worded for its site. Use cases are not shared between products to save repeating them.
-- **A scenario a product repeats is verified by that product's own test**, named with that product's scenario ID, so a copy that drifts fails its own tests. This holds for what the product's own code makes happen (its client code, its side panel, its agent against the worker). A repeated scenario that only the worker decides, the same whichever extension asks (such as a credit rule), is not tested again: the copy names the scenario whose test in `worker/test/` verifies it.
+- **A scenario a product repeats is verified by that product's own test**, named with that product's scenario ID, so a copy that drifts fails its own tests. This holds for what the product's own code makes happen (its client code, its side panel, its agent against the worker). A repeated scenario that only the worker decides, the same whichever extension asks (such as a credit rule), is not tested again: the copy names the scenario whose test in `worker/test/` verifies it, and that test's name carries both IDs (`[UC-CHAT-001-S09] [UC-CHAT-004-S09] …`), so the coverage check finds a test for each.
 - **`docs/use-cases/shared/`** holds only behavior that involves the backend alone and no extension's UI, such as the operators' admin page and usage records. A shared use case is verified once, in `worker/test/`.
 
 ## Strategy
@@ -104,7 +104,7 @@ A guard or rejection branch should not rank above its use case's success path un
 
 ## Coverage audit
 
-Per-PR rules stay light; gaps are found by an audit run now and then, before a release or after a large feature: the `/bdd-audit` skill (`.claude/skills/bdd-audit/SKILL.md`). It runs the coverage check and lists, by use case, promises in a Behavior or Key constraint with no scenario, untagged tests that guard a rule users would notice, and tests whose name doesn't match their scenario, each with a suggested scenario line and priority. It changes nothing: the maintainer picks what to fix, in one PR.
+Per-PR rules stay light; gaps are found by an audit run now and then, before a release or after a large feature: the `/bdd-audit` skill (`.agents/skills/bdd-audit/SKILL.md`; `.claude/skills/bdd-audit` links to it for Claude Code). It runs the coverage check and lists, by use case, promises in a Behavior or Key constraint with no scenario, untagged tests that guard a rule users would notice, and tests whose name doesn't match their scenario, each with a suggested scenario line and priority. It changes nothing: the maintainer picks what to fix, in one PR.
 
 ## File format
 
@@ -139,5 +139,5 @@ Key constraint:
 - Use case: `UC-{DOMAIN}-{NNN}`. Domains: `ADMIN`, `AGENT`, `AUTH`, `BILLING`, `CHAT`, `NOTION`, `PANEL`, `SESSION`.
 - IDs are unique across the repository, whatever the product, since tests are found by them. A new product's use cases get IDs of their own: what is about its site gets a domain of its own (`UC-CONFLUENCE-001`), and a use case it repeats from another product takes the next free number in that domain (another product's sign-in would be `UC-AUTH-002`, never a second `UC-AUTH-001`).
 - Scenario: `{UC ID}-S{NN}`.
-- IDs are labels that link a scenario to its tests. Renumbering a scenario, or reusing a deleted one's ID, is fine as long as its tests are renamed with it.
+- IDs are labels that link a scenario to its tests. Renumbering a scenario, or reusing a deleted one's ID, is fine as long as its tests are renamed with it. When a scenario is deleted, delete its tests or take the ID out of their names, so a later scenario that reuses the ID can't pass on a test of the old one.
 - Test names start with the ID: `it('[UC-CHAT-001-S01] signed-in user gets a streamed reply', ...)`. Several tests may cover one scenario.

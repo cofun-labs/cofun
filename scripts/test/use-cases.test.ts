@@ -45,6 +45,28 @@ describe('checkUseCases', () => {
     ])
   })
 
+  it('reads a row with leading spaces, as Markdown does', () => {
+    const report = checkUseCases([useCase(['  | UC-CHAT-001-S01 | P1 | ✅ | … |'])], [])
+    expect(report.errors).toEqual([
+      'docs/use-cases/notico/chat/UC-CHAT-001-ask.md:6: UC-CHAT-001-S01 is ✅ api-test, but no test names it',
+    ])
+  })
+
+  it('does not count an ID named in a comment, or by a skipped or to-do test', () => {
+    const tests = {
+      path: 'worker/test/api.test.ts',
+      text: [
+        '// [UC-CHAT-001-S01] is covered below',
+        "it.skip('[UC-CHAT-001-S01] does it', () => {})",
+        "it.todo('[UC-CHAT-001-S01] does it')",
+      ].join('\n'),
+    }
+    const report = checkUseCases([useCase(['| UC-CHAT-001-S01 | P1 | ✅ | … |'])], [tests])
+    expect(report.errors).toEqual([
+      'docs/use-cases/notico/chat/UC-CHAT-001-ask.md:6: UC-CHAT-001-S01 is ✅ api-test, but no test names it',
+    ])
+  })
+
   it('is silent about a P1 or P2 🚧 api-test scenario with no test yet', () => {
     const report = checkUseCases([useCase(['| UC-CHAT-001-S01 | P1 | 🚧 | … |'])], [])
     expect(report.errors).toEqual([])
