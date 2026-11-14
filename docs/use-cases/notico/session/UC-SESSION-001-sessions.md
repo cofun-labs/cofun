@@ -2,7 +2,7 @@
 
 ## Behavior
 
-Each conversation in the side panel is a session. A signed-in user can start a new session at any time, and opening the side panel starts one. Past sessions are kept in a list, most recently used first, each titled with its first question and showing the Notion page it started on. The user can search the list by title and delete sessions they no longer want.
+Each conversation in the side panel is a session. A signed-in user can start a new session at any time, and opening the side panel starts one. The top of the panel shows the open session's title, or "New chat" until its first question. Past sessions are kept in a list, most recently used first, each titled with its first question and showing the Notion page it started on. The user can search the list by title and delete sessions they no longer want.
 
 Reopening a session shows the whole conversation, including the tools the agent used and what they returned, and the next question continues it: the AI has the earlier conversation as context, as if the session had never been closed. Switching to another session while a reply is still coming stops that reply first, so it never lands in the wrong session.
 
@@ -25,6 +25,7 @@ Key constraints:
 | UC-SESSION-001-S02 | P1 | ✅ | Given a user with saved sessions; when they ask the AI in a new session; then nothing from the earlier sessions is sent to the AI. |
 | UC-SESSION-001-S03 | P1 | ✅ | Given several saved sessions; when the user opens the session list; then it shows them most recently used first, each titled with its first question and with the Notion page it started on. |
 | UC-SESSION-001-S12 | P1 | ✅ | Given sessions with different titles; when the user searches the list; then only the sessions whose title contains what they typed are listed, ignoring case. |
+| UC-SESSION-001-S13 | P1 | ✅ | Given a new session; when the user asks a question, and later reopens an earlier session; then the top of the panel shows "New chat" before the question, then the session's title, then the reopened session's title. |
 | UC-SESSION-001-S05 | P1 | ✅ | Given a saved session; when the user deletes it; then it is no longer listed and cannot be reopened. |
 | UC-SESSION-001-S09 | P0 | ✅ | Given sessions saved by one account; when another account signs in on the same browser; then it sees none of them and cannot reopen them. |
 | UC-SESSION-001-S10 | P1 | ✅ | Given one session open in two windows; when the user continues it in both; then the session keeps the first window's conversation, the second window's is saved as a separate session, and both are in the list. |

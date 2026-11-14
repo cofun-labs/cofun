@@ -478,6 +478,11 @@ export function Chat({ userId }: { userId: string }) {
   const settingsOpen = view === 'settings'
   // The chat stays on screen, or mounted, behind the session list and the settings page, out of reach until they close.
   const covered = listOpen || settingsOpen
+  // The session's first question, on one line; the header cuts it to fit.
+  const title = messages
+    .find((m) => m.role === 'user')
+    ?.content.replace(/\s+/g, ' ')
+    .trim()
 
   /** Closes the session list and puts the focus back on the button that opened it. */
   function closeList() {
@@ -487,7 +492,7 @@ export function Chat({ userId }: { userId: string }) {
 
   return (
     <>
-      <Header>
+      <Header title={title || <span className="untitled">New chat</span>}>
         <button
           ref={listButtonRef}
           className="icon-button"
