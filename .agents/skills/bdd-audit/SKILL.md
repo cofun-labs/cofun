@@ -11,7 +11,7 @@ Read `docs/bdd.md` first for what a use case, a scenario, and the two strategies
 
 ## Steps
 
-1. **Run the coverage check.** `pnpm use-cases`. Note every error (a ✅ `api-test` scenario no test names) and warning (a 🚧 scenario that already has a test, a test naming an ID no use case it can verify has, an ID in more than one row, an ID whose prefix doesn't match the product whose folder holds it, a test naming an `ai-e2e` scenario).
+1. **Run the coverage check.** `pnpm use-cases`. Note every error (a ✅ `api-test` scenario no test names) and warning (a 🚧 scenario that already has a test, a test naming an ID no use case it can verify has or an ID without its product, an ID in more than one row, an ID whose prefix doesn't match the product whose folder holds it, a test naming an `ai-e2e` scenario).
 
 2. **Promises with no scenario.** For each use case in `extensions/*/use-cases/**/UC-*.md` and `worker/use-cases/**/UC-*.md`, read its Behavior and Key constraints and list each promise a user or client relies on that no scenario expresses. Each Key constraint needs at least one scenario. Also look for promises the code no longer keeps (a constraint the implementation dropped): those are gaps too, in the use case or in the code.
 

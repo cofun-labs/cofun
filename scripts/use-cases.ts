@@ -49,13 +49,21 @@ const ROW = new RegExp(`^\\|\\s*(${SCENARIO_ID})\\s*\\|([^|]*)\\|([^|]*)\\|`)
 const TABLE_FRAME = /^\|\s*ID\s*\||^\|[\s:|-]+$/
 const STRATEGY = /^###\s+(api-test|ai-e2e)\s*$/
 const TEST_ID = new RegExp(`\\[(${SCENARIO_ID})\\]`, 'g')
+/** A scenario ID without a product (`UC-CHAT-001-S01`), as IDs were before each product got its prefix. */
+const OLD_TEST_ID = /\[(UC-[A-Z]+-\d+-S\d+)\]/g
 
 /** The product a use case or test file belongs to, from its folder. */
 function productOf(file: string): string {
   if (file.startsWith(`${WORKER}/`)) return WORKER
   const extension = /^extensions\/([^/]+)\//.exec(file)
-  if (extension) return extension[1]
-  throw new Error(`${file} is not in an extension's folder or the worker's`)
+  if (!extension) throw new Error(`${file} is not in an extension's folder or the worker's`)
+  // The folder name, in capitals, is the product's ID prefix, which may hold letters only.
+  if (!/^[a-z]+$/.test(extension[1])) {
+    throw new Error(
+      `extensions/${extension[1]}: an extension's folder name is lowercase letters only (docs/bdd.md#ids)`,
+    )
+  }
+  return extension[1]
 }
 
 /** What a product's IDs start with: its name, or COFUN for the worker (the platform every extension shares). */
@@ -111,14 +119,19 @@ function readRows(file: SourceFile, report: Report): Row[] {
 const NOT_A_TEST = /^\s*(\/\/|\/?\*)|\.(skip|todo)\b/
 
 /** Every scenario ID a test file names in brackets, with where it is. */
-function readTestIds(file: SourceFile): Map<string, TestId[]> {
+function readTestIds(file: SourceFile, report: Report): Map<string, TestId[]> {
   const ids = new Map<string, TestId[]>()
   const product = productOf(file.path)
   file.text.split('\n').forEach((line, index) => {
     if (NOT_A_TEST.test(line)) return
+    const at = `${file.path}:${index + 1}`
     for (const match of line.matchAll(TEST_ID)) {
-      const at = `${file.path}:${index + 1}`
       ids.set(match[1], [...(ids.get(match[1]) ?? []), { product, at }])
+    }
+    for (const match of line.matchAll(OLD_TEST_ID)) {
+      report.warnings.push(
+        `${at}: names ${match[1]}, which has no product in it and counts for nothing (IDs are like UC-NOTICO-CHAT-001-S01)`,
+      )
     }
   })
   return ids
@@ -135,7 +148,7 @@ export function checkUseCases(useCases: SourceFile[], tests: SourceFile[]): Repo
   const rows = useCases.flatMap((file) => readRows(file, report))
   const tested = new Map<string, TestId[]>()
   for (const file of tests) {
-    for (const [id, found] of readTestIds(file)) tested.set(id, [...(tested.get(id) ?? []), ...found])
+    for (const [id, found] of readTestIds(file, report)) tested.set(id, [...(tested.get(id) ?? []), ...found])
   }
 
   const byId = new Map<string, Row[]>()

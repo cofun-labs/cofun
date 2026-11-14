@@ -18,6 +18,14 @@ const report = checkUseCases(
   read(['worker/test/**/*.test.{ts,tsx}', 'extensions/*/test/**/*.test.{ts,tsx}']),
 )
 
+// Use cases lived in docs/use-cases/ before they moved next to their code. One still there, from a
+// branch made before the move, would not be read at all, so it fails.
+for (const file of globSync('docs/use-cases/**/*.md', { cwd: ROOT }).sort()) {
+  report.errors.push(
+    `${file}: use cases live in extensions/<name>/use-cases/ and worker/use-cases/ (docs/bdd.md#products)`,
+  )
+}
+
 for (const warning of report.warnings) console.warn(`warning: ${warning}`)
 for (const error of report.errors) console.error(`error: ${error}`)
 const { 'api-test': api, 'ai-e2e': e2e } = report.scenarios

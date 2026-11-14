@@ -188,4 +188,20 @@ describe('checkUseCases', () => {
       "worker/use-cases/admin/UC-COFUN-ADMIN-001-account.md:6: UC-NOTICO-ADMIN-001-S01 is in worker's use cases, so its ID starts with UC-COFUN-",
     ])
   })
+
+  it('warns when a test names an ID without its product, which counts for nothing', () => {
+    const report = checkUseCases([useCase(['| UC-NOTICO-CHAT-001-S01 | P1 | ✅ | … |'])], [test('UC-CHAT-001-S01')])
+    expect(report.errors).toEqual([
+      'extensions/notico/use-cases/chat/UC-NOTICO-CHAT-001-ask.md:6: UC-NOTICO-CHAT-001-S01 is ✅ api-test, but no test names it',
+    ])
+    expect(report.warnings).toEqual([
+      'worker/test/api.test.ts:1: names UC-CHAT-001-S01, which has no product in it and counts for nothing (IDs are like UC-NOTICO-CHAT-001-S01)',
+    ])
+  })
+
+  it("refuses an extension folder whose name can't be an ID prefix", () => {
+    expect(() => checkUseCases([], [testIn('extensions/foo-bar/test/chat.test.ts', 'UC-FOOBAR-CHAT-001-S01')])).toThrow(
+      "extensions/foo-bar: an extension's folder name is lowercase letters only (docs/bdd.md#ids)",
+    )
+  })
 })

@@ -101,7 +101,7 @@ A guard or rejection branch should not rank above its use case's success path un
 
 ## Coverage check
 
-`pnpm check` runs `pnpm use-cases` (`scripts/check-use-cases.ts`), which reads every scenario row in `extensions/*/use-cases/` and `worker/use-cases/`, and every scenario ID named in brackets in a test under `worker/test/` or `extensions/*/test/`. A scenario counts as tested only by a test that can verify it: an extension's by a test in its own `extensions/<name>/test/` or in `worker/test/`, the worker's by a test in `worker/test/`. It fails on one thing: an `api-test` scenario marked ✅ that no test names (and on a scenario row it can't read, so a typo can't hide one). It only warns about the rest, to tidy when convenient: a 🚧 `api-test` scenario that already has a test (mark it ✅), a P0 🚧 `api-test` scenario with no test yet (P0 is verified before merge), a test naming an ID no use case it can verify has, an ID in more than one row, an ID whose prefix doesn't match the product whose folder holds it, and a test naming an `ai-e2e` scenario. A P1 or P2 🚧 `api-test` scenario with no test and an `ai-e2e` scenario with none pass quietly.
+`pnpm check` runs `pnpm use-cases` (`scripts/check-use-cases.ts`), which reads every scenario row in `extensions/*/use-cases/` and `worker/use-cases/`, and every scenario ID named in brackets in a test under `worker/test/` or `extensions/*/test/`. A scenario counts as tested only by a test that can verify it: an extension's by a test in its own `extensions/<name>/test/` or in `worker/test/`, the worker's by a test in `worker/test/`. It fails on one thing: an `api-test` scenario marked ✅ that no test names (and on a scenario row it can't read, so a typo can't hide one, and on a use case left in the old `docs/use-cases/`). It only warns about the rest, to tidy when convenient: a 🚧 `api-test` scenario that already has a test (mark it ✅), a P0 🚧 `api-test` scenario with no test yet (P0 is verified before merge), a test naming an ID no use case it can verify has, or an ID without its product, an ID in more than one row, an ID whose prefix doesn't match the product whose folder holds it, and a test naming an `ai-e2e` scenario. A P1 or P2 🚧 `api-test` scenario with no test and an `ai-e2e` scenario with none pass quietly.
 
 ## Coverage audit
 
@@ -137,7 +137,7 @@ Key constraint:
 
 ## IDs
 
-- Use case: `UC-{PRODUCT}-{DOMAIN}-{NNN}`. `{PRODUCT}` is the extension's folder name in capitals (`NOTICO`), or `COFUN` for the worker's use cases. Domains: `ADMIN`, `AGENT`, `AUTH`, `BILLING`, `CHAT`, `PANEL`, `SESSION`, and one for what is about a product's site (`NOTION` for Notico).
+- Use case: `UC-{PRODUCT}-{DOMAIN}-{NNN}`. `{PRODUCT}` is the extension's folder name, which is lowercase letters only, in capitals (`NOTICO`), or `COFUN` for the worker's use cases. Domains: `ADMIN`, `AGENT`, `AUTH`, `BILLING`, `CHAT`, `PANEL`, `SESSION`, and one for what is about a product's site (`NOTION` for Notico).
 - Each product numbers its own use cases: a use case it repeats from another product gets its own prefix and its own number, so Confluco's sign-in would be `UC-CONFLUCO-AUTH-001`. The prefix keeps IDs unique across the repository, since tests are found by them.
 - Scenario: `{UC ID}-S{NN}`.
 - IDs are labels that link a scenario to its tests. Renumbering a scenario, or reusing a deleted one's ID, is fine as long as its tests are renamed with it. When a scenario is deleted, delete its tests or take the ID out of their names, so a later scenario that reuses the ID can't pass on a test of the old one.
