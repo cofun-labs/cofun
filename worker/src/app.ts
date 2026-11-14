@@ -9,6 +9,7 @@ import { billingRoutes, stripeRoutes } from './routes/billing'
 import { chatRoutes } from './routes/chat'
 import { creditsRoutes } from './routes/credits'
 import { pageRoutes } from './routes/pages'
+import { defaultRateLimit } from './routes/rate-limit'
 import { requireSession } from './routes/session'
 
 export type { AiBinding, Env } from './http'
@@ -45,14 +46,19 @@ export function createApp({
 /**
  * The routes under /v1. The session check is this sub-app's first handler, so every route mounted
  * here runs after it: a route under /v1 can't be added without it.
+ *
+ * Handlers run in the order they are added. The chat comes before the default rate limit, since it
+ * has a limit of its own and its calls must not count toward this one; every route added after the
+ * limit gets it. `worker/test/rate-limit.test.ts` checks that the chat is the only route without it.
  */
 function v1Routes(deps: Deps): App {
   const v1: App = new Hono()
   v1.use('*', requireSession)
+  v1.route('/chat', chatRoutes(deps))
+  v1.use('*', defaultRateLimit)
   v1.route('/admin', adminRoutes(deps))
   v1.get('/me', (c) => c.json({ userId: c.get('userId'), model: c.env.MODEL }))
   v1.route('/billing', billingRoutes(deps))
   v1.route('/credits', creditsRoutes(deps))
-  v1.route('/chat', chatRoutes(deps))
   return v1
 }

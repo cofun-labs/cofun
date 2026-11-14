@@ -41,6 +41,7 @@ beforeEach(async () => {
     DB: (db = new FakeD1Database()),
     USAGE: (usage = new FakeUsageDataset()),
     CHAT_LIMIT: new FakeRateLimiter(),
+    API_LIMIT: new FakeRateLimiter(),
     MODEL,
     AI_GATEWAY_ID: 'gw-test',
     CLERK_JWT_KEY: clerk.publicKeyPem,

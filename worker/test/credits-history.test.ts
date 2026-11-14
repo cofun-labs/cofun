@@ -49,6 +49,7 @@ beforeEach(async () => {
     DB: (db = new FakeD1Database()),
     USAGE: new FakeUsageDataset(),
     CHAT_LIMIT: new FakeRateLimiter(),
+    API_LIMIT: new FakeRateLimiter(),
     MODEL,
     CLERK_JWT_KEY: clerk.publicKeyPem,
     CLERK_AUTHORIZED_PARTIES: `${EXT}, http://localhost`,
