@@ -23,6 +23,19 @@ export function pageIdFromUrl(url: string): string | undefined {
   }
 }
 
+/**
+ * Whether a Notion URL shows a database as its page: a full-page database has its view in the URL
+ * (`?v=<id>`), unless a side peek (`?p=<id>`) shows one of its rows over it.
+ */
+export function showsDatabase(url: string): boolean {
+  try {
+    const params = new URL(url).searchParams
+    return params.has('v') && !params.has('p')
+  } catch {
+    return false
+  }
+}
+
 /** The id of the page under a side peek: the id at the end of the URL's path, as a dashed UUID. */
 export function pathPageIdFromUrl(url: string): string | undefined {
   try {
