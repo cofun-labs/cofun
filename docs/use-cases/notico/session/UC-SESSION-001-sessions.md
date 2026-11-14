@@ -2,7 +2,7 @@
 
 ## Behavior
 
-Each conversation in the side panel is a session. A signed-in user can start a new session at any time, and opening the side panel starts one. The top of the panel shows the open session's title, or "New chat" until its first question. Past sessions are kept in a list, most recently used first, each with its title and the Notion page it started on. The user can search the list by title and delete sessions they no longer want.
+Each conversation in the side panel is a session, which the panel calls a chat. A signed-in user can start a new session at any time, and opening the side panel starts one. The top of the panel shows the open session's title, or "New chat" until its first question. Past sessions are kept in a list, most recently used first, each with its title and the Notion page it started on. The user can search the list by title and delete sessions they no longer want.
 
 Once a session's first reply has come in, the model the user is asking with (the hosted one, which spends credits as any request does, or their own) is asked for a short title of a few words, in the language of the question, from the first question and the start of the reply. The title is written once and does not change as the conversation goes on. Until it arrives, or if the model gives none that can be used, the session is titled with its first question; that is not shown to the user as a failure and does not stop the conversation.
 
@@ -45,4 +45,4 @@ Key constraints:
 
 | ID | Priority | Status | Scenario |
 | --- | --- | --- | --- |
-| UC-SESSION-001-S11 | P2 | ✅ | Given a session open in the side panel that was continued in another window since; when the user asks a follow-up; then the reply arrives, the panel says the conversation was saved as a separate session, and both sessions are in the list. |
+| UC-SESSION-001-S11 | P2 | ✅ | Given a session open in the side panel that was continued in another window since; when the user asks a follow-up; then the reply arrives, the panel says the chat was saved as a separate chat, and both sessions are in the list. |

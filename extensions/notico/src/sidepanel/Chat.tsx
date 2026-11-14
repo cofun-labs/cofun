@@ -781,8 +781,8 @@ export function Chat({ userId }: { userId: string }) {
         <button
           ref={listButtonRef}
           className="icon-button"
-          aria-label="Sessions"
-          title="Sessions"
+          aria-label="Chats"
+          title="Chats"
           aria-expanded={listOpen}
           onClick={() => (listOpen ? closeList() : setView('sessions'))}
         >
@@ -868,8 +868,7 @@ export function Chat({ userId }: { userId: string }) {
                   {m.note && <div className="note">{m.note}</div>}
                   {m.copied && (
                     <div className="note">
-                      This session was also continued in another window, so this conversation is saved as a separate
-                      session.
+                      This chat was also continued in another window, so this one is saved as a separate chat.
                     </div>
                   )}
                   <ReplyFoot reply={m} ended={!(busy && i === messages.length - 1)} />
