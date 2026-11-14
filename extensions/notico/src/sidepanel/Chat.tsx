@@ -632,11 +632,7 @@ export function Chat({ userId }: { userId: string }) {
           )}
         </main>
 
-        {/* Which model answers, and a switch to another: the next question goes to it. */}
-        <div className="composer-bar" inert={covered}>
-          <ModelMenu settings={model} onChange={changeModel} onMore={openSettings} />
-        </div>
-
+        {/* One box: the question on top, and below it, inside the box, which model answers and the send button. */}
         <form id="composer" onSubmit={onSubmit} inert={covered}>
           <textarea
             ref={inputRef}
@@ -648,15 +644,19 @@ export function Chat({ userId }: { userId: string }) {
             title="Enter to send, Shift+Enter for a new line"
             aria-label="Message"
           />
-          <button
-            // Blue only when pressing it does something: there is a question to send, or a reply to stop.
-            className={busy || input.trim() ? 'send ready' : 'send'}
-            type="submit"
-            aria-label={busy ? 'Stop' : 'Send'}
-            title={busy ? 'Stop' : 'Send'}
-          >
-            <Icon name={busy ? 'square' : 'send'} />
-          </button>
+          <div className="composer-tools">
+            {/* The model chip leads the right side, next to send; the left is for tools that act on the question. */}
+            <ModelMenu settings={model} onChange={changeModel} onMore={openSettings} />
+            <button
+              // Blue only when pressing it does something: there is a question to send, or a reply to stop.
+              className={busy || input.trim() ? 'send ready' : 'send'}
+              type="submit"
+              aria-label={busy ? 'Stop' : 'Send'}
+              title={busy ? 'Stop' : 'Send'}
+            >
+              <Icon name={busy ? 'square' : 'send'} />
+            </button>
+          </div>
         </form>
 
         {listOpen && (

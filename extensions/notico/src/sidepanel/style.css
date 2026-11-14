@@ -564,32 +564,34 @@ header .untitled {
 /* Composer */
 
 #composer {
+  /* The model menu opens from the box, so it can use the box's width at the narrowest panel. */
+  position: relative;
   display: flex;
-  align-items: flex-end;
+  flex-direction: column;
   gap: 8px;
   margin: 8px 12px 14px;
-  padding: 6px 6px 6px 16px;
+  padding: 12px 8px 8px 14px;
   border: 1px solid var(--border);
-  border-radius: 24px;
+  border-radius: 18px;
   background: var(--bg);
   box-shadow: 0 2px 10px var(--shadow);
 }
 
-#composer:focus-within {
+#composer:has(textarea:focus) {
   border-color: var(--muted);
 }
 
 #composer textarea {
-  flex: 1;
-  min-width: 0;
-  align-self: center;
+  /* Room for two lines while empty, so the box doesn't look cramped. */
+  min-height: 3em;
   max-height: 9em;
-  padding: 0;
+  padding: 0 6px 0 0;
   border: none;
   outline: none;
   resize: none;
-  /* Grows with what is typed, up to the height above. */
+  /* Grows with what is typed, up to the height above, then scrolls. */
   field-sizing: content;
+  overflow-y: auto;
   background: transparent;
   color: inherit;
   font: inherit;
@@ -599,11 +601,20 @@ header .untitled {
   color: var(--muted);
 }
 
+/* The toolbar inside the box: tools on the left (none yet), then the model chip and send on the right. */
+.composer-tools {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+  margin-left: -6px;
+}
+
 #composer .send {
   display: grid;
   place-items: center;
-  width: 34px;
-  height: 34px;
+  width: 32px;
+  height: 32px;
   flex: none;
   border-radius: 50%;
   background: var(--tint);
@@ -1177,16 +1188,13 @@ button.pack:disabled {
   font-size: 12.5px;
 }
 
-/* The model menu above the composer */
-
-.composer-bar {
-  display: flex;
-  margin: 6px 12px -2px;
-}
+/* The model chip in the composer's toolbar: no outline of its own, the box is the outline. A long
+   name is cut, and the chip gives way to tools on the toolbar's left before the send button does. */
 
 .model-menu {
-  position: relative;
+  flex: 0 1 auto;
   min-width: 0;
+  max-width: 150px;
 }
 
 .model-button {
@@ -1195,13 +1203,17 @@ button.pack:disabled {
   gap: 4px;
   max-width: 100%;
   overflow: hidden;
-  padding: 3px 10px;
-  border: 1px solid var(--border);
-  border-radius: 999px;
+  padding: 4px 8px;
+  border-radius: 8px;
   color: var(--muted);
-  font-size: 12.5px;
+  font-size: 12px;
   white-space: nowrap;
-  text-overflow: ellipsis;
+}
+
+.model-button .icon {
+  flex: none;
+  width: 10px;
+  height: 10px;
 }
 
 .model-button:hover,
@@ -1212,16 +1224,17 @@ button.pack:disabled {
 
 .model-popover {
   position: absolute;
+  /* Opens upward from the box, flush with its right edge, and never wider than the box. */
   bottom: calc(100% + 6px);
-  left: 0;
+  right: -1px;
   z-index: 2;
-  width: 280px;
-  max-width: calc(100vw - 24px);
+  width: 260px;
+  max-width: calc(100% + 2px);
   display: flex;
   flex-direction: column;
-  padding: 6px;
+  padding: 5px;
   border: 1px solid var(--border);
-  border-radius: 16px;
+  border-radius: 12px;
   background: var(--bg);
   box-shadow: 0 8px 28px var(--shadow);
 }
@@ -1232,39 +1245,49 @@ button.pack:disabled {
   justify-content: space-between;
   gap: 8px;
   width: 100%;
-  padding: 7px 10px;
-  border-radius: 10px;
+  padding: 6px 8px;
+  border-radius: 8px;
   text-align: left;
 }
 
+/* Keyboard focus: a thin grey ring inside the item, quieter than the page's accent outline but
+   clear on the tint of the chosen or hovered item (--muted is over 3:1 on both themes' backgrounds). */
+.model-popover [role^='menuitem']:focus-visible {
+  outline: none;
+  box-shadow: inset 0 0 0 1.5px var(--muted);
+}
+
 .model-popover [role^='menuitem']:hover,
-.model-popover [role^='menuitem']:focus-visible,
 .model-popover [aria-checked='true'] {
   background: var(--tint);
 }
 
-.model-popover [role^='menuitem'] > span {
-  display: flex;
-  flex-direction: column;
+/* One line per model, in the composer's type (not the settings page's bold): a long name is cut, not wrapped. */
+.model-popover .model-name {
+  min-width: 0;
+  font-weight: 400;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .model-popover .model-more {
   margin-top: 2px;
   border-top: 1px solid var(--border);
-  border-radius: 0 0 10px 10px;
+  border-radius: 0 0 8px 8px;
   color: var(--muted);
 }
 
 .model-popover .model-group {
-  padding: 6px 10px 2px;
+  padding: 6px 8px 2px;
   color: var(--muted);
-  font-size: 11.5px;
+  font-size: 12px;
   font-weight: 600;
 }
 
 .model-popover .model-state {
   color: var(--muted);
-  font-size: 12.5px;
+  font-size: 12px;
 }
 
 .model-button-name {

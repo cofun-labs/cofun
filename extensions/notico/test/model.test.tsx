@@ -121,7 +121,7 @@ describe('choosing the model', () => {
     expect(browser.openRouter.calls).toEqual([])
 
     await openSettings(user)
-    expect(modelInUse()).toHaveTextContent('Notico (hosted)')
+    expect(modelInUse()).toHaveTextContent('Auto')
     await user.click(screen.getByRole('radio', { name: 'OpenRouter, with your key' }))
     expect(screen.getByLabelText('OpenRouter API key')).toHaveValue('')
     expect(screen.queryByText(/key is saved/)).not.toBeInTheDocument()
@@ -144,7 +144,7 @@ describe('choosing the model', () => {
 
     await openSettings(user)
     await user.click(screen.getByRole('button', { name: 'Remove key' }))
-    expect(modelInUse()).toHaveTextContent('Notico (hosted)')
+    expect(modelInUse()).toHaveTextContent('Auto')
     await backToChat(user)
 
     await ask(user, 'Hello?')
@@ -243,7 +243,7 @@ describe('choosing the model', () => {
     expect(await screen.findByText(/Hello from Workers AI/)).toBeVisible()
     expect(browser.openRouter.calls).toEqual([])
     await openSettings(user)
-    expect(modelInUse()).toHaveTextContent('Notico (hosted)')
+    expect(modelInUse()).toHaveTextContent('Auto')
     expect(JSON.stringify(browser.tab.storage.values)).not.toContain(KEY)
   })
 
@@ -273,9 +273,7 @@ describe('switching the model from the chat', () => {
     await user.click(chip('GPT-6.1 Sol'))
     const menu = screen.getByRole('menu', { name: 'Model' })
     expect(within(menu).getByRole('menuitemradio', { name: /^GPT-6.1 Sol/ })).toHaveAttribute('aria-checked', 'true')
-    await user.click(
-      await within(menu).findByRole('menuitemradio', { name: /^Claude Sonnet 5.5 Strong with tools · \$2 \/ \$10/ }),
-    )
+    await user.click(await within(menu).findByRole('menuitemradio', { name: 'Claude Sonnet 5.5' }))
 
     // Still in the chat, now showing the new model.
     expect(screen.queryByRole('menu', { name: 'Model' })).not.toBeInTheDocument()
@@ -294,27 +292,27 @@ describe('switching the model from the chat', () => {
     await setUpOpenRouter(browser, user)
 
     await user.click(chip('GPT-6.1 Sol'))
-    await user.click(screen.getByRole('menuitemradio', { name: /^Notico \(hosted\)/ }))
+    await user.click(screen.getByRole('menuitemradio', { name: /^Auto/ }))
     await ask(user, 'Hello?')
     expect(await screen.findByText(/Hello from Workers AI/)).toBeVisible()
     await answered()
     expect(browser.openRouter.calls).toEqual([])
 
     // The key is kept: the own model is one pick away.
-    await user.click(chip('Notico (hosted)'))
+    await user.click(chip('Auto'))
     await user.click(await screen.findByRole('menuitemradio', { name: /^GPT-6.1 Sol/ }))
     expect(chip('GPT-6.1 Sol')).toBeVisible()
   })
 
   it('without a key, the menu offers the hosted model and leads to the settings page, contacting no one', async () => {
     const { browser, user } = await openPanel()
-    await user.click(chip('Notico (hosted)'))
+    await user.click(chip('Auto'))
     const menu = screen.getByRole('menu', { name: 'Model' })
     expect(
       within(menu)
         .getAllByRole('menuitemradio')
         .map((item) => item.textContent),
-    ).toEqual(['Notico (hosted) Spends credits'])
+    ).toEqual(['Auto'])
     expect(browser.openRouter.requests).toEqual([])
 
     await user.click(within(menu).getByRole('menuitem', { name: 'Set up your own model…' }))
@@ -329,7 +327,7 @@ describe('switching the model from the chat', () => {
     await user.click(chip('GPT-6.1 Sol'))
     // The recommended models, in their order, once OpenRouter's list is in.
     await screen.findByRole('menuitemradio', { name: /^Claude Sonnet 5.5/ })
-    expect(screen.getByRole('menuitemradio', { name: /^Notico \(hosted\)/ })).toHaveFocus()
+    expect(screen.getByRole('menuitemradio', { name: /^Auto/ })).toHaveFocus()
     await user.keyboard('{ArrowDown}')
     expect(screen.getByRole('menuitemradio', { name: /^Claude Sonnet 5.5/ })).toHaveFocus()
     await user.keyboard('{End}')
@@ -424,9 +422,9 @@ describe('DeepSeek with the user key', () => {
     expect(browser.ai.calls).toEqual([])
   })
 
-  it('[UC-AGENT-002-S13] the chat menu lists DeepSeek models with their prices once a DeepSeek key is saved', async () => {
+  it('[UC-AGENT-002-S17] the chat menu lists the hosted model and DeepSeek models by name only once a DeepSeek key is saved', async () => {
     const { browser, user } = await openPanel()
-    await user.click(chip('Notico (hosted)'))
+    await user.click(chip('Auto'))
     expect(screen.queryByRole('group', { name: 'DeepSeek' })).not.toBeInTheDocument()
     await user.keyboard('{Escape}')
 
@@ -434,10 +432,10 @@ describe('DeepSeek with the user key', () => {
     await user.click(chip('DeepSeek V4.1 Flash'))
     const group = screen.getByRole('group', { name: 'DeepSeek' })
     expect(
-      within(group)
+      within(screen.getByRole('menu', { name: 'Model' }))
         .getAllByRole('menuitemradio')
         .map((item) => item.textContent),
-    ).toEqual(['DeepSeek V4.1 Flash $0.30 / $1.20', 'DeepSeek V4 Pro $1.32 / $3.96'])
+    ).toEqual(['Auto', 'DeepSeek V4.1 Flash', 'DeepSeek V4 Pro'])
     expect(within(group).getByRole('menuitemradio', { name: FLASH })).toHaveAttribute('aria-checked', 'true')
 
     await user.click(within(group).getByRole('menuitemradio', { name: /^DeepSeek V4 Pro/ }))
@@ -535,7 +533,7 @@ describe('DeepSeek with the user key', () => {
 
     await openSettings(user)
     await user.click(screen.getByRole('button', { name: 'Remove key' }))
-    expect(modelInUse()).toHaveTextContent('Notico (hosted)')
+    expect(modelInUse()).toHaveTextContent('Auto')
     expect(JSON.stringify(browser.tab.storage.values)).not.toContain(DS_KEY)
 
     await user.click(screen.getByRole('radio', { name: 'OpenRouter, with your key' }))
