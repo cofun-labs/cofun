@@ -464,7 +464,7 @@ describe('a tool that needs confirmation', () => {
     await first.user.click(within(first.prompt).getByRole('button', { name: 'Allow' }))
     await screen.findByText('Done.')
     await answered()
-    expect(screen.getByText(/^Changed 1 page · \d+ Notion requests?$/)).toBeVisible()
+    expect(screen.getByText('Changed 1 page')).toBeVisible()
   })
 
   it('[UC-AGENT-001-S24] a change the user declined is not counted as changed', async () => {
@@ -575,21 +575,62 @@ describe('sessions', () => {
     expect(said()).toEqual(['Read Fixture page', 'Edited Fixture page'])
   })
 
-  it('[UC-AGENT-001-S20][UC-AGENT-001-S23] a reply shows how many pages it read and Notion requests it made, also after the session is reopened', async () => {
+  /** The rows of the reply's details, opened from its "…" button. */
+  async function replyDetails(user: UserEvent) {
+    await user.click(screen.getByRole('button', { name: 'Reply details' }))
+    const popover = screen.getByRole('dialog', { name: 'Reply details' })
+    return [...popover.querySelectorAll('p')].map((row) => row.textContent)
+  }
+
+  it('[UC-AGENT-001-S23][UC-AGENT-001-S25] a reply shows the pages it read, and its details the Notion requests, tokens, and model, also after the session is reopened', async () => {
     const { browser, user } = await openPanel()
+    // Each model call reports 1,200 input tokens, 800 of them cached, and 50 output tokens.
+    browser.ai.usage = { prompt_tokens: 1200, completion_tokens: 50, prompt_tokens_details: { cached_tokens: 800 } }
     await askAboutPage(browser, user)
 
     const made = browser.tab.sent.length
     expect(made).toBeGreaterThan(0)
-    const line = `Read 1 page · ${made} Notion request${made === 1 ? '' : 's'}`
-    expect(screen.getByText(line)).toBeVisible()
+    // The line counts pages only; the requests are in the details.
+    expect(screen.getByText('Read 1 page')).toBeVisible()
+    expect(screen.queryByText(/Notion request/)).not.toBeInTheDocument()
+    // Both model calls of the question, and not the request for the session's title.
+    const details = [
+      `Sent ${made} Notion request${made === 1 ? '' : 's'}`,
+      'Tokens: 2,400 in (1,600 cached) · 100 out',
+      'Model: Auto',
+    ]
+    expect(await replyDetails(user)).toEqual(details)
 
     await browser.openPanel()
     await openSession(user, /What does this page say\?/)
 
-    expect(await screen.findByText(line)).toBeVisible()
+    expect(await screen.findByText('Read 1 page')).toBeVisible()
+    expect(await replyDetails(user)).toEqual(details)
     // Showing a saved session asks nothing of Notion.
     expect(browser.tab.sent).toHaveLength(made)
+  })
+
+  it("a reply's details close on Escape, on a click outside, and when pressed again", async () => {
+    const { browser, user } = await openPanel()
+    await askAboutPage(browser, user)
+    const button = screen.getByRole('button', { name: 'Reply details' })
+    const popover = () => screen.queryByRole('dialog', { name: 'Reply details' })
+
+    await user.click(button)
+    expect(popover()).toBeVisible()
+    expect(button).toHaveAttribute('aria-expanded', 'true')
+    await user.keyboard('{Escape}')
+    expect(popover()).not.toBeInTheDocument()
+    expect(button).toHaveFocus()
+
+    await user.click(button)
+    await user.click(screen.getByText('It is a fixture.'))
+    expect(popover()).not.toBeInTheDocument()
+
+    await user.click(button)
+    await user.click(button)
+    expect(popover()).not.toBeInTheDocument()
+    expect(button).toHaveAttribute('aria-expanded', 'false')
   })
 
   it('[UC-AGENT-001-S23] a page read twice for a question counts once', async () => {
@@ -605,7 +646,7 @@ describe('sessions', () => {
     await screen.findByText('Read them.')
     await answered()
 
-    expect(screen.getByText(/^Read 2 pages · \d+ Notion requests?$/)).toBeVisible()
+    expect(screen.getByText('Read 2 pages')).toBeVisible()
   })
 
   it('[UC-CHAT-001-S19] copying a reply puts its Markdown on the clipboard, without its tool calls or the line under it', async () => {
@@ -654,7 +695,7 @@ describe('sessions', () => {
     expect(screen.getByRole('status')).toHaveTextContent("Couldn't copy the reply")
   })
 
-  it('a reply that used no Notion tool has no line under it', async () => {
+  it('a reply that used no Notion tool says nothing about Notion under it', async () => {
     const { browser, user } = await openPanel()
     browser.ai.script.push({ reply: 'Hello.' })
 
@@ -662,7 +703,9 @@ describe('sessions', () => {
     await screen.findByText('Hello.')
     await answered()
 
-    expect(screen.queryByText(/Notion request|Read \d+ page|Changed \d+ page/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/Read \d+ page|Changed \d+ page/)).not.toBeInTheDocument()
+    // It sent nothing to Notion, so its details say only what the model used.
+    expect(await replyDetails(user)).toEqual(['Tokens: 12 in · 5 out', 'Model: Auto'])
   })
 
   it('[UC-SESSION-001-S07] opening the side panel starts a new, empty session, with the earlier ones in the list', async () => {

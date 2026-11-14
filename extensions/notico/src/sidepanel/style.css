@@ -420,12 +420,52 @@ header .untitled {
   font-size: 12px;
 }
 
-/* Under a reply that has ended: Copy, then the line saying what it touched in Notion. */
+/* Under a reply that has ended: Copy, the line saying what it touched in Notion, and its details. */
 .reply-foot {
+  position: relative;
+  /* Across the reply, so the details popover anchored to it has the panel's width to fit in. */
+  align-self: stretch;
   display: flex;
   align-items: center;
   gap: 6px;
   margin-left: -6px;
+}
+
+/* Without Copy, the line starts where the reply's text does. */
+.reply-foot > .note:first-child {
+  margin-left: 6px;
+}
+
+.reply-action[aria-expanded='true'] {
+  background: var(--tint);
+  color: var(--fg);
+}
+
+/* A reply's details: opens upward from its row, where the chat has room, like the model menu. */
+.reply-popover {
+  position: absolute;
+  bottom: calc(100% + 4px);
+  left: 6px;
+  z-index: 2;
+  width: max-content;
+  max-width: calc(100% - 6px);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--bg);
+  box-shadow: 0 8px 28px var(--shadow);
+  font-size: 14px;
+}
+
+.reply-popover p {
+  margin: 0;
+}
+
+.reply-popover .detail-label {
+  color: var(--muted);
 }
 
 .reply-action {

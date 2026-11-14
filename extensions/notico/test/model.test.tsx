@@ -48,6 +48,13 @@ async function ask(user: UserEvent, question: string) {
 
 const answered = () => screen.findByRole('button', { name: 'Send' })
 
+/** The rows of the latest reply's details, opened from its "…" button. */
+async function replyDetails(user: UserEvent) {
+  await user.click(screen.getAllByRole('button', { name: 'Reply details' }).at(-1)!)
+  const popover = screen.getByRole('dialog', { name: 'Reply details' })
+  return [...popover.querySelectorAll('p')].map((row) => row.textContent)
+}
+
 describe('choosing the model', () => {
   it('[UC-AGENT-002-S01] the own model answers with the user key and a tool, and the worker never gets the key or the question', async () => {
     const { browser, user } = await openPanel()
@@ -104,6 +111,23 @@ describe('choosing the model', () => {
     ])
     expect(browser.titles.calls).toEqual([])
     expect(browser.sentToWorker.slice(before).some((sent) => sent.includes('/chat/completions'))).toBe(false)
+  })
+
+  it("a reply's details name the own model and the tokens OpenRouter reported", async () => {
+    const { browser, user } = await openPanel()
+    await setUpOpenRouter(browser, user)
+    browser.openRouter.ai.usage = {
+      prompt_tokens: 3000,
+      completion_tokens: 40,
+      prompt_tokens_details: { cached_tokens: 2000 },
+    }
+    browser.openRouter.ai.script.push({ reply: 'It is a fixture.' })
+
+    await ask(user, 'What does this page say?')
+    await screen.findByText('It is a fixture.')
+    await answered()
+
+    expect(await replyDetails(user)).toEqual(['Tokens: 3,000 in (2,000 cached) · 40 out', 'Model: OpenAI: GPT-6.1 Sol'])
   })
 
   it('[UC-AGENT-002-S02] another account on the same browser gets the hosted model and cannot see the key', async () => {
@@ -383,6 +407,22 @@ describe('DeepSeek with the user key', () => {
       expect(sent).not.toContain('What does this page say?')
     }
     expect(browser.sentToWorker.slice(before).some((sent) => sent.includes('/chat/completions'))).toBe(false)
+  })
+
+  it("a reply's details name the DeepSeek model and the tokens DeepSeek reported", async () => {
+    const { browser, user } = await openPanel()
+    await setUpDeepSeek(browser, user)
+    // DeepSeek reports its cache hits in a field of its own.
+    browser.deepSeek.ai.usage = { prompt_tokens: 900, completion_tokens: 30, prompt_cache_hit_tokens: 600 }
+    browser.deepSeek.ai.script.push({ reply: 'It is a fixture.' })
+
+    await ask(user, 'What does this page say?')
+    await screen.findByText('It is a fixture.')
+    await answered()
+
+    const [tokens, model] = await replyDetails(user)
+    expect(tokens).toBe('Tokens: 900 in (600 cached) · 30 out')
+    expect(model).toMatch(/^Model: DeepSeek V4.1 Flash/)
   })
 
   it('[UC-AGENT-002-S12] switching between OpenRouter and DeepSeek uses each one with its own key, never asked again', async () => {
