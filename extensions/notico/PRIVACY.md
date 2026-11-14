@@ -54,7 +54,7 @@ An event says that something happened, never what was written or read. Every val
 |---|---|
 | The panel was opened; the sign-in page was opened; you signed in | Nothing more |
 | Your device's random id was joined to your account (`$identify`, sent by the analytics code when it first sees you signed in) | The random id and your Clerk user id |
-| A question was asked | Which service answers (Notico's own model, OpenRouter, or DeepSeek), and whether the current tab was a Notion page |
+| A question was asked | Which service answers (Cofun's hosted model, OpenRouter, or DeepSeek), and whether the current tab was a Notion page |
 | A question ended | The same service; how it ended (answered, stopped, out of steps, or failed, with our server's error code if it had one); how many times the model was called; how many tools ran |
 | A tool ran | The tool's name (such as `read_page`), whether it worked and how it ended, and Notion's kind of error if it failed (such as "no access") |
 | The model was switched; a key of your own was saved | Which service. Never the key, or the model's name |
