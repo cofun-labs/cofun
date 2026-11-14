@@ -7,6 +7,7 @@
 //   worker        wrangler.jsonc (main: src/index.ts), and vitest's default test files
 //   e2e           the "e2e" script in package.json (tsx src/cli.ts), and vitest's default test files
 //   smoke         playwright.config.ts (testDir: test)
+//   scripts       the "use-cases" script in package.json (node check-use-cases.ts), and vitest's default test files
 //   root          .oxlintrc.json, lefthook.yml, and the scripts in package.json
 //
 // A finding is fixed by deleting the code or the dependency. Only a false positive, or something
