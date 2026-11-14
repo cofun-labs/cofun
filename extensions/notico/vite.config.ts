@@ -9,7 +9,7 @@ import { buildManifest } from './manifest.ts'
  */
 function manifest(env: Record<string, string>): Plugin {
   return {
-    name: 'notion-copilot-manifest',
+    name: 'notico-manifest',
     generateBundle() {
       const json = buildManifest(
         { ...env, VITE_CLERK_SYNC_HOST: env.VITE_CLERK_SYNC_HOST },
