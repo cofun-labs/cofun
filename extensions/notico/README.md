@@ -28,7 +28,7 @@
 - **Databases:** Create databases, add rows, fill in properties, and add, rename, or remove properties and select options.
 - **Organize:** Move pages under another page, duplicate them, or move them to Notion's trash (it asks you first).
 - **Collaborate:** Add comments on a page or on a block, and mention workspace members by name.
-- **Stay in context:** It knows which page is open and what you selected in it. The panel stays open, with your conversation, as you switch tabs. Past conversations are saved, searchable, and can be picked up again.
+- **Stay in context:** It knows which page is open and what you selected in it. The panel stays open, with your chat, as you switch tabs. Past chats are saved, searchable, and can be picked up again.
 
 ## Get started
 
@@ -61,7 +61,7 @@ There is nothing to connect on the Notion side: no integration to create, no tok
 
 **What leaves your browser.** Your questions, and what Notico reads to answer them (pages, database rows, comments, search results), go to our server (one for every [Cofun](../../README.md) extension) and on to the AI model, which runs on Cloudflare Workers AI. On a tab that isn't Notion, Notico never reads the page; it sends that tab's address and title only when a question needs them. The server doesn't keep any of this: for each request it records who asked, sizes, token counts, and the outcome, never the text of a prompt or a reply. [Notico's privacy page](PRIVACY.md) has the full account of what is read and which hosts it goes to, and [Cofun's](../../PRIVACY.md) of what the server keeps.
 
-**What stays on your device.** Conversations are saved in Chrome on your device, per account, and kept after you sign out so you can pick up again. They are not encrypted: anyone who can use your Chrome profile can read them, including the page content Notico read.
+**What stays on your device.** Chats are saved in Chrome on your device, per account, and kept after you sign out so you can pick up again. They are not encrypted: anyone who can use your Chrome profile can read them, including the page content Notico read.
 
 > [!WARNING]
 > **It edits without asking first.** Notico edits pages, creates pages and rows, changes properties (it can remove a database property, with its values in every row), adds comments, and moves and duplicates pages as soon as it decides to. Moving pages to the trash is the one thing it asks you about, every time. Each change is shown in the side panel as it happens, and Notion's page history can undo edits.
