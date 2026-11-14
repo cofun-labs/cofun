@@ -80,11 +80,12 @@ function size(message: AgentMessage): number {
 }
 
 /** The parts of these details that are known, without keys for the others. */
-export function detailsOf({ requests, tokens, model }: QuestionDetails): QuestionDetails {
+export function detailsOf({ requests, tokens, model, cost }: QuestionDetails): QuestionDetails {
   return {
     ...(requests !== undefined && { requests }),
     ...(tokens && { tokens }),
     ...(model && { model }),
+    ...(cost && { cost }),
   }
 }
 

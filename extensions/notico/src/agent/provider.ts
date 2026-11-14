@@ -23,6 +23,17 @@ export interface ModelProvider {
   parseError(message: string | undefined): Failure
   /** The request failed because the model it named is no longer served: look it up again. */
   modelChanged(failure: Failure): boolean
+  /**
+   * What a model call cost in credits, when this chunk of its stream says (see `callCost` in
+   * worker.ts). Only the hosted provider has it: a user's own model spends no credits.
+   */
+  callCost?(chunk: unknown): CallCost | undefined
+}
+
+/** What one model call cost, as the worker charged it: in micro-credits, and whether from estimated tokens. */
+export interface CallCost {
+  microCredits: number
+  estimated: boolean
 }
 
 // The worker allows 200 messages and 200,000 characters, tools included.

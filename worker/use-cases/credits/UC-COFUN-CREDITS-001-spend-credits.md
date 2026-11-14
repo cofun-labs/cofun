@@ -11,6 +11,7 @@ Key constraints:
 - A user with no credits left cannot reach the model again until they get more credits: their next free credits, or credits they buy.
 - A model call that starts with credits left is answered in full, even when it costs more than what was left. What it overspent is taken out of the next credits the user gets.
 - Credits that have expired cannot be spent.
+- Only the service prices a call. Each reply tells the client what its call cost, so a product can show it; a call that was cut short is charged from estimated tokens, and says so.
 
 ## Scenarios
 
@@ -23,6 +24,8 @@ Key constraints:
 | UC-COFUN-CREDITS-001-S03 | P1 | ✅ | Given a user whose last model call cost more than the credits they had left; when their next free credits arrive; then what they overspent is taken out of those credits first. |
 | UC-COFUN-CREDITS-001-S04 | P1 | ✅ | Given a user with credits left when their week ends; when they ask the AI afterwards; then the leftover is gone and only the new week's credits can be spent. |
 | UC-COFUN-CREDITS-001-S05 | P1 | ✅ | Given a model call whose input was partly read from the model's cache; when it is charged; then the cached part costs the cached price and the rest the full price. |
+| UC-COFUN-CREDITS-001-S06 | P1 | ✅ | Given a model call that ran to its end; when its reply reaches the client, streamed or not; then the reply says what the call cost, the same amount the user was charged. |
+| UC-COFUN-CREDITS-001-S07 | P1 | ✅ | Given a streamed reply that breaks off before the model reported its totals; when the stream ends; then the client is told what the call was charged, marked as an estimate. |
 
 ### ai-e2e
 

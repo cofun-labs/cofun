@@ -162,24 +162,31 @@ export interface StreamSummary {
 }
 
 /**
- * Passes an OpenAI-style SSE stream through unchanged, chunk by chunk, while reading the token
- * usage and finish reason from it. Calls `done` once, when the stream ends, fails, or is cancelled,
- * and waits for it before the returned stream ends, so a reader that saw the end knows it has run.
- * A stream that ends without `data: [DONE]` was cut short and is reported as `incomplete`; one
- * that carried an error event is reported as `provider_error`, like a failed non-streamed call.
- * Only the current incomplete line is held back for parsing; the reply itself is never buffered.
+ * Passes an OpenAI-style SSE stream through, line by line, while reading the token usage and finish
+ * reason from it. Calls `done` once, when the stream ends, fails, or is cancelled, and waits for it
+ * before the returned stream ends, so a reader that saw the end knows it has run. A stream that ends
+ * without `data: [DONE]` was cut short and is reported as `incomplete`; one that carried an error
+ * event is reported as `provider_error`, like a failed non-streamed call. Only the current
+ * incomplete line is held back, for parsing; the reply itself is never buffered.
+ *
+ * `last` gives the fields of one more chunk, written for the client as the last before
+ * `data: [DONE]`, or before the end of a stream that ends without it: what the call cost. The
+ * stream's totals have all arrived by then, and nothing after `[DONE]` is read into the summary, so
+ * `last` and `done` see the same one. A stream the client cancelled has no reader left to tell.
  *
  * When reading the source fails, the error goes to `failed` and the returned stream ends with an
- * error written here: the source's own error may carry anything, a quote of the request included,
- * and an error left on a response body is outside what the worker decides to log.
+ * error written here, after that last chunk: the source's own error may carry anything, a quote of
+ * the request included, and an error left on a response body is outside what the worker decides to log.
  */
 export function meterStream(
   source: ReadableStream<Uint8Array>,
   done: (outcome: string, summary: StreamSummary) => void | Promise<void>,
+  last: (outcome: string, summary: StreamSummary) => Record<string, unknown>,
   failed: (err: unknown) => void,
 ): ReadableStream<Uint8Array> {
   const reader = source.getReader()
   const decoder = new TextDecoder()
+  const encoder = new TextEncoder()
   const summary: StreamSummary = {
     promptTokens: 0,
     cachedTokens: 0,
@@ -195,11 +202,16 @@ export function meterStream(
   // Set once the client has cancelled: the returned stream is closed then and must not be touched,
   // also not by a read that was waiting on `done` when the cancel came.
   let cancelled = false
+  // Set when reading the source failed: the stream errors on the next pull, once the last chunk has
+  // been read (erroring a stream drops what it has not handed out yet).
+  let broke = false
   const finish = async (outcome: string) => {
     if (finished) return
     finished = true
     await done(outcome, summary)
   }
+  const lastChunk = (outcome: string) => `data: ${JSON.stringify(last(outcome, summary))}\n\n`
+  const isDone = (line: string) => line.startsWith('data:') && line.slice(5).trim() === '[DONE]'
 
   const scan = (line: string) => {
     if (!line.startsWith('data:')) return
@@ -229,30 +241,72 @@ export function meterStream(
     if (reason) summary.finishReason = finishReason(reason)
   }
 
+  /** Complete lines, as they go to the client: with the last chunk ahead of `[DONE]`. */
+  const pass = (lines: string[]) => {
+    let out = ''
+    for (const line of lines) {
+      if (!sawDone && isDone(line)) out += lastChunk(sawError ? 'provider_error' : 'ok')
+      if (!sawDone) scan(line.trimEnd())
+      out += `${line}\n`
+    }
+    return out
+  }
+  /** The line held back, when the stream ends: it may be a whole event with no newline after it. */
+  const rest = () => {
+    const tail = partial + decoder.decode()
+    partial = ''
+    if (!tail) return ''
+    const line = tail.trimEnd()
+    if (!sawDone && isDone(line)) return `${lastChunk(sawError ? 'provider_error' : 'ok')}${tail}\n`
+    if (!sawDone) scan(line)
+    return `${tail}\n\n`
+  }
+
   return new ReadableStream<Uint8Array>({
     async pull(controller) {
-      let result: ReadableStreamReadResult<Uint8Array>
-      try {
-        result = await reader.read()
-      } catch (err) {
-        // Once the client has cancelled, the stream is closed and must not be touched.
-        if (finished) return
-        failed(err)
-        await finish(sawError ? 'provider_error' : 'stream_error')
-        if (!cancelled) controller.error(new Error('the model stream failed'))
+      if (broke) {
+        controller.error(new Error('the model stream failed'))
         return
       }
-      if (finished) return
-      if (result.done) {
-        scan(partial + decoder.decode())
-        await finish(sawError ? 'provider_error' : sawDone ? 'ok' : 'incomplete')
-        if (!cancelled) controller.close()
-        return
+      // Each pull hands out something, or ends the stream: a pull that does neither is not repeated.
+      for (;;) {
+        let result: ReadableStreamReadResult<Uint8Array>
+        try {
+          result = await reader.read()
+        } catch (err) {
+          // Once the client has cancelled, the stream is closed and must not be touched.
+          if (cancelled) return
+          failed(err)
+          const tail = rest()
+          const outcome = sawError ? 'provider_error' : 'stream_error'
+          const end = sawDone ? '' : lastChunk(outcome)
+          await finish(outcome)
+          if (cancelled) return
+          if (tail || end) {
+            controller.enqueue(encoder.encode(tail + end))
+            broke = true
+          } else controller.error(new Error('the model stream failed'))
+          return
+        }
+        if (cancelled) return
+        if (result.done) {
+          const tail = rest()
+          const outcome = sawError ? 'provider_error' : sawDone ? 'ok' : 'incomplete'
+          const end = sawDone ? '' : lastChunk(outcome)
+          await finish(outcome)
+          if (cancelled) return
+          if (tail || end) controller.enqueue(encoder.encode(tail + end))
+          controller.close()
+          return
+        }
+        const lines = (partial + decoder.decode(result.value, { stream: true })).split('\n')
+        partial = lines.pop() ?? ''
+        const out = pass(lines)
+        if (out) {
+          controller.enqueue(encoder.encode(out))
+          return
+        }
       }
-      const lines = (partial + decoder.decode(result.value, { stream: true })).split('\n')
-      partial = lines.pop() ?? ''
-      for (const line of lines) scan(line.trimEnd())
-      controller.enqueue(result.value)
     },
     async cancel(reason) {
       // A client that reads an error event stops reading at once, so the error decides the outcome.

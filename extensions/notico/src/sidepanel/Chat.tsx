@@ -5,6 +5,7 @@ import {
   type AgentUpdate,
   type ConfirmTool,
   type HistoryMessage,
+  type QuestionCost,
   type QuestionDetails,
   type QuestionPage,
 } from '../agent'
@@ -614,8 +615,8 @@ export function Chat({ userId }: { userId: string }) {
         )
       const result = await agent.ask(text, onUpdate, confirm, { context, pages: sentPages, readOnly })
       answered = result.status === 'done'
-      const { requests, tokens, model } = result
-      updateReply((m) => ({ ...m, details: { requests, tokens, model } }))
+      const { requests, tokens, model, cost } = result
+      updateReply((m) => ({ ...m, details: { requests, tokens, model, cost } }))
       if (result.status === 'stopped') {
         updateTools((t) => (t.status === 'running' || t.status === 'confirm' ? { ...t, status: 'stopped' } : t))
         updateReply((m) => ({ ...m, stopped: true }))
@@ -1039,7 +1040,7 @@ function toShown(history: HistoryMessage[]): Shown[] {
         ...(m.pages?.length && { pages: m.pages }),
         ...(m.readOnly && { readOnly: true }),
       })
-      details = { requests: m.requests, tokens: m.tokens, model: m.model }
+      details = { requests: m.requests, tokens: m.tokens, model: m.model, cost: m.cost }
       continue
     }
     let reply = shown.at(-1)
@@ -1106,10 +1107,12 @@ const ReplyFoot = memo(function ReplyFoot({ reply, ended }: { reply: Reply; ende
   const text = replyMarkdown(reply.parts)
   const summary = touched(reply)
   const details = detailRows(reply.details)
-  if (!text && !summary && !details.length) return null
+  const cost = reply.details?.cost
+  if (!text && !summary && !details.length && !cost) return null
   return (
     <div className="reply-foot">
       {text && <CopyButton text={text} />}
+      {cost && <CostNote cost={cost} />}
       {summary && <div className="note">{summary}</div>}
       {details.length > 0 && <ReplyDetails rows={details} />}
     </div>
@@ -1151,6 +1154,22 @@ function CopyButton({ text }: { text: string }) {
 }
 
 const counted = (n: number, noun: string) => `${n} ${noun}${n === 1 ? '' : 's'}`
+
+/**
+ * What a reply cost in credits, as the worker charged it: short, to two significant digits below one
+ * credit ("0.48 credits") and one decimal above. An estimate is marked as approximate.
+ */
+function CostNote({ cost }: { cost: QuestionCost }) {
+  const credits = cost.microCredits / 1_000_000
+  const digits = credits < 1 ? { maximumSignificantDigits: 2 } : { maximumFractionDigits: 1 }
+  const text = `${cost.estimated ? '≈ ' : ''}${credits.toLocaleString('en-US', digits)} ${credits === 1 ? 'credit' : 'credits'}`
+  const title = cost.estimated ? 'Approximate: the reply was cut short' : 'What this reply cost'
+  return (
+    <div className="note" title={title}>
+      {text}
+    </div>
+  )
+}
 
 /**
  * What a question touched in Notion: the distinct pages and databases its tools read and changed

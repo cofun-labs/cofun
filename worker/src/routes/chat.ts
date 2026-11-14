@@ -61,6 +61,18 @@ function isStream(value: unknown): value is ReadableStream<Uint8Array> {
   return !!value && typeof value === 'object' && 'getReader' in value && typeof value.getReader === 'function'
 }
 
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  !!value && typeof value === 'object' && !Array.isArray(value)
+
+/**
+ * What a model call cost, as the client is told: in micro-credits, as charged (`costOf`), and whether
+ * its tokens were estimated because the call was cut short. Sent next to `usage`, in the body of a
+ * reply or in the last chunk of a stream. The worker is the only place that prices a call.
+ */
+function callCost(microCredits: number, estimated: boolean) {
+  return { micro_credits: microCredits, estimated }
+}
+
 /** Chat completions, mounted at /v1/chat. */
 export function chatRoutes({ now, priceOf: priceFor, logError }: Deps): App {
   const routes: App = new Hono()
@@ -119,8 +131,9 @@ export function chatRoutes({ now, priceOf: priceFor, logError }: Deps): App {
       throw new HttpError(400, 'unsupported_model', `unsupported model; use ${c.env.MODEL} or omit it`)
     }
 
-    const price = priceFor(c.env.MODEL)
-    if (!price) throw new HttpError(503, 'not_configured', 'MODEL has no price')
+    const priced = priceFor(c.env.MODEL)
+    if (!priced) throw new HttpError(503, 'not_configured', 'MODEL has no price')
+    const price = priced
 
     // Charged after use: a call goes ahead while the user has credits, and its cost is taken when
     // the reply ends. The last call may take the balance below zero; the next grant pays that back
@@ -222,7 +235,8 @@ export function chatRoutes({ now, priceOf: priceFor, logError }: Deps): App {
       if (stream === true) {
         // Workers AI already streams OpenAI-style SSE; pass it through, reading usage on the way.
         if (!isStream(out)) throw new Error('the model returned no stream')
-        const settle = async (outcome: string, summary: StreamSummary) => {
+        /** What a stream that ended this way is charged by: its tokens, and whether they are an estimate. */
+        const charged = (outcome: string, summary: StreamSummary) => {
           const { promptTokens, cachedTokens, completionTokens } = summary
           const tokens: Tokens = { promptTokens, cachedTokens, completionTokens }
           // A reply the user stopped, or a stream that broke off, costs what it used. Its totals come
@@ -242,6 +256,10 @@ export function chatRoutes({ now, priceOf: priceFor, logError }: Deps): App {
             tokens.cachedTokens = estimateCachedTokens(tokens.promptTokens)
             tokens.completionTokens = Math.max(tokens.completionTokens, estimateTokens(summary.replyChars))
           }
+          return { tokens, estimated }
+        }
+        const settle = async (outcome: string, summary: StreamSummary) => {
+          const { tokens, estimated } = charged(outcome, summary)
           usage.promptTokens = tokens.promptTokens
           usage.cachedTokens = tokens.cachedTokens
           usage.completionTokens = tokens.completionTokens
@@ -257,6 +275,12 @@ export function chatRoutes({ now, priceOf: priceFor, logError }: Deps): App {
             c.executionCtx.waitUntil(settled)
             return settled
           },
+          // The cost goes to the client in a chunk of its own, as the last before [DONE]: it is known
+          // only once the stream's totals are in, and Workers AI reports usage on many chunks.
+          (outcome, summary) => {
+            const { tokens, estimated } = charged(outcome, summary)
+            return { choices: [], cost: callCost(costOf(price, tokens), estimated) }
+          },
           (err) => logError(`model stream failed: ${errorSummary(err)}`),
         )
         return new Response(metered, {
@@ -269,7 +293,8 @@ export function chatRoutes({ now, priceOf: priceFor, logError }: Deps): App {
       usage.finishReason = finishReason(reply?.finish_reason)
       // The reply as the model gave it. Build the response first: if that throws, the request is
       // recorded once, as internal, and nothing is charged.
-      const res = c.newResponse(JSON.stringify(out), 200, { 'content-type': 'application/json' })
+      const body = isRecord(out) ? { ...out, cost: callCost(costOf(price, tokens), false) } : out
+      const res = c.newResponse(JSON.stringify(body), 200, { 'content-type': 'application/json' })
       await endCall('ok', tokens, usage.finishReason, false)
       record('ok')
       return res

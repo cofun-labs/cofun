@@ -323,6 +323,52 @@ describe('UC-COFUN-CREDITS-001 Spend credits on the hosted model', () => {
     ])
   })
 
+  it('[UC-COFUN-CREDITS-001-S06] the reply says what the call cost, streamed or not, as it was charged', async () => {
+    ai.usage = { prompt_tokens: 5639, completion_tokens: 6, prompt_tokens_details: { cached_tokens: 5568 } }
+    const cost = { micro_credits: 71 * 300 + 5568 * 6 + 6 * 1200, estimated: false }
+    expect((await json(await chat(token))).cost).toEqual(cost)
+    const sse = await (await chat(token, { messages: hi, stream: true })).text()
+    const events = sse.split('\n\n').filter(Boolean)
+    // The last chunk before [DONE] says what the call cost; the chunk with the usage comes before it.
+    expect(events.slice(-2)).toEqual([`data: ${JSON.stringify({ choices: [], cost })}`, 'data: [DONE]'])
+    expect(events.at(-3)).toContain('"usage"')
+    expect(db.rows('model_calls').map((r) => r.micro_credits)).toEqual([cost.micro_credits, cost.micro_credits])
+  })
+
+  it('[UC-COFUN-CREDITS-001-S07] a stream that breaks off says what it was charged, as an estimate', async () => {
+    // The reply's first piece, "abcdef": 2 tokens; no chunk gave the prompt: 1 token, from the input.
+    ai.rawSse = 'data: {"choices":[{"delta":{"content":"abcdef"}}]}\n\n'
+    const sse = await (await chat(token, { messages: hi, stream: true })).text()
+    const cost = { micro_credits: 300 + 2 * 1200, estimated: true }
+    expect(sse.split('\n\n').filter(Boolean).at(-1)).toBe(`data: ${JSON.stringify({ choices: [], cost })}`)
+    expect(db.rows('model_calls')).toEqual([
+      expect.objectContaining({ outcome: 'incomplete', estimated: 1, micro_credits: cost.micro_credits }),
+    ])
+  })
+
+  it('a stream whose read fails says what it was charged before it errors', async () => {
+    ai.streamFailWith = new Error('connection reset')
+    ai.usage = { prompt_tokens: 3, completion_tokens: 0 }
+    const res = await chat(token, { messages: hi, stream: true })
+    const reader = res.body!.getReader()
+    const decoder = new TextDecoder()
+    let text = ''
+    await expect(
+      (async () => {
+        for (;;) {
+          const { done, value } = await reader.read()
+          if (done) return
+          text += decoder.decode(value, { stream: true })
+        }
+      })(),
+    ).rejects.toThrow('the model stream failed')
+    const [call] = db.rows('model_calls')
+    expect(call).toMatchObject({ outcome: 'stream_error' })
+    expect(text).toContain(
+      `"cost":${JSON.stringify({ micro_credits: call.micro_credits, estimated: call.estimated === 1 })}`,
+    )
+  })
+
   it('calls sent at once all start on the same balance, and what they overspent is owed', async () => {
     repliesCost(190)
     await chat(token)
@@ -396,7 +442,8 @@ describe('UC-COFUN-CREDITS-001 Spend credits on the hosted model', () => {
   it('a stream cut short is recorded with the estimate it was charged by', async () => {
     const res = await chat(token, { messages: hi, stream: true })
     const reader = res.body!.getReader()
-    for (let i = 0; i < 5; i++) await reader.read()
+    // The first line: the first piece of the reply, "Hello ".
+    await reader.read()
     await reader.cancel()
     expect(db.rows('model_calls')).toEqual([
       expect.objectContaining({ outcome: 'cancelled', estimated: 1, prompt_tokens: 1, completion_tokens: 2 }),
@@ -536,8 +583,8 @@ describe('UC-COFUN-CREDITS-001 Spend credits on the hosted model', () => {
   it('a reply the user stops is charged an estimate of what it used', async () => {
     const res = await chat(token, { messages: hi, stream: true })
     const reader = res.body!.getReader()
-    // 80 bytes: the first piece of the reply, "Hello ", and the start of the next.
-    for (let i = 0; i < 5; i++) await reader.read()
+    // The stream goes out a line at a time: this is the first piece of the reply, "Hello ".
+    expect(new TextDecoder().decode((await reader.read()).value)).toContain('"Hello "')
     await reader.cancel()
     // No chunk reported the prompt, so it is estimated from the input: 2 characters, 1 token, of
     // which 90%, rounded down, counts as cached: none. The reply is estimated from the 6 characters
@@ -707,7 +754,9 @@ describe("UC-COFUN-CHAT-002 Keep a record of each user's chat usage", () => {
   it('[UC-COFUN-CHAT-002-S02] a stream that ends early without an error is recorded as incomplete', async () => {
     const sse = 'data: {"choices":[{"delta":{"content":"a"}}]}\n\n'
     ai.rawSse = sse
-    expect(await (await chat(token, { messages: hi, stream: true })).text()).toBe(sse)
+    // The client is told what it cost, as an estimate, in a last chunk of its own.
+    const last = 'data: {"choices":[],"cost":{"micro_credits":1500,"estimated":true}}\n\n'
+    expect(await (await chat(token, { messages: hi, stream: true })).text()).toBe(sse + last)
     expect(records().map((r) => r.outcome)).toEqual(['incomplete'])
   })
 
@@ -893,10 +942,11 @@ describe('usage records', () => {
     expect(records().map((r) => r.outcome)).toEqual(['cancelled'])
   })
 
-  it('the stream reaches the client unchanged', async () => {
-    const sse = 'data: {"choices":[{"delta":{"content":"a"}}]}\n\ndata: [DONE]\n\n'
-    ai.rawSse = sse
-    expect(await (await chat(token, { messages: hi, stream: true })).text()).toBe(sse)
+  it('the stream reaches the client unchanged, with what it cost ahead of [DONE]', async () => {
+    const reply = 'data: {"choices":[{"delta":{"content":"a"}}]}\n\n'
+    ai.rawSse = `${reply}data: [DONE]\n\n`
+    const cost = 'data: {"choices":[],"cost":{"micro_credits":0,"estimated":false}}\n\n'
+    expect(await (await chat(token, { messages: hi, stream: true })).text()).toBe(`${reply}${cost}data: [DONE]\n\n`)
     expect(records()[0]).toMatchObject({ outcome: 'ok', promptTokens: 0, completionTokens: 0, finishReason: '' })
   })
 
@@ -929,9 +979,10 @@ describe('usage records', () => {
   })
 
   it('non-object events in the stream are passed through and skipped', async () => {
-    const sse = 'data: null\n\ndata: 3\n\ndata: {"choices":[{"delta":{"content":"a"}}]}\n\ndata: [DONE]\n\n'
-    ai.rawSse = sse
-    expect(await (await chat(token, { messages: hi, stream: true })).text()).toBe(sse)
+    const events = 'data: null\n\ndata: 3\n\ndata: {"choices":[{"delta":{"content":"a"}}]}\n\n'
+    ai.rawSse = `${events}data: [DONE]\n\n`
+    const cost = 'data: {"choices":[],"cost":{"micro_credits":0,"estimated":false}}\n\n'
+    expect(await (await chat(token, { messages: hi, stream: true })).text()).toBe(`${events}${cost}data: [DONE]\n\n`)
     expect(records().map((r) => r.outcome)).toEqual(['ok'])
   })
 
@@ -959,8 +1010,10 @@ describe('usage records', () => {
         },
       }
       const res = await chat(token)
-      // The reply itself goes to the client as the model gave it.
-      expect([res.status, await json(res)]).toEqual([200, reply])
+      // The reply itself goes to the client as the model gave it, with what it cost when it is an object.
+      const cost = { micro_credits: Number(recorded.promptTokens) * 300, estimated: false }
+      const sent = typeof reply === 'object' && reply !== null && !Array.isArray(reply) ? { ...reply, cost } : reply
+      expect([res.status, await json(res)]).toEqual([200, sent])
       expect(records()[0]).toMatchObject({ outcome: 'ok', ...recorded })
     }
   })

@@ -35,7 +35,15 @@ import { z } from '../../extensions/notico/src/zod'
 import { createApp, type Env } from '../src/app'
 import { priceOf } from '../src/pricing'
 import { FakeClerk } from './clerk'
-import { FakeAiBinding, FakeD1Database, FakeExecutionContext, FakeUsageDataset, MODEL, usageCosting } from './fakes'
+import {
+  FAKE_COST,
+  FakeAiBinding,
+  FakeD1Database,
+  FakeExecutionContext,
+  FakeUsageDataset,
+  MODEL,
+  usageCosting,
+} from './fakes'
 import {
   FakeNotionTab,
   FakeStorage,
@@ -133,17 +141,18 @@ function withActiveTab(tab: { url?: string; title?: string } | undefined) {
 const usedOnHosted = (calls: number): QuestionDetails => ({
   tokens: { input: 12 * calls, output: 5 * calls, cached: 0 },
   model: { service: 'hosted' },
+  cost: { microCredits: FAKE_COST * calls, estimated: false },
 })
 
 /**
- * Asks one question and collects what the side panel would show. The tokens it used and the model
- * that answered are kept apart from how it ended, for the tests about them.
+ * Asks one question and collects what the side panel would show. The tokens it used, what it cost,
+ * and the model that answered are kept apart from how it ended, for the tests about them.
  */
 async function ask(agent: CopilotAgent, text: string, confirm?: ConfirmTool, extras?: QuestionExtras) {
   const updates: AgentUpdate[] = []
-  const { tokens, model, ...result } = await agent.ask(text, (u) => updates.push(u), confirm, extras)
+  const { tokens, model, cost, ...result } = await agent.ask(text, (u) => updates.push(u), confirm, extras)
   const reply = updates.map((u) => (u.type === 'text' ? u.delta : '')).join('')
-  return { result, used: { tokens, model }, updates, reply }
+  return { result, used: { tokens, model, cost }, updates, reply }
 }
 
 /** A stand-in for a tool that needs the user's OK each time, like moving a page to the trash; records each run. */
@@ -1164,7 +1173,13 @@ describe('extension agent against the worker', () => {
     expect((await ask(agent, 'Which page am I on?')).result).toEqual({ status: 'stopped' })
     const saved = structuredClone(agent.history())
     expect(saved).toEqual<HistoryMessage[]>([
-      { role: 'user', text: 'Which page am I on?', ...usedOnHosted(1) },
+      // Stopped: the call cut short never reports what it was charged, so the cost is approximate.
+      {
+        role: 'user',
+        text: 'Which page am I on?',
+        ...usedOnHosted(1),
+        cost: { microCredits: FAKE_COST, estimated: true },
+      },
       { role: 'assistant', parts: [{ type: 'tool_call', id: 'chatcmpl-tool-0', name: 'lookup_page', args: {} }] },
       {
         role: 'tool',
@@ -1765,7 +1780,12 @@ describe('tokens per question', () => {
     const agent = makeAgent()
 
     const { used } = await ask(agent, 'Which page am I on?')
-    const details = { tokens: { input: 2000, output: 80, cached: 1200 }, model: { service: 'hosted' } }
+    // Each call: 400 new input tokens at 300 micro-credits, 600 cached at 6, and 40 output at 1,200.
+    const details = {
+      tokens: { input: 2000, output: 80, cached: 1200 },
+      model: { service: 'hosted' },
+      cost: { microCredits: 2 * (400 * 300 + 600 * 6 + 40 * 1200), estimated: false },
+    }
     expect(used).toEqual(details)
 
     // The title request is not part of the question.
@@ -1783,7 +1803,8 @@ describe('tokens per question', () => {
     for (const usage of [{}, { prompt_tokens: 'many', completion_tokens: 5 }, { prompt_tokens: 3.5 }]) {
       ai.usage = usage
       ai.script = [{ reply: 'Hello.' }]
-      expect((await ask(agent, 'Hi')).used).toEqual({ tokens: undefined, model: { service: 'hosted' } })
+      const { tokens, model } = (await ask(agent, 'Hi')).used
+      expect({ tokens, model }).toEqual({ tokens: undefined, model: { service: 'hosted' } })
     }
   })
 })

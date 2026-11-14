@@ -804,6 +804,42 @@ describe('sessions', () => {
     expect(browser.tab.sent).toHaveLength(made)
   })
 
+  it('[UC-NOTICO-CHAT-003-S13] a reply shows what it cost in credits, summed over its model calls, also after the session is reopened', async () => {
+    const { browser, user } = await openPanel()
+    // Each model call costs 400 new input tokens at 300 micro-credits, 800 cached at 6, and 50 output
+    // at 1,200: 184,800 micro-credits. The question's two calls cost 0.37 credits.
+    browser.ai.usage = { prompt_tokens: 1200, completion_tokens: 50, prompt_tokens_details: { cached_tokens: 800 } }
+    await askAboutPage(browser, user)
+
+    // In the row under the reply, not in its details.
+    expect(conversation().getByText('0.37 credits')).toBeVisible()
+    expect(await replyDetails(user)).not.toContainEqual(expect.stringMatching(/credit/))
+
+    await browser.openPanel()
+    await openSession(user, /What does this page say\?/)
+    expect(await conversation().findByText('0.37 credits')).toBeVisible()
+  })
+
+  it('[UC-NOTICO-CHAT-003-S14] a reply the user stopped shows its cost as approximate', async () => {
+    const { browser, user } = await openPanel()
+    browser.ai.usage = { prompt_tokens: 1200, completion_tokens: 50, prompt_tokens_details: { cached_tokens: 800 } }
+    // The page is read in full; the answer after it stops partway, until the user stops it.
+    const words = Array.from({ length: 50 }, (_, n) => `word${n}`).join(' ')
+    browser.ai.pause = { after: 1500, until: new Promise<void>(() => {}) }
+    browser.ai.script.push(
+      { toolCalls: [{ name: 'read_page', arguments: JSON.stringify({ part: 1 }) }] },
+      { reply: words },
+    )
+
+    await ask(user, 'What does this page say?')
+    await screen.findByText(/^word0/)
+    await user.click(screen.getByRole('button', { name: 'Stop' }))
+    await answered()
+
+    // The call that read the page reported 0.18 credits; the one stopped never hears what it was charged.
+    expect(conversation().getByText('≈ 0.18 credits')).toHaveAttribute('title', 'Approximate: the reply was cut short')
+  })
+
   it("a reply's details close on Escape, on a click outside, and when pressed again", async () => {
     const { browser, user } = await openPanel()
     await askAboutPage(browser, user)

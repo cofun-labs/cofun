@@ -56,7 +56,7 @@ async function replyDetails(user: UserEvent) {
 }
 
 describe('choosing the model', () => {
-  it('[UC-NOTICO-AGENT-002-S01] the own model answers with the user key and a tool, and the worker never gets the key or the question', async () => {
+  it('[UC-NOTICO-AGENT-002-S01][UC-NOTICO-CHAT-003-S15] the own model answers with the user key and a tool, and the worker never gets the key or the question', async () => {
     const { browser, user } = await openPanel()
     await setUpOpenRouter(browser, user)
     browser.openRouter.ai.script.push(
@@ -69,6 +69,8 @@ describe('choosing the model', () => {
     expect(await screen.findByText('It is a fixture.')).toBeVisible()
     await answered()
 
+    // [UC-NOTICO-CHAT-003-S15] The user's own model spends no credits: the reply shows no cost.
+    expect(screen.queryByText(/\bcredits?$/)).not.toBeInTheDocument()
     // Both model calls went to OpenRouter, with the user's key, for the chosen model.
     const { calls } = browser.openRouter
     expect(calls.map((c) => [c.key, c.model])).toEqual([
