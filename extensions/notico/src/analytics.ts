@@ -53,6 +53,11 @@ const Count = z.int().min(0).max(10_000)
 const AnalyticsEvent = z.discriminatedUnion('event', [
   z.strictObject({ event: z.literal('panel_opened') }),
   z.strictObject({ event: z.literal('sign_in_opened') }),
+  /**
+   * The device's usage was joined to an account: usually a sign-in, but also the first panel this
+   * version opens for someone already signed in, and usage data turned on again by someone who signed
+   * in while it was off. The panel reloads when a sign-in happens, so it never sees one as it happens.
+   */
   z.strictObject({ event: z.literal('signed_in') }),
   /** `notion_tab`: whether the current tab showed a Notion page. */
   z.strictObject({ event: z.literal('question_asked'), provider: Provider, notion_tab: z.boolean() }),
