@@ -931,7 +931,7 @@ describe('update_pages details', () => {
       ['⁍', [['e', 'a*b']]],
       [' and '],
       ['docs', [['a', 'https://x.example']]],
-      [' @kitfun'],
+      [' @acme'],
     ]
     await query(tab, [
       rowRecord(6, '', 'Done', {
@@ -945,7 +945,7 @@ describe('update_pages details', () => {
     expect(
       updatePages.preview!({
         pages: [
-          { page: hex(row(6)), title: '@home Bold', properties: { Notes: 'See code, old, red, a*b and docs @kitfun' } },
+          { page: hex(row(6)), title: '@home Bold', properties: { Notes: 'See code, old, red, a*b and docs @acme' } },
         ],
       }),
     ).toBe(
@@ -953,7 +953,7 @@ describe('update_pages details', () => {
         'Change 1 page',
         `@home Bold ^${hex(row(6))}`,
         '    Title: @home Bold (same text; its formatting changes)',
-        '    Notes: See code, old, red, a*b and docs @kitfun (same text; its formatting changes)',
+        '    Notes: See code, old, red, a*b and docs @acme (same text; its formatting changes)',
       ].join('\n'),
     )
   })

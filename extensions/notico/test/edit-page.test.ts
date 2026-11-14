@@ -143,6 +143,24 @@ describe('UC-NOTICO-NOTION-002 edit a page', () => {
     expect(ws.transactions).toEqual([])
   })
 
+  it('[UC-NOTICO-NOTION-002-S19] makes none of an edit’s changes when one of them is refused', async () => {
+    const ws = workspace([1, 2, 3], [block(1, 'text', 'Intro'), block(2, 'text', 'Draft'), block(3, 'text', 'Old')])
+    open(ws)
+    const before = body(await read())
+    ws.edit(id(2), { properties: { title: [['What the user just typed']] } })
+
+    // The first and last changes could be made; the middle one would overwrite the user's change.
+    await expect(
+      edit([
+        { action: 'insert', position: 'start', markdown: '## Summary' },
+        { action: 'replace', block: '^00000002', markdown: 'Rewritten' },
+        { action: 'delete', block: '^00000003' },
+      ]),
+    ).rejects.toThrow('^00000002 was changed since you read the page.')
+    expect(ws.transactions).toEqual([])
+    expect(body(await read())).toBe(before.replace('Draft', 'What the user just typed'))
+  })
+
   it('[UC-NOTICO-NOTION-002-S04] never replaces content it cannot write', async () => {
     const ws = workspace(
       [1, 2, 3, 4],
@@ -424,7 +442,7 @@ describe('edit_page safety', () => {
     expect(ws.records.get(id(2))!.properties).toEqual({ title: [['What the user just typed']] })
   })
 
-  it('[UC-NOTICO-NOTION-002-S02] refuses a block of a long page the agent has not read the part of', async () => {
+  it('[UC-NOTICO-NOTION-002-S05] refuses a block of a long page the agent has not read the part of', async () => {
     const n = 300
     const blocks = Array.from({ length: n }, (_, i) => block(i + 1, 'text', `P${i} ${'w'.repeat(60)}`))
     const ws = workspace(
@@ -1071,8 +1089,8 @@ describe('round 11', () => {
   })
 })
 
-describe('round 12', () => {
-  it('[UC-NOTICO-NOTION-002-S02] refuses to delete a long block before every part of it was read', async () => {
+describe('edits of a page read in parts', () => {
+  it('[UC-NOTICO-NOTION-002-S05] refuses to delete a long block before every part of it was read', async () => {
     const n = 300
     const items = Array.from({ length: n }, (_, i) =>
       block(i + 2, 'bulleted_list', `Item ${i} ${'t'.repeat(60)}`, {}, id(1)),

@@ -484,7 +484,7 @@ describe('UC-COFUN-BILLING-001 Buy credits: the webhook', () => {
     ])
   })
 
-  it('a refund that arrives before its payment is granted keeps the payment from granting', async () => {
+  it('[UC-COFUN-BILLING-001-S12] a refund that arrives before its payment is granted keeps the payment from granting', async () => {
     await checkout(alice, 5000)
     // The payment's own event fails for a while (the database is down), and the refund comes first.
     db.failWith = new Error('D1_ERROR: Network connection lost.')

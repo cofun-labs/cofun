@@ -17,6 +17,7 @@ Key constraints:
 | --- | --- | --- | --- |
 | UC-NOTICO-NOTION-010-S01 | P0 | ✅ | Given a page under one page; when the AI moves it to another page; then it is at the end of that page with its content, no longer under the first, without the user being asked. |
 | UC-NOTICO-NOTION-010-S02 | P0 | ✅ | Given pages the AI wants to trash; when it asks to; then the user is asked first, shown each page and that it goes to the trash, and only after they agree are the pages in Notion's trash, out of their parents, restorable. |
+| UC-NOTICO-NOTION-010-S06 | P1 | ✅ | Given a user who agreed to trash one page; when the AI then trashes another, in the same question or a later one; then the user is asked again, and that page is trashed only once they agree. |
 | UC-NOTICO-NOTION-010-S03 | P1 | ✅ | Given a page with content; when the AI duplicates it; then a copy with the same content is next to the original, without the user being asked, and the original is unchanged. |
 | UC-NOTICO-NOTION-010-S04 | P1 | ✅ | Given a page; when the AI tries to move it into itself or a page inside it; then nothing moves and the AI is told why. |
 

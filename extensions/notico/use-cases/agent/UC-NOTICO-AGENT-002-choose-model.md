@@ -34,6 +34,7 @@ Key constraints:
 | UC-NOTICO-AGENT-002-S12 | P1 | ✅ | Given a user who set up both OpenRouter and DeepSeek; when they switch from one to the other and back, from the settings page or the chat; then each question goes to the one chosen then, with its own key, and neither key has to be entered again. |
 | UC-NOTICO-AGENT-002-S14 | P1 | ✅ | Given a user whose DeepSeek key DeepSeek rejects, or whose DeepSeek balance ran out; when they ask something; then they are told which, and what to do about it. |
 | UC-NOTICO-AGENT-002-S15 | P1 | ✅ | Given a user whose DeepSeek account is getting too many requests; when they ask something; then the question stops, they are told to wait, and nothing is sent again. |
+| UC-NOTICO-AGENT-002-S18 | P1 | ✅ | Given a question the hosted model is answering with a tool; when the user switches to their own model before it ends; then the hosted model still answers that question, and the next question goes to their own model with the conversation so far. |
 | UC-NOTICO-AGENT-002-S17 | P1 | ✅ | Given a user who saved a DeepSeek key; when they open the model menu in the chat; then the hosted model and DeepSeek's models are listed by name only, without notes or prices, and picking one has it answer the next question. |
 
 ### ai-e2e

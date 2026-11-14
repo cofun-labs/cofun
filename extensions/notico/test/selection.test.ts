@@ -312,7 +312,7 @@ describe('UC-NOTICO-NOTION-003 work on the selection', () => {
     expect(ws.transactions).toEqual([])
   })
 
-  it('[UC-NOTICO-NOTION-003-S01] says when the selected blocks aren’t on the open page, or only some are', async () => {
+  it('says when the selected blocks aren’t on the open page, or only some are', async () => {
     // A selection in a side peek of another page, while the open page is this one.
     setup((_, __, peek) => across(peek.children[0], peek.children[0]))
     expect(await run()).toBe(
@@ -328,7 +328,7 @@ describe('UC-NOTICO-NOTION-003 work on the selection', () => {
     ])
   })
 
-  it('[UC-NOTICO-NOTION-003-S01] shows at most a part of a large selection, and only that much counts as read', async () => {
+  it('shows at most a part of a large selection, and only that much counts as read', async () => {
     const big = Array.from({ length: 30 }, (_, n) => new FakeElement(id(100 + n), `${n} ${'y'.repeat(900)}`))
     setup((els) => ({ from: [els[0], 0], to: [big.at(-1)!, 3] }), {
       blocks: big.map((_, n) => block(100 + n, 'text', `${n} ${'y'.repeat(900)}`)),

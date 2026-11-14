@@ -176,6 +176,13 @@ export class FakeBrowser {
     await act(() => import(/* @vite-ignore */ script.getAttribute('src')!))
   }
 
+  /** The user signs in again, as the account the browser started with, on the sign-in page; Clerk tells the open panel. */
+  async signInAgain(): Promise<void> {
+    if (!this.session) throw new Error('this browser started signed out')
+    const { fakeClerk } = await import('./clerk')
+    act(() => fakeClerk.signIn(this.session!))
+  }
+
   /** What the model was sent with its latest call. */
   sentToModel(): { role: string; content?: string }[] {
     return this.ai.calls.at(-1)!.inputs.messages as { role: string; content?: string }[]
