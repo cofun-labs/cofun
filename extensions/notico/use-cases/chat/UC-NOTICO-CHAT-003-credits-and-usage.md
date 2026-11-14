@@ -2,7 +2,7 @@
 
 ## Behavior
 
-A signed-in user needs to know how much of the AI they can still use (see UC-COFUN-CREDITS-001 for what credits are and how they are spent). Their account menu in the side panel shows the account they are signed in to, then Credits, with how many credits are left, and Settings, each opening its own page, and Sign out. The Credits page is about the present: the credits left, split by where they came from (this week's free credits with when new ones can arrive, bought credits with when they expire, and any added by Cofun), the packs to buy (UC-NOTICO-BILLING-001), and the credits used on each of the last 30 days, by the days of their own clock, with the total and today's. The Settings page holds the rest: which model answers (UC-NOTICO-AGENT-002) and the account, with Sign out. They see only their own credits (UC-COFUN-CREDITS-002).
+A signed-in user needs to know how much of the AI they can still use (see UC-COFUN-CREDITS-001 for what credits are and how they are spent). Their account menu in the side panel shows the account they are signed in to, then Credits, with how many credits are left, and Settings, each opening its own page, and Sign out. The Credits page is about the present: the credits left, split by where they came from (this week's free credits with when new ones can arrive, bought credits with when they expire, and any added by Cofun), the packs to buy (UC-NOTICO-BILLING-001), and the credits used on each of the last 30 days, by the days of their own clock, with the total and today's. The Settings page holds the rest: the model providers and their models (UC-NOTICO-AGENT-002) and the account, with Sign out. They see only their own credits (UC-COFUN-CREDITS-002).
 
 Free credits arrive only when the user asks the AI. Until then, a user with no current week of free credits (a new user, or one whose week has ended) is shown the credits their next question starts with, as not started yet: the free credits, less anything they overspent before.
 
@@ -36,7 +36,7 @@ Key constraints:
 | UC-NOTICO-CHAT-003-S13 | P1 | ✅ | Given a question the hosted model answered in several steps; when its reply ends; then the row under the reply shows what all of its model calls cost in credits, and the reopened chat shows it too. |
 | UC-NOTICO-CHAT-003-S14 | P1 | ✅ | Given a reply on the hosted model that the user stopped, or that ended in an error, after a step; when it ends; then no cost is shown under it, though the credits shown still include what it was charged. |
 | UC-NOTICO-CHAT-003-S15 | P1 | ✅ | Given a user who uses their own model; when its reply ends; then no cost in credits is shown under it. |
-| UC-NOTICO-CHAT-003-S16 | P1 | ✅ | Given a signed-in user; when they open Settings from their account; then they see which model answers and the account they are signed in to, with Sign out, and nothing about credits. |
+| UC-NOTICO-CHAT-003-S16 | P1 | ✅ | Given a signed-in user; when they open Settings from their account; then they see the model providers and their models (UC-NOTICO-AGENT-002) and the account they are signed in to, with Sign out, and nothing about credits. |
 
 ### ai-e2e
 

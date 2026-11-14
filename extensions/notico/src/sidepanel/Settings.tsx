@@ -4,15 +4,19 @@ import { Avatar, useAccount } from './Account'
 import { Page } from './Header'
 import { ModelCard } from './Model'
 
-/** The Settings page: everything that isn't money. Which model answers, and the account with Sign out. */
+/** The Settings page: everything that isn't money. The model providers and their models, and the account with Sign out. */
 export function Settings({
   model,
   onModelChange,
+  at,
   onClose,
 }: {
   /** Which model answers; undefined while it loads. */
   model?: ModelSettings
-  onModelChange: (settings: ModelSettings) => void
+  /** Saves what `update` makes of the model settings as they are when it is saved. */
+  onModelChange: (update: (settings: ModelSettings) => ModelSettings) => void
+  /** The section to put the focus on as the page opens; Back has it otherwise. */
+  at?: 'providers'
   onClose: () => void
 }) {
   const { signOut } = useAuth()
@@ -20,7 +24,7 @@ export function Settings({
 
   return (
     <Page id="settings" title="Settings" onBack={onClose}>
-      <ModelCard settings={model} onChange={onModelChange} />
+      <ModelCard settings={model} onChange={onModelChange} focus={at === 'providers'} />
 
       <section className="page-section" aria-labelledby="settings-account">
         <h2 id="settings-account">Account</h2>

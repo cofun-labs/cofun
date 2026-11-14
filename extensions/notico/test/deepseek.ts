@@ -1,5 +1,5 @@
-// Stands in for DeepSeek's API at the edge, for the side panel's UI tests: chat completions behind a
-// key, refused as DeepSeek refuses them. Replies come from a FakeAiBinding, which streams the
+// Stands in for DeepSeek's API at the edge, for the side panel's UI tests: the balance endpoint the
+// settings page checks a key with, and chat completions behind a key, refused as DeepSeek refuses them. Replies come from a FakeAiBinding, which streams the
 // OpenAI-style events DeepSeek sends too.
 import { FakeAiBinding } from '../../../worker/test/fakes'
 import { answerTitle, failingTitles, titleRequests } from './titles'
@@ -31,6 +31,8 @@ export class FakeDeepSeek {
   /** Whether DeepSeek is turning the account's requests away for too many of them. */
   rateLimited = false
   /** Every request, in order: its path and the key it carried. */
+  /** Whether DeepSeek can't be reached: every request fails as a fetch to a host that is down does. */
+  unreachable = false
   readonly requests: { path: string; key: string | undefined }[] = []
   /** The model calls that got through. */
   readonly calls: Call[] = []
@@ -39,6 +41,16 @@ export class FakeDeepSeek {
     const url = new URL(request.url)
     const key = request.headers.get('authorization')?.replace(/^Bearer /, '')
     this.requests.push({ path: url.pathname, key })
+    if (this.unreachable) throw new TypeError('Failed to fetch')
+    if (request.method === 'GET' && url.pathname === '/user/balance') {
+      if (!key || !this.keys.has(key))
+        return refusal(401, 'Authentication Fails, Your api key is invalid', 'authentication_error')
+      const total = this.outOfBalance ? '0.00' : '38.50'
+      return Response.json({
+        is_available: !this.outOfBalance,
+        balance_infos: [{ currency: 'CNY', total_balance: total, granted_balance: '0.00', topped_up_balance: total }],
+      })
+    }
     if (request.method !== 'POST' || url.pathname !== '/chat/completions')
       return refusal(404, 'Not Found', 'invalid_request_error')
     if (!key || !this.keys.has(key))

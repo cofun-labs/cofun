@@ -303,12 +303,12 @@ describe('the Credits page', () => {
 })
 
 describe('the Settings page', () => {
-  it('[UC-NOTICO-CHAT-003-S16] shows which model answers and the account, with Sign out, and nothing about credits', async () => {
+  it('[UC-NOTICO-CHAT-003-S16] shows the model providers and the account, with Sign out, and nothing about credits', async () => {
     const { user } = await openPanel()
 
     await openSettings(user)
 
-    expect(within(section('Model')).getByLabelText('Model in use')).toBeVisible()
+    expect(within(section('Providers')).getByRole('list', { name: "Notico's models" })).toBeVisible()
     const account = within(section('Account'))
     expect(account.getByText('Alice Example')).toBeVisible()
     expect(account.getByText('alice@example.com')).toBeVisible()
