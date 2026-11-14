@@ -120,7 +120,7 @@ export async function openPanel(
     })
     // Other tabs may show the same page, so mark ours by a title of its own for a moment and find
     // it by that.
-    const marker = `cofun-e2e-${crypto.randomUUID()}`
+    const marker = `notico-e2e-${crypto.randomUUID()}`
     const title = await notion.evaluate(
       (m: string) => {
         const before = document.title

@@ -12,7 +12,7 @@
     "typecheck": "pnpm -r typecheck",
     "build": "pnpm -r --filter './extensions/*' build",
     "test": "pnpm -r test",
-    "e2e": "pnpm --silent --filter cofun-e2e e2e",
+    "e2e": "pnpm --silent --filter notico-e2e e2e",
     "smoke": "pnpm build && pnpm --silent --filter cofun-smoke smoke",
     "icons": "pnpm --silent --filter cofun-smoke icons",
     "check": "pnpm lint && pnpm knip && pnpm format:check && pnpm use-cases && pnpm typecheck && pnpm build && pnpm test",

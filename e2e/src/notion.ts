@@ -31,7 +31,7 @@ export interface TabNotion {
 
 /** Sends Notion requests from `tab`, like the extension's tabTransport does from its own tab. */
 export async function tabNotion(tab: Target): Promise<TabNotion> {
-  const world = await tab.isolatedWorld('cofun-e2e')
+  const world = await tab.isolatedWorld('notico-e2e')
   const send: NotionTransport = async (endpoint, body, { spaceId }) => {
     const res = await tab.evaluate(
       notionRequest,
@@ -134,7 +134,7 @@ export function taskDatabaseOps(
   return { operations, pageId: ids.page }
 }
 
-const USER_ACTION = 'cofun e2e'
+const USER_ACTION = 'notico e2e'
 
 /**
  * Creates a private page and returns its id. `beforeWrite` hears the id before anything is sent, so
