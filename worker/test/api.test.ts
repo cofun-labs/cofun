@@ -124,11 +124,14 @@ describe('worker API', () => {
     expect((await chat(web)).status).toBe(200)
   })
 
-  it('a session without an origin (Clerk Native API) is accepted', async () => {
-    const native = await clerk.sessionToken({ userId: 'user_alice' })
-    const res = await app.request('/v1/me', { headers: { authorization: `Bearer ${native}` } }, env)
-    expect(res.status).toBe(200)
-    expect((await json(res)).userId).toBe('user_alice')
+  it('a validly signed session that names no origin is refused', async () => {
+    const noOrigin = await clerk.sessionToken({ userId: 'user_alice' })
+    const notText = await clerk.sessionToken({ userId: 'user_alice', claims: { azp: [EXT] } })
+    for (const bearer of [noOrigin, notText]) {
+      const res = await req('GET', '/v1/me', bearer)
+      expect(res.status).toBe(401)
+      expect((await json(res)).error.code).toBe('unauthorized')
+    }
   })
 
   it('API is off without the JWT key', async () => {
@@ -901,13 +904,11 @@ describe('product of a model call', () => {
     expect(ai.calls[0].inputs).not.toHaveProperty('product')
   })
 
-  it('is unknown for an allowed caller that is no listed extension, or a token with no origin, and the call goes ahead', async () => {
+  it('is unknown for an allowed caller that is no listed extension, and the call goes ahead', async () => {
     const web = await clerk.sessionToken({ userId: 'user_alice', azp: 'https://cofun.example' })
-    const native = await clerk.sessionToken({ userId: 'user_alice' })
     expect((await chat(web)).status).toBe(200)
-    expect((await chat(native)).status).toBe(200)
-    expect(products()).toEqual(['unknown', 'unknown'])
-    expect(usageProducts()).toEqual(['unknown', 'unknown'])
+    expect(products()).toEqual(['unknown'])
+    expect(usageProducts()).toEqual(['unknown'])
   })
 
   it('is unknown for every caller when no products are configured', async () => {

@@ -43,7 +43,7 @@ export interface Env {
   /**
    * Which product each extension is, by its origin: `{"chrome-extension://<id>": "notico"}`. A JSON
    * object in wrangler.jsonc, so it arrives as an object; read through `Products`. A caller whose
-   * origin is not listed (the admin page, a token with no azp) is the product `unknown`.
+   * origin is not listed (the admin page) is the product `unknown`.
    */
   PRODUCTS?: unknown
   /** Every user's credits: their grants, and their model calls with what each cost (D1 database, schema in migrations/). */
@@ -79,8 +79,12 @@ export interface AppOptions {
   logBilling?: (line: string) => void
 }
 
-/** `claims` is the verified session token's payload, as Clerk wrote it: read it through a schema. */
-type Vars = { userId: string; claims: unknown }
+/**
+ * What the session check (routes/session.ts) sets: the user, the allowed origin the token was issued
+ * to, and the token's claims. `claims` is the verified session token's payload, as Clerk wrote it:
+ * read it through a schema.
+ */
+type Vars = { userId: string; azp: string; claims: unknown }
 /** The bindings and variables of the worker's Hono app, and of each sub-app of routes. */
 export type AppEnv = { Bindings: Env; Variables: Vars }
 export type Ctx = Context<AppEnv>
