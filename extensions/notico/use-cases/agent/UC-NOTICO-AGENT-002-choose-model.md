@@ -2,11 +2,11 @@
 
 ## Behavior
 
-A signed-in user can have the AI answered by a model of their own choice, with their own key, instead of by Notico's hosted model: through their OpenRouter account, which offers many models, or through their DeepSeek account, which offers DeepSeek's own models at DeepSeek's prices. These models usually use tools better than the hosted one; the user pays OpenRouter or DeepSeek for what they use, and spends no credits (see UC-NOTICO-CHAT-001).
+A signed-in user can have the AI answered by a model of their own choice, with their own key, instead of by Cofun's hosted model: through their OpenRouter account, which offers many models, or through their DeepSeek account, which offers DeepSeek's own models at DeepSeek's prices. These models usually use tools better than the hosted one; the user pays OpenRouter or DeepSeek for what they use, and spends no credits (see UC-NOTICO-CHAT-001).
 
 Two places do two jobs. **Settings decides where models come from**: which providers are on, their keys, and which of their models to offer. **The composer's model menu decides which of those answers** the next question.
 
-**Providers in Settings.** Providers are switches, and any number can be on. Notico is always on, needs no key, spends credits, and offers Auto, the hosted model, which stays the default, so nothing needs setting up. OpenRouter and DeepSeek each need the user's key: switching one on opens its key field.
+**Providers in Settings.** Providers are switches, and any number can be on. Cofun is always on, needs no key, spends credits, and offers Auto, the hosted model, which stays the default, so nothing needs setting up. OpenRouter and DeepSeek each need the user's key: switching one on opens its key field.
 
 **The key is checked before it is saved.** Checking asks the provider whether the key works, through the provider's own account endpoint, which is free and asks no model anything. While the check runs, the field and the button are locked, and the check gives up after about 15 seconds. Only a key that passes is saved; the provider then says the key works, with the balance where the provider reports one, and shows its models, the first recommended one switched on so the provider is usable at once. A key that fails is not saved, and the user is told which of these happened: the provider rejected the key, the account has no money left, the check timed out, or the provider couldn't be reached. What was pasted stays in the field, so it can be fixed.
 
@@ -20,7 +20,7 @@ Settings are kept on this device for the account that set them up: another accou
 
 Key constraints:
 
-- The user's own key leaves the device only in requests to the provider it belongs to. It never reaches Notico's service, or the other provider.
+- The user's own key leaves the device only in requests to the provider it belongs to. It never reaches Cofun's service, or the other provider.
 - A question answered by the user's own model spends no credits.
 - Checking a key asks no model anything, so it costs nothing.
 
@@ -30,7 +30,7 @@ Key constraints:
 
 | ID | Priority | Status | Scenario |
 | --- | --- | --- | --- |
-| UC-NOTICO-AGENT-002-S01 | P0 | ✅ | Given a user who turned OpenRouter on with their key and chose one of its models in the composer; when they ask a question that needs a tool; then their model is asked with their key, the AI uses the tool and answers, Notico's service never gets the key or the question, and no credits are spent. |
+| UC-NOTICO-AGENT-002-S01 | P0 | ✅ | Given a user who turned OpenRouter on with their key and chose one of its models in the composer; when they ask a question that needs a tool; then their model is asked with their key, the AI uses the tool and answers, Cofun's service never gets the key or the question, and no credits are spent. |
 | UC-NOTICO-AGENT-002-S02 | P0 | ✅ | Given a user who set up their own model; when another account signs in on the same browser and asks something; then the hosted model answers, and that account cannot see the key. |
 | UC-NOTICO-AGENT-002-S03 | P1 | ✅ | Given a user whose saved key OpenRouter now turns away; when they ask something; then they are told the key was turned away, and Settings marks OpenRouter "Key stopped working", with "Check again" and "Remove key". |
 | UC-NOTICO-AGENT-002-S04 | P1 | ✅ | Given a user who set up their own model; when they remove their key and ask something; then the hosted model answers. |
@@ -40,7 +40,7 @@ Key constraints:
 | UC-NOTICO-AGENT-002-S08 | P0 | ✅ | Given a user who switches OpenRouter on and pastes a key OpenRouter accepts; when they check it; then the field and the button are locked while it runs, no model is asked anything, the key is saved, they are told it works with what it has left, and the first recommended model is switched on. |
 | UC-NOTICO-AGENT-002-S19 | P0 | ✅ | Given a user checking a key; when the provider rejects it, says the account has no money left, doesn't answer within 15 seconds, or can't be reached; then the key is not saved, the field keeps what was pasted, and they are told which of these happened. |
 | UC-NOTICO-AGENT-002-S10 | P1 | ✅ | Given a user with their own model set up; when they switch to another model from the chat and ask a follow-up; then that model answers it with the conversation so far, without the user leaving the chat. |
-| UC-NOTICO-AGENT-002-S11 | P0 | ✅ | Given a user who turned DeepSeek on with their DeepSeek key and chose a DeepSeek model; when they ask a question that needs a tool; then DeepSeek is asked with their key, the AI uses the tool and answers, neither Notico's service nor OpenRouter gets the key or the question, and no credits are spent. |
+| UC-NOTICO-AGENT-002-S11 | P0 | ✅ | Given a user who turned DeepSeek on with their DeepSeek key and chose a DeepSeek model; when they ask a question that needs a tool; then DeepSeek is asked with their key, the AI uses the tool and answers, neither Cofun's service nor OpenRouter gets the key or the question, and no credits are spent. |
 | UC-NOTICO-AGENT-002-S12 | P1 | ✅ | Given a user with both OpenRouter and DeepSeek on; when they switch from one to the other and back in the composer; then each question goes to the one chosen then, with its own key, and neither key has to be entered again. |
 | UC-NOTICO-AGENT-002-S14 | P1 | ✅ | Given a user whose DeepSeek key DeepSeek rejects, or whose DeepSeek balance ran out; when they ask something; then they are told which, and what to do about it. |
 | UC-NOTICO-AGENT-002-S15 | P1 | ✅ | Given a user whose DeepSeek account is getting too many requests; when they ask something; then the question stops, they are told to wait, and nothing is sent again. |

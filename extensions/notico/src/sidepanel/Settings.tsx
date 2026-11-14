@@ -31,6 +31,8 @@ export function Settings({
     <Page id="settings" title="Settings" onBack={onClose}>
       <ModelCard settings={model} onChange={onModelChange} focus={at === 'providers'} />
 
+      <UsageData />
+
       <section className="page-section" aria-labelledby="settings-account">
         <h2 id="settings-account">Account</h2>
         <div className="settings-account">
@@ -44,8 +46,6 @@ export function Settings({
           </button>
         </div>
       </section>
-
-      <UsageData />
     </Page>
   )
 }

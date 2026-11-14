@@ -19,7 +19,7 @@ export function hostedProvider({ apiUrl, getToken }: Pick<AgentConfig, 'apiUrl' 
     return value
   }
   return {
-    name: 'Notico',
+    name: 'Cofun',
     async loadModel() {
       const res = await fetch(`${baseUrl}/me`, { headers: { authorization: `Bearer ${await token()}` } })
       const body = MeReply.safeParse(await res.json().catch(() => undefined)).data
