@@ -10,6 +10,8 @@ Reopening a session shows the whole conversation, including the tools the agent 
 
 Each browser window has its own side panel, and the same session can be open in more than one. If it is continued in two windows, neither conversation replaces the other: the one saved later is kept as a separate session in the list, and that window tells the user so.
 
+A saved session the panel can no longer read, such as one kept in a form an earlier version wrote and this one does not understand, never stops the user from using the others. It stays in the list, marked as unreadable, and the only thing the user can do with it is delete it. A session whose conversation can't be read is not opened and nothing of it is sent to the AI: the user is told it can't be opened and is offered to delete it.
+
 Sessions are kept on the user's device and do not follow them to other devices. They stay there after the user signs out, so they can pick up again after signing back in. The service never stores them; it only sees the conversation the AI needs to answer the current question (see UC-AGENT-001 and UC-CHAT-002).
 
 Key constraints:
@@ -36,6 +38,8 @@ Key constraints:
 | UC-SESSION-001-S06 | P0 | ✅ | Given a session from earlier in which the agent used a tool, and the side panel opened again; when the user reopens that session and asks a follow-up; then the earlier conversation shows with its tool calls, and the reply uses the earlier context. |
 | UC-SESSION-001-S07 | P1 | ✅ | Given earlier sessions; when the user opens the side panel; then it starts a new, empty session, and the earlier sessions are in the list. |
 | UC-SESSION-001-S08 | P2 | ✅ | Given a reply still coming in; when the user switches to another session; then that reply stops and does not appear in either session. |
+| UC-SESSION-001-S17 | P1 | ✅ | Given saved sessions, one of which the panel can no longer read; when the user opens the session list; then the others are listed as usual, the unreadable one is listed as unreadable, and the user can delete it but not open it. |
+| UC-SESSION-001-S18 | P1 | ✅ | Given a listed session whose conversation the panel can no longer read; when the user opens it; then the chat is not entered, nothing of it is sent to the AI, the user is told it can't be opened, and they can delete it. |
 
 ### ai-e2e
 
