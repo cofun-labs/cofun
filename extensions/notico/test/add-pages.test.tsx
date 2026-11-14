@@ -190,6 +190,16 @@ describe('UC-CHAT-004 add pages to a question', () => {
     // Typing on, past the same @, opens nothing.
     await user.type(composer(), 'ad')
     expect(picker()).not.toBeInTheDocument()
+
+    // A press outside the message box does the same as Escape: coming back to it, the @ text stays text.
+    await user.type(composer(), ' @fi')
+    await within(picker()!).findByRole('option', { name: /Fixture page/ })
+    await user.click(screen.getByRole('main'))
+    expect(picker()).not.toBeInTheDocument()
+    await user.click(composer())
+    await user.keyboard('{End}')
+    expect(picker()).not.toBeInTheDocument()
+    expect(composer()).toHaveValue('Compare this with @road @fi')
   })
 
   it('[UC-CHAT-004-S03] "+" opens the same picker with its own search field, and leaves the message as it is', async () => {
@@ -450,6 +460,20 @@ describe('UC-CHAT-004 add pages to a question', () => {
     expect(screen.queryByText(/Notion is busy/)).not.toBeInTheDocument()
     await user.keyboard('{Escape}')
     await user.clear(composer())
+
+    // A failure nobody understands stops a question waiting for that search too.
+    tab.respondText('search', 500, JSON.stringify({ name: 'UnexpectedError', message: 'Something broke' }))
+    const broken = tab.hold('search')
+    const sentBefore = searches(tab).length
+    await user.type(composer(), 'Go @road')
+    await pause()
+    await waitFor(() => expect(searches(tab)).toHaveLength(sentBefore + 1))
+    const askedBefore = browser.ai.calls.length
+    await user.click(screen.getByRole('button', { name: 'Send' }))
+    await act(async () => broken())
+    expect(await screen.findByText(/Stopped after a Notion failure Notico doesn.t understand/)).toBeVisible()
+    await answered()
+    expect(browser.ai.calls).toHaveLength(askedBefore)
 
     // A question stopped, or left for a new chat, while it waits for a search is never asked.
     for (const leave of ['Stop', 'New chat']) {

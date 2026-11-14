@@ -161,7 +161,10 @@ export function usePagePicker({
       if (wanted.current === sending) setSearch({ status: 'done', pages })
     } catch (err) {
       const limited = err instanceof NotionError && err.code === 'rate_limited'
-      if (limited) stopsQuestion = err.stopsQuestion ?? LIMITED_STOP
+      // A failure that stops a question stops the one waiting for this search too: Notion turning
+      // it away, or a failure nobody understands (see NotionError.stopsQuestion).
+      if (err instanceof NotionError && err.stopsQuestion) stopsQuestion = err.stopsQuestion
+      else if (limited) stopsQuestion = LIMITED_STOP
       // Never retried, nor worked around: no more searches for this question. A failure that comes
       // after its question was sent leaves the next question's query to go on.
       const stopped = stopSearch(

@@ -312,11 +312,16 @@ export function Chat({ userId }: { userId: string }) {
     setPicker(undefined)
   }, [offTopic])
 
-  // A press outside the composer closes the picker.
+  // A press outside the composer closes the picker, as Escape does: what follows an `@` stays text.
+  const pickerNow = useRef(picker)
+  pickerNow.current = picker
   useEffect(() => {
     if (!picker) return
     const onPointerDown = (e: PointerEvent) => {
-      if (e.target instanceof Node && !document.getElementById('composer')?.contains(e.target)) setPicker(undefined)
+      if (!(e.target instanceof Node) || document.getElementById('composer')?.contains(e.target)) return
+      const was = pickerNow.current
+      if (was?.from === '@') dismissed.current = was.start
+      setPicker(undefined)
     }
     document.addEventListener('pointerdown', onPointerDown)
     return () => document.removeEventListener('pointerdown', onPointerDown)
