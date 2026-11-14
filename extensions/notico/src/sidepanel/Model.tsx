@@ -58,7 +58,7 @@ function removed(settings: ModelSettings, service: Service): ModelSettings {
 /**
  * The model menu by the composer (UC-AGENT-002): it shows which model answers, and switches between
  * the hosted model and the user's own models, on each service they set up, without leaving the chat.
- * Other models on OpenRouter, and setting up a key, are on the settings page (`onMore`).
+ * It lists them by name; their prices, other models on OpenRouter, and setting up a key are on the settings page (`onMore`).
  */
 export function ModelMenu({
   settings,
@@ -98,17 +98,18 @@ export function ModelMenu({
   }
 
   // On OpenRouter: the model the user chose, then the recommended ones OpenRouter offers.
-  const onOpenRouter: { model: OwnModel; note?: string }[] = []
+  const onOpenRouter: OwnModel[] = []
   if (openRouter) {
     const models = list?.status === 'ready' ? list.models : []
-    if (!RECOMMENDED.some((r) => r.id === openRouter.model.id)) onOpenRouter.push({ model: openRouter.model })
-    for (const { id, note } of RECOMMENDED) {
+    if (!RECOMMENDED.some((r) => r.id === openRouter.model.id)) onOpenRouter.push(openRouter.model)
+    for (const { id } of RECOMMENDED) {
       const model = id === openRouter.model.id ? openRouter.model : models.find((m) => m.id === id)
-      if (model) onOpenRouter.push({ model, note })
+      if (model) onOpenRouter.push(model)
     }
   }
 
-  const item = (service: Service, model: OwnModel, next: ModelSettings, note?: string) => {
+  // The menu names the models only: their notes and prices are on the settings page.
+  const item = (service: Service, model: OwnModel, next: ModelSettings) => {
     const checked = inUse?.service === service && inUse.model.id === model.id
     return (
       <button
@@ -119,13 +120,7 @@ export function ModelMenu({
         tabIndex={-1}
         onClick={() => pick(next)}
       >
-        <span>
-          <span className="model-name">{shortName(model)}</span>{' '}
-          <span className="account-detail">
-            {note && `${note} · `}
-            {shortPrice(model)}
-          </span>
-        </span>
+        <span className="model-name">{shortName(model)}</span>
         {checked && <Icon name="check" />}
       </button>
     )
@@ -154,9 +149,7 @@ export function ModelMenu({
             tabIndex={-1}
             onClick={() => pick({ ...settings, use: 'hosted' })}
           >
-            <span>
-              <span className="model-name">{HOSTED}</span> <span className="account-detail">Spends credits</span>
-            </span>
+            <span className="model-name">{HOSTED}</span>
             {!inUse && <Icon name="check" />}
           </button>
           {openRouter && (
@@ -164,13 +157,12 @@ export function ModelMenu({
               <div id={`${menuId}-openrouter`} className="model-group" aria-hidden="true">
                 OpenRouter
               </div>
-              {onOpenRouter.map(({ model, note }) =>
-                item(
-                  'openrouter',
-                  model,
-                  { ...settings, use: 'openrouter', openRouter: { key: openRouter.key, model } },
-                  note,
-                ),
+              {onOpenRouter.map((model) =>
+                item('openrouter', model, {
+                  ...settings,
+                  use: 'openrouter',
+                  openRouter: { key: openRouter.key, model },
+                }),
               )}
               {/* A menu holds only items: a state to read is one that can't be picked. */}
               {list?.status === 'loading' && (
@@ -582,13 +574,6 @@ function SetupActions({
 
 /** A model's name without the vendor OpenRouter puts before it ("Anthropic: Claude Sonnet 5.5"). */
 const shortName = ({ name }: OwnModel) => name.replace(/^[^:]+:\s*/, '') || name
-
-/** What a model costs, short: dollars per million tokens in and out. */
-function shortPrice({ price }: OwnModel): string {
-  if (price.input === 0 && price.output === 0) return 'Free'
-  const short = (n: number) => (Number.isInteger(n) ? `$${n}` : dollars(n))
-  return `${short(price.input)} / ${short(price.output)}`
-}
 
 const dollars = (n: number) => `$${n < 0.1 ? n.toFixed(3).replace(/0$/, '') : n.toFixed(2)}`
 

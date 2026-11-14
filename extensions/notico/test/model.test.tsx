@@ -273,9 +273,7 @@ describe('switching the model from the chat', () => {
     await user.click(chip('GPT-6.1 Sol'))
     const menu = screen.getByRole('menu', { name: 'Model' })
     expect(within(menu).getByRole('menuitemradio', { name: /^GPT-6.1 Sol/ })).toHaveAttribute('aria-checked', 'true')
-    await user.click(
-      await within(menu).findByRole('menuitemradio', { name: /^Claude Sonnet 5.5 Strong with tools · \$2 \/ \$10/ }),
-    )
+    await user.click(await within(menu).findByRole('menuitemradio', { name: 'Claude Sonnet 5.5' }))
 
     // Still in the chat, now showing the new model.
     expect(screen.queryByRole('menu', { name: 'Model' })).not.toBeInTheDocument()
@@ -314,7 +312,7 @@ describe('switching the model from the chat', () => {
       within(menu)
         .getAllByRole('menuitemradio')
         .map((item) => item.textContent),
-    ).toEqual(['Auto Spends credits'])
+    ).toEqual(['Auto'])
     expect(browser.openRouter.requests).toEqual([])
 
     await user.click(within(menu).getByRole('menuitem', { name: 'Set up your own model…' }))
@@ -424,7 +422,7 @@ describe('DeepSeek with the user key', () => {
     expect(browser.ai.calls).toEqual([])
   })
 
-  it('[UC-AGENT-002-S13] the chat menu lists DeepSeek models with their prices once a DeepSeek key is saved', async () => {
+  it('[UC-AGENT-002-S17] the chat menu lists the hosted model and DeepSeek models by name only once a DeepSeek key is saved', async () => {
     const { browser, user } = await openPanel()
     await user.click(chip('Auto'))
     expect(screen.queryByRole('group', { name: 'DeepSeek' })).not.toBeInTheDocument()
@@ -434,10 +432,10 @@ describe('DeepSeek with the user key', () => {
     await user.click(chip('DeepSeek V4.1 Flash'))
     const group = screen.getByRole('group', { name: 'DeepSeek' })
     expect(
-      within(group)
+      within(screen.getByRole('menu', { name: 'Model' }))
         .getAllByRole('menuitemradio')
         .map((item) => item.textContent),
-    ).toEqual(['DeepSeek V4.1 Flash $0.30 / $1.20', 'DeepSeek V4 Pro $1.32 / $3.96'])
+    ).toEqual(['Auto', 'DeepSeek V4.1 Flash', 'DeepSeek V4 Pro'])
     expect(within(group).getByRole('menuitemradio', { name: FLASH })).toHaveAttribute('aria-checked', 'true')
 
     await user.click(within(group).getByRole('menuitemradio', { name: /^DeepSeek V4 Pro/ }))

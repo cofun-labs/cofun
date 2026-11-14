@@ -1251,15 +1251,6 @@ button.pack:disabled {
   text-align: left;
 }
 
-/* The same type as the composer's text: a menu is read at a glance, not as headings. */
-.model-popover .model-name {
-  font-weight: 400;
-}
-
-.model-popover .account-detail {
-  font-size: 12px;
-}
-
 /* Keyboard focus: a thin grey ring inside the item, quieter than the page's accent outline but
    clear on the tint of the chosen or hovered item (--muted is over 3:1 on both themes' backgrounds). */
 .model-popover [role^='menuitem']:focus-visible {
@@ -1272,9 +1263,13 @@ button.pack:disabled {
   background: var(--tint);
 }
 
-.model-popover [role^='menuitem'] > span {
-  display: flex;
-  flex-direction: column;
+/* One line per model, in the composer's type (not the settings page's bold): a long name is cut, not wrapped. */
+.model-popover .model-name {
+  min-width: 0;
+  font-weight: 400;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .model-popover .model-more {
