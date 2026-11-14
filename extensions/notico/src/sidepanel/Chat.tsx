@@ -294,9 +294,10 @@ export function Chat({ userId }: { userId: string }) {
     ]
   }
 
-  // Words after an `@` that go past a space and match no page in the browser are the message going
-  // on, not a page: the picker closes, leaving them as text, so Enter sends them as typed.
-  const offTopic = picker?.from === '@' && /\s/.test(picker.query) && !pages.localMatch
+  // Words after an `@` that go past a space and that no page's title holds (in the browser or the
+  // workspace) are the message going on, not a page: the picker closes, leaving them as text, so
+  // Enter sends them as typed.
+  const offTopic = picker?.from === '@' && /\s/.test(picker.query) && !pages.titleMatch
   useEffect(() => {
     if (!offTopic || picker?.from !== '@') return
     dismissed.current = picker.start

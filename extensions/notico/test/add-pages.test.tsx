@@ -342,28 +342,41 @@ describe('UC-CHAT-004 add pages to a question', () => {
     expect(pagesSent()).toEqual([['Fixture page', 'Roadmap']])
   })
 
-  it('[UC-CHAT-004-S10] an @ followed by ordinary words is sent as typed, with nothing searched or added', async () => {
+  it('[UC-CHAT-004-S10] an @ followed by ordinary words is sent as typed, and no page is added in their place', async () => {
     const { browser, tab, user } = await openPanel()
     browser.ai.script.push({ reply: 'Noted.' }, { reply: 'Will do.' })
+    tab.respond('search', 200, searchAnswer()).respond('search', 200, searchAnswer())
 
+    // A space right after the @ is no page: nothing opens, and nothing is searched.
     await user.type(composer(), 'Meet me @ 5pm')
     expect(picker()).not.toBeInTheDocument()
     await user.keyboard('{Enter}')
     await screen.findByText('Noted.')
     await answered()
+    expect(searches(tab)).toEqual([])
 
-    // A word right after the @ opens the picker, until the words go on and match no page.
+    // Words past a space stay a page search while some page's title holds them, also one only the
+    // workspace search finds…
+    await user.type(composer(), '@launch pl')
+    await pause()
+    expect(await within(picker()!).findByRole('option', { name: /Launch plan/ })).toBeVisible()
+    await user.keyboard('{Escape}')
+    await user.clear(composer())
+
+    // …and once no title does, they are the message going on: the picker closes, and Enter sends
+    // them, even though the search found pages whose content may hold the words.
     await user.type(composer(), 'ping @road')
     expect(await within(picker()!).findByRole('group', { name: 'Open tabs' })).toBeVisible()
     await user.type(composer(), ' about it')
-    await waitFor(() => expect(screen.queryByText(/Searches your workspace/)).not.toBeInTheDocument())
     await pause()
+    await waitFor(() => expect(searches(tab)).toHaveLength(2))
+    await waitFor(() => expect(screen.queryByText(/Searching your workspace/)).not.toBeInTheDocument())
+    expect(picker()).not.toBeInTheDocument()
     await user.keyboard('{Enter}')
     await screen.findByText('Will do.')
     await answered()
 
     expect(sentQuestions(browser).map((q) => q?.split('\n\n').at(-1))).toEqual(['Meet me @ 5pm', 'ping @road about it'])
-    expect(searches(tab)).toEqual([])
     expect(pagesSent()).toEqual([['Fixture page'], ['Fixture page']])
   })
 

@@ -74,8 +74,7 @@ export interface PickerOptions {
  * the search for the rest of the question, and the other groups stay usable.
  *
  * Returns the picker to render, the key handler for the field the user types in (true when it
- * handled the key), the id of the option the keys move to, and whether a page already in the
- * browser matches the query.
+ * handled the key), the id of the option the keys move to, and whether a page's title may hold the query.
  */
 export function usePagePicker({
   open,
@@ -92,8 +91,11 @@ export function usePagePicker({
   element: ReactNode
   onKeyDown: (e: KeyboardEvent) => boolean
   activeId?: string
-  /** A page of the first three groups (no workspace search) matches the query. */
-  localMatch: boolean
+  /**
+   * Some page's title may hold the query: one listed does, or the pages in the browser or the
+   * workspace search are still to come.
+   */
+  titleMatch: boolean
 } {
   const id = useId()
   const [local, setLocal] = useState<{ tabs: QuestionPage[]; recent: QuestionPage[] }>()
@@ -193,8 +195,10 @@ export function usePagePicker({
     add('Recent', page)
     recents++
   }
-  // Notion's search matched the content too, so its pages are not filtered by title.
-  if (search.status === 'done') for (const page of search.pages) add('Workspace', page)
+  // Notion's search matched the content too, so its pages are not filtered by title, unless the
+  // query has words past a space: those may be the message going on, which a page's content can match.
+  const spaced = /\s/.test(words)
+  if (search.status === 'done') for (const page of search.pages) if (!spaced || matches(page)) add('Workspace', page)
 
   // The keys move from the first option again whenever the options change.
   const optionKeys = options.map((o) => o.key).join(' ')
@@ -225,7 +229,7 @@ export function usePagePicker({
     return false
   }
 
-  if (!open) return { element: null, onKeyDown, localMatch: true }
+  if (!open) return { element: null, onKeyDown, titleMatch: true }
 
   const groups = (['This page', 'Open tabs', 'Recent', 'Workspace'] as const).flatMap((group) => {
     const rows = options.flatMap((o, i) => (o.group === group ? [{ o, i }] : []))
@@ -306,8 +310,8 @@ export function usePagePicker({
     element,
     onKeyDown,
     activeId: current >= 0 ? optionId(current) : undefined,
-    // Until the pages in the browser are read, they may still match.
-    localMatch: !local || options.some((o) => o.group !== 'Workspace'),
+    titleMatch:
+      !local || search.status === 'waiting' || search.status === 'searching' || options.some((o) => matches(o.page)),
   }
 }
 
