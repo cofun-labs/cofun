@@ -33,6 +33,7 @@ Key constraints:
 | UC-BILLING-001-S12 | P1 | ✅ | Given a user with no credits left; when a question of theirs is refused; then the refusal offers to buy credits beside saying when the free ones return. |
 | UC-BILLING-001-S13 | P1 | ✅ | Given a payment for something other than the pack its checkout was made for; when it goes through; then no credits are added. |
 | UC-BILLING-001-S14 | P1 | ✅ | Given a user whose purchase paid back what they had overspent; when the purchase is refunded or disputed; then they owe that again. |
+| UC-BILLING-001-S15 | P1 | ✅ | Given a signed-in user on the settings page; when they look at the packs on offer; then they are told that bought credits last one year from the purchase and that nothing renews. |
 
 ### ai-e2e
 
