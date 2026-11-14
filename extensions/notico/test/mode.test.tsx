@@ -92,8 +92,7 @@ describe('Read only', () => {
     const { browser, user } = await openPanel(tab)
     await user.click(screen.getByRole('button', { name: 'Mode: Edit' }))
     // The message box says which mode the next question is asked in.
-    expect(screen.getByRole('button', { name: 'Mode: Read only' })).toHaveAttribute(
-      'title',
+    expect(screen.getByRole('button', { name: 'Mode: Read only' })).toHaveAccessibleDescription(
       "Read only: won't change pages",
     )
     expect(composer()).toHaveAttribute('placeholder', expect.stringMatching(/^Ask without changing anything/))
@@ -115,7 +114,7 @@ describe('Read only', () => {
   it('[UC-NOTICO-AGENT-003-S02] a user who has not chosen a mode is in Edit, and the agent makes the change', async () => {
     const { tab, workspace } = workspaceTab()
     const { browser, user } = await openPanel(tab)
-    expect(screen.getByRole('button', { name: 'Mode: Edit' })).toHaveAttribute('title', 'Edit: can change pages')
+    expect(screen.getByRole('button', { name: 'Mode: Edit' })).toHaveAccessibleDescription('Edit: can change pages')
     expect(composer()).toHaveAttribute('placeholder', expect.stringMatching(/^Ask something/))
 
     browser.ai.script.push(RENAME, { reply: 'Renamed it.' })

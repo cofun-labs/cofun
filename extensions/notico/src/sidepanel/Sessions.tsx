@@ -100,7 +100,7 @@ export function Sessions({
     <section id="sessions" role="dialog" aria-label="Chats">
       <div className="sheet-head">
         <h2>Chats</h2>
-        <button className="icon-button" aria-label="Close" title="Close" autoFocus onClick={onClose}>
+        <button className="icon-button tip-below" aria-label="Close" data-tip="Close" autoFocus onClick={onClose}>
           <Icon name="close" />
         </button>
       </div>
