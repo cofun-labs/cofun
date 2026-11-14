@@ -61,6 +61,18 @@ function req(method: string, path: string, bearer?: string, body?: unknown) {
 }
 
 const hi = [{ role: 'user', content: 'hi' }]
+
+/** `text` as a stream of 64 kB chunks, sent with no content-length. */
+function inChunks(text: string): ReadableStream<Uint8Array> {
+  const bytes = new TextEncoder().encode(text)
+  let at = 0
+  return new ReadableStream({
+    pull(controller) {
+      if (at >= bytes.length) return controller.close()
+      controller.enqueue(bytes.slice(at, (at += 64 * 1024)))
+    },
+  })
+}
 const chat = (bearer: string | undefined, body: unknown = { messages: hi }) =>
   req('POST', '/v1/chat/completions', bearer, body)
 
@@ -233,6 +245,29 @@ describe('worker API', () => {
     expect((await chat(token, { messages: hi, max_tokens: 100_000 })).status).toBe(400)
     expect((await chat(token, { messages: hi, stream: 'false' })).status).toBe(400)
     expect(ai.calls).toHaveLength(0)
+  })
+
+  it('a chat body too large is refused with 413 before it is read whole, with or without its length', async () => {
+    const payload = JSON.stringify({ messages: [{ role: 'user', content: 'x'.repeat(5 * 1024 * 1024) }] })
+    const send = (body: string | ReadableStream<Uint8Array>, headers: Record<string, string> = {}) => {
+      // Node needs `duplex` to send a stream; the Workers types do not list it.
+      const init = {
+        method: 'POST',
+        headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json', ...headers },
+        body,
+        duplex: 'half',
+      }
+      const request = new Request('http://localhost/v1/chat/completions', init)
+      return app.request(request, undefined, env, new FakeExecutionContext())
+    }
+    const sized = await send(payload, { 'content-length': String(payload.length) })
+    expect(sized.status).toBe(413)
+    expect((await json(sized)).error.code).toBe('too_large')
+    // Sent in chunks with no length, as a chunked upload is.
+    expect((await send(inChunks(payload))).status).toBe(413)
+    // A body in chunks within the limit is read as usual.
+    expect((await send(inChunks(JSON.stringify({ messages: hi })))).status).toBe(200)
+    expect(ai.calls).toHaveLength(1)
   })
 
   it('passes only role and content to the model, and defaults max_tokens when unset', async () => {

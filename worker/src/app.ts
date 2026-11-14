@@ -1,6 +1,7 @@
 // The worker's Hono app, composed from its routes. What every route shares (the bindings, the
 // options, errors, and request parsing) is in http.ts; each area's routes are a sub-app in routes/.
 import { Hono } from 'hono'
+import { bodyLimit } from 'hono/body-limit'
 import { cors } from 'hono/cors'
 import { priceOf } from './pricing'
 import { HttpError, errorSummary, type App, type AppOptions, type Deps } from './http'
@@ -14,6 +15,14 @@ import { requireSession } from './routes/session'
 
 export type { AiBinding, Env } from './http'
 
+/**
+ * The largest request body the worker reads, on every route. The chat's is the largest: its text is
+ * capped at MAX_CONTENT_CHARS (200,000 characters), at most 800 kB in UTF-8 or 1.2 MB written as
+ * JSON escapes (\uXXXX), and the JSON around it adds little. Routes may refuse less (the Stripe
+ * webhook does).
+ */
+const MAX_BODY_BYTES = 4 * 1024 * 1024
+
 export function createApp({
   now = () => new Date(),
   priceOf: priceFor = priceOf,
@@ -26,6 +35,17 @@ export function createApp({
 
   // The extension calls from a chrome-extension:// origin. Auth is a bearer token, not cookies.
   app.use('*', cors({ origin: '*', allowHeaders: ['authorization', 'content-type'], maxAge: 86400 }))
+  // A body over the limit is refused before it is read whole: by its content-length, or, sent
+  // without one (chunked), as soon as the bytes read pass the limit.
+  app.use(
+    '*',
+    bodyLimit({
+      maxSize: MAX_BODY_BYTES,
+      onError: () => {
+        throw new HttpError(413, 'too_large', `request body is larger than ${MAX_BODY_BYTES} bytes`)
+      },
+    }),
+  )
 
   // Sub-apps have no error handler of their own, so this one answers for their routes too.
   app.onError((err, c) => {

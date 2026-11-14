@@ -101,8 +101,14 @@ async function checkout(bearer: string, credits: number): Promise<string> {
   return url
 }
 
-/** Stripe delivers `evt` to the webhook, signed now (or as `options` says). */
-async function deliver(evt: unknown, options: { at?: number; secret?: string; header?: string | null } = {}) {
+/**
+ * Stripe delivers `evt` to the webhook, signed now (or as `options` says): with its content-length
+ * when `sized`, or in chunks with none when `chunked`.
+ */
+async function deliver(
+  evt: unknown,
+  options: { at?: number; secret?: string; header?: string | null; sized?: boolean; chunked?: boolean } = {},
+) {
   const payload = JSON.stringify(evt)
   const headers: Record<string, string> = { 'content-type': 'application/json' }
   const header =
@@ -110,7 +116,24 @@ async function deliver(evt: unknown, options: { at?: number; secret?: string; he
       ? await signature(payload, options.at ?? clock.getTime(), options.secret)
       : options.header
   if (header !== null) headers['stripe-signature'] = header
-  return app.request('/stripe/webhook', { method: 'POST', headers, body: payload }, env, new FakeExecutionContext())
+  if (options.sized) headers['content-length'] = String(new TextEncoder().encode(payload).length)
+  const body = options.chunked ? inChunks(payload) : payload
+  // Node needs `duplex` to send a stream; the Workers types do not list it.
+  const init = { method: 'POST', headers, body, duplex: 'half' }
+  const request = new Request(`${WORKER}/stripe/webhook`, init)
+  return app.request(request, undefined, env, new FakeExecutionContext())
+}
+
+/** `text` as a stream of 16 kB chunks, sent with no content-length. */
+function inChunks(text: string): ReadableStream<Uint8Array> {
+  const bytes = new TextEncoder().encode(text)
+  let at = 0
+  return new ReadableStream({
+    pull(controller) {
+      if (at >= bytes.length) return controller.close()
+      controller.enqueue(bytes.slice(at, (at += 16 * 1024)))
+    },
+  })
 }
 
 /** Buys the pack of `credits` as the user signed in with `bearer`: Checkout, then the payment goes through. */
@@ -604,9 +627,13 @@ describe('UC-COFUN-BILLING-001 Buy credits: the webhook', () => {
     expect(logged).toEqual(['stripe event failed: Error: D1_ERROR: Network connection lost.'])
   })
 
-  it('refuses an event too large to be Stripe’s', async () => {
+  it('refuses an event too large to be Stripe’s, with or without its length, and reads one in chunks', async () => {
     const big = event('customer.created', { id: 'cus_1', object: 'customer', note: 'x'.repeat(300 * 1024) })
-    await answer(deliver(big), 413)
+    await answer(deliver(big, { sized: true }), 413)
+    await answer(deliver(big, { chunked: true }), 413)
+    await checkout(alice, 5000)
+    await answer(deliver(stripe.sessionEvent(), { chunked: true }))
+    expect(db.rows('grants')).toHaveLength(1)
   })
 })
 
