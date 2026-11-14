@@ -27,8 +27,16 @@ export default defineConfig(({ mode }) => {
     if (!env[name]) throw new Error(`${name} is not set. Put it in .env.local.`)
   }
 
+  // Usage events (src/analytics.ts) are sent by the build that goes to the Chrome Web Store only: any
+  // other build, such as a development or e2e one, gets no PostHog key, so it sends nothing and its
+  // use is not counted with real users'. POSTHOG_IN_DEV=1 keeps the key, to try the events locally.
+  const sendsUsage = process.env.CRX_STORE_BUILD === '1' || process.env.POSTHOG_IN_DEV === '1'
+
   return {
     plugins: [react(), manifest(env)],
+    define: {
+      'import.meta.env.VITE_POSTHOG_KEY': JSON.stringify(sendsUsage ? (env.VITE_POSTHOG_KEY ?? '') : ''),
+    },
     build: {
       outDir: 'dist',
       emptyOutDir: true,

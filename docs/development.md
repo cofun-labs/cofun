@@ -89,7 +89,7 @@ There is no test environment: the one worker is deployed on merge, with the live
 
 ### PostHog
 
-Product analytics go to one [PostHog](https://posthog.com) project, in the US region: the extensions send usage events to it themselves, and the worker sends `purchase_completed` when a payment adds credits (see [Usage data](architecture.md#usage-data)). The project's key (Settings → Project → Project API key, `phc_…`) is public by design, and is set in two places: `VITE_POSTHOG_KEY` in `extensions/notico/.env`, and `POSTHOG_KEY` in `worker/wrangler.jsonc`. While it is empty nothing is sent, and the build and the tests need no key.
+Product analytics go to one [PostHog](https://posthog.com) project, in the US region: the extensions send usage events to it themselves, and the worker sends `purchase_completed` when a payment adds credits (see [Usage data](architecture.md#usage-data)). The project's key (Settings → Project → Project API key, `phc_…`) is public by design, and is set in two places: `VITE_POSTHOG_KEY` in `extensions/notico/.env`, and `POSTHOG_KEY` in `worker/wrangler.jsonc`. While it is empty nothing is sent, and the build and the tests need no key. The extension sends usage events only when built for the store (`CRX_STORE_BUILD=1`, which the release workflow sets): a development or `pnpm e2e` build is given no key, so its use is not counted with real users'. To try the events from a local build, build it with `POSTHOG_IN_DEV=1`.
 
 In the project's settings, turn on **Discard client IP data** (the privacy pages say PostHog is set not to keep the address), and leave autocapture, session replay, heatmaps, and exception capture off: the extension turns them off itself and never asks the project for its settings, so they would have no effect, but nothing should suggest otherwise. Don't use PostHog's setup wizard on this repository: it adds the SDK with its defaults, which send page views with the page's title and URL.
 
@@ -235,7 +235,7 @@ In `chrome://extensions`, turn on Developer mode, click "Load unpacked", and pic
 | `VITE_CLERK_SYNC_HOST` | URL of the sign-in page (the worker's domain). With a development instance's key (`pk_test_…`) Clerk syncs the session from this host; with a production instance's key (`pk_live_…`) it syncs from the Frontend API host instead |
 | `VITE_API_URL` | Worker base URL, including `/v1` |
 | `VITE_POSTHOG_HOST` | PostHog's ingestion host, where usage events go. The manifest's content security policy allows it |
-| `VITE_POSTHOG_KEY` | The PostHog project's key (`phc_…`), public by design. Empty: the extension sends no usage events. See [PostHog](#posthog) |
+| `VITE_POSTHOG_KEY` | The PostHog project's key (`phc_…`), public by design. Only the [store build](#releases) is given it; any other build sends no usage events, unless it is built with `POSTHOG_IN_DEV=1`. See [PostHog](#posthog) |
 | `CRX_PUBLIC_KEY` | Extension public key; pins the extension ID. The committed one is the Chrome Web Store's, so a development build has the store's ID. The [store build](#releases) leaves it out |
 | `CLERK_COOKIE_DOMAIN` | Optional. The registrable domain Clerk sets its cookies on, e.g. `example.co.uk`. Defaults to the last two labels of the sign-in page's host |
 
