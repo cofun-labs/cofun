@@ -65,7 +65,7 @@ export interface Env {
   STRIPE_WEBHOOK_SECRET?: string
   /** The id of the Stripe price of 1,000 credits, US$1. A pack is a quantity of it. */
   CREDIT_PRICE?: string
-  /** The quantities of CREDIT_PRICE on sale as packs: `[5, 10, 20, 50]` (see `offerOf` in billing.ts). */
+  /** The quantities of CREDIT_PRICE on sale as packs: `[1, 5, 20, 100]` (see `offerOf` in billing.ts). */
   CREDIT_PACKS?: unknown
 }
 
