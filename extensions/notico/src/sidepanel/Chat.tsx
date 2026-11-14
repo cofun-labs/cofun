@@ -483,7 +483,6 @@ export function Chat({ userId }: { userId: string }) {
     void readCredits()
   }
 
-  /** Closes the settings page and puts the focus back on the avatar that led to it. */
   /** Closes the settings page and puts the focus back on what led to it: the model chip, or the avatar. */
   function closeSettings() {
     setView('chat')

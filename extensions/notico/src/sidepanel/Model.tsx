@@ -810,13 +810,15 @@ const letters = (text: string) => text.toLowerCase().replace(/[^a-z0-9]/g, '')
 
 /**
  * A model's name without the vendor OpenRouter puts before it ("Anthropic: Claude Sonnet 5.5" for
- * `anthropic/claude-sonnet-5.5`). Only the id's own vendor is taken off: a colon in a name that
+ * `anthropic/claude-sonnet-5.5`, "Meta: …" for `meta-llama/…`). Only the id's own vendor is taken off: a colon in a name that
  * doesn't start with it is part of the name.
  */
 function shortName({ id, name }: { id: string; name: string }): string {
   const at = name.indexOf(':')
   const vendor = id.split('/')[0]
-  if (at < 0 || !id.includes('/') || letters(name.slice(0, at)) !== letters(vendor)) return name
+  const prefix = letters(name.slice(0, at))
+  // OpenRouter's vendor ids are sometimes longer than the name it shows (`meta-llama` for "Meta").
+  if (at < 0 || !id.includes('/') || !prefix || !letters(vendor).startsWith(prefix)) return name
   return name.slice(at + 1).trim() || name
 }
 

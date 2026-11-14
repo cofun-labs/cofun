@@ -625,7 +625,11 @@ describe('saving while a key is checked', () => {
 describe('OpenRouter model names and list', () => {
   it("drops a vendor from a model's name only when it is the vendor in its id", async () => {
     const { browser, user } = await openPanel()
-    browser.openRouter.models.push(listed('qwen/qwen-6', 'Qwen: Qwen 6: Turbo'), listed('thudm/glm-5', 'GLM 5: 32B'))
+    browser.openRouter.models.push(
+      listed('qwen/qwen-6', 'Qwen: Qwen 6: Turbo'),
+      listed('thudm/glm-5', 'GLM 5: 32B'),
+      listed('meta-llama/llama-5-70b', 'Meta: Llama 5 70B'),
+    )
     browser.openRouter.keys.add(KEY)
     await openSettings(user)
     await turnOn(user, 'OpenRouter', KEY)
@@ -635,10 +639,13 @@ describe('OpenRouter model names and list', () => {
     await user.clear(search)
     await user.type(search, 'glm')
     await user.click(modelSwitch('OpenRouter', 'GLM 5: 32B'))
+    await user.clear(search)
+    await user.type(search, 'llama')
+    await user.click(modelSwitch('OpenRouter', 'Meta: Llama 5 70B'))
     await backToChat(user)
 
     await user.click(chip('Auto'))
-    expect(menuItems()).toEqual(['Auto', 'Claude Sonnet 5.5', 'Qwen 6: Turbo', 'GLM 5: 32B'])
+    expect(menuItems()).toEqual(['Auto', 'Claude Sonnet 5.5', 'Qwen 6: Turbo', 'GLM 5: 32B', 'Llama 5 70B'])
   })
 
   it("reads OpenRouter's model list again once it is an hour old", async () => {
