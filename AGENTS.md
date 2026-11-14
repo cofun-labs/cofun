@@ -8,7 +8,7 @@ Cofun: Chrome extensions that each open an AI side panel next to one kind of pag
 
 **Always use `pnpm`** (never `npm` or `yarn`). **Always use the `gh` CLI** for GitHub operations: issues, labels, pull requests, checks, comments, and reviews.
 
-**All changes follow the BDD workflow (see [docs/bdd.md](docs/bdd.md)) and are usually issue-driven:**
+**All changes follow this workflow (its BDD part is in [docs/bdd.md](docs/bdd.md)):**
 
 1. **Create an Issue first**, unless the user explicitly asks you to open a PR directly; then skip the Issue and put its Goal, Approach, and Checklist in the PR body instead. Add a priority label and describe:
    - Priority: `P0` (must do now), `P1` (should do soon), `P2` (can wait), or `later` (for Issues only; use case scenarios keep P0/P1/P2, see [docs/bdd.md](docs/bdd.md)). A `later` issue is only recorded and is not developed until it is re-prioritized. Use `later` for work whose value is low for its cost now, or that would add more complexity than the product needs.
@@ -19,7 +19,7 @@ Cofun: Chrome extensions that each open an AI side panel next to one kind of pag
      ```markdown
      ## Checklist
 
-     - [ ] Use cases and tests updated
+     - [ ] Business rules covered by scenarios and tests (or none changed)
      - [ ] CI passes
      - [ ] Sub-agent review submitted on PR
      - [ ] All PR comments resolved
@@ -68,6 +68,7 @@ Cofun: Chrome extensions that each open an AI side panel next to one kind of pag
 ### Git rules
 
 - **Never push to `main`.** Every change goes through a branch and PR. The `main` ruleset (`.github/rulesets/main.json`) makes GitHub reject direct pushes to `main` from everyone.
+- **Work in a worktree.** Develop each task in its own git worktree under `.claude/worktrees/`, branched from `origin/main`, and leave the main checkout on `main` without switching its branch: the maintainer reads code and runs `pnpm build` and `pnpm e2e` there.
 - **GitHub settings are code.** The `main` ruleset lives in `.github/rulesets/main.json` and repository options in `scripts/sync-github-settings.sh`. Change them through a PR; a repository admin then runs `scripts/sync-github-settings.sh`. If you change a setting in the GitHub dashboard, copy it back into these files.
 - **Never rewrite published history** (`git commit --amend`, `git rebase`) on pushed branches. Add new commits instead.
 - **Never force-push** unless explicitly asked.
@@ -91,7 +92,7 @@ Privacy is written in two parts, which together are an extension's Chrome Web St
 - `extensions/notico/`: Chrome MV3 side panel for Notion. Vite + React + TypeScript. Clerk sign-in through Sync Host. `vite.config.ts` generates `manifest.json` from `.env`. The agent loop runs in the side panel on `@earendil-works/pi-agent-core`; only `src/agent/` imports pi (the agent loop in `src/agent/agent.ts`, each model provider in a module of its own), and the tools live in `src/tools/`, one module per area, which `src/tools/index.ts` lists.
 - `worker/`: Cloudflare Worker with Hono, shared by every extension. Serves `/login`, verifies Clerk session JWTs locally, and proxies OpenAI-compatible `/v1/chat/completions` to Workers AI through AI Gateway. `src/app.ts` composes the app from the routes in `src/routes/`, one Hono sub-app per area (chat, credits, billing, admin, pages); every route under `/v1` is on one sub-app whose first handler is the session check (`src/routes/session.ts`), and `worker/test/session.test.ts` checks that every `/v1` route refuses a request without a session.
 - Notion tools call Notion's own internal endpoints (`/api/v3/…`) as the signed-in Notion user, through `src/notion/api.ts`: the only module that knows Notion's endpoints and request shapes. Requests run inside the user's Notion tab (`src/notion/tab.ts`, `chrome.scripting` in the ISOLATED world), so they go to that tab's own host with its session. Tools never `fetch` Notion URLs themselves. Do not use `chrome.debugger`: it shows a permanent "debugging this browser" banner.
-- **These module boundaries are lint errors** (`.oxlintrc.json`, run by `pnpm lint` and so by `pnpm check`), written once for every `extensions/<name>/`, whose site layer is `src/<site>/` (`src/notion/` in Notico): only `src/agent/` imports pi; `fetch` is used only in `src/<site>/tab.ts` (the site) and `src/agent/` (the worker); `chrome.scripting` is used only in `src/<site>/tab.ts`; `chrome.debugger` is used nowhere; `zod` is imported only by `src/zod.ts`, which sets it up for the extension's content security policy, and the rest of `src/` imports `z` from there (the worker does the same through `worker/src/zod.ts`); the site layer imports nothing from `src/agent/`, `src/tool.ts`, `src/tools/`, `src/sessions.ts`, or `src/sidepanel/`; and an extension never imports another extension's code by a relative path (from `src/`, a path into another folder's `src/` or `test/`; from `test/` and the root files, a path that climbs to `extensions/`; from anywhere, a path through a folder named `extensions/`). When a boundary changes, change the rule and this section together. Never silence one with an `oxlint-disable` comment.
+- **Module boundaries are lint errors** in `.oxlintrc.json` (run by `pnpm check`), which says how each is written. In every extension: only `src/agent/` imports pi; `fetch` is used only in `src/<site>/tab.ts` (the site) and `src/agent/` (the worker), and `chrome.scripting` only in `src/<site>/tab.ts`; `zod` is imported only through `src/zod.ts` (the worker's through `worker/src/zod.ts`); the site layer imports nothing from the agent, the tools, the sessions, or the side panel; and no extension imports another. When a boundary changes, change the rule and this list together. Never silence one with an `oxlint-disable` comment.
 
 ## Untrusted values
 

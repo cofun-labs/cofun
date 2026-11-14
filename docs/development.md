@@ -34,7 +34,7 @@ Merging to `main` deploys the worker through Cloudflare Workers Builds. To deplo
 
 ```bash
 cd worker
-npx wrangler login
+pnpm exec wrangler login
 # If your Cloudflare login has several accounts, pick one with an env var (don't commit it)
 CLOUDFLARE_ACCOUNT_ID=<account id> pnpm run deploy
 ```
