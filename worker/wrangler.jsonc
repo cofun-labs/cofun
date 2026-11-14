@@ -22,13 +22,13 @@
   // The database is found by its name on the deploying account, so its id is not kept here.
   "d1_databases": [{ "binding": "DB", "database_name": "cofun-db", "migrations_dir": "migrations" }],
 
-  // Per-request usage records (sizes, token counts, credits charged, outcome; never message content).
-  // Workers Analytics Engine keeps them for 90 days. The dataset is created on first write.
   // Caps how many chat requests one user can start a minute (keyed by user id), which bounds what
   // calls sent at once can spend beyond the user's credits. Normal use, one question's calls one
   // after another, stays far below it. The namespace id is any number unique on the account.
   "ratelimits": [{ "name": "CHAT_LIMIT", "namespace_id": "1001", "simple": { "limit": 30, "period": 60 } }],
 
+  // Per-request usage records (sizes, token counts, credits charged, outcome; never message content).
+  // Workers Analytics Engine keeps them for 90 days. The dataset is created on first write.
   "analytics_engine_datasets": [{ "binding": "USAGE", "dataset": "cofun_api_usage" }],
 
   "vars": {
