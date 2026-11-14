@@ -4,7 +4,15 @@
 import { beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import { createApp, type Env } from '../src/app'
 import { FakeClerk } from './clerk'
-import { FakeAiBinding, FakeD1Database, FakeExecutionContext, FakeUsageDataset, MODEL, usageCosting } from './fakes'
+import {
+  FakeAiBinding,
+  FakeD1Database,
+  FakeExecutionContext,
+  FakeUsageDataset,
+  FakeRateLimiter,
+  MODEL,
+  usageCosting,
+} from './fakes'
 
 const EXT = 'chrome-extension://abcdefghijklmnopabcdefghijklmnop'
 const START = Date.parse('2026-11-08T12:00:00Z')
@@ -40,6 +48,7 @@ beforeEach(async () => {
     AI: ai,
     DB: (db = new FakeD1Database()),
     USAGE: new FakeUsageDataset(),
+    CHAT_LIMIT: new FakeRateLimiter(),
     MODEL,
     CLERK_JWT_KEY: clerk.publicKeyPem,
     CLERK_AUTHORIZED_PARTIES: `${EXT}, http://localhost`,

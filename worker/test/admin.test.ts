@@ -7,6 +7,7 @@ import {
   FakeD1Database,
   FakeExecutionContext,
   FakeUsageDataset,
+  FakeRateLimiter,
   MODEL,
   usageCosting,
 } from './fakes'
@@ -49,6 +50,7 @@ beforeEach(async () => {
     AI: ai,
     DB: (db = new FakeD1Database()),
     USAGE: new FakeUsageDataset(),
+    CHAT_LIMIT: new FakeRateLimiter(),
     MODEL,
     CLERK_JWT_KEY: clerk.publicKeyPem,
     CLERK_AUTHORIZED_PARTIES: `${EXT}, ${WORKER}`,

@@ -8,6 +8,7 @@ import {
   FakeD1Database,
   FakeExecutionContext,
   FakeUsageDataset,
+  FakeRateLimiter,
   MODEL,
   usageCosting,
 } from './fakes'
@@ -39,6 +40,7 @@ beforeEach(async () => {
     AI: ai,
     DB: (db = new FakeD1Database()),
     USAGE: (usage = new FakeUsageDataset()),
+    CHAT_LIMIT: new FakeRateLimiter(),
     MODEL,
     AI_GATEWAY_ID: 'gw-test',
     CLERK_JWT_KEY: clerk.publicKeyPem,
@@ -545,6 +547,23 @@ describe('UC-COFUN-CREDITS-001 Spend credits on the hosted model', () => {
     repliesCost(200)
     await chat(token)
     await refused(await chat(token))
+    const bob = await clerk.sessionToken({ userId: 'user_bob', azp: EXT })
+    expect((await chat(bob)).status).toBe(200)
+  })
+
+  it('[UC-COFUN-CREDITS-001-S14] a user who starts too many calls in a minute is told to wait, at no cost, and others are not', async () => {
+    env.CHAT_LIMIT = new FakeRateLimiter(2)
+    expect((await chat(token)).status).toBe(200)
+    expect((await chat(token)).status).toBe(200)
+    const res = await chat(token)
+    expect(res.status).toBe(429)
+    expect((await json(res)).error).toEqual({
+      code: 'rate_limited',
+      message: 'Too many requests at once. Wait a minute, then ask again.',
+    })
+    expect(ai.calls).toHaveLength(2)
+    expect(db.rows('model_calls')).toHaveLength(2)
+    expect(records().map((r) => r.outcome)).toEqual(['ok', 'ok', 'rate_limited'])
     const bob = await clerk.sessionToken({ userId: 'user_bob', azp: EXT })
     expect((await chat(bob)).status).toBe(200)
   })

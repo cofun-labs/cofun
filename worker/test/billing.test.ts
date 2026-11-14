@@ -9,7 +9,15 @@ import { beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import { createApp, type Env } from '../src/app'
 import { stripeOverHttp } from '../src/stripe'
 import { FakeClerk } from './clerk'
-import { FakeAiBinding, FakeD1Database, FakeExecutionContext, FakeUsageDataset, MODEL, usageCosting } from './fakes'
+import {
+  FakeAiBinding,
+  FakeD1Database,
+  FakeExecutionContext,
+  FakeUsageDataset,
+  FakeRateLimiter,
+  MODEL,
+  usageCosting,
+} from './fakes'
 import { disputed, event, FakeStripe, refunded, signature, WEBHOOK_SECRET } from './stripe'
 
 const EXT = 'chrome-extension://abcdefghijklmnopabcdefghijklmnop'
@@ -54,6 +62,7 @@ beforeEach(async () => {
     AI: ai,
     DB: (db = new FakeD1Database()),
     USAGE: new FakeUsageDataset(),
+    CHAT_LIMIT: new FakeRateLimiter(),
     MODEL,
     CLERK_JWT_KEY: clerk.publicKeyPem,
     CLERK_AUTHORIZED_PARTIES: `${EXT}, ${WORKER}`,

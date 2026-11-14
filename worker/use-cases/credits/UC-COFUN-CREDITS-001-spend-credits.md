@@ -10,7 +10,7 @@ Key constraints:
 
 - A user with no credits left cannot reach the model again until they get more credits: their next free credits, or credits they buy.
 - A model call that starts with credits left is answered in full, even when it costs more than what was left. What it overspent is owed, and taken out of the next credits the user gets.
-- Calls sent at once all start from the same balance, so each of them is answered in full, and together they can overspend by more than one call costs. Nothing bounds how many such calls run at once; what they overspend is owed like any other overspend.
+- Calls sent at once all start from the same balance, so each of them is answered in full, and together they can overspend by more than one call costs. What they overspend is owed like any other overspend, and how many calls one user can start in a minute is capped, which bounds it.
 - Credits that have expired cannot be spent.
 - Only the service prices a call. Each reply tells the client what its call cost, so a product can show it; a call that was cut short is charged from estimated tokens, and says so.
 
@@ -33,6 +33,7 @@ Key constraints:
 | UC-COFUN-CREDITS-001-S11 | P1 | ✅ | Given a user with a few credits left; when several calls are sent at once, each costing more than that; then every one is answered in full, and what they overspent together is taken out of the next credits the user gets. |
 | UC-COFUN-CREDITS-001-S12 | P1 | ✅ | Given a model call that ran to its end; when its reply reaches the client, streamed or not; then the reply says what the call cost, the same amount the user was charged. |
 | UC-COFUN-CREDITS-001-S13 | P1 | ✅ | Given a streamed reply that breaks off before the model reported its totals; when the stream ends; then the client is told what the call was charged, marked as an estimate. |
+| UC-COFUN-CREDITS-001-S14 | P1 | ✅ | Given a user who has started many calls within the last minute; when they ask the AI again; then the request is refused with a message to wait a minute, costs nothing, and no model is called, while other users still get replies. |
 
 ### ai-e2e
 

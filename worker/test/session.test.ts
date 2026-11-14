@@ -4,7 +4,7 @@
 import { describe, expect, it } from 'vitest'
 import { createApp, type Env } from '../src/app'
 import { FakeClerk } from './clerk'
-import { FakeAiBinding, FakeD1Database, FakeUsageDataset, MODEL } from './fakes'
+import { FakeAiBinding, FakeD1Database, FakeUsageDataset, FakeRateLimiter, MODEL } from './fakes'
 
 const EXTENSION = 'chrome-extension://abcdefghijklmnopabcdefghijklmnop'
 
@@ -24,6 +24,7 @@ async function setup() {
     AI: new FakeAiBinding(),
     DB: new FakeD1Database(),
     USAGE: new FakeUsageDataset(),
+    CHAT_LIMIT: new FakeRateLimiter(),
     MODEL,
     CLERK_JWT_KEY: clerk.publicKeyPem,
     CLERK_AUTHORIZED_PARTIES: EXTENSION,
