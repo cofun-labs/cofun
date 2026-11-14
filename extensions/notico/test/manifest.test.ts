@@ -96,6 +96,17 @@ describe('extension manifest', () => {
     )
   })
 
+  // The store asks why each permission is needed. store/privacy.md keeps those answers, one heading
+  // per permission and one for the host permissions, so a permission can't be added without one.
+  it('has a store justification for exactly the permissions it asks for', () => {
+    const env = hostedEnv()
+    const json = buildManifest({ ...env, VITE_CLERK_SYNC_HOST: env.VITE_CLERK_SYNC_HOST! }, '1.2.3')
+    const privacy = readFileSync(new URL('../store/privacy.md', import.meta.url), 'utf8')
+    const section = privacy.split(/^## /m).find((part) => part.startsWith('Permission justifications'))
+    const justified = [...(section ?? '').matchAll(/^### (.+)$/gm)].map((match) => match[1])
+    expect(justified).toEqual([...json.permissions, ...(json.host_permissions.length ? ['Host permission'] : [])])
+  })
+
   it('has a description short enough for the Chrome Web Store summary', () => {
     // Chrome's manifest reference caps the description at 132 characters; the store shows it as the summary.
     expect(manifest({ VITE_CLERK_SYNC_HOST: 'https://sync.example.com' }).description.length).toBeLessThanOrEqual(132)
