@@ -17,6 +17,8 @@ export interface StartContext {
   page?: OpenPage
   /** The tab shows a Notion page, which the user took off the question. */
   removed: boolean
+  /** The user added pages to the question by hand. */
+  added: boolean
   mode?: Mode
 }
 
@@ -34,7 +36,7 @@ const quoted = (page: OpenPage) => `“${titleOf(page)}”`
  * The suggestions at the start of a chat, chosen from what the composer already knows: the open
  * page, whether it is a database, and the mode. Fixed sets: no model call, no Notion request.
  */
-function startSet({ page, removed, mode }: StartContext): StartSet {
+function startSet({ page, removed, added, mode }: StartContext): StartSet {
   const readOnly = mode === 'read_only'
   if (!page) {
     const suggestions: Suggestion[] = [
@@ -45,7 +47,9 @@ function startSet({ page, removed, mode }: StartContext): StartSet {
     if (removed)
       return {
         heading: 'What are you looking for?',
-        line: 'No page goes with the question, so Notico works from your whole workspace.',
+        line: added
+          ? 'The open page is off the question: Notico works from the pages you added and your workspace.'
+          : 'No page goes with the question, so Notico works from your whole workspace.',
         suggestions,
       }
     return {

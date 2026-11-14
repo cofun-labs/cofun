@@ -108,7 +108,9 @@ describe('the start of a chat', () => {
   })
 
   it('[UC-NOTICO-CHAT-001-S24] taking the page off the question switches to the workspace suggestions, and adding it back to the page ones', async () => {
-    const { user } = await openPanel()
+    const tab = pageTab()
+    tab.otherTabs = [{ url: ROADMAP_URL, title: 'Roadmap | Notion' }]
+    const { user } = await openPanel(tab)
     await screen.findByText('What should we do with this page?')
 
     await user.click(screen.getByRole('button', { name: 'Remove Fixture page' }))
@@ -116,6 +118,14 @@ describe('the start of a chat', () => {
     expect(suggestions()).toEqual(WORKSPACE_SET)
     // The page is still open in the tab: nothing says to open one.
     expect(screen.queryByText(/^Open a Notion page/)).not.toBeInTheDocument()
+
+    // A page added by hand goes with the question instead.
+    await user.type(composer(), '@roadmap')
+    await user.click(await screen.findByRole('option', { name: /Roadmap/ }))
+    expect(
+      screen.getByText('The open page is off the question: Notico works from the pages you added and your workspace.'),
+    ).toBeVisible()
+    expect(suggestions()).toEqual(WORKSPACE_SET)
 
     await user.type(composer(), '@fix')
     await user.click(await screen.findByRole('option', { name: /Fixture page/ }))

@@ -922,7 +922,7 @@ export function Chat({ userId }: { userId: string }) {
         <main id="messages" ref={listRef} inert={covered}>
           {messages.length === 0 && (
             <ChatStart
-              context={{ page: openPage, removed: !!tabPage && !openPage, mode }}
+              context={{ page: openPage, removed: !!tabPage && !openPage, added: chosen.length > 0, mode }}
               onPick={(text, at) => {
                 setInput(text)
                 caret.current = at
