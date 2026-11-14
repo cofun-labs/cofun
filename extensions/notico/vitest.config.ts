@@ -12,8 +12,8 @@ const env = {
 export default defineConfig({
   test: {
     projects: [
-      // The extension's client code, in Node, with the real modules.
-      { test: { name: 'client', include: ['test/**/*.test.ts'], env } },
+      // The extension's client code, in Node, with the real modules, on the same clock as the UI tests.
+      { test: { name: 'client', include: ['test/**/*.test.ts'], env: { ...env, TZ: 'Asia/Kolkata' } } },
       // The side panel's UI, in a DOM. Only here is Clerk a fake; see test/clerk.tsx.
       {
         resolve: {

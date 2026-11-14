@@ -1,6 +1,6 @@
 // The query_database tool (extensions/notico/src/tools/database.ts) against a fake Notion tab answering in the
 // shapes Notion's syncRecordValuesMain and queryCollection return (see the #64 spike).
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { QUERY_LOAD, QUERY_PART, localDate, queryDatabase } from '../src/tools/database'
 import { FakeNotionTab, PAGE_URL, SPACE, USER, restoreGlobals } from './notion-tab'
 
@@ -113,6 +113,19 @@ describe('UC-NOTICO-NOTION-006 read a database', () => {
       collectionView: { id: VIEW, spaceId: SPACE },
       loader: { reducers: { collection_group_results: { type: 'results', limit: QUERY_LOAD } } },
     })
+  })
+
+  it('[UC-NOTICO-NOTION-006-S08] tells the AI today’s date on the user’s own clock', async () => {
+    // Two at night on the user's clock (Asia/Kolkata, see vitest.config.ts), still the day before in UTC.
+    const now = new Date(2026, 10, 15, 2, 0)
+    expect(now.toISOString()).toBe('2026-11-14T20:30:00.000Z')
+    vi.useFakeTimers({ toFake: ['Date'], now })
+    try {
+      database()
+      expect((await query()).split('\n')[1]).toBe('Today: 2026-11-15')
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('[UC-NOTICO-NOTION-006-S02] keeps only the rows that match every condition, in the asked order', async () => {

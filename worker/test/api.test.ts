@@ -323,7 +323,7 @@ describe('UC-COFUN-CREDITS-001 Spend credits on the hosted model', () => {
     ])
   })
 
-  it('calls sent at once all start on the same balance, and what they overspent is owed', async () => {
+  it('[UC-COFUN-CREDITS-001-S11] calls sent at once all start on the same balance, and what they overspent is owed', async () => {
     repliesCost(190)
     await chat(token)
     // 10 credits are left, and two replies that cost 190 each are written at once.
@@ -489,12 +489,12 @@ describe('UC-COFUN-CREDITS-001 Spend credits on the hosted model', () => {
     ])
   })
 
-  it('a call is charged what its tokens cost', async () => {
+  it('[UC-COFUN-CREDITS-001-S06] a call is charged what its tokens cost', async () => {
     await chat(token)
     expect(records()[0]).toMatchObject({ cachedTokens: 0, microCredits: FAKE_COST })
   })
 
-  it('each user has their own credits', async () => {
+  it('[UC-COFUN-CREDITS-001-S10] each user has their own credits', async () => {
     repliesCost(200)
     await chat(token)
     await refused(await chat(token))
@@ -502,7 +502,7 @@ describe('UC-COFUN-CREDITS-001 Spend credits on the hosted model', () => {
     expect((await chat(bob)).status).toBe(200)
   })
 
-  it('a user who comes back after a month gets one grant, not one for each week away', async () => {
+  it('[UC-COFUN-CREDITS-001-S09] a user who comes back after a month gets one grant, not one for each week away', async () => {
     repliesCost(150)
     await chat(token)
     later(30 * 24 * 60 * 60 * 1000)
@@ -511,7 +511,7 @@ describe('UC-COFUN-CREDITS-001 Spend credits on the hosted model', () => {
     expect(await refused(await chat(token))).toContain('2026-12-15 at 12:00 UTC')
   })
 
-  it('requests that are refused, and model calls that fail, cost nothing', async () => {
+  it('[UC-COFUN-CREDITS-001-S07] requests that are refused, and model calls that fail, cost nothing', async () => {
     repliesCost(200)
     await chat(undefined)
     await chat(token, { messages: [] })
@@ -533,7 +533,7 @@ describe('UC-COFUN-CREDITS-001 Spend credits on the hosted model', () => {
     await refused(await chat(token))
   })
 
-  it('a reply the user stops is charged an estimate of what it used', async () => {
+  it('[UC-COFUN-CREDITS-001-S08] a reply the user stops is charged an estimate of what it used', async () => {
     const res = await chat(token, { messages: hi, stream: true })
     const reader = res.body!.getReader()
     // 80 bytes: the first piece of the reply, "Hello ", and the start of the next.

@@ -2,7 +2,7 @@
 // chat. Besides the screen, the tests look at the edges: what OpenRouter, DeepSeek, and the worker
 // were sent.
 import '@testing-library/jest-dom/vitest'
-import { act, screen, within } from '@testing-library/react'
+import { act, screen, waitFor, within } from '@testing-library/react'
 import userEvent, { type UserEvent } from '@testing-library/user-event'
 import { afterEach, describe, expect, it } from 'vitest'
 import { pageTab, type FakeNotionTab } from './notion-tab'
@@ -310,6 +310,39 @@ describe('switching the model from the chat', () => {
     expect(last.model).toBe('anthropic/claude-sonnet-5.5')
     expect(JSON.stringify(last.messages)).toContain('From Sol.')
     expect(browser.ai.calls).toEqual([])
+  })
+
+  it('[UC-NOTICO-AGENT-002-S18] a question already running ends with the model it started with', async () => {
+    const tab = pageTab()
+    const { browser, user } = await openPanel(tab)
+    await setUpOpenRouter(browser, user)
+    await user.click(chip('GPT-6.1 Sol'))
+    await user.click(screen.getByRole('menuitemradio', { name: /^Auto/ }))
+    browser.ai.script.push(
+      { toolCalls: [{ name: 'read_page', arguments: JSON.stringify({}) }] },
+      { reply: 'From the hosted model.' },
+    )
+    // Notion holds its answer, so the question is still running when the user switches.
+    const release = tab.hold('loadPageChunk')
+    await ask(user, 'What does this page say?')
+    await waitFor(() => expect(tab.sent).toHaveLength(1))
+
+    await user.click(chip('Auto'))
+    await user.click(await screen.findByRole('menuitemradio', { name: /^GPT-6.1 Sol/ }))
+    expect(chip('GPT-6.1 Sol')).toBeVisible()
+    release()
+    expect(await screen.findByText('From the hosted model.')).toBeVisible()
+    await answered()
+    // Both of the question's model calls went to the hosted model.
+    expect(browser.ai.calls).toHaveLength(2)
+    expect(browser.openRouter.calls).toEqual([])
+
+    browser.openRouter.ai.script.push({ reply: 'From Sol.' })
+    await ask(user, 'A follow-up')
+    expect(await screen.findByText('From Sol.')).toBeVisible()
+    expect(browser.openRouter.calls.map((c) => c.model)).toEqual(['openai/gpt-6.1-sol'])
+    expect(JSON.stringify(browser.openRouter.calls[0].messages)).toContain('From the hosted model.')
+    expect(browser.ai.calls).toHaveLength(2)
   })
 
   it('the hosted model can be picked from the chat, and the own model again after it', async () => {

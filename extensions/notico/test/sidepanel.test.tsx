@@ -408,6 +408,42 @@ describe('on a tab that is not Notion', () => {
     expect(browser.tab.sent).toEqual([])
   })
 
+  it('[UC-NOTICO-PANEL-001-S10] a Notion page open in another tab is never read in place of the current tab', async () => {
+    const OTHER = 'https://app.notion.com/p/Other-page-2b2b2b2b000040008000000000000020'
+    const tab = pageTab()
+    tab.otherTabs = [{ url: OTHER, title: 'Other page' }]
+    const { browser, user } = await openPanel(tab)
+    const readThisPage = { toolCalls: [{ name: 'read_page', arguments: JSON.stringify({}) }] }
+    browser.ai.script.push(readThisPage, { reply: 'It is the fixture page.' })
+
+    await ask(user, 'Summarize this page')
+    expect(await screen.findByText('It is the fixture page.')).toBeVisible()
+    await answered()
+    // The page in the current tab was read, in that tab, and the other tab's page was not.
+    expect(toolResults(browser)).toEqual([expect.stringContaining('Fixture page')])
+    expect(tab.sent).not.toEqual([])
+    expect(tab.injections.map((i) => i.tabId)).toEqual(tab.injections.map(() => 7))
+    expect(tab.sent.map((r) => (r.body.page as { id: string }).id)).toEqual(tab.sent.map(() => PAGE))
+    expect(JSON.stringify(browser.sentToModel())).not.toContain('Other page')
+    const injected = tab.injections.length
+    const sent = tab.sent.length
+
+    // The user moves to another site; both Notion pages are now in tabs behind it.
+    act(() => tab.switchTab(INBOX, 'Inbox (3)'))
+    tab.otherTabs = [
+      { url: PAGE_URL, title: 'Fixture page' },
+      { url: OTHER, title: 'Other page' },
+    ]
+    browser.ai.script.push(readThisPage, { reply: 'Switch to a Notion page and ask again.' })
+    await ask(user, 'Summarize this page')
+    expect(await screen.findByText('Switch to a Notion page and ask again.')).toBeVisible()
+    await answered()
+    expect(toolResults(browser).at(-1)).toMatch(/The current tab is not a Notion page.*Tell the user to switch/)
+    // Nothing ran in any tab, so nothing was asked of Notion.
+    expect(tab.injections).toHaveLength(injected)
+    expect(tab.sent).toHaveLength(sent)
+  })
+
   // UC-NOTICO-PANEL-001-S07 itself stays ai-e2e: that Chrome keeps the panel open across tabs. This is
   // the panel's part of it.
   it('a conversation started on a Notion page goes on after the user switches to another site', async () => {
@@ -742,6 +778,20 @@ describe('sessions', () => {
       { role: 'assistant', content: expect.stringContaining('It is a fixture.') },
       { role: 'user', content: expect.stringContaining('And its first heading?') },
     ])
+  })
+
+  it('[UC-NOTICO-SESSION-001-S20] sessions stay after signing out, and are there again after signing back in', async () => {
+    const { browser, user } = await openPanel()
+    await askAboutPage(browser, user)
+
+    await user.click(screen.getByRole('button', { name: 'Account' }))
+    await user.click(screen.getByRole('menuitem', { name: 'Sign out' }))
+    expect(await screen.findByText('Sign in to use Notico.')).toBeVisible()
+    await browser.signInAgain()
+
+    await openSession(user, /What does this page say\?/)
+    expect(await conversation().findByText('What does this page say?')).toBeVisible()
+    expect(screen.getByText('It is a fixture.')).toBeVisible()
   })
 
   it('[UC-NOTICO-AGENT-001-S22] an edit names the page it changed, also after the session is reopened', async () => {
