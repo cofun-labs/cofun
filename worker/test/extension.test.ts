@@ -1519,11 +1519,12 @@ describe('extension agent against the worker', () => {
   it('a retry after a model change stays with the model the question started with', async () => {
     // The user switches to their own model while the question is being retried.
     const own: ModelSettings = {
-      use: 'openrouter',
       openRouter: {
+        on: true,
         key: 'sk-or-test',
-        model: { id: 'openai/gpt-6.1-sol', name: 'GPT', contextLength: 200_000, price: { input: 1, output: 1 } },
+        models: [{ id: 'openai/gpt-6.1-sol', name: 'GPT', contextLength: 200_000, price: { input: 1, output: 1 } }],
       },
+      chosen: { service: 'openrouter', model: 'openai/gpt-6.1-sol', name: 'GPT' },
     }
     let reads = 0
     const agent = makeAgent({ model: async () => (reads++ < 2 ? HOSTED_ONLY : own) })

@@ -2,7 +2,7 @@
 // back to, and Stripe's webhook, which grants what was paid for. What each event does is in billing.ts.
 import { Hono } from 'hono'
 import * as z from '../zod'
-import { postHogOverHttp, reportPurchase, type ProductAnalytics } from '../analytics'
+import { reportPurchase } from '../analytics'
 import { billingPage } from '../billing-page'
 import { CREDITS_PER_UNIT, handleEvent, offerOf, type Offer } from '../billing'
 import { stripeOverHttp, verifiedEvent, type StripeApi } from '../stripe'
@@ -14,12 +14,6 @@ const MAX_EVENT_BYTES = 256 * 1024
 /** Stripe's API: the one tests pass, or Stripe's own with the secret key; none without a key. */
 function stripeOf(env: Env): StripeApi | undefined {
   return env.STRIPE ?? (env.STRIPE_SECRET_KEY ? stripeOverHttp(env.STRIPE_SECRET_KEY) : undefined)
-}
-
-/** Where product events go: the one tests pass, or PostHog with the project's key; none when it is not set up. */
-function analyticsOf(env: Env): ProductAnalytics | undefined {
-  if (env.POSTHOG) return env.POSTHOG
-  return env.POSTHOG_KEY && env.POSTHOG_HOST ? postHogOverHttp(env.POSTHOG_KEY, env.POSTHOG_HOST) : undefined
 }
 
 /** The routes Stripe sends buyers and events to. No Clerk session: they are not under /v1. */
@@ -57,8 +51,12 @@ export function stripeRoutes({ now, logError, logBilling }: Deps): App {
       throw new HttpError(500, 'internal', 'the event could not be handled')
     }
     if (handled.log) logBilling(handled.log)
-    // Once per payment: only the event that added the credits reports the purchase.
-    if (handled.purchase) await reportPurchase(analyticsOf(c.env), handled.purchase, logError)
+    // Once per payment: only the event that added the credits reports the purchase, and only when
+    // PostHog is set up (it is not in the tests, which send nothing).
+    const { POSTHOG_KEY, POSTHOG_HOST } = c.env
+    if (handled.purchase && POSTHOG_KEY && POSTHOG_HOST) {
+      await reportPurchase(POSTHOG_KEY, POSTHOG_HOST, handled.purchase, logError)
+    }
     return c.json({ received: true, done: handled.done })
   })
 

@@ -1,7 +1,7 @@
 // Usage data (UC-NOTICO-PANEL-002): what the panel tells PostHog, as a user's actions cause it. The
 // whole panel runs; besides the screen, the tests look at one edge: what PostHog was sent.
 import '@testing-library/jest-dom/vitest'
-import { screen, waitFor } from '@testing-library/react'
+import { screen, waitFor, within } from '@testing-library/react'
 import userEvent, { type UserEvent } from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { pageTab, PAGE_URL } from './notion-tab'
@@ -207,11 +207,17 @@ describe('usage data', () => {
     const { browser, user } = await openPanel()
     browser.openRouter.keys.add(KEY)
     await openSettings(user)
-    await user.click(screen.getByRole('radio', { name: 'OpenRouter, with your key' }))
-    await user.type(screen.getByLabelText('OpenRouter API key'), KEY)
-    await user.click(await screen.findByRole('radio', { name: /^OpenAI: GPT-6.1 Sol/ }))
-    await user.click(screen.getByRole('button', { name: 'Use OpenRouter' }))
+    // OpenRouter switched on with the key, one of its models switched on, and picked in the composer.
+    const openRouter = within(screen.getByRole('group', { name: 'OpenRouter' }))
+    await user.click(openRouter.getByRole('switch', { name: 'OpenRouter' }))
+    await user.type(openRouter.getByLabelText('OpenRouter API key'), `${KEY}{Enter}`)
+    expect(await openRouter.findByText(/^Key works/)).toBeVisible()
+    await user.click(await waitFor(() => openRouter.getByRole('switch', { name: 'OpenAI: GPT-6.1 Sol' })))
     await user.click(screen.getByRole('button', { name: 'Back' }))
+    await user.click(screen.getByRole('button', { name: /^Model: / }))
+    await user.click(
+      within(screen.getByRole('menu', { name: 'Model' })).getByRole('menuitemradio', { name: 'GPT-6.1 Sol' }),
+    )
     browser.openRouter.ai.script.push({ reply: 'It is a fixture.' })
 
     await ask(user, 'What does this page say?')

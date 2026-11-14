@@ -1,5 +1,5 @@
 // Stands in for OpenRouter's API at the edge, for the side panel's UI tests: the public model list,
-// and chat completions behind a key. Replies come from a FakeAiBinding, which streams the
+// the key endpoint the settings page checks a key with, and chat completions behind a key. Replies come from a FakeAiBinding, which streams the
 // OpenAI-style events OpenRouter sends too.
 import { FakeAiBinding } from '../../../worker/test/fakes'
 import { answerTitle, failingTitles, titleRequests } from './titles'
@@ -51,6 +51,12 @@ export class FakeOpenRouter {
   readonly keys = new Set<string>()
   /** What `/models` lists. */
   models: ListedModel[] = [...RECOMMENDED_LISTED]
+  /** What the key endpoint says the key has left: null for a key with no limit of its own. */
+  limitRemaining: number | null = null
+  /** Whether OpenRouter can't be reached: every request fails as a fetch to a host that is down does. */
+  unreachable = false
+  /** Holds the key endpoint's answers until it resolves, when set. */
+  checks?: Promise<void>
   /** Every request, model list included, in order: its path and the key it carried. */
   readonly requests: { path: string; key: string | undefined }[] = []
   /** The model calls that got through. */
@@ -60,7 +66,23 @@ export class FakeOpenRouter {
     const url = new URL(request.url)
     const key = request.headers.get('authorization')?.replace(/^Bearer /, '')
     this.requests.push({ path: url.pathname, key })
+    if (this.unreachable) throw new TypeError('Failed to fetch')
     if (request.method === 'GET' && url.pathname === '/api/v1/models') return Response.json({ data: this.models })
+    if (request.method === 'GET' && url.pathname === '/api/v1/key') {
+      await this.checks
+      if (!key || !this.keys.has(key))
+        return Response.json({ error: { message: 'User not found.', code: 401 } }, { status: 401 })
+      const limit = this.limitRemaining === null ? null : this.limitRemaining + 1
+      return Response.json({
+        data: {
+          label: 'sk-or-v1-tes...key',
+          limit,
+          limit_remaining: this.limitRemaining,
+          usage: 1,
+          is_free_tier: false,
+        },
+      })
+    }
     if (request.method !== 'POST' || url.pathname !== '/api/v1/chat/completions')
       return Response.json({ error: { message: 'Not Found', code: 404 } }, { status: 404 })
     if (!key || !this.keys.has(key))

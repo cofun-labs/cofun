@@ -12,6 +12,7 @@ import {
 } from 'react'
 import {
   CopilotAgent,
+  KEY_REJECTED,
   type AgentUpdate,
   type ConfirmTool,
   type HistoryMessage,
@@ -23,9 +24,10 @@ import { track } from '../analytics'
 import type { CreditsState } from '../credits'
 import { loadMode, saveMode, watchMode, type Mode } from '../mode'
 import {
+  answering,
   HOSTED_ONLY,
+  keyRejected,
   loadModelSettings,
-  ownSetup,
   saveModelSettings,
   watchModelSettings,
   type ModelSettings,
@@ -52,7 +54,7 @@ import { Header } from './Header'
 import { Icon } from './icons'
 import { Markdown } from './Markdown'
 import { useMenu } from './menu'
-import { HOSTED, ModelMenu } from './Model'
+import { HOSTED, ModelMenu, ModelNote } from './Model'
 import { AddMenu, pageKey, usePagePicker, type SearchStop } from './PagePicker'
 import { ComposerPages, SentPages, type Chip } from './Pages'
 import { SaveButton, SaveToast, useSaves, type SaveState } from './Save'
@@ -158,7 +160,10 @@ export function Chat({ userId }: { userId: string }) {
   // Answers for tool calls waiting for the user's OK, by call id.
   const pending = useRef(new Map<string, (allow: boolean) => void>())
   const accountButtonRef = useRef<HTMLButtonElement>(null)
+  const modelButtonRef = useRef<HTMLButtonElement>(null)
   const [view, setView] = useState<'chat' | 'sessions' | 'settings'>('chat')
+  // Opened from the model menu's "Manage models": the settings page puts the focus on Providers.
+  const [settingsAt, setSettingsAt] = useState<'providers'>()
   const [credits, setCredits] = useState<CreditsState>({ status: 'loading' })
   // Reads can overlap (a question ends while the settings page loads); only the newest one counts.
   const creditReads = useRef(0)
@@ -420,14 +425,16 @@ export function Chat({ userId }: { userId: string }) {
     saveMode(userId, next).catch((err: unknown) => console.error('Could not save the mode', err))
   }
 
-  function changeModel(settings: ModelSettings) {
-    const before = modelRef.current
+  /** Saves what `update` makes of the model settings as they are now, here or saved by another window. */
+  function changeModel(update: (settings: ModelSettings) => ModelSettings) {
+    const before = modelRef.current ?? HOSTED_ONLY
+    const settings = update(before)
     // Which service answers now, and a key that was just saved: never the key or the model's name.
-    const provider = ownSetup(settings)?.service ?? 'hosted'
-    if (before && provider !== (ownSetup(before)?.service ?? 'hosted')) track({ event: 'model_switched', provider })
-    if (settings.openRouter && settings.openRouter.key !== before?.openRouter?.key)
+    const provider = answering(settings)?.service ?? 'hosted'
+    if (provider !== (answering(before)?.service ?? 'hosted')) track({ event: 'model_switched', provider })
+    if (settings.openRouter && settings.openRouter.key !== before.openRouter?.key)
       track({ event: 'own_key_saved', provider: 'openrouter' })
-    if (settings.deepSeek && settings.deepSeek.key !== before?.deepSeek?.key)
+    if (settings.deepSeek && settings.deepSeek.key !== before.deepSeek?.key)
       track({ event: 'own_key_saved', provider: 'deepseek' })
     modelRef.current = settings
     setModel(settings)
@@ -481,16 +488,17 @@ export function Chat({ userId }: { userId: string }) {
     await chrome.tabs.create({ url })
   }
 
-  function openSettings() {
+  function openSettings(at?: 'providers') {
     track({ event: 'settings_opened' })
+    setSettingsAt(at)
     setView('settings')
     void readCredits()
   }
 
-  /** Closes the settings page and puts the focus back on the avatar that led to it. */
+  /** Closes the settings page and puts the focus back on what led to it: the model chip, or the avatar. */
   function closeSettings() {
     setView('chat')
-    accountButtonRef.current?.focus()
+    ;(settingsAt === 'providers' ? modelButtonRef : accountButtonRef).current?.focus()
   }
 
   async function send() {
@@ -661,8 +669,10 @@ export function Chat({ userId }: { userId: string }) {
             ? ms
             : ms.map((m, i) => (i === reply - 1 && m.role === 'user' ? { ...m, readOnly: true } : m)),
         )
+      // The key the question goes with, if it goes to the user's own model: a 401 marks that key only.
+      const askedWith = answering(modelRef.current ?? (await modelLoad))
       // The service the question is asked of, as the agent reads it when the question starts.
-      const provider = ownSetup(modelRef.current ?? (await modelLoad))?.service ?? 'hosted'
+      const provider = askedWith?.service ?? 'hosted'
       track({ event: 'question_asked', provider, notion_tab: !!tabPage })
       const result = await agent.ask(text, onUpdate, confirm, { context, pages: sentPages, readOnly })
       track({
@@ -679,9 +689,15 @@ export function Chat({ userId }: { userId: string }) {
       if (result.status === 'stopped') {
         updateTools((t) => (t.status === 'running' || t.status === 'confirm' ? { ...t, status: 'stopped' } : t))
         updateReply((m) => ({ ...m, stopped: true }))
-      } else if (result.status === 'error')
+      } else if (result.status === 'error') {
         updateReply((m) => ({ ...m, error: result.message, outOfCredits: result.code === 'out_of_credits' }))
-      else if (result.status === 'step_limit')
+        // The provider turned the user's key away: Settings marks it, until a check passes or a new key is saved.
+        const by = result.model
+        if (result.code === KEY_REJECTED && by && by.service !== 'hosted' && askedWith?.service === by.service) {
+          const { key } = askedWith
+          changeModel((now) => keyRejected(now, by.service, key, Date.now()))
+        }
+      } else if (result.status === 'step_limit')
         updateReply((m) => ({ ...m, note: `Stopped after ${result.steps} steps. Ask again to continue.` }))
     } finally {
       // A question can end without the panel answering, e.g. on unmount.
@@ -959,7 +975,7 @@ export function Chat({ userId }: { userId: string }) {
         <AccountMenu
           credits={credits}
           onOpen={() => void readCredits()}
-          onSettings={openSettings}
+          onSettings={() => openSettings()}
           buttonRef={accountButtonRef}
         />
       </Header>
@@ -1014,7 +1030,7 @@ export function Chat({ userId }: { userId: string }) {
                       {m.outOfCredits && (
                         <>
                           {' '}
-                          <button type="button" className="link" onClick={openSettings}>
+                          <button type="button" className="link" onClick={() => openSettings()}>
                             Buy credits
                           </button>
                         </>
@@ -1045,6 +1061,7 @@ export function Chat({ userId }: { userId: string }) {
           )}
         </main>
 
+        <ModelNote settings={model} />
         {/* One box: the question on top, and below it, inside the box, which model answers and the send button. */}
         <form id="composer" onSubmit={onSubmit} inert={covered}>
           {/* Over the chat, just above the box (which is what it is placed against). */}
@@ -1085,7 +1102,12 @@ export function Chat({ userId }: { userId: string }) {
             <ModeButton mode={mode ?? 'edit'} onChange={changeMode} />
             <span className="grow" />
             {/* The model chip leads the right side, next to send; the left is for what goes with the question. */}
-            <ModelMenu settings={model} onChange={changeModel} onMore={openSettings} />
+            <ModelMenu
+              settings={model}
+              onChange={changeModel}
+              onManage={() => openSettings('providers')}
+              buttonRef={modelButtonRef}
+            />
             <button
               // Blue only when pressing it does something: there is a question to send, or a reply to stop.
               className={busy || input.trim() ? 'send ready tip-end' : 'send tip-end'}
@@ -1127,6 +1149,7 @@ export function Chat({ userId }: { userId: string }) {
               }}
               model={model}
               onModelChange={changeModel}
+              at={settingsAt}
               buying={{ packs: () => agent.creditPacks(), buy: buyCredits }}
               onClose={closeSettings}
             />
