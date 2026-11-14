@@ -61,6 +61,13 @@ const SHAPES = {
   ),
   dots: <path d="M3.5 8v.01M8 8v.01M12.5 8v.01" strokeWidth="2.4" />,
   minus: <path d="M4 8h8" />,
+  pencil: <path d="M10.5 3l2.5 2.5-7.5 7.5-3 .5.5-3zM9 4.5L11.5 7" />,
+  eye: (
+    <>
+      <path d="M1.5 8S4 3.5 8 3.5 14.5 8 14.5 8 12 12.5 8 12.5 1.5 8 1.5 8z" />
+      <circle cx="8" cy="8" r="2" />
+    </>
+  ),
   square: <rect x="4.5" y="4.5" width="7" height="7" rx="1.5" fill="currentColor" stroke="none" />,
   slash: (
     <>

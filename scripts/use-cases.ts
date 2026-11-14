@@ -49,7 +49,7 @@ const ROW = new RegExp(`^\\|\\s*(${SCENARIO_ID})\\s*\\|([^|]*)\\|([^|]*)\\|`)
 const TABLE_FRAME = /^\|\s*ID\s*\||^\|[\s:|-]+$/
 const STRATEGY = /^###\s+(api-test|ai-e2e)\s*$/
 const TEST_ID = new RegExp(`\\[(${SCENARIO_ID})\\]`, 'g')
-/** A scenario ID without a product (`UC-CHAT-001-S01`), as IDs were before each product got its prefix. */
+/** A scenario ID without a product (`UC-{DOMAIN}-{NNN}-S{NN}`), as IDs were before each product got its prefix. */
 const OLD_TEST_ID = /\[(UC-[A-Z]+-\d+-S\d+)\]/g
 
 /** The product a use case or test file belongs to, from its folder. */

@@ -190,12 +190,12 @@ describe('checkUseCases', () => {
   })
 
   it('warns when a test names an ID without its product, which counts for nothing', () => {
-    const report = checkUseCases([useCase(['| UC-NOTICO-CHAT-001-S01 | P1 | ✅ | … |'])], [test('UC-CHAT-001-S01')])
+    const report = checkUseCases([useCase(['| UC-NOTICO-CHAT-001-S01 | P1 | ✅ | … |'])], [test('UC-PAGES-001-S01')])
     expect(report.errors).toEqual([
       'extensions/notico/use-cases/chat/UC-NOTICO-CHAT-001-ask.md:6: UC-NOTICO-CHAT-001-S01 is ✅ api-test, but no test names it',
     ])
     expect(report.warnings).toEqual([
-      'worker/test/api.test.ts:1: names UC-CHAT-001-S01, which has no product in it and counts for nothing (IDs are like UC-NOTICO-CHAT-001-S01)',
+      'worker/test/api.test.ts:1: names UC-PAGES-001-S01, which has no product in it and counts for nothing (IDs are like UC-NOTICO-CHAT-001-S01)',
     ])
   })
 

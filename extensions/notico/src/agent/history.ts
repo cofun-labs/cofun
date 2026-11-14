@@ -38,6 +38,10 @@ export function usedTools(tail: AgentMessage[]): AgentMessage[] {
  * The character budget also pays for the system prompt and the tool definitions (`overhead`).
  * It starts at a user message, so a reply or tool result is never sent without what led to it.
  * The newest question is always kept; if it alone is too long, the worker says so.
+ *
+ * System messages in the part left out are kept too: pi records there which tools were added and
+ * removed (a question in Read only offers fewer), and the tools offered now are worked out from all
+ * of them. They carry no text of their own here, so they cost nothing to send.
  */
 export function recent(
   messages: AgentMessage[],
@@ -57,7 +61,8 @@ export function recent(
   if (start === rest.length) {
     for (start = rest.length - 1; start > 0 && rest[start].role !== 'user'; start--);
   }
-  return [...messages.slice(0, head), ...rest.slice(start)]
+  const changes = rest.slice(0, start).filter((m) => m.role === 'system')
+  return [...messages.slice(0, head), ...changes, ...rest.slice(start)]
 }
 
 /** Characters a message adds to a request: its text, tool calls, and tool results. */
