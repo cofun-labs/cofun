@@ -29,6 +29,7 @@
 - **Organize:** Move pages under another page, duplicate them, or move them to Notion's trash (it asks you first).
 - **Collaborate:** Add comments on a page or on a block, and mention workspace members by name.
 - **Stay in context:** It knows which page is open and what you selected in it. The panel stays open, with your chat, as you switch tabs. Past chats are saved, searchable, and can be picked up again.
+- **Keep the answer:** Save a reply, or a whole chat, as a new page under the Notion page you have open, from the reply's "…" or the chat list.
 
 ## Get started
 

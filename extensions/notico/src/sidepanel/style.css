@@ -496,6 +496,64 @@ header .untitled {
   color: var(--muted);
 }
 
+/* Saving a reply to Notion: the last part of its details, set off by a line when details come first. */
+.reply-save {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+}
+
+.reply-popover p + .reply-save {
+  margin-top: 4px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+}
+
+.save-button,
+.save-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 -6px;
+  padding: 4px 6px;
+  border-radius: 8px;
+}
+
+.save-button:hover:not(:disabled),
+.save-button:focus-visible,
+.save-link:hover,
+.save-link:focus-visible {
+  outline: none;
+  background: var(--tint);
+}
+
+.save-button:disabled {
+  color: var(--muted);
+  cursor: default;
+}
+
+.save-link {
+  color: var(--accent-text);
+  text-decoration: none;
+}
+
+.save-button .icon,
+.save-link .icon {
+  width: 14px;
+  height: 14px;
+}
+
+.save-note {
+  max-width: 260px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.save-note.failed {
+  color: var(--error);
+}
+
 .reply-action {
   display: grid;
   place-items: center;
@@ -1107,6 +1165,7 @@ header .untitled {
 .session-list li {
   position: relative;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 4px;
   padding-right: 6px;
@@ -1211,6 +1270,97 @@ header .untitled {
   .session-delete {
     opacity: 1;
   }
+}
+
+/* A chat's "…" menu, shown like its trash can; it opens downward, flush with the row's right edge. */
+.chat-menu {
+  position: relative;
+  flex: none;
+}
+
+.session-more {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  color: var(--muted);
+  opacity: 0;
+  transition:
+    opacity 0.12s,
+    background-color 0.12s;
+}
+
+.session-list li:hover .session-more,
+.session-list li:focus-within .session-more,
+.session-more[aria-expanded='true'] {
+  opacity: 1;
+}
+
+.session-more:hover,
+.session-more[aria-expanded='true'] {
+  background: var(--bg);
+  color: var(--fg);
+}
+
+@media (hover: none) {
+  .session-more {
+    opacity: 1;
+  }
+}
+
+.chat-popover {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 2;
+  min-width: 180px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 5px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--bg);
+  box-shadow: 0 8px 28px var(--shadow);
+}
+
+.chat-popover [role='menuitem'] {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 8px;
+  border-radius: 8px;
+  text-align: left;
+}
+
+.chat-popover [role='menuitem']:hover:not([aria-disabled]),
+.chat-popover [role='menuitem']:focus-visible {
+  outline: none;
+  background: var(--tint);
+}
+
+.chat-popover [role='menuitem'][aria-disabled] {
+  color: var(--muted);
+  cursor: default;
+}
+
+.chat-popover .icon {
+  color: var(--muted);
+}
+
+.chat-popover .save-note {
+  padding: 0 8px 4px;
+}
+
+/* How saving a chat went, on a line of its own under the row. */
+.session-saved {
+  order: 1;
+  flex-basis: 100%;
+  display: flex;
+  padding: 0 14px 8px;
+  font-size: 13px;
 }
 
 /* A session that can't be read is not a button: it only offers its trash can, always shown. */

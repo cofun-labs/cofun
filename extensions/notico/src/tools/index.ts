@@ -12,12 +12,14 @@ import { listPages, searchPages } from './find'
 import { duplicatePage, movePage, trashPage } from './organize'
 import { getSelection, readPage } from './read'
 import type { OpenPage } from './current'
+import type { SavedTurn } from './save'
 import { NONE, verb } from './shared'
 import { createPage, editPage, updatePages } from './write'
 
 export { carryPages, currentNotionPage, openNotionPages, type OpenPage } from './current'
 export { findPages, type FoundPage } from './find'
 export { forgetReads } from './memory'
+export { OPEN_A_PAGE, replyTitle, savePage, type SavedTurn } from './save'
 
 export const TOOLS: Tool[] = [
   readPage,
@@ -46,7 +48,11 @@ export function describeCall(name: string, args: unknown, result?: string): Acti
 }
 
 /** What a question's calls that worked read and changed: the distinct pages and databases of each. */
-export function touchedBy(calls: { name: string; args: unknown; result: string }[]): { read: number; changed: number } {
+export function touchedBy(calls: { name: string; args: unknown; result: string }[]): {
+  read: number
+  /** The ids of the pages and databases changed, each once. */
+  changed: string[]
+} {
   const read = new Set<string>()
   const changed = new Set<string>()
   for (const call of calls) {
@@ -54,7 +60,7 @@ export function touchedBy(calls: { name: string; args: unknown; result: string }
     for (const id of t.read ?? []) read.add(id)
     for (const id of t.changed ?? []) changed.add(id)
   }
-  return { read: read.size, changed: changed.size }
+  return { read: read.size, changed: [...changed] }
 }
 
 /**
@@ -87,4 +93,28 @@ export function pagesIn(messages: HistoryMessage[], origin: string): OpenPage[] 
     }
   }
   return pages.reverse()
+}
+
+/**
+ * A saved conversation as a saved page holds it: each question, what its reply wrote, and what the
+ * reply's calls that worked read and changed. Read from the conversation alone: no Notion request.
+ */
+export function turnsOf(messages: HistoryMessage[]): SavedTurn[] {
+  const turns: { question: string; texts: string[]; calls: { name: string; args: unknown; result: string }[] }[] = []
+  const args = new Map<string, unknown>()
+  for (const m of messages) {
+    if (m.role === 'user') {
+      turns.push({ question: m.text, texts: [], calls: [] })
+      continue
+    }
+    const turn = turns.at(-1)
+    if (!turn) continue
+    if (m.role === 'assistant') {
+      for (const part of m.parts) {
+        if (part.type === 'text' && part.text.trim()) turn.texts.push(part.text.trim())
+        else if (part.type === 'tool_call') args.set(part.id, part.args)
+      }
+    } else if (m.status === 'done') turn.calls.push({ name: m.name, args: args.get(m.id), result: m.result })
+  }
+  return turns.map(({ question, texts, calls }) => ({ question, markdown: texts.join('\n\n'), ...touchedBy(calls) }))
 }

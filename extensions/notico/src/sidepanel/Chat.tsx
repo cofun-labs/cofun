@@ -1,5 +1,15 @@
 import { useAuth } from '@clerk/chrome-extension'
-import { memo, useEffect, useId, useLayoutEffect, useRef, useState, type FormEvent, type KeyboardEvent } from 'react'
+import {
+  memo,
+  useCallback,
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type FormEvent,
+  type KeyboardEvent,
+} from 'react'
 import {
   CopilotAgent,
   type AgentUpdate,
@@ -11,9 +21,22 @@ import {
 import type { CreditsState } from '../credits'
 import { loadMode, saveMode, watchMode, type Mode } from '../mode'
 import { HOSTED_ONLY, loadModelSettings, saveModelSettings, watchModelSettings, type ModelSettings } from '../models'
+import { pageIdFromUrl } from '../notion/hosts'
 import { countNotionRequests } from '../notion/tab'
 import { SessionStore, titleFor, type Session } from '../sessions'
-import { carryPages, currentNotionPage, forgetReads, pagesIn, TOOLS, touchedBy, type OpenPage } from '../tools'
+import {
+  carryPages,
+  currentNotionPage,
+  forgetReads,
+  OPEN_A_PAGE,
+  pagesIn,
+  replyTitle,
+  savePage,
+  TOOLS,
+  touchedBy,
+  turnsOf,
+  type OpenPage,
+} from '../tools'
 import { AccountMenu } from './Account'
 import { Header } from './Header'
 import { Icon, Mark } from './icons'
@@ -22,6 +45,7 @@ import { useMenu } from './menu'
 import { HOSTED, ModelMenu } from './Model'
 import { AddMenu, pageKey, usePagePicker, type SearchStop } from './PagePicker'
 import { ComposerPages, SentPages, type Chip } from './Pages'
+import { SaveReply, useSave, type Save } from './Save'
 import { Sessions, type OpenResult } from './Sessions'
 import { Settings } from './Settings'
 import { ToolCall, type ShownTool } from './ToolCall'
@@ -813,6 +837,28 @@ export function Chat({ userId }: { userId: string }) {
       ?.content.replace(/\s+/g, ' ')
       .trim()
 
+  // Saving goes under the page open in the current tab as the user saves (see savePage).
+  const saveBlocked = tabPage && pageIdFromUrl(tabPage.url) ? undefined : OPEN_A_PAGE
+
+  /** Saves the reply at `i` as a page titled with the chat's title and its question. */
+  const saveReplyRef = useRef<(i: number) => Promise<{ url: string }>>(undefined)
+  saveReplyRef.current = (i) => {
+    const reply = messages[i]
+    const question = messages.slice(0, i).findLast((m) => m.role === 'user')
+    if (reply?.role !== 'assistant' || !question) return Promise.reject(new Error('That reply is no longer here.'))
+    const turn = { question: question.content, markdown: replyMarkdown(reply.parts), ...touchedBy(doneCalls(reply)) }
+    return savePage(replyTitle(headerTitle ?? '', question.content), [turn])
+  }
+  // One function for the panel's life, so a reply that hasn't changed is not drawn again.
+  const saveReply = useCallback((i: number) => saveReplyRef.current!(i), [])
+
+  /** Saves a saved chat, as the store has it, as a page titled with the chat's title. */
+  async function saveChat(id: string) {
+    const session = await store.get(id)
+    if (!session || session === 'unreadable') throw new Error("This chat can't be read, so it can't be saved.")
+    return savePage(session.title || 'Untitled', turnsOf(session.messages))
+  }
+
   /** Closes the session list and puts the focus back on the button that opened it. */
   function closeList() {
     setView('chat')
@@ -921,7 +967,13 @@ export function Chat({ userId }: { userId: string }) {
                       This chat was also continued in another window, so this one is saved as a separate chat.
                     </div>
                   )}
-                  <ReplyFoot reply={m} ended={!(busy && i === messages.length - 1)} />
+                  <ReplyFoot
+                    reply={m}
+                    ended={!(busy && i === messages.length - 1)}
+                    index={i}
+                    saveBlocked={saveBlocked}
+                    onSave={saveReply}
+                  />
                 </div>
               </div>
             ),
@@ -976,6 +1028,8 @@ export function Chat({ userId }: { userId: string }) {
             saved={saved}
             onOpen={open}
             onClose={closeList}
+            saveBlocked={saveBlocked}
+            onSave={saveChat}
             onDeleted={(id) => {
               deleted.current.add(id)
               // The open session is being deleted: stop its reply, so it isn't saved back.
@@ -1101,7 +1155,19 @@ type Reply = Extract<Shown, { role: 'assistant' }>
  * and a button for its details. Memoized: a reply that hasn't changed keeps its object, so its calls
  * aren't read again on every render.
  */
-const ReplyFoot = memo(function ReplyFoot({ reply, ended }: { reply: Reply; ended: boolean }) {
+const ReplyFoot = memo(function ReplyFoot({
+  reply,
+  ended,
+  index,
+  saveBlocked,
+  onSave,
+}: {
+  reply: Reply
+  ended: boolean
+  index: number
+  saveBlocked?: string
+  onSave: (index: number) => Promise<{ url: string }>
+}) {
   if (!ended) return null
   const text = replyMarkdown(reply.parts)
   const summary = touched(reply)
@@ -1111,7 +1177,9 @@ const ReplyFoot = memo(function ReplyFoot({ reply, ended }: { reply: Reply; ende
     <div className="reply-foot">
       {text && <CopyButton text={text} />}
       {summary && <div className="note">{summary}</div>}
-      {details.length > 0 && <ReplyDetails rows={details} />}
+      {(details.length > 0 || text) && (
+        <ReplyDetails rows={details} save={text ? { blocked: saveBlocked, onSave: () => onSave(index) } : undefined} />
+      )}
     </div>
   )
 })
@@ -1157,11 +1225,15 @@ const counted = (n: number, noun: string) => `${n} ${noun}${n === 1 ? '' : 's'}`
  * (only calls that worked). A part that is zero is left out; empty when it touched nothing.
  */
 function touched(reply: Reply): string {
-  const calls = reply.parts.flatMap((p) => (p.type === 'tool' && p.tool.status === 'done' ? [p.tool] : []))
-  const { read, changed } = touchedBy(calls)
-  return [read && `Read ${counted(read, 'page')}`, changed && `Changed ${counted(changed, 'page')}`]
+  const { read, changed } = touchedBy(doneCalls(reply))
+  return [read && `Read ${counted(read, 'page')}`, changed.length && `Changed ${counted(changed.length, 'page')}`]
     .filter(Boolean)
     .join(' · ')
+}
+
+/** A reply's tool calls that worked. */
+function doneCalls(reply: Reply): ShownTool[] {
+  return reply.parts.flatMap((p) => (p.type === 'tool' && p.tool.status === 'done' ? [p.tool] : []))
 }
 
 const amount = (n: number) => n.toLocaleString('en-US')
@@ -1186,9 +1258,19 @@ function detailRows(details: QuestionDetails = {}): { label?: string; text: stri
   ]
 }
 
-/** The "…" button at the end of a reply's row, and the popover with its details it opens and closes. */
-function ReplyDetails({ rows }: { rows: { label?: string; text: string }[] }) {
+/**
+ * The "…" button at the end of a reply's row, and the popover with its details it opens and closes,
+ * ending with "Save to Notion" when the reply wrote something. How a save went stays while the popover is closed.
+ */
+function ReplyDetails({
+  rows,
+  save,
+}: {
+  rows: { label?: string; text: string }[]
+  save?: { blocked?: string; onSave: Save }
+}) {
   const { open, setOpen, rootRef, onKeyDown } = useMenu()
+  const [saved, startSave] = useSave()
   const id = useId()
   return (
     <div className="reply-details" ref={rootRef} onKeyDown={onKeyDown}>
@@ -1211,6 +1293,7 @@ function ReplyDetails({ rows }: { rows: { label?: string; text: string }[] }) {
               {text}
             </p>
           ))}
+          {save && <SaveReply blocked={save.blocked} state={saved} onSave={() => startSave(save.onSave)} />}
         </div>
       )}
     </div>
