@@ -163,7 +163,8 @@ export function Chat({ userId }: { userId: string }) {
   const [removed, setRemoved] = useState<string>()
   const openPage = tabPage && pageKey(tabPage) !== removed ? tabPage : undefined
 
-  // Follows the tab: switching tabs, or the tab going to another page or renaming it.
+  // Follows the tab: switching tabs, the tab going to another page or renaming it, or Chrome swapping
+  // in a prerendered tab for it (onReplaced, which fires neither of the others).
   useEffect(() => {
     let reads = 0
     const read = () => {
@@ -181,10 +182,12 @@ export function Chat({ userId }: { userId: string }) {
     read()
     chrome.tabs.onActivated.addListener(read)
     chrome.tabs.onUpdated.addListener(onUpdated)
+    chrome.tabs.onReplaced.addListener(read)
     return () => {
       reads++
       chrome.tabs.onActivated.removeListener(read)
       chrome.tabs.onUpdated.removeListener(onUpdated)
+      chrome.tabs.onReplaced.removeListener(read)
     }
   }, [])
 

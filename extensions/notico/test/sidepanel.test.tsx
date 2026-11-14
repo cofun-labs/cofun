@@ -462,6 +462,10 @@ describe('the page a question goes with', () => {
     expect(await within(toSend()!).findByText('Roadmap')).toBeVisible()
     expect(within(toSend()!).queryByText('Fixture page')).not.toBeInTheDocument()
 
+    // Chrome swapping in a prerendered tab for a navigation.
+    act(() => browser.tab.replaceTab(PAGE_URL, 'Fixture page'))
+    expect(await within(toSend()!).findByText('Fixture page')).toBeVisible()
+
     act(() => browser.tab.switchTab(INBOX, 'Inbox'))
     await waitFor(() => expect(toSend()).not.toBeInTheDocument())
     expect(screen.queryByText('Inbox')).not.toBeInTheDocument()

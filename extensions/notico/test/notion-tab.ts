@@ -142,6 +142,14 @@ export class FakeNotionTab {
 
   private activated: ((info: { tabId: number; windowId: number }) => void)[] = []
   private updated: ((tabId: number, change: { url?: string; title?: string }, tab: object) => void)[] = []
+  private replaced: ((added: number, removed: number) => void)[] = []
+
+  /** Chrome swaps in a prerendered tab showing `url` for the current one, as it can on a navigation. */
+  replaceTab(url: string, title = ''): void {
+    this.url = url
+    this.title = title
+    for (const listener of this.replaced) listener(8, 7)
+  }
 
   /** The user switches to another tab, showing `url`; Chrome tells the side panel. */
   switchTab(url: string | undefined, title = ''): void {
@@ -165,6 +173,7 @@ export class FakeNotionTab {
         query: async () => (this.url === undefined ? [] : [{ id: 7, url: this.url, title: this.title }]),
         onActivated: listeners(this.activated),
         onUpdated: listeners(this.updated),
+        onReplaced: listeners(this.replaced),
         get: async (tabId: number) => {
           if (this.closed) throw new Error(`No tab with id: ${tabId}.`)
           return { id: tabId, url: this.pageUrl ?? this.url }
