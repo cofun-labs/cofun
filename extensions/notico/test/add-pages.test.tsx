@@ -359,6 +359,24 @@ describe('UC-NOTICO-CHAT-004 add pages to a question', () => {
     expect(pagesSent()).toEqual([['Fixture page', 'Roadmap']])
   })
 
+  it('[UC-NOTICO-CHAT-004-S12] clicking a page in a question takes the current tab to it', async () => {
+    const { browser, tab, user } = await openPanel()
+    browser.ai.script.push({ reply: 'They differ.' })
+
+    await user.type(composer(), 'Compare this with @road')
+    await within(picker()!).findByRole('option', { name: /Roadmap/ })
+    await user.keyboard('{Enter}')
+    await ask(user, 'and the notes')
+    await screen.findByText('They differ.')
+    await answered()
+
+    const sent = conversation().getByRole('list', { name: 'Pages sent' })
+    await user.click(within(sent).getByRole('link', { name: 'Roadmap' }))
+    expect(tab.url).toBe(ROADMAP_URL)
+    // In the panel, not in another tab.
+    expect(browser.openedTabs).toEqual([])
+  })
+
   it('[UC-NOTICO-CHAT-004-S10] an @ followed by ordinary words is sent as typed, and no page is added in their place', async () => {
     const { browser, tab, user } = await openPanel()
     browser.ai.script.push({ reply: 'Thanks.' }, { reply: 'Pinged.' }, { reply: 'Noted.' }, { reply: 'Will do.' })

@@ -320,10 +320,23 @@ header .untitled {
 
 .sent-pages li {
   display: inline-flex;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.sent-pages a {
+  display: inline-flex;
   align-items: center;
   gap: 4px;
   min-width: 0;
   max-width: 100%;
+  color: inherit;
+  text-decoration: none;
+}
+
+.sent-pages a:hover .page-title,
+.sent-pages a:focus-visible .page-title {
+  text-decoration: underline;
 }
 
 .sent-pages .icon {
