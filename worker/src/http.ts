@@ -73,8 +73,11 @@ export interface AppOptions {
   logBilling?: (line: string) => void
 }
 
-/** `claims` is the verified session token's payload, as Clerk wrote it: read it through a schema. */
-/** What the session check (routes/session.ts) sets: the user, the allowed origin the token was issued to, and the token's claims. */
+/**
+ * What the session check (routes/session.ts) sets: the user, the allowed origin the token was issued
+ * to, and the token's claims. `claims` is the verified session token's payload, as Clerk wrote it:
+ * read it through a schema.
+ */
 type Vars = { userId: string; azp: string; claims: unknown }
 /** The bindings and variables of the worker's Hono app, and of each sub-app of routes. */
 export type AppEnv = { Bindings: Env; Variables: Vars }
