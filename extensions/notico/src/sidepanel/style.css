@@ -597,6 +597,10 @@ header .untitled {
   font: inherit;
 }
 
+#composer textarea::placeholder {
+  color: var(--muted);
+}
+
 /* The toolbar inside the box: tools on the left (none yet), then the model chip and send on the right. */
 .composer-tools {
   display: flex;
@@ -604,10 +608,6 @@ header .untitled {
   justify-content: flex-end;
   gap: 4px;
   margin-left: -6px;
-}
-
-#composer textarea::placeholder {
-  color: var(--muted);
 }
 
 #composer .send {
@@ -1234,8 +1234,6 @@ button.pack:disabled {
   display: flex;
   flex-direction: column;
   padding: 5px;
-  font-size: 13px;
-  line-height: 1.35;
   border: 1px solid var(--border);
   border-radius: 12px;
   background: var(--bg);
@@ -1253,9 +1251,9 @@ button.pack:disabled {
   text-align: left;
 }
 
-/* Lighter than the settings page: a menu is read at a glance. */
+/* The same type as the composer's text: a menu is read at a glance, not as headings. */
 .model-popover .model-name {
-  font-weight: 500;
+  font-weight: 400;
 }
 
 .model-popover .account-detail {
@@ -1289,7 +1287,7 @@ button.pack:disabled {
 .model-popover .model-group {
   padding: 6px 8px 2px;
   color: var(--muted);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 600;
 }
 

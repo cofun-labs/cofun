@@ -5,7 +5,7 @@ import { Icon } from './icons'
 import { useMenu } from './menu'
 
 /** The hosted model, as the panel names it. */
-const HOSTED = 'Notico (hosted)'
+const HOSTED = 'Auto'
 
 /** How many models a search shows at once; a longer query narrows them. */
 const SEARCH_LIMIT = 20
