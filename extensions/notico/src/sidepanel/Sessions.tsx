@@ -144,10 +144,10 @@ export function Sessions({
               </button>
             )}
             <button
-              className={confirming === s.id ? 'session-delete confirming tip-end' : 'session-delete tip-end'}
+              className={confirming === s.id ? 'session-delete confirming' : 'session-delete'}
               onClick={() => void remove(s.id)}
               onBlur={() => setConfirming(undefined)}
-              data-tip="Delete chat"
+              title="Delete chat"
               aria-label={confirming === s.id ? undefined : 'Delete chat'}
             >
               {confirming === s.id ? 'Delete?' : <Icon name="trash" />}

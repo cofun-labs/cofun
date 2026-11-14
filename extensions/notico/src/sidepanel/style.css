@@ -581,7 +581,7 @@ a.icon-button {
   right: 0;
 }
 
-/* From the right edge, for a control at the end of its row (send, a chat's delete). */
+/* From the right edge, for a control at the end of its row (send, the model chip). */
 .tip-end[data-tip]:hover::after,
 .tip-end[data-tip]:focus-visible::after {
   left: auto;
@@ -1731,7 +1731,6 @@ button.pack:disabled {
   align-items: center;
   gap: 4px;
   max-width: 100%;
-  overflow: hidden;
   padding: 4px 8px;
   border-radius: 8px;
   color: var(--muted);
@@ -1819,7 +1818,9 @@ button.pack:disabled {
   font-size: 12px;
 }
 
+/* The name is cut to fit, not the button: the button's tip is drawn outside it. */
 .model-button-name {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
 }
