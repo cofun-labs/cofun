@@ -12,6 +12,7 @@ import {
 } from 'react'
 import {
   CopilotAgent,
+  KEY_REJECTED,
   type AgentUpdate,
   type ConfirmTool,
   type HistoryMessage,
@@ -21,7 +22,14 @@ import {
 } from '../agent'
 import type { CreditsState } from '../credits'
 import { loadMode, saveMode, watchMode, type Mode } from '../mode'
-import { HOSTED_ONLY, loadModelSettings, saveModelSettings, watchModelSettings, type ModelSettings } from '../models'
+import {
+  HOSTED_ONLY,
+  keyRejected,
+  loadModelSettings,
+  saveModelSettings,
+  watchModelSettings,
+  type ModelSettings,
+} from '../models'
 import { pageIdFromUrl } from '../notion/hosts'
 import { countNotionRequests } from '../notion/tab'
 import { SessionStore, titleFor, type Session } from '../sessions'
@@ -44,7 +52,7 @@ import { Header } from './Header'
 import { Icon } from './icons'
 import { Markdown } from './Markdown'
 import { useMenu } from './menu'
-import { HOSTED, ModelMenu } from './Model'
+import { HOSTED, ModelMenu, ModelNote } from './Model'
 import { AddMenu, pageKey, usePagePicker, type SearchStop } from './PagePicker'
 import { ComposerPages, SentPages, type Chip } from './Pages'
 import { SaveButton, SaveToast, useSaves, type SaveState } from './Save'
@@ -151,6 +159,8 @@ export function Chat({ userId }: { userId: string }) {
   const pending = useRef(new Map<string, (allow: boolean) => void>())
   const accountButtonRef = useRef<HTMLButtonElement>(null)
   const [view, setView] = useState<'chat' | 'sessions' | 'settings'>('chat')
+  // Opened from the model menu's "Manage models": the settings page puts the focus on Providers.
+  const [settingsAt, setSettingsAt] = useState<'providers'>()
   const [credits, setCredits] = useState<CreditsState>({ status: 'loading' })
   // Reads can overlap (a question ends while the settings page loads); only the newest one counts.
   const creditReads = useRef(0)
@@ -463,7 +473,8 @@ export function Chat({ userId }: { userId: string }) {
     await chrome.tabs.create({ url })
   }
 
-  function openSettings() {
+  function openSettings(at?: 'providers') {
+    setSettingsAt(at)
     setView('settings')
     void readCredits()
   }
@@ -643,9 +654,13 @@ export function Chat({ userId }: { userId: string }) {
       if (result.status === 'stopped') {
         updateTools((t) => (t.status === 'running' || t.status === 'confirm' ? { ...t, status: 'stopped' } : t))
         updateReply((m) => ({ ...m, stopped: true }))
-      } else if (result.status === 'error')
+      } else if (result.status === 'error') {
         updateReply((m) => ({ ...m, error: result.message, outOfCredits: result.code === 'out_of_credits' }))
-      else if (result.status === 'step_limit')
+        // The provider turned the user's key away: Settings marks it, until a check passes or a new key is saved.
+        const by = result.model
+        if (result.code === KEY_REJECTED && by && by.service !== 'hosted' && modelRef.current)
+          changeModel(keyRejected(modelRef.current, by.service, Date.now()))
+      } else if (result.status === 'step_limit')
         updateReply((m) => ({ ...m, note: `Stopped after ${result.steps} steps. Ask again to continue.` }))
     } finally {
       // A question can end without the panel answering, e.g. on unmount.
@@ -913,7 +928,7 @@ export function Chat({ userId }: { userId: string }) {
         <AccountMenu
           credits={credits}
           onOpen={() => void readCredits()}
-          onSettings={openSettings}
+          onSettings={() => openSettings()}
           buttonRef={accountButtonRef}
         />
       </Header>
@@ -968,7 +983,7 @@ export function Chat({ userId }: { userId: string }) {
                       {m.outOfCredits && (
                         <>
                           {' '}
-                          <button type="button" className="link" onClick={openSettings}>
+                          <button type="button" className="link" onClick={() => openSettings()}>
                             Buy credits
                           </button>
                         </>
@@ -999,6 +1014,7 @@ export function Chat({ userId }: { userId: string }) {
           )}
         </main>
 
+        <ModelNote settings={model} />
         {/* One box: the question on top, and below it, inside the box, which model answers and the send button. */}
         <form id="composer" onSubmit={onSubmit} inert={covered}>
           {/* Over the chat, just above the box (which is what it is placed against). */}
@@ -1039,7 +1055,7 @@ export function Chat({ userId }: { userId: string }) {
             <ModeButton mode={mode ?? 'edit'} onChange={changeMode} />
             <span className="grow" />
             {/* The model chip leads the right side, next to send; the left is for what goes with the question. */}
-            <ModelMenu settings={model} onChange={changeModel} onMore={openSettings} />
+            <ModelMenu settings={model} onChange={changeModel} onManage={() => openSettings('providers')} />
             <button
               // Blue only when pressing it does something: there is a question to send, or a reply to stop.
               className={busy || input.trim() ? 'send ready tip-end' : 'send tip-end'}
@@ -1080,6 +1096,7 @@ export function Chat({ userId }: { userId: string }) {
               }}
               model={model}
               onModelChange={changeModel}
+              at={settingsAt}
               buying={{ packs: () => agent.creditPacks(), buy: buyCredits }}
               onClose={closeSettings}
             />

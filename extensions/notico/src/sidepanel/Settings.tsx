@@ -27,7 +27,7 @@ export interface Buying {
 }
 
 /**
- * The settings page: the account, which model answers, the packs of credits to buy, the
+ * The settings page: the account, the model providers and their models, the packs of credits to buy, the
  * credits with their dates, and usage per day. The history of the credits opens from the
  * credits, in place of the page, and leads back to it.
  */
@@ -37,6 +37,7 @@ export function Settings({
   history,
   model,
   onModelChange,
+  at,
   buying,
   onClose,
 }: {
@@ -48,6 +49,8 @@ export function Settings({
   /** Which model answers; undefined while it loads. */
   model?: ModelSettings
   onModelChange: (settings: ModelSettings) => void
+  /** The section to put the focus on as the page opens; Back has it otherwise. */
+  at?: 'providers'
   buying: Buying
   onClose: () => void
 }) {
@@ -117,7 +120,7 @@ export function Settings({
         </div>
       </section>
 
-      <ModelCard settings={model} onChange={onModelChange} />
+      <ModelCard settings={model} onChange={onModelChange} focus={at === 'providers'} />
 
       <section className="card" aria-labelledby="settings-credits">
         <h3 id="settings-credits">Credits</h3>

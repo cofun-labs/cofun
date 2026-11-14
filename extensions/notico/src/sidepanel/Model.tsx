@@ -1,6 +1,6 @@
-import { useEffect, useId, useState } from 'react'
-import { checkModel, DEEPSEEK_MODELS, openRouterModels, type ModelCheck } from '../agent'
-import { ownSetup, RECOMMENDED, type ModelSettings, type OwnModel, type OwnSetup } from '../models'
+import { useEffect, useId, useRef, useState, type FormEvent } from 'react'
+import { checkKey, DEEPSEEK_MODELS, openRouterModels, type KeyCheck, type ListedModel } from '../agent'
+import { answering, RECOMMENDED, SERVICE_NAME, type ModelSettings, type OwnModel, type Service } from '../models'
 import { Icon } from './icons'
 import { useMenu } from './menu'
 
@@ -10,15 +10,15 @@ export const HOSTED = 'Auto'
 /** How many models a search shows at once; a longer query narrows them. */
 const SEARCH_LIMIT = 20
 
-type List = { status: 'loading' } | { status: 'ready'; models: OwnModel[] } | { status: 'failed'; message: string }
+type List = { status: 'loading' } | { status: 'ready'; models: ListedModel[] } | { status: 'failed'; message: string }
 
-let listed: Promise<OwnModel[]> | undefined
+let listed: Promise<ListedModel[]> | undefined
 
 /**
- * OpenRouter's model list, read once for the panel, by the settings page and the chat's menu alike.
- * A read that failed is made again the next time it is asked for.
+ * OpenRouter's model list, read once for the panel. A read that failed is made again the next time
+ * it is asked for.
  */
-function modelList(): Promise<OwnModel[]> {
+function modelList(): Promise<ListedModel[]> {
   listed ??= openRouterModels().catch((err: unknown) => {
     listed = undefined
     throw err
@@ -28,102 +28,78 @@ function modelList(): Promise<OwnModel[]> {
 
 const errorText = (err: unknown) => (err instanceof Error ? err.message : String(err))
 
-/** The services a user's own key works with, as the panel names them. */
-const SERVICE = { openrouter: 'OpenRouter', deepseek: 'DeepSeek' } as const
-type Service = keyof typeof SERVICE
+/**
+ * What the last check that passed in this panel found each key has left. Kept for the panel, not
+ * saved: a balance changes with every question, so an old one would mislead.
+ */
+const balances = new Map<string, string>()
 
-/** The own model in use, with the service it is on; undefined when the hosted one answers. */
-function ownInUse(settings: ModelSettings): { service: Service; model: OwnModel } | undefined {
-  const setup = ownSetup(settings)
+/** Where to get a key, as the user knows the provider's site. */
+const KEY_SITE: Record<Service, string> = { openrouter: 'openrouter.ai', deepseek: 'platform.deepseek.com' }
+
+/** A model as the menu and the settings page show it: its provider, and how the provider names it. */
+interface Offered {
+  service: Service
+  model: OwnModel
+}
+
+/** A DeepSeek model by its id, from DeepSeek's catalog; undefined once the catalog no longer has it. */
+const deepSeekModel = (id: string) => DEEPSEEK_MODELS.find((m) => m.id === id)
+
+/** OpenRouter's switched-on models, the recommended ones first, in their order. */
+function openRouterOrder(models: OwnModel[]): OwnModel[] {
+  const rank = (m: OwnModel) => {
+    const at = RECOMMENDED.findIndex((r) => r.id === m.id)
+    return at < 0 ? RECOMMENDED.length : at
+  }
+  return [...models].sort((a, b) => rank(a) - rank(b))
+}
+
+/** Each provider that is on, with its switched-on models, as the menu lists them. */
+function offered(settings: ModelSettings): { service: Service; models: OwnModel[] }[] {
+  const { openRouter, deepSeek } = settings
+  const groups: { service: Service; models: OwnModel[] }[] = []
+  if (openRouter?.on) groups.push({ service: 'openrouter', models: openRouterOrder(openRouter.models) })
+  if (deepSeek?.on)
+    groups.push({ service: 'deepseek', models: DEEPSEEK_MODELS.filter((m) => deepSeek.models.includes(m.id)) })
+  return groups.filter((g) => g.models.length > 0)
+}
+
+/** The own model that answers, with its provider; undefined when Auto does. */
+function inUse(settings: ModelSettings): Offered | undefined {
+  const setup = answering(settings)
   if (!setup) return undefined
   if (setup.service === 'openrouter') return { service: 'openrouter', model: setup.model }
-  return { service: 'deepseek', model: deepSeekModel(setup.model) }
-}
-
-/** A DeepSeek model by its id; one the catalog no longer has is shown by its id. */
-function deepSeekModel(id: string): OwnModel {
-  return DEEPSEEK_MODELS.find((m) => m.id === id) ?? { id, name: id, contextLength: 1, price: { input: 0, output: 0 } }
-}
-
-/** The settings with one service's setup removed: the hosted model answers if it was in use. */
-function removed(settings: ModelSettings, service: Service): ModelSettings {
-  const { openRouter, deepSeek } = settings
-  return {
-    use: settings.use === service ? 'hosted' : settings.use,
-    ...(service !== 'openrouter' && openRouter && { openRouter }),
-    ...(service !== 'deepseek' && deepSeek && { deepSeek }),
-  }
+  const model = deepSeekModel(setup.model)
+  return model && { service: 'deepseek', model }
 }
 
 /**
- * The model menu by the composer (UC-NOTICO-AGENT-002): it shows which model answers, and switches between
- * the hosted model and the user's own models, on each service they set up, without leaving the chat.
- * It lists them by name; their prices, other models on OpenRouter, and setting up a key are on the settings page (`onMore`).
+ * The model menu by the composer (UC-NOTICO-AGENT-002): it shows which model answers, and picks
+ * among Auto and the models switched on in Settings, grouped by provider, by name only. Which
+ * providers and models are offered is set in Settings (`onManage`).
  */
 export function ModelMenu({
   settings,
   onChange,
-  onMore,
+  onManage,
 }: {
   /** Undefined while they load: the menu isn't shown yet. */
   settings?: ModelSettings
   onChange: (settings: ModelSettings) => void
-  onMore: () => void
+  onManage: () => void
 }) {
   const { open, setOpen, close, rootRef, menuRef, onKeyDown } = useMenu()
-  const [list, setList] = useState<List>()
   const menuId = useId()
-  const openRouter = settings?.openRouter
-  const deepSeek = settings?.deepSeek
-
-  // The recommended models need OpenRouter's list, for their names and prices: read once the menu
-  // opens with an OpenRouter key saved, never before.
-  useEffect(() => {
-    if (!open || !openRouter) return
-    let live = true
-    setList((now) => (now?.status === 'ready' ? now : { status: 'loading' }))
-    modelList().then(
-      (models) => live && setList({ status: 'ready', models }),
-      (err: unknown) => live && setList({ status: 'failed', message: errorText(err) }),
-    )
-    return () => void (live = false)
-  }, [open, !!openRouter])
 
   if (!settings) return null
-  const inUse = ownInUse(settings)
+  const now = inUse(settings)
+  const shown = now ? shortName(now.model) : HOSTED
 
-  function pick(next: ModelSettings) {
+  function pick(chosen: ModelSettings['chosen']) {
     close()
-    onChange(next)
-  }
-
-  // On OpenRouter: the model the user chose, then the recommended ones OpenRouter offers.
-  const onOpenRouter: OwnModel[] = []
-  if (openRouter) {
-    const models = list?.status === 'ready' ? list.models : []
-    if (!RECOMMENDED.some((r) => r.id === openRouter.model.id)) onOpenRouter.push(openRouter.model)
-    for (const { id } of RECOMMENDED) {
-      const model = id === openRouter.model.id ? openRouter.model : models.find((m) => m.id === id)
-      if (model) onOpenRouter.push(model)
-    }
-  }
-
-  // The menu names the models only: their notes and prices are on the settings page.
-  const item = (service: Service, model: OwnModel, next: ModelSettings) => {
-    const checked = inUse?.service === service && inUse.model.id === model.id
-    return (
-      <button
-        key={model.id}
-        type="button"
-        role="menuitemradio"
-        aria-checked={checked}
-        tabIndex={-1}
-        onClick={() => pick(next)}
-      >
-        <span className="model-name">{shortName(model)}</span>
-        {checked && <Icon name="check" />}
-      </button>
-    )
+    const { chosen: _, ...rest } = settings!
+    onChange(chosen ? { ...rest, chosen } : rest)
   }
 
   return (
@@ -133,65 +109,43 @@ export function ModelMenu({
         className="model-button tip-end"
         aria-haspopup="menu"
         aria-expanded={open}
-        aria-label={`Model: ${inUse ? shortName(inUse.model) : HOSTED}`}
+        aria-label={`Model: ${shown}`}
         data-tip="Choose the model"
         aria-description="Choose the model"
         onClick={() => setOpen(!open)}
       >
-        <span className="model-button-name">{inUse ? shortName(inUse.model) : HOSTED}</span>
+        <span className="model-button-name">{shown}</span>
         <Icon name="chevron" />
       </button>
       {open && (
         <div ref={menuRef} className="model-popover" role="menu" aria-label="Model">
-          <button
-            type="button"
-            role="menuitemradio"
-            aria-checked={!inUse}
-            tabIndex={-1}
-            onClick={() => pick({ ...settings, use: 'hosted' })}
-          >
+          <button type="button" role="menuitemradio" aria-checked={!now} tabIndex={-1} onClick={() => pick(undefined)}>
             <span className="model-name">{HOSTED}</span>
-            {!inUse && <Icon name="check" />}
+            {!now && <Icon name="check" />}
           </button>
-          {openRouter && (
-            <div role="group" aria-labelledby={`${menuId}-openrouter`}>
-              <div id={`${menuId}-openrouter`} className="model-group" aria-hidden="true">
-                OpenRouter
+          {offered(settings).map(({ service, models }) => (
+            <div key={service} role="group" aria-labelledby={`${menuId}-${service}`}>
+              <div id={`${menuId}-${service}`} className="model-group" aria-hidden="true">
+                {SERVICE_NAME[service]}
               </div>
-              {onOpenRouter.map((model) =>
-                item('openrouter', model, {
-                  ...settings,
-                  use: 'openrouter',
-                  openRouter: { key: openRouter.key, model },
-                }),
-              )}
-              {/* A menu holds only items: a state to read is one that can't be picked. */}
-              {list?.status === 'loading' && (
-                <div role="menuitem" aria-disabled="true" tabIndex={-1} className="model-state">
-                  Loading OpenRouter's models…
-                </div>
-              )}
-              {list?.status === 'failed' && (
-                <div role="menuitem" aria-disabled="true" tabIndex={-1} className="model-state">
-                  {list.message}
-                </div>
-              )}
+              {models.map((model) => {
+                const checked = now?.service === service && now.model.id === model.id
+                return (
+                  <button
+                    key={model.id}
+                    type="button"
+                    role="menuitemradio"
+                    aria-checked={checked}
+                    tabIndex={-1}
+                    onClick={() => pick({ service, model: model.id, name: model.name })}
+                  >
+                    <span className="model-name">{shortName(model)}</span>
+                    {checked && <Icon name="check" />}
+                  </button>
+                )
+              })}
             </div>
-          )}
-          {deepSeek && (
-            <div role="group" aria-labelledby={`${menuId}-deepseek`}>
-              <div id={`${menuId}-deepseek`} className="model-group" aria-hidden="true">
-                DeepSeek
-              </div>
-              {DEEPSEEK_MODELS.map((model) =>
-                item('deepseek', model, {
-                  ...settings,
-                  use: 'deepseek',
-                  deepSeek: { key: deepSeek.key, model: model.id },
-                }),
-              )}
-            </div>
-          )}
+          ))}
           <button
             type="button"
             role="menuitem"
@@ -199,10 +153,11 @@ export function ModelMenu({
             tabIndex={-1}
             onClick={() => {
               setOpen(false)
-              onMore()
+              onManage()
             }}
           >
-            {openRouter || deepSeek ? 'More models…' : 'Set up your own model…'}
+            <Icon name="settings" />
+            <span className="model-name">Manage models</span>
           </button>
         </div>
       )}
@@ -211,109 +166,419 @@ export function ModelMenu({
 }
 
 /**
- * The settings page's Model section (UC-NOTICO-AGENT-002): which model answers, and setting up OpenRouter
- * or DeepSeek with the user's own key. A change applies from the next question on.
+ * Above the composer, when the model the composer chose is no longer offered (switched off in
+ * Settings, or its provider or key gone): questions go to Auto, and this says so instead of the
+ * chip changing silently. It goes once the user picks a model, or the model is offered again.
+ */
+export function ModelNote({ settings }: { settings?: ModelSettings }) {
+  const chosen = settings?.chosen
+  if (!settings || !chosen || answering(settings)) return null
+  const name = chosen.service === 'deepseek' ? (deepSeekModel(chosen.model)?.name ?? chosen.name) : chosen.name
+  return (
+    <p className="model-note" role="status">
+      <Icon name="info" />
+      <span>
+        {shortName({ name })} was switched off in Settings, so questions use {HOSTED}.
+      </span>
+    </p>
+  )
+}
+
+/**
+ * The settings page's Providers section (UC-NOTICO-AGENT-002): which providers are on, their keys,
+ * and which of their models the composer's menu offers. A change applies from the next question on.
+ * `focus`: the page was opened to manage models, so the section takes the focus.
  */
 export function ModelCard({
   settings,
   onChange,
+  focus,
 }: {
   /** Undefined while they load. */
   settings?: ModelSettings
   onChange: (settings: ModelSettings) => void
+  focus?: boolean
 }) {
-  const [mode, setMode] = useState<ModelSettings['use']>()
-  const shown = mode ?? settings?.use ?? 'hosted'
-  const radios = useId()
+  const headingRef = useRef<HTMLHeadingElement>(null)
+  useEffect(() => {
+    if (!focus) return
+    headingRef.current?.focus()
+    headingRef.current?.scrollIntoView?.({ block: 'start' })
+  }, [])
 
+  const heading = (
+    <h3 id="settings-providers" ref={headingRef} tabIndex={-1}>
+      Providers
+    </h3>
+  )
   if (!settings) {
     return (
-      <section className="card" aria-labelledby="settings-model">
-        <h3 id="settings-model">Model</h3>
+      <section className="card" aria-labelledby="settings-providers">
+        {heading}
         <p className="account-detail">Loading…</p>
       </section>
     )
   }
 
   const { openRouter, deepSeek } = settings
-  const inUse = ownInUse(settings)
-
-  function pick(next: ModelSettings['use']) {
-    setMode(next)
-    // Set up already: switching is one step. Otherwise the setup below finishes it.
-    const ready = next === 'hosted' || (next === 'openrouter' ? openRouter : deepSeek)
-    if (ready) onChange({ ...settings!, use: next })
-  }
-
-  function remove(service: Service) {
-    // The choice shown follows what is saved now: the hosted model, or the other service if another
-    // window switched to it meanwhile.
-    setMode(undefined)
-    onChange(removed(settings!, service))
+  /** The settings with one provider's part replaced, or removed with `undefined`. */
+  function withProvider<S extends 'openRouter' | 'deepSeek'>(name: S, part: ModelSettings[S]): ModelSettings {
+    const { [name]: _, ...rest } = settings!
+    return part ? { ...rest, [name]: part } : rest
   }
 
   return (
-    <section className="card" aria-labelledby="settings-model">
-      <h3 id="settings-model">Model</h3>
-      <p className="settings-value" aria-label="Model in use">
-        {inUse ? inUse.model.name : HOSTED}
-      </p>
-      <p className="account-detail">
-        {inUse
-          ? `On ${SERVICE[inUse.service]}, with your key. Questions spend no credits.`
-          : "Notico's own model. Questions spend credits."}
-      </p>
-
-      <fieldset className="model-choice">
-        <legend>Answer with</legend>
-        <label>
-          <input type="radio" name={radios} checked={shown === 'hosted'} onChange={() => pick('hosted')} />
-          {HOSTED}
-        </label>
-        {(Object.keys(SERVICE) as Service[]).map((service) => (
-          <label key={service}>
-            <input type="radio" name={radios} checked={shown === service} onChange={() => pick(service)} />
-            {SERVICE[service]}, with your key
-          </label>
-        ))}
-      </fieldset>
-
-      {shown === 'openrouter' && (
-        <OpenRouterSetup
-          saved={openRouter}
-          onSave={(next) => onChange({ ...settings, use: 'openrouter', openRouter: next })}
-          onRemove={() => remove('openrouter')}
-        />
-      )}
-      {shown === 'deepseek' && (
-        <DeepSeekSetup
-          saved={deepSeek}
-          onSave={(next) => onChange({ ...settings, use: 'deepseek', deepSeek: next })}
-          onRemove={() => remove('deepseek')}
-        />
-      )}
+    <section className="card providers" aria-labelledby="settings-providers">
+      {heading}
+      <div className="provider">
+        <ProviderHead name="Notico" detail="No key needed. Spends your credits." mark="N">
+          <Switch label="Notico" checked disabled tip="Always on" />
+        </ProviderHead>
+        <ul className="provider-models" aria-label="Notico's models">
+          <ModelRow name={HOSTED} detail="Notico picks the model" checked disabled />
+        </ul>
+      </div>
+      <ProviderSetup
+        service="openrouter"
+        saved={openRouter}
+        onKey={async (key) => {
+          // A new key keeps the models switched on. A first one starts with the first recommended
+          // model OpenRouter offers, so the provider is usable at once.
+          let models = openRouter?.models
+          if (!models) {
+            const listed = await modelList().catch((): ListedModel[] => [])
+            const first = RECOMMENDED.map((r) => listed.find((m) => m.id === r.id && m.tools)).find((m) => m)
+            models = first ? [ownModel(first)] : []
+          }
+          onChange(withProvider('openRouter', { on: true, key, models }))
+        }}
+        onSwitch={(on) => openRouter && onChange(withProvider('openRouter', { ...openRouter, on }))}
+        onRemove={() => onChange(withProvider('openRouter', undefined))}
+      >
+        {openRouter && (
+          <OpenRouterModels
+            on={openRouter.models}
+            onChange={(models) => onChange(withProvider('openRouter', { ...openRouter, models }))}
+          />
+        )}
+      </ProviderSetup>
+      <ProviderSetup
+        service="deepseek"
+        saved={deepSeek}
+        onKey={async (key) =>
+          onChange(
+            withProvider('deepSeek', {
+              on: true,
+              key,
+              // The catalog's first model starts switched on, so the provider is usable at once.
+              models: deepSeek?.models ?? DEEPSEEK_MODELS.slice(0, 1).map((m) => m.id),
+            }),
+          )
+        }
+        onSwitch={(on) => deepSeek && onChange(withProvider('deepSeek', { ...deepSeek, on }))}
+        onRemove={() => onChange(withProvider('deepSeek', undefined))}
+      >
+        {deepSeek && (
+          <ModelList label="DeepSeek's models" count={deepSeek.models.length} total={DEEPSEEK_MODELS.length}>
+            {DEEPSEEK_MODELS.map((model) => {
+              const checked = deepSeek.models.includes(model.id)
+              return (
+                <ModelRow
+                  key={model.id}
+                  name={model.name}
+                  detail={priceText(model)}
+                  checked={checked}
+                  last={checked && deepSeek.models.length === 1}
+                  onSwitch={(on) =>
+                    onChange(
+                      withProvider('deepSeek', {
+                        ...deepSeek,
+                        models: on ? [...deepSeek.models, model.id] : deepSeek.models.filter((id) => id !== model.id),
+                      }),
+                    )
+                  }
+                />
+              )
+            })}
+          </ModelList>
+        )}
+      </ProviderSetup>
     </section>
   )
 }
 
-/** The key and the model on OpenRouter: entered once, then the model can be changed on its own. */
-function OpenRouterSetup({
-  saved,
-  onSave,
-  onRemove,
+/** A model from OpenRouter's list, as it is saved: without what only the list needs. */
+const ownModel = ({ id, name, contextLength, price }: OwnModel): OwnModel => ({ id, name, contextLength, price })
+
+/** A provider's name, what it is, and its switch. */
+function ProviderHead({
+  name,
+  detail,
+  mark,
+  status,
+  children,
 }: {
-  saved?: { key: string; model: OwnModel }
-  onSave: (openRouter: { key: string; model: OwnModel }) => void
-  onRemove: () => void
+  name: string
+  detail?: string
+  mark: string
+  status?: { ok: boolean; text: string }
+  children: React.ReactNode
 }) {
+  return (
+    <div className="provider-head">
+      <span className={`provider-mark provider-mark-${mark.toLowerCase()}`} aria-hidden="true">
+        {mark}
+      </span>
+      <div className="provider-name">
+        <span className="model-name">{name}</span>
+        {status ? (
+          <span className={status.ok ? 'provider-status ok' : 'provider-status bad'}>
+            <Icon name={status.ok ? 'ok' : 'alert'} />
+            {status.text}
+          </span>
+        ) : (
+          <span className="account-detail">{detail}</span>
+        )}
+      </div>
+      {children}
+    </div>
+  )
+}
+
+type Check = { status: 'checking' } | Exclude<KeyCheck, { status: 'ok' }>
+
+/**
+ * A provider that needs a key: its switch, its key and the check of it, and, once a key is saved and
+ * the provider is on, its models (`children`). `onKey` saves a key that passed the check.
+ */
+function ProviderSetup({
+  service,
+  saved,
+  onKey,
+  onSwitch,
+  onRemove,
+  children,
+}: {
+  service: Service
+  saved?: { on: boolean; key: string; rejectedAt?: number }
+  onKey: (key: string) => Promise<void>
+  onSwitch: (on: boolean) => void
+  onRemove: () => void
+  children: React.ReactNode
+}) {
+  const name = SERVICE_NAME[service]
+  // Switched on with no key saved yet: the key field is open, and nothing is saved until a key passes.
+  const [opening, setOpening] = useState(false)
+  const [changing, setChanging] = useState(false)
+  const [value, setValue] = useState('')
+  const [check, setCheck] = useState<Check>()
+  const fieldId = useId()
+  const on = saved ? saved.on : opening
+  const balance = saved && balances.get(saved.key)
+
+  /** Checks `key`, and saves it if it passes. Only a key that passes is saved. */
+  async function run(key: string) {
+    setCheck({ status: 'checking' })
+    let result: KeyCheck
+    try {
+      result = await checkKey(service, key)
+      if (result.status === 'ok') {
+        if (result.balance) balances.set(key, result.balance)
+        else balances.delete(key)
+        await onKey(key)
+      }
+    } catch (err) {
+      result = { status: 'failed', message: errorText(err) }
+    }
+    if (result.status !== 'ok') return setCheck(result)
+    setCheck(undefined)
+    setOpening(false)
+    setChanging(false)
+    setValue('')
+  }
+
+  function submit(e: FormEvent) {
+    e.preventDefault()
+    const key = value.trim()
+    if (key && check?.status !== 'checking') void run(key)
+  }
+
+  const checking = check?.status === 'checking'
+  const problem = check && check.status !== 'checking' ? checkProblem(service, check) : undefined
+  const status = !saved
+    ? undefined
+    : saved.rejectedAt !== undefined
+      ? { ok: false, text: 'Key stopped working' }
+      : { ok: true, text: balance ? `Key works · ${balance}` : 'Key works' }
+  const keyForm = (
+    <form className="key-form" onSubmit={submit}>
+      <div className="key-row">
+        <input
+          id={fieldId}
+          type="password"
+          aria-label={`${name} API key`}
+          autoComplete="off"
+          spellCheck={false}
+          placeholder={`Paste your ${name} key`}
+          value={value}
+          readOnly={checking}
+          aria-invalid={!!problem}
+          onChange={(e) => {
+            setValue(e.target.value)
+            if (check?.status !== 'checking') setCheck(undefined)
+          }}
+        />
+        <button type="submit" className="primary" disabled={!value.trim() || checking}>
+          {checking ? 'Checking…' : 'Check key'}
+        </button>
+      </div>
+      {checking && (
+        <p className="key-message info" role="status">
+          <span className="spinner" aria-hidden="true" />
+          Asking {name} whether this key works…
+        </p>
+      )}
+      {problem && (
+        <p className="key-message bad" role="alert">
+          <Icon name="alert" />
+          <span>{problem}</span>
+        </p>
+      )}
+      {!checking && !problem && (
+        <p className="account-detail">
+          Get a key at {KEY_SITE[service]}. It stays on this device, not encrypted, and goes only to {name}.
+        </p>
+      )}
+      {changing && (
+        <button
+          type="button"
+          className="link"
+          disabled={checking}
+          onClick={() => {
+            setChanging(false)
+            setValue('')
+            setCheck(undefined)
+          }}
+        >
+          Keep the saved key
+        </button>
+      )}
+    </form>
+  )
+
+  return (
+    <div className="provider" role="group" aria-label={name}>
+      <ProviderHead
+        name={name}
+        detail="Your own key. No credits spent."
+        mark={name[0]}
+        status={on ? status : undefined}
+      >
+        <Switch
+          label={name}
+          checked={on}
+          disabled={checking}
+          onChange={(next) => {
+            if (saved) return onSwitch(next)
+            setOpening(next)
+            setValue('')
+            setCheck(undefined)
+          }}
+        />
+      </ProviderHead>
+      {on && (
+        <div className="provider-body">
+          {!saved || changing ? (
+            keyForm
+          ) : (
+            <>
+              {saved.rejectedAt !== undefined && (
+                <p className="key-message bad" role="alert">
+                  <Icon name="alert" />
+                  <span>
+                    {name} turned this key away on {dateText(saved.rejectedAt)}. Questions to its models will fail until
+                    you check it again or paste a new one.
+                  </span>
+                </p>
+              )}
+              <div className="key-row">
+                <span className="key-saved" aria-label={`Saved ${name} key`}>
+                  {masked(saved.key)}
+                </span>
+                {saved.rejectedAt !== undefined ? (
+                  <button type="button" className="primary" disabled={checking} onClick={() => void run(saved.key)}>
+                    {checking ? 'Checking…' : 'Check again'}
+                  </button>
+                ) : (
+                  <button type="button" className="secondary" onClick={() => setChanging(true)}>
+                    Change
+                  </button>
+                )}
+              </div>
+              {checking && (
+                <p className="key-message info" role="status">
+                  <span className="spinner" aria-hidden="true" />
+                  Asking {name} whether this key works…
+                </p>
+              )}
+              {problem && (
+                <p className="key-message bad" role="alert">
+                  <Icon name="alert" />
+                  <span>{problem}</span>
+                </p>
+              )}
+              <div className="key-actions">
+                {saved.rejectedAt !== undefined && (
+                  <button type="button" className="link" disabled={checking} onClick={() => setChanging(true)}>
+                    Paste a new key
+                  </button>
+                )}
+                <button type="button" className="link" disabled={checking} onClick={onRemove}>
+                  Remove key
+                </button>
+              </div>
+            </>
+          )}
+          {saved && children}
+        </div>
+      )}
+    </div>
+  )
+}
+
+/** Why a check failed, and what to do about it. */
+function checkProblem(service: Service, check: Exclude<Check, { status: 'checking' }>): string {
+  const name = SERVICE_NAME[service]
+  const site = KEY_SITE[service]
+  switch (check.status) {
+    case 'rejected':
+      return `${name} doesn't accept this key. Copy it again from ${site} and paste it here.`
+    case 'no_money':
+      return `The key works, but its ${name} account has no money left. Add credit at ${site}, then check again.`
+    case 'timed_out':
+      return `${name} didn't answer in time. Check your connection, then try again.`
+    case 'unreachable':
+      return `${name} couldn't be reached. Check your connection, then try again.`
+    case 'failed':
+      return `The check failed: ${check.message}`
+  }
+}
+
+/** A saved key, with only its start and its last four characters showing. */
+function masked(key: string): string {
+  const start = key.startsWith('sk-or-v1-') ? 'sk-or-v1-' : key.slice(0, 3)
+  return `${start}••••••••${key.slice(-4)}`
+}
+
+const dateText = (ms: number) => new Date(ms).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+
+/** OpenRouter's models: the recommended ones and those switched on, and a search over its whole list. */
+function OpenRouterModels({ on, onChange }: { on: OwnModel[]; onChange: (models: OwnModel[]) => void }) {
   const [list, setList] = useState<List>({ status: 'loading' })
   const [loads, setLoads] = useState(0)
-  const [key, setKey] = useState('')
-  const [picked, setPicked] = useState<OwnModel | undefined>(saved?.model)
   const [query, setQuery] = useState('')
-  const radios = useId()
 
-  // Read when the user picks OpenRouter, not before: until then the extension doesn't contact it.
+  // Read once a key is saved and OpenRouter is on, not before: until then the extension doesn't contact it.
   useEffect(() => {
     let live = true
     setList({ status: 'loading' })
@@ -324,257 +589,187 @@ function OpenRouterSetup({
     return () => void (live = false)
   }, [loads])
 
-  function choose(model: OwnModel) {
-    setPicked(model)
-    // With a key saved, a new model applies at once.
-    if (saved) onSave({ key: saved.key, model })
-  }
-
   const models = list.status === 'ready' ? list.models : []
   const byId = new Map(models.map((m) => [m.id, m]))
+  const isOn = (id: string) => on.some((m) => m.id === id)
   const needle = query.trim().toLowerCase()
+
+  function row(model: OwnModel & { tools?: boolean }, note?: string) {
+    const checked = isOn(model.id)
+    // A model that can't use tools can't be switched on; one already on can still be switched off.
+    const noTools = model.tools === false && !checked
+    return (
+      <ModelRow
+        key={model.id}
+        name={model.name}
+        detail={noTools ? "Can't use tools, which Notico needs" : [note, priceText(model)].filter(Boolean).join(' · ')}
+        checked={checked}
+        disabled={noTools}
+        last={checked && on.length === 1}
+        onSwitch={(next) => onChange(next ? [...on, ownModel(model)] : on.filter((m) => m.id !== model.id))}
+      />
+    )
+  }
+
+  const recommended = RECOMMENDED.map(({ id, note }) => {
+    const model = byId.get(id) ?? on.find((m) => m.id === id)
+    if (model) return row(model, note)
+    return list.status === 'ready' ? (
+      <li key={id} className="account-detail">
+        {id}: not available on OpenRouter now
+      </li>
+    ) : null
+  })
+  const others = on.filter((m) => !RECOMMENDED.some((r) => r.id === m.id)).map((m) => row(byId.get(m.id) ?? m))
   const found = needle
     ? models
         .filter((m) => m.name.toLowerCase().includes(needle) || m.id.toLowerCase().includes(needle))
         .slice(0, SEARCH_LIMIT)
     : []
-  const keyToUse = saved?.key ?? key.trim()
-  const option = (model: OwnModel, note?: string) => (
-    <ModelOption key={model.id} model={model} note={note} name={radios} picked={picked?.id} onPick={choose} />
-  )
 
-  return (
-    <div className="own-setup">
-      <KeyField service="openrouter" saved={!!saved} value={key} onChange={setKey} onRemove={onRemove} />
-
-      <fieldset className="model-list">
-        <legend>Model</legend>
-        {list.status === 'loading' && <p className="account-detail">Loading OpenRouter's models…</p>}
-        {list.status === 'failed' && (
-          <>
-            <p role="alert">{list.message}</p>
-            <button type="button" className="primary" onClick={() => setLoads((n) => n + 1)}>
-              Try again
-            </button>
-          </>
-        )}
-        {list.status === 'ready' && (
-          <>
-            <ul aria-label="Recommended models">
-              {RECOMMENDED.map(({ id, note }) => {
-                const model = byId.get(id)
-                return model ? (
-                  option(model, note)
-                ) : (
-                  <li key={id} className="account-detail">
-                    {id}: not available on OpenRouter now
-                  </li>
-                )
-              })}
-            </ul>
-            {picked && !RECOMMENDED.some((r) => r.id === picked.id) && (
-              <ul aria-label="Your model">{option(picked)}</ul>
-            )}
-            <label className="field">
-              Search models
-              <input type="search" value={query} onChange={(e) => setQuery(e.target.value)} />
-            </label>
-            {needle && (
-              <ul aria-label="Search results">
-                {found.length ? (
-                  found.map((m) => option(m))
-                ) : (
-                  <li className="account-detail">No model that can use tools matches.</li>
-                )}
-              </ul>
-            )}
-          </>
-        )}
-      </fieldset>
-
-      <SetupActions
-        key={picked?.id}
-        service="openrouter"
-        saved={!!saved}
-        setup={keyToUse && picked ? { service: 'openrouter', key: keyToUse, model: picked } : undefined}
-        onUse={() => picked && onSave({ key: keyToUse, model: picked })}
-      />
-    </div>
-  )
-}
-
-/** The key and the model on DeepSeek, whose models are all listed: entered once, then the model can be changed on its own. */
-function DeepSeekSetup({
-  saved,
-  onSave,
-  onRemove,
-}: {
-  saved?: { key: string; model: string }
-  onSave: (deepSeek: { key: string; model: string }) => void
-  onRemove: () => void
-}) {
-  const [key, setKey] = useState('')
-  const [picked, setPicked] = useState<string | undefined>(saved?.model)
-  const radios = useId()
-
-  function choose(model: OwnModel) {
-    setPicked(model.id)
-    if (saved) onSave({ key: saved.key, model: model.id })
-  }
-
-  const keyToUse = saved?.key ?? key.trim()
-  return (
-    <div className="own-setup">
-      <KeyField service="deepseek" saved={!!saved} value={key} onChange={setKey} onRemove={onRemove} />
-
-      <fieldset className="model-list">
-        <legend>Model</legend>
-        <ul aria-label="DeepSeek's models">
-          {DEEPSEEK_MODELS.map((model) => (
-            <ModelOption key={model.id} model={model} name={radios} picked={picked} onPick={choose} />
-          ))}
-        </ul>
-      </fieldset>
-
-      <SetupActions
-        key={picked}
-        service="deepseek"
-        saved={!!saved}
-        setup={keyToUse && picked ? { service: 'deepseek', key: keyToUse, model: picked } : undefined}
-        onUse={() => picked && onSave({ key: keyToUse, model: picked })}
-      />
-    </div>
-  )
-}
-
-/** The key for a service: a field to enter it, or, once saved, a way to remove it. */
-function KeyField({
-  service,
-  saved,
-  value,
-  onChange,
-  onRemove,
-}: {
-  service: Service
-  saved: boolean
-  value: string
-  onChange: (key: string) => void
-  onRemove: () => void
-}) {
-  const name = SERVICE[service]
-  if (saved) {
-    return (
-      <p className="account-detail">
-        Your {name} key is saved on this device.{' '}
-        <button type="button" className="link" onClick={onRemove}>
-          Remove key
-        </button>
-      </p>
-    )
-  }
   return (
     <>
-      <label className="field">
-        {name} API key
+      {needle ? (
+        <ModelList label="Search results" count={on.length}>
+          {found.length ? (
+            found.map((m) => row(m))
+          ) : list.status === 'ready' ? (
+            <li className="account-detail">No model on OpenRouter matches.</li>
+          ) : null}
+        </ModelList>
+      ) : (
+        <ModelList label="OpenRouter's models" count={on.length}>
+          {recommended}
+          {others}
+        </ModelList>
+      )}
+      {list.status === 'loading' && <p className="account-detail">Loading OpenRouter's models…</p>}
+      {list.status === 'failed' && (
+        <>
+          <p role="alert">{list.message}</p>
+          <button type="button" className="secondary" onClick={() => setLoads((n) => n + 1)}>
+            Try again
+          </button>
+        </>
+      )}
+      <label className="model-search">
+        <Icon name="search" />
         <input
-          type="password"
-          autoComplete="off"
-          spellCheck={false}
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
+          type="search"
+          aria-label="Find another model on OpenRouter"
+          placeholder="Find another model on OpenRouter"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
         />
       </label>
-      <p className="account-detail">
-        Kept on this device for this account only, not encrypted, and sent only to {name}.
-      </p>
+      {needle && <p className="account-detail">Switching one on adds it to the list and to the menu.</p>}
     </>
   )
 }
 
-/** One model to pick, with its price and context. */
-function ModelOption({
-  model,
-  note,
-  name,
-  picked,
-  onPick,
+/** A provider's models, each with its switch, and how many are on. */
+function ModelList({
+  label,
+  count,
+  total,
+  children,
 }: {
-  model: OwnModel
-  note?: string
-  /** The radio group's name. */
-  name: string
-  picked?: string
-  onPick: (model: OwnModel) => void
+  label: string
+  count: number
+  total?: number
+  children: React.ReactNode
 }) {
   return (
-    <li>
-      <label>
-        <input type="radio" name={name} checked={picked === model.id} onChange={() => onPick(model)} />
-        <span>
-          <span className="model-name">{model.name}</span>{' '}
-          <span className="account-detail">
-            {note && `${note} · `}
-            {priceText(model)}
-          </span>
-        </span>
-      </label>
-    </li>
+    <div className="model-list">
+      <p className="model-list-head" aria-hidden="true">
+        <span>Models in the menu</span>
+        <span>{total === undefined ? `${count} on` : `${count} of ${total} on`}</span>
+      </p>
+      <ul className="provider-models" aria-label={label}>
+        {children}
+      </ul>
+    </div>
   )
 }
 
 /**
- * Using the service (before a key is saved), and checking the key and model. Give it a `key` that
- * changes with the model, so a check of another model is not shown.
+ * One model with its switch. `last`: the provider's only model on, which stays on, so the provider
+ * always offers one.
  */
-function SetupActions({
-  service,
-  saved,
-  setup,
-  onUse,
+function ModelRow({
+  name,
+  detail,
+  checked,
+  disabled,
+  last,
+  onSwitch,
 }: {
-  service: Service
-  saved: boolean
-  /** What to use and check; undefined until there is a key and a model. */
-  setup?: OwnSetup
-  onUse: () => void
+  name: string
+  detail: string
+  checked: boolean
+  disabled?: boolean
+  last?: boolean
+  onSwitch?: (on: boolean) => void
 }) {
-  const [check, setCheck] = useState<ModelCheck | 'checking'>()
+  const detailId = useId()
   return (
-    <>
-      <div className="model-actions">
-        {!saved && (
-          <button type="button" className="primary" disabled={!setup} onClick={onUse}>
-            Use {SERVICE[service]}
-          </button>
-        )}
-        <button
-          type="button"
-          className="link"
-          disabled={!setup || check === 'checking'}
-          onClick={async () => {
-            if (!setup) return
-            setCheck('checking')
-            try {
-              setCheck(await checkModel(setup))
-            } catch (err) {
-              setCheck({ status: 'failed', message: errorText(err) })
-            }
-          }}
-        >
-          Check key and model
-        </button>
-      </div>
-      {check && (
-        <p role="status" className={check !== 'checking' && check.status !== 'ok' ? 'check-problem' : 'account-detail'}>
-          {checkText(check)}
-        </p>
-      )}
-    </>
+    <li className={disabled && !checked ? 'model-row off' : 'model-row'}>
+      <span className="model-row-name">
+        <span>{name}</span>
+        <span id={detailId} className="account-detail">
+          {detail}
+        </span>
+      </span>
+      <Switch
+        label={name}
+        describedBy={detailId}
+        checked={checked}
+        disabled={disabled || last}
+        tip={last ? 'One model stays on' : undefined}
+        onChange={onSwitch}
+        small
+      />
+    </li>
+  )
+}
+
+/** An on/off switch. */
+function Switch({
+  label,
+  checked,
+  disabled,
+  tip,
+  describedBy,
+  small,
+  onChange,
+}: {
+  label: string
+  checked: boolean
+  disabled?: boolean
+  /** Why it can't be switched, shown on hover. */
+  tip?: string
+  describedBy?: string
+  small?: boolean
+  onChange?: (on: boolean) => void
+}) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      className={`${small ? 'switch small' : 'switch'}${tip ? ' tip-end' : ''}`}
+      aria-label={label}
+      aria-checked={checked}
+      aria-describedby={describedBy}
+      aria-description={tip}
+      data-tip={tip}
+      disabled={disabled}
+      onClick={() => onChange?.(!checked)}
+    />
   )
 }
 
 /** A model's name without the vendor OpenRouter puts before it ("Anthropic: Claude Sonnet 5.5"). */
-const shortName = ({ name }: OwnModel) => name.replace(/^[^:]+:\s*/, '') || name
+const shortName = ({ name }: { name: string }) => name.replace(/^[^:]+:\s*/, '') || name
 
 const dollars = (n: number) => `$${n < 0.1 ? n.toFixed(3).replace(/0$/, '') : n.toFixed(2)}`
 
@@ -589,12 +784,4 @@ function priceText({ price, contextLength }: OwnModel): string {
   const context = `${contextText(contextLength)} context`
   if (price.input === 0 && price.output === 0) return `Free · ${context}`
   return `${dollars(price.input)} in · ${dollars(price.output)} out per million tokens · ${context}`
-}
-
-function checkText(check: ModelCheck | 'checking'): string {
-  if (check === 'checking') return 'Checking…'
-  if (check.status === 'ok') return 'The model answered and can use tools.'
-  if (check.status === 'no_tools')
-    return "The model answered but didn't use the tool. Notico needs tools to read and edit pages; pick another model."
-  return `The check failed: ${check.message}`
 }

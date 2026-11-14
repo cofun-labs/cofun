@@ -103,6 +103,24 @@ const SHAPES = {
       <path d="M8 7.5v3.5M8 5.2v.1" />
     </>
   ),
+  ok: (
+    <>
+      <circle cx="8" cy="8" r="5.5" />
+      <path d="M5.5 8.2l1.8 1.8 3.2-3.8" />
+    </>
+  ),
+  alert: (
+    <>
+      <circle cx="8" cy="8" r="5.5" />
+      <path d="M8 5v3.5M8 10.8v.1" />
+    </>
+  ),
+  settings: (
+    <>
+      <circle cx="8" cy="8" r="2.2" />
+      <path d="M8 1.8v1.6M8 12.6v1.6M1.8 8h1.6M12.6 8h1.6M3.6 3.6l1.1 1.1M11.3 11.3l1.1 1.1M3.6 12.4l1.1-1.1M11.3 4.7l1.1-1.1" />
+    </>
+  ),
   square: <rect x="4.5" y="4.5" width="7" height="7" rx="1.5" fill="currentColor" stroke="none" />,
   slash: (
     <>
