@@ -667,6 +667,30 @@ a.icon-button {
   right: auto;
 }
 
+/*
+ * In the chat list, which scrolls and so would clip a tip drawn inside it: drawn over the panel
+ * instead, anchored to its element, and turned below or toward the left when there's no room.
+ */
+#messages [data-tip] {
+  anchor-name: --tip;
+  anchor-scope: --tip;
+}
+
+#messages [data-tip]:hover::after,
+#messages [data-tip]:focus-visible::after {
+  position: fixed;
+  position-anchor: --tip;
+  inset: auto;
+  bottom: anchor(top);
+  left: anchor(left);
+  margin-bottom: 6px;
+  z-index: 10;
+  position-try-fallbacks:
+    flip-block,
+    flip-inline,
+    flip-block flip-inline;
+}
+
 /* Not over an open popover of its own. */
 [data-tip][aria-expanded='true']::after {
   display: none;
