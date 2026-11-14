@@ -4,7 +4,7 @@ A review of the path from a user's question to what happens in Notion and in the
 
 It is a reading of the code and its tests, not a penetration test: nothing was tried against the deployed worker, real accounts, or a real Notion workspace. Where a control is said to hold, the code that enforces it and the test that pins it are named. Where something was not checked, it says so.
 
-A change that touches one of the areas below is checked against this file, and updates it in the same PR when it changes a finding or a control (see [Rules for later changes](#rules-for-later-changes)). To report a vulnerability, see [#384](https://github.com/cofun-labs/cofun/issues/384) until `SECURITY.md` exists; do not put the details of one that can be used in a public Issue.
+A change that touches one of the areas below is checked against this file, and updates it in the same PR when it changes a finding or a control (see [Rules for later changes](#rules-for-later-changes)). There is no private way to report a vulnerability yet ([#384](https://github.com/cofun-labs/cofun/issues/384) adds one). Until it exists, ask in #384 for a private contact, without the details: do not put the details of a hole that can be used in a public Issue.
 
 ## Threat model in brief
 
@@ -42,7 +42,7 @@ Severity is what it would cost if it happened, weighed by how likely it is: **Hi
 | B1 | Chats and keys on the device are not encrypted | Low | Accepted trade-off |
 | B2 | `static.cofun.cc` is on the same site as the sign-in | Low | Accepted, with a rule |
 | C1 | A session token with no `azp` is accepted | Low | Fix proposed → [#385](https://github.com/cofun-labs/cofun/issues/385) |
-| C2 | The overdraft's bound is weaker than documented | Medium | Reported privately; details withheld here |
+| C2 | A finding about the hosted model's cost to the operator | Medium | Reported privately; details withheld here |
 | C3 | Nothing bounds what all accounts together spend on the hosted model | Medium | Fix proposed → [#386](https://github.com/cofun-labs/cofun/issues/386) |
 | C4 | The worker's pages have no script policy | Low | Fix proposed → #385 |
 | C5 | Request bodies are read whole before they are measured | Low | Fix proposed → #385 |
@@ -156,9 +156,9 @@ How it works today. Every route under `/v1` is behind `requireSession` (`worker/
 
 `requireSession` checks `azp` only when the token has one. A browser always names its origin when it asks Clerk for a token, so a token without one comes from a client that is not a browser page, holding the user's own Clerk client token; it gains nothing it could not get by naming the extension's origin itself. The check exists to stop other websites using a session, and a website cannot produce such a token. Still, the rule is simpler and stricter as "every token names an allowed origin". → [#385](https://github.com/cofun-labs/cofun/issues/385).
 
-### C2. The overdraft's bound is weaker than documented (Medium)
+### C2. A finding about the hosted model's cost to the operator (Medium)
 
-[architecture.md](architecture.md#credits) says calls sent at once can overspend, bounded by the per-user rate limit. The review found the bound is weaker than that sentence suggests. What is at stake is the operator's cost for the hosted model, not another user's credits or data. The details are kept out of this public document and were given to the maintainer on 2026-11-14; this entry is completed when the fix lands.
+What is at stake is the operator's cost for the hosted model, not another user's credits or data. The details are kept out of this public document (rule 10 below) and were given to the maintainer on 2026-11-14; this entry is completed when the fix lands.
 
 ### C3. Nothing bounds what all accounts together spend (Medium)
 
