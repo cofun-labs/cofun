@@ -10,6 +10,7 @@ import {
 } from '../agent'
 import type { CreditsState } from '../credits'
 import { HOSTED_ONLY, loadModelSettings, saveModelSettings, watchModelSettings, type ModelSettings } from '../models'
+import { LIMITED_STOP } from '../notion/api'
 import { countNotionRequests } from '../notion/tab'
 import { SessionStore, titleFor, type Session } from '../sessions'
 import { carryPages, currentNotionPage, forgetReads, pagesIn, TOOLS, touchedBy, type OpenPage } from '../tools'
@@ -233,6 +234,7 @@ export function Chat({ userId }: { userId: string }) {
     added: new Set(chips.map((c) => pageKey(c.page))),
     recent: recentPages,
     stop: searchStop,
+    paused: busy,
     onStop: (stop) => {
       if (round !== composing.current) return false
       setSearchStop(stop)
@@ -539,6 +541,12 @@ export function Chat({ userId }: { userId: string }) {
     const before = agent.history().length
     let answered = false
     try {
+      // A page search still out goes first: Notion is asked one thing at a time. If it was turned
+      // away, so is the question, which sends nothing.
+      if (await pages.settled()) {
+        updateReply((m) => ({ ...m, error: LIMITED_STOP }))
+        return
+      }
       const result = await agent.ask(text, onUpdate, confirm, { context, pages: sentPages })
       answered = result.status === 'done'
       const { requests, tokens, model } = result

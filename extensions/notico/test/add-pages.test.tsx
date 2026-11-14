@@ -306,7 +306,7 @@ describe('UC-CHAT-004 add pages to a question', () => {
     await user.keyboard('{Escape}')
 
     // The next question may search again.
-    browser.ai.script.push({ reply: 'Done.' }, { reply: 'Again.' })
+    browser.ai.script.push({ reply: 'Done.' })
     await user.click(screen.getByRole('button', { name: 'Send' }))
     await screen.findByText('Done.')
     await answered()
@@ -315,25 +315,6 @@ describe('UC-CHAT-004 add pages to a question', () => {
     await pause()
     expect(await within(picker()!).findByRole('option', { name: /Launch plan/ })).toBeVisible()
     expect(searches(tab)).toHaveLength(2)
-    await user.keyboard('{Escape}')
-
-    // A search turned away after its question was sent stops nothing for the next question: its
-    // query, waiting behind that search, goes once it ends.
-    await user.clear(composer())
-    tab.limit('search', 1, 429).respond('search', 200, searchAnswer())
-    const late = tab.hold('search')
-    await user.type(composer(), 'Go @lau')
-    await pause()
-    await waitFor(() => expect(searches(tab)).toHaveLength(3))
-    await user.click(screen.getByRole('button', { name: 'Send' }))
-    await screen.findByText('Again.')
-    await answered()
-    await user.type(composer(), '@launch')
-    await pause()
-    await act(async () => late())
-    expect(await within(picker()!).findByRole('option', { name: /Launch plan/ })).toBeVisible()
-    expect(searches(tab)).toHaveLength(4)
-    expect(screen.queryByText(/Notion is busy/)).not.toBeInTheDocument()
   })
 
   it('[UC-CHAT-004-S07] the AI is told the pages a question carries, and its bubble lists them, also after the session is reopened', async () => {
@@ -420,6 +401,53 @@ describe('UC-CHAT-004 add pages to a question', () => {
       'ping @road about it',
     ])
     expect(pagesSent()).toEqual([['Fixture page'], ['Fixture page'], ['Fixture page'], ['Fixture page']])
+  })
+
+  it('[UC-CHAT-004-S11] the picker and the AI never ask Notion at once', async () => {
+    const { browser, tab, user } = await openPanel()
+    tab.respond('search', 200, searchAnswer())
+
+    // While a question is being answered, typing after an @ searches nothing…
+    let resume!: () => void
+    browser.ai.pause = { after: 150, until: new Promise<void>((resolve) => (resume = resolve)) }
+    browser.ai.script.push({ reply: 'The roadmap has three milestones' })
+    await user.type(composer(), 'Summarize{Enter}')
+    await screen.findByRole('button', { name: 'Stop' })
+    await user.type(composer(), '@launch')
+    await pause()
+    expect(await screen.findByText('Your workspace is searched once the answer is done.')).toBeVisible()
+    expect(searches(tab)).toEqual([])
+    // …until the answer is done.
+    await act(async () => resume())
+    await answered()
+    await pause()
+    expect(await within(picker()!).findByRole('option', { name: /Launch plan/ })).toBeVisible()
+    expect(searches(tab)).toHaveLength(1)
+    await user.keyboard('{Escape}')
+    await user.clear(composer())
+
+    // A question sent while a search is out waits for it, and stops when Notion turned it away.
+    tab.limit('search', 1, 429)
+    const release = tab.hold('search')
+    await user.type(composer(), 'Compare @road')
+    await pause()
+    await waitFor(() => expect(searches(tab)).toHaveLength(2))
+    const calls = browser.ai.calls.length
+    const sent = tab.sent.length
+    await user.click(screen.getByRole('button', { name: 'Send' }))
+    await act(async () => release())
+    expect(await screen.findByText(/Notion is turning requests away right now/)).toBeVisible()
+    await answered()
+    expect(browser.ai.calls).toHaveLength(calls)
+    expect(tab.sent).toHaveLength(sent)
+
+    // That search belonged to the question already sent: the next question searches again.
+    tab.respond('search', 200, searchAnswer())
+    await user.type(composer(), '@launch')
+    await pause()
+    expect(await within(picker()!).findByRole('option', { name: /Launch plan/ })).toBeVisible()
+    expect(searches(tab)).toHaveLength(3)
+    expect(screen.queryByText(/Notion is busy/)).not.toBeInTheDocument()
   })
 
   it('[UC-CHAT-004-S08] the open page taken off and picked again goes with the question, also once the tab moves on', async () => {

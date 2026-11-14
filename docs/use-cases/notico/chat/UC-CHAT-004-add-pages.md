@@ -12,6 +12,7 @@ Key constraints:
 
 - Listing this page, the open tabs, and recent pages asks nothing of Notion.
 - Searching the workspace is gentle on the user's Notion account: one search at a time, only after typing pauses, and never retried. When Notion turns a search away, the picker says Notion is busy and searches no more for that question; the other groups stay usable.
+- The picker and the AI never ask Notion at the same time: while a question is being answered, the workspace is not searched (the other groups stay usable), and a question sent while a search is out waits for it. When Notion turned that search away, the question stops too, before asking Notion anything.
 - No data leaves the browser for a host it did not go to before: the search goes to Notion from the user's Notion tab, and the pages a question carries go where the question goes.
 
 ## Scenarios
@@ -29,6 +30,7 @@ Key constraints:
 | UC-CHAT-004-S07 | P1 | ✅ | Given a page added to a question; when it is sent; then the AI is told the open page and the added page by title and address, nothing is read from Notion ahead of it, the question shows both pages, also after the session is reopened, and the next question starts with only the open page. |
 | UC-CHAT-004-S08 | P1 | ✅ | Given the open page taken off the question; when the user picks it in the picker and then moves the tab to another page; then it goes with the question as an added page, next to the new open page. |
 | UC-CHAT-004-S10 | P1 | ✅ | Given a message with an `@` followed by ordinary words, such as "thanks @bob", "Meet me @ 5pm", or "ping @team about it"; when the user presses Enter, at once or after a pause; then the message is sent as typed and no page is added in place of the words, while words that a page's title holds, also one only the workspace search finds, still list that page. |
+| UC-CHAT-004-S11 | P1 | ✅ | Given a question being answered; when the user types a page's name after an `@`; then the workspace is not searched until the answer is done, and then it is; and given a page search Notion turns away while a question is sent; then the question stops with Notion's busy message, without asking the AI or Notion anything. |
 
 ### ai-e2e
 

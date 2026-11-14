@@ -59,6 +59,11 @@ export interface PickerOptions {
   /** Set once the workspace is not searched again for this question. */
   stop?: SearchStop
   /**
+   * A question is being answered: the workspace is not searched meanwhile, so the picker never
+   * asks Notion for anything while the agent does.
+   */
+  paused?: boolean
+  /**
    * Called with the `onStop` given when the failed search was sent; false when that question was
    * sent meanwhile, so the failure stops nothing.
    */
@@ -87,6 +92,7 @@ export function usePagePicker({
   added,
   recent,
   stop,
+  paused = false,
   onStop,
   onPick,
   onClose,
@@ -94,6 +100,11 @@ export function usePagePicker({
   element: ReactNode
   onKeyDown: (e: KeyboardEvent) => boolean
   activeId?: string
+  /**
+   * Resolves once no search is out, with whether Notion turned the last one away: a question sent
+   * meanwhile waits for it, so the two never ask Notion at once.
+   */
+  settled: () => Promise<boolean>
   /**
    * Some page's title may hold the query: one listed does, or the pages in the browser or the
    * workspace search are still to come.
@@ -110,6 +121,8 @@ export function usePagePicker({
   const wanted = useRef<string>(undefined)
   const running = useRef(false)
   const timer = useRef<ReturnType<typeof setTimeout>>(undefined)
+  // The search that is out, if one is: resolves with whether Notion turned it away.
+  const out = useRef<Promise<boolean>>(undefined)
 
   // The pages already in the browser, read each time the picker opens: no Notion request.
   useEffect(() => {
@@ -127,7 +140,8 @@ export function usePagePicker({
 
   const words = query.trim()
   const searchable = !!thisPage && pageIdFromUrl(thisPage.url) !== undefined
-  const wantsSearch = open && !stop && Array.from(words).length >= SEARCH_MIN
+  const longEnough = Array.from(words).length >= SEARCH_MIN
+  const wantsSearch = open && !stop && !paused && longEnough
 
   async function run() {
     const sending = wanted.current
@@ -139,20 +153,24 @@ export function usePagePicker({
     // A failure stops searching for the question this search was sent for, not the one after it.
     const stopSearch = onStopRef.current
     setSearch({ status: 'searching' })
+    let turnedAway!: (limited: boolean) => void
+    out.current = new Promise<boolean>((resolve) => (turnedAway = resolve))
+    let limited = false
     try {
       const pages = await findPages(sending, SEARCH_LIMIT)
       if (wanted.current === sending) setSearch({ status: 'done', pages })
     } catch (err) {
+      limited = err instanceof NotionError && err.code === 'rate_limited'
       // Never retried, nor worked around: no more searches for this question. A failure that comes
       // after its question was sent leaves the next question's query to go on.
       const stopped = stopSearch(
-        err instanceof NotionError && err.code === 'rate_limited'
-          ? { busy: true }
-          : { busy: false, message: err instanceof Error ? err.message : String(err) },
+        limited ? { busy: true } : { busy: false, message: err instanceof Error ? err.message : String(err) },
       )
       if (stopped || wanted.current === sending) wanted.current = undefined
     } finally {
       running.current = false
+      out.current = undefined
+      turnedAway(limited)
     }
     // A newer query waited for this search; if its pause is over too, it goes now.
     if (wanted.current !== undefined && wanted.current !== sending && timer.current === undefined) void run()
@@ -245,13 +263,15 @@ export function usePagePicker({
     return false
   }
 
-  if (!open) return { element: null, onKeyDown, titleMatch: true }
+  const settled = () => out.current ?? Promise.resolve(false)
+
+  if (!open) return { element: null, onKeyDown, settled, titleMatch: true }
 
   const groups = (['This page', 'Open tabs', 'Recent', 'Workspace'] as const).flatMap((group) => {
     const rows = options.flatMap((o, i) => (o.group === group ? [{ o, i }] : []))
     return rows.length ? [{ group, rows }] : []
   })
-  const state = stateLine(search, stop, words, options.length > 0, !!local)
+  const state = stateLine(search, stop, paused && longEnough, words, options.length > 0, !!local)
 
   const element = (
     <div className="page-picker">
@@ -325,6 +345,7 @@ export function usePagePicker({
   return {
     element,
     onKeyDown,
+    settled,
     activeId: current >= 0 ? optionId(current) : undefined,
     titleMatch:
       !local || search.status === 'waiting' || search.status === 'searching' || options.some((o) => matches(o.page)),
@@ -335,12 +356,14 @@ export function usePagePicker({
 function stateLine(
   search: Search,
   stop: SearchStop | undefined,
+  paused: boolean,
   words: string,
   any: boolean,
   loaded: boolean,
 ): string | undefined {
   if (stop?.busy) return 'Notion is busy, so your workspace isn’t searched for this question. Try again in a moment.'
   if (stop) return `Couldn’t search your workspace: ${stop.message}`
+  if (paused) return 'Your workspace is searched once the answer is done.'
   if (search.status === 'waiting') return 'Searches your workspace when you stop typing.'
   if (search.status === 'searching') return 'Searching your workspace…'
   if (search.status === 'no-page' && !any) return 'Open a Notion page to search its workspace.'
