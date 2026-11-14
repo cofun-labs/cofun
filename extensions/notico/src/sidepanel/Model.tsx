@@ -1,6 +1,11 @@
-import { useEffect, useId, useRef, useState } from 'react'
+import { useEffect, useId, useState } from 'react'
 import { checkModel, openRouterModels, type ModelCheck } from '../agent'
 import { HOSTED_ONLY, RECOMMENDED, type ModelSettings, type OpenRouterModel } from '../models'
+import { Icon } from './icons'
+import { useMenu } from './menu'
+
+/** The hosted model, as the panel names it. */
+const HOSTED = 'Notico (hosted)'
 
 /** How many models a search shows at once; a longer query narrows them. */
 const SEARCH_LIMIT = 20
@@ -9,6 +14,150 @@ type List =
   | { status: 'loading' }
   | { status: 'ready'; models: OpenRouterModel[] }
   | { status: 'failed'; message: string }
+
+let listed: Promise<OpenRouterModel[]> | undefined
+
+/**
+ * OpenRouter's model list, read once for the panel, by the settings page and the chat's menu alike.
+ * A read that failed is made again the next time it is asked for.
+ */
+function modelList(): Promise<OpenRouterModel[]> {
+  listed ??= openRouterModels().catch((err: unknown) => {
+    listed = undefined
+    throw err
+  })
+  return listed
+}
+
+const errorText = (err: unknown) => (err instanceof Error ? err.message : String(err))
+
+/**
+ * The model menu by the composer (UC-AGENT-002): it shows which model answers, and switches between
+ * the hosted model and the user's own models on OpenRouter without leaving the chat. Other models,
+ * and setting up a key, are on the settings page (`onMore`).
+ */
+export function ModelMenu({
+  settings,
+  onChange,
+  onMore,
+}: {
+  /** Undefined while they load: the menu isn't shown yet. */
+  settings?: ModelSettings
+  onChange: (settings: ModelSettings) => void
+  onMore: () => void
+}) {
+  const { open, setOpen, close, rootRef, menuRef, onKeyDown } = useMenu()
+  const [list, setList] = useState<List>()
+  const saved = settings?.openRouter
+
+  // The recommended models need OpenRouter's list, for their names and prices: read once the menu
+  // opens with a key saved, never before.
+  useEffect(() => {
+    if (!open || !saved) return
+    let live = true
+    setList((now) => (now?.status === 'ready' ? now : { status: 'loading' }))
+    modelList().then(
+      (models) => live && setList({ status: 'ready', models }),
+      (err: unknown) => live && setList({ status: 'failed', message: errorText(err) }),
+    )
+    return () => void (live = false)
+  }, [open, !!saved])
+
+  if (!settings) return null
+  const inUse = settings.use === 'openrouter' && saved ? saved.model : undefined
+
+  function pick(next: ModelSettings) {
+    close()
+    onChange(next)
+  }
+
+  // The user's own models: the one they chose, then the recommended ones OpenRouter offers.
+  const own: { model: OpenRouterModel; note?: string }[] = []
+  if (saved) {
+    const models = list?.status === 'ready' ? list.models : []
+    if (!RECOMMENDED.some((r) => r.id === saved.model.id)) own.push({ model: saved.model })
+    for (const { id, note } of RECOMMENDED) {
+      const model = id === saved.model.id ? saved.model : models.find((m) => m.id === id)
+      if (model) own.push({ model, note })
+    }
+  }
+
+  return (
+    <div className="model-menu" ref={rootRef} onKeyDown={onKeyDown}>
+      <button
+        type="button"
+        className="model-button"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-label={`Model: ${inUse ? shortName(inUse) : HOSTED}`}
+        title="Choose the model"
+        onClick={() => setOpen(!open)}
+      >
+        <span className="model-button-name">{inUse ? shortName(inUse) : HOSTED}</span>
+        <Icon name="chevron" />
+      </button>
+      {open && (
+        <div ref={menuRef} className="model-popover" role="menu" aria-label="Model">
+          <button
+            type="button"
+            role="menuitemradio"
+            aria-checked={!inUse}
+            tabIndex={-1}
+            onClick={() => pick({ ...settings, use: 'hosted' })}
+          >
+            <span>
+              <span className="model-name">{HOSTED}</span> <span className="account-detail">Spends credits</span>
+            </span>
+            {!inUse && <Icon name="check" />}
+          </button>
+          {saved &&
+            own.map(({ model, note }) => (
+              <button
+                key={model.id}
+                type="button"
+                role="menuitemradio"
+                aria-checked={inUse?.id === model.id}
+                tabIndex={-1}
+                onClick={() => pick({ use: 'openrouter', openRouter: { key: saved.key, model } })}
+              >
+                <span>
+                  <span className="model-name">{shortName(model)}</span>{' '}
+                  <span className="account-detail">
+                    {note && `${note} · `}
+                    {shortPrice(model)}
+                  </span>
+                </span>
+                {inUse?.id === model.id && <Icon name="check" />}
+              </button>
+            ))}
+          {/* A menu holds only items: a state to read is one that can't be picked. */}
+          {saved && list?.status === 'loading' && (
+            <div role="menuitem" aria-disabled="true" tabIndex={-1} className="model-state">
+              Loading OpenRouter's models…
+            </div>
+          )}
+          {saved && list?.status === 'failed' && (
+            <div role="menuitem" aria-disabled="true" tabIndex={-1} className="model-state">
+              {list.message}
+            </div>
+          )}
+          <button
+            type="button"
+            role="menuitem"
+            className="model-more"
+            tabIndex={-1}
+            onClick={() => {
+              setOpen(false)
+              onMore()
+            }}
+          >
+            {saved ? 'More models…' : 'Set up your own model…'}
+          </button>
+        </div>
+      )}
+    </div>
+  )
+}
 
 /**
  * The settings page's Model section (UC-AGENT-002): which model answers, and setting up OpenRouter
@@ -48,7 +197,7 @@ export function ModelCard({
     <section className="card" aria-labelledby="settings-model">
       <h3 id="settings-model">Model</h3>
       <p className="settings-value" aria-label="Model in use">
-        {inUse ? inUse.name : 'Notico (hosted)'}
+        {inUse ? inUse.name : HOSTED}
       </p>
       <p className="account-detail">
         {inUse
@@ -60,7 +209,7 @@ export function ModelCard({
         <legend>Answer with</legend>
         <label>
           <input type="radio" name={radios} checked={shown === 'hosted'} onChange={() => pick('hosted')} />
-          Notico (hosted)
+          {HOSTED}
         </label>
         <label>
           <input type="radio" name={radios} checked={shown === 'openrouter'} onChange={() => pick('openrouter')} />
@@ -101,16 +250,12 @@ function OpenRouterSetup({
   const radios = useId()
 
   // Read when the user picks OpenRouter, not before: until then the extension doesn't contact it.
-  // One request per load, kept here: React may run the effect twice for one load.
-  const request = useRef<{ load: number; models: Promise<OpenRouterModel[]> }>(undefined)
   useEffect(() => {
     let live = true
     setList({ status: 'loading' })
-    if (request.current?.load !== loads) request.current = { load: loads, models: openRouterModels() }
-    request.current.models.then(
+    modelList().then(
       (models) => live && setList({ status: 'ready', models }),
-      (err: unknown) =>
-        live && setList({ status: 'failed', message: err instanceof Error ? err.message : String(err) }),
+      (err: unknown) => live && setList({ status: 'failed', message: errorText(err) }),
     )
     return () => void (live = false)
   }, [loads])
@@ -254,6 +399,16 @@ function OpenRouterSetup({
       )}
     </div>
   )
+}
+
+/** A model's name without the vendor OpenRouter puts before it ("Anthropic: Claude Sonnet 5.5"). */
+const shortName = ({ name }: OpenRouterModel) => name.replace(/^[^:]+:\s*/, '') || name
+
+/** What a model costs, short: dollars per million tokens in and out. */
+function shortPrice({ price }: OpenRouterModel): string {
+  if (price.input === 0 && price.output === 0) return 'Free'
+  const short = (n: number) => (Number.isInteger(n) ? `$${n}` : dollars(n))
+  return `${short(price.input)} / ${short(price.output)}`
 }
 
 const dollars = (n: number) => `$${n < 0.1 ? n.toFixed(3).replace(/0$/, '') : n.toFixed(2)}`

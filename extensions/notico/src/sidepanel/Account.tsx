@@ -1,6 +1,7 @@
 import { useAuth, useUser } from '@clerk/chrome-extension'
-import { useEffect, useRef, useState, type KeyboardEvent, type Ref } from 'react'
+import { useState, type Ref } from 'react'
 import { creditsSummary, type CreditsState } from '../credits'
+import { useMenu } from './menu'
 
 /** Who is signed in, as Clerk knows them. Notico only shows it: there is nothing here to change the account. */
 export function useAccount(): { name: string; email: string; imageUrl: string } {
@@ -55,52 +56,8 @@ export function AccountMenu({
 }) {
   const { signOut } = useAuth()
   const account = useAccount()
-  const [open, setOpen] = useState(false)
-  const rootRef = useRef<HTMLDivElement>(null)
-  const menuRef = useRef<HTMLDivElement>(null)
-
-  const items = () => [...(menuRef.current?.querySelectorAll<HTMLElement>('[role="menuitem"]') ?? [])]
-
-  // Opening puts the focus on the first item, so the arrow keys work at once.
-  useEffect(() => {
-    if (open) items()[0]?.focus()
-  }, [open])
-
-  // A press anywhere else closes the menu.
-  useEffect(() => {
-    if (!open) return
-    const onPointerDown = (e: PointerEvent) => {
-      if (e.target instanceof Node && !rootRef.current?.contains(e.target)) setOpen(false)
-    }
-    document.addEventListener('pointerdown', onPointerDown)
-    return () => document.removeEventListener('pointerdown', onPointerDown)
-  }, [open])
-
-  function close() {
-    setOpen(false)
-    rootRef.current?.querySelector('button')?.focus()
-  }
-
-  function onKeyDown(e: KeyboardEvent) {
-    if (!open) return
-    if (e.key === 'Escape') {
-      e.preventDefault()
-      return close()
-    }
-    // Tab moves on, out of the menu, which then closes.
-    if (e.key === 'Tab') return setOpen(false)
-    const all = items()
-    const at = all.findIndex((item) => item === document.activeElement)
-    const to = {
-      ArrowDown: (at + 1) % all.length,
-      ArrowUp: (at <= 0 ? all.length : at) - 1,
-      Home: 0,
-      End: all.length - 1,
-    }[e.key]
-    if (to === undefined) return
-    e.preventDefault()
-    all[to]?.focus()
-  }
+  // Escape and Tab, the arrow keys, and a press elsewhere, as every menu of the panel does.
+  const { open, setOpen, rootRef, menuRef, onKeyDown } = useMenu()
 
   return (
     <div className="account" ref={rootRef} onKeyDown={onKeyDown}>

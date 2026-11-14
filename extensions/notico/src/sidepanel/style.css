@@ -1179,3 +1179,96 @@ button.pack:disabled {
   color: var(--error);
   font-size: 12.5px;
 }
+
+/* The model menu above the composer */
+
+.composer-bar {
+  display: flex;
+  margin: 6px 12px -2px;
+}
+
+.model-menu {
+  position: relative;
+  min-width: 0;
+}
+
+.model-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 100%;
+  overflow: hidden;
+  padding: 3px 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: 12.5px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.model-button:hover,
+.model-button[aria-expanded='true'] {
+  background: var(--tint);
+  color: inherit;
+}
+
+.model-popover {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 0;
+  z-index: 2;
+  width: 280px;
+  max-width: calc(100vw - 24px);
+  display: flex;
+  flex-direction: column;
+  padding: 6px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: var(--bg);
+  box-shadow: 0 8px 28px var(--shadow);
+}
+
+.model-popover [role^='menuitem'] {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  padding: 7px 10px;
+  border-radius: 10px;
+  text-align: left;
+}
+
+.model-popover [role^='menuitem']:hover,
+.model-popover [role^='menuitem']:focus-visible,
+.model-popover [aria-checked='true'] {
+  background: var(--tint);
+}
+
+.model-popover [role^='menuitem'] > span {
+  display: flex;
+  flex-direction: column;
+}
+
+.model-popover .model-more {
+  margin-top: 2px;
+  border-top: 1px solid var(--border);
+  border-radius: 0 0 10px 10px;
+  color: var(--muted);
+}
+
+.model-popover .model-state {
+  color: var(--muted);
+  font-size: 12.5px;
+}
+
+.model-button-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Up while closed, toward where the menu opens; down while it is open. */
+.model-button[aria-expanded='true'] .icon {
+  transform: rotate(180deg);
+}
