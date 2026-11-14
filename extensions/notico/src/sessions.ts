@@ -19,7 +19,7 @@ export interface Session extends SessionInfo {
 }
 
 // One database per account, so another account signed in on this browser never sees these sessions.
-const DB_PREFIX = 'notion-copilot-sessions-'
+const DB_PREFIX = 'notico-sessions-'
 // Two stores, so the list never loads conversations: they grow with every tool result.
 const INFO = 'sessions'
 const MESSAGES = 'messages'
