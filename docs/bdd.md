@@ -9,15 +9,13 @@ Before adding or changing a scenario, ask two questions:
 1. **Implementation swap:** if the UI, framework, or internals were replaced, would the product owner still need to review this sentence? If not, it is not a scenario.
 2. **Gap:** does an existing behavior or scenario already express it? If so, reuse it.
 
-Never write into a use case:
+Use cases are a structural aid: they make clear what is covered by tests and keep the product stable. They are not a ledger to keep perfect, and a review doesn't block on how one is worded. When writing one:
 
-- HTTP status codes, API fields, error codes, headers, CORS, endpoints, functions, libraries, config.
-- Bug reproduction steps or fix history.
-- UI layout, wording, loading or error presentation.
-- Retries, timeouts, caching, races, and other implementation risks.
-- Combinations of every parameter, role, or input.
+- Describe what the user or client gets, not how: prefer behavior over HTTP status codes, API fields, error codes, headers, endpoints, functions, libraries, or config.
+- Leave out bug reproduction steps and fix history, UI layout and wording, and implementation risks such as retries, timeouts, caching, and races.
+- Don't list every combination of parameters, roles, or inputs; one representative example per branch is enough.
 
-These can still be worth testing. Write them as **standalone tests**: same integration-test style, but without a scenario ID in the name.
+What is left out can still be worth testing. Write it as a **standalone test**: same integration-test style, but without a scenario ID in the name.
 
 ## Structure
 
@@ -97,8 +95,16 @@ A guard or rejection branch should not rank above its use case's success path un
 
 ## Status
 
-- 🚧 Not yet verified by its strategy. New and semantically changed scenarios start here.
+- 🚧 Not yet verified by its strategy: for `api-test`, deliberately not tested yet. New and changed scenarios start here.
 - ✅ Verified: `api-test` has a passing test named with the ID; `ai-e2e` has a recorded passing run.
+
+## Coverage check
+
+`pnpm check` runs `pnpm use-cases` (`scripts/check-use-cases.ts`), which reads every scenario row in `docs/use-cases` and every scenario ID named in brackets in a test under `worker/test/` or `extensions/*/test/`. It fails on one thing: an `api-test` scenario marked ✅ that no test names. It only warns about the rest, to tidy when convenient: a 🚧 `api-test` scenario that already has a test (mark it ✅), a test naming an ID no use case has, an ID in more than one row, and a test naming an `ai-e2e` scenario. A 🚧 `api-test` scenario with no test and an `ai-e2e` scenario with none pass quietly.
+
+## Coverage audit
+
+Per-PR rules stay light; gaps are found by an audit run now and then, before a release or after a large feature: the `/bdd-audit` skill (`.claude/skills/bdd-audit/SKILL.md`). It runs the coverage check and lists, by use case, promises in a Behavior or Key constraint with no scenario, untagged tests that guard a rule users would notice, and tests whose name doesn't match their scenario, each with a suggested scenario line and priority. It changes nothing: the maintainer picks what to fix, in one PR.
 
 ## File format
 
@@ -133,5 +139,5 @@ Key constraint:
 - Use case: `UC-{DOMAIN}-{NNN}`. Domains: `ADMIN`, `AGENT`, `AUTH`, `BILLING`, `CHAT`, `NOTION`, `PANEL`, `SESSION`.
 - IDs are unique across the repository, whatever the product, since tests are found by them. A new product's use cases get IDs of their own: what is about its site gets a domain of its own (`UC-CONFLUENCE-001`), and a use case it repeats from another product takes the next free number in that domain (another product's sign-in would be `UC-AUTH-002`, never a second `UC-AUTH-001`).
 - Scenario: `{UC ID}-S{NN}`.
-- Once merged, IDs are never renumbered and deleted IDs are not reused. A scenario keeps its ID only for wording changes; changed behavior gets a new ID.
+- IDs are labels that link a scenario to its tests. Renumbering a scenario, or reusing a deleted one's ID, is fine as long as its tests are renamed with it.
 - Test names start with the ID: `it('[UC-CHAT-001-S01] signed-in user gets a streamed reply', ...)`. Several tests may cover one scenario.

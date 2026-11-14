@@ -1,6 +1,7 @@
 packages:
   - e2e
   - extensions/*
+  - scripts
   - smoke
   - worker
 

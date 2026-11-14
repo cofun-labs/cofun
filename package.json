@@ -6,6 +6,7 @@
   "scripts": {
     "lint": "oxlint .",
     "knip": "knip",
+    "use-cases": "pnpm --silent --filter notion-copilot-scripts use-cases",
     "format:fix": "oxfmt --write '**/*.{ts,tsx,json,css}'",
     "format:check": "oxfmt --check '**/*.{ts,tsx,json,css}'",
     "typecheck": "pnpm -r typecheck",
@@ -14,7 +15,7 @@
     "e2e": "pnpm --silent --filter notion-copilot-e2e e2e",
     "smoke": "pnpm build && pnpm --silent --filter notion-copilot-smoke smoke",
     "icons": "pnpm --silent --filter notion-copilot-smoke icons",
-    "check": "pnpm lint && pnpm knip && pnpm format:check && pnpm typecheck && pnpm build && pnpm test",
+    "check": "pnpm lint && pnpm knip && pnpm format:check && pnpm use-cases && pnpm typecheck && pnpm build && pnpm test",
     "prepare": "lefthook install"
   },
   "devDependencies": {

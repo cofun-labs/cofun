@@ -1,0 +1,17 @@
+{
+  "name": "notion-copilot-scripts",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Repository tooling: pnpm use-cases checks that use case scenarios and tests agree",
+  "type": "module",
+  "scripts": {
+    "use-cases": "node check-use-cases.ts",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.6",
+    "typescript": "^7.0.2",
+    "vitest": "^5.1.0"
+  }
+}

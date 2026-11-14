@@ -169,6 +169,7 @@ docs/
 .github/dependabot.yml    weekly dependency updates
 scripts/
   sync-github-settings.sh applies the rulesets and repository options with gh
+  check-use-cases.ts      pnpm use-cases (run by pnpm check): every ✅ api-test scenario has a test
 README.md                 Cofun and its extensions, for users
 PRIVACY.md                what the sign-in and the worker do with users' data, for every extension
 AGENTS.md                 development workflow and conventions (CLAUDE.md links here)
