@@ -2,7 +2,7 @@
 
 ## Behavior
 
-The operator needs to know how each user uses chat (how many requests, how many tokens, how many credits, how often they fail) to watch cost and check it against what users were charged. Every chat request from a signed-in user, from any product, leaves a usage record for that user, whether it got a reply, was refused, or failed. The records describe each request by its size, cost, and outcome only. They are never what a user is charged from: credits are charged as each product's chat use case describes (Notico's UC-NOTICO-CHAT-001).
+The operator needs to know how each user uses chat (how many requests, how many tokens, how many credits, how often they fail) to watch cost and check it against what users were charged. Every chat request from a signed-in user, from any product, leaves a usage record for that user, whether it got a reply, was refused, or failed. The records describe each request by its size, cost, and outcome only. They are never what a user is charged from: credits are charged as UC-COFUN-CREDITS-001 describes.
 
 Key constraint:
 

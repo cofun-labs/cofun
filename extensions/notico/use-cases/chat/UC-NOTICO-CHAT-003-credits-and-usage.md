@@ -2,7 +2,7 @@
 
 ## Behavior
 
-A signed-in user needs to know how much of the AI they can still use (see UC-NOTICO-CHAT-001 for what credits are). From their account in the side panel they see how many credits are left, when those expire, and when their next free credits arrive. A settings page shows the same in full, with the account they are signed in to and how many credits they used on each recent day, by the days of their own clock.
+A signed-in user needs to know how much of the AI they can still use (see UC-COFUN-CREDITS-001 for what credits are and how they are spent). From their account in the side panel they see how many credits are left, when those expire, and when their next free credits arrive. A settings page shows the same in full, with the account they are signed in to and how many credits they used on each recent day, by the days of their own clock. They see only their own (UC-COFUN-CREDITS-002).
 
 Free credits arrive only when the user asks the AI. Until then, a user with no current week of free credits (a new user, or one whose week has ended) is shown the credits their next question starts with, as not started yet: the free credits, less anything they overspent before.
 
@@ -13,7 +13,6 @@ The credits shown are current after every question. When a question is refused f
 Key constraints:
 
 - Looking at credits changes nothing: it never starts the week of free credits.
-- A user sees only their own credits, usage, and history.
 - Credits are for information: the chat works the same when they cannot be shown.
 
 ## Scenarios
@@ -26,7 +25,6 @@ Key constraints:
 | UC-NOTICO-CHAT-003-S02 | P0 | ✅ | Given a user with no current week of free credits; when they look at their credits; then they see the free credits their next question starts with, as not started, and their week starts only with that question, with exactly those credits. |
 | UC-NOTICO-CHAT-003-S03 | P1 | ✅ | Given a user who overspent their credits; when they look at their credits; then they see none left, and once their week has ended, the next free credits less what they overspent. |
 | UC-NOTICO-CHAT-003-S04 | P1 | ✅ | Given a user who asked the AI on several days; when they look at their usage; then they see the credits used on each of those days, by the days of their own clock. |
-| UC-NOTICO-CHAT-003-S05 | P0 | ✅ | Given two users; when one looks at their credits, usage, or history; then they see only their own. |
 | UC-NOTICO-CHAT-003-S06 | P1 | ✅ | Given a user with the side panel open; when a question of theirs ends; then the credits shown are what is left after it. |
 | UC-NOTICO-CHAT-003-S07 | P1 | ✅ | Given a user with no credits left; when they ask the AI from the side panel; then the refusal says when credits arrive and leads to the settings page. |
 | UC-NOTICO-CHAT-003-S08 | P1 | ✅ | Given the user's credits cannot be read; when they use the side panel; then they can still ask the AI, and the panel says the credits are unavailable instead of showing a number. |

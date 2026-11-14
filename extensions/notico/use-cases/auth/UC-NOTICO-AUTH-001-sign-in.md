@@ -2,11 +2,7 @@
 
 ## Behavior
 
-A Notion user signs in once on the web sign-in page, including with Google, and is then signed in inside the side panel without reopening it. Signing out from the side panel signs them out. Notico uses the sign-in only to know who the user is: the side panel shows which account is signed in and lets the user sign out, and offers nothing to change the account.
-
-Key constraint:
-
-- Only signed-in users of this product can use the AI. A request without a valid session never reaches the model.
+A Notion user signs in once on the web sign-in page, including with Google, and is then signed in inside the side panel without reopening it. Signing out from the side panel signs them out. Notico uses the sign-in only to know who the user is: the side panel shows which account is signed in and lets the user sign out, and offers nothing to change the account. Only signed-in users can use the AI; the service refuses anyone else (UC-COFUN-CHAT-001).
 
 ## Scenarios
 
@@ -14,8 +10,6 @@ Key constraint:
 
 | ID | Priority | Status | Scenario |
 | --- | --- | --- | --- |
-| UC-NOTICO-AUTH-001-S01 | P0 | ✅ | Given no valid session (missing, forged, or expired); when a client asks the AI something; then the request is refused and the model is not called. |
-| UC-NOTICO-AUTH-001-S02 | P1 | ✅ | Given a session a website other than this product obtained for the user in the browser; when that site uses it to ask the AI; then the request is refused. |
 | UC-NOTICO-AUTH-001-S04 | P1 | ✅ | Given a signed-in user; when they sign out from the side panel; then the side panel asks them to sign in again. |
 
 ### ai-e2e

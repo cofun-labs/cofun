@@ -223,7 +223,7 @@ describe('UC-NOTICO-CHAT-003 See credits, usage, and the plan', () => {
     expect((await credits(alice, '?utc_offset=60')).usage.byDay).toEqual([])
   })
 
-  it('[UC-NOTICO-CHAT-003-S05] a user sees only their own credits and usage', async () => {
+  it('[UC-COFUN-CREDITS-002-S01] a user sees only their own credits and usage', async () => {
     await ask(alice, 150)
     await ask(alice, 150)
     await ask(bob, 30)

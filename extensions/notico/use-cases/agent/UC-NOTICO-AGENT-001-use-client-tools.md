@@ -17,9 +17,9 @@ Each question's use of Notion is visible and bounded, so heavy use of the user's
 Key constraints:
 
 - A page the user took off a question is never used for it in place of a page the AI names: not read, and not even named to the AI.
-- Tools run in the extension, never on the server. The server only carries the AI's request to run a tool and the result back.
+- Tools run in the extension, never on the server. The server only carries the AI's request to run a tool and the result back (UC-COFUN-CHAT-001).
 - A tool that moves the user's pages to the trash never runs without the user's confirmation, which they are asked for each time; other changes are made right away, and the side panel shows them. If they decline, the tool does not run and the agent goes on without it; if they stop the agent while it waits, the tool does not run and the question ends.
-- Tool definitions, tool requests, and tool results are part of the conversation: the same size limits, credits, and usage records apply, and none of their content is kept by the service. Each round trip to the model is charged credits for what it cost (UC-NOTICO-CHAT-001).
+- Tool definitions, tool requests, and tool results are part of the conversation: the same size limits, credits, and usage records apply, and none of their content is kept by the service (UC-COFUN-CHAT-001). Each round trip to the model is charged credits for what it cost (UC-NOTICO-CHAT-001).
 
 ## Scenarios
 
@@ -27,9 +27,6 @@ Key constraints:
 
 | ID | Priority | Status | Scenario |
 | --- | --- | --- | --- |
-| UC-NOTICO-AGENT-001-S01 | P0 | ✅ | Given a signed-in user and a tool the extension offers; when they ask something that needs that tool; then the reply asks the extension to run it, with its arguments, instead of answering. |
-| UC-NOTICO-AGENT-001-S02 | P0 | ✅ | Given the result of a tool the extension ran; when it is sent back with the conversation; then the AI answers using it. |
-| UC-NOTICO-AGENT-001-S03 | P0 | ✅ | Given a signed-in user who uses tools; when they ask the AI; then nothing in the tool definitions, tool requests, or tool results is kept by the service. |
 | UC-NOTICO-AGENT-001-S04 | P0 | ✅ | Given a question that needs a tool; when the user asks it in the side panel; then the tool runs in the extension and the answer uses its result. |
 | UC-NOTICO-AGENT-001-S05 | P1 | ✅ | Given a model that keeps calling tools; when the question reaches its step limit; then the agent stops without running more tools and tells the user, and the next question still works. |
 | UC-NOTICO-AGENT-001-S09 | P0 | ✅ | Given a tool that needs confirmation; when the user declines it; then it does not run, and the agent continues without it. |

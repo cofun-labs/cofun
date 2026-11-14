@@ -189,7 +189,8 @@ worker/                   Cloudflare Worker
   test/                   REST integration tests (real signed JWTs, fake AI binding, fake Stripe with
                           webhook events signed like Stripe's, the real SQL on SQLite behind a fake D1),
                           and the extension's agent run against the worker
-  use-cases/              use cases of the backend alone (UC-COFUN-…), by domain
+  use-cases/              the rules only the worker decides, whichever extension asks, and the
+                          backend's own use cases (UC-COFUN-…), by domain
 e2e/                      pnpm e2e: drives the shared Chrome Canary over CDP for ai-e2e runs
                           (maintainer's machine only; its unit tests run in pnpm test)
 smoke/                    pnpm smoke: loads the built extension into Chromium and checks that it

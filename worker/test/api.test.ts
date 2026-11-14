@@ -62,13 +62,13 @@ const chat = (bearer: string | undefined, body: unknown = { messages: hi }) =>
   req('POST', '/v1/chat/completions', bearer, body)
 
 describe('UC-NOTICO-AUTH-001 Sign in to use Notico', () => {
-  it('[UC-NOTICO-AUTH-001-S01] request without a session is refused', async () => {
+  it('[UC-COFUN-CHAT-001-S03] request without a session is refused', async () => {
     const res = await chat(undefined)
     expect(res.status).toBe(401)
     expect((await json(res)).error.code).toBe('unauthorized')
   })
 
-  it('[UC-NOTICO-AUTH-001-S01] invalid, forged and expired sessions are refused', async () => {
+  it('[UC-COFUN-CHAT-001-S03] invalid, forged and expired sessions are refused', async () => {
     const forged = await otherClerk.sessionToken({ userId: 'user_eve', azp: EXT })
     const expired = await clerk.sessionToken({ userId: 'user_alice', azp: EXT, expiresInSec: -60 })
     for (const bad of ['not-a-jwt', forged, expired]) {
@@ -77,14 +77,14 @@ describe('UC-NOTICO-AUTH-001 Sign in to use Notico', () => {
     expect(ai.calls).toHaveLength(0)
   })
 
-  it('[UC-NOTICO-AUTH-001-S02] session issued to another site is refused', async () => {
+  it('[UC-COFUN-CHAT-001-S04] session issued to another site is refused', async () => {
     const elsewhere = await clerk.sessionToken({ userId: 'user_alice', azp: 'https://evil.example' })
     expect((await chat(elsewhere)).status).toBe(401)
   })
 })
 
 describe('UC-NOTICO-CHAT-001 Ask the AI from the side panel', () => {
-  it('[UC-NOTICO-CHAT-001-S01] reply streams as server-sent events', async () => {
+  it('[UC-COFUN-CHAT-001-S01] reply streams as server-sent events', async () => {
     const res = await chat(token, { messages: hi, stream: true })
     expect(res.status).toBe(200)
     expect(res.headers.get('content-type')).toBe('text/event-stream')
@@ -96,7 +96,7 @@ describe('UC-NOTICO-CHAT-001 Ask the AI from the side panel', () => {
     expect(text).toBe('Hello from Workers AI ')
   })
 
-  it('[UC-NOTICO-CHAT-001-S02] asking for another model is refused', async () => {
+  it('[UC-COFUN-CHAT-001-S02] asking for another model is refused', async () => {
     const res = await chat(token, { messages: hi, model: 'openai/gpt-5' })
     expect(res.status).toBe(400)
     expect((await json(res)).error.code).toBe('unsupported_model')
@@ -264,7 +264,7 @@ describe('UC-NOTICO-CHAT-001 credits', () => {
     return String(error.message)
   }
 
-  it('[UC-NOTICO-CHAT-001-S09] a user with no credits left is refused, told when credits arrive, and the model is not called', async () => {
+  it('[UC-COFUN-CREDITS-001-S01] a user with no credits left is refused, told when credits arrive, and the model is not called', async () => {
     repliesCost(150)
     expect((await chat(token)).status).toBe(200)
     // 50 credits are left: the call goes ahead, and takes the balance below zero.
@@ -277,7 +277,7 @@ describe('UC-NOTICO-CHAT-001 credits', () => {
     expect(ai.calls).toHaveLength(2)
   })
 
-  it('[UC-NOTICO-CHAT-001-S10] a new week brings new free credits', async () => {
+  it('[UC-COFUN-CREDITS-001-S02] a new week brings new free credits', async () => {
     repliesCost(200)
     expect((await chat(token)).status).toBe(200)
     later(WEEK_MS - 1000)
@@ -286,7 +286,7 @@ describe('UC-NOTICO-CHAT-001 credits', () => {
     expect((await chat(token)).status).toBe(200)
   })
 
-  it('[UC-NOTICO-CHAT-001-S13] what a call overspent is taken out of the next free credits', async () => {
+  it('[UC-COFUN-CREDITS-001-S03] what a call overspent is taken out of the next free credits', async () => {
     repliesCost(150)
     await chat(token)
     await chat(token)
@@ -300,7 +300,7 @@ describe('UC-NOTICO-CHAT-001 credits', () => {
     expect(await refused(await chat(token))).toContain('2026-11-22 at 12:00 UTC')
   })
 
-  it('[UC-NOTICO-CHAT-001-S14] credits left when the week ends are gone', async () => {
+  it('[UC-COFUN-CREDITS-001-S04] credits left when the week ends are gone', async () => {
     repliesCost(50)
     await chat(token)
     // 150 credits were left. The new week has 200, not 350.
@@ -311,7 +311,7 @@ describe('UC-NOTICO-CHAT-001 credits', () => {
     await refused(await chat(token))
   })
 
-  it('[UC-NOTICO-CHAT-001-S15] input read from the cache costs the cached price', async () => {
+  it('[UC-COFUN-CREDITS-001-S05] input read from the cache costs the cached price', async () => {
     // As the hosted model reported a second call with the same long prompt.
     ai.usage = { prompt_tokens: 5639, completion_tokens: 6, prompt_tokens_details: { cached_tokens: 5568 } }
     await chat(token)
@@ -1045,7 +1045,7 @@ async function readStream(res: Response) {
 }
 
 describe('UC-NOTICO-AGENT-001 Ask the AI something that needs a tool', () => {
-  it('[UC-NOTICO-AGENT-001-S01] the streamed reply asks the extension to run tools, with their arguments', async () => {
+  it('[UC-COFUN-CHAT-001-S05] the streamed reply asks the extension to run tools, with their arguments', async () => {
     ai = env.AI = new FakeAiBinding("I'll check.")
     ai.toolCalls = [
       { name: 'get_current_page', arguments: '{}' },
@@ -1064,7 +1064,7 @@ describe('UC-NOTICO-AGENT-001 Ask the AI something that needs a tool', () => {
     expect(ai.calls[0].inputs.tools).toEqual(tools)
   })
 
-  it('[UC-NOTICO-AGENT-001-S01] the non-streamed reply asks the extension to run a tool', async () => {
+  it('[UC-COFUN-CHAT-001-S05] the non-streamed reply asks the extension to run a tool', async () => {
     ai.toolCalls = [{ name: 'get_current_page', arguments: '{}' }]
     const res = await chat(token, { messages: askPage, tools })
     expect(res.status).toBe(200)
@@ -1075,7 +1075,7 @@ describe('UC-NOTICO-AGENT-001 Ask the AI something that needs a tool', () => {
     ])
   })
 
-  it('[UC-NOTICO-AGENT-001-S02] the AI answers from the tool result the extension sends back', async () => {
+  it('[UC-COFUN-CHAT-001-S06] the AI answers from the tool result the extension sends back', async () => {
     ai = env.AI = new FakeAiBinding('You are on Q4 Roadmap')
     const result = JSON.stringify({ title: 'Q4 Roadmap', url: 'https://www.notion.so/Q4-Roadmap-abc123' })
     const res = await chat(token, { messages: withToolResult(result), tools, stream: true })
@@ -1093,7 +1093,7 @@ describe('UC-NOTICO-AGENT-001 Ask the AI something that needs a tool', () => {
     ])
   })
 
-  it('[UC-NOTICO-AGENT-001-S03] nothing in tool definitions, calls, or results is kept', async () => {
+  it('[UC-COFUN-CHAT-001-S07] nothing in tool definitions, calls, or results is kept', async () => {
     const SECRET = 'okapi-91c2-confidential'
     ai = env.AI = new FakeAiBinding(`checking ${SECRET}-preamble`)
     ai.toolCalls = [{ name: 'search_pages', arguments: JSON.stringify({ query: `${SECRET}-arguments` }) }]

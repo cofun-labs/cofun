@@ -25,7 +25,7 @@ Cofun: Chrome extensions that each open an AI side panel next to one kind of pag
      - [ ] All PR comments resolved
      ```
 
-2. **Cover business rules with scenarios.** Ask one question: does this change add or change a business rule a user can notice? If not, as with most bug fixes and refactors, no use case changes. If so, a scenario covers it, in the product's use cases (`extensions/<name>/use-cases/{domain}/` for an extension, or `worker/use-cases/{domain}/` for behavior of the backend alone; see [docs/bdd.md](docs/bdd.md#products)): reuse or edit one that already says it, or add one with a priority (P0/P1/P2), under its strategy (`api-test` or `ai-e2e`), marked 🚧 until verified, then ✅. [docs/bdd.md](docs/bdd.md) says how to write them.
+2. **Cover business rules with scenarios.** Ask one question: does this change add or change a business rule a user can notice? If not, as with most bug fixes and refactors, no use case changes. If so, a scenario covers it, in the product's use cases (`extensions/<name>/use-cases/{domain}/` for an extension, or `worker/use-cases/{domain}/` for a rule only the worker decides, whichever extension asks; see [docs/bdd.md](docs/bdd.md#products)): reuse or edit one that already says it, or add one with a priority (P0/P1/P2), under its strategy (`api-test` or `ai-e2e`), marked 🚧 until verified, then ✅. [docs/bdd.md](docs/bdd.md) says how to write them.
 
 3. **Implement with tests.** A test guards each such rule:
    - P0 scenarios must be verified before merge; P1 should be; P2 can wait.

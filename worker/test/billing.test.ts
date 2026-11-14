@@ -122,7 +122,7 @@ const credits = (bearer: string): Promise<any> => answer(req('GET', '/v1/credits
 const yearAfter = (ms: number) => Date.parse(new Date(ms).toISOString().replace(/^2026/, '2027'))
 
 describe('UC-NOTICO-BILLING-001 buy credits: the packs and Checkout', () => {
-  it('[UC-NOTICO-BILLING-001-S01] a signed-in user who chooses a pack gets the Checkout page for it, for their account', async () => {
+  it('[UC-COFUN-BILLING-001-S01] a signed-in user who chooses a pack gets the Checkout page for it, for their account', async () => {
     expect(await answer(req('GET', '/v1/billing/packs', alice))).toEqual({
       packs: [
         { quantity: 5, credits: 5000, usdCents: 500 },
@@ -148,7 +148,7 @@ describe('UC-NOTICO-BILLING-001 buy credits: the packs and Checkout', () => {
     expect(db.rows('grants')).toEqual([])
   })
 
-  it('[UC-NOTICO-BILLING-001-S09] a pack that is not on offer is refused, and no Checkout Session is made', async () => {
+  it('[UC-COFUN-BILLING-001-S09] a pack that is not on offer is refused, and no Checkout Session is made', async () => {
     for (const body of [
       { quantity: 7 },
       { quantity: 1 },
@@ -217,7 +217,7 @@ describe('UC-NOTICO-BILLING-001 buy credits: the packs and Checkout', () => {
 })
 
 describe('UC-NOTICO-BILLING-001 buy credits: the webhook', () => {
-  it('[UC-NOTICO-BILLING-001-S02] a paid pack adds its credits for a year, spent after the free credits, and the free week still comes', async () => {
+  it('[UC-COFUN-BILLING-001-S02] a paid pack adds its credits for a year, spent after the free credits, and the free week still comes', async () => {
     await buy(alice, 5000)
 
     // The free week has not started: the next question brings it, beside the purchase.
@@ -246,7 +246,7 @@ describe('UC-NOTICO-BILLING-001 buy credits: the webhook', () => {
     expect((await credits(bob)).grants).toEqual([])
   })
 
-  it('[UC-NOTICO-BILLING-001-S03] a payment reported more than once adds its credits once', async () => {
+  it('[UC-COFUN-BILLING-001-S03] a payment reported more than once adds its credits once', async () => {
     await checkout(alice, 5000)
     const completed = stripe.sessionEvent()
     for (const evt of [
@@ -268,7 +268,7 @@ describe('UC-NOTICO-BILLING-001 buy credits: the webhook', () => {
     expect((await credits(alice)).balance).toBe(10_200 * CREDIT)
   })
 
-  it('[UC-NOTICO-BILLING-001-S04] an event that Stripe did not sign adds nothing', async () => {
+  it('[UC-COFUN-BILLING-001-S04] an event that Stripe did not sign adds nothing', async () => {
     await checkout(alice, 5000)
     const evt = stripe.sessionEvent()
     const payload = JSON.stringify(evt)
@@ -306,7 +306,7 @@ describe('UC-NOTICO-BILLING-001 buy credits: the webhook', () => {
     expect(db.rows('grants')).toHaveLength(1)
   })
 
-  it('[UC-NOTICO-BILLING-001-S05] the credits are the pack’s, whatever currency the buyer paid in and whatever tax was added', async () => {
+  it('[UC-COFUN-BILLING-001-S05] the credits are the pack’s, whatever currency the buyer paid in and whatever tax was added', async () => {
     await checkout(alice, 10_000)
     // Adaptive Pricing showed euros, and VAT was added.
     await answer(deliver(stripe.sessionEvent({ currency: 'eur', amountTotal: 1105 })))
@@ -316,7 +316,7 @@ describe('UC-NOTICO-BILLING-001 buy credits: the webhook', () => {
     ])
   })
 
-  it('[UC-NOTICO-BILLING-001-S06] a payment that completes later adds its credits when it goes through, and none when it fails', async () => {
+  it('[UC-COFUN-BILLING-001-S06] a payment that completes later adds its credits when it goes through, and none when it fails', async () => {
     await checkout(alice, 5000)
     await answer(deliver(stripe.sessionEvent({ paymentStatus: 'unpaid' })))
     expect(db.rows('grants')).toEqual([])
@@ -336,7 +336,7 @@ describe('UC-NOTICO-BILLING-001 buy credits: the webhook', () => {
     expect((await credits(bob)).grants).toEqual([])
   })
 
-  it('[UC-NOTICO-BILLING-001-S07] what the user overspent is taken out of the purchase first', async () => {
+  it('[UC-COFUN-BILLING-001-S07] what the user overspent is taken out of the purchase first', async () => {
     // 210 credits from the 200 free ones: 10 overspent.
     await ask(alice, 210)
     expect((await credits(alice)).balance).toBe(-10 * CREDIT)
@@ -351,7 +351,7 @@ describe('UC-NOTICO-BILLING-001 buy credits: the webhook', () => {
     ])
   })
 
-  it('[UC-NOTICO-BILLING-001-S08] a refund or a dispute takes back what is left of the purchase, and nothing else', async () => {
+  it('[UC-COFUN-BILLING-001-S08] a refund or a dispute takes back what is left of the purchase, and nothing else', async () => {
     await answer(req('POST', '/v1/admin/accounts/user_alice/grants', admin, { credits: 300, days: 30 }))
     await buy(alice, 5000, 'pi_refunded')
     await buy(alice, 10_000, 'pi_disputed')
@@ -414,7 +414,7 @@ describe('UC-NOTICO-BILLING-001 buy credits: the webhook', () => {
     expect(res.status).toBe(402)
   })
 
-  it('[UC-NOTICO-BILLING-001-S13] a payment for anything but the pack the checkout was made for adds nothing, and is logged', async () => {
+  it('[UC-COFUN-BILLING-001-S10] a payment for anything but the pack the checkout was made for adds nothing, and is logged', async () => {
     for (const items of [
       [{ price: 'price_other', quantity: 5 }],
       [{ price: PRICE, quantity: 50 }],
@@ -516,7 +516,7 @@ describe('UC-NOTICO-BILLING-001 buy credits: the webhook', () => {
     expect((await credits(alice)).balance).toBe(5200 * CREDIT)
   })
 
-  it('[UC-NOTICO-BILLING-001-S14] what a purchase paid back of an overspend is owed again when the purchase is taken back', async () => {
+  it('[UC-COFUN-BILLING-001-S11] what a purchase paid back of an overspend is owed again when the purchase is taken back', async () => {
     // 10 credits overspent, which the purchase pays back first.
     await ask(alice, 210)
     await buy(alice, 5000)

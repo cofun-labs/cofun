@@ -312,7 +312,7 @@ describe('UC-NOTICO-CHAT-003 the history of a user’s credits', () => {
     expect([db.rows('grants'), db.rows('model_calls')]).toEqual(before)
   })
 
-  it('[UC-NOTICO-CHAT-003-S05] a user sees only their own history', async () => {
+  it('[UC-COFUN-CREDITS-002-S01] a user sees only their own history', async () => {
     for (let credits = 1; credits <= 25; credits++) await grant('user_alice', credits, 30)
     await ask(alice, 150)
     await ask(bob, 30)
