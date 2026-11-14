@@ -1188,6 +1188,16 @@ header .untitled {
   }
 }
 
+/* A session that can't be read is not a button: it only offers its trash can, always shown. */
+.session-open.unreadable .session-title {
+  color: var(--muted);
+  font-style: italic;
+}
+
+.session-open.unreadable + .session-delete {
+  opacity: 1;
+}
+
 .session-delete:hover {
   background: var(--error-bg);
   color: var(--error);

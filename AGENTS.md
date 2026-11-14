@@ -103,7 +103,7 @@ A value the code does not control is `unknown` until it has been validated where
 
 Two things inside a Notion record are the exception, on purpose: a database's property definitions, and the runs and marks of rich text. A record is parsed where it arrives; these two are read where they are used, with checks written by hand, and the type assertions already on them stay. They are written back to Notion, and the code that writes them relies on what a missing part means today, so reading them through a schema would either change that or add nothing to a check. New code that reads them checks what it reads, asserts nothing wider than it checked, and does not copy an older assertion that checks less.
 
-What is read back from storage has not been moved to this rule yet (#201). Everywhere else it applies: a change must not add a type assertion on such a value, and the review checks the lines a PR touches.
+A change must not add a type assertion on such a value, and the review checks the lines a PR touches.
 
 ## Calling Notion: stop, don't work around
 

@@ -83,6 +83,8 @@ The user adds more pages to a question with `@` in the composer or its "+" butto
 
 Conversations are saved in the extension's IndexedDB, one database per Clerk user (`notico-sessions-<userId>`), and never sent to the worker beyond what the model needs for the current question. They stay after sign-out so the user can pick up again, and they are not encrypted: keeping accounts apart only means one account's panel never shows another's sessions. Anyone with access to the Chrome profile can read them, tool results included, such as the content of Notion pages the agent read (for example in DevTools).
 
+What is read back is parsed against the session's schemas (`SessionInfo` in `sessions.ts`, `HistoryMessage` in `src/agent/types.ts`), since an earlier version may have saved it in another form. A session that doesn't parse is unreadable: the list shows it as such and offers only to delete it, and it is never opened, so nothing of it reaches the chat or the model. There is no migration or format version yet; they come with the first change to the format that is not only an added optional field.
+
 A session is titled with its first question until its first reply is in; then the agent asks the model that answered for a short title (`CopilotAgent.title`), so it goes only where the conversation already went, and on the hosted model it spends credits like any request. The title the model wrote replaces the first question in the stored session, once, and later saves keep it; a failed or unusable answer changes nothing.
 
 ### Writes without approval

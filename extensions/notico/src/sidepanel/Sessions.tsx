@@ -1,8 +1,13 @@
 import { useEffect, useRef, useState } from 'react'
 import { Icon } from './icons'
-import { filterSessions, type SessionInfo, type SessionStore } from '../sessions'
+import { filterSessions, type ListedSession, type SessionStore } from '../sessions'
 
-/** The list of saved sessions: search by title, open, and delete. */
+/** How opening a session went: `gone` when it no longer exists, `unreadable` when it can't be read. */
+export type OpenResult = 'opened' | 'gone' | 'unreadable'
+
+const UNREADABLE = "This session was saved by an earlier version of Notico and can't be opened. You can delete it."
+
+/** The list of saved sessions: search by title, open, and delete. One that can't be read can only be deleted. */
 export function Sessions({
   store,
   currentId,
@@ -15,13 +20,14 @@ export function Sessions({
   currentId?: string
   /** Changes whenever a session is saved, so the list stays current while it is open. */
   saved: number
-  /** Resolves false when the session no longer exists. */
-  onOpen: (id: string) => Promise<boolean>
+  onOpen: (id: string) => Promise<OpenResult>
   onClose: () => void
   /** Called before the session is deleted. */
   onDeleted: (id: string) => void
 }) {
-  const [sessions, setSessions] = useState<SessionInfo[] | null>(null)
+  const [sessions, setSessions] = useState<ListedSession[] | null>(null)
+  // Sessions whose details read fine but whose conversation didn't, found when the user opened them.
+  const [unopenable, setUnopenable] = useState<ReadonlySet<string>>(new Set())
   const [error, setError] = useState<string>()
   const [query, setQuery] = useState('')
   // Deleting takes a second click on the same row, so a stray click loses nothing.
@@ -75,7 +81,12 @@ export function Sessions({
 
   async function openSession(id: string) {
     try {
-      if (await onOpen(id)) return
+      const result = await onOpen(id)
+      if (result === 'opened') return
+      if (result === 'unreadable') {
+        setUnopenable((ids) => new Set(ids).add(id))
+        return setError(UNREADABLE)
+      }
       await load()
       setError('This session no longer exists.')
     } catch (err) {
@@ -103,24 +114,35 @@ export function Sessions({
           onChange={(e) => setQuery(e.target.value)}
         />
       </label>
-      {error && <div className="error">{error}</div>}
+      {error && (
+        <div className="error" role="alert">
+          {error}
+        </div>
+      )}
       {sessions && shown.length === 0 && (
         <div className="empty">{sessions.length === 0 ? 'No sessions yet.' : 'No matching sessions.'}</div>
       )}
       <ul className="session-list">
         {shown.map((s) => (
           <li key={s.id} className={s.id === currentId ? 'current' : undefined}>
-            <button
-              className="session-open"
-              aria-current={s.id === currentId || undefined}
-              onClick={() => void openSession(s.id)}
-            >
-              <span className="session-title">{s.title || 'Untitled'}</span>
-              <span className="session-meta">
-                {s.page && <>{s.page.title || 'Untitled page'} · </>}
-                {formatTime(s.updatedAt)}
-              </span>
-            </button>
+            {'unreadable' in s || unopenable.has(s.id) ? (
+              <div className="session-open unreadable">
+                <span className="session-title">{'title' in s && s.title ? s.title : 'Unreadable session'}</span>
+                <span className="session-meta">Saved by an earlier version; it can't be opened</span>
+              </div>
+            ) : (
+              <button
+                className="session-open"
+                aria-current={s.id === currentId || undefined}
+                onClick={() => void openSession(s.id)}
+              >
+                <span className="session-title">{s.title || 'Untitled'}</span>
+                <span className="session-meta">
+                  {s.page && <>{s.page.title || 'Untitled page'} · </>}
+                  {formatTime(s.updatedAt)}
+                </span>
+              </button>
+            )}
             <button
               className={confirming === s.id ? 'session-delete confirming' : 'session-delete'}
               onClick={() => void remove(s.id)}
