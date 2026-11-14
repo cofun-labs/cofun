@@ -4,7 +4,7 @@
 // key (own.ts). Only the modules of this folder import the agent runtime (pi); the rest of the
 // extension uses the types in types.ts, through index.ts.
 import { Agent, type AgentEvent, type AgentMessage, type AgentTool } from '@earendil-works/pi-agent-core'
-import type { AssistantMessage, Model, ToolCall } from '@earendil-works/pi-ai'
+import type { AssistantMessage, Model } from '@earendil-works/pi-ai'
 import { streamSimple } from '@earendil-works/pi-ai/api/openai-completions'
 import { Credits, GrantsPage, Packs, UsagePeriod } from '../credits'
 import { HOSTED_ONLY, ownSetup, type OwnSetup } from '../models'
@@ -450,7 +450,7 @@ export class CopilotAgent {
         const content: AssistantMessage['content'] = m.parts.map((p) =>
           p.type === 'text'
             ? { type: 'text', text: p.text }
-            : { type: 'toolCall', id: p.id, name: p.name, arguments: p.args as ToolCall['arguments'] },
+            : { type: 'toolCall', id: p.id, name: p.name, arguments: p.args },
         )
         return {
           role: 'assistant',

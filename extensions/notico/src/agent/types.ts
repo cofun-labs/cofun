@@ -1,6 +1,7 @@
 // The agent's types, as the rest of the extension uses them: its configuration, the tools it runs,
 // what it reports while it works, and the conversation as saved sessions keep it.
 import type { ModelSettings, OwnSetup } from '../models'
+import { z } from '../zod'
 
 export interface AgentConfig {
   /** Base URL including /v1. */
@@ -46,11 +47,8 @@ export interface QuestionExtras {
 }
 
 /** A page a question was sent with: its title and URL, and whether it is a database. */
-export interface QuestionPage {
-  title: string
-  url: string
-  database?: true
-}
+const QuestionPage = z.object({ title: z.string(), url: z.string(), database: z.literal(true).optional() })
+export type QuestionPage = z.infer<typeof QuestionPage>
 
 /** A tool the model can ask the extension to run. */
 export interface ToolSpec {
@@ -106,7 +104,8 @@ export type ConfirmTool = (call: ToolCallRequest) => Promise<boolean>
  * limit. `stopped`: the user stopped the question while the tool ran or waited for their OK.
  * `declined`: the user did not let it run.
  */
-export type ToolStatus = 'done' | 'failed' | 'skipped' | 'stopped' | 'declined'
+const ToolStatus = z.enum(['done', 'failed', 'skipped', 'stopped', 'declined'])
+export type ToolStatus = z.infer<typeof ToolStatus>
 
 /** What the side panel shows while the agent works on a question. */
 export type AgentUpdate =
@@ -120,25 +119,21 @@ export type AgentUpdate =
   /** `result`: what the model got back, the error message when the tool failed. */
   | { type: 'tool_end'; id: string; name: string; status: ToolStatus; result: string }
 
-/**
- * The conversation as the agent keeps it, in a form of our own, so saved sessions don't depend on
- * the agent runtime. A reply is an assistant message followed by the results of the tools it called;
- * a question may take several such steps before the final answer.
- */
-export type HistoryMessage =
-  /**
-   * `context`, `pages`, and `readOnly`: what went with the question (see QuestionExtras), besides what
-   * the user typed.
-   */
-  | ({ role: 'user'; text: string; context?: string; pages?: QuestionPage[]; readOnly?: true } & QuestionDetails)
-  | { role: 'assistant'; parts: AssistantPart[] }
-  /** The result of one tool call. `id` matches the call in the assistant message before it. */
-  | { role: 'tool'; id: string; name: string; status: ToolStatus; result: string }
+/** Tokens a question used. `input` counts all of the input, `cached` the part of it read from the service's cache. */
+const TokenUsage = z.object({ input: z.number(), output: z.number(), cached: z.number() })
+export type TokenUsage = z.infer<typeof TokenUsage>
 
-/** What the model wrote, in order: text and the tools it asked to run. */
-export type AssistantPart =
-  | { type: 'text'; text: string }
-  | { type: 'tool_call'; id: string; name: string; args: Record<string, unknown> }
+/** Which model a question was asked of: the hosted one, or a user's own one on its service, by its name. */
+const OwnService = z.enum(['openrouter', 'deepseek'])
+/** True when A and B are the same set of values. */
+type Same<A, B> = [A, B] extends [B, A] ? true : false
+// The same services as OwnSetup, both ways: one missing here would make every session it answered unreadable.
+true satisfies Same<z.infer<typeof OwnService>, OwnSetup['service']>
+const AnsweredBy = z.union([
+  z.object({ service: z.literal('hosted') }),
+  z.object({ service: OwnService, name: z.string() }),
+])
+export type AnsweredBy = z.infer<typeof AnsweredBy>
 
 /**
  * What a question used, once it ended; each part only when it is known.
@@ -146,21 +141,53 @@ export type AssistantPart =
  * `tokens`: what the model used for it, summed over its model calls, as the service reported them.
  * `model`: the model that was asked.
  */
-export interface QuestionDetails {
-  requests?: number
-  tokens?: TokenUsage
-  model?: AnsweredBy
-}
+const QuestionDetails = z.object({
+  requests: z.number().optional(),
+  tokens: TokenUsage.optional(),
+  model: AnsweredBy.optional(),
+})
+export type QuestionDetails = z.infer<typeof QuestionDetails>
 
-/** Tokens a question used. `input` counts all of the input, `cached` the part of it read from the service's cache. */
-export interface TokenUsage {
-  input: number
-  output: number
-  cached: number
-}
+/** A JSON value; arrays are read-only, as the agent runtime hands them over. */
+type Json = string | number | boolean | null | readonly Json[] | { [key: string]: Json }
+const Json: z.ZodType<Json> = z.lazy(() =>
+  z.union([z.string(), z.number(), z.boolean(), z.null(), z.array(Json).readonly(), z.record(z.string(), Json)]),
+)
+const JsonObject = z.record(z.string(), Json)
 
-/** Which model a question was asked of: the hosted one, or a user's own one on its service, by its name. */
-export type AnsweredBy = { service: 'hosted' } | { service: OwnSetup['service']; name: string }
+/**
+ * What the model wrote, in order: text and the tools it asked to run. A call's `args` are what the
+ * model sent, a JSON object, whatever the tool; the tool parses them when it runs.
+ */
+const AssistantPart = z.discriminatedUnion('type', [
+  z.object({ type: z.literal('text'), text: z.string() }),
+  z.object({ type: z.literal('tool_call'), id: z.string(), name: z.string(), args: JsonObject }),
+])
+export type AssistantPart = z.infer<typeof AssistantPart>
+
+/**
+ * The conversation as the agent keeps it, in a form of our own, so saved sessions don't depend on
+ * the agent runtime. A reply is an assistant message followed by the results of the tools it called;
+ * a question may take several such steps before the final answer. Saved sessions are read back
+ * through this schema, so one an earlier version saved in another form is refused, not misread.
+ */
+export const HistoryMessage = z.discriminatedUnion('role', [
+  /**
+   * `context`, `pages`, and `readOnly`: what went with the question (see QuestionExtras), besides what
+   * the user typed.
+   */
+  QuestionDetails.extend({
+    role: z.literal('user'),
+    text: z.string(),
+    context: z.string().optional(),
+    pages: z.array(QuestionPage).optional(),
+    readOnly: z.literal(true).optional(),
+  }),
+  z.object({ role: z.literal('assistant'), parts: z.array(AssistantPart) }),
+  /** The result of one tool call. `id` matches the call in the assistant message before it. */
+  z.object({ role: z.literal('tool'), id: z.string(), name: z.string(), status: ToolStatus, result: z.string() }),
+])
+export type HistoryMessage = z.infer<typeof HistoryMessage>
 
 export type AskResult = (
   | { status: 'done' }

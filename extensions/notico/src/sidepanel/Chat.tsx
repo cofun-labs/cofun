@@ -22,7 +22,7 @@ import { useMenu } from './menu'
 import { HOSTED, ModelMenu } from './Model'
 import { AddMenu, pageKey, usePagePicker, type SearchStop } from './PagePicker'
 import { ComposerPages, SentPages, type Chip } from './Pages'
-import { Sessions } from './Sessions'
+import { Sessions, type OpenResult } from './Sessions'
 import { Settings } from './Settings'
 import { ToolCall, type ShownTool } from './ToolCall'
 
@@ -306,11 +306,18 @@ export function Chat({ userId }: { userId: string }) {
    */
   async function recentPages(): Promise<QuestionPage[]> {
     const origin = tabPage ? new URL(tabPage.url).origin : NOTION_ORIGIN
-    const infos = (await store.list()).filter((s) => s.id !== current?.id).slice(0, RECENT_SESSIONS)
+    // A session that can't be read has no pages to offer.
+    const infos = (await store.list())
+      .filter((s) => s.id !== current?.id && !('unreadable' in s))
+      .slice(0, RECENT_SESSIONS)
     const saved = await Promise.all(infos.map((info) => store.get(info.id).catch(() => undefined)))
     return [
       ...pagesIn(agent.history(), origin),
-      ...infos.flatMap((info, i) => [...pagesIn(saved[i]?.messages ?? [], origin), ...(info.page ? [info.page] : [])]),
+      ...infos.flatMap((info, i) => {
+        const session = saved[i]
+        const messages = session && session !== 'unreadable' ? session.messages : []
+        return [...pagesIn(messages, origin), ...('page' in info && info.page ? [info.page] : [])]
+      }),
     ]
   }
 
@@ -734,27 +741,35 @@ export function Chat({ userId }: { userId: string }) {
     dismissed.current = undefined
   }
 
-  /** Opens a saved session; false if it no longer exists. */
-  async function open(id: string): Promise<boolean> {
+  /** Opens a saved session, unless it no longer exists or can't be read. */
+  async function open(id: string): Promise<OpenResult> {
     // The open session is already on screen, maybe with a reply still coming in.
     if (id === current?.id) {
       setView('chat')
-      return true
+      return 'opened'
     }
-    // Stop the reply now, not once the session has loaded: it must not finish in the meantime.
+    const chat = chatId.current
+    const token = ++opening.current
+    // The user started a new chat, opened another session, or asked something meanwhile; that wins.
+    const overtaken = () => chatId.current !== chat || opening.current !== token
+    // First see whether it can be opened at all: one that can't leaves the open chat, and a reply
+    // still coming in for it, as they are. Nothing of it reaches the chat or the agent.
+    const found = await store.get(id)
+    if (overtaken()) return 'opened'
+    if (!found) return 'gone'
+    if (found === 'unreadable') return 'unreadable'
+    // Stop the reply now, not once the session has loaded again: it must not finish in the meantime.
     declineAll()
     stopped.current++
     agent.stop()
-    const chat = chatId.current
-    const token = ++opening.current
     // A save of this panel's still waiting to write would otherwise look like another window's later.
     await saving.current
     const session = await store.get(id)
-    // The user started a new chat, opened another session, or asked something meanwhile; that wins.
-    if (chatId.current !== chat || opening.current !== token) return true
-    if (!session) return false
+    if (overtaken()) return 'opened'
+    if (!session) return 'gone'
+    if (session === 'unreadable') return 'unreadable'
     switchTo(session)
-    return true
+    return 'opened'
   }
 
   function onSubmit(e: FormEvent) {
