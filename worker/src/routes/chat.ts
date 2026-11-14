@@ -35,22 +35,19 @@ const Products = z.record(
     .refine((name) => name !== UNKNOWN_PRODUCT, { error: `${UNKNOWN_PRODUCT} is not a product name` }),
 )
 
-/** The origin a session token was issued to, when it names one. */
-const Azp = z.object({ azp: z.string().optional() })
-
 /**
  * The product a model call comes from: the one PRODUCTS lists for the origin the session token was
- * issued to (its `azp`, which Clerk signs, so a client cannot pick it), or `unknown`. Unknown callers
- * are not refused: the product only sorts what was spent, credits are one balance across products.
+ * issued to (its `azp`, which Clerk signs, so a client cannot pick it), or `unknown` for an allowed
+ * origin that is no listed extension (the admin page). Such a caller is not refused: the product
+ * only sorts what was spent, credits are one balance across products.
  */
-function productOf(env: Env, claims: unknown): string {
+function productOf(env: Env, azp: string): string {
   const products = Products.optional().safeParse(env.PRODUCTS)
   if (!products.success) {
     throw new HttpError(503, 'not_configured', `PRODUCTS is invalid: ${products.error.issues[0].message}`)
   }
   const listed = products.data ?? {}
-  const azp = Azp.safeParse(claims).data?.azp
-  return azp !== undefined && Object.hasOwn(listed, azp) ? listed[azp] : UNKNOWN_PRODUCT
+  return Object.hasOwn(listed, azp) ? listed[azp] : UNKNOWN_PRODUCT
 }
 
 /**
@@ -113,7 +110,7 @@ export function chatRoutes({ now, priceOf: priceFor, logError }: Deps): App {
    * Throws HttpError for refusals; the caller records those.
    */
   async function chatCompletion(c: Ctx, usage: UsageRecord, record: (outcome: string) => void): Promise<Response> {
-    const product = productOf(c.env, c.get('claims'))
+    const product = productOf(c.env, c.get('azp'))
     usage.product = product
     const body = parse(Body, await c.req.json().catch(() => undefined))
     usage.stream = body.stream === true

@@ -195,8 +195,8 @@ describe('UC-COFUN-ADMIN-002 See granted and spent credits as a whole', () => {
     const CONFLUCO = 'chrome-extension://ponmlkjihgfedcbaponmlkjihgfedcba'
     env.CLERK_AUTHORIZED_PARTIES += `, ${CONFLUCO}`
     env.PRODUCTS = { [EXT]: 'notico', [CONFLUCO]: 'confluco' }
-    const askFrom = async (name: string, azp?: string) => {
-      const bearer = await clerk.sessionToken({ userId: `user_${name}`, ...(azp ? { azp } : {}) })
+    const askFrom = async (name: string, azp: string) => {
+      const bearer = await clerk.sessionToken({ userId: `user_${name}`, azp })
       const res = await req('POST', '/v1/chat/completions', bearer, { messages: [{ role: 'user', content: 'hi' }] })
       expect(res.status).toBe(200)
     }
@@ -204,9 +204,9 @@ describe('UC-COFUN-ADMIN-002 See granted and spent credits as a whole', () => {
     await asks('alice')
     await askFrom('alice', CONFLUCO)
     await askFrom('bob', CONFLUCO)
-    // The same account, from the admin page and with a token that names no origin.
+    // The same account, twice from the admin page, which is none of the products.
     await askFrom('carol', WORKER)
-    await askFrom('carol')
+    await askFrom('carol', WORKER)
     later(DAY_MS)
     await askFrom('alice', CONFLUCO)
 
@@ -321,7 +321,6 @@ describe('UC-COFUN-ADMIN-002 See granted and spent credits as a whole', () => {
       await clerk.sessionToken({ userId: 'user_eve', azp: WORKER }),
       // An admin's session, but not one issued to the admin page.
       await clerk.sessionToken({ userId: 'user_root', azp: EXT, claims: { role: 'admin' } }),
-      await clerk.sessionToken({ userId: 'user_root', claims: { role: 'admin' } }),
     ]
     for (const stranger of strangers) {
       const answers = [

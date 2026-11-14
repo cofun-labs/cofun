@@ -61,7 +61,7 @@ Variables in `wrangler.jsonc`:
 | `AI_GATEWAY_ID` | AI Gateway id; leave empty to call Workers AI directly |
 | `MODEL` | The only model clients can use. Its token prices must be listed in `worker/src/pricing.ts`: without them every chat request is refused as `not_configured` |
 | `CLERK_AUTHORIZED_PARTIES` | Allowed origins, comma-separated: `chrome-extension://<extension id>` and the sign-in page |
-| `PRODUCTS` | Which product each extension is, by its origin (the token's `azp`), as a JSON object: `{"chrome-extension://<extension id>": "notico"}`. Model calls from any other caller are recorded as `unknown` |
+| `PRODUCTS` | Which product each extension is, by its origin (the token's `azp`), as a JSON object: `{"chrome-extension://<extension id>": "notico"}`. Model calls from an allowed origin that is not listed (the admin page) are recorded as `unknown` |
 | `CLERK_JWT_KEY` | Clerk JWT public key (PEM). Public; also available at `https://<frontend-api>/.well-known/jwks.json` |
 | `CREDIT_PRICE` | The id of the Stripe price of one unit of credits: 1,000 credits for US$1, one-time. The committed value is the live account's |
 | `CREDIT_PACKS` | The packs on sale, as quantities of `CREDIT_PRICE`: `[1, 5, 20, 100]` sells US$1, 5, 20, and 100 packs. A pack's credits are its quantity × 1000. Changing the packs on sale changes only this |
