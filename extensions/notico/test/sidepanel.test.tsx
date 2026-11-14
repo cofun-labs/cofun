@@ -713,6 +713,8 @@ describe('sessions', () => {
     await ask(user, 'What is on the roadmap?')
     await screen.findByText('Three milestones.')
     await answered()
+    // The first title request has failed before the title model is scripted for the second session.
+    await waitFor(() => expect(browser.titles.calls).toHaveLength(1))
     vi.setSystemTime(new Date(START.getTime() + 60_000))
 
     // It answers with more than a title.
