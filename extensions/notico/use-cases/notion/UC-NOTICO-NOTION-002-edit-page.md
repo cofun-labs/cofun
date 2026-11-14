@@ -33,6 +33,7 @@ Key constraints:
 | UC-NOTICO-NOTION-002-S15 | P1 | ✅ | Given a piece that can hold nested content; when the AI inserts content inside it; then the content is nested in that piece, before what it already held. |
 | UC-NOTICO-NOTION-002-S16 | P1 | ✅ | Given a table the AI has read; when it rewrites the table with one cell changed and a row added; then that cell changes and the row is added, and the rest of the table stays as it was. |
 | UC-NOTICO-NOTION-002-S18 | P1 | ✅ | Given an edit Notion doesn't answer (no reply comes, or a server error); then nothing is tried again, the question stops, and the user is told the edit may or may not have been made and to check the page. |
+| UC-NOTICO-NOTION-002-S19 | P0 | ✅ | Given an edit of several changes, one of which can't be made (a piece changed since the AI read the page); when the AI makes it; then none of its changes is made, and the AI is told why. |
 | UC-NOTICO-NOTION-002-S13 | P2 | ✅ | Given an edit Notion saved; when Notion then turns away the AI's next request; then the question stops, and the user is told the edit may already have been made and to check the page before asking again. |
 
 ### ai-e2e

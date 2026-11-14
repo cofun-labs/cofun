@@ -21,6 +21,7 @@ Key constraints:
 | UC-NOTICO-PANEL-001-S04 | P1 | ✅ | Given the side panel open on a tab that is not a Notion page; when the AI tries to read or change Notion; then nothing is asked of Notion, and the AI is told to have the user switch to a Notion page. |
 | UC-NOTICO-PANEL-001-S05 | P1 | ✅ | Given the side panel open on a tab on another site; when the AI looks up the current tab; then it gets that tab's address and title, and nothing else of the site. |
 | UC-NOTICO-PANEL-001-S06 | P1 | ✅ | Given the side panel open on a Notion page; when the AI looks up the current tab; then it gets that tab's address and title. |
+| UC-NOTICO-PANEL-001-S10 | P0 | ✅ | Given another Notion page open in a tab in the background; when the AI reads "this page" with a Notion page in the current tab, and then with another site in the current tab; then the first reads the current tab's page, in that tab, and the second asks nothing of Notion in any tab and tells the AI to have the user switch to a Notion page. |
 
 ### ai-e2e
 

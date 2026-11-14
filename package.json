@@ -14,6 +14,7 @@
     "test": "pnpm -r test",
     "e2e": "pnpm --silent --filter notico-e2e e2e",
     "smoke": "pnpm build && pnpm --silent --filter cofun-smoke smoke",
+    "media": "pnpm --silent --filter cofun-scripts media",
     "icons": "pnpm --silent --filter cofun-smoke icons",
     "check": "pnpm lint && pnpm knip && pnpm format:check && pnpm use-cases && pnpm typecheck && pnpm build && pnpm test",
     "prepare": "lefthook install"
