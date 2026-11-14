@@ -34,4 +34,4 @@ Key constraints:
 
 | ID | Priority | Status | Scenario |
 | --- | --- | --- | --- |
-| UC-CHAT-004-S09 | P1 | 🚧 | Given the side panel on a real Notion page in Chrome, with another Notion page open in a tab; when the user adds that page with `@`, adds a page found by the workspace search, and asks to compare them; then the AI reads the pages the question carries and answers about them, and the reply's details show only the Notion requests the agent made. |
+| UC-CHAT-004-S09 | P1 | ✅ | Given the side panel on a real Notion page in Chrome, with another Notion page open in a tab; when the user adds that page with `@`, adds a page found by the workspace search, and asks to compare them; then the AI reads the pages the question carries and answers about them, and the reply's details show only the Notion requests the agent made. |
