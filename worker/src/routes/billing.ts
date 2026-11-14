@@ -6,9 +6,24 @@ import { reportPurchase } from '../analytics'
 import { billingPage } from '../billing-page'
 import { CREDITS_PER_UNIT, handleEvent, offerOf, type Offer } from '../billing'
 import { stripeOverHttp, verifiedEvent, type StripeApi } from '../stripe'
-import { HttpError, badRequest, errorSummary, parse, part, type App, type Deps, type Env } from '../http'
+import {
+  HttpError,
+  MAX_SMALL_BODY_BYTES,
+  badRequest,
+  errorSummary,
+  parse,
+  part,
+  readJson,
+  readText,
+  type App,
+  type Deps,
+  type Env,
+} from '../http'
 
-/** The largest event the Stripe webhook reads. Stripe's events about a Checkout Session or a charge are a few kB. */
+/**
+ * The largest event the Stripe webhook reads. Stripe's events about a Checkout Session or a charge
+ * are a few kB; this is far above them, and bounds what an unsigned request can make the worker read.
+ */
 const MAX_EVENT_BYTES = 256 * 1024
 
 /** Stripe's API: the one tests pass, or Stripe's own with the secret key; none without a key. */
@@ -31,10 +46,8 @@ export function stripeRoutes({ now, logError, logBilling }: Deps): App {
   routes.post('/stripe/webhook', async (c) => {
     const secret = c.env.STRIPE_WEBHOOK_SECRET
     if (!secret) throw new HttpError(503, 'not_configured', 'STRIPE_WEBHOOK_SECRET is not set')
-    const length = Number(c.req.header('content-length') ?? 0)
-    if (length > MAX_EVENT_BYTES) throw new HttpError(413, 'too_large', 'event too large')
-    const payload = await c.req.text()
-    if (payload.length > MAX_EVENT_BYTES) throw new HttpError(413, 'too_large', 'event too large')
+    // The text of the body's bytes, as Stripe signed them.
+    const payload = await readText(c, MAX_EVENT_BYTES)
     const event = await verifiedEvent(payload, c.req.header('stripe-signature'), secret, now().getTime())
     if (event === undefined) throw new HttpError(400, 'bad_signature', 'not signed by Stripe')
     // Granting a purchase reads its line items from Stripe, so the webhook needs Stripe's API. It does
@@ -96,7 +109,7 @@ export function billingRoutes({ logError }: Deps): App {
     const { offer, stripe } = billing(c.env)
     const { quantity } = parse(
       part(z.object({ quantity: z.int() }), 'body must be {"quantity": <a pack\'s quantity>}'),
-      await c.req.json().catch(() => undefined),
+      await readJson(c, MAX_SMALL_BODY_BYTES),
     )
     if (!offer.quantities.includes(quantity)) {
       throw badRequest(`quantity must be one of the packs on sale: ${offer.quantities.join(', ')}`)

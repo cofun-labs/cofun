@@ -9,10 +9,12 @@ import {
   DAY_MS,
   HttpError,
   MAX_ID_CHARS,
+  MAX_SMALL_BODY_BYTES,
   WholeNumber,
   errorSummary,
   parse,
   part,
+  readJson,
   type App,
   type Ctx,
   type Deps,
@@ -147,7 +149,7 @@ export function adminRoutes({ now, logError, logAdmin }: Deps): App {
 
   routes.post('/accounts/:userId/grants', async (c) => {
     const userId = parse(UserId, c.req.param('userId'))
-    const { credits, days } = parse(GrantBody, await c.req.json().catch(() => undefined))
+    const { credits, days } = parse(GrantBody, await readJson(c, MAX_SMALL_BODY_BYTES))
     const at = now().getTime()
     const grant = { amount: credits * MICRO_CREDITS, expiresAt: at + days * DAY_MS, by: c.get('userId') }
     // A call that fails may still have written the grant, and granting again would give it twice:
