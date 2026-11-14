@@ -68,6 +68,8 @@ The agent loop and its tools run in the side panel. The worker only checks who i
 
 The panel is open on every tab, but the tools work on the current tab only: the active tab of the panel's window, looked up again for each question and each tool call, since the user can switch tabs at any time. Each question tells the model whether that tab is a Notion page (and which), and nothing else about a tab on another site. The Notion tools are offered everywhere; when the current tab is not on Notion they fail with `no_notion_tab`, which tells the model to send the user to a Notion page, and they never use a Notion page open in another tab instead. `get_current_tab` gives the model the current tab's URL and title on any site when a question needs them; no tool reads another site's content.
 
+The page a question goes with is shown at the top of the composer (`Pages.tsx`), read from the tab as Chrome reports it (`chrome.tabs` events, no Notion request), so the question carries what the user saw. The user can take it off; the question's note then names no page, and `carryOpenPage` (`src/tools.ts`) makes every tool that would default to the open page (reading it, its comments, its database or selection, and `get_current_tab`) refuse for that question, so the model asks or searches instead. The pages a question went with are saved with it in the session and shown in its bubble.
+
 | Area | Choice | Why |
 |---|---|---|
 | Extension | Chrome MV3 + [Side Panel API](https://developer.chrome.com/docs/extensions/reference/api/sidePanel) | Sits next to the page without covering Notion. One panel per window, on every tab (the manifest's `side_panel.default_path`), so the conversation stays as the user switches tabs |
@@ -124,6 +126,7 @@ extensions/notico/        Notico, the extension for Notion
   src/sidepanel/          React UI (main.tsx: sign-in, Chat.tsx: chat, Sessions.tsx: saved sessions,
                           ToolCall.tsx: one tool call and its changes, Header.tsx: the top bar,
                           Markdown.tsx: a reply's text as formatted Markdown,
+                          Pages.tsx: the pages a question goes with, in the composer and its bubble,
                           Account.tsx: the avatar and its menu, Settings.tsx: the settings page,
                           History.tsx: the history of the user's credits,
                           Model.tsx: the model menu by the composer, and the settings page's choice

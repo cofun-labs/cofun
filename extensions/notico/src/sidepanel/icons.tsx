@@ -32,6 +32,12 @@ const SHAPES = {
   back: <path d="M9.5 3.5L5 8l4.5 4.5" />,
   chevron: <path d="M4.5 10l3.5-3.5 3.5 3.5" />,
   close: <path d="M4.5 4.5l7 7M11.5 4.5l-7 7" />,
+  page: (
+    <>
+      <path d="M4.5 2.5h4.8L12 5.2v8.3H4.5z" />
+      <path d="M9 2.5v3h3M6.5 8.5h3.5M6.5 10.8h3.5" />
+    </>
+  ),
   search: (
     <>
       <circle cx="7" cy="7" r="4.5" />

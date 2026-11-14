@@ -98,20 +98,57 @@ async function currentTab(): Promise<{ title: string; url: string } | undefined>
  * The title and URL of the Notion page open in the current tab, if one is. Other sites are never
  * reported here, so their URLs and titles reach the model only through get_current_tab.
  */
-export async function currentNotionPage(): Promise<{ title: string; url: string } | undefined> {
+export async function currentNotionPage(): Promise<OpenPage | undefined> {
   const tab = await currentTab()
   if (!tab || !isNotion(tab.url)) return undefined
   // Drop a trailing " | Notion" if the tab title has one; the model does not need it.
   return { title: tab.title.replace(/\s+\|\s+Notion$/, ''), url: tab.url }
 }
 
+/** A Notion page a question carries: its title and URL, as the tab showed them. */
+export interface OpenPage {
+  title: string
+  url: string
+}
+
 /**
- * Whether the current tab is a Notion page, and which, told to the model with each question; the
- * user can switch tabs between them. A tab on another site is only said not to be Notion.
+ * Whether the tools of the question being asked may use the page open in the current tab when a
+ * call names none. False once the user took that page off the question: then such a call is refused,
+ * so a page the user left out is never read in its place.
  */
-export async function openPageNote(): Promise<string> {
-  const page = await currentNotionPage()
+let openPageAttached = true
+
+const LEFT_OUT =
+  'No page is attached to this question: the user took the page open in the current tab off it, so that page ' +
+  "can't be used. Ask the user which page they mean, or search for it, and give it to this tool."
+
+/** Refuses a call that names no page while the question carries none; see `openPageAttached`. */
+function needsAttachedPage(): void {
+  if (!openPageAttached) throw new Error(LEFT_OUT)
+}
+
+/**
+ * Sets up the next question from what its composer showed: `page`, the Notion page open in the
+ * current tab (if one is), and whether the user removed it from the question. Returns the note the
+ * model is told with the question: which page is open, that the user left it out, or that the
+ * current tab is not a Notion page. Until the next question, its tools follow the same choice.
+ */
+export function carryOpenPage(page: OpenPage | undefined, removed: boolean): string {
+  openPageAttached = !(page && removed)
   if (!page) return '[The current tab is not a Notion page.]'
+  if (removed)
+    return (
+      '[No Notion page is attached to this question: the user took the page open in the current tab off it. ' +
+      'Do not use that page; if the question needs a page, ask the user which one, or search for it.]'
+    )
+  return openPageNote(page)
+}
+
+/**
+ * Names the page a question carries, for the model. A tab on another site is never named: such a
+ * tab is only said not to be Notion.
+ */
+function openPageNote(page: OpenPage): string {
   // The page's author picks its title, and a shared link its query: keep both from closing the note
   // and faking another one.
   const title = clip(page.title.replace(/[[\]]/g, ''), TITLE_CHARS)
@@ -265,6 +302,7 @@ export const readPage = defineTool({
   run: async ({ page, part = 1 }) => {
     const since = generation
     const pageText = filled(page)
+    if (pageText === undefined) needsAttachedPage()
     const tab = await activeNotionTab()
     const id = pageText === undefined ? tab.pageId : pageArg(pageText)
     if (!id) {
@@ -550,6 +588,7 @@ export const queryDatabase = defineTool({
   args: QUERY_ARGS,
   run: async ({ database, filter, sort: sortBy, part = 1 }) => {
     const given = filled(database)
+    if (!given) needsAttachedPage()
     const tab = await activeNotionTab()
     const id = given ? pageArg(given) : tab.pageId
     if (given && !id) throw new Error(`Not a Notion database URL or id: ${given}`)
@@ -1826,6 +1865,7 @@ export const updateDatabaseSchema = defineTool({
       schemaRefusal(err)
     }
     const given = filled(args.database)
+    if (!given) needsAttachedPage()
     const tab = await activeNotionTab()
     const id = given ? pageArg(given) : tab.pageId
     if (given && !id) throw new Error(`Not a Notion database URL or id: ${given}`)
@@ -2376,6 +2416,7 @@ export const getSelection = defineTool({
   describe: () => ({ verb: READ, what: 'the selection' }),
   args: z.strictObject({}),
   run: async () => {
+    needsAttachedPage()
     const tab = await activeNotionTab()
     if (!tab.pageId) throw new Error('The Notion tab does not show a page.')
     const selection = await selectionIn(tab.tabId)
@@ -2675,6 +2716,7 @@ export const readComments = defineTool({
     part: partArg('Which part of many comments to read, starting at 1.'),
   }),
   run: async ({ page, part = 1 }) => {
+    if (filled(page) === undefined) needsAttachedPage()
     const tab = await activeNotionTab()
     const id = commentsPage(tab, filled(page))
     const loaded = await tab.client.loadPage(id)
@@ -2849,6 +2891,7 @@ const getCurrentTab = defineTool({
   describe: () => ({ verb: LOOK, what: 'the current tab' }),
   args: z.strictObject({}),
   run: async () => {
+    needsAttachedPage()
     const tab = await currentTab()
     if (!tab) throw new Error('Could not tell which tab is the current one.')
     return { title: clip(tab.title, TITLE_CHARS), url: clip(tab.url, TAB_URL_CHARS) }

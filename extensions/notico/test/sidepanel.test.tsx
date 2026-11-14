@@ -2,7 +2,7 @@
 // only type, click, and read what is on screen. Besides the screen they look at the edges alone:
 // what the model was sent, and what Notion was asked to do.
 import '@testing-library/jest-dom/vitest'
-import { screen, waitFor, within } from '@testing-library/react'
+import { act, screen, waitFor, within } from '@testing-library/react'
 import userEvent, { type UserEvent } from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { FakeNotionTab, FakeWorkspace, PAGE, PAGE_URL, SPACE, pageTab } from './notion-tab'
@@ -20,6 +20,8 @@ async function openPanel(tab: FakeNotionTab = pageTab()) {
 const composer = () => screen.getByRole('textbox', { name: 'Message' })
 /** The conversation, without the header above it, which also shows the first question. */
 const conversation = () => within(screen.getByRole('main'))
+/** The session list, while it is open. */
+const sessionList = () => within(screen.getByRole('dialog', { name: 'Sessions' }))
 
 async function ask(user: UserEvent, question: string) {
   await user.type(composer(), question)
@@ -217,7 +219,8 @@ describe('a formatted reply', () => {
     expect(screen.getByText('eggs', { selector: 'code' })).toBeVisible()
     expect(screen.getByText('today', { selector: 'em' })).toBeVisible()
     expect(screen.getByRole('separator')).toBeInTheDocument()
-    const lists = screen.getAllByRole('list')
+    // The reply's own lists; the question's list of pages has a name.
+    const lists = screen.getAllByRole('list', { name: '' })
     expect(within(lists[0]).getByText('whole')).toBeVisible()
     expect(screen.getByRole('checkbox', { name: '' })).toBeChecked()
     expect(screen.getByText('Buy early.').closest('blockquote')).not.toBeNull()
@@ -407,8 +410,9 @@ describe('on a tab that is not Notion', () => {
     await ask(user, 'What is this page?')
     await screen.findByText('It is a fixture.')
     await answered()
-    browser.tab.url = INBOX
-    browser.tab.title = 'Inbox (3)'
+    act(() => browser.tab.switchTab(INBOX, 'Inbox (3)'))
+    // No page to send on another site.
+    await waitFor(() => expect(screen.queryByRole('list', { name: 'Pages to send' })).not.toBeInTheDocument())
     await ask(user, 'And now?')
 
     expect(await screen.findByText('You left Notion.')).toBeVisible()
@@ -423,6 +427,149 @@ describe('on a tab that is not Notion', () => {
       `[The Notion page open in the current tab: "Fixture page", ${PAGE_URL}]\n\nWhat is this page?`,
       '[The current tab is not a Notion page.]\n\nAnd now?',
     ])
+  })
+})
+
+describe('the page a question goes with', () => {
+  const ROADMAP = '2b2b2b2b-0000-4000-8000-000000000020'
+  const ROADMAP_URL = `https://app.notion.com/p/Roadmap-${ROADMAP.replace(/-/g, '')}`
+  const INBOX = 'https://mail.example.com/inbox'
+  /** The pages the composer will send the question with, if it shows any. */
+  const toSend = () => screen.queryByRole('list', { name: 'Pages to send' })
+  const sentQuestions = (browser: FakeBrowser) =>
+    browser
+      .sentToModel()
+      .filter((m) => m.role === 'user')
+      .map((m) => m.content)
+  /** The question's bubble in the conversation. */
+  const bubble = (question: string) => conversation().getByText(question).closest('.msg')! as HTMLElement
+
+  it('[UC-AGENT-001-S26] the message box shows the open page, and follows the tab', async () => {
+    const { browser } = await openPanel()
+
+    const shown = await screen.findByRole('list', { name: 'Pages to send' })
+    expect(within(shown).getByText('Fixture page')).toBeVisible()
+    expect(within(shown).getByRole('button', { name: 'Remove Fixture page' })).toBeVisible()
+
+    act(() => browser.tab.navigate(ROADMAP_URL, 'Roadmap | Notion'))
+    expect(await within(toSend()!).findByText('Roadmap')).toBeVisible()
+    expect(within(toSend()!).queryByText('Fixture page')).not.toBeInTheDocument()
+
+    act(() => browser.tab.switchTab(INBOX, 'Inbox'))
+    await waitFor(() => expect(toSend()).not.toBeInTheDocument())
+    expect(screen.queryByText('Inbox')).not.toBeInTheDocument()
+
+    // Only Chrome's word for the tab: nothing was asked of Notion.
+    expect(browser.tab.injections).toEqual([])
+  })
+
+  it('[UC-AGENT-001-S25] a question sent without the open page does not name it, and the agent cannot read it in its place', async () => {
+    const { browser, user } = await openPanel()
+    const change = { action: 'add_property', property: 'Owner', type: 'text' }
+    browser.ai.script.push(
+      {
+        toolCalls: [
+          { name: 'read_page', arguments: '{}' },
+          { name: 'read_comments', arguments: '{}' },
+          { name: 'query_database', arguments: '{}' },
+          { name: 'update_database_schema', arguments: JSON.stringify({ changes: [change] }) },
+          { name: 'get_selection', arguments: '{}' },
+          { name: 'get_current_tab', arguments: '{}' },
+        ],
+      },
+      { reply: 'Which page do you mean?' },
+    )
+
+    await user.click(await screen.findByRole('button', { name: 'Remove Fixture page' }))
+    expect(toSend()).not.toBeInTheDocument()
+    expect(composer()).toHaveFocus()
+    await ask(user, 'Summarize it')
+
+    expect(await screen.findByText('Which page do you mean?')).toBeVisible()
+    await answered()
+    const [question] = sentQuestions(browser)
+    expect(question).toMatch(/^\[No Notion page is attached to this question.*\]\n\nSummarize it$/)
+    // Each call that would have used the open page was refused, before anything was asked of Notion.
+    const results = browser
+      .sentToModel()
+      .filter((m) => m.role === 'tool')
+      .map((m) => m.content)
+    expect(results).toHaveLength(6)
+    for (const result of results) expect(result).toMatch(/No page is attached.*Ask the user which page.*or search/)
+    const everything = JSON.stringify(browser.sentToModel())
+    expect(everything).not.toContain('Fixture page')
+    expect(everything).not.toContain(PAGE.replace(/-/g, ''))
+    expect(browser.tab.sent).toEqual([])
+    expect(browser.tab.injections).toEqual([])
+    // The question went with no page, and says so by showing none.
+    expect(within(bubble('Summarize it')).queryByRole('list', { name: 'Pages sent' })).not.toBeInTheDocument()
+  })
+
+  it('[UC-AGENT-001-S27] a page taken off stays off for the chat until the user goes to another page or starts a new chat', async () => {
+    const { browser, user } = await openPanel()
+    browser.ai.script.push({ reply: 'One.' }, { reply: 'Two.' })
+    const leftOut = /^\[No Notion page is attached to this question/
+
+    await user.click(await screen.findByRole('button', { name: 'Remove Fixture page' }))
+    await ask(user, 'First?')
+    await screen.findByText('One.')
+    await answered()
+    expect(toSend()).not.toBeInTheDocument()
+    await ask(user, 'Second?')
+    await screen.findByText('Two.')
+    await answered()
+    expect(sentQuestions(browser)).toEqual([expect.stringMatching(leftOut), expect.stringMatching(leftOut)])
+
+    // Another page brings its chip, and coming back brings this one's.
+    act(() => browser.tab.navigate(ROADMAP_URL, 'Roadmap'))
+    expect(await screen.findByRole('button', { name: 'Remove Roadmap' })).toBeVisible()
+    act(() => browser.tab.navigate(PAGE_URL, 'Fixture page'))
+    expect(await screen.findByRole('button', { name: 'Remove Fixture page' })).toBeVisible()
+
+    // A new chat does too.
+    await user.click(screen.getByRole('button', { name: 'Remove Fixture page' }))
+    await user.click(screen.getByRole('button', { name: 'New chat' }))
+    expect(await screen.findByRole('button', { name: 'Remove Fixture page' })).toBeVisible()
+    browser.ai.script.push({ reply: 'Three.' })
+    await ask(user, 'Third?')
+    await screen.findByText('Three.')
+    await answered()
+    expect(sentQuestions(browser)).toEqual([
+      `[The Notion page open in the current tab: "Fixture page", ${PAGE_URL}]\n\nThird?`,
+    ])
+  })
+
+  it('[UC-AGENT-001-S28] a question shows the page it went with, also after the session is reopened', async () => {
+    const { browser, user } = await openPanel()
+    browser.ai.script.push({ reply: 'With the page.' }, { reply: 'Without it.' })
+
+    await ask(user, 'With?')
+    await screen.findByText('With the page.')
+    await answered()
+    await user.click(screen.getByRole('button', { name: 'Remove Fixture page' }))
+    await ask(user, 'Without?')
+    await screen.findByText('Without it.')
+    await answered()
+
+    const shows = (question: string) => {
+      const list = within(bubble(question)).queryByRole('list', { name: 'Pages sent' })
+      return list
+        ? within(list)
+            .getAllByRole('listitem')
+            .map((li) => li.textContent)
+        : []
+    }
+    expect(shows('With?')).toEqual(['Fixture page'])
+    expect(shows('Without?')).toEqual([])
+
+    // Reopened in a new panel, on another site.
+    browser.tab.url = INBOX
+    await browser.openPanel()
+    await user.click(screen.getByRole('button', { name: 'Sessions' }))
+    await user.click(await sessionList().findByRole('button', { name: /^With\?/ }))
+    await conversation().findByText('With?')
+    expect(shows('With?')).toEqual(['Fixture page'])
+    expect(shows('Without?')).toEqual([])
   })
 })
 
@@ -685,7 +832,9 @@ describe('sessions', () => {
     expect(composer()).toHaveValue('')
 
     await user.click(screen.getByRole('button', { name: 'Sessions' }))
-    const sessions = await screen.findAllByRole('button', { name: /Fixture page/ })
+    const sessions = await within(await screen.findByRole('dialog', { name: 'Sessions' })).findAllByRole('button', {
+      name: /Fixture page/,
+    })
     // Most recently used first, each with its first question and the page it started on.
     expect(sessions.map((s) => s.textContent)).toEqual([
       expect.stringMatching(/^Who owns the launch\?Fixture page/),
@@ -712,7 +861,10 @@ describe('sessions', () => {
     await answered()
 
     await user.click(screen.getByRole('button', { name: 'Sessions' }))
-    const rows = () => screen.queryAllByRole('button', { name: /Fixture page/ }).map((b) => b.textContent)
+    const rows = () =>
+      sessionList()
+        .queryAllByRole('button', { name: /Fixture page/ })
+        .map((b) => b.textContent)
     await waitFor(() => expect(rows()).toEqual([expect.stringMatching(/^Roadmap milestones overviewFixture page/)]))
     // One request, without tools, with the first question and the start of the reply; it went
     // through the worker, which charges it like any other.
@@ -773,7 +925,10 @@ describe('sessions', () => {
 
     await waitFor(() => expect(browser.titles.calls).toHaveLength(2))
     await user.click(screen.getByRole('button', { name: 'Sessions' }))
-    const rows = () => screen.queryAllByRole('button', { name: /Fixture page/ }).map((b) => b.textContent)
+    const rows = () =>
+      sessionList()
+        .queryAllByRole('button', { name: /Fixture page/ })
+        .map((b) => b.textContent)
     await waitFor(() =>
       expect(rows()).toEqual([
         expect.stringMatching(/^Who owns the launch\?Fixture page/),
@@ -860,8 +1015,13 @@ describe('sessions', () => {
     await answered()
 
     await user.click(screen.getByRole('button', { name: 'Sessions' }))
-    const rows = () => screen.queryAllByRole('button', { name: /Fixture page/ }).map((b) => b.textContent)
-    await screen.findAllByRole('button', { name: /Fixture page/ })
+    const rows = () =>
+      sessionList()
+        .queryAllByRole('button', { name: /Fixture page/ })
+        .map((b) => b.textContent)
+    await within(await screen.findByRole('dialog', { name: 'Sessions' })).findAllByRole('button', {
+      name: /Fixture page/,
+    })
     // Only search by title: there is no other filter.
     expect(screen.queryByRole('combobox')).not.toBeInTheDocument()
     await user.type(screen.getByRole('searchbox', { name: 'Search sessions' }), 'ROADMAP')
