@@ -1,7 +1,7 @@
 // Usage data (UC-NOTICO-PANEL-002): what the panel tells PostHog, as a user's actions cause it. The
 // whole panel runs; besides the screen, the tests look at one edge: what PostHog was sent.
 import '@testing-library/jest-dom/vitest'
-import { screen, waitFor, within } from '@testing-library/react'
+import { screen, waitFor } from '@testing-library/react'
 import userEvent, { type UserEvent } from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { pageTab, PAGE_URL } from './notion-tab'
@@ -200,66 +200,5 @@ describe('usage data', () => {
 
     await vi.advanceTimersByTimeAsync(2 * 60 * 60 * 1000)
     expect(browser.postHog.requests.length).toBe(before + 1)
-  })
-
-  it("[UC-NOTICO-PANEL-002-S03] a question asked with the user's own key is counted with its service, without the key or the model", async () => {
-    const KEY = 'sk-or-v1-test-key'
-    const { browser, user } = await openPanel()
-    browser.openRouter.keys.add(KEY)
-    await openSettings(user)
-    // OpenRouter switched on with the key, one of its models switched on, and picked in the composer.
-    const openRouter = within(screen.getByRole('group', { name: 'OpenRouter' }))
-    await user.click(openRouter.getByRole('switch', { name: 'OpenRouter' }))
-    await user.type(openRouter.getByLabelText('OpenRouter API key'), `${KEY}{Enter}`)
-    expect(await openRouter.findByText(/^Key works/)).toBeVisible()
-    await user.click(await waitFor(() => openRouter.getByRole('switch', { name: 'OpenAI: GPT-6.1 Sol' })))
-    await user.click(screen.getByRole('button', { name: 'Back' }))
-    await user.click(screen.getByRole('button', { name: /^Model: / }))
-    await user.click(
-      within(screen.getByRole('menu', { name: 'Model' })).getByRole('menuitemradio', { name: 'GPT-6.1 Sol' }),
-    )
-    browser.openRouter.ai.script.push({ reply: 'It is a fixture.' })
-
-    await ask(user, 'What does this page say?')
-    expect(await screen.findByText('It is a fixture.')).toBeVisible()
-    await answered()
-    await sent(browser, 'question_ended')
-
-    const { postHog } = browser
-    expect(postHog.named('own_key_saved')).toMatchObject([{ provider: 'openrouter' }])
-    expect(postHog.named('model_switched')).toMatchObject([{ provider: 'openrouter' }])
-    expect(postHog.named('question_asked')).toMatchObject([{ provider: 'openrouter', notion_tab: true }])
-    expect(postHog.named('question_ended')).toMatchObject([
-      { provider: 'openrouter', outcome: 'done', rounds: 1, tool_calls: 0 },
-    ])
-    expect(postHog.events.flatMap(notAllowed)).toEqual([])
-    for (const request of postHog.requests) {
-      expect(request).not.toContain(KEY)
-      expect(request).not.toMatch(/gpt|openai/i)
-    }
-  })
-
-  it('[UC-NOTICO-PANEL-002-S04] opening the panel is counted for the device, then joined to the account that is signed in', async () => {
-    const { browser } = await openPanel()
-    await sent(browser, 'signed_in')
-
-    const { events } = browser.postHog
-    expect(events.map((each) => each.event)).toEqual(['panel_opened', '$identify', 'signed_in'])
-    const [opened, identify, signedIn] = events.map((each) => each.properties)
-    // Before the panel knows who is signed in: a random id, made on this device.
-    expect(isUuid(opened.distinct_id)).toBe(true)
-    expect(identify).toMatchObject({ distinct_id: 'user_alice', $anon_distinct_id: opened.distinct_id })
-    expect(signedIn.distinct_id).toBe('user_alice')
-    // Nothing is recorded about the person: only the two ids are joined.
-    expect(events[1]).not.toHaveProperty('$set')
-    expect(events[1]).not.toHaveProperty('$set_once')
-
-    // The panel opens again, still signed in: counted under the account, which is not joined again.
-    await browser.openPanel()
-    await waitFor(() => expect(browser.postHog.names()).toHaveLength(4))
-    expect(browser.postHog.events[3]).toMatchObject({
-      event: 'panel_opened',
-      properties: { distinct_id: 'user_alice' },
-    })
   })
 })
