@@ -18,6 +18,7 @@ import { createPage, editPage, updatePages } from './write'
 export { carryPages, currentNotionPage, openNotionPages, type OpenPage } from './current'
 export { findPages, type FoundPage } from './find'
 export { forgetReads } from './memory'
+export { OPEN_A_PAGE, chatTitle, replyTitle, savePage, type SavedTurn } from './save'
 
 export const TOOLS: Tool[] = [
   readPage,
@@ -46,7 +47,11 @@ export function describeCall(name: string, args: unknown, result?: string): Acti
 }
 
 /** What a question's calls that worked read and changed: the distinct pages and databases of each. */
-export function touchedBy(calls: { name: string; args: unknown; result: string }[]): { read: number; changed: number } {
+export function touchedBy(calls: { name: string; args: unknown; result: string }[]): {
+  read: number
+  /** The ids of the pages and databases changed, each once. */
+  changed: string[]
+} {
   const read = new Set<string>()
   const changed = new Set<string>()
   for (const call of calls) {
@@ -54,7 +59,7 @@ export function touchedBy(calls: { name: string; args: unknown; result: string }
     for (const id of t.read ?? []) read.add(id)
     for (const id of t.changed ?? []) changed.add(id)
   }
-  return { read: read.size, changed: changed.size }
+  return { read: read.size, changed: [...changed] }
 }
 
 /**

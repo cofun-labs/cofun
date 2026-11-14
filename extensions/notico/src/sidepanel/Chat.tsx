@@ -1,5 +1,15 @@
 import { useAuth } from '@clerk/chrome-extension'
-import { memo, useEffect, useId, useLayoutEffect, useRef, useState, type FormEvent, type KeyboardEvent } from 'react'
+import {
+  memo,
+  useCallback,
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type FormEvent,
+  type KeyboardEvent,
+} from 'react'
 import {
   CopilotAgent,
   type AgentUpdate,
@@ -12,9 +22,23 @@ import {
 import type { CreditsState } from '../credits'
 import { loadMode, saveMode, watchMode, type Mode } from '../mode'
 import { HOSTED_ONLY, loadModelSettings, saveModelSettings, watchModelSettings, type ModelSettings } from '../models'
+import { pageIdFromUrl } from '../notion/hosts'
 import { countNotionRequests } from '../notion/tab'
 import { SessionStore, titleFor, type Session } from '../sessions'
-import { carryPages, currentNotionPage, forgetReads, pagesIn, TOOLS, touchedBy, type OpenPage } from '../tools'
+import {
+  carryPages,
+  currentNotionPage,
+  forgetReads,
+  OPEN_A_PAGE,
+  pagesIn,
+  chatTitle,
+  replyTitle,
+  savePage,
+  TOOLS,
+  touchedBy,
+  type OpenPage,
+  type SavedTurn,
+} from '../tools'
 import { AccountMenu } from './Account'
 import { Header } from './Header'
 import { Icon, Mark } from './icons'
@@ -23,6 +47,7 @@ import { useMenu } from './menu'
 import { HOSTED, ModelMenu } from './Model'
 import { AddMenu, pageKey, usePagePicker, type SearchStop } from './PagePicker'
 import { ComposerPages, SentPages, type Chip } from './Pages'
+import { SaveButton, SaveToast, useSaves, type SaveState } from './Save'
 import { Sessions, type OpenResult } from './Sessions'
 import { Settings } from './Settings'
 import { ToolCall, type ShownTool } from './ToolCall'
@@ -710,6 +735,8 @@ export function Chat({ userId }: { userId: string }) {
   /** Switches to a new session, or to a saved one; a reply still coming in is stopped. */
   function switchTo(session?: Session) {
     chatId.current++
+    // A failed save's message belongs to the chat it was for.
+    setSaveFailure(undefined)
     stopped.current++
     declineAll()
     // Another conversation: the agent must read pages again before it edits them.
@@ -814,6 +841,44 @@ export function Chat({ userId }: { userId: string }) {
       ?.content.replace(/\s+/g, ' ')
       .trim()
 
+  // Saving goes under the page open in the current tab as the user saves (see savePage).
+  const saveBlocked = tabPage && pageIdFromUrl(tabPage.url) ? undefined : OPEN_A_PAGE
+
+  // Saves of a reply, or of the whole chat, by the chat they were started in (`chatId`) and the
+  // reply's place in it: here, not in the reply's row, which shows the next chat's reply at the
+  // same place once the user switches. The chat's save is also by how many questions it held, so
+  // once another question is answered the chat can be saved again, with it.
+  // Why the latest save failed, shown in a toast; a new failure shows anew, even with the same words.
+  const [saveFailure, setSaveFailure] = useState<{ message: string; key: number }>()
+  const [saves, startSave] = useSaves((message) => setSaveFailure((was) => ({ message, key: (was?.key ?? 0) + 1 })))
+  // The chat as a save takes it: without a reply still coming in.
+  const ended = busy
+    ? messages.slice(
+        0,
+        messages.findLastIndex((m) => m.role === 'user'),
+      )
+    : messages
+  const asked = ended.filter((m) => m.role === 'user').length
+  const saveKey = (what: number | 'chat') => `${chatId.current}:${what === 'chat' ? `chat:${asked}` : what}`
+
+  /**
+   * Saves the reply at `what` as a page titled with the chat's title and its question, or with
+   * 'chat', the chat so far as a page titled with the chat's title. A reply still coming in is left out.
+   */
+  const saveRef = useRef<(what: number | 'chat') => void>(undefined)
+  saveRef.current = (what) => {
+    if (what === 'chat') {
+      const turns = shownTurns(ended)
+      startSave(saveKey('chat'), () => savePage(chatTitle(headerTitle ?? ''), turns))
+      return
+    }
+    const turn = shownTurns(messages.slice(0, what + 1)).at(-1)
+    if (!turn) return
+    startSave(saveKey(what), () => savePage(replyTitle(headerTitle ?? '', turn.question), [turn]))
+  }
+  // One function for the panel's life, so a reply that hasn't changed is not drawn again.
+  const saveToNotion = useCallback((what: number | 'chat') => saveRef.current!(what), [])
+
   /** Closes the session list and puts the focus back on the button that opened it. */
   function closeList() {
     setView('chat')
@@ -823,6 +888,17 @@ export function Chat({ userId }: { userId: string }) {
   return (
     <>
       <Header title={headerTitle || <span className="untitled">New chat</span>}>
+        {/* Not while the list or settings cover the chat: what it saves, and its toast, are behind them. */}
+        {asked > 0 && !covered && (
+          <SaveButton
+            what="chat"
+            className="icon-button"
+            tipBelow
+            state={saves[saveKey('chat')]}
+            blocked={saveBlocked}
+            onSave={() => saveToNotion('chat')}
+          />
+        )}
         <button
           ref={listButtonRef}
           className="icon-button"
@@ -922,7 +998,14 @@ export function Chat({ userId }: { userId: string }) {
                       This chat was also continued in another window, so this one is saved as a separate chat.
                     </div>
                   )}
-                  <ReplyFoot reply={m} ended={!(busy && i === messages.length - 1)} />
+                  <ReplyFoot
+                    reply={m}
+                    ended={!(busy && i === messages.length - 1)}
+                    index={i}
+                    saveBlocked={saveBlocked}
+                    replySave={saves[saveKey(i)]}
+                    onSave={saveToNotion}
+                  />
                 </div>
               </div>
             ),
@@ -931,6 +1014,18 @@ export function Chat({ userId }: { userId: string }) {
 
         {/* One box: the question on top, and below it, inside the box, which model answers and the send button. */}
         <form id="composer" onSubmit={onSubmit} inert={covered}>
+          {/* Over the chat, just above the box (which is what it is placed against). */}
+          {saveFailure && (
+            <SaveToast
+              key={saveFailure.key}
+              message={saveFailure.message}
+              onClose={(focused) => {
+                setSaveFailure(undefined)
+                // The focus was on the toast, which goes: it moves to the message box, not the page.
+                if (focused) inputRef.current?.focus()
+              }}
+            />
+          )}
           {pages.element}
           <ComposerPages chips={chips} onRemove={removeChip} />
           <textarea
@@ -1102,18 +1197,55 @@ type Reply = Extract<Shown, { role: 'assistant' }>
  * and a button for its details. Memoized: a reply that hasn't changed keeps its object, so its calls
  * aren't read again on every render.
  */
-const ReplyFoot = memo(function ReplyFoot({ reply, ended }: { reply: Reply; ended: boolean }) {
+const ReplyFoot = memo(function ReplyFoot({
+  reply,
+  ended,
+  index,
+  saveBlocked,
+  replySave,
+  onSave,
+}: {
+  reply: Reply
+  ended: boolean
+  index: number
+  saveBlocked?: string
+  /** How saving this reply to Notion is going. */
+  replySave?: SaveState
+  onSave: (what: number) => void
+}) {
   if (!ended) return null
   const text = replyMarkdown(reply.parts)
+  // What it touched in Notion leads its details, in the "…", so the row stays quiet.
   const summary = touched(reply)
-  const details = detailRows(reply.details)
+  const details = [...(summary ? [{ text: summary }] : []), ...detailRows(reply.details)]
+  const model = reply.details?.model
   const cost = reply.details?.cost
-  if (!text && !summary && !details.length && !cost) return null
+  if (!text && !details.length && !model && !cost) return null
+  const modelName = model && (model.service === 'hosted' ? HOSTED : model.name)
   return (
     <div className="reply-foot">
       {text && <CopyButton text={text} />}
+      {text && (
+        <SaveButton
+          what="reply"
+          className="reply-action"
+          state={replySave}
+          blocked={saveBlocked}
+          onSave={() => onSave(index)}
+        />
+      )}
       {cost && <CostNote cost={cost} />}
-      {summary && <div className="note">{summary}</div>}
+      {modelName && (
+        <span
+          className="note reply-model"
+          role="note"
+          aria-label={`Answered by ${modelName}`}
+          data-tip="The model that answered"
+        >
+          {/* Cut to fit inside: the tooltip is drawn outside the outer span, so that one can't clip. */}
+          <span className="reply-model-name">{modelName}</span>
+        </span>
+      )}
       {details.length > 0 && <ReplyDetails rows={details} />}
     </div>
   )
@@ -1135,7 +1267,7 @@ function CopyButton({ text }: { text: string }) {
         type="button"
         className="reply-action"
         aria-label={label}
-        title={label}
+        data-tip={label}
         onClick={() =>
           navigator.clipboard.writeText(text).then(
             () => setState('copied'),
@@ -1164,9 +1296,9 @@ function CostNote({ cost }: { cost: QuestionCost }) {
   const digits = credits < 1 ? { maximumSignificantDigits: 2 } : { maximumFractionDigits: 1 }
   const shown = credits.toLocaleString('en-US', digits)
   return (
-    <div className="note" title="What this reply cost">
+    <span className="note reply-cost" data-tip="What this reply cost">
       {shown} {shown === '1' ? 'credit' : 'credits'}
-    </div>
+    </span>
   )
 }
 
@@ -1175,18 +1307,39 @@ function CostNote({ cost }: { cost: QuestionCost }) {
  * (only calls that worked). A part that is zero is left out; empty when it touched nothing.
  */
 function touched(reply: Reply): string {
-  const calls = reply.parts.flatMap((p) => (p.type === 'tool' && p.tool.status === 'done' ? [p.tool] : []))
-  const { read, changed } = touchedBy(calls)
-  return [read && `Read ${counted(read, 'page')}`, changed && `Changed ${counted(changed, 'page')}`]
+  const { read, changed } = touchedBy(doneCalls(reply))
+  return [read && `Read ${counted(read, 'page')}`, changed.length && `Changed ${counted(changed.length, 'page')}`]
     .filter(Boolean)
     .join(' · ')
 }
 
-const amount = (n: number) => n.toLocaleString('en-US')
+/** The questions of `shown` with what their replies wrote and touched, as a saved page holds them. */
+function shownTurns(shown: Shown[]): SavedTurn[] {
+  const turns: SavedTurn[] = []
+  for (const m of shown) {
+    if (m.role === 'user') turns.push({ question: m.content, markdown: '', read: 0, changed: [] })
+    else if (turns.length) {
+      const { question } = turns.pop()!
+      turns.push({ question, markdown: replyMarkdown(m.parts), ...touchedBy(doneCalls(m)) })
+    }
+  }
+  return turns
+}
 
-/** A reply's details, one row each, with what is unknown (or none) left out. */
+/** A reply's tool calls that worked. */
+function doneCalls(reply: Reply): ShownTool[] {
+  return reply.parts.flatMap((p) => (p.type === 'tool' && p.tool.status === 'done' ? [p.tool] : []))
+}
+
+/** A count of tokens, short: 196, 12.4k, 1.2M. */
+function amount(n: number): string {
+  const short = (value: number, unit: string) => `${Number(value.toFixed(1))}${unit}`
+  return n < 1000 ? String(n) : n < 999_950 ? short(n / 1000, 'k') : short(n / 1_000_000, 'M')
+}
+
+/** A reply's details, one row each, with what is unknown (or none) left out; the model is shown in its row. */
 function detailRows(details: QuestionDetails = {}): { label?: string; text: string }[] {
-  const { requests, tokens: used, model } = details
+  const { requests, tokens: used } = details
   return [
     ...(requests ? [{ text: `Sent ${counted(requests, 'Notion request')}` }] : []),
     ...(used
@@ -1200,7 +1353,6 @@ function detailRows(details: QuestionDetails = {}): { label?: string; text: stri
           },
         ]
       : []),
-    ...(model ? [{ label: 'Model', text: model.service === 'hosted' ? HOSTED : model.name }] : []),
   ]
 }
 
@@ -1214,7 +1366,7 @@ function ReplyDetails({ rows }: { rows: { label?: string; text: string }[] }) {
         type="button"
         className="reply-action"
         aria-label="Reply details"
-        title="Reply details"
+        data-tip="Reply details"
         aria-expanded={open}
         aria-controls={open ? id : undefined}
         onClick={() => setOpen(!open)}
@@ -1223,12 +1375,14 @@ function ReplyDetails({ rows }: { rows: { label?: string; text: string }[] }) {
       </button>
       {open && (
         <div id={id} className="reply-popover" role="dialog" aria-label="Reply details">
-          {rows.map(({ label, text }) => (
-            <p key={label ?? text}>
-              {label && <span className="detail-label">{label}: </span>}
-              {text}
-            </p>
-          ))}
+          <div className="reply-facts">
+            {rows.map(({ label, text }) => (
+              <p key={label ?? text}>
+                {label && <span className="detail-label">{label}: </span>}
+                {text}
+              </p>
+            ))}
+          </div>
         </div>
       )}
     </div>

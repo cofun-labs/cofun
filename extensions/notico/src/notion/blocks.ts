@@ -464,6 +464,31 @@ export function blocksWithPeople(blocks: NewBlock[], ids: Map<string, string>): 
   }))
 }
 
+/** Blocks with each mention of a person written as their name, `@Name`, so nobody is mentioned or notified. */
+export function blocksWithNames(blocks: NewBlock[]): NewBlock[] {
+  const named = (title: RichText): RichText => {
+    const out: RichText = []
+    for (const run of title) {
+      const name = run[1]?.map(personName).find((n) => n !== undefined)
+      const marks = run[1] ?? []
+      if (name === undefined) push(out, run[0], marks)
+      else
+        push(
+          out,
+          `@${name}`,
+          marks.filter((m) => personName(m) === undefined),
+        )
+    }
+    return out
+  }
+  return blocks.map((b) => ({
+    ...b,
+    title: named(b.title),
+    ...(b.rows ? { rows: b.rows.map((row) => row.map(named)) } : {}),
+    children: blocksWithNames(b.children),
+  }))
+}
+
 function dashed(hex: string): string {
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`
 }

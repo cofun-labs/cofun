@@ -14,7 +14,7 @@ The short version: when you ask a question, the conversation, including the Noti
 
 It never reads the content of other sites or of tabs other than the current one, the URL or title of a tab on another site other than the current one, your browsing history, or what you type outside the side panel.
 
-It also writes to Notion when you ask it to: it edits and creates pages, changes properties, adds comments, and moves pages. These changes are requests to Notion, made as you.
+It also writes to Notion when you ask it to: it edits and creates pages, changes properties, adds comments, and moves pages. When you save a reply or a chat to Notion yourself, it creates a page under the page open in the current tab, holding your questions and the assistant's replies. These changes are requests to Notion, made as you.
 
 ## Where data goes
 
@@ -22,7 +22,7 @@ The extension sends requests to these hosts and no others. The extension's conte
 
 | Host | What is sent | Why |
 |---|---|---|
-| `www.notion.so`, `app.notion.com` | Requests to Notion's own API, sent from inside your Notion tab with that tab's session: reads, searches (the assistant's, and the text you type in the page picker), and the changes you ask for | To read and edit your pages. This is the same service your Notion tab already talks to |
+| `www.notion.so`, `app.notion.com` | Requests to Notion's own API, sent from inside your Notion tab with that tab's session: reads, searches (the assistant's, and the text you type in the page picker), the changes you ask for, and the questions and replies of a chat or a reply you save to Notion | To read and edit your pages. This is the same service your Notion tab already talks to |
 | `api.cofun.cc` (our worker) | Your Clerk session token, and for each question the conversation so far: your messages, the assistant's replies, the tool calls and their results (which contain the Notion content the assistant read), the open Notion page's title and URL, the titles and URLs of the pages you added to a question, the current tab's title and URL on another site if the assistant looked them up, and the assistant's instructions | To get the AI model's reply |
 | `api.cofun.cc` (our worker) | Your Clerk session token, how far your clock is from UTC, in minutes, and, when you look further back in your credit history, the date or the place in the list to go on from (both as part of the request's address) | To show you your own credits, how many you used each day, by the days of your own clock, and their history |
 | `api.cofun.cc` (our worker) | Your Clerk session token, and when you buy credits, which pack you chose | To list the packs of credits on offer, and to start a checkout for the one you chose |
