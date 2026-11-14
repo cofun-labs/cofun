@@ -3,7 +3,7 @@ import { defineTool } from '../tool'
 import { z } from '../zod'
 import { pageLink } from '../notion/hosts'
 import { clip } from '../notion/comments'
-import { PAGE_TYPES, hexId } from '../notion/markdown'
+import { PAGE_TYPES, hexId, titleMarkdown } from '../notion/markdown'
 import { activeNotionTab } from '../notion/tab'
 import { PageLookups, contentOf, lookUpPages, pageTree, runsText, treeLines, type PageTree } from '../notion/tree'
 import type { OpenPage } from './current'
@@ -88,7 +88,7 @@ export const listPages = defineTool({
         budget: { left: LIST_LOOKUPS },
         skip: offset,
       })
-      const title = runsText(root.properties?.title) || 'Untitled'
+      const title = titleMarkdown(records, root.properties?.title) || 'Untitled'
       return [
         `Pages under “${title}” ^${hexId(rootId)}${offset ? `, from entry ${offset}` : ''}:`,
         '',
@@ -282,12 +282,17 @@ export const searchPages = defineTool({
         (database ? names.get(r.id) : runsText(block?.properties?.title)) ||
         (database ? 'Untitled database' : 'Untitled')
       const where = whereFound(plain(r.highlight?.pathText), title)
+      // A page's title, and those in its path, as Markdown, as update_pages takes them; the
+      // highlight's title is only text.
+      const shown = database
+        ? title
+        : titleMarkdown(found.recordMap, block?.properties?.title) || titleMarkdown({}, [[title]])
       const text = plain(r.highlight?.text)
       const edited =
         typeof block?.last_edited_time === 'number' ? new Date(block.last_edited_time).toISOString().slice(0, 10) : ''
       return [
-        `${n + 1}. ${database ? '🗃' : '📄'} ${title} ^${hexId(r.id)}`,
-        ...(where ? [`   In: ${where}`] : []),
+        `${n + 1}. ${database ? '🗃' : '📄'} ${shown} ^${hexId(r.id)}`,
+        ...(where ? [`   In: ${titleMarkdown({}, [[where]])}`] : []),
         ...(edited ? [`   Edited: ${edited}`] : []),
         ...(text ? [`   Match: “${clip(text, 200)}”`] : []),
         `   URL: ${pageLink(tab.url, r.id)}`,

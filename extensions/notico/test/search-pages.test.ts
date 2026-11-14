@@ -130,7 +130,7 @@ describe('search_pages results', () => {
       recordMap: { __version__: 3 },
     })
     const result = await search({ query: 'array' })
-    expect(result).toContain(`1. 📄 Use Array<string> ^${hex(FOUND)}`)
+    expect(result).toContain(`1. 📄 Use Array\\<string> ^${hex(FOUND)}`)
     expect(result).toContain('Match: “a <b> c”')
   })
 
@@ -218,7 +218,7 @@ describe('search_pages, more results', () => {
         },
       })
     const result = await search({ query: 'beta' })
-    expect(result).toContain(`1. 📄 Use <b>bold</b> here ^${hex(FOUND)}`)
+    expect(result).toContain(`1. 📄 Use \\<b>bold\\</b> here ^${hex(FOUND)}`)
     expect(result).toContain('Match: “a beta b plan”')
     expect(result).toContain(`2. 🗃 Q3 / Q4 plan ^${hex(DATABASE)}`)
     // The database's own name is cut from the end of its path, slashes and all.
@@ -362,7 +362,7 @@ describe('search_pages, partial lookups', () => {
         recordMap: { __version__: 3 },
       })
       .install()
-    expect(await search({ query: 'bold' })).toContain(`1. 📄 Use <b>bold</b> here ^${hex(FOUND)}`)
+    expect(await search({ query: 'bold' })).toContain(`1. 📄 Use \\<b>bold\\</b> here ^${hex(FOUND)}`)
   })
 })
 
