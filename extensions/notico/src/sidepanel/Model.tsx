@@ -772,7 +772,7 @@ function ModelRow({
 }
 
 /** An on/off switch. */
-function Switch({
+export function Switch({
   label,
   checked,
   disabled,

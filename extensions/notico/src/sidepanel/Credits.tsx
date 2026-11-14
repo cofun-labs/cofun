@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react'
+import { track } from '../analytics'
 import {
   creditsText,
   dayText,
@@ -82,7 +83,15 @@ export function CreditsPage({
             )}
             {credits.status === 'ready' && <Balance credits={credits.credits} />}
             {/* Read only when it is opened, so it is there to open whether or not the credits could be read. */}
-            <button ref={historyRef} type="button" className="row-link" onClick={() => setHistoryOpen(true)}>
+            <button
+              ref={historyRef}
+              type="button"
+              className="row-link"
+              onClick={() => {
+                track({ event: 'credits_history_opened' })
+                setHistoryOpen(true)
+              }}
+            >
               <span className="grow">Credit history</span>
               <Icon name="forward" />
             </button>
