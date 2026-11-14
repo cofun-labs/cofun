@@ -2,7 +2,9 @@
 
 ## Behavior
 
-Each conversation in the side panel is a session. A signed-in user can start a new session at any time, and opening the side panel starts one. Past sessions are kept in a list, most recently used first, each titled with its first question and showing the Notion page it started on. The user can search the list by title and delete sessions they no longer want.
+Each conversation in the side panel is a session. A signed-in user can start a new session at any time, and opening the side panel starts one. Past sessions are kept in a list, most recently used first, each with its title and the Notion page it started on. The user can search the list by title and delete sessions they no longer want.
+
+Once a session's first reply has come in, the model the user is asking with (the hosted one, which spends credits as any request does, or their own) is asked for a short title of a few words, in the language of the question, from the first question and the start of the reply. The title is written once and does not change as the conversation goes on. Until it arrives, or if the model gives none that can be used, the session is titled with its first question; that is not shown to the user as a failure and does not stop the conversation.
 
 Reopening a session shows the whole conversation, including the tools the agent used and what they returned, and the next question continues it: the AI has the earlier conversation as context, as if the session had never been closed. Switching to another session while a reply is still coming stops that reply first, so it never lands in the wrong session.
 
@@ -23,7 +25,9 @@ Key constraints:
 | --- | --- | --- | --- |
 | UC-SESSION-001-S01 | P0 | ✅ | Given a saved session in which the agent used a tool; when the user reopens it and asks a follow-up; then the AI gets the earlier conversation, including the tool calls and their results, followed by the new question. |
 | UC-SESSION-001-S02 | P1 | ✅ | Given a user with saved sessions; when they ask the AI in a new session; then nothing from the earlier sessions is sent to the AI. |
-| UC-SESSION-001-S03 | P1 | ✅ | Given several saved sessions; when the user opens the session list; then it shows them most recently used first, each titled with its first question and with the Notion page it started on. |
+| UC-SESSION-001-S13 | P1 | ✅ | Given several saved sessions; when the user opens the session list; then it shows them most recently used first, each with its title and with the Notion page it started on. |
+| UC-SESSION-001-S14 | P1 | ✅ | Given a new session; when the first reply has come in; then the model is asked for a short title from the first question and the start of the reply, the session is listed under that title, the list search matches it, and later questions do not change it. |
+| UC-SESSION-001-S15 | P1 | ✅ | Given a new session; when the first reply has come in but the title request fails or gives nothing usable; then the session is listed under its first question, and the chat goes on with no error shown. |
 | UC-SESSION-001-S12 | P1 | ✅ | Given sessions with different titles; when the user searches the list; then only the sessions whose title contains what they typed are listed, ignoring case. |
 | UC-SESSION-001-S05 | P1 | ✅ | Given a saved session; when the user deletes it; then it is no longer listed and cannot be reopened. |
 | UC-SESSION-001-S09 | P0 | ✅ | Given sessions saved by one account; when another account signs in on the same browser; then it sees none of them and cannot reopen them. |

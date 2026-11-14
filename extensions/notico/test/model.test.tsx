@@ -80,6 +80,30 @@ describe('choosing the model', () => {
     expect(browser.sentToWorker.slice(before).some((sent) => sent.includes('/chat/completions'))).toBe(false)
   })
 
+  it("[UC-SESSION-001-S14] with the user's own model, the title is asked of that model with their key, not of the worker", async () => {
+    const { browser, user } = await openPanel()
+    await setUpOpenRouter(browser, user)
+    browser.openRouter.titles.failWith = undefined
+    // An apostrophe at one end is part of the title, not a quote around it.
+    browser.openRouter.titles.script.push({ reply: "'90s fixture page summary" })
+    browser.openRouter.ai.script.push({ reply: 'It is a fixture.' })
+    const before = browser.sentToWorker.length
+
+    await ask(user, 'What does this page say?')
+    await screen.findByText('It is a fixture.')
+    await answered()
+
+    await user.click(screen.getByRole('button', { name: 'Sessions' }))
+    expect(await screen.findByText("'90s fixture page summary")).toBeVisible()
+    expect(browser.openRouter.titles.calls.map((c) => c.model)).toEqual(['openai/gpt-6.1-sol'])
+    expect(browser.openRouter.requests.filter((r) => r.path === '/api/v1/chat/completions').map((r) => r.key)).toEqual([
+      KEY,
+      KEY,
+    ])
+    expect(browser.titles.calls).toEqual([])
+    expect(browser.sentToWorker.slice(before).some((sent) => sent.includes('/chat/completions'))).toBe(false)
+  })
+
   it('[UC-AGENT-002-S02] another account on the same browser gets the hosted model and cannot see the key', async () => {
     const tab = pageTab()
     {

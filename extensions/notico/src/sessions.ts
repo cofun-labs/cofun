@@ -4,8 +4,10 @@ import type { HistoryMessage } from './agent'
 /** What the session list shows; the conversation itself is loaded only when a session opens. */
 export interface SessionInfo {
   id: string
-  /** The session's first question, for now. */
+  /** The short title the model wrote after the first reply; until then, the first question (see `titleFor`). */
   title: string
+  /** `title` is the model's; it is written once, and saving the session again keeps it. */
+  titledByModel?: true
   /** The Notion page open when the session started, if there was one. */
   page?: { title: string; url: string }
   createdAt: number
@@ -36,6 +38,8 @@ export class SessionStore {
    * Another panel may have saved the session since. Its conversation is then not overwritten:
    * this one is saved as a new session, under the new id in the result. The check and the write
    * are one transaction, so of two panels saving at once only one keeps the id.
+   *
+   * A title the model wrote (see `retitle`) is kept, whatever title the caller gives.
    */
   async save({ messages, ...info }: Session, loaded?: number): Promise<SessionInfo> {
     let saved = info
@@ -47,6 +51,8 @@ export class SessionStore {
           try {
             // A session that is gone (deleted elsewhere) has nothing to overwrite.
             if (stored.result && stored.result.updatedAt !== loaded) saved = { ...info, id: crypto.randomUUID() }
+            const { titledByModel, title } = stored.result ?? {}
+            if (titledByModel === true && typeof title === 'string') saved = { ...saved, title, titledByModel: true }
             infos.put(saved)
             all.put({ id: saved.id, messages })
           } catch (err) {
@@ -69,6 +75,27 @@ export class SessionStore {
       const stored = all.get(id) as IDBRequest<{ messages: HistoryMessage[] } | undefined>
       return () => info.result && { ...info.result, messages: stored.result?.messages ?? [] }
     })
+  }
+
+  /**
+   * Gives a session the title the model wrote for it, once: resolves false, changing nothing, when
+   * the session is gone or already has one. It does not count as using the session, so it neither
+   * moves the session in the list nor makes another panel's next save a separate session.
+   */
+  async retitle(id: string, title: string): Promise<boolean> {
+    let done = false
+    await this.run('readwrite', (infos) => {
+      // Read back from storage: only checked for what this needs, and written back as it was.
+      const stored: IDBRequest<unknown> = infos.get(id)
+      stored.onsuccess = () => {
+        const record = stored.result
+        if (typeof record !== 'object' || record === null || ('titledByModel' in record && record.titledByModel)) return
+        infos.put({ ...record, title, titledByModel: true })
+        done = true
+      }
+      return () => done
+    })
+    return done
   }
 
   async delete(id: string): Promise<void> {
@@ -139,7 +166,7 @@ export class SessionStore {
   }
 }
 
-/** A session's title: its first question, on one line and cut to a readable length. */
+/** A session's title until the model writes one: its first question, on one line and cut to a readable length. */
 export function titleFor(messages: HistoryMessage[]): string {
   const first = messages.find((m) => m.role === 'user')
   // By characters, not UTF-16 units, so an emoji is never cut in half.

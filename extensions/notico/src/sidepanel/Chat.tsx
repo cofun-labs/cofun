@@ -85,6 +85,8 @@ interface Current {
   page: Promise<Session['page']>
   /** As this panel loaded or last saved it; not set until the first save. */
   updatedAt?: number
+  /** The model was asked for a title already, by this panel or the one that saved it (see `title`). */
+  titled?: boolean
 }
 
 /** The chat of one signed-in user; mount a new one for another user. */
@@ -345,8 +347,10 @@ export function Chat({ userId }: { userId: string }) {
     }
 
     const before = agent.history().length
+    let answered = false
     try {
       const result = await agent.ask(text, onUpdate, confirm)
+      answered = result.status === 'done'
       const { requests } = result
       if (requests !== undefined) updateReply((m) => ({ ...m, requests }))
       if (result.status === 'stopped') {
@@ -372,6 +376,10 @@ export function Chat({ userId }: { userId: string }) {
         if (messages.length !== before) {
           // One at a time: each save starts from the `updatedAt` the one before it stored.
           saving.current = saving.current.then(() => save(session, messages, id, reply))
+        }
+        if (answered && !session.titled) {
+          session.titled = true
+          void title(session, messages)
         }
       }
     }
@@ -410,6 +418,27 @@ export function Chat({ userId }: { userId: string }) {
     }
   }
 
+  /**
+   * Asks the model for a short title once the session's first reply is in, and gives it to the
+   * session when one comes. Until then, or if none comes, the session keeps its first question as its
+   * title; nothing is shown either way. Never rejects.
+   */
+  async function title(session: Current, messages: HistoryMessage[]) {
+    const written = await agent.title(messages)
+    // On the hosted model the request spent credits; the read after the question was too early for it.
+    void readCredits()
+    if (!written) return
+    // After the save of the reply, which may give the session another id.
+    saving.current = saving.current.then(async () => {
+      try {
+        if (deleted.current.has(session.id)) return
+        if (await store.retitle(session.id, written)) setSaved((n) => n + 1)
+      } catch (err) {
+        console.error('Could not save the title', err)
+      }
+    })
+  }
+
   /** Switches to a new session, or to a saved one; a reply still coming in is stopped. */
   function switchTo(session?: Session) {
     chatId.current++
@@ -426,6 +455,7 @@ export function Chat({ userId }: { userId: string }) {
         createdAt: session.createdAt,
         page: Promise.resolve(session.page),
         updatedAt: session.updatedAt,
+        titled: session.titledByModel,
       },
     )
     setView('chat')
