@@ -31,4 +31,4 @@ Key constraint:
 
 | ID | Priority | Status | Scenario |
 | --- | --- | --- | --- |
-| UC-SESSION-002-S09 | P1 | 🚧 | Given the side panel open on a Notion page with a reply that has headings and a list; when the user saves the reply to Notion and opens the link; then the new page sits under the open page with the question and the reply formatted as in the side panel. |
+| UC-SESSION-002-S09 | P1 | ✅ | Given the side panel open on a Notion page with a reply that has headings and a list; when the user saves the reply to Notion and opens the link; then the new page sits under the open page with the question and the reply formatted as in the side panel. |
