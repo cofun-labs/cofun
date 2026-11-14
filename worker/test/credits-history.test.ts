@@ -95,7 +95,7 @@ const later = (ms: number) => {
   clock = new Date(clock.getTime() + ms)
 }
 
-describe('UC-NOTICO-CHAT-003 the history of a user’s credits', () => {
+describe('UC-NOTICO-CHAT-003 the history of a user’s credits, and UC-COFUN-CREDITS-002 read only one’s own', () => {
   it('[UC-NOTICO-CHAT-003-S10] a user sees every grant they were given, newest first, with what went unspent of the expired ones', async () => {
     // Week one: 60 of the free credits are spent, and 140 expire unspent.
     await ask(alice, 60)

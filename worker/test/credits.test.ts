@@ -79,7 +79,7 @@ const later = (ms: number) => {
   clock = new Date(clock.getTime() + ms)
 }
 
-describe('UC-NOTICO-CHAT-003 See credits, usage, and the plan', () => {
+describe("UC-NOTICO-CHAT-003 See credits, usage, and the plan, and UC-COFUN-CREDITS-002 read only one's own", () => {
   it('[UC-NOTICO-CHAT-003-S01] a user who spent credits sees what is left, when it expires, and when the next free credits arrive', async () => {
     await ask(alice, 60)
 

@@ -61,7 +61,7 @@ const hi = [{ role: 'user', content: 'hi' }]
 const chat = (bearer: string | undefined, body: unknown = { messages: hi }) =>
   req('POST', '/v1/chat/completions', bearer, body)
 
-describe('UC-NOTICO-AUTH-001 Sign in to use Notico', () => {
+describe('UC-COFUN-CHAT-001 Ask the hosted model: only with a valid session', () => {
   it('[UC-COFUN-CHAT-001-S03] request without a session is refused', async () => {
     const res = await chat(undefined)
     expect(res.status).toBe(401)
@@ -83,7 +83,7 @@ describe('UC-NOTICO-AUTH-001 Sign in to use Notico', () => {
   })
 })
 
-describe('UC-NOTICO-CHAT-001 Ask the AI from the side panel', () => {
+describe('UC-COFUN-CHAT-001 Ask the hosted model', () => {
   it('[UC-COFUN-CHAT-001-S01] reply streams as server-sent events', async () => {
     const res = await chat(token, { messages: hi, stream: true })
     expect(res.status).toBe(200)
@@ -248,7 +248,7 @@ describe('worker API', () => {
   })
 })
 
-describe('UC-NOTICO-CHAT-001 credits', () => {
+describe('UC-COFUN-CREDITS-001 Spend credits on the hosted model', () => {
   const WEEK_MS = 7 * 24 * 60 * 60 * 1000
   /** Every reply from now on costs this many credits. A user starts with 200. */
   const repliesCost = (credits: number) => {
@@ -1044,7 +1044,7 @@ async function readStream(res: Response) {
   return { text, calls, finishReason }
 }
 
-describe('UC-NOTICO-AGENT-001 Ask the AI something that needs a tool', () => {
+describe('UC-COFUN-CHAT-001 Ask the hosted model: tools', () => {
   it('[UC-COFUN-CHAT-001-S05] the streamed reply asks the extension to run tools, with their arguments', async () => {
     ai = env.AI = new FakeAiBinding("I'll check.")
     ai.toolCalls = [

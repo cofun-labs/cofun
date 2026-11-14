@@ -121,7 +121,7 @@ const credits = (bearer: string): Promise<any> => answer(req('GET', '/v1/credits
 /** One year after `ms`, on the same day and time. */
 const yearAfter = (ms: number) => Date.parse(new Date(ms).toISOString().replace(/^2026/, '2027'))
 
-describe('UC-NOTICO-BILLING-001 buy credits: the packs and Checkout', () => {
+describe('UC-COFUN-BILLING-001 Buy credits: the packs and Checkout', () => {
   it('[UC-COFUN-BILLING-001-S01] a signed-in user who chooses a pack gets the Checkout page for it, for their account', async () => {
     expect(await answer(req('GET', '/v1/billing/packs', alice))).toEqual({
       packs: [
@@ -216,7 +216,7 @@ describe('UC-NOTICO-BILLING-001 buy credits: the packs and Checkout', () => {
   })
 })
 
-describe('UC-NOTICO-BILLING-001 buy credits: the webhook', () => {
+describe('UC-COFUN-BILLING-001 Buy credits: the webhook', () => {
   it('[UC-COFUN-BILLING-001-S02] a paid pack adds its credits for a year, spent after the free credits, and the free week still comes', async () => {
     await buy(alice, 5000)
 
