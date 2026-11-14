@@ -842,9 +842,18 @@ export function Chat({ userId }: { userId: string }) {
 
   // Saves of a reply, or of the whole chat, by the chat they were started in (`chatId`) and the
   // reply's place in it: here, not in the reply's row, which shows the next chat's reply at the
-  // same place once the user switches.
+  // same place once the user switches. The chat's save is also by how many questions it held, so
+  // once another question is answered the chat can be saved again, with it.
   const [saves, startSave] = useSaves()
-  const saveKey = (what: number | 'chat') => `${chatId.current}:${what}`
+  // The chat as a save takes it: without a reply still coming in.
+  const ended = busy
+    ? messages.slice(
+        0,
+        messages.findLastIndex((m) => m.role === 'user'),
+      )
+    : messages
+  const asked = ended.filter((m) => m.role === 'user').length
+  const saveKey = (what: number | 'chat') => `${chatId.current}:${what === 'chat' ? `chat:${asked}` : what}`
 
   /**
    * Saves the reply at `what` as a page titled with the chat's title and its question, or with
@@ -853,12 +862,6 @@ export function Chat({ userId }: { userId: string }) {
   const saveRef = useRef<(what: number | 'chat') => void>(undefined)
   saveRef.current = (what) => {
     if (what === 'chat') {
-      const ended = busy
-        ? messages.slice(
-            0,
-            messages.findLastIndex((m) => m.role === 'user'),
-          )
-        : messages
       const turns = shownTurns(ended)
       startSave(saveKey('chat'), () => savePage(headerTitle || 'Untitled', turns))
       return

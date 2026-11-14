@@ -176,6 +176,27 @@ describe('UC-NOTICO-SESSION-002 save a chat or a reply to Notion', () => {
     expect(workspace.transactions).toHaveLength(1)
   })
 
+  it('once another question is answered, the chat can be saved again, with it', async () => {
+    const { tab, workspace } = workspaceTab()
+    const { browser, user } = await openPanel(tab)
+    browser.ai.script.push({ reply: 'Three milestones.' }, { reply: 'Alice owns them.' })
+    await ask(user, 'What is on the roadmap?', 'Three milestones.')
+    let menu = await replyMenu(user)
+    await user.click(menu.getByRole('button', { name: 'Save chat to Notion' }))
+    await menu.findByRole('link', { name: 'Open the saved chat' })
+    await user.keyboard('{Escape}')
+
+    await ask(user, 'Who owns it?', 'Alice owns them.')
+    menu = await replyMenu(user)
+    await user.click(menu.getByRole('button', { name: 'Save chat to Notion' }))
+    await menu.findByRole('link', { name: 'Open the saved chat' })
+    expect(savedPage(workspace).blocks.filter(([type]) => type === 'quote')).toEqual([
+      ['quote', 'What is on the roadmap?'],
+      ['quote', 'Who owns it?'],
+    ])
+    expect(workspace.transactions).toHaveLength(2)
+  })
+
   it("a reply's save stays with its chat: another chat's reply at the same place can be saved on its own", async () => {
     const { tab, workspace } = workspaceTab()
     const { browser, user } = await openPanel(tab)
