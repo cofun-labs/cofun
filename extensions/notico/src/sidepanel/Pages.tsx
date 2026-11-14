@@ -1,3 +1,4 @@
+import type { MouseEvent } from 'react'
 import type { QuestionPage } from '../agent'
 import { Icon } from './icons'
 
@@ -50,15 +51,26 @@ export function ComposerPages({ chips, onRemove }: { chips: Chip[]; onRemove: (c
   )
 }
 
-/** The pages a question was sent with, in its bubble under what the user typed. */
+/**
+ * The pages a question was sent with, in its bubble under what the user typed. Each is a link that
+ * takes the current tab to the page, as a link in Notion would; a modified click (to open it in a
+ * new tab or window) is left to the browser.
+ */
 export function SentPages({ pages }: { pages?: QuestionPage[] }) {
   if (!pages?.length) return null
+  const open = (event: MouseEvent<HTMLAnchorElement>, url: string) => {
+    if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
+    event.preventDefault()
+    void chrome.tabs.update({ url })
+  }
   return (
     <ul className="sent-pages" aria-label="Pages sent">
       {pages.map((page, i) => (
         <li key={i}>
-          <PageIcon page={page} />
-          <span className="page-title">{titleOf(page)}</span>
+          <a href={page.url} onClick={(event) => open(event, page.url)}>
+            <PageIcon page={page} />
+            <span className="page-title">{titleOf(page)}</span>
+          </a>
         </li>
       ))}
     </ul>

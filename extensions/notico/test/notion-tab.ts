@@ -202,6 +202,8 @@ export class FakeNotionTab {
           if (this.closed) throw new Error(`No tab with id: ${tabId}.`)
           return { id: tabId, url: this.pageUrl ?? this.url }
         },
+        // With no tab id, Chrome updates the current window's active tab: this one.
+        update: async ({ url }: { url: string }) => this.navigate(url, ''),
       },
       scripting: {
         executeScript: async ({

@@ -268,7 +268,8 @@ describe('a formatted reply', () => {
     // Links that are not http or https are shown as their text, not as links.
     expect(screen.getByText('run')).toBeVisible()
     expect(screen.getByText('mail')).toBeVisible()
-    expect(screen.queryAllByRole('link')).toEqual([])
+    // The only link is the page the question went with.
+    expect(screen.getAllByRole('link').map((link) => link.textContent)).toEqual(['Fixture page'])
   })
 
   it('[UC-NOTICO-CHAT-001-S18] an image in a reply is not loaded: its description links to it instead', async () => {
@@ -298,7 +299,8 @@ describe('a formatted reply', () => {
     await screen.findByText(/Status:/)
     await answered()
 
-    expect(screen.getAllByRole('link')).toHaveLength(1)
+    // Besides the page the question went with, one link.
+    expect(screen.getAllByRole('link').map((link) => link.textContent)).toEqual(['Fixture page', 'Build passing'])
     expect(screen.getByRole('link', { name: 'Build passing' })).toHaveAttribute('href', 'https://ci.example.com')
     expect(document.querySelector('[src*="img.example.com"]')).toBeNull()
   })
