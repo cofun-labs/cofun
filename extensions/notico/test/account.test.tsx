@@ -47,7 +47,7 @@ async function openSettings(user: UserEvent) {
 const section = (name: string) => screen.getByRole('region', { name })
 
 describe('the account menu', () => {
-  it('[UC-CHAT-003-S12] shows who is signed in, with Settings and Sign out, and nothing to manage the account', async () => {
+  it('[UC-NOTICO-CHAT-003-S12] shows who is signed in, with Settings and Sign out, and nothing to manage the account', async () => {
     const { user } = await openPanel()
 
     await openMenu(user)
@@ -59,7 +59,7 @@ describe('the account menu', () => {
     expect(screen.queryByText(/clerk/i)).not.toBeInTheDocument()
   })
 
-  it('[UC-CHAT-003-S01] shows the credits that are left and when they expire', async () => {
+  it('[UC-NOTICO-CHAT-003-S01] shows the credits that are left and when they expire', async () => {
     const { browser, user } = await openPanel()
 
     await ask(browser, user, 'What is on the roadmap?', 60)
@@ -70,7 +70,7 @@ describe('the account menu', () => {
     expect(screen.getByText('Expire Nov 15, 5:30 PM')).toBeVisible()
   })
 
-  it('[UC-CHAT-003-S06] shows what is left after each question, without the panel being opened again', async () => {
+  it('[UC-NOTICO-CHAT-003-S06] shows what is left after each question, without the panel being opened again', async () => {
     const { browser, user } = await openPanel()
     await openMenu(user)
     expect(await screen.findByText('200 credits left')).toBeVisible()
@@ -86,7 +86,7 @@ describe('the account menu', () => {
     expect(await screen.findByText('110 credits left')).toBeVisible()
   })
 
-  it('[UC-CHAT-003-S02] shows a new user the free credits their next question starts with, and looking does not start the week', async () => {
+  it('[UC-NOTICO-CHAT-003-S02] shows a new user the free credits their next question starts with, and looking does not start the week', async () => {
     const { browser, user } = await openPanel()
 
     await openMenu(user)
@@ -103,7 +103,7 @@ describe('the account menu', () => {
     expect(screen.getByText('Expire Nov 17, 5:30 PM')).toBeVisible()
   })
 
-  it('[UC-CHAT-003-S03] shows a user who overspent that no credits are left, and then the next free credits less what they owe', async () => {
+  it('[UC-NOTICO-CHAT-003-S03] shows a user who overspent that no credits are left, and then the next free credits less what they owe', async () => {
     const { browser, user } = await openPanel()
     await ask(browser, user, 'First', 150)
     // 50 credits are left: the question goes ahead, and overspends by 100.
@@ -213,7 +213,7 @@ describe('the account menu', () => {
 })
 
 describe('the settings page', () => {
-  it('[UC-CHAT-003-S12] shows the account, and no plan', async () => {
+  it('[UC-NOTICO-CHAT-003-S12] shows the account, and no plan', async () => {
     const { user } = await openPanel()
 
     await openSettings(user)
@@ -228,7 +228,7 @@ describe('the settings page', () => {
     expect(screen.getByRole('textbox', { name: 'Message' })).toBeVisible()
   })
 
-  it('[UC-CHAT-003-S01] shows what is left, when it expires, and when the next free credits arrive', async () => {
+  it('[UC-NOTICO-CHAT-003-S01] shows what is left, when it expires, and when the next free credits arrive', async () => {
     const { browser, user } = await openPanel()
     await ask(browser, user, 'What is on the roadmap?', 60)
 
@@ -243,7 +243,7 @@ describe('the settings page', () => {
     ).toBeVisible()
   })
 
-  it('[UC-CHAT-003-S02] shows free credits that have not started as such', async () => {
+  it('[UC-NOTICO-CHAT-003-S02] shows free credits that have not started as such', async () => {
     const { user } = await openPanel()
 
     await openSettings(user)
@@ -258,7 +258,7 @@ describe('the settings page', () => {
     expect(within(section('Usage')).getByText('No credits used in the last 30 days.')).toBeVisible()
   })
 
-  it('[UC-CHAT-003-S04] lists the credits used on each day, newest first, by the days of the user’s own clock', async () => {
+  it('[UC-NOTICO-CHAT-003-S04] lists the credits used on each day, newest first, by the days of the user’s own clock', async () => {
     const { browser, user } = await openPanel()
     // 5:30 PM on Nov 8, on the user's clock.
     await ask(browser, user, 'First', 30)
@@ -277,7 +277,7 @@ describe('the settings page', () => {
     ).toEqual(['Mon, Nov 966', 'Sun, Nov 830'])
   })
 
-  it('[UC-CHAT-003-S08] when credits cannot be read, the user can still ask, and the panel says credits are unavailable', async () => {
+  it('[UC-NOTICO-CHAT-003-S08] when credits cannot be read, the user can still ask, and the panel says credits are unavailable', async () => {
     const browser = await FakeBrowser.start(pageTab(), { signedInAs: 'user_alice' })
     // Only reading the usage fails; the worker can still check and charge credits for a question.
     browser.db.failOn = { sql: 'GROUP BY day', error: new Error('D1_ERROR: Network connection lost.') }
@@ -303,7 +303,7 @@ describe('the settings page', () => {
 })
 
 describe('a question refused for lack of credits', () => {
-  it('[UC-CHAT-003-S07] says when credits arrive and leads to the settings page', async () => {
+  it('[UC-NOTICO-CHAT-003-S07] says when credits arrive and leads to the settings page', async () => {
     const { browser, user } = await openPanel()
     await ask(browser, user, 'First', 210)
 

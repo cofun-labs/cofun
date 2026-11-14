@@ -55,8 +55,8 @@ function open(ws: FakeWorkspace) {
 }
 const create = async (args: Record<string, unknown>) => (await createPage.run(args)) as string
 
-describe('UC-NOTION-007 create a page', () => {
-  it('[UC-NOTION-007-S06] creates a page with its content at the end of the open page', async () => {
+describe('UC-NOTICO-NOTION-007 create a page', () => {
+  it('[UC-NOTICO-NOTION-007-S06] creates a page with its content at the end of the open page', async () => {
     const ws = workspace()
     open(ws)
     const result = await create({
@@ -101,7 +101,7 @@ describe('UC-NOTION-007 create a page', () => {
     expect(ws.records.get(PAGE)).toMatchObject({ last_edited_by_id: USER, last_edited_by_table: 'notion_user' })
   })
 
-  it('[UC-NOTION-007-S02] creates it in another page when asked', async () => {
+  it('[UC-NOTICO-NOTION-007-S02] creates it in another page when asked', async () => {
     const ws = workspace()
     open(ws)
     await create({ title: 'Child', parent: `https://app.notion.com/${hex(OTHER)}` })
@@ -109,7 +109,7 @@ describe('UC-NOTION-007 create a page', () => {
     expect(ws.content(PAGE).map((b) => b.type)).toEqual(['text'])
   })
 
-  it('[UC-NOTION-007-S05] refuses to create a page inside a piece of a page', async () => {
+  it('[UC-NOTICO-NOTION-007-S05] refuses to create a page inside a piece of a page', async () => {
     const ws = workspace()
     open(ws)
     await expect(create({ title: 'x', parent: hex(intro) })).rejects.toThrow(

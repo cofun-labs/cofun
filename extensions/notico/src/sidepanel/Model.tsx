@@ -56,7 +56,7 @@ function removed(settings: ModelSettings, service: Service): ModelSettings {
 }
 
 /**
- * The model menu by the composer (UC-AGENT-002): it shows which model answers, and switches between
+ * The model menu by the composer (UC-NOTICO-AGENT-002): it shows which model answers, and switches between
  * the hosted model and the user's own models, on each service they set up, without leaving the chat.
  * It lists them by name; their prices, other models on OpenRouter, and setting up a key are on the settings page (`onMore`).
  */
@@ -210,7 +210,7 @@ export function ModelMenu({
 }
 
 /**
- * The settings page's Model section (UC-AGENT-002): which model answers, and setting up OpenRouter
+ * The settings page's Model section (UC-NOTICO-AGENT-002): which model answers, and setting up OpenRouter
  * or DeepSeek with the user's own key. A change applies from the next question on.
  */
 export function ModelCard({

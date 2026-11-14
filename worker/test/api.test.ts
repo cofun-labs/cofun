@@ -61,14 +61,14 @@ const hi = [{ role: 'user', content: 'hi' }]
 const chat = (bearer: string | undefined, body: unknown = { messages: hi }) =>
   req('POST', '/v1/chat/completions', bearer, body)
 
-describe('UC-AUTH-001 Sign in to use Notico', () => {
-  it('[UC-AUTH-001-S01] request without a session is refused', async () => {
+describe('UC-COFUN-CHAT-001 Ask the hosted model: only with a valid session', () => {
+  it('[UC-COFUN-CHAT-001-S03] request without a session is refused', async () => {
     const res = await chat(undefined)
     expect(res.status).toBe(401)
     expect((await json(res)).error.code).toBe('unauthorized')
   })
 
-  it('[UC-AUTH-001-S01] invalid, forged and expired sessions are refused', async () => {
+  it('[UC-COFUN-CHAT-001-S03] invalid, forged and expired sessions are refused', async () => {
     const forged = await otherClerk.sessionToken({ userId: 'user_eve', azp: EXT })
     const expired = await clerk.sessionToken({ userId: 'user_alice', azp: EXT, expiresInSec: -60 })
     for (const bad of ['not-a-jwt', forged, expired]) {
@@ -77,14 +77,14 @@ describe('UC-AUTH-001 Sign in to use Notico', () => {
     expect(ai.calls).toHaveLength(0)
   })
 
-  it('[UC-AUTH-001-S02] session issued to another site is refused', async () => {
+  it('[UC-COFUN-CHAT-001-S04] session issued to another site is refused', async () => {
     const elsewhere = await clerk.sessionToken({ userId: 'user_alice', azp: 'https://evil.example' })
     expect((await chat(elsewhere)).status).toBe(401)
   })
 })
 
-describe('UC-CHAT-001 Ask the AI from the side panel', () => {
-  it('[UC-CHAT-001-S01] reply streams as server-sent events', async () => {
+describe('UC-COFUN-CHAT-001 Ask the hosted model', () => {
+  it('[UC-COFUN-CHAT-001-S01] reply streams as server-sent events', async () => {
     const res = await chat(token, { messages: hi, stream: true })
     expect(res.status).toBe(200)
     expect(res.headers.get('content-type')).toBe('text/event-stream')
@@ -96,7 +96,7 @@ describe('UC-CHAT-001 Ask the AI from the side panel', () => {
     expect(text).toBe('Hello from Workers AI ')
   })
 
-  it('[UC-CHAT-001-S02] asking for another model is refused', async () => {
+  it('[UC-COFUN-CHAT-001-S02] asking for another model is refused', async () => {
     const res = await chat(token, { messages: hi, model: 'openai/gpt-5' })
     expect(res.status).toBe(400)
     expect((await json(res)).error.code).toBe('unsupported_model')
@@ -248,7 +248,7 @@ describe('worker API', () => {
   })
 })
 
-describe('UC-CHAT-001 credits', () => {
+describe('UC-COFUN-CREDITS-001 Spend credits on the hosted model', () => {
   const WEEK_MS = 7 * 24 * 60 * 60 * 1000
   /** Every reply from now on costs this many credits. A user starts with 200. */
   const repliesCost = (credits: number) => {
@@ -264,7 +264,7 @@ describe('UC-CHAT-001 credits', () => {
     return String(error.message)
   }
 
-  it('[UC-CHAT-001-S09] a user with no credits left is refused, told when credits arrive, and the model is not called', async () => {
+  it('[UC-COFUN-CREDITS-001-S01] a user with no credits left is refused, told when credits arrive, and the model is not called', async () => {
     repliesCost(150)
     expect((await chat(token)).status).toBe(200)
     // 50 credits are left: the call goes ahead, and takes the balance below zero.
@@ -277,7 +277,7 @@ describe('UC-CHAT-001 credits', () => {
     expect(ai.calls).toHaveLength(2)
   })
 
-  it('[UC-CHAT-001-S10] a new week brings new free credits', async () => {
+  it('[UC-COFUN-CREDITS-001-S02] a new week brings new free credits', async () => {
     repliesCost(200)
     expect((await chat(token)).status).toBe(200)
     later(WEEK_MS - 1000)
@@ -286,7 +286,7 @@ describe('UC-CHAT-001 credits', () => {
     expect((await chat(token)).status).toBe(200)
   })
 
-  it('[UC-CHAT-001-S13] what a call overspent is taken out of the next free credits', async () => {
+  it('[UC-COFUN-CREDITS-001-S03] what a call overspent is taken out of the next free credits', async () => {
     repliesCost(150)
     await chat(token)
     await chat(token)
@@ -300,7 +300,7 @@ describe('UC-CHAT-001 credits', () => {
     expect(await refused(await chat(token))).toContain('2026-11-22 at 12:00 UTC')
   })
 
-  it('[UC-CHAT-001-S14] credits left when the week ends are gone', async () => {
+  it('[UC-COFUN-CREDITS-001-S04] credits left when the week ends are gone', async () => {
     repliesCost(50)
     await chat(token)
     // 150 credits were left. The new week has 200, not 350.
@@ -311,7 +311,7 @@ describe('UC-CHAT-001 credits', () => {
     await refused(await chat(token))
   })
 
-  it('[UC-CHAT-001-S15] input read from the cache costs the cached price', async () => {
+  it('[UC-COFUN-CREDITS-001-S05] input read from the cache costs the cached price', async () => {
     // As the hosted model reported a second call with the same long prompt.
     ai.usage = { prompt_tokens: 5639, completion_tokens: 6, prompt_tokens_details: { cached_tokens: 5568 } }
     await chat(token)
@@ -630,13 +630,13 @@ function usageRecord(point: FakeUsageDataset['points'][number]) {
 }
 const records = () => usage.points.map(usageRecord)
 
-describe("UC-CHAT-002 Keep a record of each user's chat usage", () => {
+describe("UC-COFUN-CHAT-002 Keep a record of each user's chat usage", () => {
   const two = [
     { role: 'system', content: 'be brief' },
     { role: 'user', content: 'hello' },
   ]
 
-  it('[UC-CHAT-002-S01] a streamed reply leaves a record with its token counts', async () => {
+  it('[UC-COFUN-CHAT-002-S01] a streamed reply leaves a record with its token counts', async () => {
     const res = await chat(token, { messages: two, stream: true })
     expect(res.status).toBe(200)
     await res.text()
@@ -660,7 +660,7 @@ describe("UC-CHAT-002 Keep a record of each user's chat usage", () => {
     expect(ai.calls[0].inputs.stream_options).toEqual({ include_usage: true })
   })
 
-  it('[UC-CHAT-002-S01] a non-streamed reply leaves a record with its token counts', async () => {
+  it('[UC-COFUN-CHAT-002-S01] a non-streamed reply leaves a record with its token counts', async () => {
     expect((await chat(token, { messages: two })).status).toBe(200)
     expect(records()).toEqual([
       expect.objectContaining({
@@ -677,7 +677,7 @@ describe("UC-CHAT-002 Keep a record of each user's chat usage", () => {
     ])
   })
 
-  it('[UC-CHAT-002-S02] refused and failed requests leave a record of how they ended', async () => {
+  it('[UC-COFUN-CHAT-002-S02] refused and failed requests leave a record of how they ended', async () => {
     await chat(token, { messages: [] })
     ai.failWith = new Error('capacity')
     await chat(token)
@@ -697,21 +697,21 @@ describe("UC-CHAT-002 Keep a record of each user's chat usage", () => {
     expect(records().every((r) => r.userId === 'user_alice')).toBe(true)
   })
 
-  it('[UC-CHAT-002-S02] a stream that breaks off leaves a record of how it ended', async () => {
+  it('[UC-COFUN-CHAT-002-S02] a stream that breaks off leaves a record of how it ended', async () => {
     ai.streamFailWith = new Error('connection reset')
     const res = await chat(token, { messages: hi, stream: true })
     await expect(res.text()).rejects.toThrow('the model stream failed')
     expect(records().map((r) => r.outcome)).toEqual(['stream_error'])
   })
 
-  it('[UC-CHAT-002-S02] a stream that ends early without an error is recorded as incomplete', async () => {
+  it('[UC-COFUN-CHAT-002-S02] a stream that ends early without an error is recorded as incomplete', async () => {
     const sse = 'data: {"choices":[{"delta":{"content":"a"}}]}\n\n'
     ai.rawSse = sse
     expect(await (await chat(token, { messages: hi, stream: true })).text()).toBe(sse)
     expect(records().map((r) => r.outcome)).toEqual(['incomplete'])
   })
 
-  it('[UC-CHAT-002-S03] nothing users wrote or the AI replied is kept', async () => {
+  it('[UC-COFUN-CHAT-002-S03] nothing users wrote or the AI replied is kept', async () => {
     const SECRET = 'zebra-7f3a-confidential'
     ai = env.AI = new FakeAiBinding(`reply ${SECRET}-reply`)
     const messages = [
@@ -1044,8 +1044,8 @@ async function readStream(res: Response) {
   return { text, calls, finishReason }
 }
 
-describe('UC-AGENT-001 Ask the AI something that needs a tool', () => {
-  it('[UC-AGENT-001-S01] the streamed reply asks the extension to run tools, with their arguments', async () => {
+describe('UC-COFUN-CHAT-001 Ask the hosted model: tools', () => {
+  it('[UC-COFUN-CHAT-001-S05] the streamed reply asks the extension to run tools, with their arguments', async () => {
     ai = env.AI = new FakeAiBinding("I'll check.")
     ai.toolCalls = [
       { name: 'get_current_page', arguments: '{}' },
@@ -1064,7 +1064,7 @@ describe('UC-AGENT-001 Ask the AI something that needs a tool', () => {
     expect(ai.calls[0].inputs.tools).toEqual(tools)
   })
 
-  it('[UC-AGENT-001-S01] the non-streamed reply asks the extension to run a tool', async () => {
+  it('[UC-COFUN-CHAT-001-S05] the non-streamed reply asks the extension to run a tool', async () => {
     ai.toolCalls = [{ name: 'get_current_page', arguments: '{}' }]
     const res = await chat(token, { messages: askPage, tools })
     expect(res.status).toBe(200)
@@ -1075,7 +1075,7 @@ describe('UC-AGENT-001 Ask the AI something that needs a tool', () => {
     ])
   })
 
-  it('[UC-AGENT-001-S02] the AI answers from the tool result the extension sends back', async () => {
+  it('[UC-COFUN-CHAT-001-S06] the AI answers from the tool result the extension sends back', async () => {
     ai = env.AI = new FakeAiBinding('You are on Q4 Roadmap')
     const result = JSON.stringify({ title: 'Q4 Roadmap', url: 'https://www.notion.so/Q4-Roadmap-abc123' })
     const res = await chat(token, { messages: withToolResult(result), tools, stream: true })
@@ -1093,7 +1093,7 @@ describe('UC-AGENT-001 Ask the AI something that needs a tool', () => {
     ])
   })
 
-  it('[UC-AGENT-001-S03] nothing in tool definitions, calls, or results is kept', async () => {
+  it('[UC-COFUN-CHAT-001-S07] nothing in tool definitions, calls, or results is kept', async () => {
     const SECRET = 'okapi-91c2-confidential'
     ai = env.AI = new FakeAiBinding(`checking ${SECRET}-preamble`)
     ai.toolCalls = [{ name: 'search_pages', arguments: JSON.stringify({ query: `${SECRET}-arguments` }) }]

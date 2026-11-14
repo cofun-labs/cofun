@@ -85,8 +85,8 @@ const account = async (userId: string) => {
   return json(res)
 }
 
-describe("UC-ADMIN-001 Look at an account's credits and grant credits by hand", () => {
-  it('[UC-ADMIN-001-S01] an operator sees an account’s balance and each of its grants', async () => {
+describe("UC-COFUN-ADMIN-001 Look at an account's credits and grant credits by hand", () => {
+  it('[UC-COFUN-ADMIN-001-S01] an operator sees an account’s balance and each of its grants', async () => {
     expect((await chat(alice)).status).toBe(200)
     expect(await account('user_alice')).toEqual({
       userId: 'user_alice',
@@ -104,7 +104,7 @@ describe("UC-ADMIN-001 Look at an account's credits and grant credits by hand", 
     })
   })
 
-  it('[UC-ADMIN-001-S02] credits granted by hand can be spent, beside the weekly free credits, until they expire', async () => {
+  it('[UC-COFUN-ADMIN-001-S02] credits granted by hand can be spent, beside the weekly free credits, until they expire', async () => {
     // The user spends the whole free week and 10 credits more, and is out of credits.
     repliesCost(210)
     expect((await chat(alice)).status).toBe(200)
@@ -148,7 +148,7 @@ describe("UC-ADMIN-001 Look at an account's credits and grant credits by hand", 
     expect((await chat(alice)).status).toBe(402)
   })
 
-  it('[UC-ADMIN-001-S03] someone who is not an operator is refused, whatever they ask for, and nothing changes', async () => {
+  it('[UC-COFUN-ADMIN-001-S03] someone who is not an operator is refused, whatever they ask for, and nothing changes', async () => {
     const strangers = [
       alice,
       // A role that is not the admin's, and values that only look like it.
@@ -178,12 +178,12 @@ describe("UC-ADMIN-001 Look at an account's credits and grant credits by hand", 
     expect(adminLog).toEqual([])
   })
 
-  it('[UC-ADMIN-001-S03] without a session nothing is shown', async () => {
+  it('[UC-COFUN-ADMIN-001-S03] without a session nothing is shown', async () => {
     expect((await lookUp('user_alice', '')).status).toBe(401)
     expect((await grant('user_alice', { credits: 100, days: 30 }, '')).status).toBe(401)
   })
 
-  it('[UC-ADMIN-001-S04] grants that have expired stay in the record and count for nothing', async () => {
+  it('[UC-COFUN-ADMIN-001-S04] grants that have expired stay in the record and count for nothing', async () => {
     expect((await chat(alice)).status).toBe(200)
     await grant('user_alice', { credits: 10, days: 1 })
     later(8 * DAY_MS)
@@ -198,7 +198,7 @@ describe("UC-ADMIN-001 Look at an account's credits and grant credits by hand", 
     expect((await account('user_alice')).grants).toHaveLength(3)
   })
 
-  it('[UC-ADMIN-001-S05] what an account overspent is taken out of a grant first', async () => {
+  it('[UC-COFUN-ADMIN-001-S05] what an account overspent is taken out of a grant first', async () => {
     repliesCost(150)
     await chat(alice)
     await chat(alice)
@@ -210,7 +210,7 @@ describe("UC-ADMIN-001 Look at an account's credits and grant credits by hand", 
     expect(grants[1]).toMatchObject({ source: 'manual', amount: 300 * CREDIT, left: 200 * CREDIT })
   })
 
-  it('[UC-ADMIN-001-S06] looking up and granting leave the free week to start when the user next asks', async () => {
+  it('[UC-COFUN-ADMIN-001-S06] looking up and granting leave the free week to start when the user next asks', async () => {
     // An account the worker has not seen has nothing, and looking at it gives it nothing.
     expect(await account('user_alice')).toEqual({ userId: 'user_alice', balance: 0, debt: 0, grants: [] })
     await grant('user_alice', { credits: 50, days: 30 })
@@ -230,7 +230,7 @@ describe("UC-ADMIN-001 Look at an account's credits and grant credits by hand", 
     expect(balance).toBe(250 * CREDIT - FAKE_COST)
   })
 
-  it('[UC-ADMIN-001-S06] a grant by hand during the week does not move the next free credits', async () => {
+  it('[UC-COFUN-ADMIN-001-S06] a grant by hand during the week does not move the next free credits', async () => {
     repliesCost(210)
     await chat(alice)
     later(2 * DAY_MS)
@@ -243,7 +243,7 @@ describe("UC-ADMIN-001 Look at an account's credits and grant credits by hand", 
     expect((await json(refused)).error.message).toContain('2026-11-15 at 12:00 UTC')
   })
 
-  it('[UC-ADMIN-001-S07] a grant beyond the limits is refused and the account does not change', async () => {
+  it('[UC-COFUN-ADMIN-001-S07] a grant beyond the limits is refused and the account does not change', async () => {
     const cases: [unknown, string][] = [
       [{ credits: 50_001, days: 30 }, 'credits must be a whole number from 1 to 50000'],
       [{ credits: 1_000_000, days: 30 }, 'credits must be a whole number from 1 to 50000'],

@@ -69,7 +69,7 @@ const usageRows = (table: HTMLElement) =>
     .map((row) => [within(row).getByRole('rowheader').textContent, within(row).getByRole('cell').textContent])
 
 describe('the credit history', () => {
-  it('[UC-CHAT-003-S10] lists every lot of credits the user was given, newest first, with its dates and what went unspent', async () => {
+  it('[UC-NOTICO-CHAT-003-S10] lists every lot of credits the user was given, newest first, with its dates and what went unspent', async () => {
     const { browser, user } = await openPanel()
     // Week one: 60 of the free credits are used, and 140 expire unspent.
     await ask(browser, user, 'First', 60)
@@ -94,7 +94,7 @@ describe('the credit history', () => {
     expect(within(current).getAllByRole('listitem')[0]).toHaveTextContent('Added credits100 left')
   })
 
-  it('[UC-CHAT-003-S10] shows credits that were used to the end, before and after they expire', async () => {
+  it('[UC-NOTICO-CHAT-003-S10] shows credits that were used to the end, before and after they expire', async () => {
     const { browser, user } = await openPanel()
     await ask(browser, user, 'First', 210)
 
@@ -107,7 +107,7 @@ describe('the credit history', () => {
     expect(await lots()).toEqual(['Free weekly credits200 creditsGiven Nov 8, 2026 · expired Nov 15, 2026'])
   })
 
-  it('[UC-CHAT-003-S10] shows the newest lots first, and older ones when asked, to the end', async () => {
+  it('[UC-NOTICO-CHAT-003-S10] shows the newest lots first, and older ones when asked, to the end', async () => {
     const { browser, user } = await openPanel()
     // 25 lots, told apart by how many credits each was.
     for (let credits = 1; credits <= 25; credits++) {
@@ -125,7 +125,7 @@ describe('the credit history', () => {
     expect(screen.queryByRole('button', { name: 'Show older credits' })).not.toBeInTheDocument()
   })
 
-  it('[UC-CHAT-003-S11] shows the credits used per day further back than the settings page, by the days of the user’s own clock', async () => {
+  it('[UC-NOTICO-CHAT-003-S11] shows the credits used per day further back than the settings page, by the days of the user’s own clock', async () => {
     const { browser, user } = await openPanel()
     // 11:30 PM on Nov 8, on the user's clock.
     vi.setSystemTime(new Date('2026-11-08T18:00:00Z'))

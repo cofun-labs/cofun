@@ -52,8 +52,8 @@ const edit = async (edits: Rec[], args: Rec = {}) => (await editPage.run({ page:
 const body = (result: string) => result.slice(result.indexOf('\n\n') + 2)
 const withoutRefs = (text: string) => text.replace(/ \^[0-9a-f]{8,32}$/gm, '')
 
-describe('UC-NOTION-002 edit a page', () => {
-  it('[UC-NOTION-002-S09] inserts, replaces, and deletes in one edit, and changes nothing else', async () => {
+describe('UC-NOTICO-NOTION-002 edit a page', () => {
+  it('[UC-NOTICO-NOTION-002-S09] inserts, replaces, and deletes in one edit, and changes nothing else', async () => {
     const ws = workspace(
       [1, 2, 3, 4],
       [
@@ -92,7 +92,7 @@ describe('UC-NOTION-002 edit a page', () => {
     expect(ws.records.get(id(3))).toMatchObject({ alive: false })
   })
 
-  it('[UC-NOTION-002-S09] a round trip, replacing each block with what read_page showed, changes nothing', async () => {
+  it('[UC-NOTICO-NOTION-002-S09] a round trip, replacing each block with what read_page showed, changes nothing', async () => {
     const ws = workspace(
       [1, 2, 3, 4, 5, 6],
       [
@@ -118,7 +118,7 @@ describe('UC-NOTION-002 edit a page', () => {
     expect(body(await read())).toBe(before)
   })
 
-  it('[UC-NOTION-002-S02] refuses to change a block the user changed after the AI read the page', async () => {
+  it('[UC-NOTICO-NOTION-002-S02] refuses to change a block the user changed after the AI read the page', async () => {
     const ws = workspace([1, 2], [block(1, 'text', 'Intro'), block(2, 'text', 'Draft')])
     open(ws)
     await read()
@@ -131,7 +131,7 @@ describe('UC-NOTION-002 edit a page', () => {
     expect(ws.records.get(id(2))!.properties).toEqual({ title: [['What the user just typed']] })
   })
 
-  it('[UC-NOTION-002-S02] refuses to insert after a block that was removed since the AI read the page', async () => {
+  it('[UC-NOTICO-NOTION-002-S02] refuses to insert after a block that was removed since the AI read the page', async () => {
     const ws = workspace([1, 2], [block(1, 'text', 'Intro'), block(2, 'text', 'Draft')])
     open(ws)
     await read()
@@ -143,7 +143,7 @@ describe('UC-NOTION-002 edit a page', () => {
     expect(ws.transactions).toEqual([])
   })
 
-  it('[UC-NOTION-002-S04] never replaces content it cannot write', async () => {
+  it('[UC-NOTICO-NOTION-002-S04] never replaces content it cannot write', async () => {
     const ws = workspace(
       [1, 2, 3, 4],
       [
@@ -170,7 +170,7 @@ describe('UC-NOTION-002 edit a page', () => {
     expect(ws.transactions).toEqual([])
   })
 
-  it('[UC-NOTION-002-S05] asks to read a page before editing it', async () => {
+  it('[UC-NOTICO-NOTION-002-S05] asks to read a page before editing it', async () => {
     const other = '7a7a7a7a-0000-4000-8000-000000000077'
     const ws = workspace([1], [block(1, 'text', 'Hi', {}, other)], other)
     open(ws, `https://app.notion.com/p/${hex(other)}`)
@@ -180,7 +180,7 @@ describe('UC-NOTION-002 edit a page', () => {
     expect(ws.transactions).toEqual([])
   })
 
-  it('[UC-NOTION-002-S06] rewriting a block as the same kind keeps what is nested under it', async () => {
+  it('[UC-NOTICO-NOTION-002-S06] rewriting a block as the same kind keeps what is nested under it', async () => {
     const ws = workspace(
       [1],
       [block(1, 'toggle', 'Old title', { content: [id(2)] }), block(2, 'text', 'Inside', {}, id(1))],
@@ -195,7 +195,7 @@ describe('UC-NOTION-002 edit a page', () => {
     expect(body(await read())).toBe(['▸ New title ^00000001', '  Inside ^00000002'].join('\n'))
   })
 
-  it('[UC-NOTION-002-S17] stops the question when Notion refuses the edit, and nothing changes', async () => {
+  it('[UC-NOTICO-NOTION-002-S17] stops the question when Notion refuses the edit, and nothing changes', async () => {
     const ws = workspace([1], [block(1, 'text', 'Intro')])
     open(ws)
     await read()
@@ -242,7 +242,7 @@ describe('edit_page details', () => {
     )
   })
 
-  it('[UC-NOTION-002-S13] says the edit was saved, and stops the question, when Notion turns the read-back away', async () => {
+  it('[UC-NOTICO-NOTION-002-S13] says the edit was saved, and stops the question, when Notion turns the read-back away', async () => {
     const ws = workspace([1], [block(1, 'text', 'Intro')])
     const tab = open(ws)
     await read()
@@ -411,7 +411,7 @@ describe('Markdown to blocks', () => {
 })
 
 describe('edit_page safety', () => {
-  it('[UC-NOTION-002-S02] still refuses a block the user changed, after another edit took a fresh read', async () => {
+  it('[UC-NOTICO-NOTION-002-S02] still refuses a block the user changed, after another edit took a fresh read', async () => {
     const ws = workspace([1, 2], [block(1, 'text', 'Intro'), block(2, 'text', 'Draft')])
     open(ws)
     await read()
@@ -424,7 +424,7 @@ describe('edit_page safety', () => {
     expect(ws.records.get(id(2))!.properties).toEqual({ title: [['What the user just typed']] })
   })
 
-  it('[UC-NOTION-002-S02] refuses a block of a long page the agent has not read the part of', async () => {
+  it('[UC-NOTICO-NOTION-002-S02] refuses a block of a long page the agent has not read the part of', async () => {
     const n = 300
     const blocks = Array.from({ length: n }, (_, i) => block(i + 1, 'text', `P${i} ${'w'.repeat(60)}`))
     const ws = workspace(
@@ -464,7 +464,7 @@ describe('edit_page safety', () => {
     }
   })
 
-  it('[UC-NOTION-002-S02] refuses to delete a block when something nested under it changed', async () => {
+  it('[UC-NOTICO-NOTION-002-S02] refuses to delete a block when something nested under it changed', async () => {
     const ws = workspace([1], [block(1, 'toggle', 'T', { content: [id(2)] }), block(2, 'text', 'Inside', {}, id(1))])
     open(ws)
     await read()
@@ -475,7 +475,7 @@ describe('edit_page safety', () => {
     expect(ws.transactions).toEqual([])
   })
 
-  it('[UC-NOTION-002-S04] refuses to delete a block with a child page nested under it', async () => {
+  it('[UC-NOTICO-NOTION-002-S04] refuses to delete a block with a child page nested under it', async () => {
     const ws = workspace([1], [block(1, 'toggle', 'T', { content: [id(2)] }), block(2, 'page', 'Child', {}, id(1))])
     open(ws)
     await read()
@@ -616,7 +616,7 @@ describe('edit_page safety, round 2', () => {
     expect(ws.transactions).toEqual([])
   })
 
-  it('[UC-NOTION-002-S05] a new conversation must read the page again before editing it', async () => {
+  it('[UC-NOTICO-NOTION-002-S05] a new conversation must read the page again before editing it', async () => {
     const ws = workspace([1], [block(1, 'text', 'Intro')])
     open(ws)
     await read()
@@ -1072,7 +1072,7 @@ describe('round 11', () => {
 })
 
 describe('round 12', () => {
-  it('[UC-NOTION-002-S02] refuses to delete a long block before every part of it was read', async () => {
+  it('[UC-NOTICO-NOTION-002-S02] refuses to delete a long block before every part of it was read', async () => {
     const n = 300
     const items = Array.from({ length: n }, (_, i) =>
       block(i + 2, 'bulleted_list', `Item ${i} ${'t'.repeat(60)}`, {}, id(1)),
@@ -1300,10 +1300,10 @@ describe('lookups of mentioned people in edits', () => {
   })
 })
 
-describe('UC-NOTION-002 writing more of what read_page shows', () => {
+describe('UC-NOTICO-NOTION-002 writing more of what read_page shows', () => {
   const ADA = '0f0f0f0f-0000-4000-8000-000000000004'
 
-  it('[UC-NOTION-002-S14] writes tables, nested quotes and headings, colors, equations, people, and dates as read_page shows them', async () => {
+  it('[UC-NOTICO-NOTION-002-S14] writes tables, nested quotes and headings, colors, equations, people, and dates as read_page shows them', async () => {
     const ws = workspace([1], [block(1, 'text', 'Intro')])
     ws.put('notion_user', { id: ADA, name: 'Ada Lovelace' })
     open(ws)
@@ -1387,7 +1387,7 @@ describe('UC-NOTION-002 writing more of what read_page shows', () => {
     expect(ws.transactions).toHaveLength(sent)
   })
 
-  it('[UC-NOTION-002-S15] inserts content nested inside a block, before what it holds', async () => {
+  it('[UC-NOTICO-NOTION-002-S15] inserts content nested inside a block, before what it holds', async () => {
     const ws = workspace(
       [1, 2, 3, 4, 5],
       [
@@ -1434,7 +1434,7 @@ describe('UC-NOTION-002 writing more of what read_page shows', () => {
     expect(ws.transactions).toHaveLength(sent)
   })
 
-  it('[UC-NOTION-002-S16] rewrites a table in place: a changed cell and a new row, the rest as it was', async () => {
+  it('[UC-NOTICO-NOTION-002-S16] rewrites a table in place: a changed cell and a new row, the rest as it was', async () => {
     const ws = workspace(
       [1],
       [
@@ -1554,7 +1554,7 @@ describe('more inline content written by edit_page', () => {
 })
 
 describe('reads edit_page checks against', () => {
-  it('[UC-NOTION-002-S05] refuses a block longer than a part until every part it is in was read', async () => {
+  it('[UC-NOTICO-NOTION-002-S05] refuses a block longer than a part until every part it is in was read', async () => {
     const ws = workspace([1, 2], [block(1, 'text', 'a'.repeat(15_000)), block(2, 'text', 'End')])
     open(ws)
     expect(await read()).toContain('Part 1 of 2')
@@ -1566,7 +1566,7 @@ describe('reads edit_page checks against', () => {
     expect(ws.records.get(id(1))!.properties).toEqual({ title: [['Short']] })
   })
 
-  it('[UC-NOTION-002-S05] does not keep a read that ends after the conversation changed', async () => {
+  it('[UC-NOTICO-NOTION-002-S05] does not keep a read that ends after the conversation changed', async () => {
     const ws = workspace([1], [block(1, 'text', 'Intro')])
     open(ws)
     const reading = read()
@@ -1834,7 +1834,7 @@ describe('third review of #148', () => {
 })
 
 describe('fourth review of #148', () => {
-  it('[UC-NOTION-002-S16] rewrites a table whose unchanged cell mentions a guest, without looking them up by name', async () => {
+  it('[UC-NOTICO-NOTION-002-S16] rewrites a table whose unchanged cell mentions a guest, without looking them up by name', async () => {
     const GUEST = '0f0f0f0f-0000-4000-8000-000000000005'
     const ws = workspace(
       [1],

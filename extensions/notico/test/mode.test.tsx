@@ -1,4 +1,4 @@
-// Edit and Read only (UC-AGENT-003), as a user switches between them from the message box. Besides
+// Edit and Read only (UC-NOTICO-AGENT-003), as a user switches between them from the message box. Besides
 // the screen, the tests look at the edges: what the model was offered and told, and what Notion was
 // asked to change.
 import '@testing-library/jest-dom/vitest'
@@ -87,7 +87,7 @@ const CHANGING = [
 ]
 
 describe('Read only', () => {
-  it('[UC-AGENT-003-S01] the model is offered only tools that read, is told how to switch, and nothing changes even when it asks', async () => {
+  it('[UC-NOTICO-AGENT-003-S01] the model is offered only tools that read, is told how to switch, and nothing changes even when it asks', async () => {
     const { tab, workspace } = workspaceTab()
     const { browser, user } = await openPanel(tab)
     await user.click(screen.getByRole('button', { name: 'Mode: Edit' }))
@@ -112,7 +112,7 @@ describe('Read only', () => {
     expect(conversation().getByText('Read only')).toBeVisible()
   })
 
-  it('[UC-AGENT-003-S02] a user who has not chosen a mode is in Edit, and the agent makes the change', async () => {
+  it('[UC-NOTICO-AGENT-003-S02] a user who has not chosen a mode is in Edit, and the agent makes the change', async () => {
     const { tab, workspace } = workspaceTab()
     const { browser, user } = await openPanel(tab)
     expect(screen.getByRole('button', { name: 'Mode: Edit' })).toHaveAttribute('title', 'Edit: can change pages')
@@ -129,7 +129,7 @@ describe('Read only', () => {
     expect(conversation().queryByText('Read only')).not.toBeInTheDocument()
   })
 
-  it('[UC-AGENT-003-S03] a question running in Read only stays so after a switch to Edit, and the next one can change pages', async () => {
+  it('[UC-NOTICO-AGENT-003-S03] a question running in Read only stays so after a switch to Edit, and the next one can change pages', async () => {
     const { tab, workspace } = workspaceTab()
     const { browser, user } = await openPanel(tab)
     await user.click(screen.getByRole('button', { name: 'Mode: Edit' }))
@@ -161,7 +161,7 @@ describe('Read only', () => {
     expect(conversation().getAllByText('Read only')).toHaveLength(1)
   })
 
-  it('[UC-AGENT-003-S04] Read only is kept for the account when the panel opens again, and another account starts in Edit', async () => {
+  it('[UC-NOTICO-AGENT-003-S04] Read only is kept for the account when the panel opens again, and another account starts in Edit', async () => {
     const { tab } = workspaceTab()
     {
       const { browser, user } = await openPanel(tab)
@@ -184,7 +184,7 @@ describe('Read only', () => {
     expect(offered(browser, 0)).toEqual(expect.arrayContaining(CHANGING))
   })
 
-  it('[UC-AGENT-003-S05] a reopened session shows which question was asked in Read only', async () => {
+  it('[UC-NOTICO-AGENT-003-S05] a reopened session shows which question was asked in Read only', async () => {
     const { tab } = workspaceTab()
     const { browser, user } = await openPanel(tab)
     browser.ai.script.push({ reply: 'First answer.' }, { reply: 'Second answer.' })

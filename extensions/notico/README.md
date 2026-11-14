@@ -78,7 +78,7 @@ Notico is one of the [Cofun](../../README.md) extensions, which share one backen
 - [Architecture](../../docs/architecture.md): how it is built, the technical choices and why, the sign-in flow, and the code layout.
 - [Development](../../docs/development.md): build and load the extension, run the checks, and deploy your own worker.
 - [AGENTS.md](../../AGENTS.md): the issue → PR → review → merge workflow and coding rules.
-- [BDD](../../docs/bdd.md) and [Notico's use cases](../../docs/use-cases/notico): the product behavior contract and how it is tested.
+- [BDD](../../docs/bdd.md) and [Notico's use cases](use-cases): the product behavior contract and how it is tested.
 
 ## License
 

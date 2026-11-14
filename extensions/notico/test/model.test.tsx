@@ -1,4 +1,4 @@
-// Choosing which model answers (UC-AGENT-002), as a user does it on the settings page and in the
+// Choosing which model answers (UC-NOTICO-AGENT-002), as a user does it on the settings page and in the
 // chat. Besides the screen, the tests look at the edges: what OpenRouter, DeepSeek, and the worker
 // were sent.
 import '@testing-library/jest-dom/vitest'
@@ -56,7 +56,7 @@ async function replyDetails(user: UserEvent) {
 }
 
 describe('choosing the model', () => {
-  it('[UC-AGENT-002-S01] the own model answers with the user key and a tool, and the worker never gets the key or the question', async () => {
+  it('[UC-NOTICO-AGENT-002-S01] the own model answers with the user key and a tool, and the worker never gets the key or the question', async () => {
     const { browser, user } = await openPanel()
     await setUpOpenRouter(browser, user)
     browser.openRouter.ai.script.push(
@@ -87,7 +87,7 @@ describe('choosing the model', () => {
     expect(browser.sentToWorker.slice(before).some((sent) => sent.includes('/chat/completions'))).toBe(false)
   })
 
-  it("[UC-SESSION-001-S14] with the user's own model, the title is asked of that model with their key, not of the worker", async () => {
+  it("[UC-NOTICO-SESSION-001-S14] with the user's own model, the title is asked of that model with their key, not of the worker", async () => {
     const { browser, user } = await openPanel()
     await setUpOpenRouter(browser, user)
     browser.openRouter.titles.failWith = undefined
@@ -130,7 +130,7 @@ describe('choosing the model', () => {
     expect(await replyDetails(user)).toEqual(['Tokens: 3,000 in (2,000 cached) · 40 out', 'Model: OpenAI: GPT-6.1 Sol'])
   })
 
-  it('[UC-AGENT-002-S02] another account on the same browser gets the hosted model and cannot see the key', async () => {
+  it('[UC-NOTICO-AGENT-002-S02] another account on the same browser gets the hosted model and cannot see the key', async () => {
     const tab = pageTab()
     {
       const { browser, user } = await openPanel(tab, 'user_alice')
@@ -151,7 +151,7 @@ describe('choosing the model', () => {
     expect(screen.queryByText(/key is saved/)).not.toBeInTheDocument()
   })
 
-  it('[UC-AGENT-002-S03] a key OpenRouter rejects is reported as rejected', async () => {
+  it('[UC-NOTICO-AGENT-002-S03] a key OpenRouter rejects is reported as rejected', async () => {
     const { browser, user } = await openPanel()
     await setUpOpenRouter(browser, user)
     // The key was revoked on OpenRouter since.
@@ -162,7 +162,7 @@ describe('choosing the model', () => {
     expect(browser.ai.calls).toEqual([])
   })
 
-  it('[UC-AGENT-002-S04] after the key is removed, the hosted model answers', async () => {
+  it('[UC-NOTICO-AGENT-002-S04] after the key is removed, the hosted model answers', async () => {
     const { browser, user } = await openPanel()
     await setUpOpenRouter(browser, user)
 
@@ -176,7 +176,7 @@ describe('choosing the model', () => {
     expect(browser.openRouter.calls).toEqual([])
   })
 
-  it('[UC-AGENT-002-S05] switching from the hosted model mid-conversation, the own model gets the conversation so far', async () => {
+  it('[UC-NOTICO-AGENT-002-S05] switching from the hosted model mid-conversation, the own model gets the conversation so far', async () => {
     const { browser, user } = await openPanel()
     browser.ai.script.push({ reply: 'The hosted answer.' })
     await ask(user, 'First question')
@@ -199,7 +199,7 @@ describe('choosing the model', () => {
     expect(browser.ai.calls).toHaveLength(1)
   })
 
-  it('[UC-AGENT-002-S06] the own model still answers after the side panel is opened again', async () => {
+  it('[UC-NOTICO-AGENT-002-S06] the own model still answers after the side panel is opened again', async () => {
     const { browser, user } = await openPanel()
     await setUpOpenRouter(browser, user)
 
@@ -211,7 +211,7 @@ describe('choosing the model', () => {
     expect(browser.ai.calls).toEqual([])
   })
 
-  it('[UC-AGENT-002-S07] a search shows only models that can use tools, with their price, and one can be picked', async () => {
+  it('[UC-NOTICO-AGENT-002-S07] a search shows only models that can use tools, with their price, and one can be picked', async () => {
     const { browser, user } = await openPanel()
     browser.openRouter.models.push(
       listed('google/gemma-5-27b', 'Google: Gemma 5 27B', 0.1, 0.4),
@@ -235,7 +235,7 @@ describe('choosing the model', () => {
     expect(modelInUse()).toHaveTextContent('Google: Gemma 5 27B')
   })
 
-  it('[UC-AGENT-002-S08] checking a key and model says whether the model answered and can use tools', async () => {
+  it('[UC-NOTICO-AGENT-002-S08] checking a key and model says whether the model answered and can use tools', async () => {
     const { browser, user } = await openPanel()
     browser.openRouter.keys.add(KEY)
     await openSettings(user)
@@ -286,7 +286,7 @@ describe('choosing the model', () => {
 describe('switching the model from the chat', () => {
   const chip = (name: string) => screen.getByRole('button', { name: `Model: ${name}` })
 
-  it('[UC-AGENT-002-S10] a follow-up goes to the model picked from the chat, with the conversation so far', async () => {
+  it('[UC-NOTICO-AGENT-002-S10] a follow-up goes to the model picked from the chat, with the conversation so far', async () => {
     const { browser, user } = await openPanel()
     await setUpOpenRouter(browser, user)
     browser.openRouter.ai.script.push({ reply: 'From Sol.' }, { reply: 'From Sonnet.' })
@@ -379,7 +379,7 @@ describe('DeepSeek with the user key', () => {
     await backToChat(user)
   }
 
-  it('[UC-AGENT-002-S11] a DeepSeek model answers with the user key and a tool, and no one else gets the key or the question', async () => {
+  it('[UC-NOTICO-AGENT-002-S11] a DeepSeek model answers with the user key and a tool, and no one else gets the key or the question', async () => {
     const { browser, user } = await openPanel()
     await setUpDeepSeek(browser, user)
     browser.deepSeek.ai.script.push(
@@ -425,7 +425,7 @@ describe('DeepSeek with the user key', () => {
     expect(model).toMatch(/^Model: DeepSeek V4.1 Flash/)
   })
 
-  it('[UC-AGENT-002-S12] switching between OpenRouter and DeepSeek uses each one with its own key, never asked again', async () => {
+  it('[UC-NOTICO-AGENT-002-S12] switching between OpenRouter and DeepSeek uses each one with its own key, never asked again', async () => {
     const { browser, user } = await openPanel()
     await setUpOpenRouter(browser, user)
     await setUpDeepSeek(browser, user)
@@ -462,7 +462,7 @@ describe('DeepSeek with the user key', () => {
     expect(browser.ai.calls).toEqual([])
   })
 
-  it('[UC-AGENT-002-S17] the chat menu lists the hosted model and DeepSeek models by name only once a DeepSeek key is saved', async () => {
+  it('[UC-NOTICO-AGENT-002-S17] the chat menu lists the hosted model and DeepSeek models by name only once a DeepSeek key is saved', async () => {
     const { browser, user } = await openPanel()
     await user.click(chip('Auto'))
     expect(screen.queryByRole('group', { name: 'DeepSeek' })).not.toBeInTheDocument()
@@ -488,7 +488,7 @@ describe('DeepSeek with the user key', () => {
     expect(browser.openRouter.requests).toEqual([])
   })
 
-  it('[UC-AGENT-002-S14] a key DeepSeek rejects, and a balance that ran out, are each said plainly', async () => {
+  it('[UC-NOTICO-AGENT-002-S14] a key DeepSeek rejects, and a balance that ran out, are each said plainly', async () => {
     const { browser, user } = await openPanel()
     await setUpDeepSeek(browser, user)
 
@@ -504,7 +504,7 @@ describe('DeepSeek with the user key', () => {
     expect(browser.ai.calls).toEqual([])
   })
 
-  it('[UC-AGENT-002-S15] when DeepSeek turns requests away for too many, the question stops and nothing is sent again', async () => {
+  it('[UC-NOTICO-AGENT-002-S15] when DeepSeek turns requests away for too many, the question stops and nothing is sent again', async () => {
     const { browser, user } = await openPanel()
     await setUpDeepSeek(browser, user)
     browser.deepSeek.rateLimited = true

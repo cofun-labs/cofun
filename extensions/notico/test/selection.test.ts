@@ -229,8 +229,8 @@ function setup(
 
 const run = async (args: Record<string, unknown> = {}) => (await getSelection.run(args)) as string
 
-describe('UC-NOTION-003 work on the selection', () => {
-  it('[UC-NOTION-003-S01] gets the selected text and the blocks it covers, across two blocks', async () => {
+describe('UC-NOTICO-NOTION-003 work on the selection', () => {
+  it('[UC-NOTICO-NOTION-003-S01] gets the selected text and the blocks it covers, across two blocks', async () => {
     setup((els) => ({ from: [els[0], 6], to: [els[1], 6] }))
     expect(await run()).toBe(
       [
@@ -245,7 +245,7 @@ describe('UC-NOTION-003 work on the selection', () => {
     )
   })
 
-  it('[UC-NOTION-003-S01] leaves out a block the range only touches at its edge', async () => {
+  it('[UC-NOTICO-NOTION-003-S01] leaves out a block the range only touches at its edge', async () => {
     // A triple-click ends the range at the start of the next block's text.
     setup((els) => ({ from: [els[0], 0], to: [els[1], 0] }))
     expect((await run()).split('\n').slice(-2)).toEqual(['Selected block:', 'First paragraph. ^00000001'])
@@ -256,7 +256,7 @@ describe('UC-NOTION-003 work on the selection', () => {
     expect((await run()).split('\n').slice(-2)).toEqual(['Selected block:', 'Second paragraph. ^00000002'])
   })
 
-  it('[UC-NOTION-003-S01] gets blocks selected as blocks', async () => {
+  it('[UC-NOTICO-NOTION-003-S01] gets blocks selected as blocks', async () => {
     setup((els) => {
       els[2].halo = true
       return undefined
@@ -268,7 +268,7 @@ describe('UC-NOTION-003 work on the selection', () => {
     )
   })
 
-  it('[UC-NOTION-003-S01] keeps a block whose own text is selected along with a block nested in it', async () => {
+  it('[UC-NOTICO-NOTION-003-S01] keeps a block whose own text is selected along with a block nested in it', async () => {
     const child = new FakeElement(id(5), 'Inside the toggle')
     const toggle = new FakeElement(id(4), 'A toggle').add(child)
     setup(() => ({ from: [toggle, 2], to: [child, 6] }), {
@@ -292,7 +292,7 @@ describe('UC-NOTION-003 work on the selection', () => {
     expect((await run()).split('\n').slice(-2)).toEqual(['Selected block:', 'Inside the toggle ^00000005'])
   })
 
-  it('[UC-NOTION-003-S01] stands for a table row by its table, which is what the agent sees', async () => {
+  it('[UC-NOTICO-NOTION-003-S01] stands for a table row by its table, which is what the agent sees', async () => {
     const row = new FakeElement(id(7), 'cell')
     const table = new FakeElement(id(6)).add(row)
     const { ws } = setup(() => across(row, row), {
@@ -312,7 +312,7 @@ describe('UC-NOTION-003 work on the selection', () => {
     expect(ws.transactions).toEqual([])
   })
 
-  it('[UC-NOTION-003-S01] says when the selected blocks aren’t on the open page, or only some are', async () => {
+  it('[UC-NOTICO-NOTION-003-S01] says when the selected blocks aren’t on the open page, or only some are', async () => {
     // A selection in a side peek of another page, while the open page is this one.
     setup((_, __, peek) => across(peek.children[0], peek.children[0]))
     expect(await run()).toBe(
@@ -328,7 +328,7 @@ describe('UC-NOTION-003 work on the selection', () => {
     ])
   })
 
-  it('[UC-NOTION-003-S01] shows at most a part of a large selection, and only that much counts as read', async () => {
+  it('[UC-NOTICO-NOTION-003-S01] shows at most a part of a large selection, and only that much counts as read', async () => {
     const big = Array.from({ length: 30 }, (_, n) => new FakeElement(id(100 + n), `${n} ${'y'.repeat(900)}`))
     setup((els) => ({ from: [els[0], 0], to: [big.at(-1)!, 3] }), {
       blocks: big.map((_, n) => block(100 + n, 'text', `${n} ${'y'.repeat(900)}`)),
@@ -345,7 +345,7 @@ describe('UC-NOTION-003 work on the selection', () => {
     ).rejects.toThrow('is not a block of the page as you last read it')
   })
 
-  it('[UC-NOTION-003-S05] says when blocks selected as blocks may go on past what Notion has drawn', async () => {
+  it('[UC-NOTICO-NOTION-003-S05] says when blocks selected as blocks may go on past what Notion has drawn', async () => {
     const notice =
       'The selection may go on past the part of the page Notion has drawn in the browser, so some selected ' +
       'blocks may be missing. Ask the user whether more is selected, or read the page.'
@@ -377,7 +377,7 @@ describe('UC-NOTION-003 work on the selection', () => {
     expect((await run()).split('\n').slice(-2)).toEqual(['Selected block:', 'Second paragraph. ^00000002'])
   })
 
-  it('[UC-NOTION-003-S06] gets a text selection that starts in the page title', async () => {
+  it('[UC-NOTICO-NOTION-003-S06] gets a text selection that starts in the page title', async () => {
     setup((els, _, __, title) => ({ from: [title, 8], to: [els[0], 5] }))
     expect(await run()).toBe(
       [
@@ -391,7 +391,7 @@ describe('UC-NOTION-003 work on the selection', () => {
     )
   })
 
-  it('[UC-NOTION-003-S06] gets the open page’s blocks of a text selection that runs into a side peek', async () => {
+  it('[UC-NOTICO-NOTION-003-S06] gets the open page’s blocks of a text selection that runs into a side peek', async () => {
     const { ws } = setup((els, _, peek) => ({ from: [els[2], 2], to: [peek.children[0], 2] }))
     expect((await run()).split('\n').slice(-6)).toEqual([
       'Selected text: “taskIn”',
@@ -404,12 +404,12 @@ describe('UC-NOTION-003 work on the selection', () => {
     expect(ws.transactions).toEqual([])
   })
 
-  it('[UC-NOTION-003-S02] says when nothing is selected', async () => {
+  it('[UC-NOTICO-NOTION-003-S02] says when nothing is selected', async () => {
     setup(() => undefined)
     expect(await run()).toBe('Nothing is selected in the Notion page.')
   })
 
-  it('[UC-NOTION-003-S03] lets the agent change exactly the selected block, without reading the whole page', async () => {
+  it('[UC-NOTICO-NOTION-003-S03] lets the agent change exactly the selected block, without reading the whole page', async () => {
     const { ws } = setup((els) => across(els[1], els[1]))
     await run()
     await editPage.run({

@@ -1,4 +1,4 @@
-// Which model answers the user's questions (UC-AGENT-002): the hosted one, or one on OpenRouter or
+// Which model answers the user's questions (UC-NOTICO-AGENT-002): the hosted one, or one on OpenRouter or
 // DeepSeek with the user's own key. The choice and the keys are kept in chrome.storage.local per
 // account: on this device only, never synced, and not encrypted, like the Clerk client token.
 import { z } from './zod'
