@@ -32,7 +32,7 @@
 
 ## Get started
 
-1. **Install** the extension from the Chrome Web Store. _(Not published yet; the link will be here.)_
+1. **Install** [Notico from the Chrome Web Store](https://chromewebstore.google.com/detail/notico-ai-copilot-for-not/moblfnjjebknafkgoifncombfnbfghom).
 2. **Open a Notion page** and click the Notico icon in Chrome's toolbar (if it's hidden, pin it from the puzzle-piece Extensions menu). The side panel opens next to the page. It opens on any other tab too, and you can chat there, but reading and changing Notion works only while the tab you're on is a Notion page.
 3. **Sign in.** The panel opens a sign-in page in a new tab (Google is supported); once you're signed in, the panel picks it up.
 4. **Ask.** A few things to try:

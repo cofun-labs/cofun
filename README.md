@@ -16,7 +16,7 @@ Each extension is installed on its own, from the Chrome Web Store, and has its o
 
 | Extension | Works with | |
 |---|---|---|
-| <img src="extensions/notico/icons/icon.svg" alt="" width="20" height="20" /> **[Notico](extensions/notico/README.md)** | Notion | Reads and edits your Notion pages with you: pages, databases, comments, search. _Not published yet._ |
+| <img src="extensions/notico/icons/icon.svg" alt="" width="20" height="20" /> **[Notico](extensions/notico/README.md)** | Notion | Reads and edits your Notion pages with you: pages, databases, comments, search. [Install from the Chrome Web Store](https://chromewebstore.google.com/detail/notico-ai-copilot-for-not/moblfnjjebknafkgoifncombfnbfghom) |
 
 Confluco, for Confluence, is next.
 
