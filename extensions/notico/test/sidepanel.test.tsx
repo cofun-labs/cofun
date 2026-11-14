@@ -512,6 +512,35 @@ describe('the page a question goes with', () => {
     expect(pagesSent()).toEqual([])
   })
 
+  it('with a page taken off, a tab on another site is looked up and Notion tools say to switch to Notion, as without it', async () => {
+    const { browser, user } = await openPanel()
+    browser.ai.script.push(
+      {
+        toolCalls: [
+          { name: 'get_current_tab', arguments: '{}' },
+          { name: 'read_page', arguments: '{}' },
+        ],
+      },
+      { reply: 'Saved the link.' },
+    )
+
+    await user.click(await screen.findByRole('button', { name: 'Remove Fixture page' }))
+    await act(async () => browser.tab.switchTab(INBOX, 'Inbox'))
+    await ask(user, 'Save a link to this site')
+
+    expect(await screen.findByText('Saved the link.')).toBeVisible()
+    await answered()
+    const results = browser
+      .sentToModel()
+      .filter((m) => m.role === 'tool')
+      .map((m) => m.content)
+    expect(results).toEqual([
+      JSON.stringify({ title: 'Inbox', url: INBOX }),
+      expect.stringMatching(/The current tab is not a Notion page.*Tell the user to switch to a Notion page/),
+    ])
+    expect(browser.tab.injections).toEqual([])
+  })
+
   it('[UC-AGENT-001-S28] a page taken off stays off for the chat until the user goes to another page or starts a new chat', async () => {
     const { browser, user } = await openPanel()
     browser.ai.script.push({ reply: 'One.' }, { reply: 'Two.' })
