@@ -2,7 +2,7 @@
 // purchases they start. Model requests go to the worker through pi, with this provider.
 import { CheckoutPage } from '../credits'
 import { z } from '../zod'
-import { HOSTED_HISTORY, looseText, parseError, type ModelProvider } from './provider'
+import { HOSTED_HISTORY, looseText, parseError, type CallCost, type ModelProvider } from './provider'
 import type { AgentConfig } from './types'
 
 const SIGN_IN = 'Please sign in first.'
@@ -53,7 +53,27 @@ export function hostedProvider({ apiUrl, getToken }: Pick<AgentConfig, 'apiUrl' 
     parseError,
     // The worker's model changed since the panel looked it up (a deploy).
     modelChanged: (failure) => failure.code === 'unsupported_model',
+    callCost,
   }
+}
+
+/**
+ * What the worker says a model call cost: in its own chunk, the last of the stream before `[DONE]`
+ * (and in the body of a reply that isn't streamed). The worker is the only place that prices a call.
+ */
+const CostChunk = z.object({
+  cost: z.object({ micro_credits: z.number().int().nonnegative(), estimated: z.boolean() }).optional(),
+})
+
+/**
+ * The cost a chunk of the worker's stream carries, if it carries one. A cost that is not what the
+ * panel expects throws, saying what is wrong: a reply must not show a number it could not read.
+ */
+function callCost(chunk: unknown): CallCost | undefined {
+  // Most chunks are the model's own, and carry no cost.
+  if (!chunk || typeof chunk !== 'object' || !('cost' in chunk)) return undefined
+  const cost = CostChunk.parse(chunk).cost
+  return cost && { microCredits: cost.micro_credits, estimated: cost.estimated }
 }
 
 /** A refusal from the worker, as far as its message. */

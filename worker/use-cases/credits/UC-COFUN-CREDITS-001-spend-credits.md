@@ -12,6 +12,7 @@ Key constraints:
 - A model call that starts with credits left is answered in full, even when it costs more than what was left. What it overspent is owed, and taken out of the next credits the user gets.
 - Calls sent at once all start from the same balance, so each of them is answered in full, and together they can overspend by more than one call costs. Nothing bounds how many such calls run at once; what they overspend is owed like any other overspend.
 - Credits that have expired cannot be spent.
+- Only the service prices a call. Each reply tells the client what its call cost, so a product can show it; a call that was cut short is charged from estimated tokens, and says so.
 
 ## Scenarios
 
@@ -30,6 +31,8 @@ Key constraints:
 | UC-COFUN-CREDITS-001-S09 | P1 | ✅ | Given a user who last asked the AI a month ago; when they ask again; then they get one week of free credits, not one for each week they were away. |
 | UC-COFUN-CREDITS-001-S10 | P1 | ✅ | Given a user who spent all their credits; when another user asks the AI; then the other user's credits are untouched and they get a reply. |
 | UC-COFUN-CREDITS-001-S11 | P1 | ✅ | Given a user with a few credits left; when several calls are sent at once, each costing more than that; then every one is answered in full, and what they overspent together is taken out of the next credits the user gets. |
+| UC-COFUN-CREDITS-001-S12 | P1 | ✅ | Given a model call that ran to its end; when its reply reaches the client, streamed or not; then the reply says what the call cost, the same amount the user was charged. |
+| UC-COFUN-CREDITS-001-S13 | P1 | ✅ | Given a streamed reply that breaks off before the model reported its totals; when the stream ends; then the client is told what the call was charged, marked as an estimate. |
 
 ### ai-e2e
 

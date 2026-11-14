@@ -11,7 +11,7 @@ import { HOSTED_ONLY, ownSetup, type OwnSetup } from '../models'
 import { askUser, previewCall, toAgentTool, type Reporter } from './calls'
 import { addUsage, detailsOf, recent, textOf, usedTools } from './history'
 import { ownProvider } from './own'
-import type { Failure, ModelProvider } from './provider'
+import type { CallCost, Failure, ModelProvider } from './provider'
 import { writeTitle } from './title'
 import type {
   AgentConfig,
@@ -21,6 +21,7 @@ import type {
   AssistantPart,
   ConfirmTool,
   HistoryMessage,
+  QuestionCost,
   QuestionDetails,
   QuestionExtras,
   QuestionPage,
@@ -98,6 +99,8 @@ export class CopilotAgent {
   private stopReason?: string
   /** Set by a tool that changes data and changed something, or may have (see `changesData`). */
   private changed = false
+  /** Takes each chunk of the model's streams while a question runs: what the calls cost is in them. */
+  private onChunk?: (chunk: unknown) => void
 
   constructor(private readonly config: AgentConfig) {
     this.provider = hostedProvider(config)
@@ -200,6 +203,22 @@ export class CopilotAgent {
     let answered = false
     // What the model calls of this question reported they used, if any did.
     let tokens: TokenUsage | undefined
+    // What they cost, summed as the worker reports each call (the hosted model only). A cost that
+    // could not be read, or was estimated, leaves the sum unknown: only an exact one is shown.
+    let cost: QuestionCost | undefined
+    let costUnknown = false
+    const provider = this.provider
+    this.onChunk = (chunk) => {
+      let call: CallCost | undefined
+      try {
+        call = provider.callCost?.(chunk)
+      } catch (err) {
+        console.error('Could not read what a model call cost', err)
+        costUnknown = true
+      }
+      if (call?.estimated) costUnknown = true
+      else if (call) cost = { microCredits: (cost?.microCredits ?? 0) + call.microCredits }
+    }
     const refused = new Set<string>()
     const declined = new Set<string>()
     // How the latest call with each id ended, kept with its result message when that arrives.
@@ -330,12 +349,8 @@ export class CopilotAgent {
       unsubscribe()
       agent.beforeToolCall = undefined
       agent.finishTurn = undefined
+      this.onChunk = undefined
     }
-    // Kept with the question, so a saved session still has it.
-    const model = this.answeredBy()
-    const counted = detailsOf({ requests: meter?.requests, tokens, model })
-    this.details.set(question, counted)
-
     // Also stopped when the abort landed after a model reply that asked for tools, e.g. while a tool
     // finished. A stop after the final answer keeps it: the user has already read it.
     stopped ||= epoch !== this.epoch && !answered
@@ -343,6 +358,13 @@ export class CopilotAgent {
     const changed = this.changed || meter?.wrote === true
     if (!stopped && this.stopReason)
       failure ??= { text: changed ? `${this.stopReason} ${MAY_HAVE_CHANGED}` : this.stopReason }
+    // Kept with the question, so a saved session still has it. Only a question that ended normally has
+    // a cost: one stopped or failed has none, since a call cut short never hears what it was charged
+    // (the balance still shows it).
+    const model = this.answeredBy()
+    const spent = costUnknown || stopped || failure ? undefined : cost
+    const counted = detailsOf({ requests: meter?.requests, tokens, model, cost: spent })
+    this.details.set(question, counted)
     if (failure || stopped) {
       const kept = usedTools(agent.state.messages.slice(before))
       agent.state.messages = [...agent.state.messages.slice(0, before), ...kept]
@@ -534,7 +556,14 @@ export class CopilotAgent {
         tools: this.allTools,
         messages: this.fromHistory(this.initial, model),
       },
-      streamFn: (m, context, options) => streamSimple(m as Model<'openai-completions'>, context, options),
+      streamFn: (m, context, options) => {
+        // The question asking now: its request reports to it, even if another starts meanwhile.
+        const onChunk = this.onChunk
+        return streamSimple(m as Model<'openai-completions'>, context, {
+          ...options,
+          onProviderStreamEvent: (chunk) => onChunk?.(chunk),
+        })
+      },
       getApiKey: () => this.provider.apiKey(),
       identity: this.provider.identity,
       // Notion tools will change pages; run them one at a time, in the order the model asked.

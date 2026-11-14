@@ -15,6 +15,7 @@ import {
   type AgentUpdate,
   type ConfirmTool,
   type HistoryMessage,
+  type QuestionCost,
   type QuestionDetails,
   type QuestionPage,
 } from '../agent'
@@ -639,8 +640,8 @@ export function Chat({ userId }: { userId: string }) {
         )
       const result = await agent.ask(text, onUpdate, confirm, { context, pages: sentPages, readOnly })
       answered = result.status === 'done'
-      const { requests, tokens, model } = result
-      updateReply((m) => ({ ...m, details: { requests, tokens, model } }))
+      const { requests, tokens, model, cost } = result
+      updateReply((m) => ({ ...m, details: { requests, tokens, model, cost } }))
       if (result.status === 'stopped') {
         updateTools((t) => (t.status === 'running' || t.status === 'confirm' ? { ...t, status: 'stopped' } : t))
         updateReply((m) => ({ ...m, stopped: true }))
@@ -1134,7 +1135,7 @@ function toShown(history: HistoryMessage[]): Shown[] {
         ...(m.pages?.length && { pages: m.pages }),
         ...(m.readOnly && { readOnly: true }),
       })
-      details = { requests: m.requests, tokens: m.tokens, model: m.model }
+      details = { requests: m.requests, tokens: m.tokens, model: m.model, cost: m.cost }
       continue
     }
     let reply = shown.at(-1)
@@ -1218,7 +1219,8 @@ const ReplyFoot = memo(function ReplyFoot({
   const summary = touched(reply)
   const details = [...(summary ? [{ text: summary }] : []), ...detailRows(reply.details)]
   const model = reply.details?.model
-  if (!text && !details.length && !model) return null
+  const cost = reply.details?.cost
+  if (!text && !details.length && !model && !cost) return null
   const modelName = model && (model.service === 'hosted' ? HOSTED : model.name)
   return (
     <div className="reply-foot">
@@ -1232,6 +1234,7 @@ const ReplyFoot = memo(function ReplyFoot({
           onSave={() => onSave(index)}
         />
       )}
+      {cost && <CostNote cost={cost} />}
       {modelName && (
         <span
           className="note reply-model"
@@ -1283,6 +1286,21 @@ function CopyButton({ text }: { text: string }) {
 }
 
 const counted = (n: number, noun: string) => `${n} ${noun}${n === 1 ? '' : 's'}`
+
+/**
+ * What a reply cost in credits, as the worker charged it: short, to two significant digits below one
+ * credit ("0.48 credits") and one decimal above.
+ */
+function CostNote({ cost }: { cost: QuestionCost }) {
+  const credits = cost.microCredits / 1_000_000
+  const digits = credits < 1 ? { maximumSignificantDigits: 2 } : { maximumFractionDigits: 1 }
+  const shown = credits.toLocaleString('en-US', digits)
+  return (
+    <span className="note reply-cost" data-tip="What this reply cost">
+      {shown} {shown === '1' ? 'credit' : 'credits'}
+    </span>
+  )
+}
 
 /**
  * What a question touched in Notion: the distinct pages and databases its tools read and changed
