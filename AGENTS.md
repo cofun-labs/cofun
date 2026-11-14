@@ -25,20 +25,20 @@ Cofun: Chrome extensions that each open an AI side panel next to one kind of pag
      - [ ] All PR comments resolved
      ```
 
-2. **Cover business rules with scenarios.** Ask one question: does this change add or change a business rule a user can notice? If not, as with most bug fixes and refactors, no use case changes. If so, a scenario covers it, in `docs/use-cases/{product}/{domain}/` (an extension's folder name, or `shared` for behavior of the backend alone; see [docs/bdd.md](docs/bdd.md#products)): reuse or edit one that already says it, or add one with a priority (P0/P1/P2), under its strategy (`api-test` or `ai-e2e`), marked 🚧 until verified, then ✅. [docs/bdd.md](docs/bdd.md) says how to write them.
+2. **Cover business rules with scenarios.** Ask one question: does this change add or change a business rule a user can notice? If not, as with most bug fixes and refactors, no use case changes. If so, a scenario covers it, in the product's use cases (`extensions/<name>/use-cases/{domain}/` for an extension, or `worker/use-cases/{domain}/` for a rule only the worker decides, whichever extension asks; see [docs/bdd.md](docs/bdd.md#products)): reuse or edit one that already says it, or add one with a priority (P0/P1/P2), under its strategy (`api-test` or `ai-e2e`), marked 🚧 until verified, then ✅. [docs/bdd.md](docs/bdd.md) says how to write them.
 
 3. **Implement with tests.** A test guards each such rule:
    - P0 scenarios must be verified before merge; P1 should be; P2 can wait.
    - `api-test` scenarios are vitest integration tests, named with the scenario ID: in `worker/test/` for the worker's HTTP API, in the extension's `extensions/<name>/test/` for its client code (`*.test.ts`) and the side panel's UI (`*.test.tsx`). `ai-e2e` scenarios are verified by an agent driving a real browser with `pnpm e2e`, and the run is recorded in the PR (see [Running an `ai-e2e` scenario](docs/bdd.md#running-an-ai-e2e-scenario)).
      ```typescript
-     it('[UC-CHAT-001-S01] signed-in user gets a streamed reply', async () => {
+     it('[UC-NOTICO-CHAT-001-S01] signed-in user gets a streamed reply', async () => {
      ```
    - `pnpm check` fails when an `api-test` scenario marked ✅ has no test named with its ID, or when it can't read a scenario row, and only warns about the rest ([Coverage check](docs/bdd.md#coverage-check)). A scenario's ID may change; rename its tests with it. When a scenario is deleted, delete its tests or take the ID out of their names.
    - Implementation details worth guarding (status codes, CORS, config errors, regressions) get standalone tests without a scenario ID.
 
    Gaps that slip past a PR are found by the `/bdd-audit` skill (`.agents/skills/bdd-audit/SKILL.md`, linked from `.claude/skills/` for Claude Code), run before a release or after a large feature ([Coverage audit](docs/bdd.md#coverage-audit)), not by per-PR bookkeeping.
 
-4. **Run pre-PR checks.** Run `pnpm check`, then review `git diff --stat origin/main...` and `git diff origin/main... -- docs/use-cases`. Confirm the diff matches the Issue (or the PR body, when there is no Issue) and every business rule it adds or changes has a scenario and a test.
+4. **Run pre-PR checks.** Run `pnpm check`, then review `git diff --stat origin/main...` and `git diff origin/main... -- 'extensions/*/use-cases/*' worker/use-cases`. Confirm the diff matches the Issue (or the PR body, when there is no Issue) and every business rule it adds or changes has a scenario and a test.
 
 5. **Open a PR.** Branch `issue-{ID}` from `origin/main` (or a short descriptive name when there is no Issue), commit, push, and open a PR. If there is an Issue, the PR body contains `Closes #{ID}`. A branch builds on another unmerged PR only when it needs that PR's changes; its PR then targets that branch as its base, so its diff and review cover only its own commits. A PR whose base is not `main` is never merged: once its base merges, GitHub points it at `main`, and it merges `origin/main` and goes through the queue like any other.
 

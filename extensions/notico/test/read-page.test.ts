@@ -94,8 +94,8 @@ function body(result: string): string {
   return result.slice(result.indexOf('\n\n') + 2)
 }
 
-describe('UC-NOTION-001 read a page', () => {
-  it('[UC-NOTION-001-S01] reads common content in page order, with its structure and a reference on each block', async () => {
+describe('UC-NOTICO-NOTION-001 read a page', () => {
+  it('[UC-NOTICO-NOTION-001-S01] reads common content in page order, with its structure and a reference on each block', async () => {
     const blocks = {
       ...block(id(1), 'header', 'Plan'),
       ...block(id(2), 'sub_header', 'Goals'),
@@ -185,7 +185,7 @@ describe('UC-NOTION-001 read a page', () => {
     )
   })
 
-  it('[UC-NOTION-001-S01] reads the recorded fixture page, following its chunks', async () => {
+  it('[UC-NOTICO-NOTION-001-S01] reads the recorded fixture page, following its chunks', async () => {
     new FakeNotionTab(PAGE_URL)
       .respond('loadPageChunk', 200, fixture('load-page-chunk-0'))
       .respond('loadPageChunk', 200, fixture('load-page-chunk-1'))
@@ -195,7 +195,7 @@ describe('UC-NOTION-001 read a page', () => {
     )
   })
 
-  it('[UC-NOTION-001-S01] reads a recorded page with mentions, a callout, code, a table, columns, and a synced block', async () => {
+  it('[UC-NOTICO-NOTION-001-S01] reads a recorded page with mentions, a callout, code, a table, columns, and a synced block', async () => {
     new FakeNotionTab(PAGE_URL).respond('loadPageChunk', 200, fixture('rich-page')).install()
     expect(body(await read())).toBe(
       [
@@ -228,7 +228,7 @@ describe('UC-NOTION-001 read a page', () => {
     )
   })
 
-  it('[UC-NOTION-001-S01] shows what a synced copy shows: the content of its original', async () => {
+  it('[UC-NOTICO-NOTION-001-S01] shows what a synced copy shows: the content of its original', async () => {
     new FakeNotionTab(PAGE_URL).respond('loadPageChunk', 200, fixture('synced-copy')).install()
     // The copied blocks are the original's, on another page: they have no references here.
     expect(body(await read({ page: RECORDED.syncedCopy }))).toBe(
@@ -247,7 +247,7 @@ describe('UC-NOTION-001 read a page', () => {
     await expect(edit(hex('f1f1f1f1-0000-4000-8000-000000000112'))).rejects.toThrow('is not a block of the page')
   })
 
-  it('[UC-NOTION-001-S02] marks content it cannot show, and keeps everything after it', async () => {
+  it('[UC-NOTICO-NOTION-001-S02] marks content it cannot show, and keeps everything after it', async () => {
     openPage(
       chunk([id(1), id(2), id(3)], {
         block: {
@@ -268,7 +268,7 @@ describe('UC-NOTION-001 read a page', () => {
     )
   })
 
-  it('[UC-NOTION-001-S03] reads a long page part by part, and says when there is more', async () => {
+  it('[UC-NOTICO-NOTION-001-S03] reads a long page part by part, and says when there is more', async () => {
     const count = 400
     const ids = Array.from({ length: count }, (_, i) => id(i + 1))
     const blocks = Object.assign({}, ...ids.map((b, i) => block(b, 'text', `Paragraph ${i + 1} ${'x'.repeat(60)}`)))
@@ -301,7 +301,7 @@ describe('UC-NOTION-001 read a page', () => {
     )
   })
 
-  it('[UC-NOTION-001-S04] reads a database row with its properties', async () => {
+  it('[UC-NOTICO-NOTION-001-S04] reads a database row with its properties', async () => {
     const collection = {
       [COLLECTION]: wrapped({
         id: COLLECTION,
@@ -350,7 +350,7 @@ describe('UC-NOTION-001 read a page', () => {
     })
   })
 
-  it('[UC-NOTION-001-S04] reads a recorded database row, its properties in the order its view shows them and by name', async () => {
+  it('[UC-NOTICO-NOTION-001-S04] reads a recorded database row, its properties in the order its view shows them and by name', async () => {
     // The row's load leaves out the person and the related row it names: they are loaded together.
     const tab = new FakeNotionTab(PAGE_URL)
       .respond('loadPageChunk', 200, fixture('database-row'))
@@ -376,7 +376,7 @@ describe('UC-NOTION-001 read a page', () => {
     })
   })
 
-  it('[UC-NOTION-001-S05] shows child pages and databases by name and id, without their content, and opens them by id', async () => {
+  it('[UC-NOTICO-NOTION-001-S05] shows child pages and databases by name and id, without their content, and opens them by id', async () => {
     const child = id(1)
     const database = id(2)
     const link = id(3)
@@ -416,7 +416,7 @@ describe('UC-NOTION-001 read a page', () => {
     expect(tab.sent.at(-1)!.body).toMatchObject({ page: { id: child } })
   })
 
-  it('[UC-NOTION-001-S06] tells the AI a page its Notion account cannot open cannot be read', async () => {
+  it('[UC-NOTICO-NOTION-001-S06] tells the AI a page its Notion account cannot open cannot be read', async () => {
     // Notion answers a page the user can't see with an empty record map, not an error.
     openPage(fixture('empty-record-map'))
     await expect(read()).rejects.toThrow(
@@ -689,7 +689,7 @@ describe('more converter and argument details', () => {
     )
   })
 
-  it('[UC-NOTION-001-S06] checks the account in the tab can still open the page before giving a later part', async () => {
+  it('[UC-NOTICO-NOTION-001-S06] checks the account in the tab can still open the page before giving a later part', async () => {
     const ids = Array.from({ length: 300 }, (_, i) => id(i + 1))
     const page = chunk(ids, {
       block: Object.assign({}, ...ids.map((b, i) => block(b, 'text', `P${i} ${'z'.repeat(60)}`))),
@@ -719,7 +719,7 @@ describe('more converter and argument details', () => {
 })
 
 describe('faithful details', () => {
-  it('[UC-NOTION-001-S09] reads what is inside closed toggles, level by level', async () => {
+  it('[UC-NOTICO-NOTION-001-S09] reads what is inside closed toggles, level by level', async () => {
     // Notion's page load leaves out a closed toggle's children; they come from a record lookup.
     const tab = openPage(chunk([id(1)], { block: { ...block(id(1), 'toggle', 'Details', { content: [id(2)] }) } }))
       .respond('syncRecordValuesMain', 200, {

@@ -79,8 +79,8 @@ const later = (ms: number) => {
   clock = new Date(clock.getTime() + ms)
 }
 
-describe('UC-CHAT-003 See credits, usage, and the plan', () => {
-  it('[UC-CHAT-003-S01] a user who spent credits sees what is left, when it expires, and when the next free credits arrive', async () => {
+describe("UC-NOTICO-CHAT-003 See credits, usage, and the plan, and UC-COFUN-CREDITS-002 read only one's own", () => {
+  it('[UC-NOTICO-CHAT-003-S01] a user who spent credits sees what is left, when it expires, and when the next free credits arrive', async () => {
     await ask(alice, 60)
 
     expect(await credits(alice)).toEqual({
@@ -91,7 +91,7 @@ describe('UC-CHAT-003 See credits, usage, and the plan', () => {
     })
   })
 
-  it('[UC-CHAT-003-S02] a new user sees the free credits as not started, nothing is written, and their first question starts with exactly that', async () => {
+  it('[UC-NOTICO-CHAT-003-S02] a new user sees the free credits as not started, nothing is written, and their first question starts with exactly that', async () => {
     const shown = await credits(alice)
 
     expect(shown).toEqual({
@@ -111,7 +111,7 @@ describe('UC-CHAT-003 See credits, usage, and the plan', () => {
     expect(after.free).toEqual({ started: true, until: START + 2 * DAY_MS + WEEK_MS })
   })
 
-  it('[UC-CHAT-003-S02] a user whose week ended sees new free credits as not started, and the leftover is gone', async () => {
+  it('[UC-NOTICO-CHAT-003-S02] a user whose week ended sees new free credits as not started, and the leftover is gone', async () => {
     await ask(alice, 60)
     later(WEEK_MS)
 
@@ -128,7 +128,7 @@ describe('UC-CHAT-003 See credits, usage, and the plan', () => {
     expect((await credits(alice)).balance).toBe(shown.balance - 30 * CREDIT)
   })
 
-  it('[UC-CHAT-003-S03] a user who overspent sees no credits left, and then the next free credits less what they owe', async () => {
+  it('[UC-NOTICO-CHAT-003-S03] a user who overspent sees no credits left, and then the next free credits less what they owe', async () => {
     await ask(alice, 150)
     // 50 credits are left: the call goes ahead, and takes the balance 100 credits below zero.
     await ask(alice, 150)
@@ -150,7 +150,7 @@ describe('UC-CHAT-003 See credits, usage, and the plan', () => {
     expect((await ask(alice)).status).toBe(402)
   })
 
-  it('[UC-CHAT-003-S02] credits granted by hand show beside free credits that have not started', async () => {
+  it('[UC-NOTICO-CHAT-003-S02] credits granted by hand show beside free credits that have not started', async () => {
     const admin = await clerk.sessionToken({ userId: 'user_root', azp: 'http://localhost', claims: { role: 'admin' } })
     const grant = await req('POST', '/v1/admin/accounts/user_alice/grants', admin, { credits: 100, days: 30 })
     expect(grant.status).toBe(200)
@@ -174,7 +174,7 @@ describe('UC-CHAT-003 See credits, usage, and the plan', () => {
     })
   })
 
-  it('[UC-CHAT-003-S04] usage is totalled per day, newest first, and a day is the day on the user’s own clock', async () => {
+  it('[UC-NOTICO-CHAT-003-S04] usage is totalled per day, newest first, and a day is the day on the user’s own clock', async () => {
     at('2026-11-08T12:00:00Z')
     await ask(alice, 30)
     at('2026-11-08T23:30:00Z')
@@ -204,7 +204,7 @@ describe('UC-CHAT-003 See credits, usage, and the plan', () => {
     ])
   })
 
-  it('[UC-CHAT-003-S04] usage covers the 30 most recent days of the user’s clock, today included', async () => {
+  it('[UC-NOTICO-CHAT-003-S04] usage covers the 30 most recent days of the user’s clock, today included', async () => {
     at('2026-11-08T23:30:00Z')
     await ask(alice, 30)
     at('2026-11-09T00:30:00Z')
@@ -223,7 +223,7 @@ describe('UC-CHAT-003 See credits, usage, and the plan', () => {
     expect((await credits(alice, '?utc_offset=60')).usage.byDay).toEqual([])
   })
 
-  it('[UC-CHAT-003-S05] a user sees only their own credits and usage', async () => {
+  it('[UC-COFUN-CREDITS-002-S01] a user sees only their own credits and usage', async () => {
     await ask(alice, 150)
     await ask(alice, 150)
     await ask(bob, 30)

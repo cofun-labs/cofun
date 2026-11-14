@@ -36,7 +36,7 @@ function clerkCookiePermission(syncHost: string, cookieDomain?: string): string 
   return `${protocol}//*.${labels.slice(-2).join('.')}/*`
 }
 
-/** The APIs where a user's own model is asked (UC-AGENT-002): OpenRouter's, and DeepSeek's. */
+/** The APIs where a user's own model is asked (UC-NOTICO-AGENT-002): OpenRouter's, and DeepSeek's. */
 const OWN_MODEL_HOSTS = ['https://openrouter.ai', 'https://api.deepseek.com']
 
 /**

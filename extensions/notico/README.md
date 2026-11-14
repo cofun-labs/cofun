@@ -48,6 +48,8 @@ There is nothing to connect on the Notion side: no integration to create, no tok
 
 **Credits.** Asking the AI with Notico's own model costs credits (answering with your own model on OpenRouter or DeepSeek spends none), and every account gets 200 free credits each week. When you need more, buy a pack on the Settings page: it opens Stripe's checkout in a new tab, nothing renews, and the credits last a year. Back in the side panel, they show as soon as the payment goes through. Your avatar at the top of the panel shows how many are left and when they expire; its Settings page also shows how many you used each day, and leads to the history of your credits: every lot you were given and what you used further back.
 
+**What's new.** The [changelog](CHANGELOG.md) lists what changed in each version.
+
 ## How it works
 
 <p align="center">
@@ -77,7 +79,7 @@ Notico is one of the [Cofun](../../README.md) extensions, which share one backen
 - [Architecture](../../docs/architecture.md): how it is built, the technical choices and why, the sign-in flow, and the code layout.
 - [Development](../../docs/development.md): build and load the extension, run the checks, and deploy your own worker.
 - [AGENTS.md](../../AGENTS.md): the issue → PR → review → merge workflow and coding rules.
-- [BDD](../../docs/bdd.md) and [Notico's use cases](../../docs/use-cases/notico): the product behavior contract and how it is tested.
+- [BDD](../../docs/bdd.md) and [Notico's use cases](use-cases): the product behavior contract and how it is tested.
 
 ## License
 

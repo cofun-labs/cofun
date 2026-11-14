@@ -33,7 +33,7 @@ const section = (name: string) => screen.getByRole('region', { name })
 const comeBack = () => fireEvent.focus(window)
 
 describe('buying credits on the settings page', () => {
-  it('[UC-BILLING-001-S01] choosing a pack opens its Checkout page in a new tab, for the signed-in account', async () => {
+  it('[UC-NOTICO-BILLING-001-S01] choosing a pack opens its Checkout page in a new tab, for the signed-in account', async () => {
     const { browser, user } = await openPanel()
     await openSettings(user)
 
@@ -55,7 +55,7 @@ describe('buying credits on the settings page', () => {
     expect(browser.stripe.sessions).toMatchObject([{ userId: 'user_alice', quantity: 5, price: 'price_credits' }])
   })
 
-  it('[UC-BILLING-001-S15] the packs on offer say bought credits last one year and nothing renews', async () => {
+  it('[UC-NOTICO-BILLING-001-S15] the packs on offer say bought credits last one year and nothing renews', async () => {
     const { user } = await openPanel()
     await openSettings(user)
 
@@ -68,7 +68,7 @@ describe('buying credits on the settings page', () => {
     ).toBeVisible()
   })
 
-  it('[UC-BILLING-001-S10] coming back to the panel after paying shows the new credits', async () => {
+  it('[UC-NOTICO-BILLING-001-S10] coming back to the panel after paying shows the new credits', async () => {
     const { browser, user } = await openPanel()
     await openSettings(user)
     const credits = within(section('Credits'))
@@ -92,7 +92,7 @@ describe('buying credits on the settings page', () => {
     expect(await screen.findByText('10,200 credits left')).toBeVisible()
   })
 
-  it('[UC-BILLING-001-S11] the history shows a purchase as such, and what a refund took back', async () => {
+  it('[UC-NOTICO-BILLING-001-S11] the history shows a purchase as such, and what a refund took back', async () => {
     const { browser, user } = await openPanel()
     await openSettings(user)
     await user.click(await screen.findByRole('button', { name: 'Buy 5,000 credits for US$5' }))
@@ -146,7 +146,7 @@ describe('buying credits on the settings page', () => {
 })
 
 describe('a question refused for lack of credits', () => {
-  it('[UC-BILLING-001-S12] offers to buy credits beside saying when the free ones return', async () => {
+  it('[UC-NOTICO-BILLING-001-S12] offers to buy credits beside saying when the free ones return', async () => {
     const { browser, user } = await openPanel()
     browser.ai.usage = usageCosting(210)
     browser.ai.script.push({ reply: 'Answer' })

@@ -105,7 +105,7 @@ const accounts = async (from: string, to: string, more?: Record<string, string |
   expect(res.status).toBe(200)
   return json(res)
 }
-/** One account's own record (UC-ADMIN-001). */
+/** One account's own record (UC-COFUN-ADMIN-001). */
 const lookUp = async (userId: string) => json(await req('GET', `/v1/admin/accounts/${userId}`, admin))
 
 const NOTHING = {
@@ -141,8 +141,8 @@ async function threeDays() {
   later(DAY_MS)
 }
 
-describe('UC-ADMIN-002 See granted and spent credits as a whole', () => {
-  it('[UC-ADMIN-002-S01] an operator sees what was granted and spent in a period, in all and for each day', async () => {
+describe('UC-COFUN-ADMIN-002 See granted and spent credits as a whole', () => {
+  it('[UC-COFUN-ADMIN-002-S01] an operator sees what was granted and spent in a period, in all and for each day', async () => {
     await threeDays()
     const nov8 = {
       ...NOTHING,
@@ -189,7 +189,7 @@ describe('UC-ADMIN-002 See granted and spent credits as a whole', () => {
     })
   })
 
-  it('[UC-ADMIN-002-S10] an operator sees what each product spent, and what came from no known product', async () => {
+  it('[UC-COFUN-ADMIN-002-S10] an operator sees what each product spent, and what came from no known product', async () => {
     const CONFLUCO = 'chrome-extension://ponmlkjihgfedcbaponmlkjihgfedcba'
     env.CLERK_AUTHORIZED_PARTIES += `, ${CONFLUCO}`
     env.PRODUCTS = { [EXT]: 'notico', [CONFLUCO]: 'confluco' }
@@ -223,7 +223,7 @@ describe('UC-ADMIN-002 See granted and spent credits as a whole', () => {
     expect((await overview('2026-11-01', '2026-11-07')).products).toEqual([])
   })
 
-  it('[UC-ADMIN-002-S09] a call the user stopped counts as a failed call, and as a cancelled one', async () => {
+  it('[UC-COFUN-ADMIN-002-S09] a call the user stopped counts as a failed call, and as a cancelled one', async () => {
     await asks('alice')
     // Bob stops reading his reply partway.
     const bearer = await clerk.sessionToken({ userId: 'user_bob', azp: EXT })
@@ -243,7 +243,7 @@ describe('UC-ADMIN-002 See granted and spent credits as a whole', () => {
     expect(days[0]).toMatchObject({ day: '2026-11-08', calls: 3, failedCalls: 2, cancelledCalls: 1 })
   })
 
-  it('[UC-ADMIN-002-S02] an operator sees the accounts of a period, the biggest spender first, with the balance their own record shows', async () => {
+  it('[UC-COFUN-ADMIN-002-S02] an operator sees the accounts of a period, the biggest spender first, with the balance their own record shows', async () => {
     await threeDays()
     // Dave is only granted credits, and bob overspends his week by 40 credits and more.
     await grant('dave', 20, 30)
@@ -311,7 +311,7 @@ describe('UC-ADMIN-002 See granted and spent credits as a whole', () => {
     await agreesWithLookups(afterwards)
   })
 
-  it('[UC-ADMIN-002-S03] someone who is not an operator is refused the overview and the accounts', async () => {
+  it('[UC-COFUN-ADMIN-002-S03] someone who is not an operator is refused the overview and the accounts', async () => {
     await threeDays()
     const strangers = [
       await clerk.sessionToken({ userId: 'user_alice', azp: EXT }),
@@ -336,12 +336,12 @@ describe('UC-ADMIN-002 See granted and spent credits as a whole', () => {
     }
   })
 
-  it('[UC-ADMIN-002-S03] without a session nothing is shown', async () => {
+  it('[UC-COFUN-ADMIN-002-S03] without a session nothing is shown', async () => {
     expect((await getOverview(period('2026-11-08', '2026-11-10'), '')).status).toBe(401)
     expect((await getAccounts(period('2026-11-08', '2026-11-10'), '')).status).toBe(401)
   })
 
-  it('[UC-ADMIN-002-S04] the first and last day of a period count in full, and nothing outside it', async () => {
+  it('[UC-COFUN-ADMIN-002-S04] the first and last day of a period count in full, and nothing outside it', async () => {
     // Each user's first question also starts their free week, so grants and calls sit on the same edges.
     at('2026-11-08T23:59:59.999Z')
     await asks('early')
@@ -374,7 +374,7 @@ describe('UC-ADMIN-002 See granted and spent credits as a whole', () => {
     expect((await overview('2026-11-08', '2026-11-11')).totals.calls).toBe(4)
   })
 
-  it('[UC-ADMIN-002-S05] a grant or a call counts on the day it happened on the operator’s clock', async () => {
+  it('[UC-COFUN-ADMIN-002-S05] a grant or a call counts on the day it happened on the operator’s clock', async () => {
     at('2026-11-08T05:00:00Z')
     await asks('alice')
     at('2026-11-08T18:00:00Z')
@@ -418,7 +418,7 @@ describe('UC-ADMIN-002 See granted and spent credits as a whole', () => {
     })
   })
 
-  it('[UC-ADMIN-002-S06] a period with more accounts than the list shows gives the biggest spenders, and says there are more', async () => {
+  it('[UC-COFUN-ADMIN-002-S06] a period with more accounts than the list shows gives the biggest spenders, and says there are more', async () => {
     for (const [name, cost] of [
       ['ann', 3],
       ['ben', 40],
@@ -441,7 +441,7 @@ describe('UC-ADMIN-002 See granted and spent credits as a whole', () => {
     expect(all.more).toBe(false)
   })
 
-  it('[UC-ADMIN-002-S07] a period that is too long, ends before it starts, or is not a period is refused', async () => {
+  it('[UC-COFUN-ADMIN-002-S07] a period that is too long, ends before it starts, or is not a period is refused', async () => {
     const cases: [string, string][] = [
       // 93 days.
       [period('2026-08-10', '2026-11-10'), 'the period must be at most 92 days'],
@@ -478,7 +478,7 @@ describe('UC-ADMIN-002 See granted and spent credits as a whole', () => {
     expect((await getAccounts(period('2026-08-11', '2026-11-10'))).status).toBe(200)
   })
 
-  it('[UC-ADMIN-002-S08] looking at the overview and the accounts changes no account and starts no free week', async () => {
+  it('[UC-COFUN-ADMIN-002-S08] looking at the overview and the accounts changes no account and starts no free week', async () => {
     // Alice's free week has run out, and carol has only credits granted by hand.
     await asks('alice')
     await grant('carol', 50, 30)

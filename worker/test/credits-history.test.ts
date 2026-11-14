@@ -95,8 +95,8 @@ const later = (ms: number) => {
   clock = new Date(clock.getTime() + ms)
 }
 
-describe('UC-CHAT-003 the history of a user’s credits', () => {
-  it('[UC-CHAT-003-S10] a user sees every grant they were given, newest first, with what went unspent of the expired ones', async () => {
+describe('UC-NOTICO-CHAT-003 the history of a user’s credits, and UC-COFUN-CREDITS-002 read only one’s own', () => {
+  it('[UC-NOTICO-CHAT-003-S10] a user sees every grant they were given, newest first, with what went unspent of the expired ones', async () => {
     // Week one: 60 of the free credits are spent, and 140 expire unspent.
     await ask(alice, 60)
     // Week two: a new free week, and an hour later credits granted by hand for 30 days.
@@ -130,7 +130,7 @@ describe('UC-CHAT-003 the history of a user’s credits', () => {
     })
   })
 
-  it('[UC-CHAT-003-S10] a grant spent to the end, and one that paid back what was overspent, are in the history', async () => {
+  it('[UC-NOTICO-CHAT-003-S10] a grant spent to the end, and one that paid back what was overspent, are in the history', async () => {
     await ask(alice, 150)
     // 50 credits are left: the call goes ahead, and overspends by 100.
     await ask(alice, 150)
@@ -150,7 +150,7 @@ describe('UC-CHAT-003 the history of a user’s credits', () => {
     ])
   })
 
-  it('[UC-CHAT-003-S10] grants are read a page at a time, to the end, each once and in order', async () => {
+  it('[UC-NOTICO-CHAT-003-S10] grants are read a page at a time, to the end, each once and in order', async () => {
     // 45 grants, told apart by their amounts: 20 given an hour apart, then 25 in the same millisecond.
     for (let credits = 1; credits <= 45; credits++) {
       await grant('user_alice', credits, 30)
@@ -185,7 +185,7 @@ describe('UC-CHAT-003 the history of a user’s credits', () => {
     expect(second.next).toBeNull()
   })
 
-  it('[UC-CHAT-003-S11] a user reads the credits they used per day further back, a period at a time, to the end', async () => {
+  it('[UC-NOTICO-CHAT-003-S11] a user reads the credits they used per day further back, a period at a time, to the end', async () => {
     at('2026-08-01T23:30:00Z')
     await ask(alice, 30)
     at('2026-08-02T00:30:00Z')
@@ -226,7 +226,7 @@ describe('UC-CHAT-003 the history of a user’s credits', () => {
     })
   })
 
-  it('[UC-CHAT-003-S11] days further back are days on the user’s own clock too', async () => {
+  it('[UC-NOTICO-CHAT-003-S11] days further back are days on the user’s own clock too', async () => {
     at('2026-08-01T23:30:00Z')
     await ask(alice, 30)
     at('2026-08-02T00:30:00Z')
@@ -312,7 +312,7 @@ describe('UC-CHAT-003 the history of a user’s credits', () => {
     expect([db.rows('grants'), db.rows('model_calls')]).toEqual(before)
   })
 
-  it('[UC-CHAT-003-S05] a user sees only their own history', async () => {
+  it('[UC-COFUN-CREDITS-002-S01] a user sees only their own history', async () => {
     for (let credits = 1; credits <= 25; credits++) await grant('user_alice', credits, 30)
     await ask(alice, 150)
     await ask(bob, 30)

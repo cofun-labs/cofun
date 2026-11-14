@@ -130,8 +130,8 @@ async function ask(user: UserEvent, question: string) {
   await user.click(screen.getByRole('button', { name: 'Send' }))
 }
 
-describe('UC-CHAT-004 add pages to a question', () => {
-  it('[UC-CHAT-004-S01] @ lists this page, the other open tabs, and recent pages, filtered by what is typed, without asking Notion', async () => {
+describe('UC-NOTICO-CHAT-004 add pages to a question', () => {
+  it('[UC-NOTICO-CHAT-004-S01] @ lists this page, the other open tabs, and recent pages, filtered by what is typed, without asking Notion', async () => {
     const { browser, tab, user } = await openPanel()
     // An earlier chat, in which the agent read "Old notes".
     browser.ai.script.push(
@@ -167,7 +167,7 @@ describe('UC-CHAT-004 add pages to a question', () => {
     expect(tab.injections).toHaveLength(injected)
   })
 
-  it('[UC-CHAT-004-S02] a page chosen with the keys becomes a chip in place of the @ text, and Escape leaves the text as it is', async () => {
+  it('[UC-NOTICO-CHAT-004-S02] a page chosen with the keys becomes a chip in place of the @ text, and Escape leaves the text as it is', async () => {
     const { user } = await openPanel()
 
     await user.type(composer(), 'Compare this with @')
@@ -202,7 +202,7 @@ describe('UC-CHAT-004 add pages to a question', () => {
     expect(composer()).toHaveValue('Compare this with @road @fi')
   })
 
-  it('[UC-CHAT-004-S03] "+" opens the same picker with its own search field, and leaves the message as it is', async () => {
+  it('[UC-NOTICO-CHAT-004-S03] "+" opens the same picker with its own search field, and leaves the message as it is', async () => {
     const { browser, tab, user } = await openPanel()
     await user.type(composer(), 'Summarize')
 
@@ -233,7 +233,7 @@ describe('UC-CHAT-004 add pages to a question', () => {
     expect(composer()).toHaveValue('Summarize')
   })
 
-  it('[UC-CHAT-004-S04] Backspace in an empty message takes the last page off, then the one before it', async () => {
+  it('[UC-NOTICO-CHAT-004-S04] Backspace in an empty message takes the last page off, then the one before it', async () => {
     const { browser, user } = await openPanel()
     await user.type(composer(), '@road')
     await within(picker()!).findByRole('option', { name: /Roadmap/ })
@@ -251,7 +251,7 @@ describe('UC-CHAT-004 add pages to a question', () => {
     expect(sentQuestions(browser)).toEqual([expect.stringMatching(/^\[No Notion page is attached to this question/)])
   })
 
-  it('[UC-CHAT-004-S05] the workspace is searched once typing pauses, one search at a time, with the newest text', async () => {
+  it('[UC-NOTICO-CHAT-004-S05] the workspace is searched once typing pauses, one search at a time, with the newest text', async () => {
     const { tab, user } = await openPanel()
     tab.respond('search', 200, searchAnswer()).respond('search', 200, searchAnswer())
 
@@ -289,7 +289,7 @@ describe('UC-CHAT-004 add pages to a question', () => {
     expect(searches(tab)).toHaveLength(2)
   })
 
-  it('[UC-CHAT-004-S06] Notion turning a search away stops searching for the question, and the other groups still work', async () => {
+  it('[UC-NOTICO-CHAT-004-S06] Notion turning a search away stops searching for the question, and the other groups still work', async () => {
     const { browser, tab, user } = await openPanel()
     tab.limit('search', 1, 529)
     const release = tab.hold('search')
@@ -327,7 +327,7 @@ describe('UC-CHAT-004 add pages to a question', () => {
     expect(searches(tab)).toHaveLength(2)
   })
 
-  it('[UC-CHAT-004-S07] the AI is told the pages a question carries, and its bubble lists them, also after the session is reopened', async () => {
+  it('[UC-NOTICO-CHAT-004-S07] the AI is told the pages a question carries, and its bubble lists them, also after the session is reopened', async () => {
     const { browser, tab, user } = await openPanel()
     browser.ai.script.push({ reply: 'They differ.' })
 
@@ -359,7 +359,7 @@ describe('UC-CHAT-004 add pages to a question', () => {
     expect(pagesSent()).toEqual([['Fixture page', 'Roadmap']])
   })
 
-  it('[UC-CHAT-004-S10] an @ followed by ordinary words is sent as typed, and no page is added in their place', async () => {
+  it('[UC-NOTICO-CHAT-004-S10] an @ followed by ordinary words is sent as typed, and no page is added in their place', async () => {
     const { browser, tab, user } = await openPanel()
     browser.ai.script.push({ reply: 'Thanks.' }, { reply: 'Pinged.' }, { reply: 'Noted.' }, { reply: 'Will do.' })
     tab.respond('search', 200, searchAnswer()).respond('search', 200, searchAnswer())
@@ -413,7 +413,7 @@ describe('UC-CHAT-004 add pages to a question', () => {
     expect(pagesSent()).toEqual([['Fixture page'], ['Fixture page'], ['Fixture page'], ['Fixture page']])
   })
 
-  it('[UC-CHAT-004-S11] the picker and the AI never ask Notion at once', async () => {
+  it('[UC-NOTICO-CHAT-004-S11] the picker and the AI never ask Notion at once', async () => {
     const { browser, tab, user } = await openPanel()
     tab.respond('search', 200, searchAnswer())
 
@@ -497,7 +497,7 @@ describe('UC-CHAT-004 add pages to a question', () => {
     expect(await screen.findByText('Fresh.')).toBeVisible()
   })
 
-  it('[UC-CHAT-004-S08] the open page taken off and picked again goes with the question, also once the tab moves on', async () => {
+  it('[UC-NOTICO-CHAT-004-S08] the open page taken off and picked again goes with the question, also once the tab moves on', async () => {
     const { browser, tab, user } = await openPanel()
     await user.click(screen.getByRole('button', { name: 'Remove Fixture page' }))
     expect(screen.queryByRole('list', { name: 'Pages to send' })).not.toBeInTheDocument()

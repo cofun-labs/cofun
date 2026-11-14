@@ -102,10 +102,10 @@ describe('parseArgs', () => {
   })
 
   it('reads lock actions, with a purpose only for acquire', () => {
-    expect(parseArgs(['lock', 'acquire', 'UC-NOTION-007-S04', 'run']).command).toEqual({
+    expect(parseArgs(['lock', 'acquire', 'UC-NOTICO-NOTION-007-S04', 'run']).command).toEqual({
       name: 'lock',
       action: 'acquire',
-      purpose: 'UC-NOTION-007-S04 run',
+      purpose: 'UC-NOTICO-NOTION-007-S04 run',
     })
     expect(parseArgs(['lock', 'status']).command).toEqual({ name: 'lock', action: 'status', purpose: undefined })
     expect(() => parseArgs(['lock', 'steal'])).toThrow(UsageError)

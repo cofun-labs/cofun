@@ -949,7 +949,7 @@ describe('when Notion turns requests away', () => {
     expect(tab.sent).toHaveLength(1)
   })
 
-  it('[UC-NOTION-002-S11] does not send a change again that Notion turned away, and nothing changes', async () => {
+  it('[UC-NOTICO-NOTION-002-S11] does not send a change again that Notion turned away, and nothing changes', async () => {
     const tab = new FakeNotionTab(PAGE_URL).limit('saveTransactionsFanout', 1).install()
     tab.workspace = new FakeWorkspace([page], SPACE)
     const err = await notionError((await activeNotionTab()).client.submitTransaction(SPACE, [rename], 'rename page'))
@@ -958,7 +958,7 @@ describe('when Notion turns requests away', () => {
     expect(tab.workspace.transactions).toEqual([])
   })
 
-  it('[UC-NOTION-002-S12] says the outcome of a change is unknown when Notion is too busy, which may come after it was applied', async () => {
+  it('[UC-NOTICO-NOTION-002-S12] says the outcome of a change is unknown when Notion is too busy, which may come after it was applied', async () => {
     const tab = new FakeNotionTab(PAGE_URL).limit('saveTransactionsFanout', 1, 529).install()
     const err = await notionError((await activeNotionTab()).client.submitTransaction(SPACE, [rename], 'rename page'))
     // The user is told the change may have been saved, since the question stops before the AI can say so.
@@ -983,7 +983,7 @@ describe('when Notion turns requests away', () => {
     expect([err.code, err.stopsQuestion]).toEqual(['rate_limited', LIMITED_STOP])
   })
 
-  it('[UC-NOTION-001-S11] stops the question on each failure that is not understood, and sends it once', async () => {
+  it('[UC-NOTICO-NOTION-001-S11] stops the question on each failure that is not understood, and sends it once', async () => {
     const cases: [string, (tab: FakeNotionTab) => void, string][] = [
       [
         'server error',
@@ -1034,7 +1034,7 @@ describe('when Notion turns requests away', () => {
     }
   })
 
-  it('[UC-NOTION-002-S18] stops the question when a change gets no answer, saying it may have been saved', async () => {
+  it('[UC-NOTICO-NOTION-002-S18] stops the question when a change gets no answer, saying it may have been saved', async () => {
     for (const setUp of [
       (t: FakeNotionTab) => t.respondText('saveTransactionsFanout', 504, 'Gateway timeout'),
       (t: FakeNotionTab) => (t.networkDown = true),

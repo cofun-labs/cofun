@@ -98,8 +98,8 @@ const lookups = (tab: FakeNotionTab) =>
 /** The lookups a section of the overview may make, by its limit. */
 const sectionLookups = Math.ceil((LIST_LOOKUPS * SECTION_LIMIT) / LIST_LIMIT)
 
-describe('UC-NOTION-005 browse the workspace', () => {
-  it('[UC-NOTION-005-S01] lists the top level by section, with titles and ids and no content', async () => {
+describe('UC-NOTICO-NOTION-005 browse the workspace', () => {
+  it('[UC-NOTICO-NOTION-005-S01] lists the top level by section, with titles and ids and no content', async () => {
     const tab = notion(
       [
         page(1, 'Notes', [id(9)]),
@@ -141,7 +141,7 @@ describe('UC-NOTION-005 browse the workspace', () => {
     expect(lookups(tab).flat()).not.toContain(id(9))
   })
 
-  it('[UC-NOTION-005-S05] lists the teamspaces the user joined, in the order Notion gives them, without archived ones', async () => {
+  it('[UC-NOTICO-NOTION-005-S05] lists the teamspaces the user joined, in the order Notion gives them, without archived ones', async () => {
     const tab = notion([page(1, 'Notes'), page(21, 'Brand'), page(22, 'Icons'), page(11, 'Eng handbook')])
       .respond('getSpaces', 200, spaces({}, { private_pages: [id(1)] }))
       .respond(
@@ -176,7 +176,7 @@ describe('UC-NOTION-005 browse the workspace', () => {
     expect(JSON.stringify(tab.sent.map((r) => r.body))).not.toContain(id(31))
   })
 
-  it('[UC-NOTION-005-S02] lists the pages under a page, as deep as asked and no deeper', async () => {
+  it('[UC-NOTICO-NOTION-005-S02] lists the pages under a page, as deep as asked and no deeper', async () => {
     const tab = notion([
       page(10, 'Projects', [id(11), id(12), id(13)]),
       page(11, 'Alpha', [id(21)]),
@@ -201,7 +201,7 @@ describe('UC-NOTION-005 browse the workspace', () => {
     expect(JSON.stringify(tab.sent.map((r) => r.body))).not.toContain(id(31))
   })
 
-  it('[UC-NOTION-005-S03] says when the list was cut off', async () => {
+  it('[UC-NOTICO-NOTION-005-S03] says when the list was cut off', async () => {
     const many = range(100, LIST_LIMIT + 20)
     notion([page(10, 'Big', many), ...pages(many, 'Page')]).install()
     const result = await run({ page: hex(id(10)) })
@@ -209,7 +209,7 @@ describe('UC-NOTION-005 browse the workspace', () => {
     expect(result).toContain(`(Cut off: more entries follow. List them with \`offset: ${LIST_LIMIT}\`.)`)
   })
 
-  it('[UC-NOTION-005-S06] lists the entries after the ones a cut-off list showed', async () => {
+  it('[UC-NOTICO-NOTION-005-S06] lists the entries after the ones a cut-off list showed', async () => {
     // A text block among the children counts as an entry, so the offset lines up with the page's own list.
     const many = [id(99), ...range(100, LIST_LIMIT + 20)]
     const blocks = [page(10, 'Big', many), ...text([id(99)]), ...pages(many.slice(1), 'Page')]
@@ -224,7 +224,7 @@ describe('UC-NOTION-005 browse the workspace', () => {
     expect(result).not.toContain('Cut off')
   })
 
-  it('[UC-NOTION-005-S06] picks up inside columns that hold more pages than one list shows', async () => {
+  it('[UC-NOTICO-NOTION-005-S06] picks up inside columns that hold more pages than one list shows', async () => {
     // Two pages before the columns, and more pages in them than one list shows.
     const inside = range(100, LIST_LIMIT + 50)
     const blocks = [
@@ -254,7 +254,7 @@ describe('UC-NOTION-005 browse the workspace', () => {
     ])
   })
 
-  it('[UC-NOTION-005-S06] lists one top-level section from where it was cut off', async () => {
+  it('[UC-NOTICO-NOTION-005-S06] lists one top-level section from where it was cut off', async () => {
     const many = range(200, SECTION_LIMIT + 10)
     const workspace = () =>
       notion([page(1, 'Notes'), ...pages(many, 'Eng')])
@@ -278,7 +278,7 @@ describe('UC-NOTION-005 browse the workspace', () => {
     )
   })
 
-  it('[UC-NOTION-005-S08] says what it did not look into when the list fills up before the asked depth', async () => {
+  it('[UC-NOTICO-NOTION-005-S08] says what it did not look into when the list fills up before the asked depth', async () => {
     // Exactly full at the top level, and every page holds blocks: whether they hold pages isn't looked up.
     const kids = range(300, LIST_LIMIT)
     const tab = notion([page(10, 'Exactly full', kids), ...pages(kids, 'Child', () => [id(900)])]).install()
