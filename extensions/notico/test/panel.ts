@@ -21,6 +21,7 @@ import type { FakeSession } from './clerk'
 import { DEEPSEEK, FakeDeepSeek } from './deepseek'
 import { restoreGlobals, type FakeNotionTab } from './notion-tab'
 import { FakeOpenRouter, OPENROUTER } from './openrouter'
+import { failingTitles, titleRequests } from './titles'
 
 const EXTENSION = 'chrome-extension://abcdefghijklmnopabcdefghijklmnop'
 /** Where the worker answers (VITE_API_URL in vitest.config.ts): the origin its admin page signs in on. */
@@ -40,8 +41,13 @@ let clerk: Promise<FakeClerk> | undefined
  * signed in to Notico, and the worker the panel talks to. Lives for one test.
  */
 export class FakeBrowser {
-  /** The model behind the worker; script its replies, and read what it was sent. */
+  /** The model behind the worker; script its replies, and read what it was sent. Title requests go to `titles`. */
   readonly ai = new FakeAiBinding()
+  /**
+   * The same model, for the panel's title requests (see `titleRequests`), so they never take a reply
+   * scripted for a question. Fails until a test gives it a reply: the session keeps its first question.
+   */
+  readonly titles = failingTitles()
   /** The worker's database: the signed-in user's credits. A test may make it fail. */
   readonly db = new FakeD1Database()
   /** URLs the panel opened in new tabs. */
@@ -112,7 +118,7 @@ export class FakeBrowser {
     const browser = new FakeBrowser(tab, session || undefined)
 
     const env: Env = {
-      AI: browser.ai,
+      AI: { run: (model, inputs, options) => titleRequests(browser, inputs).run(model, inputs, options) },
       DB: browser.db,
       USAGE: new FakeUsageDataset(),
       MODEL,

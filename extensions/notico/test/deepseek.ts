@@ -2,6 +2,7 @@
 // key, refused as DeepSeek refuses them. Replies come from a FakeAiBinding, which streams the
 // OpenAI-style events DeepSeek sends too.
 import { FakeAiBinding } from '../../../worker/test/fakes'
+import { answerTitle, failingTitles, titleRequests } from './titles'
 
 export const DEEPSEEK = 'https://api.deepseek.com'
 
@@ -21,6 +22,8 @@ const refusal = (status: number, message: string, type: string) =>
 export class FakeDeepSeek {
   /** The model behind it; script its replies. */
   readonly ai = new FakeAiBinding()
+  /** The model, for the panel's title requests, which are not in `calls` (see titles.ts). */
+  readonly titles = failingTitles()
   /** Keys DeepSeek accepts. */
   readonly keys = new Set<string>()
   /** Whether the account behind the keys has run out of balance. */
@@ -43,6 +46,7 @@ export class FakeDeepSeek {
     if (this.outOfBalance) return refusal(402, 'Insufficient Balance', 'unknown_error')
     if (this.rateLimited) return refusal(429, 'Rate limit reached for requests', 'rate_limit_error')
     const body = (await request.json()) as Record<string, unknown>
+    if (titleRequests(this, body) === this.titles) return answerTitle(this.titles, body)
     const model = String(body.model)
     this.calls.push({ key, model, messages: body.messages as Call['messages'], thinking: body.thinking })
     const out = await this.ai.run(model, body)
