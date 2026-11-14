@@ -280,7 +280,7 @@ export class FakeUsageDataset implements UsageDataset {
 }
 
 /**
- * Stands in for the rate limiting binding (env.CHAT_LIMIT): lets each key through `limit` times, and
+ * Stands in for a rate limiting binding (env.CHAT_LIMIT, env.API_LIMIT): lets each key through `limit` times, and
  * counts which keys asked. Time never passes for it: a test that needs the period over makes a new one.
  */
 export class FakeRateLimiter implements RateLimiter {

@@ -31,6 +31,7 @@ Key constraints:
 | UC-COFUN-BILLING-001-S10 | P1 | ✅ | Given a payment for something other than the pack its checkout was made for; when it goes through; then no credits are added. |
 | UC-COFUN-BILLING-001-S11 | P1 | ✅ | Given a user whose purchase paid back what they had overspent; when the purchase is refunded or disputed; then they owe that again. |
 | UC-COFUN-BILLING-001-S12 | P2 | ✅ | Given a payment whose refund is reported before the payment itself; when the report of the payment arrives; then no credits are added. |
+| UC-COFUN-BILLING-001-S13 | P1 | ✅ | Given a user who has made many requests within the last minute (UC-COFUN-CREDITS-002); when they choose a pack; then they are refused with a message to wait a minute, and no payment page is made. |
 
 ### ai-e2e
 

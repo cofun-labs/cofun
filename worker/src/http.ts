@@ -26,6 +26,12 @@ export interface Env {
    * overspend, not an exact count.
    */
   CHAT_LIMIT: RateLimiter
+  /**
+   * Caps how many requests one user can make per period to the other routes under /v1 (`ratelimits`
+   * in wrangler.jsonc), keyed by user id. The chat does not count toward it. Approximate, like
+   * CHAT_LIMIT.
+   */
+  API_LIMIT: RateLimiter
   MODEL: string
   AI_GATEWAY_ID?: string
   /** Clerk publishable key, used by the sign-in page. */

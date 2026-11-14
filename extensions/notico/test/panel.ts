@@ -126,6 +126,7 @@ export class FakeBrowser {
       DB: browser.db,
       USAGE: new FakeUsageDataset(),
       CHAT_LIMIT: new FakeRateLimiter(),
+      API_LIMIT: new FakeRateLimiter(),
       MODEL,
       CLERK_JWT_KEY: issuer.publicKeyPem,
       CLERK_AUTHORIZED_PARTIES: `${EXTENSION}, ${WORKER}`,
