@@ -383,6 +383,7 @@ describe('UC-COFUN-BILLING-001 Buy credits: the webhook', () => {
         left: 10_000 * CREDIT,
         grantedAt: START,
         expiresAt: START + DAY_MS,
+        usdCents: 1000,
         revoked: 'dispute',
       },
       {
@@ -391,6 +392,7 @@ describe('UC-COFUN-BILLING-001 Buy credits: the webhook', () => {
         left: 4930 * CREDIT,
         grantedAt: START,
         expiresAt: START + DAY_MS,
+        usdCents: 500,
         revoked: 'refund',
       },
     ])
@@ -599,7 +601,7 @@ describe('UC-COFUN-BILLING-001 Buy credits: the webhook', () => {
 })
 
 describe('UC-NOTICO-BILLING-001 buy credits: purchases in the history and on the admin page', () => {
-  it('[UC-NOTICO-BILLING-001-S11] a purchase shows as such in the credits and the history, with the day it expires', async () => {
+  it('[UC-NOTICO-BILLING-001-S11] a purchase shows as such in the credits and the history, with the day it expires and what it cost', async () => {
     await buy(alice, 5000)
     expect((await credits(alice)).grants).toEqual([
       { source: 'purchase', left: 5000 * CREDIT, expiresAt: yearAfter(START) },
@@ -612,6 +614,7 @@ describe('UC-NOTICO-BILLING-001 buy credits: purchases in the history and on the
           left: 5000 * CREDIT,
           grantedAt: START,
           expiresAt: yearAfter(START),
+          usdCents: 500,
         },
       ],
       next: null,
