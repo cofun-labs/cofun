@@ -69,6 +69,13 @@ function workspaceTab() {
   return { tab, workspace }
 }
 
+/** The rows of the reply's details, opened from its "…" button. */
+async function replyDetails(user: UserEvent) {
+  await user.click(screen.getByRole('button', { name: 'Reply details' }))
+  const popover = screen.getByRole('dialog', { name: 'Reply details' })
+  return [...popover.querySelectorAll('p')].map((row) => row.textContent)
+}
+
 describe('asking the AI', () => {
   it('[UC-NOTICO-CHAT-001-S03] the sent message appears and the reply streams in below it', async () => {
     const { browser, user } = await openPanel()
@@ -658,7 +665,7 @@ describe('a tool that needs confirmation', () => {
     await first.user.click(within(first.prompt).getByRole('button', { name: 'Allow' }))
     await screen.findByText('Done.')
     await answered()
-    expect(screen.getByText('Changed 1 page')).toBeVisible()
+    expect(await replyDetails(first.user)).toContain('Changed 1 page')
   })
 
   it('[UC-NOTICO-AGENT-001-S24] a change the user declined is not counted as changed', async () => {
@@ -667,7 +674,7 @@ describe('a tool that needs confirmation', () => {
     await user.click(within(prompt).getByRole('button', { name: 'Deny' }))
     await screen.findByText('Left it.')
     await answered()
-    expect(screen.queryByText(/Changed \d+ page/)).not.toBeInTheDocument()
+    expect((await replyDetails(user)).join('\n')).not.toMatch(/Changed \d+ page/)
   })
 
   it('[UC-NOTICO-AGENT-001-S11] does not run the tool when the user declines, and the agent goes on without it', async () => {
@@ -769,13 +776,6 @@ describe('sessions', () => {
     expect(said()).toEqual(['Read Fixture page', 'Edited Fixture page'])
   })
 
-  /** The rows of the reply's details, opened from its "…" button. */
-  async function replyDetails(user: UserEvent) {
-    await user.click(screen.getByRole('button', { name: 'Reply details' }))
-    const popover = screen.getByRole('dialog', { name: 'Reply details' })
-    return [...popover.querySelectorAll('p')].map((row) => row.textContent)
-  }
-
   it('[UC-NOTICO-AGENT-001-S23][UC-NOTICO-AGENT-001-S25] a reply shows the pages it read, and its details the Notion requests, tokens, and model, also after the session is reopened', async () => {
     const { browser, user } = await openPanel()
     // Each model call reports 1,200 input tokens, 800 of them cached, and 50 output tokens.
@@ -784,21 +784,20 @@ describe('sessions', () => {
 
     const made = browser.tab.sent.length
     expect(made).toBeGreaterThan(0)
-    // The line counts pages only; the requests are in the details.
-    expect(screen.getByText('Read 1 page')).toBeVisible()
-    expect(screen.queryByText(/Notion request/)).not.toBeInTheDocument()
+    // The row under the reply stays quiet: what it read is in its details, first.
+    expect(screen.queryByText(/Read 1 page|Notion request/)).not.toBeInTheDocument()
     // Both model calls of the question, and not the request for the session's title.
     const details = [
+      'Read 1 page',
       `Sent ${made} Notion request${made === 1 ? '' : 's'}`,
-      'Tokens: 2,400 in (1,600 cached) · 100 out',
-      'Model: Auto',
+      'Tokens: 2.4k in (1.6k cached) · 100 out',
     ]
     expect(await replyDetails(user)).toEqual(details)
 
     await browser.openPanel()
     await openSession(user, /What does this page say\?/)
 
-    expect(await screen.findByText('Read 1 page')).toBeVisible()
+    await screen.findByText('It is a fixture.')
     expect(await replyDetails(user)).toEqual(details)
     // Showing a saved session asks nothing of Notion.
     expect(browser.tab.sent).toHaveLength(made)
@@ -840,7 +839,7 @@ describe('sessions', () => {
     await screen.findByText('Read them.')
     await answered()
 
-    expect(screen.getByText('Read 2 pages')).toBeVisible()
+    expect(await replyDetails(user)).toContain('Read 2 pages')
   })
 
   it('[UC-NOTICO-CHAT-001-S19] copying a reply puts its Markdown on the clipboard, without its tool calls or the line under it', async () => {
@@ -899,7 +898,9 @@ describe('sessions', () => {
 
     expect(screen.queryByText(/Read \d+ page|Changed \d+ page/)).not.toBeInTheDocument()
     // It sent nothing to Notion, so its details say only what the model used.
-    expect(await replyDetails(user)).toEqual(['Tokens: 12 in · 5 out', 'Model: Auto'])
+    expect(await replyDetails(user)).toEqual(['Tokens: 12 in · 5 out'])
+    // The model that answered is in the reply's row, outside its details.
+    expect(screen.getByRole('note', { name: 'Answered by Auto' })).toHaveTextContent('Auto')
   })
 
   it('[UC-NOTICO-SESSION-001-S07] opening the side panel starts a new, empty session, with the earlier ones in the list', async () => {

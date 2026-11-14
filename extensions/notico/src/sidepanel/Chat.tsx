@@ -1186,13 +1186,20 @@ const ReplyFoot = memo(function ReplyFoot({
 }) {
   if (!ended) return null
   const text = replyMarkdown(reply.parts)
+  // What it touched in Notion leads its details, in the "…", so the row stays quiet.
   const summary = touched(reply)
-  const details = detailRows(reply.details)
-  if (!text && !summary && !details.length) return null
+  const details = [...(summary ? [{ text: summary }] : []), ...detailRows(reply.details)]
+  const model = reply.details?.model
+  if (!text && !details.length && !model) return null
+  const modelName = model && (model.service === 'hosted' ? HOSTED : model.name)
   return (
     <div className="reply-foot">
       {text && <CopyButton text={text} />}
-      {summary && <div className="note">{summary}</div>}
+      {modelName && (
+        <span className="note reply-model" role="note" aria-label={`Answered by ${modelName}`} title="Model">
+          {modelName}
+        </span>
+      )}
       {(details.length > 0 || text) && (
         <ReplyDetails
           rows={details}
@@ -1278,11 +1285,15 @@ function doneCalls(reply: Reply): ShownTool[] {
   return reply.parts.flatMap((p) => (p.type === 'tool' && p.tool.status === 'done' ? [p.tool] : []))
 }
 
-const amount = (n: number) => n.toLocaleString('en-US')
+/** A count of tokens, short: 196, 12.4k, 1.2M. */
+function amount(n: number): string {
+  const short = (value: number, unit: string) => `${Number(value.toFixed(1))}${unit}`
+  return n < 1000 ? String(n) : n < 999_950 ? short(n / 1000, 'k') : short(n / 1_000_000, 'M')
+}
 
-/** A reply's details, one row each, with what is unknown (or none) left out. */
+/** A reply's details, one row each, with what is unknown (or none) left out; the model is shown in its row. */
 function detailRows(details: QuestionDetails = {}): { label?: string; text: string }[] {
-  const { requests, tokens: used, model } = details
+  const { requests, tokens: used } = details
   return [
     ...(requests ? [{ text: `Sent ${counted(requests, 'Notion request')}` }] : []),
     ...(used
@@ -1296,7 +1307,6 @@ function detailRows(details: QuestionDetails = {}): { label?: string; text: stri
           },
         ]
       : []),
-    ...(model ? [{ label: 'Model', text: model.service === 'hosted' ? HOSTED : model.name }] : []),
   ]
 }
 

@@ -459,6 +459,14 @@ header .untitled {
   margin-left: -6px;
 }
 
+/* The model that answered, in the reply's row: a long name is cut to fit. */
+.reply-model {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* Without Copy, the line starts where the reply's text does. */
 .reply-foot > .note:first-child {
   margin-left: 6px;
