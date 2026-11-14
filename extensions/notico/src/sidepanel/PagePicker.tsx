@@ -197,9 +197,10 @@ export function usePagePicker({
     add('Recent', page)
     recents++
   }
-  // Notion's search matched the content too, so its pages are not filtered by title, unless the
-  // query has words past a space: those may be the message going on, which a page's content can match.
-  const spaced = /\s/.test(words)
+  // Notion's search matched the content too, so its pages are not filtered by title, unless words
+  // after an `@` go past a space: those may be the message going on, which a page's content can
+  // match. The "+" picker's own field searches any words.
+  const spaced = !onQuery && /\s/.test(words)
   if (search.status === 'done') for (const page of search.pages) if (!spaced || matches(page)) add('Workspace', page)
 
   // The keys move from the first option again whenever the options change.

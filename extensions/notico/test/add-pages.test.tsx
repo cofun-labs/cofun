@@ -193,7 +193,7 @@ describe('UC-CHAT-004 add pages to a question', () => {
   })
 
   it('[UC-CHAT-004-S03] "+" opens the same picker with its own search field, and leaves the message as it is', async () => {
-    const { browser, user } = await openPanel()
+    const { browser, tab, user } = await openPanel()
     await user.type(composer(), 'Summarize')
 
     await user.click(screen.getByRole('button', { name: 'Add a page' }))
@@ -206,6 +206,14 @@ describe('UC-CHAT-004 add pages to a question', () => {
     expect(field).toBeVisible()
     expect(composer()).toHaveValue('Summarize')
     expect(browser.ai.calls).toEqual([])
+    await user.clear(field)
+
+    // Words past a space list what Notion's search found, also pages it matched by content.
+    tab.respond('search', 200, searchAnswer())
+    await user.type(field, 'beta dates')
+    await pause()
+    expect(await within(picker()!).findByRole('option', { name: /Launch plan/ })).toBeVisible()
+    expect(listed('Workspace')).toEqual(['Launch planFixture workspace / Projects', 'Launch tasksFixture workspace'])
     await user.clear(field)
     await user.type(field, 'road')
     await user.click(within(picker()!).getByRole('option', { name: /Roadmap/ }))
