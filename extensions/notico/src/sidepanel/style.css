@@ -423,6 +423,8 @@ header .untitled {
 /* Under a reply that has ended: Copy, the line saying what it touched in Notion, and its details. */
 .reply-foot {
   position: relative;
+  /* Across the reply, so the details popover anchored to it has the panel's width to fit in. */
+  align-self: stretch;
   display: flex;
   align-items: center;
   gap: 6px;
