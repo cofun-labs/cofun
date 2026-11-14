@@ -1,7 +1,7 @@
 import { useEffect, useId, useRef, useState, type FormEvent } from 'react'
 import { checkKey, DEEPSEEK_MODELS, openRouterModels, type KeyCheck, type ListedModel } from '../agent'
 import { answering, RECOMMENDED, SERVICE_NAME, type ModelSettings, type OwnModel, type Service } from '../models'
-import { Icon } from './icons'
+import { Icon, Mark } from './icons'
 import { useMenu } from './menu'
 
 /** The hosted model, as the panel names it. */
@@ -254,11 +254,11 @@ export function ModelCard({
     <section className="card providers" aria-labelledby="settings-providers">
       {heading}
       <div className="provider">
-        <ProviderHead name="Notico" detail="No key needed. Spends your credits." mark="N">
-          <Switch label="Notico" checked disabled tip="Always on" />
+        <ProviderHead name="Cofun" detail="No key needed. Spends your credits." mark={<Mark />} tone="cofun">
+          <Switch label="Cofun" checked disabled tip="Always on" />
         </ProviderHead>
-        <ul className="provider-models" aria-label="Notico's models">
-          <ModelRow name={HOSTED} detail="Notico picks the model" checked disabled />
+        <ul className="provider-models" aria-label="Cofun's models">
+          <ModelRow name={HOSTED} detail="Cofun picks the model" checked disabled />
         </ul>
       </div>
       <ProviderSetup
@@ -350,18 +350,22 @@ function ProviderHead({
   name,
   detail,
   mark,
+  tone,
   status,
   children,
 }: {
   name: string
   detail?: string
-  mark: string
+  /** The provider's logo: its initial, or Cofun's mark. */
+  mark: React.ReactNode
+  /** Picks the logo's color (`provider-mark-<tone>` in style.css). */
+  tone: string
   status?: { ok: boolean; text: string }
   children: React.ReactNode
 }) {
   return (
     <div className="provider-head">
-      <span className={`provider-mark provider-mark-${mark.toLowerCase()}`} aria-hidden="true">
+      <span className={`provider-mark provider-mark-${tone}`} aria-hidden="true">
         {mark}
       </span>
       <div className="provider-name">
@@ -507,6 +511,7 @@ function ProviderSetup({
         name={name}
         detail="Your own key. No credits spent."
         mark={name[0]}
+        tone={name[0].toLowerCase()}
         status={on ? status : undefined}
       >
         <Switch

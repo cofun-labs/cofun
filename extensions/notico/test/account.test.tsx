@@ -308,7 +308,7 @@ describe('the Settings page', () => {
 
     await openSettings(user)
 
-    expect(within(section('Providers')).getByRole('list', { name: "Notico's models" })).toBeVisible()
+    expect(within(section('Providers')).getByRole('list', { name: "Cofun's models" })).toBeVisible()
     const account = within(section('Account'))
     expect(account.getByText('Alice Example')).toBeVisible()
     expect(account.getByText('alice@example.com')).toBeVisible()
