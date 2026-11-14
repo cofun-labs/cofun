@@ -35,13 +35,15 @@ interface QuestionMeter {
 }
 
 /**
- * What goes with a question besides what the user typed, both saved with it. `context` is sent to the
+ * What goes with a question besides what the user typed, all saved with it. `context` is sent to the
  * model ahead of the question (say, which page is open); `pages` are the pages the user sent it with,
- * shown with the question.
+ * shown with the question; `readOnly`: the question is asked in Read only, so the model is offered no
+ * tool that changes data (`changesData`) for it.
  */
 export interface QuestionExtras {
   context?: string
   pages?: QuestionPage[]
+  readOnly?: boolean
 }
 
 /** A page a question was sent with: its title and URL, and whether it is a database. */
@@ -170,12 +172,16 @@ export type AssistantPart = z.infer<typeof AssistantPart>
  * through this schema, so one an earlier version saved in another form is refused, not misread.
  */
 export const HistoryMessage = z.discriminatedUnion('role', [
-  /** `context` and `pages`: what went with the question (see QuestionExtras), besides what the user typed. */
+  /**
+   * `context`, `pages`, and `readOnly`: what went with the question (see QuestionExtras), besides what
+   * the user typed.
+   */
   QuestionDetails.extend({
     role: z.literal('user'),
     text: z.string(),
     context: z.string().optional(),
     pages: z.array(QuestionPage).optional(),
+    readOnly: z.literal(true).optional(),
   }),
   z.object({ role: z.literal('assistant'), parts: z.array(AssistantPart) }),
   /** The result of one tool call. `id` matches the call in the assistant message before it. */

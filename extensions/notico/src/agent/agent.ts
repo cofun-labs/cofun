@@ -3,7 +3,7 @@
 // provider.ts): our worker (the hosted one, worker.ts), or OpenRouter or DeepSeek with the user's own
 // key (own.ts). Only the modules of this folder import the agent runtime (pi); the rest of the
 // extension uses the types in types.ts, through index.ts.
-import { Agent, type AgentEvent, type AgentMessage } from '@earendil-works/pi-agent-core'
+import { Agent, type AgentEvent, type AgentMessage, type AgentTool } from '@earendil-works/pi-agent-core'
 import type { AssistantMessage, Model } from '@earendil-works/pi-ai'
 import { streamSimple } from '@earendil-works/pi-ai/api/openai-completions'
 import { Credits, GrantsPage, Packs, UsagePeriod } from '../credits'
@@ -56,6 +56,14 @@ function stoppedInPreview(reason: string, earlier: boolean): string {
 const STOPPED_BEFORE = 'Not run: the user stopped the question before this action started.'
 const STOPPED_DURING =
   'Stopped by the user while this action was running; it may have partly happened. Check before trying it again.'
+/** Ahead of a question asked in Read only, for the model: it has no tool that changes data for it. */
+const READ_ONLY_NOTE =
+  '[Read only: the user set Notico to Read only for this question, so you have no tools that change Notion. ' +
+  "If the question asks for a change, make none and don't describe one as done: say you can't make changes in " +
+  'Read only, and that the user can switch to Edit with the mode button at the bottom left of the message box ' +
+  'and ask again. You can still read and answer.]'
+/** Ahead of a question asked in Edit right after one in Read only: the tools that change data are back. */
+const EDIT_NOTE = '[Edit: the user switched Notico back to Edit, so the tools that change Notion are available again.]'
 
 export class CopilotAgent {
   private agent?: Agent
@@ -67,6 +75,9 @@ export class CopilotAgent {
   /** Names of the tools that need the user's OK before each run. */
   private readonly confirmed: Set<string>
   private readonly tools: Map<string, ToolSpec>
+  /** The tools as the agent runtime takes them: every one in Edit, and those that change no data in Read only. */
+  private readonly allTools: AgentTool[]
+  private readonly readingTools: AgentTool[]
   /** Bumped by stop() and reset(), so a question still waiting to start knows it was cancelled. */
   private epoch = 0
   /** Aborted with each epoch bump, so waits that pi doesn't cut short end too. */
@@ -80,6 +91,7 @@ export class CopilotAgent {
   /** What went with each question, by its user message; see QuestionExtras. */
   private readonly contexts = new WeakMap<AgentMessage, string>()
   private readonly pages = new WeakMap<AgentMessage, QuestionPage[]>()
+  private readonly readOnly = new WeakSet<AgentMessage>()
   /** What each question used, by its user message; see QuestionDetails. */
   private readonly details = new WeakMap<AgentMessage, QuestionDetails>()
   /** Set by a tool whose error stops the question (see `stopsQuestion` in calls.ts): what the user is told. */
@@ -92,6 +104,8 @@ export class CopilotAgent {
     this.maxSteps = config.maxSteps ?? DEFAULT_MAX_STEPS
     this.confirmed = new Set(config.tools.filter((t) => t.needsConfirmation).map((t) => t.name))
     this.tools = new Map(config.tools.map((t) => [t.name, t]))
+    this.allTools = config.tools.map((t) => toAgentTool(t, () => this.reporter()))
+    this.readingTools = this.allTools.filter((_, i) => !config.tools[i].changesData)
   }
 
   /**
@@ -161,7 +175,7 @@ export class CopilotAgent {
     onUpdate: (update: AgentUpdate) => void,
     epoch: number,
     confirm: ConfirmTool | undefined,
-    { context, pages }: QuestionExtras,
+    { context, pages, readOnly }: QuestionExtras,
   ): Promise<{ result: AskResult; kept: boolean; failure?: Failure }> {
     let agent: Agent
     try {
@@ -171,6 +185,9 @@ export class CopilotAgent {
     }
     // Stopped, or a new chat started, while the agent was being set up.
     if (epoch !== this.epoch) return { result: { status: 'stopped' }, kept: false }
+    // Offered for this question only, and taken as the question starts: a mode switched while it runs
+    // applies from the next one. pi tells the model of the change in the conversation.
+    agent.state.tools = readOnly ? this.readingTools : this.allTools
 
     const before = agent.state.messages.length
     this.stopReason = undefined
@@ -305,6 +322,7 @@ export class CopilotAgent {
     try {
       if (context) this.contexts.set(question, context)
       if (pages?.length) this.pages.set(question, pages)
+      if (readOnly) this.readOnly.add(question)
       await agent.prompt(question)
     } catch (err) {
       failure ??= this.provider.parseError((err as Error).message)
@@ -384,6 +402,7 @@ export class CopilotAgent {
             text: textOf(message.content),
             ...(context && { context }),
             ...(pages && { pages }),
+            ...(this.readOnly.has(message) && { readOnly: true as const }),
             ...this.details.get(message),
           },
         ]
@@ -422,6 +441,7 @@ export class CopilotAgent {
         const question: AgentMessage = { role: 'user', content: m.text, timestamp }
         if (m.context) this.contexts.set(question, m.context)
         if (m.pages?.length) this.pages.set(question, m.pages)
+        if (m.readOnly) this.readOnly.add(question)
         const details = detailsOf(m)
         if (Object.keys(details).length) this.details.set(question, details)
         return question
@@ -511,7 +531,7 @@ export class CopilotAgent {
       initialState: {
         systemPrompt: this.config.systemPrompt,
         model,
-        tools: this.config.tools.map((t) => toAgentTool(t, () => this.reporter())),
+        tools: this.allTools,
         messages: this.fromHistory(this.initial, model),
       },
       streamFn: (m, context, options) => streamSimple(m as Model<'openai-completions'>, context, options),
@@ -520,20 +540,26 @@ export class CopilotAgent {
       // Notion tools will change pages; run them one at a time, in the order the model asked.
       toolExecution: 'sequential',
       transformContext: async (messages) =>
-        recent(
-          messages.map((m) => this.withContext(m)),
-          this.config.history ?? this.provider.history,
-          toolChars,
-        ),
+        recent(this.withNotes(messages), this.config.history ?? this.provider.history, toolChars),
     })
     return this.agent
   }
 
-  /** The question as the model gets it: its context first, then what the user typed. */
-  private withContext(message: AgentMessage): AgentMessage {
-    const context = this.contexts.get(message)
-    if (!context || message.role !== 'user') return message
-    return { ...message, content: `${context}\n\n${textOf(message.content)}` }
+  /**
+   * The questions as the model gets them: each with its notes first, then what the user typed. The
+   * notes are the mode, for a question in Read only and for the first one back in Edit, then the
+   * question's context.
+   */
+  private withNotes(messages: AgentMessage[]): AgentMessage[] {
+    let readOnlyBefore = false
+    return messages.map((message) => {
+      if (message.role !== 'user') return message
+      const readOnly = this.readOnly.has(message)
+      const mode = readOnly ? READ_ONLY_NOTE : readOnlyBefore ? EDIT_NOTE : undefined
+      readOnlyBefore = readOnly
+      const notes = [mode, this.contexts.get(message)].filter(Boolean).join('\n')
+      return notes ? { ...message, content: `${notes}\n\n${textOf(message.content)}` } : message
+    })
   }
 
   /**

@@ -992,6 +992,31 @@ describe('extension agent against the worker', () => {
     expect(sentMessages(1).map((m) => m.content)).toEqual(['You are Notico.', 'first', '你好 来自 worker ', 'third'])
   })
 
+  it('a long conversation in Read only still offers only the tools that change no data', async () => {
+    const reader = pageTool().tool
+    const writer: ToolSpec = { ...pageTool().tool, name: 'change_page', changesData: true }
+    const agent = makeAgent({ tools: [reader, writer], history: { messages: 3, chars: 100_000 } })
+    const offered = (n: number) =>
+      (ai.calls[n].inputs.tools as { function: { name: string } }[]).map((t) => t.function.name)
+    await ask(agent, 'first')
+    await ask(agent, 'second', undefined, { readOnly: true })
+    // "second", where Read only began, is no longer sent; the tools stay as it set them.
+    await ask(agent, 'third', undefined, { readOnly: true })
+    await ask(agent, 'fourth', undefined, { readOnly: true })
+    expect(
+      sentMessages(3)
+        .filter((m) => m.role === 'user')
+        .map((m) => m.content),
+    ).toEqual([expect.stringMatching(/third$/), expect.stringMatching(/fourth$/)])
+    expect([offered(0), offered(1), offered(3)]).toEqual([
+      ['lookup_page', 'change_page'],
+      ['lookup_page'],
+      ['lookup_page'],
+    ])
+    await ask(agent, 'fifth')
+    expect(offered(4)).toEqual(['lookup_page', 'change_page'])
+  })
+
   it('trimming never separates tool results from their call', async () => {
     const agent = makeAgent({ history: { messages: 3, chars: 100_000 } })
     ai.script = [{ toolCalls: [{ name: 'lookup_page', arguments: '{}' }] }, { reply: 'Q4 Roadmap' }]

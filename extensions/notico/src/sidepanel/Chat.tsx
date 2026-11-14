@@ -9,6 +9,7 @@ import {
   type QuestionPage,
 } from '../agent'
 import type { CreditsState } from '../credits'
+import { loadMode, saveMode, watchMode, type Mode } from '../mode'
 import { HOSTED_ONLY, loadModelSettings, saveModelSettings, watchModelSettings, type ModelSettings } from '../models'
 import { countNotionRequests } from '../notion/tab'
 import { SessionStore, titleFor, type Session } from '../sessions'
@@ -36,6 +37,7 @@ const SYSTEM_PROMPT =
   'The note may also list pages the user added to the question: they are the pages the question is about, ' +
   'so read them with their URLs when the question needs what they say. ' +
   'When the user took the open page off a question, do not use it: if the question needs a page, ask which one, or search for it. ' +
+  'A note may also say that the question is in Read only, or back in Edit; follow what it says about changes. ' +
   'The panel is open on every site, but the Notion tools work only while the current tab is a Notion page. When it ' +
   'is not, answer what you can without them, and when a request needs Notion, tell the user to switch to a Notion ' +
   'page and ask again; never guess what a Notion page says. The note does not say which site a tab that is not ' +
@@ -77,7 +79,7 @@ type Part = { type: 'text'; text: string } | { type: 'tool'; tool: ShownTool }
 
 // The agent keeps the conversation it sends to the model; this is only what the panel shows.
 type Shown =
-  | { role: 'user'; content: string; pages?: QuestionPage[] }
+  | { role: 'user'; content: string; pages?: QuestionPage[]; readOnly?: true }
   | {
       role: 'assistant'
       parts: Part[]
@@ -155,6 +157,16 @@ export function Chat({ userId }: { userId: string }) {
     }),
   )
   const [model, setModel] = useState<ModelSettings>()
+  // Whether the agent may change pages: read once for this account, then switched from the composer.
+  // A question takes the mode as it is sent, so a switch applies from the next one on.
+  const [modeLoad] = useState(() =>
+    loadMode(userId).catch((err: unknown): Mode => {
+      console.error('Could not read the mode', err)
+      return 'edit'
+    }),
+  )
+  const [mode, setMode] = useState<Mode>()
+  const modeRef = useRef<Mode>(undefined)
   const modelRef = useRef<ModelSettings>(undefined)
   const agentRef = useRef<CopilotAgent | null>(null)
   agentRef.current ??= new CopilotAgent({
@@ -357,6 +369,24 @@ export function Chat({ userId }: { userId: string }) {
     })
   }, [])
 
+  useEffect(() => {
+    void modeLoad.then((loaded) => {
+      modeRef.current ??= loaded
+      setMode(modeRef.current)
+    })
+    // Another window's panel asks its next question in the mode it saves, and so does this one.
+    return watchMode(userId, (next) => {
+      modeRef.current = next
+      setMode(next)
+    })
+  }, [])
+
+  function changeMode(next: Mode) {
+    modeRef.current = next
+    setMode(next)
+    saveMode(userId, next).catch((err: unknown) => console.error('Could not save the mode', err))
+  }
+
   function changeModel(settings: ModelSettings) {
     modelRef.current = settings
     setModel(settings)
@@ -436,6 +466,8 @@ export function Chat({ userId }: { userId: string }) {
     const sentPages = chips.map((c) => c.page)
     // A page is off while the composer shows none for it: also on another site, until another page shows.
     const context = carryPages(tabPage, removed !== undefined && !openPage, chosen)
+    // The mode the composer showed; only right as the panel opens may it not be read yet.
+    const sentMode = modeRef.current
     setInput('')
     resetPicker()
     setBusy(true)
@@ -444,7 +476,12 @@ export function Chat({ userId }: { userId: string }) {
     const reply = messages.length + 1
     setMessages((ms) => [
       ...ms,
-      { role: 'user', content: text, ...(sentPages.length && { pages: sentPages }) },
+      {
+        role: 'user',
+        content: text,
+        ...(sentPages.length && { pages: sentPages }),
+        ...(sentMode === 'read_only' && { readOnly: true }),
+      },
       { role: 'assistant', parts: [] },
     ])
     const updateReply = (fn: (m: Extract<Shown, { role: 'assistant' }>) => Shown) =>
@@ -568,7 +605,14 @@ export function Chat({ userId }: { userId: string }) {
         updateReply((m) => ({ ...m, error: turnedAway }))
         return
       }
-      const result = await agent.ask(text, onUpdate, confirm, { context, pages: sentPages })
+      const readOnly = (sentMode ?? (await modeLoad)) === 'read_only'
+      if (readOnly && !sentMode)
+        setMessages((ms) =>
+          chatId.current !== id
+            ? ms
+            : ms.map((m, i) => (i === reply - 1 && m.role === 'user' ? { ...m, readOnly: true } : m)),
+        )
+      const result = await agent.ask(text, onUpdate, confirm, { context, pages: sentPages, readOnly })
       answered = result.status === 'done'
       const { requests, tokens, model } = result
       updateReply((m) => ({ ...m, details: { requests, tokens, model } }))
@@ -827,6 +871,12 @@ export function Chat({ userId }: { userId: string }) {
               <div key={i} className="msg user">
                 {m.content}
                 <SentPages pages={m.pages} />
+                {m.readOnly && (
+                  <p className="question-mode">
+                    <Icon name="eye" />
+                    Read only
+                  </p>
+                )}
               </div>
             ) : (
               <div key={i} className="msg assistant">
@@ -893,12 +943,17 @@ export function Chat({ userId }: { userId: string }) {
             onSelect={(e) => followAt(e.currentTarget.value, e.currentTarget.selectionStart)}
             onKeyDown={onKeyDown}
             aria-activedescendant={picker?.from === '@' ? pages.activeId : undefined}
-            placeholder="Ask something… Type @ to add a page."
+            placeholder={
+              mode === 'read_only'
+                ? 'Ask without changing anything… Type @ to add a page.'
+                : 'Ask something… Type @ to add a page.'
+            }
             title="Enter to send, Shift+Enter for a new line"
             aria-label="Message"
           />
           <div className="composer-tools">
             <AddMenu onAddPage={() => setPicker({ from: 'menu', query: '' })} />
+            <ModeButton mode={mode ?? 'edit'} onChange={changeMode} />
             <span className="grow" />
             {/* The model chip leads the right side, next to send; the left is for what goes with the question. */}
             <ModelMenu settings={model} onChange={changeModel} onMore={openSettings} />
@@ -952,6 +1007,25 @@ export function Chat({ userId }: { userId: string }) {
   )
 }
 
+/**
+ * Switches between Edit and Read only. Its name says the mode the next question is asked in, and its
+ * tooltip what that means.
+ */
+function ModeButton({ mode, onChange }: { mode: Mode; onChange: (mode: Mode) => void }) {
+  const readOnly = mode === 'read_only'
+  return (
+    <button
+      type="button"
+      className={readOnly ? 'tool-button read-only' : 'tool-button'}
+      aria-label={readOnly ? 'Mode: Read only' : 'Mode: Edit'}
+      title={readOnly ? "Read only: won't change pages" : 'Edit: can change pages'}
+      onClick={() => onChange(readOnly ? 'edit' : 'read_only')}
+    >
+      <Icon name={readOnly ? 'eye' : 'pencil'} />
+    </button>
+  )
+}
+
 /** A saved conversation as the panel shows it: each question, then everything the agent did for it. */
 function toShown(history: HistoryMessage[]): Shown[] {
   const shown: Shown[] = []
@@ -959,7 +1033,12 @@ function toShown(history: HistoryMessage[]): Shown[] {
   let details: QuestionDetails | undefined
   for (const m of history) {
     if (m.role === 'user') {
-      shown.push({ role: 'user', content: m.text, ...(m.pages?.length && { pages: m.pages }) })
+      shown.push({
+        role: 'user',
+        content: m.text,
+        ...(m.pages?.length && { pages: m.pages }),
+        ...(m.readOnly && { readOnly: true }),
+      })
       details = { requests: m.requests, tokens: m.tokens, model: m.model }
       continue
     }

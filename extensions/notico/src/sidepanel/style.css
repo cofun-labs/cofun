@@ -789,6 +789,31 @@ header .untitled {
   color: var(--fg);
 }
 
+/* Read only is not the default, so it stays visible: a grey ground, a shade darker on hover. */
+.tool-button.read-only {
+  background: var(--tint);
+  color: var(--fg);
+}
+
+.tool-button.read-only:hover {
+  background: var(--border);
+}
+
+/* Under a question asked in Read only. */
+.question-mode {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.question-mode .icon {
+  width: 13px;
+  height: 13px;
+}
+
 /* The "+" menu opens upward from the box, flush with its left edge. */
 .add-popover {
   position: absolute;
