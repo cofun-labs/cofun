@@ -32,13 +32,8 @@ const SHAPES = {
   back: <path d="M9.5 3.5L5 8l4.5 4.5" />,
   chevron: <path d="M4.5 10l3.5-3.5 3.5 3.5" />,
   close: <path d="M4.5 4.5l7 7M11.5 4.5l-7 7" />,
-  /** A page with an arrow into it: save to Notion. */
-  save: (
-    <>
-      <path d="M9 2.5H4.5v11h7V5z" />
-      <path d="M9 2.5V5h2.5M8 6.8v4.4M6.2 9.5L8 11.3l1.8-1.8" />
-    </>
-  ),
+  /** An arrow down into a tray: save to Notion. */
+  save: <path d="M8 2.5v7M5 6.5l3 3 3-3M2.5 10v2A1.5 1.5 0 0 0 4 13.5h8A1.5 1.5 0 0 0 13.5 12v-2" />,
   page: (
     <>
       <path d="M4.5 2.5h4.8L12 5.2v8.3H4.5z" />
