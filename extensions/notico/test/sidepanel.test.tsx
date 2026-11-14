@@ -1169,7 +1169,7 @@ describe('a saved session that can no longer be read', () => {
   /** Writes a record into the panel's saved sessions as it is, as an earlier version might have left it. */
   async function writeSaved(store: 'sessions' | 'messages', record: object) {
     const db = await new Promise<IDBDatabase>((resolve, reject) => {
-      const req = indexedDB.open('notion-copilot-sessions-user_alice')
+      const req = indexedDB.open('notico-sessions-user_alice')
       req.onsuccess = () => resolve(req.result)
       req.onerror = () => reject(req.error)
     })
@@ -1224,7 +1224,7 @@ describe('a saved session that can no longer be read', () => {
     await twoSessions(browser, user)
     // The first session's conversation, as this version can't read it.
     const first = await new Promise<IDBValidKey>((resolve, reject) => {
-      const req = indexedDB.open('notion-copilot-sessions-user_alice')
+      const req = indexedDB.open('notico-sessions-user_alice')
       req.onsuccess = () => {
         const cursor = req.result.transaction('sessions').objectStore('sessions').openCursor()
         cursor.onsuccess = () => {

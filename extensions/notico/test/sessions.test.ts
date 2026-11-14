@@ -48,7 +48,7 @@ async function listed(store: SessionStore): Promise<SessionInfo[]> {
 async function database(store: SessionStore): Promise<IDBDatabase> {
   // The store creates its database when first used.
   await store.list()
-  const name = `notion-copilot-sessions-${users.get(store)}`
+  const name = `notico-sessions-${users.get(store)}`
   return new Promise((resolve, reject) => {
     const req = indexedDB.open(name)
     req.onsuccess = () => resolve(req.result)
