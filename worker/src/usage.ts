@@ -12,7 +12,7 @@ export interface UsageDataset {
 export interface UsageRecord {
   /** Clerk user id (pseudonymous). */
   userId: string
-  /** The product the request came from: see `productOf` in app.ts. */
+  /** The product the request came from: see `productOf` in routes/chat.ts. */
   product: string
   model: string
   stream: boolean

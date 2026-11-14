@@ -1,5 +1,5 @@
 // The signed-in user's credits as the worker reports them (GET /v1/credits, and their history from
-// GET /v1/credits/grants and GET /v1/credits/usage), and how the side panel words them. The request itself is made by the agent (agent.ts), like every call to the worker.
+// GET /v1/credits/grants and GET /v1/credits/usage), and how the side panel words them. The request itself is made by the agent (agent/worker.ts), like every call to the worker.
 import { z } from './zod'
 
 /** The worker's amounts are micro-credits; the panel shows whole credits. */

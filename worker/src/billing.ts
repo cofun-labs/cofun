@@ -1,7 +1,7 @@
 // Buying credits: the packs on sale, and what the Stripe webhook does with the events it is sent.
 // Stripe sells one product, 1,000 credits for US$1 (1 US dollar = 1000 credits, as everywhere), and a
 // pack is a quantity of it. A paid purchase adds one grant of the paid quantity's credits, valid for a
-// year; a refund or a dispute takes back what is left of it. The routes are in app.ts.
+// year; a refund or a dispute takes back what is left of it. The routes are in routes/billing.ts.
 import * as z from './zod'
 import { Ledger, MICRO_CREDITS, takeBack, type Database } from './credits'
 import {

@@ -1,8 +1,10 @@
 // Creating databases and changing their properties (create_database and update_database_schema in
-// extensions/notico/src/tools.ts), against a fake Notion workspace that applies transactions the way
+// extensions/notico/src/tools/database.ts), against a fake Notion workspace that applies transactions the way
 // Notion's web client was seen to make them.
 import { afterEach, describe, expect, it } from 'vitest'
-import { QUERY_LOAD, createDatabase, createPage, forgetReads, queryDatabase, updateDatabaseSchema } from '../src/tools'
+import { QUERY_LOAD, createDatabase, queryDatabase, updateDatabaseSchema } from '../src/tools/database'
+import { forgetReads } from '../src/tools/memory'
+import { createPage } from '../src/tools/write'
 import { newSchema } from '../src/notion/schema'
 import { FakeNotionTab, FakeWorkspace, PAGE, PAGE_URL, SPACE, USER, restoreGlobals } from './notion-tab'
 

@@ -18,7 +18,7 @@
 {
   "$schema": "./node_modules/oxlint/configuration_schema.json",
   "rules": {
-    // Everywhere in the repository, tests included. extensions/*/src/agent.ts is exempted below.
+    // Everywhere in the repository, tests included. extensions/*/src/agent/ is exempted below.
     "no-restricted-imports": [
       "error",
       {
@@ -30,7 +30,7 @@
               "@earendil-works/pi-ai",
               "@earendil-works/pi-ai/**"
             ],
-            "message": "Only an extension's src/agent.ts imports pi. Import what you need from agent.ts, or add it there."
+            "message": "Only an extension's src/agent/ imports pi. Import what you need from src/agent/ (its index.ts), or add it there."
           }
         ]
       }
@@ -66,7 +66,7 @@
                   "@earendil-works/pi-ai",
                   "@earendil-works/pi-ai/**"
                 ],
-                "message": "Only an extension's src/agent.ts imports pi. Import what you need from agent.ts, or add it there."
+                "message": "Only an extension's src/agent/ imports pi. Import what you need from src/agent/ (its index.ts), or add it there."
               },
               {
                 "regex": "^\\.\\./[^./]",
@@ -96,7 +96,7 @@
                   "@earendil-works/pi-ai",
                   "@earendil-works/pi-ai/**"
                 ],
-                "message": "Only an extension's src/agent.ts imports pi. Import what you need from agent.ts, or add it there."
+                "message": "Only an extension's src/agent/ imports pi. Import what you need from src/agent/ (its index.ts), or add it there."
               },
               {
                 "regex": "^\\.\\./\\.\\./[^./]",
@@ -125,7 +125,7 @@
                   "@earendil-works/pi-ai",
                   "@earendil-works/pi-ai/**"
                 ],
-                "message": "Only an extension's src/agent.ts imports pi. Import what you need from agent.ts, or add it there."
+                "message": "Only an extension's src/agent/ imports pi. Import what you need from src/agent/ (its index.ts), or add it there."
               },
               {
                 "regex": "^zod(/|$)",
@@ -146,7 +146,7 @@
           "error",
           {
             "name": "fetch",
-            "message": "Only an extension's src/<site>/tab.ts sends requests to its site, and only its src/agent.ts calls the worker. Tools call the typed methods of the site's client (src/notion/api.ts in Notico)."
+            "message": "Only an extension's src/<site>/tab.ts sends requests to its site, and only its src/agent/ calls the worker. Tools call the typed methods of the site's client (src/notion/api.ts in Notico)."
           }
         ],
         "no-restricted-properties": [
@@ -164,17 +164,17 @@
           {
             "object": "globalThis",
             "property": "fetch",
-            "message": "Only an extension's src/<site>/tab.ts sends requests to its site, and only its src/agent.ts calls the worker. Tools call the typed methods of the site's client (src/notion/api.ts in Notico)."
+            "message": "Only an extension's src/<site>/tab.ts sends requests to its site, and only its src/agent/ calls the worker. Tools call the typed methods of the site's client (src/notion/api.ts in Notico)."
           },
           {
             "object": "window",
             "property": "fetch",
-            "message": "Only an extension's src/<site>/tab.ts sends requests to its site, and only its src/agent.ts calls the worker. Tools call the typed methods of the site's client (src/notion/api.ts in Notico)."
+            "message": "Only an extension's src/<site>/tab.ts sends requests to its site, and only its src/agent/ calls the worker. Tools call the typed methods of the site's client (src/notion/api.ts in Notico)."
           },
           {
             "object": "self",
             "property": "fetch",
-            "message": "Only an extension's src/<site>/tab.ts sends requests to its site, and only its src/agent.ts calls the worker. Tools call the typed methods of the site's client (src/notion/api.ts in Notico)."
+            "message": "Only an extension's src/<site>/tab.ts sends requests to its site, and only its src/agent/ calls the worker. Tools call the typed methods of the site's client (src/notion/api.ts in Notico)."
           }
         ]
       }
@@ -196,11 +196,11 @@
                   "@earendil-works/pi-ai",
                   "@earendil-works/pi-ai/**"
                 ],
-                "message": "Only an extension's src/agent.ts imports pi. Import what you need from agent.ts, or add it there."
+                "message": "Only an extension's src/agent/ imports pi. Import what you need from src/agent/ (its index.ts), or add it there."
               },
               {
                 "regex": "^(\\.\\./)+(agent|tool|tools|sessions|sidepanel)(\\.|/|$)",
-                "message": "An extension's site layer (src/notion/ in Notico) imports nothing from agent.ts, tool.ts, tools.ts, sessions.ts, or sidepanel/: those modules depend on the site layer, not the other way round."
+                "message": "An extension's site layer (src/notion/ in Notico) imports nothing from agent/, tool.ts, tools/, sessions.ts, or sidepanel/: those modules depend on the site layer, not the other way round."
               },
               {
                 "regex": "^zod(/|$)",
@@ -220,8 +220,8 @@
       }
     },
     {
-      // The one module that imports pi, and the one that calls the worker.
-      "files": ["extensions/*/src/agent.ts"],
+      // The one folder that imports pi, and the one that calls the worker: the agent, src/agent/.
+      "files": ["extensions/*/src/agent/**"],
       "rules": {
         "no-restricted-imports": [
           "error",
@@ -290,7 +290,7 @@
                   "@earendil-works/pi-ai",
                   "@earendil-works/pi-ai/**"
                 ],
-                "message": "Only an extension's src/agent.ts imports pi. Import what you need from agent.ts, or add it there."
+                "message": "Only an extension's src/agent/ imports pi. Import what you need from src/agent/ (its index.ts), or add it there."
               },
               {
                 "regex": "^(\\.\\./)+[^./][^/]*/(src|test)(/|$)",
@@ -320,7 +320,7 @@
                   "@earendil-works/pi-ai",
                   "@earendil-works/pi-ai/**"
                 ],
-                "message": "Only an extension's src/agent.ts imports pi. Import what you need from agent.ts, or add it there."
+                "message": "Only an extension's src/agent/ imports pi. Import what you need from src/agent/ (its index.ts), or add it there."
               },
               {
                 "regex": "^zod(/|$)",
@@ -346,7 +346,7 @@
                   "@earendil-works/pi-ai",
                   "@earendil-works/pi-ai/**"
                 ],
-                "message": "Only an extension's src/agent.ts imports pi. Import what you need from agent.ts, or add it there."
+                "message": "Only an extension's src/agent/ imports pi. Import what you need from src/agent/ (its index.ts), or add it there."
               }
             ]
           }
