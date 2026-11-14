@@ -27,7 +27,7 @@ THINGS TO TRY
 • Select some text, then: "Rewrite this to be shorter."
 
 STAYS IN CONTEXT
-Notico knows which page is open and what you selected. The panel stays open, with your conversation, as you switch tabs, and past conversations are saved on your device so you can pick them up again.
+Notico knows which page is open and what you selected. The panel stays open, with your chat, as you switch tabs, and past chats are saved on your device so you can pick them up again.
 
 HOW IT WORKS
 Notico works inside your own Notion tab, with the session you're already signed in with, so it can reach what you can reach and nothing else. Sign in to Notico once with Google or your email; nothing else to configure.
@@ -36,7 +36,7 @@ CREDITS
 Asking the AI costs credits. Every account gets free credits each week, and the panel shows how many you have left and when they renew.
 
 PRIVACY
-Your questions, and the Notion content Notico reads to answer them, go to our server and on to an AI model running on Cloudflare Workers AI. The server does not store that content: it keeps only usage numbers, never the text of a question or an answer. Conversations are saved only in Chrome on your device. No analytics, no ads, no tracking.
+Your questions, and the Notion content Notico reads to answer them, go to our server and on to an AI model running on Cloudflare Workers AI. The server does not store that content: it keeps only usage numbers, never the text of a question or an answer. Chats are saved only in Chrome on your device. No analytics, no ads, no tracking.
 
 PLEASE NOTE
 • Notico edits pages as soon as it decides to; moving pages to the trash is the one thing it asks about first. Every change is shown in the side panel, and Notion's page history can undo edits.

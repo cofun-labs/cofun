@@ -5,7 +5,7 @@ import { filterSessions, type ListedSession, type SessionStore } from '../sessio
 /** How opening a session went: `gone` when it no longer exists, `unreadable` when it can't be read. */
 export type OpenResult = 'opened' | 'gone' | 'unreadable'
 
-const UNREADABLE = "This session was saved by an earlier version of Notico and can't be opened. You can delete it."
+const UNREADABLE = "This chat was saved by an earlier version of Notico and can't be opened. You can delete it."
 
 /** The list of saved sessions: search by title, open, and delete. One that can't be read can only be deleted. */
 export function Sessions({
@@ -44,7 +44,7 @@ export function Sessions({
       setSessions(list)
       setError(undefined)
     } catch (err) {
-      if (n === loads.current) setError(`Could not load sessions: ${(err as Error).message}`)
+      if (n === loads.current) setError(`Could not load chats: ${(err as Error).message}`)
     }
   }
 
@@ -75,7 +75,7 @@ export function Sessions({
       await store.delete(id)
       await load()
     } catch (err) {
-      setError(`Could not delete the session: ${(err as Error).message}`)
+      setError(`Could not delete the chat: ${(err as Error).message}`)
     }
   }
 
@@ -88,18 +88,18 @@ export function Sessions({
         return setError(UNREADABLE)
       }
       await load()
-      setError('This session no longer exists.')
+      setError('This chat no longer exists.')
     } catch (err) {
-      setError(`Could not open the session: ${(err as Error).message}`)
+      setError(`Could not open the chat: ${(err as Error).message}`)
     }
   }
 
   const shown = sessions ? filterSessions(sessions, query) : []
 
   return (
-    <section id="sessions" role="dialog" aria-label="Sessions">
+    <section id="sessions" role="dialog" aria-label="Chats">
       <div className="sheet-head">
-        <h2>Sessions</h2>
+        <h2>Chats</h2>
         <button className="icon-button" aria-label="Close" title="Close" autoFocus onClick={onClose}>
           <Icon name="close" />
         </button>
@@ -108,8 +108,8 @@ export function Sessions({
         <Icon name="search" />
         <input
           type="search"
-          placeholder="Search sessions"
-          aria-label="Search sessions"
+          placeholder="Search chats"
+          aria-label="Search chats"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
         />
@@ -120,14 +120,14 @@ export function Sessions({
         </div>
       )}
       {sessions && shown.length === 0 && (
-        <div className="empty">{sessions.length === 0 ? 'No sessions yet.' : 'No matching sessions.'}</div>
+        <div className="empty">{sessions.length === 0 ? 'No chats yet.' : 'No matching chats.'}</div>
       )}
       <ul className="session-list">
         {shown.map((s) => (
           <li key={s.id} className={s.id === currentId ? 'current' : undefined}>
             {'unreadable' in s || unopenable.has(s.id) ? (
               <div className="session-open unreadable">
-                <span className="session-title">{'title' in s && s.title ? s.title : 'Unreadable session'}</span>
+                <span className="session-title">{'title' in s && s.title ? s.title : 'Unreadable chat'}</span>
                 <span className="session-meta">Saved by an earlier version; it can't be opened</span>
               </div>
             ) : (
@@ -147,8 +147,8 @@ export function Sessions({
               className={confirming === s.id ? 'session-delete confirming' : 'session-delete'}
               onClick={() => void remove(s.id)}
               onBlur={() => setConfirming(undefined)}
-              title="Delete session"
-              aria-label={confirming === s.id ? undefined : 'Delete session'}
+              title="Delete chat"
+              aria-label={confirming === s.id ? undefined : 'Delete chat'}
             >
               {confirming === s.id ? 'Delete?' : <Icon name="trash" />}
             </button>

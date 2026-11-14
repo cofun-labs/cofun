@@ -1,8 +1,8 @@
 {
-  "name": "notion-copilot-worker",
+  "name": "cofun-worker",
   "version": "0.1.0",
   "private": true,
-  "description": "notion-copilot backend: Clerk-authenticated, OpenAI-compatible chat endpoint on Workers AI",
+  "description": "Cofun backend: Clerk-authenticated, OpenAI-compatible chat endpoint on Workers AI",
   "type": "module",
   "scripts": {
     "dev": "wrangler dev",

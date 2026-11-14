@@ -42,7 +42,7 @@ beforeEach(async () => {
     MODEL,
     AI_GATEWAY_ID: 'gw-test',
     CLERK_JWT_KEY: clerk.publicKeyPem,
-    CLERK_AUTHORIZED_PARTIES: `${EXT}, https://notion-copilot.example`,
+    CLERK_AUTHORIZED_PARTIES: `${EXT}, https://cofun.example`,
     PRODUCTS: { [EXT]: 'notico' },
   }
   token = await clerk.sessionToken({ userId: 'user_alice', azp: EXT })
@@ -117,7 +117,7 @@ describe('worker API', () => {
   })
 
   it('a session from any allowed origin is accepted', async () => {
-    const web = await clerk.sessionToken({ userId: 'user_alice', azp: 'https://notion-copilot.example' })
+    const web = await clerk.sessionToken({ userId: 'user_alice', azp: 'https://cofun.example' })
     expect((await chat(web)).status).toBe(200)
   })
 
@@ -833,7 +833,7 @@ describe('product of a model call', () => {
   })
 
   it('is unknown for an allowed caller that is no listed extension, or a token with no origin, and the call goes ahead', async () => {
-    const web = await clerk.sessionToken({ userId: 'user_alice', azp: 'https://notion-copilot.example' })
+    const web = await clerk.sessionToken({ userId: 'user_alice', azp: 'https://cofun.example' })
     const native = await clerk.sessionToken({ userId: 'user_alice' })
     expect((await chat(web)).status).toBe(200)
     expect((await chat(native)).status).toBe(200)
@@ -848,12 +848,7 @@ describe('product of a model call', () => {
   })
 
   it('a products config that is not valid refuses the call before the model is asked, and says what is wrong', async () => {
-    for (const bad of [
-      'notico',
-      { [EXT]: 'Notico' },
-      { [EXT]: 'unknown' },
-      { 'https://notion-copilot.example': 'notico' },
-    ]) {
+    for (const bad of ['notico', { [EXT]: 'Notico' }, { [EXT]: 'unknown' }, { 'https://cofun.example': 'notico' }]) {
       env.PRODUCTS = bad
       const res = await chat(token)
       expect(res.status).toBe(503)

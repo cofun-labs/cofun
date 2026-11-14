@@ -46,7 +46,7 @@ jobs:
       # No --with-deps: the runner image already has the libraries Chromium needs, and the only
       # packages it would add are fonts, which took most of a minute and the test doesn't need.
       - name: Install Chromium
-        run: pnpm --filter notion-copilot-smoke exec playwright install --no-shell chromium
+        run: pnpm --filter cofun-smoke exec playwright install --no-shell chromium
 
       - name: Run the extension smoke test
-        run: pnpm --filter notion-copilot-smoke smoke
+        run: pnpm --filter cofun-smoke smoke

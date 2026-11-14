@@ -130,7 +130,7 @@ describe('CanaryLock', () => {
 })
 
 describe('the maintainer’s canary-lock.sh, when installed', () => {
-  const script = join(process.env.HOME ?? '', '.cache', 'notion-copilot', 'canary-lock.sh')
+  const script = join(process.env.HOME ?? '', '.cache', 'cofun', 'canary-lock.sh')
 
   it.skipIf(!existsSync(script))('sees a lock this tool took, and the tool sees one the script took', async () => {
     // The script has its lock path built in; run a copy pointed at the test directory.

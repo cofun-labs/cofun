@@ -124,10 +124,10 @@ jobs:
       # The smoke test loads extensions/notico/dist, the build just made. Another extension
       # needs the smoke test to cover it before it is added to the inputs above.
       - name: Install Chromium
-        run: pnpm --filter notion-copilot-smoke exec playwright install --no-shell chromium
+        run: pnpm --filter cofun-smoke exec playwright install --no-shell chromium
 
       - name: Run the extension smoke test
-        run: pnpm --filter notion-copilot-smoke smoke
+        run: pnpm --filter cofun-smoke smoke
 
       # The store wants manifest.json at the root of the zip. The variable is not named ZIP:
       # Info-ZIP's zip reads $ZIP as default options, so it would write the archive into dist.

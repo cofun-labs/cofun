@@ -1,5 +1,5 @@
 {
-  "name": "notion-copilot-smoke",
+  "name": "cofun-smoke",
   "version": "0.1.0",
   "private": true,
   "description": "pnpm smoke: loads the built extension into Chromium and checks that it still works",

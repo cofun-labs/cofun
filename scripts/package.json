@@ -1,5 +1,5 @@
 {
-  "name": "notion-copilot-scripts",
+  "name": "cofun-scripts",
   "version": "0.1.0",
   "private": true,
   "description": "Repository tooling: pnpm use-cases checks that use case scenarios and tests agree",

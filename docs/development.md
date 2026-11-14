@@ -6,7 +6,7 @@ Requires Node.js 24 and pnpm. The repository is one pnpm workspace: the [worker]
 pnpm install
 pnpm check        # lint, unused code check (knip), format check, use case coverage (pnpm use-cases), typecheck, extension build, and every package's tests
 pnpm knip         # unused files, exports, and dependencies (knip.jsonc lists what is kept, and why)
-pnpm smoke        # build the extension and load it into Chromium (first: pnpm --filter notion-copilot-smoke exec playwright install chromium)
+pnpm smoke        # build the extension and load it into Chromium (first: pnpm --filter cofun-smoke exec playwright install chromium)
 pnpm icons        # export extensions/notico/icons/icon.svg into extensions/notico/public/icons (needs the same Chromium); commit the PNGs
 ```
 
@@ -34,7 +34,7 @@ Merging to `main` deploys the worker through Cloudflare Workers Builds. To deplo
 
 ```bash
 cd worker
-npx wrangler login
+pnpm exec wrangler login
 # If your Cloudflare login has several accounts, pick one with an env var (don't commit it)
 CLOUDFLARE_ACCOUNT_ID=<account id> pnpm run deploy
 ```

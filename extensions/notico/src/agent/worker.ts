@@ -29,7 +29,7 @@ export function hostedProvider({ apiUrl, getToken }: Pick<AgentConfig, 'apiUrl' 
         id: model,
         name: model,
         api: 'openai-completions',
-        provider: 'notion-copilot',
+        provider: 'cofun',
         baseUrl,
         reasoning: false,
         input: ['text'],
