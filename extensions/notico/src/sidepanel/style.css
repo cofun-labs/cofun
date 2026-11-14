@@ -1224,13 +1224,12 @@ button.pack:disabled {
 
 .model-popover {
   position: absolute;
-  /* Opens upward from the box, never past its left edge. 38px puts the menu's right edge 6px past the
-     chip's: the box's right padding (8px), the send button (32px), and the toolbar's gap (4px), less 6px. */
+  /* Opens upward from the box, flush with its right edge, and never wider than the box. */
   bottom: calc(100% + 6px);
-  right: 38px;
+  right: -1px;
   z-index: 2;
   width: 260px;
-  max-width: calc(100% - 38px);
+  max-width: calc(100% + 2px);
   display: flex;
   flex-direction: column;
   padding: 5px;
