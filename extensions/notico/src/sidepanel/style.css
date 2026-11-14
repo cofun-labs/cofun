@@ -568,9 +568,9 @@ header .untitled {
   position: relative;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 8px;
   margin: 8px 12px 14px;
-  padding: 10px 8px 8px 14px;
+  padding: 12px 8px 8px 14px;
   border: 1px solid var(--border);
   border-radius: 18px;
   background: var(--bg);
@@ -582,7 +582,8 @@ header .untitled {
 }
 
 #composer textarea {
-  min-height: 1.5em;
+  /* Room for two lines while empty, so the box doesn't look cramped. */
+  min-height: 3em;
   max-height: 9em;
   padding: 0 6px 0 0;
   border: none;
@@ -1205,12 +1206,14 @@ button.pack:disabled {
   padding: 4px 8px;
   border-radius: 8px;
   color: var(--muted);
-  font-size: 12.5px;
+  font-size: 12px;
   white-space: nowrap;
 }
 
 .model-button .icon {
   flex: none;
+  width: 10px;
+  height: 10px;
 }
 
 .model-button:hover,
