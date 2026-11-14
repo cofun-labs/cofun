@@ -39,7 +39,16 @@ export function replyTitle(chat: string, question: string): string {
   return asked ? `${cut(title, TITLE_CHARS - asked.length - 3)} — ${asked}` : cut(title, TITLE_CHARS)
 }
 
-const cut = (text: string, max: number) => (text.length > max ? `${text.slice(0, max - 1).trimEnd()}…` : text)
+/** `text` in at most `max` characters, counted as people see them: an emoji is never cut in two. */
+function cut(text: string, max: number): string {
+  const chars = Array.from(text)
+  return chars.length > max
+    ? `${chars
+        .slice(0, max - 1)
+        .join('')
+        .trimEnd()}…`
+    : text
+}
 
 /**
  * Creates a page titled `title` holding `turns` at the end of the page open in the current tab, and

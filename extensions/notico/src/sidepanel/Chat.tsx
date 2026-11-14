@@ -45,7 +45,7 @@ import { useMenu } from './menu'
 import { HOSTED, ModelMenu } from './Model'
 import { AddMenu, pageKey, usePagePicker, type SearchStop } from './PagePicker'
 import { ComposerPages, SentPages, type Chip } from './Pages'
-import { SaveReply, useSave, type Save } from './Save'
+import { SaveReply, useSaves, type SaveState } from './Save'
 import { Sessions, type OpenResult } from './Sessions'
 import { Settings } from './Settings'
 import { ToolCall, type ShownTool } from './ToolCall'
@@ -840,17 +840,25 @@ export function Chat({ userId }: { userId: string }) {
   // Saving goes under the page open in the current tab as the user saves (see savePage).
   const saveBlocked = tabPage && pageIdFromUrl(tabPage.url) ? undefined : OPEN_A_PAGE
 
+  // Saves of replies, by the chat they were shown in (`chatId`) and their place in it: here, not in
+  // the reply's row, which shows the next chat's reply at the same place once the user switches.
+  const [replySaves, startReplySave] = useSaves()
+  const replyKey = (i: number) => `${chatId.current}:${i}`
+
   /** Saves the reply at `i` as a page titled with the chat's title and its question. */
-  const saveReplyRef = useRef<(i: number) => Promise<{ url: string }>>(undefined)
+  const saveReplyRef = useRef<(i: number) => void>(undefined)
   saveReplyRef.current = (i) => {
     const reply = messages[i]
     const question = messages.slice(0, i).findLast((m) => m.role === 'user')
-    if (reply?.role !== 'assistant' || !question) return Promise.reject(new Error('That reply is no longer here.'))
+    if (reply?.role !== 'assistant' || !question) return
     const turn = { question: question.content, markdown: replyMarkdown(reply.parts), ...touchedBy(doneCalls(reply)) }
-    return savePage(replyTitle(headerTitle ?? '', question.content), [turn])
+    startReplySave(replyKey(i), () => savePage(replyTitle(headerTitle ?? '', question.content), [turn]))
   }
   // One function for the panel's life, so a reply that hasn't changed is not drawn again.
   const saveReply = useCallback((i: number) => saveReplyRef.current!(i), [])
+
+  // Saves of chats from the list, by session id: here, so closing the list mid-save loses neither.
+  const [chatSaves, startChatSave] = useSaves()
 
   /** Saves a saved chat, as the store has it, as a page titled with the chat's title. */
   async function saveChat(id: string) {
@@ -972,6 +980,7 @@ export function Chat({ userId }: { userId: string }) {
                     ended={!(busy && i === messages.length - 1)}
                     index={i}
                     saveBlocked={saveBlocked}
+                    saveState={replySaves[replyKey(i)]}
                     onSave={saveReply}
                   />
                 </div>
@@ -1029,7 +1038,8 @@ export function Chat({ userId }: { userId: string }) {
             onOpen={open}
             onClose={closeList}
             saveBlocked={saveBlocked}
-            onSave={saveChat}
+            saves={chatSaves}
+            onSave={(id) => startChatSave(id, () => saveChat(id))}
             onDeleted={(id) => {
               deleted.current.add(id)
               // The open session is being deleted: stop its reply, so it isn't saved back.
@@ -1160,13 +1170,15 @@ const ReplyFoot = memo(function ReplyFoot({
   ended,
   index,
   saveBlocked,
+  saveState,
   onSave,
 }: {
   reply: Reply
   ended: boolean
   index: number
   saveBlocked?: string
-  onSave: (index: number) => Promise<{ url: string }>
+  saveState?: SaveState
+  onSave: (index: number) => void
 }) {
   if (!ended) return null
   const text = replyMarkdown(reply.parts)
@@ -1178,7 +1190,10 @@ const ReplyFoot = memo(function ReplyFoot({
       {text && <CopyButton text={text} />}
       {summary && <div className="note">{summary}</div>}
       {(details.length > 0 || text) && (
-        <ReplyDetails rows={details} save={text ? { blocked: saveBlocked, onSave: () => onSave(index) } : undefined} />
+        <ReplyDetails
+          rows={details}
+          save={text ? { blocked: saveBlocked, state: saveState, onSave: () => onSave(index) } : undefined}
+        />
       )}
     </div>
   )
@@ -1260,17 +1275,16 @@ function detailRows(details: QuestionDetails = {}): { label?: string; text: stri
 
 /**
  * The "…" button at the end of a reply's row, and the popover with its details it opens and closes,
- * ending with "Save to Notion" when the reply wrote something. How a save went stays while the popover is closed.
+ * ending with "Save to Notion" when the reply wrote something.
  */
 function ReplyDetails({
   rows,
   save,
 }: {
   rows: { label?: string; text: string }[]
-  save?: { blocked?: string; onSave: Save }
+  save?: { blocked?: string; state?: SaveState; onSave: () => void }
 }) {
   const { open, setOpen, rootRef, onKeyDown } = useMenu()
-  const [saved, startSave] = useSave()
   const id = useId()
   return (
     <div className="reply-details" ref={rootRef} onKeyDown={onKeyDown}>
@@ -1293,7 +1307,7 @@ function ReplyDetails({
               {text}
             </p>
           ))}
-          {save && <SaveReply blocked={save.blocked} state={saved} onSave={() => startSave(save.onSave)} />}
+          {save && <SaveReply blocked={save.blocked} state={save.state} onSave={save.onSave} />}
         </div>
       )}
     </div>

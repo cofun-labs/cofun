@@ -9,24 +9,26 @@ export type SaveState = { status: 'saving' } | { status: 'saved'; url: string } 
 export type Save = () => Promise<{ url: string }>
 
 /**
- * The state of one thing's save, and a function that starts it. A save that is running starts no
- * other: one click creates at most one page.
+ * The state of each thing's save, by key, and a function that starts one. A save that is running
+ * starts no other for its key: one click creates at most one page. Keep it where it outlives what
+ * shows it (a closed popover or list), so neither the guard nor the link is lost.
  */
-export function useSave(): [SaveState | undefined, (save: Save) => void] {
-  const [state, setState] = useState<SaveState>()
-  const running = useRef(false)
-  function start(save: Save) {
-    if (running.current) return
-    running.current = true
-    setState({ status: 'saving' })
+export function useSaves(): [Record<string, SaveState>, (key: string, save: Save) => void] {
+  const [states, setStates] = useState<Record<string, SaveState>>({})
+  const running = useRef(new Set<string>())
+  function start(key: string, save: Save) {
+    if (running.current.has(key)) return
+    running.current.add(key)
+    const set = (state: SaveState) => setStates((all) => ({ ...all, [key]: state }))
+    set({ status: 'saving' })
     save()
       .then(
-        ({ url }) => setState({ status: 'saved', url }),
-        (err: unknown) => setState({ status: 'failed', error: err instanceof Error ? err.message : String(err) }),
+        ({ url }) => set({ status: 'saved', url }),
+        (err: unknown) => set({ status: 'failed', error: err instanceof Error ? err.message : String(err) }),
       )
-      .finally(() => (running.current = false))
+      .finally(() => running.current.delete(key))
   }
-  return [state, start]
+  return [states, start]
 }
 
 /**
@@ -69,7 +71,7 @@ export function SaveReply({ blocked, state, onSave }: { blocked?: string; state?
           type="button"
           className="save-button"
           disabled={!!blocked}
-          // Not `disabled` while it saves, so the focus stays on it; a second press starts nothing (useSave).
+          // Not `disabled` while it saves, so the focus stays on it; a second press starts nothing (useSaves).
           aria-disabled={state?.status === 'saving' || undefined}
           aria-describedby={blocked ? hint : undefined}
           onClick={onSave}
@@ -89,9 +91,8 @@ export function SaveReply({ blocked, state, onSave }: { blocked?: string; state?
 }
 
 /** The "…" menu of a row in the chat list, with "Save to Notion", and what the save shows under the row. */
-export function ChatMenu({ blocked, onSave }: { blocked?: string; onSave: Save }) {
-  const { open, setOpen, rootRef, menuRef, onKeyDown } = useMenu()
-  const [state, start] = useSave()
+export function ChatMenu({ blocked, state, onSave }: { blocked?: string; state?: SaveState; onSave: () => void }) {
+  const { open, setOpen, close, rootRef, menuRef, onKeyDown } = useMenu()
   const hint = useId()
   return (
     <>
@@ -108,22 +109,26 @@ export function ChatMenu({ blocked, onSave }: { blocked?: string; onSave: Save }
           <Icon name="dots" />
         </button>
         {open && (
-          <div ref={menuRef} className="chat-popover" role="menu" aria-label="Chat">
-            <button
-              type="button"
-              role="menuitem"
-              tabIndex={-1}
-              aria-disabled={blocked || state?.status === 'saving' ? true : undefined}
-              aria-describedby={blocked ? hint : undefined}
-              onClick={() => {
-                if (blocked) return
-                setOpen(false)
-                start(onSave)
-              }}
-            >
-              <Icon name="page" />
-              Save to Notion
-            </button>
+          <div className="chat-popover">
+            <div ref={menuRef} role="menu" aria-label="Chat">
+              <button
+                type="button"
+                role="menuitem"
+                tabIndex={-1}
+                aria-disabled={blocked || state?.status === 'saving' ? true : undefined}
+                aria-describedby={blocked ? hint : undefined}
+                onClick={() => {
+                  if (blocked) return
+                  // Back to the "…" button: the item is about to go.
+                  close()
+                  onSave()
+                }}
+              >
+                <Icon name="page" />
+                Save to Notion
+              </button>
+            </div>
+            {/* Outside the menu, which holds only its items; the item names it as its description. */}
             {blocked && (
               <span id={hint} className="save-note">
                 {blocked}

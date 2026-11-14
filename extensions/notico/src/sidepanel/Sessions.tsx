@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Icon } from './icons'
-import { ChatMenu } from './Save'
+import { ChatMenu, type SaveState } from './Save'
 import { filterSessions, type ListedSession, type SessionStore } from '../sessions'
 
 /** How opening a session went: `gone` when it no longer exists, `unreadable` when it can't be read. */
@@ -20,6 +20,7 @@ export function Sessions({
   onClose,
   onDeleted,
   saveBlocked,
+  saves,
   onSave,
 }: {
   store: SessionStore
@@ -32,8 +33,10 @@ export function Sessions({
   onDeleted: (id: string) => void
   /** Why a chat can't be saved to Notion now, if it can't. */
   saveBlocked?: string
-  /** Saves a chat to Notion as a new page, resolving with its link. */
-  onSave: (id: string) => Promise<{ url: string }>
+  /** How saving each chat to Notion went, by id; kept by the chat, so it outlives the list. */
+  saves: Record<string, SaveState>
+  /** Starts saving a chat to Notion as a new page. */
+  onSave: (id: string) => void
 }) {
   const [sessions, setSessions] = useState<ListedSession[] | null>(null)
   // Sessions whose details read fine but whose conversation didn't, found when the user opened them.
@@ -154,7 +157,7 @@ export function Sessions({
               </button>
             )}
             {!('unreadable' in s || unopenable.has(s.id)) && (
-              <ChatMenu blocked={saveBlocked} onSave={() => onSave(s.id)} />
+              <ChatMenu blocked={saveBlocked} state={saves[s.id]} onSave={() => onSave(s.id)} />
             )}
             <button
               className={confirming === s.id ? 'session-delete confirming' : 'session-delete'}

@@ -1,4 +1,4 @@
-// Saving a reply or a whole chat to Notion (UC-SESSION-002), as a user does it from the side panel.
+// Saving a reply or a whole chat to Notion (UC-NOTICO-SESSION-002), as a user does it from the side panel.
 // Besides the screen, the tests look at what Notion was asked to do: the fake workspace applies the
 // transaction, so the new page is read back from it.
 import '@testing-library/jest-dom/vitest'
@@ -100,8 +100,8 @@ function readAndRename(browser: FakeBrowser) {
   )
 }
 
-describe('UC-SESSION-002 save a chat or a reply to Notion', () => {
-  it('[UC-SESSION-002-S01] a reply is saved under the open page, titled with the chat and its question, without tool details', async () => {
+describe('UC-NOTICO-SESSION-002 save a chat or a reply to Notion', () => {
+  it('[UC-NOTICO-SESSION-002-S01] a reply is saved under the open page, titled with the chat and its question, without tool details', async () => {
     const { tab, workspace } = workspaceTab()
     const { browser, user } = await openPanel(tab)
     browser.titles.failWith = undefined
@@ -149,7 +149,7 @@ describe('UC-SESSION-002 save a chat or a reply to Notion', () => {
     expect(again.getByRole('link', { name: 'Open the saved page' })).toBeVisible()
   })
 
-  it('[UC-SESSION-002-S02] a saved chat is saved from the chat list, every question and reply in order', async () => {
+  it('[UC-NOTICO-SESSION-002-S02] a saved chat is saved from the chat list, every question and reply in order', async () => {
     const { tab, workspace } = workspaceTab()
     const { browser, user } = await openPanel(tab)
     browser.ai.script.push({ reply: 'Three milestones.' }, { reply: 'Alice owns them.' })
@@ -176,7 +176,68 @@ describe('UC-SESSION-002 save a chat or a reply to Notion', () => {
     expect(workspace.transactions).toHaveLength(1)
   })
 
-  it('[UC-SESSION-002-S03] off Notion, saving is unavailable and says to open a Notion page', async () => {
+  it("a reply's save stays with its chat: another chat's reply at the same place can be saved on its own", async () => {
+    const { tab, workspace } = workspaceTab()
+    const { browser, user } = await openPanel(tab)
+    browser.ai.script.push({ reply: 'First chat.' }, { reply: 'Second chat.' })
+    await ask(user, 'One', 'First chat.')
+    await saveReply(user)
+    await user.click(screen.getAllByRole('button', { name: 'Reply details' }).at(-1)!)
+
+    await user.click(screen.getByRole('button', { name: 'New chat' }))
+    await ask(user, 'Two', 'Second chat.')
+    const menu = await replyMenu(user)
+    expect(menu.queryByRole('link', { name: 'Open the saved page' })).not.toBeInTheDocument()
+    await user.click(menu.getByRole('button', { name: 'Save to Notion' }))
+    await menu.findByRole('link', { name: 'Open the saved page' })
+    expect(
+      workspace
+        .content(PAGE)
+        .slice(1)
+        .map((p) => plain((p.properties as { title?: unknown }).title)),
+    ).toEqual(['One', 'Two'])
+  })
+
+  it('saving from the chat list puts the focus back on the row\'s "…"', async () => {
+    const { tab } = workspaceTab()
+    const { browser, user } = await openPanel(tab)
+    browser.ai.script.push({ reply: 'An answer.' })
+    await ask(user, 'Hello', 'An answer.')
+    await user.click(screen.getByRole('button', { name: 'Chats' }))
+    const more = await screen.findByRole('button', { name: 'More for this chat' })
+    await user.click(more)
+    await user.click(screen.getByRole('menuitem', { name: 'Save to Notion' }))
+    expect(more).toHaveFocus()
+    await screen.findByRole('link', { name: 'Open the saved page' })
+  })
+
+  it('a chat still saving when the list closes keeps its save: no second page, and the link when the list reopens', async () => {
+    const { tab, workspace } = workspaceTab()
+    const { browser, user } = await openPanel(tab)
+    browser.ai.script.push({ reply: 'Three milestones.' })
+    await ask(user, 'What is on the roadmap?', 'Three milestones.')
+    const release = tab.hold('saveTransactionsFanout')
+
+    const list = () => within(screen.getByRole('dialog', { name: 'Chats' }))
+    await user.click(screen.getByRole('button', { name: 'Chats' }))
+    await user.click(await list().findByRole('button', { name: 'More for this chat' }))
+    await user.click(screen.getByRole('menuitem', { name: 'Save to Notion' }))
+    await list().findByText('Saving to Notion…')
+    await user.click(list().getByRole('button', { name: 'Close' }))
+
+    // Reopened while the save is still out: it says so, and saving again starts nothing.
+    await user.click(screen.getByRole('button', { name: 'Chats' }))
+    expect(await list().findByText('Saving to Notion…')).toBeVisible()
+    await user.click(list().getByRole('button', { name: 'More for this chat' }))
+    await user.click(screen.getByRole('menuitem', { name: 'Save to Notion' }))
+    release()
+
+    expect(await list().findByRole('link', { name: 'Open the saved page' })).toBeVisible()
+    expect(endpoints(tab).filter((e) => e === 'saveTransactionsFanout')).toHaveLength(1)
+    expect(workspace.transactions).toHaveLength(1)
+  })
+
+  it('[UC-NOTICO-SESSION-002-S03] off Notion, saving is unavailable and says to open a Notion page', async () => {
     const tab = new FakeNotionTab('https://example.com/article', 'An article')
     const { browser, user } = await openPanel(tab)
     browser.ai.script.push({ reply: 'An answer.' })
@@ -198,7 +259,7 @@ describe('UC-SESSION-002 save a chat or a reply to Notion', () => {
     expect(tab.sent).toEqual([])
   })
 
-  it('[UC-SESSION-002-S04] a database open in the tab is not saved into, and the user is told why', async () => {
+  it('[UC-NOTICO-SESSION-002-S04] a database open in the tab is not saved into, and the user is told why', async () => {
     const { tab, workspace } = workspaceTab(`https://app.notion.com/p/Tasks-${hex(TASKS)}`)
     const { browser, user } = await openPanel(tab)
     browser.ai.script.push({ reply: 'An answer.' })
@@ -211,7 +272,7 @@ describe('UC-SESSION-002 save a chat or a reply to Notion', () => {
     expect(workspace.transactions).toEqual([])
   })
 
-  it('[UC-SESSION-002-S05] in Read only, a reply is saved as in Edit', async () => {
+  it('[UC-NOTICO-SESSION-002-S05] in Read only, a reply is saved as in Edit', async () => {
     const { tab, workspace } = workspaceTab()
     const { browser, user } = await openPanel(tab)
     await user.click(screen.getByRole('button', { name: 'Mode: Edit' }))
@@ -227,7 +288,7 @@ describe('UC-SESSION-002 save a chat or a reply to Notion', () => {
     ])
   })
 
-  it('[UC-SESSION-002-S06] when Notion turns the save away, nothing more is sent and the user is told to wait', async () => {
+  it('[UC-NOTICO-SESSION-002-S06] when Notion turns the save away, nothing more is sent and the user is told to wait', async () => {
     const { tab, workspace } = workspaceTab()
     const { browser, user } = await openPanel(tab)
     browser.ai.script.push({ reply: 'An answer.' })
@@ -247,7 +308,7 @@ describe('UC-SESSION-002 save a chat or a reply to Notion', () => {
     expect(workspace.content(PAGE).map((b) => b.id)).toEqual([NOTE])
   })
 
-  it('[UC-SESSION-002-S07] when Notion does not say whether the page was made, it is not retried and the user is told to check', async () => {
+  it('[UC-NOTICO-SESSION-002-S07] when Notion does not say whether the page was made, it is not retried and the user is told to check', async () => {
     const { tab, workspace } = workspaceTab()
     const { browser, user } = await openPanel(tab)
     browser.ai.script.push({ reply: 'An answer.' })
@@ -263,7 +324,7 @@ describe('UC-SESSION-002 save a chat or a reply to Notion', () => {
     expect(savedPage(workspace).title).toBe('Hello')
   })
 
-  it('[UC-SESSION-002-S08] a person a reply mentions is saved as their name, and nobody is mentioned', async () => {
+  it('[UC-NOTICO-SESSION-002-S08] a person a reply mentions is saved as their name, and nobody is mentioned', async () => {
     const { tab, workspace } = workspaceTab()
     const { browser, user } = await openPanel(tab)
     browser.ai.script.push({ reply: 'Ask @[Kim Lee] to review it.' })
