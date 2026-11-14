@@ -62,7 +62,7 @@ No, I am not using remote code. Everything the extension runs is in its package;
 | Authentication information | Yes | The Clerk session token and cookie |
 | Personal communications | Yes | The user's conversation with the assistant goes to the worker and the model |
 | Location | No | The clock's offset from UTC is sent for the credit history; it is not a location |
-| Web history | Yes | A tab's URL and title, when a question needs them |
+| Web history | Yes | A tab's URL and title, when a question needs them, and the URL and title of a Notion page open in another tab that the user adds to a question |
 | User activity | No | |
 | Website content | Yes | The Notion content the assistant reads goes to the worker and the model |
 

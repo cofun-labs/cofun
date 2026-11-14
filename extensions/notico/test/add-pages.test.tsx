@@ -342,6 +342,31 @@ describe('UC-CHAT-004 add pages to a question', () => {
     expect(pagesSent()).toEqual([['Fixture page', 'Roadmap']])
   })
 
+  it('[UC-CHAT-004-S10] an @ followed by ordinary words is sent as typed, with nothing searched or added', async () => {
+    const { browser, tab, user } = await openPanel()
+    browser.ai.script.push({ reply: 'Noted.' }, { reply: 'Will do.' })
+
+    await user.type(composer(), 'Meet me @ 5pm')
+    expect(picker()).not.toBeInTheDocument()
+    await user.keyboard('{Enter}')
+    await screen.findByText('Noted.')
+    await answered()
+
+    // A word right after the @ opens the picker, until the words go on and match no page.
+    await user.type(composer(), 'ping @road')
+    expect(await within(picker()!).findByRole('group', { name: 'Open tabs' })).toBeVisible()
+    await user.type(composer(), ' about it')
+    await waitFor(() => expect(screen.queryByText(/Searches your workspace/)).not.toBeInTheDocument())
+    await pause()
+    await user.keyboard('{Enter}')
+    await screen.findByText('Will do.')
+    await answered()
+
+    expect(sentQuestions(browser).map((q) => q?.split('\n\n').at(-1))).toEqual(['Meet me @ 5pm', 'ping @road about it'])
+    expect(searches(tab)).toEqual([])
+    expect(pagesSent()).toEqual([['Fixture page'], ['Fixture page']])
+  })
+
   it('[UC-CHAT-004-S08] the open page taken off and picked again goes with the question, also once the tab moves on', async () => {
     const { browser, tab, user } = await openPanel()
     await user.click(screen.getByRole('button', { name: 'Remove Fixture page' }))

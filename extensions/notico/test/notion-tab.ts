@@ -186,10 +186,14 @@ export class FakeNotionTab {
     globals.chrome = {
       storage: this.storage,
       tabs: {
-        query: async (info: { active?: boolean } = {}) => {
+        query: async (info: { active?: boolean; url?: string[] } = {}) => {
           const current = this.url === undefined ? [] : [{ id: 7, url: this.url, title: this.title, active: true }]
           if (info.active) return current
-          return [...current, ...this.otherTabs.map((tab, i) => ({ id: 20 + i, ...tab, active: false }))]
+          const all = [...current, ...this.otherTabs.map((tab, i) => ({ id: 20 + i, ...tab, active: false }))]
+          // Match patterns as the extension uses them: `https://<host>/*`.
+          const hosts = info.url?.map((pattern) => /^https:\/\/([^/]+)\/\*$/.exec(pattern)?.[1])
+          // Like Chrome, a tab that doesn't match is not reported at all: no URL or title of it.
+          return hosts ? all.filter((tab) => hosts.includes(new URL(tab.url).hostname)) : all
         },
         onActivated: listeners(this.activated),
         onUpdated: listeners(this.updated),

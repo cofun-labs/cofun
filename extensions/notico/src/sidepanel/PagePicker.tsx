@@ -74,7 +74,8 @@ export interface PickerOptions {
  * the search for the rest of the question, and the other groups stay usable.
  *
  * Returns the picker to render, the key handler for the field the user types in (true when it
- * handled the key), and the id of the option the keys move to.
+ * handled the key), the id of the option the keys move to, and whether a page already in the
+ * browser matches the query.
  */
 export function usePagePicker({
   open,
@@ -87,7 +88,13 @@ export function usePagePicker({
   onStop,
   onPick,
   onClose,
-}: PickerOptions): { element: ReactNode; onKeyDown: (e: KeyboardEvent) => boolean; activeId?: string } {
+}: PickerOptions): {
+  element: ReactNode
+  onKeyDown: (e: KeyboardEvent) => boolean
+  activeId?: string
+  /** A page of the first three groups (no workspace search) matches the query. */
+  localMatch: boolean
+} {
   const id = useId()
   const [local, setLocal] = useState<{ tabs: QuestionPage[]; recent: QuestionPage[] }>()
   const [search, setSearch] = useState<Search>({ status: 'off' })
@@ -218,7 +225,7 @@ export function usePagePicker({
     return false
   }
 
-  if (!open) return { element: null, onKeyDown }
+  if (!open) return { element: null, onKeyDown, localMatch: true }
 
   const groups = (['This page', 'Open tabs', 'Recent', 'Workspace'] as const).flatMap((group) => {
     const rows = options.flatMap((o, i) => (o.group === group ? [{ o, i }] : []))
@@ -295,7 +302,13 @@ export function usePagePicker({
       </div>
     </div>
   )
-  return { element, onKeyDown, activeId: current >= 0 ? optionId(current) : undefined }
+  return {
+    element,
+    onKeyDown,
+    activeId: current >= 0 ? optionId(current) : undefined,
+    // Until the pages in the browser are read, they may still match.
+    localMatch: !local || options.some((o) => o.group !== 'Workspace'),
+  }
 }
 
 /** What the picker says under its pages: how the workspace search stands, or that nothing matches. */

@@ -272,7 +272,8 @@ export function Chat({ userId }: { userId: string }) {
   /** Opens the picker for an `@` just before the caret, or closes one the caret left. */
   function followAt(text: string, at: number | null) {
     const before = at === null ? '' : text.slice(0, at)
-    const match = /(?:^|\s)@([^@\n]{0,40})$/.exec(before)
+    // A page's title may have spaces, but it starts right after the `@`: "@ 5pm" is no page.
+    const match = /(?:^|\s)@((?:\S[^@\n]{0,39})?)$/.exec(before)
     const start = match ? before.length - match[1].length - 1 : undefined
     if (start === undefined || dismissed.current !== start) dismissed.current = undefined
     if (start !== undefined && dismissed.current === undefined) setPicker({ from: '@', start, query: match![1] })
@@ -292,6 +293,15 @@ export function Chat({ userId }: { userId: string }) {
       ...infos.flatMap((info, i) => [...pagesIn(saved[i]?.messages ?? [], origin), ...(info.page ? [info.page] : [])]),
     ]
   }
+
+  // Words after an `@` that go past a space and match no page in the browser are the message going
+  // on, not a page: the picker closes, leaving them as text, so Enter sends them as typed.
+  const offTopic = picker?.from === '@' && /\s/.test(picker.query) && !pages.localMatch
+  useEffect(() => {
+    if (!offTopic || picker?.from !== '@') return
+    dismissed.current = picker.start
+    setPicker(undefined)
+  }, [offTopic])
 
   // A press outside the composer closes the picker.
   useEffect(() => {

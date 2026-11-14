@@ -18,7 +18,7 @@ import {
   type Operation,
   type RecordMap,
 } from './notion/api'
-import { isNotion, pageIdFromUrl, pageLink, pathPageIdFromUrl, toUuid } from './notion/hosts'
+import { NOTION_HOSTS, isNotion, pageIdFromUrl, pageLink, pathPageIdFromUrl, toUuid } from './notion/hosts'
 import {
   EDIT_ARGS,
   EditError,
@@ -125,7 +125,8 @@ const tabTitle = (title: string) => title.replace(/\s+\|\s+Notion$/, '')
  */
 export async function openNotionPages(): Promise<OpenPage[]> {
   const seen = new Set<string>()
-  return (await chrome.tabs.query({})).flatMap((tab) => {
+  // Chrome is asked for Notion's tabs only: no other site's URL or title is read.
+  return (await chrome.tabs.query({ url: NOTION_HOSTS.map((host) => `https://${host}/*`) })).flatMap((tab) => {
     const id = tab.url && isNotion(tab.url) ? pageIdFromUrl(tab.url) : undefined
     if (!tab.url || !id || seen.has(id)) return []
     seen.add(id)
@@ -164,17 +165,20 @@ async function needsAttachedPage(): Promise<void> {
  */
 export function carryPages(page: OpenPage | undefined, removed: boolean, added: OpenPage[] = []): string {
   openPageAttached = !removed
-  const notes = [openNote(page, removed)]
   // The open page is named once, in its own note, also when the user added it by hand.
   const open = page && !removed ? pageIdFromUrl(page.url) : undefined
   const others = added.filter((p) => !open || pageIdFromUrl(p.url) !== open)
+  const notes = [openNote(page, removed, others.length > 0)]
   if (others.length)
     notes.push(`[Pages the user added to this question: ${others.map((p) => pageNamed(p)).join('; ')}]`)
   return notes.join('\n')
 }
 
-function openNote(page: OpenPage | undefined, removed: boolean): string {
+function openNote(page: OpenPage | undefined, removed: boolean, others: boolean): string {
   if (!page) return '[The current tab is not a Notion page.]'
+  // The pages the user added are what the question is about: the note says only which page to leave out.
+  if (removed && others)
+    return '[The user took the page open in the current tab off this question: do not use that page.]'
   if (removed)
     return (
       '[No Notion page is attached to this question: the user took the page open in the current tab off it. ' +
