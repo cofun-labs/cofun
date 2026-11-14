@@ -1175,7 +1175,7 @@ describe('sessions', () => {
   })
 
   it('the session list closes from its Close button, the Sessions button, or Escape, back to the chat', async () => {
-    const { user } = await openPanel()
+    const { browser, user } = await openPanel()
     const toggle = screen.getByRole('button', { name: 'Chats' })
     const list = () => screen.queryByRole('dialog', { name: 'Chats' })
 
@@ -1201,6 +1201,19 @@ describe('sessions', () => {
     expect(list()).not.toBeInTheDocument()
     expect(toggle).toHaveFocus()
     expect(composer()).toBeVisible()
+
+    // Opening a chat from the list, another one or the one already open, puts the focus in the message box.
+    browser.ai.script.push({ reply: 'Three milestones.' })
+    await ask(user, 'What is on the roadmap?')
+    await screen.findByText('Three milestones.')
+    await answered()
+    await openSession(user, /What is on the roadmap\?/)
+    expect(list()).not.toBeInTheDocument()
+    expect(composer()).toHaveFocus()
+    await user.click(screen.getByRole('button', { name: 'New chat' }))
+    await openSession(user, /What is on the roadmap\?/)
+    await screen.findByText('Three milestones.')
+    await waitFor(() => expect(composer()).toHaveFocus())
   })
 
   it('the session list is searched by title, and deleting a session takes a second click', async () => {

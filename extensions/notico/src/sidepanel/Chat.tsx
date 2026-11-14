@@ -517,6 +517,12 @@ export function Chat({ userId }: { userId: string }) {
     focusAfter.current.focus()
     focusAfter.current = null
   }, [view])
+  // Opening a chat from the session list puts the focus in the message box once the list has closed,
+  // instead of leaving it on the row the list took away.
+  const [focusInput, setFocusInput] = useState(0)
+  useEffect(() => {
+    if (focusInput) inputRef.current?.focus()
+  }, [focusInput])
 
   async function send() {
     const text = input.trim()
@@ -853,6 +859,7 @@ export function Chat({ userId }: { userId: string }) {
     // The open session is already on screen, maybe with a reply still coming in.
     if (id === current?.id) {
       setView('chat')
+      setFocusInput((n) => n + 1)
       return 'opened'
     }
     const chat = chatId.current
@@ -880,6 +887,7 @@ export function Chat({ userId }: { userId: string }) {
     if (!session) return 'gone'
     if (session === 'unreadable') return 'unreadable'
     switchTo(session)
+    setFocusInput((n) => n + 1)
     track({ event: 'chat_opened' })
     return 'opened'
   }
