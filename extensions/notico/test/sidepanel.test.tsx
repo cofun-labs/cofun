@@ -1237,6 +1237,10 @@ describe('a saved session that can no longer be read', () => {
       req.onerror = () => reject(req.error)
     })
     await writeSaved('messages', { id: first, messages: [{ role: 'system', text: 'Be brief' }] })
+    // A reply in the open chat is still coming in.
+    const resume = pausedReply(browser, 'The launch is on Friday')
+    await ask(user, 'When is the launch?')
+    await conversation().findByText(/^The launch/)
     const calls = browser.ai.calls.length
 
     await user.click(screen.getByRole('button', { name: 'Sessions' }))
@@ -1248,6 +1252,10 @@ describe('a saved session that can no longer be read', () => {
     await user.click(screen.getByRole('button', { name: 'Close' }))
     expect(conversation().getByText('Alice.')).toBeVisible()
     expect(conversation().queryByText('Three milestones.')).not.toBeInTheDocument()
+    // The reply was not stopped: it comes in whole, in the chat it was asked in.
+    resume()
+    expect(await conversation().findByText('The launch is on Friday')).toBeVisible()
+    await answered()
     expect(browser.ai.calls).toHaveLength(calls)
 
     await user.click(screen.getByRole('button', { name: 'Sessions' }))

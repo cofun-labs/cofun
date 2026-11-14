@@ -704,19 +704,25 @@ export function Chat({ userId }: { userId: string }) {
       setView('chat')
       return 'opened'
     }
-    // Stop the reply now, not once the session has loaded: it must not finish in the meantime.
+    const chat = chatId.current
+    const token = ++opening.current
+    // The user started a new chat, opened another session, or asked something meanwhile; that wins.
+    const overtaken = () => chatId.current !== chat || opening.current !== token
+    // First see whether it can be opened at all: one that can't leaves the open chat, and a reply
+    // still coming in for it, as they are. Nothing of it reaches the chat or the agent.
+    const found = await store.get(id)
+    if (overtaken()) return 'opened'
+    if (!found) return 'gone'
+    if (found === 'unreadable') return 'unreadable'
+    // Stop the reply now, not once the session has loaded again: it must not finish in the meantime.
     declineAll()
     stopped.current++
     agent.stop()
-    const chat = chatId.current
-    const token = ++opening.current
     // A save of this panel's still waiting to write would otherwise look like another window's later.
     await saving.current
     const session = await store.get(id)
-    // The user started a new chat, opened another session, or asked something meanwhile; that wins.
-    if (chatId.current !== chat || opening.current !== token) return 'opened'
+    if (overtaken()) return 'opened'
     if (!session) return 'gone'
-    // Nothing of it reaches the chat or the agent.
     if (session === 'unreadable') return 'unreadable'
     switchTo(session)
     return 'opened'

@@ -122,12 +122,14 @@ const TokenUsage = z.object({ input: z.number(), output: z.number(), cached: z.n
 export type TokenUsage = z.infer<typeof TokenUsage>
 
 /** Which model a question was asked of: the hosted one, or a user's own one on its service, by its name. */
+const OwnService = z.enum(['openrouter', 'deepseek'])
+/** True when A and B are the same set of values. */
+type Same<A, B> = [A, B] extends [B, A] ? true : false
+// The same services as OwnSetup, both ways: one missing here would make every session it answered unreadable.
+true satisfies Same<z.infer<typeof OwnService>, OwnSetup['service']>
 const AnsweredBy = z.union([
   z.object({ service: z.literal('hosted') }),
-  z.object({
-    service: z.enum(['openrouter', 'deepseek']) satisfies z.ZodType<OwnSetup['service']>,
-    name: z.string(),
-  }),
+  z.object({ service: OwnService, name: z.string() }),
 ])
 export type AnsweredBy = z.infer<typeof AnsweredBy>
 
