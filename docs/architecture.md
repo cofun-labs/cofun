@@ -89,6 +89,8 @@ What is read back is parsed against the session's schemas (`SessionInfo` in `ses
 
 A session is titled with its first question until its first reply is in; then the agent asks the model that answered for a short title (`CopilotAgent.title`), so it goes only where the conversation already went, and on the hosted model it spends credits like any request. The title the model wrote replaces the first question in the stored session, once, and later saves keep it; a failed or unusable answer changes nothing.
 
+With a button under a reply, or one at the top of the panel, the user can save that reply, or the whole chat so far, as a new Notion page (`savePage` in `src/tools/save.ts`, `Save.tsx`). It is the user's own action, not a tool the agent is offered, so Read only does not limit it, and nothing asks to confirm it. The page always goes at the end of the page open in the current tab when the user saves, the same tab rule the tools follow; with no Notion page there the action is unavailable, and a database is refused before anything is written. It is written the way `create_page` writes a page, from the reply's Markdown, in one transaction sent once and never retried: a rate limit stops it with nothing more sent, and an unknown outcome tells the user to look in Notion before saving again. Unlike the picker's search, a save may go out while a question is answered: it is two requests, started by hand, and counted toward no question. A save notifies nobody: people a reply mentions are written as names.
+
 ### Writes without approval
 
 The agent edits pages, creates pages and rows, changes properties, adds comments, and moves and duplicates pages without asking first. Moving pages to the trash is the one thing it asks the user's approval for, each time, showing each page by its current name; pages only ever go to Notion's trash, where they can be restored. Each change shows on its tool card in the side panel, and a page's history in Notion can undo edits. The trade-off: the agent reads text the user doesn't control (shared pages, guest content, search results), and an instruction hidden in that text can make it write as the user without anyone being asked. It could change many pages in one call, move a private page under a page others can read (a page takes its sharing from where it sits, so it is exposed as soon as it moves), or copy content the user can see into a page or a comment someone else can read; a comment also notifies the people following the page or the thread, and a mention notifies the person mentioned. When a mention's name matches no one, the agent is told the members with a similar name, so text in a page could have it probe for the names of the workspace's people. Page history and "Move to" can undo the changes, but not what someone read in the meantime.
@@ -130,6 +132,7 @@ extensions/notico/        Notico, the extension for Notion
     organize.ts           move_page, duplicate_page, trash_page
     comments.ts           read_comments, add_comment
     current.ts            the current tab and the page a question carries; get_current_tab
+    save.ts               saving a reply or a chat as a Notion page, which the user starts (not a tool)
     shared.ts             common arguments, how a call is worded, and the pages a call names
     load.ts               loads several tools share: a page with its database and mentions, a database, a workspace
     memory.ts             what the agent remembers between calls (pages read, rows and databases seen),
@@ -155,6 +158,7 @@ extensions/notico/        Notico, the extension for Notion
                           Markdown.tsx: a reply's text as formatted Markdown,
                           Pages.tsx: the pages a question goes with, in the composer and its bubble,
                           PagePicker.tsx: the page picker `@` and "+" open,
+                          Save.tsx: the buttons that save a reply or the chat to Notion, and why a save failed,
                           Account.tsx: the avatar and its menu, Settings.tsx: the settings page,
                           History.tsx: the history of the user's credits,
                           Model.tsx: the model menu by the composer, and the settings page's choice

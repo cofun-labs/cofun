@@ -127,7 +127,8 @@ describe('choosing the model', () => {
     await screen.findByText('It is a fixture.')
     await answered()
 
-    expect(await replyDetails(user)).toEqual(['Tokens: 3,000 in (2,000 cached) · 40 out', 'Model: OpenAI: GPT-6.1 Sol'])
+    expect(await replyDetails(user)).toEqual(['Tokens: 3k in (2k cached) · 40 out'])
+    expect(screen.getByRole('note', { name: 'Answered by OpenAI: GPT-6.1 Sol' })).toBeVisible()
   })
 
   it('[UC-NOTICO-AGENT-002-S02] another account on the same browser gets the hosted model and cannot see the key', async () => {
@@ -453,9 +454,8 @@ describe('DeepSeek with the user key', () => {
     await screen.findByText('It is a fixture.')
     await answered()
 
-    const [tokens, model] = await replyDetails(user)
-    expect(tokens).toBe('Tokens: 900 in (600 cached) · 30 out')
-    expect(model).toMatch(/^Model: DeepSeek V4.1 Flash/)
+    expect(await replyDetails(user)).toEqual(['Tokens: 900 in (600 cached) · 30 out'])
+    expect(screen.getByRole('note', { name: /^Answered by DeepSeek V4.1 Flash/ })).toBeVisible()
   })
 
   it('[UC-NOTICO-AGENT-002-S12] switching between OpenRouter and DeepSeek uses each one with its own key, never asked again', async () => {

@@ -26,7 +26,7 @@ Key constraints:
 | UC-NOTICO-CHAT-001-S16 | P1 | ✅ | Given a reply written in Markdown; when it is shown in the side panel; then it reads formatted (headings, emphasis, lists, tables, code, quotes, links), and the user's question is shown as typed. |
 | UC-NOTICO-CHAT-001-S17 | P0 | ✅ | Given a reply with HTML and non-web links in it; when it is shown; then the HTML is shown as text, and only its web links can be followed. |
 | UC-NOTICO-CHAT-001-S18 | P0 | ✅ | Given a reply with an image in it; when it is shown; then the image is not loaded, and its description links to it instead. |
-| UC-NOTICO-CHAT-001-S19 | P1 | ✅ | Given a finished reply; when the user presses its Copy button; then the reply's Markdown is on the clipboard, without its tool calls or the line under it, and the button says it was copied. |
+| UC-NOTICO-CHAT-001-S19 | P1 | ✅ | Given a finished reply; when the user presses its Copy button; then the reply's Markdown is on the clipboard, without its tool calls or what it read and changed, and the button says it was copied. |
 
 ### ai-e2e
 
