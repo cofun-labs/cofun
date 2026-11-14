@@ -248,6 +248,8 @@ An extension is released from `main` by the [Release workflow](../.github/workfl
 gh workflow run release.yml --ref main -f extension=notico -f version=0.2.0
 ```
 
+Before running it, add the version to the extension's `CHANGELOG.md` ([Notico's](../extensions/notico/CHANGELOG.md)) through a PR: what changed for users since the last release (`git log <name>-v<last version>..main`), worker changes they notice included, written for them rather than copied from commit titles.
+
 The version goes into the manifest and is not committed: `package.json` keeps its development version, and the tags record what was released. It must be 1 to 4 dot-separated integers from 0 to 65535, without leading zeros, and higher than the version last uploaded to the store, which rejects any other.
 
 The workflow needs no secrets. It checks out `main`, runs `pnpm check`, builds the extension for the store, runs the smoke test against that build, and zips `extensions/<name>/dist`. Then it tags the commit `<name>-v<version>` (for example `notico-v0.2.0`) and creates a **draft** GitHub Release with the zip (`<name>-<version>.zip`) attached; the zip is also kept as the run's artifact. A tag that exists already stops the run, so each version is built once. To throw a run's result away, delete the draft release and its tag:
