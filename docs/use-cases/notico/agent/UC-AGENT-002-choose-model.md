@@ -41,4 +41,4 @@ Key constraints:
 | ID | Priority | Status | Scenario |
 | --- | --- | --- | --- |
 | UC-AGENT-002-S09 | P0 | ✅ | Given a user who set up a recommended model on OpenRouter with a real key; when they ask about the open Notion page; then the model reads the page with a tool and answers from it. |
-| UC-AGENT-002-S16 | P1 | 🚧 | Given a user who set up a DeepSeek model with a real DeepSeek key; when they ask about the open Notion page; then the model reads the page with a tool and answers from it. |
+| UC-AGENT-002-S16 | P1 | ✅ | Given a user who set up a DeepSeek model with a real DeepSeek key; when they ask about the open Notion page; then the model reads the page with a tool and answers from it. |
