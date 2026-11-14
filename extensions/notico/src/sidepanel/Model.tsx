@@ -629,20 +629,10 @@ function OpenRouterModels({ on, onChange }: { on: OwnModel[]; onChange: (models:
 
   return (
     <>
-      {needle ? (
-        <ModelList label="Search results" count={on.length}>
-          {found.length ? (
-            found.map((m) => row(m))
-          ) : list.status === 'ready' ? (
-            <li className="account-detail">No model on OpenRouter matches.</li>
-          ) : null}
-        </ModelList>
-      ) : (
-        <ModelList label="OpenRouter's models" count={on.length}>
-          {recommended}
-          {others}
-        </ModelList>
-      )}
+      <ModelList label="OpenRouter's models" count={on.length}>
+        {recommended}
+        {others}
+      </ModelList>
       {list.status === 'loading' && <p className="account-detail">Loading OpenRouter's models…</p>}
       {list.status === 'failed' && (
         <>
@@ -652,6 +642,7 @@ function OpenRouterModels({ on, onChange }: { on: OwnModel[]; onChange: (models:
           </button>
         </>
       )}
+      {/* The results go under the field, so it stays where it is while the user types. */}
       <label className="model-search">
         <Icon name="search" />
         <input
@@ -662,7 +653,18 @@ function OpenRouterModels({ on, onChange }: { on: OwnModel[]; onChange: (models:
           onChange={(e) => setQuery(e.target.value)}
         />
       </label>
-      {needle && <p className="account-detail">Switching one on adds it to the list and to the menu.</p>}
+      {needle && (
+        <>
+          <ul className="provider-models" aria-label="Search results">
+            {found.length ? (
+              found.map((m) => row(m))
+            ) : list.status === 'ready' ? (
+              <li className="account-detail">No model on OpenRouter matches.</li>
+            ) : null}
+          </ul>
+          <p className="account-detail">Switching one on adds it to the list above and to the menu.</p>
+        </>
+      )}
     </>
   )
 }
@@ -681,8 +683,8 @@ function ModelList({
 }) {
   return (
     <div className="model-list">
-      <p className="model-list-head" aria-hidden="true">
-        <span>Models in the menu</span>
+      <p className="model-list-head">
+        <span>Models · price per 1M tokens</span>
         <span>{total === undefined ? `${count} on` : `${count} of ${total} on`}</span>
       </p>
       <ul className="provider-models" aria-label={label}>
@@ -779,9 +781,9 @@ function contextText(tokens: number): string {
   return `${Math.floor(tokens / 1000)}K`
 }
 
-/** What a model costs, per million tokens in and out, and how much it takes in at once. */
+/** What a model costs, per million tokens in and out (the list head says the unit), and how much it takes in at once. */
 function priceText({ price, contextLength }: OwnModel): string {
   const context = `${contextText(contextLength)} context`
   if (price.input === 0 && price.output === 0) return `Free · ${context}`
-  return `${dollars(price.input)} in · ${dollars(price.output)} out per million tokens · ${context}`
+  return `${dollars(price.input)} in · ${dollars(price.output)} out · ${context}`
 }

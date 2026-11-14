@@ -394,7 +394,7 @@ describe('turning a provider on and checking its key', () => {
       ['DeepSeek V4.1 Flash', 'true'],
       ['DeepSeek V4 Pro', 'false'],
     ])
-    expect(models[0]).toHaveAccessibleDescription('$0.30 in · $1.20 out per million tokens · 1M context')
+    expect(models[0]).toHaveAccessibleDescription('$0.30 in · $1.20 out · 1M context')
     expect(browser.openRouter.requests).toEqual([])
   })
 
@@ -508,7 +508,7 @@ describe("a provider's models in Settings", () => {
 
     const results = within(provider('OpenRouter').getByRole('list', { name: 'Search results' })).getAllByRole('switch')
     expect(results.map((r) => r.getAttribute('aria-label'))).toEqual(['Google: Gemma 5 27B', 'Google: Gemma 5 9B'])
-    expect(results[0]).toHaveAccessibleDescription('$0.10 in · $0.40 out per million tokens · 200K context')
+    expect(results[0]).toHaveAccessibleDescription('$0.10 in · $0.40 out · 200K context')
     expect(results[1]).toBeDisabled()
     expect(results[1]).toHaveAccessibleDescription("Can't use tools, which Notico needs")
 
