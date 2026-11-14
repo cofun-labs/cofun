@@ -1,7 +1,7 @@
 /* The Cofun look: blue has one meaning, the brand and the one action to take now (the mark, the
-   user's question, the primary action, the selected session); everything else is neutral grey on
-   a white page (near-black in dark mode). System fonts only: the extension contacts no host for
-   fonts (see PRIVACY.md). */
+   primary action, the selected session); the user's question sits on the same light tint as the
+   selected session, and everything else is neutral grey on a white page (near-black in dark
+   mode). System fonts only: the extension contacts no host for fonts (see PRIVACY.md). */
 :root {
   --bg: #ffffff;
   --fg: #1d2330;
@@ -9,7 +9,7 @@
   --border: #e4e7ec;
   /* Quiet surfaces: secondary buttons, hover, the search field. */
   --tint: #f2f4f7;
-  /* The selected row: the one tinted surface. */
+  /* The tinted surface: the selected row, and the user's question. */
   --selected: #eaf3fd;
   /* The mark, icons, and outlines. */
   --accent: #2383e2;
@@ -160,13 +160,11 @@ header .title {
   white-space: nowrap;
   text-overflow: ellipsis;
   font-size: inherit;
-  font-weight: 600;
-  letter-spacing: -0.01em;
+  font-weight: 400;
 }
 
 header .untitled {
   color: var(--muted);
-  font-weight: 500;
 }
 
 /* Signed out, and the start of a session */
@@ -253,8 +251,8 @@ header .untitled {
   max-width: 84%;
   padding: 8px 12px;
   border-radius: 16px 16px 4px 16px;
-  background: var(--accent-fill);
-  color: var(--on-accent);
+  background: var(--selected);
+  color: var(--fg);
 }
 
 .reply {
