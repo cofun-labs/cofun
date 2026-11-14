@@ -1,5 +1,6 @@
 // OpenAI-compatible chat completions (/v1/chat/completions) on the model the worker fixes, charged
 // to the user's credits and metered in a usage record.
+import { Hono } from 'hono'
 import * as z from '../zod'
 import { FREE_CREDITS, Ledger, type Balance } from '../credits'
 import { costOf, estimateCachedTokens, estimateTokens, type Tokens } from '../pricing'
@@ -60,11 +61,12 @@ function isStream(value: unknown): value is ReadableStream<Uint8Array> {
   return !!value && typeof value === 'object' && 'getReader' in value && typeof value.getReader === 'function'
 }
 
-/** Chat completions, after the session check (see session.ts). */
-export function chatRoutes(app: App, { now, priceOf: priceFor, logError }: Deps) {
+/** Chat completions, mounted at /v1/chat. */
+export function chatRoutes({ now, priceOf: priceFor, logError }: Deps): App {
+  const routes: App = new Hono()
   // OpenAI-compatible chat completions. The model is fixed by the server.
   // Every request that passed auth leaves one usage record, however it ends.
-  app.post('/v1/chat/completions', async (c) => {
+  routes.post('/completions', async (c) => {
     const started = Date.now()
     const usage: UsageRecord = {
       userId: c.get('userId'),
@@ -273,4 +275,6 @@ export function chatRoutes(app: App, { now, priceOf: priceFor, logError }: Deps)
       return res
     }
   }
+
+  return routes
 }

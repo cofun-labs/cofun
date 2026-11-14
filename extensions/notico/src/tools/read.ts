@@ -9,7 +9,7 @@ import { PAGE_TYPES, hexId, pageToMarkdown, splitSections } from '../notion/mark
 import { activeNotionTab, selectionIn } from '../notion/tab'
 import { needsAttachedPage } from './current'
 import { loadForPart, loadMentioned } from './load'
-import { generation, pageReads, partsRead, remember } from './memory'
+import { generation, keepPartsRead, lastRead, partsReadOf, remember } from './memory'
 import { NONE, PART_CHARS, READ, filled, idIn, named, on, pageArg, partArg, plainTitle, plural } from './shared'
 
 export const readPage = defineTool({
@@ -35,7 +35,7 @@ export const readPage = defineTool({
     part: partArg('Which part of a long page to read, starting at 1.'),
   }),
   run: async ({ page, part = 1 }) => {
-    const since = generation
+    const since = generation()
     const pageText = filled(page)
     if (pageText === undefined) await needsAttachedPage()
     const tab = await activeNotionTab()
@@ -96,12 +96,12 @@ export const readPage = defineTool({
     const drawn = drawnIn[part - 1]
     // A block drawn in several parts (a paragraph longer than a part, say) is seen in full only
     // once each of them was read since part 1 (or since the page was loaded again).
-    const read = part === 1 || reloaded ? new Set<number>() : (partsRead.get(loaded.page.id) ?? new Set<number>())
+    const read = part === 1 || reloaded ? new Set<number>() : (partsReadOf(loaded.page.id) ?? new Set<number>())
     read.add(part)
     const whole = (b: string) => drawnIn.every((d, n) => !d.has(b) || read.has(n + 1))
     const seen = pageRead(loaded, md, (b) => drawn.has(b), whole)
-    if (since === generation) partsRead.set(loaded.page.id, read)
-    remember(part === 1 ? seen : mergeReads(pageReads.get(loaded.page.id), seen), since)
+    keepPartsRead(loaded.page.id, read, since)
+    remember(part === 1 ? seen : mergeReads(lastRead(loaded.page.id), seen), since)
     return [...header, '', ...(body ? [body] : []), ...(part === 1 ? empty : [])].join('\n')
   },
 })
@@ -185,7 +185,7 @@ export const getSelection = defineTool({
     const chosen = new Set(ids.slice(0, lines.length))
     remember(
       mergeReads(
-        pageReads.get(loaded.page.id),
+        lastRead(loaded.page.id),
         pageRead(loaded, md, (b) => chosen.has(b)),
       ),
     )

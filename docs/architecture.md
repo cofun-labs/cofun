@@ -126,7 +126,8 @@ extensions/notico/        Notico, the extension for Notion
     current.ts            the current tab and the page a question carries; get_current_tab
     shared.ts             common arguments, how a call is worded, and the pages a call names
     load.ts               loads several tools share: a page with its database and mentions, a database, a workspace
-    memory.ts             what the agent remembers between calls: pages read, rows and databases seen
+    memory.ts             what the agent remembers between calls (pages read, rows and databases seen),
+                          behind functions: its maps are its own
   src/tool.ts             defines a tool from one zod schema of its arguments
   src/clerk.ts            Clerk's Frontend API host and Sync Host, read from the publishable key
   src/zod.ts              zod, set up for the extension's content security policy; the only module that imports it
@@ -156,15 +157,16 @@ extensions/notico/        Notico, the extension for Notion
                           fixtures), and of the side panel's UI: the whole panel in jsdom
                           (*.test.tsx)
 worker/                   Cloudflare Worker
-  src/app.ts              the Hono app, composed from the routes below
+  src/app.ts              the Hono app, composed from the sub-apps below; everything under /v1 is one
+                          sub-app whose first handler is the session check
   src/http.ts             what every route shares: bindings, options, errors, and request parsing
-  src/routes/             the routes, by area:
-    session.ts            Clerk JWT verification for /v1/*
+  src/routes/             the routes, by area, each a Hono sub-app:
+    session.ts            Clerk JWT verification, the first handler under /v1
     chat.ts               /v1/chat/completions, charged to credits (chat-request.ts: what a request may hold)
     credits.ts            the user's own credits and their history (/v1/credits…)
     billing.ts            buying credits (/v1/billing/*), Checkout's return pages, and /stripe/webhook
     admin.ts              the admin routes (/v1/admin/*)
-    pages.ts              the sign-in page and the admin page
+    pages.ts              the sign-in page, the admin page, /health, and / (a redirect to /login)
   src/credits.ts          credit ledger over D1: grants, expiry, spending, model calls and their cost
   src/billing.ts          the packs on offer, and what the Stripe webhook does with each event
   src/stripe.ts           Stripe's API (Checkout Sessions), webhook signatures, and the events' shapes

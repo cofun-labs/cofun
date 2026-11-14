@@ -60,10 +60,11 @@ export interface AppOptions {
 
 /** `claims` is the verified session token's payload, as Clerk wrote it: read it through a schema. */
 type Vars = { userId: string; claims: unknown }
-type Bindings = { Bindings: Env; Variables: Vars }
-export type Ctx = Context<Bindings>
-/** The worker's Hono app, which each module of routes adds its routes to. */
-export type App = Hono<Bindings>
+/** The bindings and variables of the worker's Hono app, and of each sub-app of routes. */
+export type AppEnv = { Bindings: Env; Variables: Vars }
+export type Ctx = Context<AppEnv>
+/** The worker's Hono app, or one of the sub-apps of routes it is composed of. */
+export type App = Hono<AppEnv>
 /** AppOptions with every default filled in, as the routes use them. */
 export type Deps = Required<AppOptions>
 

@@ -1,5 +1,6 @@
 // The admin routes (/v1/admin/*): an account's credits, grants by hand, and what was granted and
 // spent across accounts. Every one needs a session whose token says its user is an admin.
+import { Hono } from 'hono'
 import * as z from '../zod'
 import { readAccounts, readOverview, type Period } from '../overview'
 import { Ledger, MICRO_CREDITS, type Account } from '../credits'
@@ -81,11 +82,13 @@ const AccountsLimit = part(
   `limit must be a whole number from 1 to ${MAX_ACCOUNTS}`,
 ).optional()
 
-/** The admin routes, after the session check (see session.ts), behind a check of the admin role. */
-export function adminRoutes(app: App, { now, logError, logAdmin }: Deps) {
-  // ---- Admin: /v1/admin/* needs a session whose token says its user is an admin ----
+/** The admin routes, mounted at /v1/admin, behind a check of the admin role. */
+export function adminRoutes({ now, logError, logAdmin }: Deps): App {
+  const routes: App = new Hono()
 
-  app.use('/v1/admin/*', async (c, next) => {
+  // First, before any route of this sub-app: every one needs a session whose token says its user
+  // is an admin.
+  routes.use('*', async (c, next) => {
     // One refusal for every reason, and for every path, existing or not: someone who is not an
     // admin learns nothing about what is here.
     const claims = AdminClaims.safeParse(c.get('claims'))
@@ -108,7 +111,7 @@ export function adminRoutes(app: App, { now, logError, logAdmin }: Deps) {
     }
   }
 
-  app.get('/v1/admin/accounts/:userId', async (c) => {
+  routes.get('/accounts/:userId', async (c) => {
     const userId = parse(UserId, c.req.param('userId'))
     const unavailable = 'Credits are unavailable, try again in a moment.'
     const account = await onLedger(c, userId, unavailable, (ledger) => ledger.read(now().getTime()))
@@ -126,14 +129,14 @@ export function adminRoutes(app: App, { now, logError, logAdmin }: Deps) {
   }
 
   // What was granted and spent in a period across every account, in all and per day.
-  app.get('/v1/admin/overview', async (c) => {
+  routes.get('/overview', async (c) => {
     const period = parse(PeriodQuery, c.req.query())
     const overview = await onOverview(() => readOverview(c.env.DB, period))
     return c.json({ period, ...overview })
   })
 
   // The accounts with a grant or a model call in a period, the biggest spenders first.
-  app.get('/v1/admin/accounts', async (c) => {
+  routes.get('/accounts', async (c) => {
     const period = parse(PeriodQuery, c.req.query())
     const limit = parse(AccountsLimit, c.req.query('limit')) ?? DEFAULT_ACCOUNTS
     // The balances are as of this moment, like an account's own lookup.
@@ -142,7 +145,7 @@ export function adminRoutes(app: App, { now, logError, logAdmin }: Deps) {
     return c.json({ period, at, ...accounts })
   })
 
-  app.post('/v1/admin/accounts/:userId/grants', async (c) => {
+  routes.post('/accounts/:userId/grants', async (c) => {
     const userId = parse(UserId, c.req.param('userId'))
     const { credits, days } = parse(GrantBody, await c.req.json().catch(() => undefined))
     const at = now().getTime()
@@ -159,4 +162,6 @@ export function adminRoutes(app: App, { now, logError, logAdmin }: Deps) {
     )
     return c.json(accountJson(userId, account))
   })
+
+  return routes
 }

@@ -1,5 +1,5 @@
 // The worker's Hono app, composed from its routes. What every route shares (the bindings, the
-// options, errors, and request parsing) is in http.ts; each area's routes are in routes/.
+// options, errors, and request parsing) is in http.ts; each area's routes are a sub-app in routes/.
 import { Hono } from 'hono'
 import { cors } from 'hono/cors'
 import { priceOf } from './pricing'
@@ -9,7 +9,7 @@ import { billingRoutes, stripeRoutes } from './routes/billing'
 import { chatRoutes } from './routes/chat'
 import { creditsRoutes } from './routes/credits'
 import { pageRoutes } from './routes/pages'
-import { sessionAuth } from './routes/session'
+import { requireSession } from './routes/session'
 
 export type { AiBinding, Env } from './http'
 
@@ -26,22 +26,33 @@ export function createApp({
   // The extension calls from a chrome-extension:// origin. Auth is a bearer token, not cookies.
   app.use('*', cors({ origin: '*', allowHeaders: ['authorization', 'content-type'], maxAge: 86400 }))
 
+  // Sub-apps have no error handler of their own, so this one answers for their routes too.
   app.onError((err, c) => {
     if (err instanceof HttpError) return c.json({ error: { code: err.code, message: err.message } }, err.status)
     logError(`request failed: ${errorSummary(err)}`)
     return c.json({ error: { code: 'internal', message: 'internal error' } }, 500)
   })
 
-  // The routes are added in this order: those under /v1 only after the session check, which comes
-  // before them.
-  pageRoutes(app)
-  stripeRoutes(app, deps)
-  sessionAuth(app)
-  adminRoutes(app, deps)
-  app.get('/v1/me', (c) => c.json({ userId: c.get('userId'), model: c.env.MODEL }))
-  billingRoutes(app, deps)
-  creditsRoutes(app, deps)
-  chatRoutes(app, deps)
+  // Without a Clerk session: the worker's pages, and what Stripe sends buyers and events to.
+  app.route('/', pageRoutes())
+  app.route('/', stripeRoutes(deps))
+  // Everything else is under /v1, and needs a session.
+  app.route('/v1', v1Routes(deps))
 
   return app
+}
+
+/**
+ * The routes under /v1. The session check is this sub-app's first handler, so every route mounted
+ * here runs after it: a route under /v1 can't be added without it.
+ */
+function v1Routes(deps: Deps): App {
+  const v1: App = new Hono()
+  v1.use('*', requireSession)
+  v1.route('/admin', adminRoutes(deps))
+  v1.get('/me', (c) => c.json({ userId: c.get('userId'), model: c.env.MODEL }))
+  v1.route('/billing', billingRoutes(deps))
+  v1.route('/credits', creditsRoutes(deps))
+  v1.route('/chat', chatRoutes(deps))
+  return v1
 }

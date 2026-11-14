@@ -1,4 +1,5 @@
 // The signed-in user's own credits, for the side panel (/v1/credits…): what is left, and their history.
+import { Hono } from 'hono'
 import * as z from '../zod'
 import { FREE_PERIOD_MS, Ledger, type GrantsCursor, type Standing } from '../credits'
 import { CalendarDate, DAY_MS, HttpError, errorSummary, parse, part, type App, type Ctx, type Deps } from '../http'
@@ -62,12 +63,13 @@ const creditsJson = ({ balance, free, grants, usage }: Standing) => ({
   },
 })
 
-/** The signed-in user's own credits, after the session check (see session.ts). */
-export function creditsRoutes(app: App, { now, logError }: Deps) {
+/** The signed-in user's own credits, mounted at /v1/credits. */
+export function creditsRoutes({ now, logError }: Deps): App {
+  const routes: App = new Hono()
   // The signed-in user's own credits, for the side panel: what is left, when it expires and when
   // more arrive, and what was spent per day. It only reads: the weekly free grant still waits for
   // the user's next question, and is reported as not started until then.
-  app.get('/v1/credits', async (c) => {
+  routes.get('/', async (c) => {
     const offsetMs = parse(UtcOffset, c.req.query('utc_offset')) * MINUTE_MS
     const period = { days: USAGE_DAYS, offsetMs }
     return c.json(creditsJson(await onOwnLedger(c, (ledger) => ledger.look(now().getTime(), period))))
@@ -88,7 +90,7 @@ export function creditsRoutes(app: App, { now, logError }: Deps) {
 
   // Every grant the user was given, newest first, the expired ones included, with what is left of
   // each (for an expired one: what went unspent). Never the admin who made a grant by hand.
-  app.get('/v1/credits/grants', async (c) => {
+  routes.get('/grants', async (c) => {
     const from = parse(GrantsBefore, c.req.query('before'))
     const { grants, next } = await onOwnLedger(c, (ledger) => ledger.grantsPage(from))
     return c.json({
@@ -108,7 +110,7 @@ export function creditsRoutes(app: App, { now, logError }: Deps) {
   // Credits used per day over one period as long as the one /v1/credits reports, by the same days:
   // the most recent one, or the one that ends before `before`. `earlier` is the `before` that
   // leads to the user's usage before this period, skipping the days they made no call.
-  app.get('/v1/credits/usage', async (c) => {
+  routes.get('/usage', async (c) => {
     const offsetMs = parse(UtcOffset, c.req.query('utc_offset')) * MINUTE_MS
     const before = parse(UsageBefore, c.req.query('before'))
     const period = { days: USAGE_DAYS, offsetMs, ...(before === undefined ? {} : { before }) }
@@ -120,4 +122,6 @@ export function creditsRoutes(app: App, { now, logError }: Deps) {
       earlier: earlier === undefined ? null : dateOf(earlier),
     })
   })
+
+  return routes
 }

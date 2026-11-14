@@ -47,7 +47,18 @@ import {
 import { PAGE_TYPES, hexId, pageToMarkdown, type Schema } from '../notion/markdown'
 import { activeNotionTab } from '../notion/tab'
 import { loadMentioned, resolveDatabase } from './load'
-import { generation, pageReads, recentReads, remember, seenDatabases, seenRows, type SeenRow } from './memory'
+import {
+  forgetLoads,
+  forgetRead,
+  forgetSeenRow,
+  generation,
+  lastRead,
+  remember,
+  renameRead,
+  seenDatabase,
+  seenRow,
+  type SeenRow,
+} from './memory'
 import {
   CREATE,
   EDIT,
@@ -104,17 +115,17 @@ export const editPage = defineTool({
   preview: (args) => {
     const given = filled(args.page)
     if (!given) return undefined
-    return previewEdits(args.edits, pageReads.get(pageArg(given) ?? ''), given)
+    return previewEdits(args.edits, lastRead(pageArg(given) ?? ''), given)
   },
   run: async (args, signal) => {
-    const since = generation
+    const since = generation()
     // The page is named in the call, so the page the preview names is the page that gets changed.
     const given = filled(args.page)
     if (!given) throw new EditError(GIVE_PAGE)
     const id = pageArg(given)
     if (!id) throw new Error(`Not a Notion page URL or id: ${given}`)
     const tab = await activeNotionTab()
-    const read = pageReads.get(id)
+    const read = lastRead(id)
     if (!read) throw new EditError('Read the page with read_page first, then edit it using the references it shows.')
     const edits = parseEdits(args.edits, read)
 
@@ -170,15 +181,15 @@ export const editPage = defineTool({
       // The edit may have been saved: a retry from the same read could apply it twice, so the
       // page must be read again first, which also shows whether it landed.
       if (err instanceof NotionError && err.code === 'outcome_unknown') {
-        pageReads.delete(id)
-        for (const key of recentReads.keys()) if (key.endsWith(`:${id}`)) recentReads.delete(key)
+        forgetRead(id)
+        forgetLoads(id)
       }
       throw err
     }
 
     // The page changed: forget cached parts. What the agent saw stays as it was, except for what
     // this edit changed, so a block the user changed meanwhile is still refused.
-    for (const key of recentReads.keys()) if (key.endsWith(`:${id}`)) recentReads.delete(key)
+    forgetLoads(id)
     // Blocks it changed or deleted need a new read before they are edited again.
     let next = forget(read, [...plan.deleted, ...plan.changed.filter((b) => b !== id)])
     let newRefs = ''
@@ -275,15 +286,15 @@ export const createPage = defineTool({
     const given = args.parent.trim()
     const id = given ? pageArg(given) : undefined
     // By name when the agent has read it, so the user can tell which page or database it is.
-    const database = id ? seenDatabases.get(id) : undefined
-    const known = id ? (database ?? pageReads.get(id)?.title) : undefined
+    const database = id ? seenDatabase(id) : undefined
+    const known = id ? (database ?? lastRead(id)?.title) : undefined
     const parent = id ? `${known ? `${oneLine(known)} ` : ''}^${hexId(id)}` : given || '(none given)'
     const markdown = filled(args.markdown) ?? '(empty)'
     const props = Object.entries(args.properties ?? {})
     // Each part on a line of its own, so text in the title can't read as where the page goes.
     // Whether the parent is a page or a database decides what happens; say it only when known.
     const row = !!database || props.length > 0
-    const page = !row && !!id && pageReads.has(id)
+    const page = !row && !!id && !!lastRead(id)
     return [
       row ? 'Add a row to a database' : 'Create a page',
       `Title: ${title}`,
@@ -350,7 +361,7 @@ export const createPage = defineTool({
     } catch (err) {
       // A retry would create a second page if this one was saved: the agent must look first.
       if (err instanceof NotionError && err.code === 'outcome_unknown') {
-        pageReads.delete(parentId)
+        forgetRead(parentId)
         throw new NotionError(
           'outcome_unknown',
           `Notion did not confirm it, so the page may or may not have been created. ` +
@@ -361,7 +372,7 @@ export const createPage = defineTool({
       }
       throw err
     } finally {
-      for (const key of recentReads.keys()) if (key.endsWith(`:${parentId}`)) recentReads.delete(key)
+      forgetLoads(parentId)
     }
     const hex = hexId(pageId)
     return [
@@ -422,8 +433,8 @@ export const updatePages = defineTool({
     for (const u of updates) {
       const given = u.page.trim()
       const id = given ? pageArg(given) : undefined
-      const seen = id ? seenRows.get(id) : undefined
-      const known = seen ? shownText(seen.title) : id ? pageReads.get(id)?.title : undefined
+      const seen = id ? seenRow(id) : undefined
+      const known = seen ? shownText(seen.title) : id ? lastRead(id)?.title : undefined
       lines.push(id ? `${known ? `${oneLine(known)} ` : ''}^${hexId(id)}` : oneLine(given) || '(no page given)')
       if (u.title !== undefined) {
         const title = shownMarkdown(u.title)
@@ -550,19 +561,16 @@ export const updatePages = defineTool({
       await tab.client.submitTransaction(spaceId, operations, 'Notico: update_pages')
     } catch (err) {
       // Whether a rename landed is unknown: the page's read, and the title it shows, go too.
-      if (err instanceof NotionError && err.code === 'outcome_unknown') for (const id of ids) pageReads.delete(id)
+      if (err instanceof NotionError && err.code === 'outcome_unknown') for (const id of ids) forgetRead(id)
       throw err
     } finally {
       for (const id of ids) {
-        seenRows.delete(id)
-        for (const key of recentReads.keys()) if (key.endsWith(`:${id}`)) recentReads.delete(key)
+        forgetSeenRow(id)
+        forgetLoads(id)
       }
     }
     // A read's title shows in later previews; keep it current.
-    for (const u of updates) {
-      const read = pageReads.get(u.id)
-      if (read && u.title !== undefined) read.title = u.title.shown
-    }
+    for (const u of updates) if (u.title !== undefined) renameRead(u.id, u.title.shown)
     return [`Changed ${updates.length} page${updates.length === 1 ? '' : 's'}:`, ...summary].join('\n')
   },
 })

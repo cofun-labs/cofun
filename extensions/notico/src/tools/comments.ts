@@ -10,7 +10,7 @@ import { oneLine } from '../notion/props'
 import { LAYOUT_TYPES, PAGE_TYPES, hexId, pageToMarkdown } from '../notion/markdown'
 import { activeNotionTab, type NotionTab } from '../notion/tab'
 import { needsAttachedPage } from './current'
-import { pageReads } from './memory'
+import { lastRead } from './memory'
 import { ADD, GIVE_PAGE, PART_CHARS, READ, filled, idIn, on, pageArg, partArg, plural, quoted } from './shared'
 
 /** The page a call names, or the open page when it names none. */
@@ -130,7 +130,7 @@ export const addComment = defineTool({
   preview: (args) => {
     const given = filled(args.page)
     const id = given ? pageArg(given) : undefined
-    const read = id ? pageReads.get(id) : undefined
+    const read = id ? lastRead(id) : undefined
     const page = id ? `${read ? `${oneLine(read.title)} ` : ''}^${hexId(id)}` : oneLine(given ?? '') || '(none given)'
     const ref = blockArg(args.block)
     const blockId = ref ? read?.ids.get(ref) : undefined

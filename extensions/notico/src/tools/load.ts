@@ -13,7 +13,7 @@ import {
 import { collectionId, unnamedMentions, unnamedRowMentions, type Schema } from '../notion/markdown'
 import { notionUserIn, type NotionTab } from '../notion/tab'
 import { runsText } from '../notion/tree'
-import { PARTS_PAGES, PARTS_REUSE_MS, pageWorkspaces, recentReads, type Loaded } from './memory'
+import { freshLoad, keepLoad, keepWorkspace, knownWorkspace, type Loaded } from './memory'
 
 /**
  * Part 1 always reads the page fresh. Later parts reuse that read for a while, so reading a long
@@ -21,16 +21,14 @@ import { PARTS_PAGES, PARTS_REUSE_MS, pageWorkspaces, recentReads, type Loaded }
  */
 export async function loadForPart(tab: NotionTab, id: string, part: number): Promise<Loaded> {
   const key = `${tab.tabId}:${id}`
-  const recent = recentReads.get(key)
-  if (part > 1 && recent && Date.now() - recent.at < PARTS_REUSE_MS) {
+  const recent = part > 1 ? freshLoad(key) : undefined
+  if (recent) {
     // The account in the tab may have changed since: check it can still open the page.
-    await tab.client.getRecords([{ table: 'block', id, spaceId: recent.result.loaded.spaceId }])
-    return recent.result
+    await tab.client.getRecords([{ table: 'block', id, spaceId: recent.loaded.spaceId }])
+    return recent
   }
   const result = await loadWithDatabase(tab, id)
-  recentReads.delete(key)
-  recentReads.set(key, { at: Date.now(), result })
-  if (recentReads.size > PARTS_PAGES) recentReads.delete(recentReads.keys().next().value!)
+  keepLoad(key, result)
   // A later part read fresh may not fit with earlier parts the model got from another read.
   return part > 1 ? { ...result, reloaded: true } : result
 }
@@ -108,9 +106,6 @@ export async function resolveDatabase(client: NotionTab['client'], block: Block)
   }
 }
 
-/** Open pages whose workspace is remembered at most; the one used longest ago is forgotten first. */
-const WORKSPACE_PAGES = 20
-
 /** The workspace of the page open in the tab, which must show one. */
 export async function workspaceOf(tab: NotionTab): Promise<string> {
   const pageId = tab.pageId!
@@ -118,12 +113,8 @@ export async function workspaceOf(tab: NotionTab): Promise<string> {
   // up again as the new one, which may not open it. Without a user, nothing is remembered.
   const user = await notionUserIn(tab.tabId)
   const key = user ? `${tab.tabId}:${user}:${pageId}` : undefined
-  const known = key ? pageWorkspaces.get(key) : undefined
-  if (key && known) {
-    pageWorkspaces.delete(key)
-    pageWorkspaces.set(key, known)
-    return known
-  }
+  const known = key ? knownWorkspace(key) : undefined
+  if (known) return known
   let spaceId: string | undefined
   try {
     const opened = await tab.client.getRecords([{ table: 'block', id: pageId }])
@@ -135,10 +126,7 @@ export async function workspaceOf(tab: NotionTab): Promise<string> {
     throw err
   }
   if (!spaceId) throw new Error('Could not tell which workspace the open page is in.')
-  if (key) {
-    pageWorkspaces.set(key, spaceId)
-    if (pageWorkspaces.size > WORKSPACE_PAGES) pageWorkspaces.delete(pageWorkspaces.keys().next().value!)
-  }
+  if (key) keepWorkspace(key, spaceId)
   return spaceId
 }
 
