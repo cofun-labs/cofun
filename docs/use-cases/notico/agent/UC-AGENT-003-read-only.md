@@ -30,4 +30,4 @@ Key constraint:
 
 | ID | Priority | Status | Scenario |
 | --- | --- | --- | --- |
-| UC-AGENT-003-S06 | P1 | 🚧 | Given the side panel open on a Notion page in Read only; when the user asks to change the page, then switches to Edit and asks again; then the first reply says it can't make changes in Read only and how to switch, with the page unchanged, and the second makes the change. |
+| UC-AGENT-003-S06 | P1 | ✅ | Given the side panel open on a Notion page in Read only; when the user asks to change the page, then switches to Edit and asks again; then the first reply says it can't make changes in Read only and how to switch, with the page unchanged, and the second makes the change. |
