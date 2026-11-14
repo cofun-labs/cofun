@@ -101,8 +101,6 @@ export class CopilotAgent {
   private changed = false
   /** Set by a tool that failed with an error that has a code, until its call is reported as ended. */
   private failedWith?: string
-  /** The model calls the latest question took; see `rounds`. */
-  private steps = 0
   /** Takes each chunk of the model's streams while a question runs: what the calls cost is in them. */
   private onChunk?: (chunk: unknown) => void
 
@@ -133,7 +131,7 @@ export class CopilotAgent {
     extras: QuestionExtras = {},
   ): Promise<AskResult> {
     // One question at a time: an overlapping run would roll back the other's messages.
-    if (this.running) return { status: 'error', message: 'Already answering a question.' }
+    if (this.running) return { status: 'error', message: 'Already answering a question.', rounds: 0 }
     const question = {}
     this.running = question
     try {
@@ -154,7 +152,7 @@ export class CopilotAgent {
     try {
       await this.chooseProvider()
     } catch (err) {
-      return { status: 'error', message: (err as Error).message }
+      return { status: 'error', message: (err as Error).message, rounds: 0 }
     }
     const { result, kept, failure } = await this.askOnce(text, onUpdate, epoch, confirm, extras)
     // The provider's model changed since this panel looked it up (for the hosted one, a deploy, which
@@ -163,7 +161,11 @@ export class CopilotAgent {
     // tool (which is now in the conversation), ask the user to repeat it instead.
     if (failure && this.provider.modelChanged(failure) && epoch === this.epoch) {
       // What the first try sent counts even when the question goes no further, and so does what it kept.
-      const counted = { ...detailsOf(result), ...(result.conversation && { conversation: result.conversation }) }
+      const counted = {
+        ...detailsOf(result),
+        rounds: result.rounds,
+        ...(result.conversation && { conversation: result.conversation }),
+      }
       try {
         this.model = await this.provider.loadModel()
       } catch (err) {
@@ -190,10 +192,10 @@ export class CopilotAgent {
     try {
       agent = await this.getAgent()
     } catch (err) {
-      return { result: { status: 'error', message: (err as Error).message }, kept: false }
+      return { result: { status: 'error', message: (err as Error).message, rounds: 0 }, kept: false }
     }
     // Stopped, or a new chat started, while the agent was being set up.
-    if (epoch !== this.epoch) return { result: { status: 'stopped' }, kept: false }
+    if (epoch !== this.epoch) return { result: { status: 'stopped', rounds: 0 }, kept: false }
     // Offered for this question only, and taken as the question starts: a mode switched while it runs
     // applies from the next one. pi tells the model of the change in the conversation.
     agent.state.tools = readOnly ? this.readingTools : this.allTools
@@ -202,7 +204,6 @@ export class CopilotAgent {
     this.stopReason = undefined
     this.changed = false
     this.failedWith = undefined
-    this.steps = 0
     let steps = 0
     let hitLimit = false
     let failure: Failure | undefined
@@ -216,7 +217,10 @@ export class CopilotAgent {
     let cost: QuestionCost | undefined
     let costUnknown = false
     const provider = this.provider
-    this.onChunk = (chunk) => {
+    // The model the question is asked of, read now: a new chat started while this one ends changes it.
+    const model = this.answeredBy()
+    // Cleared below only while it is still this question's: another may have started meanwhile.
+    const onChunk = (chunk: unknown) => {
       let call: CallCost | undefined
       try {
         call = provider.callCost?.(chunk)
@@ -227,6 +231,7 @@ export class CopilotAgent {
       if (call?.estimated) costUnknown = true
       else if (call) cost = { microCredits: (cost?.microCredits ?? 0) + call.microCredits }
     }
+    this.onChunk = onChunk
     const refused = new Set<string>()
     const declined = new Set<string>()
     // How the latest call with each id ended, kept with its result message when that arrives.
@@ -310,12 +315,15 @@ export class CopilotAgent {
       return { action: 'end' }
     }
     const unsubscribe = agent.subscribe((event: AgentEvent) => {
-      if (event.type === 'turn_start') this.steps = ++steps
+      if (event.type === 'turn_start') steps++
       const update = toUpdate(event)
       if (update?.type === 'tool_end') {
         // Tools run one at a time, so a code reported since the last call ended is this call's.
-        if (update.status === 'failed' && this.failedWith) update.code = this.failedWith
-        this.failedWith = undefined
+        // A question stopped or left reports none: the code, if any, is the next question's.
+        if (epoch === this.epoch) {
+          if (update.status === 'failed' && this.failedWith) update.code = this.failedWith
+          this.failedWith = undefined
+        }
         if (refused.has(update.id)) update.status = 'skipped'
         else if (declined.has(update.id)) update.status = 'declined'
         // A tool cut short by Stop reports an error; it did not fail on its own. A tool that
@@ -340,7 +348,7 @@ export class CopilotAgent {
       if (event.type === 'message_end' && event.message.role === 'assistant') {
         const m = event.message as AssistantMessage
         tokens = addUsage(tokens, m.usage)
-        if (m.stopReason === 'error') failure = this.provider.parseError(m.errorMessage)
+        if (m.stopReason === 'error') failure = provider.parseError(m.errorMessage)
         if (m.stopReason === 'aborted') stopped = true
         const final = !m.content.some((block) => block.type === 'toolCall')
         if (final && (m.stopReason === 'stop' || m.stopReason === 'length')) answered = true
@@ -355,12 +363,12 @@ export class CopilotAgent {
       if (readOnly) this.readOnly.add(question)
       await agent.prompt(question)
     } catch (err) {
-      failure ??= this.provider.parseError((err as Error).message)
+      failure ??= provider.parseError((err as Error).message)
     } finally {
       unsubscribe()
       agent.beforeToolCall = undefined
       agent.finishTurn = undefined
-      this.onChunk = undefined
+      if (this.onChunk === onChunk) this.onChunk = undefined
     }
     // Also stopped when the abort landed after a model reply that asked for tools, e.g. while a tool
     // finished. A stop after the final answer keeps it: the user has already read it.
@@ -372,29 +380,24 @@ export class CopilotAgent {
     // Kept with the question, so a saved session still has it. Only a question that ended normally has
     // a cost: one stopped or failed has none, since a call cut short never hears what it was charged
     // (the balance still shows it).
-    const model = this.answeredBy()
     const spent = costUnknown || stopped || failure ? undefined : cost
     const counted = detailsOf({ requests: meter?.requests, tokens, model, cost: spent })
     this.details.set(question, counted)
+    const used = { ...counted, rounds: steps }
     if (failure || stopped) {
       const kept = usedTools(agent.state.messages.slice(before))
       agent.state.messages = [...agent.state.messages.slice(0, before), ...kept]
       const result: AskResult = stopped
-        ? { status: 'stopped' }
-        : { status: 'error', message: failure!.text, ...(failure!.code ? { code: failure!.code } : {}) }
+        ? { status: 'stopped', ...used }
+        : { status: 'error', message: failure!.text, ...(failure!.code ? { code: failure!.code } : {}), ...used }
       return {
-        result: { ...result, ...counted, ...(kept.length > 0 && { conversation: this.historyOf(agent) }) },
+        result: { ...result, ...(kept.length > 0 && { conversation: this.historyOf(agent) }) },
         kept: kept.length > 0,
         failure: stopped ? undefined : failure,
       }
     }
-    const result: AskResult = hitLimit ? { status: 'step_limit', steps } : { status: 'done' }
-    return { result: { ...result, ...counted, conversation: this.historyOf(agent) }, kept: true }
-  }
-
-  /** How many times the model was called for the latest question, once `ask` resolved: 0 when it never got that far. */
-  rounds(): number {
-    return this.steps
+    const result: AskResult = hitLimit ? { status: 'step_limit', steps, ...used } : { status: 'done', ...used }
+    return { result: { ...result, conversation: this.historyOf(agent) }, kept: true }
   }
 
   /** Stops the current model call and any running tool. */

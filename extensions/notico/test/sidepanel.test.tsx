@@ -5,7 +5,7 @@ import '@testing-library/jest-dom/vitest'
 import { act, screen, waitFor, within } from '@testing-library/react'
 import userEvent, { type UserEvent } from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { FakeNotionTab, FakeWorkspace, PAGE, PAGE_URL, SPACE, pageTab } from './notion-tab'
+import { FakeNotionTab, FakeWorkspace, PAGE, PAGE_URL, SPACE, fixture, pageTab } from './notion-tab'
 import { closeBrowser, FakeBrowser, START } from './panel'
 
 afterEach(closeBrowser)
@@ -875,6 +875,42 @@ describe('sessions', () => {
     // charged: no number is shown rather than one that is too low.
     expect(screen.getByRole('note', { name: 'Answered by Auto' })).toBeVisible()
     expect(conversation().queryByText(/\bcredits?$/)).not.toBeInTheDocument()
+  })
+
+  it('a question in a new chat shows all it cost, even when the chat it left ends its question meanwhile', async () => {
+    // Each question reads the page, in two requests.
+    const tab = pageTab()
+      .respond('loadPageChunk', 200, fixture('load-page-chunk-0'))
+      .respond('loadPageChunk', 200, fixture('load-page-chunk-1'))
+    const { browser, user } = await openPanel(tab)
+    // 0.18 credits a model call, as above.
+    browser.ai.usage = { prompt_tokens: 1200, completion_tokens: 50, prompt_tokens_details: { cached_tokens: 800 } }
+
+    // A question reads the page, and Notion has not answered yet when the user leaves.
+    const left = browser.tab.hold('loadPageChunk')
+    browser.ai.script.push({ toolCalls: [{ name: 'read_page', arguments: JSON.stringify({ part: 1 }) }] })
+    let sent = browser.tab.sent.length
+    await ask(user, 'What does this page say?')
+    await waitFor(() => expect(browser.tab.sent.length).toBeGreaterThan(sent))
+    vi.setSystemTime(new Date(START.getTime() + 60_000))
+    await user.click(screen.getByRole('button', { name: 'New chat' }))
+
+    // The new chat's question reads the page too; the chat left ends its question while it does,
+    // before the new question's second model call.
+    const asked = browser.tab.hold('loadPageChunk')
+    browser.ai.script.push(
+      { toolCalls: [{ name: 'read_page', arguments: JSON.stringify({ part: 1 }) }] },
+      { reply: 'Still a fixture.' },
+    )
+    sent = browser.tab.sent.length
+    await ask(user, 'What is on it now?')
+    await waitFor(() => expect(browser.tab.sent.length).toBeGreaterThan(sent))
+    await act(async () => left())
+    await act(async () => asked())
+
+    await screen.findByText('Still a fixture.')
+    await answered()
+    expect(conversation().getByText('0.37 credits')).toBeVisible()
   })
 
   it("a reply's details close on Escape, on a click outside, and when pressed again", async () => {

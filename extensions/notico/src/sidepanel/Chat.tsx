@@ -701,7 +701,7 @@ export function Chat({ userId }: { userId: string }) {
         provider,
         outcome: result.status,
         error_code: result.status === 'error' ? result.code : undefined,
-        rounds: agent.rounds(),
+        rounds: result.rounds,
         tool_calls: toolCalls,
       })
       answered = result.status === 'done'
