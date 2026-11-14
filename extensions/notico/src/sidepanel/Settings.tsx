@@ -81,7 +81,7 @@ export function Settings({
     <div className="sheet-head">
       <button
         ref={backRef}
-        className="icon-button"
+        className="icon-button tip-below tip-start"
         aria-label="Back"
         data-tip="Back"
         autoFocus

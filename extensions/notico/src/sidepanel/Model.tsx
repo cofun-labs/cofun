@@ -130,7 +130,7 @@ export function ModelMenu({
     <div className="model-menu" ref={rootRef} onKeyDown={onKeyDown}>
       <button
         type="button"
-        className="model-button"
+        className="model-button tip-end"
         aria-haspopup="menu"
         aria-expanded={open}
         aria-label={`Model: ${inUse ? shortName(inUse.model) : HOSTED}`}

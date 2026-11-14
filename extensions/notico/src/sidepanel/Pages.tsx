@@ -38,7 +38,7 @@ export function ComposerPages({ chips, onRemove }: { chips: Chip[]; onRemove: (c
               type="button"
               className="page-remove"
               aria-label={`Remove ${title}`}
-              data-tip="Remove"
+              title="Remove"
               onClick={() => onRemove(chip)}
             >
               <Icon name="close" />

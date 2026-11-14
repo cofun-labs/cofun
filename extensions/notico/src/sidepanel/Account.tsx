@@ -63,7 +63,7 @@ export function AccountMenu({
     <div className="account" ref={rootRef} onKeyDown={onKeyDown}>
       <button
         ref={buttonRef}
-        className="account-button"
+        className="account-button tip-below"
         aria-label="Account"
         data-tip="Account"
         aria-haspopup="menu"

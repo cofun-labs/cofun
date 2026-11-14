@@ -1690,19 +1690,58 @@ button.pack:disabled {
   transform: rotate(180deg);
 }
 
-/* A control's tip (see Tooltip.tsx): small, dark, above the control, never wider than the panel. */
-.tooltip {
-  position: fixed;
-  z-index: 10;
-  max-width: calc(100vw - 12px);
+/*
+ * A tooltip: the element's `data-tip`, shown on hover and keyboard focus. Above and from the
+ * element's left edge, so it stays inside the panel from the row's start; `.tip-below` opens it
+ * below and from the right edge, as in the header.
+ */
+[data-tip] {
+  position: relative;
+}
+
+[data-tip]:hover::after,
+[data-tip]:focus-visible::after {
+  content: attr(data-tip);
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 0;
+  z-index: 4;
+  width: max-content;
+  max-width: 240px;
   padding: 4px 8px;
   border-radius: 6px;
   background: var(--fg);
   color: var(--bg);
   font-size: 12px;
-  line-height: 1.4;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  font-weight: 400;
+  line-height: 1.35;
+  white-space: normal;
   pointer-events: none;
+}
+
+.tip-below[data-tip]:hover::after,
+.tip-below[data-tip]:focus-visible::after {
+  top: calc(100% + 6px);
+  bottom: auto;
+  left: auto;
+  right: 0;
+}
+
+/* From the right edge, for a control at the end of its row (send, a chat's delete). */
+.tip-end[data-tip]:hover::after,
+.tip-end[data-tip]:focus-visible::after {
+  left: auto;
+  right: 0;
+}
+
+/* From the left edge, for a control at the start of the header (Back). */
+.tip-start[data-tip]:hover::after,
+.tip-start[data-tip]:focus-visible::after {
+  left: 0;
+  right: auto;
+}
+
+/* Not over an open popover of its own. */
+[data-tip][aria-expanded='true']::after {
+  display: none;
 }

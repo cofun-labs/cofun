@@ -824,7 +824,7 @@ export function Chat({ userId }: { userId: string }) {
       <Header title={headerTitle || <span className="untitled">New chat</span>}>
         <button
           ref={listButtonRef}
-          className="icon-button"
+          className="icon-button tip-below"
           aria-label="Chats"
           data-tip="Chats"
           aria-expanded={listOpen}
@@ -832,7 +832,7 @@ export function Chat({ userId }: { userId: string }) {
         >
           <Icon name="history" />
         </button>
-        <button className="icon-button" aria-label="New chat" data-tip="New chat" onClick={() => switchTo()}>
+        <button className="icon-button tip-below" aria-label="New chat" data-tip="New chat" onClick={() => switchTo()}>
           <Icon name="compose" />
         </button>
         <AccountMenu
@@ -959,7 +959,7 @@ export function Chat({ userId }: { userId: string }) {
             <ModelMenu settings={model} onChange={changeModel} onMore={openSettings} />
             <button
               // Blue only when pressing it does something: there is a question to send, or a reply to stop.
-              className={busy || input.trim() ? 'send ready' : 'send'}
+              className={busy || input.trim() ? 'send ready tip-end' : 'send tip-end'}
               type="submit"
               aria-label={busy ? 'Stop' : 'Send'}
               data-tip={busy ? 'Stop' : 'Send'}

@@ -2,7 +2,7 @@
 // only type, click, and read what is on screen. Besides the screen they look at the edges alone:
 // what the model was sent, and what Notion was asked to do.
 import '@testing-library/jest-dom/vitest'
-import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
+import { act, screen, waitFor, within } from '@testing-library/react'
 import userEvent, { type UserEvent } from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { FakeNotionTab, FakeWorkspace, PAGE, PAGE_URL, SPACE, pageTab } from './notion-tab'
@@ -1313,71 +1313,6 @@ describe('a saved session that can no longer be read', () => {
     await user.click(within(row).getByRole('button', { name: 'Delete chat' }))
     await user.click(within(row).getByRole('button', { name: 'Delete?' }))
     await waitFor(() => expect(sessionList().queryByText('What is on the roadmap?')).not.toBeInTheDocument())
-  })
-})
-
-describe('tips', () => {
-  it("a button's tip shows as soon as it has keyboard focus, and Escape hides it", async () => {
-    const { user } = await openPanel()
-    const chats = screen.getByRole('button', { name: 'Chats' })
-    while (document.activeElement !== chats) await user.tab()
-    expect(screen.getByRole('tooltip', { hidden: true })).toHaveTextContent('Chats')
-    await user.tab()
-    expect(screen.getByRole('tooltip', { hidden: true })).toHaveTextContent('New chat')
-    await user.keyboard('{Escape}')
-    expect(screen.queryByRole('tooltip', { hidden: true })).not.toBeInTheDocument()
-  })
-
-  it('a tip put away by a click stays away while the pointer is still on the button', async () => {
-    const { user } = await openPanel()
-    const mode = screen.getByRole('button', { name: 'Mode: Edit' })
-    while (document.activeElement !== mode) await user.tab()
-    expect(screen.getByRole('tooltip', { hidden: true })).toHaveTextContent('Edit: can change pages')
-    await user.click(mode)
-    expect(screen.queryByRole('tooltip', { hidden: true })).not.toBeInTheDocument()
-    // From the icon onto the button's own edge: still the same button.
-    fireEvent.pointerOver(screen.getByRole('button', { name: 'Mode: Read only' }))
-    expect(screen.queryByRole('tooltip', { hidden: true })).not.toBeInTheDocument()
-  })
-
-  it('a tip put away by a click stays away also when the click took focus from the message box', async () => {
-    const { user } = await openPanel()
-    await user.click(composer())
-    const mode = screen.getByRole('button', { name: 'Mode: Edit' })
-    await user.click(mode)
-    // The clock moves from here on, so a tip waiting to show would show.
-    vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout'], now: START })
-    fireEvent.pointerOver(screen.getByRole('button', { name: 'Mode: Read only' }))
-    act(() => vi.advanceTimersByTime(1000))
-    expect(screen.queryByRole('tooltip', { hidden: true })).not.toBeInTheDocument()
-    // Once the pointer has left the button and comes back, its tip shows again.
-    fireEvent.pointerOver(composer())
-    fireEvent.pointerOver(screen.getByRole('button', { name: 'Mode: Read only' }))
-    act(() => vi.advanceTimersByTime(1000))
-    expect(screen.getByRole('tooltip', { hidden: true })).toHaveTextContent("Read only: won't change pages")
-  })
-
-  it('a tip put away by a click stays away also when another control had the tip before the click', async () => {
-    const { user } = await openPanel()
-    // Keyboard focus gives "+" the tip while the pointer rests on the mode button.
-    const add = screen.getByRole('button', { name: 'Add a page' })
-    while (document.activeElement !== add) await user.tab()
-    expect(screen.getByRole('tooltip', { hidden: true })).toHaveTextContent('Add a page')
-    vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout'], now: START })
-    const mode = screen.getByRole('button', { name: 'Mode: Edit' })
-    fireEvent.pointerDown(mode)
-    fireEvent.pointerOver(mode)
-    act(() => vi.advanceTimersByTime(1000))
-    expect(screen.queryByRole('tooltip', { hidden: true })).not.toBeInTheDocument()
-  })
-
-  it('a tip hides when the pointer leaves the panel', async () => {
-    const { user } = await openPanel()
-    const chats = screen.getByRole('button', { name: 'Chats' })
-    while (document.activeElement !== chats) await user.tab()
-    expect(screen.getByRole('tooltip', { hidden: true })).toHaveTextContent('Chats')
-    fireEvent.pointerOut(chats, { relatedTarget: null })
-    expect(screen.queryByRole('tooltip', { hidden: true })).not.toBeInTheDocument()
   })
 })
 
