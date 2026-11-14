@@ -788,7 +788,6 @@ export function createApp({
       const { url } = await stripe.createCheckout({
         price: offer.price,
         quantity,
-        credits: quantity * CREDITS_PER_UNIT,
         userId: c.get('userId'),
         successUrl: `${origin}/billing/paid`,
         cancelUrl: `${origin}/billing/cancelled`,

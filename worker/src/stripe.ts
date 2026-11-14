@@ -17,8 +17,6 @@ export interface CheckoutRequest {
   price: string
   /** How many units: the pack. Kept on the session too, so the webhook can check what was paid for. */
   quantity: number
-  /** The credits the pack gives, for the text Checkout shows. */
-  credits: number
   /** The Clerk user id of the buyer. */
   userId: string
   /** Where Stripe sends the buyer after paying, and after going back without paying. */
@@ -83,7 +81,7 @@ export function stripeOverHttp(secretKey: string, send: Send = (url, init) => fe
   }
 
   return {
-    async createCheckout({ price, quantity, credits, userId, successUrl, cancelUrl }) {
+    async createCheckout({ price, quantity, userId, successUrl, cancelUrl }) {
       const res = await send('https://api.stripe.com/v1/checkout/sessions', {
         method: 'POST',
         headers: { ...headers, 'content-type': 'application/x-www-form-urlencoded' },
@@ -98,8 +96,8 @@ export function stripeOverHttp(secretKey: string, send: Send = (url, init) => fe
           [`metadata[${META_USER}]`]: userId,
           [`metadata[${META_QUANTITY}]`]: String(quantity),
           [`metadata[${META_PRICE}]`]: price,
-          // Checkout names the product and its quantity ("1,000 Credits × 10"); this says what that gives.
-          'custom_text[submit][message]': `You get ${credits.toLocaleString('en')} credits for Cofun, valid for one year.`,
+          // No custom_text: Stripe refuses it with Managed Payments. Checkout names the product and its
+          // quantity ("1,000 Credits × 10"); the side panel says how long the credits last.
           success_url: successUrl,
           cancel_url: cancelUrl,
         }),
