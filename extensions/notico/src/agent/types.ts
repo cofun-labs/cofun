@@ -34,13 +34,15 @@ interface QuestionMeter {
 }
 
 /**
- * What goes with a question besides what the user typed, both saved with it. `context` is sent to the
+ * What goes with a question besides what the user typed, all saved with it. `context` is sent to the
  * model ahead of the question (say, which page is open); `pages` are the pages the user sent it with,
- * shown with the question.
+ * shown with the question; `readOnly`: the question is asked in Read only, so the model is offered no
+ * tool that changes data (`changesData`) for it.
  */
 export interface QuestionExtras {
   context?: string
   pages?: QuestionPage[]
+  readOnly?: boolean
 }
 
 /** A page a question was sent with: its title and URL, and whether it is a database. */
@@ -125,9 +127,10 @@ export type AgentUpdate =
  */
 export type HistoryMessage =
   /**
-   * `context` and `pages`: what went with the question (see QuestionExtras), besides what the user typed.
+   * `context`, `pages`, and `readOnly`: what went with the question (see QuestionExtras), besides what
+   * the user typed.
    */
-  | ({ role: 'user'; text: string; context?: string; pages?: QuestionPage[] } & QuestionDetails)
+  | ({ role: 'user'; text: string; context?: string; pages?: QuestionPage[]; readOnly?: true } & QuestionDetails)
   | { role: 'assistant'; parts: AssistantPart[] }
   /** The result of one tool call. `id` matches the call in the assistant message before it. */
   | { role: 'tool'; id: string; name: string; status: ToolStatus; result: string }
