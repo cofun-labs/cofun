@@ -100,7 +100,7 @@ A guard or rejection branch should not rank above its use case's success path un
 
 ## Coverage check
 
-`pnpm check` runs `pnpm use-cases` (`scripts/check-use-cases.ts`), which reads every scenario row in `docs/use-cases` and every scenario ID named in brackets in a test under `worker/test/` or `extensions/*/test/`. It fails on one thing: an `api-test` scenario marked ✅ that no test names. It only warns about the rest, to tidy when convenient: a 🚧 `api-test` scenario that already has a test (mark it ✅), a test naming an ID no use case has, an ID in more than one row, and a test naming an `ai-e2e` scenario. A 🚧 `api-test` scenario with no test and an `ai-e2e` scenario with none pass quietly.
+`pnpm check` runs `pnpm use-cases` (`scripts/check-use-cases.ts`), which reads every scenario row in `docs/use-cases` and every scenario ID named in brackets in a test under `worker/test/` or `extensions/*/test/`. It fails on one thing: an `api-test` scenario marked ✅ that no test names (and on a scenario row it can't read, so a typo can't hide one). It only warns about the rest, to tidy when convenient: a 🚧 `api-test` scenario that already has a test (mark it ✅), a P0 🚧 `api-test` scenario with no test yet (P0 is verified before merge), a test naming an ID no use case has, an ID in more than one row, and a test naming an `ai-e2e` scenario. A P1 or P2 🚧 `api-test` scenario with no test and an `ai-e2e` scenario with none pass quietly.
 
 ## Coverage audit
 

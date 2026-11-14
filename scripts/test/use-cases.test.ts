@@ -37,7 +37,15 @@ describe('checkUseCases', () => {
     ])
   })
 
-  it('is silent about a 🚧 api-test scenario with no test yet', () => {
+  it('warns about a P0 🚧 api-test scenario with no test yet', () => {
+    const report = checkUseCases([useCase(['| UC-CHAT-001-S01 | P0 | 🚧 | … |'])], [])
+    expect(report.errors).toEqual([])
+    expect(report.warnings).toEqual([
+      'docs/use-cases/notico/chat/UC-CHAT-001-ask.md:6: UC-CHAT-001-S01 is P0 and 🚧 with no test yet; P0 is verified before merge',
+    ])
+  })
+
+  it('is silent about a P1 or P2 🚧 api-test scenario with no test yet', () => {
     const report = checkUseCases([useCase(['| UC-CHAT-001-S01 | P1 | 🚧 | … |'])], [])
     expect(report.errors).toEqual([])
     expect(report.warnings).toEqual([])
@@ -78,13 +86,19 @@ describe('checkUseCases', () => {
   it('fails on a row it cannot read, so a typo cannot hide a scenario from the check', () => {
     const report = checkUseCases(
       [
-        useCase(['| UC-CHAT-001-S01 | P0 | done | … |']),
+        useCase([
+          '| UC-CHAT-001-S01 | P0 | done | … |',
+          '| `UC-CHAT-001-S02` | P0 | ✅ | … |',
+          '| UC-CHAT-001-03 | P0 | ✅ | … |',
+        ]),
         { path: 'docs/use-cases/x.md', text: `## Scenarios\n${TABLE}\n| UC-CHAT-001-S03 | P0 | ✅ | … |` },
       ],
       [],
     )
     expect(report.errors).toEqual([
       'docs/use-cases/notico/chat/UC-CHAT-001-ask.md:6: UC-CHAT-001-S01 has status "done"; use ✅ or 🚧',
+      'docs/use-cases/notico/chat/UC-CHAT-001-ask.md:7: a row whose ID cell is not a scenario ID like UC-CHAT-001-S01',
+      'docs/use-cases/notico/chat/UC-CHAT-001-ask.md:8: a row whose ID cell is not a scenario ID like UC-CHAT-001-S01',
       'docs/use-cases/x.md:4: UC-CHAT-001-S03 is not under an "### api-test" or "### ai-e2e" heading',
     ])
   })

@@ -22,11 +22,14 @@ interface Row {
   id: string
   strategy: Strategy
   verified: boolean
+  priority: string
   /** Where the row is: `docs/use-cases/….md:12`. */
   at: string
 }
 
 const ROW = /^\|\s*(UC-[A-Z]+-\d+-S\d+)\s*\|([^|]*)\|([^|]*)\|/
+/** A table's header (`| ID | Priority | …`) or separator (`| --- | … |`) line. */
+const TABLE_FRAME = /^\|\s*ID\s*\||^\|[\s:|-]+$/
 const STRATEGY = /^###\s+(api-test|ai-e2e)\s*$/
 const TEST_ID = /\[(UC-[A-Z]+-\d+-S\d+)\]/g
 
@@ -44,11 +47,17 @@ function readRows(file: SourceFile, report: Report): Row[] {
       strategy = undefined
       return
     }
-    const row = ROW.exec(line)
-    if (!row) return
-    const id = row[1]
-    const status = row[3].trim()
     // A row the check can't read would escape it, so these fail rather than warn.
+    const row = ROW.exec(line)
+    if (!row) {
+      if (strategy && line.startsWith('|') && !TABLE_FRAME.test(line.trim())) {
+        report.errors.push(`${at}: a row whose ID cell is not a scenario ID like UC-CHAT-001-S01`)
+      }
+      return
+    }
+    const id = row[1]
+    const priority = row[2].trim()
+    const status = row[3].trim()
     if (!strategy) {
       report.errors.push(`${at}: ${id} is not under an "### api-test" or "### ai-e2e" heading`)
       return
@@ -57,7 +66,7 @@ function readRows(file: SourceFile, report: Report): Row[] {
       report.errors.push(`${at}: ${id} has status "${status}"; use ✅ or 🚧`)
       return
     }
-    rows.push({ id, strategy, verified: status === '✅', at })
+    rows.push({ id, strategy, verified: status === '✅', priority, at })
   })
   return rows
 }
@@ -92,6 +101,10 @@ export function checkUseCases(useCases: SourceFile[], tests: SourceFile[]): Repo
     if (row.strategy === 'api-test') {
       if (row.verified && !at) report.errors.push(`${row.at}: ${row.id} is ✅ api-test, but no test names it`)
       if (!row.verified && at) report.warnings.push(`${row.at}: ${row.id} is 🚧 but has a test (${at[0]}): mark it ✅`)
+      // P0 must be verified before merge (AGENTS.md); a warning, since a PR may add one on its way there.
+      if (!row.verified && !at && row.priority === 'P0') {
+        report.warnings.push(`${row.at}: ${row.id} is P0 and 🚧 with no test yet; P0 is verified before merge`)
+      }
     } else if (at) {
       report.warnings.push(`${row.at}: ${row.id} is ai-e2e, but a test names it (${at[0]})`)
     }
