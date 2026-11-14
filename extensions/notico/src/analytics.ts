@@ -9,7 +9,8 @@
 // What the SDK would send by itself is turned off, and checked against posthog-js 1.448: with
 // only `autocapture: false` it still sends a `$pageview` with the page's title and URL, asks
 // us-assets.i.posthog.com for its remote configuration, and asks /flags for feature flags. With the
-// options below it sends only the events captured here, each to `/e/` on the one host. Those still
+// options below it sends only the events captured here, each to `/e/` on the one host, once
+// (package.json pins the SDK's exact version: a newer one is checked again before it is taken). Those still
 // carry what the SDK adds to every event (the page's URL, the user agent, the time zone, the screen
 // size, …), so `onlyKept` drops every property that is not listed.
 import { PostHog, type CaptureResult } from 'posthog-js/dist/module.no-external'
@@ -139,12 +140,13 @@ const KEPT = new Set([...OWN_PROPERTIES, ...SDK_PROPERTIES])
 /**
  * The event as it is sent: only the listed properties, and nothing set on the person. Signing in
  * makes the SDK send an `$identify` event, which joins the device's random id to the Clerk user id;
- * it would also record the first page's URL and referrer on the person.
+ * it would also record the first page's URL and referrer on the person. Every event, that one
+ * included, tells PostHog not to work out a location from the request's address.
  */
 function onlyKept(event: CaptureResult | null): CaptureResult | null {
   if (!event) return null
   const properties = Object.fromEntries(Object.entries(event.properties).filter(([name]) => KEPT.has(name)))
-  return { ...event, properties, $set: undefined, $set_once: undefined }
+  return { ...event, properties: { ...properties, $geoip_disable: true }, $set: undefined, $set_once: undefined }
 }
 
 const STORAGE_KEY = 'analytics'
@@ -218,6 +220,10 @@ async function started(): Promise<PostHog | undefined> {
       person_profiles: 'identified_only',
       before_send: onlyKept,
     })
+    // An event whose request fails is lost, not sent again: the SDK would retry it for up to half an
+    // hour, also after usage data was turned off.
+    client._retryQueue?.unload()
+    client._retryQueue = undefined
   }
   return client
 }
@@ -246,7 +252,6 @@ function capture(posthog: PostHog, event: AnalyticsEvent): void {
     ...properties,
     version: chrome.runtime.getManifest().version,
     product: 'notico',
-    $geoip_disable: true,
   })
 }
 

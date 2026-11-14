@@ -14,11 +14,14 @@ export class FakePostHog {
   readonly requests: string[] = []
   /** Every event sent, in order, with all it carried. */
   readonly events: SentEvent[] = []
+  /** When set, every request is answered with this status, like PostHog failing. */
+  failWith?: number
 
   async handle(request: Request): Promise<Response> {
     const text = await request.text()
     this.requests.push(`${request.method} ${request.url}\n${text}`)
     this.events.push(...Body.parse(JSON.parse(text)).batch)
+    if (this.failWith) return new Response('unavailable', { status: this.failWith })
     return Response.json({ status: 1 })
   }
 

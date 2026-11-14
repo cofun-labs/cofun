@@ -46,13 +46,14 @@ When you buy credits, the extension opens Stripe's Checkout page (`checkout.stri
 
 ## Usage data
 
-Notico sends usage events to PostHog, a product analytics service, so that we can see how it is used: whether people who open the panel get as far as asking a question, which tools are used and how often they fail, and which of the panel's actions are used at all. **It is on until you turn it off**: open the settings from the account menu and switch off "Share usage data". While it is off, the analytics code is not started and nothing is sent to PostHog; switching it off takes effect at once.
+Notico sends usage events to PostHog, a product analytics service, so that we can see how it is used: whether people who open the panel get as far as asking a question, which tools are used and how often they fail, and which of the panel's actions are used at all. **It is on until you turn it off**: open the settings from the account menu and switch off "Share usage data". While it is off, the analytics code is not started and nothing is sent to PostHog; switching it off takes effect at once, and an event that did not reach PostHog is never sent again later.
 
 An event says that something happened, never what was written or read. Every value in it is a name from a fixed list, a number, or yes/no, and the code refuses to send an event that holds anything else. These are all the events:
 
 | Event | What it holds |
 |---|---|
 | The panel was opened; the sign-in page was opened; you signed in | Nothing more |
+| Your device's random id was joined to your account (`$identify`, sent by the analytics code when it first sees you signed in) | The random id and your Clerk user id |
 | A question was asked | Which service answers (Notico's own model, OpenRouter, or DeepSeek), and whether the current tab was a Notion page |
 | A question ended | The same service; how it ended (answered, stopped, out of steps, or failed, with our server's error code if it had one); how many times the model was called; how many tools ran |
 | A tool ran | The tool's name (such as `read_page`), whether it worked and how it ended, and Notion's kind of error if it failed (such as "no access") |
@@ -60,7 +61,7 @@ An event says that something happened, never what was written or read. Every val
 | The settings were opened; the credit history was opened; a pack of credits was chosen to buy | For a pack, its size |
 | A chat was started, opened, or deleted; a page was added to a question; a reply was stopped or copied | For an added page, whether with `@` or the "+" button. Never a chat's title, a page, or the reply |
 
-Every event also holds the name of the extension (`notico`) and its version, the time, the name and version of your browser and the name of your operating system, a random id for the stretch of use it belongs to, and who it is counted under: a random id made on your device, and once you are signed in your Clerk user id, to which that random id is joined, so that what happened before and after signing in is counted as one person. It holds no URL, no page title, not your name or email address, and not your time zone, language, or screen size.
+Every event also holds the name of the extension (`notico`) and its version, the time, a random id of its own, the public key of our PostHog project, the name and version of the analytics code, the name and version of your browser and the name of your operating system, a random id for the stretch of use it belongs to, an instruction to PostHog not to work out a location, and who it is counted under, with whether that is an account: a random id made on your device, and once you are signed in your Clerk user id, to which that random id is joined, so that what happened before and after signing in is counted as one person. It holds no URL, no page title, not your name or email address, and not your time zone, language, or screen size.
 
 Notico does not record clicks, keystrokes, or the screen, does not use PostHog's session replay, automatic event capture, or error reporting, and loads no code from PostHog: the analytics code is part of the extension's package. [PostHog's privacy policy](https://posthog.com/privacy) says how PostHog handles the data it is sent. When a payment for credits goes through, our worker also tells PostHog so; [Cofun's privacy page](../../PRIVACY.md#buying-credits) says what that holds.
 
@@ -76,7 +77,7 @@ The side panel's account menu and settings page show your credits (how many are 
 - **Your sign-in.** Clerk's code in the extension keeps its client token, which keeps you signed in, in the extension's local storage (`chrome.storage.local`). It is not encrypted either.
 - **Your own model, if you set one up.** Your OpenRouter key and your DeepSeek key, each with the model you chose there, are kept in the extension's local storage (`chrome.storage.local`), for the account that set them up: another account signed in on the same Chrome profile does not use them. They are **not encrypted** and they **stay after you sign out**; anyone with access to your Chrome profile can read the keys. Removing a key in the settings page deletes it; removing the extension deletes it too.
 - **Small settings.** The extension's local storage also holds, for each account, whether the assistant may change your pages (Edit or Read only), and the time until which it waits after Notion turned a request away; and for the device, whether usage data is shared, once you have changed it.
-- **The ids usage is counted under.** While usage data is on, the analytics code keeps, in the extension's own page storage (`localStorage`), the random id made for your device, the random id of the current stretch of use, and, once you are signed in, your Clerk user id. They are sent with usage events as described under [Usage data](#usage-data). After you turn usage data off they stay on the device and are sent nowhere. Removing the extension deletes them.
+- **The ids usage is counted under.** While usage data is on, the analytics code keeps, in the extension's own page storage (`localStorage`), the random id made for your device, the random id of the current stretch of use, and, once you are signed in, your Clerk user id. They are sent with usage events as described under [Usage data](#usage-data). It keeps its own bookkeeping there too, which is not sent: times, counts of the events sent, and the side panel page's own address inside the extension. After you turn usage data off they stay on the device and are sent nowhere. Removing the extension deletes them.
 
 ## What is never collected
 

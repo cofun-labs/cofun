@@ -3,9 +3,9 @@
 import '@testing-library/jest-dom/vitest'
 import { screen, waitFor } from '@testing-library/react'
 import userEvent, { type UserEvent } from '@testing-library/user-event'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { pageTab, PAGE_URL } from './notion-tab'
-import { closeBrowser, FakeBrowser } from './panel'
+import { closeBrowser, FakeBrowser, START } from './panel'
 import type { SentEvent } from './posthog'
 
 afterEach(closeBrowser)
@@ -127,6 +127,8 @@ describe('usage data', () => {
     )
     // Every field of every event is one that is listed, with a value of its kind.
     expect(postHog.events.flatMap(notAllowed)).toEqual([])
+    // Every event, the joining one included, tells PostHog to work out no location.
+    expect(postHog.events.filter((each) => each.properties.$geoip_disable !== true)).toEqual([])
     // And all of it went to the one address, with no text of the conversation or the page anywhere in it.
     expect(postHog.requests.length).toBe(postHog.events.length)
     for (const request of postHog.requests) {
@@ -181,6 +183,23 @@ describe('usage data', () => {
     await user.click(screen.getByRole('button', { name: 'New chat' }))
     await waitFor(() => expect(browser.postHog.names().slice(before)).toContain('chat_created'))
     expect(browser.postHog.names().slice(before)).not.toContain('question_asked')
+  })
+
+  // Turned off, nothing may follow: so an event that could not be delivered is never sent again later.
+  it('[UC-NOTICO-PANEL-002-S02] an event PostHog did not take is not sent again, however long the panel stays open', async () => {
+    const { browser } = await openPanel()
+    await sent(browser, 'signed_in')
+    browser.postHog.failWith = 503
+    const before = browser.postHog.requests.length
+    // From here the test moves the timers itself: the SDK would retry after seconds, then minutes.
+    vi.useFakeTimers({ now: START })
+
+    screen.getByRole('button', { name: 'New chat' }).click()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(browser.postHog.names().slice(before)).toEqual(['chat_created'])
+
+    await vi.advanceTimersByTimeAsync(2 * 60 * 60 * 1000)
+    expect(browser.postHog.requests.length).toBe(before + 1)
   })
 
   it("[UC-NOTICO-PANEL-002-S03] a question asked with the user's own key is counted with its service, without the key or the model", async () => {

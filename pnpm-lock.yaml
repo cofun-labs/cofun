@@ -51,7 +51,7 @@ importers:
         specifier: 1.5.0
         version: 1.5.0(@aws-sdk/credential-provider-node@3.972.94)(@smithy/signature-v4@5.7.5)(undici@8.12.4)(ws@8.21.0)(zod@4.6.7)
       posthog-js:
-        specifier: ^1.448.0
+        specifier: 1.448.0
         version: 1.448.0(@types/react@19.3.0)(react@19.3.1)
       react:
         specifier: ^19.3.0
