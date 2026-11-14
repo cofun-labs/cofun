@@ -282,10 +282,17 @@ describe('UC-CHAT-004 add pages to a question', () => {
   it('[UC-CHAT-004-S06] Notion turning a search away stops searching for the question, and the other groups still work', async () => {
     const { browser, tab, user } = await openPanel()
     tab.limit('search', 1, 529)
+    const release = tab.hold('search')
 
+    // A newer query waits for the search already sent; that one is turned away, so the newer one is never sent.
     await user.type(composer(), '@road')
     await pause()
+    await waitFor(() => expect(searches(tab)).toHaveLength(1))
+    await user.type(composer(), 'm')
+    await pause()
+    await act(async () => release())
     expect(await screen.findByText(/Notion is busy, so your workspace isn’t searched for this question/)).toBeVisible()
+    await pause()
     expect(searches(tab)).toHaveLength(1)
     // The pages already in the browser are still there to choose.
     await user.keyboard('{Enter}')
@@ -299,7 +306,7 @@ describe('UC-CHAT-004 add pages to a question', () => {
     await user.keyboard('{Escape}')
 
     // The next question may search again.
-    browser.ai.script.push({ reply: 'Done.' })
+    browser.ai.script.push({ reply: 'Done.' }, { reply: 'Again.' })
     await user.click(screen.getByRole('button', { name: 'Send' }))
     await screen.findByText('Done.')
     await answered()
@@ -308,6 +315,25 @@ describe('UC-CHAT-004 add pages to a question', () => {
     await pause()
     expect(await within(picker()!).findByRole('option', { name: /Launch plan/ })).toBeVisible()
     expect(searches(tab)).toHaveLength(2)
+    await user.keyboard('{Escape}')
+
+    // A search turned away after its question was sent stops nothing for the next question: its
+    // query, waiting behind that search, goes once it ends.
+    await user.clear(composer())
+    tab.limit('search', 1, 429).respond('search', 200, searchAnswer())
+    const late = tab.hold('search')
+    await user.type(composer(), 'Go @lau')
+    await pause()
+    await waitFor(() => expect(searches(tab)).toHaveLength(3))
+    await user.click(screen.getByRole('button', { name: 'Send' }))
+    await screen.findByText('Again.')
+    await answered()
+    await user.type(composer(), '@launch')
+    await pause()
+    await act(async () => late())
+    expect(await within(picker()!).findByRole('option', { name: /Launch plan/ })).toBeVisible()
+    expect(searches(tab)).toHaveLength(4)
+    expect(screen.queryByText(/Notion is busy/)).not.toBeInTheDocument()
   })
 
   it('[UC-CHAT-004-S07] the AI is told the pages a question carries, and its bubble lists them, also after the session is reopened', async () => {

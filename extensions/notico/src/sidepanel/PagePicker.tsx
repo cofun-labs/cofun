@@ -58,8 +58,11 @@ export interface PickerOptions {
   recent: () => Promise<QuestionPage[]>
   /** Set once the workspace is not searched again for this question. */
   stop?: SearchStop
-  /** Called with the `onStop` given when the failed search was sent. */
-  onStop: (stop: SearchStop) => void
+  /**
+   * Called with the `onStop` given when the failed search was sent; false when that question was
+   * sent meanwhile, so the failure stops nothing.
+   */
+  onStop: (stop: SearchStop) => boolean
   onPick: (page: QuestionPage) => void
   /** Escape, or Tab: the picker closes, and what was typed stays as text. */
   onClose: () => void
@@ -140,13 +143,14 @@ export function usePagePicker({
       const pages = await findPages(sending, SEARCH_LIMIT)
       if (wanted.current === sending) setSearch({ status: 'done', pages })
     } catch (err) {
-      // Never retried, nor worked around: no more searches for this question.
-      wanted.current = undefined
-      stopSearch(
+      // Never retried, nor worked around: no more searches for this question. A failure that comes
+      // after its question was sent leaves the next question's query to go on.
+      const stopped = stopSearch(
         err instanceof NotionError && err.code === 'rate_limited'
           ? { busy: true }
           : { busy: false, message: err instanceof Error ? err.message : String(err) },
       )
+      if (stopped || wanted.current === sending) wanted.current = undefined
     } finally {
       running.current = false
     }

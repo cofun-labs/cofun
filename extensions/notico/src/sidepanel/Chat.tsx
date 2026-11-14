@@ -233,7 +233,11 @@ export function Chat({ userId }: { userId: string }) {
     added: new Set(chips.map((c) => pageKey(c.page))),
     recent: recentPages,
     stop: searchStop,
-    onStop: (stop) => round === composing.current && setSearchStop(stop),
+    onStop: (stop) => {
+      if (round !== composing.current) return false
+      setSearchStop(stop)
+      return true
+    },
     onPick: addPage,
     onClose: closePicker,
   })
