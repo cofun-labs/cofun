@@ -1328,6 +1328,18 @@ describe('tips', () => {
     expect(screen.queryByRole('tooltip', { hidden: true })).not.toBeInTheDocument()
   })
 
+  it('a tip put away by a click stays away while the pointer is still on the button', async () => {
+    const { user } = await openPanel()
+    const mode = screen.getByRole('button', { name: 'Mode: Edit' })
+    while (document.activeElement !== mode) await user.tab()
+    expect(screen.getByRole('tooltip', { hidden: true })).toHaveTextContent('Edit: can change pages')
+    await user.click(mode)
+    expect(screen.queryByRole('tooltip', { hidden: true })).not.toBeInTheDocument()
+    // From the icon onto the button's own edge: still the same button.
+    fireEvent.pointerOver(screen.getByRole('button', { name: 'Mode: Read only' }))
+    expect(screen.queryByRole('tooltip', { hidden: true })).not.toBeInTheDocument()
+  })
+
   it('a tip hides when the pointer leaves the panel', async () => {
     const { user } = await openPanel()
     const chats = screen.getByRole('button', { name: 'Chats' })

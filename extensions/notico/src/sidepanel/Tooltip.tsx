@@ -45,6 +45,13 @@ export function Tooltips() {
       shown = undefined
       setTip(undefined)
     }
+    // A click or Escape puts the tip away, and it stays away while the pointer is on that control:
+    // the control stays current, so moving within it (from its icon to its edge) shows nothing.
+    const dismiss = () => {
+      clearTimeout(timer)
+      shown = undefined
+      setTip(undefined)
+    }
     const follow = (el: HTMLElement | undefined, now: boolean) => {
       if (el === current) return
       if (!el) return hide()
@@ -74,26 +81,29 @@ export function Tooltips() {
       // Keyboard focus only: a click also focuses the control, and its tip would linger.
       if (el && el.matches(':focus-visible')) follow(el, true)
     }
-    const onKeyDown = (e: KeyboardEvent) => e.key === 'Escape' && hide()
+    const onKeyDown = (e: KeyboardEvent) => e.key === 'Escape' && dismiss()
     const options = { capture: true }
     document.addEventListener('pointerover', onPointerOver, options)
     document.addEventListener('pointerout', onPointerOut, options)
     document.addEventListener('focusin', onFocusIn, options)
     document.addEventListener('focusout', hide, options)
-    document.addEventListener('pointerdown', hide, options)
+    document.addEventListener('pointerdown', dismiss, options)
     document.addEventListener('keydown', onKeyDown, options)
     document.addEventListener('scroll', onScroll, options)
     window.addEventListener('blur', hide)
+    // The tip is placed once; the panel resizing moves the control from under it.
+    window.addEventListener('resize', hide)
     return () => {
       hide()
       document.removeEventListener('pointerover', onPointerOver, options)
       document.removeEventListener('pointerout', onPointerOut, options)
       document.removeEventListener('focusin', onFocusIn, options)
       document.removeEventListener('focusout', hide, options)
-      document.removeEventListener('pointerdown', hide, options)
+      document.removeEventListener('pointerdown', dismiss, options)
       document.removeEventListener('keydown', onKeyDown, options)
       document.removeEventListener('scroll', onScroll, options)
       window.removeEventListener('blur', hide)
+      window.removeEventListener('resize', hide)
     }
   }, [])
 
