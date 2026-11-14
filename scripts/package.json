@@ -2,11 +2,12 @@
   "name": "cofun-scripts",
   "version": "0.1.0",
   "private": true,
-  "description": "Repository tooling: pnpm use-cases checks that use case scenarios and tests agree, and release-notes prints a version's changelog entry for the Release workflow",
+  "description": "Repository tooling: pnpm use-cases checks that use case scenarios and tests agree, release-notes prints a version's changelog entry for the Release workflow, and media uploads a PR's demo recording to the public R2 bucket",
   "type": "module",
   "scripts": {
     "use-cases": "node check-use-cases.ts",
     "release-notes": "node release-notes.ts",
+    "media": "node upload-media.ts",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
   },
