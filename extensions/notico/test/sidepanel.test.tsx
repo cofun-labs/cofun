@@ -441,8 +441,15 @@ describe('the page a question goes with', () => {
       .sentToModel()
       .filter((m) => m.role === 'user')
       .map((m) => m.content)
-  /** The question's bubble in the conversation. */
-  const bubble = (question: string) => conversation().getByText(question).closest('.msg')! as HTMLElement
+  /** The lists of pages the conversation's questions went with, each as the titles it shows. */
+  const pagesSent = () =>
+    conversation()
+      .queryAllByRole('list', { name: 'Pages sent' })
+      .map((list) =>
+        within(list)
+          .getAllByRole('listitem')
+          .map((li) => li.textContent),
+      )
 
   it('[UC-AGENT-001-S26] the message box shows the open page, and follows the tab', async () => {
     const { browser } = await openPanel()
@@ -502,7 +509,7 @@ describe('the page a question goes with', () => {
     expect(browser.tab.sent).toEqual([])
     expect(browser.tab.injections).toEqual([])
     // The question went with no page, and says so by showing none.
-    expect(within(bubble('Summarize it')).queryByRole('list', { name: 'Pages sent' })).not.toBeInTheDocument()
+    expect(pagesSent()).toEqual([])
   })
 
   it('[UC-AGENT-001-S27] a page taken off stays off for the chat until the user goes to another page or starts a new chat', async () => {
@@ -551,16 +558,14 @@ describe('the page a question goes with', () => {
     await screen.findByText('Without it.')
     await answered()
 
-    const shows = (question: string) => {
-      const list = within(bubble(question)).queryByRole('list', { name: 'Pages sent' })
-      return list
-        ? within(list)
-            .getAllByRole('listitem')
-            .map((li) => li.textContent)
-        : []
+    // One list, shown with the first question: after it and before the second.
+    const shows = () => {
+      expect(pagesSent()).toEqual([['Fixture page']])
+      const list = conversation().getByRole('list', { name: 'Pages sent' })
+      expect(comesBefore(conversation().getByText('With?'), list)).toBe(true)
+      expect(comesBefore(list, conversation().getByText('Without?'))).toBe(true)
     }
-    expect(shows('With?')).toEqual(['Fixture page'])
-    expect(shows('Without?')).toEqual([])
+    shows()
 
     // Reopened in a new panel, on another site.
     browser.tab.url = INBOX
@@ -568,8 +573,7 @@ describe('the page a question goes with', () => {
     await user.click(screen.getByRole('button', { name: 'Sessions' }))
     await user.click(await sessionList().findByRole('button', { name: /^With\?/ }))
     await conversation().findByText('With?')
-    expect(shows('With?')).toEqual(['Fixture page'])
-    expect(shows('Without?')).toEqual([])
+    shows()
   })
 })
 
