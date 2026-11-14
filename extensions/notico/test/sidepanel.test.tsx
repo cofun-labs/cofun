@@ -608,6 +608,52 @@ describe('sessions', () => {
     expect(screen.getByText(/^Read 2 pages · \d+ Notion requests?$/)).toBeVisible()
   })
 
+  it('[UC-CHAT-001-S19] copying a reply puts its Markdown on the clipboard, without its tool calls or the line under it', async () => {
+    const { browser, user } = await openPanel()
+    browser.ai.script.push(
+      { reply: 'Let me look.', toolCalls: [{ name: 'read_page', arguments: JSON.stringify({ part: 1 }) }] },
+      { reply: 'It has **two** items:\n\n- One\n- Two' },
+    )
+
+    await ask(user, 'What does this page say?')
+    await answered()
+    await user.click(screen.getByRole('button', { name: 'Copy reply' }))
+
+    expect(await navigator.clipboard.readText()).toBe('Let me look.\n\nIt has **two** items:\n\n- One\n- Two')
+    expect(screen.getByRole('button', { name: 'Copied' })).toBeVisible()
+    expect(screen.getByRole('status')).toHaveTextContent('Copied')
+  })
+
+  it('a reply cannot be copied until it has ended', async () => {
+    const { browser, user } = await openPanel()
+    const resume = pausedReply(browser, 'The roadmap has three milestones')
+
+    await ask(user, 'What is on the roadmap?')
+    await screen.findByText(/The roadmap/)
+    expect(screen.queryByRole('button', { name: 'Copy reply' })).not.toBeInTheDocument()
+
+    resume()
+    await answered()
+    expect(screen.getByRole('button', { name: 'Copy reply' })).toBeVisible()
+  })
+
+  it('says so when the clipboard refuses the reply', async () => {
+    const { browser, user } = await openPanel()
+    browser.ai.script.push({ reply: 'Hello.' })
+    await ask(user, 'Hi')
+    await answered()
+    // The browser's clipboard, refusing: as when the panel has lost focus.
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText: () => Promise.reject(new DOMException('Document is not focused.', 'NotAllowedError')) },
+    })
+
+    await user.click(screen.getByRole('button', { name: 'Copy reply' }))
+
+    expect(await screen.findByRole('button', { name: "Couldn't copy" })).toBeVisible()
+    expect(screen.getByRole('status')).toHaveTextContent("Couldn't copy the reply")
+  })
+
   it('a reply that used no Notion tool has no line under it', async () => {
     const { browser, user } = await openPanel()
     browser.ai.script.push({ reply: 'Hello.' })

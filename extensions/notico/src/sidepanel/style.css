@@ -298,16 +298,6 @@ header .untitled {
   overflow-x: auto;
 }
 
-/* Read out, not shown: the heading Markdown gives a reply's footnotes. */
-.text .sr-only {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
-  clip-path: inset(50%);
-  white-space: nowrap;
-}
-
 .text .footnotes {
   font-size: 12.5px;
   color: var(--muted);
@@ -430,6 +420,48 @@ header .untitled {
 .note {
   color: var(--muted);
   font-size: 12px;
+}
+
+/* Under a reply that has ended: Copy, then the line saying what it touched in Notion. */
+.reply-foot {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: -6px;
+}
+
+.reply-action {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  flex: none;
+  border-radius: 8px;
+  color: var(--muted);
+  transition:
+    background-color 0.12s,
+    color 0.12s;
+}
+
+.reply-action:hover,
+.reply-action:focus-visible {
+  background: var(--tint);
+  color: var(--fg);
+}
+
+.reply-action .icon {
+  width: 15px;
+  height: 15px;
+}
+
+/* Read out, not shown: such as the heading Markdown gives a reply's footnotes, and the copy button's result. */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
 }
 
 .note.working {

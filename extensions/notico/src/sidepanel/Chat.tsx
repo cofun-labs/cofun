@@ -625,7 +625,7 @@ export function Chat({ userId }: { userId: string }) {
                       session.
                     </div>
                   )}
-                  <Summary reply={m} />
+                  <ReplyFoot reply={m} ended={!(busy && i === messages.length - 1)} />
                 </div>
               </div>
             ),
@@ -753,6 +753,58 @@ function newestOpenCall(parts: Part[], id: string): number {
     j--
   }
   return j
+}
+
+/** What a reply wrote, as the Markdown the model sent: its text parts, without the tools run between them. */
+function replyMarkdown(parts: Part[]): string {
+  return parts.flatMap((p) => (p.type === 'text' && p.text.trim() ? [p.text.trim()] : [])).join('\n\n')
+}
+
+/** The row under a reply that has ended: a button to copy what it wrote, then what it touched in Notion. */
+function ReplyFoot({ reply, ended }: { reply: Extract<Shown, { role: 'assistant' }>; ended: boolean }) {
+  const text = ended ? replyMarkdown(reply.parts) : ''
+  const summary = <Summary reply={reply} />
+  if (!text) return summary
+  return (
+    <div className="reply-foot">
+      <CopyButton text={text} />
+      {summary}
+    </div>
+  )
+}
+
+/** Copies `text` to the clipboard, and says for a moment whether it worked. */
+function CopyButton({ text }: { text: string }) {
+  const [state, setState] = useState<'idle' | 'copied' | 'failed'>('idle')
+  useEffect(() => {
+    if (state === 'idle') return
+    const timer = setTimeout(() => setState('idle'), 2000)
+    return () => clearTimeout(timer)
+  }, [state])
+
+  const label = state === 'copied' ? 'Copied' : state === 'failed' ? "Couldn't copy" : 'Copy reply'
+  return (
+    <>
+      <button
+        type="button"
+        className="reply-action"
+        aria-label={label}
+        title={label}
+        onClick={() =>
+          navigator.clipboard.writeText(text).then(
+            () => setState('copied'),
+            () => setState('failed'),
+          )
+        }
+      >
+        <Icon name={state === 'copied' ? 'check' : 'copy'} />
+      </button>
+      {/* Read out when it changes: the button's own name is not announced again while it has focus. */}
+      <span className="sr-only" role="status">
+        {state === 'copied' ? 'Copied' : state === 'failed' ? "Couldn't copy the reply" : ''}
+      </span>
+    </>
+  )
 }
 
 const counted = (n: number, noun: string) => `${n} ${noun}${n === 1 ? '' : 's'}`
