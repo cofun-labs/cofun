@@ -47,7 +47,6 @@ Source code and privacy policy: https://github.com/cofun-labs/cofun
 Notico is an independent project. It is not made or endorsed by Notion.
 ```
 
-This describes version 0.1.0, the one in the store. The next version adds credit packs bought through Stripe and answering with the user's own OpenRouter or DeepSeek key: CREDITS, PRIVACY, and the list at the top change with it.
 
 ## Details
 
@@ -68,3 +67,7 @@ This describes version 0.1.0, the one in the store. The next version adds credit
 | Marquee promo tile | [marquee-promo-tile.png](images/marquee-promo-tile.png) | 1400×560 |
 
 The screenshots show the real side panel next to throwaway pages, made with `pnpm e2e`: the Notion page and the side panel are captured separately and set side by side, so they carry no browser frame. The screenshots and promo tiles are PNG without transparency, as the store requires for them.
+
+## For the next version
+
+The text above describes version 0.1.0, the one in the store. The next version adds credit packs bought through Stripe and answering with the user's own OpenRouter or DeepSeek key: CREDITS, PRIVACY, and the list at the top change with it.

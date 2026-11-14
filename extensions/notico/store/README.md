@@ -12,4 +12,4 @@ What Notico's item in the [Chrome Web Store Developer Dashboard](https://chrome.
 
 The summary line under the name is not here: it is the manifest's `description` in [`../manifest.ts`](../manifest.ts), and it changes only with a new version.
 
-A pull request that changes what Notico asks for or what leaves the browser updates these files with the code: a permission or host permission changes [privacy.md](privacy.md), a new place data goes changes its data usage, and selling something changes [distribution.md](distribution.md). Update the Dashboard before submitting the version that needs it.
+The files say what the Dashboard says for the version in the store (0.1.0 today). A pull request that changes what Notico asks for or what leaves the browser updates them with the code, as a note under "For the next version" while that version isn't in the store yet: a permission or host permission changes [privacy.md](privacy.md), a new place data goes changes its data usage, and selling something changes [distribution.md](distribution.md). Before submitting the next version, fold those notes into the text, copy it into the Dashboard, and update the version named here.

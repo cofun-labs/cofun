@@ -45,7 +45,7 @@ Runs the requests that read and edit Notion pages inside the user's own Notion t
 ### Host permission
 
 ```text
-notion.so and app.notion.com: to read and edit the user's pages in their Notion tab. api.cofun.cc: our server and sign-in page. clerk.cofun.cc: our sign-in service, whose session cookie the extension reads to sign the user in. *.cofun.cc: only to read the sign-in cookie that the sign-in service sets on the parent domain.
+www.notion.so and app.notion.com: to read and edit the user's pages in their Notion tab. api.cofun.cc: our server and sign-in page. clerk.cofun.cc: our sign-in service, whose session cookie the extension reads to sign the user in. *.cofun.cc: only to read the sign-in cookie that the sign-in service sets on the parent domain.
 ```
 
 ## Remote code
