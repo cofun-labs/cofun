@@ -128,8 +128,10 @@ export function usePagePicker({
 
   async function run() {
     const sending = wanted.current
-    // One at a time: the search running sends the newest query when it ends.
-    if (running.current || sending === undefined) return
+    if (sending === undefined) return
+    // One at a time: the search running sends the newest query when it ends. Until then, this query
+    // is being searched for, as far as the user is concerned.
+    if (running.current) return setSearch({ status: 'searching' })
     running.current = true
     // A failure stops searching for the question this search was sent for, not the one after it.
     const stopSearch = onStopRef.current
@@ -213,12 +215,21 @@ export function usePagePicker({
       if (options.length) setActive((current + (e.key === 'ArrowDown' ? 1 : options.length - 1)) % options.length)
       return true
     }
-    // While the picker is open, Enter only adds a page: with none to add yet (the search is still
-    // to come, or nothing matches), it does nothing, and never sends the message.
+    // Enter adds the highlighted page. With none listed, after an `@` the words were the message
+    // going on: the picker closes and Enter sends the message as typed. In the picker's own search
+    // field it does nothing, and never submits the message.
     if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
-      e.preventDefault()
-      if (current >= 0) onPick(options[current].page)
-      return true
+      if (current >= 0) {
+        e.preventDefault()
+        onPick(options[current].page)
+        return true
+      }
+      if (onQuery) {
+        e.preventDefault()
+        return true
+      }
+      onClose()
+      return false
     }
     if (e.key === 'Escape') {
       e.preventDefault()

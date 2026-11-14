@@ -168,7 +168,7 @@ describe('UC-CHAT-004 add pages to a question', () => {
   })
 
   it('[UC-CHAT-004-S02] a page chosen with the keys becomes a chip in place of the @ text, and Escape leaves the text as it is', async () => {
-    const { browser, user } = await openPanel()
+    const { user } = await openPanel()
 
     await user.type(composer(), 'Compare this with @')
     await within(picker()!).findByRole('option', { name: /Roadmap/ })
@@ -190,14 +190,6 @@ describe('UC-CHAT-004 add pages to a question', () => {
     // Typing on, past the same @, opens nothing.
     await user.type(composer(), 'ad')
     expect(picker()).not.toBeInTheDocument()
-
-    // With nothing to add yet, Enter does nothing: the half-typed @ text is not sent.
-    await user.type(composer(), ' @zq')
-    expect(await screen.findByText('Searches your workspace when you stop typing.')).toBeVisible()
-    await user.keyboard('{Enter}')
-    expect(screen.getByText('Searches your workspace when you stop typing.')).toBeVisible()
-    expect(composer()).toHaveValue('Compare this with @road @zq')
-    expect(browser.ai.calls).toEqual([])
   })
 
   it('[UC-CHAT-004-S03] "+" opens the same picker with its own search field, and leaves the message as it is', async () => {
@@ -344,8 +336,19 @@ describe('UC-CHAT-004 add pages to a question', () => {
 
   it('[UC-CHAT-004-S10] an @ followed by ordinary words is sent as typed, and no page is added in their place', async () => {
     const { browser, tab, user } = await openPanel()
-    browser.ai.script.push({ reply: 'Noted.' }, { reply: 'Will do.' })
+    browser.ai.script.push({ reply: 'Thanks.' }, { reply: 'Pinged.' }, { reply: 'Noted.' }, { reply: 'Will do.' })
     tab.respond('search', 200, searchAnswer()).respond('search', 200, searchAnswer())
+
+    // With no page listed, Enter sends the message as typed, without waiting for a search: one
+    // word that names no page, and words typed straight on.
+    await user.type(composer(), 'thanks @bob{Enter}')
+    await screen.findByText('Thanks.')
+    await answered()
+    await user.type(composer(), 'ping @road about it{Enter}')
+    await screen.findByText('Pinged.')
+    await answered()
+    await pause()
+    expect(searches(tab)).toEqual([])
 
     // A space right after the @ is no page: nothing opens, and nothing is searched.
     await user.type(composer(), 'Meet me @ 5pm')
@@ -376,8 +379,13 @@ describe('UC-CHAT-004 add pages to a question', () => {
     await screen.findByText('Will do.')
     await answered()
 
-    expect(sentQuestions(browser).map((q) => q?.split('\n\n').at(-1))).toEqual(['Meet me @ 5pm', 'ping @road about it'])
-    expect(pagesSent()).toEqual([['Fixture page'], ['Fixture page']])
+    expect(sentQuestions(browser).map((q) => q?.split('\n\n').at(-1))).toEqual([
+      'thanks @bob',
+      'ping @road about it',
+      'Meet me @ 5pm',
+      'ping @road about it',
+    ])
+    expect(pagesSent()).toEqual([['Fixture page'], ['Fixture page'], ['Fixture page'], ['Fixture page']])
   })
 
   it('[UC-CHAT-004-S08] the open page taken off and picked again goes with the question, also once the tab moves on', async () => {
