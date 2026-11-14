@@ -2,7 +2,7 @@
 
 ## Behavior
 
-A signed-in user asks the AI something in the side panel and reads the reply as it streams in, formatted the way the AI wrote it: headings, emphasis, lists, tables, code, quotes, and links. The user's own question is shown as typed. A session with no question yet offers a few example questions; picking one puts it in the message box, where the user can change it before sending.
+A signed-in user asks the AI something in the side panel and reads the reply as it streams in, formatted the way the AI wrote it: headings, emphasis, lists, tables, code, quotes, and links. The user's own question is shown as typed. Each finished reply can be copied with one press, as the Markdown the AI wrote, to paste elsewhere. A session with no question yet offers a few example questions; picking one puts it in the message box, where the user can change it before sending.
 
 Using Notico's hosted AI costs credits, so one account cannot run up unbounded model usage. A question answered by the user's own model spends none (see UC-AGENT-002). A credit is a thousandth of a US dollar, and each call to the model costs what its tokens cost the service, with nothing added. Input the model reads from its cache costs less than new input, and is charged at that lower price. A question the AI answers with tools (see UC-AGENT-001) makes one model call for each round trip, and costs the sum of them.
 
@@ -37,6 +37,7 @@ Key constraints:
 | UC-CHAT-001-S16 | P1 | ✅ | Given a reply written in Markdown; when it is shown in the side panel; then it reads formatted (headings, emphasis, lists, tables, code, quotes, links), and the user's question is shown as typed. |
 | UC-CHAT-001-S17 | P0 | ✅ | Given a reply with HTML and non-web links in it; when it is shown; then the HTML is shown as text, and only its web links can be followed. |
 | UC-CHAT-001-S18 | P0 | ✅ | Given a reply with an image in it; when it is shown; then the image is not loaded, and its description links to it instead. |
+| UC-CHAT-001-S19 | P1 | ✅ | Given a finished reply; when the user presses its Copy button; then the reply's Markdown is on the clipboard, without its tool calls or the line under it, and the button says it was copied. |
 
 ### ai-e2e
 
