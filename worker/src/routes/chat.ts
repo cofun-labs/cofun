@@ -13,7 +13,7 @@ import {
   type StreamSummary,
   type UsageRecord,
 } from '../usage'
-import { HttpError, errorSummary, parse, readJson, type App, type Ctx, type Deps, type Env } from '../http'
+import { HttpError, errorSummary, parse, type App, type Ctx, type Deps, type Env } from '../http'
 import { Body, MAX_CONTENT_CHARS, MAX_TOKENS, MaxTokens, Stream, parseModelInputs } from './chat-request'
 
 /** A time as the out-of-credits message gives it: to the minute, in UTC, since the worker does not know the user's time zone. */
@@ -57,14 +57,6 @@ function productOf(env: Env, azp: string): string {
 function isStream(value: unknown): value is ReadableStream<Uint8Array> {
   return !!value && typeof value === 'object' && 'getReader' in value && typeof value.getReader === 'function'
 }
-
-/**
- * The largest chat request body read. The characters it may hold are capped at MAX_CONTENT_CHARS:
- * 200,000 of them are at most 800 kB in UTF-8, or 1.2 MB written as JSON escapes (\uXXXX), and
- * the JSON around them (roles, tool call ids, up to 200 messages) adds little. This leaves room for
- * all of that and bounds what a request can make the worker hold.
- */
-const MAX_BODY_BYTES = 4 * 1024 * 1024
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   !!value && typeof value === 'object' && !Array.isArray(value)
@@ -120,7 +112,7 @@ export function chatRoutes({ now, priceOf: priceFor, logError }: Deps): App {
   async function chatCompletion(c: Ctx, usage: UsageRecord, record: (outcome: string) => void): Promise<Response> {
     const product = productOf(c.env, c.get('azp'))
     usage.product = product
-    const body = parse(Body, await readJson(c, MAX_BODY_BYTES))
+    const body = parse(Body, await c.req.json().catch(() => undefined))
     usage.stream = body.stream === true
     const { inputs: modelInputs, chars } = parseModelInputs(body)
     usage.messages = modelInputs.messages.length
