@@ -13,8 +13,19 @@ export interface AiBinding {
   run(model: string, inputs: Record<string, unknown>, options?: Record<string, unknown>): Promise<unknown>
 }
 
+/** The slice of a Workers rate limiting binding this worker uses: one count per key, over the binding's period. */
+export interface RateLimiter {
+  limit(options: { key: string }): Promise<{ success: boolean }>
+}
+
 export interface Env {
   AI: AiBinding
+  /**
+   * Caps how many chat requests one user can start per period (`ratelimits` in wrangler.jsonc), keyed
+   * by user id. Counted per Cloudflare location and approximate: a cap on what calls sent at once can
+   * overspend, not an exact count.
+   */
+  CHAT_LIMIT: RateLimiter
   MODEL: string
   AI_GATEWAY_ID?: string
   /** Clerk publishable key, used by the sign-in page. */

@@ -14,6 +14,7 @@ import {
   FakeD1Database,
   FakeExecutionContext,
   FakeUsageDataset,
+  FakeRateLimiter,
   MODEL,
 } from '../../../worker/test/fakes'
 import { FakeStripe, signature, WEBHOOK_SECRET } from '../../../worker/test/stripe'
@@ -121,6 +122,7 @@ export class FakeBrowser {
       AI: { run: (model, inputs, options) => titleRequests(browser, inputs).run(model, inputs, options) },
       DB: browser.db,
       USAGE: new FakeUsageDataset(),
+      CHAT_LIMIT: new FakeRateLimiter(),
       MODEL,
       CLERK_JWT_KEY: issuer.publicKeyPem,
       CLERK_AUTHORIZED_PARTIES: `${EXTENSION}, ${WORKER}`,

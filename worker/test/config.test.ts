@@ -7,7 +7,7 @@ import { describe, expect, it } from 'vitest'
 import { createApp, type Env } from '../src/app'
 import { offerOf } from '../src/billing'
 import { FakeClerk } from './clerk'
-import { FakeAiBinding, FakeD1Database, FakeUsageDataset, MODEL } from './fakes'
+import { FakeAiBinding, FakeD1Database, FakeUsageDataset, FakeRateLimiter, MODEL } from './fakes'
 
 const { rawConfig } = experimental_readRawConfig({ config: new URL('../wrangler.jsonc', import.meta.url).pathname })
 const routes = rawConfig.routes ?? []
@@ -46,6 +46,7 @@ describe("the deployed worker's address", () => {
       AI: new FakeAiBinding(),
       DB: new FakeD1Database(),
       USAGE: new FakeUsageDataset(),
+      CHAT_LIMIT: new FakeRateLimiter(),
       MODEL,
       CLERK_JWT_KEY: clerk.publicKeyPem,
       CLERK_AUTHORIZED_PARTIES: AUTHORIZED_PARTIES,
