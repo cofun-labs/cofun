@@ -1259,10 +1259,11 @@ button.pack:disabled {
   font-size: 12px;
 }
 
-/* Keyboard focus is a deeper grey than the chosen item's tint, not the page's outline ring. */
+/* Keyboard focus: a thin grey ring inside the item, quieter than the page's accent outline but
+   clear on the tint of the chosen or hovered item (--muted is over 3:1 on both themes' backgrounds). */
 .model-popover [role^='menuitem']:focus-visible {
   outline: none;
-  background: var(--border);
+  box-shadow: inset 0 0 0 1.5px var(--muted);
 }
 
 .model-popover [role^='menuitem']:hover,
