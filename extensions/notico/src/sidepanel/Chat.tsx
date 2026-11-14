@@ -34,8 +34,8 @@ import {
   savePage,
   TOOLS,
   touchedBy,
-  turnsOf,
   type OpenPage,
+  type SavedTurn,
 } from '../tools'
 import { AccountMenu } from './Account'
 import { Header } from './Header'
@@ -45,7 +45,7 @@ import { useMenu } from './menu'
 import { HOSTED, ModelMenu } from './Model'
 import { AddMenu, pageKey, usePagePicker, type SearchStop } from './PagePicker'
 import { ComposerPages, SentPages, type Chip } from './Pages'
-import { SaveReply, useSaves, type SaveState } from './Save'
+import { SaveActions, useSaves, type SaveActionsProps, type SaveState } from './Save'
 import { Sessions, type OpenResult } from './Sessions'
 import { Settings } from './Settings'
 import { ToolCall, type ShownTool } from './ToolCall'
@@ -840,32 +840,35 @@ export function Chat({ userId }: { userId: string }) {
   // Saving goes under the page open in the current tab as the user saves (see savePage).
   const saveBlocked = tabPage && pageIdFromUrl(tabPage.url) ? undefined : OPEN_A_PAGE
 
-  // Saves of replies, by the chat they were shown in (`chatId`) and their place in it: here, not in
-  // the reply's row, which shows the next chat's reply at the same place once the user switches.
-  const [replySaves, startReplySave] = useSaves()
-  const replyKey = (i: number) => `${chatId.current}:${i}`
+  // Saves of a reply, or of the whole chat, by the chat they were started in (`chatId`) and the
+  // reply's place in it: here, not in the reply's row, which shows the next chat's reply at the
+  // same place once the user switches.
+  const [saves, startSave] = useSaves()
+  const saveKey = (what: number | 'chat') => `${chatId.current}:${what}`
 
-  /** Saves the reply at `i` as a page titled with the chat's title and its question. */
-  const saveReplyRef = useRef<(i: number) => void>(undefined)
-  saveReplyRef.current = (i) => {
-    const reply = messages[i]
-    const question = messages.slice(0, i).findLast((m) => m.role === 'user')
-    if (reply?.role !== 'assistant' || !question) return
-    const turn = { question: question.content, markdown: replyMarkdown(reply.parts), ...touchedBy(doneCalls(reply)) }
-    startReplySave(replyKey(i), () => savePage(replyTitle(headerTitle ?? '', question.content), [turn]))
+  /**
+   * Saves the reply at `what` as a page titled with the chat's title and its question, or with
+   * 'chat', the chat so far as a page titled with the chat's title. A reply still coming in is left out.
+   */
+  const saveRef = useRef<(what: number | 'chat') => void>(undefined)
+  saveRef.current = (what) => {
+    if (what === 'chat') {
+      const ended = busy
+        ? messages.slice(
+            0,
+            messages.findLastIndex((m) => m.role === 'user'),
+          )
+        : messages
+      const turns = shownTurns(ended)
+      startSave(saveKey('chat'), () => savePage(headerTitle || 'Untitled', turns))
+      return
+    }
+    const turn = shownTurns(messages.slice(0, what + 1)).at(-1)
+    if (!turn) return
+    startSave(saveKey(what), () => savePage(replyTitle(headerTitle ?? '', turn.question), [turn]))
   }
   // One function for the panel's life, so a reply that hasn't changed is not drawn again.
-  const saveReply = useCallback((i: number) => saveReplyRef.current!(i), [])
-
-  // Saves of chats from the list, by session id: here, so closing the list mid-save loses neither.
-  const [chatSaves, startChatSave] = useSaves()
-
-  /** Saves a saved chat, as the store has it, as a page titled with the chat's title. */
-  async function saveChat(id: string) {
-    const session = await store.get(id)
-    if (!session || session === 'unreadable') throw new Error("This chat can't be read, so it can't be saved.")
-    return savePage(session.title || 'Untitled', turnsOf(session.messages))
-  }
+  const saveToNotion = useCallback((what: number | 'chat') => saveRef.current!(what), [])
 
   /** Closes the session list and puts the focus back on the button that opened it. */
   function closeList() {
@@ -980,8 +983,9 @@ export function Chat({ userId }: { userId: string }) {
                     ended={!(busy && i === messages.length - 1)}
                     index={i}
                     saveBlocked={saveBlocked}
-                    saveState={replySaves[replyKey(i)]}
-                    onSave={saveReply}
+                    replySave={saves[saveKey(i)]}
+                    chatSave={saves[saveKey('chat')]}
+                    onSave={saveToNotion}
                   />
                 </div>
               </div>
@@ -1037,9 +1041,6 @@ export function Chat({ userId }: { userId: string }) {
             saved={saved}
             onOpen={open}
             onClose={closeList}
-            saveBlocked={saveBlocked}
-            saves={chatSaves}
-            onSave={(id) => startChatSave(id, () => saveChat(id))}
             onDeleted={(id) => {
               deleted.current.add(id)
               // The open session is being deleted: stop its reply, so it isn't saved back.
@@ -1170,15 +1171,18 @@ const ReplyFoot = memo(function ReplyFoot({
   ended,
   index,
   saveBlocked,
-  saveState,
+  replySave,
+  chatSave,
   onSave,
 }: {
   reply: Reply
   ended: boolean
   index: number
   saveBlocked?: string
-  saveState?: SaveState
-  onSave: (index: number) => void
+  /** How saving this reply, and the whole chat, to Notion went. */
+  replySave?: SaveState
+  chatSave?: SaveState
+  onSave: (what: number | 'chat') => void
 }) {
   if (!ended) return null
   const text = replyMarkdown(reply.parts)
@@ -1192,7 +1196,17 @@ const ReplyFoot = memo(function ReplyFoot({
       {(details.length > 0 || text) && (
         <ReplyDetails
           rows={details}
-          save={text ? { blocked: saveBlocked, state: saveState, onSave: () => onSave(index) } : undefined}
+          save={
+            text
+              ? {
+                  blocked: saveBlocked,
+                  reply: replySave,
+                  chat: chatSave,
+                  onSaveReply: () => onSave(index),
+                  onSaveChat: () => onSave('chat'),
+                }
+              : undefined
+          }
         />
       )}
     </div>
@@ -1246,6 +1260,19 @@ function touched(reply: Reply): string {
     .join(' · ')
 }
 
+/** The questions of `shown` with what their replies wrote and touched, as a saved page holds them. */
+function shownTurns(shown: Shown[]): SavedTurn[] {
+  const turns: SavedTurn[] = []
+  for (const m of shown) {
+    if (m.role === 'user') turns.push({ question: m.content, markdown: '', read: 0, changed: [] })
+    else if (turns.length) {
+      const { question } = turns.pop()!
+      turns.push({ question, markdown: replyMarkdown(m.parts), ...touchedBy(doneCalls(m)) })
+    }
+  }
+  return turns
+}
+
 /** A reply's tool calls that worked. */
 function doneCalls(reply: Reply): ShownTool[] {
   return reply.parts.flatMap((p) => (p.type === 'tool' && p.tool.status === 'done' ? [p.tool] : []))
@@ -1275,15 +1302,9 @@ function detailRows(details: QuestionDetails = {}): { label?: string; text: stri
 
 /**
  * The "…" button at the end of a reply's row, and the popover with its details it opens and closes,
- * ending with "Save to Notion" when the reply wrote something.
+ * starting with saving the reply, or the whole chat, to Notion when the reply wrote something.
  */
-function ReplyDetails({
-  rows,
-  save,
-}: {
-  rows: { label?: string; text: string }[]
-  save?: { blocked?: string; state?: SaveState; onSave: () => void }
-}) {
+function ReplyDetails({ rows, save }: { rows: { label?: string; text: string }[]; save?: SaveActionsProps }) {
   const { open, setOpen, rootRef, onKeyDown } = useMenu()
   const id = useId()
   return (
@@ -1301,13 +1322,18 @@ function ReplyDetails({
       </button>
       {open && (
         <div id={id} className="reply-popover" role="dialog" aria-label="Reply details">
-          {rows.map(({ label, text }) => (
-            <p key={label ?? text}>
-              {label && <span className="detail-label">{label}: </span>}
-              {text}
-            </p>
-          ))}
-          {save && <SaveReply blocked={save.blocked} state={save.state} onSave={save.onSave} />}
+          {/* What the user can do comes first, like a menu; what the reply used follows, quieter. */}
+          {save && <SaveActions {...save} />}
+          {rows.length > 0 && (
+            <div className="reply-facts">
+              {rows.map(({ label, text }) => (
+                <p key={label ?? text}>
+                  {label && <span className="detail-label">{label}: </span>}
+                  {text}
+                </p>
+              ))}
+            </div>
+          )}
         </div>
       )}
     </div>

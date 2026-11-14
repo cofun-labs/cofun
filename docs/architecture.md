@@ -89,7 +89,7 @@ What is read back is parsed against the session's schemas (`SessionInfo` in `ses
 
 A session is titled with its first question until its first reply is in; then the agent asks the model that answered for a short title (`CopilotAgent.title`), so it goes only where the conversation already went, and on the hosted model it spends credits like any request. The title the model wrote replaces the first question in the stored session, once, and later saves keep it; a failed or unusable answer changes nothing.
 
-The user can save one reply, from its "…", or a whole saved chat, from the chat list's row menu, as a new Notion page (`savePage` in `src/tools/save.ts`, `Save.tsx`). It is the user's own action, not a tool the agent is offered, so Read only does not limit it, and nothing asks to confirm it. The page always goes at the end of the page open in the current tab when the user saves, the same tab rule the tools follow; with no Notion page there the action is unavailable, and a database is refused before anything is written. It is written the way `create_page` writes a page, from the reply's Markdown, in one transaction sent once and never retried: a rate limit stops it with nothing more sent, and an unknown outcome tells the user to look in Notion before saving again. Unlike the picker's search, a save may go out while a question is answered: it is two requests, started by hand, and counted toward no question. A save notifies nobody: people a reply mentions are written as names.
+From a reply's "…", the user can save that reply, or the whole chat so far, as a new Notion page (`savePage` in `src/tools/save.ts`, `Save.tsx`). It is the user's own action, not a tool the agent is offered, so Read only does not limit it, and nothing asks to confirm it. The page always goes at the end of the page open in the current tab when the user saves, the same tab rule the tools follow; with no Notion page there the action is unavailable, and a database is refused before anything is written. It is written the way `create_page` writes a page, from the reply's Markdown, in one transaction sent once and never retried: a rate limit stops it with nothing more sent, and an unknown outcome tells the user to look in Notion before saving again. Unlike the picker's search, a save may go out while a question is answered: it is two requests, started by hand, and counted toward no question. A save notifies nobody: people a reply mentions are written as names.
 
 ### Writes without approval
 
@@ -158,7 +158,7 @@ extensions/notico/        Notico, the extension for Notion
                           Markdown.tsx: a reply's text as formatted Markdown,
                           Pages.tsx: the pages a question goes with, in the composer and its bubble,
                           PagePicker.tsx: the page picker `@` and "+" open,
-                          Save.tsx: "Save to Notion" in a reply's "…" and a chat's row menu,
+                          Save.tsx: saving a reply or the chat to Notion, from a reply's "…",
                           Account.tsx: the avatar and its menu, Settings.tsx: the settings page,
                           History.tsx: the history of the user's credits,
                           Model.tsx: the model menu by the composer, and the settings page's choice
