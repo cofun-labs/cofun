@@ -564,35 +564,45 @@ header .untitled {
 /* Composer */
 
 #composer {
+  /* The model menu opens from the box, so it can use the box's width at the narrowest panel. */
+  position: relative;
   display: flex;
-  align-items: flex-end;
-  gap: 8px;
+  flex-direction: column;
+  gap: 4px;
   margin: 8px 12px 14px;
-  padding: 6px 6px 6px 16px;
+  padding: 10px 8px 8px 14px;
   border: 1px solid var(--border);
-  border-radius: 24px;
+  border-radius: 18px;
   background: var(--bg);
   box-shadow: 0 2px 10px var(--shadow);
 }
 
-#composer:focus-within {
+#composer:has(textarea:focus) {
   border-color: var(--muted);
 }
 
 #composer textarea {
-  flex: 1;
-  min-width: 0;
-  align-self: center;
+  min-height: 1.5em;
   max-height: 9em;
-  padding: 0;
+  padding: 0 6px 0 0;
   border: none;
   outline: none;
   resize: none;
-  /* Grows with what is typed, up to the height above. */
+  /* Grows with what is typed, up to the height above, then scrolls. */
   field-sizing: content;
+  overflow-y: auto;
   background: transparent;
   color: inherit;
   font: inherit;
+}
+
+/* The toolbar inside the box: tools on the left (none yet), then the model chip and send on the right. */
+.composer-tools {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+  margin-left: -6px;
 }
 
 #composer textarea::placeholder {
@@ -602,8 +612,8 @@ header .untitled {
 #composer .send {
   display: grid;
   place-items: center;
-  width: 34px;
-  height: 34px;
+  width: 32px;
+  height: 32px;
   flex: none;
   border-radius: 50%;
   background: var(--tint);
@@ -1177,16 +1187,13 @@ button.pack:disabled {
   font-size: 12.5px;
 }
 
-/* The model menu above the composer */
-
-.composer-bar {
-  display: flex;
-  margin: 6px 12px -2px;
-}
+/* The model chip in the composer's toolbar: no outline of its own, the box is the outline. A long
+   name is cut, and the chip gives way to tools on the toolbar's left before the send button does. */
 
 .model-menu {
-  position: relative;
+  flex: 0 1 auto;
   min-width: 0;
+  max-width: 150px;
 }
 
 .model-button {
@@ -1195,13 +1202,16 @@ button.pack:disabled {
   gap: 4px;
   max-width: 100%;
   overflow: hidden;
-  padding: 3px 10px;
-  border: 1px solid var(--border);
-  border-radius: 999px;
+  padding: 4px 8px;
+  border-radius: 8px;
   color: var(--muted);
   font-size: 12.5px;
   white-space: nowrap;
   text-overflow: ellipsis;
+}
+
+.model-button .icon {
+  flex: none;
 }
 
 .model-button:hover,
@@ -1212,11 +1222,12 @@ button.pack:disabled {
 
 .model-popover {
   position: absolute;
+  /* Opens upward from the box, its right edge by the chip's (left of the send button), never past the box's left edge. */
   bottom: calc(100% + 6px);
-  left: 0;
+  right: 38px;
   z-index: 2;
   width: 280px;
-  max-width: calc(100vw - 24px);
+  max-width: calc(100% - 38px);
   display: flex;
   flex-direction: column;
   padding: 6px;
