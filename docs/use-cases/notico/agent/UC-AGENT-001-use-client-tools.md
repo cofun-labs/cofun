@@ -56,5 +56,5 @@ Key constraints:
 | ID | Priority | Status | Scenario |
 | --- | --- | --- | --- |
 | UC-AGENT-001-S16 | P0 | ✅ | Given the side panel open on a Notion page; when the user asks which page they are on; then the agent answers with the page's title without using a tool. |
-| UC-AGENT-001-S29 | P1 | 🚧 | Given the side panel open on a Notion page in Chrome; when the user switches to another tab and moves to another page; then the message box shows the page open in the current tab each time, and a question sent after taking it off is answered without reading it. |
+| UC-AGENT-001-S29 | P1 | ✅ | Given the side panel open on a Notion page in Chrome; when the user switches to another tab and moves to another page; then the message box shows the page open in the current tab each time, and a question sent after taking it off is answered without reading it. |
 | UC-AGENT-001-S21 | P2 | 🚧 | Given a question that has made as many Notion requests as it may; when it needs another; then the side panel asks the user whether to continue, and the question goes on only after they agree. |
