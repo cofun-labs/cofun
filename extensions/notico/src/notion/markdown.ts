@@ -598,9 +598,7 @@ class Context {
         case 'd':
           return `@${formatDate(arg)}`
         case 'e':
-          // A table cell is one line, and its `<br>` would be read as LaTeX: there a line break in
-          // an equation is a space, which LaTeX reads the same.
-          return `$${raw(table ? String(arg).replace(/\n/g, ' ') : String(arg))}$`
+          return `$${raw(equation(String(arg)))}$`
         case 'h':
           if (typeof arg === 'string' && COLOR.test(arg)) color = arg
           break
@@ -670,6 +668,16 @@ function withRef(pad: string, prefix: string, text: string, ref: string, breaks:
 /** A reference on a line of its own, after a block whose last line can't carry it; none for none. */
 function refLine(pad: string, ref: string): string[] {
   return ref ? [`${pad}${ref.trim()}`] : []
+}
+
+/**
+ * An inline equation's LaTeX as it is shown between `$`s. A line break in it is a space, which LaTeX
+ * reads the same: the `<br>` it would otherwise be shown as is read back as a line break, which ends
+ * the equation. A `<br>` in the LaTeX itself is escaped, `\<br>`, as in text, and `inline` reads it
+ * back as the `<br>`.
+ */
+function equation(latex: string): string {
+  return latex.replace(/\n/g, ' ').replace(/<br\s*\/?>/gi, '\\$&')
 }
 
 /** The length of the longest run of backticks in `text`. */

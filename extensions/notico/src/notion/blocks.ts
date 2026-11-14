@@ -312,7 +312,8 @@ export function inline(text: string, marks: Mark[] = []): RichText {
       // a non-space and closes it only after one, and not before a letter or digit, so prices and
       // `$HOME/$USER` stay text.
       re: /\$(?=\S)((?:\\.|[^$\\\n])+?)(?<=\S)\$(?!\w)/,
-      run: (m) => [['⁍', [...marks, ['e', m[1]]]]],
+      // read_page shows a `<br>` in LaTeX as `\<br>`, so it isn't read as a line break.
+      run: (m) => [['⁍', [...marks, ['e', m[1].replace(/\\(<br\s*\/?>)/gi, '$1')]]]],
     },
     {
       re: DATE,
@@ -548,8 +549,12 @@ export function notionLanguage(language: string): string {
  * a <br> inside inline code (read_page ends the code before a line break).
  */
 export function breaks(text: string): string {
-  // A backtick behind an odd number of backslashes is a literal backtick, not the start of code.
-  const code = new RegExp(`(?<!(?:^|[^\\\\])(?:\\\\\\\\)*\\\\)${CODE_SPAN.source}`, 'g')
+  // Code and equations are passed over whole, so a backtick in an equation's LaTeX can't pair with
+  // one that opens code after it. A backtick or `$` behind an odd number of backslashes is literal.
+  // The equation is inline's, but one holding a `<br>` is not an equation (read_page shows a `<br>`
+  // in LaTeX as `\<br>`): a line that ends in a price would pair with the next one (`5$<br>6$`).
+  const equation = /\$(?=\S)(?:\\.|(?!<br\s*\/?>)[^$\\\n])+?(?<=\S)\$(?!\w)/
+  const code = new RegExp(`(?<!(?:^|[^\\\\])(?:\\\\\\\\)*\\\\)(?:${CODE_SPAN.source}|${equation.source})`, 'gi')
   let out = ''
   let at = 0
   for (const m of text.matchAll(code)) {
