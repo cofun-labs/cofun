@@ -39,6 +39,11 @@ export function replyTitle(chat: string, question: string): string {
   return asked ? `${cut(title, TITLE_CHARS - asked.length - 3)} — ${asked}` : cut(title, TITLE_CHARS)
 }
 
+/** The title of a page holding a whole chat: the chat's title on one line, cut to fit. */
+export function chatTitle(chat: string): string {
+  return cut(chat.replace(/\s+/g, ' ').trim(), TITLE_CHARS) || 'Untitled'
+}
+
 /** `text` in at most `max` characters, counted as people see them: an emoji is never cut in two. */
 function cut(text: string, max: number): string {
   const chars = Array.from(text)

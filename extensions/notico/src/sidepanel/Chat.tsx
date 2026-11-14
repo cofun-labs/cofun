@@ -30,6 +30,7 @@ import {
   forgetReads,
   OPEN_A_PAGE,
   pagesIn,
+  chatTitle,
   replyTitle,
   savePage,
   TOOLS,
@@ -733,6 +734,8 @@ export function Chat({ userId }: { userId: string }) {
   /** Switches to a new session, or to a saved one; a reply still coming in is stopped. */
   function switchTo(session?: Session) {
     chatId.current++
+    // A failed save's message belongs to the chat it was for.
+    setSaveFailure(undefined)
     stopped.current++
     declineAll()
     // Another conversation: the agent must read pages again before it edits them.
@@ -865,7 +868,7 @@ export function Chat({ userId }: { userId: string }) {
   saveRef.current = (what) => {
     if (what === 'chat') {
       const turns = shownTurns(ended)
-      startSave(saveKey('chat'), () => savePage(headerTitle || 'Untitled', turns))
+      startSave(saveKey('chat'), () => savePage(chatTitle(headerTitle ?? ''), turns))
       return
     }
     const turn = shownTurns(messages.slice(0, what + 1)).at(-1)
@@ -1012,7 +1015,15 @@ export function Chat({ userId }: { userId: string }) {
         <form id="composer" onSubmit={onSubmit} inert={covered}>
           {/* Over the chat, just above the box (which is what it is placed against). */}
           {saveFailure && (
-            <SaveToast key={saveFailure.key} message={saveFailure.message} onClose={() => setSaveFailure(undefined)} />
+            <SaveToast
+              key={saveFailure.key}
+              message={saveFailure.message}
+              onClose={(focused) => {
+                setSaveFailure(undefined)
+                // The focus was on the toast, which goes: it moves to the message box, not the page.
+                if (focused) inputRef.current?.focus()
+              }}
+            />
           )}
           {pages.element}
           <ComposerPages chips={chips} onRemove={removeChip} />
@@ -1228,7 +1239,8 @@ const ReplyFoot = memo(function ReplyFoot({
           aria-label={`Answered by ${modelName}`}
           data-tip="The model that answered"
         >
-          {modelName}
+          {/* Cut to fit inside: the tooltip is drawn outside the outer span, so that one can't clip. */}
+          <span className="reply-model-name">{modelName}</span>
         </span>
       )}
       {details.length > 0 && <ReplyDetails rows={details} />}

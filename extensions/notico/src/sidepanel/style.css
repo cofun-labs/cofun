@@ -459,9 +459,13 @@ header .untitled {
   margin-left: -6px;
 }
 
-/* The model that answered, in the reply's row: a long name is cut to fit. */
+/* The model that answered, in the reply's row: a long name is cut to fit (its tooltip is outside). */
 .reply-model {
+  display: flex;
   min-width: 0;
+}
+
+.reply-model-name {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

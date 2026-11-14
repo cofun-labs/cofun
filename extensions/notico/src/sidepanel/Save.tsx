@@ -120,17 +120,25 @@ export function SaveButton({
 const TOAST_MS = 6000
 
 /** Why a save failed, for a few seconds or until the user closes it. */
-export function SaveToast({ message, onClose }: { message: string; onClose: () => void }) {
-  const close = useRef(onClose)
-  close.current = onClose
+export function SaveToast({
+  message,
+  onClose,
+}: {
+  message: string
+  /** `focused`: the focus was in the toast, so it needs somewhere to go. */
+  onClose: (focused: boolean) => void
+}) {
+  const root = useRef<HTMLDivElement>(null)
+  const close = useRef(() => onClose(!!root.current?.contains(document.activeElement)))
+  close.current = () => onClose(!!root.current?.contains(document.activeElement))
   useEffect(() => {
     const timer = setTimeout(() => close.current(), TOAST_MS)
     return () => clearTimeout(timer)
   }, [message])
   return (
-    <div className="save-toast" role="alert">
+    <div className="save-toast" role="alert" ref={root}>
       <span className="grow">{message}</span>
-      <button type="button" className="icon-button" aria-label="Dismiss" onClick={onClose}>
+      <button type="button" className="icon-button" aria-label="Dismiss" onClick={() => close.current()}>
         <Icon name="close" />
       </button>
     </div>

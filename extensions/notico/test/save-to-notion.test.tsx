@@ -236,6 +236,8 @@ describe('UC-NOTICO-SESSION-002 save a chat or a reply to Notion', () => {
     expect(screen.getByRole('button', { name: 'Save reply to Notion' })).not.toHaveAttribute('aria-disabled')
     await user.click(within(toast()).getByRole('button', { name: 'Dismiss' }))
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    // The focus was on the toast: it goes to the message box, not lost.
+    expect(composer()).toHaveFocus()
   })
 
   it('[UC-NOTICO-SESSION-002-S05] in Read only, a reply is saved as in Edit', async () => {
