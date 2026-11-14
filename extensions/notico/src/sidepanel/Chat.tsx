@@ -899,15 +899,15 @@ export function Chat({ userId }: { userId: string }) {
         )}
         <button
           ref={listButtonRef}
-          className="icon-button"
+          className="icon-button tip-below"
           aria-label="Chats"
-          title="Chats"
+          data-tip="Chats"
           aria-expanded={listOpen}
           onClick={() => (listOpen ? closeList() : setView('sessions'))}
         >
           <Icon name="history" />
         </button>
-        <button className="icon-button" aria-label="New chat" title="New chat" onClick={() => switchTo()}>
+        <button className="icon-button tip-below" aria-label="New chat" data-tip="New chat" onClick={() => switchTo()}>
           <Icon name="compose" />
         </button>
         <AccountMenu
@@ -1042,10 +1042,10 @@ export function Chat({ userId }: { userId: string }) {
             <ModelMenu settings={model} onChange={changeModel} onMore={openSettings} />
             <button
               // Blue only when pressing it does something: there is a question to send, or a reply to stop.
-              className={busy || input.trim() ? 'send ready' : 'send'}
+              className={busy || input.trim() ? 'send ready tip-end' : 'send tip-end'}
               type="submit"
               aria-label={busy ? 'Stop' : 'Send'}
-              title={busy ? 'Stop' : 'Send'}
+              data-tip={busy ? 'Stop' : 'Send'}
             >
               <Icon name={busy ? 'square' : 'send'} />
             </button>
@@ -1101,7 +1101,9 @@ function ModeButton({ mode, onChange }: { mode: Mode; onChange: (mode: Mode) => 
       type="button"
       className={readOnly ? 'tool-button read-only' : 'tool-button'}
       aria-label={readOnly ? 'Mode: Read only' : 'Mode: Edit'}
-      title={readOnly ? "Read only: won't change pages" : 'Edit: can change pages'}
+      // The tip says what the mode does, which the name does not; screen readers get it as the description.
+      data-tip={readOnly ? "Read only: won't change pages" : 'Edit: can change pages'}
+      aria-description={readOnly ? "Read only: won't change pages" : 'Edit: can change pages'}
       onClick={() => onChange(readOnly ? 'edit' : 'read_only')}
     >
       <Icon name={readOnly ? 'eye' : 'pencil'} />

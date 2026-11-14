@@ -399,7 +399,7 @@ export function AddMenu({ onAddPage }: { onAddPage: () => void }) {
         aria-haspopup="menu"
         aria-expanded={open}
         aria-label="Add a page"
-        title="Add a page"
+        data-tip="Add a page"
         onClick={() => setOpen(!open)}
       >
         <Icon name="plus" />

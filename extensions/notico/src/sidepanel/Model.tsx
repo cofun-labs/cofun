@@ -130,11 +130,12 @@ export function ModelMenu({
     <div className="model-menu" ref={rootRef} onKeyDown={onKeyDown}>
       <button
         type="button"
-        className="model-button"
+        className="model-button tip-end"
         aria-haspopup="menu"
         aria-expanded={open}
         aria-label={`Model: ${inUse ? shortName(inUse.model) : HOSTED}`}
-        title="Choose the model"
+        data-tip="Choose the model"
+        aria-description="Choose the model"
         onClick={() => setOpen(!open)}
       >
         <span className="model-button-name">{inUse ? shortName(inUse.model) : HOSTED}</span>
