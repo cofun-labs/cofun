@@ -36,14 +36,14 @@ function clerkCookiePermission(syncHost: string, cookieDomain?: string): string 
   return `${protocol}//*.${labels.slice(-2).join('.')}/*`
 }
 
-/** OpenRouter's API, where a user's own model is asked (UC-AGENT-002). */
-const OPENROUTER = 'https://openrouter.ai'
+/** The APIs where a user's own model is asked (UC-AGENT-002): OpenRouter's, and DeepSeek's. */
+const OWN_MODEL_HOSTS = ['https://openrouter.ai', 'https://api.deepseek.com']
 
 /**
  * The policy for the extension's own pages (the side panel and the service worker). Chrome's
  * default only limits scripts; this one limits every kind of load to the extension itself, except
- * requests, which may also go to the worker, Clerk's Frontend API, and OpenRouter (only once the user
- * picks it; a host permission would not widen this list, #46), and images, which may also
+ * requests, which may also go to the worker, Clerk's Frontend API, and OpenRouter and DeepSeek (only
+ * once the user picks one; a host permission would not widen this list, #46), and images, which may also
  * come from Clerk's image host. So the browser itself enforces the host list in PRIVACY.md. Notion calls
  * are not made from these pages (they run in the Notion tab).
  */
@@ -53,7 +53,7 @@ function contentSecurityPolicy(env: ManifestEnv): string {
     ...new Set([
       ...(env.VITE_API_URL ? [new URL(env.VITE_API_URL).origin] : []),
       ...(clerkHost ? [`https://${clerkHost}`] : []),
-      OPENROUTER,
+      ...OWN_MODEL_HOSTS,
     ]),
   ]
   return [

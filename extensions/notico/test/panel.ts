@@ -1,6 +1,7 @@
 // The side panel's UI tests run the whole panel: the page sidepanel.html loads, with the real agent,
 // tools, and session store behind it, and the real worker answering its model calls. Only the edges
-// are fakes: chrome.* (with a Notion tab), Clerk (see clerk.tsx), IndexedDB, and the model binding.
+// are fakes: chrome.* (with a Notion tab), Clerk (see clerk.tsx), IndexedDB, the model binding, and
+// the services a user's own model is on (OpenRouter, DeepSeek).
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { act } from '@testing-library/react'
@@ -17,6 +18,7 @@ import {
 } from '../../../worker/test/fakes'
 import { FakeStripe, signature, WEBHOOK_SECRET } from '../../../worker/test/stripe'
 import type { FakeSession } from './clerk'
+import { DEEPSEEK, FakeDeepSeek } from './deepseek'
 import { restoreGlobals, type FakeNotionTab } from './notion-tab'
 import { FakeOpenRouter, OPENROUTER } from './openrouter'
 
@@ -48,6 +50,8 @@ export class FakeBrowser {
   readonly stripe = new FakeStripe()
   /** OpenRouter, for a user's own model; script its model, and read what it was sent. */
   readonly openRouter = new FakeOpenRouter()
+  /** DeepSeek, for a user's own model; script its model, and read what it was sent. */
+  readonly deepSeek = new FakeDeepSeek()
   /** Every request the panel sent the worker, as text: its URL, headers, and body. */
   readonly sentToWorker: string[] = []
 
@@ -122,10 +126,11 @@ export class FakeBrowser {
     browser.issuer = issuer
     browser.env = env
     browser.worker = (request) => app.request(request, undefined, env, new FakeExecutionContext())
-    // The panel calls fetch(); route it into the worker app, or to OpenRouter.
+    // The panel calls fetch(); route it into the worker app, or to OpenRouter or DeepSeek.
     globals.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
       const request = new Request(input, init)
       if (request.url.startsWith(`${OPENROUTER}/`)) return browser.openRouter.handle(request)
+      if (request.url.startsWith(`${DEEPSEEK}/`)) return browser.deepSeek.handle(request)
       const headers = [...request.headers].map(([name, value]) => `${name}: ${value}`).join('\n')
       browser.sentToWorker.push(`${request.url}\n${headers}\n${await request.clone().text()}`)
       return browser.worker(request)
