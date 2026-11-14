@@ -116,11 +116,13 @@ describe('UC-NOTICO-NOTION-006 read a database', () => {
   })
 
   it('[UC-NOTICO-NOTION-006-S08] tells the AI today’s date on the user’s own clock', async () => {
-    // Half past eleven at night, on the clock of the computer the panel runs on.
-    vi.useFakeTimers({ toFake: ['Date'], now: new Date(2026, 10, 14, 23, 30) })
+    // Two at night on the user's clock (Asia/Kolkata, see vitest.config.ts), still the day before in UTC.
+    const now = new Date(2026, 10, 15, 2, 0)
+    expect(now.toISOString()).toBe('2026-11-14T20:30:00.000Z')
+    vi.useFakeTimers({ toFake: ['Date'], now })
     try {
       database()
-      expect((await query()).split('\n')[1]).toBe('Today: 2026-11-14')
+      expect((await query()).split('\n')[1]).toBe('Today: 2026-11-15')
     } finally {
       vi.useRealTimers()
     }
