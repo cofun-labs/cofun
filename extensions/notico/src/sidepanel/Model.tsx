@@ -134,7 +134,7 @@ export function ModelMenu({
         aria-haspopup="menu"
         aria-expanded={open}
         aria-label={`Model: ${inUse ? shortName(inUse.model) : HOSTED}`}
-        title="Choose the model"
+        data-tip="Choose the model"
         onClick={() => setOpen(!open)}
       >
         <span className="model-button-name">{inUse ? shortName(inUse.model) : HOSTED}</span>

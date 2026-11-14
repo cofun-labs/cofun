@@ -65,7 +65,7 @@ export function AccountMenu({
         ref={buttonRef}
         className="account-button"
         aria-label="Account"
-        title="Account"
+        data-tip="Account"
         aria-haspopup="menu"
         aria-expanded={open}
         onClick={() => {

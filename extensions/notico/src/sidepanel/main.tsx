@@ -5,6 +5,7 @@ import { clerkSyncHost } from '../clerk'
 import { Chat } from './Chat'
 import { Header } from './Header'
 import { Mark } from './icons'
+import { Tooltips } from './Tooltip'
 import './style.css'
 
 const PUBLISHABLE_KEY = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY as string
@@ -99,6 +100,7 @@ function App() {
       <Show when="signed-in">
         <SignedInChat />
       </Show>
+      <Tooltips />
     </ClerkProvider>
   )
 }

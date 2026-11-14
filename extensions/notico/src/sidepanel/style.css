@@ -1689,3 +1689,20 @@ button.pack:disabled {
 .model-button[aria-expanded='true'] .icon {
   transform: rotate(180deg);
 }
+
+/* A control's tip (see Tooltip.tsx): small, dark, above the control, never wider than the panel. */
+.tooltip {
+  position: fixed;
+  z-index: 10;
+  max-width: calc(100vw - 12px);
+  padding: 4px 8px;
+  border-radius: 6px;
+  background: var(--fg);
+  color: var(--bg);
+  font-size: 12px;
+  line-height: 1.4;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  pointer-events: none;
+}

@@ -1316,6 +1316,19 @@ describe('a saved session that can no longer be read', () => {
   })
 })
 
+describe('tips', () => {
+  it("a button's tip shows as soon as it has keyboard focus, and Escape hides it", async () => {
+    const { user } = await openPanel()
+    const chats = screen.getByRole('button', { name: 'Chats' })
+    while (document.activeElement !== chats) await user.tab()
+    expect(screen.getByRole('tooltip', { hidden: true })).toHaveTextContent('Chats')
+    await user.tab()
+    expect(screen.getByRole('tooltip', { hidden: true })).toHaveTextContent('New chat')
+    await user.keyboard('{Escape}')
+    expect(screen.queryByRole('tooltip', { hidden: true })).not.toBeInTheDocument()
+  })
+})
+
 describe('signing in and out', () => {
   it('[UC-NOTICO-AUTH-001-S04] signing out from the side panel returns it to the sign-in screen', async () => {
     const { browser, user } = await openPanel()

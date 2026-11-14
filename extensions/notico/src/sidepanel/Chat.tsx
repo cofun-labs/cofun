@@ -826,13 +826,13 @@ export function Chat({ userId }: { userId: string }) {
           ref={listButtonRef}
           className="icon-button"
           aria-label="Chats"
-          title="Chats"
+          data-tip="Chats"
           aria-expanded={listOpen}
           onClick={() => (listOpen ? closeList() : setView('sessions'))}
         >
           <Icon name="history" />
         </button>
-        <button className="icon-button" aria-label="New chat" title="New chat" onClick={() => switchTo()}>
+        <button className="icon-button" aria-label="New chat" data-tip="New chat" onClick={() => switchTo()}>
           <Icon name="compose" />
         </button>
         <AccountMenu
@@ -962,7 +962,7 @@ export function Chat({ userId }: { userId: string }) {
               className={busy || input.trim() ? 'send ready' : 'send'}
               type="submit"
               aria-label={busy ? 'Stop' : 'Send'}
-              title={busy ? 'Stop' : 'Send'}
+              data-tip={busy ? 'Stop' : 'Send'}
             >
               <Icon name={busy ? 'square' : 'send'} />
             </button>
@@ -1018,7 +1018,9 @@ function ModeButton({ mode, onChange }: { mode: Mode; onChange: (mode: Mode) => 
       type="button"
       className={readOnly ? 'tool-button read-only' : 'tool-button'}
       aria-label={readOnly ? 'Mode: Read only' : 'Mode: Edit'}
-      title={readOnly ? "Read only: won't change pages" : 'Edit: can change pages'}
+      // The tip says what the mode does, which the name does not; screen readers get it as the description.
+      data-tip={readOnly ? "Read only: won't change pages" : 'Edit: can change pages'}
+      aria-description={readOnly ? "Read only: won't change pages" : 'Edit: can change pages'}
       onClick={() => onChange(readOnly ? 'edit' : 'read_only')}
     >
       <Icon name={readOnly ? 'eye' : 'pencil'} />
@@ -1132,7 +1134,7 @@ function CopyButton({ text }: { text: string }) {
         type="button"
         className="reply-action"
         aria-label={label}
-        title={label}
+        data-tip={label}
         onClick={() =>
           navigator.clipboard.writeText(text).then(
             () => setState('copied'),
@@ -1196,7 +1198,7 @@ function ReplyDetails({ rows }: { rows: { label?: string; text: string }[] }) {
         type="button"
         className="reply-action"
         aria-label="Reply details"
-        title="Reply details"
+        data-tip="Reply details"
         aria-expanded={open}
         aria-controls={open ? id : undefined}
         onClick={() => setOpen(!open)}

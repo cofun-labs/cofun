@@ -100,7 +100,7 @@ export function Sessions({
     <section id="sessions" role="dialog" aria-label="Chats">
       <div className="sheet-head">
         <h2>Chats</h2>
-        <button className="icon-button" aria-label="Close" title="Close" autoFocus onClick={onClose}>
+        <button className="icon-button" aria-label="Close" data-tip="Close" autoFocus onClick={onClose}>
           <Icon name="close" />
         </button>
       </div>
@@ -147,7 +147,7 @@ export function Sessions({
               className={confirming === s.id ? 'session-delete confirming' : 'session-delete'}
               onClick={() => void remove(s.id)}
               onBlur={() => setConfirming(undefined)}
-              title="Delete chat"
+              data-tip="Delete chat"
               aria-label={confirming === s.id ? undefined : 'Delete chat'}
             >
               {confirming === s.id ? 'Delete?' : <Icon name="trash" />}
