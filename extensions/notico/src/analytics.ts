@@ -83,6 +83,7 @@ const AnalyticsEvent = z.discriminatedUnion('event', [
   z.strictObject({ event: z.literal('settings_opened') }),
   /** `pack`: the pack's quantity, in units of 1,000 credits. */
   z.strictObject({ event: z.literal('credits_buy_clicked'), pack: Count }),
+  z.strictObject({ event: z.literal('credits_opened') }),
   z.strictObject({ event: z.literal('credits_history_opened') }),
   z.strictObject({ event: z.literal('chat_created') }),
   z.strictObject({ event: z.literal('chat_opened') }),

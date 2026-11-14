@@ -494,6 +494,7 @@ export function Chat({ userId }: { userId: string }) {
   }
 
   function openCredits() {
+    track({ event: 'credits_opened' })
     setView('credits')
     void readCredits()
   }

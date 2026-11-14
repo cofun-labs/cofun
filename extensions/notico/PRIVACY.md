@@ -58,7 +58,7 @@ An event says that something happened, never what was written or read. Every val
 | A question ended | The same service; how it ended (answered, stopped, out of steps, or failed, with our server's error code if it had one); how many times the model was called; how many tools ran |
 | A tool ran | The tool's name (such as `read_page`), whether it worked and how it ended, and Notion's kind of error if it failed (such as "no access") |
 | The model was switched; a key of your own was saved | Which service. Never the key, or the model's name |
-| The settings were opened; the credit history was opened; a pack of credits was chosen to buy | For a pack, its size |
+| The settings were opened; the credits page was opened; the credit history was opened; a pack of credits was chosen to buy | For a pack, its size |
 | A chat was started, opened, or deleted; a page was added to a question; a reply was stopped or copied | For an added page, whether with `@` or the "+" button. Never a chat's title, a page, or the reply |
 
 Every event also holds the name of the extension (`notico`) and its version, the time, a random id of its own, the public key of our PostHog project, the name and version of the analytics code, the name and version of your browser and the name of your operating system, a random id for the stretch of use it belongs to, an instruction to PostHog not to work out a location, and who it is counted under, with whether that is an account: a random id made on your device, and once you are signed in your Clerk user id, to which that random id is joined, so that what happened before and after signing in is counted as one person. It holds no URL, no page title, not your name or email address, and not your time zone, language, or screen size.
