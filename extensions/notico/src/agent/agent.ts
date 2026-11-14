@@ -6,7 +6,7 @@
 import { Agent, type AgentEvent, type AgentMessage, type AgentTool } from '@earendil-works/pi-agent-core'
 import type { AssistantMessage, Model } from '@earendil-works/pi-ai'
 import { streamSimple } from '@earendil-works/pi-ai/api/openai-completions'
-import { Credits, GrantsPage, Packs, UsagePeriod } from '../credits'
+import { Credits, GrantsPage, Packs } from '../credits'
 import { answering, HOSTED_ONLY, type OwnSetup } from '../models'
 import { askUser, previewCall, toAgentTool, type Reporter } from './calls'
 import { addUsage, detailsOf, recent, textOf, usedTools } from './history'
@@ -120,6 +120,8 @@ export class CopilotAgent {
    * The conversation carries over to the next question. A question that fails or is stopped keeps
    * only the tools it used and how they ended, so the model learns what already happened (a tool may
    * have changed a page) but never sees a half-finished reply. If it used no tool, it is dropped.
+   * The result carries the conversation with the question in it (`conversation`), which is the one to
+   * save: after a reset() that stopped the question, history() is the next conversation's.
    *
    * `confirm` is asked before each run of a tool that needs confirmation. Without it, such tools
    * are declined. `extras` go with the question, and are saved with it.
@@ -160,8 +162,8 @@ export class CopilotAgent {
     // the question left nothing behind; a retry runs the whole question again, so after it used a
     // tool (which is now in the conversation), ask the user to repeat it instead.
     if (failure && this.provider.modelChanged(failure) && epoch === this.epoch) {
-      // What the first try sent counts even when the question goes no further.
-      const counted = detailsOf(result)
+      // What the first try sent counts even when the question goes no further, and so does what it kept.
+      const counted = { ...detailsOf(result), ...(result.conversation && { conversation: result.conversation }) }
       try {
         this.model = await this.provider.loadModel()
       } catch (err) {
@@ -380,10 +382,14 @@ export class CopilotAgent {
       const result: AskResult = stopped
         ? { status: 'stopped' }
         : { status: 'error', message: failure!.text, ...(failure!.code ? { code: failure!.code } : {}) }
-      return { result: { ...result, ...counted }, kept: kept.length > 0, failure: stopped ? undefined : failure }
+      return {
+        result: { ...result, ...counted, ...(kept.length > 0 && { conversation: this.historyOf(agent) }) },
+        kept: kept.length > 0,
+        failure: stopped ? undefined : failure,
+      }
     }
     const result: AskResult = hitLimit ? { status: 'step_limit', steps } : { status: 'done' }
-    return { result: { ...result, ...counted }, kept: true }
+    return { result: { ...result, ...counted, conversation: this.historyOf(agent) }, kept: true }
   }
 
   /** How many times the model was called for the latest question, once `ask` resolved: 0 when it never got that far. */
@@ -401,7 +407,8 @@ export class CopilotAgent {
 
   /**
    * Starts another conversation: a new one, or `history` to continue a saved one. A question still
-   * running is stopped first. It looks up the model again.
+   * running is stopped first, as stop() stops it: its ask() resolves with the conversation it was
+   * asked in, which this agent no longer holds. It looks up the model again.
    */
   async reset(history: HistoryMessage[] = []): Promise<void> {
     this.epoch++
@@ -423,8 +430,11 @@ export class CopilotAgent {
    * is still changing.
    */
   history(): HistoryMessage[] {
-    if (!this.agent) return this.initial
-    return this.agent.state.messages.flatMap((m) => this.toHistory(m))
+    return this.agent ? this.historyOf(this.agent) : this.initial
+  }
+
+  private historyOf(agent: Agent): HistoryMessage[] {
+    return agent.state.messages.flatMap((m) => this.toHistory(m))
   }
 
   private toHistory(message: AgentMessage): HistoryMessage[] {
@@ -638,15 +648,7 @@ export class CopilotAgent {
     return readOwn(this.config, 'credits/grants', { before }, GrantsPage)
   }
 
-  /**
-   * Credits used per day over one period: the most recent one, or the one that ends before the day
-   * `before` (the `earlier` of the period after it). Read only when the user opens the history.
-   */
-  async creditUsage(before?: string): Promise<UsagePeriod> {
-    return readOwn(this.config, 'credits/usage', { utc_offset: utcOffset(), before }, UsagePeriod)
-  }
-
-  /** The packs of credits on offer. Read when the settings page opens. */
+  /** The packs of credits on offer. Read when the Credits page opens. */
   async creditPacks(): Promise<Packs> {
     return readOwn(this.config, 'billing/packs', {}, Packs)
   }

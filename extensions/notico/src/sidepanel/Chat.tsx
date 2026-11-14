@@ -60,6 +60,7 @@ import { ComposerPages, SentPages, type Chip } from './Pages'
 import { SaveButton, SaveToast, useSaves, type SaveState } from './Save'
 import { Sessions, type OpenResult } from './Sessions'
 import { ChatStart } from './Suggestions'
+import { CreditsPage } from './Credits'
 import { Settings } from './Settings'
 import { ToolCall, type ShownTool } from './ToolCall'
 
@@ -119,7 +120,7 @@ type Shown =
       parts: Part[]
       /** Why the question failed; shown below what the agent already did. */
       error?: string
-      /** The question was refused for lack of credits: the error leads to the settings page. */
+      /** The question was refused for lack of credits: the error leads to the Credits page. */
       outOfCredits?: boolean
       stopped?: boolean
       note?: string
@@ -161,11 +162,11 @@ export function Chat({ userId }: { userId: string }) {
   const pending = useRef(new Map<string, (allow: boolean) => void>())
   const accountButtonRef = useRef<HTMLButtonElement>(null)
   const modelButtonRef = useRef<HTMLButtonElement>(null)
-  const [view, setView] = useState<'chat' | 'sessions' | 'settings'>('chat')
-  // Opened from the model menu's "Manage models": the settings page puts the focus on Providers.
+  const [view, setView] = useState<'chat' | 'sessions' | 'credits' | 'settings'>('chat')
+  // Opened from the model menu's "Manage models": the Settings page puts the focus on Providers.
   const [settingsAt, setSettingsAt] = useState<'providers'>()
   const [credits, setCredits] = useState<CreditsState>({ status: 'loading' })
-  // Reads can overlap (a question ends while the settings page loads); only the newest one counts.
+  // Reads can overlap (a question ends while the Credits page loads); only the newest one counts.
   const creditReads = useRef(0)
   // Opening the panel starts a new session; it gets an id when its first question is sent.
   const [current, setCurrent] = useState<Current>()
@@ -183,6 +184,10 @@ export function Chat({ userId }: { userId: string }) {
   const deleted = useRef(new Set<string>())
   // The save in progress, if any; the next one waits for it.
   const saving = useRef(Promise.resolve())
+  // The questions that have not ended, each with the session it was asked in: also one of a session
+  // the user has left, which was stopped then and ends on its own time (a Notion request already sent
+  // is not cut short). `ended` settles once its save, if it has one, is in `saving`.
+  const asking = useRef(new Set<{ session: Current; ended: Promise<void> }>())
   const tokenRef = useRef(getToken)
   tokenRef.current = getToken
   // Which model answers: read once for this account, then changed on the settings page. Each
@@ -446,10 +451,10 @@ export function Chat({ userId }: { userId: string }) {
 
   /**
    * Reads the user's credits from the worker: when the panel loads, after each question, and when
-   * the account menu or the settings page opens. The read after a question keeps the menu current
+   * the account menu or the Credits page opens. The read after a question keeps the menu current
    * without a wait; the one on opening catches what that read can miss: a reply the user stopped is
    * charged after the panel has gone on, and another window may have spent credits. A read that
-   * fails never touches the chat: the menu and the settings page say the credits are unavailable.
+   * fails never touches the chat: the menu and the Credits page say the credits are unavailable.
    */
   async function readCredits() {
     const read = ++creditReads.current
@@ -488,18 +493,29 @@ export function Chat({ userId }: { userId: string }) {
     await chrome.tabs.create({ url })
   }
 
+  function openCredits() {
+    setView('credits')
+    void readCredits()
+  }
+
   function openSettings(at?: 'providers') {
     track({ event: 'settings_opened' })
     setSettingsAt(at)
     setView('settings')
-    void readCredits()
   }
 
-  /** Closes the settings page and puts the focus back on what led to it: the model chip, or the avatar. */
-  function closeSettings() {
+  // Closing a page puts the focus back on what led to it (the model chip, or the avatar), once the
+  // header it is in is no longer covered (and inert).
+  const focusAfter = useRef<HTMLElement | null>(null)
+  function closePage() {
+    focusAfter.current = (view === 'settings' && settingsAt === 'providers' ? modelButtonRef : accountButtonRef).current
     setView('chat')
-    ;(settingsAt === 'providers' ? modelButtonRef : accountButtonRef).current?.focus()
   }
+  useEffect(() => {
+    if (view !== 'chat' || !focusAfter.current) return
+    focusAfter.current.focus()
+    focusAfter.current = null
+  }, [view])
 
   async function send() {
     const text = input.trim()
@@ -646,8 +662,12 @@ export function Chat({ userId }: { userId: string }) {
         })
     }
 
-    const before = agent.history().length
+    // The conversation with this question in it, once it ended, if the question is part of it.
+    let conversation: HistoryMessage[] | undefined
     let answered = false
+    let ended!: () => void
+    const question = { session, ended: new Promise<void>((resolve) => (ended = resolve)) }
+    asking.current.add(question)
     try {
       // A page search still out goes first: Notion is asked one thing at a time. If it was turned
       // away, so is the question, which sends nothing; and so it does when the user stopped it, or
@@ -684,6 +704,7 @@ export function Chat({ userId }: { userId: string }) {
         tool_calls: toolCalls,
       })
       answered = result.status === 'done'
+      conversation = result.conversation
       const { requests, tokens, model, cost } = result
       updateReply((m) => ({ ...m, details: { requests, tokens, model, cost } }))
       if (result.status === 'stopped') {
@@ -707,20 +728,24 @@ export function Chat({ userId }: { userId: string }) {
       void readCredits()
       // Another session that opened meanwhile already unlocked the composer, and the agent holds
       // that session now.
-      if (chatId.current === id) {
-        setBusy(false)
-        // A question that failed or was stopped before using a tool leaves the conversation as it
-        // was; don't move the session to the top of the list for it. One that used tools keeps them.
-        const messages = agent.history()
-        if (messages.length !== before) {
-          // One at a time: each save starts from the `updatedAt` the one before it stored.
-          saving.current = saving.current.then(() => save(session, messages, id, reply))
-        }
-        if (answered && !session.titled) {
+      const here = chatId.current === id
+      if (here) setBusy(false)
+      // A question that failed or was stopped before using a tool leaves the conversation as it
+      // was; don't move the session to the top of the list for it. One that used tools keeps them,
+      // in the session it was asked in: leaving that session stopped the question like Stop does, and
+      // what it already did there must not be done again when the session is continued.
+      if (conversation) {
+        const messages = conversation
+        // One at a time: each save starts from the `updatedAt` the one before it stored.
+        saving.current = saving.current.then(() => save(session, messages, id, reply))
+        // Only for the open session: the agent asks the model it holds, which is that session's.
+        if (here && answered && !session.titled) {
           session.titled = true
           void title(session, messages)
         }
       }
+      asking.current.delete(question)
+      ended()
     }
   }
 
@@ -782,7 +807,10 @@ export function Chat({ userId }: { userId: string }) {
     })
   }
 
-  /** Switches to a new session, or to a saved one; a reply still coming in is stopped. */
+  /**
+   * Switches to a new session, or to a saved one. A question still being answered is stopped, as Stop
+   * stops it, and saved to the session it was asked in when it has ended (see `send`).
+   */
   function switchTo(session?: Session) {
     chatId.current++
     // A failed save's message belongs to the chat it was for.
@@ -840,7 +868,11 @@ export function Chat({ userId }: { userId: string }) {
     declineAll()
     stopped.current++
     agent.stop()
-    // A save of this panel's still waiting to write would otherwise look like another window's later.
+    // A question asked in this very session may still be ending (the user left it for a new chat, and
+    // comes back): it is saved to the session once it has, so wait for it. That save, like any of this
+    // panel's still waiting to write, would otherwise look like another window's later, and the
+    // session would open without the question. A question of any other session is not waited for.
+    await Promise.all([...asking.current].filter((q) => q.session.id === id).map((q) => q.ended))
     await saving.current
     const session = await store.get(id)
     if (overtaken()) return 'opened'
@@ -882,9 +914,10 @@ export function Chat({ userId }: { userId: string }) {
   }
 
   const listOpen = view === 'sessions'
-  const settingsOpen = view === 'settings'
-  // The chat stays on screen, or mounted, behind the session list and the settings page, out of reach until they close.
-  const covered = listOpen || settingsOpen
+  // A page (Credits or Settings) covers the whole panel, the header included.
+  const pageOpen = view === 'credits' || view === 'settings'
+  // The chat stays on screen, or mounted, behind the session list and the pages, out of reach until they close.
+  const covered = listOpen || pageOpen
   // The model's title, or until it has one the session's first question, on one line; the header cuts it to fit.
   const headerTitle =
     modelTitle ??
@@ -939,8 +972,8 @@ export function Chat({ userId }: { userId: string }) {
 
   return (
     <>
-      <Header title={headerTitle || <span className="untitled">New chat</span>}>
-        {/* Not while the list or settings cover the chat: what it saves, and its toast, are behind them. */}
+      <Header title={headerTitle || <span className="untitled">New chat</span>} inert={pageOpen}>
+        {/* Not while the list or a page covers the chat: what it saves, and its toast, are behind them. */}
         {asked > 0 && !covered && (
           <SaveButton
             what="chat"
@@ -975,6 +1008,7 @@ export function Chat({ userId }: { userId: string }) {
         <AccountMenu
           credits={credits}
           onOpen={() => void readCredits()}
+          onCredits={openCredits}
           onSettings={() => openSettings()}
           buttonRef={accountButtonRef}
         />
@@ -1030,7 +1064,7 @@ export function Chat({ userId }: { userId: string }) {
                       {m.outOfCredits && (
                         <>
                           {' '}
-                          <button type="button" className="link" onClick={() => openSettings()}>
+                          <button type="button" className="link" onClick={openCredits}>
                             Buy credits
                           </button>
                         </>
@@ -1130,32 +1164,27 @@ export function Chat({ userId }: { userId: string }) {
             onDeleted={(id) => {
               track({ event: 'chat_deleted' })
               deleted.current.add(id)
-              // The open session is being deleted: stop its reply, so it isn't saved back.
+              // The open session is being deleted: stop its reply. No save brings the session back.
               if (id !== current?.id) return
               switchTo()
               setView('sessions')
             }}
           />
         )}
-
-        {settingsOpen && (
-          <div className="page-layer">
-            <Settings
-              credits={credits}
-              onRetry={() => void readCredits()}
-              history={{
-                grants: (before) => agent.creditGrants(before),
-                usage: (before) => agent.creditUsage(before),
-              }}
-              model={model}
-              onModelChange={changeModel}
-              at={settingsAt}
-              buying={{ packs: () => agent.creditPacks(), buy: buyCredits }}
-              onClose={closeSettings}
-            />
-          </div>
-        )}
       </div>
+
+      {view === 'credits' && (
+        <CreditsPage
+          credits={credits}
+          onRetry={() => void readCredits()}
+          grants={(before) => agent.creditGrants(before)}
+          buying={{ packs: () => agent.creditPacks(), buy: buyCredits }}
+          onClose={closePage}
+        />
+      )}
+      {view === 'settings' && (
+        <Settings model={model} onModelChange={changeModel} at={settingsAt} onClose={closePage} />
+      )}
     </>
   )
 }
