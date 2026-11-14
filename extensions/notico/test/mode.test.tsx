@@ -198,7 +198,7 @@ describe('Read only', () => {
     await answered()
 
     await browser.openPanel()
-    await user.click(screen.getByRole('button', { name: 'Sessions' }))
+    await user.click(screen.getByRole('button', { name: 'Chats' }))
     await user.click(await screen.findByRole('button', { name: /^First\?/ }))
     await conversation().findByText('Second answer.')
     const [first, second] = [conversation().getByText('First?'), conversation().getByText('Second?')]
