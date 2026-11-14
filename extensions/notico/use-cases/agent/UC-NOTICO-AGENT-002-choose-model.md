@@ -57,4 +57,4 @@ Key constraints:
 | --- | --- | --- | --- |
 | UC-NOTICO-AGENT-002-S09 | P0 | ✅ | Given a user who turned OpenRouter on with a real key and chose a recommended model; when they ask about the open Notion page; then the model reads the page with a tool and answers from it. |
 | UC-NOTICO-AGENT-002-S16 | P1 | ✅ | Given a user who turned DeepSeek on with a real DeepSeek key and chose a DeepSeek model; when they ask about the open Notion page; then the model reads the page with a tool and answers from it. |
-| UC-NOTICO-AGENT-002-S24 | P1 | 🚧 | Given a real OpenRouter or DeepSeek key; when the user checks it in Settings; then the provider's account endpoint answers, the key is saved, and the balance shows where the provider reports one. |
+| UC-NOTICO-AGENT-002-S24 | P1 | ✅ | Given a real OpenRouter or DeepSeek key; when the user checks it in Settings; then the provider's account endpoint answers, the key is saved, and the balance shows where the provider reports one. |
