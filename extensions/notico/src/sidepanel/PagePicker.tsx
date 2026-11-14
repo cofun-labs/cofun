@@ -1,6 +1,6 @@
 import { useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
 import type { QuestionPage } from '../agent'
-import { NotionError } from '../notion/api'
+import { LIMITED_STOP, NotionError } from '../notion/api'
 import { pageIdFromUrl } from '../notion/hosts'
 import { findPages, openNotionPages, type FoundPage } from '../tools'
 import { Icon } from './icons'
@@ -101,10 +101,10 @@ export function usePagePicker({
   onKeyDown: (e: KeyboardEvent) => boolean
   activeId?: string
   /**
-   * Resolves once no search is out, with whether Notion turned the last one away: a question sent
-   * meanwhile waits for it, so the two never ask Notion at once.
+   * Resolves once no search is out, with what the user is told when Notion turned that one away: a
+   * question sent meanwhile waits for it, so the two never ask Notion at once, and stops with it.
    */
-  settled: () => Promise<boolean>
+  settled: () => Promise<string | undefined>
   /**
    * Some page's title may hold the query: one listed does, or the pages in the browser or the
    * workspace search are still to come.
@@ -122,7 +122,7 @@ export function usePagePicker({
   const running = useRef(false)
   const timer = useRef<ReturnType<typeof setTimeout>>(undefined)
   // The search that is out, if one is: resolves with whether Notion turned it away.
-  const out = useRef<Promise<boolean>>(undefined)
+  const out = useRef<Promise<string | undefined>>(undefined)
 
   // The pages already in the browser, read each time the picker opens: no Notion request.
   useEffect(() => {
@@ -153,14 +153,15 @@ export function usePagePicker({
     // A failure stops searching for the question this search was sent for, not the one after it.
     const stopSearch = onStopRef.current
     setSearch({ status: 'searching' })
-    let turnedAway!: (limited: boolean) => void
-    out.current = new Promise<boolean>((resolve) => (turnedAway = resolve))
-    let limited = false
+    let turnedAway!: (stopsQuestion: string | undefined) => void
+    out.current = new Promise<string | undefined>((resolve) => (turnedAway = resolve))
+    let stopsQuestion: string | undefined
     try {
       const pages = await findPages(sending, SEARCH_LIMIT)
       if (wanted.current === sending) setSearch({ status: 'done', pages })
     } catch (err) {
-      limited = err instanceof NotionError && err.code === 'rate_limited'
+      const limited = err instanceof NotionError && err.code === 'rate_limited'
+      if (limited) stopsQuestion = err.stopsQuestion ?? LIMITED_STOP
       // Never retried, nor worked around: no more searches for this question. A failure that comes
       // after its question was sent leaves the next question's query to go on.
       const stopped = stopSearch(
@@ -170,7 +171,7 @@ export function usePagePicker({
     } finally {
       running.current = false
       out.current = undefined
-      turnedAway(limited)
+      turnedAway(stopsQuestion)
     }
     // A newer query waited for this search; if its pause is over too, it goes now.
     if (wanted.current !== undefined && wanted.current !== sending && timer.current === undefined) void run()
@@ -263,7 +264,7 @@ export function usePagePicker({
     return false
   }
 
-  const settled = () => out.current ?? Promise.resolve(false)
+  const settled = () => out.current ?? Promise.resolve(undefined)
 
   if (!open) return { element: null, onKeyDown, settled, titleMatch: true }
 

@@ -30,7 +30,7 @@ Key constraints:
 | UC-CHAT-004-S07 | P1 | ✅ | Given a page added to a question; when it is sent; then the AI is told the open page and the added page by title and address, nothing is read from Notion ahead of it, the question shows both pages, also after the session is reopened, and the next question starts with only the open page. |
 | UC-CHAT-004-S08 | P1 | ✅ | Given the open page taken off the question; when the user picks it in the picker and then moves the tab to another page; then it goes with the question as an added page, next to the new open page. |
 | UC-CHAT-004-S10 | P1 | ✅ | Given a message with an `@` followed by ordinary words, such as "thanks @bob", "Meet me @ 5pm", or "ping @team about it"; when the user presses Enter, at once or after a pause; then the message is sent as typed and no page is added in place of the words, while words that a page's title holds, also one only the workspace search finds, still list that page. |
-| UC-CHAT-004-S11 | P1 | ✅ | Given a question being answered; when the user types a page's name after an `@`; then the workspace is not searched until the answer is done, and then it is; and given a page search Notion turns away while a question is sent; then the question stops with Notion's busy message, without asking the AI or Notion anything. |
+| UC-CHAT-004-S11 | P1 | ✅ | Given a question being answered; when the user types a page's name after an `@`; then the workspace is not searched until the answer is done, and then it is; and given a page search Notion turns away while a question is sent; then the question stops with Notion's busy message, without asking the AI or Notion anything; and a question the user stops, or leaves for a new chat, while it waits for a search is never asked. |
 
 ### ai-e2e
 

@@ -448,6 +448,29 @@ describe('UC-CHAT-004 add pages to a question', () => {
     expect(await within(picker()!).findByRole('option', { name: /Launch plan/ })).toBeVisible()
     expect(searches(tab)).toHaveLength(3)
     expect(screen.queryByText(/Notion is busy/)).not.toBeInTheDocument()
+    await user.keyboard('{Escape}')
+    await user.clear(composer())
+
+    // A question stopped, or left for a new chat, while it waits for a search is never asked.
+    for (const leave of ['Stop', 'New chat']) {
+      tab.respond('search', 200, searchAnswer())
+      const answer = tab.hold('search')
+      const before = searches(tab).length
+      await user.type(composer(), 'Go @road')
+      await pause()
+      await waitFor(() => expect(searches(tab)).toHaveLength(before + 1))
+      const asked = browser.ai.calls.length
+      await user.click(screen.getByRole('button', { name: 'Send' }))
+      await user.click(screen.getByRole('button', { name: leave }))
+      await act(async () => answer())
+      await answered()
+      expect(browser.ai.calls).toHaveLength(asked)
+      if (leave === 'Stop') expect(conversation().getAllByText('Stopped').at(-1)).toBeVisible()
+    }
+    // The new chat answers its own question.
+    browser.ai.script.push({ reply: 'Fresh.' })
+    await user.type(composer(), 'Hello{Enter}')
+    expect(await screen.findByText('Fresh.')).toBeVisible()
   })
 
   it('[UC-CHAT-004-S08] the open page taken off and picked again goes with the question, also once the tab moves on', async () => {

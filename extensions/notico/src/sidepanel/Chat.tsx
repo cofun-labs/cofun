@@ -10,7 +10,6 @@ import {
 } from '../agent'
 import type { CreditsState } from '../credits'
 import { HOSTED_ONLY, loadModelSettings, saveModelSettings, watchModelSettings, type ModelSettings } from '../models'
-import { LIMITED_STOP } from '../notion/api'
 import { countNotionRequests } from '../notion/tab'
 import { SessionStore, titleFor, type Session } from '../sessions'
 import { carryPages, currentNotionPage, forgetReads, pagesIn, TOOLS, touchedBy, type OpenPage } from '../tools'
@@ -136,6 +135,9 @@ export function Chat({ userId }: { userId: string }) {
   const [saved, setSaved] = useState(0)
   // Bumped when another session opens, so updates still arriving for the old one are dropped.
   const chatId = useRef(0)
+  // Bumped by every Stop, and every switch to another chat: a question still waiting to be asked
+  // (see `send`) is not asked then.
+  const stopped = useRef(0)
   // Bumped by every open() and by sending: a session still loading when either happens is not opened.
   const opening = useRef(0)
   // Sessions deleted in this panel; a save still waiting to write must not bring one back.
@@ -542,9 +544,16 @@ export function Chat({ userId }: { userId: string }) {
     let answered = false
     try {
       // A page search still out goes first: Notion is asked one thing at a time. If it was turned
-      // away, so is the question, which sends nothing.
-      if (await pages.settled()) {
-        updateReply((m) => ({ ...m, error: LIMITED_STOP }))
+      // away, so is the question, which sends nothing; and so it does when the user stopped it, or
+      // went to another chat, meanwhile.
+      const stops = stopped.current
+      const turnedAway = await pages.settled()
+      if (stopped.current !== stops) {
+        updateReply((m) => ({ ...m, stopped: true }))
+        return
+      }
+      if (turnedAway) {
+        updateReply((m) => ({ ...m, error: turnedAway }))
         return
       }
       const result = await agent.ask(text, onUpdate, confirm, { context, pages: sentPages })
@@ -644,6 +653,7 @@ export function Chat({ userId }: { userId: string }) {
   /** Switches to a new session, or to a saved one; a reply still coming in is stopped. */
   function switchTo(session?: Session) {
     chatId.current++
+    stopped.current++
     declineAll()
     // Another conversation: the agent must read pages again before it edits them.
     forgetReads()
@@ -684,6 +694,7 @@ export function Chat({ userId }: { userId: string }) {
     }
     // Stop the reply now, not once the session has loaded: it must not finish in the meantime.
     declineAll()
+    stopped.current++
     agent.stop()
     const chat = chatId.current
     const token = ++opening.current
@@ -702,6 +713,7 @@ export function Chat({ userId }: { userId: string }) {
     if (busy) {
       setStopping(true)
       declineAll()
+      stopped.current++
       agent.stop()
     } else send()
   }
