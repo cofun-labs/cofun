@@ -21,7 +21,7 @@ const composer = () => screen.getByRole('textbox', { name: 'Message' })
 /** The conversation, without the header above it, which also shows the first question. */
 const conversation = () => within(screen.getByRole('main'))
 /** The session list, while it is open. */
-const sessionList = () => within(screen.getByRole('dialog', { name: 'Sessions' }))
+const sessionList = () => within(screen.getByRole('dialog', { name: 'Chats' }))
 
 async function ask(user: UserEvent, question: string) {
   await user.type(composer(), question)
@@ -613,7 +613,7 @@ describe('the page a question goes with', () => {
     // Reopened in a new panel, on another site.
     browser.tab.url = INBOX
     await browser.openPanel()
-    await user.click(screen.getByRole('button', { name: 'Sessions' }))
+    await user.click(screen.getByRole('button', { name: 'Chats' }))
     await user.click(await sessionList().findByRole('button', { name: /^With\?/ }))
     await conversation().findByText('With?')
     shows()
@@ -698,7 +698,7 @@ describe('sessions', () => {
   }
 
   async function openSession(user: UserEvent, title: RegExp) {
-    await user.click(screen.getByRole('button', { name: 'Sessions' }))
+    await user.click(screen.getByRole('button', { name: 'Chats' }))
     await user.click(await screen.findByRole('button', { name: title }))
   }
 
@@ -921,8 +921,8 @@ describe('sessions', () => {
     expect(screen.queryByText('Who owns the launch?')).not.toBeInTheDocument()
     expect(composer()).toHaveValue('')
 
-    await user.click(screen.getByRole('button', { name: 'Sessions' }))
-    const sessions = await within(await screen.findByRole('dialog', { name: 'Sessions' })).findAllByRole('button', {
+    await user.click(screen.getByRole('button', { name: 'Chats' }))
+    const sessions = await within(await screen.findByRole('dialog', { name: 'Chats' })).findAllByRole('button', {
       name: /Fixture page/,
     })
     // Most recently used first, each with its first question and the page it started on.
@@ -950,7 +950,7 @@ describe('sessions', () => {
     await screen.findByText('Three milestones.')
     await answered()
 
-    await user.click(screen.getByRole('button', { name: 'Sessions' }))
+    await user.click(screen.getByRole('button', { name: 'Chats' }))
     const rows = () =>
       sessionList()
         .queryAllByRole('button', { name: /Fixture page/ })
@@ -971,7 +971,7 @@ describe('sessions', () => {
     expect(browser.sentToWorker.filter((sent) => sent.includes('/v1/chat/completions'))).toHaveLength(2)
 
     // The list search matches the title, not the question it replaced.
-    await user.type(screen.getByRole('searchbox', { name: 'Search sessions' }), 'MILESTONES')
+    await user.type(screen.getByRole('searchbox', { name: 'Search chats' }), 'MILESTONES')
     expect(rows()).toHaveLength(1)
     await user.clear(screen.getByRole('searchbox'))
     await user.type(screen.getByRole('searchbox'), 'What is on')
@@ -989,7 +989,7 @@ describe('sessions', () => {
     await ask(user, 'When is it?')
     await screen.findByText('Next week.')
     await answered()
-    await user.click(screen.getByRole('button', { name: 'Sessions' }))
+    await user.click(screen.getByRole('button', { name: 'Chats' }))
     await waitFor(() => expect(rows()).toEqual([expect.stringMatching(/^Roadmap milestones overviewFixture page/)]))
     expect(browser.titles.calls).toHaveLength(1)
   })
@@ -1014,7 +1014,7 @@ describe('sessions', () => {
     await answered()
 
     await waitFor(() => expect(browser.titles.calls).toHaveLength(2))
-    await user.click(screen.getByRole('button', { name: 'Sessions' }))
+    await user.click(screen.getByRole('button', { name: 'Chats' }))
     const rows = () =>
       sessionList()
         .queryAllByRole('button', { name: /Fixture page/ })
@@ -1065,8 +1065,8 @@ describe('sessions', () => {
 
   it('the session list closes from its Close button, the Sessions button, or Escape, back to the chat', async () => {
     const { user } = await openPanel()
-    const toggle = screen.getByRole('button', { name: 'Sessions' })
-    const list = () => screen.queryByRole('dialog', { name: 'Sessions' })
+    const toggle = screen.getByRole('button', { name: 'Chats' })
+    const list = () => screen.queryByRole('dialog', { name: 'Chats' })
 
     await user.click(toggle)
     expect(list()).toBeVisible()
@@ -1104,23 +1104,23 @@ describe('sessions', () => {
     await screen.findByText('Alice.')
     await answered()
 
-    await user.click(screen.getByRole('button', { name: 'Sessions' }))
+    await user.click(screen.getByRole('button', { name: 'Chats' }))
     const rows = () =>
       sessionList()
         .queryAllByRole('button', { name: /Fixture page/ })
         .map((b) => b.textContent)
-    await within(await screen.findByRole('dialog', { name: 'Sessions' })).findAllByRole('button', {
+    await within(await screen.findByRole('dialog', { name: 'Chats' })).findAllByRole('button', {
       name: /Fixture page/,
     })
     // Only search by title: there is no other filter.
     expect(screen.queryByRole('combobox')).not.toBeInTheDocument()
-    await user.type(screen.getByRole('searchbox', { name: 'Search sessions' }), 'ROADMAP')
+    await user.type(screen.getByRole('searchbox', { name: 'Search chats' }), 'ROADMAP')
     expect(rows()).toEqual([expect.stringMatching(/^What is on the roadmap\?/)])
     await user.clear(screen.getByRole('searchbox'))
     expect(rows()).toHaveLength(2)
 
     // The first click only asks; the second deletes.
-    const [first] = screen.getAllByRole('button', { name: 'Delete session' })
+    const [first] = screen.getAllByRole('button', { name: 'Delete chat' })
     await user.click(first)
     expect(rows()).toHaveLength(2)
     await user.click(screen.getByRole('button', { name: 'Delete?' }))
@@ -1159,7 +1159,7 @@ describe('sessions', () => {
     expect(JSON.stringify(browser.sentToModel())).not.toContain('launch')
 
     // The stopped question left no session behind either.
-    await user.click(screen.getByRole('button', { name: 'Sessions' }))
+    await user.click(screen.getByRole('button', { name: 'Chats' }))
     expect(await screen.findByRole('button', { name: /What is on the roadmap\?/ })).toBeVisible()
     expect(screen.queryByRole('button', { name: /Who owns the launch\?/ })).not.toBeInTheDocument()
   })
@@ -1200,22 +1200,22 @@ describe('a saved session that can no longer be read', () => {
     await twoSessions(browser, user)
     await writeSaved('sessions', { id: 'old', title: { text: 'Old chat' } })
 
-    await user.click(screen.getByRole('button', { name: 'Sessions' }))
+    await user.click(screen.getByRole('button', { name: 'Chats' }))
     const list = sessionList()
     await list.findByRole('button', { name: /What is on the roadmap\?/ })
     expect(list.getByRole('button', { name: /Who owns the launch\?/ })).toBeVisible()
-    const row = list.getByText('Unreadable session').closest('li')!
+    const row = list.getByText('Unreadable chat').closest('li')!
     expect(within(row).getByText(/can't be opened/)).toBeVisible()
     // Its only button deletes it.
     expect(
       within(row)
         .getAllByRole('button')
         .map((b) => b.getAttribute('aria-label')),
-    ).toEqual(['Delete session'])
+    ).toEqual(['Delete chat'])
 
-    await user.click(within(row).getByRole('button', { name: 'Delete session' }))
+    await user.click(within(row).getByRole('button', { name: 'Delete chat' }))
     await user.click(within(row).getByRole('button', { name: 'Delete?' }))
-    await waitFor(() => expect(list.queryByText('Unreadable session')).not.toBeInTheDocument())
+    await waitFor(() => expect(list.queryByText('Unreadable chat')).not.toBeInTheDocument())
     expect(list.getAllByRole('button', { name: /Fixture page/ })).toHaveLength(2)
   })
 
@@ -1243,7 +1243,7 @@ describe('a saved session that can no longer be read', () => {
     await conversation().findByText(/^The launch/)
     const calls = browser.ai.calls.length
 
-    await user.click(screen.getByRole('button', { name: 'Sessions' }))
+    await user.click(screen.getByRole('button', { name: 'Chats' }))
     await user.click(await sessionList().findByRole('button', { name: /What is on the roadmap\?/ }))
 
     expect(await sessionList().findByRole('alert')).toHaveTextContent(/can't be opened/)
@@ -1258,9 +1258,9 @@ describe('a saved session that can no longer be read', () => {
     await answered()
     expect(browser.ai.calls).toHaveLength(calls)
 
-    await user.click(screen.getByRole('button', { name: 'Sessions' }))
+    await user.click(screen.getByRole('button', { name: 'Chats' }))
     const row = (await sessionList().findByText('What is on the roadmap?')).closest('li')!
-    await user.click(within(row).getByRole('button', { name: 'Delete session' }))
+    await user.click(within(row).getByRole('button', { name: 'Delete chat' }))
     await user.click(within(row).getByRole('button', { name: 'Delete?' }))
     await waitFor(() => expect(sessionList().queryByText('What is on the roadmap?')).not.toBeInTheDocument())
   })

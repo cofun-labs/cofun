@@ -351,9 +351,9 @@ describe('UC-CHAT-004 add pages to a question', () => {
 
     tab.url = 'https://mail.example.com/inbox'
     await browser.openPanel()
-    await user.click(screen.getByRole('button', { name: 'Sessions' }))
+    await user.click(screen.getByRole('button', { name: 'Chats' }))
     await user.click(
-      await within(screen.getByRole('dialog', { name: 'Sessions' })).findByRole('button', { name: /^Compare this/ }),
+      await within(screen.getByRole('dialog', { name: 'Chats' })).findByRole('button', { name: /^Compare this/ }),
     )
     await conversation().findByText('Compare this with and the notes')
     expect(pagesSent()).toEqual([['Fixture page', 'Roadmap']])

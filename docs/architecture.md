@@ -81,6 +81,8 @@ The user adds more pages to a question with `@` in the composer or its "+" butto
 
 ### Sessions
 
+A saved conversation is a *session* in code and a *chat* in everything users read (the side panel, the README, the privacy policy, the store listing); session names in code and storage stay as they are, so that renaming them never loses saved data.
+
 Conversations are saved in the extension's IndexedDB, one database per Clerk user (`notico-sessions-<userId>`), and never sent to the worker beyond what the model needs for the current question. They stay after sign-out so the user can pick up again, and they are not encrypted: keeping accounts apart only means one account's panel never shows another's sessions. Anyone with access to the Chrome profile can read them, tool results included, such as the content of Notion pages the agent read (for example in DevTools).
 
 What is read back is parsed against the session's schemas (`SessionInfo` in `sessions.ts`, `HistoryMessage` in `src/agent/types.ts`), since an earlier version may have saved it in another form. A session that doesn't parse is unreadable: the list shows it as such and offers only to delete it, and it is never opened, so nothing of it reaches the chat or the model. There is no migration or format version yet; they come with the first change to the format that is not only an added optional field.
