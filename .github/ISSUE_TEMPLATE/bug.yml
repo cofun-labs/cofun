@@ -1,0 +1,24 @@
+name: Bug report
+description: Something doesn't work as it should.
+title: "fix: "
+type: Bug
+body:
+  - type: markdown
+    attributes:
+      value: This repository is public. Don't paste private page content or account details.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what you saw.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+  - type: input
+    id: version
+    attributes:
+      label: Notico version and browser
+      placeholder: Notico 0.1.0, Chrome 131

@@ -1,0 +1,12 @@
+name: Feature request
+description: Something you want to do that you can't yet.
+title: "feat: "
+type: Feature
+body:
+  - type: textarea
+    id: goal
+    attributes:
+      label: What you want to do
+      description: The task or problem you have, not only the solution you have in mind.
+    validations:
+      required: true
