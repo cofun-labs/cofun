@@ -3,7 +3,10 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { LIMITED_STOP } from '../src/notion/api'
 import { countNotionRequests } from '../src/notion/tab'
-import { addComment, createPage, editPage, forgetReads, readPage } from '../src/tools'
+import { addComment } from '../src/tools/comments'
+import { forgetReads } from '../src/tools/memory'
+import { readPage } from '../src/tools/read'
+import { createPage, editPage } from '../src/tools/write'
 import { FakeNotionTab, FakeWorkspace, PAGE, PAGE_URL, SPACE, USER, notionError, restoreGlobals } from './notion-tab'
 
 // Each test is one question, as the side panel starts one per message.

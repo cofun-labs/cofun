@@ -22,7 +22,7 @@ const ModelSettings = z.object({
   use: z.enum(['hosted', 'openrouter', 'deepseek']),
   openRouter: z.object({ key: z.string().min(1), model: OwnModel }).optional(),
   /**
-   * The model by its id in DeepSeek's catalog (`DEEPSEEK_MODELS` in agent.ts), which has what it
+   * The model by its id in DeepSeek's catalog (`DEEPSEEK_MODELS` in agent/deepseek.ts), which has what it
    * costs and how it is asked: a saved copy would go stale as the catalog changes.
    */
   deepSeek: z.object({ key: z.string().min(1), model: z.string().min(1) }).optional(),

@@ -68,15 +68,15 @@ The agent loop and its tools run in the side panel. The worker only checks who i
 
 The panel is open on every tab, but the tools work on the current tab only: the active tab of the panel's window, looked up again for each question and each tool call, since the user can switch tabs at any time. Each question tells the model whether that tab is a Notion page (and which), and nothing else about a tab on another site. The Notion tools are offered everywhere; when the current tab is not on Notion they fail with `no_notion_tab`, which tells the model to send the user to a Notion page, and they never use a Notion page open in another tab instead. `get_current_tab` gives the model the current tab's URL and title on any site when a question needs them; no tool reads another site's content.
 
-The page a question goes with is shown at the top of the composer (`Pages.tsx`), read from the tab as Chrome reports it (`chrome.tabs` events, no Notion request), so the question carries what the user saw. The user can take it off; the question's note then names no page, and `carryPages` (`src/tools.ts`) makes every tool that would default to the open page (reading it, its comments, its database or selection, and `get_current_tab`) refuse for that question while the tab shows a Notion page, so the model asks or searches instead; on another site they work as they do without a page. The pages a question went with are saved with it in the session and shown in its bubble.
+The page a question goes with is shown at the top of the composer (`Pages.tsx`), read from the tab as Chrome reports it (`chrome.tabs` events, no Notion request), so the question carries what the user saw. The user can take it off; the question's note then names no page, and `carryPages` (`src/tools/current.ts`) makes every tool that would default to the open page (reading it, its comments, its database or selection, and `get_current_tab`) refuse for that question while the tab shows a Notion page, so the model asks or searches instead; on another site they work as they do without a page. The pages a question went with are saved with it in the session and shown in its bubble.
 
-The user adds more pages to a question with `@` in the composer or its "+" button, which open one picker (`PagePicker.tsx`). Its groups are the open page, the other Notion pages open in the browser's tabs (`chrome.tabs`), and recent pages, worked out from the saved sessions (the pages their questions carried, and those their tool calls read or changed, `pagesIn` in `src/tools.ts`): none asks anything of Notion. Its fourth group is Notion's own search of the workspace (`findPages`), sent from the Notion tab like any tool's request, and held to the same rules: only once typing pauses, one search at a time (a newer query replaces one still waiting, and waits for one already sent), counted toward no question, and never retried; when Notion turns one away, or one fails, the picker searches no more for that question. The picker and the agent never ask Notion at once: no search goes out while a question is answered, and a question sent while a search is out waits for it, and stops, sending nothing, if Notion turned that search away. The question carries the added pages as titles and URLs in its note (`carryPages`), not their content: the model reads them with its tools when it needs to. A page added by hand stays with the question when the tab moves; the open page's chip follows the tab.
+The user adds more pages to a question with `@` in the composer or its "+" button, which open one picker (`PagePicker.tsx`). Its groups are the open page, the other Notion pages open in the browser's tabs (`chrome.tabs`), and recent pages, worked out from the saved sessions (the pages their questions carried, and those their tool calls read or changed, `pagesIn` in `src/tools/index.ts`): none asks anything of Notion. Its fourth group is Notion's own search of the workspace (`findPages` in `src/tools/find.ts`), sent from the Notion tab like any tool's request, and held to the same rules: only once typing pauses, one search at a time (a newer query replaces one still waiting, and waits for one already sent), counted toward no question, and never retried; when Notion turns one away, or one fails, the picker searches no more for that question. The picker and the agent never ask Notion at once: no search goes out while a question is answered, and a question sent while a search is out waits for it, and stops, sending nothing, if Notion turned that search away. The question carries the added pages as titles and URLs in its note (`carryPages`), not their content: the model reads them with its tools when it needs to. A page added by hand stays with the question when the tab moves; the open page's chip follows the tab.
 
 | Area | Choice | Why |
 |---|---|---|
 | Extension | Chrome MV3 + [Side Panel API](https://developer.chrome.com/docs/extensions/reference/api/sidePanel) | Sits next to the page without covering Notion. One panel per window, on every tab (the manifest's `side_panel.default_path`), so the conversation stays as the user switches tabs |
 | Extension build | Vite + React + TypeScript | Clerk's extension SDK is React-based; Vite needs little config and no extension framework |
-| Agent runtime | [`@earendil-works/pi-agent-core`](https://www.npmjs.com/package/@earendil-works/pi-agent-core), wrapped in `extensions/notico/src/agent.ts` | Tool loop, events, abort, and tool hooks in a small package; it runs in the side panel because tools act on the browser. Only `agent.ts` imports it, so it can be replaced |
+| Agent runtime | [`@earendil-works/pi-agent-core`](https://www.npmjs.com/package/@earendil-works/pi-agent-core), wrapped in `extensions/notico/src/agent/` | Tool loop, events, abort, and tool hooks in a small package; it runs in the side panel because tools act on the browser. Only `src/agent/` imports it, so it can be replaced |
 | Notion read/write | Notion's own internal endpoints (`/api/v3/loadPageChunk` to read, `/api/v3/saveTransactionsFanout` to write), called from inside the user's Notion tab with `chrome.scripting` | Verified to read and write a real page, with edits persisting after reload. Requests are same-origin and carry the tab's own Notion session (sessions are per host: `app.notion.com` and `www.notion.so` don't share one), so no Notion integration token is needed. They run in an isolated world, out of the page's reach. No `chrome.debugger` (which shows a permanent "debugging this browser" banner). The trade-off: these are not public APIs and may change |
 
 ### Sessions
@@ -106,9 +106,30 @@ extensions/notico/        Notico, the extension for Notion
   icons/icon.svg          the extension icon; `pnpm icons` exports it into public/icons, which the manifest lists
   sidepanel.html
   src/background.ts       opens the side panel from the toolbar icon, on any tab
-  src/agent.ts            agent loop (pi), and the model providers it asks (the worker, OpenRouter, or DeepSeek); the only module that imports pi
+  src/agent/              the agent, and the only folder that imports pi (index.ts: what the rest of the extension uses)
+    agent.ts              the agent loop: a question, its tool calls, and the conversation it keeps
+    types.ts              the agent's types: its config, tools, updates, and the conversation as sessions save it
+    calls.ts              tool calls as pi runs them: arguments, previews, the user's OK, errors that stop a question
+    history.ts            what of a conversation is sent and kept, and what a question used
+    title.ts              a conversation's title, written by the model that answered it
+    provider.ts           ModelProvider: where model requests go, and how a service's errors read
+    worker.ts             the worker: the hosted model's provider, and the user's credits and purchases
+    openrouter.ts         OpenRouter with the user's own key, and its models
+    deepseek.ts           DeepSeek with the user's own key, and its models from pi's catalog
+    own.ts                the user's own model, and the settings page's check of it
   src/models.ts           which model answers, and the user's own keys, kept per account on the device
-  src/tools.ts            tools the agent runs in the extension
+  src/tools/              tools the agent runs in the extension (index.ts: the list of them)
+    read.ts               read_page, get_selection
+    find.ts               list_pages, search_pages
+    write.ts              edit_page, create_page, update_pages
+    database.ts           query_database, create_database, update_database_schema
+    organize.ts           move_page, duplicate_page, trash_page
+    comments.ts           read_comments, add_comment
+    current.ts            the current tab and the page a question carries; get_current_tab
+    shared.ts             common arguments, how a call is worded, and the pages a call names
+    load.ts               loads several tools share: a page with its database and mentions, a database, a workspace
+    memory.ts             what the agent remembers between calls (pages read, rows and databases seen),
+                          behind functions: its maps are its own
   src/tool.ts             defines a tool from one zod schema of its arguments
   src/clerk.ts            Clerk's Frontend API host and Sync Host, read from the publishable key
   src/zod.ts              zod, set up for the extension's content security policy; the only module that imports it
@@ -139,9 +160,16 @@ extensions/notico/        Notico, the extension for Notion
                           fixtures), and of the side panel's UI: the whole panel in jsdom
                           (*.test.tsx)
 worker/                   Cloudflare Worker
-  src/app.ts              Hono app: Clerk JWT verification, /v1/chat/completions, the user's own credits
-                          and their history (/v1/credits…), buying credits (/v1/billing/*, /stripe/webhook),
-                          and the admin routes (/v1/admin/*)
+  src/app.ts              the Hono app, composed from the sub-apps below; everything under /v1 is one
+                          sub-app whose first handler is the session check
+  src/http.ts             what every route shares: bindings, options, errors, and request parsing
+  src/routes/             the routes, by area, each a Hono sub-app:
+    session.ts            Clerk JWT verification, the first handler under /v1
+    chat.ts               /v1/chat/completions, charged to credits (chat-request.ts: what a request may hold)
+    credits.ts            the user's own credits and their history (/v1/credits…)
+    billing.ts            buying credits (/v1/billing/*), Checkout's return pages, and /stripe/webhook
+    admin.ts              the admin routes (/v1/admin/*)
+    pages.ts              the sign-in page, the admin page, /health, and / (a redirect to /login)
   src/credits.ts          credit ledger over D1: grants, expiry, spending, model calls and their cost
   src/billing.ts          the packs on offer, and what the Stripe webhook does with each event
   src/stripe.ts           Stripe's API (Checkout Sessions), webhook signatures, and the events' shapes

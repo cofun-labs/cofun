@@ -1,7 +1,10 @@
-// The get_selection tool (extensions/notico/src/tools.ts): the selection read from the Notion tab's page,
+// The get_selection tool (extensions/notico/src/tools/read.ts): the selection read from the Notion tab's page,
 // against a small fake DOM with the parts the in-tab script uses, and the page from a fake workspace.
 import { afterEach, describe, expect, it } from 'vitest'
-import { PART_CHARS, editPage, forgetReads, getSelection } from '../src/tools'
+import { forgetReads } from '../src/tools/memory'
+import { getSelection } from '../src/tools/read'
+import { PART_CHARS } from '../src/tools/shared'
+import { editPage } from '../src/tools/write'
 import { FakeNotionTab, FakeWorkspace, PAGE, PAGE_URL, SPACE, restoreGlobals } from './notion-tab'
 
 afterEach(() => {
