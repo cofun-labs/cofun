@@ -89,7 +89,7 @@ export function pageToMarkdown({ page, recordMap }: LoadedPage): PageMarkdown {
   const sections = isDatabase ? [] : ctx.children(page, 0).map((lines) => lines.join('\n'))
   return {
     title: title || 'Untitled',
-    titleMarkdown: (isDatabase ? title : ctx.rich(page.properties?.title).replace(/\s+/g, ' ').trim()) || 'Untitled',
+    titleMarkdown: (isDatabase ? title : titleMarkdown(recordMap, page.properties?.title)) || 'Untitled',
     properties: ctx.properties(page),
     sections,
     kind: isDatabase ? 'database' : 'page',
@@ -181,6 +181,14 @@ export function unnamedRowMentions(
 /** Rich text from outside a page's blocks (a comment, say) as Markdown, with mentions named from `recordMap`. */
 export function richMarkdown(recordMap: RecordMap, value: unknown): string {
   return new Context(recordMap, recordMap.block ?? {}).rich(value)
+}
+
+/**
+ * A page's title as Markdown on one line, with mentions named from `recordMap`: what the `title` of
+ * update_pages and create_page takes, so a title copied from where it is shown is stored unchanged.
+ */
+export function titleMarkdown(recordMap: RecordMap, title: unknown): string {
+  return richMarkdown(recordMap, title).replace(/\s+/g, ' ').trim()
 }
 
 /** A Notion user's name as `recordMap` has it, or "someone". */
@@ -381,7 +389,9 @@ class Context {
         return line('', `[embed: ${this.plain(block.properties?.source)}]`)
       case 'page':
         // A child page's own content stays in that page.
-        return [`${pad}📄 ${this.plain(block.properties?.title) || 'Untitled'}${this.fullRef(block.id)}`]
+        return [
+          `${pad}📄 ${titleMarkdown(this.recordMap, block.properties?.title) || 'Untitled'}${this.fullRef(block.id)}`,
+        ]
       case 'collection_view':
       case 'collection_view_page':
         return [`${pad}🗃 ${this.databaseName(block)} (database)${this.fullRef(block.id)}`]

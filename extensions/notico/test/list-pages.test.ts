@@ -4,6 +4,8 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { LIST_LIMIT, LIST_LOOKUPS, SECTION_LIMIT, listPages } from '../src/tools/find'
 import { forgetReads } from '../src/tools/memory'
+import { readPage } from '../src/tools/read'
+import { updatePages } from '../src/tools/write'
 import { FakeNotionTab, FakeWorkspace, PAGE, PAGE_URL, SPACE, USER, notionError, restoreGlobals } from './notion-tab'
 import { LIMITED_STOP, NO_USER_MAP, UNEXPECTED_STOP } from '../src/notion/api'
 
@@ -711,5 +713,23 @@ describe('list_pages workspace', () => {
     tab.workspace = new FakeWorkspace([{ id: PAGE, type: 'page', alive: false }], SPACE)
     tab.install()
     await expect(run()).rejects.toThrow('The open page is in the trash. Open another page of the workspace.')
+  })
+})
+
+describe('titles as Markdown', () => {
+  it('[UC-NOTICO-NOTION-008-S11] shows a title with Markdown characters so that, copied into update_pages, it is stored unchanged', async () => {
+    const title = '*x* @2026-11-20 [a](https://a.example) @[Ann] 5$ `y`'
+    const shown = '\\*x\\* \\@2026-11-20 \\[a\\](https://a.example) @\\[Ann\\] 5$ \\`y\\`'
+    const tab = notion([
+      { id: PAGE, type: 'page', properties: { title: [['Fixture page']] }, content: [id(11)] },
+      page(11, title),
+    ]).install()
+    const listedTitle = listed(await run({ page: hex(PAGE) }))[0]
+    expect(listedTitle).toBe(`- 📄 ${shown} ^${hex(id(11))}`)
+    // read_page's line for a child page shows it the same way.
+    expect((await readPage.run({})) as string).toContain(`📄 ${shown} ^${hex(id(11))}`)
+
+    await updatePages.run({ pages: [{ page: hex(id(11)), title: shown }] })
+    expect(tab.workspace!.records.get(id(11))!.properties).toEqual({ title: [[title]] })
   })
 })
