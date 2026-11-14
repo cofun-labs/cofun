@@ -6,15 +6,17 @@ import { readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { beforeAll, beforeEach, describe, expect, it } from 'vitest'
+import { postHogOverHttp } from '../src/analytics'
 import { createApp, type Env } from '../src/app'
 import { stripeOverHttp } from '../src/stripe'
 import { FakeClerk } from './clerk'
 import {
   FakeAiBinding,
+  FakeAnalytics,
   FakeD1Database,
   FakeExecutionContext,
-  FakeUsageDataset,
   FakeRateLimiter,
+  FakeUsageDataset,
   MODEL,
   usageCosting,
 } from './fakes'
@@ -44,6 +46,7 @@ let clerk: FakeClerk
 let ai: FakeAiBinding
 let db: FakeD1Database
 let stripe: FakeStripe
+let analytics: FakeAnalytics
 let env: Env
 let alice: string
 let bob: string
@@ -67,6 +70,7 @@ beforeEach(async () => {
     CLERK_JWT_KEY: clerk.publicKeyPem,
     CLERK_AUTHORIZED_PARTIES: `${EXT}, ${WORKER}`,
     STRIPE: (stripe = new FakeStripe()),
+    POSTHOG: (analytics = new FakeAnalytics()),
     STRIPE_WEBHOOK_SECRET: WEBHOOK_SECRET,
     CREDIT_PRICE: PRICE,
     CREDIT_PACKS: PACKS,
@@ -672,6 +676,62 @@ describe('UC-NOTICO-BILLING-001 buy credits: purchases in the history and on the
       { free: 200 * CREDIT, manual: 0, purchase: 5000 * CREDIT },
       { free: 0, manual: 0, purchase: 10_000 * CREDIT },
     ])
+  })
+})
+
+describe('the purchase event', () => {
+  it('reports a payment that added credits once, with the buyer and the pack', async () => {
+    await checkout(alice, 5000)
+    const paid = stripe.sessionEvent()
+    await answer(deliver(paid))
+    // The same payment reported again adds nothing, and is not a second purchase.
+    await answer(deliver(paid))
+
+    expect(analytics.purchases).toEqual([{ userId: 'user_alice', pack: 5 }])
+  })
+
+  it('reports nothing for a payment that adds no credits', async () => {
+    await checkout(alice, 5000)
+    await answer(deliver(stripe.sessionEvent({ paymentStatus: 'unpaid' })))
+    await answer(deliver(refunded('pi_for_cs_test_1')))
+
+    expect(analytics.purchases).toEqual([])
+  })
+
+  it('adds the credits and answers Stripe when the event cannot be sent', async () => {
+    analytics.failWith = new Error('connect timeout')
+    await checkout(alice, 5000)
+
+    expect(await answer(deliver(stripe.sessionEvent()))).toEqual({ received: true, done: 'granted' })
+    expect((await credits(alice)).grants).toMatchObject([{ source: 'purchase', left: 5000 * CREDIT }])
+    expect(logged).toEqual(['purchase event not sent: Error: connect timeout'])
+  })
+
+  it('buys without product analytics set up', async () => {
+    delete env.POSTHOG
+    await buy(alice, 5000)
+
+    expect((await credits(alice)).grants).toMatchObject([{ source: 'purchase', left: 5000 * CREDIT }])
+    expect(logged).toEqual([])
+  })
+
+  it("sends PostHog the event with the buyer's id and the pack, and nothing about the payment", async () => {
+    const sent: { url: string; init: RequestInit }[] = []
+    const posthog = postHogOverHttp('phc_test_key', 'https://us.i.posthog.com', async (url, init) => {
+      sent.push({ url, init })
+      return Response.json({ status: 1 })
+    })
+
+    await posthog.purchaseCompleted({ userId: 'user_alice', pack: 5 })
+
+    expect(sent.map(({ url }) => url)).toEqual(['https://us.i.posthog.com/i/v0/e/'])
+    expect(sent[0].init.method).toBe('POST')
+    expect(JSON.parse(String(sent[0].init.body))).toEqual({
+      api_key: 'phc_test_key',
+      event: 'purchase_completed',
+      distinct_id: 'user_alice',
+      properties: { pack: 5, $geoip_disable: true },
+    })
   })
 })
 

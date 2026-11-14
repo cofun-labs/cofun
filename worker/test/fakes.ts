@@ -1,3 +1,4 @@
+import type { ProductAnalytics, Purchase } from '../src/analytics'
 import type { AiBinding } from '../src/app'
 import type { RateLimiter } from '../src/http'
 import { readdirSync, readFileSync } from 'node:fs'
@@ -266,6 +267,18 @@ export class FakeExecutionContext {
   props = {}
   waitUntil(_promise: Promise<unknown>): void {}
   passThroughOnException(): void {}
+}
+
+/** Stands in for product analytics (env.POSTHOG): keeps every purchase the worker reported. */
+export class FakeAnalytics implements ProductAnalytics {
+  purchases: Purchase[] = []
+  /** When set, reporting fails with this error, like PostHog being unreachable. */
+  failWith?: Error
+
+  async purchaseCompleted(purchase: Purchase): Promise<void> {
+    if (this.failWith) throw this.failWith
+    this.purchases.push(purchase)
+  }
 }
 
 type DataPoint = Parameters<UsageDataset['writeDataPoint']>[0]

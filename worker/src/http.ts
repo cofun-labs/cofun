@@ -3,6 +3,7 @@
 import type { Context, Hono } from 'hono'
 import type { ContentfulStatusCode } from 'hono/utils/http-status'
 import * as z from './zod'
+import type { ProductAnalytics } from './analytics'
 import type { Database } from './credits'
 import type { priceOf } from './pricing'
 import type { StripeApi } from './stripe'
@@ -54,6 +55,12 @@ export interface Env {
   CREDIT_PRICE?: string
   /** The quantities of CREDIT_PRICE on sale as packs: `[1, 5, 20, 100]` (see `offerOf` in billing.ts). */
   CREDIT_PACKS?: unknown
+  /** Where product events go. Tests pass a fake; deployed, it is PostHog's capture API with POSTHOG_KEY. */
+  POSTHOG?: ProductAnalytics
+  /** The PostHog project's key (public by design). Without it, or without POSTHOG_HOST, no event is sent. */
+  POSTHOG_KEY?: string
+  /** PostHog's ingestion host, e.g. `https://us.i.posthog.com`. */
+  POSTHOG_HOST?: string
 }
 
 export interface AppOptions {
