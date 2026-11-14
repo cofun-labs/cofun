@@ -62,9 +62,9 @@ describe("the deployed worker's address", () => {
 })
 
 describe("the deployed worker's packs of credits", () => {
-  it('are the live credit price, sold in quantities of 5, 10, 20, and 50', () => {
+  it('are the live credit price, sold in quantities of 1, 5, 20, and 100', () => {
     expect(offerOf(rawConfig.vars?.CREDIT_PRICE, rawConfig.vars?.CREDIT_PACKS)).toEqual({
-      offer: { price: 'price_1UbLSMCT6MhL4FCmD4mRe680', quantities: [5, 10, 20, 50] },
+      offer: { price: 'price_1UbLSMCT6MhL4FCmD4mRe680', quantities: [1, 5, 20, 100] },
     })
   })
 })

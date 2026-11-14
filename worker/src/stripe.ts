@@ -96,8 +96,8 @@ export function stripeOverHttp(secretKey: string, send: Send = (url, init) => fe
           [`metadata[${META_USER}]`]: userId,
           [`metadata[${META_QUANTITY}]`]: String(quantity),
           [`metadata[${META_PRICE}]`]: price,
-          // No custom_text: Stripe refuses it with Managed Payments. Checkout names the product and its
-          // quantity ("1,000 Credits × 10"); the side panel says how long the credits last.
+          // No custom_text: Stripe refuses it with Managed Payments. Checkout names the product as its heading
+          // ("Cofun Credits") and the quantity under "View details"; the side panel says how long the credits last.
           success_url: successUrl,
           cancel_url: cancelUrl,
         }),

@@ -30,7 +30,7 @@ export interface Offer {
 const PRICE_ID = 'must be a Stripe price id (price_…)'
 const CreditPrice = z.string({ error: PRICE_ID }).regex(/^price_[A-Za-z0-9]{1,64}$/, { error: PRICE_ID })
 
-/** CREDIT_PACKS: the quantities on sale, `[5, 10, 20, 50]`. A JSON array in wrangler.jsonc, so it arrives as one. */
+/** CREDIT_PACKS: the quantities on sale, `[1, 5, 20, 100]`. A JSON array in wrangler.jsonc, so it arrives as one. */
 const CreditPacks = z
   .array(z.int().min(1).max(MAX_QUANTITY), { error: `must be an array of quantities from 1 to ${MAX_QUANTITY}` })
   .min(1, { error: 'must list at least one quantity' })
