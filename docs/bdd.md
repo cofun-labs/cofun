@@ -43,7 +43,7 @@ Each extension is a product with its own use cases, in its own directory: `docs/
 | Strategy | Use for | Verified by |
 |---|---|---|
 | `api-test` | Anything observable through the worker's HTTP API, the extension's client code, or the side panel's UI | A vitest integration test whose name starts with the scenario ID, in `worker/test/` (the worker's HTTP API) or the product's `extensions/<name>/test/` (the extension's client code in `*.test.ts`, the side panel's UI in `*.test.tsx`) |
-| `ai-e2e` | Paths that need real Chrome or real accounts: the side panel opening and staying open across tabs, Clerk sign-in, real Notion pages, the real model | An agent drives Chrome with the extension loaded; the PR description or a comment records the run, with the Notion requests each tested question made (the side panel shows the count with the reply) |
+| `ai-e2e` | Paths that need real Chrome or real accounts: the side panel opening and staying open across tabs, Clerk sign-in, real Notion pages, the real model | An agent drives Chrome with the extension loaded; the PR description or a comment records the run, with the Notion requests each tested question made (the reply's details in the side panel show the count) |
 
 Pick the cheapest strategy that observes the result directly. `ai-e2e` is not a place to park scenarios that could be `api-test`.
 
