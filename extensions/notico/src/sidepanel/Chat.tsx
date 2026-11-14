@@ -170,9 +170,10 @@ export function Chat({ userId }: { userId: string }) {
   const deleted = useRef(new Set<string>())
   // The save in progress, if any; the next one waits for it.
   const saving = useRef(Promise.resolve())
-  // Settles once every question asked so far has ended and its save, if it has one, is in `saving`:
-  // also a question of a chat the user has left, which ends on its own time.
-  const asking = useRef(Promise.resolve())
+  // The questions that have not ended, each with the session it was asked in: also one of a session
+  // the user has left, which was stopped then and ends on its own time (a Notion request already sent
+  // is not cut short). `ended` settles once its save, if it has one, is in `saving`.
+  const asking = useRef(new Set<{ session: Current; ended: Promise<void> }>())
   const tokenRef = useRef(getToken)
   tokenRef.current = getToken
   // Which model answers: read once for this account, then changed on the settings page. Each
@@ -620,8 +621,8 @@ export function Chat({ userId }: { userId: string }) {
     let conversation: HistoryMessage[] | undefined
     let answered = false
     let ended!: () => void
-    const earlier = asking.current
-    asking.current = new Promise<void>((resolve) => (ended = resolve)).then(() => earlier)
+    const question = { session, ended: new Promise<void>((resolve) => (ended = resolve)) }
+    asking.current.add(question)
     try {
       // A page search still out goes first: Notion is asked one thing at a time. If it was turned
       // away, so is the question, which sends nothing; and so it does when the user stopped it, or
@@ -679,6 +680,7 @@ export function Chat({ userId }: { userId: string }) {
           void title(session, messages)
         }
       }
+      asking.current.delete(question)
       ended()
     }
   }
@@ -802,10 +804,11 @@ export function Chat({ userId }: { userId: string }) {
     declineAll()
     stopped.current++
     agent.stop()
-    // The stopped question is saved to the session it was asked in, which may be this one (the user
-    // went from it to a new chat, and back). That save, like any of this panel's still waiting to
-    // write, would otherwise look like another window's later, and the session would open without it.
-    await asking.current
+    // A question asked in this very session may still be ending (the user left it for a new chat, and
+    // comes back): it is saved to the session once it has, so wait for it. That save, like any of this
+    // panel's still waiting to write, would otherwise look like another window's later, and the
+    // session would open without the question. A question of any other session is not waited for.
+    await Promise.all([...asking.current].filter((q) => q.session.id === id).map((q) => q.ended))
     await saving.current
     const session = await store.get(id)
     if (overtaken()) return 'opened'

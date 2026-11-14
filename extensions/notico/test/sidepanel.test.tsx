@@ -1386,6 +1386,47 @@ describe('sessions', () => {
     expect(JSON.stringify(browser.sentToModel())).not.toMatch(/launch|first one/)
   })
 
+  it('a chat left while Notion still answers its question opens with that question once it has ended, and holds up no other chat', async () => {
+    const { browser, user } = await openPanel()
+    await askAboutPage(browser, user)
+    vi.setSystemTime(new Date(START.getTime() + 60_000))
+    await user.click(screen.getByRole('button', { name: 'New chat' }))
+    browser.ai.script.push({ reply: 'Hello.' })
+    await ask(user, 'Hi')
+    await screen.findByText('Hello.')
+    await answered()
+
+    // Back in the first chat, a follow-up reads the page again, and Notion has not answered yet
+    // when the user leaves for a new chat.
+    vi.setSystemTime(new Date(START.getTime() + 120_000))
+    await openSession(user, /What does this page say\?/)
+    await screen.findByText('It is a fixture.')
+    const release = browser.tab.hold('loadPageChunk')
+    browser.ai.script.push({ toolCalls: [{ name: 'read_page', arguments: JSON.stringify({ part: 1 }) }] })
+    const sent = browser.tab.sent.length
+    await ask(user, 'Read it again')
+    await waitFor(() => expect(browser.tab.sent.length).toBeGreaterThan(sent))
+    await user.click(screen.getByRole('button', { name: 'New chat' }))
+
+    // Another chat opens at once.
+    await openSession(user, /^Hi/)
+    expect(await screen.findByText('Hello.')).toBeVisible()
+
+    // The chat that was left opens once its question has ended, with the question and the read that
+    // was cut short, shown as a tool stopped by hand is.
+    await openSession(user, /What does this page say\?/)
+    await act(async () => release())
+    expect(await conversation().findByText('Read it again')).toBeVisible()
+    expect(toolsSaid()).toEqual(['Read Fixture page', 'Stopped: read the open page'])
+
+    // It goes on as one chat: the next question is not saved apart, as another window's would be.
+    browser.ai.script.push({ reply: 'The same.' })
+    await ask(user, 'And?')
+    expect(await screen.findByText('The same.')).toBeVisible()
+    await answered()
+    expect(screen.queryByText(/saved as a separate chat/)).not.toBeInTheDocument()
+  })
+
   it('a chat deleted while a question the user left it for is still stopping is not saved back', async () => {
     const { browser, user } = await openPanel()
     await askAboutPage(browser, user)
