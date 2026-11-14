@@ -156,14 +156,22 @@ export const daysText = (ms: number) => {
   return days === 1 ? '1 day' : `${days} days`
 }
 
-/** What is left of the grants that still count from `source`, and the first of them to expire. */
-export function fromSource({ grants }: Credits, source: string): { left: number; expiresAt?: number } {
-  const mine = grants.filter((grant) => grant.source === source)
-  const spendable = mine.filter((grant) => grant.left > 0)
-  return {
-    left: mine.reduce((sum, grant) => sum + grant.left, 0),
-    ...(spendable[0] ? { expiresAt: spendable[0].expiresAt } : {}),
-  }
+/** What is left of the grants that still count from `source`. */
+export const leftFrom = ({ grants }: Credits, source: string) =>
+  grants.filter((grant) => grant.source === source).reduce((sum, grant) => sum + grant.left, 0)
+
+/**
+ * What is left of the grants from `source`, with when the first of them expires: "5,000 · expire
+ * Nov 8, 2027", or with several, how many of them expire then: "10,000 · 5,000 expire Nov 8, 2027".
+ */
+export function sourceLeftText(credits: Credits, source: string): string {
+  const left = leftFrom(credits, source)
+  const spendable = credits.grants.filter((grant) => grant.source === source && grant.left > 0)
+  const [first] = spendable
+  if (!first) return wholeCredits(left)
+  // What expires first: the first grant, and any that expire at the same moment.
+  const soonest = spendable.filter((grant) => grant.expiresAt === first.expiresAt).reduce((sum, g) => sum + g.left, 0)
+  return `${wholeCredits(left)} · ${soonest === left ? '' : `${wholeCredits(soonest)} `}expire ${when(first.expiresAt)}`
 }
 
 /** A grant of the history in words: "Free weekly credits", "Bought 5,000 credits". One the panel does not know is plain "Credits". */

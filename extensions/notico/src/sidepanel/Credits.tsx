@@ -3,7 +3,8 @@ import {
   creditsText,
   dayText,
   daysText,
-  fromSource,
+  leftFrom,
+  sourceLeftText,
   lastDays,
   usdText,
   when,
@@ -104,8 +105,7 @@ export function CreditsPage({
 /** The balance as one number, then one line per source: the free weekly credits, bought credits, and any granted by hand. */
 function Balance({ credits }: { credits: Credits }) {
   const { balance, free } = credits
-  const bought = fromSource(credits, 'purchase')
-  const added = fromSource(credits, 'manual')
+  const added = leftFrom(credits, 'manual')
   // A source a newer worker names, which the panel does not know.
   const other = credits.grants
     .filter((grant) => !['free', 'purchase', 'manual'].includes(grant.source))
@@ -129,7 +129,7 @@ function Balance({ credits }: { credits: Credits }) {
           <span>Free this week</span>
           <span className="account-detail">
             {free.started
-              ? `${wholeCredits(fromSource(credits, 'free').left)} · renew after ${when(free.until)}`
+              ? `${wholeCredits(leftFrom(credits, 'free'))} · renew after ${when(free.until)}`
               : free.toCome > 0
                 ? `${wholeCredits(free.toCome)} · valid for ${daysText(free.lastsMs)} from your next question`
                 : 'Not started: they go to what you overspent'}
@@ -137,20 +137,12 @@ function Balance({ credits }: { credits: Credits }) {
         </li>
         <li>
           <span>Bought</span>
-          <span className="account-detail">
-            {bought.expiresAt
-              ? `${wholeCredits(bought.left)} · expire ${when(bought.expiresAt)}`
-              : wholeCredits(bought.left)}
-          </span>
+          <span className="account-detail">{sourceLeftText(credits, 'purchase')}</span>
         </li>
-        {added.left > 0 && (
+        {added > 0 && (
           <li>
             <span>From Cofun</span>
-            <span className="account-detail">
-              {added.expiresAt
-                ? `${wholeCredits(added.left)} · expire ${when(added.expiresAt)}`
-                : wholeCredits(added.left)}
-            </span>
+            <span className="account-detail">{sourceLeftText(credits, 'manual')}</span>
           </li>
         )}
         {other > 0 && (
@@ -263,7 +255,8 @@ function BuyCredits({ buying }: { buying: Buying }) {
 function Usage({ usage }: { usage: Credits['usage'] }) {
   const days = lastDays(Date.now(), usage.days)
   const used = new Map(usage.byDay.map(({ day, microCredits }) => [day, microCredits]))
-  const total = usage.byDay.reduce((sum, { microCredits }) => sum + microCredits, 0)
+  // Only the days the chart shows, so the total and the bars agree even if the worker's day is not the panel's.
+  const total = days.reduce((sum, day) => sum + (used.get(day) ?? 0), 0)
   const most = Math.max(...days.map((day) => used.get(day) ?? 0))
   const [picked, setPicked] = useState<number>()
   const pickedDay = picked === undefined ? undefined : days[picked]

@@ -110,7 +110,15 @@ describe('buying credits on the Credits page', () => {
     // The second Checkout tab is open before the user pays in it.
     await waitFor(() => expect(browser.openedTabs).toHaveLength(2))
     await browser.stripeSends(browser.stripe.sessionEvent({ payment: 'pi_refunded' }))
+    // A day later, a third: the Credits page says how many of the credits bought expire first.
     vi.setSystemTime(new Date('2026-11-09T12:00:00Z'))
+    await user.click(screen.getByRole('button', { name: 'Buy 5,000 credits for US$5' }))
+    await waitFor(() => expect(browser.openedTabs).toHaveLength(3))
+    await browser.stripeSends(browser.stripe.sessionEvent({ payment: 'pi_later' }))
+    comeBack()
+    await waitFor(async () =>
+      expect((await bySource()).at(-1)).toBe('Bought20,000 · 15,000 expire Nov 8, 2027, 5:30 PM'),
+    )
     await browser.stripeSends(refunded('pi_refunded'))
 
     await user.click(within(section('Balance')).getByRole('button', { name: 'Credit history' }))
@@ -118,6 +126,7 @@ describe('buying credits on the Credits page', () => {
     const given = await screen.findByRole('list', { name: 'Credits you were given' })
     const lots = within(given).getAllByRole('listitem')
     expect(lots.map((lot) => lot.textContent)).toEqual([
+      'Bought 5,000 creditsNov 9 · Paid US$5 · expire Nov 9, 2027+5,0005,000 left',
       'Bought 10,000 creditsNov 8 · Paid US$10 · refunded Nov 9+10,00010,000 taken back',
       'Bought 5,000 creditsNov 8 · Paid US$5 · expire Nov 8, 2027+5,0005,000 left',
     ])
