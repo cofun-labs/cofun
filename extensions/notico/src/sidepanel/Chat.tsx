@@ -45,7 +45,7 @@ import { useMenu } from './menu'
 import { HOSTED, ModelMenu } from './Model'
 import { AddMenu, pageKey, usePagePicker, type SearchStop } from './PagePicker'
 import { ComposerPages, SentPages, type Chip } from './Pages'
-import { SaveActions, useSaves, type SaveActionsProps, type SaveState } from './Save'
+import { SaveButton, SaveToast, useSaves, type SaveState } from './Save'
 import { Sessions, type OpenResult } from './Sessions'
 import { Settings } from './Settings'
 import { ToolCall, type ShownTool } from './ToolCall'
@@ -844,7 +844,9 @@ export function Chat({ userId }: { userId: string }) {
   // reply's place in it: here, not in the reply's row, which shows the next chat's reply at the
   // same place once the user switches. The chat's save is also by how many questions it held, so
   // once another question is answered the chat can be saved again, with it.
-  const [saves, startSave] = useSaves()
+  // Why the latest save failed, shown in a toast; a new failure shows anew, even with the same words.
+  const [saveFailure, setSaveFailure] = useState<{ message: string; key: number }>()
+  const [saves, startSave] = useSaves((message) => setSaveFailure((was) => ({ message, key: (was?.key ?? 0) + 1 })))
   // The chat as a save takes it: without a reply still coming in.
   const ended = busy
     ? messages.slice(
@@ -882,6 +884,16 @@ export function Chat({ userId }: { userId: string }) {
   return (
     <>
       <Header title={headerTitle || <span className="untitled">New chat</span>}>
+        {asked > 0 && (
+          <SaveButton
+            what="chat"
+            className="icon-button"
+            tipBelow
+            state={saves[saveKey('chat')]}
+            blocked={saveBlocked}
+            onSave={() => saveToNotion('chat')}
+          />
+        )}
         <button
           ref={listButtonRef}
           className="icon-button"
@@ -987,7 +999,6 @@ export function Chat({ userId }: { userId: string }) {
                     index={i}
                     saveBlocked={saveBlocked}
                     replySave={saves[saveKey(i)]}
-                    chatSave={saves[saveKey('chat')]}
                     onSave={saveToNotion}
                   />
                 </div>
@@ -998,6 +1009,10 @@ export function Chat({ userId }: { userId: string }) {
 
         {/* One box: the question on top, and below it, inside the box, which model answers and the send button. */}
         <form id="composer" onSubmit={onSubmit} inert={covered}>
+          {/* Over the chat, just above the box (which is what it is placed against). */}
+          {saveFailure && (
+            <SaveToast key={saveFailure.key} message={saveFailure.message} onClose={() => setSaveFailure(undefined)} />
+          )}
           {pages.element}
           <ComposerPages chips={chips} onRemove={removeChip} />
           <textarea
@@ -1175,17 +1190,15 @@ const ReplyFoot = memo(function ReplyFoot({
   index,
   saveBlocked,
   replySave,
-  chatSave,
   onSave,
 }: {
   reply: Reply
   ended: boolean
   index: number
   saveBlocked?: string
-  /** How saving this reply, and the whole chat, to Notion went. */
+  /** How saving this reply to Notion is going. */
   replySave?: SaveState
-  chatSave?: SaveState
-  onSave: (what: number | 'chat') => void
+  onSave: (what: number) => void
 }) {
   if (!ended) return null
   const text = replyMarkdown(reply.parts)
@@ -1198,27 +1211,26 @@ const ReplyFoot = memo(function ReplyFoot({
   return (
     <div className="reply-foot">
       {text && <CopyButton text={text} />}
+      {text && (
+        <SaveButton
+          what="reply"
+          className="reply-action"
+          state={replySave}
+          blocked={saveBlocked}
+          onSave={() => onSave(index)}
+        />
+      )}
       {modelName && (
-        <span className="note reply-model" role="note" aria-label={`Answered by ${modelName}`} title="Model">
+        <span
+          className="note reply-model"
+          role="note"
+          aria-label={`Answered by ${modelName}`}
+          data-tip="The model that answered"
+        >
           {modelName}
         </span>
       )}
-      {(details.length > 0 || text) && (
-        <ReplyDetails
-          rows={details}
-          save={
-            text
-              ? {
-                  blocked: saveBlocked,
-                  reply: replySave,
-                  chat: chatSave,
-                  onSaveReply: () => onSave(index),
-                  onSaveChat: () => onSave('chat'),
-                }
-              : undefined
-          }
-        />
-      )}
+      {details.length > 0 && <ReplyDetails rows={details} />}
     </div>
   )
 })
@@ -1239,7 +1251,7 @@ function CopyButton({ text }: { text: string }) {
         type="button"
         className="reply-action"
         aria-label={label}
-        title={label}
+        data-tip={label}
         onClick={() =>
           navigator.clipboard.writeText(text).then(
             () => setState('copied'),
@@ -1313,11 +1325,8 @@ function detailRows(details: QuestionDetails = {}): { label?: string; text: stri
   ]
 }
 
-/**
- * The "…" button at the end of a reply's row, and the popover with its details it opens and closes,
- * starting with saving the reply, or the whole chat, to Notion when the reply wrote something.
- */
-function ReplyDetails({ rows, save }: { rows: { label?: string; text: string }[]; save?: SaveActionsProps }) {
+/** The "…" button at the end of a reply's row, and the popover with its details it opens and closes. */
+function ReplyDetails({ rows }: { rows: { label?: string; text: string }[] }) {
   const { open, setOpen, rootRef, onKeyDown } = useMenu()
   const id = useId()
   return (
@@ -1326,7 +1335,7 @@ function ReplyDetails({ rows, save }: { rows: { label?: string; text: string }[]
         type="button"
         className="reply-action"
         aria-label="Reply details"
-        title="Reply details"
+        data-tip="Reply details"
         aria-expanded={open}
         aria-controls={open ? id : undefined}
         onClick={() => setOpen(!open)}
@@ -1335,18 +1344,14 @@ function ReplyDetails({ rows, save }: { rows: { label?: string; text: string }[]
       </button>
       {open && (
         <div id={id} className="reply-popover" role="dialog" aria-label="Reply details">
-          {/* What the user can do comes first, like a menu; what the reply used follows, quieter. */}
-          {save && <SaveActions {...save} />}
-          {rows.length > 0 && (
-            <div className="reply-facts">
-              {rows.map(({ label, text }) => (
-                <p key={label ?? text}>
-                  {label && <span className="detail-label">{label}: </span>}
-                  {text}
-                </p>
-              ))}
-            </div>
-          )}
+          <div className="reply-facts">
+            {rows.map(({ label, text }) => (
+              <p key={label ?? text}>
+                {label && <span className="detail-label">{label}: </span>}
+                {text}
+              </p>
+            ))}
+          </div>
         </div>
       )}
     </div>

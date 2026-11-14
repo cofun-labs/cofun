@@ -54,19 +54,17 @@ async function ask(user: UserEvent, question: string, reply: string) {
   await answered()
 }
 
-/** Opens the latest reply's "…" and returns its popover. */
-async function replyMenu(user: UserEvent) {
-  await user.click(screen.getAllByRole('button', { name: 'Reply details' }).at(-1)!)
-  return within(screen.getByRole('dialog', { name: 'Reply details' }))
+/** The save buttons named `name` (the reply's, or the chat's in the header) that are still saving. */
+const saving = (name: string) =>
+  screen.queryAllByRole('button', { name }).filter((b) => b.getAttribute('aria-disabled') === 'true')
+
+/** Presses a save button (the latest reply's, by default), and waits until the save has ended. */
+async function save(user: UserEvent, name = 'Save reply to Notion') {
+  await user.click(screen.getAllByRole('button', { name }).at(-1)!)
+  await waitFor(() => expect(saving(name)).toEqual([]))
 }
 
-/** Saves the latest reply from its "…", and returns the popover once the save has ended. */
-async function saveReply(user: UserEvent) {
-  const menu = await replyMenu(user)
-  await user.click(menu.getByRole('button', { name: 'Save reply to Notion' }))
-  await waitFor(() => expect(menu.queryByText('Saving the reply…')).not.toBeInTheDocument())
-  return menu
-}
+const toast = () => screen.getByRole('alert')
 
 type Run = [string, [string, unknown?][]?]
 const plain = (title: unknown) => ((title as Run[] | undefined) ?? []).map((r) => r[0]).join('')
@@ -112,7 +110,7 @@ describe('UC-NOTICO-SESSION-002 save a chat or a reply to Notion', () => {
     await screen.findByRole('heading', { name: 'Notes cleanup' })
     const made = workspace.transactions.length
 
-    const menu = await saveReply(user)
+    await save(user)
 
     // One transaction, made at once: nobody was asked to confirm.
     expect(workspace.transactions).toHaveLength(made + 1)
@@ -134,34 +132,25 @@ describe('UC-NOTICO-SESSION-002 save a chat or a reply to Notion', () => {
         ['p', NOTE],
       ],
     ])
-    // Where the user saved it, a link to the new page.
-    expect(menu.getByRole('link', { name: 'Open the saved reply' })).toHaveAttribute(
-      'href',
-      `https://app.notion.com/p/${hex(saved.id)}`,
-    )
-    expect(menu.queryByRole('button', { name: 'Save reply to Notion' })).not.toBeInTheDocument()
-
-    // The link took the place of the button, and the focus with it.
-    expect(menu.getByRole('link', { name: 'Open the saved reply' })).toHaveFocus()
-    // The link stays with the reply once its menu closes.
-    await user.keyboard('{Escape}')
-    const again = await replyMenu(user)
-    expect(again.getByRole('link', { name: 'Open the saved reply' })).toBeVisible()
+    // Where the user saved it, a link to the new page took the button's place, and the focus.
+    const link = screen.getByRole('link', { name: 'Open the saved reply' })
+    expect(link).toHaveAttribute('href', `https://app.notion.com/p/${hex(saved.id)}`)
+    expect(link).toHaveFocus()
+    expect(screen.queryByRole('button', { name: 'Save reply to Notion' })).not.toBeInTheDocument()
   })
 
-  it("[UC-NOTICO-SESSION-002-S02] the whole chat is saved from a reply's menu, every question and reply in order", async () => {
+  it('[UC-NOTICO-SESSION-002-S02] the whole chat is saved from the top of the panel, every question and reply in order', async () => {
     const { tab, workspace } = workspaceTab()
     const { browser, user } = await openPanel(tab)
+    // A new chat has nothing to save.
+    expect(screen.queryByRole('button', { name: 'Save chat to Notion' })).not.toBeInTheDocument()
     browser.ai.script.push({ reply: 'Three milestones.' }, { reply: 'Alice owns them.' })
     await ask(user, 'What is on the roadmap?', 'Three milestones.')
     await ask(user, 'Who owns it?', 'Alice owns them.')
 
-    // From the first reply's menu: it saves the chat, not only that reply.
-    await user.click(screen.getAllByRole('button', { name: 'Reply details' })[0])
-    const menu = within(screen.getByRole('dialog', { name: 'Reply details' }))
-    await user.click(menu.getByRole('button', { name: 'Save chat to Notion' }))
+    await save(user, 'Save chat to Notion')
 
-    const link = await menu.findByRole('link', { name: 'Open the saved chat' })
+    const link = within(screen.getByRole('banner')).getByRole('link', { name: 'Open the saved chat' })
     const saved = savedPage(workspace)
     expect(link).toHaveAttribute('href', `https://app.notion.com/p/${hex(saved.id)}`)
     // The chat's title: its first question, since the model gave it none.
@@ -181,15 +170,12 @@ describe('UC-NOTICO-SESSION-002 save a chat or a reply to Notion', () => {
     const { browser, user } = await openPanel(tab)
     browser.ai.script.push({ reply: 'Three milestones.' }, { reply: 'Alice owns them.' })
     await ask(user, 'What is on the roadmap?', 'Three milestones.')
-    let menu = await replyMenu(user)
-    await user.click(menu.getByRole('button', { name: 'Save chat to Notion' }))
-    await menu.findByRole('link', { name: 'Open the saved chat' })
-    await user.keyboard('{Escape}')
+    await save(user, 'Save chat to Notion')
+    expect(screen.getByRole('link', { name: 'Open the saved chat' })).toBeVisible()
 
     await ask(user, 'Who owns it?', 'Alice owns them.')
-    menu = await replyMenu(user)
-    await user.click(menu.getByRole('button', { name: 'Save chat to Notion' }))
-    await menu.findByRole('link', { name: 'Open the saved chat' })
+    await save(user, 'Save chat to Notion')
+    expect(screen.getByRole('link', { name: 'Open the saved chat' })).toBeVisible()
     expect(savedPage(workspace).blocks.filter(([type]) => type === 'quote')).toEqual([
       ['quote', 'What is on the roadmap?'],
       ['quote', 'Who owns it?'],
@@ -202,15 +188,13 @@ describe('UC-NOTICO-SESSION-002 save a chat or a reply to Notion', () => {
     const { browser, user } = await openPanel(tab)
     browser.ai.script.push({ reply: 'First chat.' }, { reply: 'Second chat.' })
     await ask(user, 'One', 'First chat.')
-    await saveReply(user)
-    await user.click(screen.getAllByRole('button', { name: 'Reply details' }).at(-1)!)
+    await save(user)
 
     await user.click(screen.getByRole('button', { name: 'New chat' }))
     await ask(user, 'Two', 'Second chat.')
-    const menu = await replyMenu(user)
-    expect(menu.queryByRole('link', { name: 'Open the saved reply' })).not.toBeInTheDocument()
-    await user.click(menu.getByRole('button', { name: 'Save reply to Notion' }))
-    await menu.findByRole('link', { name: 'Open the saved reply' })
+    expect(screen.queryByRole('link', { name: 'Open the saved reply' })).not.toBeInTheDocument()
+    await save(user)
+    expect(screen.getByRole('link', { name: 'Open the saved reply' })).toBeVisible()
     expect(
       workspace
         .content(PAGE)
@@ -225,12 +209,13 @@ describe('UC-NOTICO-SESSION-002 save a chat or a reply to Notion', () => {
     browser.ai.script.push({ reply: 'An answer.' })
     await ask(user, 'Hello', 'An answer.')
 
-    const menu = await replyMenu(user)
     for (const name of ['Save reply to Notion', 'Save chat to Notion']) {
-      const save = menu.getByRole('button', { name })
-      expect(save).toBeDisabled()
-      expect(save).toHaveAccessibleDescription('Open a Notion page to save under it.')
+      const button = screen.getByRole('button', { name })
+      expect(button).toHaveAttribute('aria-disabled', 'true')
+      expect(button).toHaveAccessibleDescription('Open a Notion page to save under it.')
+      await user.click(button)
     }
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
     expect(tab.sent).toEqual([])
   })
 
@@ -240,11 +225,13 @@ describe('UC-NOTICO-SESSION-002 save a chat or a reply to Notion', () => {
     browser.ai.script.push({ reply: 'An answer.' })
     await ask(user, 'Hello', 'An answer.')
 
-    const menu = await saveReply(user)
-    expect(menu.getByRole('alert')).toHaveTextContent(
-      "Saving into a database isn't supported. Open a page to save under it.",
-    )
+    await save(user)
+    expect(toast()).toHaveTextContent("Saving into a database isn't supported. Open a page to save under it.")
     expect(workspace.transactions).toEqual([])
+    // The button stays as it was, to try again once a page is open; the message can be closed.
+    expect(screen.getByRole('button', { name: 'Save reply to Notion' })).not.toHaveAttribute('aria-disabled')
+    await user.click(within(toast()).getByRole('button', { name: 'Dismiss' }))
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
   })
 
   it('[UC-NOTICO-SESSION-002-S05] in Read only, a reply is saved as in Edit', async () => {
@@ -255,8 +242,8 @@ describe('UC-NOTICO-SESSION-002 save a chat or a reply to Notion', () => {
     browser.ai.script.push({ reply: 'It is a fixture.' })
     await ask(user, 'What does this page say?', 'It is a fixture.')
 
-    const menu = await saveReply(user)
-    expect(menu.getByRole('link', { name: 'Open the saved reply' })).toBeVisible()
+    await save(user)
+    expect(screen.getByRole('link', { name: 'Open the saved reply' })).toBeVisible()
     expect(savedPage(workspace).blocks).toEqual([
       ['quote', 'What does this page say?'],
       ['text', 'It is a fixture.'],
@@ -270,15 +257,13 @@ describe('UC-NOTICO-SESSION-002 save a chat or a reply to Notion', () => {
     await ask(user, 'Hello', 'An answer.')
     const release = tab.hold('saveTransactionsFanout')
 
-    const menu = await replyMenu(user)
-    const save = menu.getByRole('button', { name: 'Save reply to Notion' })
-    await user.click(save)
-    const saving = await menu.findByRole('button', { name: 'Saving the reply…' })
-    expect(saving).toHaveAttribute('aria-disabled', 'true')
-    await user.click(saving)
+    const button = screen.getByRole('button', { name: 'Save reply to Notion' })
+    await user.click(button)
+    await waitFor(() => expect(button).toHaveAttribute('aria-disabled', 'true'))
+    await user.click(button)
     release()
 
-    await menu.findByRole('link', { name: 'Open the saved reply' })
+    await screen.findByRole('link', { name: 'Open the saved reply' })
     expect(endpoints(tab).filter((e) => e === 'saveTransactionsFanout')).toHaveLength(1)
     expect(workspace.transactions).toHaveLength(1)
   })
@@ -290,15 +275,15 @@ describe('UC-NOTICO-SESSION-002 save a chat or a reply to Notion', () => {
     await ask(user, 'Hello', 'An answer.')
     tab.limit('saveTransactionsFanout', 1, 429, '30')
 
-    const menu = await saveReply(user)
-    expect(menu.getByRole('alert')).toHaveTextContent(
+    await save(user)
+    expect(toast()).toHaveTextContent(
       'Notion is turning requests away right now (too many requests, or too busy), so nothing was saved. Wait 30 seconds, then try again.',
     )
     const sent = tab.sent.length
-    // Trying again during the wait sends nothing.
-    await user.click(menu.getByRole('button', { name: 'Save reply to Notion' }))
-    await waitFor(() => expect(menu.queryByText('Saving the reply…')).not.toBeInTheDocument())
-    expect(menu.getByRole('alert')).toHaveTextContent('so nothing was saved')
+    // Trying again during the wait sends nothing, and says so again.
+    await user.click(within(toast()).getByRole('button', { name: 'Dismiss' }))
+    await save(user)
+    expect(toast()).toHaveTextContent('so nothing was saved')
     expect(tab.sent).toHaveLength(sent)
     expect(workspace.content(PAGE).map((b) => b.id)).toEqual([NOTE])
   })
@@ -310,8 +295,8 @@ describe('UC-NOTICO-SESSION-002 save a chat or a reply to Notion', () => {
     await ask(user, 'Hello', 'An answer.')
     workspace.failAfterApply = true
 
-    const menu = await saveReply(user)
-    expect(menu.getByRole('alert')).toHaveTextContent(
+    await save(user)
+    expect(toast()).toHaveTextContent(
       "Notion didn't say whether the page was created. Look at the end of the open page in Notion before saving again.",
     )
     expect(endpoints(tab).filter((e) => e === 'saveTransactionsFanout')).toHaveLength(1)
@@ -325,7 +310,7 @@ describe('UC-NOTICO-SESSION-002 save a chat or a reply to Notion', () => {
     browser.ai.script.push({ reply: 'Ask @[Kim Lee] to review it.' })
     await ask(user, 'Who reviews?', 'to review it.')
 
-    await saveReply(user)
+    await save(user)
     const saved = savedPage(workspace)
     expect(saved.blocks[1]).toEqual(['text', 'Ask @Kim Lee to review it.'])
     expect(saved.runs[1]).toEqual([['Ask @Kim Lee to review it.']])
