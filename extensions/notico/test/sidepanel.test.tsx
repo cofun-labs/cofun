@@ -1357,6 +1357,20 @@ describe('tips', () => {
     expect(screen.getByRole('tooltip', { hidden: true })).toHaveTextContent("Read only: won't change pages")
   })
 
+  it('a tip put away by a click stays away also when another control had the tip before the click', async () => {
+    const { user } = await openPanel()
+    // Keyboard focus gives "+" the tip while the pointer rests on the mode button.
+    const add = screen.getByRole('button', { name: 'Add a page' })
+    while (document.activeElement !== add) await user.tab()
+    expect(screen.getByRole('tooltip', { hidden: true })).toHaveTextContent('Add a page')
+    vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout'], now: START })
+    const mode = screen.getByRole('button', { name: 'Mode: Edit' })
+    fireEvent.pointerDown(mode)
+    fireEvent.pointerOver(mode)
+    act(() => vi.advanceTimersByTime(1000))
+    expect(screen.queryByRole('tooltip', { hidden: true })).not.toBeInTheDocument()
+  })
+
   it('a tip hides when the pointer leaves the panel', async () => {
     const { user } = await openPanel()
     const chats = screen.getByRole('button', { name: 'Chats' })

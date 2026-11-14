@@ -49,9 +49,10 @@ export function Tooltips() {
       shown = undefined
       setTip(undefined)
     }
-    const dismiss = () => {
-      dismissed = current
+    // Puts away the tip of `el`: the control pressed, or for Escape the one whose tip shows.
+    const dismiss = (el: HTMLElement | undefined) => {
       hide()
+      dismissed = el
       // Not a move along a toolbar: the next control's tip waits as usual.
       warmUntil = 0
     }
@@ -91,13 +92,14 @@ export function Tooltips() {
       // Keyboard focus only: a click also focuses the control, and its tip would linger.
       if (el && el.matches(':focus-visible')) follow(el, true)
     }
-    const onKeyDown = (e: KeyboardEvent) => e.key === 'Escape' && dismiss()
+    const onKeyDown = (e: KeyboardEvent) => e.key === 'Escape' && dismiss(current)
+    const onPointerDown = (e: PointerEvent) => dismiss(tipped(e.target))
     const options = { capture: true }
     document.addEventListener('pointerover', onPointerOver, options)
     document.addEventListener('pointerout', onPointerOut, options)
     document.addEventListener('focusin', onFocusIn, options)
     document.addEventListener('focusout', hide, options)
-    document.addEventListener('pointerdown', dismiss, options)
+    document.addEventListener('pointerdown', onPointerDown, options)
     document.addEventListener('keydown', onKeyDown, options)
     document.addEventListener('scroll', onScroll, options)
     window.addEventListener('blur', hide)
@@ -109,7 +111,7 @@ export function Tooltips() {
       document.removeEventListener('pointerout', onPointerOut, options)
       document.removeEventListener('focusin', onFocusIn, options)
       document.removeEventListener('focusout', hide, options)
-      document.removeEventListener('pointerdown', dismiss, options)
+      document.removeEventListener('pointerdown', onPointerDown, options)
       document.removeEventListener('keydown', onKeyDown, options)
       document.removeEventListener('scroll', onScroll, options)
       window.removeEventListener('blur', hide)
