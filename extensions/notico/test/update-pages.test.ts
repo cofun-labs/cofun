@@ -718,14 +718,28 @@ describe('update_pages details', () => {
     const shown = shownCells(await query(tab, [ws.records.get(row(1)) as never]), row(1))
     expect(shown.Notes).toBe('x $a b$<br>end<br>')
     const pages = [{ page: hex(row(1)), properties: { Notes: shown.Notes } }]
-    // The equation goes onto one line, which reads the same: the preview shows a change.
-    expect((await updatePages.preview!({ pages }))?.split('\n')[2]).toBe('    Notes: x a b end (was x $a b$ end)')
+    // The equation goes onto one line, which LaTeX reads the same: the preview shows no change.
+    expect((await updatePages.preview!({ pages }))?.split('\n')[2]).toBe('    Notes: x a b end (unchanged)')
     await update(pages)
     expect(prop(ws, 1, 'g:g')).toEqual([['x '], ['⁍', [['e', 'a b']]], ['\nend\n']])
     // Written back again, it is as it is stored, the line break at its end included.
     const again = shownCells(await query(tab, [ws.records.get(row(1)) as never]), row(1))
     expect(again.Notes).toBe(shown.Notes)
     expect((await updatePages.preview!({ pages }))?.split('\n')[2]).toBe('    Notes: x a b end (unchanged)')
+  })
+
+  it('keeps a <br> in an equation’s LaTeX, and a backtick in it before inline code, as they are', async () => {
+    const ws = mentionable()
+    const tab = open(ws, `https://app.notion.com/${hex(DB)}`)
+    const notes = [['⁍', [['e', 'c<br>d']]], [' '], ['⁍', [['e', 'x`y']]], [' '], ['p<br>q', [['c']]], ['\nend']]
+    ws.edit(row(1), { properties: { title: [['Write docs']], 'a:a': [['Done']], 'g:g': notes } })
+    const shown = shownCells(await query(tab, [ws.records.get(row(1)) as never]), row(1))
+    expect(shown.Notes).toBe('$c\\<br>d$ $x`y$ `p<br>q`<br>end')
+    const pages = [{ page: hex(row(1)), properties: { Notes: shown.Notes } }]
+    expect((await updatePages.preview!({ pages }))?.split('\n')[2]).toMatch(/ \(unchanged\)$/)
+    // Written with more text, the rest is as it was.
+    await update([{ page: hex(row(1)), properties: { Notes: `${shown.Notes} more` } }])
+    expect(prop(ws, 1, 'g:g')).toEqual([...notes.slice(0, -1), ['\nend more']])
   })
 
   it.each([

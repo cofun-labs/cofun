@@ -907,6 +907,63 @@ describe('round 6', () => {
     expect(body(await read()).split('\n')[2]).toBe('| `a\\|b` | $\\|x\\|$ |')
   })
 
+  it('keeps inline equations equations when written back as read_page shows them', async () => {
+    // A line break in LaTeX, a `<br>` in it, and a backtick in it before code that holds a `<br>`.
+    const title = [
+      ['⁍', [['e', 'a\nb']]],
+      [' and '],
+      ['⁍', [['e', 'c<br>d']]],
+      [' then '],
+      ['⁍', [['e', 'x`y']]],
+      [' '],
+      ['p<br>q', [['c']]],
+      [' costs 5$\nand 6$'],
+    ]
+    const ws = workspace(
+      [1, 2],
+      [
+        block(1, 'text', undefined, { properties: { title } }),
+        block(2, 'quote', undefined, { properties: { title: [['⁍', [['e', 'a\nb']]], ['\nnext']] } }),
+      ],
+    )
+    open(ws)
+    const shown = body(await read())
+    expect(withoutRefs(shown)).toBe(
+      ['$a b$ and $c\\<br>d$ then $x`y$ `p<br>q` costs 5$<br>and 6\\$', '> $a b$', '> next'].join('\n'),
+    )
+    // Each block is edited elsewhere, so its text is written again.
+    const [text, ...quote] = withoutRefs(shown).replace(' and ', ' plus ').replace('next', 'later').split('\n')
+    await edit([
+      { action: 'replace', block: '^00000001', markdown: text },
+      { action: 'replace', block: '^00000002', markdown: quote.join('\n') },
+    ])
+    // The line break is a space, which LaTeX reads the same; everything else is as it was.
+    expect(ws.records.get(id(1))!.properties).toEqual({
+      title: [['⁍', [['e', 'a b']]], [' plus '], ...title.slice(2)],
+    })
+    expect(ws.records.get(id(2))!.properties).toEqual({ title: [['⁍', [['e', 'a b']]], ['\nlater']] })
+  })
+
+  it('writes an equation in a page table’s cell back as read_page shows it, its line break a space', async () => {
+    const ws = workspace(
+      [1],
+      [
+        block(1, 'table', undefined, { content: [id(2), id(3)], format: { table_block_column_order: ['a'] } }),
+        block(2, 'table_row', undefined, { properties: { a: [['A']] } }, id(1)),
+        block(3, 'table_row', undefined, { properties: { a: [['x '], ['⁍', [['e', 'a\nb']]]] } }, id(1)),
+      ],
+    )
+    open(ws)
+    const shown = withoutRefs(body(await read()))
+    expect(shown.split('\n')[2]).toBe('| x $a b$ |')
+    // The cell is edited elsewhere, so its text is written again.
+    const markdown = shown.replace(/\n\^[0-9a-f]+$/, '').replace('| x ', '| y ')
+    await edit([{ action: 'replace', block: '^00000001', markdown }])
+    const table = [...ws.records.values()].find((r) => (r as Rec).type === 'table') as Rec
+    const rows = (table.content as string[]).map((r) => ws.records.get(r)!.properties)
+    expect(rows).toEqual([{ a: [['A']] }, { a: [['y '], ['⁍', [['e', 'a b']]]] }])
+  })
+
   it('does not write protocol-relative links', () => {
     expect(inline('[x](//evil.example)')).toEqual([['[x](//evil.example)']])
   })
