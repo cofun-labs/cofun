@@ -23,6 +23,10 @@ export function Tooltips() {
     let warmUntil = 0
     // The text shown, if the tip shows.
     let shown: string | undefined
+    // The control whose tip a click or Escape put away. It shows none until the pointer leaves it,
+    // whatever focus does meanwhile: a click moves focus, from the message box say, and that must not
+    // let the tip come back as the pointer moves within the control (from its icon to its edge).
+    let dismissed: HTMLElement | undefined
     // A tip that changes while it shows (Copy reply, then Copied) follows the control, and one whose
     // control is gone hides: a removed control fires no focusout or pointer event.
     const watch = new MutationObserver(() => {
@@ -45,14 +49,16 @@ export function Tooltips() {
       shown = undefined
       setTip(undefined)
     }
-    // A click or Escape puts the tip away, and it stays away while the pointer is on that control:
-    // the control stays current, so moving within it (from its icon to its edge) shows nothing.
     const dismiss = () => {
-      clearTimeout(timer)
-      shown = undefined
-      setTip(undefined)
+      dismissed = current
+      hide()
+      // Not a move along a toolbar: the next control's tip waits as usual.
+      warmUntil = 0
     }
     const follow = (el: HTMLElement | undefined, now: boolean) => {
+      // A put-away tip shows again once the pointer, or the focus, has moved on to another control.
+      if (el === dismissed) return
+      dismissed = undefined
       if (el === current) return
       if (!el) return hide()
       clearTimeout(timer)
@@ -69,7 +75,11 @@ export function Tooltips() {
 
     const onPointerOver = (e: PointerEvent) => follow(tipped(e.target), false)
     // Out of the panel altogether (onto the page next to it): no pointerover follows inside it.
-    const onPointerOut = (e: PointerEvent) => e.relatedTarget === null && hide()
+    const onPointerOut = (e: PointerEvent) => {
+      if (e.relatedTarget !== null) return
+      dismissed = undefined
+      hide()
+    }
     // Only a scroll that moves the control: the chat scrolling itself as a reply streams in leaves
     // the composer's buttons, and their tips, where they are.
     const onScroll = (e: Event) => {

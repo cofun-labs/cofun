@@ -1340,6 +1340,23 @@ describe('tips', () => {
     expect(screen.queryByRole('tooltip', { hidden: true })).not.toBeInTheDocument()
   })
 
+  it('a tip put away by a click stays away also when the click took focus from the message box', async () => {
+    const { user } = await openPanel()
+    await user.click(composer())
+    const mode = screen.getByRole('button', { name: 'Mode: Edit' })
+    await user.click(mode)
+    // The clock moves from here on, so a tip waiting to show would show.
+    vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout'], now: START })
+    fireEvent.pointerOver(screen.getByRole('button', { name: 'Mode: Read only' }))
+    act(() => vi.advanceTimersByTime(1000))
+    expect(screen.queryByRole('tooltip', { hidden: true })).not.toBeInTheDocument()
+    // Once the pointer has left the button and comes back, its tip shows again.
+    fireEvent.pointerOver(composer())
+    fireEvent.pointerOver(screen.getByRole('button', { name: 'Mode: Read only' }))
+    act(() => vi.advanceTimersByTime(1000))
+    expect(screen.getByRole('tooltip', { hidden: true })).toHaveTextContent("Read only: won't change pages")
+  })
+
   it('a tip hides when the pointer leaves the panel', async () => {
     const { user } = await openPanel()
     const chats = screen.getByRole('button', { name: 'Chats' })
