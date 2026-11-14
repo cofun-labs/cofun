@@ -47,7 +47,6 @@ Source code and privacy policy: https://github.com/cofun-labs/cofun
 Notico is an independent project. It is not made or endorsed by Notion.
 ```
 
-
 ## Details
 
 | Field | Value |
