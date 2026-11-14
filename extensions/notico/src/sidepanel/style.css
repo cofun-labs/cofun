@@ -1146,7 +1146,7 @@ button.pack:disabled {
   font-weight: 600;
 }
 
-.openrouter {
+.own-setup {
   align-self: stretch;
   display: flex;
   flex-direction: column;
@@ -1257,6 +1257,13 @@ button.pack:disabled {
   border-top: 1px solid var(--border);
   border-radius: 0 0 10px 10px;
   color: var(--muted);
+}
+
+.model-popover .model-group {
+  padding: 6px 10px 2px;
+  color: var(--muted);
+  font-size: 11.5px;
+  font-weight: 600;
 }
 
 .model-popover .model-state {

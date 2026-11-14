@@ -1,13 +1,14 @@
 // The side panel's agent: asks the model, runs the tools it calls in the extension, and sends the
 // results back until the model answers. Where the model runs is a provider (see ModelProvider): our
-// worker (the hosted one), or OpenRouter with the user's own key. This is the only module that imports the agent runtime (pi); the rest of
-// the extension uses the types below.
+// worker (the hosted one), or OpenRouter or DeepSeek with the user's own key. This is the only module
+// that imports the agent runtime (pi); the rest of the extension uses the types below.
 import { Agent, type AgentEvent, type AgentMessage, type AgentTool } from '@earendil-works/pi-agent-core'
 import { normalizeContext } from '@earendil-works/pi-ai'
 import type { AssistantMessage, ClientIdentity, Model, ToolCall, ToolResultMessage } from '@earendil-works/pi-ai'
 import { streamSimple } from '@earendil-works/pi-ai/api/openai-completions'
+import { DEEPSEEK_MODELS as DEEPSEEK_CATALOG } from '@earendil-works/pi-ai/providers/deepseek.models'
 import { CheckoutPage, Credits, GrantsPage, Packs, UsagePeriod } from './credits'
-import { HOSTED_ONLY, type ModelSettings, type OpenRouterModel } from './models'
+import { HOSTED_ONLY, ownSetup, type ModelSettings, type OwnModel, type OwnSetup } from './models'
 import { z } from './zod'
 
 export interface AgentConfig {
@@ -176,7 +177,7 @@ export class CopilotAgent {
   private model?: Model<'openai-completions'>
   /** Where model requests go, and the settings it was made from. */
   private provider: ModelProvider
-  private providerFor?: ModelSettings
+  private providerFor?: OwnSetup | 'hosted'
   private readonly maxSteps: number
   /** Names of the tools that need the user's OK before each run. */
   private readonly confirmed: Set<string>
@@ -599,17 +600,12 @@ export class CopilotAgent {
    * request looks it up from the new provider; the conversation stays.
    */
   private async chooseProvider(): Promise<void> {
-    const settings = (await this.config.model?.()) ?? HOSTED_ONLY
-    const { openRouter } = settings
-    const choice = settings.use === 'openrouter' && openRouter ? settings : HOSTED_ONLY
+    const choice = ownSetup((await this.config.model?.()) ?? HOSTED_ONLY) ?? 'hosted'
     const before = this.providerFor
-    if (before && JSON.stringify(before) === JSON.stringify(choice)) return
-    if (!before && choice === HOSTED_ONLY) {
-      this.providerFor = choice
-      return
-    }
     this.providerFor = choice
-    this.provider = choice.openRouter ? openRouterProvider(choice.openRouter) : hostedProvider(this.config)
+    // The agent starts on the hosted provider.
+    if (before === undefined ? choice === 'hosted' : JSON.stringify(before) === JSON.stringify(choice)) return
+    this.provider = choice === 'hosted' ? hostedProvider(this.config) : ownProvider(choice)
     this.model = undefined
   }
 
@@ -728,6 +724,8 @@ export class CopilotAgent {
  * agent loop itself knows none of this.
  */
 interface ModelProvider {
+  /** The service, as the user knows it. */
+  name: string
   /** The model requests name. Looked up as a conversation starts, and again when `modelChanged`. */
   loadModel(): Promise<Model<'openai-completions'>>
   /** The key for one model request. Throws, with what the user should do, when there is none. */
@@ -754,6 +752,7 @@ function hostedProvider({ apiUrl, getToken }: Pick<AgentConfig, 'apiUrl' | 'getT
     return value
   }
   return {
+    name: 'Notico',
     async loadModel() {
       const res = await fetch(`${baseUrl}/me`, { headers: { authorization: `Bearer ${await token()}` } })
       const body = MeReply.safeParse(await res.json().catch(() => undefined)).data
@@ -793,6 +792,21 @@ function hostedProvider({ apiUrl, getToken }: Pick<AgentConfig, 'apiUrl' | 'getT
 // The worker allows 200 messages and 200,000 characters, tools included.
 const HOSTED_HISTORY = { messages: 100, chars: 150_000 }
 
+/** The provider for the user's own model on the service they chose. */
+const ownProvider = (setup: OwnSetup): ModelProvider =>
+  setup.service === 'openrouter' ? openRouterProvider(setup) : deepSeekProvider(setup)
+
+/**
+ * How much of a long conversation to send to a model the user pays for: what the hosted provider
+ * sends, at most. Every round trip resends the history, so a model with a huge context must not make
+ * each question cost dollars. A smaller context lowers it (a token is about four characters: half the
+ * context, which leaves room for the reply).
+ */
+const ownHistory = (contextLength: number) => ({
+  messages: 100,
+  chars: Math.min(contextLength * 2, HOSTED_HISTORY.chars),
+})
+
 /** OpenRouter's API, which answers requests from the extension's pages. */
 const OPENROUTER = 'https://openrouter.ai/api/v1'
 
@@ -801,15 +815,12 @@ const OPENROUTER = 'https://openrouter.ai/api/v1'
  * the OpenAI-compatible API, the `anthropic/*` ones included (pi's catalog lists those under
  * Anthropic's own API, which would bring in another SDK); they use tools correctly this way (#46).
  */
-function openRouterProvider({ key, model }: { key: string; model: OpenRouterModel }): ModelProvider {
+function openRouterProvider({ key, model }: { key: string; model: OwnModel }): ModelProvider {
   return {
+    name: 'OpenRouter',
     loadModel: async () => openRouterModel(model),
     apiKey: async () => key,
-    // What the hosted provider sends, at most: every round trip resends the history, and the user
-    // pays for it, so a model with a huge context must not make each question cost dollars. A
-    // smaller context lowers it (a token is about four characters: half the context, which leaves
-    // room for the reply).
-    history: { messages: 100, chars: Math.min(model.contextLength * 2, HOSTED_HISTORY.chars) },
+    history: ownHistory(model.contextLength),
     // OpenRouter's app attribution headers would name the extension to it; nothing needs them.
     identity: { attribution: null },
     parseError: openRouterError,
@@ -823,7 +834,7 @@ function openRouterError(message: string | undefined): Failure {
   return parseError(message)
 }
 
-function openRouterModel(model: OpenRouterModel): Model<'openai-completions'> {
+function openRouterModel(model: OwnModel): Model<'openai-completions'> {
   return {
     id: model.id,
     name: model.name,
@@ -866,12 +877,12 @@ const perMillion = (perToken: string) => {
  * is left out). The list is public, so the key is not sent. An entry that is not in the expected
  * shape is skipped; a list that is not is an error.
  */
-export async function openRouterModels(): Promise<OpenRouterModel[]> {
+export async function openRouterModels(): Promise<OwnModel[]> {
   const res = await fetch(`${OPENROUTER}/models`)
   if (!res.ok) throw new Error(`OpenRouter's model list could not be loaded (HTTP ${res.status}).`)
   const body = z.object({ data: z.array(z.unknown()) }).safeParse(await res.json().catch(() => undefined))
   if (!body.success) throw new Error("OpenRouter's model list is not in the shape Notico expects.")
-  return body.data.data.flatMap((entry): OpenRouterModel[] => {
+  return body.data.data.flatMap((entry): OwnModel[] => {
     const listed = ListedModel.safeParse(entry)
     if (!listed.success) return []
     const { id, name, context_length, pricing, supported_parameters } = listed.data
@@ -883,6 +894,52 @@ export async function openRouterModels(): Promise<OpenRouterModel[]> {
   })
 }
 
+/**
+ * DeepSeek's models, from pi's catalog: how each is asked (DeepSeek's thinking format, its own
+ * fields on assistant messages), its context, and its prices, kept current as pi updates. DeepSeek's
+ * own model list has none of that, so it is never read.
+ */
+const deepSeekCatalog: Model<'openai-completions'>[] = Object.values(DEEPSEEK_CATALOG)
+
+/** DeepSeek's models, as the panel offers them. */
+export const DEEPSEEK_MODELS: OwnModel[] = deepSeekCatalog.map((m) => ({
+  id: m.id,
+  name: m.name,
+  contextLength: m.contextWindow,
+  price: { input: m.cost.input, output: m.cost.output },
+}))
+
+/**
+ * DeepSeek's own API with the user's own key, which goes to DeepSeek alone. Its models answer
+ * without thinking first: pi turns thinking off when no reasoning level is asked for.
+ */
+function deepSeekProvider({ key, model: id }: { key: string; model: string }): ModelProvider {
+  const model = deepSeekCatalog.find((m) => m.id === id)
+  return {
+    name: 'DeepSeek',
+    async loadModel() {
+      if (!model) throw new Error(`DeepSeek's model ${id} is no longer offered. Choose another on the settings page.`)
+      return model
+    },
+    apiKey: async () => key,
+    history: model ? ownHistory(model.contextWindow) : HOSTED_HISTORY,
+    identity: { attribution: null },
+    parseError: deepSeekError,
+    modelChanged: () => false,
+  }
+}
+
+/** DeepSeek's error, with what the user can do about the ones it gives for their account. */
+function deepSeekError(message: string | undefined): Failure {
+  if (message && /^401\b/.test(message)) return { text: 'DeepSeek rejected your key. Check it on the settings page.' }
+  if (message && /^402\b/.test(message))
+    return { text: 'Your DeepSeek balance has run out. Top it up on DeepSeek, or choose another model.' }
+  // A rate limit ends the question like any failure, and nothing is sent again (see askWithRetry).
+  if (message && /^429\b/.test(message))
+    return { text: 'DeepSeek is getting too many requests from your account. Wait a minute, then ask again.' }
+  return parseError(message)
+}
+
 const CHECK_TIMEOUT_MS = 30_000
 
 /** How a check of a key and model went. */
@@ -892,7 +949,8 @@ export type ModelCheck = { status: 'ok' } | { status: 'no_tools' } | { status: '
  * Asks the model one short question with one tool, as the settings page's check: whether the key
  * and the model work, and whether the model calls the tool. Costs the user a tiny request.
  */
-export async function checkModel(settings: { key: string; model: OpenRouterModel }): Promise<ModelCheck> {
+export async function checkModel(setup: OwnSetup): Promise<ModelCheck> {
+  const provider = ownProvider(setup)
   const context = normalizeContext({
     systemPrompt: 'Use the tool to answer.',
     messages: [{ role: 'user', content: 'What time is it? Use the tool.', timestamp: Date.now() }],
@@ -904,16 +962,16 @@ export async function checkModel(settings: { key: string; model: OpenRouterModel
       },
     ],
   })
-  const stream = streamSimple(openRouterModel(settings.model), context, {
-    apiKey: settings.key,
-    identity: { attribution: null },
+  const stream = streamSimple(await provider.loadModel(), context, {
+    apiKey: await provider.apiKey(),
+    identity: provider.identity,
     // A stalled model must not leave the check waiting forever.
     signal: AbortSignal.timeout(CHECK_TIMEOUT_MS),
   })
   for await (const _event of stream);
   const reply = await stream.result()
-  if (reply.stopReason === 'aborted') return { status: 'failed', message: 'OpenRouter did not answer in time.' }
-  if (reply.stopReason === 'error') return { status: 'failed', message: openRouterError(reply.errorMessage).text }
+  if (reply.stopReason === 'aborted') return { status: 'failed', message: `${provider.name} did not answer in time.` }
+  if (reply.stopReason === 'error') return { status: 'failed', message: provider.parseError(reply.errorMessage).text }
   return reply.content.some((block) => block.type === 'toolCall') ? { status: 'ok' } : { status: 'no_tools' }
 }
 

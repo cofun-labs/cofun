@@ -1,10 +1,10 @@
-// Which model answers the user's questions (UC-AGENT-002): the hosted one, or one on OpenRouter with
-// the user's own key. The choice and the key are kept in chrome.storage.local per account: on this
-// device only, never synced, and not encrypted, like the Clerk client token.
+// Which model answers the user's questions (UC-AGENT-002): the hosted one, or one on OpenRouter or
+// DeepSeek with the user's own key. The choice and the keys are kept in chrome.storage.local per
+// account: on this device only, never synced, and not encrypted, like the Clerk client token.
 import { z } from './zod'
 
-/** A model on OpenRouter, as the settings page offers it. */
-export const OpenRouterModel = z.object({
+/** A model the user asks with their own key (on OpenRouter or DeepSeek), as the panel offers it. */
+export const OwnModel = z.object({
   id: z.string().min(1),
   name: z.string(),
   /** Tokens the model takes in one request. */
@@ -12,15 +12,20 @@ export const OpenRouterModel = z.object({
   /** US dollars per million tokens. */
   price: z.object({ input: z.number().nonnegative(), output: z.number().nonnegative() }),
 })
-export type OpenRouterModel = z.infer<typeof OpenRouterModel>
+export type OwnModel = z.infer<typeof OwnModel>
 
 /**
- * What the user set up. `openRouter` stays when they switch back to the hosted model, so switching
- * again is one step; removing the key removes it.
+ * What the user set up. Each service keeps its own key and model, whichever one is in use, so
+ * switching between them is one step; removing a key removes that service's setup.
  */
 const ModelSettings = z.object({
-  use: z.enum(['hosted', 'openrouter']),
-  openRouter: z.object({ key: z.string().min(1), model: OpenRouterModel }).optional(),
+  use: z.enum(['hosted', 'openrouter', 'deepseek']),
+  openRouter: z.object({ key: z.string().min(1), model: OwnModel }).optional(),
+  /**
+   * The model by its id in DeepSeek's catalog (`DEEPSEEK_MODELS` in agent.ts), which has what it
+   * costs and how it is asked: a saved copy would go stale as the catalog changes.
+   */
+  deepSeek: z.object({ key: z.string().min(1), model: z.string().min(1) }).optional(),
 })
 export type ModelSettings = z.infer<typeof ModelSettings>
 
@@ -74,4 +79,16 @@ export function watchModelSettings(userId: string, onChange: (settings: ModelSet
 
 export async function saveModelSettings(userId: string, settings: ModelSettings): Promise<void> {
   await chrome.storage.local.set({ [storageKey(userId)]: settings })
+}
+
+/** The user's own model in use: the service, their key for it, and the model they chose there. */
+export type OwnSetup =
+  | { service: 'openrouter'; key: string; model: OwnModel }
+  | { service: 'deepseek'; key: string; model: string }
+
+/** The own model the settings say to use, if they say one that is set up; otherwise the hosted one answers. */
+export function ownSetup(settings: ModelSettings): OwnSetup | undefined {
+  if (settings.use === 'openrouter' && settings.openRouter) return { service: 'openrouter', ...settings.openRouter }
+  if (settings.use === 'deepseek' && settings.deepSeek) return { service: 'deepseek', ...settings.deepSeek }
+  return undefined
 }
