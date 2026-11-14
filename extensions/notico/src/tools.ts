@@ -1,6 +1,7 @@
 // Tools the agent can run in the extension.
 // The worker's tests import this file too, and their tsconfig has no chrome types.
 /// <reference types="chrome" />
+import type { HistoryMessage } from './agent'
 import { defineTool, type Action, type Tool, type Touched, type Verb } from './tool'
 import { z } from './zod'
 import {
@@ -102,13 +103,34 @@ export async function currentNotionPage(): Promise<OpenPage | undefined> {
   const tab = await currentTab()
   if (!tab || !isNotion(tab.url)) return undefined
   // Drop a trailing " | Notion" if the tab title has one; the model does not need it.
-  return { title: tab.title.replace(/\s+\|\s+Notion$/, ''), url: tab.url }
+  return { title: tabTitle(tab.title), url: tab.url }
 }
 
-/** A Notion page a question carries: its title and URL, as the tab showed them. */
+/**
+ * A Notion page a question carries: its title and URL, as the tab or Notion's search showed them,
+ * and whether it is a database.
+ */
 export interface OpenPage {
   title: string
   url: string
+  database?: true
+}
+
+/** The title Chrome reports for a Notion tab, without the " | Notion" a tab title may end with. */
+const tabTitle = (title: string) => title.replace(/\s+\|\s+Notion$/, '')
+
+/**
+ * The Notion pages open in the browser's tabs, in any window, as Chrome reports them: no Notion
+ * request. A tab that shows no page (say, Notion's home) is left out, and a page open twice is listed once.
+ */
+export async function openNotionPages(): Promise<OpenPage[]> {
+  const seen = new Set<string>()
+  return (await chrome.tabs.query({})).flatMap((tab) => {
+    const id = tab.url && isNotion(tab.url) ? pageIdFromUrl(tab.url) : undefined
+    if (!tab.url || !id || seen.has(id)) return []
+    seen.add(id)
+    return [{ title: tabTitle(tab.title ?? ''), url: tab.url }]
+  })
 }
 
 /**
@@ -133,33 +155,44 @@ async function needsAttachedPage(): Promise<void> {
 
 /**
  * Sets up the next question from what its composer showed: `page`, the Notion page open in the
- * current tab (if one is), and whether the user took a page off the question. Returns the note the
- * model is told with the question: which page is open, that the user left it out, or that the
- * current tab is not a Notion page. Until the next question, its tools follow the same choice: a
- * question sent while a page is off never falls back on the open page, even one sent from another
- * site whose user goes back to that page while it runs.
+ * current tab (if one is), whether the user took a page off the question, and the pages they added
+ * to it by hand. Returns the note the model is told with the question: which page is open, that the
+ * user left it out, or that the current tab is not a Notion page; then the pages added, if any.
+ * Until the next question, its tools follow the same choice: a question sent while a page is off
+ * never falls back on the open page, even one sent from another site whose user goes back to that
+ * page while it runs.
  */
-export function carryOpenPage(page: OpenPage | undefined, removed: boolean): string {
+export function carryPages(page: OpenPage | undefined, removed: boolean, added: OpenPage[] = []): string {
   openPageAttached = !removed
+  const notes = [openNote(page, removed)]
+  // The open page is named once, in its own note, also when the user added it by hand.
+  const open = page && !removed ? pageIdFromUrl(page.url) : undefined
+  const others = added.filter((p) => !open || pageIdFromUrl(p.url) !== open)
+  if (others.length)
+    notes.push(`[Pages the user added to this question: ${others.map((p) => pageNamed(p)).join('; ')}]`)
+  return notes.join('\n')
+}
+
+function openNote(page: OpenPage | undefined, removed: boolean): string {
   if (!page) return '[The current tab is not a Notion page.]'
   if (removed)
     return (
       '[No Notion page is attached to this question: the user took the page open in the current tab off it. ' +
       'Do not use that page; if the question needs a page, ask the user which one, or search for it.]'
     )
-  return openPageNote(page)
+  return `[The Notion page open in the current tab: ${pageNamed(page)}]`
 }
 
 /**
- * Names the page a question carries, for the model. A tab on another site is never named: such a
+ * Names a page a question carries, for the model. A tab on another site is never named: such a
  * tab is only said not to be Notion.
  */
-function openPageNote(page: OpenPage): string {
+function pageNamed(page: OpenPage): string {
   // The page's author picks its title, and a shared link its query: keep both from closing the note
   // and faking another one.
   const title = clip(page.title.replace(/[[\]]/g, ''), TITLE_CHARS)
   const url = page.url.replaceAll('[', '%5B').replaceAll(']', '%5D')
-  return `[The Notion page open in the current tab: ${JSON.stringify(title)}, ${url}]`
+  return `${JSON.stringify(title)}${page.database ? ' (a database)' : ''}, ${url}`
 }
 
 const TITLE_CHARS = 200
@@ -2563,9 +2596,7 @@ export const searchPages = defineTool({
         plain(r.highlight?.title) ||
         (database ? names.get(r.id) : runsText(block?.properties?.title)) ||
         (database ? 'Untitled database' : 'Untitled')
-      // The path may end with the page itself (a top-level page's is only its own title).
-      const path = plain(r.highlight?.pathText)
-      const where = path === title ? '' : path.endsWith(` / ${title}`) ? path.slice(0, -title.length - 3) : path
+      const where = whereFound(plain(r.highlight?.pathText), title)
       const text = plain(r.highlight?.text)
       const edited =
         typeof block?.last_edited_time === 'number' ? new Date(block.last_edited_time).toISOString().slice(0, 10) : ''
@@ -2585,6 +2616,44 @@ export const searchPages = defineTool({
     return [`Pages found for "${query}"${more}:`, '', ...lines].join('\n')
   },
 })
+
+/** Where a search hit is: its path, which may end with the page itself (a top-level page's is only its own title). */
+function whereFound(path: string, title: string): string {
+  return path === title ? '' : path.endsWith(` / ${title}`) ? path.slice(0, -title.length - 3) : path
+}
+
+/** A page Notion's search found for the composer's page picker, with where it is. */
+export interface FoundPage extends OpenPage {
+  path?: string
+}
+
+/**
+ * Searches the workspace of the open page for the composer's page picker, as search_pages does,
+ * for the user rather than the model: no tool runs, and the requests count toward no question.
+ * Pages in the trash are left out. A failure throws as any Notion call does and is never retried;
+ * a database is named as the search names it, with no request for its name.
+ */
+export async function findPages(words: string, limit: number): Promise<FoundPage[]> {
+  const tab = await activeNotionTab({ counted: false })
+  if (!tab.pageId) throw new Error('Open a page of the workspace to search it.')
+  const spaceId = await workspaceOf(tab)
+  const found = await tab.client.search(spaceId, words.trim(), limit)
+  const tag = highlightTag(found.results)
+  const plain = (text: unknown) => withoutTag(typeof text === 'string' ? text : undefined, tag)
+  return found.results.flatMap((r) => {
+    const block = found.recordMap.block?.[r.id]
+    if (block?.alive === false) return []
+    const database = block?.type === 'collection_view_page' || block?.type === 'collection_view'
+    const title =
+      plain(r.highlight?.title) ||
+      (database ? '' : runsText(block?.properties?.title)) ||
+      (database ? 'Untitled database' : 'Untitled')
+    const path = whereFound(plain(r.highlight?.pathText), title)
+    return [
+      { title, url: pageLink(tab.url, r.id), ...(database && { database: true as const }), ...(path && { path }) },
+    ]
+  })
+}
 
 /**
  * The tag a search response marks matched words with: a random name per response, such as
@@ -2940,4 +3009,28 @@ export function touchedBy(calls: { name: string; args: unknown; result: string }
     for (const id of t.changed ?? []) changed.add(id)
   }
   return { read: read.size, changed: changed.size }
+}
+
+/**
+ * The pages a saved conversation went with, newest first: the pages its questions carried, and the
+ * one page each call that worked read or changed, when the side panel names it (as on its card). Read
+ * from the conversation alone: no Notion request. `origin` is the Notion host links are made on.
+ */
+export function pagesIn(messages: HistoryMessage[], origin: string): OpenPage[] {
+  const calls = new Map<string, unknown>()
+  const pages: OpenPage[] = []
+  for (const m of messages) {
+    if (m.role === 'user') pages.push(...(m.pages ?? []))
+    else if (m.role === 'assistant') {
+      for (const part of m.parts) if (part.type === 'tool_call') calls.set(part.id, part.args)
+    } else if (m.status === 'done') {
+      const tool = TOOLS.find((t) => t.name === m.name)
+      const args = calls.get(m.id)
+      const touched = tool?.touched(args, m.result) ?? NONE
+      const ids = [...new Set([...(touched.read ?? []), ...(touched.changed ?? [])])]
+      const title = ids.length === 1 ? tool?.describe(args, m.result).name : undefined
+      if (title) pages.push({ title, url: pageLink(origin, ids[0]) })
+    }
+  }
+  return pages.reverse()
 }

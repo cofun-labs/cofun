@@ -305,6 +305,21 @@ const SearchHit = z.looseObject({
   highlightBlockId: text,
 })
 type RawSearchResult = z.output<typeof SearchHit>
+/** A search response: hits that don't parse are left out, and a total that isn't a count is missing. */
+const SearchResponse = z.looseObject({
+  results: z
+    .array(z.unknown())
+    .catch([])
+    .transform((hits) =>
+      hits.flatMap((hit) => {
+        const parsed = SearchHit.safeParse(hit)
+        return parsed.success ? [parsed.data] : []
+      }),
+    ),
+  // zod 4 numbers are finite.
+  total: z.number().optional().catch(undefined),
+  recordMap: z.unknown().optional(),
+})
 
 export interface SearchResults {
   results: RawSearchResult[]
@@ -988,12 +1003,8 @@ export class NotionClient {
       },
       space,
     )
-    const results = (Array.isArray(json.results) ? json.results : []).flatMap((hit: unknown) => {
-      const parsed = SearchHit.safeParse(hit)
-      return parsed.success ? [parsed.data] : []
-    })
-    const total = typeof json.total === 'number' && Number.isFinite(json.total) ? json.total : results.length
-    return { results, total: Math.max(total, results.length), recordMap: normalizeRecordMap(json.recordMap) }
+    const { results, total = results.length, recordMap } = SearchResponse.parse(json)
+    return { results, total: Math.max(total, results.length), recordMap: normalizeRecordMap(recordMap) }
   }
 
   /**

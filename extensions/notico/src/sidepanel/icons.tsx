@@ -38,6 +38,13 @@ const SHAPES = {
       <path d="M9 2.5v3h3M6.5 8.5h3.5M6.5 10.8h3.5" />
     </>
   ),
+  database: (
+    <>
+      <rect x="2.5" y="3" width="11" height="10" rx="1.5" />
+      <path d="M2.5 6.5h11M6.5 6.5v6.5" />
+    </>
+  ),
+  plus: <path d="M8 3.5v9M3.5 8h9" />,
   search: (
     <>
       <circle cx="7" cy="7" r="4.5" />

@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { NESTED_MAX } from '../src/notion/api'
 import { inline } from '../src/notion/blocks'
 import { blockRefs, codeSpan, splitIntoParts } from '../src/notion/markdown'
-import { PART_CHARS, carryOpenPage, createDatabase, createPage, editPage, listPages, readPage } from '../src/tools'
+import { PART_CHARS, carryPages, createDatabase, createPage, editPage, listPages, readPage } from '../src/tools'
 import { FakeNotionTab, PAGE, PAGE_URL, SPACE, USER, fixture, restoreGlobals } from './notion-tab'
 
 afterEach(restoreGlobals)
@@ -1052,11 +1052,11 @@ describe('how the side panel describes a read', () => {
 })
 
 describe('a question sent while the user took a page off it', () => {
-  afterEach(() => void carryOpenPage(undefined, false))
+  afterEach(() => void carryPages(undefined, false))
 
   it('never reads the open page, even one the user goes back to from another site', async () => {
     // Sent from another site while the page was off; the user then goes back to it.
-    carryOpenPage(undefined, true)
+    carryPages(undefined, true)
     const tab = new FakeNotionTab(PAGE_URL).install()
 
     await expect(readPage.run({})).rejects.toThrow(/No page is attached to this question/)

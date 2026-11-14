@@ -70,6 +70,8 @@ The panel is open on every tab, but the tools work on the current tab only: the 
 
 The page a question goes with is shown at the top of the composer (`Pages.tsx`), read from the tab as Chrome reports it (`chrome.tabs` events, no Notion request), so the question carries what the user saw. The user can take it off; the question's note then names no page, and `carryOpenPage` (`src/tools.ts`) makes every tool that would default to the open page (reading it, its comments, its database or selection, and `get_current_tab`) refuse for that question while the tab shows a Notion page, so the model asks or searches instead; on another site they work as they do without a page. The pages a question went with are saved with it in the session and shown in its bubble.
 
+The user adds more pages to a question with `@` in the composer or its "+" button, which open one picker (`PagePicker.tsx`). Its groups are the open page, the other Notion pages open in the browser's tabs (`chrome.tabs`), and recent pages, worked out from the saved sessions (the pages their questions carried, and those their tool calls read or changed, `pagesIn` in `src/tools.ts`): none asks anything of Notion. Its fourth group is Notion's own search of the workspace (`findPages`), sent from the Notion tab like any tool's request, and held to the same rules: only once typing pauses, one search at a time (a newer query replaces one still waiting, and waits for one already sent), counted toward no question, and never retried; when Notion turns one away, or one fails, the picker searches no more for that question. The question carries the added pages as titles and URLs in its note (`carryPages`), not their content: the model reads them with its tools when it needs to. A page added by hand stays with the question when the tab moves; the open page's chip follows the tab.
+
 | Area | Choice | Why |
 |---|---|---|
 | Extension | Chrome MV3 + [Side Panel API](https://developer.chrome.com/docs/extensions/reference/api/sidePanel) | Sits next to the page without covering Notion. One panel per window, on every tab (the manifest's `side_panel.default_path`), so the conversation stays as the user switches tabs |
@@ -127,6 +129,7 @@ extensions/notico/        Notico, the extension for Notion
                           ToolCall.tsx: one tool call and its changes, Header.tsx: the top bar,
                           Markdown.tsx: a reply's text as formatted Markdown,
                           Pages.tsx: the pages a question goes with, in the composer and its bubble,
+                          PagePicker.tsx: the page picker `@` and "+" open,
                           Account.tsx: the avatar and its menu, Settings.tsx: the settings page,
                           History.tsx: the history of the user's credits,
                           Model.tsx: the model menu by the composer, and the settings page's choice

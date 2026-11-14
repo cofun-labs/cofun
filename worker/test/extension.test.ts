@@ -28,7 +28,7 @@ import { HOSTED_ONLY, type ModelSettings } from '../../extensions/notico/src/mod
 import { activeNotionTab, countNotionRequests, notionCooldown } from '../../extensions/notico/src/notion/tab'
 import { defineTool } from '../../extensions/notico/src/tool'
 import {
-  carryOpenPage,
+  carryPages,
   currentNotionPage,
   editPage,
   movePage,
@@ -228,7 +228,7 @@ describe('extension agent against the worker', () => {
     // As the side panel asks: with the page the tab shows, or the note that it is not Notion.
     const askHere = async (text: string) => {
       const page = await currentNotionPage()
-      return ask(agent, text, undefined, { context: carryOpenPage(page, false), pages: page && [page] })
+      return ask(agent, text, undefined, { context: carryPages(page, false), pages: page && [page] })
     }
     withActiveTab({ url: 'https://www.notion.so/Q4-Roadmap-abc123', title: 'Q4 Roadmap | Notion' })
     await askHere('Summarize this')
@@ -1689,7 +1689,7 @@ describe('the open page note', () => {
   /** The note a question asked on `tab` is sent with, its page carried. */
   async function noteOn(tab: { url?: string; title?: string } | undefined) {
     withActiveTab(tab)
-    return carryOpenPage(await currentNotionPage(), false)
+    return carryPages(await currentNotionPage(), false)
   }
 
   it('names the Notion page in the current window', async () => {
@@ -1726,14 +1726,14 @@ describe('the open page note', () => {
 
   it('names no page once the user took it off the question', async () => {
     withActiveTab({ url: 'https://www.notion.so/Q4-Roadmap-abc123', title: 'Q4 Roadmap' })
-    const note = carryOpenPage(await currentNotionPage(), true)
+    const note = carryPages(await currentNotionPage(), true)
     expect(note).toMatch(
       /^\[No Notion page is attached to this question.*ask the user which one, or search for it\.\]$/,
     )
     expect(note).not.toContain('Roadmap')
     expect(note).not.toContain('abc123')
     // The next question carries the page again, as later tests expect.
-    carryOpenPage(undefined, false)
+    carryPages(undefined, false)
   })
 })
 

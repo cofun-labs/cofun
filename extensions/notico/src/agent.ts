@@ -52,10 +52,11 @@ export interface QuestionExtras {
   pages?: QuestionPage[]
 }
 
-/** A page a question was sent with: its title and URL. */
+/** A page a question was sent with: its title and URL, and whether it is a database. */
 export interface QuestionPage {
   title: string
   url: string
+  database?: true
 }
 
 /** A tool the model can ask the extension to run. */
