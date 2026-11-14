@@ -7,7 +7,7 @@ import { Agent, type AgentEvent, type AgentMessage, type AgentTool } from '@eare
 import type { AssistantMessage, Model } from '@earendil-works/pi-ai'
 import { streamSimple } from '@earendil-works/pi-ai/api/openai-completions'
 import { Credits, GrantsPage, Packs, UsagePeriod } from '../credits'
-import { HOSTED_ONLY, ownSetup, type OwnSetup } from '../models'
+import { answering, HOSTED_ONLY, type OwnSetup } from '../models'
 import { askUser, previewCall, toAgentTool, type Reporter } from './calls'
 import { addUsage, detailsOf, recent, textOf, usedTools } from './history'
 import { ownProvider } from './own'
@@ -520,7 +520,7 @@ export class CopilotAgent {
    * request looks it up from the new provider; the conversation stays.
    */
   private async chooseProvider(): Promise<void> {
-    const choice = ownSetup((await this.config.model?.()) ?? HOSTED_ONLY) ?? 'hosted'
+    const choice = answering((await this.config.model?.()) ?? HOSTED_ONLY) ?? 'hosted'
     const before = this.providerFor
     this.providerFor = choice
     // The agent starts on the hosted provider.

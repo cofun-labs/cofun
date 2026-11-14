@@ -78,6 +78,9 @@ export function parseError(message: string | undefined): Failure {
   return inner?.message ? { text: inner.message, code: inner.code } : { text: rest }
 }
 
+/** The code of a failure for a key the user's own provider turned away (HTTP 401 or 403). */
+export const KEY_REJECTED = 'key_rejected'
+
 export interface Failure {
   text: string
   /** The service's error code, e.g. the worker's `unsupported_model`. */
