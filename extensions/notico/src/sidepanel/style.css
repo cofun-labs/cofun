@@ -1259,13 +1259,13 @@ button.pack:disabled {
   font-size: 12px;
 }
 
-/* The menu's keyboard focus is its tint, as on hover, not the page's outline ring. */
+/* Keyboard focus is a deeper grey than the chosen item's tint, not the page's outline ring. */
 .model-popover [role^='menuitem']:focus-visible {
   outline: none;
+  background: var(--border);
 }
 
 .model-popover [role^='menuitem']:hover,
-.model-popover [role^='menuitem']:focus-visible,
 .model-popover [aria-checked='true'] {
   background: var(--tint);
 }
