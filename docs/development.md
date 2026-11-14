@@ -4,7 +4,7 @@ Requires Node.js 24 and pnpm. The repository is one pnpm workspace: the [worker]
 
 ```bash
 pnpm install
-pnpm check        # lint, unused code check (knip), format check, typecheck, extension build, and every package's tests
+pnpm check        # lint, unused code check (knip), format check, use case coverage (pnpm use-cases), typecheck, extension build, and every package's tests
 pnpm knip         # unused files, exports, and dependencies (knip.jsonc lists what is kept, and why)
 pnpm smoke        # build the extension and load it into Chromium (first: pnpm --filter notion-copilot-smoke exec playwright install chromium)
 pnpm icons        # export extensions/notico/icons/icon.svg into extensions/notico/public/icons (needs the same Chromium); commit the PNGs
