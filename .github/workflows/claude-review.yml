@@ -42,12 +42,15 @@ jobs:
             - Performance problems
             - Adherence to the conventions in CLAUDE.md, if present
 
-            If this pull request already has review threads, read them first (`gh api
-            repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/comments`).
-            Review only the commits pushed since the head commit your last summary comment named
-            (`gh api repos/${{ github.repository }}/compare/<that commit>...<head commit>`), and
-            what they break; don't raise again what a thread already covers. Start each finding
-            with **Blocking:** or **Suggestion:**, judged by step 8 of CLAUDE.md.
+            If you have reviewed this pull request before (a summary comment of yours names the
+            head commit it reviewed), read the review threads first (`gh api
+            repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/comments`),
+            then review only what changed since that commit (`gh api
+            repos/${{ github.repository }}/compare/<that commit>...<head commit>`) and what it
+            breaks. Changes that came in by merging the base branch are not the pull request's
+            own: skip them. Don't raise again what a thread already covers or answered. Without
+            an earlier summary of yours, review the whole pull request.
+            Start each finding with **Blocking:** or **Suggestion:**, judged by step 8 of CLAUDE.md.
 
             Use inline comments for specific issues in the code.
             Finish with a single summary comment posted via `gh pr comment`, naming the head commit
@@ -55,4 +58,4 @@ jobs:
             Be concise and skip praise; only report things worth acting on.
           claude_args: |
             --model ${{ vars.CLAUDE_MODEL || 'claude-sonnet-5-5' }}
-            --allowed-tools "mcp__github_inline_comment__create_inline_comment,Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*),Bash(gh api repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/comments:*),Bash(gh api repos/${{ github.repository }}/compare/:*)"
+            --allowed-tools "mcp__github_inline_comment__create_inline_comment,Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*),Bash(gh api repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/comments*),Bash(gh api repos/${{ github.repository }}/compare/*)"
