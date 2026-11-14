@@ -425,6 +425,8 @@ export function Chat({ userId }: { userId: string }) {
    */
   async function title(session: Current, messages: HistoryMessage[]) {
     const written = await agent.title(messages)
+    // On the hosted model the request spent credits; the read after the question was too early for it.
+    void readCredits()
     if (!written) return
     // After the save of the reply, which may give the session another id.
     saving.current = saving.current.then(async () => {

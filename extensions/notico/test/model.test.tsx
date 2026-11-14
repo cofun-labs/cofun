@@ -84,7 +84,8 @@ describe('choosing the model', () => {
     const { browser, user } = await openPanel()
     await setUpOpenRouter(browser, user)
     browser.openRouter.titles.failWith = undefined
-    browser.openRouter.titles.script.push({ reply: 'Fixture page summary' })
+    // An apostrophe at one end is part of the title, not a quote around it.
+    browser.openRouter.titles.script.push({ reply: "'90s fixture page summary" })
     browser.openRouter.ai.script.push({ reply: 'It is a fixture.' })
     const before = browser.sentToWorker.length
 
@@ -93,7 +94,7 @@ describe('choosing the model', () => {
     await answered()
 
     await user.click(screen.getByRole('button', { name: 'Sessions' }))
-    expect(await screen.findByText('Fixture page summary')).toBeVisible()
+    expect(await screen.findByText("'90s fixture page summary")).toBeVisible()
     expect(browser.openRouter.titles.calls.map((c) => c.model)).toEqual(['openai/gpt-6.1-sol'])
     expect(browser.openRouter.requests.filter((r) => r.path === '/api/v1/chat/completions').map((r) => r.key)).toEqual([
       KEY,

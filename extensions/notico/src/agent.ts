@@ -1009,6 +1009,18 @@ function cut(text: string, max: number): string {
   return chars.length > max ? chars.slice(0, max).join('') : text
 }
 
+/** Each opening quote a model may wrap a title in, with the one that closes it. */
+const QUOTES: Record<string, string> = { '"': '"', "'": "'", '“': '”', '‘': '’', '«': '»', '「': '」', '『': '』' }
+
+/** `text` without quotes around the whole of it; a quote at one end only (an apostrophe) stays. */
+function unquoted(text: string): string {
+  const chars = Array.from(text)
+  const close = QUOTES[chars[0]]
+  return chars.length > 2 && close && chars.at(-1) === close ? chars.slice(1, -1).join('').trim() : text
+}
+
+const withoutFullStop = (text: string) => text.replace(/[.。]+$/u, '').trim()
+
 /**
  * The model's answer to the title request, as a title: one line, without the quotes or the full stop
  * a model may add anyway, and short.
@@ -1017,12 +1029,7 @@ const ModelTitle = z
   .string()
   .trim()
   .refine((t) => !/[\r\n]/.test(t), 'The title must be on one line.')
-  .transform((t) =>
-    t
-      .replace(/\s+/g, ' ')
-      .replace(/^["'“”‘’«»「『]+|["'“”‘’«»」』.。]+$/gu, '')
-      .trim(),
-  )
+  .transform((t) => withoutFullStop(unquoted(withoutFullStop(t.replace(/\s+/g, ' ')))))
   .pipe(
     z
       .string()

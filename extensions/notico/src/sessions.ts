@@ -51,7 +51,8 @@ export class SessionStore {
           try {
             // A session that is gone (deleted elsewhere) has nothing to overwrite.
             if (stored.result && stored.result.updatedAt !== loaded) saved = { ...info, id: crypto.randomUUID() }
-            if (stored.result?.titledByModel) saved = { ...saved, title: stored.result.title, titledByModel: true }
+            const { titledByModel, title } = stored.result ?? {}
+            if (titledByModel === true && typeof title === 'string') saved = { ...saved, title, titledByModel: true }
             infos.put(saved)
             all.put({ id: saved.id, messages })
           } catch (err) {
@@ -84,10 +85,12 @@ export class SessionStore {
   async retitle(id: string, title: string): Promise<boolean> {
     let done = false
     await this.run('readwrite', (infos) => {
-      const stored = infos.get(id) as IDBRequest<SessionInfo | undefined>
+      // Read back from storage: only checked for what this needs, and written back as it was.
+      const stored: IDBRequest<unknown> = infos.get(id)
       stored.onsuccess = () => {
-        if (!stored.result || stored.result.titledByModel) return
-        infos.put({ ...stored.result, title, titledByModel: true })
+        const record = stored.result
+        if (typeof record !== 'object' || record === null || ('titledByModel' in record && record.titledByModel)) return
+        infos.put({ ...record, title, titledByModel: true })
         done = true
       }
       return () => done
