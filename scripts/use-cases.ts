@@ -1,7 +1,12 @@
-// Checks that the use case scenarios in docs/use-cases and the tests named after them agree (docs/bdd.md).
+// Checks that the use case scenarios and the tests named after them agree (docs/bdd.md).
 //
-// One rule fails: an api-test scenario marked ✅ must have a test that names its ID. Everything else
-// the check notices is a warning, for whoever runs it to tidy when it suits them.
+// Each product keeps its use cases next to its code: an extension's in extensions/<name>/use-cases/,
+// the worker's (behavior of the backend alone) in worker/use-cases/. A scenario is matched only
+// against the tests that can verify it: an extension's scenarios against its own tests and the
+// worker's, the worker's scenarios against the worker's tests.
+//
+// One rule fails: an api-test scenario marked ✅ must have such a test that names its ID. Everything
+// else the check notices is a warning, for whoever runs it to tidy when it suits them.
 
 /** A file's path, relative to the repository root, and its text. */
 export interface SourceFile {
@@ -18,23 +23,49 @@ export interface Report {
 
 type Strategy = 'api-test' | 'ai-e2e'
 
+/** The worker, whose tests may verify any product's scenarios. */
+const WORKER = 'worker'
+
 interface Row {
   id: string
   strategy: Strategy
   verified: boolean
   priority: string
-  /** Where the row is: `docs/use-cases/….md:12`. */
+  /** The product whose folder holds the row: an extension's folder name, or `worker`. */
+  product: string
+  /** Where the row is: `extensions/notico/use-cases/….md:12`. */
   at: string
 }
 
-const ROW = /^\|\s*(UC-[A-Z]+-\d+-S\d+)\s*\|([^|]*)\|([^|]*)\|/
+interface TestId {
+  /** The product whose folder holds the test: an extension's folder name, or `worker`. */
+  product: string
+  at: string
+}
+
+const SCENARIO_ID = 'UC-([A-Z]+)-[A-Z]+-\\d+-S\\d+'
+const ROW = new RegExp(`^\\|\\s*(${SCENARIO_ID})\\s*\\|([^|]*)\\|([^|]*)\\|`)
 /** A table's header (`| ID | Priority | …`) or separator (`| --- | … |`) line. */
 const TABLE_FRAME = /^\|\s*ID\s*\||^\|[\s:|-]+$/
 const STRATEGY = /^###\s+(api-test|ai-e2e)\s*$/
-const TEST_ID = /\[(UC-[A-Z]+-\d+-S\d+)\]/g
+const TEST_ID = new RegExp(`\\[(${SCENARIO_ID})\\]`, 'g')
+
+/** The product a use case or test file belongs to, from its folder. */
+function productOf(file: string): string {
+  if (file.startsWith(`${WORKER}/`)) return WORKER
+  const extension = /^extensions\/([^/]+)\//.exec(file)
+  if (extension) return extension[1]
+  throw new Error(`${file} is not in an extension's folder or the worker's`)
+}
+
+/** What a product's IDs start with: its name, or COFUN for the worker (the platform every extension shares). */
+function prefixOf(product: string): string {
+  return product === WORKER ? 'COFUN' : product.toUpperCase()
+}
 
 function readRows(file: SourceFile, report: Report): Row[] {
   const rows: Row[] = []
+  const product = productOf(file.path)
   let strategy: Strategy | undefined
   file.text.split('\n').forEach((raw, index) => {
     // Markdown still reads a line with leading spaces as a table row or heading.
@@ -53,13 +84,13 @@ function readRows(file: SourceFile, report: Report): Row[] {
     const row = ROW.exec(line)
     if (!row) {
       if (strategy && line.startsWith('|') && !TABLE_FRAME.test(line)) {
-        report.errors.push(`${at}: a row whose ID cell is not a scenario ID like UC-CHAT-001-S01`)
+        report.errors.push(`${at}: a row whose ID cell is not a scenario ID like UC-${prefixOf(product)}-CHAT-001-S01`)
       }
       return
     }
-    const id = row[1]
-    const priority = row[2].trim()
-    const status = row[3].trim()
+    const [, id, prefix, priorityCell, statusCell] = row
+    const priority = priorityCell.trim()
+    const status = statusCell.trim()
     if (!strategy) {
       report.errors.push(`${at}: ${id} is not under an "### api-test" or "### ai-e2e" heading`)
       return
@@ -68,7 +99,10 @@ function readRows(file: SourceFile, report: Report): Row[] {
       report.errors.push(`${at}: ${id} has status "${status}"; use ✅ or 🚧`)
       return
     }
-    rows.push({ id, strategy, verified: status === '✅', priority, at })
+    if (prefix !== prefixOf(product)) {
+      report.warnings.push(`${at}: ${id} is in ${product}'s use cases, so its ID starts with UC-${prefixOf(product)}-`)
+    }
+    rows.push({ id, strategy, verified: status === '✅', priority, product, at })
   })
   return rows
 }
@@ -77,25 +111,31 @@ function readRows(file: SourceFile, report: Report): Row[] {
 const NOT_A_TEST = /^\s*(\/\/|\/?\*)|\.(skip|todo)\b/
 
 /** Every scenario ID a test file names in brackets, with where it is. */
-function readTestIds(file: SourceFile): Map<string, string[]> {
-  const ids = new Map<string, string[]>()
+function readTestIds(file: SourceFile): Map<string, TestId[]> {
+  const ids = new Map<string, TestId[]>()
+  const product = productOf(file.path)
   file.text.split('\n').forEach((line, index) => {
     if (NOT_A_TEST.test(line)) return
     for (const match of line.matchAll(TEST_ID)) {
       const at = `${file.path}:${index + 1}`
-      ids.set(match[1], [...(ids.get(match[1]) ?? []), at])
+      ids.set(match[1], [...(ids.get(match[1]) ?? []), { product, at }])
     }
   })
   return ids
+}
+
+/** Whether a test in one product's folder may verify a scenario of another's: its own, or any from the worker's tests. */
+function verifies(test: TestId, row: Row): boolean {
+  return test.product === row.product || test.product === WORKER
 }
 
 export function checkUseCases(useCases: SourceFile[], tests: SourceFile[]): Report {
   const report: Report = { errors: [], warnings: [], scenarios: { 'api-test': 0, 'ai-e2e': 0 } }
 
   const rows = useCases.flatMap((file) => readRows(file, report))
-  const tested = new Map<string, string[]>()
+  const tested = new Map<string, TestId[]>()
   for (const file of tests) {
-    for (const [id, at] of readTestIds(file)) tested.set(id, [...(tested.get(id) ?? []), ...at])
+    for (const [id, found] of readTestIds(file)) tested.set(id, [...(tested.get(id) ?? []), ...found])
   }
 
   const byId = new Map<string, Row[]>()
@@ -103,16 +143,16 @@ export function checkUseCases(useCases: SourceFile[], tests: SourceFile[]): Repo
 
   for (const row of rows) {
     report.scenarios[row.strategy]++
-    const at = tested.get(row.id)
+    const test = tested.get(row.id)?.find((found) => verifies(found, row))?.at
     if (row.strategy === 'api-test') {
-      if (row.verified && !at) report.errors.push(`${row.at}: ${row.id} is ✅ api-test, but no test names it`)
-      if (!row.verified && at) report.warnings.push(`${row.at}: ${row.id} is 🚧 but has a test (${at[0]}): mark it ✅`)
+      if (row.verified && !test) report.errors.push(`${row.at}: ${row.id} is ✅ api-test, but no test names it`)
+      if (!row.verified && test) report.warnings.push(`${row.at}: ${row.id} is 🚧 but has a test (${test}): mark it ✅`)
       // P0 must be verified before merge (AGENTS.md); a warning, since a PR may add one on its way there.
-      if (!row.verified && !at && row.priority === 'P0') {
+      if (!row.verified && !test && row.priority === 'P0') {
         report.warnings.push(`${row.at}: ${row.id} is P0 and 🚧 with no test yet; P0 is verified before merge`)
       }
-    } else if (at) {
-      report.warnings.push(`${row.at}: ${row.id} is ai-e2e, but a test names it (${at[0]})`)
+    } else if (test) {
+      report.warnings.push(`${row.at}: ${row.id} is ai-e2e, but a test names it (${test})`)
     }
   }
 
@@ -120,8 +160,14 @@ export function checkUseCases(useCases: SourceFile[], tests: SourceFile[]): Repo
     if (same.length > 1) report.warnings.push(`${id} is in more than one row: ${same.map((row) => row.at).join(', ')}`)
   }
 
-  for (const [id, at] of tested) {
-    if (!byId.has(id)) report.warnings.push(`${at[0]}: names ${id}, which no use case has`)
+  for (const [id, found] of tested) {
+    for (const test of found) {
+      if (!(byId.get(id) ?? []).some((row) => verifies(test, row))) {
+        const where = test.product === WORKER ? 'no use case' : `no use case of ${test.product}`
+        report.warnings.push(`${test.at}: names ${id}, which ${where} has`)
+        break
+      }
+    }
   }
 
   return report

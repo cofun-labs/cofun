@@ -1,5 +1,6 @@
-// pnpm use-cases (run by pnpm check): checks the use cases in docs/use-cases against the tests named after
-// their scenarios (see use-cases.ts and docs/bdd.md). Exits 1 on an error; warnings alone exit 0.
+// pnpm use-cases (run by pnpm check): checks the use cases in extensions/*/use-cases and worker/use-cases
+// against the tests named after their scenarios (see use-cases.ts and docs/bdd.md). Exits 1 on an
+// error; warnings alone exit 0.
 import { globSync, readFileSync } from 'node:fs'
 import path from 'node:path'
 import { type SourceFile, checkUseCases } from './use-cases.ts'
@@ -13,7 +14,7 @@ function read(patterns: string[]): SourceFile[] {
 }
 
 const report = checkUseCases(
-  read(['docs/use-cases/**/UC-*.md']),
+  read(['extensions/*/use-cases/**/UC-*.md', 'worker/use-cases/**/UC-*.md']),
   read(['worker/test/**/*.test.{ts,tsx}', 'extensions/*/test/**/*.test.{ts,tsx}']),
 )
 

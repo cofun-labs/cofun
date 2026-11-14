@@ -121,8 +121,8 @@ const values = (ws: FakeWorkspace, n: number) => ws.records.get(row(n))!.propert
 const change = async (changes: unknown, database: string | undefined = hex(DB)) =>
   (await updateDatabaseSchema.run({ ...(database ? { database } : {}), changes })) as string
 
-describe('UC-NOTION-012 create and change databases', () => {
-  it('[UC-NOTION-012-S01] creates a database with its properties and options at the end of the page', async () => {
+describe('UC-NOTICO-NOTION-012 create and change databases', () => {
+  it('[UC-NOTICO-NOTION-012-S01] creates a database with its properties and options at the end of the page', async () => {
     const ws = workspace()
     open(ws)
     const result = (await createDatabase.run({
@@ -174,7 +174,7 @@ describe('UC-NOTION-012 create and change databases', () => {
     expect(added.properties).toMatchObject({ [named(schema, 'Stage')[0]!]: [['Draft']] })
   })
 
-  it('[UC-NOTION-012-S01] creates it with Name as the title column, in another page, and shows the preview', async () => {
+  it('[UC-NOTICO-NOTION-012-S01] creates it with Name as the title column, in another page, and shows the preview', async () => {
     const ws = workspace()
     open(ws)
     const args = { parent: hex(OTHER), title: 'Reading list', properties: [{ name: 'Done', type: 'checkbox' }] }
@@ -221,7 +221,7 @@ describe('UC-NOTION-012 create and change databases', () => {
     })
   })
 
-  it('[UC-NOTION-012-S02] adds and renames properties and adds options in one change, keeping every value', async () => {
+  it('[UC-NOTICO-NOTION-012-S02] adds and renames properties and adds options in one change, keeping every value', async () => {
     const ws = workspace()
     open(ws)
     const before = [1, 2, 3].map((n) => structuredClone(values(ws, n)))
@@ -262,7 +262,7 @@ describe('UC-NOTION-012 create and change databases', () => {
     expect(updateDatabaseSchema.touched({}, String(result))).toEqual({ changed: [hex(DB)] })
   })
 
-  it('[UC-NOTION-012-S02] changes the open database without asking, in few Notion requests', async () => {
+  it('[UC-NOTICO-NOTION-012-S02] changes the open database without asking, in few Notion requests', async () => {
     const ws = workspace()
     const tab = open(ws, DB_URL)
     expect(updateDatabaseSchema.needsConfirmation).toBeUndefined()
@@ -276,7 +276,7 @@ describe('UC-NOTION-012 create and change databases', () => {
     ])
   })
 
-  it('[UC-NOTION-012-S03] renames an option in every row that has it, and in no other', async () => {
+  it('[UC-NOTICO-NOTION-012-S03] renames an option in every row that has it, and in no other', async () => {
     const ws = workspace()
     open(ws)
     const result = await change([
@@ -299,7 +299,7 @@ describe('UC-NOTION-012 create and change databases', () => {
     expect(table).toContain('| Write post | Writing |')
   })
 
-  it('[UC-NOTION-012-S03] renames several options of one property, even when the names swap', async () => {
+  it('[UC-NOTICO-NOTION-012-S03] renames several options of one property, even when the names swap', async () => {
     const ws = workspace()
     open(ws)
     await change([
@@ -323,7 +323,7 @@ describe('UC-NOTION-012 create and change databases', () => {
     expect(values(ws, 2)).toMatchObject({ 'b:b': [['Guide']] })
   })
 
-  it('[UC-NOTION-012-S04] refuses removing the title column, and two properties or options with one name', async () => {
+  it('[UC-NOTICO-NOTION-012-S04] refuses removing the title column, and two properties or options with one name', async () => {
     const ws = workspace()
     open(ws)
     const refusals: [unknown[], string][] = [
@@ -352,7 +352,7 @@ describe('UC-NOTION-012 create and change databases', () => {
     expect(schemaOf(ws)).toEqual(SCHEMA)
   })
 
-  it('[UC-NOTION-012-S04] refuses renaming an option when not every row can be read', async () => {
+  it('[UC-NOTICO-NOTION-012-S04] refuses renaming an option when not every row can be read', async () => {
     const rows = Array.from({ length: QUERY_LOAD + 1 }, (_, i) => rowRecord(i + 1, `Row ${i + 1}`, { 'a:a': 'Draft' }))
     const ws = workspace(rows)
     open(ws)
@@ -363,7 +363,7 @@ describe('UC-NOTION-012 create and change databases', () => {
     expect(values(ws, QUERY_LOAD + 1)).toMatchObject({ 'a:a': [['Draft']] })
   })
 
-  it('[UC-NOTION-012-S04] refuses renaming an option when Notion leaves out a row', async () => {
+  it('[UC-NOTICO-NOTION-012-S04] refuses renaming an option when Notion leaves out a row', async () => {
     const ws = workspace()
     const tab = open(ws)
     // The query lists a row it doesn't return.
@@ -386,7 +386,7 @@ describe('UC-NOTION-012 create and change databases', () => {
     expect(ws.transactions).toHaveLength(0)
   })
 
-  it('[UC-NOTION-012-S05] removes a property and an option, and the preview says their values go', async () => {
+  it('[UC-NOTICO-NOTION-012-S05] removes a property and an option, and the preview says their values go', async () => {
     const ws = workspace()
     open(ws)
     const changes = [

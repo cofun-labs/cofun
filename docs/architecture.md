@@ -163,6 +163,8 @@ extensions/notico/        Notico, the extension for Notion
   test/                   tests of the extension's client code (fake Notion tab with sanitized
                           fixtures), and of the side panel's UI: the whole panel in jsdom
                           (*.test.tsx)
+  use-cases/              Notico's use cases (UC-NOTICO-…), by domain; tests are named with their
+                          scenario IDs (docs/bdd.md)
 worker/                   Cloudflare Worker
   src/app.ts              the Hono app, composed from the sub-apps below; everything under /v1 is one
                           sub-app whose first handler is the session check
@@ -187,6 +189,7 @@ worker/                   Cloudflare Worker
   test/                   REST integration tests (real signed JWTs, fake AI binding, fake Stripe with
                           webhook events signed like Stripe's, the real SQL on SQLite behind a fake D1),
                           and the extension's agent run against the worker
+  use-cases/              use cases of the backend alone (UC-COFUN-…), by domain
 e2e/                      pnpm e2e: drives the shared Chrome Canary over CDP for ai-e2e runs
                           (maintainer's machine only; its unit tests run in pnpm test)
 smoke/                    pnpm smoke: loads the built extension into Chromium and checks that it
@@ -196,8 +199,6 @@ docs/
   development.md          setup, deployment, and repository settings
   assets/                 pictures used by Notico's README.md
   bdd.md                  how use cases and scenarios are written, and how to run ai-e2e scenarios
-  use-cases/              use cases by product (notico/, and shared/ for the backend alone), then by domain;
-                          tests reference their scenario IDs
 .oxlintrc.json            lint rules, including the extensions' module boundaries
 .github/rulesets/         GitHub branch rulesets (export format)
 .github/workflows/        CI, CodeQL, dependency review, workflow lint, Claude review, and Claude on request

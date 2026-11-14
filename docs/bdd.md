@@ -30,11 +30,11 @@ A scenario earns its place only if deleting it would let an implementation pass 
 
 ## Products
 
-Each extension is a product with its own use cases, in its own directory: `docs/use-cases/notico/` for Notico. The directory, not the ID, tells which product a use case belongs to.
+Each extension is a product, and keeps its use cases next to its code: `extensions/<name>/use-cases/` (`extensions/notico/use-cases/` for Notico). The worker's are in `worker/use-cases/`. The folder tells which product a use case belongs to, and its ID's prefix says the same (see [IDs](#ids)).
 
 - **A product's use cases are written in full for that product**, even where they repeat another product's: sign-in, chat, sessions, settings, and opening the side panel are each product's own, worded for its site. Use cases are not shared between products to save repeating them.
-- **A scenario a product repeats is verified by that product's own test**, named with that product's scenario ID, so a copy that drifts fails its own tests. This holds for what the product's own code makes happen (its client code, its side panel, its agent against the worker). A repeated scenario that only the worker decides, the same whichever extension asks (such as a credit rule), is not tested again: the copy names the scenario whose test in `worker/test/` verifies it, and that test's name carries both IDs (`[UC-CHAT-001-S09] [UC-CHAT-004-S09] …`), so the coverage check finds a test for each.
-- **`docs/use-cases/shared/`** holds only behavior that involves the backend alone and no extension's UI, such as the operators' admin page and usage records. A shared use case is verified once, in `worker/test/`.
+- **A scenario a product repeats is verified by that product's own test**, named with that product's scenario ID, so a copy that drifts fails its own tests. This holds for what the product's own code makes happen (its client code, its side panel, its agent against the worker). A repeated scenario that only the worker decides, the same whichever extension asks (such as a credit rule), is not tested again: the copy names the worker scenario whose test in `worker/test/` verifies it, and that test's name carries both IDs (`[UC-NOTICO-CHAT-001-S09] [UC-CONFLUCO-CHAT-001-S09] …`), so the coverage check finds a test for each.
+- **`worker/use-cases/`** holds only behavior that involves the backend alone and no extension's UI, such as the operators' admin page and usage records. Its use cases belong to Cofun, the platform every extension shares, and are verified once, in `worker/test/`.
 
 ## Strategy
 
@@ -61,13 +61,13 @@ A fake model answers what the test scripts, so these tests show what the panel d
 `ai-e2e` runs use the maintainer's Chrome Canary: started with `--remote-debugging-port=9228`, signed in to Notion and to Notico, with the extension loaded unpacked. `pnpm e2e` drives it over the DevTools protocol (`pnpm e2e --help` lists every command and option):
 
 ```bash
-pnpm e2e lock acquire "UC-NOTION-007-S04"    # hold the browser across all the steps
-pnpm e2e reload                              # build this checkout into the extension Canary loads, reload it
+pnpm e2e lock acquire "UC-NOTICO-NOTION-007-S04"    # hold the browser across all the steps
+pnpm e2e reload                                     # build this checkout into the extension Canary loads, reload it
 pnpm e2e page "e2e S04" "## Meeting notes" "We ship on Friday." "## Next steps" "Write the notes."
-pnpm e2e panel <url printed by page>         # open the side panel on that page, with a new chat
+pnpm e2e panel <url printed by page>                # open the side panel on that page, with a new chat
 pnpm e2e ask "Turn the Meeting notes section into its own child page." --allow
-pnpm e2e trash <id printed by page>          # move the throwaway page to the trash
-pnpm e2e close                               # close the tabs the tool opened
+pnpm e2e trash <id printed by page>                 # move the throwaway page to the trash
+pnpm e2e close                                      # close the tabs the tool opened
 pnpm e2e lock release
 ```
 
@@ -100,7 +100,7 @@ A guard or rejection branch should not rank above its use case's success path un
 
 ## Coverage check
 
-`pnpm check` runs `pnpm use-cases` (`scripts/check-use-cases.ts`), which reads every scenario row in `docs/use-cases` and every scenario ID named in brackets in a test under `worker/test/` or `extensions/*/test/`. It fails on one thing: an `api-test` scenario marked ✅ that no test names (and on a scenario row it can't read, so a typo can't hide one). It only warns about the rest, to tidy when convenient: a 🚧 `api-test` scenario that already has a test (mark it ✅), a P0 🚧 `api-test` scenario with no test yet (P0 is verified before merge), a test naming an ID no use case has, an ID in more than one row, and a test naming an `ai-e2e` scenario. A P1 or P2 🚧 `api-test` scenario with no test and an `ai-e2e` scenario with none pass quietly.
+`pnpm check` runs `pnpm use-cases` (`scripts/check-use-cases.ts`), which reads every scenario row in `extensions/*/use-cases/` and `worker/use-cases/`, and every scenario ID named in brackets in a test under `worker/test/` or `extensions/*/test/`. A scenario counts as tested only by a test that can verify it: an extension's by a test in its own `extensions/<name>/test/` or in `worker/test/`, the worker's by a test in `worker/test/`. It fails on one thing: an `api-test` scenario marked ✅ that no test names (and on a scenario row it can't read, so a typo can't hide one). It only warns about the rest, to tidy when convenient: a 🚧 `api-test` scenario that already has a test (mark it ✅), a P0 🚧 `api-test` scenario with no test yet (P0 is verified before merge), a test naming an ID no use case it can verify has, an ID in more than one row, an ID whose prefix doesn't match the product whose folder holds it, and a test naming an `ai-e2e` scenario. A P1 or P2 🚧 `api-test` scenario with no test and an `ai-e2e` scenario with none pass quietly.
 
 ## Coverage audit
 
@@ -108,10 +108,10 @@ Per-PR rules stay light; gaps are found by an audit run now and then, before a r
 
 ## File format
 
-`docs/use-cases/{product}/{domain}/UC-{DOMAIN}-{NNN}-{slug}.md`, where `{product}` is an extension's folder name under `extensions/` (`notico`) or `shared`:
+`extensions/<name>/use-cases/{domain}/UC-{PRODUCT}-{DOMAIN}-{NNN}-{slug}.md` for an extension, and `worker/use-cases/{domain}/UC-COFUN-{DOMAIN}-{NNN}-{slug}.md` for the worker:
 
 ```markdown
-# UC-CHAT-001: Ask the AI from the side panel
+# UC-NOTICO-CHAT-001: Ask the AI from the side panel
 
 ## Behavior
 
@@ -127,7 +127,7 @@ Key constraint:
 
 | ID | Priority | Status | Scenario |
 | --- | --- | --- | --- |
-| UC-CHAT-001-S01 | P0 | ✅ | Given a signed-in user; when they ask the AI something; then the reply streams back piece by piece. |
+| UC-NOTICO-CHAT-001-S01 | P0 | ✅ | Given a signed-in user; when they ask the AI something; then the reply streams back piece by piece. |
 
 ### ai-e2e
 
@@ -136,8 +136,8 @@ Key constraint:
 
 ## IDs
 
-- Use case: `UC-{DOMAIN}-{NNN}`. Domains: `ADMIN`, `AGENT`, `AUTH`, `BILLING`, `CHAT`, `NOTION`, `PANEL`, `SESSION`.
-- IDs are unique across the repository, whatever the product, since tests are found by them. A new product's use cases get IDs of their own: what is about its site gets a domain of its own (`UC-CONFLUENCE-001`), and a use case it repeats from another product takes the next free number in that domain (another product's sign-in would be `UC-AUTH-002`, never a second `UC-AUTH-001`).
+- Use case: `UC-{PRODUCT}-{DOMAIN}-{NNN}`. `{PRODUCT}` is the extension's folder name in capitals (`NOTICO`), or `COFUN` for the worker's use cases. Domains: `ADMIN`, `AGENT`, `AUTH`, `BILLING`, `CHAT`, `PANEL`, `SESSION`, and one for what is about a product's site (`NOTION` for Notico).
+- Each product numbers its own use cases: a use case it repeats from another product gets its own prefix and its own number, so Confluco's sign-in would be `UC-CONFLUCO-AUTH-001`. The prefix keeps IDs unique across the repository, since tests are found by them.
 - Scenario: `{UC ID}-S{NN}`.
 - IDs are labels that link a scenario to its tests. Renumbering a scenario, or reusing a deleted one's ID, is fine as long as its tests are renamed with it. When a scenario is deleted, delete its tests or take the ID out of their names, so a later scenario that reuses the ID can't pass on a test of the old one.
-- Test names start with the ID: `it('[UC-CHAT-001-S01] signed-in user gets a streamed reply', ...)`. Several tests may cover one scenario.
+- Test names start with the ID: `it('[UC-NOTICO-CHAT-001-S01] signed-in user gets a streamed reply', ...)`. Several tests may cover one scenario.

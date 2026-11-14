@@ -67,8 +67,8 @@ const read = async () => {
 const edit = async (edits: Rec[]) => (await editPage.run({ page: hex(PAGE), edits })) as string
 const title = (ws: FakeWorkspace, blockId: string) => (ws.records.get(blockId)!.properties as Rec).title
 
-describe('UC-NOTION-011 mention people', () => {
-  it('[UC-NOTION-011-S01] writes a mention of the member named, which reads back as written', async () => {
+describe('UC-NOTICO-NOTION-011 mention people', () => {
+  it('[UC-NOTICO-NOTION-011-S01] writes a mention of the member named, which reads back as written', async () => {
     const ws = workspace([block(1, 'text', [['Intro']])])
     const tab = open(ws)
     await read()
@@ -90,7 +90,7 @@ describe('UC-NOTION-011 mention people', () => {
     expect(await read()).toContain('- [ ] @[Kim Lee] to follow up ^')
   })
 
-  it('[UC-NOTION-011-S01] matches a name whatever its case and spacing', async () => {
+  it('[UC-NOTICO-NOTION-011-S01] matches a name whatever its case and spacing', async () => {
     const ws = workspace([block(1, 'text', [['Intro']])])
     open(ws)
     await read()
@@ -98,7 +98,7 @@ describe('UC-NOTION-011 mention people', () => {
     expect(title(ws, id(1))).toEqual([['Ask '], ['‣', [['u', KIM]]], [' and '], ['‣', [['b'], ['u', USER]]]])
   })
 
-  it('[UC-NOTION-011-S02] keeps a mention when other text in its block changes', async () => {
+  it('[UC-NOTICO-NOTION-011-S02] keeps a mention when other text in its block changes', async () => {
     const ws = workspace([block(1, 'text', [['Call '], ['‣', [['u', KIM]]], [' today']])])
     open(ws)
     const shown = await read()
@@ -115,7 +115,7 @@ describe('UC-NOTION-011 mention people', () => {
     expect(title(ws, id(1))).toEqual([['Call '], ['‣', [['u', KIM]]], [' tomorrow']])
   })
 
-  it('[UC-NOTION-011-S02] keeps the person a block mentions, even one no longer among the members', async () => {
+  it('[UC-NOTICO-NOTION-011-S02] keeps the person a block mentions, even one no longer among the members', async () => {
     // Kim Lee left the workspace; Notion still loads their name with the page.
     const ws = workspace([block(1, 'to_do', [['‣', [['u', KIM]]], [' follows up']])])
     ws.visibleUsers = [ALEX, USER]
@@ -130,7 +130,7 @@ describe('UC-NOTION-011 mention people', () => {
     expect(endpoints(tab, sent)).not.toContain('getVisibleUsers')
   })
 
-  it('[UC-NOTION-011-S02] keeps the person a block mentions when a member has the same name', async () => {
+  it('[UC-NOTICO-NOTION-011-S02] keeps the person a block mentions when a member has the same name', async () => {
     const ws = workspace(
       [block(1, 'text', [['Call '], ['‣', [['u', KIM]]], [' today']])],
       [
@@ -145,7 +145,7 @@ describe('UC-NOTION-011 mention people', () => {
     expect(title(ws, id(1))).toEqual([['Call '], ['‣', [['u', KIM]]], [' tomorrow']])
   })
 
-  it('[UC-NOTION-011-S05] refuses a name a block mentions two people by', async () => {
+  it('[UC-NOTICO-NOTION-011-S05] refuses a name a block mentions two people by', async () => {
     const ws = workspace(
       [block(1, 'text', [['‣', [['u', KIM]]], [' and '], ['‣', [['u', ALEX]]]])],
       [
@@ -161,7 +161,7 @@ describe('UC-NOTION-011 mention people', () => {
     expect(ws.transactions).toEqual([])
   })
 
-  it('[UC-NOTION-011-S03] mentions a member in a new page', async () => {
+  it('[UC-NOTICO-NOTION-011-S03] mentions a member in a new page', async () => {
     const ws = workspace([block(1, 'text', [['Intro']])])
     open(ws)
     const result = (await createPage.run({
@@ -175,7 +175,7 @@ describe('UC-NOTION-011 mention people', () => {
     expect((first.properties as Rec).title).toEqual([['‣', [['u', KIM]]], [' sends the notes']])
   })
 
-  it('[UC-NOTION-011-S03] mentions a member in a comment', async () => {
+  it('[UC-NOTICO-NOTION-011-S03] mentions a member in a comment', async () => {
     const ws = workspace([block(1, 'text', [['Intro']])])
     open(ws)
     await addComment.run({ page: hex(PAGE), block: '^00000001', text: '@[Kim Lee], can you check this?' })
@@ -183,7 +183,7 @@ describe('UC-NOTION-011 mention people', () => {
     expect(added.text).toEqual([['‣', [['u', KIM]]], [', can you check this?']])
   })
 
-  it('[UC-NOTION-011-S04] refuses a name no member has, and names the similar ones', async () => {
+  it('[UC-NOTICO-NOTION-011-S04] refuses a name no member has, and names the similar ones', async () => {
     const ws = workspace([block(1, 'text', [['Intro']])])
     open(ws)
     await read()
@@ -202,7 +202,7 @@ describe('UC-NOTION-011 mention people', () => {
     expect(ws.transactions).toEqual([])
   })
 
-  it('[UC-NOTION-011-S04] refuses a mention in a new page or a comment before writing anything', async () => {
+  it('[UC-NOTICO-NOTION-011-S04] refuses a mention in a new page or a comment before writing anything', async () => {
     const ws = workspace([block(1, 'text', [['Intro']])])
     open(ws)
     await expect(createPage.run({ title: 'Notes', parent: hex(PAGE), markdown: '@[Nobody]' })).rejects.toThrow(
@@ -214,7 +214,7 @@ describe('UC-NOTION-011 mention people', () => {
     expect(ws.transactions).toEqual([])
   })
 
-  it('[UC-NOTION-011-S05] refuses a name two members share', async () => {
+  it('[UC-NOTICO-NOTION-011-S05] refuses a name two members share', async () => {
     const ws = workspace(
       [block(1, 'text', [['Intro']])],
       [

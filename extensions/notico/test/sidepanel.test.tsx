@@ -70,7 +70,7 @@ function workspaceTab() {
 }
 
 describe('asking the AI', () => {
-  it('[UC-CHAT-001-S03] the sent message appears and the reply streams in below it', async () => {
+  it('[UC-NOTICO-CHAT-001-S03] the sent message appears and the reply streams in below it', async () => {
     const { browser, user } = await openPanel()
     // The model has written its first words and is still writing.
     const resume = pausedReply(browser, 'The roadmap has three milestones')
@@ -89,7 +89,7 @@ describe('asking the AI', () => {
     await answered()
   })
 
-  it('[UC-CHAT-001-S08] an example question goes into the message box, not to the model, and can be changed before sending', async () => {
+  it('[UC-NOTICO-CHAT-001-S08] an example question goes into the message box, not to the model, and can be changed before sending', async () => {
     const { browser, user } = await openPanel()
     browser.ai.script.push({ reply: 'It is a fixture.' })
 
@@ -107,7 +107,7 @@ describe('asking the AI', () => {
     expect(screen.queryByRole('button', { name: 'Summarize this page' })).not.toBeInTheDocument()
   })
 
-  // UC-AGENT-001-S16 itself stays ai-e2e: whether the model answers from the note, without a tool, is its
+  // UC-NOTICO-AGENT-001-S16 itself stays ai-e2e: whether the model answers from the note, without a tool, is its
   // own judgment. This is the panel's part of it.
   it('a question goes to the model with a note naming the open page, and the panel shows only what the user typed', async () => {
     const { browser, user } = await openPanel()
@@ -126,7 +126,7 @@ describe('asking the AI', () => {
     expect(browser.tab.sent).toEqual([])
   })
 
-  it('[UC-AGENT-001-S22] a reply says in words what a tool did and on what, and on request the tool, its input, and its result', async () => {
+  it('[UC-NOTICO-AGENT-001-S22] a reply says in words what a tool did and on what, and on request the tool, its input, and its result', async () => {
     const { browser, user } = await openPanel()
     browser.ai.script.push(
       { toolCalls: [{ name: 'read_page', arguments: JSON.stringify({ part: 1 }) }] },
@@ -155,7 +155,7 @@ describe('asking the AI', () => {
     expect(screen.getByText(/Hello \*\*bold\*\*/)).toBeVisible()
   })
 
-  it('[UC-AGENT-001-S22] a tool that failed says so in words, with its error on request', async () => {
+  it('[UC-NOTICO-AGENT-001-S22] a tool that failed says so in words, with its error on request', async () => {
     const { browser, user } = await openPanel()
     browser.ai.script.push(
       { toolCalls: [{ name: 'read_page', arguments: JSON.stringify({ page: 'my notes' }) }] },
@@ -192,7 +192,7 @@ describe('asking the AI', () => {
 })
 
 describe('a formatted reply', () => {
-  it('[UC-CHAT-001-S16] the reply is shown formatted, and the question as typed', async () => {
+  it('[UC-NOTICO-CHAT-001-S16] the reply is shown formatted, and the question as typed', async () => {
     const { browser, user } = await openPanel()
     browser.ai.script.push({
       reply: [
@@ -235,7 +235,7 @@ describe('a formatted reply', () => {
     expect(screen.queryByText(/\*\*milk\*\*|## Shopping|\| Item/)).not.toBeInTheDocument()
   })
 
-  it('[UC-CHAT-001-S16] a single line break in a reply stays a line break', async () => {
+  it('[UC-NOTICO-CHAT-001-S16] a single line break in a reply stays a line break', async () => {
     const { browser, user } = await openPanel()
     browser.ai.script.push({ reply: 'Owner: Ana\nDue: Friday' })
 
@@ -263,7 +263,7 @@ describe('a formatted reply', () => {
     expect(screen.getByText('npm test now').closest('pre')).not.toBeNull()
   })
 
-  it('[UC-CHAT-001-S17] HTML in a reply is shown as text, and only web links can be followed', async () => {
+  it('[UC-NOTICO-CHAT-001-S17] HTML in a reply is shown as text, and only web links can be followed', async () => {
     const { browser, user } = await openPanel()
     browser.ai.script.push({
       reply: 'Look: <b onclick="alert(1)">bold</b>\n\n[run](javascript:alert(1)) and [mail](mailto:a@example.com)',
@@ -282,7 +282,7 @@ describe('a formatted reply', () => {
     expect(screen.queryAllByRole('link')).toEqual([])
   })
 
-  it('[UC-CHAT-001-S18] an image in a reply is not loaded: its description links to it instead', async () => {
+  it('[UC-NOTICO-CHAT-001-S18] an image in a reply is not loaded: its description links to it instead', async () => {
     const { browser, user } = await openPanel()
     browser.ai.script.push({ reply: 'Here is the chart: ![Sales by month](https://images.example.com/chart.png)' })
 
@@ -299,7 +299,7 @@ describe('a formatted reply', () => {
     )
   })
 
-  it('[UC-CHAT-001-S18] an image inside a link is shown as its description, and the link goes where it says', async () => {
+  it('[UC-NOTICO-CHAT-001-S18] an image inside a link is shown as its description, and the link goes where it says', async () => {
     const { browser, user } = await openPanel()
     browser.ai.script.push({
       reply: 'Status: [![Build passing](https://img.example.com/b.svg)](https://ci.example.com)',
@@ -332,7 +332,7 @@ describe('on a tab that is not Notion', () => {
       .filter((m) => m.role === 'tool')
       .map((m) => m.content)
 
-  it('[UC-PANEL-001-S03] a question is answered, and the model is told only that the tab is not a Notion page', async () => {
+  it('[UC-NOTICO-PANEL-001-S03] a question is answered, and the model is told only that the tab is not a Notion page', async () => {
     const { browser, user } = await openElsewhere()
     browser.ai.script.push({ reply: 'A haiku has three lines.' })
 
@@ -349,7 +349,7 @@ describe('on a tab that is not Notion', () => {
     expect(browser.tab.injections).toEqual([])
   })
 
-  it('[UC-PANEL-001-S04] a Notion tool fails there, telling the model to send the user to a Notion page, and Notion is not asked', async () => {
+  it('[UC-NOTICO-PANEL-001-S04] a Notion tool fails there, telling the model to send the user to a Notion page, and Notion is not asked', async () => {
     const { browser, user } = await openElsewhere()
     browser.ai.script.push(
       { toolCalls: [{ name: 'read_page', arguments: JSON.stringify({}) }] },
@@ -369,7 +369,7 @@ describe('on a tab that is not Notion', () => {
     expect(browser.tab.sent).toEqual([])
   })
 
-  it('[UC-PANEL-001-S05] the model gets the address and title of a tab on another site when it asks for them', async () => {
+  it('[UC-NOTICO-PANEL-001-S05] the model gets the address and title of a tab on another site when it asks for them', async () => {
     const { browser, user } = await openElsewhere()
     browser.ai.script.push(
       { toolCalls: [{ name: 'get_current_tab', arguments: JSON.stringify({}) }] },
@@ -386,7 +386,7 @@ describe('on a tab that is not Notion', () => {
     expect(browser.tab.injections).toEqual([])
   })
 
-  it('[UC-PANEL-001-S06] the model gets the address and title of a Notion tab the same way', async () => {
+  it('[UC-NOTICO-PANEL-001-S06] the model gets the address and title of a Notion tab the same way', async () => {
     const { browser, user } = await openPanel()
     browser.ai.script.push(
       { toolCalls: [{ name: 'get_current_tab', arguments: JSON.stringify({}) }] },
@@ -401,7 +401,7 @@ describe('on a tab that is not Notion', () => {
     expect(browser.tab.sent).toEqual([])
   })
 
-  // UC-PANEL-001-S07 itself stays ai-e2e: that Chrome keeps the panel open across tabs. This is
+  // UC-NOTICO-PANEL-001-S07 itself stays ai-e2e: that Chrome keeps the panel open across tabs. This is
   // the panel's part of it.
   it('a conversation started on a Notion page goes on after the user switches to another site', async () => {
     const { browser, user } = await openPanel()
@@ -451,7 +451,7 @@ describe('the page a question goes with', () => {
           .map((li) => li.textContent),
       )
 
-  it('[UC-AGENT-001-S27] the message box shows the open page, and follows the tab', async () => {
+  it('[UC-NOTICO-AGENT-001-S27] the message box shows the open page, and follows the tab', async () => {
     const { browser } = await openPanel()
 
     const shown = await screen.findByRole('list', { name: 'Pages to send' })
@@ -474,7 +474,7 @@ describe('the page a question goes with', () => {
     expect(browser.tab.injections).toEqual([])
   })
 
-  it('[UC-AGENT-001-S26] a question sent without the open page does not name it, and the agent cannot read it in its place', async () => {
+  it('[UC-NOTICO-AGENT-001-S26] a question sent without the open page does not name it, and the agent cannot read it in its place', async () => {
     const { browser, user } = await openPanel()
     const change = { action: 'add_property', property: 'Owner', type: 'text' }
     browser.ai.script.push(
@@ -545,7 +545,7 @@ describe('the page a question goes with', () => {
     expect(browser.tab.injections).toEqual([])
   })
 
-  it('[UC-AGENT-001-S28] a page taken off stays off for the chat until the user goes to another page or starts a new chat', async () => {
+  it('[UC-NOTICO-AGENT-001-S28] a page taken off stays off for the chat until the user goes to another page or starts a new chat', async () => {
     const { browser, user } = await openPanel()
     browser.ai.script.push({ reply: 'One.' }, { reply: 'Two.' })
     const leftOut = /^\[No Notion page is attached to this question/
@@ -589,7 +589,7 @@ describe('the page a question goes with', () => {
     ])
   })
 
-  it('[UC-AGENT-001-S29] a question shows the page it went with, also after the session is reopened', async () => {
+  it('[UC-NOTICO-AGENT-001-S29] a question shows the page it went with, also after the session is reopened', async () => {
     const { browser, user } = await openPanel()
     browser.ai.script.push({ reply: 'With the page.' }, { reply: 'Without it.' })
 
@@ -630,7 +630,7 @@ describe('a tool that needs confirmation', () => {
     return { browser, user, workspace, prompt }
   }
 
-  it('[UC-AGENT-001-S11] asks first, showing what the tool will do, and runs it only after the user agrees', async () => {
+  it('[UC-NOTICO-AGENT-001-S11] asks first, showing what the tool will do, and runs it only after the user agrees', async () => {
     const { browser, user, workspace, prompt } = await askToTrash()
     browser.ai.script.push({ reply: 'The old notes are in the trash.' })
 
@@ -652,7 +652,7 @@ describe('a tool that needs confirmation', () => {
     expect(screen.queryByRole('group', { name: 'Allow this? Move 1 page to the trash' })).not.toBeInTheDocument()
   })
 
-  it('[UC-AGENT-001-S24] a reply says how many pages it changed', async () => {
+  it('[UC-NOTICO-AGENT-001-S24] a reply says how many pages it changed', async () => {
     const first = await askToTrash()
     first.browser.ai.script.push({ reply: 'Done.' })
     await first.user.click(within(first.prompt).getByRole('button', { name: 'Allow' }))
@@ -661,7 +661,7 @@ describe('a tool that needs confirmation', () => {
     expect(screen.getByText('Changed 1 page')).toBeVisible()
   })
 
-  it('[UC-AGENT-001-S24] a change the user declined is not counted as changed', async () => {
+  it('[UC-NOTICO-AGENT-001-S24] a change the user declined is not counted as changed', async () => {
     const { browser, user, prompt } = await askToTrash()
     browser.ai.script.push({ reply: 'Left it.' })
     await user.click(within(prompt).getByRole('button', { name: 'Deny' }))
@@ -670,7 +670,7 @@ describe('a tool that needs confirmation', () => {
     expect(screen.queryByText(/Changed \d+ page/)).not.toBeInTheDocument()
   })
 
-  it('[UC-AGENT-001-S11] does not run the tool when the user declines, and the agent goes on without it', async () => {
+  it('[UC-NOTICO-AGENT-001-S11] does not run the tool when the user declines, and the agent goes on without it', async () => {
     const { browser, user, workspace, prompt } = await askToTrash()
     browser.ai.script.push({ reply: 'I left the old notes where they are.' })
 
@@ -702,7 +702,7 @@ describe('sessions', () => {
     await user.click(await screen.findByRole('button', { name: title }))
   }
 
-  it('[UC-SESSION-001-S06] a reopened session shows its tool calls, and a follow-up continues it', async () => {
+  it('[UC-NOTICO-SESSION-001-S06] a reopened session shows its tool calls, and a follow-up continues it', async () => {
     const { browser, user } = await openPanel()
     await askAboutPage(browser, user)
 
@@ -737,7 +737,7 @@ describe('sessions', () => {
     ])
   })
 
-  it('[UC-AGENT-001-S22] an edit names the page it changed, also after the session is reopened', async () => {
+  it('[UC-NOTICO-AGENT-001-S22] an edit names the page it changed, also after the session is reopened', async () => {
     const { browser, user } = await openPanel(workspaceTab().tab)
     browser.ai.script.push(
       { toolCalls: [{ name: 'read_page', arguments: JSON.stringify({ page: PAGE }) }] },
@@ -776,7 +776,7 @@ describe('sessions', () => {
     return [...popover.querySelectorAll('p')].map((row) => row.textContent)
   }
 
-  it('[UC-AGENT-001-S23][UC-AGENT-001-S25] a reply shows the pages it read, and its details the Notion requests, tokens, and model, also after the session is reopened', async () => {
+  it('[UC-NOTICO-AGENT-001-S23][UC-NOTICO-AGENT-001-S25] a reply shows the pages it read, and its details the Notion requests, tokens, and model, also after the session is reopened', async () => {
     const { browser, user } = await openPanel()
     // Each model call reports 1,200 input tokens, 800 of them cached, and 50 output tokens.
     browser.ai.usage = { prompt_tokens: 1200, completion_tokens: 50, prompt_tokens_details: { cached_tokens: 800 } }
@@ -827,7 +827,7 @@ describe('sessions', () => {
     expect(button).toHaveAttribute('aria-expanded', 'false')
   })
 
-  it('[UC-AGENT-001-S23] a page read twice for a question counts once', async () => {
+  it('[UC-NOTICO-AGENT-001-S23] a page read twice for a question counts once', async () => {
     const { browser, user } = await openPanel(workspaceTab().tab)
     browser.ai.script.push(
       { toolCalls: [{ name: 'read_page', arguments: JSON.stringify({}) }] },
@@ -843,7 +843,7 @@ describe('sessions', () => {
     expect(screen.getByText('Read 2 pages')).toBeVisible()
   })
 
-  it('[UC-CHAT-001-S19] copying a reply puts its Markdown on the clipboard, without its tool calls or the line under it', async () => {
+  it('[UC-NOTICO-CHAT-001-S19] copying a reply puts its Markdown on the clipboard, without its tool calls or the line under it', async () => {
     const { browser, user } = await openPanel()
     browser.ai.script.push(
       { reply: 'Let me look.', toolCalls: [{ name: 'read_page', arguments: JSON.stringify({ part: 1 }) }] },
@@ -902,7 +902,7 @@ describe('sessions', () => {
     expect(await replyDetails(user)).toEqual(['Tokens: 12 in · 5 out', 'Model: Auto'])
   })
 
-  it('[UC-SESSION-001-S07] opening the side panel starts a new, empty session, with the earlier ones in the list', async () => {
+  it('[UC-NOTICO-SESSION-001-S07] opening the side panel starts a new, empty session, with the earlier ones in the list', async () => {
     const { browser, user } = await openPanel()
     browser.ai.script.push({ reply: 'Three milestones.' }, { reply: 'Alice.' })
     await ask(user, 'What is on the roadmap?')
@@ -940,7 +940,7 @@ describe('sessions', () => {
     expect(browser.sentToModel().map((m) => m.role)).toEqual(['system', 'user'])
   })
 
-  it('[UC-SESSION-001-S14] after its first reply, a session is titled by the model, found by that title, and keeps it', async () => {
+  it('[UC-NOTICO-SESSION-001-S14] after its first reply, a session is titled by the model, found by that title, and keeps it', async () => {
     const { browser, user } = await openPanel()
     browser.titles.failWith = undefined
     // Quotes and a full stop the model adds anyway are dropped.
@@ -994,7 +994,7 @@ describe('sessions', () => {
     expect(browser.titles.calls).toHaveLength(1)
   })
 
-  it('[UC-SESSION-001-S15] a session whose title request fails, or gives no title, keeps its first question, with no error shown', async () => {
+  it('[UC-NOTICO-SESSION-001-S15] a session whose title request fails, or gives no title, keeps its first question, with no error shown', async () => {
     const { browser, user } = await openPanel()
     browser.ai.script.push({ reply: 'Three milestones.' }, { reply: 'Alice.' })
     // The title model fails.
@@ -1034,7 +1034,7 @@ describe('sessions', () => {
     expect(await screen.findByText('Next week.')).toBeVisible()
   })
 
-  it('[UC-SESSION-001-S16] the header shows the open session\'s title, or "New chat" before its first question', async () => {
+  it('[UC-NOTICO-SESSION-001-S16] the header shows the open session\'s title, or "New chat" before its first question', async () => {
     const { browser, user } = await openPanel()
     const title = () => screen.getByRole('heading', { level: 1 })
     expect(title()).toHaveTextContent(/^New chat$/)
@@ -1127,7 +1127,7 @@ describe('sessions', () => {
     await waitFor(() => expect(rows()).toEqual([expect.stringMatching(/^What is on the roadmap\?/)]))
   })
 
-  it('[UC-SESSION-001-S08] switching sessions stops a reply still coming in, and it lands in neither session', async () => {
+  it('[UC-NOTICO-SESSION-001-S08] switching sessions stops a reply still coming in, and it lands in neither session', async () => {
     const { browser, user } = await openPanel()
     browser.ai.script.push({ reply: 'Three milestones.' })
     await ask(user, 'What is on the roadmap?')
@@ -1195,7 +1195,7 @@ describe('a saved session that can no longer be read', () => {
     await answered()
   }
 
-  it('[UC-SESSION-001-S17] the others are listed as usual, and the unreadable one can be deleted but not opened', async () => {
+  it('[UC-NOTICO-SESSION-001-S17] the others are listed as usual, and the unreadable one can be deleted but not opened', async () => {
     const { browser, user } = await openPanel()
     await twoSessions(browser, user)
     await writeSaved('sessions', { id: 'old', title: { text: 'Old chat' } })
@@ -1219,7 +1219,7 @@ describe('a saved session that can no longer be read', () => {
     expect(list.getAllByRole('button', { name: /Fixture page/ })).toHaveLength(2)
   })
 
-  it("[UC-SESSION-001-S18] a session whose conversation can't be read is not opened, nothing goes to the AI, and it can be deleted", async () => {
+  it("[UC-NOTICO-SESSION-001-S18] a session whose conversation can't be read is not opened, nothing goes to the AI, and it can be deleted", async () => {
     const { browser, user } = await openPanel()
     await twoSessions(browser, user)
     // The first session's conversation, as this version can't read it.
@@ -1267,7 +1267,7 @@ describe('a saved session that can no longer be read', () => {
 })
 
 describe('signing in and out', () => {
-  it('[UC-AUTH-001-S04] signing out from the side panel returns it to the sign-in screen', async () => {
+  it('[UC-NOTICO-AUTH-001-S04] signing out from the side panel returns it to the sign-in screen', async () => {
     const { browser, user } = await openPanel()
     browser.ai.script.push({ reply: 'Three milestones.' })
     await ask(user, 'What is on the roadmap?')

@@ -92,7 +92,7 @@ beforeEach(() => {
 })
 
 describe('saved sessions', () => {
-  it('[UC-SESSION-001-S13] lists sessions most recently used first, with their titles', async () => {
+  it('[UC-NOTICO-SESSION-001-S13] lists sessions most recently used first, with their titles', async () => {
     await store.save(session('a', 'Summarize this page', 1000, ROADMAP))
     await store.save(session('b', 'What changed last week?', 3000, NOTES))
     await store.save(session('c', 'Draft an agenda', 2000))
@@ -134,7 +134,7 @@ describe('saved sessions', () => {
     expect((await load(store, 'a'))?.title).toBe('Page summary')
   })
 
-  it('[UC-SESSION-001-S12] search lists only the sessions whose title contains the query, ignoring case', async () => {
+  it('[UC-NOTICO-SESSION-001-S12] search lists only the sessions whose title contains the query, ignoring case', async () => {
     await store.save(session('a', 'Summarize this page', 1000, ROADMAP))
     await store.save(session('b', 'Summarize the decisions', 2000, NOTES))
     await store.save(session('c', 'Draft an agenda', 3000, NOTES))
@@ -147,7 +147,7 @@ describe('saved sessions', () => {
     expect(ids(filterSessions(all, '  '))).toEqual(['c', 'b', 'a'])
   })
 
-  it('[UC-SESSION-001-S05] a deleted session is no longer listed and cannot be reopened', async () => {
+  it('[UC-NOTICO-SESSION-001-S05] a deleted session is no longer listed and cannot be reopened', async () => {
     await store.save(session('a', 'Summarize this page', 1000, ROADMAP))
     await store.save(session('b', 'Draft an agenda', 2000))
     await store.delete('a')
@@ -156,7 +156,7 @@ describe('saved sessions', () => {
     expect((await load(store, 'b'))?.title).toBe('Draft an agenda')
   })
 
-  it("[UC-SESSION-001-S09] another account on the same browser sees none of the first account's sessions", async () => {
+  it("[UC-NOTICO-SESSION-001-S09] another account on the same browser sees none of the first account's sessions", async () => {
     const alice = new SessionStore('user_alice_s09')
     const bob = new SessionStore('user_bob_s09')
     await alice.save(session('a', 'Summarize this page', 1000, ROADMAP))
@@ -167,7 +167,7 @@ describe('saved sessions', () => {
     expect((await alice.list()).map((s) => s.id)).toEqual(['a'])
   })
 
-  it('[UC-SESSION-001-S10] a session continued in two windows keeps both conversations', async () => {
+  it('[UC-NOTICO-SESSION-001-S10] a session continued in two windows keeps both conversations', async () => {
     // Two side panels of one user: two stores over the same database.
     const first = new SessionStore('user_s10')
     const second = new SessionStore('user_s10')

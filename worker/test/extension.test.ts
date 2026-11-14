@@ -175,7 +175,7 @@ const PAGE_JSON = JSON.stringify({ title: 'Q4 Roadmap', url: 'https://www.notion
 const sentMessages = (call: number) => ai.calls[call].inputs.messages as Record<string, unknown>[]
 
 describe('extension agent against the worker', () => {
-  it('[UC-CHAT-001-S01] a plain question gets a streamed answer', async () => {
+  it('[UC-NOTICO-CHAT-001-S01] a plain question gets a streamed answer', async () => {
     const { result, updates, reply } = await ask(makeAgent(), 'hi')
     expect(result).toEqual({ status: 'done' })
     expect(reply).toBe('你好 来自 worker ')
@@ -191,7 +191,7 @@ describe('extension agent against the worker', () => {
     ])
   })
 
-  it('[UC-AGENT-001-S04] a tool the model asks for runs in the extension and the answer uses its result', async () => {
+  it('[UC-NOTICO-AGENT-001-S04] a tool the model asks for runs in the extension and the answer uses its result', async () => {
     const { tool, runs } = pageTool()
     ai.script = [{ toolCalls: [{ name: 'lookup_page', arguments: '{}' }] }, { reply: 'You are on Q4 Roadmap' }]
     const { result, updates, reply } = await ask(makeAgent({ tools: [tool] }), 'Which page am I on?')
@@ -219,7 +219,7 @@ describe('extension agent against the worker', () => {
     ])
   })
 
-  it('[UC-AGENT-001-S15] the model is told which page is open with each question', async () => {
+  it('[UC-NOTICO-AGENT-001-S15] the model is told which page is open with each question', async () => {
     const agent = makeAgent()
     // As the side panel asks: with the page the tab shows, or the note that it is not Notion.
     const askHere = async (text: string) => {
@@ -264,7 +264,7 @@ describe('extension agent against the worker', () => {
     expect(reopened.history()[0]).toMatchObject({ pages: [{ title: 'Q4 Roadmap' }] })
   })
 
-  it('[UC-NOTION-001-S01] the agent reads the open Notion page and answers from it', async () => {
+  it('[UC-NOTICO-NOTION-001-S01] the agent reads the open Notion page and answers from it', async () => {
     new FakeNotionTab(PAGE_URL)
       .respond('loadPageChunk', 200, fixture('load-page-chunk-0'))
       .respond('loadPageChunk', 200, fixture('load-page-chunk-1'))
@@ -446,7 +446,7 @@ describe('extension agent against the worker', () => {
     return ws
   }
 
-  it('[UC-NOTION-002-S09] the agent reads the page and edits it without asking the user', async () => {
+  it('[UC-NOTICO-NOTION-002-S09] the agent reads the page and edits it without asking the user', async () => {
     const ws = editablePage()
     const asked: ToolCallRequest[] = []
     const { result, updates } = await ask(
@@ -464,7 +464,7 @@ describe('extension agent against the worker', () => {
     expect(first.properties).toEqual({ title: [['Summary: hi']] })
   })
 
-  it('[UC-NOTION-010-S02] the agent trashes a page only after the user agrees to what the preview names', async () => {
+  it('[UC-NOTICO-NOTION-010-S02] the agent trashes a page only after the user agrees to what the preview names', async () => {
     const OLD = 'b0b0b0b0-0000-4000-8000-000000000001'
     const ws = new FakeWorkspace(
       [
@@ -509,7 +509,7 @@ describe('extension agent against the worker', () => {
     expect(ws.records.get(PAGE)!.content).toEqual([])
   })
 
-  it('[UC-NOTION-001-S08] the question stops when Notion turns a read away, and nothing more is sent', async () => {
+  it('[UC-NOTICO-NOTION-001-S08] the question stops when Notion turns a read away, and nothing more is sent', async () => {
     const tab = new FakeNotionTab(PAGE_URL).limit('loadPageChunk', 1).install()
     // The model would read again, and then try another way.
     ai.script = [
@@ -533,7 +533,7 @@ describe('extension agent against the worker', () => {
     })
   })
 
-  it('[UC-NOTION-001-S13] asked again before the wait Notion asked for is over, nothing is sent and the user is told how long to wait', async () => {
+  it('[UC-NOTICO-NOTION-001-S13] asked again before the wait Notion asked for is over, nothing is sent and the user is told how long to wait', async () => {
     let now = Date.now()
     const tab = new FakeNotionTab(PAGE_URL).limit('loadPageChunk', 1, 429, '120').install()
     notionCooldown.now = () => now
@@ -561,7 +561,7 @@ describe('extension agent against the worker', () => {
     expect(tab.sent).toHaveLength(2)
   })
 
-  it('[UC-NOTION-002-S11] the question stops when Notion turns an edit away, and nothing changes', async () => {
+  it('[UC-NOTICO-NOTION-002-S11] the question stops when Notion turns an edit away, and nothing changes', async () => {
     const ws = editablePage()
     const tab = new FakeNotionTab(PAGE_URL).limit('saveTransactionsFanout', 1)
     tab.workspace = ws
@@ -592,7 +592,7 @@ describe('extension agent against the worker', () => {
     expect(ai.calls).toHaveLength(1)
   })
 
-  it('[UC-NOTION-001-S11] the question stops when a read fails in a way that is not understood', async () => {
+  it('[UC-NOTICO-NOTION-001-S11] the question stops when a read fails in a way that is not understood', async () => {
     const tab = new FakeNotionTab(PAGE_URL).respondText('loadPageChunk', 500, 'oops').install()
     // The model would read again, and then try another way.
     ai.script = [
@@ -610,7 +610,7 @@ describe('extension agent against the worker', () => {
     expect(ai.calls).toHaveLength(1)
   })
 
-  it('[UC-NOTION-002-S17] the question stops when Notion refuses an edit without explaining it', async () => {
+  it('[UC-NOTICO-NOTION-002-S17] the question stops when Notion refuses an edit without explaining it', async () => {
     const ws = editablePage()
     const tab = new FakeNotionTab(PAGE_URL).respond('saveTransactionsFanout', 400, {
       name: 'ValidationError',
@@ -628,7 +628,7 @@ describe('extension agent against the worker', () => {
     expect(ai.calls).toHaveLength(2)
   })
 
-  it('[UC-NOTION-002-S18] the question stops when an edit gets no answer, and the user is told to check', async () => {
+  it('[UC-NOTICO-NOTION-002-S18] the question stops when an edit gets no answer, and the user is told to check', async () => {
     const ws = editablePage()
     const tab = new FakeNotionTab(PAGE_URL).respondText('saveTransactionsFanout', 504, 'Gateway timeout')
     tab.workspace = ws
@@ -639,7 +639,7 @@ describe('extension agent against the worker', () => {
     expect(ai.calls).toHaveLength(2)
   })
 
-  it('[UC-NOTION-002-S12] the question stops when Notion is too busy to say whether an edit was saved', async () => {
+  it('[UC-NOTICO-NOTION-002-S12] the question stops when Notion is too busy to say whether an edit was saved', async () => {
     const ws = editablePage()
     const tab = new FakeNotionTab(PAGE_URL).limit('saveTransactionsFanout', 1, 529)
     tab.workspace = ws
@@ -650,7 +650,7 @@ describe('extension agent against the worker', () => {
     expect(ai.calls).toHaveLength(2)
   })
 
-  it('[UC-NOTION-002-S13] a question stopped after an earlier change tells the user that change was made', async () => {
+  it('[UC-NOTICO-NOTION-002-S13] a question stopped after an earlier change tells the user that change was made', async () => {
     const ws = editablePage()
     const tab = new FakeNotionTab(PAGE_URL)
     tab.workspace = ws
@@ -669,7 +669,7 @@ describe('extension agent against the worker', () => {
     expect(ws.transactions).toHaveLength(1)
   })
 
-  it('[UC-NOTION-010-S02] a trash preview Notion turns away ends the question before the user is asked', async () => {
+  it('[UC-NOTICO-NOTION-010-S02] a trash preview Notion turns away ends the question before the user is asked', async () => {
     const OLD = 'b0b0b0b0-0000-4000-8000-000000000001'
     const ws = new FakeWorkspace(
       [
@@ -828,7 +828,7 @@ describe('extension agent against the worker', () => {
     expect(tab.sent).toHaveLength(1)
   })
 
-  it('[UC-AGENT-001-S05] a model that keeps calling tools is stopped at the step limit', async () => {
+  it('[UC-NOTICO-AGENT-001-S05] a model that keeps calling tools is stopped at the step limit', async () => {
     const { tool, runs } = pageTool()
     ai.toolCalls = [{ name: 'lookup_page', arguments: '{}' }]
     const agent = makeAgent({ tools: [tool], maxSteps: 3 })
@@ -1018,7 +1018,7 @@ describe('extension agent against the worker', () => {
     expect(reply).toBe('Open a page first ')
   })
 
-  it('[UC-AGENT-001-S12] stopping during a tool keeps the tools used so far, and drops what had not started', async () => {
+  it('[UC-NOTICO-AGENT-001-S12] stopping during a tool keeps the tools used so far, and drops what had not started', async () => {
     let agent: CopilotAgent
     const { tool: rename, runs } = renameTool()
     const slow: ToolSpec = {
@@ -1059,7 +1059,7 @@ describe('extension agent against the worker', () => {
     })
   })
 
-  it('[UC-AGENT-001-S13] a question that fails after a tool ran keeps the tool for the next question', async () => {
+  it('[UC-NOTICO-AGENT-001-S13] a question that fails after a tool ran keeps the tool for the next question', async () => {
     const { tool, runs } = renameTool()
     const failing: ToolSpec = {
       ...tool,
@@ -1096,7 +1096,7 @@ describe('extension agent against the worker', () => {
     ])
   })
 
-  it('[UC-AGENT-001-S14] a question stopped or failed before any tool ran is left out', async () => {
+  it('[UC-NOTICO-AGENT-001-S14] a question stopped or failed before any tool ran is left out', async () => {
     // Fails on the first model request.
     ai.failWith = new Error('capacity')
     const agent = makeAgent()
@@ -1189,7 +1189,7 @@ describe('extension agent against the worker', () => {
     expect(updates.flatMap((u) => (u.type === 'tool_end' ? [u.status] : []))).toEqual(['done'])
   })
 
-  it('[UC-AGENT-001-S09] a tool the user declines does not run, and the agent continues without it', async () => {
+  it('[UC-NOTICO-AGENT-001-S09] a tool the user declines does not run, and the agent continues without it', async () => {
     const { tool, runs } = renameTool()
     ai.script = [{ toolCalls: [RENAME_CALL] }, { reply: 'OK, I left the title as it is' }]
     const asked: ToolCallRequest[] = []
@@ -1292,7 +1292,7 @@ describe('extension agent against the worker', () => {
     expect(toolStatuses(updates)).toEqual(['done'])
   })
 
-  it('[UC-AGENT-001-S10] a tool the user agrees to runs, and the answer uses its result', async () => {
+  it('[UC-NOTICO-AGENT-001-S10] a tool the user agrees to runs, and the answer uses its result', async () => {
     const { tool, runs } = renameTool()
     ai.script = [{ toolCalls: [RENAME_CALL] }, { reply: 'Renamed to Q4 Plan' }]
     const { result, updates, reply } = await ask(
@@ -1350,7 +1350,7 @@ describe('extension agent against the worker', () => {
     expect(runs).toEqual([{}])
   })
 
-  it('[UC-AGENT-001-S12] stopping while the user is asked counts as no, ends the question, and keeps the call as stopped', async () => {
+  it('[UC-NOTICO-AGENT-001-S12] stopping while the user is asked counts as no, ends the question, and keeps the call as stopped', async () => {
     const { tool, runs } = renameTool()
     const agent = makeAgent({ tools: [tool] })
     ai.script = [{ toolCalls: [RENAME_CALL] }]
@@ -1495,7 +1495,7 @@ describe('extension agent against the worker', () => {
     expect(ai.calls.at(-1)!.model).toBe(NEXT_MODEL)
   })
 
-  it('[UC-SESSION-001-S01] a reopened session sends its earlier conversation, tool calls included', async () => {
+  it('[UC-NOTICO-SESSION-001-S01] a reopened session sends its earlier conversation, tool calls included', async () => {
     ai.script = [{ toolCalls: [{ name: 'lookup_page', arguments: '{}' }] }, { reply: 'You are on Q4 Roadmap' }]
     const first = makeAgent()
     await ask(first, 'Which page am I on?')
@@ -1536,7 +1536,7 @@ describe('extension agent against the worker', () => {
     ])
   })
 
-  it('[UC-SESSION-001-S02] a new or other session sends nothing from earlier sessions', async () => {
+  it('[UC-NOTICO-SESSION-001-S02] a new or other session sends nothing from earlier sessions', async () => {
     const agent = makeAgent()
     await ask(agent, 'secret plans')
     const earlier = agent.history()
@@ -1599,7 +1599,7 @@ describe('extension agent against the worker', () => {
   const OUT_OF_CREDITS =
     'You have no credits left. Your next 200 free credits arrive on 2026-11-15 at 12:00 UTC, or you can buy credits.'
 
-  it('[UC-CHAT-001-S09] shows when the next free credits arrive, and drops the refused question', async () => {
+  it('[UC-NOTICO-CHAT-001-S09] shows when the next free credits arrive, and drops the refused question', async () => {
     // A user starts with 200 credits.
     ai.usage = usageCosting(200)
     const agent = makeAgent()
@@ -1615,7 +1615,7 @@ describe('extension agent against the worker', () => {
     expect(sentMessages(1).map((m) => m.content)).toEqual(['You are Notico.', 'first', '你好 来自 worker ', 'third'])
   })
 
-  it('[UC-CHAT-001-S11] a question answered with one tool costs the credits of both model calls', async () => {
+  it('[UC-NOTICO-CHAT-001-S11] a question answered with one tool costs the credits of both model calls', async () => {
     ai.usage = usageCosting(90)
     const { tool, runs } = pageTool()
     const agent = makeAgent({ tools: [tool] })
@@ -1645,7 +1645,7 @@ describe('extension agent against the worker', () => {
     return { agent, runs, result }
   }
 
-  it('[UC-CHAT-001-S12] credits that run out after a tool ran end the question, saying when credits arrive', async () => {
+  it('[UC-NOTICO-CHAT-001-S12] credits that run out after a tool ran end the question, saying when credits arrive', async () => {
     const { runs, result } = await askIntoNoCredits()
     expect(result).toEqual({ status: 'error', message: OUT_OF_CREDITS, code: 'out_of_credits' })
     expect(runs).toHaveLength(1)
@@ -1654,7 +1654,7 @@ describe('extension agent against the worker', () => {
   })
 
   it('keeps a tool used before the credits ran out for the next question', async () => {
-    // UC-AGENT-001-S13 covers a model failure; this guards the same rule when the request is refused for credits.
+    // UC-NOTICO-AGENT-001-S13 covers a model failure; this guards the same rule when the request is refused for credits.
     const { agent, runs } = await askIntoNoCredits()
     // A week later the user has credits again.
     clock = new Date(clock.getTime() + WEEK_MS)
@@ -1734,7 +1734,7 @@ describe('the open page note', () => {
 })
 
 describe('tokens per question', () => {
-  it('[UC-AGENT-001-S25] a question reports the tokens its model calls used, cached ones too, and the saved session keeps them', async () => {
+  it('[UC-NOTICO-AGENT-001-S25] a question reports the tokens its model calls used, cached ones too, and the saved session keeps them', async () => {
     ai.usage = { prompt_tokens: 1000, completion_tokens: 40, prompt_tokens_details: { cached_tokens: 600 } }
     ai.script = [{ toolCalls: [{ name: 'lookup_page', arguments: '{}' }] }, { reply: 'You are on Q4 Roadmap' }]
     const agent = makeAgent()
@@ -1791,7 +1791,7 @@ describe('Notion requests per question', () => {
   }
   const LOOK_UP = { name: 'look_up', arguments: '{}' }
 
-  it('[UC-AGENT-001-S17] a question reports the Notion requests it made, and the saved session keeps them', async () => {
+  it('[UC-NOTICO-AGENT-001-S17] a question reports the Notion requests it made, and the saved session keeps them', async () => {
     const tab = new FakeNotionTab(PAGE_URL)
       .respond('loadPageChunk', 200, fixture('load-page-chunk-0'))
       .respond('loadPageChunk', 200, fixture('load-page-chunk-1'))
@@ -1832,7 +1832,7 @@ describe('Notion requests per question', () => {
     expect(stopped.result).toEqual({ status: 'stopped', requests: 3 })
   })
 
-  it('[UC-AGENT-001-S18] at the budget, the agent asks the user and sends nothing until they answer', async () => {
+  it('[UC-NOTICO-AGENT-001-S18] at the budget, the agent asks the user and sends nothing until they answer', async () => {
     const tab = workspaceTab()
     ai.script = [{ toolCalls: [LOOK_UP] }, { reply: 'Done.' }]
     const asked: { call: ToolCallRequest; sent: number }[] = []
@@ -1890,7 +1890,7 @@ describe('Notion requests per question', () => {
     expect(tab.sent).toHaveLength(REQUEST_BUDGET + 3)
   })
 
-  it('[UC-AGENT-001-S19] stopping at the budget sends nothing more, ends the question, and tells the AI not to work around it', async () => {
+  it('[UC-NOTICO-AGENT-001-S19] stopping at the budget sends nothing more, ends the question, and tells the AI not to work around it', async () => {
     const tab = workspaceTab()
     // The model would try again, with fewer requests.
     ai.script = [{ toolCalls: [LOOK_UP] }, { toolCalls: [LOOK_UP] }, { reply: 'Trying another way.' }]

@@ -60,8 +60,8 @@ function open(): FakeNotionTab {
 
 const search = async (args: Record<string, unknown>) => (await searchPages.run(args)) as string
 
-describe('UC-NOTION-004 find and read other pages', () => {
-  it('[UC-NOTION-004-S01] finds pages with their titles, where they are, the matching text, and their ids', async () => {
+describe('UC-NOTICO-NOTION-004 find and read other pages', () => {
+  it('[UC-NOTICO-NOTION-004-S01] finds pages with their titles, where they are, the matching text, and their ids', async () => {
     const tab = open().respond('search', 200, SEARCH)
     // Notion has more than the two asked for.
     expect(await search({ query: 'beta plan', limit: 2 })).toBe(
@@ -86,12 +86,12 @@ describe('UC-NOTION-004 find and read other pages', () => {
     expect(sent.headers['x-notion-space-id']).toBe(SPACE)
   })
 
-  it('[UC-NOTION-004-S02] says when nothing was found', async () => {
+  it('[UC-NOTICO-NOTION-004-S02] says when nothing was found', async () => {
     open().respond('search', 200, { results: [], total: 0, recordMap: { __version__: 3 } })
     expect(await search({ query: 'zebra' })).toBe('No pages found for "zebra".')
   })
 
-  it('[UC-NOTION-004-S03] reads a page the search found, by the id it showed', async () => {
+  it('[UC-NOTICO-NOTION-004-S03] reads a page the search found, by the id it showed', async () => {
     const tab = open().respond('search', 200, SEARCH)
     const result = await search({ query: 'plan' })
     const ref = /\^([0-9a-f]{32})/.exec(result)![1]

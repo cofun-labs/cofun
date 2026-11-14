@@ -89,8 +89,8 @@ const tableRows = (result: string) =>
   result.split('\n').filter((l) => l.startsWith('| ') && !l.startsWith('| Task | Status |') && !l.startsWith('| ---'))
 const today = localDate(new Date())
 
-describe('UC-NOTION-006 read a database', () => {
-  it('[UC-NOTION-006-S01] reads the open database: its properties, and each row with its values and id', async () => {
+describe('UC-NOTICO-NOTION-006 read a database', () => {
+  it('[UC-NOTICO-NOTION-006-S01] reads the open database: its properties, and each row with its values and id', async () => {
     const tab = database()
     expect(await query()).toBe(
       [
@@ -115,7 +115,7 @@ describe('UC-NOTION-006 read a database', () => {
     })
   })
 
-  it('[UC-NOTION-006-S02] keeps only the rows that match every condition, in the asked order', async () => {
+  it('[UC-NOTICO-NOTION-006-S02] keeps only the rows that match every condition, in the asked order', async () => {
     database()
     const result = await query({
       database: hex(DB),
@@ -139,7 +139,7 @@ describe('UC-NOTION-006 read a database', () => {
     expect(tableRows(empty).map((l) => l.split(' | ')[0])).toEqual(['| Plan retro'])
   })
 
-  it('[UC-NOTION-006-S02] has Notion order the rows, and keeps its order', async () => {
+  it('[UC-NOTICO-NOTION-006-S02] has Notion order the rows, and keeps its order', async () => {
     const titles = (result: string) => tableRows(result).map((l) => l.split(' | ')[0].slice(2))
     // Notion answers with the rows sorted (by due date, descending; empty last).
     const tab = database([TASKS[2], TASKS[1], TASKS[0], TASKS[3]].map(rowRecord))
@@ -152,7 +152,7 @@ describe('UC-NOTION-006 read a database', () => {
     expect(tab.sent.at(-1)!.body).toMatchObject({ loader: { sort: [{ property: 'b:b', direction: 'descending' }] } })
   })
 
-  it('[UC-NOTION-006-S03] reads many rows part by part, and says when there are more than it read', async () => {
+  it('[UC-NOTICO-NOTION-006-S03] reads many rows part by part, and says when there are more than it read', async () => {
     const many = Array.from({ length: QUERY_PART + 10 }, (_, i) =>
       rowRecord({ ...TASKS[0], n: 100 + i, task: `Task ${i}` }),
     )
@@ -167,7 +167,7 @@ describe('UC-NOTION-006 read a database', () => {
     expect(second).toContain('This part comes from a new read of the database')
   })
 
-  it('[UC-NOTION-006-S05] with more rows than one read loads, asks Notion for the order, so the rows read come first in it', async () => {
+  it('[UC-NOTICO-NOTION-006-S05] with more rows than one read loads, asks Notion for the order, so the rows read come first in it', async () => {
     const tab = database(TASKS.map(rowRecord), true)
     const result = await query({ sort: { property: 'points', direction: 'descending' } })
     expect(tab.sent.at(-1)!.body).toMatchObject({
@@ -486,7 +486,7 @@ describe('query_database options, numbers, and code', () => {
     expect(await filter('a*b')).toEqual(['Ship beta'])
   })
 
-  it('[UC-NOTION-006-S06] shows a status never set as the database’s default, and filters by it', async () => {
+  it('[UC-NOTICO-NOTION-006-S06] shows a status never set as the database’s default, and filters by it', async () => {
     const options = ['Not started', 'In progress', 'Done'].map((value) => ({ value }))
     const schema = { ...SCHEMA, 'a:a': { name: 'Status', type: 'status', options, defaultOption: 'Not started' } }
     const rows = TASKS.map(rowRecord)
@@ -503,7 +503,7 @@ describe('query_database options, numbers, and code', () => {
     expect(tableRows(await query())[3]).toContain('| Plan retro |  |')
   })
 
-  it('[UC-NOTION-006-S07] shows a relation by the titles of its pages, looked up when the result leaves them out', async () => {
+  it('[UC-NOTICO-NOTION-006-S07] shows a relation by the titles of its pages, looked up when the result leaves them out', async () => {
     const REVIEW = 'b1b1b1b1-0000-4000-8000-000000000050'
     const schema = { ...SCHEMA, 'r:r': { name: 'Blocked by', type: 'relation' } }
     const rows = TASKS.map(rowRecord)

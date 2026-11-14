@@ -111,8 +111,8 @@ const update = async (pages: unknown) => (await updatePages.run({ pages })) as s
 const props = (ws: FakeWorkspace, n: number) => ws.records.get(row(n))!.properties
 const prop = (ws: FakeWorkspace, n: number, key: string) => (props(ws, n) as Record<string, unknown>)[key]
 
-describe('UC-NOTION-008 change properties and rows', () => {
-  it('[UC-NOTION-008-S06] sets a property on several rows in one change, and only on those', async () => {
+describe('UC-NOTICO-NOTION-008 change properties and rows', () => {
+  it('[UC-NOTICO-NOTION-008-S06] sets a property on several rows in one change, and only on those', async () => {
     const ws = workspace()
     open(ws)
     const result = await update([
@@ -141,7 +141,7 @@ describe('UC-NOTION-008 change properties and rows', () => {
     expect(ws.records.get(row(1))).not.toHaveProperty('last_edited_by_id')
   })
 
-  it('[UC-NOTION-008-S06] sets dates, lists of options, text, and titles and icons, and clears values', async () => {
+  it('[UC-NOTICO-NOTION-008-S06] sets dates, lists of options, text, and titles and icons, and clears values', async () => {
     const ws = workspace()
     open(ws)
     await update([
@@ -167,7 +167,7 @@ describe('UC-NOTION-008 change properties and rows', () => {
     ])
   })
 
-  it('[UC-NOTION-008-S02] writes nothing when a value does not fit its property, and says why', async () => {
+  it('[UC-NOTICO-NOTION-008-S02] writes nothing when a value does not fit its property, and says why', async () => {
     const ws = workspace()
     const tab = open(ws)
     const refused: [unknown, string][] = [
@@ -193,7 +193,7 @@ describe('UC-NOTION-008 change properties and rows', () => {
     expect(tab.sent.map((r) => r.url.split('/api/v3/')[1])).not.toContain('saveTransactionsFanout')
   })
 
-  it('[UC-NOTION-008-S07] adds a row to a database with its properties and content', async () => {
+  it('[UC-NOTICO-NOTION-008-S07] adds a row to a database with its properties and content', async () => {
     const ws = workspace()
     open(ws)
     const result = (await createPage.run({
@@ -253,7 +253,7 @@ describe('update_pages details', () => {
     ['‣', [['d', { type: 'date', start_date: '2026-11-20' }]]],
   ]
 
-  it('[UC-NOTION-008-S10] stores the Markdown of a text value and a title as formatting, links, and mentions', async () => {
+  it('[UC-NOTICO-NOTION-008-S10] stores the Markdown of a text value and a title as formatting, links, and mentions', async () => {
     const ws = mentionable()
     const tab = open(ws)
     await update([
@@ -275,7 +275,7 @@ describe('update_pages details', () => {
     expect(tab.sent.filter((r) => r.url.endsWith('/getVisibleUsers'))).toHaveLength(1)
   })
 
-  it('[UC-NOTION-008-S10] stores the Markdown of a new row’s title and text', async () => {
+  it('[UC-NOTICO-NOTION-008-S10] stores the Markdown of a new row’s title and text', async () => {
     const ws = mentionable()
     open(ws)
     const result = (await createPage.run({
@@ -294,7 +294,7 @@ describe('update_pages details', () => {
     })
   })
 
-  it('[UC-NOTION-008-S11] stores a text value and a title written back as query_database shows them as they were', async () => {
+  it('[UC-NOTICO-NOTION-008-S11] stores a text value and a title written back as query_database shows them as they were', async () => {
     const ws = mentionable()
     const tab = open(ws, `https://app.notion.com/${hex(DB)}`)
     const title = [['Write '], ['the', [['i']]], [' a|b [docs] with '], ['‣', [['u', ANN]]]]
@@ -324,7 +324,7 @@ describe('update_pages details', () => {
     expect(props(ws, 1)).toEqual(stored)
   })
 
-  it('[UC-NOTION-008-S12] writes nothing when a text value or a title mentions a name no member has', async () => {
+  it('[UC-NOTICO-NOTION-008-S12] writes nothing when a text value or a title mentions a name no member has', async () => {
     const ws = mentionable()
     const tab = open(ws)
     for (const change of [{ properties: { Notes: 'Ask @[Bob]' } }, { title: 'For @[Bob]' }]) {
@@ -420,7 +420,7 @@ describe('update_pages details', () => {
     [' soon'],
   ]
 
-  it('[UC-NOTION-008-S13] stores a text value and a title written back as shown with what the Markdown does not show', async () => {
+  it('[UC-NOTICO-NOTION-008-S13] stores a text value and a title written back as shown with what the Markdown does not show', async () => {
     const ws = mentionable()
     const tab = open(ws, `https://app.notion.com/${hex(DB)}`)
     const title = [['Write '], ['the', [['_'], ['b']]], [' docs']]
@@ -440,7 +440,7 @@ describe('update_pages details', () => {
     expect(props(ws, 1)).toEqual(stored)
   })
 
-  it('[UC-NOTION-008-S13] keeps what the Markdown does not show on the text a change leaves as it was', async () => {
+  it('[UC-NOTICO-NOTION-008-S13] keeps what the Markdown does not show on the text a change leaves as it was', async () => {
     const ws = mentionable()
     open(ws)
     ws.edit(row(1), { properties: { title: [['Write docs']], 'g:g': HIDDEN } })
@@ -513,7 +513,7 @@ describe('update_pages details', () => {
     ],
     ['a mark it doesn’t know', ['odd', [['zz', 1]]], '**odd**', 'formatting of a kind that is not known on “odd”'],
   ])(
-    '[UC-NOTION-008-S14] writes nothing when a change would remove %s from text that stays',
+    '[UC-NOTICO-NOTION-008-S14] writes nothing when a change would remove %s from text that stays',
     async (_kind, run, markdown, lost) => {
       const ws = mentionable()
       open(ws)
@@ -675,7 +675,7 @@ describe('update_pages details', () => {
     expect(ws.transactions).toEqual([])
   })
 
-  it('[UC-NOTION-008-S15] stores a text value of several lines written back as query_database shows it as it was', async () => {
+  it('[UC-NOTICO-NOTION-008-S15] stores a text value of several lines written back as query_database shows it as it was', async () => {
     const ws = mentionable()
     const tab = open(ws, `https://app.notion.com/${hex(DB)}`)
     const notes = [['First line\nSecond '], ['bold\nlines', [['b']]], ['\n\nand a last one']]
@@ -958,7 +958,7 @@ describe('update_pages details', () => {
     )
   })
 
-  it('[UC-NOTION-008-S09] says a date’s reminder is removed, the same day or another', async () => {
+  it('[UC-NOTICO-NOTION-008-S09] says a date’s reminder is removed, the same day or another', async () => {
     const ws = workspace()
     const tab = open(ws, `https://app.notion.com/${hex(DB)}`)
     const reminded = [

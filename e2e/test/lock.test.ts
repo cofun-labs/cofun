@@ -24,9 +24,11 @@ describe('CanaryLock', () => {
   it('takes a free lock and writes the owner line the shell script writes', async () => {
     const lock = new CanaryLock(dir, at('2026-11-10T08:11:00'))
     expect(await lock.holder()).toBeUndefined()
-    expect(await lock.acquire('issue-106', 'UC-NOTION-007-S04')).toEqual({ status: 'acquired' })
-    expect(await readFile(join(dir, 'owner'), 'utf8')).toBe('issue-106 | UC-NOTION-007-S04 | since 2026-11-10 08:11\n')
-    expect(await lock.holder()).toBe('issue-106 | UC-NOTION-007-S04 | since 2026-11-10 08:11')
+    expect(await lock.acquire('issue-106', 'UC-NOTICO-NOTION-007-S04')).toEqual({ status: 'acquired' })
+    expect(await readFile(join(dir, 'owner'), 'utf8')).toBe(
+      'issue-106 | UC-NOTICO-NOTION-007-S04 | since 2026-11-10 08:11\n',
+    )
+    expect(await lock.holder()).toBe('issue-106 | UC-NOTICO-NOTION-007-S04 | since 2026-11-10 08:11')
   })
 
   it('reports a lock held by someone else as busy, and leaves it alone', async () => {
