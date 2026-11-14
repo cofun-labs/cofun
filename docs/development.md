@@ -28,7 +28,7 @@ If you change a setting in the GitHub dashboard, copy it back into these files.
 
 ## PR media
 
-The GIF or screenshots that show a finished feature in a PR comment ([AGENTS.md](../AGENTS.md), step 9) are kept in the R2 bucket `cofun-static`, served at `https://static.cofun.cc`. They are never pushed to a git branch. The bucket is public: anyone can read every file in it, so a recording shows a test workspace only, with no real page content or account details, like anything else in this repository.
+The GIF or screenshots that show a finished feature in a PR comment ([AGENTS.md](../AGENTS.md), step 9) are kept in the public R2 bucket `cofun-static`, served at `https://static.cofun.cc`, never on a git branch. Upload them and embed the URLs it prints as `![what it shows](<url>)` (GitHub shows only images that way; link to a video instead):
 
 ```bash
 pnpm media 367 demo.gif before.png
@@ -36,16 +36,7 @@ pnpm media 367 demo.gif before.png
 # https://static.cofun.cc/cofun/pr/367/before.png
 ```
 
-Each file goes to `cofun/pr/<number>/<name>` (the first part is this repository's name) and its URL is printed, to embed in the PR comment as `![what it shows](<url>)`. The name is the file's own, with anything but letters, digits, `.`, `_`, and `-` replaced by a dash; GIF, PNG, JPEG, WebP, MP4, and WebM files are accepted. Uploading a name again replaces the file, but Cloudflare and GitHub may keep serving the old one for a while, so give a new recording a new name.
-
-Only the maintainer's machine can upload: the script ([`scripts/upload-media.ts`](../scripts/upload-media.ts)) runs the `cf` CLI with the Cloudflare login on that machine, and nothing in the repository or in CI holds a token for the bucket. With several accounts in that login, pick the one that has the bucket with `CLOUDFLARE_ACCOUNT_ID` (don't commit it). The bucket and its domain were made once, on the account that has the `cofun.cc` zone:
-
-```bash
-cf r2 buckets create-by-name cofun-static
-cf r2 buckets domains custom create cofun-static --domain static.cofun.cc --zone-id <cofun.cc zone id> --min-tls 1.2
-```
-
-Showcase GIFs meant for the README or an extension's help pages are committed in the repository instead, next to the page that shows them.
+Only the maintainer's machine can upload: the script runs the `cf` CLI with the Cloudflare login there (with several accounts in it, `CLOUDFLARE_ACCOUNT_ID` picks the one that has the bucket; don't commit it). Showcase GIFs meant for the README or an extension's help pages are committed in the repository instead.
 
 ## Worker
 
