@@ -2,7 +2,7 @@
 
 ## Behavior
 
-Using the hosted AI (UC-COFUN-CHAT-001) costs credits, so one account cannot run up unbounded model usage. Credits are one balance per account, whichever products spend them. A credit is a thousandth of a US dollar, and each call to the model costs what its tokens cost the service, with nothing added. Input the model reads from its cache costs less than new input, and is charged at that lower price. A question a product answers with several model calls, such as one for each round trip of a tool, costs the sum of them.
+Using the hosted AI (UC-COFUN-CHAT-001) costs credits, so one account cannot run up unbounded model usage. A credit is a thousandth of a US dollar, and each call to the model costs what its tokens cost the service, with nothing added. Input the model reads from its cache costs less than new input, and is charged at that lower price. A question a product answers with several model calls, such as one for each round trip of a tool, costs the sum of them.
 
 Every signed-in user gets 200 free credits a week. They arrive when the user asks and has no current week of credits, and they expire 7 days later; a new week starts the next time the user asks after that, so unused credits never add up. Credits can also be bought (UC-COFUN-BILLING-001) or granted by an operator (UC-COFUN-ADMIN-001).
 

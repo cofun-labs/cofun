@@ -120,7 +120,7 @@ A signed-in user asks the AI something in the side panel and reads the reply as 
 
 Key constraint:
 
-- The server chooses the model. Clients cannot use another one.
+- A reply cannot make the side panel run or load anything.
 
 ## Scenarios
 
@@ -137,7 +137,7 @@ Key constraint:
 
 ## IDs
 
-- Use case: `UC-{PRODUCT}-{DOMAIN}-{NNN}`. `{PRODUCT}` is the extension's folder name, which is lowercase letters only, in capitals (`NOTICO`), or `COFUN` for the worker's use cases. Domains: `ADMIN`, `AGENT`, `AUTH`, `BILLING`, `CHAT`, `PANEL`, `SESSION`, and one for what is about a product's site (`NOTION` for Notico).
+- Use case: `UC-{PRODUCT}-{DOMAIN}-{NNN}`. `{PRODUCT}` is the extension's folder name, which is lowercase letters only, in capitals (`NOTICO`), or `COFUN` for the worker's use cases. Domains: `ADMIN`, `AGENT`, `AUTH`, `BILLING`, `CHAT`, `CREDITS`, `PANEL`, `SESSION`, and one for what is about a product's site (`NOTION` for Notico).
 - Each product numbers its own use cases: a use case it repeats from another product gets its own prefix and its own number, so Confluco's sign-in would be `UC-CONFLUCO-AUTH-001`. The prefix keeps IDs unique across the repository, since tests are found by them.
 - Scenario: `{UC ID}-S{NN}`.
 - IDs are labels that link a scenario to its tests. Renumbering a scenario, or reusing a deleted one's ID, is fine as long as its tests are renamed with it. When a scenario is deleted, delete its tests or take the ID out of their names, so a later scenario that reuses the ID can't pass on a test of the old one.
