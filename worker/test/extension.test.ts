@@ -141,7 +141,7 @@ function withActiveTab(tab: { url?: string; title?: string } | undefined) {
 const usedOnHosted = (calls: number): QuestionDetails => ({
   tokens: { input: 12 * calls, output: 5 * calls, cached: 0 },
   model: { service: 'hosted' },
-  cost: { microCredits: FAKE_COST * calls, estimated: false },
+  cost: { microCredits: FAKE_COST * calls },
 })
 
 /**
@@ -1230,13 +1230,8 @@ describe('extension agent against the worker', () => {
     expect((await ask(agent, 'Which page am I on?')).result).toEqual({ status: 'stopped' })
     const saved = structuredClone(agent.history())
     expect(saved).toEqual<HistoryMessage[]>([
-      // Stopped: the call cut short never reports what it was charged, so the cost is approximate.
-      {
-        role: 'user',
-        text: 'Which page am I on?',
-        ...usedOnHosted(1),
-        cost: { microCredits: FAKE_COST, estimated: true },
-      },
+      // Stopped: no cost, since the call cut short never hears what it was charged.
+      { role: 'user', text: 'Which page am I on?', ...usedOnHosted(1), cost: undefined },
       { role: 'assistant', parts: [{ type: 'tool_call', id: 'chatcmpl-tool-0', name: 'lookup_page', args: {} }] },
       {
         role: 'tool',
@@ -1841,7 +1836,7 @@ describe('tokens per question', () => {
     const details = {
       tokens: { input: 2000, output: 80, cached: 1200 },
       model: { service: 'hosted' },
-      cost: { microCredits: 2 * (400 * 300 + 600 * 6 + 40 * 1200), estimated: false },
+      cost: { microCredits: 2 * (400 * 300 + 600 * 6 + 40 * 1200) },
     }
     expect(used).toEqual(details)
 
@@ -1853,6 +1848,18 @@ describe('tokens per question', () => {
     const resumed = makeAgent()
     await resumed.reset(saved)
     expect(resumed.history()).toEqual(saved)
+  })
+
+  it('[UC-NOTICO-CHAT-003-S14] a question that failed has no cost; one that ended normally has its exact cost', async () => {
+    const agent = makeAgent()
+    ai.script = [{ toolCalls: [{ name: 'lookup_page', arguments: '{}' }] }, { reply: 'Hi.' }]
+    expect((await ask(agent, 'Which page?')).used.cost).toEqual({ microCredits: 2 * FAKE_COST })
+    // The first call answers, the second breaks off: the worker charges it from estimated tokens.
+    ai.script = [{ toolCalls: [{ name: 'lookup_page', arguments: '{}' }] }]
+    ai.rawSse = 'data: {"choices":[{"delta":{"content":"abc"}}]}\n\n'
+    const { result, used } = await ask(agent, 'And now?')
+    expect(result.status).toBe('error')
+    expect(used.cost).toBeUndefined()
   })
 
   it('leaves the tokens out when the model reports none, or counts that do not check out', async () => {

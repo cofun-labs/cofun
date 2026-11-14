@@ -204,7 +204,7 @@ export class CopilotAgent {
     // What the model calls of this question reported they used, if any did.
     let tokens: TokenUsage | undefined
     // What they cost, summed as the worker reports each call (the hosted model only). A cost that
-    // could not be read leaves the sum unknown: a part of it would show too little.
+    // could not be read, or was estimated, leaves the sum unknown: only an exact one is shown.
     let cost: QuestionCost | undefined
     let costUnknown = false
     const provider = this.provider
@@ -216,11 +216,8 @@ export class CopilotAgent {
         console.error('Could not read what a model call cost', err)
         costUnknown = true
       }
-      if (call)
-        cost = {
-          microCredits: (cost?.microCredits ?? 0) + call.microCredits,
-          estimated: (cost?.estimated ?? false) || call.estimated,
-        }
+      if (call?.estimated) costUnknown = true
+      else if (call) cost = { microCredits: (cost?.microCredits ?? 0) + call.microCredits }
     }
     const refused = new Set<string>()
     const declined = new Set<string>()
@@ -357,16 +354,17 @@ export class CopilotAgent {
     // Also stopped when the abort landed after a model reply that asked for tools, e.g. while a tool
     // finished. A stop after the final answer keeps it: the user has already read it.
     stopped ||= epoch !== this.epoch && !answered
-    // Kept with the question, so a saved session still has it. A stopped question's cost is the calls
-    // that reported one: the call cut short by Stop is charged too, but never hears what.
-    const model = this.answeredBy()
-    const spent = costUnknown || !cost ? undefined : { ...cost, estimated: cost.estimated || stopped }
-    const counted = detailsOf({ requests: meter?.requests, tokens, model, cost: spent })
-    this.details.set(question, counted)
     // A write that was sent counts even when the tool that sent it does not say it changed data.
     const changed = this.changed || meter?.wrote === true
     if (!stopped && this.stopReason)
       failure ??= { text: changed ? `${this.stopReason} ${MAY_HAVE_CHANGED}` : this.stopReason }
+    // Kept with the question, so a saved session still has it. Only a question that ended normally has
+    // a cost: one stopped or failed has none, since a call cut short never hears what it was charged
+    // (the balance still shows it).
+    const model = this.answeredBy()
+    const spent = costUnknown || stopped || failure ? undefined : cost
+    const counted = detailsOf({ requests: meter?.requests, tokens, model, cost: spent })
+    this.details.set(question, counted)
     if (failure || stopped) {
       const kept = usedTools(agent.state.messages.slice(before))
       agent.state.messages = [...agent.state.messages.slice(0, before), ...kept]

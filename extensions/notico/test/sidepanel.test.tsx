@@ -870,9 +870,8 @@ describe('sessions', () => {
     expect(await conversation().findByText('0.37 credits')).toBeVisible()
   })
 
-  it('[UC-NOTICO-CHAT-003-S14] a reply the user stopped shows its cost as approximate', async () => {
+  it('[UC-NOTICO-CHAT-003-S14] a reply the user stopped shows no cost', async () => {
     const { browser, user } = await openPanel()
-    browser.ai.usage = { prompt_tokens: 1200, completion_tokens: 50, prompt_tokens_details: { cached_tokens: 800 } }
     // The page is read in full; the answer after it stops partway, until the user stops it.
     const words = Array.from({ length: 50 }, (_, n) => `word${n}`).join(' ')
     browser.ai.pause = { after: 1500, until: new Promise<void>(() => {}) }
@@ -886,8 +885,10 @@ describe('sessions', () => {
     await user.click(screen.getByRole('button', { name: 'Stop' }))
     await answered()
 
-    // The call that read the page reported 0.18 credits; the one stopped never hears what it was charged.
-    expect(conversation().getByText('≈ 0.18 credits')).toHaveAttribute('title', 'Approximate: the reply was cut short')
+    // The call that read the page reported its cost, but the one stopped never hears what it was
+    // charged: no number is shown rather than one that is too low.
+    expect(screen.getByText('Read 1 page')).toBeVisible()
+    expect(conversation().queryByText(/\bcredits?$/)).not.toBeInTheDocument()
   })
 
   it("a reply's details close on Escape, on a click outside, and when pressed again", async () => {

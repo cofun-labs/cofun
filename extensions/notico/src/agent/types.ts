@@ -137,11 +137,9 @@ export type AnsweredBy = z.infer<typeof AnsweredBy>
 
 /**
  * What a question cost on the hosted model, summed over its model calls as the worker charged them,
- * in micro-credits (a credit is 1,000,000). `estimated`: some of it is not exact, because a call was
- * cut short (the worker charged it from estimated tokens) or the question was stopped (the call
- * stopped never reports what it was charged, so it is left out).
+ * in micro-credits (a credit is 1,000,000). Exact: only a question that ended normally has one.
  */
-const QuestionCost = z.object({ microCredits: z.number().int().nonnegative(), estimated: z.boolean() })
+const QuestionCost = z.object({ microCredits: z.number().int().nonnegative() })
 export type QuestionCost = z.infer<typeof QuestionCost>
 
 /**
@@ -149,7 +147,8 @@ export type QuestionCost = z.infer<typeof QuestionCost>
  * `requests`: how many requests its tools made (see AgentConfig.meter).
  * `tokens`: what the model used for it, summed over its model calls, as the service reported them.
  * `model`: the model that was asked.
- * `cost`: what it cost in credits, on the hosted model only; a user's own model spends none.
+ * `cost`: what it cost in credits, on the hosted model only (a user's own model spends none), and
+ * only when it ended normally: a question stopped or failed has none (see `ask` in agent.ts).
  */
 const QuestionDetails = z.object({
   requests: z.number().optional(),

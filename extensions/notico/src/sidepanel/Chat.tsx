@@ -1157,16 +1157,15 @@ const counted = (n: number, noun: string) => `${n} ${noun}${n === 1 ? '' : 's'}`
 
 /**
  * What a reply cost in credits, as the worker charged it: short, to two significant digits below one
- * credit ("0.48 credits") and one decimal above. An estimate is marked as approximate.
+ * credit ("0.48 credits") and one decimal above.
  */
 function CostNote({ cost }: { cost: QuestionCost }) {
   const credits = cost.microCredits / 1_000_000
   const digits = credits < 1 ? { maximumSignificantDigits: 2 } : { maximumFractionDigits: 1 }
-  const text = `${cost.estimated ? '≈ ' : ''}${credits.toLocaleString('en-US', digits)} ${credits === 1 ? 'credit' : 'credits'}`
-  const title = cost.estimated ? 'Approximate: the reply was cut short' : 'What this reply cost'
+  const shown = credits.toLocaleString('en-US', digits)
   return (
-    <div className="note" title={title}>
-      {text}
+    <div className="note" title="What this reply cost">
+      {shown} {shown === '1' ? 'credit' : 'credits'}
     </div>
   )
 }
