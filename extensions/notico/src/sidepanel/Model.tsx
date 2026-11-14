@@ -12,18 +12,24 @@ const SEARCH_LIMIT = 20
 
 type List = { status: 'loading' } | { status: 'ready'; models: ListedModel[] } | { status: 'failed'; message: string }
 
-let listed: Promise<ListedModel[]> | undefined
+/** How long a read of OpenRouter's model list is used for: its prices and models change. */
+const LIST_FOR_MS = 60 * 60 * 1000
+
+let listed: { models: Promise<ListedModel[]>; at: number } | undefined
 
 /**
- * OpenRouter's model list, read once for the panel. A read that failed is made again the next time
- * it is asked for.
+ * OpenRouter's model list, read once for the panel and again once that read is an hour old. A read
+ * that failed is made again the next time it is asked for.
  */
 function modelList(): Promise<ListedModel[]> {
-  listed ??= openRouterModels().catch((err: unknown) => {
-    listed = undefined
-    throw err
-  })
-  return listed
+  if (!listed || Date.now() - listed.at > LIST_FOR_MS) {
+    const read = { at: Date.now(), models: openRouterModels() }
+    read.models.catch(() => {
+      if (listed === read) listed = undefined
+    })
+    listed = read
+  }
+  return listed.models
 }
 
 const errorText = (err: unknown) => (err instanceof Error ? err.message : String(err))
@@ -83,11 +89,15 @@ export function ModelMenu({
   settings,
   onChange,
   onManage,
+  buttonRef,
 }: {
   /** Undefined while they load: the menu isn't shown yet. */
   settings?: ModelSettings
-  onChange: (settings: ModelSettings) => void
+  /** Saves what `update` makes of the settings as they are when it is saved. */
+  onChange: (update: (settings: ModelSettings) => ModelSettings) => void
   onManage: () => void
+  /** The chip, which takes the focus back when Settings opened from "Manage models" closes. */
+  buttonRef?: React.Ref<HTMLButtonElement>
 }) {
   const { open, setOpen, close, rootRef, menuRef, onKeyDown } = useMenu()
   const menuId = useId()
@@ -98,13 +108,13 @@ export function ModelMenu({
 
   function pick(chosen: ModelSettings['chosen']) {
     close()
-    const { chosen: _, ...rest } = settings!
-    onChange(chosen ? { ...rest, chosen } : rest)
+    onChange(({ chosen: _, ...rest }) => (chosen ? { ...rest, chosen } : rest))
   }
 
   return (
     <div className="model-menu" ref={rootRef} onKeyDown={onKeyDown}>
       <button
+        ref={buttonRef}
         type="button"
         className="model-button tip-end"
         aria-haspopup="menu"
@@ -178,7 +188,7 @@ export function ModelNote({ settings }: { settings?: ModelSettings }) {
     <p className="model-note" role="status">
       <Icon name="info" />
       <span>
-        {shortName({ name })} was switched off in Settings, so questions use {HOSTED}.
+        {shortName({ id: chosen.model, name })} was switched off in Settings, so questions use {HOSTED}.
       </span>
     </p>
   )
@@ -196,7 +206,8 @@ export function ModelCard({
 }: {
   /** Undefined while they load. */
   settings?: ModelSettings
-  onChange: (settings: ModelSettings) => void
+  /** Saves what `update` makes of the settings as they are when it is saved. */
+  onChange: (update: (settings: ModelSettings) => ModelSettings) => void
   focus?: boolean
 }) {
   const headingRef = useRef<HTMLHeadingElement>(null)
@@ -221,10 +232,22 @@ export function ModelCard({
   }
 
   const { openRouter, deepSeek } = settings
-  /** The settings with one provider's part replaced, or removed with `undefined`. */
-  function withProvider<S extends 'openRouter' | 'deepSeek'>(name: S, part: ModelSettings[S]): ModelSettings {
-    const { [name]: _, ...rest } = settings!
-    return part ? { ...rest, [name]: part } : rest
+  /**
+   * Saves a change to one provider's part, made to the settings as they are when it is saved, not
+   * as they were when it started: a key check takes a while, and meanwhile the other provider, the
+   * composer, or another window's panel may save. `change` returns undefined to remove the part, or
+   * the settings unchanged (`same`) when the part it changes is gone.
+   */
+  function update<S extends 'openRouter' | 'deepSeek'>(
+    name: S,
+    change: (part: ModelSettings[S]) => ModelSettings[S] | typeof same,
+  ) {
+    onChange((now) => {
+      const part = change(now[name])
+      if (part === same) return now
+      const { [name]: _, ...rest } = now
+      return part ? { ...rest, [name]: part } : rest
+    })
   }
 
   return (
@@ -242,23 +265,30 @@ export function ModelCard({
         service="openrouter"
         saved={openRouter}
         onKey={async (key) => {
-          // A new key keeps the models switched on. A first one starts with the first recommended
-          // model OpenRouter offers, so the provider is usable at once.
-          let models = openRouter?.models
-          if (!models) {
-            const listed = await modelList().catch((): ListedModel[] => [])
-            const first = RECOMMENDED.map((r) => listed.find((m) => m.id === r.id && m.tools)).find((m) => m)
-            models = first ? [ownModel(first)] : []
-          }
-          onChange(withProvider('openRouter', { on: true, key, models }))
+          // A first key starts with the first recommended model OpenRouter offers, so the provider
+          // is usable at once; a new key keeps the models switched on.
+          const listed = openRouter ? [] : await modelList().catch((): ListedModel[] => [])
+          const first = RECOMMENDED.map((r) => listed.find((m) => m.id === r.id && m.tools)).find((m) => m)
+          update('openRouter', (now) => ({ on: true, key, models: now?.models ?? (first ? [ownModel(first)] : []) }))
         }}
-        onSwitch={(on) => openRouter && onChange(withProvider('openRouter', { ...openRouter, on }))}
-        onRemove={() => onChange(withProvider('openRouter', undefined))}
+        onSwitch={(on) => update('openRouter', (now) => (now ? { ...now, on } : same))}
+        onRemove={() => update('openRouter', () => undefined)}
       >
         {openRouter && (
           <OpenRouterModels
             on={openRouter.models}
-            onChange={(models) => onChange(withProvider('openRouter', { ...openRouter, models }))}
+            onSwitch={(model, on) =>
+              update('openRouter', (now) =>
+                now
+                  ? {
+                      ...now,
+                      models: on
+                        ? [...now.models.filter((m) => m.id !== model.id), ownModel(model)]
+                        : now.models.filter((m) => m.id !== model.id),
+                    }
+                  : same,
+              )
+            }
           />
         )}
       </ProviderSetup>
@@ -266,17 +296,15 @@ export function ModelCard({
         service="deepseek"
         saved={deepSeek}
         onKey={async (key) =>
-          onChange(
-            withProvider('deepSeek', {
-              on: true,
-              key,
-              // The catalog's first model starts switched on, so the provider is usable at once.
-              models: deepSeek?.models ?? DEEPSEEK_MODELS.slice(0, 1).map((m) => m.id),
-            }),
-          )
+          update('deepSeek', (now) => ({
+            on: true,
+            key,
+            // The catalog's first model starts switched on, so the provider is usable at once.
+            models: now?.models ?? DEEPSEEK_MODELS.slice(0, 1).map((m) => m.id),
+          }))
         }
-        onSwitch={(on) => deepSeek && onChange(withProvider('deepSeek', { ...deepSeek, on }))}
-        onRemove={() => onChange(withProvider('deepSeek', undefined))}
+        onSwitch={(on) => update('deepSeek', (now) => (now ? { ...now, on } : same))}
+        onRemove={() => update('deepSeek', () => undefined)}
       >
         {deepSeek && (
           <ModelList label="DeepSeek's models" count={deepSeek.models.length} total={DEEPSEEK_MODELS.length}>
@@ -290,11 +318,15 @@ export function ModelCard({
                   checked={checked}
                   last={checked && deepSeek.models.length === 1}
                   onSwitch={(on) =>
-                    onChange(
-                      withProvider('deepSeek', {
-                        ...deepSeek,
-                        models: on ? [...deepSeek.models, model.id] : deepSeek.models.filter((id) => id !== model.id),
-                      }),
+                    update('deepSeek', (now) =>
+                      now
+                        ? {
+                            ...now,
+                            models: on
+                              ? [...now.models.filter((id) => id !== model.id), model.id]
+                              : now.models.filter((id) => id !== model.id),
+                          }
+                        : same,
                     )
                   }
                 />
@@ -306,6 +338,9 @@ export function ModelCard({
     </section>
   )
 }
+
+/** What an update to a provider's part returns to leave the settings as they are. */
+const same = Symbol('same')
 
 /** A model from OpenRouter's list, as it is saved: without what only the list needs. */
 const ownModel = ({ id, name, contextLength, price }: OwnModel): OwnModel => ({ id, name, contextLength, price })
@@ -573,7 +608,7 @@ function masked(key: string): string {
 const dateText = (ms: number) => new Date(ms).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
 
 /** OpenRouter's models: the recommended ones and those switched on, and a search over its whole list. */
-function OpenRouterModels({ on, onChange }: { on: OwnModel[]; onChange: (models: OwnModel[]) => void }) {
+function OpenRouterModels({ on, onSwitch }: { on: OwnModel[]; onSwitch: (model: OwnModel, on: boolean) => void }) {
   const [list, setList] = useState<List>({ status: 'loading' })
   const [loads, setLoads] = useState(0)
   const [query, setQuery] = useState('')
@@ -606,7 +641,7 @@ function OpenRouterModels({ on, onChange }: { on: OwnModel[]; onChange: (models:
         checked={checked}
         disabled={noTools}
         last={checked && on.length === 1}
-        onSwitch={(next) => onChange(next ? [...on, ownModel(model)] : on.filter((m) => m.id !== model.id))}
+        onSwitch={(next) => onSwitch(model, next)}
       />
     )
   }
@@ -629,20 +664,7 @@ function OpenRouterModels({ on, onChange }: { on: OwnModel[]; onChange: (models:
 
   return (
     <>
-      <ModelList label="OpenRouter's models" count={on.length}>
-        {recommended}
-        {others}
-      </ModelList>
-      {list.status === 'loading' && <p className="account-detail">Loading OpenRouter's models…</p>}
-      {list.status === 'failed' && (
-        <>
-          <p role="alert">{list.message}</p>
-          <button type="button" className="secondary" onClick={() => setLoads((n) => n + 1)}>
-            Try again
-          </button>
-        </>
-      )}
-      {/* The results go under the field, so it stays where it is while the user types. */}
+      {/* Above the list, which the results replace while there is a query: the field never moves. */}
       <label className="model-search">
         <Icon name="search" />
         <input
@@ -653,16 +675,30 @@ function OpenRouterModels({ on, onChange }: { on: OwnModel[]; onChange: (models:
           onChange={(e) => setQuery(e.target.value)}
         />
       </label>
-      {needle && (
+      {needle ? (
         <>
-          <ul className="provider-models" aria-label="Search results">
+          <ModelList label="Search results" count={on.length}>
             {found.length ? (
               found.map((m) => row(m))
             ) : list.status === 'ready' ? (
               <li className="account-detail">No model on OpenRouter matches.</li>
             ) : null}
-          </ul>
-          <p className="account-detail">Switching one on adds it to the list above and to the menu.</p>
+          </ModelList>
+          <p className="account-detail">Switching one on adds it to the list and to the menu.</p>
+        </>
+      ) : (
+        <ModelList label="OpenRouter's models" count={on.length}>
+          {recommended}
+          {others}
+        </ModelList>
+      )}
+      {list.status === 'loading' && <p className="account-detail">Loading OpenRouter's models…</p>}
+      {list.status === 'failed' && (
+        <>
+          <p role="alert">{list.message}</p>
+          <button type="button" className="secondary" onClick={() => setLoads((n) => n + 1)}>
+            Try again
+          </button>
         </>
       )}
     </>
@@ -770,8 +806,19 @@ function Switch({
   )
 }
 
-/** A model's name without the vendor OpenRouter puts before it ("Anthropic: Claude Sonnet 5.5"). */
-const shortName = ({ name }: { name: string }) => name.replace(/^[^:]+:\s*/, '') || name
+const letters = (text: string) => text.toLowerCase().replace(/[^a-z0-9]/g, '')
+
+/**
+ * A model's name without the vendor OpenRouter puts before it ("Anthropic: Claude Sonnet 5.5" for
+ * `anthropic/claude-sonnet-5.5`). Only the id's own vendor is taken off: a colon in a name that
+ * doesn't start with it is part of the name.
+ */
+function shortName({ id, name }: { id: string; name: string }): string {
+  const at = name.indexOf(':')
+  const vendor = id.split('/')[0]
+  if (at < 0 || !id.includes('/') || letters(name.slice(0, at)) !== letters(vendor)) return name
+  return name.slice(at + 1).trim() || name
+}
 
 const dollars = (n: number) => `$${n < 0.1 ? n.toFixed(3).replace(/0$/, '') : n.toFixed(2)}`
 

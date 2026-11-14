@@ -158,9 +158,13 @@ export function answering({ chosen, openRouter, deepSeek }: ModelSettings): OwnS
   return undefined
 }
 
-/** The settings with `service` marked as having turned a question away for its key, `at` (ms). */
-export function keyRejected(settings: ModelSettings, service: Service, at: number): ModelSettings {
+/**
+ * The settings with `service` marked as having turned a question away for `key`, `at` (ms). Only
+ * while that key is the one saved: a key saved since, while the question ran, is not marked.
+ */
+export function keyRejected(settings: ModelSettings, service: Service, key: string, at: number): ModelSettings {
+  const { openRouter, deepSeek } = settings
   if (service === 'openrouter')
-    return settings.openRouter ? { ...settings, openRouter: { ...settings.openRouter, rejectedAt: at } } : settings
-  return settings.deepSeek ? { ...settings, deepSeek: { ...settings.deepSeek, rejectedAt: at } } : settings
+    return openRouter?.key === key ? { ...settings, openRouter: { ...openRouter, rejectedAt: at } } : settings
+  return deepSeek?.key === key ? { ...settings, deepSeek: { ...deepSeek, rejectedAt: at } } : settings
 }

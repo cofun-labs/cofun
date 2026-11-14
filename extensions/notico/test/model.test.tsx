@@ -595,6 +595,82 @@ describe("a provider's models in Settings", () => {
   })
 })
 
+describe('saving while a key is checked', () => {
+  it('two keys checked at the same time are both saved, with what the composer picked meanwhile', async () => {
+    const { browser, user } = await openPanel()
+    browser.openRouter.keys.add(KEY)
+    browser.deepSeek.keys.add(DS_KEY)
+    await openSettings(user)
+    let answer!: () => void
+    browser.openRouter.checks = new Promise((resolve) => (answer = resolve))
+    await user.click(providerSwitch('OpenRouter'))
+    await user.type(provider('OpenRouter').getByLabelText('OpenRouter API key'), `${KEY}{Enter}`)
+    expect(await provider('OpenRouter').findByText('Asking OpenRouter whether this key works…')).toBeVisible()
+
+    // While OpenRouter's check waits, DeepSeek's passes, and its model is picked in the composer.
+    await turnOn(user, 'DeepSeek', DS_KEY)
+    await backToChat(user)
+    await pick(user, 'DeepSeek V4.1 Flash')
+    answer()
+    await waitFor(() => expect(savedSettings(browser).value.openRouter).toMatchObject({ key: KEY }))
+
+    expect(savedSettings(browser).value).toMatchObject({
+      deepSeek: { on: true, key: DS_KEY },
+      chosen: { service: 'deepseek', model: 'deepseek-flash' },
+    })
+    expect(chip('DeepSeek V4.1 Flash')).toBeVisible()
+  })
+})
+
+describe('OpenRouter model names and list', () => {
+  it("drops a vendor from a model's name only when it is the vendor in its id", async () => {
+    const { browser, user } = await openPanel()
+    browser.openRouter.models.push(listed('qwen/qwen-6', 'Qwen: Qwen 6: Turbo'), listed('thudm/glm-5', 'GLM 5: 32B'))
+    browser.openRouter.keys.add(KEY)
+    await openSettings(user)
+    await turnOn(user, 'OpenRouter', KEY)
+    const search = provider('OpenRouter').getByRole('searchbox', { name: 'Find another model on OpenRouter' })
+    await user.type(search, 'qwen')
+    await user.click(modelSwitch('OpenRouter', 'Qwen: Qwen 6: Turbo'))
+    await user.clear(search)
+    await user.type(search, 'glm')
+    await user.click(modelSwitch('OpenRouter', 'GLM 5: 32B'))
+    await backToChat(user)
+
+    await user.click(chip('Auto'))
+    expect(menuItems()).toEqual(['Auto', 'Claude Sonnet 5.5', 'Qwen 6: Turbo', 'GLM 5: 32B'])
+  })
+
+  it("reads OpenRouter's model list again once it is an hour old", async () => {
+    const { browser, user } = await openPanel()
+    browser.openRouter.keys.add(KEY)
+    await openSettings(user)
+    await turnOn(user, 'OpenRouter', KEY)
+    await waitFor(() => modelSwitch('OpenRouter', 'OpenAI: GPT-6.1 Sol'))
+    const reads = () => browser.openRouter.requests.filter((r) => r.path === '/api/v1/models').length
+    expect(reads()).toBe(1)
+
+    // Within the hour, Settings uses the list it read.
+    await backToChat(user)
+    vi.setSystemTime(Date.now() + 59 * 60 * 1000)
+    await openSettings(user)
+    await waitFor(() => modelSwitch('OpenRouter', 'OpenAI: GPT-6.1 Sol'))
+    expect(reads()).toBe(1)
+
+    // Past it, the list is read again, with the prices OpenRouter has now.
+    browser.openRouter.models[1] = listed('openai/gpt-6.1-sol', 'OpenAI: GPT-6.1 Sol', 1, 4)
+    await backToChat(user)
+    vi.setSystemTime(Date.now() + 2 * 60 * 1000)
+    await openSettings(user)
+    await waitFor(() =>
+      expect(modelSwitch('OpenRouter', 'OpenAI: GPT-6.1 Sol')).toHaveAccessibleDescription(
+        'Strong all-round · $1.00 in · $4.00 out · 200K context',
+      ),
+    )
+    expect(reads()).toBe(2)
+  })
+})
+
 describe('the model menu in the chat', () => {
   it('[UC-NOTICO-AGENT-002-S10] a follow-up goes to the model picked from the chat, with the conversation so far', async () => {
     const { browser, user } = await openPanel()
@@ -672,6 +748,9 @@ describe('the model menu in the chat', () => {
     await user.click(menu.getByRole('menuitem', { name: 'Manage models' }))
     expect(await screen.findByRole('heading', { name: 'Settings' })).toBeVisible()
     expect(screen.getByRole('heading', { name: 'Providers' })).toHaveFocus()
+    // Closing it goes back to where the user came from: the model chip.
+    await backToChat(user)
+    expect(chip('DeepSeek V4.1 Flash')).toHaveFocus()
   })
 
   it('[UC-NOTICO-AGENT-002-S12] switching between OpenRouter and DeepSeek in the composer uses each with its own key, never asked again', async () => {

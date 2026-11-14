@@ -23,6 +23,7 @@ import {
 import type { CreditsState } from '../credits'
 import { loadMode, saveMode, watchMode, type Mode } from '../mode'
 import {
+  answering,
   HOSTED_ONLY,
   keyRejected,
   loadModelSettings,
@@ -158,6 +159,7 @@ export function Chat({ userId }: { userId: string }) {
   // Answers for tool calls waiting for the user's OK, by call id.
   const pending = useRef(new Map<string, (allow: boolean) => void>())
   const accountButtonRef = useRef<HTMLButtonElement>(null)
+  const modelButtonRef = useRef<HTMLButtonElement>(null)
   const [view, setView] = useState<'chat' | 'sessions' | 'settings'>('chat')
   // Opened from the model menu's "Manage models": the settings page puts the focus on Providers.
   const [settingsAt, setSettingsAt] = useState<'providers'>()
@@ -421,7 +423,9 @@ export function Chat({ userId }: { userId: string }) {
     saveMode(userId, next).catch((err: unknown) => console.error('Could not save the mode', err))
   }
 
-  function changeModel(settings: ModelSettings) {
+  /** Saves what `update` makes of the model settings as they are now, here or saved by another window. */
+  function changeModel(update: (settings: ModelSettings) => ModelSettings) {
+    const settings = update(modelRef.current ?? HOSTED_ONLY)
     modelRef.current = settings
     setModel(settings)
     saveModelSettings(userId, settings).catch((err: unknown) => console.error('Could not save the model settings', err))
@@ -480,9 +484,10 @@ export function Chat({ userId }: { userId: string }) {
   }
 
   /** Closes the settings page and puts the focus back on the avatar that led to it. */
+  /** Closes the settings page and puts the focus back on what led to it: the model chip, or the avatar. */
   function closeSettings() {
     setView('chat')
-    accountButtonRef.current?.focus()
+    ;(settingsAt === 'providers' ? modelButtonRef : accountButtonRef).current?.focus()
   }
 
   async function send() {
@@ -647,6 +652,8 @@ export function Chat({ userId }: { userId: string }) {
             ? ms
             : ms.map((m, i) => (i === reply - 1 && m.role === 'user' ? { ...m, readOnly: true } : m)),
         )
+      // The key the question goes with, if it goes to the user's own model: a 401 marks that key only.
+      const askedWith = answering(modelRef.current ?? (await modelLoad))
       const result = await agent.ask(text, onUpdate, confirm, { context, pages: sentPages, readOnly })
       answered = result.status === 'done'
       const { requests, tokens, model, cost } = result
@@ -658,8 +665,10 @@ export function Chat({ userId }: { userId: string }) {
         updateReply((m) => ({ ...m, error: result.message, outOfCredits: result.code === 'out_of_credits' }))
         // The provider turned the user's key away: Settings marks it, until a check passes or a new key is saved.
         const by = result.model
-        if (result.code === KEY_REJECTED && by && by.service !== 'hosted' && modelRef.current)
-          changeModel(keyRejected(modelRef.current, by.service, Date.now()))
+        if (result.code === KEY_REJECTED && by && by.service !== 'hosted' && askedWith?.service === by.service) {
+          const { key } = askedWith
+          changeModel((now) => keyRejected(now, by.service, key, Date.now()))
+        }
       } else if (result.status === 'step_limit')
         updateReply((m) => ({ ...m, note: `Stopped after ${result.steps} steps. Ask again to continue.` }))
     } finally {
@@ -1055,7 +1064,12 @@ export function Chat({ userId }: { userId: string }) {
             <ModeButton mode={mode ?? 'edit'} onChange={changeMode} />
             <span className="grow" />
             {/* The model chip leads the right side, next to send; the left is for what goes with the question. */}
-            <ModelMenu settings={model} onChange={changeModel} onManage={() => openSettings('providers')} />
+            <ModelMenu
+              settings={model}
+              onChange={changeModel}
+              onManage={() => openSettings('providers')}
+              buttonRef={modelButtonRef}
+            />
             <button
               // Blue only when pressing it does something: there is a question to send, or a reply to stop.
               className={busy || input.trim() ? 'send ready tip-end' : 'send tip-end'}

@@ -48,7 +48,8 @@ export function Settings({
   history: HistoryReads
   /** Which model answers; undefined while it loads. */
   model?: ModelSettings
-  onModelChange: (settings: ModelSettings) => void
+  /** Saves what `update` makes of the model settings as they are when it is saved. */
+  onModelChange: (update: (settings: ModelSettings) => ModelSettings) => void
   /** The section to put the focus on as the page opens; Back has it otherwise. */
   at?: 'providers'
   buying: Buying
