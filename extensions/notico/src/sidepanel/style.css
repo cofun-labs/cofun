@@ -547,7 +547,7 @@ header .untitled {
   text-decoration: none;
 }
 
-.save-item:hover:not(:disabled),
+.save-item:hover:not(:disabled, [aria-disabled='true']),
 .save-item:focus-visible {
   outline: none;
   background: var(--tint);

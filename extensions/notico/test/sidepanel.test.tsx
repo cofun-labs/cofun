@@ -793,12 +793,15 @@ describe('sessions', () => {
       'Tokens: 2.4k in (1.6k cached) · 100 out',
     ]
     expect(await replyDetails(user)).toEqual(details)
+    // The model that answered is named in the reply's row.
+    expect(screen.getByRole('note', { name: 'Answered by Auto' })).toBeVisible()
 
     await browser.openPanel()
     await openSession(user, /What does this page say\?/)
 
     await screen.findByText('It is a fixture.')
     expect(await replyDetails(user)).toEqual(details)
+    expect(screen.getByRole('note', { name: 'Answered by Auto' })).toBeVisible()
     // Showing a saved session asks nothing of Notion.
     expect(browser.tab.sent).toHaveLength(made)
   })
@@ -842,7 +845,7 @@ describe('sessions', () => {
     expect(await replyDetails(user)).toContain('Read 2 pages')
   })
 
-  it('[UC-NOTICO-CHAT-001-S19] copying a reply puts its Markdown on the clipboard, without its tool calls or the line under it', async () => {
+  it('[UC-NOTICO-CHAT-001-S19] copying a reply puts its Markdown on the clipboard, without its tool calls or what it read', async () => {
     const { browser, user } = await openPanel()
     browser.ai.script.push(
       { reply: 'Let me look.', toolCalls: [{ name: 'read_page', arguments: JSON.stringify({ part: 1 }) }] },

@@ -263,6 +263,26 @@ describe('UC-NOTICO-SESSION-002 save a chat or a reply to Notion', () => {
     ])
   })
 
+  it('a save still running starts no other: pressing again while it saves makes one page', async () => {
+    const { tab, workspace } = workspaceTab()
+    const { browser, user } = await openPanel(tab)
+    browser.ai.script.push({ reply: 'An answer.' })
+    await ask(user, 'Hello', 'An answer.')
+    const release = tab.hold('saveTransactionsFanout')
+
+    const menu = await replyMenu(user)
+    const save = menu.getByRole('button', { name: 'Save reply to Notion' })
+    await user.click(save)
+    const saving = await menu.findByRole('button', { name: 'Saving the reply…' })
+    expect(saving).toHaveAttribute('aria-disabled', 'true')
+    await user.click(saving)
+    release()
+
+    await menu.findByRole('link', { name: 'Open the saved reply' })
+    expect(endpoints(tab).filter((e) => e === 'saveTransactionsFanout')).toHaveLength(1)
+    expect(workspace.transactions).toHaveLength(1)
+  })
+
   it('[UC-NOTICO-SESSION-002-S06] when Notion turns the save away, nothing more is sent and the user is told to wait', async () => {
     const { tab, workspace } = workspaceTab()
     const { browser, user } = await openPanel(tab)
