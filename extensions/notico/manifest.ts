@@ -78,7 +78,9 @@ export function buildManifest(env: ManifestEnv, version: string, { store = false
     manifest_version: 3,
     name: 'Notico: AI copilot for Notion',
     version,
-    description: 'An AI side panel that reads and edits your Notion pages with you.',
+    // The store's summary line: at most 132 characters, which the manifest test pins.
+    description:
+      'AI copilot for Notion: summarize and edit pages, update databases, search and organize your workspace. No subscription needed.',
     ...(env.CRX_PUBLIC_KEY && !store ? { key: env.CRX_PUBLIC_KEY } : {}),
     icons: ICONS,
     // scripting: Notion calls run in the user's Notion tab (src/notion/tab.ts).
