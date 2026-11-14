@@ -5,7 +5,7 @@ import { useEffect, useRef, useState, type KeyboardEvent } from 'react'
  * first item, the arrow keys, Home, and End move between items, Escape closes it and puts the
  * focus back on the button, Tab moves on and closes it, and a press anywhere else closes it.
  * Put `rootRef` and `onKeyDown` on the element around the button and the menu, and `menuRef` on
- * the element with the menu role.
+ * the element with the menu role. A popover with nothing to choose opens and closes the same way.
  */
 export function useMenu() {
   const [open, setOpen] = useState(false)
@@ -47,7 +47,8 @@ export function useMenu() {
       Home: 0,
       End: all.length - 1,
     }[e.key]
-    if (to === undefined) return
+    // A popover with no items (such as a reply's details) leaves the arrow keys to the page.
+    if (to === undefined || !all.length) return
     e.preventDefault()
     all[to]?.focus()
   }

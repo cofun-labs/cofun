@@ -133,10 +133,9 @@ export type AgentUpdate =
  */
 export type HistoryMessage =
   /**
-   * `context` and `pages`: what went with the question (see QuestionExtras).
-   * `requests`: how many requests its tools made (see AgentConfig.meter), once it ended.
+   * `context` and `pages`: what went with the question (see QuestionExtras), besides what the user typed.
    */
-  | { role: 'user'; text: string; context?: string; pages?: QuestionPage[]; requests?: number }
+  | ({ role: 'user'; text: string; context?: string; pages?: QuestionPage[] } & QuestionDetails)
   | { role: 'assistant'; parts: AssistantPart[] }
   /** The result of one tool call. `id` matches the call in the assistant message before it. */
   | { role: 'tool'; id: string; name: string; status: ToolStatus; result: string }
@@ -146,14 +145,36 @@ type AssistantPart =
   | { type: 'text'; text: string }
   | { type: 'tool_call'; id: string; name: string; args: Record<string, unknown> }
 
-/** `requests`: how many requests the question's tools made, when it ran and the agent counts them. */
+/**
+ * What a question used, once it ended; each part only when it is known.
+ * `requests`: how many requests its tools made (see AgentConfig.meter).
+ * `tokens`: what the model used for it, summed over its model calls, as the service reported them.
+ * `model`: the model that was asked.
+ */
+export interface QuestionDetails {
+  requests?: number
+  tokens?: TokenUsage
+  model?: AnsweredBy
+}
+
+/** Tokens a question used. `input` counts all of the input, `cached` the part of it read from the service's cache. */
+interface TokenUsage {
+  input: number
+  output: number
+  cached: number
+}
+
+/** Which model a question was asked of: the hosted one, or a user's own one on its service, by its name. */
+export type AnsweredBy = { service: 'hosted' } | { service: OwnSetup['service']; name: string }
+
 export type AskResult = (
   | { status: 'done' }
   | { status: 'stopped' }
   | { status: 'step_limit'; steps: number }
   /** `code`: the worker's error code when it refused the question, e.g. `out_of_credits`. */
   | { status: 'error'; message: string; code?: string }
-) & { requests?: number }
+) &
+  QuestionDetails
 
 const DEFAULT_MAX_STEPS = 10
 
@@ -206,8 +227,8 @@ export class CopilotAgent {
   /** What went with each question, by its user message; see QuestionExtras. */
   private readonly contexts = new WeakMap<AgentMessage, string>()
   private readonly pages = new WeakMap<AgentMessage, QuestionPage[]>()
-  /** The requests each question made, by its user message; see AgentConfig.meter. */
-  private readonly requests = new WeakMap<AgentMessage, number>()
+  /** What each question used, by its user message; see QuestionDetails. */
+  private readonly details = new WeakMap<AgentMessage, QuestionDetails>()
   /** Set by a tool whose error stops the question (see `stopsQuestion`): what the user is told. */
   private stopReason?: string
   /** Set by a tool that changes data and changed something, or may have (see `changesData`). */
@@ -266,7 +287,7 @@ export class CopilotAgent {
     // tool (which is now in the conversation), ask the user to repeat it instead.
     if (failure && this.provider.modelChanged(failure) && epoch === this.epoch) {
       // What the first try sent counts even when the question goes no further.
-      const counted = result.requests === undefined ? {} : { requests: result.requests }
+      const counted = detailsOf(result)
       try {
         this.model = await this.provider.loadModel()
       } catch (err) {
@@ -307,6 +328,8 @@ export class CopilotAgent {
     let stopped = false
     // The model gave its final answer; a Stop after this point is too late to drop it.
     let answered = false
+    // What the model calls of this question reported they used, if any did.
+    let tokens: TokenUsage | undefined
     const refused = new Set<string>()
     const declined = new Set<string>()
     // How the latest call with each id ended, kept with its result message when that arrives.
@@ -416,6 +439,7 @@ export class CopilotAgent {
       }
       if (event.type === 'message_end' && event.message.role === 'assistant') {
         const m = event.message as AssistantMessage
+        tokens = addUsage(tokens, m.usage)
         if (m.stopReason === 'error') failure = this.provider.parseError(m.errorMessage)
         if (m.stopReason === 'aborted') stopped = true
         const final = !m.content.some((block) => block.type === 'toolCall')
@@ -437,8 +461,9 @@ export class CopilotAgent {
       agent.finishTurn = undefined
     }
     // Kept with the question, so a saved session still has it.
-    const counted = meter && { requests: meter.requests }
-    if (meter) this.requests.set(question, meter.requests)
+    const model = this.answeredBy()
+    const counted = detailsOf({ requests: meter?.requests, tokens, model })
+    this.details.set(question, counted)
 
     // Also stopped when the abort landed after a model reply that asked for tools, e.g. while a tool
     // finished. A stop after the final answer keeps it: the user has already read it.
@@ -500,14 +525,13 @@ export class CopilotAgent {
       case 'user': {
         const context = this.contexts.get(message)
         const pages = this.pages.get(message)
-        const requests = this.requests.get(message)
         return [
           {
             role: 'user',
             text: textOf(message.content),
             ...(context && { context }),
             ...(pages && { pages }),
-            ...(requests !== undefined && { requests }),
+            ...this.details.get(message),
           },
         ]
       }
@@ -545,7 +569,8 @@ export class CopilotAgent {
         const question: AgentMessage = { role: 'user', content: m.text, timestamp }
         if (m.context) this.contexts.set(question, m.context)
         if (m.pages?.length) this.pages.set(question, m.pages)
-        if (m.requests !== undefined) this.requests.set(question, m.requests)
+        const details = detailsOf(m)
+        if (Object.keys(details).length) this.details.set(question, details)
         return question
       }
       if (m.role === 'assistant') {
@@ -607,6 +632,13 @@ export class CopilotAgent {
     if (before === undefined ? choice === 'hosted' : JSON.stringify(before) === JSON.stringify(choice)) return
     this.provider = choice === 'hosted' ? hostedProvider(this.config) : ownProvider(choice)
     this.model = undefined
+  }
+
+  /** The model the question being answered is asked of, once it has been looked up. */
+  private answeredBy(): AnsweredBy | undefined {
+    const used = this.providerFor
+    if (used === undefined || used === 'hosted') return { service: 'hosted' }
+    return this.model && { service: used.service, name: this.model.name }
   }
 
   private async getAgent(): Promise<Agent> {
@@ -1329,6 +1361,40 @@ function toUpdate(event: AgentEvent): AgentUpdate | undefined {
       }
     default:
       return undefined
+  }
+}
+
+/** The parts of these details that are known, without keys for the others. */
+function detailsOf({ requests, tokens, model }: QuestionDetails): QuestionDetails {
+  return {
+    ...(requests !== undefined && { requests }),
+    ...(tokens && { tokens }),
+    ...(model && { model }),
+  }
+}
+
+const tokenCount = z.number().int().nonnegative()
+
+/**
+ * The token counts pi read from a model reply. They come from the service (the worker, OpenRouter,
+ * DeepSeek), so they are checked like any value from outside.
+ */
+const ReportedUsage = z.object({ input: tokenCount, output: tokenCount, cacheRead: tokenCount, cacheWrite: tokenCount })
+
+/**
+ * `total` with what one model reply used added. pi gives `input` without the cached part, and
+ * leaves every count 0 for a reply that reported none; counts that don't check out add nothing.
+ */
+function addUsage(total: TokenUsage | undefined, usage: unknown): TokenUsage | undefined {
+  const reported = ReportedUsage.safeParse(usage)
+  if (!reported.success) return total
+  const { input, output, cacheRead, cacheWrite } = reported.data
+  if (!input && !output && !cacheRead && !cacheWrite) return total
+  const sum = total ?? { input: 0, output: 0, cached: 0 }
+  return {
+    input: sum.input + input + cacheRead + cacheWrite,
+    output: sum.output + output,
+    cached: sum.cached + cacheRead,
   }
 }
 

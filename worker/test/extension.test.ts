@@ -9,6 +9,7 @@ import {
   type QuestionExtras,
   type ConfirmTool,
   type HistoryMessage,
+  type QuestionDetails,
   type ToolCallRequest,
   type ToolSpec,
 } from '../../extensions/notico/src/agent'
@@ -132,12 +133,21 @@ function withActiveTab(tab: { url?: string; title?: string } | undefined) {
   }
 }
 
-/** Asks one question and collects what the side panel would show. */
+/** What a question of `calls` model calls on the hosted model used, each reporting FAKE_USAGE. */
+const usedOnHosted = (calls: number): QuestionDetails => ({
+  tokens: { input: 12 * calls, output: 5 * calls, cached: 0 },
+  model: { service: 'hosted' },
+})
+
+/**
+ * Asks one question and collects what the side panel would show. The tokens it used and the model
+ * that answered are kept apart from how it ended, for the tests about them.
+ */
 async function ask(agent: CopilotAgent, text: string, confirm?: ConfirmTool, extras?: QuestionExtras) {
   const updates: AgentUpdate[] = []
-  const result = await agent.ask(text, (u) => updates.push(u), confirm, extras)
+  const { tokens, model, ...result } = await agent.ask(text, (u) => updates.push(u), confirm, extras)
   const reply = updates.map((u) => (u.type === 'text' ? u.delta : '')).join('')
-  return { result, updates, reply }
+  return { result, used: { tokens, model }, updates, reply }
 }
 
 /** A stand-in for a tool that needs the user's OK each time, like moving a page to the trash; records each run. */
@@ -241,8 +251,9 @@ describe('extension agent against the worker', () => {
         text: 'Summarize this',
         context: roadmap,
         pages: [{ title: 'Q4 Roadmap', url: 'https://www.notion.so/Q4-Roadmap-abc123' }],
+        ...usedOnHosted(1),
       },
-      { role: 'user', text: 'And now?', context: none },
+      { role: 'user', text: 'And now?', context: none, ...usedOnHosted(1) },
     ])
 
     // A reopened session tells the model the same as before.
@@ -1132,7 +1143,7 @@ describe('extension agent against the worker', () => {
     expect((await ask(agent, 'Which page am I on?')).result).toEqual({ status: 'stopped' })
     const saved = structuredClone(agent.history())
     expect(saved).toEqual<HistoryMessage[]>([
-      { role: 'user', text: 'Which page am I on?' },
+      { role: 'user', text: 'Which page am I on?', ...usedOnHosted(1) },
       { role: 'assistant', parts: [{ type: 'tool_call', id: 'chatcmpl-tool-0', name: 'lookup_page', args: {} }] },
       {
         role: 'tool',
@@ -1495,7 +1506,7 @@ describe('extension agent against the worker', () => {
     // What the panel saves; stored sessions go through structured cloning, so keep only plain data.
     const saved = structuredClone(first.history())
     expect(saved).toEqual<HistoryMessage[]>([
-      { role: 'user', text: 'Which page am I on?' },
+      { role: 'user', text: 'Which page am I on?', ...usedOnHosted(2) },
       {
         role: 'assistant',
         parts: [{ type: 'tool_call', id: 'chatcmpl-tool-0', name: 'lookup_page', args: {} }],
@@ -1524,7 +1535,7 @@ describe('extension agent against the worker', () => {
     ])
     expect(resumed.history()).toEqual([
       ...saved,
-      { role: 'user', text: 'And its URL?' },
+      { role: 'user', text: 'And its URL?', ...usedOnHosted(1) },
       { role: 'assistant', parts: [{ type: 'text', text: '你好 来自 worker ' }] },
     ])
   })
@@ -1726,6 +1737,36 @@ describe('the open page note', () => {
   })
 })
 
+describe('tokens per question', () => {
+  it('[UC-AGENT-001-S25] a question reports the tokens its model calls used, cached ones too, and the saved session keeps them', async () => {
+    ai.usage = { prompt_tokens: 1000, completion_tokens: 40, prompt_tokens_details: { cached_tokens: 600 } }
+    ai.script = [{ toolCalls: [{ name: 'lookup_page', arguments: '{}' }] }, { reply: 'You are on Q4 Roadmap' }]
+    const agent = makeAgent()
+
+    const { used } = await ask(agent, 'Which page am I on?')
+    const details = { tokens: { input: 2000, output: 80, cached: 1200 }, model: { service: 'hosted' } }
+    expect(used).toEqual(details)
+
+    // The title request is not part of the question.
+    ai.script = [{ reply: 'Roadmap page' }]
+    await agent.title(agent.history())
+    const saved = structuredClone(agent.history())
+    expect(saved[0]).toEqual({ role: 'user', text: 'Which page am I on?', ...details })
+    const resumed = makeAgent()
+    await resumed.reset(saved)
+    expect(resumed.history()).toEqual(saved)
+  })
+
+  it('leaves the tokens out when the model reports none, or counts that do not check out', async () => {
+    const agent = makeAgent()
+    for (const usage of [{}, { prompt_tokens: 'many', completion_tokens: 5 }, { prompt_tokens: 3.5 }]) {
+      ai.usage = usage
+      ai.script = [{ reply: 'Hello.' }]
+      expect((await ask(agent, 'Hi')).used).toEqual({ tokens: undefined, model: { service: 'hosted' } })
+    }
+  })
+})
+
 describe('Notion requests per question', () => {
   /** The fixture page in a workspace that answers every read, and applies edits. */
   function workspaceTab() {
@@ -1771,8 +1812,8 @@ describe('Notion requests per question', () => {
 
     const saved = structuredClone(agent.history())
     expect(saved.filter((m) => m.role === 'user')).toEqual([
-      { role: 'user', text: 'Summarize this page', requests: 2 },
-      { role: 'user', text: 'Thanks', requests: 0 },
+      { role: 'user', text: 'Summarize this page', requests: 2, ...usedOnHosted(2) },
+      { role: 'user', text: 'Thanks', requests: 0, ...usedOnHosted(1) },
     ])
     const resumed = makeAgent({ tools: [readPage], meter: countNotionRequests })
     await resumed.reset(saved)

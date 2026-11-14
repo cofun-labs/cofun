@@ -1,6 +1,13 @@
 import { useAuth } from '@clerk/chrome-extension'
-import { memo, useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from 'react'
-import { CopilotAgent, type AgentUpdate, type ConfirmTool, type HistoryMessage, type QuestionPage } from '../agent'
+import { memo, useEffect, useId, useRef, useState, type FormEvent, type KeyboardEvent } from 'react'
+import {
+  CopilotAgent,
+  type AgentUpdate,
+  type ConfirmTool,
+  type HistoryMessage,
+  type QuestionDetails,
+  type QuestionPage,
+} from '../agent'
 import type { CreditsState } from '../credits'
 import { HOSTED_ONLY, loadModelSettings, saveModelSettings, watchModelSettings, type ModelSettings } from '../models'
 import { pageIdFromUrl } from '../notion/hosts'
@@ -11,7 +18,8 @@ import { AccountMenu } from './Account'
 import { Header } from './Header'
 import { Icon, Mark } from './icons'
 import { Markdown } from './Markdown'
-import { ModelMenu } from './Model'
+import { useMenu } from './menu'
+import { HOSTED, ModelMenu } from './Model'
 import { ComposerPages, SentPages } from './Pages'
 import { Sessions } from './Sessions'
 import { Settings } from './Settings'
@@ -73,8 +81,8 @@ type Shown =
       note?: string
       /** Another window continued the session too, so this conversation was saved as a new session. */
       copied?: boolean
-      /** Notion requests the question made, once it ended. */
-      requests?: number
+      /** What the question used, once it ended. */
+      details?: QuestionDetails
     }
 
 /**
@@ -180,9 +188,10 @@ export function Chat({ userId }: { userId: string }) {
     }
   }, [])
 
-  // Another page brings its chip back; a page taken off stays off only while it is the one open.
+  // Another Notion page brings its chip back. A tab on another site, or a read of the tab that
+  // failed, shows no page and keeps the one taken off: coming back to it, it is still off.
   useEffect(() => {
-    if (removed !== undefined && (!tabPage || pageKey(tabPage) !== removed)) setRemoved(undefined)
+    if (removed !== undefined && tabPage && pageKey(tabPage) !== removed) setRemoved(undefined)
   }, [tabPage, removed])
 
   // Only when the conversation changes: closing the session list leaves the chat where the user had scrolled it.
@@ -400,8 +409,8 @@ export function Chat({ userId }: { userId: string }) {
     try {
       const result = await agent.ask(text, onUpdate, confirm, { context, pages })
       answered = result.status === 'done'
-      const { requests } = result
-      if (requests !== undefined) updateReply((m) => ({ ...m, requests }))
+      const { requests, tokens, model } = result
+      updateReply((m) => ({ ...m, details: { requests, tokens, model } }))
       if (result.status === 'stopped') {
         updateTools((t) => (t.status === 'running' || t.status === 'confirm' ? { ...t, status: 'stopped' } : t))
         updateReply((m) => ({ ...m, stopped: true }))
@@ -757,15 +766,15 @@ export function Chat({ userId }: { userId: string }) {
 function toShown(history: HistoryMessage[]): Shown[] {
   const shown: Shown[] = []
   // Of the latest question, shown under its reply.
-  let requests: number | undefined
+  let details: QuestionDetails | undefined
   for (const m of history) {
     if (m.role === 'user') {
       shown.push({ role: 'user', content: m.text, ...(m.pages?.length && { pages: m.pages }) })
-      requests = m.requests
+      details = { requests: m.requests, tokens: m.tokens, model: m.model }
       continue
     }
     let reply = shown.at(-1)
-    if (reply?.role !== 'assistant') shown.push((reply = { role: 'assistant', parts: [], requests }))
+    if (reply?.role !== 'assistant') shown.push((reply = { role: 'assistant', parts: [], details }))
     if (m.role === 'assistant') {
       for (const p of m.parts)
         reply.parts.push(
@@ -821,18 +830,27 @@ function replyMarkdown(parts: Part[]): string {
   return parts.flatMap((p) => (p.type === 'text' && p.text.trim() ? [p.text.trim()] : [])).join('\n\n')
 }
 
-/** The row under a reply that has ended: a button to copy what it wrote, then what it touched in Notion. */
-function ReplyFoot({ reply, ended }: { reply: Extract<Shown, { role: 'assistant' }>; ended: boolean }) {
-  const text = ended ? replyMarkdown(reply.parts) : ''
-  const summary = <Summary reply={reply} />
-  if (!text) return summary
+type Reply = Extract<Shown, { role: 'assistant' }>
+
+/**
+ * The row under a reply that has ended: a button to copy what it wrote, what it touched in Notion,
+ * and a button for its details. Memoized: a reply that hasn't changed keeps its object, so its calls
+ * aren't read again on every render.
+ */
+const ReplyFoot = memo(function ReplyFoot({ reply, ended }: { reply: Reply; ended: boolean }) {
+  if (!ended) return null
+  const text = replyMarkdown(reply.parts)
+  const summary = touched(reply)
+  const details = detailRows(reply.details)
+  if (!text && !summary && !details.length) return null
   return (
     <div className="reply-foot">
-      <CopyButton text={text} />
-      {summary}
+      {text && <CopyButton text={text} />}
+      {summary && <div className="note">{summary}</div>}
+      {details.length > 0 && <ReplyDetails rows={details} />}
     </div>
   )
-}
+})
 
 /** Copies `text` to the clipboard, and says for a moment whether it worked. */
 function CopyButton({ text }: { text: string }) {
@@ -871,21 +889,66 @@ function CopyButton({ text }: { text: string }) {
 const counted = (n: number, noun: string) => `${n} ${noun}${n === 1 ? '' : 's'}`
 
 /**
- * What a question touched, under its reply: the distinct pages and databases its tools read and
- * changed (only calls that worked), and the Notion requests it made. A part that is zero is left
- * out; a reply that touched nothing in Notion has no line. Memoized: a reply that hasn't changed
- * keeps its object, so its calls aren't read again on every render.
+ * What a question touched in Notion: the distinct pages and databases its tools read and changed
+ * (only calls that worked). A part that is zero is left out; empty when it touched nothing.
  */
-const Summary = memo(function Summary({ reply }: { reply: Extract<Shown, { role: 'assistant' }> }) {
-  // The line is for a question that has ended: its request count arrives then.
-  if (reply.requests === undefined) return null
+function touched(reply: Reply): string {
   const calls = reply.parts.flatMap((p) => (p.type === 'tool' && p.tool.status === 'done' ? [p.tool] : []))
   const { read, changed } = touchedBy(calls)
-  const { requests } = reply
-  const said = [
-    read && `Read ${counted(read, 'page')}`,
-    changed && `Changed ${counted(changed, 'page')}`,
-    requests && counted(requests, 'Notion request'),
-  ].filter(Boolean)
-  return said.length ? <div className="note">{said.join(' · ')}</div> : null
-})
+  return [read && `Read ${counted(read, 'page')}`, changed && `Changed ${counted(changed, 'page')}`]
+    .filter(Boolean)
+    .join(' · ')
+}
+
+const amount = (n: number) => n.toLocaleString('en-US')
+
+/** A reply's details, one row each, with what is unknown (or none) left out. */
+function detailRows(details: QuestionDetails = {}): { label?: string; text: string }[] {
+  const { requests, tokens: used, model } = details
+  return [
+    ...(requests ? [{ text: `Sent ${counted(requests, 'Notion request')}` }] : []),
+    ...(used
+      ? [
+          {
+            label: 'Tokens',
+            text:
+              `${amount(used.input)} in` +
+              (used.cached ? ` (${amount(used.cached)} cached)` : '') +
+              ` · ${amount(used.output)} out`,
+          },
+        ]
+      : []),
+    ...(model ? [{ label: 'Model', text: model.service === 'hosted' ? HOSTED : model.name }] : []),
+  ]
+}
+
+/** The "…" button at the end of a reply's row, and the popover with its details it opens and closes. */
+function ReplyDetails({ rows }: { rows: { label?: string; text: string }[] }) {
+  const { open, setOpen, rootRef, onKeyDown } = useMenu()
+  const id = useId()
+  return (
+    <div className="reply-details" ref={rootRef} onKeyDown={onKeyDown}>
+      <button
+        type="button"
+        className="reply-action"
+        aria-label="Reply details"
+        title="Reply details"
+        aria-expanded={open}
+        aria-controls={open ? id : undefined}
+        onClick={() => setOpen(!open)}
+      >
+        <Icon name="dots" />
+      </button>
+      {open && (
+        <div id={id} className="reply-popover" role="dialog" aria-label="Reply details">
+          {rows.map(({ label, text }) => (
+            <p key={label ?? text}>
+              {label && <span className="detail-label">{label}: </span>}
+              {text}
+            </p>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
