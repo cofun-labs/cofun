@@ -139,7 +139,6 @@ describe('UC-BILLING-001 buy credits: the packs and Checkout', () => {
         id: 'cs_test_1',
         price: PRICE,
         quantity: 5,
-        credits: 5000,
         userId: 'user_alice',
         successUrl: `${WORKER}/billing/paid`,
         cancelUrl: `${WORKER}/billing/cancelled`,
@@ -680,7 +679,6 @@ describe('Stripe over HTTP', () => {
   const request = {
     price: 'price_credits',
     quantity: 10,
-    credits: 10_000,
     userId: 'user_alice',
     successUrl: 'https://api.example.test/billing/paid',
     cancelUrl: 'https://api.example.test/billing/cancelled',
@@ -710,7 +708,6 @@ describe('Stripe over HTTP', () => {
       'metadata[cofun_user_id]': 'user_alice',
       'metadata[cofun_quantity]': '10',
       'metadata[cofun_price]': 'price_credits',
-      'custom_text[submit][message]': 'You get 10,000 credits for Cofun, valid for one year.',
       success_url: 'https://api.example.test/billing/paid',
       cancel_url: 'https://api.example.test/billing/cancelled',
     })

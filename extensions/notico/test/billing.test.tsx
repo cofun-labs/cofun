@@ -55,6 +55,19 @@ describe('buying credits on the settings page', () => {
     expect(browser.stripe.sessions).toMatchObject([{ userId: 'user_alice', quantity: 5, price: 'price_credits' }])
   })
 
+  it('[UC-BILLING-001-S15] the packs on offer say bought credits last one year and nothing renews', async () => {
+    const { user } = await openPanel()
+    await openSettings(user)
+
+    const buy = within(section('Buy credits'))
+    await buy.findByRole('list', { name: 'Packs of credits' })
+    expect(
+      buy.getByText(
+        'Credits you buy are valid for one year from the day you buy them. A one-time purchase, not a subscription.',
+      ),
+    ).toBeVisible()
+  })
+
   it('[UC-BILLING-001-S10] coming back to the panel after paying shows the new credits', async () => {
     const { browser, user } = await openPanel()
     await openSettings(user)
