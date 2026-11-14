@@ -26,6 +26,18 @@ scripts/sync-github-settings.sh
 
 If you change a setting in the GitHub dashboard, copy it back into these files.
 
+## PR media
+
+The GIF or screenshots that show a finished feature in a PR comment ([AGENTS.md](../AGENTS.md), step 9) are kept in the public R2 bucket `cofun-static`, served at `https://static.cofun.cc`, never on a git branch. Upload them and embed the URLs it prints as `![what it shows](<url>)` (GitHub shows only images that way; link to a video instead):
+
+```bash
+pnpm media 367 demo.gif before.png
+# https://static.cofun.cc/cofun/pr/367/demo.gif
+# https://static.cofun.cc/cofun/pr/367/before.png
+```
+
+Only the maintainer's machine can upload: the script runs the `cf` CLI with the Cloudflare login there (with several accounts in it, `CLOUDFLARE_ACCOUNT_ID` picks the one that has the bucket; don't commit it). Showcase GIFs meant for the README or an extension's help pages are committed in the repository instead.
+
 ## Worker
 
 The worker is one deployment for every extension: sign-in, the model, credits, and the admin page.

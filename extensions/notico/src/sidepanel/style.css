@@ -459,6 +459,18 @@ header .untitled {
   margin-left: -6px;
 }
 
+/* The model that answered, in the reply's row: a long name is cut to fit (its tooltip is outside). */
+.reply-model {
+  display: flex;
+  min-width: 0;
+}
+
+.reply-model-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* Without Copy, the line starts where the reply's text does. */
 .reply-foot > .note:first-child {
   margin-left: 6px;
@@ -477,23 +489,121 @@ header .untitled {
   z-index: 2;
   width: max-content;
   max-width: calc(100% - 6px);
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
   padding: 8px 12px;
   border: 1px solid var(--border);
   border-radius: 12px;
   background: var(--bg);
   box-shadow: 0 8px 28px var(--shadow);
-  font-size: 14px;
 }
 
 .reply-popover p {
   margin: 0;
 }
 
-.reply-popover .detail-label {
+/* What the reply read, sent, and used: small and quiet. */
+.reply-facts {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
   color: var(--muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+/* A saved page's link, where its save button was. */
+a.reply-action,
+a.icon-button {
+  color: var(--accent-text);
+}
+
+/* A save that can't run now (no Notion page) or is running: quiet, with no hover. */
+.reply-action[aria-disabled='true'],
+.icon-button[aria-disabled='true'] {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.reply-action[aria-disabled='true']:hover,
+.icon-button[aria-disabled='true']:hover {
+  background: none;
+  color: var(--muted);
+}
+
+/*
+ * A tooltip: the element's `data-tip`, shown on hover and keyboard focus. Above and from the
+ * element's left edge, so it stays inside the panel from the row's start; `.tip-below` opens it
+ * below and from the right edge, as in the header.
+ */
+[data-tip] {
+  position: relative;
+}
+
+[data-tip]:hover::after,
+[data-tip]:focus-visible::after {
+  content: attr(data-tip);
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 0;
+  z-index: 4;
+  width: max-content;
+  max-width: 240px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  background: var(--fg);
+  color: var(--bg);
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.35;
+  white-space: normal;
+  pointer-events: none;
+}
+
+.tip-below[data-tip]:hover::after,
+.tip-below[data-tip]:focus-visible::after {
+  top: calc(100% + 6px);
+  bottom: auto;
+  left: auto;
+  right: 0;
+}
+
+/* Not over an open popover of its own. */
+[data-tip][aria-expanded='true']::after {
+  display: none;
+}
+
+/* Why a save failed: just above the message box, over the chat, until it goes or is closed. */
+.save-toast {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: calc(100% + 8px);
+  z-index: 5;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 8px 6px 8px 12px;
+  border-radius: 10px;
+  background: var(--fg);
+  color: var(--bg);
+  font-size: 13px;
+  line-height: 1.4;
+  box-shadow: 0 8px 28px var(--shadow);
+}
+
+.save-toast .grow {
+  flex: 1;
+  padding-top: 5px;
+}
+
+.save-toast .icon-button {
+  width: 28px;
+  height: 28px;
+  color: inherit;
+}
+
+.save-toast .icon-button:hover {
+  background: rgb(255 255 255 / 0.12);
+  color: inherit;
 }
 
 .reply-action {
