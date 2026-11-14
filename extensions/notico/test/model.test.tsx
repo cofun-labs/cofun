@@ -94,7 +94,9 @@ describe('choosing the model', () => {
     await answered()
 
     await user.click(screen.getByRole('button', { name: 'Sessions' }))
-    expect(await screen.findByText("'90s fixture page summary")).toBeVisible()
+    // In the list, not only in the header above it.
+    const list = await screen.findByRole('dialog', { name: 'Sessions' })
+    expect(await within(list).findByText("'90s fixture page summary")).toBeVisible()
     expect(browser.openRouter.titles.calls.map((c) => c.model)).toEqual(['openai/gpt-6.1-sol'])
     expect(browser.openRouter.requests.filter((r) => r.path === '/api/v1/chat/completions').map((r) => r.key)).toEqual([
       KEY,

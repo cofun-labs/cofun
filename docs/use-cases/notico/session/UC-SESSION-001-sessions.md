@@ -2,7 +2,7 @@
 
 ## Behavior
 
-Each conversation in the side panel is a session. A signed-in user can start a new session at any time, and opening the side panel starts one. Past sessions are kept in a list, most recently used first, each with its title and the Notion page it started on. The user can search the list by title and delete sessions they no longer want.
+Each conversation in the side panel is a session. A signed-in user can start a new session at any time, and opening the side panel starts one. The top of the panel shows the open session's title, or "New chat" until its first question. Past sessions are kept in a list, most recently used first, each with its title and the Notion page it started on. The user can search the list by title and delete sessions they no longer want.
 
 Once a session's first reply has come in, the model the user is asking with (the hosted one, which spends credits as any request does, or their own) is asked for a short title of a few words, in the language of the question, from the first question and the start of the reply. The title is written once and does not change as the conversation goes on. Until it arrives, or if the model gives none that can be used, the session is titled with its first question; that is not shown to the user as a failure and does not stop the conversation.
 
@@ -29,6 +29,7 @@ Key constraints:
 | UC-SESSION-001-S14 | P1 | ✅ | Given a new session; when the first reply has come in; then the model is asked for a short title from the first question and the start of the reply, the session is listed under that title, the list search matches it, and later questions do not change it. |
 | UC-SESSION-001-S15 | P1 | ✅ | Given a new session; when the first reply has come in but the title request fails or gives nothing usable; then the session is listed under its first question, and the chat goes on with no error shown. |
 | UC-SESSION-001-S12 | P1 | ✅ | Given sessions with different titles; when the user searches the list; then only the sessions whose title contains what they typed are listed, ignoring case. |
+| UC-SESSION-001-S16 | P1 | ✅ | Given a new session; when the user asks a question, its first reply comes in, and the user later reopens an earlier session; then the top of the panel shows "New chat" before the question, then the session's title (its first question, then the model's title once it comes), then the reopened session's title. |
 | UC-SESSION-001-S05 | P1 | ✅ | Given a saved session; when the user deletes it; then it is no longer listed and cannot be reopened. |
 | UC-SESSION-001-S09 | P0 | ✅ | Given sessions saved by one account; when another account signs in on the same browser; then it sees none of them and cannot reopen them. |
 | UC-SESSION-001-S10 | P1 | ✅ | Given one session open in two windows; when the user continues it in both; then the session keeps the first window's conversation, the second window's is saved as a separate session, and both are in the list. |

@@ -18,6 +18,8 @@ async function openPanel(tab: FakeNotionTab = pageTab()) {
 }
 
 const composer = () => screen.getByRole('textbox', { name: 'Message' })
+/** The conversation, without the header above it, which also shows the first question. */
+const conversation = () => within(screen.getByRole('main'))
 
 async function ask(user: UserEvent, question: string) {
   await user.type(composer(), question)
@@ -73,7 +75,7 @@ describe('asking the AI', () => {
 
     await user.type(composer(), 'What is on the roadmap?{Enter}')
 
-    const question = await screen.findByText('What is on the roadmap?')
+    const question = await conversation().findByText('What is on the roadmap?')
     const reply = await screen.findByText(/^The roadmap/)
     expect(reply).not.toHaveTextContent('milestones')
     expect(comesBefore(question, reply)).toBe(true)
@@ -96,7 +98,7 @@ describe('asking the AI', () => {
 
     await user.type(composer(), ' in one line{Enter}')
 
-    expect(await screen.findByText('Summarize this page in one line')).toBeVisible()
+    expect(await conversation().findByText('Summarize this page in one line')).toBeVisible()
     await answered()
     expect(browser.sentToModel().at(-1)!.content).toContain('Summarize this page in one line')
     // The examples are for a session with no question yet.
@@ -209,7 +211,7 @@ describe('a formatted reply', () => {
     await answered()
 
     // The question stays as the user typed it.
-    expect(screen.getByText('What do I **need**?')).toBeVisible()
+    expect(conversation().getByText('What do I **need**?')).toBeVisible()
     expect(heading).toBeVisible()
     expect(screen.getByText('milk', { selector: 'strong' })).toBeVisible()
     expect(screen.getByText('eggs', { selector: 'code' })).toBeVisible()
@@ -411,7 +413,7 @@ describe('on a tab that is not Notion', () => {
 
     expect(await screen.findByText('You left Notion.')).toBeVisible()
     await answered()
-    expect(screen.getByText('What is this page?')).toBeVisible()
+    expect(conversation().getByText('What is this page?')).toBeVisible()
     expect(
       browser
         .sentToModel()
@@ -516,7 +518,7 @@ describe('sessions', () => {
     expect(screen.queryByText('What does this page say?')).not.toBeInTheDocument()
     await openSession(user, /What does this page say\?/)
 
-    const question = await screen.findByText('What does this page say?')
+    const question = await conversation().findByText('What does this page say?')
     const tool = screen.getByText('Fixture page', { selector: 'em' }).closest('summary')!
     const answer = screen.getByText('It is a fixture.')
     expect(comesBefore(question, tool)).toBe(true)
@@ -711,6 +713,8 @@ describe('sessions', () => {
     await ask(user, 'What is on the roadmap?')
     await screen.findByText('Three milestones.')
     await answered()
+    // The first title request has failed before the title model is scripted for the second session.
+    await waitFor(() => expect(browser.titles.calls).toHaveLength(1))
     vi.setSystemTime(new Date(START.getTime() + 60_000))
 
     // It answers with more than a title.
@@ -737,6 +741,35 @@ describe('sessions', () => {
     browser.ai.script.push({ reply: 'Next week.' })
     await ask(user, 'When is the launch?')
     expect(await screen.findByText('Next week.')).toBeVisible()
+  })
+
+  it('[UC-SESSION-001-S16] the header shows the open session\'s title, or "New chat" before its first question', async () => {
+    const { browser, user } = await openPanel()
+    const title = () => screen.getByRole('heading', { level: 1 })
+    expect(title()).toHaveTextContent(/^New chat$/)
+
+    browser.titles.failWith = undefined
+    browser.titles.script.push({ reply: 'Roadmap milestones' }, { reply: 'Launch owner' })
+    browser.ai.script.push({ reply: 'Three milestones.' }, { reply: 'Alice.' })
+    await ask(user, 'What is   on the\nroadmap?')
+    // Right away, before the reply, and on one line.
+    expect(title()).toHaveTextContent(/^What is on the roadmap\?$/, { normalizeWhitespace: false })
+    await screen.findByText('Three milestones.')
+    await answered()
+    // Then the title the model wrote.
+    await waitFor(() => expect(title()).toHaveTextContent(/^Roadmap milestones$/))
+
+    vi.setSystemTime(new Date(START.getTime() + 60_000))
+    await user.click(screen.getByRole('button', { name: 'New chat' }))
+    expect(title()).toHaveTextContent(/^New chat$/)
+    await ask(user, 'Who owns the launch?')
+    await screen.findByText('Alice.')
+    await answered()
+    await waitFor(() => expect(title()).toHaveTextContent(/^Launch owner$/))
+
+    await openSession(user, /^Roadmap milestones/)
+    await screen.findByText('Three milestones.')
+    expect(title()).toHaveTextContent(/^Roadmap milestones$/)
   })
 
   it('the session list closes from its Close button, the Sessions button, or Escape, back to the chat', async () => {
