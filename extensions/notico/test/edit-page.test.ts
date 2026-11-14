@@ -1,10 +1,12 @@
-// The edit_page tool (extensions/notico/src/tools.ts) against a fake Notion workspace that applies
+// The edit_page tool (extensions/notico/src/tools/write.ts) against a fake Notion workspace that applies
 // transactions the way Notion does, so each test checks the page as it is after the edit.
 import { afterEach, describe, expect, it } from 'vitest'
 import { inline, parseMarkdown } from '../src/notion/blocks'
 import { mergeReads, type PageRead } from '../src/notion/edit'
 import { splitSections } from '../src/notion/markdown'
-import { editPage, forgetReads, readPage } from '../src/tools'
+import { forgetReads } from '../src/tools/memory'
+import { readPage } from '../src/tools/read'
+import { editPage } from '../src/tools/write'
 import { LIMITED_STOP, UNEXPECTED_STOP } from '../src/notion/api'
 import { FakeNotionTab, FakeWorkspace, PAGE, PAGE_URL, SPACE, USER, notionError, restoreGlobals } from './notion-tab'
 

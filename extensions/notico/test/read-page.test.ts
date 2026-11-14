@@ -1,10 +1,15 @@
-// The read_page tool (extensions/notico/src/tools.ts) against a fake Notion tab, with pages built in the
+// The read_page tool (extensions/notico/src/tools/read.ts) against a fake Notion tab, with pages built in the
 // shape Notion's loadPageChunk returns them (see fixtures/notion/ for recorded examples).
 import { afterEach, describe, expect, it } from 'vitest'
 import { NESTED_MAX } from '../src/notion/api'
 import { inline } from '../src/notion/blocks'
 import { blockRefs, codeSpan, splitIntoParts } from '../src/notion/markdown'
-import { PART_CHARS, carryOpenPage, createDatabase, createPage, editPage, listPages, readPage } from '../src/tools'
+import { carryOpenPage } from '../src/tools/current'
+import { createDatabase } from '../src/tools/database'
+import { listPages } from '../src/tools/find'
+import { readPage } from '../src/tools/read'
+import { PART_CHARS } from '../src/tools/shared'
+import { createPage, editPage } from '../src/tools/write'
 import { FakeNotionTab, PAGE, PAGE_URL, SPACE, USER, fixture, restoreGlobals } from './notion-tab'
 
 afterEach(restoreGlobals)

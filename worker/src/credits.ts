@@ -202,7 +202,7 @@ export interface ManualGrant {
  * in micro-credits, 0 when it cost nothing.
  */
 export interface ModelCall {
-  /** The product the call came from: see `productOf` in app.ts. */
+  /** The product the call came from: see `productOf` in routes/chat.ts. */
   product: string
   model: string
   startedAt: number

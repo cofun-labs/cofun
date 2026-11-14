@@ -1,4 +1,4 @@
-// Runs the extension's real agent (extensions/notico/src/agent.ts) against the worker,
+// Runs the extension's real agent (extensions/notico/src/agent/) against the worker,
 // so the two sides can't drift apart.
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
@@ -27,14 +27,10 @@ import {
 import { HOSTED_ONLY, type ModelSettings } from '../../extensions/notico/src/models'
 import { activeNotionTab, countNotionRequests, notionCooldown } from '../../extensions/notico/src/notion/tab'
 import { defineTool } from '../../extensions/notico/src/tool'
-import {
-  carryOpenPage,
-  currentNotionPage,
-  editPage,
-  movePage,
-  readPage,
-  trashPage,
-} from '../../extensions/notico/src/tools'
+import { carryOpenPage, currentNotionPage } from '../../extensions/notico/src/tools/current'
+import { movePage, trashPage } from '../../extensions/notico/src/tools/organize'
+import { readPage } from '../../extensions/notico/src/tools/read'
+import { editPage } from '../../extensions/notico/src/tools/write'
 import { z } from '../../extensions/notico/src/zod'
 import { createApp, type Env } from '../src/app'
 import { priceOf } from '../src/pricing'

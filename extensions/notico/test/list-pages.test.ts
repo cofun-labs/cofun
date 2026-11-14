@@ -1,8 +1,9 @@
-// The list_pages tool (extensions/notico/src/tools.ts) against a fake Notion tab: a fake workspace answers
+// The list_pages tool (extensions/notico/src/tools/find.ts) against a fake Notion tab: a fake workspace answers
 // block lookups (syncRecordValuesMain) the way Notion does, and getSpaces and getTeamsV2 answer
 // with queued responses in Notion's shapes.
 import { afterEach, describe, expect, it } from 'vitest'
-import { LIST_LIMIT, LIST_LOOKUPS, SECTION_LIMIT, forgetReads, listPages } from '../src/tools'
+import { LIST_LIMIT, LIST_LOOKUPS, SECTION_LIMIT, listPages } from '../src/tools/find'
+import { forgetReads } from '../src/tools/memory'
 import { FakeNotionTab, FakeWorkspace, PAGE, PAGE_URL, SPACE, USER, notionError, restoreGlobals } from './notion-tab'
 import { LIMITED_STOP, NO_USER_MAP, UNEXPECTED_STOP } from '../src/notion/api'
 

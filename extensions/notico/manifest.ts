@@ -85,7 +85,7 @@ export function buildManifest(env: ManifestEnv, version: string, { store = false
     icons: ICONS,
     // scripting: Notion calls run in the user's Notion tab (src/notion/tab.ts).
     // tabs: the side panel reads the current tab's URL and title, to tell a Notion tab from others
-    // (src/notion/tab.ts) and for the get_current_tab tool (src/tools.ts). Host permissions would
+    // (src/notion/tab.ts) and for the get_current_tab tool (src/tools/current.ts). Host permissions would
     // expose a Notion tab's URL too, but not once the user limits the extension's site access; with
     // tabs the tools still find the tab there and say which access is missing.
     permissions: ['sidePanel', 'storage', 'tabs', 'cookies', 'scripting'],

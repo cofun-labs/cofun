@@ -1,8 +1,10 @@
-// The create_page tool (extensions/notico/src/tools.ts) against a fake Notion workspace that applies
+// The create_page tool (extensions/notico/src/tools/write.ts) against a fake Notion workspace that applies
 // transactions the way Notion does.
 import { afterEach, describe, expect, it } from 'vitest'
 import { LIMITED_STOP } from '../src/notion/api'
-import { createPage, forgetReads, readPage } from '../src/tools'
+import { forgetReads } from '../src/tools/memory'
+import { readPage } from '../src/tools/read'
+import { createPage } from '../src/tools/write'
 import { toUuid } from '../src/notion/hosts'
 import { FakeNotionTab, FakeWorkspace, PAGE, PAGE_URL, SPACE, USER, notionError, restoreGlobals } from './notion-tab'
 
