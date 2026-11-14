@@ -75,6 +75,39 @@ const SHAPES = {
       <circle cx="8" cy="8" r="2" />
     </>
   ),
+  summary: <path d="M3 4h10M3 7h10M3 10h6M3 13h4" />,
+  todo: (
+    <>
+      <rect x="2.5" y="2.5" width="11" height="11" rx="2" />
+      <path d="M5.5 8l2 2 3-4" />
+    </>
+  ),
+  list: <path d="M6 4h7.5M6 8h7.5M6 12h7.5M2.5 4v.01M2.5 8v.01M2.5 12v.01" />,
+  clock: (
+    <>
+      <circle cx="8" cy="8" r="5.5" />
+      <path d="M8 5v3l2 1.5" />
+    </>
+  ),
+  columns: (
+    <>
+      <rect x="2.5" y="3" width="3" height="10" rx="1" />
+      <rect x="6.5" y="3" width="3" height="7" rx="1" />
+      <rect x="10.5" y="3" width="3" height="4" rx="1" />
+    </>
+  ),
+  question: (
+    <>
+      <circle cx="8" cy="8" r="5.5" />
+      <path d="M6.5 6.5a1.5 1.5 0 1 1 2 1.4c-.4.2-.5.5-.5.9v.4M8 11.2v.1" />
+    </>
+  ),
+  info: (
+    <>
+      <circle cx="8" cy="8" r="5.5" />
+      <path d="M8 7.5v3.5M8 5.2v.1" />
+    </>
+  ),
   square: <rect x="4.5" y="4.5" width="7" height="7" rx="1.5" fill="currentColor" stroke="none" />,
   slash: (
     <>

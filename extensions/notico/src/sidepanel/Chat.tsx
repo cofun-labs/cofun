@@ -41,7 +41,7 @@ import {
 } from '../tools'
 import { AccountMenu } from './Account'
 import { Header } from './Header'
-import { Icon, Mark } from './icons'
+import { Icon } from './icons'
 import { Markdown } from './Markdown'
 import { useMenu } from './menu'
 import { HOSTED, ModelMenu } from './Model'
@@ -49,6 +49,7 @@ import { AddMenu, pageKey, usePagePicker, type SearchStop } from './PagePicker'
 import { ComposerPages, SentPages, type Chip } from './Pages'
 import { SaveButton, SaveToast, useSaves, type SaveState } from './Save'
 import { Sessions, type OpenResult } from './Sessions'
+import { ChatStart } from './Suggestions'
 import { Settings } from './Settings'
 import { ToolCall, type ShownTool } from './ToolCall'
 
@@ -96,9 +97,6 @@ const RECENT_SESSIONS = 5
 
 /** Pages links are made on when no Notion tab says which host the user's Notion is on. */
 const NOTION_ORIGIN = 'https://www.notion.so'
-
-/** Offered while the session has no question yet; picking one puts it in the message box. */
-const EXAMPLES = ['Summarize this page', 'List the action items', 'Find related pages', 'Suggest improvements']
 
 /** A reply in the order it happened: text the model wrote and the tools it ran in between. */
 type Part = { type: 'text'; text: string } | { type: 'tool'; tool: ShownTool }
@@ -923,25 +921,14 @@ export function Chat({ userId }: { userId: string }) {
       <div className="stage">
         <main id="messages" ref={listRef} inert={covered}>
           {messages.length === 0 && (
-            <div className="empty">
-              <Mark className="hero-mark" />
-              <p className="empty-title">Ask anything to get started.</p>
-              <p>Notico reads, finds, and edits your Notion pages.</p>
-              <div className="examples" role="group" aria-label="Example questions">
-                {EXAMPLES.map((example) => (
-                  <button
-                    key={example}
-                    type="button"
-                    onClick={() => {
-                      setInput(example)
-                      inputRef.current?.focus()
-                    }}
-                  >
-                    {example}
-                  </button>
-                ))}
-              </div>
-            </div>
+            <ChatStart
+              context={{ page: openPage, removed: !!tabPage && !openPage, mode }}
+              onPick={(text, at) => {
+                setInput(text)
+                caret.current = at
+                inputRef.current?.focus()
+              }}
+            />
           )}
           {messages.map((m, i) =>
             m.role === 'user' ? (

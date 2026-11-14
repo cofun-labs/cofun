@@ -3,7 +3,7 @@
 /// <reference types="chrome" />
 import { defineTool } from '../tool'
 import { z } from '../zod'
-import { NOTION_HOSTS, isNotion, pageIdFromUrl } from '../notion/hosts'
+import { NOTION_HOSTS, isNotion, pageIdFromUrl, showsDatabase } from '../notion/hosts'
 import { clip } from '../notion/comments'
 import { LOOK, NONE } from './shared'
 
@@ -21,7 +21,7 @@ export async function currentNotionPage(): Promise<OpenPage | undefined> {
   const tab = await currentTab()
   if (!tab || !isNotion(tab.url)) return undefined
   // Drop a trailing " | Notion" if the tab title has one; the model does not need it.
-  return { title: tabTitle(tab.title), url: tab.url }
+  return { title: tabTitle(tab.title), url: tab.url, ...(showsDatabase(tab.url) && { database: true }) }
 }
 
 /**
@@ -48,7 +48,7 @@ export async function openNotionPages(): Promise<OpenPage[]> {
     const id = tab.url && isNotion(tab.url) ? pageIdFromUrl(tab.url) : undefined
     if (!tab.url || !id || seen.has(id)) return []
     seen.add(id)
-    return [{ title: tabTitle(tab.title ?? ''), url: tab.url }]
+    return [{ title: tabTitle(tab.title ?? ''), url: tab.url, ...(showsDatabase(tab.url) && { database: true }) }]
   })
 }
 
