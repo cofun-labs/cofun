@@ -663,7 +663,7 @@ describe('sessions', () => {
     browser.ai.script.push({ reply: 'Three milestones.' }, { reply: 'Alice.' })
     await ask(user, 'What is   on the\nroadmap?')
     // Right away, before the reply, and on one line.
-    expect(title()).toHaveTextContent(/^What is on the roadmap\?$/)
+    expect(title()).toHaveTextContent(/^What is on the roadmap\?$/, { normalizeWhitespace: false })
     await screen.findByText('Three milestones.')
     await answered()
 
