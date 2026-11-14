@@ -140,11 +140,40 @@ export class FakeNotionTab {
   /** The browser's chrome.storage, which all its side panels share. */
   storage = new FakeStorage()
 
+  private activated: ((info: { tabId: number; windowId: number }) => void)[] = []
+  private updated: ((tabId: number, change: { url?: string; title?: string }, tab: object) => void)[] = []
+  private replaced: ((added: number, removed: number) => void)[] = []
+
+  /** Chrome swaps in a prerendered tab showing `url` for the current one, as it can on a navigation. */
+  replaceTab(url: string, title = ''): void {
+    this.url = url
+    this.title = title
+    for (const listener of this.replaced) listener(8, 7)
+  }
+
+  /** The user switches to another tab, showing `url`; Chrome tells the side panel. */
+  switchTab(url: string | undefined, title = ''): void {
+    this.url = url
+    this.title = title
+    for (const listener of this.activated) listener({ tabId: 7, windowId: 1 })
+  }
+
+  /** The tab goes to `url` (or renames its page, given the same URL); Chrome tells the side panel. */
+  navigate(url: string, title = this.title): void {
+    const change = { ...(url !== this.url && { url }), ...(title !== this.title && { title }) }
+    this.url = url
+    this.title = title
+    for (const listener of this.updated) listener(7, change, { id: 7, active: true, url, title })
+  }
+
   install(): this {
     globals.chrome = {
       storage: this.storage,
       tabs: {
         query: async () => (this.url === undefined ? [] : [{ id: 7, url: this.url, title: this.title }]),
+        onActivated: listeners(this.activated),
+        onUpdated: listeners(this.updated),
+        onReplaced: listeners(this.replaced),
         get: async (tabId: number) => {
           if (this.closed) throw new Error(`No tab with id: ${tabId}.`)
           return { id: tabId, url: this.pageUrl ?? this.url }
@@ -208,6 +237,17 @@ export class FakeNotionTab {
       return Object.defineProperties(new Response(null), { type: { value: 'opaqueredirect' }, status: { value: 0 } })
     }
     return new Response(next.text, { status: next.status, headers: next.headers })
+  }
+}
+
+/** A chrome.events.Event that keeps its listeners in `list`. */
+function listeners<L>(list: L[]) {
+  return {
+    addListener: (listener: L) => void list.push(listener),
+    removeListener: (listener: L) => {
+      const i = list.indexOf(listener)
+      if (i >= 0) list.splice(i, 1)
+    },
   }
 }
 

@@ -23,11 +23,6 @@ export interface AgentConfig {
   model?: () => Promise<ModelSettings>
   systemPrompt: string
   tools: ToolSpec[]
-  /**
-   * Read before each question and sent to the model ahead of it, e.g. which page is open. It is saved
-   * with the question but is not part of what the user typed.
-   */
-  context?: () => Promise<string | undefined>
   /** Model calls allowed per question. */
   maxSteps?: number
   /** How much of a long conversation to send. Defaults stay well under the provider's limits. */
@@ -45,6 +40,22 @@ interface QuestionMeter {
   readonly requests: number
   /** A request that changes the user's data was sent and may have landed. */
   readonly wrote: boolean
+}
+
+/**
+ * What goes with a question besides what the user typed, both saved with it. `context` is sent to the
+ * model ahead of the question (say, which page is open); `pages` are the pages the user sent it with,
+ * shown with the question.
+ */
+export interface QuestionExtras {
+  context?: string
+  pages?: QuestionPage[]
+}
+
+/** A page a question was sent with: its title and URL. */
+export interface QuestionPage {
+  title: string
+  url: string
 }
 
 /** A tool the model can ask the extension to run. */
@@ -121,8 +132,10 @@ export type AgentUpdate =
  * a question may take several such steps before the final answer.
  */
 export type HistoryMessage =
-  /** `context`: what the model was told with the question, besides what the user typed. */
-  | ({ role: 'user'; text: string; context?: string } & QuestionDetails)
+  /**
+   * `context` and `pages`: what went with the question (see QuestionExtras), besides what the user typed.
+   */
+  | ({ role: 'user'; text: string; context?: string; pages?: QuestionPage[] } & QuestionDetails)
   | { role: 'assistant'; parts: AssistantPart[] }
   /** The result of one tool call. `id` matches the call in the assistant message before it. */
   | { role: 'tool'; id: string; name: string; status: ToolStatus; result: string }
@@ -211,8 +224,9 @@ export class CopilotAgent {
   private initial: HistoryMessage[] = []
   /** How each tool call ended, by its result message; pi itself only knows whether it failed. */
   private readonly statuses = new WeakMap<AgentMessage, ToolStatus>()
-  /** What the model is told with each question, by its user message; see AgentConfig.context. */
+  /** What went with each question, by its user message; see QuestionExtras. */
   private readonly contexts = new WeakMap<AgentMessage, string>()
+  private readonly pages = new WeakMap<AgentMessage, QuestionPage[]>()
   /** What each question used, by its user message; see QuestionDetails. */
   private readonly details = new WeakMap<AgentMessage, QuestionDetails>()
   /** Set by a tool whose error stops the question (see `stopsQuestion`): what the user is told. */
@@ -234,15 +248,20 @@ export class CopilotAgent {
    * have changed a page) but never sees a half-finished reply. If it used no tool, it is dropped.
    *
    * `confirm` is asked before each run of a tool that needs confirmation. Without it, such tools
-   * are declined.
+   * are declined. `extras` go with the question, and are saved with it.
    */
-  async ask(text: string, onUpdate: (update: AgentUpdate) => void, confirm?: ConfirmTool): Promise<AskResult> {
+  async ask(
+    text: string,
+    onUpdate: (update: AgentUpdate) => void,
+    confirm?: ConfirmTool,
+    extras: QuestionExtras = {},
+  ): Promise<AskResult> {
     // One question at a time: an overlapping run would roll back the other's messages.
     if (this.running) return { status: 'error', message: 'Already answering a question.' }
     const question = {}
     this.running = question
     try {
-      return await this.askWithRetry(text, onUpdate, confirm)
+      return await this.askWithRetry(text, onUpdate, confirm, extras)
     } finally {
       if (this.running === question) this.running = undefined
     }
@@ -251,7 +270,8 @@ export class CopilotAgent {
   private async askWithRetry(
     text: string,
     onUpdate: (update: AgentUpdate) => void,
-    confirm?: ConfirmTool,
+    confirm: ConfirmTool | undefined,
+    extras: QuestionExtras,
   ): Promise<AskResult> {
     const epoch = this.epoch
     // Once per question: a retry below goes to the same model, whatever the user chose meanwhile.
@@ -260,7 +280,7 @@ export class CopilotAgent {
     } catch (err) {
       return { status: 'error', message: (err as Error).message }
     }
-    const { result, kept, failure } = await this.askOnce(text, onUpdate, epoch, confirm)
+    const { result, kept, failure } = await this.askOnce(text, onUpdate, epoch, confirm, extras)
     // The provider's model changed since this panel looked it up (for the hosted one, a deploy, which
     // refuses the request before any credits are spent), so look the model up again. Retry once if
     // the question left nothing behind; a retry runs the whole question again, so after it used a
@@ -277,7 +297,7 @@ export class CopilotAgent {
       // The question stays in the conversation with the tools it used, so the model can pick up
       // where it left off; asking the same question again could run those tools twice.
       if (kept) return { status: 'error', message: 'Notico was just updated. Ask it to continue.', ...counted }
-      return (await this.askOnce(text, onUpdate, epoch, confirm)).result
+      return (await this.askOnce(text, onUpdate, epoch, confirm, extras)).result
     }
     return result
   }
@@ -287,7 +307,8 @@ export class CopilotAgent {
     text: string,
     onUpdate: (update: AgentUpdate) => void,
     epoch: number,
-    confirm?: ConfirmTool,
+    confirm: ConfirmTool | undefined,
+    { context, pages }: QuestionExtras,
   ): Promise<{ result: AskResult; kept: boolean; failure?: Failure }> {
     let agent: Agent
     try {
@@ -296,8 +317,6 @@ export class CopilotAgent {
       return { result: { status: 'error', message: (err as Error).message }, kept: false }
     }
     // Stopped, or a new chat started, while the agent was being set up.
-    if (epoch !== this.epoch) return { result: { status: 'stopped' }, kept: false }
-    const context = await this.readContext()
     if (epoch !== this.epoch) return { result: { status: 'stopped' }, kept: false }
 
     const before = agent.state.messages.length
@@ -432,6 +451,7 @@ export class CopilotAgent {
     const question: AgentMessage = { role: 'user', content: text, timestamp: Date.now() }
     try {
       if (context) this.contexts.set(question, context)
+      if (pages?.length) this.pages.set(question, pages)
       await agent.prompt(question)
     } catch (err) {
       failure ??= this.provider.parseError((err as Error).message)
@@ -462,27 +482,6 @@ export class CopilotAgent {
     }
     const result: AskResult = hitLimit ? { status: 'step_limit', steps } : { status: 'done' }
     return { result: { ...result, ...counted }, kept: true }
-  }
-
-  /**
-   * A context that fails to load must not block the question; it goes without one. Stop ends the
-   * wait even if the context never comes.
-   */
-  private async readContext(): Promise<string | undefined> {
-    if (!this.config.context) return undefined
-    const { signal } = this.cancel
-    if (signal.aborted) return undefined
-    let onAbort!: () => void
-    const stopped = new Promise<undefined>((resolve) => (onAbort = () => resolve(undefined)))
-    signal.addEventListener('abort', onAbort, { once: true })
-    try {
-      return await Promise.race([this.config.context(), stopped])
-    } catch (err) {
-      console.error('Could not read the context for the question', err)
-      return undefined
-    } finally {
-      signal.removeEventListener('abort', onAbort)
-    }
   }
 
   /** Stops the current model call and any running tool. */
@@ -525,8 +524,15 @@ export class CopilotAgent {
     switch (message.role) {
       case 'user': {
         const context = this.contexts.get(message)
+        const pages = this.pages.get(message)
         return [
-          { role: 'user', text: textOf(message.content), ...(context && { context }), ...this.details.get(message) },
+          {
+            role: 'user',
+            text: textOf(message.content),
+            ...(context && { context }),
+            ...(pages && { pages }),
+            ...this.details.get(message),
+          },
         ]
       }
       case 'assistant':
@@ -562,6 +568,7 @@ export class CopilotAgent {
       if (m.role === 'user') {
         const question: AgentMessage = { role: 'user', content: m.text, timestamp }
         if (m.context) this.contexts.set(question, m.context)
+        if (m.pages?.length) this.pages.set(question, m.pages)
         const details = detailsOf(m)
         if (Object.keys(details).length) this.details.set(question, details)
         return question

@@ -4,7 +4,7 @@
 
 A signed-in user asks the AI something it can only answer with information or actions the extension has, such as what a Notion page says. The extension offers the AI a set of tools. Instead of guessing, the AI asks the extension to run one; the extension runs it and sends back the result, and the AI uses that result to answer. The AI may use several tools, one after another, before it answers.
 
-With each question, the AI is also told which Notion page is open in the current tab, or that the current tab is not a Notion page, so it knows what "this page" means without using a tool. The user may move to another page between questions; each question is told the page open when it was asked.
+With each question, the AI is also told which Notion page is open in the current tab, or that the current tab is not a Notion page, so it knows what "this page" means without using a tool. The message box shows that page before the question is sent, as the page it goes with, and follows the user as they switch tabs or move to another page; on another site it shows none. The user can take the page off a question that is about something else: the AI is then told only that no page goes with the question, and the agent can't fall back on the open page for it, so it asks the user which page they mean or searches for one. The page stays off for the chat's next questions until the user goes to another page or starts a new chat. Each question is told the page it went with, and shows that page with the question, also in a reopened session.
 
 Each question gets a bounded number of steps, so a model that keeps calling tools cannot run on forever, and the user can stop the agent at any time.
 
@@ -16,6 +16,7 @@ Each question's use of Notion is visible and bounded, so heavy use of the user's
 
 Key constraints:
 
+- A page the user took off a question is never used for it in place of a page the AI names: not read, and not even named to the AI.
 - Tools run in the extension, never on the server. The server only carries the AI's request to run a tool and the result back.
 - A tool that moves the user's pages to the trash never runs without the user's confirmation, which they are asked for each time; other changes are made right away, and the side panel shows them. If they decline, the tool does not run and the agent goes on without it; if they stop the agent while it waits, the tool does not run and the question ends.
 - Tool definitions, tool requests, and tool results are part of the conversation: the same size limits, credits, and usage records apply, and none of their content is kept by the service. Each round trip to the model is charged credits for what it cost (UC-CHAT-001).
@@ -45,10 +46,15 @@ Key constraints:
 | UC-AGENT-001-S23 | P1 | ✅ | Given a question whose tools read some pages, one of them twice; when it ends; then the reply says how many distinct pages it read, also after the session is reopened. |
 | UC-AGENT-001-S24 | P1 | ✅ | Given a question whose tool changes a page; when it ends; then the reply says how many pages it changed, and a change the user declined is not counted. |
 | UC-AGENT-001-S25 | P1 | ✅ | Given the side panel open on a Notion page; when the user asks a question that reads the page and opens the reply's details; then they show how many Notion requests it sent, the tokens the model used, and which model answered, also after the session is reopened, and the line under the reply does not count the requests. |
+| UC-AGENT-001-S26 | P1 | ✅ | Given a Notion page open in the current tab; when the user takes it off the question and asks; then the AI is told that no page goes with the question, not the page's title or address, and a tool that would use the open page when given no page refuses, telling the AI to ask the user which page or to search, without asking anything of Notion. |
+| UC-AGENT-001-S27 | P1 | ✅ | Given the side panel open on a Notion page; when the user looks at the message box, moves to another Notion page, and then to another site; then the box shows the open page as the one the question goes with, then the other page, then none, without asking anything of Notion. |
+| UC-AGENT-001-S28 | P1 | ✅ | Given a page the user took off the question; when they ask again on the same page, also after a visit to another site; then it stays off; and when they go to another page, or start a new chat, the page open then goes with the next question again. |
+| UC-AGENT-001-S29 | P1 | ✅ | Given a question sent with the open page and one sent without it; when the session is reopened later; then the first shows the page it went with, and the second shows none. |
 
 ### ai-e2e
 
 | ID | Priority | Status | Scenario |
 | --- | --- | --- | --- |
 | UC-AGENT-001-S16 | P0 | ✅ | Given the side panel open on a Notion page; when the user asks which page they are on; then the agent answers with the page's title without using a tool. |
+| UC-AGENT-001-S30 | P1 | ✅ | Given the side panel open on a Notion page in Chrome; when the user switches to another tab and moves to another page; then the message box shows the page open in the current tab each time, and a question sent after taking it off is answered without reading it. |
 | UC-AGENT-001-S21 | P2 | 🚧 | Given a question that has made as many Notion requests as it may; when it needs another; then the side panel asks the user whether to continue, and the question goes on only after they agree. |
