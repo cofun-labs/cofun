@@ -115,6 +115,7 @@ Tools call Notion's internal API as the user's own account, so **stability comes
 
 ## Testing
 
+- **Write a test only when it earns its place.** More tests are not better: each one costs time to run, read, and change. A test guards a business rule, or an implementation detail whose breaking would hurt and would not be noticed otherwise. Don't test what a type, a lint rule, or another test already covers, and don't test a small tool that is run by hand and fails in plain sight.
 - Backend tests are REST integration tests: they call the Hono app over HTTP and assert on status codes and JSON bodies.
 - **No mocking.** Do not use `vi.mock()` or spies. Replace external dependencies with fake objects that implement the same interface, and inject them through `env`:
   - `FakeAiBinding` (`worker/test/fakes.ts`) stands in for the Workers AI binding.
