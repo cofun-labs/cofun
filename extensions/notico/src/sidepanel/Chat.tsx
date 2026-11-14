@@ -59,6 +59,7 @@ import { ComposerPages, SentPages, type Chip } from './Pages'
 import { SaveButton, SaveToast, useSaves, type SaveState } from './Save'
 import { Sessions, type OpenResult } from './Sessions'
 import { ChatStart } from './Suggestions'
+import { CreditsPage } from './Credits'
 import { Settings } from './Settings'
 import { ToolCall, type ShownTool } from './ToolCall'
 
@@ -118,7 +119,7 @@ type Shown =
       parts: Part[]
       /** Why the question failed; shown below what the agent already did. */
       error?: string
-      /** The question was refused for lack of credits: the error leads to the settings page. */
+      /** The question was refused for lack of credits: the error leads to the Credits page. */
       outOfCredits?: boolean
       stopped?: boolean
       note?: string
@@ -160,11 +161,11 @@ export function Chat({ userId }: { userId: string }) {
   const pending = useRef(new Map<string, (allow: boolean) => void>())
   const accountButtonRef = useRef<HTMLButtonElement>(null)
   const modelButtonRef = useRef<HTMLButtonElement>(null)
-  const [view, setView] = useState<'chat' | 'sessions' | 'settings'>('chat')
-  // Opened from the model menu's "Manage models": the settings page puts the focus on Providers.
+  const [view, setView] = useState<'chat' | 'sessions' | 'credits' | 'settings'>('chat')
+  // Opened from the model menu's "Manage models": the Settings page puts the focus on Providers.
   const [settingsAt, setSettingsAt] = useState<'providers'>()
   const [credits, setCredits] = useState<CreditsState>({ status: 'loading' })
-  // Reads can overlap (a question ends while the settings page loads); only the newest one counts.
+  // Reads can overlap (a question ends while the Credits page loads); only the newest one counts.
   const creditReads = useRef(0)
   // Opening the panel starts a new session; it gets an id when its first question is sent.
   const [current, setCurrent] = useState<Current>()
@@ -436,10 +437,10 @@ export function Chat({ userId }: { userId: string }) {
 
   /**
    * Reads the user's credits from the worker: when the panel loads, after each question, and when
-   * the account menu or the settings page opens. The read after a question keeps the menu current
+   * the account menu or the Credits page opens. The read after a question keeps the menu current
    * without a wait; the one on opening catches what that read can miss: a reply the user stopped is
    * charged after the panel has gone on, and another window may have spent credits. A read that
-   * fails never touches the chat: the menu and the settings page say the credits are unavailable.
+   * fails never touches the chat: the menu and the Credits page say the credits are unavailable.
    */
   async function readCredits() {
     const read = ++creditReads.current
@@ -477,17 +478,28 @@ export function Chat({ userId }: { userId: string }) {
     await chrome.tabs.create({ url })
   }
 
-  function openSettings(at?: 'providers') {
-    setSettingsAt(at)
-    setView('settings')
+  function openCredits() {
+    setView('credits')
     void readCredits()
   }
 
-  /** Closes the settings page and puts the focus back on what led to it: the model chip, or the avatar. */
-  function closeSettings() {
-    setView('chat')
-    ;(settingsAt === 'providers' ? modelButtonRef : accountButtonRef).current?.focus()
+  function openSettings(at?: 'providers') {
+    setSettingsAt(at)
+    setView('settings')
   }
+
+  // Closing a page puts the focus back on what led to it (the model chip, or the avatar), once the
+  // header it is in is no longer covered (and inert).
+  const focusAfter = useRef<HTMLElement | null>(null)
+  function closePage() {
+    focusAfter.current = (view === 'settings' && settingsAt === 'providers' ? modelButtonRef : accountButtonRef).current
+    setView('chat')
+  }
+  useEffect(() => {
+    if (view !== 'chat' || !focusAfter.current) return
+    focusAfter.current.focus()
+    focusAfter.current = null
+  }, [view])
 
   async function send() {
     const text = input.trim()
@@ -851,9 +863,10 @@ export function Chat({ userId }: { userId: string }) {
   }
 
   const listOpen = view === 'sessions'
-  const settingsOpen = view === 'settings'
-  // The chat stays on screen, or mounted, behind the session list and the settings page, out of reach until they close.
-  const covered = listOpen || settingsOpen
+  // A page (Credits or Settings) covers the whole panel, the header included.
+  const pageOpen = view === 'credits' || view === 'settings'
+  // The chat stays on screen, or mounted, behind the session list and the pages, out of reach until they close.
+  const covered = listOpen || pageOpen
   // The model's title, or until it has one the session's first question, on one line; the header cuts it to fit.
   const headerTitle =
     modelTitle ??
@@ -908,8 +921,8 @@ export function Chat({ userId }: { userId: string }) {
 
   return (
     <>
-      <Header title={headerTitle || <span className="untitled">New chat</span>}>
-        {/* Not while the list or settings cover the chat: what it saves, and its toast, are behind them. */}
+      <Header title={headerTitle || <span className="untitled">New chat</span>} inert={pageOpen}>
+        {/* Not while the list or a page covers the chat: what it saves, and its toast, are behind them. */}
         {asked > 0 && !covered && (
           <SaveButton
             what="chat"
@@ -936,6 +949,7 @@ export function Chat({ userId }: { userId: string }) {
         <AccountMenu
           credits={credits}
           onOpen={() => void readCredits()}
+          onCredits={openCredits}
           onSettings={() => openSettings()}
           buttonRef={accountButtonRef}
         />
@@ -991,7 +1005,7 @@ export function Chat({ userId }: { userId: string }) {
                       {m.outOfCredits && (
                         <>
                           {' '}
-                          <button type="button" className="link" onClick={() => openSettings()}>
+                          <button type="button" className="link" onClick={openCredits}>
                             Buy credits
                           </button>
                         </>
@@ -1097,25 +1111,20 @@ export function Chat({ userId }: { userId: string }) {
             }}
           />
         )}
-
-        {settingsOpen && (
-          <div className="page-layer">
-            <Settings
-              credits={credits}
-              onRetry={() => void readCredits()}
-              history={{
-                grants: (before) => agent.creditGrants(before),
-                usage: (before) => agent.creditUsage(before),
-              }}
-              model={model}
-              onModelChange={changeModel}
-              at={settingsAt}
-              buying={{ packs: () => agent.creditPacks(), buy: buyCredits }}
-              onClose={closeSettings}
-            />
-          </div>
-        )}
       </div>
+
+      {view === 'credits' && (
+        <CreditsPage
+          credits={credits}
+          onRetry={() => void readCredits()}
+          grants={(before) => agent.creditGrants(before)}
+          buying={{ packs: () => agent.creditPacks(), buy: buyCredits }}
+          onClose={closePage}
+        />
+      )}
+      {view === 'settings' && (
+        <Settings model={model} onModelChange={changeModel} at={settingsAt} onClose={closePage} />
+      )}
     </>
   )
 }
