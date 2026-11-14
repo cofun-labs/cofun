@@ -58,6 +58,7 @@ export interface PickerOptions {
   recent: () => Promise<QuestionPage[]>
   /** Set once the workspace is not searched again for this question. */
   stop?: SearchStop
+  /** Called with the `onStop` given when the failed search was sent. */
   onStop: (stop: SearchStop) => void
   onPick: (page: QuestionPage) => void
   /** Escape, or Tab: the picker closes, and what was typed stays as text. */
@@ -121,6 +122,8 @@ export function usePagePicker({
     // One at a time: the search running sends the newest query when it ends.
     if (running.current || sending === undefined) return
     running.current = true
+    // A failure stops searching for the question this search was sent for, not the one after it.
+    const stopSearch = onStopRef.current
     setSearch({ status: 'searching' })
     try {
       const pages = await findPages(sending, SEARCH_LIMIT)
@@ -128,7 +131,7 @@ export function usePagePicker({
     } catch (err) {
       // Never retried, nor worked around: no more searches for this question.
       wanted.current = undefined
-      onStopRef.current(
+      stopSearch(
         err instanceof NotionError && err.code === 'rate_limited'
           ? { busy: true }
           : { busy: false, message: err instanceof Error ? err.message : String(err) },
@@ -199,9 +202,11 @@ export function usePagePicker({
       if (options.length) setActive((current + (e.key === 'ArrowDown' ? 1 : options.length - 1)) % options.length)
       return true
     }
-    if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing && current >= 0) {
+    // While the picker is open, Enter only adds a page: with none to add yet (the search is still
+    // to come, or nothing matches), it does nothing, and never sends the message.
+    if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
       e.preventDefault()
-      onPick(options[current].page)
+      if (current >= 0) onPick(options[current].page)
       return true
     }
     if (e.key === 'Escape') {

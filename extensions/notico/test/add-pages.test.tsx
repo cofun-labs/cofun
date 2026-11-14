@@ -168,7 +168,7 @@ describe('UC-CHAT-004 add pages to a question', () => {
   })
 
   it('[UC-CHAT-004-S02] a page chosen with the keys becomes a chip in place of the @ text, and Escape leaves the text as it is', async () => {
-    const { user } = await openPanel()
+    const { browser, user } = await openPanel()
 
     await user.type(composer(), 'Compare this with @')
     await within(picker()!).findByRole('option', { name: /Roadmap/ })
@@ -190,10 +190,18 @@ describe('UC-CHAT-004 add pages to a question', () => {
     // Typing on, past the same @, opens nothing.
     await user.type(composer(), 'ad')
     expect(picker()).not.toBeInTheDocument()
+
+    // With nothing to add yet, Enter does nothing: the half-typed @ text is not sent.
+    await user.type(composer(), ' @zq')
+    expect(await screen.findByText('Searches your workspace when you stop typing.')).toBeVisible()
+    await user.keyboard('{Enter}')
+    expect(screen.getByText('Searches your workspace when you stop typing.')).toBeVisible()
+    expect(composer()).toHaveValue('Compare this with @road @zq')
+    expect(browser.ai.calls).toEqual([])
   })
 
   it('[UC-CHAT-004-S03] "+" opens the same picker with its own search field, and leaves the message as it is', async () => {
-    const { user } = await openPanel()
+    const { browser, user } = await openPanel()
     await user.type(composer(), 'Summarize')
 
     await user.click(screen.getByRole('button', { name: 'Add a page' }))
@@ -201,6 +209,12 @@ describe('UC-CHAT-004 add pages to a question', () => {
     const field = screen.getByRole('searchbox', { name: 'Search pages' })
     expect(field).toHaveFocus()
     expect(await within(picker()!).findByRole('group', { name: 'Open tabs' })).toBeVisible()
+    // Enter in the field with nothing to add yet neither sends the message nor closes the picker.
+    await user.type(field, 'zq{Enter}')
+    expect(field).toBeVisible()
+    expect(composer()).toHaveValue('Summarize')
+    expect(browser.ai.calls).toEqual([])
+    await user.clear(field)
     await user.type(field, 'road')
     await user.click(within(picker()!).getByRole('option', { name: /Roadmap/ }))
 

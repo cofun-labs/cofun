@@ -208,6 +208,9 @@ export function Chat({ userId }: { userId: string }) {
   const dismissed = useRef<number>(undefined)
   // Set once the workspace is not searched again for the next question (see usePagePicker).
   const [searchStop, setSearchStop] = useState<SearchStop>()
+  // Which question the composer is for: a search that fails after its question was sent stops none.
+  const composing = useRef(0)
+  const round = composing.current
   // Where the caret goes once the message box shows the text a pick changed.
   const caret = useRef<number>(undefined)
   const chips: Chip[] = [
@@ -230,7 +233,7 @@ export function Chat({ userId }: { userId: string }) {
     added: new Set(chips.map((c) => pageKey(c.page))),
     recent: recentPages,
     stop: searchStop,
-    onStop: setSearchStop,
+    onStop: (stop) => round === composing.current && setSearchStop(stop),
     onPick: addPage,
     onClose: closePicker,
   })
@@ -645,6 +648,7 @@ export function Chat({ userId }: { userId: string }) {
     setChosen([])
     setPicker(undefined)
     setSearchStop(undefined)
+    composing.current++
     dismissed.current = undefined
   }
 
