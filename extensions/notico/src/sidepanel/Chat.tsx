@@ -288,7 +288,8 @@ export function Chat({ userId }: { userId: string }) {
     if (!current) setCurrent(session)
     // What the composer shows is what the question carries.
     const pages = openPage ? [openPage] : []
-    const context = carryOpenPage(tabPage, tabPage !== undefined && !openPage)
+    // A page is off while the composer shows none for it: also on another site, until another page shows.
+    const context = carryOpenPage(tabPage, removed !== undefined && !openPage)
     setInput('')
     setBusy(true)
     setStopping(false)

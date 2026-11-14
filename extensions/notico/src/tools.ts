@@ -129,12 +129,14 @@ function needsAttachedPage(): void {
 
 /**
  * Sets up the next question from what its composer showed: `page`, the Notion page open in the
- * current tab (if one is), and whether the user removed it from the question. Returns the note the
+ * current tab (if one is), and whether the user took a page off the question. Returns the note the
  * model is told with the question: which page is open, that the user left it out, or that the
- * current tab is not a Notion page. Until the next question, its tools follow the same choice.
+ * current tab is not a Notion page. Until the next question, its tools follow the same choice: a
+ * question sent while a page is off never falls back on the open page, even one sent from another
+ * site whose user goes back to that page while it runs.
  */
 export function carryOpenPage(page: OpenPage | undefined, removed: boolean): string {
-  openPageAttached = !(page && removed)
+  openPageAttached = !removed
   if (!page) return '[The current tab is not a Notion page.]'
   if (removed)
     return (
