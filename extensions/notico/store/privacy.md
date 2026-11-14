@@ -33,7 +33,7 @@ Reads the current tab's URL and title to tell whether it is a Notion page, and t
 ### cookies
 
 ```text
-Reads the sign-in cookie set by our own sign-in page (on cofun.cc) to notice when the user signs in or out. It reads no other cookies.
+Reads the sign-in cookies that our own sign-in service (Clerk, on cofun.cc) sets, to bring the user's session into the extension and to notice sign-in and sign-out. It reads no cookies of other sites.
 ```
 
 ### scripting
@@ -45,7 +45,7 @@ Runs the requests that read and edit Notion pages inside the user's own Notion t
 ### Host permission
 
 ```text
-notion.so and app.notion.com: to read and edit the user's pages in their Notion tab. api.cofun.cc and clerk.cofun.cc: our server and sign-in service. *.cofun.cc: only to read the sign-in cookie, which the sign-in service sets on the parent domain.
+notion.so and app.notion.com: to read and edit the user's pages in their Notion tab. api.cofun.cc: our server and sign-in page. clerk.cofun.cc: our sign-in service, whose session cookie the extension reads to sign the user in. *.cofun.cc: only to read the sign-in cookie that the sign-in service sets on the parent domain.
 ```
 
 ## Remote code
