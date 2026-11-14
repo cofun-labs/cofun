@@ -253,7 +253,9 @@ export function ModelCard({
   }
 
   function remove(service: Service) {
-    setMode('hosted')
+    // The choice shown follows what is saved now: the hosted model, or the other service if another
+    // window switched to it meanwhile.
+    setMode(undefined)
     onChange(removed(settings!, service))
   }
 

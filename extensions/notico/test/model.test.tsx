@@ -481,6 +481,27 @@ describe('DeepSeek with the user key', () => {
     expect(browser.openRouter.requests).toEqual([])
   })
 
+  it('removing a key shows the choice saved now, when another window switched services meanwhile', async () => {
+    const { browser, user } = await openPanel()
+    await setUpOpenRouter(browser, user)
+    await setUpDeepSeek(browser, user)
+    await openSettings(user)
+    // The user switches to OpenRouter and back here, so this page shows DeepSeek's setup.
+    await user.click(screen.getByRole('radio', { name: 'OpenRouter, with your key' }))
+    await user.click(screen.getByRole('radio', { name: 'DeepSeek, with your key' }))
+    expect(screen.getByText(/Your DeepSeek key is saved/)).toBeVisible()
+
+    // The side panel of another window switches to OpenRouter.
+    const saved = Object.keys(browser.tab.storage.values).find((k) => k.startsWith('model:'))!
+    const settings = browser.tab.storage.values[saved] as Record<string, unknown>
+    await act(() => browser.tab.storage.local.set({ [saved]: { ...settings, use: 'openrouter' } }))
+    await user.click(screen.getByRole('button', { name: 'Remove key' }))
+
+    expect(screen.getByRole('radio', { name: 'OpenRouter, with your key' })).toBeChecked()
+    expect(modelInUse()).toHaveTextContent(SOL)
+    expect(JSON.stringify(browser.tab.storage.values)).not.toContain(DS_KEY)
+  })
+
   it("removing the DeepSeek key keeps OpenRouter's", async () => {
     const { browser, user } = await openPanel()
     await setUpOpenRouter(browser, user)
