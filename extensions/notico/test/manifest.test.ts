@@ -96,6 +96,11 @@ describe('extension manifest', () => {
     )
   })
 
+  it('has a description short enough for the Chrome Web Store summary', () => {
+    // Chrome's manifest reference caps the description at 132 characters; the store shows it as the summary.
+    expect(manifest({ VITE_CLERK_SYNC_HOST: 'https://sync.example.com' }).description.length).toBeLessThanOrEqual(132)
+  })
+
   it('lists icons that exist in the build at the size they are listed for', () => {
     const json = manifest({ VITE_CLERK_SYNC_HOST: 'https://api.cofun.cc' })
     expect(Object.keys(json.icons)).toEqual(['16', '32', '48', '128'])
