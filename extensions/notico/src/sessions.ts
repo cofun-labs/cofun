@@ -20,6 +20,9 @@ const SessionInfo = z.object({
 })
 export type SessionInfo = z.infer<typeof SessionInfo>
 
+/** The key every stored record has, whatever else it holds. */
+const StoredId = z.object({ id: z.string() })
+
 /** A session's conversation, as the second store keeps it. */
 const StoredMessages = z.object({ messages: z.array(HistoryMessage) })
 
@@ -135,20 +138,21 @@ export class SessionStore {
 
   /** All saved sessions, most recently used first, and after them the ones that can't be read. */
   async list(): Promise<ListedSession[]> {
-    const [keys, records] = await this.run('readonly', (infos) => {
-      // Both in key order, so the n-th record is the n-th key's.
-      const keys = infos.getAllKeys()
+    const records = await this.run('readonly', (infos) => {
       const records: IDBRequest<unknown[]> = infos.getAll()
-      return () => [keys.result, records.result]
+      return () => records.result
     })
     const readable: SessionInfo[] = []
     const unreadable: UnreadableSession[] = []
-    records.forEach((record, i) => {
+    for (const record of records) {
       const parsed = SessionInfo.safeParse(record)
       if (parsed.success) readable.push(parsed.data)
-      // Every version gave sessions string ids; a record under any other key is not one of ours.
-      else if (typeof keys[i] === 'string') unreadable.push({ id: keys[i], unreadable: true })
-    })
+      else {
+        // The store's key is the record's `id`, so every record has one; every version made it a string.
+        const key = StoredId.safeParse(record)
+        if (key.success) unreadable.push({ id: key.data.id, unreadable: true })
+      }
+    }
     return [...readable.sort((a, b) => b.updatedAt - a.updatedAt), ...unreadable]
   }
 

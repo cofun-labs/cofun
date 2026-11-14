@@ -6,6 +6,7 @@ import { clip } from '../notion/comments'
 import { PAGE_TYPES, hexId } from '../notion/markdown'
 import { activeNotionTab } from '../notion/tab'
 import { PageLookups, contentOf, pageTree, runsText, treeLines, type PageTree } from '../notion/tree'
+import type { OpenPage } from './current'
 import { databaseNames, workspaceOf } from './load'
 import { LIST, NONE, SEARCH, filled, on, pageArg, wholeArg } from './shared'
 
@@ -255,9 +256,7 @@ export const searchPages = defineTool({
         plain(r.highlight?.title) ||
         (database ? names.get(r.id) : runsText(block?.properties?.title)) ||
         (database ? 'Untitled database' : 'Untitled')
-      // The path may end with the page itself (a top-level page's is only its own title).
-      const path = plain(r.highlight?.pathText)
-      const where = path === title ? '' : path.endsWith(` / ${title}`) ? path.slice(0, -title.length - 3) : path
+      const where = whereFound(plain(r.highlight?.pathText), title)
       const text = plain(r.highlight?.text)
       const edited =
         typeof block?.last_edited_time === 'number' ? new Date(block.last_edited_time).toISOString().slice(0, 10) : ''
@@ -277,6 +276,44 @@ export const searchPages = defineTool({
     return [`Pages found for "${query}"${more}:`, '', ...lines].join('\n')
   },
 })
+
+/** Where a search hit is: its path, which may end with the page itself (a top-level page's is only its own title). */
+function whereFound(path: string, title: string): string {
+  return path === title ? '' : path.endsWith(` / ${title}`) ? path.slice(0, -title.length - 3) : path
+}
+
+/** A page Notion's search found for the composer's page picker, with where it is. */
+export interface FoundPage extends OpenPage {
+  path?: string
+}
+
+/**
+ * Searches the workspace of the open page for the composer's page picker, as search_pages does,
+ * for the user rather than the model: no tool runs, and the requests count toward no question.
+ * Pages in the trash are left out. A failure throws as any Notion call does and is never retried;
+ * a database is named as the search names it, with no request for its name.
+ */
+export async function findPages(words: string, limit: number): Promise<FoundPage[]> {
+  const tab = await activeNotionTab({ counted: false })
+  if (!tab.pageId) throw new Error('Open a page of the workspace to search it.')
+  const spaceId = await workspaceOf(tab)
+  const found = await tab.client.search(spaceId, words.trim(), limit)
+  const tag = highlightTag(found.results)
+  const plain = (text: unknown) => withoutTag(typeof text === 'string' ? text : undefined, tag)
+  return found.results.flatMap((r) => {
+    const block = found.recordMap.block?.[r.id]
+    if (block?.alive === false) return []
+    const database = block?.type === 'collection_view_page' || block?.type === 'collection_view'
+    const title =
+      plain(r.highlight?.title) ||
+      (database ? '' : runsText(block?.properties?.title)) ||
+      (database ? 'Untitled database' : 'Untitled')
+    const path = whereFound(plain(r.highlight?.pathText), title)
+    return [
+      { title, url: pageLink(tab.url, r.id), ...(database && { database: true as const }), ...(path && { path }) },
+    ]
+  })
+}
 
 /**
  * The tag a search response marks matched words with: a random name per response, such as

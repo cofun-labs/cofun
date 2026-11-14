@@ -760,13 +760,208 @@ header .untitled {
   height: 12px;
 }
 
-/* The toolbar inside the box: tools on the left (none yet), then the model chip and send on the right. */
+/* The toolbar inside the box: "+" on the left, then the model chip and send on the right. */
 .composer-tools {
   display: flex;
   align-items: center;
   justify-content: flex-end;
   gap: 4px;
   margin-left: -6px;
+}
+
+.composer-tools .grow {
+  flex: 1;
+}
+
+.tool-button {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  flex: none;
+  border-radius: 8px;
+  color: var(--muted);
+}
+
+.tool-button:hover,
+.tool-button[aria-expanded='true'] {
+  background: var(--tint);
+  color: var(--fg);
+}
+
+/* The "+" menu opens upward from the box, flush with its left edge. */
+.add-popover {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: -1px;
+  z-index: 2;
+  min-width: 180px;
+  display: flex;
+  flex-direction: column;
+  padding: 5px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--bg);
+  box-shadow: 0 8px 28px var(--shadow);
+}
+
+.add-popover [role='menuitem'] {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 8px;
+  border-radius: 8px;
+  text-align: left;
+}
+
+.add-popover [role='menuitem']:hover,
+.add-popover [role='menuitem']:focus-visible {
+  outline: none;
+  background: var(--tint);
+}
+
+.add-popover .icon {
+  color: var(--muted);
+}
+
+/* The page picker: opens upward from the box, as wide as it. */
+.page-picker {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: -1px;
+  right: -1px;
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  max-height: 360px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--bg);
+  box-shadow: 0 8px 28px var(--shadow);
+}
+
+.picker-search {
+  flex: none;
+  margin: 6px 6px 0;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  outline: none;
+  background: var(--tint);
+  color: inherit;
+  font: inherit;
+}
+
+.picker-search:focus {
+  border-color: var(--muted);
+}
+
+.picker-list {
+  min-height: 0;
+  overflow-y: auto;
+  padding: 4px 5px;
+}
+
+.picker-group {
+  padding: 8px 8px 3px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.picker-option {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.picker-option.active {
+  background: var(--tint);
+}
+
+.picker-option .icon {
+  flex: none;
+  color: var(--muted);
+}
+
+.picker-lines {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.picker-name,
+.picker-path {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.picker-name mark {
+  background: transparent;
+  color: inherit;
+  font-weight: 600;
+}
+
+.picker-path {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.picker-hint {
+  flex: none;
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.picker-state {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  padding: 8px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.spinner {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  border: 1.5px solid var(--border);
+  border-top-color: var(--muted);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.picker-foot {
+  flex: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  padding: 7px 13px;
+  border-top: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.picker-foot kbd {
+  padding: 0 4px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font: inherit;
 }
 
 #composer .send {
@@ -1265,6 +1460,7 @@ button.pack:disabled {
 @media (prefers-reduced-motion: reduce) {
   .note.working,
   .tool.running .tool-mark,
+  .spinner,
   #sessions {
     animation: none;
   }

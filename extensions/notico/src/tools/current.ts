@@ -3,7 +3,7 @@
 /// <reference types="chrome" />
 import { defineTool } from '../tool'
 import { z } from '../zod'
-import { isNotion } from '../notion/hosts'
+import { NOTION_HOSTS, isNotion, pageIdFromUrl } from '../notion/hosts'
 import { clip } from '../notion/comments'
 import { LOOK, NONE } from './shared'
 
@@ -21,13 +21,35 @@ export async function currentNotionPage(): Promise<OpenPage | undefined> {
   const tab = await currentTab()
   if (!tab || !isNotion(tab.url)) return undefined
   // Drop a trailing " | Notion" if the tab title has one; the model does not need it.
-  return { title: tab.title.replace(/\s+\|\s+Notion$/, ''), url: tab.url }
+  return { title: tabTitle(tab.title), url: tab.url }
 }
 
-/** A Notion page a question carries: its title and URL, as the tab showed them. */
+/**
+ * A Notion page a question carries: its title and URL, as the tab or Notion's search showed them,
+ * and whether it is a database.
+ */
 export interface OpenPage {
   title: string
   url: string
+  database?: true
+}
+
+/** The title Chrome reports for a Notion tab, without the " | Notion" a tab title may end with. */
+const tabTitle = (title: string) => title.replace(/\s+\|\s+Notion$/, '')
+
+/**
+ * The Notion pages open in the browser's tabs, in any window, as Chrome reports them: no Notion
+ * request. A tab that shows no page (say, Notion's home) is left out, and a page open twice is listed once.
+ */
+export async function openNotionPages(): Promise<OpenPage[]> {
+  const seen = new Set<string>()
+  // Chrome is asked for Notion's tabs only: no other site's URL or title is read.
+  return (await chrome.tabs.query({ url: NOTION_HOSTS.map((host) => `https://${host}/*`) })).flatMap((tab) => {
+    const id = tab.url && isNotion(tab.url) ? pageIdFromUrl(tab.url) : undefined
+    if (!tab.url || !id || seen.has(id)) return []
+    seen.add(id)
+    return [{ title: tabTitle(tab.title ?? ''), url: tab.url }]
+  })
 }
 
 /**
@@ -52,33 +74,47 @@ export async function needsAttachedPage(): Promise<void> {
 
 /**
  * Sets up the next question from what its composer showed: `page`, the Notion page open in the
- * current tab (if one is), and whether the user took a page off the question. Returns the note the
- * model is told with the question: which page is open, that the user left it out, or that the
- * current tab is not a Notion page. Until the next question, its tools follow the same choice: a
- * question sent while a page is off never falls back on the open page, even one sent from another
- * site whose user goes back to that page while it runs.
+ * current tab (if one is), whether the user took a page off the question, and the pages they added
+ * to it by hand. Returns the note the model is told with the question: which page is open, that the
+ * user left it out, or that the current tab is not a Notion page; then the pages added, if any.
+ * Until the next question, its tools follow the same choice: a question sent while a page is off
+ * never falls back on the open page, even one sent from another site whose user goes back to that
+ * page while it runs.
  */
-export function carryOpenPage(page: OpenPage | undefined, removed: boolean): string {
+export function carryPages(page: OpenPage | undefined, removed: boolean, added: OpenPage[] = []): string {
   openPageAttached = !removed
+  // The open page is named once, in its own note, also when the user added it by hand.
+  const open = page && !removed ? pageIdFromUrl(page.url) : undefined
+  const others = added.filter((p) => !open || pageIdFromUrl(p.url) !== open)
+  const notes = [openNote(page, removed, others.length > 0)]
+  if (others.length)
+    notes.push(`[Pages the user added to this question: ${others.map((p) => pageNamed(p)).join('; ')}]`)
+  return notes.join('\n')
+}
+
+function openNote(page: OpenPage | undefined, removed: boolean, others: boolean): string {
   if (!page) return '[The current tab is not a Notion page.]'
+  // The pages the user added are what the question is about: the note says only which page to leave out.
+  if (removed && others)
+    return '[The user took the page open in the current tab off this question: do not use that page.]'
   if (removed)
     return (
       '[No Notion page is attached to this question: the user took the page open in the current tab off it. ' +
       'Do not use that page; if the question needs a page, ask the user which one, or search for it.]'
     )
-  return openPageNote(page)
+  return `[The Notion page open in the current tab: ${pageNamed(page)}]`
 }
 
 /**
- * Names the page a question carries, for the model. A tab on another site is never named: such a
+ * Names a page a question carries, for the model. A tab on another site is never named: such a
  * tab is only said not to be Notion.
  */
-function openPageNote(page: OpenPage): string {
+function pageNamed(page: OpenPage): string {
   // The page's author picks its title, and a shared link its query: keep both from closing the note
   // and faking another one.
   const title = clip(page.title.replace(/[[\]]/g, ''), TITLE_CHARS)
   const url = page.url.replaceAll('[', '%5B').replaceAll(']', '%5D')
-  return `[The Notion page open in the current tab: ${JSON.stringify(title)}, ${url}]`
+  return `${JSON.stringify(title)}${page.database ? ' (a database)' : ''}, ${url}`
 }
 
 const TITLE_CHARS = 200

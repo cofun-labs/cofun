@@ -44,8 +44,8 @@ export interface QuestionExtras {
   pages?: QuestionPage[]
 }
 
-/** A page a question was sent with: its title and URL. */
-const QuestionPage = z.object({ title: z.string(), url: z.string() })
+/** A page a question was sent with: its title and URL, and whether it is a database. */
+const QuestionPage = z.object({ title: z.string(), url: z.string(), database: z.literal(true).optional() })
 export type QuestionPage = z.infer<typeof QuestionPage>
 
 /** A tool the model can ask the extension to run. */

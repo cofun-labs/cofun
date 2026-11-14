@@ -61,11 +61,13 @@ export function countNotionRequests(ask?: (question: string) => Promise<boolean>
 /**
  * The active tab of the side panel's window, if it is on Notion; otherwise a `no_notion_tab` error.
  * The panel is open on every tab, so this is where a Notion tool finds out it can't run. Only the
- * active tab counts: a Notion page open in another tab is never used instead.
+ * active tab counts: a Notion page open in another tab is never used instead. With `counted: false`
+ * its requests count toward no question.
  */
-export async function activeNotionTab(): Promise<NotionTab> {
+export async function activeNotionTab({ counted: count = true }: { counted?: boolean } = {}): Promise<NotionTab> {
   // The question that asked for the tab, even if another one starts while the tab is looked up.
-  const counted = usage
+  // Requests made outside a question (the composer's page search) count toward none.
+  const counted = count ? usage : undefined
   // Every client is made here, so none sends before a wait another side panel started is known.
   await notionCooldown.ready()
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true })

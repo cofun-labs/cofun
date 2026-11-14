@@ -101,6 +101,22 @@ export class FakeNotionTab {
   /** The tab's title, as chrome.tabs reports it. */
   title = 'Fixture page'
 
+  /** The browser's other tabs, in any window, as chrome.tabs reports them. */
+  otherTabs: { url: string; title: string }[] = []
+
+  /** Requests held until the test lets them through, by endpoint (see `hold`). */
+  private held: Record<string, Promise<void>[]> = {}
+
+  /**
+   * Holds the next request to `endpoint` before Notion answers it, until the returned function is
+   * called: the request is sent (and counted in `sent`) at once, its answer comes once released.
+   */
+  hold(endpoint: string): () => void {
+    let release!: () => void
+    ;(this.held[endpoint] ??= []).push(new Promise<void>((resolve) => (release = resolve)))
+    return release
+  }
+
   constructor(
     /** Where the tab is; a test moves the user to another tab by changing it. */
     public url: string | undefined,
@@ -170,7 +186,15 @@ export class FakeNotionTab {
     globals.chrome = {
       storage: this.storage,
       tabs: {
-        query: async () => (this.url === undefined ? [] : [{ id: 7, url: this.url, title: this.title }]),
+        query: async (info: { active?: boolean; url?: string[] } = {}) => {
+          const current = this.url === undefined ? [] : [{ id: 7, url: this.url, title: this.title, active: true }]
+          if (info.active) return current
+          const all = [...current, ...this.otherTabs.map((tab, i) => ({ id: 20 + i, ...tab, active: false }))]
+          // Match patterns as the extension uses them: `https://<host>/*`.
+          const hosts = info.url?.map((pattern) => /^https:\/\/([^/]+)\/\*$/.exec(pattern)?.[1])
+          // Like Chrome, a tab that doesn't match is not reported at all: no URL or title of it.
+          return hosts ? all.filter((tab) => hosts.includes(new URL(tab.url).hostname)) : all
+        },
         onActivated: listeners(this.activated),
         onUpdated: listeners(this.updated),
         onReplaced: listeners(this.replaced),
@@ -222,6 +246,7 @@ export class FakeNotionTab {
     this.sent.push({ url, headers: init.headers as Record<string, string>, body: JSON.parse(init.body as string) })
     const endpoint = url.split('/api/v3/')[1]
     this.counts[endpoint] = (this.counts[endpoint] ?? 0) + 1
+    await this.held[endpoint]?.shift()
     if (this.limitAt?.endpoint === endpoint && this.limitAt.nth === this.counts[endpoint]) {
       const body = { isNotionError: true, name: 'RateLimitedError', message: 'Rate limited' }
       return new Response(JSON.stringify(body), { status: this.limitAt.status })
