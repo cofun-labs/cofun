@@ -1,13 +1,14 @@
 /* The Cofun look: blue has one meaning, the brand and the one action to take now (the mark, the
-   user's question, the primary action, the selected session); everything else is neutral. System
-   fonts only: the extension contacts no host for fonts (see PRIVACY.md). */
+   user's question, the primary action, the selected session); everything else is neutral grey on
+   a white page (near-black in dark mode). System fonts only: the extension contacts no host for
+   fonts (see PRIVACY.md). */
 :root {
-  --bg: #fbfcfe;
-  --fg: #14213a;
-  --muted: #5d6b85;
-  --border: #e3e5e9;
+  --bg: #ffffff;
+  --fg: #1d2330;
+  --muted: #667085;
+  --border: #e4e7ec;
   /* Quiet surfaces: secondary buttons, hover, the search field. */
-  --tint: #f0f1f4;
+  --tint: #f2f4f7;
   /* The selected row: the one tinted surface. */
   --selected: #eaf3fd;
   /* The mark, icons, and outlines. */
@@ -20,17 +21,17 @@
   --ok: #1f8a5b;
   --error: #c4352f;
   --error-bg: #fdecea;
-  --shadow: rgb(20 33 58 / 0.08);
+  --shadow: rgb(16 24 40 / 0.08);
   color-scheme: light dark;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #0f1622;
-    --fg: #e8eef8;
-    --muted: #93a1b8;
-    --border: #2a303b;
-    --tint: #1d222b;
+    --bg: #16181d;
+    --fg: #e8eaee;
+    --muted: #98a0ad;
+    --border: #2b2f36;
+    --tint: #20232a;
     --selected: #17283f;
     --accent: #4a9eea;
     --accent-text: #4a9eea;
@@ -38,7 +39,7 @@
     --ok: #4cc38a;
     --error: #f0766b;
     --error-bg: #3a1d1f;
-    --shadow: rgb(0 0 0 / 0.3);
+    --shadow: rgb(0 0 0 / 0.32);
   }
 }
 
