@@ -1,22 +1,39 @@
 // Saved sessions, kept on this device in IndexedDB. They never go to the worker.
-import type { HistoryMessage } from './agent'
+//
+// What is read back is parsed, never taken on trust: an earlier version may have saved a session in
+// another form. One that doesn't parse is unreadable. It is listed as such, so it can be deleted,
+// and it is never opened: nothing of it reaches the chat or the model.
+import { HistoryMessage } from './agent'
+import { z } from './zod'
 
 /** What the session list shows; the conversation itself is loaded only when a session opens. */
-export interface SessionInfo {
-  id: string
+const SessionInfo = z.object({
+  id: z.string(),
   /** The short title the model wrote after the first reply; until then, the first question (see `titleFor`). */
-  title: string
+  title: z.string(),
   /** `title` is the model's; it is written once, and saving the session again keeps it. */
-  titledByModel?: true
+  titledByModel: z.literal(true).optional(),
   /** The Notion page open when the session started, if there was one. */
-  page?: { title: string; url: string }
-  createdAt: number
-  updatedAt: number
-}
+  page: z.object({ title: z.string(), url: z.string() }).optional(),
+  createdAt: z.number(),
+  updatedAt: z.number(),
+})
+export type SessionInfo = z.infer<typeof SessionInfo>
+
+/** A session's conversation, as the second store keeps it. */
+const StoredMessages = z.object({ messages: z.array(HistoryMessage) })
 
 export interface Session extends SessionInfo {
   messages: HistoryMessage[]
 }
+
+/** A saved session whose details don't parse: all the list can do with it is delete it. */
+interface UnreadableSession {
+  id: string
+  unreadable: true
+}
+
+export type ListedSession = SessionInfo | UnreadableSession
 
 // One database per account, so another account signed in on this browser never sees these sessions.
 const DB_PREFIX = 'notion-copilot-sessions-'
@@ -46,13 +63,15 @@ export class SessionStore {
     let failure: unknown
     try {
       await this.run('readwrite', (infos, all) => {
-        const stored = infos.get(info.id) as IDBRequest<SessionInfo | undefined>
+        const stored: IDBRequest<unknown> = infos.get(info.id)
         stored.onsuccess = () => {
           try {
-            // A session that is gone (deleted elsewhere) has nothing to overwrite.
-            if (stored.result && stored.result.updatedAt !== loaded) saved = { ...info, id: crypto.randomUUID() }
-            const { titledByModel, title } = stored.result ?? {}
-            if (titledByModel === true && typeof title === 'string') saved = { ...saved, title, titledByModel: true }
+            // A session that is gone (deleted elsewhere) has nothing to overwrite; one that can't be
+            // read is not overwritten either, since it can't be told apart from another panel's.
+            const prior = stored.result === undefined ? undefined : SessionInfo.safeParse(stored.result).data
+            if (stored.result !== undefined && (!prior || prior.updatedAt !== loaded))
+              saved = { ...info, id: crypto.randomUUID() }
+            if (prior?.titledByModel) saved = { ...saved, title: prior.title, titledByModel: true }
             infos.put(saved)
             all.put({ id: saved.id, messages })
           } catch (err) {
@@ -69,12 +88,20 @@ export class SessionStore {
     return saved
   }
 
-  async get(id: string): Promise<Session | undefined> {
-    return this.run('readonly', (infos, all) => {
-      const info = infos.get(id) as IDBRequest<SessionInfo | undefined>
-      const stored = all.get(id) as IDBRequest<{ messages: HistoryMessage[] } | undefined>
-      return () => info.result && { ...info.result, messages: stored.result?.messages ?? [] }
+  /** A saved session with its conversation; `'unreadable'` when either doesn't parse, `undefined` when it is gone. */
+  async get(id: string): Promise<Session | 'unreadable' | undefined> {
+    const [info, stored] = await this.run('readonly', (infos, all) => {
+      const info: IDBRequest<unknown> = infos.get(id)
+      const stored: IDBRequest<unknown> = all.get(id)
+      return () => [info.result, stored.result]
     })
+    if (info === undefined) return undefined
+    const details = SessionInfo.safeParse(info)
+    // Both stores are written in one transaction, so a session has its conversation; without one it is empty.
+    const conversation =
+      stored === undefined ? { success: true, data: { messages: [] } } : StoredMessages.safeParse(stored)
+    if (!details.success || !conversation.success) return 'unreadable'
+    return { ...details.data, messages: conversation.data.messages }
   }
 
   /**
@@ -85,11 +112,11 @@ export class SessionStore {
   async retitle(id: string, title: string): Promise<boolean> {
     let done = false
     await this.run('readwrite', (infos) => {
-      // Read back from storage: only checked for what this needs, and written back as it was.
       const stored: IDBRequest<unknown> = infos.get(id)
       stored.onsuccess = () => {
-        const record = stored.result
-        if (typeof record !== 'object' || record === null || ('titledByModel' in record && record.titledByModel)) return
+        // A session that can't be read is left as it is.
+        const record = SessionInfo.safeParse(stored.result).data
+        if (!record || record.titledByModel) return
         infos.put({ ...record, title, titledByModel: true })
         done = true
       }
@@ -106,13 +133,23 @@ export class SessionStore {
     })
   }
 
-  /** All saved sessions, most recently used first. */
-  async list(): Promise<SessionInfo[]> {
-    const all = await this.run('readonly', (infos) => {
-      const req = infos.getAll() as IDBRequest<SessionInfo[]>
-      return () => req.result
+  /** All saved sessions, most recently used first, and after them the ones that can't be read. */
+  async list(): Promise<ListedSession[]> {
+    const [keys, records] = await this.run('readonly', (infos) => {
+      // Both in key order, so the n-th record is the n-th key's.
+      const keys = infos.getAllKeys()
+      const records: IDBRequest<unknown[]> = infos.getAll()
+      return () => [keys.result, records.result]
     })
-    return all.sort((a, b) => b.updatedAt - a.updatedAt)
+    const readable: SessionInfo[] = []
+    const unreadable: UnreadableSession[] = []
+    records.forEach((record, i) => {
+      const parsed = SessionInfo.safeParse(record)
+      if (parsed.success) readable.push(parsed.data)
+      // Every version gave sessions string ids; a record under any other key is not one of ours.
+      else if (typeof keys[i] === 'string') unreadable.push({ id: keys[i], unreadable: true })
+    })
+    return [...readable.sort((a, b) => b.updatedAt - a.updatedAt), ...unreadable]
   }
 
   private open(): Promise<IDBDatabase> {
@@ -174,8 +211,8 @@ export function titleFor(messages: HistoryMessage[]): string {
   return chars.length > TITLE_LENGTH ? `${chars.slice(0, TITLE_LENGTH - 1).join('')}…` : chars.join('')
 }
 
-/** Sessions whose title contains `query`, ignoring case. */
-export function filterSessions<T extends SessionInfo>(sessions: T[], query: string): T[] {
+/** Sessions whose title contains `query`, ignoring case; one that can't be read has no title to match. */
+export function filterSessions(sessions: ListedSession[], query: string): ListedSession[] {
   const q = query.trim().toLowerCase()
-  return q ? sessions.filter((s) => s.title.toLowerCase().includes(q)) : sessions
+  return q ? sessions.filter((s) => 'title' in s && s.title.toLowerCase().includes(q)) : sessions
 }

@@ -21,7 +21,7 @@ import { Markdown } from './Markdown'
 import { useMenu } from './menu'
 import { HOSTED, ModelMenu } from './Model'
 import { ComposerPages, SentPages } from './Pages'
-import { Sessions } from './Sessions'
+import { Sessions, type OpenResult } from './Sessions'
 import { Settings } from './Settings'
 import { ToolCall, type ShownTool } from './ToolCall'
 
@@ -529,12 +529,12 @@ export function Chat({ userId }: { userId: string }) {
     setView('chat')
   }
 
-  /** Opens a saved session; false if it no longer exists. */
-  async function open(id: string): Promise<boolean> {
+  /** Opens a saved session, unless it no longer exists or can't be read. */
+  async function open(id: string): Promise<OpenResult> {
     // The open session is already on screen, maybe with a reply still coming in.
     if (id === current?.id) {
       setView('chat')
-      return true
+      return 'opened'
     }
     // Stop the reply now, not once the session has loaded: it must not finish in the meantime.
     declineAll()
@@ -545,10 +545,12 @@ export function Chat({ userId }: { userId: string }) {
     await saving.current
     const session = await store.get(id)
     // The user started a new chat, opened another session, or asked something meanwhile; that wins.
-    if (chatId.current !== chat || opening.current !== token) return true
-    if (!session) return false
+    if (chatId.current !== chat || opening.current !== token) return 'opened'
+    if (!session) return 'gone'
+    // Nothing of it reaches the chat or the agent.
+    if (session === 'unreadable') return 'unreadable'
     switchTo(session)
-    return true
+    return 'opened'
   }
 
   function onSubmit(e: FormEvent) {

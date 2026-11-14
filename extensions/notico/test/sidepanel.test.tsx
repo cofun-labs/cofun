@@ -1165,6 +1165,99 @@ describe('sessions', () => {
   })
 })
 
+describe('a saved session that can no longer be read', () => {
+  /** Writes a record into the panel's saved sessions as it is, as an earlier version might have left it. */
+  async function writeSaved(store: 'sessions' | 'messages', record: object) {
+    const db = await new Promise<IDBDatabase>((resolve, reject) => {
+      const req = indexedDB.open('notion-copilot-sessions-user_alice')
+      req.onsuccess = () => resolve(req.result)
+      req.onerror = () => reject(req.error)
+    })
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction(store, 'readwrite')
+      tx.objectStore(store).put(record)
+      tx.oncomplete = () => resolve()
+      tx.onerror = () => reject(tx.error)
+    })
+    db.close()
+  }
+
+  /** Asks two questions, each in a session of its own; the second stays open. */
+  async function twoSessions(browser: FakeBrowser, user: UserEvent) {
+    browser.ai.script.push({ reply: 'Three milestones.' }, { reply: 'Alice.' })
+    await ask(user, 'What is on the roadmap?')
+    await screen.findByText('Three milestones.')
+    await answered()
+    vi.setSystemTime(new Date(START.getTime() + 60_000))
+    await user.click(screen.getByRole('button', { name: 'New chat' }))
+    await ask(user, 'Who owns the launch?')
+    await screen.findByText('Alice.')
+    await answered()
+  }
+
+  it('[UC-SESSION-001-S17] the others are listed as usual, and the unreadable one can be deleted but not opened', async () => {
+    const { browser, user } = await openPanel()
+    await twoSessions(browser, user)
+    await writeSaved('sessions', { id: 'old', title: { text: 'Old chat' } })
+
+    await user.click(screen.getByRole('button', { name: 'Sessions' }))
+    const list = sessionList()
+    await list.findByRole('button', { name: /What is on the roadmap\?/ })
+    expect(list.getByRole('button', { name: /Who owns the launch\?/ })).toBeVisible()
+    const row = list.getByText('Unreadable session').closest('li')!
+    expect(within(row).getByText(/can't be opened/)).toBeVisible()
+    // Its only button deletes it.
+    expect(
+      within(row)
+        .getAllByRole('button')
+        .map((b) => b.getAttribute('aria-label')),
+    ).toEqual(['Delete session'])
+
+    await user.click(within(row).getByRole('button', { name: 'Delete session' }))
+    await user.click(within(row).getByRole('button', { name: 'Delete?' }))
+    await waitFor(() => expect(list.queryByText('Unreadable session')).not.toBeInTheDocument())
+    expect(list.getAllByRole('button', { name: /Fixture page/ })).toHaveLength(2)
+  })
+
+  it("[UC-SESSION-001-S18] a session whose conversation can't be read is not opened, nothing goes to the AI, and it can be deleted", async () => {
+    const { browser, user } = await openPanel()
+    await twoSessions(browser, user)
+    // The first session's conversation, as this version can't read it.
+    const first = await new Promise<IDBValidKey>((resolve, reject) => {
+      const req = indexedDB.open('notion-copilot-sessions-user_alice')
+      req.onsuccess = () => {
+        const cursor = req.result.transaction('sessions').objectStore('sessions').openCursor()
+        cursor.onsuccess = () => {
+          const at = cursor.result!
+          if (!JSON.stringify(at.value).includes('What is on the roadmap?')) return at.continue()
+          req.result.close()
+          resolve(at.key)
+        }
+      }
+      req.onerror = () => reject(req.error)
+    })
+    await writeSaved('messages', { id: first, messages: [{ role: 'system', text: 'Be brief' }] })
+    const calls = browser.ai.calls.length
+
+    await user.click(screen.getByRole('button', { name: 'Sessions' }))
+    await user.click(await sessionList().findByRole('button', { name: /What is on the roadmap\?/ }))
+
+    expect(await sessionList().findByRole('alert')).toHaveTextContent(/can't be opened/)
+    // The list stays open over the chat that was open, and the session can no longer be opened from it.
+    expect(sessionList().queryByRole('button', { name: /What is on the roadmap\?/ })).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Close' }))
+    expect(conversation().getByText('Alice.')).toBeVisible()
+    expect(conversation().queryByText('Three milestones.')).not.toBeInTheDocument()
+    expect(browser.ai.calls).toHaveLength(calls)
+
+    await user.click(screen.getByRole('button', { name: 'Sessions' }))
+    const row = (await sessionList().findByText('What is on the roadmap?')).closest('li')!
+    await user.click(within(row).getByRole('button', { name: 'Delete session' }))
+    await user.click(within(row).getByRole('button', { name: 'Delete?' }))
+    await waitFor(() => expect(sessionList().queryByText('What is on the roadmap?')).not.toBeInTheDocument())
+  })
+})
+
 describe('signing in and out', () => {
   it('[UC-AUTH-001-S04] signing out from the side panel returns it to the sign-in screen', async () => {
     const { browser, user } = await openPanel()
