@@ -154,9 +154,9 @@ const usedOnHosted = (calls: number): QuestionDetails => ({
 async function ask(agent: CopilotAgent, text: string, confirm?: ConfirmTool, extras?: QuestionExtras) {
   const updates: AgentUpdate[] = []
   const asked = await agent.ask(text, (u) => updates.push(u), confirm, extras)
-  const { tokens, model, cost, conversation, ...result } = asked
+  const { tokens, model, cost, rounds, conversation, ...result } = asked
   const reply = updates.map((u) => (u.type === 'text' ? u.delta : '')).join('')
-  return { result, used: { tokens, model, cost }, conversation, updates, reply }
+  return { result, used: { tokens, model, cost }, rounds, conversation, updates, reply }
 }
 
 /** A stand-in for a tool that needs the user's OK each time, like moving a page to the trash; records each run. */
@@ -1500,7 +1500,7 @@ describe('extension agent against the worker', () => {
       if (cancel === 'stop') agent.stop()
       else void agent.reset()
       release()
-      expect(await pending).toEqual({ status: 'stopped' })
+      expect(await pending).toEqual({ status: 'stopped', rounds: 0 })
     }
     // No model call was made, and nothing was left in either conversation.
     expect(ai.calls).toHaveLength(0)
@@ -1566,7 +1566,7 @@ describe('extension agent against the worker', () => {
     void agent.reset()
     expect((await ask(agent, 'B')).result).toEqual({ status: 'done' })
     release()
-    expect(await a).toEqual({ status: 'stopped' })
+    expect(await a).toEqual({ status: 'stopped', rounds: 0 })
     await ask(agent, 'C')
     expect(sentMessages(1).map((m) => m.content)).toEqual(['You are Notico.', 'B', '你好 来自 worker ', 'C'])
   })

@@ -210,6 +210,8 @@ export type AskResult = (
   | { status: 'error'; message: string; code?: string }
 ) &
   QuestionDetails & {
+    /** How many times the model was called for the question: 0 when it never got that far. */
+    rounds: number
     /**
      * The conversation the question was asked in, as it stands now that the question is part of it,
      * to save: still that conversation when reset() started another one meanwhile. Not set when the
