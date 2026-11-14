@@ -1906,6 +1906,16 @@ button.secondary:focus-visible,
   font-weight: 700;
 }
 
+/* Cofun's mark, white on its coral, as the brand draws it. */
+.provider-mark-cofun {
+  background: #f25c54;
+}
+
+.provider-mark-cofun svg {
+  width: 16px;
+  height: 16px;
+}
+
 .provider-mark-o {
   background: #6b5bd6;
 }
