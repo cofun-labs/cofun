@@ -509,6 +509,63 @@ describe('extension agent against the worker', () => {
     expect(ws.records.get(PAGE)!.content).toEqual([])
   })
 
+  it('[UC-NOTICO-NOTION-010-S06] the user is asked before every trash, also after agreeing to one', async () => {
+    const [A, B, C] = [
+      'b0b0b0b0-0000-4000-8000-00000000000a',
+      'b0b0b0b0-0000-4000-8000-00000000000b',
+      'b0b0b0b0-0000-4000-8000-00000000000c',
+    ]
+    const child = (id: string, title: string) => ({
+      id,
+      type: 'page',
+      properties: { title: [[title]] },
+      parent_id: PAGE,
+      parent_table: 'block',
+    })
+    const ws = new FakeWorkspace(
+      [
+        {
+          id: PAGE,
+          type: 'page',
+          properties: { title: [['Fixture page']] },
+          content: [A, B, C],
+          parent_id: SPACE,
+          parent_table: 'space',
+        },
+        child(A, 'Draft A'),
+        child(B, 'Draft B'),
+        child(C, 'Draft C'),
+      ],
+      SPACE,
+    )
+    const tab = new FakeNotionTab(PAGE_URL)
+    tab.workspace = ws
+    tab.install()
+    const trash = (id: string) => ({ toolCalls: [{ name: 'trash_page', arguments: JSON.stringify({ pages: [id] }) }] })
+    const agent = makeAgent({ tools: [trashPage] })
+    const asked: string[] = []
+    // Yes to the first page, no to the second, and yes again in the next question.
+    const answers = [true, false, true]
+    const confirm = async (call: ToolCallRequest) => {
+      asked.push(String(call.preview))
+      return answers.shift()!
+    }
+
+    ai.script = [trash(A), trash(B), { reply: 'Trashed A, kept B.' }]
+    const first = await ask(agent, 'Delete the drafts', confirm)
+    expect(toolStatuses(first.updates)).toEqual(['done', 'declined'])
+    ai.script = [trash(C), { reply: 'Trashed C.' }]
+    const second = await ask(agent, 'And Draft C', confirm)
+    expect(toolStatuses(second.updates)).toEqual(['done'])
+
+    expect(asked).toEqual([
+      expect.stringContaining('"Draft A"'),
+      expect.stringContaining('"Draft B"'),
+      expect.stringContaining('"Draft C"'),
+    ])
+    expect([A, B, C].map((id) => ws.records.get(id)!.alive)).toEqual([false, true, false])
+  })
+
   it('[UC-NOTICO-NOTION-001-S08] the question stops when Notion turns a read away, and nothing more is sent', async () => {
     const tab = new FakeNotionTab(PAGE_URL).limit('loadPageChunk', 1).install()
     // The model would read again, and then try another way.
@@ -669,7 +726,7 @@ describe('extension agent against the worker', () => {
     expect(ws.transactions).toHaveLength(1)
   })
 
-  it('[UC-NOTICO-NOTION-010-S02] a trash preview Notion turns away ends the question before the user is asked', async () => {
+  it('a trash preview Notion turns away ends the question before the user is asked', async () => {
     const OLD = 'b0b0b0b0-0000-4000-8000-000000000001'
     const ws = new FakeWorkspace(
       [
@@ -929,7 +986,7 @@ describe('extension agent against the worker', () => {
     expect(sentMessages(1).filter((m) => m.role === 'tool')).toHaveLength(2)
   })
 
-  it('the conversation carries over to the next question', async () => {
+  it('[UC-NOTICO-SESSION-001-S19] the conversation carries over to the next question', async () => {
     const agent = makeAgent()
     await ask(agent, 'first')
     await ask(agent, 'second')

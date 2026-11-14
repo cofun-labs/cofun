@@ -9,7 +9,7 @@ Purchased credits last one year from the purchase. They sit beside the weekly fr
 Key constraints:
 
 - A pack's credits are added only to the account that started its checkout, and only once the payment provider reports that the payment went through.
-- One payment adds its credits once, however many times it is reported.
+- One payment adds its credits once, however many times it is reported, and never after it was refunded or disputed, whichever report arrives first.
 - A user gets the credits of the pack they chose, whatever currency they paid in and whatever tax was added; a payment for anything else adds no credits.
 - Payment details are entered on the payment provider's page only, and never reach the products or the service.
 
@@ -30,6 +30,7 @@ Key constraints:
 | UC-COFUN-BILLING-001-S09 | P1 | ✅ | Given a user who asks for a pack that is not on offer; when they try to buy it; then they are refused and no payment page is made. |
 | UC-COFUN-BILLING-001-S10 | P1 | ✅ | Given a payment for something other than the pack its checkout was made for; when it goes through; then no credits are added. |
 | UC-COFUN-BILLING-001-S11 | P1 | ✅ | Given a user whose purchase paid back what they had overspent; when the purchase is refunded or disputed; then they owe that again. |
+| UC-COFUN-BILLING-001-S12 | P2 | ✅ | Given a payment whose refund is reported before the payment itself; when the report of the payment arrives; then no credits are added. |
 
 ### ai-e2e
 

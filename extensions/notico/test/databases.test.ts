@@ -262,7 +262,7 @@ describe('UC-NOTICO-NOTION-012 create and change databases', () => {
     expect(updateDatabaseSchema.touched({}, String(result))).toEqual({ changed: [hex(DB)] })
   })
 
-  it('[UC-NOTICO-NOTION-012-S02] changes the open database without asking, in few Notion requests', async () => {
+  it('[UC-NOTICO-NOTION-012-S02] adds a property to the open database without asking the user first', async () => {
     const ws = workspace()
     const tab = open(ws, DB_URL)
     expect(updateDatabaseSchema.needsConfirmation).toBeUndefined()
