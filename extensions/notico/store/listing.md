@@ -67,4 +67,4 @@ This describes version 0.1.0, the one in the store. The next version adds credit
 | Small promo tile | [small-promo-tile.png](images/small-promo-tile.png) | 440×280 |
 | Marquee promo tile | [marquee-promo-tile.png](images/marquee-promo-tile.png) | 1400×560 |
 
-The screenshots show the real side panel next to throwaway pages, made with `pnpm e2e`: the Notion page and the side panel are captured separately and set side by side, so they carry no browser frame. All images are PNG without transparency, as the store requires.
+The screenshots show the real side panel next to throwaway pages, made with `pnpm e2e`: the Notion page and the side panel are captured separately and set side by side, so they carry no browser frame. The screenshots and promo tiles are PNG without transparency, as the store requires for them.

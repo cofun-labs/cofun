@@ -70,10 +70,11 @@ All three certifications are checked: no selling or transfer of user data to thi
 
 ## For the next version
 
-This page describes version 0.1.0, the one in the store. The version after it lets users answer with their own OpenRouter or DeepSeek key, so before it is submitted:
+This page describes version 0.1.0, the one in the store. The version after it lets users answer with their own OpenRouter or DeepSeek key, and buy credit packs through Stripe, so before it is submitted:
 
 - The **storage** justification also says that the user's own model keys, and the model chosen with each, are kept there.
-- The data usage stays as it is: a user's own key is authentication information, and the conversation and the Notion content it holds go to the model service the user chose, which is personal communications and website content again. The privacy policy already says so.
+- **Financial and payment information** becomes Yes: the worker keeps each purchase, by Clerk user id, with its Stripe payment reference and whether it was refunded or disputed (see `PRIVACY.md`). The card details go to Stripe's Checkout page, never to the extension or the worker.
+- The rest of the data usage stays as it is: a user's own key is authentication information, and the conversation and the Notion content it holds go to the model service the user chose, which is personal communications and website content again. The privacy policy already says so.
 - The extension asks for no new permission: OpenRouter and DeepSeek are reached under the content security policy, not through host permissions.
 
 ## Privacy policy URL
