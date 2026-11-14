@@ -257,6 +257,27 @@ describe('saved sessions', () => {
     upgrade.close()
   })
 
+  it("deletes the account's database from 0.1.0 and leaves other accounts' alone", async () => {
+    const create = (name: string) =>
+      new Promise<void>((resolve, reject) => {
+        const req = indexedDB.open(name, 1)
+        req.onupgradeneeded = () => req.result.createObjectStore('sessions', { keyPath: 'id' })
+        req.onsuccess = () => {
+          req.result.close()
+          resolve()
+        }
+        req.onerror = () => reject(req.error)
+      })
+    await create('notion-copilot-sessions-user_old')
+    await create('notion-copilot-sessions-user_other')
+    const store = new SessionStore('user_old')
+    expect(await store.list()).toEqual([])
+    const names = (await indexedDB.databases()).map((d) => d.name)
+    expect(names).not.toContain('notion-copilot-sessions-user_old')
+    expect(names).toContain('notion-copilot-sessions-user_other')
+    expect(names).toContain('notico-sessions-user_old')
+  })
+
   it('a session whose details do not parse is listed after the others as unreadable, and can only be deleted', async () => {
     await store.save(session('a', 'Summarize this page', 1000, ROADMAP))
     await store.save(session('b', 'Draft an agenda', 2000))

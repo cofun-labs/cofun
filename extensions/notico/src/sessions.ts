@@ -40,6 +40,9 @@ export type ListedSession = SessionInfo | UnreadableSession
 
 // One database per account, so another account signed in on this browser never sees these sessions.
 const DB_PREFIX = 'notico-sessions-'
+// Where 0.1.0 kept them. Its sessions are not carried over: the database is deleted, so what the
+// panel can no longer show or delete doesn't stay behind. Remove once 0.1.0 users have updated.
+const OLD_DB_PREFIX = 'notion-copilot-sessions-'
 // Two stores, so the list never loads conversations: they grow with every tool result.
 const INFO = 'sessions'
 const MESSAGES = 'messages'
@@ -48,8 +51,11 @@ const TITLE_LENGTH = 100
 /** The saved sessions of one signed-in user. */
 export class SessionStore {
   private db?: Promise<IDBDatabase>
+  private readonly oldDeleted: Promise<void>
 
-  constructor(private readonly userId: string) {}
+  constructor(private readonly userId: string) {
+    this.oldDeleted = deleteOldDatabase(userId)
+  }
 
   /**
    * Saves a session and resolves with its details as stored. `loaded` is the `updatedAt` the caller
@@ -190,6 +196,7 @@ export class SessionStore {
     mode: IDBTransactionMode,
     fn: (info: IDBObjectStore, messages: IDBObjectStore) => () => T,
   ): Promise<T> {
+    await this.oldDeleted
     const tx = (await this.open()).transaction([INFO, MESSAGES], mode)
     let result: () => T
     try {
@@ -219,4 +226,12 @@ export function titleFor(messages: HistoryMessage[]): string {
 export function filterSessions(sessions: ListedSession[], query: string): ListedSession[] {
   const q = query.trim().toLowerCase()
   return q ? sessions.filter((s) => 'title' in s && s.title.toLowerCase().includes(q)) : sessions
+}
+
+/** Deletes the account's database from 0.1.0, if there is one. Never fails, and doesn't wait if blocked. */
+function deleteOldDatabase(userId: string): Promise<void> {
+  return new Promise((resolve) => {
+    const req = indexedDB.deleteDatabase(OLD_DB_PREFIX + userId)
+    req.onsuccess = req.onerror = req.onblocked = () => resolve()
+  })
 }
