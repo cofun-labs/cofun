@@ -10,7 +10,7 @@ Notico is an AI assistant in Chrome's side panel that reads and edits the user's
 
 ## Permission justifications
 
-One heading for each permission in the manifest, and one for its host permissions together. `test/manifest.test.ts` checks that these headings match the manifest.
+One for each permission in the manifest, and one for its host permissions together.
 
 ### sidePanel
 
