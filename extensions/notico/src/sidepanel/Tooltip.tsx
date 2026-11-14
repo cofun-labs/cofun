@@ -21,19 +21,28 @@ export function Tooltips() {
     let current: HTMLElement | undefined
     let timer: number | undefined
     let warmUntil = 0
-    // A tip that changes while it shows (Copy reply, then Copied) follows the control.
-    const watch = new MutationObserver(() => current && show(current))
+    // The text shown, if the tip shows.
+    let shown: string | undefined
+    // A tip that changes while it shows (Copy reply, then Copied) follows the control, and one whose
+    // control is gone hides: a removed control fires no focusout or pointer event.
+    const watch = new MutationObserver(() => {
+      if (!current) return
+      if (!current.isConnected) hide()
+      else if (shown !== undefined && current.dataset.tip !== shown) show(current)
+    })
 
     const show = (el: HTMLElement) => {
       const text = el.dataset.tip
       if (!text || !el.isConnected) return hide()
+      shown = text
       setTip({ text, anchor: el.getBoundingClientRect() })
     }
     const hide = () => {
       clearTimeout(timer)
       watch.disconnect()
-      if (current) warmUntil = Date.now() + WARM
+      if (shown !== undefined) warmUntil = Date.now() + WARM
       current = undefined
+      shown = undefined
       setTip(undefined)
     }
     const follow = (el: HTMLElement | undefined, now: boolean) => {
@@ -41,9 +50,10 @@ export function Tooltips() {
       if (!el) return hide()
       clearTimeout(timer)
       watch.disconnect()
+      shown = undefined
       setTip(undefined)
       current = el
-      watch.observe(el, { attributeFilter: ['data-tip'] })
+      watch.observe(document.body, { subtree: true, childList: true, attributeFilter: ['data-tip'] })
       if (now || Date.now() < warmUntil) show(el)
       else timer = window.setTimeout(() => show(el), DELAY)
     }
@@ -51,6 +61,14 @@ export function Tooltips() {
       target instanceof Element ? (target.closest<HTMLElement>('[data-tip]') ?? undefined) : undefined
 
     const onPointerOver = (e: PointerEvent) => follow(tipped(e.target), false)
+    // Out of the panel altogether (onto the page next to it): no pointerover follows inside it.
+    const onPointerOut = (e: PointerEvent) => e.relatedTarget === null && hide()
+    // Only a scroll that moves the control: the chat scrolling itself as a reply streams in leaves
+    // the composer's buttons, and their tips, where they are.
+    const onScroll = (e: Event) => {
+      const scrolled = e.target === document ? document.documentElement : e.target
+      if (current && scrolled instanceof Node && scrolled.contains(current)) hide()
+    }
     const onFocusIn = (e: FocusEvent) => {
       const el = tipped(e.target)
       // Keyboard focus only: a click also focuses the control, and its tip would linger.
@@ -59,20 +77,22 @@ export function Tooltips() {
     const onKeyDown = (e: KeyboardEvent) => e.key === 'Escape' && hide()
     const options = { capture: true }
     document.addEventListener('pointerover', onPointerOver, options)
+    document.addEventListener('pointerout', onPointerOut, options)
     document.addEventListener('focusin', onFocusIn, options)
     document.addEventListener('focusout', hide, options)
     document.addEventListener('pointerdown', hide, options)
     document.addEventListener('keydown', onKeyDown, options)
-    document.addEventListener('scroll', hide, options)
+    document.addEventListener('scroll', onScroll, options)
     window.addEventListener('blur', hide)
     return () => {
       hide()
       document.removeEventListener('pointerover', onPointerOver, options)
+      document.removeEventListener('pointerout', onPointerOut, options)
       document.removeEventListener('focusin', onFocusIn, options)
       document.removeEventListener('focusout', hide, options)
       document.removeEventListener('pointerdown', hide, options)
       document.removeEventListener('keydown', onKeyDown, options)
-      document.removeEventListener('scroll', hide, options)
+      document.removeEventListener('scroll', onScroll, options)
       window.removeEventListener('blur', hide)
     }
   }, [])

@@ -2,7 +2,7 @@
 // only type, click, and read what is on screen. Besides the screen they look at the edges alone:
 // what the model was sent, and what Notion was asked to do.
 import '@testing-library/jest-dom/vitest'
-import { act, screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent, { type UserEvent } from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { FakeNotionTab, FakeWorkspace, PAGE, PAGE_URL, SPACE, pageTab } from './notion-tab'
@@ -1325,6 +1325,15 @@ describe('tips', () => {
     await user.tab()
     expect(screen.getByRole('tooltip', { hidden: true })).toHaveTextContent('New chat')
     await user.keyboard('{Escape}')
+    expect(screen.queryByRole('tooltip', { hidden: true })).not.toBeInTheDocument()
+  })
+
+  it('a tip hides when the pointer leaves the panel', async () => {
+    const { user } = await openPanel()
+    const chats = screen.getByRole('button', { name: 'Chats' })
+    while (document.activeElement !== chats) await user.tab()
+    expect(screen.getByRole('tooltip', { hidden: true })).toHaveTextContent('Chats')
+    fireEvent.pointerOut(chats, { relatedTarget: null })
     expect(screen.queryByRole('tooltip', { hidden: true })).not.toBeInTheDocument()
   })
 })
