@@ -655,17 +655,107 @@ describe('sessions', () => {
     expect(browser.sentToModel().map((m) => m.role)).toEqual(['system', 'user'])
   })
 
-  it('[UC-SESSION-001-S13] the header shows the open session\'s title, or "New chat" before its first question', async () => {
+  it('[UC-SESSION-001-S14] after its first reply, a session is titled by the model, found by that title, and keeps it', async () => {
+    const { browser, user } = await openPanel()
+    browser.titles.failWith = undefined
+    // Quotes and a full stop the model adds anyway are dropped.
+    browser.titles.script.push({ reply: '"Roadmap milestones overview."' })
+    browser.ai.script.push({ reply: 'Three milestones.' }, { reply: 'Alice.' })
+    await ask(user, 'What is on the roadmap?')
+    await screen.findByText('Three milestones.')
+    await answered()
+
+    await user.click(screen.getByRole('button', { name: 'Sessions' }))
+    const rows = () => screen.queryAllByRole('button', { name: /Fixture page/ }).map((b) => b.textContent)
+    await waitFor(() => expect(rows()).toEqual([expect.stringMatching(/^Roadmap milestones overviewFixture page/)]))
+    // One request, without tools, with the first question and the start of the reply; it went
+    // through the worker, which charges it like any other.
+    expect(browser.titles.calls).toHaveLength(1)
+    const { inputs } = browser.titles.calls[0]
+    expect(inputs.tools).toBeUndefined()
+    expect(inputs.messages).toEqual([
+      { role: 'system', content: expect.stringContaining('title') },
+      {
+        role: 'user',
+        content: expect.stringMatching(/What is on the roadmap\?[\s\S]*Three milestones\./),
+      },
+    ])
+    expect(browser.sentToWorker.filter((sent) => sent.includes('/v1/chat/completions'))).toHaveLength(2)
+
+    // The list search matches the title, not the question it replaced.
+    await user.type(screen.getByRole('searchbox', { name: 'Search sessions' }), 'MILESTONES')
+    expect(rows()).toHaveLength(1)
+    await user.clear(screen.getByRole('searchbox'))
+    await user.type(screen.getByRole('searchbox'), 'What is on')
+    expect(rows()).toEqual([])
+    await user.click(screen.getByRole('button', { name: 'Close' }))
+
+    // A follow-up does not ask again, and the title stays, also in a panel opened later.
+    browser.titles.script.push({ reply: 'Launch owner' })
+    await ask(user, 'Who owns the launch?')
+    await screen.findByText('Alice.')
+    await answered()
+    await browser.openPanel()
+    await openSession(user, /^Roadmap milestones overview/)
+    browser.ai.script.push({ reply: 'Next week.' })
+    await ask(user, 'When is it?')
+    await screen.findByText('Next week.')
+    await answered()
+    await user.click(screen.getByRole('button', { name: 'Sessions' }))
+    await waitFor(() => expect(rows()).toEqual([expect.stringMatching(/^Roadmap milestones overviewFixture page/)]))
+    expect(browser.titles.calls).toHaveLength(1)
+  })
+
+  it('[UC-SESSION-001-S15] a session whose title request fails, or gives no title, keeps its first question, with no error shown', async () => {
+    const { browser, user } = await openPanel()
+    browser.ai.script.push({ reply: 'Three milestones.' }, { reply: 'Alice.' })
+    // The title model fails.
+    await ask(user, 'What is on the roadmap?')
+    await screen.findByText('Three milestones.')
+    await answered()
+    vi.setSystemTime(new Date(START.getTime() + 60_000))
+
+    // It answers with more than a title.
+    browser.titles.failWith = undefined
+    browser.titles.script.push({ reply: 'Here is a title:\n\nLaunch owner' })
+    await user.click(screen.getByRole('button', { name: 'New chat' }))
+    await ask(user, 'Who owns the launch?')
+    await screen.findByText('Alice.')
+    await answered()
+
+    await waitFor(() => expect(browser.titles.calls).toHaveLength(2))
+    await user.click(screen.getByRole('button', { name: 'Sessions' }))
+    const rows = () => screen.queryAllByRole('button', { name: /Fixture page/ }).map((b) => b.textContent)
+    await waitFor(() =>
+      expect(rows()).toEqual([
+        expect.stringMatching(/^Who owns the launch\?Fixture page/),
+        expect.stringMatching(/^What is on the roadmap\?Fixture page/),
+      ]),
+    )
+    await user.click(screen.getByRole('button', { name: 'Close' }))
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    expect(screen.queryByText(/title/i)).not.toBeInTheDocument()
+    // The chat goes on.
+    browser.ai.script.push({ reply: 'Next week.' })
+    await ask(user, 'When is the launch?')
+    expect(await screen.findByText('Next week.')).toBeVisible()
+  })
+
+  it('[UC-SESSION-001-S16] the header shows the open session\'s title, or "New chat" before its first question', async () => {
     const { browser, user } = await openPanel()
     const title = () => screen.getByRole('heading', { level: 1 })
     expect(title()).toHaveTextContent(/^New chat$/)
 
+    browser.titles.failWith = undefined
+    browser.titles.script.push({ reply: 'Roadmap milestones' }, { reply: 'Launch owner' })
     browser.ai.script.push({ reply: 'Three milestones.' }, { reply: 'Alice.' })
     await ask(user, 'What is   on the\nroadmap?')
     // Right away, before the reply, and on one line.
     expect(title()).toHaveTextContent(/^What is on the roadmap\?$/, { normalizeWhitespace: false })
     await screen.findByText('Three milestones.')
     await answered()
+    // Then the title the model wrote.
+    await waitFor(() => expect(title()).toHaveTextContent(/^Roadmap milestones$/))
 
     vi.setSystemTime(new Date(START.getTime() + 60_000))
     await user.click(screen.getByRole('button', { name: 'New chat' }))
@@ -673,11 +763,11 @@ describe('sessions', () => {
     await ask(user, 'Who owns the launch?')
     await screen.findByText('Alice.')
     await answered()
-    expect(title()).toHaveTextContent(/^Who owns the launch\?$/)
+    await waitFor(() => expect(title()).toHaveTextContent(/^Launch owner$/))
 
-    await openSession(user, /^What is on the roadmap\?/)
+    await openSession(user, /^Roadmap milestones/)
     await screen.findByText('Three milestones.')
-    expect(title()).toHaveTextContent(/^What is on the roadmap\?$/)
+    expect(title()).toHaveTextContent(/^Roadmap milestones$/)
   })
 
   it('the session list closes from its Close button, the Sessions button, or Escape, back to the chat', async () => {

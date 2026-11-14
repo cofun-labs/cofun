@@ -85,6 +85,8 @@ interface Current {
   page: Promise<Session['page']>
   /** As this panel loaded or last saved it; not set until the first save. */
   updatedAt?: number
+  /** The model was asked for a title already, by this panel or the one that saved it (see `title`). */
+  titled?: boolean
 }
 
 /** The chat of one signed-in user; mount a new one for another user. */
@@ -108,6 +110,8 @@ export function Chat({ userId }: { userId: string }) {
   const creditReads = useRef(0)
   // Opening the panel starts a new session; it gets an id when its first question is sent.
   const [current, setCurrent] = useState<Current>()
+  // The title the model wrote for the open session, once it has one.
+  const [modelTitle, setModelTitle] = useState<string>()
   const [saved, setSaved] = useState(0)
   // Bumped when another session opens, so updates still arriving for the old one are dropped.
   const chatId = useRef(0)
@@ -345,8 +349,10 @@ export function Chat({ userId }: { userId: string }) {
     }
 
     const before = agent.history().length
+    let answered = false
     try {
       const result = await agent.ask(text, onUpdate, confirm)
+      answered = result.status === 'done'
       const { requests } = result
       if (requests !== undefined) updateReply((m) => ({ ...m, requests }))
       if (result.status === 'stopped') {
@@ -372,6 +378,10 @@ export function Chat({ userId }: { userId: string }) {
         if (messages.length !== before) {
           // One at a time: each save starts from the `updatedAt` the one before it stored.
           saving.current = saving.current.then(() => save(session, messages, id, reply))
+        }
+        if (answered && !session.titled) {
+          session.titled = true
+          void title(session, messages)
         }
       }
     }
@@ -410,6 +420,31 @@ export function Chat({ userId }: { userId: string }) {
     }
   }
 
+  /**
+   * Asks the model for a short title once the session's first reply is in, and gives it to the
+   * session when one comes. Until then, or if none comes, the session keeps its first question as its
+   * title; nothing is shown either way. Never rejects.
+   */
+  async function title(session: Current, messages: HistoryMessage[]) {
+    const chat = chatId.current
+    const written = await agent.title(messages)
+    // On the hosted model the request spent credits; the read after the question was too early for it.
+    void readCredits()
+    if (!written) return
+    // After the save of the reply, which may give the session another id.
+    saving.current = saving.current.then(async () => {
+      try {
+        if (deleted.current.has(session.id)) return
+        if (await store.retitle(session.id, written)) {
+          setSaved((n) => n + 1)
+          if (chatId.current === chat) setModelTitle(written)
+        }
+      } catch (err) {
+        console.error('Could not save the title', err)
+      }
+    })
+  }
+
   /** Switches to a new session, or to a saved one; a reply still coming in is stopped. */
   function switchTo(session?: Session) {
     chatId.current++
@@ -420,12 +455,14 @@ export function Chat({ userId }: { userId: string }) {
     setBusy(false)
     setStopping(false)
     setMessages(session ? toShown(session.messages) : [])
+    setModelTitle(session?.titledByModel ? session.title : undefined)
     setCurrent(
       session && {
         id: session.id,
         createdAt: session.createdAt,
         page: Promise.resolve(session.page),
         updatedAt: session.updatedAt,
+        titled: session.titledByModel,
       },
     )
     setView('chat')
@@ -478,11 +515,13 @@ export function Chat({ userId }: { userId: string }) {
   const settingsOpen = view === 'settings'
   // The chat stays on screen, or mounted, behind the session list and the settings page, out of reach until they close.
   const covered = listOpen || settingsOpen
-  // The session's first question, on one line; the header cuts it to fit.
-  const title = messages
-    .find((m) => m.role === 'user')
-    ?.content.replace(/\s+/g, ' ')
-    .trim()
+  // The model's title, or until it has one the session's first question, on one line; the header cuts it to fit.
+  const headerTitle =
+    modelTitle ??
+    messages
+      .find((m) => m.role === 'user')
+      ?.content.replace(/\s+/g, ' ')
+      .trim()
 
   /** Closes the session list and puts the focus back on the button that opened it. */
   function closeList() {
@@ -492,7 +531,7 @@ export function Chat({ userId }: { userId: string }) {
 
   return (
     <>
-      <Header title={title || <span className="untitled">New chat</span>}>
+      <Header title={headerTitle || <span className="untitled">New chat</span>}>
         <button
           ref={listButtonRef}
           className="icon-button"

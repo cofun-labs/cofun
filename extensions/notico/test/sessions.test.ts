@@ -31,7 +31,7 @@ beforeEach(() => {
 })
 
 describe('saved sessions', () => {
-  it('[UC-SESSION-001-S03] lists sessions most recently used first, titled with their first question', async () => {
+  it('[UC-SESSION-001-S13] lists sessions most recently used first, with their titles', async () => {
     await store.save(session('a', 'Summarize this page', 1000, ROADMAP))
     await store.save(session('b', 'What changed last week?', 3000, NOTES))
     await store.save(session('c', 'Draft an agenda', 2000))
@@ -49,6 +49,28 @@ describe('saved sessions', () => {
     const { messages: _, ...info } = a
     expect((await store.list())[0]).toEqual({ ...info, updatedAt: 4000 })
     expect(await store.get('a')).toEqual({ ...a, messages, updatedAt: 4000 })
+  })
+
+  it('a title the model wrote is given once, does not count as using the session, and later saves keep it', async () => {
+    await store.save(session('a', 'Summarize this page', 1000, ROADMAP))
+    await store.save(session('b', 'Draft an agenda', 2000))
+    const loaded = (await store.get('a'))!
+
+    expect(await store.retitle('a', 'Page summary')).toBe(true)
+    expect(await store.retitle('a', 'Another title')).toBe(false)
+    expect(await store.retitle('gone', 'Page summary')).toBe(false)
+    // Not moved up the list, and the next save from the panel that loaded it keeps the session's id.
+    expect((await store.list()).map((s) => [s.id, s.title, s.updatedAt])).toEqual([
+      ['b', 'Draft an agenda', 2000],
+      ['a', 'Page summary', 1000],
+    ])
+    const messages: HistoryMessage[] = [...loaded.messages, { role: 'user', text: 'Thanks' }]
+    const saved = await store.save(
+      { ...loaded, title: titleFor(messages), messages, updatedAt: 3000 },
+      loaded.updatedAt,
+    )
+    expect(saved).toMatchObject({ id: 'a', title: 'Page summary', titledByModel: true })
+    expect((await store.get('a'))?.title).toBe('Page summary')
   })
 
   it('[UC-SESSION-001-S12] search lists only the sessions whose title contains the query, ignoring case', async () => {

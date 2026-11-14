@@ -2,6 +2,7 @@
 // and chat completions behind a key. Replies come from a FakeAiBinding, which streams the
 // OpenAI-style events OpenRouter sends too.
 import { FakeAiBinding } from '../../../worker/test/fakes'
+import { answerTitle, failingTitles, titleRequests } from './titles'
 
 export const OPENROUTER = 'https://openrouter.ai'
 
@@ -44,6 +45,8 @@ interface Call {
 export class FakeOpenRouter {
   /** The model behind it; script its replies. */
   readonly ai = new FakeAiBinding()
+  /** The model, for the panel's title requests, which are not in `calls` (see titles.ts). */
+  readonly titles = failingTitles()
   /** Keys OpenRouter accepts. */
   readonly keys = new Set<string>()
   /** What `/models` lists. */
@@ -63,6 +66,7 @@ export class FakeOpenRouter {
     if (!key || !this.keys.has(key))
       return Response.json({ error: { message: 'User not found.', code: 401 } }, { status: 401 })
     const body = (await request.json()) as Record<string, unknown>
+    if (titleRequests(this, body) === this.titles) return answerTitle(this.titles, body)
     const model = String(body.model)
     this.calls.push({ key, model, messages: body.messages as Call['messages'] })
     const out = await this.ai.run(model, body)
