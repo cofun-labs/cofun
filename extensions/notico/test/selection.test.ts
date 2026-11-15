@@ -3,7 +3,7 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { forgetReads } from '../src/tools/memory'
 import { getSelection } from '../src/tools/read'
-import { PART_CHARS } from '../src/tools/shared'
+import { DATA_LINE, PART_CHARS } from '../src/tools/shared'
 import { editPage } from '../src/tools/write'
 import { FakeNotionTab, FakeWorkspace, PAGE, PAGE_URL, SPACE, restoreGlobals } from './notion-tab'
 
@@ -234,9 +234,10 @@ describe('UC-NOTICO-NOTION-003 work on the selection', () => {
     setup((els) => ({ from: [els[0], 6], to: [els[1], 6] }))
     expect(await run()).toBe(
       [
+        DATA_LINE,
         `Selection on the page “Fixture page” ^${hex(PAGE)}:`,
         '',
-        'Selected text: “paragraph.Second”',
+        'Selected text: "paragraph.Second"',
         '',
         'Selected blocks:',
         'First paragraph. ^00000001',
@@ -262,9 +263,13 @@ describe('UC-NOTICO-NOTION-003 work on the selection', () => {
       return undefined
     })
     expect(await run()).toBe(
-      [`Selection on the page “Fixture page” ^${hex(PAGE)}:`, '', 'Selected block:', '- [ ] A task ^00000003'].join(
-        '\n',
-      ),
+      [
+        DATA_LINE,
+        `Selection on the page “Fixture page” ^${hex(PAGE)}:`,
+        '',
+        'Selected block:',
+        '- [ ] A task ^00000003',
+      ].join('\n'),
     )
   })
 
@@ -381,9 +386,10 @@ describe('UC-NOTICO-NOTION-003 work on the selection', () => {
     setup((els, _, __, title) => ({ from: [title, 8], to: [els[0], 5] }))
     expect(await run()).toBe(
       [
+        DATA_LINE,
         `Selection on the page “Fixture page” ^${hex(PAGE)}:`,
         '',
-        'Selected text: “pageFirst”',
+        'Selected text: "pageFirst"',
         '',
         'Selected block:',
         'First paragraph. ^00000001',
@@ -394,7 +400,7 @@ describe('UC-NOTICO-NOTION-003 work on the selection', () => {
   it('[UC-NOTICO-NOTION-003-S06] gets the open page’s blocks of a text selection that runs into a side peek', async () => {
     const { ws } = setup((els, _, peek) => ({ from: [els[2], 2], to: [peek.children[0], 2] }))
     expect((await run()).split('\n').slice(-6)).toEqual([
-      'Selected text: “taskIn”',
+      'Selected text: "taskIn"',
       '',
       'Selected block:',
       '- [ ] A task ^00000003',

@@ -645,7 +645,7 @@ describe('update_pages details', () => {
     open(ws)
     const title = [['*Draft* plan [v2] with '], ['‣', [['u', ANN]]], [' and @[name] syntax']]
     ws.edit(PAGE, { properties: { title } })
-    const shown = /^Page: (.*) \^[0-9a-f]{32}$/.exec(((await readPage.run({})) as string).split('\n')[0])![1]
+    const shown = /^Page: (.*) \^[0-9a-f]{32}$/.exec(((await readPage.run({})) as string).split('\n')[1])![1]
     expect(shown).toBe('\\*Draft\\* plan \\[v2\\] with @[Ann] and @\\[name\\] syntax')
     await update([{ page: hex(PAGE), title: shown, icon: '📝' }])
     expect(ws.records.get(PAGE)!.properties).toEqual({ title })

@@ -6,6 +6,7 @@ import { searchPages } from '../src/tools/find'
 import { forgetReads } from '../src/tools/memory'
 import { readPage } from '../src/tools/read'
 import { FakeNotionTab, PAGE, PAGE_URL, SPACE, notionError, restoreGlobals } from './notion-tab'
+import { DATA_LINE } from '../src/tools/shared'
 
 afterEach(restoreGlobals)
 
@@ -66,12 +67,13 @@ describe('UC-NOTICO-NOTION-004 find and read other pages', () => {
     // Notion has more than the two asked for.
     expect(await search({ query: 'beta plan', limit: 2 })).toBe(
       [
+        DATA_LINE,
         'Pages found for "beta plan" (5 in all; showing 2):',
         '',
         `1. 📄 Launch plan ^${hex(FOUND)}`,
         '   In: Fixture workspace / Projects',
         '   Edited: 2026-11-08',
-        '   Match: “We will ship the beta on Friday.”',
+        '   Match: "We will ship the beta on Friday."',
         `   URL: https://app.notion.com/p/${hex(FOUND)}`,
         `2. 🗃 Untitled database ^${hex(DATABASE)}`,
         '   In: Fixture workspace',
@@ -117,7 +119,7 @@ describe('UC-NOTICO-NOTION-004 find and read other pages', () => {
       },
     })
     const page = (await readPage.run({ page: `^${ref}` })) as string
-    expect(page.split('\n')[0]).toBe(`Page: Launch plan ^${hex(FOUND)}`)
+    expect(page.split('\n')[1]).toBe(`Page: Launch plan ^${hex(FOUND)}`)
     expect(page).toContain('Ship on Friday. ^000000aa')
   })
 })
@@ -131,7 +133,7 @@ describe('search_pages results', () => {
     })
     const result = await search({ query: 'array' })
     expect(result).toContain(`1. 📄 Use Array\\<string> ^${hex(FOUND)}`)
-    expect(result).toContain('Match: “a <b> c”')
+    expect(result).toContain('Match: "a <b> c"')
   })
 
   it('reports a failed search as a Notion error', async () => {
@@ -219,7 +221,7 @@ describe('search_pages, more results', () => {
       })
     const result = await search({ query: 'beta' })
     expect(result).toContain(`1. 📄 Use \\<b>bold\\</b> here ^${hex(FOUND)}`)
-    expect(result).toContain('Match: “a beta b plan”')
+    expect(result).toContain('Match: "a beta b plan"')
     expect(result).toContain(`2. 🗃 Q3 / Q4 plan ^${hex(DATABASE)}`)
     // The database's own name is cut from the end of its path, slashes and all.
     expect(result).toContain('In: Fixture workspace\n')
@@ -480,18 +482,18 @@ describe('search_pages, the count of results', () => {
 
   it('takes trashed results off the total, which is then only an upper bound', async () => {
     found(9)
-    expect((await search({ query: 'x', limit: 3 })).split('\n')[0]).toBe(
+    expect((await search({ query: 'x', limit: 3 })).split('\n')[1]).toBe(
       'Pages found for "x" (up to 8 in all; showing 2):',
     )
   })
 
   it('gives no total when the trashed results were the only ones left out', async () => {
     found(3)
-    expect((await search({ query: 'x', limit: 3 })).split('\n')[0]).toBe('Pages found for "x":')
+    expect((await search({ query: 'x', limit: 3 })).split('\n')[1]).toBe('Pages found for "x":')
   })
 
   it('gives no total when Notion returned fewer results than asked for, whatever its total says', async () => {
     found(4)
-    expect((await search({ query: 'x', limit: 4 })).split('\n')[0]).toBe('Pages found for "x":')
+    expect((await search({ query: 'x', limit: 4 })).split('\n')[1]).toBe('Pages found for "x":')
   })
 })

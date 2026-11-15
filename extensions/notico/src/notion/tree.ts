@@ -3,7 +3,7 @@
 // holds, so it asks for as few of them as it can: in order, only until the list is full, each at
 // most once, and only so many lookups per tool call.
 import { mergeRecordMaps, type Block, type NotionClient, type RecordMap } from './api'
-import { LAYOUT_TYPES, PAGE_TYPES, collectionId, hexId, titleMarkdown } from './markdown'
+import { LAYOUT_TYPES, PAGE_TYPES, collectionId, hexId, oneLine, titleMarkdown } from './markdown'
 
 export interface TreeNode {
   id: string
@@ -242,7 +242,7 @@ async function nodesFor(cache: PageLookups, ids: string[]): Promise<TreeNode[]> 
     const database = b.type !== 'page'
     const collection = database ? cache.records.collection?.[collectionId(b) ?? ''] : undefined
     // A page's title as Markdown, as update_pages takes it; a database's name as read_page shows it.
-    const title = database ? runsText(collection?.name) : titleMarkdown(cache.records, b.properties?.title)
+    const title = database ? oneLine(runsText(collection?.name)) : titleMarkdown(cache.records, b.properties?.title)
     return { id: b.id, title: title || (database ? 'Untitled database' : 'Untitled'), database, children: [] }
   })
 }

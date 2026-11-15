@@ -1,7 +1,7 @@
 // Values for a page's title and a database row's properties, from what the model gives to what
 // Notion stores, checked against the database's schema before anything is written.
 import { MarkdownError, breaks, inline, type RichText } from './blocks'
-import { formatDate, type Schema } from './markdown'
+import { formatDate, oneLine, type Schema } from './markdown'
 
 /** A property value as the model gives it: text, a number, Yes/No, a list of options, or empty. */
 export type PropertyInput = string | number | boolean | string[] | null
@@ -39,11 +39,6 @@ const READ_ONLY = new Set([
 ])
 
 const DATE = /^\d{4}-\d{2}-\d{2}$/
-
-/** A title on one line, as Notion keeps it. */
-export function oneLine(text: string): string {
-  return text.replace(/\s+/g, ' ').trim()
-}
 
 /**
  * Plain text as Notion stores it (a name, a URL), from text the model may have copied out of
@@ -131,12 +126,12 @@ export function sameMarkdown(seen: string, given: string, { lines = false } = {}
 
 /** The schema entry for a property name (any case), as [key, def]. */
 export function schemaEntry(schema: Schema, name: string): [string, PropertyDef] {
-  const want = name.trim().toLowerCase()
+  const want = oneLine(name).toLowerCase()
   const found = Object.entries(schema as Record<string, PropertyDef>).find(
-    ([key, def]) => (def.name ?? key).toLowerCase() === want,
+    ([key, def]) => oneLine(def.name ?? key).toLowerCase() === want,
   )
   if (!found) {
-    const names = Object.entries(schema as Record<string, PropertyDef>).map(([key, def]) => def.name ?? key)
+    const names = Object.entries(schema as Record<string, PropertyDef>).map(([key, def]) => oneLine(def.name ?? key))
     throw new PropertyError(`There is no property “${name}”. The properties are: ${names.join(', ')}.`)
   }
   return found
@@ -148,7 +143,7 @@ export function schemaEntry(schema: Schema, name: string): [string, PropertyDef]
  * titles are Markdown (see richValue); URLs, emails, and phone numbers are plain text.
  */
 export function propertyValue(def: PropertyDef, input: PropertyInput): RichText {
-  const name = def.name ?? 'This property'
+  const name = oneLine(def.name ?? 'This property')
   const type = def.type ?? 'text'
   if (READ_ONLY.has(type)) throw new PropertyError(`${name} is a ${type.replace(/_/g, ' ')} property; it can't be set.`)
   const text = typeof input === 'string' ? input.trim() : input
@@ -224,13 +219,13 @@ export function propertyValue(def: PropertyDef, input: PropertyInput): RichText 
 
 /** The option of a select, status, or multi-select property named `value` (any case). */
 function option(def: PropertyDef, value: string): string {
-  // As query_database shows it, or with its Markdown escapes undone.
-  const wanted = [value.trim(), value.trim().replace(/\\(.)/g, '$1')].map((v) => v.toLowerCase())
-  const found = (def.options ?? []).find((o) => wanted.includes((o.value ?? '').toLowerCase()))
+  // As query_database shows it (on one line), or with its Markdown escapes undone.
+  const wanted = [oneLine(value), oneLine(value).replace(/\\(.)/g, '$1')].map((v) => v.toLowerCase())
+  const found = (def.options ?? []).find((o) => wanted.includes(oneLine(o.value ?? '').toLowerCase()))
   if (!found?.value) {
-    const names = (def.options ?? []).map((o) => o.value).filter(Boolean)
+    const names = (def.options ?? []).flatMap((o) => (o.value ? [oneLine(o.value)] : []))
     throw new PropertyError(
-      `${def.name ?? 'This property'} has no option “${value}”.` +
+      `${oneLine(def.name ?? 'This property')} has no option “${value}”.` +
         (names.length ? ` Its options are: ${names.join(', ')}.` : ' It has no options yet.'),
     )
   }

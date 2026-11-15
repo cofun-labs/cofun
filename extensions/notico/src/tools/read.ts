@@ -4,13 +4,13 @@ import { z } from '../zod'
 import type { LoadedPage } from '../notion/api'
 import { pageLink, toUuid } from '../notion/hosts'
 import { mergeReads, pageRead } from '../notion/edit'
-import { clip, threadCount } from '../notion/comments'
+import { clip, quote, threadCount } from '../notion/comments'
 import { PAGE_TYPES, hexId, pageToMarkdown, splitSections } from '../notion/markdown'
 import { activeNotionTab, selectionIn } from '../notion/tab'
 import { needsAttachedPage } from './current'
 import { loadForPart, loadMentioned } from './load'
 import { generation, keepPartsRead, lastRead, partsReadOf, remember } from './memory'
-import { NONE, PART_CHARS, READ, filled, idIn, named, on, pageArg, partArg, plainTitle, plural } from './shared'
+import { NONE, PART_CHARS, READ, filled, asData, idIn, named, on, pageArg, partArg, plainTitle, plural } from './shared'
 
 export const readPage = defineTool({
   name: 'read_page',
@@ -102,7 +102,7 @@ export const readPage = defineTool({
     const seen = pageRead(loaded, md, (b) => drawn.has(b), whole)
     keepPartsRead(loaded.page.id, read, since)
     remember(part === 1 ? seen : mergeReads(lastRead(loaded.page.id), seen), since)
-    return [...header, '', ...(body ? [body] : []), ...(part === 1 ? empty : [])].join('\n')
+    return asData([...header, '', ...(body ? [body] : []), ...(part === 1 ? empty : [])])
   },
 })
 
@@ -190,10 +190,10 @@ export const getSelection = defineTool({
       ),
     )
     const pageHex = hexId(loaded.page.id)
-    return [
-      `Selection on the page “${md.title}” ^${pageHex}:`,
+    return asData([
+      `Selection on the page “${md.titleMarkdown}” ^${pageHex}:`,
       '',
-      ...(selection.text === undefined ? [] : [`Selected text: “${clip(selection.text, 2000)}”`, '']),
+      ...(selection.text === undefined ? [] : [`Selected text: ${quote(clip(selection.text, 2000))}`, '']),
       `Selected block${ids.length === 1 ? '' : 's'}:`,
       ...lines,
       ...(more ? ['', `${more} more selected block${more === 1 ? '' : 's'}: read the page for them.`] : []),
@@ -205,6 +205,6 @@ export const getSelection = defineTool({
               'blocks may be missing. Ask the user whether more is selected, or read the page.',
           ]
         : []),
-    ].join('\n')
+    ])
   },
 })
