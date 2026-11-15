@@ -1,13 +1,16 @@
 // Stripe, as the worker uses it: Checkout Sessions for buying credits, and the events Stripe sends to
 // the webhook. The worker is the only part of Cofun that talks to Stripe; the extension only opens
 // the Checkout page Stripe hosts. Everything Stripe sends is parsed here, at the boundary.
+// On the Stripe account: Managed Payments is on, one product sells 1,000 credits for US$1
+// (CREDIT_PRICE in wrangler.jsonc), and the webhook endpoint https://api.cofun.cc/stripe/webhook
+// sends the events handleEvent in billing.ts handles; its signing secret is STRIPE_WEBHOOK_SECRET.
 import * as z from './zod'
 
 /**
  * The API version requests are made with. Managed Payments needs 2025-03-31.basil or later. The
  * webhook endpoint is set up with a later version of the same basil release, 2025-08-27.basil (the
- * Dashboard no longer offers this one; docs/development.md), so events have the shapes parsed
- * below: the fields read here are the same in every basil version.
+ * Dashboard no longer offers this one), so events have the shapes parsed below: the fields read
+ * here are the same in every basil version.
  */
 const STRIPE_API_VERSION = '2025-03-31.basil'
 
