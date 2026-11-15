@@ -405,8 +405,9 @@ export class Ledger {
   }
 
   /**
-   * Grants credits by hand, beside the weekly free grant. It does not give the user their weekly free grant either: that still starts with their own
-   * next call, so a grant by hand never uses up part of a user's free week.
+   * Grants credits by hand, beside the weekly free grant. It does not give the user their weekly
+   * free grant: that still starts with their own next call, so a grant by hand never uses up part
+   * of a user's free week.
    */
   async grant(now: number, { amount, expiresAt, by }: ManualGrant): Promise<Account> {
     if (!Number.isSafeInteger(amount) || amount <= 0) throw new Error('a grant must be a positive integer')

@@ -10,7 +10,7 @@ Each extension keeps its own copy of the side panel code (UI, agent, sign-in, se
 
 Each fact is stored in one place, and everything else is worked out from it when it is read. A copy, a cache, or a stored total is added only when reading the source is too slow or costs too much, and then the code says which is the source and how the copy is kept right. Two stores that each hold part of the same fact drift apart, and then nobody can say which one is right.
 
-For example, a user's balance is not stored: they are worked out from their grants and model calls each time. The one stored running value in the credits is what is left of each grant (`grants.left`): working it out would mean replaying every call in the order grants are spent, so it is written in the same transaction as the call that spends it. Data kept only for watching the service, such as the usage records in Analytics Engine, is not a copy in this sense: nothing the service does reads it.
+For example, a user's balance is not stored: it is worked out from their grants and model calls each time. The one stored running value in the credits is what is left of each grant (`grants.left`): working it out would mean replaying every call in the order grants are spent, so it is written in the same transaction as the call that spends it. Data kept only for watching the service, such as the usage records in Analytics Engine, is not a copy in this sense: nothing the service does reads it.
 
 ## Shared by every extension: the worker, sign-in, and credits
 
