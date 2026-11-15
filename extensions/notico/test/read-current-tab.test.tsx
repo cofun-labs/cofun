@@ -158,16 +158,30 @@ describe('reading the page in the current tab', () => {
   })
 
   it('[UC-NOTICO-PANEL-001-S13] a page Notico cannot read gives the model the reason, without asking the user', async () => {
-    const cases: [string, RegExp, object?][] = [
-      ['chrome://settings/', /^The current tab shows a chrome: page/],
-      ['https://chromewebstore.google.com/detail/abc', /^The current tab is the Chrome Web Store/],
-      ['https://news.example.com/report.pdf', /^The current tab shows a PDF in Chrome's viewer/, { pdf: true }],
-      ['https://app.notion.com/p/Notes-2b2b2b2b000040008000000000000020', /read it with read_page instead\.$/],
+    // [address, reason, whether the site is allowed, the page's DOM when it is read]
+    const cases: [string, RegExp, boolean, object?][] = [
+      ['chrome://settings/', /^The current tab shows a chrome: page/, false],
+      ['https://chromewebstore.google.com/detail/abc', /^The current tab is the Chrome Web Store/, false],
+      ['https://news.example.com/report.PDF', /^The current tab shows a PDF in Chrome's viewer/, false],
+      ['https://app.notion.com/p/Notes-2b2b2b2b000040008000000000000020', /read it with read_page instead\.$/, false],
+      // Only a page read on a site already allowed shows it is a PDF, or that its content is all in frames.
+      [
+        'https://news.example.com/view?doc=7',
+        /^The current tab shows a PDF in Chrome's viewer/,
+        true,
+        webPage({ title: 'doc', contentType: 'application/pdf' }),
+      ],
+      [
+        'https://news.example.com/embed',
+        /its content is in frames, which Notico doesn't read\.$/,
+        true,
+        webPage({ title: 'Embed', frames: 2 }),
+      ],
     ]
-    for (const [url, reason, kind] of cases) {
+    for (const [url, reason, allowed, dom] of cases) {
       const tab = new FakeNotionTab(url)
-      tab.allowed.add(SITE)
-      if (kind) tab.dom = webPage({ title: 'report.pdf', contentType: 'application/pdf' })
+      if (allowed) tab.allowed.add(SITE)
+      tab.dom = dom
       const { browser, user } = await openOn(tab)
       browser.ai.script.push(readTab, { reply: 'I could not read it.' })
 
@@ -177,11 +191,25 @@ describe('reading the page in the current tab', () => {
       expect(screen.queryByRole('group', { name: /Allow Notico to read/ })).toBeNull()
       expect(browser.tab.accessRequests).toEqual([])
       expect(toolResults(browser)[0]).toMatch(reason)
-      // Only the PDF is looked at, to tell it is one; nothing is asked of Notion.
-      expect(browser.tab.injections).toHaveLength(kind ? 1 : 0)
+      // Only a page on an allowed site is looked at; nothing is asked of Notion.
+      expect(browser.tab.injections).toHaveLength(dom ? 1 : 0)
       expect(browser.tab.sent).toEqual([])
       await closeBrowser()
     }
+  })
+
+  it('[UC-NOTICO-PANEL-001-S12] a tab the user leaves while asked is not read', async () => {
+    const { browser, user } = await openOn()
+    browser.ai.script.push(readTab, { reply: 'You moved on.' })
+
+    await ask(user, 'Summarize this article')
+    const card = within(await screen.findByRole('group', { name: 'Allow Notico to read news.example.com?' }))
+    browser.tab.switchTab('https://news.example.com/other', 'Other')
+    await user.click(card.getByRole('button', { name: 'Allow' }))
+
+    expect(await screen.findByText('You moved on.')).toBeVisible()
+    expect(browser.tab.injections).toEqual([])
+    expect(toolResults(browser)[0]).toMatch(/^The current tab changed while Notico waited/)
   })
 
   it('[UC-NOTICO-PANEL-001-S14] one question reads only so much from other sites, and the next question can read again', async () => {

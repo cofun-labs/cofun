@@ -4,6 +4,8 @@
 // request of its own. Notico may read a site only once the user allowed it (optional host
 // permissions, one origin at a time), which only a click in the side panel can grant.
 
+import { z } from '../zod'
+
 /** The match pattern of a site's origin, as host permissions name it. */
 const pattern = (origin: string) => `${origin}/*`
 
@@ -29,6 +31,8 @@ export function readableSite(url: string): { origin: string } | { reason: string
     }
   if (STORE.some((store) => store.test(url)))
     return { reason: "The current tab is the Chrome Web Store: Chrome doesn't let extensions read it." }
+  // Told before the user is asked to allow the site; a PDF at another address shows only once read.
+  if (/\.pdf$/i.test(parsed.pathname)) return { reason: PDF }
   return { origin: parsed.origin }
 }
 
@@ -46,22 +50,27 @@ export function allowSite(origin: string): Promise<boolean> {
   return chrome.permissions.request({ origins: [pattern(origin)] })
 }
 
-/** The page a tab shows, as read from it. */
-export interface TabPage {
-  title: string
-  url: string
-  /** The page's main text, up to the characters asked for. */
-  text: string
-  /** How many characters the whole main text has. */
-  chars: number
-}
+const PDF = "The current tab shows a PDF in Chrome's viewer, which Notico can't read."
+
+/**
+ * What the script in the tab returns. The page can reach the DOM it reads (a named element can
+ * stand in for `document.title`), so the result is parsed, not trusted. `frames`: how many frames
+ * the page holds, which are not read.
+ */
+const PageResult = z.union([
+  z.object({ pdf: z.literal(true) }),
+  z.object({ title: z.string(), url: z.string(), text: z.string(), chars: z.number(), frames: z.number() }),
+])
+
+/** The page a tab shows, as read from it: its main text up to the characters asked for, and how long it all is. */
+export type TabPage = Exclude<z.infer<typeof PageResult>, { pdf: true }>
 
 /**
  * Reads up to `maxChars` of the main text of the page in the tab, which must still be on `origin`;
  * otherwise, or when the tab can't be read, says why, for the model.
  */
 export async function readPage(tabId: number, origin: string, maxChars: number): Promise<TabPage | { reason: string }> {
-  let result: Awaited<ReturnType<typeof pageText>> | undefined
+  let raw: unknown
   try {
     // ISOLATED, not MAIN: the page can't see or patch this code. The top frame only: frames from
     // other sites are other sites, which the user may not have allowed.
@@ -71,7 +80,7 @@ export async function readPage(tabId: number, origin: string, maxChars: number):
       func: pageText,
       args: [maxChars],
     })
-    result = frame?.result ?? undefined
+    raw = frame?.result
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
     if (/Cannot access contents of|Missing host permission/i.test(message))
@@ -80,8 +89,17 @@ export async function readPage(tabId: number, origin: string, maxChars: number):
       return { reason: 'The current tab shows an error page: there is nothing to read.' }
     return { reason: `Could not read the page in the current tab: ${message}` }
   }
-  if (!result) return { reason: 'The current tab reloaded or went to another page while it was read.' }
-  if ('pdf' in result) return { reason: "The current tab shows a PDF in Chrome's viewer, which Notico can't read." }
+  if (raw === undefined || raw === null)
+    return { reason: 'The current tab reloaded or went to another page while it was read.' }
+  const parsed = PageResult.safeParse(raw)
+  if (!parsed.success) return { reason: 'The page in the current tab could not be read: it did not give its text.' }
+  const result = parsed.data
+  if ('pdf' in result) return { reason: PDF }
+  if (!result.text && result.frames)
+    return {
+      reason:
+        "The page in the current tab shows no text of its own: its content is in frames, which Notico doesn't read.",
+    }
   // The tab may have moved on since it was looked at, to a site the user allowed for something else.
   if (new URL(result.url).origin !== origin)
     return { reason: 'The current tab went to another site while it was read.' }
@@ -94,7 +112,7 @@ export async function readPage(tabId: number, origin: string, maxChars: number):
  * landmark), else its first `article`, else the whole body, as the page shows it (innerText: what is
  * hidden is left out).
  */
-function pageText(maxChars: number): TabPage | { pdf: true } | null {
+function pageText(maxChars: number): z.input<typeof PageResult> | null {
   if (document.contentType === 'application/pdf') return { pdf: true }
   // An element's text as shown: only HTML elements have it (an SVG's `main` has none).
   const shown = (el: Element | null) =>
@@ -102,5 +120,8 @@ function pageText(maxChars: number): TabPage | { pdf: true } | null {
   const main = shown(document.querySelector('main, [role="main"]')) || shown(document.querySelector('article'))
   // Three or more line breaks in a row say nothing more than two.
   const text = (main || shown(document.body)).replace(/\n{3,}/g, '\n\n')
-  return { title: document.title, url: location.href, text: text.slice(0, maxChars), chars: text.length }
+  // A named element can stand in for the title; the tab then gives none.
+  const title = typeof document.title === 'string' ? document.title : ''
+  const frames = document.querySelectorAll('iframe, frame').length
+  return { title, url: location.href, text: text.slice(0, maxChars), chars: text.length, frames }
 }

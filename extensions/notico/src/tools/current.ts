@@ -5,7 +5,7 @@ import { z } from '../zod'
 import { NOTION_HOSTS, isNotion, pageIdFromUrl, showsDatabase } from '../notion/hosts'
 import { clip } from '../notion/comments'
 import { mayRead, readPage, readableSite } from '../web/tab'
-import { LOOK, READ, asData, on } from './shared'
+import { LOOK, READ, asData, count, on } from './shared'
 
 /** The title and URL of the current tab: the active tab of the side panel's window, on any site. */
 async function currentTab(): Promise<{ title: string; url: string } | undefined> {
@@ -164,7 +164,7 @@ export const readCurrentTab = defineTool({
   description:
     'Reads the page in the current tab when it is on another site than Notion: its main text as the tab shows ' +
     "it (the page's main content, or else its whole text), with the page's title and URL. It reads what the user " +
-    'sees, pages they are signed in to included, but not frames from other sites. The first time a site is read, ' +
+    'sees, pages they are signed in to included, but not what is inside frames. The first time a site is read, ' +
     'the user is asked to allow Notico to read it. Use it when a question is about the page the user is on, such ' +
     'as summarizing it or saving it to Notion; never for a Notion page (use read_page). A long page is clipped.',
   describe: (_args, details) => on(READ, details?.name, 'the current tab'),
@@ -192,6 +192,14 @@ export const readCurrentTab = defineTool({
             "without it, and don't read this site again unless the user asks.",
         )
     }
+    // The user may have moved to another tab or page while they were asked: only the page they
+    // asked about, in the current tab, is read.
+    const [now] = await chrome.tabs.query({ active: true, currentWindow: true })
+    if (now?.id !== tab.id || now.url !== tab.url)
+      throw new Error(
+        'The current tab changed while Notico waited (the user switched tabs or went to another page), so ' +
+          'nothing was read. Ask them to go back to the page and ask again.',
+      )
     const page = await readPage(tab.id, site.origin, Math.min(TAB_TEXT_CHARS, left))
     if ('reason' in page) throw new Error(page.reason)
     outsideRead += page.text.length
@@ -205,6 +213,7 @@ export const readCurrentTab = defineTool({
               `${page.chars.toLocaleString('en-US')} characters.]`,
           ]
         : []),
+      ...(page.frames ? [`[The page holds ${count(page.frames, 'frame')}, whose content is not read.]`] : []),
       ...(page.text ? ['Text:', asPageText(page.text)] : ['[The page shows no text.]']),
     ]
     return { text: asData(lines), details: { name: page.title.trim() || host } }

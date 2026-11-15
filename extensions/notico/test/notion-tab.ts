@@ -790,8 +790,8 @@ function applyOperation(
 
 /**
  * The DOM of a page on another site, as far as read_current_tab's script reads it: its title, its
- * type, and the text its `main` element, first `article`, and body show (an element left out is
- * not on the page).
+ * type, the text its `main` element, first `article`, and body show (an element left out is
+ * not on the page), and how many frames it holds.
  */
 export function webPage({
   title,
@@ -799,12 +799,14 @@ export function webPage({
   article,
   body = '',
   contentType = 'text/html',
+  frames = 0,
 }: {
   title: string
   main?: string
   article?: string
   body?: string
   contentType?: string
+  frames?: number
 }): object {
   const element = (text: string | undefined) => (text === undefined ? null : { innerText: text })
   return {
@@ -813,5 +815,6 @@ export function webPage({
     body: element(body),
     querySelector: (selector: string) =>
       selector === 'article' ? element(article) : selector === 'main, [role="main"]' ? element(main) : null,
+    querySelectorAll: (selector: string) => ({ length: selector === 'iframe, frame' ? frames : 0 }),
   }
 }
