@@ -70,7 +70,7 @@ Cofun: Chrome extensions that each open an AI side panel next to one kind of pag
 - **GitHub settings are code.** The `main` ruleset lives in `.github/rulesets/main.json` and repository options in `scripts/sync-github-settings.sh`. Change them through a PR; a repository admin then runs `scripts/sync-github-settings.sh`. If you change a setting in the GitHub dashboard, copy it back into these files.
 - **Never rewrite published history** (`git commit --amend`, `git rebase`) on pushed branches. Add new commits instead.
 - **Never force-push** unless explicitly asked.
-- Use [Conventional Commits](https://www.conventionalcommits.org/) for commits and PR titles: `feat:`, `fix:`, `docs:`, `chore:`, `refactor:`, `test:`.
+- Use [Conventional Commits](https://www.conventionalcommits.org/) for commits and PR titles: `feat:`, `fix:`, `docs:`, `chore:`, `refactor:`, `test:`. Issue titles use the same prefixes, and the prefix is the issue's kind: there are no type labels.
 
 ## Language
 
