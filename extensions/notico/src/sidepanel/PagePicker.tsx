@@ -2,13 +2,18 @@ import { useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode 
 import type { QuestionPage } from '../agent'
 import { LIMITED_STOP, NotionError } from '../notion/api'
 import { pageIdFromUrl } from '../notion/hosts'
-import { findPages, openNotionPages, type FoundPage } from '../tools'
+import { findPages, openNotionPages, openWebTabs, type FoundPage, type WebTab } from '../tools'
+import { allowSite } from '../web/tab'
 import { Icon } from './icons'
 import { useMenu } from './menu'
 import { PageIcon, titleOf } from './Pages'
 
-/** Which page a URL shows: its id, or the URL when it has none (say, Notion's home). */
-export const pageKey = (page: { url: string }): string => pageIdFromUrl(page.url) ?? page.url
+/**
+ * Which page a URL shows: a Notion page's id, or the URL when it has none (say, Notion's home); for
+ * a tab on another site, which tab it is.
+ */
+export const pageKey = (page: { url: string; web?: true; tab?: number }): string =>
+  page.web ? `tab ${page.tab ?? page.url}` : (pageIdFromUrl(page.url) ?? page.url)
 
 /** How long typing must pause before the workspace is searched. */
 const SEARCH_DELAY_MS = 300
@@ -25,7 +30,8 @@ const RECENT_MAX = 5
  */
 export type SearchStop = { busy: true } | { busy: false; message: string }
 
-type Group = 'This page' | 'Open tabs' | 'Recent' | 'Workspace'
+type Group = 'This page' | 'Open tabs' | 'Other sites' | 'Recent' | 'Workspace'
+const GROUPS: readonly Group[] = ['This page', 'Open tabs', 'Other sites', 'Recent', 'Workspace']
 
 interface Option {
   key: string
@@ -52,7 +58,7 @@ export interface PickerOptions {
   onQuery?: (query: string) => void
   /** The Notion page open in the current tab, when it shows one. */
   thisPage?: QuestionPage
-  /** The pages the question carries, by `pageKey`. */
+  /** The pages and tabs the question carries, by `pageKey`. */
   added: Set<string>
   /** Pages recent chats went with, newest first; read from the device when the picker opens. */
   recent: () => Promise<QuestionPage[]>
@@ -75,7 +81,8 @@ export interface PickerOptions {
 
 /**
  * The page picker the composer opens with `@` or "+": the page open in the tab, the other Notion
- * pages open in tabs, and recent pages, all without a Notion request; and, once at least two
+ * pages open in tabs, the window's tabs on other sites, and recent pages, all without a Notion
+ * request; and, once at least two
  * characters are typed and typing pauses, Notion's search of the workspace. One search at a time:
  * a newer query replaces one still waiting before it is sent, and waits for one already sent, so
  * none run side by side. Nothing is retried: a search Notion turns away, or one that fails, stops
@@ -112,7 +119,11 @@ export function usePagePicker({
   titleMatch: boolean
 } {
   const id = useId()
-  const [local, setLocal] = useState<{ tabs: QuestionPage[]; recent: QuestionPage[] }>()
+  const [local, setLocal] = useState<{ tabs: QuestionPage[]; web: WebTab[]; recent: QuestionPage[] }>()
+  // A tab on another site whose site Chrome is asked to let Notico read, or was refused, by host.
+  const [access, setAccess] = useState<{ host: string; asking: boolean }>()
+  const onPickRef = useRef(onPick)
+  onPickRef.current = onPick
   const [search, setSearch] = useState<Search>({ status: 'off' })
   const [active, setActive] = useState(0)
   const onStopRef = useRef(onStop)
@@ -126,17 +137,46 @@ export function usePagePicker({
 
   // The pages already in the browser, read each time the picker opens: no Notion request.
   useEffect(() => {
+    setAccess(undefined)
     if (!open) return setLocal(undefined)
     let live = true
     void Promise.all([
       openNotionPages().catch(() => []),
+      openWebTabs().catch((err: unknown) => {
+        console.error('Could not read the open tabs', err)
+        return []
+      }),
       recent().catch((err: unknown) => {
         console.error('Could not read the recent pages', err)
         return []
       }),
-    ]).then(([tabs, pages]) => live && setLocal({ tabs, recent: pages }))
+    ]).then(([tabs, web, pages]) => live && setLocal({ tabs, web, recent: pages }))
     return () => void (live = false)
   }, [open])
+
+  /**
+   * Adds a page; a tab on a site Notico may not read yet only once Chrome let it, asked in the
+   * click or key press that picked it (Chrome takes the request only then), so nothing is awaited
+   * before. A tab whose site the user refused is not added.
+   */
+  function pick(page: FoundPage) {
+    const tab = page.web && local?.web.find((t) => t.page.url === page.url)
+    if (!tab || tab.allowed) return onPick(page)
+    if (access?.asking) return
+    const host = new URL(tab.origin).host
+    setAccess({ host, asking: true })
+    allowSite(tab.origin)
+      .catch((err: unknown) => {
+        console.error('Could not ask Chrome for access to the site', err)
+        return false
+      })
+      .then((allowed) => {
+        if (!allowed) return setAccess({ host, asking: false })
+        setAccess(undefined)
+        tab.allowed = true
+        onPickRef.current(page)
+      })
+  }
 
   const words = query.trim()
   const searchable = !!thisPage && pageIdFromUrl(thisPage.url) !== undefined
@@ -206,7 +246,9 @@ export function usePagePicker({
   )
 
   const lower = words.toLowerCase()
-  const matches = (page: QuestionPage) => titleOf(page).toLowerCase().includes(lower)
+  // A tab on another site matches by its site too: its title may not say which it is.
+  const matches = (page: QuestionPage) =>
+    titleOf(page).toLowerCase().includes(lower) || (!!page.web && hostOf(page).toLowerCase().includes(lower))
   const options: Option[] = []
   const seen = new Set<string>()
   const add = (group: Group, page: FoundPage) => {
@@ -217,6 +259,7 @@ export function usePagePicker({
   }
   if (thisPage && searchable && matches(thisPage)) add('This page', thisPage)
   for (const page of local?.tabs ?? []) if (matches(page)) add('Open tabs', page)
+  for (const { page } of local?.web ?? []) if (matches(page)) add('Other sites', page)
   let recents = 0
   for (const page of local?.recent ?? []) {
     if (recents === RECENT_MAX || !matches(page) || seen.has(pageKey(page))) continue
@@ -248,7 +291,7 @@ export function usePagePicker({
     if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
       if (current >= 0) {
         e.preventDefault()
-        onPick(options[current].page)
+        pick(options[current].page)
         return true
       }
       if (onQuery) {
@@ -271,11 +314,15 @@ export function usePagePicker({
 
   if (!open) return { element: null, onKeyDown, settled, titleMatch: true }
 
-  const groups = (['This page', 'Open tabs', 'Recent', 'Workspace'] as const).flatMap((group) => {
+  const groups = GROUPS.flatMap((group) => {
     const rows = options.flatMap((o, i) => (o.group === group ? [{ o, i }] : []))
     return rows.length ? [{ group, rows }] : []
   })
-  const state = stateLine(search, stop, paused && longEnough, words, options.length > 0, !!local)
+  const state = access
+    ? access.asking
+      ? `Allow Notico to read ${access.host} in Chrome’s prompt to add its tab.`
+      : `Notico may not read ${access.host}, so its tab wasn’t added.`
+    : stateLine(search, stop, paused && longEnough, words, options.length > 0, !!local)
 
   const element = (
     <div className="page-picker">
@@ -311,12 +358,16 @@ export function usePagePicker({
                     // Keeps the focus in the field the user types in.
                     onMouseDown={(e) => e.preventDefault()}
                     onMouseMove={() => i !== current && setActive(i)}
-                    onClick={() => onPick(o.page)}
+                    onClick={() => pick(o.page)}
                   >
                     <PageIcon page={o.page} />
                     <span className="picker-lines">
                       <span className="picker-name">{marked(titleOf(o.page), words)}</span>
-                      {o.page.path && <span className="picker-path">{o.page.path}</span>}
+                      {o.page.web ? (
+                        <span className="picker-path">{hostOf(o.page)}</span>
+                      ) : (
+                        o.page.path && <span className="picker-path">{o.page.path}</span>
+                      )}
                     </span>
                     {o.added && <span className="picker-hint">Added</span>}
                   </div>
@@ -375,6 +426,9 @@ function stateLine(
   return words ? `No pages match “${words}”.` : 'Type to search your workspace.'
 }
 
+/** The site of a tab, as the picker shows it under its title. */
+const hostOf = (page: QuestionPage) => new URL(page.url).host
+
 /** `title` with the first match of `words` in bold. */
 function marked(title: string, words: string): ReactNode {
   const at = words ? title.toLowerCase().indexOf(words.toLowerCase()) : -1
@@ -398,8 +452,8 @@ export function AddMenu({ onAddPage }: { onAddPage: () => void }) {
         className="tool-button"
         aria-haspopup="menu"
         aria-expanded={open}
-        aria-label="Add a page"
-        data-tip="Add a page"
+        aria-label="Add a page or tab"
+        data-tip="Add a page or tab"
         onClick={() => setOpen(!open)}
       >
         <Icon name="plus" />
@@ -416,7 +470,7 @@ export function AddMenu({ onAddPage }: { onAddPage: () => void }) {
             }}
           >
             <Icon name="page" />
-            Add a page…
+            Add a page or tab…
           </button>
         </div>
       )}

@@ -86,7 +86,9 @@ const SYSTEM_PROMPT =
   'page and ask again; never guess what a Notion page says. The note does not say which site a tab that is not ' +
   'Notion shows: when a question needs its title or URL, call get_current_tab, and when it is about the page ' +
   'itself (say, "summarize this page" or "save this article to my notes"), read it with read_current_tab. The ' +
-  'user is asked to allow each site the first time. When an answer uses what read_current_tab read, say so and ' +
+  'user is asked to allow each site the first time. A note may also list tabs on other sites the user added to ' +
+  'the question: read them with read_tab and the tab number the note gives, also in a later question of the ' +
+  'chat; read_tab reads no other tab. When an answer uses what read_current_tab or read_tab read, say so and ' +
   "give the page's URL; never guess what a page says. " +
   'When a question needs a web page (an address the user gives, or a link in a page you read), read it with read_web_page, or with ' +
   'render_web_page, which is slower but reads pages drawn by scripts: choose by the page. When an answer ' +
@@ -581,7 +583,9 @@ export function Chat({ userId }: { userId: string }) {
     // Those the question has room for: the others never reach the model, so the question doesn't show them.
     const sentSelections = selectionsCarried(selections).map(({ selection }) => shownSelection(selection))
     // A page is off while the composer shows none for it: also on another site, until another page shows.
-    const context = carryPages(tabPage, removed !== undefined && !openPage, chosen, selections)
+    // The tabs the chat's earlier questions carried stay readable for this one.
+    const earlier = messages.flatMap((m) => (m.role === 'user' ? (m.pages ?? []) : []))
+    const context = carryPages(tabPage, removed !== undefined && !openPage, chosen, selections, earlier)
     setSelections([])
     // The mode the composer showed; only right as the panel opens may it not be read yet.
     const sentMode = modeRef.current

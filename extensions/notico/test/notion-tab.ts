@@ -57,9 +57,15 @@ type StorageListener = (changes: Record<string, { oldValue?: unknown; newValue?:
 
 /**
  * Stands in for chrome.storage: the `local` and `session` areas, and the change events every document
- * of the extension gets, the one that made the change included.
+ * of the extension gets, the one that made the change included. `restart` empties `session`, as a
+ * browser restart does.
  */
 export class FakeStorage {
+  /** The browser restarts: what the session area held is gone. */
+  restart(): void {
+    for (const key of Object.keys(this.sessionValues)) delete this.sessionValues[key]
+  }
+
   /** What `local` holds. */
   values: Record<string, unknown> = {}
   /** What `session` holds: what Chrome keeps until the browser closes. */
@@ -150,8 +156,11 @@ export class FakeNotionTab {
   /** The sites the extension asked Chrome to let it read, each request as its match patterns. */
   accessRequests: string[][] = []
 
-  /** The browser's other tabs, in any window, as chrome.tabs reports them. */
-  otherTabs: { url: string; title: string }[] = []
+  /**
+   * The browser's other tabs, as chrome.tabs reports them, with ids from 20 on: in the side panel's
+   * window unless `windowId` says another (2), each with the page's DOM for scripts that read it.
+   */
+  otherTabs: { url: string; title: string; windowId?: number; dom?: object; closed?: boolean }[] = []
 
   /** The text selected in the page, as the page's getSelection gives it. */
   selected = ''
@@ -294,10 +303,14 @@ export class FakeNotionTab {
     globals.chrome = {
       storage: this.storage,
       tabs: {
-        query: async (info: { active?: boolean; url?: string[] } = {}) => {
-          const current = this.url === undefined ? [] : [{ id: 7, url: this.url, title: this.title, active: true }]
+        query: async (info: { active?: boolean; currentWindow?: boolean; url?: string[] } = {}) => {
+          const current =
+            this.url === undefined ? [] : [{ id: 7, windowId: 1, url: this.url, title: this.title, active: true }]
           if (info.active) return current
-          const all = [...current, ...this.otherTabs.map((tab, i) => ({ id: 20 + i, ...tab, active: false }))]
+          const others = this.otherTabs.flatMap(({ url, title, windowId = 1, closed }, i) =>
+            closed ? [] : [{ id: 20 + i, url, title, windowId, active: false }],
+          )
+          const all = [...current, ...others].filter((tab) => !info.currentWindow || tab.windowId === 1)
           // Match patterns as the extension uses them: `https://<host>/*`.
           const hosts = info.url?.map((pattern) => /^https:\/\/([^/]+)\/\*$/.exec(pattern)?.[1])
           // Like Chrome, a tab that doesn't match is not reported at all: no URL or title of it.
@@ -307,17 +320,26 @@ export class FakeNotionTab {
         onUpdated: listeners(this.updated),
         onReplaced: listeners(this.replaced),
         get: async (tabId: number) => {
-          if (this.closed) throw new Error(`No tab with id: ${tabId}.`)
-          return { id: tabId, url: this.pageUrl ?? this.url }
+          const other = this.otherTabs[tabId - 20]
+          if (tabId === 7 ? this.closed : !other || other.closed) throw new Error(`No tab with id: ${tabId}.`)
+          return tabId === 7 ? { id: tabId, url: this.pageUrl ?? this.url } : { id: tabId, ...other }
         },
-        // With no tab id, Chrome updates the current window's active tab: this one.
-        update: async ({ url }: { url: string }) => this.navigate(url, ''),
+        // With no tab id, Chrome updates the current window's active tab: this one. Given another
+        // tab's id, it makes that tab the active one.
+        update: async (...args: [{ url: string }] | [number, { active: true }]) => {
+          if (args.length === 1) return this.navigate(args[0].url, '')
+          const other = this.otherTabs[args[0] - 20]
+          if (!other || other.closed) throw new Error(`No tab with id: ${args[0]}.`)
+          this.switchTab(other.url, other.title)
+        },
       },
       permissions: {
         contains: async ({ origins }: { origins: string[] }) => origins.every((o) => this.allowed.has(o)),
-        // Like Chrome, only in a user's click, while it is being handled; then the user answers its prompt.
+        // Like Chrome, only in a user's click or key press, while it is being handled; then the user
+        // answers its prompt.
         request: async ({ origins }: { origins: string[] }) => {
-          if ((globalThis as { event?: Event }).event?.type !== 'click')
+          const type = (globalThis as { event?: Event }).event?.type
+          if (type !== 'click' && type !== 'keydown')
             throw new Error('This function must be called during a user gesture')
           this.accessRequests.push(origins)
           await this.promptOpen
@@ -325,7 +347,7 @@ export class FakeNotionTab {
           return this.promptAnswer
         },
       },
-      windows: { getCurrent: async () => ({ id: 1 }) },
+      windows: { getCurrent: async () => ({ id: 1 }), update: async () => ({ id: 1 }) },
       runtime: { onInstalled: listeners(this.installed), onStartup: listeners([]) },
       contextMenus: {
         removeAll: (done?: () => void) => {
@@ -386,21 +408,27 @@ export class FakeNotionTab {
     func: Function
     args?: unknown[]
   }) {
-    if (this.closed) throw new Error(`No tab with id: ${target.tabId}.`)
+    // Another tab shows only a page on another site, read by its DOM.
+    const other = target.tabId === 7 ? undefined : this.otherTabs[target.tabId - 20]
+    if ((target.tabId !== 7 && (!other || other.closed)) || (!other && this.closed))
+      throw new Error(`No tab with id: ${target.tabId}.`)
     if (this.injectionError) throw new Error(this.injectionError)
     // Chrome runs scripts only on a site the extension may access. activeTab reaches the tab's own
     // site only: in this fake, every frame but the top one is from another site.
-    const at = new URL(this.pageUrl ?? this.url!)
+    const at = new URL(other?.url ?? this.pageUrl ?? this.url!)
     const frame = target.frameIds?.[0] ?? 0
-    if (frame !== 0 || (!isNotion(at.href) && !this.allowed.has(`${at.origin}/*`) && !this.activeTab))
+    const active = !other && this.activeTab
+    if (frame !== 0 || (!isNotion(at.href) && !this.allowed.has(`${at.origin}/*`) && !active))
       throw new Error(
         'Cannot access contents of the page. Extension manifest must request permission to access the respective host.',
       )
     this.injections.push({ tabId: target.tabId, world })
-    const location = new URL(this.pageUrl ?? this.url!)
+    const location = at
     // The page's selection, unless the test gave the page a DOM of its own that has one.
-    const selected = () => ({ toString: () => this.selected })
-    const document = Object.assign({ getSelection: selected }, this.dom ?? {}, { cookie: this.cookie })
+    const selected = () => ({ toString: () => (other ? '' : this.selected) })
+    const document = Object.assign({ getSelection: selected }, (other ? other.dom : this.dom) ?? {}, {
+      cookie: other ? '' : this.cookie,
+    })
     const fetch = (input: string, init: RequestInit) => this.fetch(new URL(input, location).href, init)
     // The page's globals are the function's own: its `location`, `document`, and `fetch` are
     // the tab's, while code outside the tab (say, the agent calling the worker, or the side

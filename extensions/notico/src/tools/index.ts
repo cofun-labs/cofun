@@ -1,13 +1,13 @@
 // Tools the agent can run in the extension, one module per area: reading pages (read.ts), finding
 // them (find.ts), writing them (write.ts), databases (database.ts), organizing pages (organize.ts),
-// comments (comments.ts), the current tab, on Notion or another site (current.ts), and web pages by
-// their address (web.ts). This module
-// lists them, and says for the side panel what a call did.
+// comments (comments.ts), the current tab, on Notion or another site, and the tabs the user added
+// (current.ts), and web pages by their address (web.ts). This module lists them, and says for the
+// side panel what a call did.
 import type { HistoryMessage, ToolDetails } from '../agent'
 import { pageLink } from '../notion/hosts'
 import type { Action, Tool } from '../tool'
 import { addComment, readComments } from './comments'
-import { getCurrentTab, readCurrentTab } from './current'
+import { getCurrentTab, readCurrentTab, readTab } from './current'
 import { createDatabase, queryDatabase, updateDatabaseSchema } from './database'
 import { listPages, searchPages } from './find'
 import { duplicatePage, movePage, trashPage } from './organize'
@@ -21,9 +21,12 @@ export {
   carryPages,
   currentNotionPage,
   openNotionPages,
+  openWebTabs,
+  addedTabNow,
   SELECTION_END,
   selectionsCarried,
   type OpenPage,
+  type WebTab,
 } from './current'
 export { findPages, type FoundPage } from './find'
 export { forgetReads } from './memory'
@@ -48,6 +51,7 @@ export const TOOLS: Tool[] = [
   addComment,
   getCurrentTab,
   readCurrentTab,
+  readTab,
   readWebPage,
   renderWebPage,
 ]
@@ -89,7 +93,8 @@ const NAMES_TOUCHED_PAGE = new Set(['read_page', 'query_database', 'edit_page', 
 export function pagesIn(messages: HistoryMessage[], origin: string): OpenPage[] {
   const pages: OpenPage[] = []
   for (const m of messages) {
-    if (m.role === 'user') pages.push(...(m.pages ?? []))
+    // A tab on another site is not a Notion page: it may be gone, and is added again from the tabs open.
+    if (m.role === 'user') pages.push(...(m.pages ?? []).filter((p) => !p.web))
     else if (m.role === 'tool' && m.status === 'done' && NAMES_TOUCHED_PAGE.has(m.name)) {
       const ids = [...new Set([...(m.details?.read ?? []), ...(m.details?.changed ?? [])])]
       const title = ids.length === 1 ? m.details?.name : undefined

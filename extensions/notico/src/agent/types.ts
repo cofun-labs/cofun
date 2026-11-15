@@ -53,8 +53,19 @@ export interface QuestionExtras {
   readOnly?: boolean
 }
 
-/** A page a question was sent with: its title and URL, and whether it is a database. */
-const QuestionPage = z.object({ title: z.string(), url: z.string(), database: z.literal(true).optional() })
+/**
+ * A page a question was sent with: its title and URL, and whether it is a database; or a page on
+ * another site than Notion (`web`), in the tab the user added (`tab`, Chrome's id for it, in the
+ * browser's run `run`).
+ */
+const QuestionPage = z.object({
+  title: z.string(),
+  url: z.string(),
+  database: z.literal(true).optional(),
+  web: z.literal(true).optional(),
+  tab: z.number().int().optional(),
+  run: z.string().optional(),
+})
 export type QuestionPage = z.infer<typeof QuestionPage>
 
 /**

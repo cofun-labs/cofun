@@ -258,6 +258,45 @@ export async function ask(
   }
 }
 
+/**
+ * Adds the tab whose title starts with `title` to the next question, from the "+" picker, as a
+ * user's clicks; a site Notico may not read yet opens Chrome's own prompt, which waits for a person.
+ * Returns what the composer then shows, or what the picker says.
+ */
+export async function addTab(panel: Target, title: string): Promise<string> {
+  await clickButton(panel, '#composer button', 'Add a page or tab')
+  await clickButton(panel, '#composer [role=menuitem]', 'Add a page or tab…')
+  const picked = await until(
+    () =>
+      panel.evaluate(
+        (t: string) => {
+          const option = [
+            ...document.querySelectorAll<HTMLElement>('[role=group][aria-label="Other sites"] [role=option]'),
+          ].find((o) => (o.querySelector('.picker-name')?.textContent ?? '').startsWith(t))
+          option?.click()
+          return option ? true : undefined
+        },
+        [title],
+        { userGesture: true },
+      ),
+    { ms: 5_000, onTimeout: () => new E2eError(`No open tab on another site whose title starts with "${title}".`) },
+  )
+  if (!picked) throw new E2eError('The tab could not be picked.')
+  // Until Chrome's prompt is answered, the picker says so.
+  return until(
+    () =>
+      panel.evaluate(() => {
+        const state = document.querySelector('.picker-state')?.textContent ?? ''
+        if (/Chrome’s prompt/.test(state)) return undefined
+        if (state) return state
+        if (document.querySelector('.page-picker')) return undefined
+        const chips = [...document.querySelectorAll('.page-chips .page-title')].map((c) => c.textContent)
+        return `To send: ${chips.join(', ')}`
+      }, []),
+    { ms: 120_000, onTimeout: () => new E2eError("Chrome's prompt was not answered.") },
+  )
+}
+
 export class TimeoutError extends E2eError {
   constructor(readonly snapshot: PanelSnapshot) {
     super('Timed out waiting for the reply; run pnpm e2e ask without a question to keep waiting.')
