@@ -1,0 +1,4 @@
+{
+  "object": "token",
+  "jwt": "eyJhbGciOiJSUzI1NiIsImtpZCI6Imluc19zbW9rZSIsInR5cCI6IkpXVCJ9.eyJhenAiOiJjaHJvbWUtZXh0ZW5zaW9uOi8vc21va2UiLCJzaWQiOiJzZXNzX3Ntb2tlIiwic3ViIjoidXNlcl9zbW9rZSIsImlzcyI6Imh0dHBzOi8vY2xlcmsuZXhhbXBsZS50ZXN0IiwiaWF0IjoxNzY3MjI1NjAwLCJuYmYiOjE3NjcyMjU2MDAsImV4cCI6NDEwMjQ0NDgwMCwidiI6Mn0.c21va2U"
+}

@@ -36,12 +36,14 @@ const CLERK_FIXTURES: Record<string, string> = {
  */
 const CLIENT_JWT = 'client_smoke_jwt'
 const SIGNED_IN_CLIENT = 'clerk-client-signed-in.json'
-/** The session token the signed-in fixture hands out: what the panel must send the worker. */
-const SESSION_TOKEN = (
-  JSON.parse(readFileSync(path.join(FIXTURES, SIGNED_IN_CLIENT), 'utf8')) as {
-    response: { sessions: { last_active_token: { jwt: string } }[] }
-  }
-).response.sessions[0]!.last_active_token.jwt
+/**
+ * Asked for a session's token, the Frontend API answers with this one, which names the extension's
+ * origin (azp). The token the signed-in client comes with names none, as Clerk's does; the worker
+ * refuses that one, so the panel asks for this one instead, and must send the worker this one.
+ */
+const SESSION_TOKEN_FIXTURE = 'clerk-session-token.json'
+const SESSION_TOKEN = (JSON.parse(readFileSync(path.join(FIXTURES, SESSION_TOKEN_FIXTURE), 'utf8')) as { jwt: string })
+  .jwt
 
 // What the signed-in panel asks the worker for while loading.
 const WORKER_FIXTURES: Record<string, string> = {
@@ -177,6 +179,14 @@ const test = base.extend<Fixtures>({
       }
       if (clerkFixture) {
         return route.fulfill({ path: path.join(FIXTURES, clerkFixture), headers: corsHeaders(request) })
+      }
+      if (
+        signedIn &&
+        request.method() === 'POST' &&
+        clerkHosts.includes(url.hostname) &&
+        url.pathname === '/v1/client/sessions/sess_smoke/tokens'
+      ) {
+        return route.fulfill({ path: path.join(FIXTURES, SESSION_TOKEN_FIXTURE), headers: corsHeaders(request) })
       }
       const workerFixture =
         signedIn && request.method() === 'GET' && workerHosts.includes(url.hostname)
@@ -329,7 +339,7 @@ test.describe('signed in', () => {
 
     await expect(panel.getByRole('button', { name: 'New chat' })).toBeVisible()
     await expect(panel.getByRole('textbox', { name: 'Message' })).toBeVisible()
-    // Clerk took the session from the fixture, and the panel asked the worker with its token.
+    // Clerk took the session from the fixture, and the panel asked the worker with a token that names its origin.
     await expect.poll(() => worker).toContainEqual({ path: '/v1/credits', token: SESSION_TOKEN })
     expect(errors).toEqual([])
     expect(blocked).toEqual([])
