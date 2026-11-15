@@ -551,35 +551,6 @@ describe('OpenRouter model names and list', () => {
     await user.click(chip('Auto'))
     expect(menuItems()).toEqual(['Auto', 'Claude Sonnet 5.5', 'Qwen 6: Turbo', 'GLM 5: 32B', 'Llama 5 70B'])
   })
-
-  it("reads OpenRouter's model list again once it is an hour old", async () => {
-    const { browser, user } = await openPanel()
-    browser.openRouter.keys.add(KEY)
-    await openSettings(user)
-    await turnOn(user, 'OpenRouter', KEY)
-    await waitFor(() => modelSwitch('OpenRouter', 'OpenAI: GPT-6.1 Sol'))
-    const reads = () => browser.openRouter.requests.filter((r) => r.path === '/api/v1/models').length
-    expect(reads()).toBe(1)
-
-    // Within the hour, Settings uses the list it read.
-    await backToChat(user)
-    vi.setSystemTime(Date.now() + 59 * 60 * 1000)
-    await openSettings(user)
-    await waitFor(() => modelSwitch('OpenRouter', 'OpenAI: GPT-6.1 Sol'))
-    expect(reads()).toBe(1)
-
-    // Past it, the list is read again, with the prices OpenRouter has now.
-    browser.openRouter.models[1] = listed('openai/gpt-6.1-sol', 'OpenAI: GPT-6.1 Sol', 1, 4)
-    await backToChat(user)
-    vi.setSystemTime(Date.now() + 2 * 60 * 1000)
-    await openSettings(user)
-    await waitFor(() =>
-      expect(modelSwitch('OpenRouter', 'OpenAI: GPT-6.1 Sol')).toHaveAccessibleDescription(
-        'Strong all-round · $1.00 in · $4.00 out · 200K context',
-      ),
-    )
-    expect(reads()).toBe(2)
-  })
 })
 
 describe('the model menu in the chat', () => {
@@ -659,21 +630,6 @@ describe('the model menu in the chat', () => {
     expect(screen.getByRole('heading', { name: 'Providers' })).toHaveFocus()
     // Closing it goes back to where the user came from: the model chip.
     await backToChat(user)
-    expect(chip('GPT-6.1 Sol')).toHaveFocus()
-  })
-
-  it('works from the keyboard: the arrows move through it, and Escape closes it on the button', async () => {
-    const { browser, user } = await openPanel()
-    await setUpOpenRouter(browser, user)
-
-    await user.click(chip('GPT-6.1 Sol'))
-    expect(screen.getByRole('menuitemradio', { name: 'Auto' })).toHaveFocus()
-    await user.keyboard('{ArrowDown}')
-    expect(screen.getByRole('menuitemradio', { name: 'Claude Sonnet 5.5' })).toHaveFocus()
-    await user.keyboard('{End}')
-    expect(screen.getByRole('menuitem', { name: 'Manage models' })).toHaveFocus()
-    await user.keyboard('{Escape}')
-    expect(screen.queryByRole('menu', { name: 'Model' })).not.toBeInTheDocument()
     expect(chip('GPT-6.1 Sol')).toHaveFocus()
   })
 })

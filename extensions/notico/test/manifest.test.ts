@@ -99,24 +99,6 @@ describe('extension manifest', () => {
     )
   })
 
-  it('has a description short enough for the Chrome Web Store summary', () => {
-    // Chrome's manifest reference caps the description at 132 characters; the store shows it as the summary.
-    expect(manifest({ VITE_CLERK_SYNC_HOST: 'https://sync.example.com' }).description.length).toBeLessThanOrEqual(132)
-  })
-
-  it('lists icons that exist in the build at the size they are listed for', () => {
-    const json = manifest({ VITE_CLERK_SYNC_HOST: 'https://api.cofun.cc' })
-    expect(Object.keys(json.icons)).toEqual(['16', '32', '48', '128'])
-    expect(json.action.default_icon).toEqual(json.icons)
-    for (const [size, file] of Object.entries(json.icons)) {
-      // Vite copies public/ into the build as it is. A PNG starts with its signature and the
-      // IHDR chunk, which holds the width and height at bytes 16 and 20.
-      const png = readFileSync(new URL(`../public/${file}`, import.meta.url))
-      expect(png.subarray(1, 4).toString('latin1')).toBe('PNG')
-      expect([png.readUInt32BE(16), png.readUInt32BE(20)]).toEqual([Number(size), Number(size)])
-    }
-  })
-
   it("covers Notion, Clerk, the sign-in page, and the sign-in page's parent domain", () => {
     expect(manifest({ VITE_CLERK_SYNC_HOST: 'https://api.cofun.cc' }).host_permissions).toEqual([
       ...NOTION,

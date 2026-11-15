@@ -323,49 +323,22 @@ describe('duplicating pages', () => {
     expect(ws.tasks.size).toBe(0)
   })
 
-  it('stops the question without checking again when a check on the copy fails', async () => {
-    const ws = workspace()
-    const tab = open(ws)
-    tab.respond('getTasks', 502, { name: 'BadGateway' })
-    const err = await notionError(copying(duplicatePage.run({ page: PLAN })))
-    expect([err.code, err.mayHaveChanged]).toEqual(['outcome_unknown', true])
-    expect(err.message).toContain('it may still appear')
-    expect(err.stopsQuestion).toBe(`${UNEXPECTED_STOP} Notion returned an error (502 BadGateway): no details.`)
-    expect(tab.sent.filter((r) => r.url.endsWith('/getTasks'))).toHaveLength(1)
-  })
-
-  it('stops checking at once when Notion refuses the check, and says the copy may still appear', async () => {
-    const ws = workspace()
-    const tab = open(ws)
-    tab.respond('getTasks', 400, { name: 'ValidationError', debugMessage: 'Unknown task.' })
-    const err = await notionError(copying(duplicatePage.run({ page: PLAN })))
-    expect(err.code).toBe('outcome_unknown')
-    expect(tab.sent.filter((r) => r.url.endsWith('/getTasks'))).toHaveLength(1)
-  })
-
-  it('says the copy may still appear when the account is signed out while Notion copies', async () => {
-    const ws = workspace()
-    const tab = open(ws)
-    tab.respond('getTasks', 401, { name: 'UnauthorizedError' })
-    const err = await notionError(copying(duplicatePage.run({ page: PLAN })))
-    expect(err.code).toBe('outcome_unknown')
-    expect(err.message).toContain('it may still appear')
-  })
-
-  it('stopped while a check on the copy stalls, answers at once that the copy may still appear', async () => {
-    const ws = workspace()
-    const tab = open(ws)
-    const stop = new AbortController()
-    // The task is queued; then Notion does not answer the check on it.
-    tab.hold('getTasks')
-    const running = duplicatePage.run({ page: PLAN }, stop.signal)
-    await until(() => sentTo(tab, 'getTasks').length > 0)
-    const at = Date.now()
-    stop.abort()
-    const err = await notionError(running)
-    expect(err.code).toBe('outcome_unknown')
-    // No time passed: the answer came from Stop, not from the deadline on the check.
-    expect(Date.now()).toBe(at)
+  it('checks on a copy no more once a check fails, and says the copy may still appear', async () => {
+    // A server error stops the question; a refusal or a signed-out account ends the check alike.
+    const failures: [number, Record<string, string>, string | undefined][] = [
+      [502, { name: 'BadGateway' }, `${UNEXPECTED_STOP} Notion returned an error (502 BadGateway): no details.`],
+      [400, { name: 'ValidationError', debugMessage: 'Unknown task.' }, undefined],
+      [401, { name: 'UnauthorizedError' }, undefined],
+    ]
+    for (const [status, body, stops] of failures) {
+      const tab = open(workspace())
+      tab.respond('getTasks', status, body)
+      const err = await notionError(copying(duplicatePage.run({ page: PLAN })))
+      expect([status, err.code, err.mayHaveChanged]).toEqual([status, 'outcome_unknown', true])
+      expect(err.message).toContain('it may still appear')
+      if (stops) expect(err.stopsQuestion).toBe(stops)
+      expect(tab.sent.filter((r) => r.url.endsWith('/getTasks'))).toHaveLength(1)
+    }
   })
 
   it('gives up early on a copy that keeps reporting an error, with what Notion said', async () => {

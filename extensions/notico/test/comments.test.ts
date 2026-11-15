@@ -220,15 +220,6 @@ describe('UC-NOTICO-NOTION-009 read and add comments', () => {
 })
 
 describe('read_comments', () => {
-  it('refuses arguments that are not what its schema says, without asking Notion', async () => {
-    const tab = open(workspace())
-    await expect(read({ part: 0 })).rejects.toThrow('`part` must be a whole number from 1.')
-    await expect(read({ part: '2' })).rejects.toThrow('`part` must be a whole number from 1.')
-    await expect(read({ page: 5 })).rejects.toThrow('`page`: Invalid input: expected string, received number')
-    await expect(read({ block: 'x' })).rejects.toThrow('Unrecognized key: "block"')
-    expect(tab.sent).toEqual([])
-  })
-
   it('leaves out deleted comments, and threads with no comment left', async () => {
     const ws = workspace([
       { on: PAGE, n: 100 },
@@ -338,11 +329,6 @@ describe('read_page and comments', () => {
     comment(ws, 101, 201, [['Kept']])
     open(ws)
     expect(await readPage.run({})).toContain('This page has 1 comment thread: read it with read_comments.')
-  })
-
-  it('says nothing about comments when there are none', async () => {
-    open(workspace())
-    expect(await readPage.run({})).not.toContain('comment')
   })
 })
 

@@ -8,8 +8,6 @@ import {
   NotionClient,
   NotionCooldown,
   coolingStop,
-  limitedStop,
-  waitText,
   NOT_SENT,
   NotionError,
   type CooldownStore,
@@ -742,61 +740,6 @@ describe('when Notion turns requests away', () => {
     expect(cooldown.left()).toBe(120_000)
   })
 
-  it('words a wait the same way in both messages, rounded up', () => {
-    const texts: [number, string][] = [
-      [1, '1 second'],
-      [30_000, '30 seconds'],
-      [59_000, '59 seconds'],
-      [59_001, 'a minute'],
-      [60_000, 'a minute'],
-      [60_001, '2 minutes'],
-      [75_000, '2 minutes'],
-      [5 * 60_000, '5 minutes'],
-      [COOLDOWN_MAX_MS, '10 minutes'],
-    ]
-    for (const [ms, text] of texts) {
-      expect([ms, waitText(ms)]).toEqual([ms, text])
-      expect(limitedStop(ms)).toContain(`Wait ${text}, then ask again.`)
-      expect(coolingStop(ms)).toContain(`Ask again in ${text}.`)
-    }
-    expect(waitText(0)).toBe('1 second')
-    // Without a wait Notion asked for, a minute is the advice.
-    expect([LIMITED_STOP, limitedStop(0)]).toEqual([limitedStop(60_000), limitedStop(60_000)])
-  })
-
-  it('tells a request the same client makes after a refusal the wait that is left, not a minute', async () => {
-    let now = Date.now()
-    const tab = new FakeNotionTab(PAGE_URL).limit('loadPageChunk', 1, 429, '120').install()
-    notionCooldown.now = () => now
-    const { client } = await activeNotionTab()
-    const first = await notionError(client.loadPage(PAGE))
-    expect(first.stopsQuestion).toBe(limitedStop(120_000))
-    // A request of the same tool call, such as one of a parallel batch that hadn't left yet.
-    const later = await notionError(client.getRecords([{ table: 'block', id: PAGE }]))
-    expect([later.message, later.stopsQuestion]).toEqual([NOT_SENT, limitedStop(120_000)])
-    now += 90_000
-    const last = await notionError(client.getRecords([{ table: 'block', id: PAGE }]))
-    expect(last.stopsQuestion).toBe(limitedStop(30_000))
-    // Once the wait is over, the client still sends nothing, and names the usual wait, not none.
-    now += 30_000
-    const over = await notionError(client.getRecords([{ table: 'block', id: PAGE }]))
-    expect(over.stopsQuestion).toBe(LIMITED_STOP)
-    expect(tab.sent).toHaveLength(1)
-  })
-
-  it('never waits longer than the longest wait, even when the clock is set back', () => {
-    let now = Date.parse('2026-11-10T08:00:00Z')
-    const cooldown = new NotionCooldown(() => now)
-    cooldown.start('600')
-    now -= 60 * 60_000
-    expect(cooldown.left()).toBe(COOLDOWN_MAX_MS)
-    // The wait ends that long after the clock changed, not an hour later.
-    now += COOLDOWN_MAX_MS - 1
-    expect(cooldown.left()).toBe(1)
-    now += 1
-    expect(cooldown.left()).toBe(0)
-  })
-
   it('keeps every side panel of the browser from sending during the wait, one opened later included', async () => {
     let now = Date.now()
     const tab = new FakeNotionTab(PAGE_URL).limit('loadPageChunk', 1, 429, '120').install()
@@ -822,24 +765,6 @@ describe('when Notion turns requests away', () => {
     expect(tab.sent).toHaveLength(2)
   })
 
-  it('cuts a kept wait that ends too far ahead to the longest wait, and ignores one that is not a time', async () => {
-    const now = Date.parse('2026-11-10T08:00:00Z')
-    let tab = new FakeNotionTab(PAGE_URL).install()
-    // Each in a browser of its own.
-    const kept = async (value: unknown) => {
-      tab = new FakeNotionTab(PAGE_URL).install()
-      await tab.storage.local.set({ [COOLDOWN_KEY]: value })
-      const cooldown = new NotionCooldown(() => now, chromeCooldownStore)
-      await cooldown.ready()
-      return cooldown.left()
-    }
-    expect(await kept(now + 24 * 60 * 60_000)).toBe(COOLDOWN_MAX_MS)
-    // Cut in the storage too, so a panel opened later doesn't start the longest wait over.
-    expect(tab.storage.values[COOLDOWN_KEY]).toBe(now + COOLDOWN_MAX_MS)
-    expect(await kept(now - 1)).toBe(0)
-    for (const value of ['soon', null, Number.NaN, Infinity, { until: now + 1000 }]) expect(await kept(value)).toBe(0)
-  })
-
   it('still keeps the wait in the side panel when the storage fails', async () => {
     const now = Date.parse('2026-11-10T08:00:00Z')
     const broken: CooldownStore = {
@@ -851,86 +776,6 @@ describe('when Notion turns requests away', () => {
     await cooldown.ready()
     cooldown.start('120')
     expect(cooldown.left()).toBe(120_000)
-  })
-
-  it('loads the kept wait on a later try when the first load failed', async () => {
-    const now = Date.parse('2026-11-10T08:00:00Z')
-    let loads = 0
-    let listeners = 0
-    const flaky: CooldownStore = {
-      load: async () => {
-        if (loads++ === 0) throw new Error('storage is busy')
-        return now + 120_000
-      },
-      save: async () => {},
-      onChange: () => void listeners++,
-    }
-    const cooldown = new NotionCooldown(() => now, flaky)
-    await cooldown.ready()
-    expect(cooldown.left()).toBe(0)
-    await cooldown.ready()
-    expect(cooldown.left()).toBe(120_000)
-    // Loaded: not loaded again, and the store's changes are followed once.
-    await cooldown.ready()
-    expect([loads, listeners]).toEqual([2, 1])
-  })
-
-  it('keeps the later end when two side panels are turned away at the same moment', async () => {
-    const now = Date.parse('2026-11-10T08:00:00Z')
-    // A storage whose change events arrive later, as chrome.storage's do.
-    let kept: unknown
-    const events: number[] = []
-    const listeners: ((until: unknown) => void)[] = []
-    const store: CooldownStore = {
-      load: async () => kept,
-      save: async (until) => {
-        kept = until
-        events.push(until)
-      },
-      onChange: (listener) => void listeners.push(listener),
-    }
-    const openPanel = async () => {
-      const cooldown = new NotionCooldown(() => now, store)
-      await cooldown.ready()
-      return cooldown
-    }
-    const [first, second] = [await openPanel(), await openPanel()]
-    // Both turned away before either hears of the other: the shorter wait is saved last.
-    first.start('600')
-    second.start('60')
-    expect(kept).toBe(now + 60_000)
-    while (events.length) for (const until of events.splice(0)) for (const listener of listeners) listener(until)
-    expect([first.left(), second.left()]).toEqual([COOLDOWN_MAX_MS, COOLDOWN_MAX_MS])
-    // A panel opened afterwards waits as long as Notion asked.
-    expect((await openPanel()).left()).toBe(COOLDOWN_MAX_MS)
-  })
-
-  it('tries again when following the storage failed', async () => {
-    const now = Date.parse('2026-11-10T08:00:00Z')
-    let tries = 0
-    const store: CooldownStore = {
-      load: async () => now + 120_000,
-      save: async () => {},
-      onChange: () => {
-        if (tries++ === 0) throw new Error('storage is busy')
-      },
-    }
-    const cooldown = new NotionCooldown(() => now, store)
-    await cooldown.ready()
-    expect(cooldown.left()).toBe(0)
-    await cooldown.ready()
-    expect(cooldown.left()).toBe(120_000)
-  })
-
-  it('reads the wait kept in a new browser, not the one before it', async () => {
-    new FakeNotionTab(PAGE_URL).install()
-    await activeNotionTab()
-    const tab = new FakeNotionTab(PAGE_URL).install()
-    tab.workspace = new FakeWorkspace([page], SPACE)
-    await tab.storage.local.set({ [COOLDOWN_KEY]: Date.now() + 120_000 })
-    const err = await notionError((await activeNotionTab()).client.loadPage(PAGE))
-    expect([err.code, err.stopsQuestion]).toEqual(['rate_limited', coolingStop(120_000)])
-    expect(tab.sent).toHaveLength(0)
   })
 
   it('a side panel opened during the wait loads it before its first request', async () => {

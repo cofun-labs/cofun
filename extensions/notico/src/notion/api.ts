@@ -85,7 +85,7 @@ export function waitText(ms: number): string {
  * asked for, during which nothing more is sent; without, Notion didn't say, and a minute is only
  * advice. The agent adds a line when changes may already have been made.
  */
-export function limitedStop(ms?: number): string {
+function limitedStop(ms?: number): string {
   return `Notion is turning requests away right now (too many requests, or too busy), so Notico stopped. Wait ${ms ? waitText(ms) : 'a minute'}, then ask again.`
 }
 

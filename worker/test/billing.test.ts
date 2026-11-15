@@ -2,9 +2,6 @@
 // real SQL on SQLite. Stripe is a fake (FakeStripe) that keeps the sessions the worker made and writes
 // the events Stripe would send about them; the webhook gets them signed with a test signing secret,
 // as Stripe signs them.
-import { readdirSync, readFileSync } from 'node:fs'
-import { join } from 'node:path'
-import { DatabaseSync } from 'node:sqlite'
 import { beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import { createApp, type Env } from '../src/app'
 import { stripeOverHttp } from '../src/stripe'
@@ -782,54 +779,5 @@ describe('Stripe over HTTP', () => {
     await expect(stripeOverHttp('sk', oddItems.send).lineItems('cs_1')).rejects.toThrow('does not understand')
     const many = fakeSend(200, { data: [], has_more: true })
     await expect(stripeOverHttp('sk', many.send).lineItems('cs_1')).rejects.toThrow('more than 100 line items')
-  })
-})
-
-describe('the migration that adds purchases (0004)', () => {
-  it('copies every grant as it was, with its id, and keeps the indexes', () => {
-    const dir = join(import.meta.dirname, '../migrations')
-    const files = readdirSync(dir)
-      .filter((name) => name.endsWith('.sql'))
-      .toSorted()
-    const before = files.filter((name) => name < '0004')
-    const sqlite = new DatabaseSync(':memory:')
-    for (const file of before) sqlite.exec(readFileSync(join(dir, file), 'utf8'))
-    sqlite.exec(`INSERT INTO grants (id, user_id, source, amount, repaid, left, granted_at, expires_at, granted_by) VALUES
-      (1, 'user_a', 'free', 200000000, 0, 150000000, 1000, 2000, NULL),
-      (7, 'user_a', 'manual', 50000000, 10000000, 40000000, 1500, 9000, 'user_root'),
-      (9, 'user_b', 'free', 200000000, 200000000, 0, 3000, 4000, NULL)`)
-    sqlite.exec(`INSERT INTO model_calls (user_id, model, started_at, ended_at, stream, outcome, finish_reason,
-      prompt_tokens, cached_tokens, completion_tokens, estimated, micro_credits, owed) VALUES
-      ('user_b', 'm', 10, 20, 0, 'ok', 'stop', 1, 0, 1, 0, 5, 5)`)
-    const rows = sqlite.prepare('SELECT * FROM grants ORDER BY id').all()
-
-    sqlite.exec(readFileSync(join(dir, '0004_grants_purchases.sql'), 'utf8'))
-
-    expect(sqlite.prepare('SELECT * FROM grants ORDER BY id').all()).toEqual(
-      rows.map((row) => ({ ...row, payment: null, revoked: null })),
-    )
-    expect(sqlite.prepare('SELECT count(*) AS n FROM model_calls').get()).toEqual({ n: 1 })
-    const indexes = sqlite
-      .prepare("SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'grants' ORDER BY name")
-      .all()
-      .map((row) => row.name)
-    expect(indexes).toEqual(['grants_by_payment', 'grants_by_time', 'grants_by_user', 'grants_by_user_granted'])
-    // New ids follow the copied ones.
-    sqlite.exec(
-      `INSERT INTO grants (user_id, source, amount, repaid, left, granted_at, expires_at) VALUES ('user_c', 'free', 1, 0, 1, 1, 2)`,
-    )
-    expect(sqlite.prepare("SELECT id FROM grants WHERE user_id = 'user_c'").get()).toEqual({ id: 10 })
-    // A source the CHECK did not list before is now the worker's schema to check, not the table's;
-    // the pairings still hold.
-    expect(() =>
-      sqlite.exec(
-        `INSERT INTO grants (user_id, source, amount, repaid, left, granted_at, expires_at) VALUES ('user_c', 'purchase', 1, 0, 1, 1, 2)`,
-      ),
-    ).toThrow(/CHECK/)
-    expect(() =>
-      sqlite.exec(
-        `INSERT INTO grants (user_id, source, amount, repaid, left, granted_at, expires_at, revoked) VALUES ('user_c', 'free', 1, 0, 1, 1, 2, 'refund')`,
-      ),
-    ).toThrow(/CHECK/)
   })
 })

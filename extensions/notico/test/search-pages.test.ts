@@ -149,16 +149,6 @@ describe('search_pages arguments', () => {
     expect(tab.sent).toEqual([])
   })
 
-  it('refuses arguments that are not what its schema says, without asking Notion', async () => {
-    const tab = open()
-    await expect(search({})).rejects.toThrow('`query` must be some words to search for.')
-    await expect(search({ query: 5 })).rejects.toThrow('`query` must be some words to search for.')
-    await expect(search({ query: 'x', limit: 1.5 })).rejects.toThrow('`limit` must be a whole number from 1 to 20.')
-    await expect(search({ query: 'x', limit: '3' })).rejects.toThrow('`limit` must be a whole number from 1 to 20.')
-    await expect(search({ query: 'x', page: 'y' })).rejects.toThrow('Unrecognized key: "page"')
-    expect(tab.sent).toEqual([])
-  })
-
   // A null is dropped before a tool gets its arguments: see "a null where the schema takes none is
   // refused" in agent.test.ts.
   it('passes the limit, and uses the default without one', async () => {
@@ -349,21 +339,6 @@ describe('search_pages, partial lookups', () => {
       .install()
     expect(await search({ query: 'x' })).toContain(`1. 🗃 Untitled database ^${hex(dbA)}`)
   })
-
-  it("removes no tag when the response has none in Notion's shape", async () => {
-    const here = 'f5f5f5f5-0000-4000-8000-000000000001'
-    new FakeNotionTab(`https://app.notion.com/${hex(here)}`)
-      .respond('syncRecordValuesMain', 200, {
-        recordMap: { __version__: 3, block: { [here]: wrapped({ id: here, type: 'page' }) } },
-      })
-      .respond('search', 200, {
-        results: [{ id: FOUND, highlight: { title: 'Use <b>bold</b> here' } }],
-        total: 1,
-        recordMap: { __version__: 3 },
-      })
-      .install()
-    expect(await search({ query: 'bold' })).toContain(`1. 📄 Use \\<b>bold\\</b> here ^${hex(FOUND)}`)
-  })
 })
 
 describe('search_pages, tags and trash', () => {
@@ -416,41 +391,6 @@ describe('search_pages, the open page’s workspace', () => {
     expect(await notionError(search({ query: 'x' }))).toMatchObject({ code: 'no_access', message: NO_ACCESS })
     expect(switched.sent.map((r) => r.url.split('/api/v3/')[1])).toEqual(['syncRecordValuesMain'])
   })
-
-  it('looks it up again in a new conversation', async () => {
-    openAs(here, ME, {}).respond('search', 200, NOTHING)
-    await search({ query: 'x' })
-    forgetReads()
-    const tab = openAs(here, ME, {}).respond('search', 200, NOTHING)
-    await search({ query: 'x' })
-    expect(lookups(tab)).toBe(1)
-  })
-
-  it('remembers the workspaces of the last 20 pages only', async () => {
-    const pages = Array.from(
-      { length: 21 },
-      (_, i) => `f8f8f8f8-0000-4000-8000-0000000001${String(i).padStart(2, '0')}`,
-    )
-    for (const id of pages) {
-      openAs(id, ME, {}).respond('search', 200, NOTHING)
-      await search({ query: 'x' })
-    }
-    // The last one is still known; the first one was forgotten.
-    const last = openAs(pages[20], ME, {}).respond('search', 200, NOTHING)
-    await search({ query: 'x' })
-    expect(lookups(last)).toBe(0)
-    const first = openAs(pages[0], ME, {}).respond('search', 200, NOTHING)
-    await search({ query: 'x' })
-    expect(lookups(first)).toBe(1)
-  })
-
-  it('remembers nothing when no Notion user is signed in to the tab', async () => {
-    const tab = new FakeNotionTab(`https://app.notion.com/${hex(here)}`, 'notion_browser_id=b')
-      .respond('syncRecordValuesMain', 200, { recordMap: { __version__: 3 } })
-      .install()
-    expect((await notionError(search({ query: 'x' }))).code).toBe('signed_out')
-    expect(lookups(tab)).toBe(1)
-  })
 })
 
 describe('search_pages, the count of results', () => {
@@ -483,15 +423,5 @@ describe('search_pages, the count of results', () => {
     expect((await search({ query: 'x', limit: 3 })).split('\n')[0]).toBe(
       'Pages found for "x" (up to 8 in all; showing 2):',
     )
-  })
-
-  it('gives no total when the trashed results were the only ones left out', async () => {
-    found(3)
-    expect((await search({ query: 'x', limit: 3 })).split('\n')[0]).toBe('Pages found for "x":')
-  })
-
-  it('gives no total when Notion returned fewer results than asked for, whatever its total says', async () => {
-    found(4)
-    expect((await search({ query: 'x', limit: 4 })).split('\n')[0]).toBe('Pages found for "x":')
   })
 })

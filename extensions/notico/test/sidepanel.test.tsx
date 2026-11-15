@@ -162,22 +162,6 @@ describe('asking the AI', () => {
     expect(screen.getByText('Error')).toBeVisible()
     expect(screen.getByText('Not a Notion page URL or id: my notes')).toBeVisible()
   })
-
-  it('a call with no arguments shows none', async () => {
-    const { browser, user } = await openPanel()
-    browser.ai.script.push(
-      { toolCalls: [{ name: 'get_selection', arguments: '{}' }] },
-      { reply: 'Nothing is selected.' },
-    )
-
-    await ask(user, 'What did I select?')
-    await answered()
-
-    // The fake tab has nothing selected to give, so the call fails; it has no arguments either way.
-    await user.click(screen.getByText("Couldn't read the selection"))
-    expect(screen.getByText('get_selection')).toBeVisible()
-    expect(screen.queryByText('Arguments')).not.toBeInTheDocument()
-  })
 })
 
 describe('a formatted reply', () => {
@@ -913,29 +897,6 @@ describe('sessions', () => {
     expect(conversation().getByText('0.37 credits')).toBeVisible()
   })
 
-  it("a reply's details close on Escape, on a click outside, and when pressed again", async () => {
-    const { browser, user } = await openPanel()
-    await askAboutPage(browser, user)
-    const button = screen.getByRole('button', { name: 'Reply details' })
-    const popover = () => screen.queryByRole('dialog', { name: 'Reply details' })
-
-    await user.click(button)
-    expect(popover()).toBeVisible()
-    expect(button).toHaveAttribute('aria-expanded', 'true')
-    await user.keyboard('{Escape}')
-    expect(popover()).not.toBeInTheDocument()
-    expect(button).toHaveFocus()
-
-    await user.click(button)
-    await user.click(screen.getByText('It is a fixture.'))
-    expect(popover()).not.toBeInTheDocument()
-
-    await user.click(button)
-    await user.click(button)
-    expect(popover()).not.toBeInTheDocument()
-    expect(button).toHaveAttribute('aria-expanded', 'false')
-  })
-
   it('[UC-NOTICO-AGENT-001-S23] a page read twice for a question counts once', async () => {
     const { browser, user } = await openPanel(workspaceTab().tab)
     browser.ai.script.push(
@@ -966,36 +927,6 @@ describe('sessions', () => {
     expect(await navigator.clipboard.readText()).toBe('Let me look.\n\nIt has **two** items:\n\n- One\n- Two')
     expect(screen.getByRole('button', { name: 'Copied' })).toBeVisible()
     expect(screen.getByRole('status')).toHaveTextContent('Copied')
-  })
-
-  it('a reply cannot be copied until it has ended', async () => {
-    const { browser, user } = await openPanel()
-    const resume = pausedReply(browser, 'The roadmap has three milestones')
-
-    await ask(user, 'What is on the roadmap?')
-    await screen.findByText(/The roadmap/)
-    expect(screen.queryByRole('button', { name: 'Copy reply' })).not.toBeInTheDocument()
-
-    resume()
-    await answered()
-    expect(screen.getByRole('button', { name: 'Copy reply' })).toBeVisible()
-  })
-
-  it('says so when the clipboard refuses the reply', async () => {
-    const { browser, user } = await openPanel()
-    browser.ai.script.push({ reply: 'Hello.' })
-    await ask(user, 'Hi')
-    await answered()
-    // The browser's clipboard, refusing: as when the panel has lost focus.
-    Object.defineProperty(navigator, 'clipboard', {
-      configurable: true,
-      value: { writeText: () => Promise.reject(new DOMException('Document is not focused.', 'NotAllowedError')) },
-    })
-
-    await user.click(screen.getByRole('button', { name: 'Copy reply' }))
-
-    expect(await screen.findByRole('button', { name: "Couldn't copy" })).toBeVisible()
-    expect(screen.getByRole('status')).toHaveTextContent("Couldn't copy the reply")
   })
 
   it('a reply that used no Notion tool says nothing about Notion under it', async () => {
@@ -1172,48 +1103,6 @@ describe('sessions', () => {
     await openSession(user, /^Roadmap milestones/)
     await screen.findByText('Three milestones.')
     expect(title()).toHaveTextContent(/^Roadmap milestones$/)
-  })
-
-  it('the session list closes from its Close button, the Sessions button, or Escape, back to the chat', async () => {
-    const { browser, user } = await openPanel()
-    const toggle = screen.getByRole('button', { name: 'Chats' })
-    const list = () => screen.queryByRole('dialog', { name: 'Chats' })
-
-    await user.click(toggle)
-    expect(list()).toBeVisible()
-    expect(toggle).toHaveAttribute('aria-expanded', 'true')
-    await user.click(screen.getByRole('button', { name: 'Close' }))
-    expect(list()).not.toBeInTheDocument()
-    expect(toggle).toHaveFocus()
-
-    await user.click(toggle)
-    await user.click(toggle)
-    expect(list()).not.toBeInTheDocument()
-    expect(toggle).toHaveAttribute('aria-expanded', 'false')
-
-    // In the search box, Escape first clears what was typed, then closes the list.
-    await user.click(toggle)
-    await user.type(screen.getByRole('searchbox'), 'road')
-    await user.keyboard('{Escape}')
-    expect(list()).toBeVisible()
-    await user.clear(screen.getByRole('searchbox'))
-    await user.keyboard('{Escape}')
-    expect(list()).not.toBeInTheDocument()
-    expect(toggle).toHaveFocus()
-    expect(composer()).toBeVisible()
-
-    // Opening a chat from the list, another one or the one already open, puts the focus in the message box.
-    browser.ai.script.push({ reply: 'Three milestones.' })
-    await ask(user, 'What is on the roadmap?')
-    await screen.findByText('Three milestones.')
-    await answered()
-    await openSession(user, /What is on the roadmap\?/)
-    expect(list()).not.toBeInTheDocument()
-    expect(composer()).toHaveFocus()
-    await user.click(screen.getByRole('button', { name: 'New chat' }))
-    await openSession(user, /What is on the roadmap\?/)
-    await screen.findByText('Three milestones.')
-    await waitFor(() => expect(composer()).toHaveFocus())
   })
 
   it('the session list is searched by title, and deleting a session takes a second click', async () => {

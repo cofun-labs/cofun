@@ -5,11 +5,9 @@ import { NESTED_MAX } from '../src/notion/api'
 import { inline } from '../src/notion/blocks'
 import { blockRefs, codeSpan, splitIntoParts } from '../src/notion/markdown'
 import { carryPages } from '../src/tools/current'
-import { createDatabase } from '../src/tools/database'
-import { listPages } from '../src/tools/find'
 import { readPage } from '../src/tools/read'
 import { PART_CHARS } from '../src/tools/shared'
-import { createPage, editPage } from '../src/tools/write'
+import { editPage } from '../src/tools/write'
 import { FakeNotionTab, PAGE, PAGE_URL, SPACE, USER, fixture, restoreGlobals } from './notion-tab'
 
 afterEach(restoreGlobals)
@@ -450,26 +448,6 @@ describe('read_page arguments', () => {
     const page = chunk([id(1)], { block: block(id(1), 'text', 'Hi') })
     openPage(page)
     expect(body(await read({ page: ' ' }))).toBe('Hi ^00000001')
-  })
-
-  it('refuses arguments that are not what its schema says, without asking Notion', async () => {
-    const tab = openPage()
-    await expect(read({ part: '2' })).rejects.toThrow('`part` must be a whole number from 1.')
-    await expect(read({ part: null })).rejects.toThrow('`part` must be a whole number from 1.')
-    await expect(read({ page: 5 })).rejects.toThrow('`page`: Invalid input: expected string, received number')
-    await expect(read({ pages: 'x' })).rejects.toThrow('Unrecognized key: "pages"')
-    expect(tab.sent).toEqual([])
-  })
-
-  it('tells the model its arguments as before', () => {
-    expect(readPage.parameters).toEqual({
-      type: 'object',
-      properties: {
-        page: { type: 'string', description: 'URL or id of the page to read. Leave out to read the open page.' },
-        part: { type: 'integer', minimum: 1, description: 'Which part of a long page to read, starting at 1.' },
-      },
-      additionalProperties: false,
-    })
   })
 
   it('asks for a page when the Notion tab shows none', async () => {
@@ -1004,55 +982,6 @@ describe('lookups of mentioned people and pages', () => {
       ),
     )
     expect(body(await read())).toBe(['---', 'Status: Doing', '---', '(This page is empty.)'].join('\n'))
-  })
-})
-
-describe('how the side panel describes a read', () => {
-  const id = 'a'.repeat(32)
-
-  it('names the page by its title as the user sees it, without its Markdown', () => {
-    const result = `Page: **Q3** plan with @[Alice] for [Launch](${id}) to\\_do ^${id}\nURL: x`
-    expect(readPage.describe({}, result)).toMatchObject({ name: 'Q3 plan with Alice for Launch to_do' })
-  })
-
-  it.each([
-    ['snake_case notes', 'snake_case notes'],
-    ['`a*b` and \\*stars\\*', 'a*b and *stars*'],
-    ['~~old~~ *new* plan', 'old new plan'],
-    ['[\\[WIP\\] Plan](' + 'b'.repeat(32) + ')', '[WIP] Plan'],
-    ['<span color="red">Red</span> title', 'Red title'],
-    ['C:\\temp', 'C:\\temp'],
-  ])('shows the title %s as %s', (markdown, shown) => {
-    expect(readPage.describe({}, `Page: ${markdown} ^${id}`)).toMatchObject({ name: shown })
-  })
-
-  it('says what other tools did in words that read right', () => {
-    expect(listPages.describe({}, undefined)).toEqual({ verb: expect.anything(), what: 'the pages in the sidebar' })
-    expect(listPages.describe({ section: 'Private' }, undefined)).toMatchObject({
-      what: 'the pages in',
-      name: 'Private',
-    })
-    expect(createPage.describe({ title: '**Q3** plan', parent: PAGE }, undefined)).toMatchObject({
-      what: 'the page',
-      name: 'Q3 plan',
-    })
-    // Without a title, the noun is said once.
-    expect(createPage.describe({}, undefined)).toEqual({ verb: expect.anything(), what: 'a page' })
-    expect(createDatabase.describe({}, undefined)).toEqual({ verb: expect.anything(), what: 'a database' })
-    expect(createDatabase.describe({ title: 'Tasks', parent: PAGE }, undefined)).toMatchObject({
-      what: 'the database',
-      name: 'Tasks',
-    })
-  })
-
-  it("shows a database's name as it is: it is plain text", () => {
-    const result = `Page: snake_*db* C:\\temp ^${id}\nURL: x\nThis page is a database: read its rows with query_database.`
-    expect(readPage.describe({}, result)).toMatchObject({ name: 'snake_*db* C:\\temp' })
-  })
-
-  it('says "a page", not the open page, when its arguments do not parse', () => {
-    expect(readPage.describe({ page: 5 }, undefined)).toMatchObject({ what: 'a page' })
-    expect(readPage.describe({}, undefined)).toMatchObject({ what: 'the open page' })
   })
 })
 

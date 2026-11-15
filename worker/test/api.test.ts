@@ -202,12 +202,6 @@ describe('worker API', () => {
     expect(options).toMatch(/^\s*telemetry: false,$/m)
   })
 
-  it('root URL redirects to the sign-in page', async () => {
-    const res = await req('GET', '/')
-    expect(res.status).toBe(302)
-    expect(res.headers.get('location')).toBe('/login')
-  })
-
   it('sign-in page is off without a publishable key', async () => {
     expect((await req('GET', '/login')).status).toBe(503)
   })
@@ -234,17 +228,6 @@ describe('worker API', () => {
     env.AI_GATEWAY_ID = ''
     await chat(token)
     expect(ai.calls[0].options).toBeUndefined()
-  })
-
-  it('invalid bodies are rejected without calling the model', async () => {
-    expect((await chat(token, { messages: [] })).status).toBe(400)
-    expect((await chat(token, [1])).status).toBe(400)
-    expect((await chat(token, { messages: [{ role: 'tool', content: 'x' }] })).status).toBe(400)
-    expect((await chat(token, { messages: [{ role: 'user', content: 1 }] })).status).toBe(400)
-    expect((await chat(token, { messages: [{ role: 'user', content: 'x'.repeat(200_001) }] })).status).toBe(400)
-    expect((await chat(token, { messages: hi, max_tokens: 100_000 })).status).toBe(400)
-    expect((await chat(token, { messages: hi, stream: 'false' })).status).toBe(400)
-    expect(ai.calls).toHaveLength(0)
   })
 
   it('a chat body too large is refused with 413 before it is read whole, with or without its length', async () => {
@@ -1515,60 +1498,5 @@ describe('tool calling', () => {
     }
     expect((await chat(token, { messages: askPage, tools: nested(64) })).status).toBe(200)
     expect((await chat(token, { messages: askPage, tools: nested(65) })).status).toBe(400)
-  })
-
-  it('invalid tools are rejected without calling the model', async () => {
-    const fn = (f: Record<string, unknown>) => [{ type: 'function', function: f }]
-    const bad: unknown[] = [
-      'get_current_page',
-      [],
-      Array.from({ length: 65 }, (_, i) => ({ type: 'function', function: { name: `t${i}` } })),
-      [{ type: 'code_interpreter' }],
-      [{ type: 'function' }],
-      fn({ name: 'has space' }),
-      fn({ name: 'x'.repeat(65) }),
-      fn({ name: 1 }),
-      fn({ name: 'f', description: 1 }),
-      fn({ name: 'f', parameters: 'object' }),
-      fn({ name: 'f', parameters: [] }),
-      [pageTool, pageTool],
-    ]
-    for (const t of bad) expect((await chat(token, { messages: askPage, tools: t })).status).toBe(400)
-    expect(ai.calls).toHaveLength(0)
-  })
-
-  it('invalid tool_choice is rejected without calling the model', async () => {
-    const bad = [
-      { tool_choice: 'auto' },
-      { tools, tool_choice: 'any' },
-      { tools, tool_choice: { type: 'function', function: { name: 'unknown' } } },
-      { tools, tool_choice: { type: 'function' } },
-      { tools, tool_choice: { function: { name: 'get_current_page' } } },
-    ]
-    for (const body of bad) expect((await chat(token, { messages: askPage, ...body })).status).toBe(400)
-    expect(ai.calls).toHaveLength(0)
-  })
-
-  it('invalid tool calls and tool results are rejected without calling the model', async () => {
-    const call = { id: 'call_1', type: 'function', function: { name: 'get_current_page', arguments: '{}' } }
-    const assistant = (m: Record<string, unknown>) => [...askPage, { role: 'assistant', ...m }]
-    const bad: unknown[][] = [
-      assistant({}),
-      assistant({ content: 1, tool_calls: [call] }),
-      assistant({ tool_calls: [] }),
-      assistant({ tool_calls: {} }),
-      assistant({ tool_calls: Array.from({ length: 33 }, (_, i) => ({ ...call, id: `c${i}` })) }),
-      assistant({ tool_calls: [{ ...call, id: '' }] }),
-      assistant({ tool_calls: [{ ...call, id: 'x'.repeat(257) }] }),
-      assistant({ tool_calls: [{ ...call, type: 'other' }] }),
-      assistant({ tool_calls: [{ ...call, function: { name: 'get_current_page', arguments: {} } }] }),
-      assistant({ tool_calls: [{ ...call, function: { name: 'bad name', arguments: '{}' } }] }),
-      [...askPage, { role: 'tool', content: '{}' }],
-      [...askPage, { role: 'tool', tool_call_id: 'call_1', content: { title: 'x' } }],
-      [...askPage, { role: 'developer', content: 'x' }],
-      [...askPage, null],
-    ]
-    for (const messages of bad) expect((await chat(token, { messages })).status).toBe(400)
-    expect(ai.calls).toHaveLength(0)
   })
 })

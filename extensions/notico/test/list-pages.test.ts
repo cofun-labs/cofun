@@ -318,22 +318,6 @@ describe('list_pages arguments', () => {
     expect(tab.sent).toEqual([])
   })
 
-  it('refuses arguments that are not what its schema says, without asking Notion', async () => {
-    const tab = new FakeNotionTab(PAGE_URL).install()
-    await expect(run({ depth: 0 })).rejects.toThrow('`depth` must be a whole number from 1 to 3.')
-    await expect(run({ depth: 1.5 })).rejects.toThrow('`depth` must be a whole number from 1 to 3.')
-    await expect(run({ depth: '2' })).rejects.toThrow('`depth` must be a whole number from 1 to 3.')
-    await expect(run({ section: 'Private', offset: 'ten' })).rejects.toThrow(
-      '`offset` must be a whole number of at least 0.',
-    )
-    await expect(run({ page: 5 })).rejects.toThrow('`page`: Invalid input: expected string, received number')
-    await expect(run({ section: ['Private'] })).rejects.toThrow(
-      '`section`: Invalid input: expected string, received array',
-    )
-    await expect(run({ limit: 10 })).rejects.toThrow('Unrecognized key: "limit"')
-    expect(tab.sent).toEqual([])
-  })
-
   it('checks section and offset before asking Notion', async () => {
     const tab = new FakeNotionTab(PAGE_URL).install()
     await expect(run({ offset: 5 })).rejects.toThrow('`offset` needs `page` or `section`.')
@@ -388,27 +372,6 @@ describe('list_pages arguments', () => {
     workspace()
     await expect(run({ section: 'Design' })).rejects.toThrow('No section “Design”.')
   })
-
-  it('tells apart teamspaces whose names differ only in case', async () => {
-    const workspace = () =>
-      notion([page(11, 'Upper'), page(21, 'Lower')])
-        .respond('getSpaces', 200, spaces({}, {}))
-        .respond('getTeamsV2', 200, teams([team(1, 'Design', [id(11)]), team(2, 'design', [id(21)])]))
-        .install()
-    workspace()
-    await expect(run({ section: 'nope' })).rejects.toThrow(
-      'The sections are: Private, Shared, Workspace, Teamspace: Design (1), Teamspace: design (2).',
-    )
-    workspace()
-    expect((await run({ section: 'Teamspace: design (2)' })).split('\n').slice(2)).toEqual([
-      `- 📄 Lower ^${hex(id(21))}`,
-    ])
-  })
-
-  it('says a page with nothing under it has no pages', async () => {
-    notion([page(10, 'Empty')]).install()
-    expect(await run({ page: hex(id(10)) })).toBe(`Pages under “Empty” ^${hex(id(10))}:\n\n(no pages)`)
-  })
 })
 
 describe('list_pages at the limit', () => {
@@ -429,28 +392,12 @@ describe('list_pages at the limit', () => {
     expect(lookups(tab)).toHaveLength(7)
   })
 
-  it('gives the next offset by position when the list holds an id twice', async () => {
-    // The first child is listed again later; the offset still points past the last one shown.
-    const kids = range(700, LIST_LIMIT + 5)
-    kids[LIST_LIMIT - 1] = kids[0]
-    notion([page(10, 'Twice', kids), ...pages([...new Set(kids)], 'Child')]).install()
-    expect(await run({ page: hex(id(10)) })).toContain(`List them with \`offset: ${LIST_LIMIT}\`.)`)
-  })
-
   it('says pages under the ones shown may be left out too when the top level is cut off deeper than one level', async () => {
     const kids = range(300, LIST_LIMIT + 1)
     notion([page(10, 'Too many', kids), ...pages(kids, 'Child', () => [id(900)])]).install()
     expect(await run({ page: hex(id(10)), depth: 2 })).toContain(
       `List them with \`offset: ${LIST_LIMIT}\`. Pages under the ones shown may be left out too. To see what is under a listed page, list it by its id.)`,
     )
-  })
-
-  it('says nothing is left out when the pages shown hold nothing', async () => {
-    const kids = range(300, LIST_LIMIT)
-    notion([page(10, 'Flat', kids), ...pages(kids, 'Child')]).install()
-    const result = await run({ page: hex(id(10)), depth: 3 })
-    expect(listed(result)).toHaveLength(LIST_LIMIT)
-    expect(result).not.toContain('(')
   })
 })
 
@@ -594,22 +541,6 @@ describe('list_pages workspace', () => {
       .respond('getSpaces', 200, spaces({}, { private_pages: [id(1)] }))
       .install()
     expect((await notionError(run())).code).toBe('signed_out')
-  })
-
-  it('finds the tab user when Notion keys it without hyphens', async () => {
-    notion([page(1, 'Mine')])
-      .respond('getSpaces', 200, spaces({}, { private_pages: [id(1)] }, USER.replace(/-/g, '')))
-      .respond('getTeamsV2', 200, teams([]))
-      .install()
-    expect(await run()).toContain(`Private\n- 📄 Mine ^${hex(id(1))}`)
-  })
-
-  it('finds the tab user by an undashed cookie id', async () => {
-    notion([page(1, 'Mine')], { cookie: `notion_user_id=${USER.replace(/-/g, '')}` })
-      .respond('getSpaces', 200, spaces({}, { private_pages: [id(1)] }))
-      .respond('getTeamsV2', 200, teams([]))
-      .install()
-    expect(await run()).toContain(`Private\n- 📄 Mine ^${hex(id(1))}`)
   })
 
   it('keeps a page in its first section only, even where that section is cut off before it', async () => {

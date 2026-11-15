@@ -17,6 +17,25 @@ Use cases are a structural aid: they make clear what is covered by tests and kee
 
 What is left out can still be worth testing. Write it as a **standalone test**: same integration-test style, but without a scenario ID in the name.
 
+## What gets a test
+
+Each ✅ `api-test` scenario has a test named with its ID; a second only when a branch of it needs a setup of its own. Anything else is a standalone test, and earns its place only if nothing else would catch the break it guards (not a type, a lint rule, or another test) and that break would:
+
+- lose, overwrite, or change the user's data in Notion without the user knowing;
+- make Notion see the extension as abuse: a request after a refusal, an unsafe retry, the request budget passed;
+- get money or access wrong: a wrong charge or grant, a request let through without a valid session;
+- let data out where it must not go: content in logs or usage data, a host outside the content security policy;
+- make the extension and the worker disagree on what goes between them.
+
+So what a use case leaves out (retries, timeouts, caching, races, status codes) is tested only where its failure is one of these. There is no test for:
+
+- finished work: a schema pinned after a migration, a data migration that has run;
+- a tool run by hand (the `pnpm e2e` driver, release scripts), or UI wording and behavior, which fail in plain sight;
+- the same check once per tool or per message, when one test of the shared code covers it;
+- a rare race or interleaving whose worst outcome is none of the above.
+
+One rule, one test: a table when its cases share a shape. Tests are grouped and named by the rule they guard, never by the review or round that found them; a regression joins the rule it broke.
+
 ## Structure
 
 | Part | Contents |
