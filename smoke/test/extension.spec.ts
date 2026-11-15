@@ -1,16 +1,26 @@
 // Loads the built extension (extensions/notico/dist) into Chromium and checks that it still works there.
 // Nothing leaves the machine: Notion, the other site, Clerk's Frontend API, and (signed in) the worker
-// are answered from fixtures/, usage events are taken and dropped, and any other request fails the test. The extension's own code and its bundled
+// and its model are answered from fixtures/ and fakes.ts, usage events are taken and dropped, and any other request fails the test. The extension's own code and its bundled
 // dependencies run unchanged.
-import { chromium, expect, test as base, type BrowserContext, type Request, type Worker } from '@playwright/test'
+import {
+  chromium,
+  expect,
+  test as base,
+  type BrowserContext,
+  type Page,
+  type Request,
+  type Worker,
+} from '@playwright/test'
 import { existsSync, readFileSync } from 'node:fs'
 import path from 'node:path'
+import { PAGE, PAGE_TITLE, PAGE_URL, USER, completionStream, notionAnswer, type NotionRequest } from './fakes'
 
 const DIST = path.resolve(import.meta.dirname, '../../extensions/notico/dist')
 const FIXTURES = path.resolve(import.meta.dirname, '../fixtures')
 
 const NOTION_URLS = ['https://www.notion.so/Smoke-Test-Page', 'https://app.notion.com/p/smoke-test-page']
 const OTHER_URL = 'https://example.com/'
+const NOTION_HOSTS = NOTION_URLS.map((url) => new URL(url).hostname)
 const PAGE_HOSTS = [...NOTION_URLS, OTHER_URL].map((url) => new URL(url).hostname)
 
 // What Clerk asks its Frontend API for while loading, answered as a signed-out client would be
@@ -36,7 +46,11 @@ const SESSION_TOKEN = (
 // What the signed-in panel asks the worker for while loading.
 const WORKER_FIXTURES: Record<string, string> = {
   '/v1/credits': 'worker-credits.json',
+  '/v1/me': 'worker-me.json',
 }
+
+/** What the model says, one entry per model call, in order (see completionStream). */
+type Reply = Parameters<typeof completionStream>[0]
 
 /** Hosts the extension's pages may fetch from, as its content security policy lists them. The worker is one. */
 function connectHosts(): string[] {
@@ -77,6 +91,10 @@ interface Fixtures {
   background: Worker
   /** Requests the worker fixtures answered: the path, and the session token they carried. */
   worker: { path: string; token: string | undefined }[]
+  /** The model's replies still to come, which a test sets before it asks; a model call past the last is blocked. */
+  replies: Reply[]
+  /** The Notion requests the Notion tab sent, which the fake answered. */
+  notion: NotionRequest[]
   /** Requests the fixtures don't answer. They are blocked, and a test expects none. */
   blocked: string[]
   /**
@@ -98,7 +116,17 @@ const test = base.extend<Fixtures>({
   worker: async ({}, use) => {
     await use([])
   },
-  context: async ({ blocked, signedIn, worker }, use) => {
+  // Playwright reads a fixture's dependencies from this destructuring pattern, so it can't be `_`.
+  // oxlint-disable-next-line no-empty-pattern
+  replies: async ({}, use) => {
+    await use([])
+  },
+  // Playwright reads a fixture's dependencies from this destructuring pattern, so it can't be `_`.
+  // oxlint-disable-next-line no-empty-pattern
+  notion: async ({}, use) => {
+    await use([])
+  },
+  context: async ({ blocked, signedIn, worker, replies, notion }, use) => {
     if (!existsSync(path.join(DIST, 'manifest.json'))) {
       throw new Error(`No built extension at ${DIST}. Run pnpm build first.`)
     }
@@ -111,8 +139,8 @@ const test = base.extend<Fixtures>({
       args: [`--disable-extensions-except=${DIST}`, `--load-extension=${DIST}`],
     })
     if (signedIn) {
-      await context.addCookies(
-        clerkHosts.map((host) => ({
+      await context.addCookies([
+        ...clerkHosts.map((host) => ({
           name: '__client',
           value: CLIENT_JWT,
           domain: host,
@@ -120,13 +148,28 @@ const test = base.extend<Fixtures>({
           secure: true,
           httpOnly: true,
         })),
-      )
+        // Signed in to Notion: the tab's requests name this user, as Notion's own client does.
+        ...NOTION_URLS.map((url) => ({ name: 'notion_user_id', value: USER, url })),
+      ])
     }
     await context.route('**/*', async (route) => {
       const request = route.request()
       const url = new URL(request.url())
       if (url.protocol === 'chrome-extension:') return route.continue()
-      if (PAGE_HOSTS.includes(url.hostname)) return route.fulfill({ path: path.join(FIXTURES, 'page.html') })
+      if (signedIn && NOTION_HOSTS.includes(url.hostname) && url.pathname.startsWith('/api/v3/')) {
+        const sent: NotionRequest = {
+          endpoint: url.pathname.slice('/api/v3/'.length),
+          body: request.postDataJSON(),
+          user: request.headers()['x-notion-active-user-header'],
+        }
+        const answer = request.method() === 'POST' ? notionAnswer(sent) : undefined
+        if (answer !== undefined) {
+          notion.push(sent)
+          return route.fulfill({ json: answer })
+        }
+      } else if (PAGE_HOSTS.includes(url.hostname)) {
+        return route.fulfill({ path: path.join(FIXTURES, 'page.html') })
+      }
       let clerkFixture =
         request.method() === 'GET' && clerkHosts.includes(url.hostname) ? CLERK_FIXTURES[url.pathname] : undefined
       if (clerkFixture === 'clerk-client.json' && request.headers().authorization === `Bearer ${CLIENT_JWT}`) {
@@ -139,6 +182,20 @@ const test = base.extend<Fixtures>({
         signedIn && request.method() === 'GET' && workerHosts.includes(url.hostname)
           ? WORKER_FIXTURES[url.pathname]
           : undefined
+      const reply =
+        signedIn &&
+        request.method() === 'POST' &&
+        workerHosts.includes(url.hostname) &&
+        url.pathname === '/v1/chat/completions'
+          ? replies.shift()
+          : undefined
+      if (reply) {
+        worker.push({ path: url.pathname, token: request.headers().authorization?.replace(/^Bearer /, '') })
+        return route.fulfill({
+          body: completionStream(reply),
+          headers: { ...corsHeaders(request), 'content-type': 'text/event-stream' },
+        })
+      }
       if (workerFixture) {
         worker.push({ path: url.pathname, token: request.headers().authorization?.replace(/^Bearer /, '') })
         return route.fulfill({ path: path.join(FIXTURES, workerFixture), headers: corsHeaders(request) })
@@ -247,23 +304,104 @@ test('the side panel page shows the signed-out state', async ({ context, backgro
   expect(blocked).toEqual([])
 })
 
+/** Opens the side panel page in a tab of its own, collecting what it reports as errors into `errors`. */
+async function openPanel(context: BrowserContext, background: Worker, errors: string[]): Promise<Page> {
+  const page = await context.newPage()
+  page.on('pageerror', (error) => errors.push(`pageerror: ${error.message}`))
+  page.on('console', (message) => {
+    if (message.type() === 'error') errors.push(`console.error: ${message.text()}`)
+  })
+  await page.goto(`chrome-extension://${new URL(background.url()).host}/sidepanel.html`)
+  return page
+}
+
+async function ask(panel: Page, question: string): Promise<void> {
+  await panel.getByRole('textbox', { name: 'Message' }).fill(question)
+  await panel.getByRole('button', { name: 'Send' }).click()
+}
+
 test.describe('signed in', () => {
   test.use({ signedIn: true })
 
   test('the side panel shows the chat to a signed-in user', async ({ context, background, blocked, worker }) => {
     const errors: string[] = []
-    const page = await context.newPage()
-    page.on('pageerror', (error) => errors.push(`pageerror: ${error.message}`))
-    page.on('console', (message) => {
-      if (message.type() === 'error') errors.push(`console.error: ${message.text()}`)
-    })
+    const panel = await openPanel(context, background, errors)
 
-    await page.goto(`chrome-extension://${new URL(background.url()).host}/sidepanel.html`)
-
-    await expect(page.getByRole('button', { name: 'New chat' })).toBeVisible()
-    await expect(page.getByRole('textbox')).toBeVisible()
+    await expect(panel.getByRole('button', { name: 'New chat' })).toBeVisible()
+    await expect(panel.getByRole('textbox', { name: 'Message' })).toBeVisible()
     // Clerk took the session from the fixture, and the panel asked the worker with its token.
     await expect.poll(() => worker).toContainEqual({ path: '/v1/credits', token: SESSION_TOKEN })
+    expect(errors).toEqual([])
+    expect(blocked).toEqual([])
+  })
+
+  test("a question gets the model's streamed reply", async ({ context, background, blocked, worker, replies }) => {
+    const errors: string[] = []
+    // The reply, then the chat's title, which the panel asks for once the reply is in.
+    replies.push({ text: 'Hello from the smoke test.' }, { text: 'Smoke test greeting' })
+    const panel = await openPanel(context, background, errors)
+
+    await ask(panel, 'Say hello')
+
+    await expect(panel.getByText('Hello from the smoke test.')).toBeVisible()
+    await expect(panel.getByRole('banner')).toContainText('Smoke test greeting')
+    expect(worker).toContainEqual({ path: '/v1/chat/completions', token: SESSION_TOKEN })
+    expect(replies).toEqual([])
+    expect(errors).toEqual([])
+    expect(blocked).toEqual([])
+  })
+
+  // The Notion tools' requests run inside the Notion tab, through chrome.scripting: no other test
+  // runs that path in Chrome. One question reads the tab's page, then trashes it, which asks first.
+  test("tools read and change the Notion tab's page, asking first where they must", async ({
+    context,
+    background,
+    blocked,
+    replies,
+    notion,
+  }) => {
+    const errors: string[] = []
+    replies.push(
+      { call: 'read_page', args: { page: PAGE_URL } },
+      { call: 'trash_page', args: { pages: [PAGE] } },
+      { text: 'Moved it to the trash.' },
+      { text: 'Trashing the smoke test page' },
+    )
+    const notionTab = await context.newPage()
+    await notionTab.goto(PAGE_URL)
+    const panel = await openPanel(context, background, errors)
+    // The tools use the active tab of the panel's window, which a real side panel sits beside.
+    await notionTab.bringToFront()
+
+    await ask(panel, 'Trash this page')
+
+    const allow = panel.getByRole('group', { name: /^Allow this\?/ })
+    await expect(allow).toBeVisible()
+    // The read ran in the tab before the user was asked, and nothing was changed yet.
+    expect(notion.map((request) => request.endpoint)).toContain('loadPageChunk')
+    expect(notion.map((request) => request.endpoint)).not.toContain('saveTransactionsFanout')
+    await expect(panel.getByText(PAGE_TITLE).first()).toBeVisible()
+
+    await allow.getByRole('button', { name: 'Allow' }).click()
+
+    await expect(panel.getByText('Moved it to the trash.')).toBeVisible()
+    // One transaction took the page out of its parent, and it went to the trash, not deleted for good.
+    const saved = notion.filter((request) => request.endpoint === 'saveTransactionsFanout')
+    expect(saved).toHaveLength(1)
+    expect(saved[0]!.body).toMatchObject({
+      transactions: [
+        {
+          operations: expect.arrayContaining([expect.objectContaining({ command: 'removeChild', args: { id: PAGE } })]),
+        },
+      ],
+    })
+    // Every request ran in the tab as its Notion user, read from the tab's own cookie.
+    expect(notion.filter((request) => request.user !== USER)).toEqual([])
+    expect(notion.find((request) => request.endpoint === 'deleteContentRecords')?.body).toMatchObject({
+      records: [{ id: PAGE }],
+      permanentlyDelete: false,
+    })
+    expect(replies).toEqual([])
     expect(errors).toEqual([])
     expect(blocked).toEqual([])
   })
