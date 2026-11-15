@@ -37,28 +37,34 @@ const EDGE = /[^A-Za-z0-9\-._~%/:@!$&*+,;=?#]/
 const AFTER = /^(?:#|[.,;:!?)\]}>'"`]*(?:[^A-Za-z0-9\-._~%/:@!$&*+,;=?#]|$))/
 
 /**
- * Whether `text` holds the address `body` (an address without its scheme) as an address of its own:
+ * Where `text` holds the address `body` (an address without its scheme) as an address of its own:
  * starting at the start of the text, after a character that can't be part of an address, or right
  * after `http://` or `https://` that start at such a place; and ending where the text's address ends.
- * So a part of a longer address the user wrote (its host alone, a shorter path, another query) is not one.
+ * So a part of a longer address the user wrote (its host alone, a shorter path, another query) is not
+ * one. Gives the scheme the user wrote it with, `https` when they wrote none; undefined when the text
+ * does not hold it.
  */
-function holds(text: string, body: string): boolean {
+function holds(text: string, body: string): 'http' | 'https' | undefined {
   for (let at = text.indexOf(body); at >= 0; at = text.indexOf(body, at + 1)) {
     const before = text.slice(0, at)
-    const scheme = /(^|[^A-Za-z0-9\-._~%/:@!$&*+,;=?#])https?:\/\/$/i.exec(before)
+    const scheme = /(^|[^A-Za-z0-9\-._~%/:@!$&*+,;=?#])(https?):\/\/$/i.exec(before)
     const starts = at === 0 || EDGE.test(before.at(-1) ?? '') || scheme !== null
-    if (starts && AFTER.test(text.slice(at + body.length))) return true
+    if (starts && AFTER.test(text.slice(at + body.length)))
+      return scheme?.[2].toLowerCase() === 'http' ? 'http' : 'https'
   }
-  return false
+  return undefined
 }
 
 /**
- * Whether the user gave `url` in one of `texts`, their own messages: written there whole, with or
- * without its scheme (http and https are taken for each other), as written or with its non-ASCII
- * characters encoded, and with or without the fragment. A model that changes any part of it (the
- * host, the path, the query, even its case) is refused, so it can't write data into an address.
+ * The address as the user wrote it in one of `texts`, their own messages, when the model's `given`
+ * (parsed as `url`) is one of theirs; undefined when it is not. It counts when the user wrote it
+ * whole, with or without its scheme, with or without the fragment, and with its non-ASCII characters
+ * encoded or not. What is read is the user's own form, never the model's: their scheme (https when
+ * they wrote none) and their characters, so the model can't carry data in which characters it
+ * encodes or which scheme it picks. A model that changes any other part of it (the host, the path,
+ * the query, even its case) is refused.
  */
-export function givenByUser(given: string, url: URL, texts: string[]): boolean {
+export function userAddress(given: string, url: URL, texts: string[]): URL | undefined {
   const scheme = /^https?:\/\//i
   const raw = given.trim().replace(/#.*$/, '')
   let decoded = url.href
@@ -75,7 +81,15 @@ export function givenByUser(given: string, url: URL, texts: string[]): boolean {
     if (body.endsWith('/') && url.pathname === '/' && !url.search) bodies.add(body.slice(0, -1))
   }
   bodies.delete('')
-  return texts.some((text) => [...bodies].some((body) => holds(text, body)))
+  for (const text of texts)
+    for (const body of bodies) {
+      const written = holds(text, body)
+      if (!written) continue
+      // `body` is a part of the user's text: the address is built from what they wrote.
+      const address = addressOf(`${written}://${body}`)
+      if (address) return address
+    }
+  return undefined
 }
 
 const NOT_GIVEN =
@@ -105,10 +119,6 @@ function refusal(err: WebError, render: boolean): string {
       return 'The site has no page at this address. Check the address with the user.'
     case 'unsupported_type':
       return `Notico reads only web pages and plain text, and ${err.message}.`
-    case 'site_busy':
-      return "The site turned the request away for coming too often. Don't read it again in this question."
-    case 'out_of_credits':
-      return `Not rendered: rendering a page costs credits, and the user has none left. ${err.message}`
     default:
       return `Could not read the page: ${err.message}.`
   }
@@ -124,11 +134,12 @@ async function readPageAt(
   const url = addressOf(given)
   if (!url) throw new Error('Not read: the address is not a web address (http or https).')
   if (isNotion(url.href)) throw new Error('This is a Notion page: read it with read_page instead.')
-  if (!context || !givenByUser(given, url, context.userText())) throw new Error(NOT_GIVEN)
+  const address = context && userAddress(given, url, context.userText())
+  if (!context || !address) throw new Error(NOT_GIVEN)
   const left = outsideLeft()
   let page
   try {
-    page = await context.readWeb(url.href, Math.min(PAGE_CHARS, left), render, signal)
+    page = await context.readWeb(address.href, Math.min(PAGE_CHARS, left), render, signal)
   } catch (err) {
     // The worker's limit stops the question: thrown as it is, with what the user is told.
     if (err instanceof WebError && !err.stopsQuestion) throw new Error(refusal(err, render), { cause: err })
@@ -140,7 +151,7 @@ async function readPageAt(
   const lines = [
     // As JSON, so the title and URL stay inside their quotes and on their line.
     `Web page${render ? ', rendered,' : ''} on ${host}: ${JSON.stringify({ title: clip(page.title, TITLE_CHARS), url: clip(page.url, URL_CHARS) })}`,
-    ...(page.url !== url.href ? [`[The address redirected here from ${clip(url.href, URL_CHARS)}.]`] : []),
+    ...(page.url !== address.href ? [`[The address redirected here from ${clip(address.href, URL_CHARS)}.]`] : []),
     ...(clipped
       ? [
           `[Clipped: this shows the first ${page.text.length.toLocaleString('en-US')} of the page's ` +

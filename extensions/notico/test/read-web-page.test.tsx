@@ -195,16 +195,21 @@ describe('reading a web page the user gives', () => {
     expect(browser.web.asked).toHaveLength(3)
   })
 
-  it('[@no-uc:notion-safety] the worker turning reads away for coming too often stops the question', async () => {
+  it.each([
+    ['the worker turns reads away for coming too often', /Notico read too many web pages in a minute/],
+    ['the site turns requests away for coming too often', /turned away Notico's requests for coming too often/],
+    ['the worker answers with a reason the extension does not know', /^Notico could not read a web page: /],
+  ])('[@no-uc:notion-safety] the question stops when %s, and nothing more is sent', async (what, told) => {
     const { browser, user } = await open()
-    browser.env.WEB_LIMIT = { limit: async () => ({ success: false }) }
-    browser.ai.script.push(readCall(ARTICLE), readCall(ARTICLE), { reply: 'Never sent.' })
+    if (what.startsWith('the worker turns')) browser.env.WEB_LIMIT = { limit: async () => ({ success: false }) }
+    else if (what.startsWith('the site')) browser.web.serve(ARTICLE, { status: 429 })
+    else browser.env.BROWSER = undefined
+    const call = what.includes('does not know') ? renderCall : readCall
+    browser.ai.script.push(call(ARTICLE), call(ARTICLE), { reply: 'Never sent.' })
 
     await ask(user, `Read ${ARTICLE}`)
 
-    expect(
-      await screen.findByText(/Notico read too many web pages in a minute\. Wait a minute, then ask again\./),
-    ).toBeVisible()
+    expect(await screen.findByText(told)).toBeVisible()
     expect(screen.queryByText('Never sent.')).toBeNull()
     expect(worked(browser)).toEqual([ARTICLE])
   })

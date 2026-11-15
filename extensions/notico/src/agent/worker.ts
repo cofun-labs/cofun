@@ -139,10 +139,42 @@ const CodedError = z.object({ error: z.object({ code: looseText, message: looseT
 const TOO_MANY_PAGES = 'Notico read too many web pages in a minute. Wait a minute, then ask again.'
 
 /**
+ * The worker's reasons a page could not be read that the model can act on (tell the user, render
+ * the page, have it opened in a tab): these come back to the model. Any other reason stops the question.
+ */
+const PAGE_REASONS = new Set([
+  'not_allowed',
+  'unreachable',
+  'timeout',
+  'too_many_redirects',
+  'no_access',
+  'bot_check',
+  'not_found',
+  'site_error',
+  'unsupported_type',
+  'no_text',
+  'render_failed',
+])
+
+/**
+ * What the user is told when the worker's answer stops the question (see PAGE_REASONS), or
+ * undefined when it doesn't. A stopped question sends nothing more, so the model can't try again.
+ */
+function stopsFor(code: string, message: string): string | undefined {
+  if (PAGE_REASONS.has(code)) return undefined
+  if (code === 'rate_limited') return TOO_MANY_PAGES
+  // The worker's message says when the next free credits arrive.
+  if (code === 'out_of_credits') return message
+  if (code === 'site_busy')
+    return "A site turned away Notico's requests for coming too often. Wait a while, then ask again."
+  return `Notico could not read a web page: ${message}`
+}
+
+/**
  * Has the worker read the web page at `url` (see ToolContext.readWeb): fetched plainly, or rendered
  * in a browser when `render` is set. Resolves with the page and what it cost, in micro-credits;
- * throws a WebError when the worker could not read it, which stops the question when the worker
- * turned the request away for coming too often.
+ * throws a WebError when the worker could not read it, which stops the question unless the model
+ * can act on the reason (see PAGE_REASONS).
  */
 export async function readWebPage(
   { apiUrl, getToken, client }: Pick<AgentConfig, 'apiUrl' | 'getToken' | 'client'>,
@@ -163,11 +195,8 @@ export async function readWebPage(
   if (!res.ok) {
     const refusal = CodedError.safeParse(body).data?.error
     const code = refusal?.code ?? `http_${res.status}`
-    throw new WebError(
-      code,
-      refusal?.message ?? `HTTP ${res.status}`,
-      code === 'rate_limited' ? TOO_MANY_PAGES : undefined,
-    )
+    const message = refusal?.message ?? `HTTP ${res.status}`
+    throw new WebError(code, message, stopsFor(code, message))
   }
   const { cost, ...page } = WebReply.parse(body)
   return { page, microCredits: cost.micro_credits }
