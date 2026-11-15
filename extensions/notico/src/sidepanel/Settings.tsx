@@ -86,7 +86,7 @@ function ContextMenu() {
         <div className="grow">
           <p>Show “Ask Notico”</p>
           <p id="settings-menu-detail" className="account-detail">
-            Ask about text you select on any page. Applies on every device your Chrome profile syncs to.
+            Ask about text you select on any page.
           </p>
         </div>
         {shown !== undefined && (
