@@ -39,7 +39,7 @@ Start each finding with its weight and the IDs of the rules it breaks:
 
 ## Rule IDs
 
-Each rule has a letter for its area and a number within the area. **IDs are stable**: a rule that is dropped keeps its line, as `A5: removed (reason)`, and its number is never given to another rule, so an ID in an old review still means what it meant. A new rule takes the next free number in its area.
+Each rule has a letter for its area and a number within the area. **IDs are stable**: a rule that is dropped keeps its line, as `A5: removed`, and its number is never given to another rule, so an ID in an old review still means what it meant. A new rule takes the next free number in its area.
 
 Where a rule is written depends on how much it matters and how often it is broken:
 
@@ -121,10 +121,10 @@ The tools call their site's API as the user's own account, so the site must neve
 - **G1. A privacy page changes with the data.** A change to what leaves the browser or where it goes updates the extension's `PRIVACY.md` (its table of hosts is the list of hosts it may contact) and `store/privacy.md`; a change to what the worker stores or logs updates the root `PRIVACY.md`.
 - **G2. A new host changes three things together**: the content security policy in `extensions/<name>/manifest.ts`, `test/manifest.test.ts`, and the privacy page's table.
 - **G3. A usage event holds no content.** Nothing the user or the model wrote, nothing from a page (content, title, URL), and no key. Every property is an enum, a number, or a boolean, checked by the event's schema; a value from the model or a service is sent only from a fixed list. A new event or property is added to the schema, the module's list of kept properties, and `PRIVACY.md`. No autocapture, session replay, or exception capture, since each would send text from the panel.
-- **G4: removed** (part of G3).
+- **G4: removed**
 - **G5. The worker stores and logs no content**: ids, numbers, and times; an error's text is logged only as a short, bounded part.
-- **G6: removed** (part of D7).
-- **G7: removed** (demo media is the author's step, not the diff's; AGENTS.md step 9 says how it is recorded and uploaded).
+- **G6: removed**
+- **G7: removed**
 
 ## H. The extension and the worker
 
@@ -134,7 +134,7 @@ The tools call their site's API as the user's own account, so the site must neve
 ## I. Performance
 
 - **I1. No needless work on a hot path**: per streamed token, per block of a long page, per render. No work that grows with the square of a page's size. [Suggestion, or Blocking when users would notice it]
-- **I2: removed** (rarely broken, and a needless round trip a user would notice is caught by I1).
+- **I2: removed**
 - **I3. What grows per user is indexed.** A D1 query over a table that grows with use reads through an index. [Suggestion]
 - **I4. A new dependency is worth its size** in the extension's bundle, and is not added for what a few lines do. [Suggestion]
 
@@ -149,7 +149,7 @@ The tools call their site's API as the user's own account, so the site must neve
 
 - **K1. Checks are not worked around.** No `oxlint-disable`, `@ts-ignore`, `@ts-expect-error`, or `any` to get past a check; a module boundary that has to change changes `.oxlintrc.json` and the list in `AGENTS.md` together.
 - **K2. Code is where the architecture puts it.** Only `src/agent/` imports pi, one model provider per module; tools in `src/tools/`, one module per area, listed in `src/tools/index.ts`; worker routes as one Hono sub-app per area in `src/routes/`. No extension imports another, and the site layer imports nothing from the agent, the tools, the sessions, or the side panel. [Suggestion, or Blocking for a module boundary]
-- **K3: removed** (TypeScript and pnpm are settled in the architecture and enforced by the tooling).
+- **K3: removed**
 - **K4. Everything is in English**: code, comments, docs, commit messages, the PR, and error messages.
 - **K5. Comments say why.** A limit, a constant, or an edge case's behavior is explained in a comment next to it; a comment doesn't restate the code. [Suggestion]
 - **K6. The PR title is a Conventional Commit** (`feat:`, `fix:`, `docs:`, `chore:`, `refactor:`, `test:`): it becomes the squash commit's message.
@@ -160,11 +160,11 @@ The tools call their site's API as the user's own account, so the site must neve
 - **L1. `docs/architecture.md` changes only with the core design**: when a change adds, moves, or removes a module boundary or anything its Layout lists, or changes where data goes or comes from (a new host, store, or route). Then it does change. Limits, constants, index names, UI details, and edge-case behavior go in code comments. [Blocking when a needed update is missing, Suggestion for detail added there]
 - **L2. User docs follow what users see.** A change to what an extension does or how it is used updates its `README.md`, which is written for users, with little technical detail. [Suggestion]
 - **L3. Docs say how to use something**, not the history of how it came to be or one-time setup steps that are done. Configuration that lives only outside the repository (a dashboard setting a deploy needs, say) stays written down, since nothing else would bring it back. [Suggestion]
-- **L4: removed** (a rule change is reviewed like any other change, by the rules as the PR leaves them).
+- **L4: removed**
 - **L5. A rule says the same everywhere.** A rule changed in one place is changed wherever else it is stated: `AGENTS.md`, this guide, the other docs, the review workflow's prompt, and the lint config. Two copies that disagree are a breach. [Blocking when they disagree on what to do, Suggestion when only the wording differs]
 
 ## M. Repository
 
 - **M1. GitHub settings are code.** A change to the `main` ruleset or a repository option is made in `.github/rulesets/main.json` or `scripts/sync-github-settings.sh`.
-- **M2: removed** (AGENTS.md step 9 says how demo media is uploaded and keeps it off git branches).
-- **M3: removed** (merging is the author's step, kept by AGENTS.md step 9, not something a PR's diff changes).
+- **M2: removed**
+- **M3: removed**
