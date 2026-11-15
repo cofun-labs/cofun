@@ -15,7 +15,14 @@ import type { OpenPage } from './current'
 import { verb } from './shared'
 import { createPage, editPage, updatePages } from './write'
 
-export { carryPages, currentNotionPage, openNotionPages, type OpenPage } from './current'
+export {
+  carryPages,
+  currentNotionPage,
+  openNotionPages,
+  SELECTION_END,
+  selectionsCarried,
+  type OpenPage,
+} from './current'
 export { findPages, type FoundPage } from './find'
 export { forgetReads } from './memory'
 export { DATA_LINE } from './shared'
