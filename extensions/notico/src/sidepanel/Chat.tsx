@@ -21,6 +21,7 @@ import {
   type QuestionPage,
 } from '../agent'
 import { track } from '../analytics'
+import { sessionToken } from '../clerk'
 import type { CreditsState } from '../credits'
 import { loadMode, saveMode, watchMode, type Mode } from '../mode'
 import {
@@ -215,7 +216,7 @@ export function Chat({ userId }: { userId: string }) {
   const agentRef = useRef<CopilotAgent | null>(null)
   agentRef.current ??= new CopilotAgent({
     apiUrl: API_URL,
-    getToken: () => tokenRef.current(),
+    getToken: () => sessionToken(tokenRef.current),
     model: async () => modelRef.current ?? (await modelLoad),
     systemPrompt: SYSTEM_PROMPT,
     tools: TOOLS,

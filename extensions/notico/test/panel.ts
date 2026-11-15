@@ -110,11 +110,18 @@ export class FakeBrowser {
     vi.useFakeTimers({ toFake: ['Date'], now: START })
     const issuer = await (clerk ??= FakeClerk.create())
     const userId = options.signedInAs
+    // As Clerk's: until a token is asked for with skipCache, getToken gives the one Clerk's client
+    // came with, which names no origin; the token asked for from the extension names it, and Clerk
+    // keeps that one.
+    let azp: string | undefined
     const session = userId && {
       userId,
       name: 'Alice Example',
       email: 'alice@example.com',
-      getToken: () => issuer.sessionToken({ userId, azp: EXTENSION }),
+      getToken: (options?: { skipCache?: boolean }) => {
+        if (options?.skipCache) azp = EXTENSION
+        return issuer.sessionToken({ userId, azp })
+      },
     }
     const browser = new FakeBrowser(tab, session || undefined)
 

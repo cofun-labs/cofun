@@ -5,12 +5,12 @@
 import type * as Clerk from '@clerk/chrome-extension'
 import { useSyncExternalStore, type ComponentProps, type ReactNode } from 'react'
 
-/** A signed-in user, with their name and email as Clerk holds them: `getToken` returns a fresh session token, as Clerk's does. */
+/** A signed-in user, with their name and email as Clerk holds them: `getToken` returns a session token, as Clerk's does. */
 export interface FakeSession {
   userId: string
   name: string
   email: string
-  getToken: () => Promise<string | null>
+  getToken: (options?: { skipCache?: boolean }) => Promise<string | null>
 }
 
 let session: FakeSession | undefined
