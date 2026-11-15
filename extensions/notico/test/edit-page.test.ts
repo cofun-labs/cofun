@@ -269,7 +269,7 @@ describe('edits only change the page as the AI read it, and as it still is', () 
     expect(ws.records.get(id(n))).toMatchObject({ alive: false })
   })
 
-  it('[UC-NOTICO-NOTION-002-S05] refuses to delete a long block before every part of it was read', async () => {
+  it('[UC-NOTICO-NOTION-002-S05] refuses to delete a long block before every part of what it holds was read', async () => {
     const n = 300
     const items = Array.from({ length: n }, (_, i) =>
       block(i + 2, 'bulleted_list', `Item ${i} ${'t'.repeat(60)}`, {}, id(1)),
@@ -281,23 +281,25 @@ describe('edits only change the page as the AI read it, and as it still is', () 
     // Every part but the last read: some of the toggle's items are still unseen.
     for (let part = 2; part < parts; part++) await read({ part })
     await expect(edit([{ action: 'delete', block: '^00000001' }])).rejects.toThrow(
-      "wasn't shown to you in full: read each part of the page it is in",
+      "wasn't shown to you: read the part of the page it is in",
     )
     await read({ part: parts })
     await edit([{ action: 'delete', block: '^00000001' }])
     expect(ws.records.get(id(1))).toMatchObject({ alive: false })
   })
 
-  it('[UC-NOTICO-NOTION-002-S05] refuses a block longer than a part until every part it is in was read', async () => {
+  it('[UC-NOTICO-NOTION-002-S20] edits what one part showed in full, but never a block split across parts', async () => {
     const ws = workspace([1, 2], [block(1, 'text', 'a'.repeat(15_000)), block(2, 'text', 'End')])
     open(ws)
     expect(await read()).toContain('Part 1 of 2')
-    await expect(edit([{ action: 'replace', block: '^00000001', markdown: 'Short' }])).rejects.toThrow(
-      "^00000001 wasn't shown to you in full",
-    )
     await read({ part: 2 })
-    await edit([{ action: 'replace', block: '^00000001', markdown: 'Short' }])
-    expect(ws.records.get(id(1))!.properties).toEqual({ title: [['Short']] })
+    // Every part was read, yet no part shows all of the long block.
+    await expect(edit([{ action: 'replace', block: '^00000001', markdown: 'Short' }])).rejects.toThrow(
+      "^00000001 is split across parts of the page, so no read shows all of it, and Notico can't edit it.",
+    )
+    await edit([{ action: 'replace', block: '^00000002', markdown: 'The end' }])
+    expect(ws.records.get(id(1))!.properties).toEqual({ title: [['a'.repeat(15_000)]] })
+    expect(ws.records.get(id(2))!.properties).toEqual({ title: [['The end']] })
   })
 
   it('[@no-uc:data] reads a block Notion sent without a version, and refuses to edit it: a change to it could not be seen', async () => {
@@ -319,6 +321,39 @@ describe('edits only change the page as the AI read it, and as it still is', () 
       expect(ws.transactions).toHaveLength(1)
       expect(tab.sent.filter((r) => r.url.endsWith('/saveTransactionsFanout'))).toHaveLength(1)
     }
+  })
+
+  it('[UC-NOTICO-NOTION-002-S02] refuses to rewrite a table from an earlier part when a row changed and a later part shows it split', async () => {
+    const n = 150
+    const rows = Array.from({ length: n }, (_, i) =>
+      block(100 + i, 'table_row', undefined, { properties: { a: [[`row ${i} ${'r'.repeat(50)}`]] } }, id(2)),
+    )
+    const ws = workspace(
+      [1, 2],
+      [
+        block(1, 'text', 'Intro'),
+        block(2, 'table', undefined, {
+          content: rows.map((r) => r.id),
+          format: { table_block_column_order: ['a'] },
+        }),
+        ...rows,
+      ],
+    )
+    open(ws)
+    const first = body(await read())
+    const table = first
+      .split('\n')
+      .filter((l) => l.startsWith('|'))
+      .join('\n')
+      .replace('row 0 ', 'row ZERO ')
+    // The user types into a row, enough that the table no longer fits in one part.
+    const typed = `Typed by the user ${'t'.repeat(5000)}`
+    ws.edit(id(100 + n - 1), { properties: { a: [[typed]] } })
+    expect(await read({ part: 2 })).toContain('Part 2 of')
+    await expect(edit([{ action: 'replace', block: '^00000002', markdown: table }])).rejects.toThrow(
+      'was changed since you read the page',
+    )
+    expect(ws.records.get(id(100 + n - 1))!.properties).toEqual({ a: [[typed]] })
   })
 
   it('[UC-NOTICO-NOTION-002-S02] refuses to delete a block when something nested under it changed', async () => {

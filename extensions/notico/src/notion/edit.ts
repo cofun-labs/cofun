@@ -39,7 +39,7 @@ export interface PageRead {
 
 /**
  * The blocks of `md` the agent saw: those `include` picks, such as the blocks a part drew. Only
- * those `whole` passes were seen in full, so only those can be changed.
+ * those `whole` passes were seen in full (a block split across parts isn't), so only those can be changed.
  */
 export function pageRead(
   loaded: LoadedPage,
@@ -56,8 +56,11 @@ export function pageRead(
     if (blocks[id] && (id === loaded.page.id || whole(id))) versions.set(id, blocks[id].version)
   }
   // Table rows and layout columns are drawn as part of the block around them, without references
-  // of their own; they were seen with it.
+  // of their own; they were seen with it, so only when it was seen in full. Otherwise a later
+  // part, read from a new load, would give the rows of a table split across parts that load's
+  // versions, and a rewrite from an earlier part could overwrite a row changed in between.
   for (const id of refs.keys()) {
+    if (!whole(id)) continue
     for (const d of descendants(blocks, id)) {
       if (DRAWN_WITH_PARENT.has(blocks[d].type)) versions.set(d, blocks[d].version)
     }
@@ -313,9 +316,13 @@ export function planEdit(
       throw new EditError(`${what} was deleted since you read the page. ${READ_AGAIN}`)
     }
     if (!read.versions.has(id)) {
-      throw new EditError(
-        `${what} wasn't shown to you in full: read each part of the page it is in, then redo the edit.`,
-      )
+      // Shown, but not in full: read_page drew it across several parts, and no part shows all of it.
+      if (read.refs.has(id)) {
+        throw new EditError(
+          `${what} is split across parts of the page, so no read shows all of it, and Notico can't edit it.`,
+        )
+      }
+      throw new EditError(`${what} wasn't shown to you: read the part of the page it is in, then redo the edit.`)
     }
     const was = read.versions.get(id)
     // Without a version on both sides there is nothing to compare: the block may have changed, and
