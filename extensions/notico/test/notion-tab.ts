@@ -113,6 +113,9 @@ export class FakeNotionTab {
   /** What the user answers in Chrome's own prompt when the extension asks to read a site. */
   promptAnswer = true
 
+  /** While set, Chrome's prompt stays open: the user answers it once this resolves. */
+  promptOpen?: Promise<void>
+
   /** The sites the extension asked Chrome to let it read, each request as its match patterns. */
   accessRequests: string[][] = []
 
@@ -239,6 +242,7 @@ export class FakeNotionTab {
           if ((globalThis as { event?: Event }).event?.type !== 'click')
             throw new Error('This function must be called during a user gesture')
           this.accessRequests.push(origins)
+          await this.promptOpen
           if (this.promptAnswer) for (const o of origins) this.allowed.add(o)
           return this.promptAnswer
         },

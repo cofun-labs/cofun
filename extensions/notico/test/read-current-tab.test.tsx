@@ -125,6 +125,25 @@ describe('reading the page in the current tab', () => {
     expect(browser.tab.accessRequests).toEqual([[SITE]])
   })
 
+  it("[UC-NOTICO-PANEL-001-S12] while Chrome's prompt is open, the card can't ask again", async () => {
+    const tab = articleTab()
+    let answer!: () => void
+    tab.promptOpen = new Promise<void>((resolve) => (answer = resolve))
+    const { browser, user } = await openOn(tab)
+    browser.ai.script.push(readTab, { reply: 'Rivers are rising.' })
+
+    await ask(user, 'Summarize this article')
+    const card = within(await screen.findByRole('group', { name: 'Allow Notico to read news.example.com?' }))
+    await user.click(card.getByRole('button', { name: 'Allow' }))
+    expect(card.getByRole('button', { name: 'Allow' })).toBeDisabled()
+    expect(card.getByRole('button', { name: 'Deny' })).toBeDisabled()
+    await user.click(card.getByRole('button', { name: 'Allow' }))
+    answer()
+
+    expect(await screen.findByText('Rivers are rising.')).toBeVisible()
+    expect(browser.tab.accessRequests).toEqual([[SITE]])
+  })
+
   it('[UC-NOTICO-PANEL-001-S12] when the user denies the site, nothing of the page is read and the model is told', async () => {
     const { browser, user } = await openOn()
     browser.ai.script.push(readTab, { reply: 'I could not read the page.' })
