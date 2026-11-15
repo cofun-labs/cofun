@@ -82,9 +82,9 @@ export interface ToolSpec {
    * Runs the tool. Throw to report a failure to the model. An error with a `stopsQuestion` string
    * (on it or a cause) also stops the question: nothing more runs, and the user is told that string.
    * The arguments come from the model: a tool parses them before it uses them. Text alone is a
-   * result with no details.
+   * result with no details. `ask` puts a question to the user on the call's card (see AskOnCard).
    */
-  run: (args: unknown, signal?: AbortSignal) => Promise<string | ToolResult>
+  run: (args: unknown, signal?: AbortSignal, ask?: AskOnCard) => Promise<string | ToolResult>
   /** The tool does what is hard to undo, such as deleting a page, so the user must agree each time before it runs. */
   needsConfirmation?: boolean
   /**
@@ -101,6 +101,22 @@ export interface ToolSpec {
   preview?: (args: unknown) => string | undefined | Promise<string | undefined>
 }
 
+/**
+ * A question a running tool puts to the user on its card. `access`: an origin (`https://example.com`)
+ * the tool asks to read; the card offers to allow it, and its yes is the browser granting it, which
+ * only a click in the side panel can ask for.
+ */
+interface CardQuestion {
+  text: string
+  access?: string
+}
+
+/**
+ * Puts a question to the user on the card of the call that asks it; resolves true for yes, and false
+ * when the question is stopped or nobody can be asked.
+ */
+export type AskOnCard = (question: CardQuestion) => Promise<boolean>
+
 /** A tool call waiting for the user's OK. */
 export interface ToolCallRequest {
   id: string
@@ -113,6 +129,8 @@ export interface ToolCallRequest {
    * at the question's request budget; resolves true for yes.
    */
   question?: string
+  /** With `question`: the origin the call asks to read (see CardQuestion). */
+  access?: string
 }
 
 /** Asks the user whether a tool may run, or what `question` asks; resolves true for yes. */

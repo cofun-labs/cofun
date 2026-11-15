@@ -1,7 +1,7 @@
 // Tool calls as the agent runs them: each tool as pi runs it, its preview, the user's OK, and the
 // errors that stop a question.
 import type { AgentTool } from '@earendil-works/pi-agent-core'
-import type { ConfirmTool, ToolCallRequest, ToolResult, ToolSpec } from './types'
+import type { AskOnCard, ConfirmTool, ToolCallRequest, ToolResult, ToolSpec } from './types'
 
 /**
  * What a call changes, in words; a broken preview must not stop the call, so it gives none. A
@@ -126,6 +126,8 @@ export interface Reporter {
   changed(): void
   /** The tool failed with an error that has a code (a Notion error's, such as `no_access`). */
   failed(code: string): void
+  /** Asks the user on the call's card; false once the question it was asked in is over. */
+  ask: AskOnCard
 }
 
 /**
@@ -160,7 +162,7 @@ export function toAgentTool(spec: ToolSpec, reporter: () => Reporter): AgentTool
       const report = reporter()
       let result: string | ToolResult
       try {
-        result = await spec.run(params, signal)
+        result = await spec.run(params, signal, report.ask)
       } catch (err) {
         const reason = stopsQuestion(err)
         if (reason) report.stop(reason)

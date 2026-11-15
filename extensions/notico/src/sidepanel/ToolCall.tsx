@@ -2,6 +2,7 @@ import { memo } from 'react'
 import type { ToolDetails, ToolStatus } from '../agent'
 import type { Action } from '../tool'
 import { describeCall } from '../tools'
+import { allowSite } from '../web/tab'
 import { Icon, type IconName } from './icons'
 
 /** A tool call as the panel shows it. */
@@ -19,6 +20,8 @@ export interface ShownTool {
   preview?: string
   /** Set while `confirm` when the call is already running and asks this instead of whether to run. */
   question?: string
+  /** With `question`: the origin the call asks to read, which the user's yes allows (see CardQuestion). */
+  access?: string
 }
 
 const MARK: Record<ShownTool['status'], IconName> = {
@@ -148,7 +151,27 @@ export const ToolCall = memo(function ToolCall({
           )}
         </div>
       </details>
-      {asking && tool.question && (
+      {asking && tool.question && tool.access && (
+        <div className="tool-confirm" role="group" aria-label={tool.question}>
+          <span>{tool.question}</span>
+          <div className="tool-answers">
+            <button onClick={() => onAnswer(false)}>Not now</button>
+            <button
+              className="primary"
+              // Chrome takes the request only in the click's own handler; its prompt then has the last word.
+              onClick={() => {
+                allowSite(tool.access!).then(onAnswer, (err: unknown) => {
+                  console.error('Could not ask Chrome for access to the site', err)
+                  onAnswer(false)
+                })
+              }}
+            >
+              Allow
+            </button>
+          </div>
+        </div>
+      )}
+      {asking && tool.question && !tool.access && (
         <div className="tool-confirm" role="group" aria-label={tool.question}>
           <span>{tool.question}</span>
           <div className="tool-answers">

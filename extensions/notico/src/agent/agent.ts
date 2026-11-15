@@ -17,6 +17,7 @@ import type {
   AgentConfig,
   AgentUpdate,
   AnsweredBy,
+  AskOnCard,
   AskResult,
   AssistantPart,
   ConfirmTool,
@@ -102,6 +103,8 @@ export class CopilotAgent {
   private changed = false
   /** Set by a tool that failed with an error that has a code, until its call is reported as ended. */
   private failedWith?: string
+  /** Asks the user on the card of the call running now, in the question being answered. */
+  private askOnCard?: AskOnCard
   /** Takes each chunk of the model's streams while a question runs: what the calls cost is in them. */
   private onChunk?: (chunk: unknown) => void
 
@@ -245,12 +248,16 @@ export class CopilotAgent {
     let running: ToolCallRequest | undefined
     // Why the question stopped, when it stopped in a call's preview rather than in a tool's run.
     let previewStop: string | undefined
-    const meter = this.config.meter?.(async (text) => {
+    // A question the running call puts to the user, on its card: the meter's at the request budget,
+    // or the tool's own (see ToolSpec.run).
+    const askOnCard: AskOnCard = async ({ text, access }) => {
       const call = running
       if (!call || epoch !== this.epoch) return false
-      const answer = await askUser(confirm, { ...call, question: text }, this.cancel.signal)
+      const answer = await askUser(confirm, { ...call, question: text, access }, this.cancel.signal)
       return answer === 'allow' && epoch === this.epoch
-    })
+    }
+    this.askOnCard = askOnCard
+    const meter = this.config.meter?.((text) => askOnCard({ text }))
 
     // On the last step, refuse the tools the model asks for instead of running them: the question
     // ends here, so the model would never see their results, and a tool could change a page.
@@ -545,6 +552,7 @@ export class CopilotAgent {
       failed: (code) => {
         if (epoch === this.epoch) this.failedWith = code
       },
+      ask: async (question) => (epoch === this.epoch && this.askOnCard ? this.askOnCard(question) : false),
     }
   }
 

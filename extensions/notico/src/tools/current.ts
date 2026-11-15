@@ -1,9 +1,11 @@
-// The current tab and the Notion page open in it: what a question carries, and get_current_tab.
+// The current tab and the Notion page open in it: what a question carries, get_current_tab, and
+// read_current_tab, which reads the page of a tab on another site.
 import { defineTool } from '../tool'
 import { z } from '../zod'
 import { NOTION_HOSTS, isNotion, pageIdFromUrl, showsDatabase } from '../notion/hosts'
 import { clip } from '../notion/comments'
-import { LOOK, asData } from './shared'
+import { mayRead, readPage, readableSite } from '../web/tab'
+import { LOOK, READ, asData, on } from './shared'
 
 /** The title and URL of the current tab: the active tab of the side panel's window, on any site. */
 async function currentTab(): Promise<{ title: string; url: string } | undefined> {
@@ -81,6 +83,7 @@ export async function needsAttachedPage(): Promise<void> {
  */
 export function carryPages(page: OpenPage | undefined, removed: boolean, added: OpenPage[] = []): string {
   openPageAttached = !removed
+  outsideRead = 0
   // The open page is named once, in its own note, also when the user added it by hand.
   const open = page && !removed ? pageIdFromUrl(page.url) : undefined
   const others = added.filter((p) => !open || pageIdFromUrl(p.url) !== open)
@@ -124,9 +127,9 @@ export const getCurrentTab = defineTool({
   name: 'get_current_tab',
   description:
     'Returns the title and URL of the current tab, the browser tab the user is looking at, on any site, Notion ' +
-    "or not. It reads nothing else: not the page's content, and no other tab. Use it only when a question needs " +
-    'to know which page or site the user is on and the note with the question does not say, such as saving a ' +
-    'link to it.',
+    "or not. It reads nothing else: not the page's content (read_current_tab reads that), and no other tab. Use " +
+    'it only when a question needs to know which page or site the user is on and the note with the question ' +
+    'does not say, such as saving a link to it.',
   describe: () => ({ verb: LOOK, what: 'the current tab' }),
   args: z.strictObject({}),
   run: async () => {
@@ -135,5 +138,75 @@ export const getCurrentTab = defineTool({
     if (!tab) throw new Error('Could not tell which tab is the current one.')
     // As JSON, so the title and URL stay inside their quotes and on their line.
     return asData([JSON.stringify({ title: clip(tab.title, TITLE_CHARS), url: clip(tab.url, TAB_URL_CHARS) })])
+  },
+})
+
+/** How much of a page read_current_tab returns. */
+const TAB_TEXT_CHARS = 20_000
+
+/**
+ * How much text from pages outside Notion one question may read, over all its reads: a question
+ * that goes on reading the same tab must not fill the conversation, or spend credits on it.
+ */
+const QUESTION_OUTSIDE_CHARS = 60_000
+
+/** Characters of pages outside Notion the question being asked has read; carryPages starts it at 0. */
+let outsideRead = 0
+
+/**
+ * Keeps the page's lines from passing for the tool's own: a line that opens like a note in
+ * brackets or a block reference gets a backslash first.
+ */
+const asPageText = (text: string) => text.replace(/^([ \t]*)(\[|\^)/gm, '$1\\$2')
+
+export const readCurrentTab = defineTool({
+  name: 'read_current_tab',
+  description:
+    'Reads the page in the current tab when it is on another site than Notion: its main text as the tab shows ' +
+    "it (the page's main content, or else its whole text), with the page's title and URL. It reads what the user " +
+    'sees, pages they are signed in to included, but not frames from other sites. The first time a site is read, ' +
+    'the user is asked to allow Notico to read it. Use it when a question is about the page the user is on, such ' +
+    'as summarizing it or saving it to Notion; never for a Notion page (use read_page). A long page is clipped.',
+  describe: (_args, details) => on(READ, details?.name, 'the current tab'),
+  args: z.strictObject({}),
+  run: async (_args, _signal, ask) => {
+    await needsAttachedPage()
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true })
+    if (tab?.id === undefined || !tab.url) throw new Error('Could not tell which tab is the current one.')
+    if (isNotion(tab.url)) throw new Error('The current tab is a Notion page: read it with read_page instead.')
+    const site = readableSite(tab.url)
+    if ('reason' in site) throw new Error(site.reason)
+    const left = QUESTION_OUTSIDE_CHARS - outsideRead
+    if (left <= 0)
+      throw new Error(
+        `This question has read as much from pages outside Notion as one question may (${QUESTION_OUTSIDE_CHARS.toLocaleString('en-US')} ` +
+          "characters). Answer from what was read; don't read the page again in this question.",
+      )
+    const host = new URL(site.origin).host
+    if (!(await mayRead(site.origin))) {
+      const allowed = await ask?.({ text: `Allow Notico to read ${host}?`, access: site.origin })
+      // Chrome granted it only if the user allowed it in its own prompt too.
+      if (!allowed || !(await mayRead(site.origin)))
+        throw new Error(
+          `Notico may not read ${host}: the user did not allow it, so nothing of the page was read. Answer ` +
+            "without it, and don't read this site again unless the user asks.",
+        )
+    }
+    const page = await readPage(tab.id, site.origin, Math.min(TAB_TEXT_CHARS, left))
+    if ('reason' in page) throw new Error(page.reason)
+    outsideRead += page.text.length
+    const shown = page.text.length < page.chars
+    const lines = [
+      // As JSON, so the title and URL stay inside their quotes and on their line.
+      `Page in the current tab, on ${host}: ${JSON.stringify({ title: clip(page.title, TITLE_CHARS), url: clip(page.url, TAB_URL_CHARS) })}`,
+      ...(shown
+        ? [
+            `[Clipped: this shows the first ${page.text.length.toLocaleString('en-US')} of the page's ` +
+              `${page.chars.toLocaleString('en-US')} characters.]`,
+          ]
+        : []),
+      ...(page.text ? ['Text:', asPageText(page.text)] : ['[The page shows no text.]']),
+    ]
+    return { text: asData(lines), details: { name: page.title.trim() || host } }
   },
 })
