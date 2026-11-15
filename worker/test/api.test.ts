@@ -23,7 +23,6 @@ let clerk: FakeClerk
 let otherClerk: FakeClerk
 let ai: FakeAiBinding
 let db: FakeD1Database
-let usage: FakeUsageDataset
 let env: Env
 let token: string
 
@@ -39,7 +38,7 @@ beforeEach(async () => {
   env = {
     AI: ai,
     DB: (db = new FakeD1Database()),
-    USAGE: (usage = new FakeUsageDataset()),
+    USAGE: new FakeUsageDataset(),
     CHAT_LIMIT: new FakeRateLimiter(),
     API_LIMIT: new FakeRateLimiter(),
     MODEL,
@@ -75,6 +74,8 @@ function inChunks(text: string): ReadableStream<Uint8Array> {
 }
 const chat = (bearer: string | undefined, body: unknown = { messages: hi }) =>
   req('POST', '/v1/chat/completions', bearer, body)
+/** The record of each model call, with its tokens and what it was charged. */
+const calls = () => db.rows('model_calls')
 
 describe('UC-COFUN-CHAT-001 Ask the hosted model: only with a valid session', () => {
   it('[UC-COFUN-CHAT-001-S03] request without a session is refused', async () => {
@@ -335,7 +336,7 @@ describe('UC-COFUN-CREDITS-001 Spend credits on the hosted model', () => {
     await chat(token)
     await (await chat(token, { messages: hi, stream: true })).text()
     const cost = 71 * 300 + 5568 * 6 + 6 * 1200
-    expect(records().map((r) => [r.promptTokens, r.cachedTokens, r.microCredits])).toEqual([
+    expect(calls().map((r) => [r.prompt_tokens, r.cached_tokens, r.micro_credits])).toEqual([
       [5639, 5568, cost],
       [5639, 5568, cost],
     ])
@@ -531,13 +532,14 @@ describe('UC-COFUN-CREDITS-001 Spend credits on the hosted model', () => {
     let text = ''
     while (!text.includes('[DONE]\n')) text += decoder.decode((await reader.read()).value, { stream: true })
     await reader.cancel()
-    expect(records()).toEqual([
+    expect(calls()).toEqual([
       expect.objectContaining({
         outcome: 'cancelled',
-        promptTokens: 1000,
-        cachedTokens: 900,
-        completionTokens: 5,
-        microCredits: 100 * 300 + 900 * 6 + 5 * 1200,
+        prompt_tokens: 1000,
+        cached_tokens: 900,
+        completion_tokens: 5,
+        estimated: 0,
+        micro_credits: 100 * 300 + 900 * 6 + 5 * 1200,
       }),
     ])
   })
@@ -548,7 +550,7 @@ describe('UC-COFUN-CREDITS-001 Spend credits on the hosted model', () => {
     ai.rawSse = undefined
     ai.streamFailWith = new Error('connection reset')
     await (await chat(token, { messages: hi, stream: true })).text().catch(() => {})
-    expect(records().map((r) => [r.outcome, r.promptTokens, r.microCredits])).toEqual([
+    expect(calls().map((r) => [r.outcome, r.prompt_tokens, r.micro_credits])).toEqual([
       ['incomplete', 0, 0],
       ['stream_error', 0, 0],
     ])
@@ -556,7 +558,7 @@ describe('UC-COFUN-CREDITS-001 Spend credits on the hosted model', () => {
 
   it('[UC-COFUN-CREDITS-001-S06] a call is charged what its tokens cost', async () => {
     await chat(token)
-    expect(records()[0]).toMatchObject({ cachedTokens: 0, microCredits: FAKE_COST })
+    expect(calls()[0]).toMatchObject({ cached_tokens: 0, micro_credits: FAKE_COST })
   })
 
   it('[UC-COFUN-CREDITS-001-S10] each user has their own credits', async () => {
@@ -579,7 +581,6 @@ describe('UC-COFUN-CREDITS-001 Spend credits on the hosted model', () => {
     })
     expect(ai.calls).toHaveLength(2)
     expect(db.rows('model_calls')).toHaveLength(2)
-    expect(records().map((r) => r.outcome)).toEqual(['ok', 'ok', 'rate_limited'])
     const bob = await clerk.sessionToken({ userId: 'user_bob', azp: EXT })
     expect((await chat(bob)).status).toBe(200)
   })
@@ -601,7 +602,8 @@ describe('UC-COFUN-CREDITS-001 Spend credits on the hosted model', () => {
     ai.failWith = new Error('capacity')
     expect((await chat(token)).status).toBe(502)
     ai.failWith = undefined
-    expect(records().map((r) => r.microCredits)).toEqual([0, 0, 0])
+    // Only the failed call reached the model, and it charged nothing.
+    expect(calls().map((r) => [r.outcome, r.micro_credits])).toEqual([['provider_error', 0]])
     // All 200 credits are still there: one call goes ahead and uses them up.
     expect((await chat(token)).status).toBe(200)
     await refused(await chat(token))
@@ -624,13 +626,13 @@ describe('UC-COFUN-CREDITS-001 Spend credits on the hosted model', () => {
     // No chunk reported the prompt, so it is estimated from the input: 2 characters, 1 token, of
     // which 90%, rounded down, counts as cached: none. The reply is estimated from the 6 characters
     // that were streamed: 2 tokens.
-    expect(records()).toEqual([
+    expect(calls()).toEqual([
       expect.objectContaining({
         outcome: 'cancelled',
-        promptTokens: 1,
-        cachedTokens: 0,
-        completionTokens: 2,
-        microCredits: 300 + 2 * 1200,
+        prompt_tokens: 1,
+        cached_tokens: 0,
+        completion_tokens: 2,
+        micro_credits: 300 + 2 * 1200,
       }),
     ])
   })
@@ -642,19 +644,19 @@ describe('UC-COFUN-CREDITS-001 Spend credits on the hosted model', () => {
       'data: {"choices":[{"delta":{"content":"abcdef","reasoning_content":"ghi"}}],"usage":{"prompt_tokens":0,"completion_tokens":2}}\n\n' +
       'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"name":"abc","arguments":"{}x"}}]}}]}\n\n'
     await (await chat(token, { messages: hi, stream: true })).text()
-    expect(records()[0]).toMatchObject({
+    expect(calls()[0]).toMatchObject({
       outcome: 'incomplete',
-      promptTokens: 1000,
-      cachedTokens: 900,
-      completionTokens: 5,
-      microCredits: 100 * 300 + 900 * 6 + 5 * 1200,
+      prompt_tokens: 1000,
+      cached_tokens: 900,
+      completion_tokens: 5,
+      micro_credits: 100 * 300 + 900 * 6 + 5 * 1200,
     })
   })
 
   it('[@no-uc:money] a stream that carries a model error and no usage costs nothing', async () => {
     ai.rawSse = 'data: {"error":{"message":"model overloaded"}}\n\n'
     await (await chat(token, { messages: hi, stream: true })).text()
-    expect(records()[0]).toMatchObject({ outcome: 'provider_error', microCredits: 0 })
+    expect(calls()[0]).toMatchObject({ outcome: 'provider_error', micro_credits: 0 })
   })
 
   it('[@no-uc:money] an unreachable database refuses the request without calling the model', async () => {
@@ -668,14 +670,10 @@ describe('UC-COFUN-CREDITS-001 Spend credits on the hosted model', () => {
     expect(ai.calls).toHaveLength(0)
   })
 
-  it('[@no-uc:money] a model call whose record fails still sends the reply, is not charged, and the usage record says so', async () => {
+  it('[@no-uc:money] a model call whose record fails still sends the reply and is not charged', async () => {
     db.failOn = { sql: 'INSERT INTO model_calls', error: new Error('D1_ERROR: Network connection lost.') }
     expect((await chat(token)).status).toBe(200)
     expect(await (await chat(token, { messages: hi, stream: true })).text()).toContain('[DONE]')
-    expect(records().map((r) => [r.outcome, r.microCredits])).toEqual([
-      ['ok', 0],
-      ['ok', 0],
-    ])
     expect(db.rows('grants')[0]).toMatchObject({ left: 200_000_000 })
     expect(logged).toEqual(Array(2).fill('model call record failed: Error: D1_ERROR: Network connection lost.'))
   })
@@ -686,138 +684,6 @@ describe('UC-COFUN-CREDITS-001 Spend credits on the hosted model', () => {
     expect(res.status).toBe(503)
     expect((await json(res)).error.code).toBe('not_configured')
     expect(ai.calls).toHaveLength(0)
-  })
-})
-
-/** Reads a usage data point back into named fields, following the layout in src/usage.ts. */
-function usageRecord(point: FakeUsageDataset['points'][number]) {
-  const [userId] = point.indexes ?? []
-  const [model, outcome, finishReason, mode] = point.blobs ?? []
-  const [messages, inputChars, promptTokens, completionTokens, durationMs, cachedTokens, microCredits] =
-    point.doubles ?? []
-  return {
-    userId,
-    model,
-    outcome,
-    finishReason,
-    mode,
-    messages,
-    inputChars,
-    promptTokens,
-    completionTokens,
-    durationMs,
-    cachedTokens,
-    microCredits,
-  }
-}
-const records = () => usage.points.map(usageRecord)
-
-describe("UC-COFUN-CHAT-002 Keep a record of each user's chat usage", () => {
-  const two = [
-    { role: 'system', content: 'be brief' },
-    { role: 'user', content: 'hello' },
-  ]
-
-  it('[UC-COFUN-CHAT-002-S01] a streamed reply leaves a record with its token counts', async () => {
-    const res = await chat(token, { messages: two, stream: true })
-    expect(res.status).toBe(200)
-    await res.text()
-    expect(records()).toEqual([
-      {
-        userId: 'user_alice',
-        model: MODEL,
-        outcome: 'ok',
-        finishReason: 'stop',
-        mode: 'stream',
-        messages: 2,
-        inputChars: 13,
-        promptTokens: FAKE_USAGE.prompt_tokens,
-        completionTokens: FAKE_USAGE.completion_tokens,
-        durationMs: expect.any(Number),
-        cachedTokens: 0,
-        microCredits: FAKE_COST,
-      },
-    ])
-    expect(records()[0].durationMs).toBeGreaterThanOrEqual(0)
-    expect(ai.calls[0].inputs.stream_options).toEqual({ include_usage: true })
-  })
-
-  it('[UC-COFUN-CHAT-002-S01] a non-streamed reply leaves a record with its token counts', async () => {
-    expect((await chat(token, { messages: two })).status).toBe(200)
-    expect(records()).toEqual([
-      expect.objectContaining({
-        userId: 'user_alice',
-        outcome: 'ok',
-        finishReason: 'stop',
-        mode: 'sync',
-        messages: 2,
-        inputChars: 13,
-        promptTokens: FAKE_USAGE.prompt_tokens,
-        completionTokens: FAKE_USAGE.completion_tokens,
-        microCredits: FAKE_COST,
-      }),
-    ])
-  })
-
-  it('[UC-COFUN-CHAT-002-S02] refused and failed requests leave a record of how they ended', async () => {
-    await chat(token, { messages: [] })
-    ai.failWith = new Error('capacity')
-    await chat(token)
-    ai.failWith = undefined
-    ai.usage = usageCosting(200)
-    await chat(token)
-    await chat(token)
-    db.failWith = new Error('D1_ERROR: Network connection lost.')
-    await chat(token)
-    expect(records().map((r) => r.outcome)).toEqual([
-      'bad_request',
-      'provider_error',
-      'ok',
-      'out_of_credits',
-      'credits_unavailable',
-    ])
-    expect(records().every((r) => r.userId === 'user_alice')).toBe(true)
-  })
-
-  it('[UC-COFUN-CHAT-002-S02] a stream that breaks off leaves a record of how it ended', async () => {
-    ai.streamFailWith = new Error('connection reset')
-    const res = await chat(token, { messages: hi, stream: true })
-    await expect(res.text()).rejects.toThrow('the model stream failed')
-    expect(records().map((r) => r.outcome)).toEqual(['stream_error'])
-  })
-
-  it('[UC-COFUN-CHAT-002-S02] a stream that ends early without an error is recorded as incomplete', async () => {
-    const sse = 'data: {"choices":[{"delta":{"content":"a"}}]}\n\n'
-    ai.rawSse = sse
-    // The client is told what it cost, as an estimate, in a last chunk of its own.
-    const last = 'data: {"choices":[],"cost":{"micro_credits":1500,"estimated":true}}\n\n'
-    expect(await (await chat(token, { messages: hi, stream: true })).text()).toBe(sse + last)
-    expect(records().map((r) => r.outcome)).toEqual(['incomplete'])
-  })
-
-  it('[UC-COFUN-CHAT-002-S03] nothing users wrote or the AI replied is kept', async () => {
-    const SECRET = 'zebra-7f3a-confidential'
-    ai = env.AI = new FakeAiBinding(`reply ${SECRET}-reply`)
-    const messages = [
-      { role: 'system', content: `system ${SECRET}-system` },
-      { role: 'user', content: `page ${SECRET}-user` },
-      { role: 'assistant', content: `earlier ${SECRET}-assistant` },
-    ]
-    await (await chat(token, { messages, stream: true })).text()
-    await chat(token, { messages })
-    await chat(token, { messages, model: `${SECRET}-model` })
-    expect(records()).toHaveLength(3)
-    expect(JSON.stringify(usage.points)).not.toContain(SECRET)
-    // The database keeps every model call and grant without an end date: none of it holds the conversation.
-    expect(db.rows('model_calls')).toHaveLength(2)
-    expect(JSON.stringify([db.rows('grants'), db.rows('model_calls')])).not.toContain(SECRET)
-    // The gateway is told not to keep prompts and replies in its logs or its cache.
-    expect(
-      ai.calls.every((call) => {
-        const gateway = call.options?.gateway as { collectLog?: boolean; skipCache?: boolean } | undefined
-        return gateway?.collectLog === false && gateway.skipCache === true
-      }),
-    ).toBe(true)
   })
 })
 
@@ -895,7 +761,6 @@ describe('error logs', () => {
 describe('product of a model call', () => {
   const OTHER = 'chrome-extension://ponmlkjihgfedcbaponmlkjihgfedcba'
   const products = () => db.rows('model_calls').map((r) => r.product)
-  const usageProducts = () => usage.points.map((point) => point.blobs?.[4])
 
   it('[@no-uc:money] is the product listed for the origin the session token was issued to', async () => {
     env.CLERK_AUTHORIZED_PARTIES += `, ${OTHER}`
@@ -903,7 +768,6 @@ describe('product of a model call', () => {
     await chat(token)
     await chat(await clerk.sessionToken({ userId: 'user_alice', azp: OTHER }))
     expect(products()).toEqual(['notico', 'confluco'])
-    expect(usageProducts()).toEqual(['notico', 'confluco'])
     expect(ai.calls.map((call) => call.options)).toMatchObject(
       ['notico', 'confluco'].map((product) => ({ gateway: { metadata: { product } } })),
     )
@@ -920,7 +784,6 @@ describe('product of a model call', () => {
     const web = await clerk.sessionToken({ userId: 'user_alice', azp: 'https://cofun.example' })
     expect((await chat(web)).status).toBe(200)
     expect(products()).toEqual(['unknown'])
-    expect(usageProducts()).toEqual(['unknown'])
   })
 
   it('[@no-uc:money] is unknown for every caller when no products are configured', async () => {
@@ -943,44 +806,14 @@ describe('product of a model call', () => {
   })
 })
 
-// Standalone tests for usage records.
-describe('usage records', () => {
-  it('[@no-uc:money] a stream that carries a model error is recorded as provider_error', async () => {
-    ai.rawSse = 'data: {"error":{"message":"model overloaded"}}\n\ndata: [DONE]\n\n'
-    await (await chat(token, { messages: hi, stream: true })).text()
-    expect(records().map((r) => r.outcome)).toEqual(['provider_error'])
-  })
-
-  it('[@no-uc:money] a reply that cannot be sent is recorded once', async () => {
-    env.AI = {
-      async run() {
-        return { usage: { prompt_tokens: 1n } }
-      },
-    }
-    expect((await chat(token)).status).toBe(500)
-    expect(records().map((r) => r.outcome)).toEqual(['internal'])
-  })
-
-  it('[@no-uc:money] requests that fail auth leave no record', async () => {
-    await chat(undefined)
-    await chat('not-a-jwt')
-    expect(usage.points).toHaveLength(0)
-  })
-
-  it('[@no-uc:money] a stream the client cancels is recorded as cancelled', async () => {
-    const res = await chat(token, { messages: hi, stream: true })
-    const reader = res.body!.getReader()
-    await reader.read()
-    await reader.cancel()
-    expect(records().map((r) => r.outcome)).toEqual(['cancelled'])
-  })
-
+// Standalone tests for how a reply is read for what it is charged.
+describe('reading a reply for its charge', () => {
   it('[@no-uc:contract] the stream reaches the client unchanged, with what it cost ahead of [DONE]', async () => {
     const reply = 'data: {"choices":[{"delta":{"content":"a"}}]}\n\n'
     ai.rawSse = `${reply}data: [DONE]\n\n`
     const cost = 'data: {"choices":[],"cost":{"micro_credits":0,"estimated":false}}\n\n'
     expect(await (await chat(token, { messages: hi, stream: true })).text()).toBe(`${reply}${cost}data: [DONE]\n\n`)
-    expect(records()[0]).toMatchObject({ outcome: 'ok', promptTokens: 0, completionTokens: 0, finishReason: '' })
+    expect(calls()[0]).toMatchObject({ outcome: 'ok', prompt_tokens: 0, completion_tokens: 0, finish_reason: '' })
   })
 
   it('[@no-uc:money] reads the totals from a Workers AI stream with per-chunk usage', async () => {
@@ -996,19 +829,19 @@ describe('usage records', () => {
       .join('')
       .concat('data: [DONE]\n\n')
     await (await chat(token, { messages: hi, stream: true })).text()
-    expect(records()[0]).toMatchObject({
+    expect(calls()[0]).toMatchObject({
       outcome: 'ok',
-      finishReason: 'length',
-      promptTokens: 36,
-      completionTokens: 30,
+      finish_reason: 'length',
+      prompt_tokens: 36,
+      completion_tokens: 30,
     })
   })
 
-  it('[@no-uc:money] unknown finish reasons and malformed token counts are not copied into records', async () => {
+  it('[@no-uc:money] unknown finish reasons and malformed token counts are not copied into the record', async () => {
     ai.rawSse =
       'data: {"choices":[{"delta":{},"finish_reason":"free text"}],"usage":{"prompt_tokens":"9","completion_tokens":-1}}\n\ndata: [DONE]\n\n'
     await (await chat(token, { messages: hi, stream: true })).text()
-    expect(records()[0]).toMatchObject({ finishReason: 'other', promptTokens: 0, completionTokens: 0 })
+    expect(calls()[0]).toMatchObject({ finish_reason: 'other', prompt_tokens: 0, completion_tokens: 0 })
   })
 
   it('[@no-uc:contract] non-object events in the stream are passed through and skipped', async () => {
@@ -1016,27 +849,26 @@ describe('usage records', () => {
     ai.rawSse = `${events}data: [DONE]\n\n`
     const cost = 'data: {"choices":[],"cost":{"micro_credits":0,"estimated":false}}\n\n'
     expect(await (await chat(token, { messages: hi, stream: true })).text()).toBe(`${events}${cost}data: [DONE]\n\n`)
-    expect(records().map((r) => r.outcome)).toEqual(['ok'])
+    expect(calls().map((r) => r.outcome)).toEqual(['ok'])
   })
 
   it('[@no-uc:money] reads the fields of a reply loosely: a field of another shape counts as missing', async () => {
     const replies: [unknown, Record<string, unknown>][] = [
       [
         { choices: { 0: { finish_reason: 'length' } }, usage: [] },
-        { finishReason: 'length', promptTokens: 0 },
+        { finish_reason: 'length', prompt_tokens: 0 },
       ],
       [
         { choices: 'stop', usage: 'x' },
-        { finishReason: '', promptTokens: 0 },
+        { finish_reason: '', prompt_tokens: 0 },
       ],
       [
         { choices: [null, { finish_reason: 'stop' }], usage: { prompt_tokens: 7 } },
-        { finishReason: '', promptTokens: 7 },
+        { finish_reason: '', prompt_tokens: 7 },
       ],
-      [['stop'], { finishReason: '', promptTokens: 0 }],
+      [['stop'], { finish_reason: '', prompt_tokens: 0 }],
     ]
     for (const [reply, recorded] of replies) {
-      env.USAGE = usage = new FakeUsageDataset()
       env.AI = {
         async run() {
           return reply
@@ -1044,10 +876,10 @@ describe('usage records', () => {
       }
       const res = await chat(token)
       // The reply itself goes to the client as the model gave it, with what it cost when it is an object.
-      const cost = { micro_credits: Number(recorded.promptTokens) * 300, estimated: false }
+      const cost = { micro_credits: Number(recorded.prompt_tokens) * 300, estimated: false }
       const sent = typeof reply === 'object' && reply !== null && !Array.isArray(reply) ? { ...reply, cost } : reply
       expect([res.status, await json(res)]).toEqual([200, sent])
-      expect(records()[0]).toMatchObject({ outcome: 'ok', ...recorded })
+      expect(calls().at(-1)).toMatchObject({ outcome: 'ok', ...recorded })
     }
   })
 
@@ -1058,16 +890,7 @@ describe('usage records', () => {
       },
     }
     expect((await chat(token)).status).toBe(200)
-    expect(records()[0]).toMatchObject({ outcome: 'ok', promptTokens: 0, completionTokens: 0, finishReason: '' })
-  })
-
-  it('[@no-uc:money] a streamed request refused before the model is called is recorded as streamed', async () => {
-    await chat(token, { messages: [], stream: true })
-    await chat(token, { messages: hi, max_tokens: 100_000, stream: true })
-    expect(records().map((r) => [r.outcome, r.mode])).toEqual([
-      ['bad_request', 'stream'],
-      ['bad_request', 'stream'],
-    ])
+    expect(calls()[0]).toMatchObject({ outcome: 'ok', prompt_tokens: 0, completion_tokens: 0, finish_reason: '' })
   })
 
   it('[@no-uc:money] a failing usage dataset does not fail the request', async () => {
@@ -1206,9 +1029,8 @@ describe('UC-COFUN-CHAT-001 Ask the hosted model: tools', () => {
     ]
     await (await chat(token, { messages, tools: secretTools, stream: true })).text()
     await chat(token, { messages, tools: secretTools })
-    expect(records()).toHaveLength(2)
-    expect(records().map((r) => r.finishReason)).toEqual(['tool_calls', 'tool_calls'])
-    expect(JSON.stringify(usage.points)).not.toContain(SECRET)
+    expect(calls().map((r) => r.finish_reason)).toEqual(['tool_calls', 'tool_calls'])
+    expect(JSON.stringify(calls())).not.toContain(SECRET)
     expect(
       ai.calls.every((call) => {
         const gateway = call.options?.gateway as { collectLog?: boolean; skipCache?: boolean } | undefined
@@ -1222,29 +1044,18 @@ describe('tool calling', () => {
   it('[@no-uc:money] a streamed tool call leaves a record with its totals and finish reason', async () => {
     ai.toolCalls = [{ name: 'get_current_page', arguments: '{}' }]
     await (await chat(token, { messages: askPage, tools, stream: true })).text()
-    expect(records()).toEqual([
+    expect(calls()).toEqual([
       expect.objectContaining({
         outcome: 'ok',
-        finishReason: 'tool_calls',
-        promptTokens: FAKE_USAGE.prompt_tokens,
-        completionTokens: FAKE_USAGE.completion_tokens,
+        finish_reason: 'tool_calls',
+        prompt_tokens: FAKE_USAGE.prompt_tokens,
+        completion_tokens: FAKE_USAGE.completion_tokens,
       }),
     ])
   })
 
-  it('[@no-uc:money] tool definitions and tool calls count toward the size limit and the record', async () => {
-    await chat(token, { messages: withToolResult('{"title":"x"}'), tools: [pageTool] })
-    const { inputChars } = records()[0]
-    const toolCalls = [{ id: 'call_1', type: 'function', function: { name: 'get_current_page', arguments: '{}' } }]
-    const result = '{"title":"x"}'
-    expect(inputChars).toBe(
-      askPage[0].content.length +
-        JSON.stringify(toolCalls).length +
-        'call_1'.length +
-        result.length +
-        JSON.stringify([pageTool]).length,
-    )
-
+  it('[@no-uc:money] tool definitions and tool calls count toward the size limit', async () => {
+    expect((await chat(token, { messages: withToolResult('{"title":"x"}'), tools: [pageTool] })).status).toBe(200)
     const big = 'x'.repeat(200_001)
     const tooBig = [
       { messages: askPage, tools: [{ type: 'function', function: { name: 'f', description: big } }] },

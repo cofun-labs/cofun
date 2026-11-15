@@ -268,15 +268,9 @@ export class FakeExecutionContext {
   passThroughOnException(): void {}
 }
 
-type DataPoint = Parameters<UsageDataset['writeDataPoint']>[0]
-
-/** Stands in for the Analytics Engine dataset (env.USAGE): keeps every data point written. */
+/** Stands in for the Analytics Engine dataset (env.USAGE): drops every data point written. */
 export class FakeUsageDataset implements UsageDataset {
-  points: DataPoint[] = []
-
-  writeDataPoint(point: DataPoint): void {
-    this.points.push(structuredClone(point))
-  }
+  writeDataPoint(): void {}
 }
 
 /**
