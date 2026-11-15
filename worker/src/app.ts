@@ -12,6 +12,7 @@ import { creditsRoutes } from './routes/credits'
 import { pageRoutes } from './routes/pages'
 import { defaultRateLimit } from './routes/rate-limit'
 import { requireSession } from './routes/session'
+import { webRoutes } from './routes/web'
 
 export type { AiBinding, Env } from './http'
 
@@ -80,5 +81,6 @@ function v1Routes(deps: Deps): App {
   v1.get('/me', (c) => c.json({ userId: c.get('userId'), model: c.env.MODEL }))
   v1.route('/billing', billingRoutes(deps))
   v1.route('/credits', creditsRoutes(deps))
+  v1.route('/web', webRoutes(deps))
   return v1
 }

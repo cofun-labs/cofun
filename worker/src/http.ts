@@ -7,6 +7,7 @@ import type { Database } from './credits'
 import type { priceOf } from './pricing'
 import type { StripeApi } from './stripe'
 import type { UsageDataset } from './usage'
+import type { BrowserBinding, WebFetcher } from './web'
 
 /** The slice of the Workers AI binding this worker uses. */
 export interface AiBinding {
@@ -32,6 +33,16 @@ export interface Env {
    * CHAT_LIMIT.
    */
   API_LIMIT: RateLimiter
+  /**
+   * Caps how many web pages one user can have read or rendered per period (`ratelimits` in
+   * wrangler.jsonc), keyed by user id. These requests count toward API_LIMIT too. Approximate, like
+   * CHAT_LIMIT.
+   */
+  WEB_LIMIT: RateLimiter
+  /** Browser Run (`browser` in wrangler.jsonc), which renders pages drawn by scripts. Without it, nothing is rendered. */
+  BROWSER?: BrowserBinding
+  /** What reads web pages. Tests pass a fake; deployed, it is not set, and the global `fetch` reads them. */
+  WEB?: WebFetcher
   MODEL: string
   AI_GATEWAY_ID?: string
   /** Clerk publishable key, used by the sign-in page. */

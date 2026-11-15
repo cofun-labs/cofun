@@ -87,9 +87,9 @@ export interface ToolSpec {
    * Runs the tool. Throw to report a failure to the model. An error with a `stopsQuestion` string
    * (on it or a cause) also stops the question: nothing more runs, and the user is told that string.
    * The arguments come from the model: a tool parses them before it uses them. Text alone is a
-   * result with no details. `ask` puts a question to the user on the call's card (see AskOnCard).
+   * result with no details. `context` is what the agent gives a running call (see ToolContext).
    */
-  run: (args: unknown, signal?: AbortSignal, ask?: AskOnCard) => Promise<string | ToolResult>
+  run: (args: unknown, signal?: AbortSignal, context?: ToolContext) => Promise<string | ToolResult>
   /** The tool does what is hard to undo, such as deleting a page, so the user must agree each time before it runs. */
   needsConfirmation?: boolean
   /**
@@ -121,6 +121,45 @@ interface CardQuestion {
  * when the question is stopped or nobody can be asked.
  */
 export type AskOnCard = (question: CardQuestion) => Promise<boolean>
+
+/** What the agent gives a call while it runs. */
+export interface ToolContext {
+  /** Puts a question to the user on the call's card (see AskOnCard). */
+  ask: AskOnCard
+  /**
+   * What the user typed in each question of the conversation, oldest first: their own words only,
+   * without the notes the extension sends with them, and nothing a tool or the model wrote.
+   */
+  userText: () => string[]
+  /**
+   * Reads the web page at `url` through the worker, up to `maxChars` of its text; `render` renders
+   * it in a browser first, which costs credits, counted with the question's cost. Throws a WebError
+   * when the worker could not read it.
+   */
+  readWeb: (url: string, maxChars: number, render: boolean, signal?: AbortSignal) => Promise<WebPage>
+}
+
+/** A web page the worker read (see ToolContext.readWeb). `scripted`: it showed little text and runs scripts. */
+export const WebPage = z.object({
+  url: z.string(),
+  title: z.string(),
+  text: z.string(),
+  chars: z.number().int().nonnegative(),
+  scripted: z.boolean(),
+})
+export type WebPage = z.infer<typeof WebPage>
+
+/** Why the worker could not read a web page: its code (`no_access`, `no_text`, …) and message. */
+export class WebError extends Error {
+  constructor(
+    readonly code: string,
+    message: string,
+    /** Set when the question must stop (the worker's rate limit): what the user is told. */
+    readonly stopsQuestion?: string,
+  ) {
+    super(message)
+  }
+}
 
 /** A tool call waiting for the user's OK. */
 export interface ToolCallRequest {

@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import type { Database, Statement } from '../src/credits'
 import type { UsageDataset } from '../src/usage'
+import type { BrowserBinding, WebFetcher } from '../src/web'
 
 type Call = { model: string; inputs: Record<string, unknown>; options?: Record<string, unknown> }
 
@@ -285,5 +286,69 @@ export class FakeRateLimiter implements RateLimiter {
   async limit({ key }: { key: string }): Promise<{ success: boolean }> {
     this.keys.push(key)
     return { success: this.keys.filter((k) => k === key).length <= this.max }
+  }
+}
+
+/** A page a FakeWeb serves: a body with its type, or another status, with headers of its own. */
+export interface FakePage {
+  status?: number
+  body?: string
+  type?: string
+  headers?: Record<string, string>
+}
+
+/**
+ * Stands in for the internet the worker reads pages from (env.WEB): serves the pages a test set, by
+ * address without the fragment, and answers 404 for any other. Records every address asked for, and
+ * what each request carried.
+ */
+export class FakeWeb implements WebFetcher {
+  readonly pages = new Map<string, FakePage>()
+  readonly requests: Request[] = []
+  /** When set, every request fails with this error, as an unreachable site's would. */
+  failWith?: Error
+
+  /** Serves `page` at `url`: HTML by default. */
+  serve(url: string, page: FakePage | string): this {
+    this.pages.set(url, typeof page === 'string' ? { body: page } : page)
+    return this
+  }
+
+  get asked(): string[] {
+    return this.requests.map((r) => r.url)
+  }
+
+  async fetch(request: Request): Promise<Response> {
+    this.requests.push(request)
+    if (this.failWith) throw this.failWith
+    const page = this.pages.get(request.url)
+    if (!page) return new Response('Not found', { status: 404, headers: { 'content-type': 'text/html' } })
+    return new Response(page.body ?? '', {
+      status: page.status ?? 200,
+      headers: { 'content-type': page.type ?? 'text/html; charset=utf-8', ...page.headers },
+    })
+  }
+}
+
+/**
+ * Stands in for Browser Run (env.BROWSER): renders the pages a test set as Markdown, reporting the
+ * browser time each used, and fails for any other as Browser Run does for a page it could not load.
+ */
+export class FakeBrowserRun implements BrowserBinding {
+  readonly pages = new Map<string, { markdown: string; browserMs?: number }>()
+  readonly calls: { action: string; options: Record<string, unknown> }[] = []
+
+  render(url: string, markdown: string, browserMs = 4000): this {
+    this.pages.set(url, { markdown, browserMs })
+    return this
+  }
+
+  async quickAction(action: 'markdown', options: Record<string, unknown>): Promise<Response> {
+    this.calls.push({ action, options })
+    const page = typeof options.url === 'string' ? this.pages.get(options.url) : undefined
+    if (!page)
+      return Response.json({ success: false, errors: [{ code: 5000, message: 'navigation failed' }] }, { status: 422 })
+    const headers = page.browserMs === undefined ? undefined : { 'x-browser-ms-used': String(page.browserMs) }
+    return Response.json({ success: true, result: page.markdown }, { headers })
   }
 }

@@ -34,7 +34,14 @@
   "ratelimits": [
     { "name": "CHAT_LIMIT", "namespace_id": "1001", "simple": { "limit": 30, "period": 60 } },
     { "name": "API_LIMIT", "namespace_id": "1002", "simple": { "limit": 120, "period": 60 } },
+    // WEB_LIMIT: how many web pages one user can have the worker read or render a minute, so one
+    // account cannot use it to send many requests to a site. A question reads a few at most.
+    { "name": "WEB_LIMIT", "namespace_id": "1003", "simple": { "limit": 30, "period": 60 } },
   ],
+
+  // Browser Run: renders the pages the extension asks for that are drawn by scripts (routes/web.ts),
+  // charged to the user's credits by the browser time each used.
+  "browser": { "binding": "BROWSER" },
 
   // Per-request usage records (sizes, token counts, credits charged, outcome; never message content).
   // Workers Analytics Engine keeps them for 90 days. The dataset is created on first write.

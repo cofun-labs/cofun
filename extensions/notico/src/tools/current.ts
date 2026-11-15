@@ -5,6 +5,7 @@ import { z } from '../zod'
 import { NOTION_HOSTS, isNotion, pageIdFromUrl, showsDatabase } from '../notion/hosts'
 import { clip } from '../notion/comments'
 import { mayRead, readPage, readableSite } from '../web/tab'
+import { asPageText, countOutside, outsideLeft, startOutside } from './outside'
 import { LOOK, READ, asData, count, on } from './shared'
 
 /** The title and URL of the current tab: the active tab of the side panel's window, on any site. */
@@ -83,7 +84,7 @@ export async function needsAttachedPage(): Promise<void> {
  */
 export function carryPages(page: OpenPage | undefined, removed: boolean, added: OpenPage[] = []): string {
   openPageAttached = !removed
-  outsideRead = 0
+  startOutside()
   // The open page is named once, in its own note, also when the user added it by hand.
   const open = page && !removed ? pageIdFromUrl(page.url) : undefined
   const others = added.filter((p) => !open || pageIdFromUrl(p.url) !== open)
@@ -144,21 +145,6 @@ export const getCurrentTab = defineTool({
 /** How much of a page read_current_tab returns. */
 const TAB_TEXT_CHARS = 20_000
 
-/**
- * How much text from pages outside Notion one question may read, over all its reads: a question
- * that goes on reading the same tab must not fill the conversation, or spend credits on it.
- */
-const QUESTION_OUTSIDE_CHARS = 60_000
-
-/** Characters of pages outside Notion the question being asked has read; carryPages starts it at 0. */
-let outsideRead = 0
-
-/**
- * Keeps the page's lines from passing for the tool's own: a line that opens like a note in
- * brackets or a block reference gets a backslash first.
- */
-const asPageText = (text: string) => text.replace(/^([^\S\n]*)(\[|\^)/gm, '$1\\$2')
-
 export const readCurrentTab = defineTool({
   name: 'read_current_tab',
   description:
@@ -169,22 +155,17 @@ export const readCurrentTab = defineTool({
     'as summarizing it or saving it to Notion; never for a Notion page (use read_page). A long page is clipped.',
   describe: (_args, details) => on(READ, details?.name, 'the current tab'),
   args: z.strictObject({}),
-  run: async (_args, _signal, ask) => {
+  run: async (_args, _signal, context) => {
     await needsAttachedPage()
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true })
     if (tab?.id === undefined || !tab.url) throw new Error('Could not tell which tab is the current one.')
     if (isNotion(tab.url)) throw new Error('The current tab is a Notion page: read it with read_page instead.')
     const site = readableSite(tab.url)
     if ('reason' in site) throw new Error(site.reason)
-    const left = QUESTION_OUTSIDE_CHARS - outsideRead
-    if (left <= 0)
-      throw new Error(
-        `This question has read as much from pages outside Notion as one question may (${QUESTION_OUTSIDE_CHARS.toLocaleString('en-US')} ` +
-          "characters). Answer from what was read; don't read the page again in this question.",
-      )
+    const left = outsideLeft()
     const host = new URL(site.origin).host
     if (!(await mayRead(site.origin))) {
-      const allowed = await ask?.({ text: `Allow Notico to read ${host}?`, access: site.origin })
+      const allowed = await context?.ask({ text: `Allow Notico to read ${host}?`, access: site.origin })
       // Chrome granted it only if the user allowed it in its own prompt too.
       if (!allowed || !(await mayRead(site.origin)))
         throw new Error(
@@ -202,7 +183,7 @@ export const readCurrentTab = defineTool({
       )
     const page = await readPage(tab.id, site.origin, Math.min(TAB_TEXT_CHARS, left))
     if ('reason' in page) throw new Error(page.reason)
-    outsideRead += page.text.length
+    countOutside(page.text.length)
     const shown = page.text.length < page.chars
     const lines = [
       // As JSON, so the title and URL stay inside their quotes and on their line.

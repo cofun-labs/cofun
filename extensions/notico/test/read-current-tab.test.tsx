@@ -243,7 +243,7 @@ describe('reading the page in the current tab', () => {
     const results = toolResults(browser)
     expect(results.slice(0, 3).map((r) => r?.split('\n').at(-1)?.length)).toEqual([20_000, 20_000, 20_000])
     expect(results[3]).toBe(
-      "This question has read as much from pages outside Notion as one question may (60,000 characters). Answer from what was read; don't read the page again in this question.",
+      "This question has read as much from outside Notion as one question may (60,000 characters). Answer from what was read; don't read more pages in this question.",
     )
     expect(browser.tab.injections).toHaveLength(3)
 

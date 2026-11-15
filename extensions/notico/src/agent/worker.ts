@@ -3,7 +3,7 @@
 import { CheckoutPage } from '../credits'
 import { z } from '../zod'
 import { HOSTED_HISTORY, looseText, parseError, type CallCost, type ModelProvider } from './provider'
-import type { AgentConfig } from './types'
+import { WebError, WebPage, type AgentConfig } from './types'
 
 const SIGN_IN = 'Please sign in first.'
 
@@ -127,4 +127,48 @@ export async function readOwn<S extends z.ZodType>(
   const body: unknown = await res.json().catch(() => undefined)
   if (!res.ok) throw new Error(ErrorReply.safeParse(body).data?.error?.message ?? `HTTP ${res.status}`)
   return schema.parse(body)
+}
+
+/** The worker's answer to a page it read: the page, and what reading it cost. */
+const WebReply = WebPage.extend({ cost: z.object({ micro_credits: z.number().int().nonnegative() }) })
+
+/** A refusal from the worker, with its code. */
+const CodedError = z.object({ error: z.object({ code: looseText, message: looseText }) })
+
+/** What the user is told when the worker's limit on pages read stops a question. */
+const TOO_MANY_PAGES = 'Notico read too many web pages in a minute. Wait a minute, then ask again.'
+
+/**
+ * Has the worker read the web page at `url` (see ToolContext.readWeb): fetched plainly, or rendered
+ * in a browser when `render` is set. Resolves with the page and what it cost, in micro-credits;
+ * throws a WebError when the worker could not read it, which stops the question when the worker
+ * turned the request away for coming too often.
+ */
+export async function readWebPage(
+  { apiUrl, getToken, client }: Pick<AgentConfig, 'apiUrl' | 'getToken' | 'client'>,
+  url: string,
+  maxChars: number,
+  render: boolean,
+  signal?: AbortSignal,
+): Promise<{ page: WebPage; microCredits: number }> {
+  const token = await getToken()
+  if (!token) throw new Error(SIGN_IN)
+  const res = await fetch(`${apiUrl.replace(/\/+$/, '')}/web/${render ? 'render' : 'read'}`, {
+    method: 'POST',
+    headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json', 'x-cofun-client': client },
+    body: JSON.stringify({ url, max_chars: maxChars }),
+    signal,
+  })
+  const body: unknown = await res.json().catch(() => undefined)
+  if (!res.ok) {
+    const refusal = CodedError.safeParse(body).data?.error
+    const code = refusal?.code ?? `http_${res.status}`
+    throw new WebError(
+      code,
+      refusal?.message ?? `HTTP ${res.status}`,
+      code === 'rate_limited' ? TOO_MANY_PAGES : undefined,
+    )
+  }
+  const { cost, ...page } = WebReply.parse(body)
+  return { page, microCredits: cost.micro_credits }
 }

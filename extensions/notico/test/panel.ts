@@ -11,10 +11,12 @@ import { createApp, type Env } from '../../../worker/src/app'
 import { FakeClerk } from '../../../worker/test/clerk'
 import {
   FakeAiBinding,
+  FakeBrowserRun,
   FakeD1Database,
   FakeExecutionContext,
   FakeUsageDataset,
   FakeRateLimiter,
+  FakeWeb,
   MODEL,
 } from '../../../worker/test/fakes'
 import { FakeStripe, signature, WEBHOOK_SECRET } from '../../../worker/test/stripe'
@@ -51,6 +53,10 @@ export class FakeBrowser {
   readonly titles = failingTitles()
   /** The worker's database: the signed-in user's credits. A test may make it fail. */
   readonly db = new FakeD1Database()
+  /** The internet the worker reads web pages from; serve pages, and read what it was asked for. */
+  readonly web = new FakeWeb()
+  /** Browser Run, which renders web pages for the worker. */
+  readonly browserRun = new FakeBrowserRun()
   /** URLs the panel opened in new tabs. */
   readonly openedTabs: string[] = []
   /** Stripe behind the worker: the Checkout Sessions made, and the events it sends about them. */
@@ -124,6 +130,9 @@ export class FakeBrowser {
       USAGE: new FakeUsageDataset(),
       CHAT_LIMIT: new FakeRateLimiter(),
       API_LIMIT: new FakeRateLimiter(),
+      WEB_LIMIT: new FakeRateLimiter(),
+      WEB: browser.web,
+      BROWSER: browser.browserRun,
       MODEL,
       CLERK_JWT_KEY: issuer.publicKeyPem,
       CLERK_AUTHORIZED_PARTIES: `${EXTENSION}, ${WORKER}`,
