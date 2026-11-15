@@ -944,6 +944,19 @@ describe('round 6', () => {
     expect(ws.records.get(id(2))!.properties).toEqual({ title: [['⁍', [['e', 'a b']]], ['\nlater']] })
   })
 
+  it('keeps an inline equation whose LaTeX starts or ends with whitespace an equation when written back', async () => {
+    const title = [['⁍', [['e', ' x^2']]], [' and '], ['⁍', [['e', 'y\n']]], [' and '], ['⁍', [['e', 'z\\ ']]]]
+    const ws = workspace([1], [block(1, 'text', undefined, { properties: { title } })])
+    open(ws)
+    const shown = withoutRefs(body(await read()))
+    // A space a backslash escapes is one LaTeX keeps: it stays, and the equation still closes after it.
+    expect(shown).toBe('$x^2$ and $y$ and $z\\ $')
+    await edit([{ action: 'replace', block: '^00000001', markdown: shown.replace(' and $y', ' plus $y') }])
+    expect(ws.records.get(id(1))!.properties).toEqual({
+      title: [['⁍', [['e', 'x^2']]], [' plus '], ['⁍', [['e', 'y']]], [' and '], ['⁍', [['e', 'z\\ ']]]],
+    })
+  })
+
   it('writes an equation in a page table’s cell back as read_page shows it, its line break a space', async () => {
     const ws = workspace(
       [1],
