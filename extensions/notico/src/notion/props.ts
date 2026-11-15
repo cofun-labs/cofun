@@ -1,7 +1,7 @@
 // Values for a page's title and a database row's properties, from what the model gives to what
 // Notion stores, checked against the database's schema before anything is written.
 import { MarkdownError, breaks, inline, type RichText } from './blocks'
-import { formatDate, type Schema } from './markdown'
+import { formatDate, oneLine, type Schema } from './markdown'
 
 /** A property value as the model gives it: text, a number, Yes/No, a list of options, or empty. */
 export type PropertyInput = string | number | boolean | string[] | null
@@ -39,11 +39,6 @@ const READ_ONLY = new Set([
 ])
 
 const DATE = /^\d{4}-\d{2}-\d{2}$/
-
-/** A title on one line, as Notion keeps it. */
-export function oneLine(text: string): string {
-  return text.replace(/\s+/g, ' ').trim()
-}
 
 /**
  * Plain text as Notion stores it (a name, a URL), from text the model may have copied out of

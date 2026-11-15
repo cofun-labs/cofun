@@ -30,6 +30,7 @@ import { defineTool } from '../../extensions/notico/src/tool'
 import { carryPages, currentNotionPage } from '../../extensions/notico/src/tools/current'
 import { movePage, trashPage } from '../../extensions/notico/src/tools/organize'
 import { readPage } from '../../extensions/notico/src/tools/read'
+import { FROM_NOTION } from '../../extensions/notico/src/tools/shared'
 import { editPage } from '../../extensions/notico/src/tools/write'
 import { z } from '../../extensions/notico/src/zod'
 import { createApp, type Env } from '../src/app'
@@ -292,6 +293,7 @@ describe('extension agent against the worker', () => {
       role: 'tool',
       tool_call_id: 'chatcmpl-tool-0',
       content: [
+        FROM_NOTION,
         'Page: Fixture page ^1a1a1a1a000040008000000000000010',
         'URL: https://app.notion.com/p/1a1a1a1a000040008000000000000010',
         'This page has 1 comment thread: read it with read_comments.',

@@ -2,13 +2,13 @@
 import { defineTool } from '../tool'
 import { z } from '../zod'
 import { pageLink } from '../notion/hosts'
-import { clip } from '../notion/comments'
-import { PAGE_TYPES, hexId, titleMarkdown } from '../notion/markdown'
+import { clip, quote } from '../notion/comments'
+import { PAGE_TYPES, hexId, oneLine, titleMarkdown } from '../notion/markdown'
 import { activeNotionTab } from '../notion/tab'
 import { PageLookups, contentOf, lookUpPages, pageTree, runsText, treeLines, type PageTree } from '../notion/tree'
 import type { OpenPage } from './current'
 import { databaseNames, workspaceOf } from './load'
-import { LIST, NONE, SEARCH, filled, on, pageArg, wholeArg } from './shared'
+import { LIST, NONE, SEARCH, filled, fromNotion, on, pageArg, wholeArg } from './shared'
 
 const LIST_MAX_DEPTH = 3
 /** How many pages one list shows, so a large workspace still fits the conversation. */
@@ -89,12 +89,12 @@ export const listPages = defineTool({
         skip: offset,
       })
       const title = titleMarkdown(records, root.properties?.title) || 'Untitled'
-      return [
+      return fromNotion([
         `Pages under “${title}” ^${hexId(rootId)}${offset ? `, from entry ${offset}` : ''}:`,
         '',
         ...(tree.nodes.length ? treeLines(tree.nodes) : ['(no pages)']),
         ...cutOff(tree, LIST_LIMIT),
-      ].join('\n')
+      ])
     }
 
     if (!tab.pageId) throw new Error('Open a page of the workspace to list it.')
@@ -103,7 +103,7 @@ export const listPages = defineTool({
     // Every label is unique, ignoring case, so `section` can name any one of them: teamspaces whose
     // names match are numbered until their label is free.
     const lower = (label: string) => label.toLowerCase()
-    const bases = space.teams.map((t) => `Teamspace: ${t.name}`)
+    const bases = space.teams.map((t) => `Teamspace: ${oneLine(t.name)}`)
     const used = new Set(['private', 'shared', 'workspace'])
     const labels = bases.map((base) => {
       const shared = bases.filter((b) => lower(b) === lower(base)).length > 1
@@ -133,8 +133,8 @@ export const listPages = defineTool({
 
     if (wanted) {
       // The label as a list shows it, or a teamspace's own name when only one teamspace has it.
-      const key = lower(wanted)
-      const named = space.teams.flatMap((t, i) => (lower(t.name) === key ? [labels[i]] : []))
+      const key = lower(oneLine(wanted))
+      const named = space.teams.flatMap((t, i) => (lower(oneLine(t.name)) === key ? [labels[i]] : []))
       const match = sections.find(([l]) => lower(l) === key)?.[0] ?? (named.length === 1 ? named[0] : undefined)
       const section = sections.find(([l]) => l === match)
       if (!section) {
@@ -150,12 +150,12 @@ export const listPages = defineTool({
         budget: { left: LIST_LOOKUPS },
         skip: offset,
       })
-      return [
-        `${label}, in the workspace “${space.name}”${offset ? `, from entry ${offset}` : ''}:`,
+      return fromNotion([
+        `${label}, in the workspace “${oneLine(space.name)}”${offset ? `, from entry ${offset}` : ''}:`,
         '',
         ...(tree.nodes.length ? treeLines(tree.nodes) : ['(no pages)']),
         ...cutOff(tree, LIST_LIMIT, label),
-      ].join('\n')
+      ])
     }
 
     // Each section has its own share of the limit, so a long one can't hide the others, and all of
@@ -173,7 +173,7 @@ export const listPages = defineTool({
     }
     await lookUpPages(cache, shown, budget)
 
-    const out = [`Pages in the workspace “${space.name}”:`]
+    const out = [`Pages in the workspace “${oneLine(space.name)}”:`]
     const skipped: string[] = []
     let any = false
     let left = LIST_LIMIT
@@ -198,7 +198,7 @@ export const listPages = defineTool({
       out.push('', `Not listed, to keep the list short: ${skipped.join(', ')}. List one with \`section\`.`)
     if (!any) out.push('', '(no pages)')
     if (teamsNote.length) out.push('', ...teamsNote)
-    return out.join('\n')
+    return fromNotion(out)
   },
 })
 
@@ -294,7 +294,7 @@ export const searchPages = defineTool({
         `${n + 1}. ${database ? '🗃' : '📄'} ${shown} ^${hexId(r.id)}`,
         ...(where ? [`   In: ${titleMarkdown({}, [[where]])}`] : []),
         ...(edited ? [`   Edited: ${edited}`] : []),
-        ...(text ? [`   Match: “${clip(text, 200)}”`] : []),
+        ...(text ? [`   Match: ${quote(clip(text, 200))}`] : []),
         `   URL: ${pageLink(tab.url, r.id)}`,
       ].join('\n')
     })
@@ -303,7 +303,7 @@ export const searchPages = defineTool({
     // others beyond them may be in it still, so the rest is only an upper bound then.
     const total = found.total - trashed
     const more = !complete && total > shown ? ` (${trashed ? 'up to ' : ''}${total} in all; showing ${shown})` : ''
-    return [`Pages found for "${query}"${more}:`, '', ...lines].join('\n')
+    return fromNotion([`Pages found for "${query}"${more}:`, '', ...lines])
   },
 })
 

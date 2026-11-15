@@ -4,8 +4,8 @@
 // with one name.
 import { z } from '../zod'
 import { blockOps, collectionOps, type Operation, type RecordMap, type SchemaOption } from './api'
-import type { Schema } from './markdown'
-import { oneLine, plainText } from './props'
+import { oneLine, type Schema } from './markdown'
+import { plainText } from './props'
 
 /** The property types a database can be given, by the names its schema uses. */
 const PROPERTY_TYPES = [

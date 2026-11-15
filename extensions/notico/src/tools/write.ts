@@ -33,7 +33,6 @@ import { clip, quote } from '../notion/comments'
 import {
   PropertyError,
   losesUnnamedPeople,
-  oneLine,
   propertyValue,
   richValue,
   sameMarkdown,
@@ -44,7 +43,7 @@ import {
   type PropertyDef,
   type PropertyInput,
 } from '../notion/props'
-import { PAGE_TYPES, hexId, pageToMarkdown, type Schema } from '../notion/markdown'
+import { PAGE_TYPES, hexId, oneLine, pageToMarkdown, type Schema } from '../notion/markdown'
 import { activeNotionTab } from '../notion/tab'
 import { loadMentioned, resolveDatabase } from './load'
 import {

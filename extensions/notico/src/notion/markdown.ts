@@ -363,7 +363,7 @@ class Context {
         return this.quoted(block, pad, `[!${label}] `, text, ref)
       }
       case 'code': {
-        const language = this.plain(block.properties?.language).toLowerCase()
+        const language = oneLine(this.plain(block.properties?.language)).toLowerCase()
         const code = this.plain(block.properties?.title)
         // The fence is longer than any run of backticks in the code, so the code can't close it.
         const fence = '`'.repeat(Math.max(3, longestRun(code) + 1))
@@ -380,13 +380,16 @@ class Context {
       case 'divider':
         return [`${pad}---${ref}`]
       case 'equation':
-        return [`${pad}$$${this.plain(block.properties?.title)}$$${ref}`]
+        // On one line, as an inline equation's is: LaTeX reads a line break as a space.
+        return [`${pad}$$${oneLine(this.plain(block.properties?.title))}$$${ref}`]
       case 'bookmark': {
-        const link = this.plain(block.properties?.link)
-        return line('', `[${this.plain(block.properties?.title) || link}](${link})`)
+        const link = oneLine(this.plain(block.properties?.link))
+        // The title is the linked site's, escaped as a link's text in rich text is.
+        const title = oneLine(this.plain(block.properties?.title))
+        return line('', `[${escapeMarkdown(title || link)}](${link})`)
       }
       case 'embed':
-        return line('', `[embed: ${this.plain(block.properties?.source)}]`)
+        return line('', `[embed: ${oneLine(this.plain(block.properties?.source))}]`)
       case 'page':
         // A child page's own content stays in that page.
         return [
@@ -419,7 +422,7 @@ class Context {
       }
       default:
         if (MEDIA_TYPES.has(block.type)) {
-          const caption = this.rich(block.properties?.caption) || this.plain(block.properties?.title)
+          const caption = this.rich(block.properties?.caption) || oneLine(this.plain(block.properties?.title))
           return line('', `[${block.type}${caption ? `: ${caption}` : ''}]`)
         }
         // A block we can't show: say what it is, so the model knows something is there.
@@ -480,7 +483,7 @@ class Context {
       const { name, type } = schema[key]
       if (key === 'title' || type === 'title') continue
       const shown = this.property(page, key, schema[key])
-      if (shown) out.push(`${name ?? key}: ${shown}`)
+      if (shown) out.push(`${oneLine(name ?? key)}: ${shown}`)
     }
     return out
   }
@@ -535,7 +538,7 @@ class Context {
   databaseName(block: Block): string {
     const id = collectionId(block)
     const collection = id ? this.recordMap.collection?.[id] : undefined
-    return this.plain(collection?.name) || 'Untitled database'
+    return oneLine(this.plain(collection?.name)) || 'Untitled database'
   }
 
   private pageTitle(id: string): string {
@@ -803,6 +806,15 @@ export function splitSections(
 /** The text of each part, as `splitSections` groups them. */
 export function splitIntoParts(sections: string[], max: number): string[] {
   return splitSections(sections, max).parts
+}
+
+/**
+ * Text on one line, as Notion keeps a title. Text from Notion that is shown as it is (a database's
+ * name, a bookmark's link) goes through it, so it can't start a line of its own and pass for one the
+ * tool wrote (a header, a note, a block reference).
+ */
+export function oneLine(text: string): string {
+  return text.replace(/\s+/g, ' ').trim()
 }
 
 /**

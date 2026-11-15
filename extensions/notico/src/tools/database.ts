@@ -5,8 +5,8 @@ import { z } from '../zod'
 import { NotionError, blockOps, type Block, type NotionRecord } from '../notion/api'
 import { pageLink, pathPageIdFromUrl, toUuid } from '../notion/hosts'
 import { EditError } from '../notion/edit'
-import { oneLine, plainText, type PropertyDef } from '../notion/props'
-import { hexId, rowValues, titleFirst, type Schema } from '../notion/markdown'
+import { plainText, type PropertyDef } from '../notion/props'
+import { hexId, oneLine, rowValues, titleFirst, type Schema } from '../notion/markdown'
 import {
   BACKSLASH,
   CHANGE_ARG,
@@ -28,6 +28,7 @@ import {
   READ,
   TITLE_EMPTY,
   filled,
+  fromNotion,
   idIn,
   named,
   on,
@@ -163,7 +164,7 @@ export const queryDatabase = defineTool({
     if (part > parts)
       throw new Error(`This result has ${parts} part${parts === 1 ? '' : 's'}; there is no part ${part}.`)
     const shown = rows.slice((part - 1) * QUERY_PART, part * QUERY_PART)
-    const columns = titleFirst(schema).map(([key, s]) => (s.name ?? key).replace(/[\\|]/g, '\\$&'))
+    const columns = titleFirst(schema).map(([key, s]) => oneLine(s.name ?? key).replace(/[\\|]/g, '\\$&'))
     const from = (part - 1) * QUERY_PART + 1
     const header = [
       `Database: ${name} ^${hexId(dbId)}`,
@@ -204,7 +205,7 @@ export const queryDatabase = defineTool({
       }
       keepSeenRow(r.id, seen)
     }
-    if (!shown.length) return [...header, '', '(no rows)'].join('\n')
+    if (!shown.length) return fromNotion([...header, '', '(no rows)'])
     const table = [
       `| ${[...columns, 'Row'].join(' | ')} |`,
       `|${[...columns, 'Row'].map(() => ' --- ').join('|')}|`,
@@ -217,7 +218,7 @@ export const queryDatabase = defineTool({
         return `| ${[...cells, `^${hexId(r.id)}`].join(' | ')} |`
       }),
     ]
-    return [...header, '', ...table].join('\n')
+    return fromNotion([...header, '', ...table])
   },
 })
 
@@ -259,8 +260,8 @@ function parseSort(
  * and rollups are computed by Notion when it shows a database; this tool can't read them.
  */
 function usableProperty(schema: Schema, name: string, where: string): [string, Schema[string]] {
-  const want = name.trim().toLowerCase()
-  const found = titleFirst(schema).find(([key, s]) => (s.name ?? key).toLowerCase() === want)
+  const want = oneLine(name).toLowerCase()
+  const found = titleFirst(schema).find(([key, s]) => oneLine(s.name ?? key).toLowerCase() === want)
   if (!found) {
     throw new Error(`${where}: no property named "${name}". The properties are: ${rowValuesHeader(schema)}.`)
   }
@@ -284,7 +285,7 @@ function urlView(url: string): string | undefined {
 
 function rowValuesHeader(schema: Schema): string {
   return titleFirst(schema)
-    .map(([key, s]) => `${s.name ?? key} (${s.type ?? 'text'})`)
+    .map(([key, s]) => `${oneLine(s.name ?? key)} (${s.type ?? 'text'})`)
     .join(', ')
 }
 
