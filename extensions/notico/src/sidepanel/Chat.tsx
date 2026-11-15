@@ -441,8 +441,6 @@ export function Chat({ userId }: { userId: string }) {
     if (provider !== (answering(before)?.service ?? 'hosted')) track({ event: 'model_switched', provider })
     if (settings.openRouter && settings.openRouter.key !== before.openRouter?.key)
       track({ event: 'own_key_saved', provider: 'openrouter' })
-    if (settings.deepSeek && settings.deepSeek.key !== before.deepSeek?.key)
-      track({ event: 'own_key_saved', provider: 'deepseek' })
     modelRef.current = settings
     setModel(settings)
     saveModelSettings(userId, settings).catch((err: unknown) => console.error('Could not save the model settings', err))

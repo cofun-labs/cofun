@@ -1,8 +1,6 @@
 // Runs Notion requests inside the user's Notion tab, so they are same-origin requests with the
 // tab's own session, exactly like Notion's own client. Sessions are per host (app.notion.com and
 // www.notion.so don't share one), which a request from the tab gets right by construction.
-// The worker's tests import this file too, and their tsconfig has no chrome types.
-/// <reference types="chrome" />
 import {
   NO_NOTION_TAB,
   NotionClient,

@@ -94,6 +94,14 @@ for feature in secret_scanning secret_scanning_push_protection; do
   fi
 done
 
+# SECURITY.md sends vulnerability reports through GitHub's private reporting.
+if [ "$(gh api "$api/private-vulnerability-reporting" --jq .enabled)" = "true" ]; then
+  unchanged "private vulnerability reporting"
+else
+  gh api -X PUT "$api/private-vulnerability-reporting" --silent
+  changed "private vulnerability reporting (enabled)"
+fi
+
 # Dependabot security updates need vulnerability alerts turned on first.
 if gh api "$api/vulnerability-alerts" --silent 2>/dev/null; then
   unchanged "Dependabot alerts"

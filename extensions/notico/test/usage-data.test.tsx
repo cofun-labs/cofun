@@ -60,7 +60,7 @@ const ALLOWED: Record<string, (value: unknown) => boolean> = {
   // What happened.
   version: (v) => v === '1.2.3',
   product: (v) => v === 'notico',
-  provider: oneOf('hosted', 'openrouter', 'deepseek'),
+  provider: oneOf('hosted', 'openrouter'),
   notion_tab: (v) => typeof v === 'boolean',
   outcome: oneOf('done', 'stopped', 'step_limit', 'error'),
   rounds: Number.isInteger,

@@ -70,14 +70,14 @@ All three certifications are checked: no selling or transfer of user data to thi
 
 ## For the next version
 
-This page describes version 0.1.0, the one in the store. The version after it lets users answer with their own OpenRouter or DeepSeek key, and buy credit packs through Stripe, so before it is submitted:
+This page describes version 0.1.0, the one in the store. The version after it lets users answer with their own OpenRouter key, and buy credit packs through Stripe, so before it is submitted:
 
 - The **storage** justification also says that the user's own model keys, and the model chosen with each, are kept there.
 - The **storage** justification also names the setting for whether the assistant may change the user's pages (Edit or Read only).
 - **Financial and payment information** becomes Yes: the worker keeps each purchase, by Clerk user id, with its Stripe payment reference and whether it was refunded or disputed (see `PRIVACY.md`). The card details go to Stripe's Checkout page, never to the extension or the worker.
 - **User activity** becomes Yes, as the table above already says, and the **storage** justification also names the setting that turns usage data off (in `chrome.storage.local`). The random id usage is counted under before sign-in is kept in the extension's own `localStorage`, which needs no permission. PostHog (`us.i.posthog.com`) is reached under the content security policy, not through a host permission. Usage events hold no content and are used only to improve the extension, which is within the Limited Use policy; the certifications stay checked.
 - The rest of the data usage stays as it is: a user's own key is authentication information, and the conversation and the Notion content it holds go to the model service the user chose, which is personal communications and website content again. The privacy policy already says so.
-- The extension asks for no new permission: OpenRouter and DeepSeek are reached under the content security policy, not through host permissions.
+- The extension asks for no new permission: OpenRouter is reached under the content security policy, not through host permissions.
 
 ## Privacy policy URL
 

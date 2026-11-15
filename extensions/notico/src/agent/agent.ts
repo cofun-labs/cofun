@@ -1,7 +1,7 @@
 // The side panel's agent: asks the model, runs the tools it calls in the extension, and sends the
 // results back until the model answers. Where the model runs is a provider (see ModelProvider in
-// provider.ts): our worker (the hosted one, worker.ts), or OpenRouter or DeepSeek with the user's own
-// key (own.ts). Only the modules of this folder import the agent runtime (pi); the rest of the
+// provider.ts): our worker (the hosted one, worker.ts), or OpenRouter with the user's own key
+// (own.ts). Only the modules of this folder import the agent runtime (pi); the rest of the
 // extension uses the types in types.ts, through index.ts.
 import { Agent, type AgentEvent, type AgentMessage, type AgentTool } from '@earendil-works/pi-agent-core'
 import type { AssistantMessage, Model } from '@earendil-works/pi-ai'

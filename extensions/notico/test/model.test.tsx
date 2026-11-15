@@ -1,6 +1,6 @@
 // Choosing which model answers (UC-NOTICO-AGENT-002), as a user does it: providers, keys, and models in
 // Settings, and the model menu in the chat. Besides the screen, the tests look at the edges: what
-// OpenRouter, DeepSeek, and the worker were sent.
+// OpenRouter and the worker were sent.
 import '@testing-library/jest-dom/vitest'
 import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent, { type UserEvent } from '@testing-library/user-event'
@@ -12,7 +12,6 @@ import { closeBrowser, FakeBrowser } from './panel'
 afterEach(closeBrowser)
 
 const KEY = 'sk-or-v1-test-key'
-const DS_KEY = 'sk-deepseek-test-key'
 
 async function openPanel(tab: FakeNotionTab = pageTab(), signedInAs = 'user_alice') {
   const browser = await FakeBrowser.start(tab, { signedInAs })
@@ -29,13 +28,12 @@ async function openSettings(user: UserEvent) {
 const backToChat = (user: UserEvent) => user.click(screen.getByRole('button', { name: 'Back' }))
 
 /** A provider on the settings page. */
-const provider = (name: 'OpenRouter' | 'DeepSeek') => within(screen.getByRole('group', { name }))
-const providerSwitch = (name: 'OpenRouter' | 'DeepSeek') => provider(name).getByRole('switch', { name })
-const modelSwitch = (name: 'OpenRouter' | 'DeepSeek', model: string | RegExp) =>
-  provider(name).getByRole('switch', { name: model })
+const provider = (name: 'OpenRouter') => within(screen.getByRole('group', { name }))
+const providerSwitch = (name: 'OpenRouter') => provider(name).getByRole('switch', { name })
+const modelSwitch = (name: 'OpenRouter', model: string | RegExp) => provider(name).getByRole('switch', { name: model })
 
 /** Switches a provider on and checks `key` with Enter, from the settings page, until it works. */
-async function turnOn(user: UserEvent, name: 'OpenRouter' | 'DeepSeek', key: string) {
+async function turnOn(user: UserEvent, name: 'OpenRouter', key: string) {
   await user.click(providerSwitch(name))
   await user.type(provider(name).getByLabelText(`${name} API key`), `${key}{Enter}`)
   expect(await provider(name).findByText(/^Key works/)).toBeVisible()
@@ -61,16 +59,6 @@ async function setUpOpenRouter(browser: FakeBrowser, user: UserEvent) {
   await backToChat(user)
   await pick(user, 'GPT-6.1 Sol')
   expect(chip('GPT-6.1 Sol')).toBeVisible()
-}
-
-/** Turns DeepSeek on with DS_KEY from the settings page, switches both its models on, and picks Flash. */
-async function setUpDeepSeek(browser: FakeBrowser, user: UserEvent) {
-  browser.deepSeek.keys.add(DS_KEY)
-  await openSettings(user)
-  await turnOn(user, 'DeepSeek', DS_KEY)
-  await user.click(modelSwitch('DeepSeek', 'DeepSeek V4 Pro'))
-  await backToChat(user)
-  await pick(user, 'DeepSeek V4.1 Flash')
 }
 
 async function ask(user: UserEvent, question: string) {
@@ -308,34 +296,6 @@ describe('answering with the own model', () => {
     expect(providerSwitch('OpenRouter')).not.toBeChecked()
     expect(JSON.stringify(browser.tab.storage.values)).not.toContain(KEY)
   })
-
-  it('settings saved in the old shape are turned into the new one, keeping the keys and the model in use', async () => {
-    const tab = pageTab()
-    const browser = await FakeBrowser.start(tab, { signedInAs: 'user_alice' })
-    const sol = {
-      id: 'openai/gpt-6.1-sol',
-      name: 'OpenAI: GPT-6.1 Sol',
-      contextLength: 200_000,
-      price: { input: 2, output: 10 },
-    }
-    tab.storage.values['model:user_alice'] = {
-      use: 'openrouter',
-      openRouter: { key: KEY, model: sol },
-      deepSeek: { key: DS_KEY, model: 'deepseek-flash' },
-    }
-    await browser.openPanel()
-    const user = userEvent.setup()
-    browser.openRouter.keys.add(KEY)
-
-    expect(await screen.findByRole('button', { name: 'Model: GPT-6.1 Sol' })).toBeVisible()
-    expect(savedSettings(browser).value).toEqual({
-      openRouter: { on: true, key: KEY, models: [sol] },
-      deepSeek: { on: true, key: DS_KEY, models: ['deepseek-flash'] },
-      chosen: { service: 'openrouter', model: sol.id, name: sol.name },
-    })
-    await user.click(chip('GPT-6.1 Sol'))
-    expect(menuItems()).toEqual(['Auto', 'GPT-6.1 Sol', 'DeepSeek V4.1 Flash'])
-  })
 })
 
 describe('turning a provider on and checking its key', () => {
@@ -380,45 +340,18 @@ describe('turning a provider on and checking its key', () => {
     expect(menuItems()).toEqual(['Auto', 'Claude Sonnet 5.5'])
   })
 
-  it("[UC-NOTICO-AGENT-002-S08] a DeepSeek key that works shows DeepSeek's balance and starts with its first model on", async () => {
-    const { browser, user } = await openPanel()
-    browser.deepSeek.keys.add(DS_KEY)
+  it('[UC-NOTICO-AGENT-002-S19] a key that fails is not saved, and the reason is said: rejected', async () => {
+    const { user } = await openPanel()
     await openSettings(user)
-    await turnOn(user, 'DeepSeek', DS_KEY)
-
-    expect(provider('DeepSeek').getByText('Key works · ¥38.50 balance')).toBeVisible()
-    expect(browser.deepSeek.requests).toEqual([{ path: '/user/balance', key: DS_KEY }])
-    expect(browser.deepSeek.calls).toEqual([])
-    const models = within(provider('DeepSeek').getByRole('list', { name: "DeepSeek's models" })).getAllByRole('switch')
-    expect(models.map((m) => [m.getAttribute('aria-label'), m.getAttribute('aria-checked')])).toEqual([
-      ['DeepSeek V4.1 Flash', 'true'],
-      ['DeepSeek V4 Pro', 'false'],
-    ])
-    expect(models[0]).toHaveAccessibleDescription('$0.30 in · $1.20 out · 1M context')
-    expect(browser.openRouter.requests).toEqual([])
-  })
-
-  it('[UC-NOTICO-AGENT-002-S19] a key that fails is not saved, and the reason is said: rejected, or no money left', async () => {
-    const { browser, user } = await openPanel()
-    await openSettings(user)
-    await user.click(providerSwitch('DeepSeek'))
-    const field = provider('DeepSeek').getByLabelText('DeepSeek API key')
-    await user.type(field, `${DS_KEY}{Enter}`)
-    expect(await provider('DeepSeek').findByRole('alert')).toHaveTextContent(
-      "DeepSeek doesn't accept this key. Copy it again from platform.deepseek.com and paste it here.",
+    await user.click(providerSwitch('OpenRouter'))
+    const field = provider('OpenRouter').getByLabelText('OpenRouter API key')
+    await user.type(field, `${KEY}{Enter}`)
+    expect(await provider('OpenRouter').findByRole('alert')).toHaveTextContent(
+      "OpenRouter doesn't accept this key. Copy it again from openrouter.ai and paste it here.",
     )
     // The field keeps what was pasted, so it can be fixed.
-    expect(field).toHaveValue(DS_KEY)
+    expect(field).toHaveValue(KEY)
     expect(field).toHaveAttribute('aria-invalid', 'true')
-
-    browser.deepSeek.keys.add(DS_KEY)
-    browser.deepSeek.outOfBalance = true
-    await user.click(provider('DeepSeek').getByRole('button', { name: 'Check key' }))
-    expect(
-      await provider('DeepSeek').findByText(/The key works, but its DeepSeek account has no money left/),
-    ).toBeVisible()
-    expect(JSON.stringify(browser.tab.storage.values)).not.toContain(DS_KEY)
-    expect(provider('DeepSeek').queryByRole('list')).not.toBeInTheDocument()
   })
 
   it("[UC-NOTICO-AGENT-002-S19] a key whose check OpenRouter can't answer is not saved: unreachable, or no money left on the key", async () => {
@@ -585,40 +518,11 @@ describe("a provider's models in Settings", () => {
     const { browser, user } = await openPanel()
     await openSettings(user)
     await user.click(providerSwitch('OpenRouter'))
-    await user.click(providerSwitch('DeepSeek'))
     expect(browser.openRouter.requests).toEqual([])
-    expect(browser.deepSeek.requests).toEqual([])
     // Switched off before a key passed: nothing is saved.
     await user.click(providerSwitch('OpenRouter'))
     expect(provider('OpenRouter').queryByLabelText('OpenRouter API key')).not.toBeInTheDocument()
     expect(savedSettings(browser).key).toBeUndefined()
-  })
-})
-
-describe('saving while a key is checked', () => {
-  it('two keys checked at the same time are both saved, with what the composer picked meanwhile', async () => {
-    const { browser, user } = await openPanel()
-    browser.openRouter.keys.add(KEY)
-    browser.deepSeek.keys.add(DS_KEY)
-    await openSettings(user)
-    let answer!: () => void
-    browser.openRouter.checks = new Promise((resolve) => (answer = resolve))
-    await user.click(providerSwitch('OpenRouter'))
-    await user.type(provider('OpenRouter').getByLabelText('OpenRouter API key'), `${KEY}{Enter}`)
-    expect(await provider('OpenRouter').findByText('Asking OpenRouter whether this key works…')).toBeVisible()
-
-    // While OpenRouter's check waits, DeepSeek's passes, and its model is picked in the composer.
-    await turnOn(user, 'DeepSeek', DS_KEY)
-    await backToChat(user)
-    await pick(user, 'DeepSeek V4.1 Flash')
-    answer()
-    await waitFor(() => expect(savedSettings(browser).value.openRouter).toMatchObject({ key: KEY }))
-
-    expect(savedSettings(browser).value).toMatchObject({
-      deepSeek: { on: true, key: DS_KEY },
-      chosen: { service: 'deepseek', model: 'deepseek-flash' },
-    })
-    expect(chip('DeepSeek V4.1 Flash')).toBeVisible()
   })
 })
 
@@ -743,12 +647,10 @@ describe('the model menu in the chat', () => {
     await user.keyboard('{Escape}')
 
     await setUpOpenRouter(browser, user)
-    await setUpDeepSeek(browser, user)
-    await user.click(chip('DeepSeek V4.1 Flash'))
+    await user.click(chip('GPT-6.1 Sol'))
     const menu = within(screen.getByRole('menu', { name: 'Model' }))
-    expect(menuItems()).toEqual(['Auto', 'Claude Sonnet 5.5', 'GPT-6.1 Sol', 'DeepSeek V4.1 Flash', 'DeepSeek V4 Pro'])
+    expect(menuItems()).toEqual(['Auto', 'Claude Sonnet 5.5', 'GPT-6.1 Sol'])
     expect(within(menu.getByRole('group', { name: 'OpenRouter' })).getAllByRole('menuitemradio')).toHaveLength(2)
-    expect(within(menu.getByRole('group', { name: 'DeepSeek' })).getAllByRole('menuitemradio')).toHaveLength(2)
     // Names only: no prices, nothing about who pays or the key.
     expect(screen.getByRole('menu', { name: 'Model' })).not.toHaveTextContent(/\$|credits|key/i)
 
@@ -757,37 +659,7 @@ describe('the model menu in the chat', () => {
     expect(screen.getByRole('heading', { name: 'Providers' })).toHaveFocus()
     // Closing it goes back to where the user came from: the model chip.
     await backToChat(user)
-    expect(chip('DeepSeek V4.1 Flash')).toHaveFocus()
-  })
-
-  it('[UC-NOTICO-AGENT-002-S12] switching between OpenRouter and DeepSeek in the composer uses each with its own key, never asked again', async () => {
-    const { browser, user } = await openPanel()
-    await setUpOpenRouter(browser, user)
-    await setUpDeepSeek(browser, user)
-    browser.deepSeek.ai.script.push({ reply: 'From DeepSeek.' }, { reply: 'DeepSeek again.' })
-    browser.openRouter.ai.script.push({ reply: 'From Sol.' })
-
-    await ask(user, 'First question')
-    expect(await screen.findByText('From DeepSeek.')).toBeVisible()
-    await answered()
-
-    await pick(user, 'GPT-6.1 Sol')
-    await ask(user, 'Second question')
-    expect(await screen.findByText('From Sol.')).toBeVisible()
-    await answered()
-
-    await pick(user, 'DeepSeek V4.1 Flash')
-    await ask(user, 'Third question')
-    expect(await screen.findByText('DeepSeek again.')).toBeVisible()
-
-    expect(browser.deepSeek.calls.map((c) => c.key)).toEqual([DS_KEY, DS_KEY])
-    expect(browser.openRouter.calls.map((c) => c.key)).toEqual([KEY])
-    // The follow-ups went on with the conversation so far.
-    expect(JSON.stringify(browser.deepSeek.calls[1].messages)).toContain('From Sol.')
-    // Neither key went to the other provider.
-    expect(browser.deepSeek.requests.every((r) => r.key === DS_KEY)).toBe(true)
-    expect(browser.openRouter.requests.every((r) => r.key === undefined || r.key === KEY)).toBe(true)
-    expect(browser.ai.calls).toEqual([])
+    expect(chip('GPT-6.1 Sol')).toHaveFocus()
   })
 
   it('works from the keyboard: the arrows move through it, and Escape closes it on the button', async () => {
@@ -803,97 +675,5 @@ describe('the model menu in the chat', () => {
     await user.keyboard('{Escape}')
     expect(screen.queryByRole('menu', { name: 'Model' })).not.toBeInTheDocument()
     expect(chip('GPT-6.1 Sol')).toHaveFocus()
-  })
-})
-
-describe('DeepSeek with the user key', () => {
-  it('[UC-NOTICO-AGENT-002-S11] a DeepSeek model answers with the user key and a tool, and no one else gets the key or the question', async () => {
-    const { browser, user } = await openPanel()
-    await setUpDeepSeek(browser, user)
-    browser.deepSeek.ai.script.push(
-      { toolCalls: [{ name: 'read_page', arguments: JSON.stringify({ part: 1 }) }] },
-      { reply: 'It is a fixture.' },
-    )
-    const before = browser.sentToWorker.length
-
-    await ask(user, 'What does this page say?')
-    expect(await screen.findByText('It is a fixture.')).toBeVisible()
-    await answered()
-
-    const { calls } = browser.deepSeek
-    expect(calls.map((c) => [c.key, c.model])).toEqual([
-      [DS_KEY, 'deepseek-flash'],
-      [DS_KEY, 'deepseek-flash'],
-    ])
-    expect(calls[1].messages.some((m) => m.role === 'tool' && String(m.content).includes('Fixture page'))).toBe(true)
-    // Asked as pi's catalog says to ask DeepSeek: without thinking first.
-    expect(calls[0].thinking).toEqual({ type: 'disabled' })
-    expect(browser.ai.calls).toEqual([])
-    expect(browser.openRouter.requests).toEqual([])
-    for (const sent of browser.sentToWorker) {
-      expect(sent).not.toContain(DS_KEY)
-      expect(sent).not.toContain('What does this page say?')
-    }
-    expect(browser.sentToWorker.slice(before).some((sent) => sent.includes('/chat/completions'))).toBe(false)
-  })
-
-  it("a reply's details name the DeepSeek model and the tokens DeepSeek reported", async () => {
-    const { browser, user } = await openPanel()
-    await setUpDeepSeek(browser, user)
-    // DeepSeek reports its cache hits in a field of its own.
-    browser.deepSeek.ai.usage = { prompt_tokens: 900, completion_tokens: 30, prompt_cache_hit_tokens: 600 }
-    browser.deepSeek.ai.script.push({ reply: 'It is a fixture.' })
-
-    await ask(user, 'What does this page say?')
-    await screen.findByText('It is a fixture.')
-    await answered()
-
-    expect(await replyDetails(user)).toEqual(['Tokens: 900 in (600 cached) · 30 out'])
-    expect(screen.getByRole('note', { name: /^Answered by DeepSeek V4.1 Flash/ })).toBeVisible()
-  })
-
-  it('[UC-NOTICO-AGENT-002-S14] a key DeepSeek rejects, and a balance that ran out, are each said plainly', async () => {
-    const { browser, user } = await openPanel()
-    await setUpDeepSeek(browser, user)
-
-    browser.deepSeek.outOfBalance = true
-    await ask(user, 'Hello?')
-    expect(await screen.findByText(/Your DeepSeek balance has run out. Top it up on DeepSeek/)).toBeVisible()
-    await answered()
-
-    browser.deepSeek.outOfBalance = false
-    browser.deepSeek.keys.clear()
-    await ask(user, 'Hello again?')
-    expect(await screen.findByText(/DeepSeek turned your key away. Check it in Settings./)).toBeVisible()
-    expect(browser.ai.calls).toEqual([])
-  })
-
-  it('[UC-NOTICO-AGENT-002-S15] when DeepSeek turns requests away for too many, the question stops and nothing is sent again', async () => {
-    const { browser, user } = await openPanel()
-    await setUpDeepSeek(browser, user)
-    browser.deepSeek.rateLimited = true
-    const before = browser.deepSeek.requests.length
-
-    await ask(user, 'Hello?')
-    expect(await screen.findByText(/DeepSeek is getting too many requests .* Wait a minute/)).toBeVisible()
-    await answered()
-    expect(browser.deepSeek.requests).toHaveLength(before + 1)
-    expect(browser.ai.calls).toEqual([])
-  })
-
-  it("removing the DeepSeek key keeps OpenRouter's", async () => {
-    const { browser, user } = await openPanel()
-    await setUpOpenRouter(browser, user)
-    await setUpDeepSeek(browser, user)
-
-    await openSettings(user)
-    await user.click(provider('DeepSeek').getByRole('button', { name: 'Remove key' }))
-    expect(JSON.stringify(browser.tab.storage.values)).not.toContain(DS_KEY)
-    expect(provider('OpenRouter').getByText(/^Key works/)).toBeVisible()
-    await backToChat(user)
-    // The model chosen was DeepSeek's: Auto answers now, and the composer says so.
-    expect(chip('Auto')).toBeVisible()
-    await pick(user, 'GPT-6.1 Sol')
-    expect(chip('GPT-6.1 Sol')).toBeVisible()
   })
 })

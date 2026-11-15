@@ -173,10 +173,11 @@ export function pageArg(text: string): string | undefined {
  */
 export function shownText(markdown: string): string {
   return markdown.replace(
-    /`([^`]*)`|\$(?=\S)((?:\\.|[^$\\\n])+?)(?<=\S)\$(?!\w)|\[((?:\\.|[^\]\\])*)\]\([^)]*\)|@\[((?:\\.|[^\]\\])*)\]|<span color="[^"]*">|<\/span>|\\(.)|[*~]|(?<=^|[\s,(])@(?=\d{4}-\d{2}-\d{2})/g,
+    /`([^`]*)`|\$(?=\S)((?:\\.|[^$\\\n])*?(?:\\.|[^$\\\s]))\$(?!\w)|\[((?:\\.|[^\]\\])*)\]\([^)]*\)|@\[((?:\\.|[^\]\\])*)\]|<span color="[^"]*">|<\/span>|\\(.)|[*~]|(?<=^|[\s,(])@(?=\d{4}-\d{2}-\d{2})/g,
     (_, code?: string, equation?: string, link?: string, person?: string, escaped?: string) => {
       if (code !== undefined) return code
-      if (equation !== undefined) return equation
+      // As stored: read_page shows a `<br>` in LaTeX as `\<br>`.
+      if (equation !== undefined) return equation.replace(/\\(<br\s*\/?>)/gi, '$1')
       const named = link ?? person
       return named !== undefined ? shownText(named) : (escaped ?? '')
     },

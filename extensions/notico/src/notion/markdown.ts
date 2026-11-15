@@ -699,10 +699,14 @@ function refLine(pad: string, ref: string): string[] {
  * An inline equation's LaTeX as it is shown between `$`s. A line break in it is a space, which LaTeX
  * reads the same: the `<br>` it would otherwise be shown as is read back as a line break, which ends
  * the equation. A `<br>` in the LaTeX itself is escaped, `\<br>`, as in text, and `inline` reads it
- * back as the `<br>`.
+ * back as the `<br>`. Whitespace at its ends is left out, which LaTeX reads the same too: `$` opens
+ * an equation only before a non-space and closes it only after one. A space a backslash escapes
+ * (`a\ `, a space LaTeX keeps) stays, and closes one too.
  */
 function equation(latex: string): string {
-  return latex.replace(/\n/g, ' ').replace(/<br\s*\/?>/gi, '\\$&')
+  const trimmed = latex.replace(/^\s+|(?<!(?:^|[^\\])(?:\\\\)*\\)\s+$/g, '')
+  // One that is only whitespace stays as it is, rather than show as `$$`.
+  return (trimmed || latex).replace(/\n/g, ' ').replace(/<br\s*\/?>/gi, '\\$&')
 }
 
 /** The length of the longest run of backticks in `text`. */

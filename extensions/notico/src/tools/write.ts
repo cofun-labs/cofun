@@ -12,7 +12,7 @@ import {
   parseEdits,
   holdsUnshown,
   keepDates,
-  keepUnshown,
+  rewriteRich,
   pageRead,
   planEdit,
   previewEdits,
@@ -492,7 +492,7 @@ export const updatePages = defineTool({
     // People the new values mention, matched before anything is written. A name the old value
     // already mentions is that same person, so a value written back as read keeps its mentions.
     // The same names tell what an old value shows of the people it mentions, where it holds something
-    // its Markdown doesn't show.
+    // its Markdown doesn't show: whether it was written back as shown, and what it loses.
     const mentioning = changes.filter(
       (c) => c.names.length || c.texts.some((key) => holdsUnshown(c.block.properties?.[key])),
     )
@@ -525,21 +525,23 @@ export const updatePages = defineTool({
     const summary: string[] = []
     updates.forEach((u, n) => {
       const { texts, block, schema } = changes[n]
+      // What a text or a title lost that reading it didn't show, for the model to tell the user.
+      const notes: string[] = []
       const values = Object.fromEntries(
         Object.entries(changes[n].values).map(([key, value]) => {
           const rich = withPeople(value, found[n])
           if (!texts.includes(key)) return [key, rich]
           const old = block.properties?.[key]
           // A date mention keeps what the old text stored with it, which query_database doesn't show.
-          // So does the rest of the text, where the new value still has it as it was shown.
-          const kept = keepUnshown(keepDates(rich, [old]), old, named.notion_user)
+          // What else the old text held that query_database doesn't show goes, unless written back as shown.
+          const kept = rewriteRich(keepDates(rich, [old]), old, named.notion_user, { title: key === 'title' })
+          const name = key === 'title' ? 'The title' : (schema[key]?.name ?? key)
           if (kept.lost.length)
-            throw new EditError(
-              `^${hexId(u.id)}: ${key === 'title' ? 'the title' : (schema[key]?.name ?? key)} holds ` +
-                `${kept.lost.map((l) => `${l.what.join(' and ')} on “${clip(oneLine(l.on), 60)}”`).join('; ')}. ` +
-                'Reading the value doesn’t show that, and this change would remove it. Write that text exactly as ' +
-                'it was shown to keep it, or leave the value as it is and tell the user to change it in Notion. ' +
-                'Nothing was written.',
+            notes.push(
+              `    ${name} held ` +
+                `${kept.lost.map((l) => `${l.what.join(' and ')} on “${clip(oneLine(l.on), 60)}”`).join('; ')}, ` +
+                'which reading it doesn’t show: it is now as written, without that. Tell the user, who can add ' +
+                'it back in Notion.',
             )
           return [key, kept.rich]
         }),
@@ -552,7 +554,7 @@ export const updatePages = defineTool({
         ...(u.icon !== undefined ? ['icon'] : []),
         ...u.props.map(([n]) => oneLine(n)),
       ]
-      summary.push(`^${hexId(u.id)}: ${changed.join(', ')}`)
+      summary.push(`^${hexId(u.id)}: ${changed.join(', ')}`, ...notes)
     })
     signal?.throwIfAborted()
     try {

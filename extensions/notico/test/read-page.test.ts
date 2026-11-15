@@ -445,8 +445,8 @@ describe('read_page arguments', () => {
     expect(tab.sent).toEqual([])
   })
 
-  // A null is dropped before the tool gets its arguments: see "read_page gets the model's arguments
-  // as its schema reads them" in worker/test/extension.test.ts.
+  // A null is dropped before the tool gets its arguments: see "a null where the schema takes none is
+  // refused" in agent.test.ts.
   it('treats an empty page as not given', async () => {
     const page = chunk([id(1)], { block: block(id(1), 'text', 'Hi') })
     openPage(page)

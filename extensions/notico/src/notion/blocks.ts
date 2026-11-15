@@ -309,9 +309,9 @@ export function inline(text: string, marks: Mark[] = []): RichText {
     { re: /\\([\\`*_~[\]^|#><$@])/, run: (m) => [marks.length ? [m[1], marks] : [m[1]]] },
     {
       // `$x^2$` is an inline equation, its LaTeX as it is. As in Pandoc, `$` opens one only before
-      // a non-space and closes it only after one, and not before a letter or digit, so prices and
-      // `$HOME/$USER` stay text.
-      re: /\$(?=\S)((?:\\.|[^$\\\n])+?)(?<=\S)\$(?!\w)/,
+      // a non-space and closes it only after one (or after a space a backslash escapes, LaTeX's
+      // `\ `), and not before a letter or digit, so prices and `$HOME/$USER` stay text.
+      re: /\$(?=\S)((?:\\.|[^$\\\n])*?(?:\\.|[^$\\\s]))\$(?!\w)/,
       // read_page shows a `<br>` in LaTeX as `\<br>`, so it isn't read as a line break.
       run: (m) => [['⁍', [...marks, ['e', m[1].replace(/\\(<br\s*\/?>)/gi, '$1')]]]],
     },
@@ -553,7 +553,7 @@ export function breaks(text: string): string {
   // one that opens code after it. A backtick or `$` behind an odd number of backslashes is literal.
   // The equation is inline's, but one holding a `<br>` is not an equation (read_page shows a `<br>`
   // in LaTeX as `\<br>`): a line that ends in a price would pair with the next one (`5$<br>6$`).
-  const equation = /\$(?=\S)(?:\\.|(?!<br\s*\/?>)[^$\\\n])+?(?<=\S)\$(?!\w)/
+  const equation = /\$(?=\S)(?:\\.|(?!<br\s*\/?>)[^$\\\n])*?(?:\\.|(?!<br\s*\/?>)[^$\\\s])\$(?!\w)/
   const code = new RegExp(`(?<!(?:^|[^\\\\])(?:\\\\\\\\)*\\\\)(?:${CODE_SPAN.source}|${equation.source})`, 'gi')
   let out = ''
   let at = 0
