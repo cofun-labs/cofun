@@ -55,6 +55,8 @@ export class FakeOpenRouter {
   limitRemaining: number | null = null
   /** Whether OpenRouter can't be reached: every request fails as a fetch to a host that is down does. */
   unreachable = false
+  /** Turns model calls away, as OpenRouter does: for too many requests (429), or for an account out of credits (402). */
+  refuses?: 'rate_limited' | 'no_credits'
   /** Holds the key endpoint's answers until it resolves, when set. */
   checks?: Promise<void>
   /** Every request, model list included, in order: its path and the key it carried. */
@@ -87,6 +89,22 @@ export class FakeOpenRouter {
       return Response.json({ error: { message: 'Not Found', code: 404 } }, { status: 404 })
     if (!key || !this.keys.has(key))
       return Response.json({ error: { message: 'User not found.', code: 401 } }, { status: 401 })
+    if (this.refuses === 'rate_limited')
+      return Response.json(
+        { error: { message: 'Rate limit exceeded: free-models-per-min.', code: 429 } },
+        { status: 429 },
+      )
+    if (this.refuses === 'no_credits')
+      return Response.json(
+        {
+          error: {
+            message:
+              'This request requires more credits, or fewer max_tokens. You requested up to 32000 tokens, but can only afford 1200. To increase, visit https://openrouter.ai/settings/credits and add more credits',
+            code: 402,
+          },
+        },
+        { status: 402 },
+      )
     const body = (await request.json()) as Record<string, unknown>
     if (titleRequests(this, body) === this.titles) return answerTitle(this.titles, body)
     const model = String(body.model)

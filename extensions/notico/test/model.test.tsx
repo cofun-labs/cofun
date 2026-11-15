@@ -206,6 +206,33 @@ describe('answering with the own model', () => {
     expect(provider('OpenRouter').getByRole('button', { name: 'Remove key' })).toBeVisible()
   })
 
+  it('[UC-NOTICO-AGENT-002-S25] when OpenRouter turns a question away for too many requests, the question stops and nothing is sent again', async () => {
+    const { browser, user } = await openPanel()
+    await setUpOpenRouter(browser, user)
+    browser.openRouter.refuses = 'rate_limited'
+    const asked = () => browser.openRouter.requests.filter((r) => r.path === '/api/v1/chat/completions')
+
+    await ask(user, 'Hello?')
+    expect(await screen.findByText(/Rate limit exceeded/)).toBeVisible()
+    await answered()
+    expect(asked()).toHaveLength(1)
+    expect(browser.ai.calls).toEqual([])
+  })
+
+  it('[UC-NOTICO-AGENT-002-S26] when the OpenRouter account has no credits left, the question says so and where to add them', async () => {
+    const { browser, user } = await openPanel()
+    await setUpOpenRouter(browser, user)
+    browser.openRouter.refuses = 'no_credits'
+
+    await ask(user, 'Hello?')
+    expect(await screen.findByText(/requires more credits.*openrouter\.ai\/settings\/credits/)).toBeVisible()
+    await answered()
+    expect(browser.ai.calls).toEqual([])
+    // Not the key's fault: Settings keeps it as working.
+    await openSettings(user)
+    expect(provider('OpenRouter').queryByText('Key stopped working')).not.toBeInTheDocument()
+  })
+
   it('[UC-NOTICO-AGENT-002-S22] checking a key that stopped working again clears the mark, and removing it deletes it', async () => {
     const { browser, user } = await openPanel()
     await setUpOpenRouter(browser, user)
