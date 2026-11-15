@@ -31,7 +31,7 @@ Start each finding with its weight and the IDs of the rules it breaks:
 
 - Name the head commit you reviewed. Read the PR's head again before submitting; if it changed, review the new head first.
 - List each finding with its weight and rule IDs, as above.
-- The full review submits one review with `gh pr review --comment` (GitHub blocks approving your own PR) that names the head commit, lists each finding with its rule IDs, and says what it checked.
+- The full review submits one review with `gh pr review --comment` (GitHub blocks approving your own PR), which also says what it checked.
 
 ## Rule IDs
 
@@ -91,17 +91,17 @@ These follow [docs/security.md](security.md); a PR that changes what it says upd
 - **D11. `docs/security.md` changes with the design.** A PR that changes what it says, or adds something its rules for later changes cover, updates it.
 - **D12. Nothing a browser runs is served from another host under `cofun.cc`.**
 
-## E. Calling Notion
+## E. Calling a site as the user
 
-The tools call Notion's internal API as the user's own account, so Notion must never see the extension as automated abuse ([AGENTS.md](../AGENTS.md), "Calling Notion").
+The tools call their site's API as the user's own account, so the site must never see the extension as automated abuse ([AGENTS.md](../AGENTS.md), "Calling a site as the user"). E2 to E5 hold for every site; E1, E6, and E7 say how Notico keeps them for Notion, and another extension gets rules like them for its site.
 
-- **E1. Notion is called only through `src/notion/api.ts`**, run inside the user's Notion tab by `src/notion/tab.ts`. A tool never builds a Notion URL or request shape itself, and nothing uses `chrome.debugger`.
+- **E1. Notico calls Notion only through `src/notion/api.ts`**, run inside the user's Notion tab by `src/notion/tab.ts`. A tool never builds a Notion URL or request shape itself, and nothing uses `chrome.debugger`.
 - **E2. A retry is clearly safe and would fix the problem.** It can't apply a change twice, and its cause is one a retry fixes. Nothing falls back to another endpoint or another way of getting the same result.
-- **E3. What isn't understood stops the question.** An unidentified failure or an unexpected response becomes a `NotionError` with `notion_error` or `outcome_unknown`; another code is used only when its meaning is known and the model can act on it. Bad input from the model is a plain error.
-- **E4. A rate limit stops the question.** On 429 or 529 nothing more is sent, the question ends, and the user is told to wait. Code that catches Notion errors rethrows one that carries `stopsQuestion`.
+- **E3. What isn't understood stops the question.** An unidentified failure or an unexpected response stops the question and is reported, with no workaround guessed (in Notico, a `NotionError` with `notion_error` or `outcome_unknown`). Another code is used only when its meaning is known and the model can act on it. Bad input from the model is a plain error.
+- **E4. A rate limit stops the question.** When the site turns a request away for coming too fast (Notion: 429 or 529), nothing more is sent, the question ends, and the user is told to wait. Code that catches the site's errors rethrows one that carries `stopsQuestion`.
 - **E5. A change that may have landed is said to.** A tool that changes data sets `changesData`, and an error after a change that may have landed sets `mayHaveChanged`, so the user is told to check before asking again.
-- **E6. No more requests than needed.** No request per item where one call covers them, no reload of what is already loaded in the same call, and within the budgets: 50 pages per bulk call, 100 Notion requests before the user is asked to go on.
-- **E7. Requests go only to the active Notion tab's own origin**, after checking it is still on a Notion host, without following redirects.
+- **E6. No more requests than needed.** In Notico: no request per item where one call covers them, no reload of what is already loaded in the same call, and within the budgets: 50 pages per bulk call, 100 Notion requests before the user is asked to go on.
+- **E7. Notico's requests go only to the active Notion tab's own origin**, after checking it is still on a Notion host, without following redirects.
 
 ## F. Untrusted values
 

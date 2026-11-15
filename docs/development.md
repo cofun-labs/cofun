@@ -6,8 +6,14 @@ Requires Node.js 24 and pnpm. The repository is one pnpm workspace: the [worker]
 pnpm install
 pnpm check        # lint, unused code check (knip), format check, use case coverage (pnpm use-cases), typecheck, extension build, and every package's tests
 pnpm knip         # unused files, exports, and dependencies (knip.jsonc lists what is kept, and why)
+pnpm use-cases    # every ✅ api-test scenario has a test; warns about other mismatches (docs/bdd.md)
+pnpm format:fix   # format all files
+pnpm test         # extension and worker tests, and the unit tests of scripts/
+pnpm build        # build every extension into extensions/<name>/dist
 pnpm smoke        # build the extension and load it into Chromium (first: pnpm --filter cofun-smoke exec playwright install chromium)
 pnpm icons        # export extensions/notico/icons/icon.svg into extensions/notico/public/icons (needs the same Chromium); commit the PNGs
+pnpm media 367 demo.gif   # upload a PR's demo GIF or screenshots and print their URLs (maintainer's machine only; see PR media)
+pnpm e2e --help   # drive the shared Chrome Canary for ai-e2e runs (maintainer's machine only)
 ```
 
 A lefthook pre-commit hook runs `pnpm check`. GitHub Actions runs it and `pnpm smoke` on every pull request.

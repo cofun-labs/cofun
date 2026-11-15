@@ -26,9 +26,6 @@ Update `docs/architecture.md` only when a change adds, moves, or removes a modul
      ## Checklist
 
      - [ ] Business rules covered by scenarios and tests (or none changed)
-     - [ ] CI passes
-     - [ ] Full review submitted on PR
-     - [ ] All PR comments resolved
      ```
 
 2. **Cover business rules with scenarios.** Ask one question: does this change add or change a business rule a user can notice? If not, as with most bug fixes and refactors, no use case changes. If so:
@@ -46,7 +43,7 @@ Update `docs/architecture.md` only when a change adds, moves, or removes a modul
    - `pnpm check` fails on a test that names neither a scenario ID nor a kind, on an `api-test` scenario marked ✅ with no test named with its ID, and on a scenario row it can't read ([Coverage check](docs/bdd.md#coverage-check)). When a scenario's ID changes, rename its tests; when a scenario is deleted, delete its tests or take the ID out of their names.
    - Gaps that slip past a PR are found by the `/bdd-audit` skill, run before a release or after a large feature ([Coverage audit](docs/bdd.md#coverage-audit)), not by per-PR bookkeeping.
 
-4. **Run pre-PR checks.** Run `pnpm check`, then review `git diff --stat origin/main...` and `git diff origin/main... -- 'extensions/*/use-cases/*' worker/use-cases`. Confirm the diff matches the Issue (or the PR body, when there is no Issue) and every business rule it adds or changes has a scenario and a test.
+4. **Run pre-PR checks.** `pnpm check` runs on every commit (a lefthook pre-commit hook). Review `git diff --stat origin/main...` and `git diff origin/main... -- 'extensions/*/use-cases/*' worker/use-cases`. Confirm the diff matches the Issue (or the PR body, when there is no Issue) and every business rule it adds or changes has a scenario and a test.
 
 5. **Open a PR.** Branch `issue-{ID}` from `origin/main` (or a short descriptive name when there is no Issue), commit, push, and open a PR. If there is an Issue, the PR body contains `Closes #{ID}`.
    - A branch builds on another unmerged PR only when it needs that PR's changes; its PR targets that branch as its base, so its diff and review cover only its own commits. Such a PR is never merged while its base is not `main`: once its base merges, GitHub points it at `main`, and it merges `origin/main` and goes through the queue like any other.
@@ -73,8 +70,6 @@ Update `docs/architecture.md` only when a change adds, moves, or removes a modul
    - **Never merge a PR on your own.** Only when the user explicitly asks, and only once the PR is ready, run `gh pr merge {PR} --match-head-commit {SHA}` with the head commit that was reviewed (or a merge of `origin/main` on top of it with no conflict resolved by hand). It adds the PR to the merge queue ([Merging](docs/development.md#merging)).
    - **Never enable auto-merge on a PR that is not ready**, by this command or any other route: it would merge by itself once ready, later pushes included. If it was enabled early, undo it with `gh pr merge {PR} --disable-auto` and tell the user.
    - Push every fix before queueing: GitHub rejects pushes to a queued PR's branch, so a fix found later goes into a follow-up PR. Wait until the PR shows as merged; if the queue removes it, fix the failure and tell the user before queueing it again.
-
-10. **Wait for the deploy.** Once the queue merges the PR, Cloudflare Workers Builds runs the worker tests and deploys the worker. The work is done only when that deploy succeeds; if it fails, fix it right away.
 
 ### Git rules
 
@@ -108,7 +103,7 @@ An extension's Chrome Web Store privacy policy is written in two parts: [PRIVACY
 [docs/architecture.md](docs/architecture.md) describes the design; these are the rules a change must keep.
 
 - **One extension per folder.** Each extension keeps its own copy of the side panel code and never imports another extension.
-- **Notion is called only through `src/notion/api.ts`**, the one module that knows Notion's endpoints and request shapes. Requests run inside the user's Notion tab (`src/notion/tab.ts`, `chrome.scripting` in the ISOLATED world), so they go to that tab's host with its session; tools never `fetch` Notion URLs themselves. Never use `chrome.debugger`: it shows a permanent "debugging this browser" banner.
+- **A site is called only through its site layer**: one module knows the site's endpoints and request shapes (Notico's `src/notion/api.ts`), and requests run inside the user's tab for that site (`src/<site>/tab.ts`, `chrome.scripting` in the ISOLATED world), so they go to that tab's host with its session. Tools never `fetch` the site's URLs themselves. Never use `chrome.debugger`: it shows a permanent "debugging this browser" banner.
 - **Every worker route under `/v1` sits behind the session check** (`src/routes/session.ts`); `worker/test/session.test.ts` checks that each refuses a request without a session.
 - **Module boundaries are lint errors** in `.oxlintrc.json`, run by `pnpm check`. In every extension:
   - only `src/agent/` imports pi (`@earendil-works/pi-agent-core`);
@@ -138,13 +133,13 @@ An extension sends product analytics to PostHog only through `src/analytics.ts`,
 - A new event or property is added to the schema, to the list of properties the module keeps, and to the extension's `PRIVACY.md` in the same PR.
 - Never turn on autocapture, session replay, or exception capture: each would send text from the panel.
 
-## Calling Notion: stop, don't work around
+## Calling a site as the user: stop, don't work around
 
-Tools call Notion's internal API as the user's own account, so **stability comes first**: Notion must never see this extension as automated abuse.
+An extension's tools call its site's own API, often an internal one, as the user's own account, through the site layer (`src/<site>/`). So **stability comes first**: the site must never see the extension as automated abuse, since a mistake lands on the user's account. These rules hold for every site; how Notico keeps them for Notion is in [review rules E](docs/review.md#e-calling-a-site-as-the-user).
 
 - **Retry only when it is clearly safe and would fix the problem**: a retry must not be able to apply a change twice, and the cause must be one a retry can fix. When in doubt, don't. Never fall back to another endpoint or another way of getting the same result.
-- **Stop on what we don't understand.** A failure we can't identify, or a response we didn't expect, stops the question and is reported to the user; don't guess a workaround. A `NotionError` with the code `notion_error` or `outcome_unknown` does this by itself. Give a failure another code only when its meaning is known and the model can act on it, and throw a plain error for bad input from the model.
-- **Rate limits stop the question, with no retry.** When Notion turns a request away (429 or 529), the client sends nothing more, the agent ends the question, and the user is told to wait. A tool error does this by carrying `stopsQuestion` (see `NotionError` in `src/notion/api.ts`); code that catches Notion errors must rethrow one that carries it, never swallow it.
+- **Stop on what we don't understand.** A failure we can't identify, or a response we didn't expect, stops the question and is reported to the user; don't guess a workaround. Give a failure a code of its own only when its meaning is known and the model can act on it, and throw a plain error for bad input from the model.
+- **Rate limits stop the question, with no retry.** When the site turns a request away for coming too fast, the client sends nothing more, the agent ends the question, and the user is told to wait. A tool error does this by carrying `stopsQuestion` (read by `src/agent/calls.ts`); code that catches the site's errors must rethrow one that carries it, never swallow it.
 - **A tool that changes the user's data sets `changesData`** (see `ToolSpec` in `src/agent/types.ts`), and an error after a change that may have landed sets `mayHaveChanged`, so a question that stops tells the user to check before asking again.
 - Handle only failures whose meaning is known, such as signed out, no access, or a page that changed since it was read.
 
@@ -160,15 +155,12 @@ How the fakes and test helpers fit together is in [Testing](docs/development.md#
 
 ## Commands
 
+The full list is in [docs/development.md](docs/development.md).
+
 ```bash
-pnpm install
-pnpm check        # lint, unused code check (knip), format check, use case coverage, typecheck, extension build, and every package's tests
-pnpm knip         # unused files, exports, and dependencies (knip.jsonc lists what is kept, and why)
-pnpm use-cases    # every ✅ api-test scenario has a test; warns about other mismatches (docs/bdd.md)
+pnpm check        # lint, knip, format check, use case coverage, typecheck, extension build, and every package's tests
 pnpm format:fix   # format all files
 pnpm test         # extension and worker tests, and the unit tests of scripts/
-pnpm build        # build every extension into extensions/<name>/dist
-pnpm smoke        # build the extension and run the smoke test in Chromium (also runs in CI)
 pnpm media 367 demo.gif   # upload a PR's demo GIF or screenshots and print their URLs (maintainer's machine only)
 pnpm e2e --help   # drive the shared Chrome Canary for ai-e2e runs (maintainer's machine only)
 ```
@@ -178,5 +170,4 @@ pnpm e2e --help   # drive the shared Chrome Canary for ai-e2e runs (maintainer's
 - **No backward compatibility.** Pick the cleanest solution; delete old code instead of deprecating it.
   - The one exception is the worker's API as the published extensions use it. The worker deploys as soon as a PR merges, but installed extensions update only after a Chrome Web Store review, so the worker keeps accepting what the extension version on the store sends and answering in a shape it parses. Keep what an older build needs with a comment saying when it can go, and a `[@no-uc:contract]` test that pins it.
   - `pnpm knip` fails on unused files, exports, and dependencies: delete what it finds. List something in `knip.jsonc` only when it is a false positive or kept on purpose, with the reason.
-- **TypeScript everywhere.**
 - **The worker fixes the hosted model.** Clients cannot make the worker use another model. A user's own model (OpenRouter, with their key) is asked from the extension directly, never through the worker.
