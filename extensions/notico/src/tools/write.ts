@@ -62,26 +62,20 @@ import {
   CREATE,
   EDIT,
   GIVE_PAGE,
-  NONE,
   PAGES_LIST,
-  QUOTED,
   TITLE_EMPTY,
   UPDATE,
   count,
   filled,
-  idIn,
   idsOf,
+  nameOf,
   on,
   pageArg,
   plainTitle,
-  quoted,
   shownText,
 } from './shared'
 
 const EDITS_LIST = '`edits` must be a list with at least one edit.'
-
-/** The first line of an edit_page result, which names the page. */
-const EDITED_PAGE = new RegExp(`^On the page (${QUOTED}) \\^[0-9a-f]+:$`, 'm')
 
 export const editPage = defineTool({
   changesData: true,
@@ -98,15 +92,7 @@ export const editPage = defineTool({
     'heading); inside a quote or callout, nest with "> " and two spaces. ' +
     "Child pages, databases, and files can't be written. If the page changed since you read it, the edit is " +
     'refused: read it again and redo the edit.',
-  // Edits that all matched what the page had wrote nothing, and changed nothing.
-  touched: (args, result) =>
-    result
-      .split('\n')
-      .slice(1)
-      .every((line) => line.endsWith('already had that content; nothing changed.'))
-      ? NONE
-      : { changed: idsOf(args && [args.page]) },
-  describe: (_args, result) => on(EDIT, quoted(result, EDITED_PAGE), 'a page'),
+  describe: (_args, details) => on(EDIT, details?.name, 'a page'),
   args: z.strictObject({
     page: z.string({ error: GIVE_PAGE }).describe('Id of the page to edit, as read_page shows it after "Page:".'),
     edits: z.array(EDIT_ARGS, { error: EDITS_LIST }).min(1, { error: EDITS_LIST }),
@@ -168,11 +154,12 @@ export const editPage = defineTool({
       e.blocks = blocksWithPeople(e.blocks, found[n])
     })
     const plan = planEdit(loaded, read, edits)
-    // The first line names the page, for the agent and for the side panel.
+    // The first line names the page.
     const header = `On the page ${quote(read.title)} ^${hexId(id)}:`
+    const name = nameOf(read.title)
     // The last point where nothing has been sent: a Stop pressed while the page loaded wins.
-    // Every edit was a no-op: there is nothing to send, and the page stays as read.
-    if (!plan.operations.length) return [header, ...plan.summary].join('\n')
+    // Every edit was a no-op: there is nothing to send, and the page stays as read, unchanged.
+    if (!plan.operations.length) return { text: [header, ...plan.summary].join('\n'), details: { name } }
     signal?.throwIfAborted()
     try {
       await tab.client.submitTransaction(loaded.spaceId, plan.operations, 'Notico: edit_page')
@@ -219,7 +206,10 @@ export const editPage = defineTool({
       }
     }
     remember(next, since)
-    return [header, ...plan.summary, newRefs, 'Read the page again to see the result.'].filter(Boolean).join('\n')
+    return {
+      text: [header, ...plan.summary, newRefs, 'Read the page again to see the result.'].filter(Boolean).join('\n'),
+      details: { name, changed: [hexId(id)] },
+    }
   },
 })
 
@@ -268,7 +258,6 @@ export const createPage = defineTool({
     "(the open page's URL, or another page), and the new page goes at its end; or a " +
     'database, and the new page is a row of it, with `properties` set by name (values as query_database shows ' +
     "them; options must exist). Returns the new page's id and URL.",
-  touched: (_args, result) => ({ changed: idIn(result, /^(?:Added the row|Created the page) “.*” \^([0-9a-f]{32}) /) }),
   describe: (args) => {
     const name = plainTitle(args?.title ?? '').trim()
     return name ? { verb: CREATE, what: 'the page', name } : { verb: CREATE, what: 'a page' }
@@ -374,12 +363,13 @@ export const createPage = defineTool({
       forgetLoads(parentId)
     }
     const hex = hexId(pageId)
-    return [
+    const text = [
       target.table === 'collection'
         ? `Added the row “${title}” ^${hex} to the database ^${hexId(parentId)}.`
         : `Created the page “${title}” ^${hex} at the end of ^${hexId(parentId)}.`,
       `URL: ${pageLink(tab.url, hex)}`,
     ].join('\n')
+    return { text, details: { changed: [hex] } }
   },
 })
 
@@ -424,7 +414,6 @@ export const updatePages = defineTool({
     'query_database shows them; options must exist; empty clears a value), several pages in one call: "mark ' +
     'these five tasks done" is one call. Get row ids from query_database. Nothing is written if any value is ' +
     'refused.',
-  touched: (args) => ({ changed: idsOf(args?.pages.map((p) => p.page)) }),
   describe: (args) => ({ verb: UPDATE, what: args ? count(args.pages.length, 'page') : 'pages' }),
   args: UPDATE_ARGS,
   preview: ({ pages: updates }) => {
@@ -572,7 +561,10 @@ export const updatePages = defineTool({
     }
     // A read's title shows in later previews; keep it current.
     for (const u of updates) if (u.title !== undefined) renameRead(u.id, u.title.shown)
-    return [`Changed ${updates.length} page${updates.length === 1 ? '' : 's'}:`, ...summary].join('\n')
+    return {
+      text: [`Changed ${updates.length} page${updates.length === 1 ? '' : 's'}:`, ...summary].join('\n'),
+      details: { changed: idsOf(args.pages.map((p) => p.page)) },
+    }
   },
 })
 

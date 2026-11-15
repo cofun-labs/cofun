@@ -1,6 +1,6 @@
 // Defines a tool from one zod schema of its arguments: the JSON Schema the model is sent, the check
 // before the tool runs, and the type its code works with all come from that schema.
-import type { ToolSpec } from './agent'
+import type { ToolDetails, ToolResult, ToolSpec } from './agent'
 import { z } from './zod'
 
 /** A verb in the forms a tool call's description needs: "read", "reading", "read". */
@@ -24,24 +24,13 @@ export interface Action {
   after?: string
 }
 
-/** The pages and databases a call read or changed, by id (32 hex digits, no dashes). */
-export interface Touched {
-  read?: string[]
-  changed?: string[]
-}
-
 /** A tool as the extension has it: what the agent runs, and how the side panel describes a call. */
 export interface Tool extends ToolSpec {
   /**
-   * What a call that worked read and changed, from its arguments and what it returned, so the side
-   * panel can sum them for a question, also in a saved session.
+   * A call in words, from the arguments the model gave (which may not parse) and, once it has worked,
+   * the details its run gave (see ToolDetails). Also used for calls in saved sessions.
    */
-  touched: (args: unknown, result: string) => Touched
-  /**
-   * A call in words, from the arguments the model gave (which may not parse) and, once it has run,
-   * what it returned. Also used for calls in saved sessions.
-   */
-  describe: (args: unknown, result?: string) => Action
+  describe: (args: unknown, details?: ToolDetails) => Action
 }
 
 /** A tool's arguments: an object schema, so the model is sent `type: "object"`. */
@@ -50,23 +39,21 @@ type ArgsSchema = z.ZodObject
 export interface ToolDefinition<S extends ArgsSchema> extends Omit<ToolSpec, 'parameters' | 'run' | 'preview'> {
   /**
    * The call in the user's words (see `Tool.describe`): from its arguments, or undefined when they
-   * don't parse, and what it returned once it has run. A name it gives comes from the arguments or
-   * the result, so a call that hasn't run, or that failed, falls back to general words.
+   * don't parse, and its run's details once it has worked. A name it gives comes from the arguments
+   * or the details, so a call that hasn't run, or that failed, falls back to general words.
    */
-  describe: (args: z.output<S> | undefined, result: string | undefined) => Action
-  /**
-   * The pages and databases a call that worked read and changed (see `Tool.touched`), from its
-   * arguments, or undefined when they don't parse, and what it returned. Searching and listing pages
-   * read none; a change counts the pages it changed or made.
-   */
-  touched: (args: z.output<S> | undefined, result: string) => Touched
+  describe: (args: z.output<S> | undefined, details: ToolDetails | undefined) => Action
   /**
    * The arguments. Describe what the model should know with `.describe()`, and give `error` where
    * the model needs more than zod's own words to correct its call.
    */
   args: S
-  /** Runs the tool with the arguments as the schema gives them. */
-  run: (args: z.output<S>, signal?: AbortSignal) => Promise<unknown>
+  /**
+   * Runs the tool with the arguments as the schema gives them. The details say which pages and
+   * databases it read and changed (searching and listing pages read none; a change counts the pages
+   * it changed or made), and the name its card shows.
+   */
+  run: (args: z.output<S>, signal?: AbortSignal) => Promise<string | ToolResult>
   /** What a call does, in words (see `ToolSpec.preview`), from the same arguments as `run` gets. */
   preview?: (args: z.output<S>) => string | undefined | Promise<string | undefined>
 }
@@ -80,23 +67,12 @@ export interface ToolDefinition<S extends ArgsSchema> extends Omit<ToolSpec, 'pa
  * nothing (only what JSON Schema can't say, such as a whole number too large to be exact): it is
  * what turns the value into its type, and what a caller without the runtime gets.
  */
-export function defineTool<S extends ArgsSchema>({
-  args,
-  run,
-  preview,
-  describe,
-  touched,
-  ...rest
-}: ToolDefinition<S>): Tool {
+export function defineTool<S extends ArgsSchema>({ args, run, preview, describe, ...rest }: ToolDefinition<S>): Tool {
   return {
     ...rest,
-    touched: (given, result) => {
+    describe: (given, details) => {
       const parsed = parseArgs(args, given)
-      return touched(parsed.ok ? parsed.args : undefined, result)
-    },
-    describe: (given, result) => {
-      const parsed = parseArgs(args, given)
-      return describe(parsed.ok ? parsed.args : undefined, result)
+      return describe(parsed.ok ? parsed.args : undefined, details)
     },
     parameters: parametersOf(args),
     run: async (given: unknown, signal) => {

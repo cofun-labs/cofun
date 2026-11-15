@@ -5,7 +5,7 @@ import { LIMITED_STOP, NO_ACCESS } from '../src/notion/api'
 import { searchPages } from '../src/tools/find'
 import { forgetReads } from '../src/tools/memory'
 import { readPage } from '../src/tools/read'
-import { FakeNotionTab, PAGE, PAGE_URL, SPACE, notionError, restoreGlobals } from './notion-tab'
+import { FakeNotionTab, PAGE, PAGE_URL, SPACE, notionError, restoreGlobals, resultText } from './notion-tab'
 import { DATA_LINE } from '../src/tools/shared'
 
 afterEach(restoreGlobals)
@@ -59,7 +59,7 @@ function open(): FakeNotionTab {
   return new FakeNotionTab(PAGE_URL).respond('syncRecordValuesMain', 200, OPEN_PAGE).install()
 }
 
-const search = async (args: Record<string, unknown>) => (await searchPages.run(args)) as string
+const search = async (args: Record<string, unknown>) => resultText(await searchPages.run(args))
 
 describe('UC-NOTICO-NOTION-004 find and read other pages', () => {
   it('[UC-NOTICO-NOTION-004-S01] finds pages with their titles, where they are, the matching text, and their ids', async () => {
@@ -118,7 +118,7 @@ describe('UC-NOTICO-NOTION-004 find and read other pages', () => {
         },
       },
     })
-    const page = (await readPage.run({ page: `^${ref}` })) as string
+    const page = resultText(await readPage.run({ page: `^${ref}` }))
     expect(page.split('\n')[1]).toBe(`Page: Launch plan ^${hex(FOUND)}`)
     expect(page).toContain('Ship on Friday. ^000000aa')
   })

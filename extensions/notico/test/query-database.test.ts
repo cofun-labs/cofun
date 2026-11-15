@@ -2,7 +2,7 @@
 // shapes Notion's syncRecordValuesMain and queryCollection return (see the #64 spike).
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { QUERY_LOAD, QUERY_PART, localDate, queryDatabase } from '../src/tools/database'
-import { FakeNotionTab, SPACE, USER, restoreGlobals } from './notion-tab'
+import { FakeNotionTab, SPACE, USER, restoreGlobals, resultText } from './notion-tab'
 import { DATA_LINE } from '../src/tools/shared'
 
 afterEach(restoreGlobals)
@@ -85,7 +85,7 @@ function database(
     .install()
 }
 
-const query = async (args: Record<string, unknown> = {}) => (await queryDatabase.run(args)) as string
+const query = async (args: Record<string, unknown> = {}) => resultText(await queryDatabase.run(args))
 const tableRows = (result: string) =>
   result.split('\n').filter((l) => l.startsWith('| ') && !l.startsWith('| Task | Status |') && !l.startsWith('| ---'))
 const today = localDate(new Date())
@@ -282,10 +282,10 @@ describe('query_database open page', () => {
         recordMap: {},
       })
       .install()
-    const result = await query()
-    expect(result).toContain(`Database: Tasks ^${hex(DB)}`)
-    // The side panel counts what the call touched from this result.
-    expect(queryDatabase.touched({}, result)).toEqual({ read: [hex(DB)] })
+    const done = await queryDatabase.run({})
+    expect(resultText(done)).toContain(`Database: Tasks ^${hex(DB)}`)
+    // The side panel names the database and counts it as read.
+    expect(done).toMatchObject({ details: { name: 'Tasks', read: [hex(DB)] } })
     expect(tab.sent.at(-1)!.body).toMatchObject({ collectionView: { id: VIEW } })
   })
 

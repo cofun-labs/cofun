@@ -19,13 +19,21 @@ describe('recent pages', () => {
           { type: 'tool_call', id: 'd', name: 'duplicate_page', args: { page: ORIGINAL } },
         ],
       },
-      { role: 'tool', id: 'r', name: 'read_page', status: 'done', result: `Page: Launch plan ^${ORIGINAL}\n\nText.` },
+      {
+        role: 'tool',
+        id: 'r',
+        name: 'read_page',
+        status: 'done',
+        result: `Page: Launch plan ^${ORIGINAL}\n\nText.`,
+        details: { name: 'Launch plan', read: [ORIGINAL] },
+      },
       {
         role: 'tool',
         id: 'd',
         name: 'duplicate_page',
         status: 'done',
         result: `Duplicated "Launch plan" ^${ORIGINAL} as ^${COPY}, right after it.\n`,
+        details: { name: 'Launch plan', changed: [COPY] },
       },
     ]
     expect(pagesIn(history, ORIGIN)).toEqual([{ title: 'Launch plan', url: `${ORIGIN}/p/${ORIGINAL}` }])

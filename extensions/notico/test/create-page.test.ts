@@ -6,7 +6,17 @@ import { forgetReads } from '../src/tools/memory'
 import { readPage } from '../src/tools/read'
 import { createPage } from '../src/tools/write'
 import { toUuid } from '../src/notion/hosts'
-import { FakeNotionTab, FakeWorkspace, PAGE, PAGE_URL, SPACE, USER, notionError, restoreGlobals } from './notion-tab'
+import {
+  FakeNotionTab,
+  FakeWorkspace,
+  PAGE,
+  PAGE_URL,
+  SPACE,
+  USER,
+  notionError,
+  restoreGlobals,
+  resultText,
+} from './notion-tab'
 
 afterEach(() => {
   restoreGlobals()
@@ -53,27 +63,28 @@ function open(ws: FakeWorkspace) {
   tab.workspace = ws
   return tab.install()
 }
-const create = async (args: Record<string, unknown>) => (await createPage.run(args)) as string
+const create = async (args: Record<string, unknown>) => resultText(await createPage.run(args))
 
 describe('UC-NOTICO-NOTION-007 create a page', () => {
   it('[UC-NOTICO-NOTION-007-S06] creates a page with its content at the end of the open page', async () => {
     const ws = workspace()
     open(ws)
-    const result = await create({
+    const done = await createPage.run({
       title: 'Launch notes',
       parent: PAGE_URL,
       markdown: '# Plan\n- Ship beta\n  - Fix Safari\n- [ ] Write post',
     })
+    const result = resultText(done)
     const created = /\^([0-9a-f]{32})/.exec(result)![1]
     expect(result).toBe(
       `Created the page “Launch notes” ^${created} at the end of ^${hex(PAGE)}.\nURL: https://app.notion.com/p/${created}`,
     )
-    // The side panel counts what the call touched from this result.
-    expect(createPage.touched({}, result)).toEqual({ changed: [created] })
+    // The side panel counts the new page as changed.
+    expect(done).toMatchObject({ details: { changed: [created] } })
     // It is the open page's last block, and reads back with its content.
     expect(ws.content(PAGE).map((b) => b.type)).toEqual(['text', 'page'])
     expect(ws.transactions).toHaveLength(1)
-    const page = (await readPage.run({ page: created })) as string
+    const page = resultText(await readPage.run({ page: created }))
     expect(page.split('\n')[1]).toBe(`Page: Launch notes ^${created}`)
     expect(page.slice(page.indexOf('\n\n') + 2).replace(/ \^[0-9a-f]+$/gm, '')).toBe(
       ['# Plan', '- Ship beta', '  - Fix Safari', '- [ ] Write post'].join('\n'),
@@ -144,11 +155,11 @@ describe('create_page details', () => {
       parent_table: 'block',
     }))
     open(workspace(long))
-    const first = (await readPage.run({ page: hex(PAGE) })) as string
+    const first = resultText(await readPage.run({ page: hex(PAGE) }))
     const parts = Number(/^Part 1 of (\d+)/m.exec(first)![1])
-    expect(await readPage.run({ page: hex(PAGE), part: parts })).not.toContain('Fresh page')
+    expect(resultText(await readPage.run({ page: hex(PAGE), part: parts }))).not.toContain('Fresh page')
     await create({ title: 'Fresh page', parent: hex(PAGE) })
-    expect(await readPage.run({ page: hex(PAGE), part: parts })).toContain('Fresh page')
+    expect(resultText(await readPage.run({ page: hex(PAGE), part: parts }))).toContain('Fresh page')
   })
 
   it('[@no-uc:data] names the parent by its title in the preview once the agent has read it', async () => {
@@ -180,7 +191,7 @@ describe('create_page details', () => {
       `the page may or may not have been created. Read ^${hex(PAGE)} and check for “Once” before trying again.`,
     )
     // It was saved: the read the agent is pointed to shows it.
-    expect(await readPage.run({ page: hex(PAGE) })).toContain('Once')
+    expect(resultText(await readPage.run({ page: hex(PAGE) }))).toContain('Once')
   })
 
   it('[@no-uc:notion-safety] stops the question when Notion is too busy to say whether the page was created', async () => {

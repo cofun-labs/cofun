@@ -10,7 +10,7 @@ import { LAYOUT_TYPES, PAGE_TYPES, hexId, oneLine, pageToMarkdown } from '../not
 import { activeNotionTab, type NotionTab } from '../notion/tab'
 import { needsAttachedPage } from './current'
 import { lastRead } from './memory'
-import { ADD, GIVE_PAGE, asData, PART_CHARS, READ, filled, idIn, on, pageArg, partArg, plural, quoted } from './shared'
+import { ADD, GIVE_PAGE, asData, PART_CHARS, READ, filled, nameOf, on, pageArg, partArg, plural } from './shared'
 
 /** The page a call names, or the open page when it names none. */
 function commentsPage(tab: NotionTab, given: string | undefined): string {
@@ -41,14 +41,8 @@ export const readComments = defineTool({
     'it is (the page itself, or a block with its reference and text), whether it is resolved, and each comment ' +
     'with its author, time, and text, quoted as people who can open the page wrote them. Many comments come in ' +
     'parts; ask for the next with `part`.',
-  touched: (_args, result) => ({ read: idIn(result, /^Comments on the page .* \^([0-9a-f]{32}):/) }),
-  describe: (args, result) =>
-    on(
-      READ,
-      quoted(result, /^Comments on the page (".*") \^[0-9a-f]+/m),
-      !args || args.page ? 'a page' : 'the open page',
-      'the comments on',
-    ),
+  describe: (args, details) =>
+    on(READ, details?.name, !args || args.page ? 'a page' : 'the open page', 'the comments on'),
   args: z.strictObject({
     page: z.string().describe('URL or id of the page. Leave out for the open page.').optional(),
     part: partArg('Which part of many comments to read, starting at 1.'),
@@ -64,7 +58,8 @@ export const readComments = defineTool({
     const threads = await loadThreads(tab.client, loaded, md)
     const pageHex = hexId(loaded.page.id)
     const header = `Comments on the page ${quote(md.title)} ^${pageHex}`
-    if (!threads.length) return asData([`${header}: none.`])
+    const details = { name: nameOf(md.title), read: [pageHex] }
+    if (!threads.length) return { text: asData([`${header}: none.`]), details }
     // A part holds as many comments as fit, at least one. A thread that goes on in the next part
     // starts it again with its heading, marked as continued.
     const parts: string[][] = []
@@ -91,7 +86,7 @@ export const readComments = defineTool({
       throw new Error(`These comments have ${plural(parts.length, 'part')}; there is no part ${part}.`)
     }
     const open = threads.filter((t) => !t.resolved).length
-    return asData([
+    const text = asData([
       `${header}: ${plural(threads.length, 'thread')}, ${open} open and ${threads.length - open} resolved.`,
       ...(parts.length > 1
         ? [`Part ${part} of ${parts.length}${part < parts.length ? `. Read part ${part + 1} for more.` : '.'}`]
@@ -101,6 +96,7 @@ export const readComments = defineTool({
       '',
       ...parts[part - 1],
     ])
+    return { text, details }
   },
 })
 
@@ -119,8 +115,7 @@ export const addComment = defineTool({
     "its blocks by the reference read_page or read_comments shows (e.g. ^1a2b3c4d). The page's content does not " +
     'change. `text` may use **bold**, *italic*, ~~strike~~, `code`, [links](url), [page](<page id>) mentions, and ' +
     '@[Name] mentions of workspace members.',
-  touched: (_args, result) => ({ changed: idIn(result, /^Added a comment on .* \^([0-9a-f]{32})\.$/) }),
-  describe: (_args, result) => on(ADD, quoted(result, /of (".*") \^[0-9a-f]+\.$/m), 'a page', 'a comment on'),
+  describe: (_args, details) => on(ADD, details?.name, 'a page', 'a comment on'),
   args: z.strictObject({
     page: z.string({ error: GIVE_PAGE }).describe('URL or id of the page, as read_page shows it after "Page:".'),
     block: z.string().describe('Reference of the block to comment on. Leave out for the page itself.').optional(),
@@ -211,6 +206,9 @@ export const addComment = defineTool({
       }
       throw err
     }
-    return `Added a comment on ${where} of ${quote(md.title)} ^${hexId(loaded.page.id)}.`
+    return {
+      text: `Added a comment on ${where} of ${quote(md.title)} ^${pageHex}.`,
+      details: { name: nameOf(md.title), changed: [pageHex] },
+    }
   },
 })

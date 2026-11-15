@@ -664,7 +664,7 @@ export function Chat({ userId }: { userId: string }) {
           if (j < 0) return m
           const part = m.parts[j] as Extract<Part, { type: 'tool' }>
           const parts = [...m.parts]
-          parts[j] = { ...part, tool: { ...part.tool, status: u.status, result: u.result } }
+          parts[j] = { ...part, tool: { ...part.tool, status: u.status, result: u.result, details: u.details } }
           return { ...m, parts }
         })
     }
@@ -1247,7 +1247,7 @@ function toShown(history: HistoryMessage[]): Shown[] {
     } else {
       // Like a live reply: the result belongs to the newest call with its id that has none yet.
       const part = reply.parts[newestOpenCall(reply.parts, m.id)]
-      if (part?.type === 'tool') part.tool = { ...part.tool, status: m.status, result: m.result }
+      if (part?.type === 'tool') part.tool = { ...part.tool, status: m.status, result: m.result, details: m.details }
     }
   }
   // A call saved without its result is not running any more.

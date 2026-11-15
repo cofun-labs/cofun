@@ -50,6 +50,24 @@ export interface QuestionExtras {
 const QuestionPage = z.object({ title: z.string(), url: z.string(), database: z.literal(true).optional() })
 export type QuestionPage = z.infer<typeof QuestionPage>
 
+/**
+ * What a call that worked says about itself for the side panel, apart from the text the model gets:
+ * `name`, the name of the thing its card names (a page's title, say), and the pages and databases it
+ * `read` and `changed`, by id (32 hex digits, no dashes). Saved with the call's result.
+ */
+export const ToolDetails = z.object({
+  name: z.string().optional(),
+  read: z.array(z.string()).optional(),
+  changed: z.array(z.string()).optional(),
+})
+export type ToolDetails = z.infer<typeof ToolDetails>
+
+/** What a tool returns: the text the model gets, and the details the side panel reads (see ToolDetails). */
+export interface ToolResult {
+  text: string
+  details: ToolDetails
+}
+
 /** A tool the model can ask the extension to run. */
 export interface ToolSpec {
   name: string
@@ -63,9 +81,10 @@ export interface ToolSpec {
   /**
    * Runs the tool. Throw to report a failure to the model. An error with a `stopsQuestion` string
    * (on it or a cause) also stops the question: nothing more runs, and the user is told that string.
-   * The arguments come from the model: a tool parses them before it uses them.
+   * The arguments come from the model: a tool parses them before it uses them. Text alone is a
+   * result with no details.
    */
-  run: (args: unknown, signal?: AbortSignal) => Promise<unknown>
+  run: (args: unknown, signal?: AbortSignal) => Promise<string | ToolResult>
   /** The tool does what is hard to undo, such as deleting a page, so the user must agree each time before it runs. */
   needsConfirmation?: boolean
   /**
@@ -119,8 +138,17 @@ export type AgentUpdate =
   /**
    * `result`: what the model got back, the error message when the tool failed. `code`: the code of
    * the error the tool failed with, when it has one (a Notion error's, such as `no_access`).
+   * `details`: what the tool said about the call, when it worked and said anything (see ToolDetails).
    */
-  | { type: 'tool_end'; id: string; name: string; status: ToolStatus; result: string; code?: string }
+  | {
+      type: 'tool_end'
+      id: string
+      name: string
+      status: ToolStatus
+      result: string
+      code?: string
+      details?: ToolDetails
+    }
 
 /** Tokens a question used. `input` counts all of the input, `cached` the part of it read from the service's cache. */
 const TokenUsage = z.object({ input: z.number(), output: z.number(), cached: z.number() })
@@ -197,8 +225,18 @@ export const HistoryMessage = z.discriminatedUnion('role', [
     readOnly: z.literal(true).optional(),
   }),
   z.object({ role: z.literal('assistant'), parts: z.array(AssistantPart) }),
-  /** The result of one tool call. `id` matches the call in the assistant message before it. */
-  z.object({ role: z.literal('tool'), id: z.string(), name: z.string(), status: ToolStatus, result: z.string() }),
+  /**
+   * The result of one tool call. `id` matches the call in the assistant message before it.
+   * `details`: what the tool said about the call for the side panel (see ToolDetails).
+   */
+  z.object({
+    role: z.literal('tool'),
+    id: z.string(),
+    name: z.string(),
+    status: ToolStatus,
+    result: z.string(),
+    details: ToolDetails.optional(),
+  }),
 ])
 export type HistoryMessage = z.infer<typeof HistoryMessage>
 
