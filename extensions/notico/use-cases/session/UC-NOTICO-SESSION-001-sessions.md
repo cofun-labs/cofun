@@ -12,7 +12,7 @@ Each browser window has its own side panel, and the same session can be open in 
 
 A saved session the panel can no longer read, such as one kept in a form an earlier version wrote and this one does not understand, never stops the user from using the others. It stays in the list, marked as unreadable, and the only thing the user can do with it is delete it. A session whose conversation can't be read is not opened and nothing of it is sent to the AI: the user is told it can't be opened and is offered to delete it.
 
-Sessions are kept on the user's device and do not follow them to other devices. They stay there after the user signs out, so they can pick up again after signing back in. The service never stores them; it only sees the conversation the AI needs to answer the current question (see UC-NOTICO-AGENT-001 and UC-COFUN-CHAT-002).
+Sessions are kept on the user's device and do not follow them to other devices. They stay there after the user signs out, so they can pick up again after signing back in. The service never stores them; it only sees the conversation the AI needs to answer the current question (see UC-NOTICO-AGENT-001).
 
 Key constraints:
 

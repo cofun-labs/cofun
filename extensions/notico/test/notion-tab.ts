@@ -3,6 +3,7 @@
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { expect } from 'vitest'
+import type { ToolResult } from '../src/agent'
 import { NotionError } from '../src/notion/api'
 import { notionCooldown } from '../src/notion/tab'
 
@@ -15,6 +16,9 @@ export const BLOCKS = [
   '1b1b1b1b-0000-4000-8000-000000000013',
 ]
 export const PAGE_URL = `https://app.notion.com/p/Fixture-page-${PAGE.replace(/-/g, '')}`
+
+/** The text a tool's run gave the model, without its details. */
+export const resultText = (result: string | ToolResult): string => (typeof result === 'string' ? result : result.text)
 
 // As a path, not a URL: in a DOM test environment the global URL is the DOM's, which node:fs does not take.
 const FIXTURES = fileURLToPath(import.meta.resolve('./fixtures/notion'))

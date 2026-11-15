@@ -6,7 +6,7 @@ import { queryDatabase } from '../src/tools/database'
 import { forgetReads } from '../src/tools/memory'
 import { readPage } from '../src/tools/read'
 import { UPDATE_MAX, createPage, updatePages } from '../src/tools/write'
-import { FakeNotionTab, FakeWorkspace, PAGE, PAGE_URL, SPACE, USER, restoreGlobals } from './notion-tab'
+import { FakeNotionTab, FakeWorkspace, PAGE, PAGE_URL, SPACE, USER, restoreGlobals, resultText } from './notion-tab'
 
 afterEach(() => {
   restoreGlobals()
@@ -93,7 +93,7 @@ async function query(tab: FakeNotionTab, rows: ReturnType<typeof rowRecord>[]) {
       ),
     },
   })
-  return (await queryDatabase.run({})) as string
+  return resultText(await queryDatabase.run({}))
 }
 /** The cells of a row as query_database's table shows them, by column name. */
 function shownCells(table: string, id: string): Record<string, string> {
@@ -107,7 +107,7 @@ function shownCells(table: string, id: string): Record<string, string> {
   const row = cells(lines.find((l) => l.includes(hex(id)))!)
   return Object.fromEntries(header.map((name, n) => [name, row[n]]))
 }
-const update = async (pages: unknown) => (await updatePages.run({ pages })) as string
+const update = async (pages: unknown) => resultText(await updatePages.run({ pages }))
 const props = (ws: FakeWorkspace, n: number) => ws.records.get(row(n))!.properties
 const prop = (ws: FakeWorkspace, n: number, key: string) => (props(ws, n) as Record<string, unknown>)[key]
 
@@ -196,16 +196,17 @@ describe('UC-NOTICO-NOTION-008 change properties and rows', () => {
   it('[UC-NOTICO-NOTION-008-S07] adds a row to a database with its properties and content', async () => {
     const ws = workspace()
     open(ws)
-    const result = (await createPage.run({
+    const done = await createPage.run({
       title: 'Renew domain',
       parent: hex(DB),
       properties: { Status: 'Not started', Due: '2026-12-01' },
       markdown: '- Check the price',
-    })) as string
+    })
+    const result = resultText(done)
     const created = /\^([0-9a-f]{32})/.exec(result)![1]
     expect(result.split('\n')[0]).toBe(`Added the row “Renew domain” ^${created} to the database ^${hex(DB)}.`)
-    // The side panel counts what the call touched from this result.
-    expect(createPage.touched({}, result)).toEqual({ changed: [created] })
+    // The side panel counts the new row as changed.
+    expect(done).toMatchObject({ details: { changed: [created] } })
     const record = [...ws.records.values()].find((r) => hex(r.id) === created)!
     expect(record).toMatchObject({
       type: 'page',
@@ -278,11 +279,13 @@ describe('update_pages details', () => {
   it('[UC-NOTICO-NOTION-008-S10] stores the Markdown of a new row’s title and text', async () => {
     const ws = mentionable()
     open(ws)
-    const result = (await createPage.run({
-      title: '**Renew** the domain with @[Ann]',
-      parent: hex(DB),
-      properties: { Notes: `Ask @[ann] about [Spec](${hex(SPEC)})`, Link: 'https://x.example/a_b_c' },
-    })) as string
+    const result = resultText(
+      await createPage.run({
+        title: '**Renew** the domain with @[Ann]',
+        parent: hex(DB),
+        properties: { Notes: `Ask @[ann] about [Spec](${hex(SPEC)})`, Link: 'https://x.example/a_b_c' },
+      }),
+    )
     const created = /\^([0-9a-f]{32})/.exec(result)![1]
     expect(result.split('\n')[0]).toBe(
       `Added the row “Renew the domain with Ann” ^${created} to the database ^${hex(DB)}.`,
@@ -589,7 +592,7 @@ describe('update_pages details', () => {
     expect((await updatePages.preview!({ pages }))?.split('\n')[2]).toBe('    Notes: One two three <br> (was empty)')
     await update(pages)
     expect(prop(ws, 1, 'g:g')).toEqual([['One\ntwo\n'], ['three', [['b']]], ['\n<br>']])
-    const result = (await createPage.run({ title: 'New', parent: hex(DB), properties: { Notes: 'a<br>b' } })) as string
+    const result = resultText(await createPage.run({ title: 'New', parent: hex(DB), properties: { Notes: 'a<br>b' } }))
     const created = /\^([0-9a-f]{32})/.exec(result)![1]
     expect([...ws.records.values()].find((r) => hex(r.id) === created)!.properties).toEqual({
       title: [['New']],
@@ -645,7 +648,7 @@ describe('update_pages details', () => {
     open(ws)
     const title = [['*Draft* plan [v2] with '], ['‣', [['u', ANN]]], [' and @[name] syntax']]
     ws.edit(PAGE, { properties: { title } })
-    const shown = /^Page: (.*) \^[0-9a-f]{32}$/.exec(((await readPage.run({})) as string).split('\n')[1])![1]
+    const shown = /^Page: (.*) \^[0-9a-f]{32}$/.exec(resultText(await readPage.run({})).split('\n')[1])![1]
     expect(shown).toBe('\\*Draft\\* plan \\[v2\\] with @[Ann] and @\\[name\\] syntax')
     await update([{ page: hex(PAGE), title: shown, icon: '📝' }])
     expect(ws.records.get(PAGE)!.properties).toEqual({ title })

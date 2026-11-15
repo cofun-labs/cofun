@@ -72,7 +72,7 @@ function pageTool(page = { title: 'Q4 Roadmap', url: 'https://www.notion.so/Q4-R
     parameters: { type: 'object', properties: {}, additionalProperties: false },
     run: async (args) => {
       runs.push(args)
-      return page
+      return JSON.stringify(page)
     },
   }
   return { tool, runs }

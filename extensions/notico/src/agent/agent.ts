@@ -30,6 +30,7 @@ import type {
   ToolSpec,
   ToolStatus,
 } from './types'
+import { ToolDetails } from './types'
 import { checkout, hostedProvider, readOwn } from './worker'
 
 const DEFAULT_MAX_STEPS = 10
@@ -476,6 +477,7 @@ export class CopilotAgent {
             name: message.toolName,
             status: this.statuses.get(message) ?? (message.isError ? 'failed' : 'done'),
             result: textOf(message.content),
+            ...withDetails(message.details),
           },
         ]
       default:
@@ -517,6 +519,7 @@ export class CopilotAgent {
         toolCallId: m.id,
         toolName: m.name,
         content: [{ type: 'text', text: m.result }],
+        ...(m.details && { details: m.details }),
         isError: m.status !== 'done',
         timestamp,
       }
@@ -681,6 +684,7 @@ function toUpdate(event: AgentEvent): AgentUpdate | undefined {
         name: event.toolName,
         status: event.isError ? 'failed' : 'done',
         result: resultText(event.result),
+        ...withDetails(event.result?.details),
       }
     default:
       return undefined
@@ -688,6 +692,15 @@ function toUpdate(event: AgentEvent): AgentUpdate | undefined {
 }
 
 const ZERO_COST = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }
+
+/**
+ * A tool result's details (see ToolDetails), as `{ details }` to spread, or nothing when it has none.
+ * pi hands them back untyped, so they are parsed; details that don't parse are left out.
+ */
+function withDetails(value: unknown): { details?: ToolDetails } {
+  const details = ToolDetails.safeParse(value)
+  return details.success ? { details: details.data } : {}
+}
 
 /** The text a tool result gave the model. */
 function resultText(result: { content?: { type: string; text?: string }[] } | undefined): string {

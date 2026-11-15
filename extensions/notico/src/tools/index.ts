@@ -2,7 +2,7 @@
 // them (find.ts), writing them (write.ts), databases (database.ts), organizing pages (organize.ts),
 // comments (comments.ts), and the current tab (current.ts). This module lists them, and says for
 // the side panel what a call did.
-import type { HistoryMessage } from '../agent'
+import type { HistoryMessage, ToolDetails } from '../agent'
 import { pageLink } from '../notion/hosts'
 import type { Action, Tool } from '../tool'
 import { addComment, readComments } from './comments'
@@ -12,7 +12,7 @@ import { listPages, searchPages } from './find'
 import { duplicatePage, movePage, trashPage } from './organize'
 import { getSelection, readPage } from './read'
 import type { OpenPage } from './current'
-import { NONE, verb } from './shared'
+import { verb } from './shared'
 import { createPage, editPage, updatePages } from './write'
 
 export { carryPages, currentNotionPage, openNotionPages, type OpenPage } from './current'
@@ -41,25 +41,23 @@ export const TOOLS: Tool[] = [
 ]
 
 /** A call in the user's words, also one from a saved session whose tool is gone. */
-export function describeCall(name: string, args: unknown, result?: string): Action {
+export function describeCall(name: string, args: unknown, details?: ToolDetails): Action {
   return (
-    TOOLS.find((t) => t.name === name)?.describe(args, result) ?? { verb: verb('use', 'using', 'used'), what: 'a tool' }
+    TOOLS.find((t) => t.name === name)?.describe(args, details) ?? {
+      verb: verb('use', 'using', 'used'),
+      what: 'a tool',
+    }
   )
 }
 
 /** What a question's calls that worked read and changed: the distinct pages and databases of each. */
-export function touchedBy(calls: { name: string; args: unknown; result: string }[]): {
+export function touchedBy(calls: { details?: ToolDetails }[]): {
   read: number
   /** The ids of the pages and databases changed, each once. */
   changed: string[]
 } {
-  const read = new Set<string>()
-  const changed = new Set<string>()
-  for (const call of calls) {
-    const t = TOOLS.find((tool) => tool.name === call.name)?.touched(call.args, call.result) ?? NONE
-    for (const id of t.read ?? []) read.add(id)
-    for (const id of t.changed ?? []) changed.add(id)
-  }
+  const read = new Set(calls.flatMap((call) => call.details?.read ?? []))
+  const changed = new Set(calls.flatMap((call) => call.details?.changed ?? []))
   return { read: read.size, changed: [...changed] }
 }
 
@@ -77,18 +75,12 @@ const NAMES_TOUCHED_PAGE = new Set(['read_page', 'query_database', 'edit_page', 
  * host links are made on.
  */
 export function pagesIn(messages: HistoryMessage[], origin: string): OpenPage[] {
-  const calls = new Map<string, unknown>()
   const pages: OpenPage[] = []
   for (const m of messages) {
     if (m.role === 'user') pages.push(...(m.pages ?? []))
-    else if (m.role === 'assistant') {
-      for (const part of m.parts) if (part.type === 'tool_call') calls.set(part.id, part.args)
-    } else if (m.status === 'done' && NAMES_TOUCHED_PAGE.has(m.name)) {
-      const tool = TOOLS.find((t) => t.name === m.name)
-      const args = calls.get(m.id)
-      const touched = tool?.touched(args, m.result) ?? NONE
-      const ids = [...new Set([...(touched.read ?? []), ...(touched.changed ?? [])])]
-      const title = ids.length === 1 ? tool?.describe(args, m.result).name : undefined
+    else if (m.role === 'tool' && m.status === 'done' && NAMES_TOUCHED_PAGE.has(m.name)) {
+      const ids = [...new Set([...(m.details?.read ?? []), ...(m.details?.changed ?? [])])]
+      const title = ids.length === 1 ? m.details?.name : undefined
       if (title) pages.push({ title, url: pageLink(origin, ids[0]) })
     }
   }

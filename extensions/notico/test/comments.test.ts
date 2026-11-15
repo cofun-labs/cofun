@@ -7,7 +7,17 @@ import { COMMENT_CHARS } from '../src/notion/comments'
 import { addComment, readComments } from '../src/tools/comments'
 import { readPage } from '../src/tools/read'
 import { DATA_LINE, PART_CHARS } from '../src/tools/shared'
-import { FakeNotionTab, FakeWorkspace, PAGE, PAGE_URL, SPACE, USER, pageTab, restoreGlobals } from './notion-tab'
+import {
+  FakeNotionTab,
+  FakeWorkspace,
+  PAGE,
+  PAGE_URL,
+  SPACE,
+  USER,
+  pageTab,
+  restoreGlobals,
+  resultText,
+} from './notion-tab'
 
 afterEach(restoreGlobals)
 
@@ -76,8 +86,8 @@ function open(ws: FakeWorkspace, url = PAGE_URL): FakeNotionTab {
   return tab.install()
 }
 
-const read = async (args: Rec = {}) => (await readComments.run(args)) as string
-const add = async (args: Rec) => (await addComment.run({ page: hex(PAGE), ...args })) as string
+const read = async (args: Rec = {}) => resultText(await readComments.run(args))
+const add = async (args: Rec) => resultText(await addComment.run({ page: hex(PAGE), ...args }))
 
 async function failure(promise: Promise<unknown>): Promise<Error> {
   const err = await promise.then(
@@ -182,11 +192,10 @@ describe('UC-NOTICO-NOTION-009 read and add comments', () => {
   it('[UC-NOTICO-NOTION-009-S04] adds a comment on the page itself, without reading it first', async () => {
     const ws = workspace()
     open(ws)
-    expect(await add({ text: 'Nice page' })).toBe(`Added a comment on the page of "Fixture page" ^${hex(PAGE)}.`)
-    // The side panel counts what the call touched from this result.
-    expect(addComment.touched({}, `Added a comment on the page of "Fixture page" ^${hex(PAGE)}.`)).toEqual({
-      changed: [hex(PAGE)],
-    })
+    const added = await addComment.run({ page: hex(PAGE), text: 'Nice page' })
+    expect(resultText(added)).toBe(`Added a comment on the page of "Fixture page" ^${hex(PAGE)}.`)
+    // The side panel names the page and counts it as changed.
+    expect(added).toMatchObject({ details: { name: 'Fixture page', changed: [hex(PAGE)] } })
     const [thread] = ws.table('discussion')
     expect(thread.parent_id).toBe(PAGE)
     expect(ws.records.get(PAGE)!.discussions).toEqual([thread.id])
@@ -248,11 +257,10 @@ describe('read_comments', () => {
     const ws = workspace([{ on: id(3), n: 100 }])
     comment(ws, 100, 200, [['On the child']])
     open(ws)
-    expect(await read()).toBe(`${DATA_LINE}\nComments on the page "Fixture page" ^${hex(PAGE)}: none.`)
-    // The side panel counts what the call touched from this result.
-    expect(readComments.touched({}, `Comments on the page "Fixture page" ^${hex(PAGE)}: none.`)).toEqual({
-      read: [hex(PAGE)],
-    })
+    const read = await readComments.run({})
+    expect(resultText(read)).toBe(`${DATA_LINE}\nComments on the page "Fixture page" ^${hex(PAGE)}: none.`)
+    // The side panel counts the page as read.
+    expect(read).toMatchObject({ details: { read: [hex(PAGE)] } })
   })
 
   it('[UC-NOTICO-NOTION-009-S01] looks up discussions, comments, and authors the page load did not bring', async () => {
@@ -309,7 +317,9 @@ describe('read_page and comments', () => {
     comment(ws, 100, 200, [['One']])
     comment(ws, 101, 201, [['Two']])
     open(ws)
-    expect(await readPage.run({})).toContain('This page has 2 comment threads: read them with read_comments.')
+    expect(resultText(await readPage.run({}))).toContain(
+      'This page has 2 comment threads: read them with read_comments.',
+    )
   })
 
   it('[UC-NOTICO-NOTION-009-S01] counts only threads that read_comments shows', async () => {
@@ -320,7 +330,7 @@ describe('read_page and comments', () => {
     comment(ws, 100, 200, [['Gone']], { alive: false })
     comment(ws, 101, 201, [['Kept']])
     open(ws)
-    expect(await readPage.run({})).toContain('This page has 1 comment thread: read it with read_comments.')
+    expect(resultText(await readPage.run({}))).toContain('This page has 1 comment thread: read it with read_comments.')
   })
 })
 

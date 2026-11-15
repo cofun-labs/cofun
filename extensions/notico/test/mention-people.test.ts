@@ -7,7 +7,17 @@ import { addComment } from '../src/tools/comments'
 import { forgetReads } from '../src/tools/memory'
 import { readPage } from '../src/tools/read'
 import { createPage, editPage } from '../src/tools/write'
-import { FakeNotionTab, FakeWorkspace, PAGE, PAGE_URL, SPACE, USER, notionError, restoreGlobals } from './notion-tab'
+import {
+  FakeNotionTab,
+  FakeWorkspace,
+  PAGE,
+  PAGE_URL,
+  SPACE,
+  USER,
+  notionError,
+  restoreGlobals,
+  resultText,
+} from './notion-tab'
 
 // Each test is one question, as the side panel starts one per message.
 beforeEach(() => {
@@ -61,10 +71,10 @@ function open(ws: FakeWorkspace): FakeNotionTab {
 
 const endpoints = (tab: FakeNotionTab, from = 0) => tab.sent.slice(from).map((r) => r.url.split('/api/v3/')[1])
 const read = async () => {
-  const result = (await readPage.run({})) as string
+  const result = resultText(await readPage.run({}))
   return result.slice(result.indexOf('\n\n') + 2)
 }
-const edit = async (edits: Rec[]) => (await editPage.run({ page: hex(PAGE), edits })) as string
+const edit = async (edits: Rec[]) => resultText(await editPage.run({ page: hex(PAGE), edits }))
 const title = (ws: FakeWorkspace, blockId: string) => (ws.records.get(blockId)!.properties as Rec).title
 
 describe('UC-NOTICO-NOTION-011 mention people', () => {
@@ -164,11 +174,13 @@ describe('UC-NOTICO-NOTION-011 mention people', () => {
   it('[UC-NOTICO-NOTION-011-S03] mentions a member in a new page', async () => {
     const ws = workspace([block(1, 'text', [['Intro']])])
     open(ws)
-    const result = (await createPage.run({
-      title: 'Follow-ups',
-      parent: hex(PAGE),
-      markdown: '- [ ] @[Kim Lee] sends the notes',
-    })) as string
+    const result = resultText(
+      await createPage.run({
+        title: 'Follow-ups',
+        parent: hex(PAGE),
+        markdown: '- [ ] @[Kim Lee] sends the notes',
+      }),
+    )
     const pageId = /\^([0-9a-f]{32})/.exec(result)![1]
     const created = [...ws.records.values()].find((r) => hex(r.id) === pageId)!
     const [first] = ws.content(created.id)

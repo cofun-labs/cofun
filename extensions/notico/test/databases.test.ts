@@ -6,7 +6,7 @@ import { QUERY_LOAD, createDatabase, queryDatabase, updateDatabaseSchema } from 
 import { forgetReads } from '../src/tools/memory'
 import { createPage } from '../src/tools/write'
 import { newSchema } from '../src/notion/schema'
-import { FakeNotionTab, FakeWorkspace, PAGE, PAGE_URL, SPACE, USER, restoreGlobals } from './notion-tab'
+import { FakeNotionTab, FakeWorkspace, PAGE, PAGE_URL, SPACE, USER, restoreGlobals, resultText } from './notion-tab'
 
 afterEach(() => {
   restoreGlobals()
@@ -119,13 +119,13 @@ const named = (schema: Record<string, Def>, name: string) =>
   Object.entries(schema).find(([, d]) => d.name === name) ?? []
 const values = (ws: FakeWorkspace, n: number) => ws.records.get(row(n))!.properties
 const change = async (changes: unknown, database: string | undefined = hex(DB)) =>
-  (await updateDatabaseSchema.run({ ...(database ? { database } : {}), changes })) as string
+  resultText(await updateDatabaseSchema.run({ ...(database ? { database } : {}), changes }))
 
 describe('UC-NOTICO-NOTION-012 create and change databases', () => {
   it('[UC-NOTICO-NOTION-012-S01] creates a database with its properties and options at the end of the page', async () => {
     const ws = workspace()
     open(ws)
-    const result = (await createDatabase.run({
+    const created = await createDatabase.run({
       parent: PAGE_URL,
       title: 'Content calendar',
       title_property: 'Post',
@@ -136,7 +136,8 @@ describe('UC-NOTICO-NOTION-012 create and change databases', () => {
         { name: 'Status', type: 'status' },
         { name: 'Words', type: 'number' },
       ],
-    })) as string
+    })
+    const result = resultText(created)
     expect(ws.transactions).toHaveLength(1)
     const [text, dbId] = ws.records.get(PAGE)!.content as string[]
     expect(text).toBe(TEXT)
@@ -165,8 +166,8 @@ describe('UC-NOTICO-NOTION-012 create and change databases', () => {
         `URL: https://app.notion.com/p/${hex(dbId)}`,
       ].join('\n'),
     )
-    // The side panel counts what the call touched from this result.
-    expect(createDatabase.touched({}, String(result))).toEqual({ changed: [hex(dbId)] })
+    // The side panel counts the new database as changed.
+    expect(created).toMatchObject({ details: { changed: [hex(dbId)] } })
 
     // It is a database the other tools can use: a row goes in with its options.
     await createPage.run({ parent: hex(dbId), title: 'Launch post', properties: { Stage: 'Draft' } })
@@ -225,14 +226,18 @@ describe('UC-NOTICO-NOTION-012 create and change databases', () => {
     const ws = workspace()
     open(ws)
     const before = [1, 2, 3].map((n) => structuredClone(values(ws, n)))
-    const result = await change([
-      { action: 'rename_property', property: 'stage', to: 'Phase' },
-      { action: 'add_options', property: 'Phase', options: ['Review', 'Published'] },
-      { action: 'add_property', property: 'Owner', type: 'person' },
-      { action: 'add_property', property: 'Channel', type: 'select', options: ['Blog'] },
-      { action: 'add_options', property: 'Tags', options: ['Design'] },
-      { action: 'rename_property', property: 'Task', to: 'Title' },
-    ])
+    const changed = await updateDatabaseSchema.run({
+      database: hex(DB),
+      changes: [
+        { action: 'rename_property', property: 'stage', to: 'Phase' },
+        { action: 'add_options', property: 'Phase', options: ['Review', 'Published'] },
+        { action: 'add_property', property: 'Owner', type: 'person' },
+        { action: 'add_property', property: 'Channel', type: 'select', options: ['Blog'] },
+        { action: 'add_options', property: 'Tags', options: ['Design'] },
+        { action: 'rename_property', property: 'Task', to: 'Title' },
+      ],
+    })
+    const result = resultText(changed)
     expect(ws.transactions).toHaveLength(1)
     const schema = schemaOf(ws)
     expect(schema['a:a']).toMatchObject({ name: 'Phase', type: 'select' })
@@ -257,9 +262,8 @@ describe('UC-NOTICO-NOTION-012 create and change databases', () => {
           'Owner (person), Channel (select)',
       ].join('\n'),
     )
-    // The side panel names the database from this result.
-    expect(updateDatabaseSchema.describe({}, String(result))).toMatchObject({ name: 'Content' })
-    expect(updateDatabaseSchema.touched({}, String(result))).toEqual({ changed: [hex(DB)] })
+    // The side panel names the database and counts it as changed.
+    expect(changed).toMatchObject({ details: { name: 'Content', changed: [hex(DB)] } })
   })
 
   it('[UC-NOTICO-NOTION-012-S02] adds a property to the open database without asking the user first', async () => {
@@ -295,7 +299,7 @@ describe('UC-NOTICO-NOTION-012 create and change databases', () => {
     expect(result).toContain('Rows renamed with their options: 3.')
 
     // query_database shows the new names.
-    const table = (await queryDatabase.run({ database: hex(DB) })) as string
+    const table = resultText(await queryDatabase.run({ database: hex(DB) }))
     expect(table).toContain('| Write post | Writing |')
   })
 

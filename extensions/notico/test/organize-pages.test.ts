@@ -5,7 +5,17 @@ import { forgetReads } from '../src/tools/memory'
 import { duplicatePage, movePage, trashPage } from '../src/tools/organize'
 import { readPage } from '../src/tools/read'
 import { editPage } from '../src/tools/write'
-import { FakeNotionTab, FakeWorkspace, PAGE, PAGE_URL, SPACE, USER, notionError, restoreGlobals } from './notion-tab'
+import {
+  FakeNotionTab,
+  FakeWorkspace,
+  PAGE,
+  PAGE_URL,
+  SPACE,
+  USER,
+  notionError,
+  restoreGlobals,
+  resultText,
+} from './notion-tab'
 import { DUPLICATE_POLLING, LIMITED_STOP, UNEXPECTED_STOP } from '../src/notion/api'
 
 // The checks on a copy wait on a fake clock, which the tests move (see `copying`): nothing waits for real time.
@@ -114,7 +124,7 @@ describe('UC-NOTICO-NOTION-010 reorganize pages', () => {
     const ws = workspace()
     open(ws)
     expect(movePage.needsConfirmation).toBeFalsy()
-    const result = await movePage.run({ pages: [hex(PLAN)], to: ARCHIVE })
+    const result = resultText(await movePage.run({ pages: [hex(PLAN)], to: ARCHIVE }))
     expect(result).toBe(`Moved 1 page to the end of ^${hex(ARCHIVE)}: ^${hex(PLAN)}.`)
     expect(contentOf(ws, ARCHIVE)).toEqual([PLAN])
     expect(contentOf(ws, PROJECTS)).toEqual([NOTE])
@@ -171,17 +181,16 @@ describe('UC-NOTICO-NOTION-010 reorganize pages', () => {
     const ws = workspace()
     open(ws)
     expect(duplicatePage.needsConfirmation).toBeFalsy()
-    const result = (await copying(duplicatePage.run({ page: hex(PLAN) }))) as string
+    const done = await copying(duplicatePage.run({ page: hex(PLAN) }))
+    const result = resultText(done)
     const [, copy] = contentOf(ws, PROJECTS)
     expect(contentOf(ws, PROJECTS)).toEqual([PLAN, copy, NOTE])
     expect(result).toBe(
       `Duplicated "Launch plan" ^${hex(PLAN)} as ^${hex(copy)}, right after it in ^${hex(PROJECTS)}.\n` +
         `URL: https://app.notion.com/p/${hex(copy)}`,
     )
-    // The side panel counts what the call touched from this result.
-    expect(duplicatePage.touched({}, result)).toEqual({ changed: [hex(copy)] })
-    // And names the page from it.
-    expect(duplicatePage.describe({ page: hex(PLAN) }, result)).toMatchObject({ name: 'Launch plan' })
+    // The side panel names the page duplicated, and counts the copy as changed.
+    expect(done).toMatchObject({ details: { name: 'Launch plan', changed: [hex(copy)] } })
     expect(titleOf(ws, copy)).toBe('Launch plan (1)')
     // The copy has its own blocks, with the same content, child pages included.
     const [text, draft] = contentOf(ws, copy)
@@ -212,7 +221,7 @@ describe('UC-NOTICO-NOTION-010 reorganize pages', () => {
   it('[UC-NOTICO-NOTION-010-S02] puts the pages in the trash, out of their parents, where they can be restored', async () => {
     const ws = workspace()
     open(ws)
-    const result = await trashPage.run({ pages: [hex(NOTE), DB] })
+    const result = resultText(await trashPage.run({ pages: [hex(NOTE), DB] }))
     expect(result).toBe(
       `Moved 2 pages to Notion's trash: ^${hex(NOTE)}, ^${hex(DB)}.\nThey can be restored from Notion's trash.`,
     )
@@ -283,7 +292,7 @@ describe('moving pages', () => {
   it('[@no-uc:data] moves a page inside another moving page along with it, where it is', async () => {
     const ws = workspace()
     open(ws)
-    const result = await movePage.run({ pages: [DRAFT, PROJECTS], to: ARCHIVE })
+    const result = resultText(await movePage.run({ pages: [DRAFT, PROJECTS], to: ARCHIVE }))
     expect(result).toBe(
       `Moved 1 page to the end of ^${hex(ARCHIVE)}: ^${hex(PROJECTS)}.\n^${hex(DRAFT)} went along inside ^${hex(PROJECTS)}.`,
     )
@@ -400,7 +409,7 @@ describe('trashing pages', () => {
   it('[@no-uc:data] leaves a page inside another page being trashed where it is, so restoring brings both back', async () => {
     const ws = workspace()
     open(ws)
-    const result = await trashPage.run({ pages: [PLAN, PROJECTS, DRAFT] })
+    const result = resultText(await trashPage.run({ pages: [PLAN, PROJECTS, DRAFT] }))
     expect(result).toContain(`^${hex(PLAN)} went inside ^${hex(PROJECTS)}.`)
     expect(result).toContain(`^${hex(DRAFT)} went inside ^${hex(PROJECTS)}.`)
     expect(contentOf(ws, PAGE)).toEqual([ARCHIVE, DB])
@@ -568,7 +577,7 @@ describe('when Notion turns requests away', () => {
   it('[@no-uc:data] goes on when the call after trashing fails in a known way: the pages are trashed', async () => {
     const ws = workspace()
     open(ws).respond('deleteContentRecords', 403, { name: 'PermissionError', message: 'No' })
-    expect(await trashPage.run({ pages: [NOTE] })).toContain("Moved 1 page to Notion's trash")
+    expect(resultText(await trashPage.run({ pages: [NOTE] }))).toContain("Moved 1 page to Notion's trash")
     expect(ws.records.get(NOTE)!.alive).toBe(false)
   })
 

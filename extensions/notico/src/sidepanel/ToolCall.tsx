@@ -1,5 +1,5 @@
 import { memo } from 'react'
-import type { ToolStatus } from '../agent'
+import type { ToolDetails, ToolStatus } from '../agent'
 import type { Action } from '../tool'
 import { describeCall } from '../tools'
 import { Icon, type IconName } from './icons'
@@ -13,6 +13,8 @@ export interface ShownTool {
   status: 'running' | 'confirm' | ToolStatus
   /** What the model got back, or the error. Empty while running. */
   result: string
+  /** What the tool said about the call for the panel, once it ended (see ToolDetails). */
+  details?: ToolDetails
   /** What the call changes, in words, as the tool saw things before it ran. */
   preview?: string
   /** Set while `confirm` when the call is already running and asks this instead of whether to run. */
@@ -99,8 +101,8 @@ export const ToolCall = memo(function ToolCall({
   /** Set while the call waits for the user's OK; called with their answer. */
   onAnswer?: (allow: boolean) => void
 }) {
-  // A name is read from the result only once the call worked: an error says nothing about the thing.
-  const action = describeCall(tool.name, tool.args, tool.status === 'done' ? tool.result : undefined)
+  // A name comes from the details only once the call worked: an error says nothing about the thing.
+  const action = describeCall(tool.name, tool.args, tool.status === 'done' ? tool.details : undefined)
   const args = pretty(tool.args)
   const asking = tool.status === 'confirm' && onAnswer
   return (
