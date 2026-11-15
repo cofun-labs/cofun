@@ -180,8 +180,12 @@ function pageNamed(page: OpenPage): string {
   return `${JSON.stringify(title)}${page.database ? ' (a database)' : ''}, ${url}`
 }
 
-/** A URL as a note names it: a shared link's query must not close the note and fake another one. */
-const noteUrl = (url: string) => url.replaceAll('[', '%5B').replaceAll(']', '%5D')
+/**
+ * A URL as a note names it: a shared link's query must not close the note and fake another one,
+ * and an address that keeps a page's state (a playground's, say) may run to many thousand
+ * characters, which every question would carry and the model would have to copy back for read_tab.
+ */
+const noteUrl = (url: string) => url.replaceAll('[', '%5B').replaceAll(']', '%5D').slice(0, TAB_URL_CHARS)
 
 const TITLE_CHARS = 200
 
@@ -307,10 +311,17 @@ function pageRead(page: TabPage, header: string, host: string) {
   return { text: asData(lines), details: { name: page.title.trim() || host } }
 }
 
-/** The tab of the side panel's window that shows exactly `url`, if one does. */
+/**
+ * The tab of the side panel's window that shows the page at `url`, if one does: the same address,
+ * but for the fragment, which a page may change as it is scrolled without showing another page.
+ */
 async function tabShowing(url: string): Promise<chrome.tabs.Tab | undefined> {
-  return (await chrome.tabs.query({ currentWindow: true })).find((tab) => tab.id !== undefined && tab.url === url)
+  return (await chrome.tabs.query({ currentWindow: true })).find(
+    (tab) => tab.id !== undefined && !!tab.url && samePage(tab.url, url),
+  )
 }
+
+const samePage = (a: string, b: string) => a.split('#')[0] === b.split('#')[0]
 
 const WHERE: TabWhere = 'the tab'
 
@@ -347,7 +358,8 @@ export const readTab = defineTool({
     const page = await readPage(tab.id, site.origin, Math.min(TAB_TEXT_CHARS, left), WHERE)
     if ('reason' in page) throw new Error(page.reason)
     // Only the page the user added: not another page of the same site the tab went to while it was read.
-    if (page.url !== url) throw new Error('The tab went to another page while it was read, so nothing was read.')
+    if (!samePage(page.url, url))
+      throw new Error('The tab went to another page while it was read, so nothing was read.')
     const host = new URL(site.origin).host
     return pageRead(page, `Page in a tab the user added, on ${host}`, host)
   },

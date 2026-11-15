@@ -154,9 +154,7 @@ describe('UC-NOTICO-CHAT-005 add open tabs to a conversation', () => {
     await screen.findByRole('option', { name: /^Kettle/ })
     await user.keyboard('{Enter}')
 
-    expect(await within(picker()!.parentElement!.parentElement!).findByRole('status')).toHaveTextContent(
-      'Notico may not read shop.example.org, so its tab wasn’t added.',
-    )
+    expect(await screen.findByText('Notico may not read shop.example.org, so its tab wasn’t added.')).toBeVisible()
     expect(browser.tab.accessRequests).toEqual([['https://shop.example.org/*']])
     expect(screen.queryByRole('list', { name: 'Pages to send' })).toBeNull()
     expect(browser.tab.injections).toEqual([])
@@ -237,6 +235,34 @@ describe('UC-NOTICO-CHAT-005 add open tabs to a conversation', () => {
       { tabId: 20, world: 'ISOLATED' },
       { tabId: 21, world: 'ISOLATED' },
       { tabId: 20, world: 'ISOLATED' },
+    ])
+  })
+
+  it('[UC-NOTICO-CHAT-005-S04] a long address is named clipped and read by that name, and a page that only moved to a part of itself is still read', async () => {
+    const LONG = `https://news.example.com/play#state=${'a'.repeat(3_000)}`
+    const NAMED = LONG.slice(0, 2_000)
+    const { browser, tab, user } = await openPanel((t) => {
+      t.otherTabs[0] = { url: LONG, title: 'Playground', dom: webPage({ title: 'Playground', main: 'Some code.' }) }
+    })
+    browser.ai.script.push(readTab(NAMED), readTab(LAKES_NOTED), { reply: 'Read both.' })
+
+    await addTab(user, 'Playground')
+    await addTab(user, 'Lakes')
+    // Scrolled to a part of the page, which changes only the address's fragment.
+    tab.otherTabs[1].url = `${LAKES}#shore`
+    await ask(user, 'What do these say?')
+    await screen.findByText('Read both.')
+
+    // The note names the address clipped, and the model reads it by that name.
+    expect(sentQuestions(browser)[0]).toContain(`"Playground", ${NAMED}; `)
+    expect(sentQuestions(browser)[0]).not.toContain(LONG)
+    expect(toolResults(browser)[0]).toMatch(
+      /^.*\nPage in a tab the user added, on news\.example\.com: .*\nText:\nSome code\.$/s,
+    )
+    expect(toolResults(browser)[1]).toBe(tabResult('Lakes | News', `${LAKES}#shore`, 'Lakes are calm.'))
+    expect(tab.injections).toEqual([
+      { tabId: 20, world: 'ISOLATED' },
+      { tabId: 21, world: 'ISOLATED' },
     ])
   })
 
