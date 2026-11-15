@@ -57,9 +57,9 @@ Update `docs/architecture.md` only when a change adds, moves, or removes a modul
    - A fix after the full review is checked by the next on-push review; run the full review again only if a fix changes the PR's approach.
    - A review that was dispatched, or a review workflow that was triggered, is not evidence that a review finished or found nothing: read the review that was submitted.
 
-8. **Handle PR comments.** Findings are **Blocking**, **User's call**, **Suggestion**, or **Follow-up**, as [docs/review.md](docs/review.md#how-to-report-a-finding) defines them. A change the user or a maintainer explicitly asks for is always blocking; comments from anyone else, bots and sub-agents included, are judged by those definitions.
+8. **Handle PR comments.** Findings are **Blocking**, **User's call**, **Suggestion**, or **Follow-up**; a reviewer's finding names its kind. A comment that names none is judged by the definitions in [docs/review.md](docs/review.md#how-to-report-a-finding). A change the user or a maintainer explicitly asks for is always blocking; comments from anyone else, bots and sub-agents included, are judged by those definitions.
    - **Blocking:** fix it, or show with evidence that it isn't a real problem. A problem the PR didn't bring in, or an edge case in behavior it did not set out to change, is a Follow-up instead; a bug in what the PR adds is fixed here.
-   - **Follow-up:** open an Issue for it: `P0` to `P2` when it would be Blocking (by its rule's weight, or by one of the harms in [docs/review.md](docs/review.md#how-to-report-a-finding)), and `later` allowed otherwise. A usable weakness (D10) never goes into an Issue: it goes to a private report ([SECURITY.md](SECURITY.md)).
+   - **Follow-up:** open an Issue for it: `P0` to `P2` when it would otherwise be Blocking, and `later` allowed otherwise. A usable weakness never goes into an Issue: it goes to a private report ([SECURITY.md](SECURITY.md)).
    - **User's call:** hand it to the user with what they would lose, and push neither way until they decide.
    - **Suggestion:** answer with a short reason (for example, that it isn't worth another round of CI and review) and resolve it without pushing, since every push restarts both. A trivial one may ride along with a push you make anyway; one worth recording gets a `later` Issue.
    - Reply to each comment with the fix commit, the verification, or the follow-up Issue. Before a reply names a fix commit, check that the PR has it (`gh pr view {PR} --json commits`).
@@ -124,7 +124,7 @@ A value the code does not control is `unknown` until it is validated where it ar
 - One schema is the single source: the type, the runtime check, and any description of the shape given to someone else (such as a tool's JSON Schema) all come from it.
 - Validate at the boundary, and only there: code behind it takes the parsed type and does not check again.
 - A value that fails says what is wrong, specifically enough for whoever sent it to correct it.
-- The one exception: a Notion database's property definitions and the runs and marks of rich text are read where they are used, with checks written by hand ([B10](docs/review.md#b-correctness)). New code that reads them asserts nothing wider than it checked.
+- The one exception: a Notion database's property definitions and the runs and marks of rich text are read where they are used, with checks written by hand. New code that reads them asserts nothing wider than it checked.
 
 ## Usage data: never content
 
@@ -137,7 +137,7 @@ An extension sends product analytics to PostHog only through `src/analytics.ts`,
 
 ## Calling outside services: stop, don't work around
 
-The extensions and the worker call outside services: the site an extension acts on as the user's own account, through its site layer (`src/<site>/`), a model provider, and Stripe. So **stability comes first**: a mistake can get the user's account barred as automated abuse, apply a change or a charge twice, or spend the user's money. The site is the riskiest: its API is often an internal one. These rules hold for every service; how they are checked is in [review rules E](docs/review.md#e-calling-outside-services).
+The extensions and the worker call outside services: the site an extension acts on as the user's own account, through its site layer (`src/<site>/`), a model provider, and Stripe. So **stability comes first**: a mistake can get the user's account barred as automated abuse, apply a change or a charge twice, or spend the user's money. The site is the riskiest: its API is often an internal one. These rules hold for every service.
 
 - **Retry only when it is clearly safe and would fix the problem**: a retry must not be able to apply a change or a charge twice, and the cause must be one a retry can fix. When in doubt, don't. Never fall back to another endpoint or another way of getting the same result.
 - **Stop on what we don't understand.** A failure we can't identify, or a response we didn't expect, stops the question and is reported to the user; don't guess a workaround. Give a failure a code of its own only when its meaning is known and the model can act on it, and throw a plain error for bad input from the model.
