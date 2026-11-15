@@ -8,8 +8,7 @@ import { isNotion } from '../notion/hosts'
 import { clip } from '../notion/comments'
 import { defineTool } from '../tool'
 import { z } from '../zod'
-import { asPageText, countOutside, outsideLeft } from './outside'
-import { READ, asData, on, verb } from './shared'
+import { READ, asData, asPageText, on, verb } from './shared'
 
 /** How much of a page one read returns. */
 const PAGE_CHARS = 20_000
@@ -144,16 +143,14 @@ async function readPageAt(
   if (isNotion(url.href)) throw new Error('This is a Notion page: read it with read_page instead.')
   const address = context && userAddress(given, url, context.userText())
   if (!context || !address) throw new Error(NOT_GIVEN)
-  const left = outsideLeft()
   let page
   try {
-    page = await context.readWeb(address.href, Math.min(PAGE_CHARS, left), render, signal)
+    page = await context.readWeb(address.href, PAGE_CHARS, render, signal)
   } catch (err) {
     // The worker's limit stops the question: thrown as it is, with what the user is told.
     if (err instanceof WebError && !err.stopsQuestion) throw new Error(refusal(err, render), { cause: err })
     throw err
   }
-  countOutside(page.text.length)
   const host = new URL(page.url).host
   const clipped = page.text.length < page.chars
   const lines = [

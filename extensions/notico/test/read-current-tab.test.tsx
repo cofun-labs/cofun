@@ -230,26 +230,4 @@ describe('reading the page in the current tab', () => {
     expect(browser.tab.injections).toEqual([])
     expect(toolResults(browser)[0]).toMatch(/^The current tab changed while Notico waited/)
   })
-
-  it('[UC-NOTICO-PANEL-001-S14] one question reads only so much from other sites, and the next question can read again', async () => {
-    const tab = articleTab('y'.repeat(25_000))
-    tab.allowed.add(SITE)
-    const { browser, user } = await openOn(tab)
-    browser.ai.script.push(readTab, readTab, readTab, readTab, { reply: 'Enough.' }, readTab, { reply: 'Again.' })
-
-    await ask(user, 'Read this article four times')
-
-    expect(await screen.findByText('Enough.')).toBeVisible()
-    const results = toolResults(browser)
-    expect(results.slice(0, 3).map((r) => r?.split('\n').at(-1)?.length)).toEqual([20_000, 20_000, 20_000])
-    expect(results[3]).toBe(
-      "This question has read as much from outside Notion as one question may (60,000 characters). Answer from what was read; don't read more pages in this question.",
-    )
-    expect(browser.tab.injections).toHaveLength(3)
-
-    await answered()
-    await ask(user, 'Read it again')
-    expect(await screen.findByText('Again.')).toBeVisible()
-    expect(browser.tab.injections).toHaveLength(4)
-  })
 })

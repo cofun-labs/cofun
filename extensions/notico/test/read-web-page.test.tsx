@@ -157,41 +157,6 @@ describe('reading a web page the user gives', () => {
     expect(screen.getByText('Board')).toBeVisible()
   })
 
-  it("[UC-NOTICO-PANEL-003-S05] one question reads only so much from outside Notion, the current tab's page included", async () => {
-    const tab = new FakeNotionTab('https://news.example.com/rivers')
-    tab.title = 'Rivers'
-    tab.dom = webPage({ title: 'Rivers', main: 'r'.repeat(25_000) })
-    tab.allowed.add('https://news.example.com/*')
-    const browser = await FakeBrowser.start(tab, { signedInAs: 'user_alice' })
-    await browser.openPanel()
-    const user = userEvent.setup()
-    const long = (n: number) => `<main><p>${String(n).repeat(25_000)}</p></main>`
-    for (const n of [1, 2, 3]) browser.web.serve(`https://tea.example/${n}`, long(n))
-    const readTab = { toolCalls: [{ name: 'read_current_tab', arguments: '{}' }] }
-    browser.ai.script.push(
-      readTab,
-      readCall('https://tea.example/1'),
-      readCall('https://tea.example/2'),
-      readCall('https://tea.example/3'),
-      { reply: 'Enough.' },
-      readCall('https://tea.example/3'),
-      { reply: 'Again.' },
-    )
-
-    await ask(user, 'Compare this page with https://tea.example/1 https://tea.example/2 https://tea.example/3')
-
-    expect(await screen.findByText('Enough.')).toBeVisible()
-    const results = toolResults(browser)
-    expect(results.slice(0, 3).map((r) => r?.split('\n').at(-1)?.length)).toEqual([20_000, 20_000, 20_000])
-    expect(results[3]).toMatch(/^This question has read as much from outside Notion as one question may/)
-    expect(browser.web.asked).toEqual(['https://tea.example/1', 'https://tea.example/2'])
-
-    await answered()
-    await ask(user, 'Read the third one now')
-    expect(await screen.findByText('Again.')).toBeVisible()
-    expect(browser.web.asked).toHaveLength(3)
-  })
-
   it.each([
     ['the worker turns reads away for coming too often', /Notico read too many web pages in a minute/],
     ['the site turns requests away for coming too often', /turned away Notico's requests for coming too often/],

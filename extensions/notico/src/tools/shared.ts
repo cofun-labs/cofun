@@ -156,3 +156,9 @@ export const PAGES_LIST = '`pages` must be a list with at least one page.'
 export function plural(n: number, word: string): string {
   return `${n} ${word}${n === 1 ? '' : 's'}`
 }
+
+/**
+ * Keeps the text of a page outside Notion from passing for the tool's own lines: a line that opens
+ * like a note in brackets or a block reference gets a backslash first.
+ */
+export const asPageText = (text: string) => text.replace(/^([^\S\n]*)(\[|\^)/gm, '$1\\$2')

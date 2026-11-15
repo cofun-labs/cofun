@@ -5,8 +5,7 @@ import { z } from '../zod'
 import { NOTION_HOSTS, isNotion, pageIdFromUrl, showsDatabase } from '../notion/hosts'
 import { clip } from '../notion/comments'
 import { mayRead, readPage, readableSite } from '../web/tab'
-import { asPageText, countOutside, outsideLeft, startOutside } from './outside'
-import { LOOK, READ, asData, count, on } from './shared'
+import { LOOK, READ, asData, asPageText, count, on } from './shared'
 
 /** The title and URL of the current tab: the active tab of the side panel's window, on any site. */
 async function currentTab(): Promise<{ title: string; url: string } | undefined> {
@@ -84,7 +83,6 @@ export async function needsAttachedPage(): Promise<void> {
  */
 export function carryPages(page: OpenPage | undefined, removed: boolean, added: OpenPage[] = []): string {
   openPageAttached = !removed
-  startOutside()
   // The open page is named once, in its own note, also when the user added it by hand.
   const open = page && !removed ? pageIdFromUrl(page.url) : undefined
   const others = added.filter((p) => !open || pageIdFromUrl(p.url) !== open)
@@ -162,7 +160,6 @@ export const readCurrentTab = defineTool({
     if (isNotion(tab.url)) throw new Error('The current tab is a Notion page: read it with read_page instead.')
     const site = readableSite(tab.url)
     if ('reason' in site) throw new Error(site.reason)
-    const left = outsideLeft()
     const host = new URL(site.origin).host
     if (!(await mayRead(site.origin))) {
       const allowed = await context?.ask({ text: `Allow Notico to read ${host}?`, access: site.origin })
@@ -181,9 +178,8 @@ export const readCurrentTab = defineTool({
         'The current tab changed while Notico waited (the user switched tabs or went to another page), so ' +
           'nothing was read. Ask them to go back to the page and ask again.',
       )
-    const page = await readPage(tab.id, site.origin, Math.min(TAB_TEXT_CHARS, left))
+    const page = await readPage(tab.id, site.origin, TAB_TEXT_CHARS)
     if ('reason' in page) throw new Error(page.reason)
-    countOutside(page.text.length)
     const shown = page.text.length < page.chars
     const lines = [
       // As JSON, so the title and URL stay inside their quotes and on their line.
