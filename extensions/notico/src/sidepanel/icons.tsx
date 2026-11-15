@@ -70,6 +70,8 @@ const SHAPES = {
       <path d="M2.5 8h11M8 2.5c-1.6 1.6-2.4 3.4-2.4 5.5s.8 3.9 2.4 5.5M8 2.5c1.6 1.6 2.4 3.4 2.4 5.5s-.8 3.9-2.4 5.5" />
     </>
   ),
+  /** Quotation marks: text selected on a page. */
+  quote: <path d="M3 11.5c1.8-.6 3-2 3-4.5V4.5H3V8h3M10 11.5c1.8-.6 3-2 3-4.5V4.5h-3V8h3" />,
   search: (
     <>
       <circle cx="7" cy="7" r="4.5" />

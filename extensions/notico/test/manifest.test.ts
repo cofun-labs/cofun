@@ -31,7 +31,15 @@ describe('extension manifest', () => {
   it('[@no-uc:privacy] ships with exactly these permissions and host permissions', () => {
     const env = hostedEnv()
     const json = buildManifest({ ...env, VITE_CLERK_SYNC_HOST: env.VITE_CLERK_SYNC_HOST! }, '1.2.3')
-    expect(json.permissions).toEqual(['sidePanel', 'storage', 'tabs', 'cookies', 'scripting'])
+    expect(json.permissions).toEqual([
+      'sidePanel',
+      'storage',
+      'tabs',
+      'cookies',
+      'scripting',
+      'contextMenus',
+      'activeTab',
+    ])
     expect(json.host_permissions).toEqual([
       'https://www.notion.so/*',
       'https://app.notion.com/*',
@@ -76,7 +84,15 @@ describe('extension manifest', () => {
       { VITE_CLERK_SYNC_HOST: 'http://localhost:8787', CRX_PUBLIC_KEY: 'public-key' },
     ]
     for (const env of envs) {
-      expect(manifest(env).permissions).toEqual(['sidePanel', 'storage', 'tabs', 'cookies', 'scripting'])
+      expect(manifest(env).permissions).toEqual([
+        'sidePanel',
+        'storage',
+        'tabs',
+        'cookies',
+        'scripting',
+        'contextMenus',
+        'activeTab',
+      ])
     }
   })
 

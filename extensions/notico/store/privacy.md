@@ -81,6 +81,14 @@ This page describes version 0.2.0. The version after it adds optional host permi
 - The **Host permission** justification's addition also says: "When the user adds a tab on a site not allowed yet to a conversation, Chrome asks them to allow that one site."
 - **Web history** also names the URL and title of a tab on another site that the user adds to a conversation.
 
+It also adds the `contextMenus` and `activeTab` permissions, neither of which adds an install warning, for the "Ask Notico" item on selected text:
+
+- **contextMenus**: "Adds an "Ask Notico" item to the menu Chrome shows when the user right-clicks selected text. Picking it opens the side panel with that text added to the user's next question; nothing is sent until the user sends the question."
+- **activeTab**: "When the user picks the "Ask Notico" menu item, reads the text they selected in that tab, with its line breaks, so it can be added to their question. No site needs to be allowed for it, and nothing else of the page is read."
+- The **scripting** justification also adds: "When the user picks "Ask Notico" on selected text, it reads that selection in the tab."
+- **Website content** also names text the user selected on a page and sent with "Ask Notico", which goes with their question to the worker and the model (or to OpenRouter).
+- The **storage** justification adds: "Whether the "Ask Notico" menu item shows, which the user can turn off in the settings; it is kept in Chrome's synced storage, so it follows their Chrome profile."
+
 ## Privacy policy URL
 
 ```text

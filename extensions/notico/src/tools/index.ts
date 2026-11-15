@@ -21,6 +21,8 @@ export {
   openNotionPages,
   openWebTabs,
   rememberTab,
+  SELECTION_END,
+  selectionsCarried,
   type OpenPage,
   type WebTab,
 } from './current'

@@ -42,12 +42,14 @@ interface QuestionMeter {
 /**
  * What goes with a question besides what the user typed, all saved with it. `context` is sent to the
  * model ahead of the question (say, which page is open); `pages` are the pages the user sent it with,
- * shown with the question; `readOnly`: the question is asked in Read only, so the model is offered no
- * tool that changes data (`changesData`) for it.
+ * shown with the question; `selections`, text the user selected on pages and sent it with, shown with
+ * it too (what the model gets of it is in `context`); `readOnly`: the question is asked in Read only,
+ * so the model is offered no tool that changes data (`changesData`) for it.
  */
 export interface QuestionExtras {
   context?: string
   pages?: QuestionPage[]
+  selections?: QuestionSelection[]
   readOnly?: boolean
 }
 
@@ -63,6 +65,13 @@ const QuestionPage = z.object({
   tab: z.number().int().optional(),
 })
 export type QuestionPage = z.infer<typeof QuestionPage>
+
+/**
+ * Text a question was sent with, selected on a page, as the question shows it: the page's title, its
+ * URL (with a text fragment that finds the selection, on a web page), and the start of the text.
+ */
+const QuestionSelection = z.object({ title: z.string(), url: z.string(), quote: z.string() })
+export type QuestionSelection = z.infer<typeof QuestionSelection>
 
 /**
  * What a call that worked says about itself for the side panel, apart from the text the model gets:
@@ -246,7 +255,7 @@ export type AssistantPart = z.infer<typeof AssistantPart>
  */
 export const HistoryMessage = z.discriminatedUnion('role', [
   /**
-   * `context`, `pages`, and `readOnly`: what went with the question (see QuestionExtras), besides what
+   * `context`, `pages`, `selections`, and `readOnly`: what went with the question (see QuestionExtras), besides what
    * the user typed.
    */
   QuestionDetails.extend({
@@ -254,6 +263,7 @@ export const HistoryMessage = z.discriminatedUnion('role', [
     text: z.string(),
     context: z.string().optional(),
     pages: z.array(QuestionPage).optional(),
+    selections: z.array(QuestionSelection).optional(),
     readOnly: z.literal(true).optional(),
   }),
   z.object({ role: z.literal('assistant'), parts: z.array(AssistantPart) }),

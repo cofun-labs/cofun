@@ -914,7 +914,7 @@ export class NotionClient {
   /**
    * Every request to Notion goes through here. `spaceId`, when known, goes along as
    * `x-notion-space-id`. When Notion turns a request away for coming too fast, nothing is retried:
-   * the client sends nothing more, and the question stops (see AGENTS.md, calling a site as the user). Each
+   * the client sends nothing more, and the question stops (see AGENTS.md, calling outside services). Each
    * request sent counts toward the question's usage, and may first wait for the user at its budget.
    */
   private async request(
