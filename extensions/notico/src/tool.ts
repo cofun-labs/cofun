@@ -1,6 +1,6 @@
 // Defines a tool from one zod schema of its arguments: the JSON Schema the model is sent, the check
 // before the tool runs, and the type its code works with all come from that schema.
-import type { AskOnCard, ToolDetails, ToolResult, ToolSpec } from './agent'
+import type { ToolContext, ToolDetails, ToolResult, ToolSpec } from './agent'
 import { z } from './zod'
 
 /** A verb in the forms a tool call's description needs: "read", "reading", "read". */
@@ -51,10 +51,10 @@ export interface ToolDefinition<S extends ArgsSchema> extends Omit<ToolSpec, 'pa
   /**
    * Runs the tool with the arguments as the schema gives them. The details say which pages and
    * databases it read and changed (searching and listing pages read none; a change counts the pages
-   * it changed or made), and the name its card shows. `ask` puts a question to the user on the call's
-   * card; without it, nobody can be asked.
+   * it changed or made), and the name its card shows. `context` is what the agent gives a running
+   * call (see ToolContext); without it, nobody can be asked.
    */
-  run: (args: z.output<S>, signal?: AbortSignal, ask?: AskOnCard) => Promise<string | ToolResult>
+  run: (args: z.output<S>, signal?: AbortSignal, context?: ToolContext) => Promise<string | ToolResult>
   /** What a call does, in words (see `ToolSpec.preview`), from the same arguments as `run` gets. */
   preview?: (args: z.output<S>) => string | undefined | Promise<string | undefined>
 }
@@ -76,10 +76,10 @@ export function defineTool<S extends ArgsSchema>({ args, run, preview, describe,
       return describe(parsed.ok ? parsed.args : undefined, details)
     },
     parameters: parametersOf(args),
-    run: async (given: unknown, signal, ask) => {
+    run: async (given: unknown, signal, context) => {
       const parsed = parseArgs(args, given)
       if (!parsed.ok) throw new Error(parsed.refusal)
-      return run(parsed.args, signal, ask)
+      return run(parsed.args, signal, context)
     },
     ...(preview && {
       preview: (given: unknown) => {

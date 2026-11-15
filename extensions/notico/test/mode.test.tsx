@@ -75,6 +75,8 @@ const READING = [
   'get_current_tab',
   'read_current_tab',
   'read_tab',
+  'read_web_page',
+  'render_web_page',
 ]
 const CHANGING = [
   'edit_page',

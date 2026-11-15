@@ -8,7 +8,7 @@ import { clip } from '../notion/comments'
 import type { Selection } from '../selection'
 import { mayRead, readPage, readableSite, type TabPage, type TabWhere } from '../web/tab'
 import type { AskOnCard } from '../agent'
-import { LOOK, READ, asData, count, on } from './shared'
+import { LOOK, READ, asData, asPageText, count, on } from './shared'
 
 /** The title and URL of the current tab: the active tab of the side panel's window, on any site. */
 async function currentTab(): Promise<{ title: string; url: string } | undefined> {
@@ -182,25 +182,21 @@ export function carryPages(
   if (carried.length < selections.length)
     notes.push(
       '[The user sent more text selected on pages with this question, which is left out: the question ' +
-        'already carries as much text from pages outside Notion as one may.]',
+        'already carries as much selected text as one may.]',
     )
   return notes.join('\n')
 }
 
-/**
- * How much selected text one question carries, over all its selections: text the user sends with a
- * question goes with every later question of the chat, unlike a tab's page, which is read only
- * when a question needs it.
- */
-const QUESTION_SELECTED_CHARS = 60_000
+/** How much selected text one question carries, over all its selections. */
+const SELECTION_CHARS = 60_000
 
 /**
  * The selections a question carries, of those sent with it, each with as much of its text as goes:
- * past QUESTION_SELECTED_CHARS the last is cut and the rest are left out. The panel shows the
- * question with these only.
+ * past SELECTION_CHARS the last is cut and the rest are left out. The panel shows the question with
+ * these only.
  */
 export function selectionsCarried(selections: Selection[]): { selection: Selection; text: string }[] {
-  let left = QUESTION_SELECTED_CHARS
+  let left = SELECTION_CHARS
   const carried = []
   for (const selection of selections) {
     if (left <= 0) break
@@ -302,12 +298,6 @@ export const getCurrentTab = defineTool({
 /** How much of a page read_current_tab returns. */
 const TAB_TEXT_CHARS = 20_000
 
-/**
- * Keeps the page's lines from passing for the tool's own: a line that opens like a note in
- * brackets or a block reference gets a backslash first.
- */
-const asPageText = (text: string) => text.replace(/^([^\S\n]*)(\[|\^)/gm, '$1\\$2')
-
 export const readCurrentTab = defineTool({
   name: 'read_current_tab',
   description:
@@ -318,7 +308,7 @@ export const readCurrentTab = defineTool({
     'as summarizing it or saving it to Notion; never for a Notion page (use read_page). A long page is clipped.',
   describe: (_args, details) => on(READ, details?.name, 'the current tab'),
   args: z.strictObject({}),
-  run: async (_args, _signal, ask) => {
+  run: async (_args, _signal, context) => {
     await needsAttachedPage()
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true })
     if (tab?.id === undefined || !tab.url) throw new Error('Could not tell which tab is the current one.')
@@ -326,7 +316,7 @@ export const readCurrentTab = defineTool({
     const site = readableSite(tab.url)
     if ('reason' in site) throw new Error(site.reason)
     const host = new URL(site.origin).host
-    await mayReadOrAsk(site.origin, ask)
+    await mayReadOrAsk(site.origin, context?.ask)
     // The user may have moved to another tab or page while they were asked: only the page they
     // asked about, in the current tab, is read.
     const [now] = await chrome.tabs.query({ active: true, currentWindow: true })
@@ -393,7 +383,7 @@ export const readTab = defineTool({
   args: z.strictObject({
     tab: z.number().int().describe('The number of the tab, as the note gave it.'),
   }),
-  run: async ({ tab }, _signal, ask) => {
+  run: async ({ tab }, _signal, context) => {
     const added = addedTabs.get(tab)
     if (!added)
       throw new Error(
@@ -409,7 +399,7 @@ export const readTab = defineTool({
     if (isNotion(now.url)) throw new Error('The tab now shows a Notion page: read it with read_page instead.')
     const site = readableSite(now.url, WHERE)
     if ('reason' in site) throw new Error(site.reason)
-    await mayReadOrAsk(site.origin, ask)
+    await mayReadOrAsk(site.origin, context?.ask)
     const page = await readPage(tab, site.origin, TAB_TEXT_CHARS, WHERE)
     if ('reason' in page) throw new Error(page.reason)
     const host = new URL(site.origin).host

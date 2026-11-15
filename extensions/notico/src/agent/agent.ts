@@ -33,7 +33,7 @@ import type {
   ToolStatus,
 } from './types'
 import { ToolDetails } from './types'
-import { checkout, hostedProvider, readOwn } from './worker'
+import { checkout, hostedProvider, readOwn, readWebPage } from './worker'
 
 const DEFAULT_MAX_STEPS = 10
 
@@ -558,7 +558,11 @@ export class CopilotAgent {
       failed: (code) => {
         if (epoch === this.epoch) this.failedWith = code
       },
-      ask: async (question) => (epoch === this.epoch && this.askOnCard ? this.askOnCard(question) : false),
+      context: {
+        ask: async (question) => (epoch === this.epoch && this.askOnCard ? this.askOnCard(question) : false),
+        // Always through the worker, whichever model answers: the page is read by the worker either way.
+        readWeb: (url, maxChars, render, signal) => readWebPage(this.config, url, maxChars, render, signal),
+      },
     }
   }
 
