@@ -15,6 +15,7 @@ import {
   type RichText,
 } from './blocks'
 import { PAGE_TYPES, formatDate, hexId, richMarkdown, type PageMarkdown } from './markdown'
+import { oneLine } from './props'
 
 /**
  * What the agent saw of a page: the references it was shown, and the version of each block it saw.
@@ -815,9 +816,6 @@ function lossyRich(stored: unknown, shown: RichText | undefined, users: Record<s
   return canonical(keepDates(withPeople(shown, ids, { keep: true }), [stored])) !== canonical(stored as RichText)
 }
 
-/** Marks of runs that each stand for one thing (a page, a person, a date, an equation). */
-const ONE_THING = ['p', 'u', 'd', 'e']
-
 /** A run of stored rich text, when it is one: its text and its marks. */
 function storedRun(run: unknown): { text: string; marks: unknown[][] } | undefined {
   if (!Array.isArray(run) || typeof run[0] !== 'string') return undefined
@@ -833,7 +831,7 @@ function unshownIn(marks: unknown[][]): string[] {
   return [
     ...(has('_') ? ['an underline'] : []),
     ...(has('m') ? ['a comment on the text'] : []),
-    ...(has('lm') ? ['a link preview (it would become an ordinary link)'] : []),
+    ...(has('lm') ? ['a link preview'] : []),
     ...(has('u') && has('a') ? ['a link on a mention of a person'] : []),
     ...(has('u') && has('c') ? ['code formatting on a mention of a person'] : []),
     ...(marks.some((m) => m[0] === 'p' && m.length > 2) ? ['the workspace of a mentioned page'] : []),
@@ -842,196 +840,57 @@ function unshownIn(marks: unknown[][]): string[] {
   ]
 }
 
-/** Whether stored rich text holds something its Markdown doesn't show (see keepUnshown). */
+/** Whether stored rich text holds something its Markdown doesn't show (see rewriteRich). */
 export function holdsUnshown(stored: unknown): boolean {
   return Array.isArray(stored) && stored.some((run) => unshownIn(storedRun(run)?.marks ?? []).length > 0)
 }
 
-/** One piece of rich text to compare: a character, or a whole mention or equation. */
-interface Unit {
-  text: string
-  marks: [string, unknown?][]
-  /** The piece with its formatting. */
-  key: string
-  /** The piece alone: the character, or what is mentioned. */
-  plain: string
-}
-
-function unitsOf(text: RichText): Unit[] {
-  return text.flatMap(([run, marks = []]): Unit[] => {
-    const format = JSON.stringify(marks.map((m) => JSON.stringify(m)).sort())
-    const thing = marks.find((m) => ONE_THING.includes(m[0]))
-    if (thing) return [{ text: run, marks, key: run + format, plain: JSON.stringify(thing) }]
-    return [...run].map((char) => ({ text: char, marks, key: char + format, plain: char }))
-  })
-}
-
-/** How many pairs of items placesOf compares at most between what two lists share at their ends. */
-const COMPARED_MAX = 1_000_000
-
-/**
- * Where each item of `old` is in `now`, or -1 for one that isn't there: what the two share at the
- * start and at the end, and between those the longest run of items they share in order. None when
- * the two are too long to compare item by item.
- */
-function placesOf(old: string[], now: string[]): number[] | undefined {
-  let head = 0
-  while (head < old.length && head < now.length && old[head] === now[head]) head++
-  let tail = 0
-  while (tail < Math.min(old.length, now.length) - head && old.at(-1 - tail) === now.at(-1 - tail)) tail++
-  const between = [old, now].map((all) => all.slice(head, all.length - tail))
-  if (between[0].length * between[1].length > COMPARED_MAX) return undefined
-  const where = old.map((_, n) => (n < head ? n : n >= old.length - tail ? n + now.length - old.length : -1))
-  for (const { a, b } of align(between[0], between[1])) {
-    if (a !== undefined && b !== undefined && between[0][a] === between[1][b]) where[head + a] = head + b
-  }
-  return where
-}
-
-/**
- * Whether text is still where it was, given its pieces and where each is in the new text (-1 for
- * one that isn't): a whole word of it, or at least half of it (spaces aside). A piece counts only
- * beside a neighbour that is beside it in the new text too, so that letters a rewrite happens to
- * share with the old text don't.
- */
-function stays(part: string[], to: number[]): boolean {
-  if (part.length === 1) return to[0] >= 0
-  const joined = (k: number) => to[k] >= 0 && to[k + 1] === to[k] + 1
-  const placed = part.map((_, k) => joined(k) || (k > 0 && joined(k - 1)))
-  const inked = part.map((p) => !!p.trim())
-  const count = (list: boolean[]) => list.filter((yes, k) => yes && inked[k]).length
-  if (count(placed) * 2 >= count(inked.map(() => true))) return true
-  // A word: pieces between spaces, all of them beside each other in the new text.
-  let start = 0
-  for (let k = 0; k <= part.length; k++) {
-    if (k < part.length && inked[k]) continue
-    if (k - start > 1 && part.slice(start, k - 1).every((_, m) => joined(start + m))) return true
-    start = k + 1
-  }
-  return false
-}
-
-/** Something a new value would remove from the stored one without its Markdown showing it. */
+/** Something writing a new value removes from the stored one without its Markdown showing it. */
 export interface Unshown {
-  /** What would go, each as unshownIn names it. */
+  /** What goes, each as unshownIn names it. */
   what: string[]
   /** The Markdown of the text it is on, as it was shown. */
   on: string
 }
 
 /**
- * `value`, about to replace the `stored` rich text of a text property or a title, with what the
- * stored text holds that its Markdown doesn't show (underline, a comment on the text, a link
- * preview, a link on a mention of a person, a mentioned page's workspace) kept wherever `value`
- * still has that text as it was shown. `lost` lists what can't be kept: the text is still in
- * `value`, but not as it was shown, so only the model's Markdown says what it should now be. Text
- * `value` no longer has goes with what was on it, as the Markdown says. `users` names the people
- * the stored text mentions.
+ * What to write for `value`, about to replace the `stored` rich text of a text property or a title,
+ * and what the stored text holds that its Markdown doesn't show (an underline, a comment on the
+ * text, a link preview, a link on a mention of a person, a mentioned page's workspace) and that
+ * writing it removes. A value that is the stored text as it was shown is the stored text, and
+ * removes nothing; any other is written as given, without what its Markdown didn't show. `users`
+ * names the people the stored text mentions; a `title` is on one line, as the model's is.
  */
-export function keepUnshown(
+export function rewriteRich(
   value: RichText,
   stored: unknown,
   users: Record<string, NotionRecord> = {},
+  { title = false } = {},
 ): { rich: unknown[]; lost: Unshown[] } {
-  if (!Array.isArray(stored) || !holdsUnshown(stored) || !value.length) return { rich: value, lost: [] }
-  // Only what is a run is read; a kept run is written back as it is stored.
-  const runs = stored.flatMap((run: unknown) => {
-    const read = storedRun(run)
-    return read ? [{ run, ...read }] : []
-  })
-  // Each stored run as its Markdown reads back, in the form `value` is in: people by id, dates as stored.
-  const shown = runs.map(({ text, marks }) => {
-    // A mentioned page's title isn't at hand, and the Markdown names the page by its id anyway.
-    const markdown = richMarkdown({ notion_user: users }, [[text, marks]]).replace(
-      /^\[page\](?=\([0-9a-f]{32}\)$)/,
-      '[…]',
-    )
-    const person = marks.find((m) => m[0] === 'u')?.[1]
-    const name = typeof person === 'string' ? users[person]?.name : undefined
-    const ids = new Map(typeof name === 'string' && typeof person === 'string' ? [[name.trim(), person]] : [])
-    try {
-      return { markdown, units: unitsOf(keepDates(withPeople(inline(markdown), ids, { keep: true }), [stored])) }
-    } catch (err) {
-      if (!(err instanceof MarkdownError)) throw err
-      return { markdown, units: undefined }
-    }
-  })
-  const old = shown.flatMap((s) => s.units ?? [])
-  const now = unitsOf(value)
-  // Where each piece of the old text is in the new one: as it was shown, and whatever its formatting.
-  const where = placesOf(
-    old.map((u) => u.key),
-    now.map((u) => u.key),
+  if (!Array.isArray(stored) || !holdsUnshown(stored)) return { rich: value, lost: [] }
+  const ids = new Map(
+    Object.entries(users).flatMap(([id, u]) =>
+      typeof u.name === 'string' && u.name.trim() ? [[u.name.trim(), id] as const] : [],
+    ),
   )
-  const plain = now.map((u) => u.plain)
-  const oldPlain = old.map((u) => u.plain)
-  const wherePlain = placesOf(oldPlain, plain)
-  const linkOf = (unit: Unit | undefined) => unit?.marks.find((m) => m[0] === 'a')?.[1]
-  const kept: { at: number; length: number; n: number }[] = []
-  const lost: Unshown[] = []
-  let start = 0
-  runs.forEach(({ run, marks }, n) => {
-    const { markdown, units } = shown[n]
-    const at = start
-    start += units?.length ?? 0
-    const what = unshownIn(marks)
-    // A run with no text shows nothing, and has nothing to keep.
-    if (!what.length || units?.length === 0) return
-    if (!units) {
-      lost.push({ what, on: markdown })
-      return
-    }
-    // Kept where the new text has the whole run as it was shown, in one piece. A link preview is
-    // shown as a link: one that now has more text is no longer the link that was shown.
-    const to = where?.[at] ?? -1
-    const whole = !!where && units.every((_, k) => where[at + k] >= 0 && where[at + k] === to + k)
-    const link = marks.some((m) => m[0] === 'lm') ? linkOf(units[0]) : undefined
-    const longer =
-      link !== undefined &&
-      [to - 1, to + units.length].some((k) => linkOf(now[k]) === link && !(where ?? []).includes(k))
-    if (whole && !longer) {
-      kept.push({ at: to, length: units.length, n })
-      return
-    }
-    // Not there whole as it was shown: only the Markdown says what the text holds now, so the
-    // write is refused while the text is still there, whatever its formatting: a word of it or
-    // at least half of it is where it was, or the new text has all of it as often as the old one
-    // did (it moved; one of two equal words that goes leaves fewer).
-    // Other text goes with what was on it. Where the texts were too long to compare, the run's
-    // text anywhere in the new one counts.
-    const part = units.map((u) => u.plain)
-    const times = (all: string[]) => all.filter((_, k) => part.every((p, m) => all[k + m] === p)).length
-    const moved = times(plain) >= (wherePlain ? times(oldPlain) : 1)
-    if (moved || (wherePlain && stays(part, wherePlain.slice(at, at + part.length)))) lost.push({ what, on: markdown })
+  try {
+    // The stored text as it was shown, with its spaces as the model's value has them.
+    const markdown = richMarkdown({ notion_user: users }, stored)
+    const shown = inline(title ? oneLine(markdown) : markdown.trim())
+    if (canonical(keepDates(withPeople(shown, ids, { keep: true }), [stored])) === canonical(value))
+      return { rich: stored, lost: [] }
+  } catch (err) {
+    if (!(err instanceof MarkdownError)) throw err
+  }
+  const lost = stored.flatMap((run: unknown): Unshown[] => {
+    const read = storedRun(run)
+    const what = unshownIn(read?.marks ?? [])
+    if (!read?.text || !what.length) return []
+    // A mentioned page's title isn't at hand, and the Markdown names the page by its id anyway.
+    const on = richMarkdown({ notion_user: users }, [[read.text, read.marks]])
+    return [{ what, on: on.replace(/^\[page\](?=\([0-9a-f]{32}\)$)/, '[…]') }]
   })
-  if (lost.length) return { rich: value, lost }
-  // The new value as it is written, and the same in a form to compare with the stored one.
-  const rich: unknown[] = []
-  const read: [string, unknown[][]][] = []
-  let open: { run: [string, [string, unknown?][]?]; unit: Unit } | undefined
-  const add = (unit: Unit) => {
-    // Characters with the same marks are one run again; a mention or an equation is its own.
-    if (open && open.unit.marks === unit.marks && !unit.marks.some((m) => ONE_THING.includes(m[0]))) {
-      open.run[0] += unit.text
-      read.at(-1)![0] += unit.text
-      return
-    }
-    open = { run: unit.marks.length ? [unit.text, unit.marks] : [unit.text], unit }
-    rich.push(open.run)
-    read.push([unit.text, unit.marks])
-  }
-  let n = 0
-  for (const k of kept.sort((a, b) => a.at - b.at)) {
-    while (n < k.at) add(now[n++])
-    rich.push(runs[k.n].run)
-    read.push([runs[k.n].text, runs[k.n].marks])
-    open = undefined
-    n = k.at + k.length
-  }
-  while (n < now.length) add(now[n++])
-  // A value written back as it was shown is the stored one, run for run, when all of it was read.
-  const same = runs.length === stored.length && canonical(read) === canonical(runs.map((r) => [r.text, r.marks]))
-  return { rich: same ? stored : rich, lost: [] }
+  return { rich: value, lost }
 }
 
 /** Rich text in one form: marks sorted, runs with the same marks merged (mentions and equations kept apart). */
