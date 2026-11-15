@@ -59,7 +59,7 @@ There is no test environment: the one worker runs with the live Stripe account. 
 
 ### Database
 
-Grants and model calls are kept in the D1 database `cofun-db` (binding `DB`). Its schema is the migration files in `worker/migrations/`, applied in order on every deploy. A new migration is a new file with the next number; never change one that was applied. Query it with `cf d1 query <database id> --sql "…"` (`cf d1 list --name cofun-db` shows the id); amounts are micro-credits (1 credit = 1,000,000) and times are ms since the epoch. D1 runs one query at a time, so a query over a whole table holds up charging: bound it by time.
+Grants and model calls are kept in the D1 database `cofun-db` (binding `DB`), created once on the deploying account with `cf d1 create --name cofun-db`. Its schema is the migration files in `worker/migrations/`, applied in order on every deploy. A new migration is a new file with the next number; never change one that was applied. Query it with `cf d1 query <database id> --sql "…"` (`cf d1 list --name cofun-db` shows the id); amounts are micro-credits (1 credit = 1,000,000) and times are ms since the epoch. D1 runs one query at a time, so a query over a whole table holds up charging: bound it by time.
 
 Per-request usage records go to the Analytics Engine dataset `cofun_api_usage` (binding `USAGE`), queried with the [SQL API](https://developers.cloudflare.com/analytics/analytics-engine/sql-api/); the order of its columns is `recordUsage` in `worker/src/usage.ts`. They are for watching the service, never for charging.
 
