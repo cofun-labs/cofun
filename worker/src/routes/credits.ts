@@ -2,7 +2,7 @@
 import { Hono } from 'hono'
 import * as z from '../zod'
 import { CREDITS_PER_UNIT } from '../billing'
-import { FREE_PERIOD_MS, Ledger, MICRO_CREDITS, type GrantsCursor, type Standing } from '../credits'
+import { FREE_PERIOD_MS, Ledger, MICRO_CREDITS, type Standing } from '../credits'
 import { DAY_MS, HttpError, errorSummary, parse, part, type App, type Ctx, type Deps } from '../http'
 
 /** How many recent days of spending a user is shown, today included. */
@@ -26,23 +26,6 @@ const UtcOffset = part(
 
 /** A day counted from 1970-01-01, as a date: YYYY-MM-DD. */
 const dateOf = (day: number) => new Date(day * DAY_MS).toISOString().slice(0, 10)
-
-/**
- * Where a page of grants starts, as the page before it gave it in `next`: a time in ms, and how
- * many grants of that millisecond were shown already. Both bounded, so the query is.
- */
-const GrantsBefore = part(
-  z
-    .string()
-    .regex(/^\d{1,15}\.\d{1,4}$/)
-    .transform((cursor): GrantsCursor => {
-      const [at, skip] = cursor.split('.').map(Number)
-      return { at, skip }
-    })
-    .optional(),
-  'before must be the next of an earlier page',
-)
-const cursorText = ({ at, skip }: GrantsCursor) => `${at}.${skip}`
 
 /**
  * What a purchase of `amount` micro-credits cost, in US cents: its list price, at 1000 credits a
@@ -90,11 +73,10 @@ export function creditsRoutes({ now, logError }: Deps): App {
   // The history of the signed-in user's credits: every grant they were given, newest first, the
   // expired ones included, with what is left of each (for an expired one: what went unspent), and
   // for a purchase what it cost. Never the admin who made a grant by hand. Read by the side panel
-  // only when the user opens it, a page at a time, so the read above stays small. It only reads,
-  // for the caller only.
+  // only when the user opens it, all at once (up to a limit far above what an account gets), so the
+  // read above stays small. It only reads, for the caller only.
   routes.get('/grants', async (c) => {
-    const from = parse(GrantsBefore, c.req.query('before'))
-    const { grants, next } = await onOwnLedger(c, (ledger) => ledger.grantsPage(from))
+    const grants = await onOwnLedger(c, (ledger) => ledger.history())
     return c.json({
       grants: grants.map(({ source, amount, left, grantedAt, expiresAt, revoked }) => ({
         source,
@@ -106,7 +88,9 @@ export function creditsRoutes({ now, logError }: Deps): App {
         // A purchase taken back ended at `expiresAt`, and `left` is what was taken back.
         ...(revoked ? { revoked } : {}),
       })),
-      next: next ? cursorText(next) : null,
+      // Always null: the history is no longer paged. Notico 0.1.0, already installed, requires the
+      // field; drop it once no installed build reads it.
+      next: null,
     })
   })
 

@@ -113,7 +113,6 @@ export function adminPage(publishableKey: string): string {
     <h2>Credits of <span id="account-id"></span></h2>
     <dl>
       <dt>Balance</dt><dd id="balance"></dd>
-      <dt>Overspent</dt><dd id="debt"></dd>
     </dl>
     <h2>Grants</h2>
     <p id="no-grants" class="muted">No grants. This account has not used the AI yet, or the user id is not the one you meant.</p>
@@ -361,7 +360,6 @@ export function adminPage(publishableKey: string): string {
     if (!account) return
     el('account-id').textContent = account.userId
     el('balance').textContent = credits(account.balance)
-    el('debt').textContent = credits(account.debt)
     el('no-grants').style.display = account.grants.length ? 'none' : 'block'
     el('grants').style.display = account.grants.length ? 'table' : 'none'
     const rows = el('grants').tBodies[0]

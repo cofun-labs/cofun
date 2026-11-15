@@ -1,41 +1,39 @@
 import { useEffect, useRef, useState } from 'react'
-import { grantDatesText, grantLeftText, grantTitle, wholeCredits, type GrantsPage } from '../credits'
+import { grantDatesText, grantLeftText, grantTitle, wholeCredits, type PastGrant } from '../credits'
 
-/** How the history is read from the worker: a page of grants, from where the one before ended. */
-export type ReadGrants = (before?: string) => Promise<GrantsPage>
+/** How the history is read from the worker: every grant, at once. */
+export type ReadGrants = () => Promise<PastGrant[]>
 
 /**
  * The history of the user's credits: every grant they were given (free weekly credits, purchases,
  * credits granted by hand), newest first, each with its dates, what a purchase cost, and what is
  * left, went unspent, or was taken back. No usage: that is on the Credits page, for the last 30
- * days. Read a page at a time, when it opens, not with the credits; a read that fails keeps what
- * was read before it, says so here, and touches nothing else.
+ * days. Read when it opens, not with the credits; a read that fails says so here, offers to try
+ * again, and touches nothing else.
  */
 export function History({ read }: { read: ReadGrants }) {
-  const [pages, setPages] = useState<GrantsPage[]>([])
+  const [given, setGiven] = useState<PastGrant[]>()
   const [reading, setReading] = useState(true)
   // Whether the last read failed: it then offers to try again, also while trying again.
   const [failed, setFailed] = useState(false)
   // Only the newest read counts, and none once the history is gone.
   const reads = useRef(0)
-  const next = pages.at(-1)?.next ?? null
-  // Where the focus goes when a read the button asked for ends and takes the button away: the first
-  // row it added, or the note that there are none. It stays focusable, or the focus would fall off it.
-  const [focusFrom, setFocusFrom] = useState<number>()
-  const focusRef = useRef<HTMLElement>(null)
+  // Where the focus goes when Try again succeeds and takes the button away: what the read showed.
+  const [moveFocus, setMoveFocus] = useState(false)
+  const shownRef = useRef<HTMLElement>(null)
   const buttonRef = useRef<HTMLButtonElement>(null)
 
-  async function more() {
+  async function load() {
     const mine = ++reads.current
     // The button stays, so the focus stays on it; it only does nothing until the read ends.
     const asked = document.activeElement !== null && document.activeElement === buttonRef.current
     setReading(true)
     try {
-      const page = await read(next ?? undefined)
+      const grants = await read()
       if (mine !== reads.current) return
-      if (asked && page.next === null) setFocusFrom(pages.reduce((sum, page) => sum + page.grants.length, 0))
-      setPages((pages) => [...pages, page])
+      setGiven(grants)
       setFailed(false)
+      setMoveFocus(asked)
     } catch {
       if (mine !== reads.current) return
       setFailed(true)
@@ -44,30 +42,32 @@ export function History({ read }: { read: ReadGrants }) {
   }
 
   useEffect(() => {
-    void more()
+    void load()
     return () => void reads.current++
   }, [])
 
   useEffect(() => {
-    if (focusFrom !== undefined) focusRef.current?.focus()
-  }, [focusFrom])
+    if (moveFocus) shownRef.current?.focus()
+  }, [moveFocus])
 
-  const given = pages.flatMap((page) => page.grants)
   // One moment for the whole list: what has expired by now.
   const now = Date.now()
+  // Focusable only to take the focus from the button that went away.
+  const focusable = moveFocus ? -1 : undefined
 
   return (
     <div className="history">
-      {given.length > 0 && (
-        <ul className="history-list" aria-label="Credits you were given">
+      {given && given.length > 0 && (
+        <ul
+          className="history-list"
+          aria-label="Credits you were given"
+          ref={(ul) => void (shownRef.current = ul)}
+          tabIndex={focusable}
+        >
           {given.map((grant, i) => {
             const left = grantLeftText(grant, now)
             return (
-              <li
-                key={i}
-                ref={i === focusFrom ? (li) => void (focusRef.current = li) : undefined}
-                tabIndex={i === focusFrom ? -1 : undefined}
-              >
+              <li key={i}>
                 <span className="grow">
                   <span className="history-title">{grantTitle(grant)}</span>
                   <span className="account-detail">{grantDatesText(grant, now)}</span>
@@ -83,12 +83,8 @@ export function History({ read }: { read: ReadGrants }) {
           })}
         </ul>
       )}
-      {given.length === 0 && pages.length > 0 && !reading && (
-        <p
-          className="account-detail"
-          ref={focusFrom === 0 ? (p) => void (focusRef.current = p) : undefined}
-          tabIndex={focusFrom === 0 ? -1 : undefined}
-        >
+      {given && given.length === 0 && (
+        <p className="account-detail" ref={(p) => void (shownRef.current = p)} tabIndex={focusable}>
           No credits yet. Your free credits start with your next question.
         </p>
       )}
@@ -97,15 +93,15 @@ export function History({ read }: { read: ReadGrants }) {
         {reading ? 'Loading…' : ''}
       </p>
       {failed && !reading && <p role="alert">Your credits could not be loaded.</p>}
-      {(failed || next !== null) && (
+      {failed && (
         <button
           ref={buttonRef}
           type="button"
-          className={failed ? 'primary' : 'history-more'}
+          className="primary"
           aria-disabled={reading || undefined}
-          onClick={() => void (reading || more())}
+          onClick={() => void (reading || load())}
         >
-          {failed ? 'Try again' : 'Show earlier'}
+          Try again
         </button>
       )}
     </div>

@@ -1186,7 +1186,7 @@ export function Chat({ userId }: { userId: string }) {
         <CreditsPage
           credits={credits}
           onRetry={() => void readCredits()}
-          grants={(before) => agent.creditGrants(before)}
+          grants={() => agent.creditGrants()}
           buying={{ packs: () => agent.creditPacks(), buy: buyCredits }}
           onClose={closePage}
         />

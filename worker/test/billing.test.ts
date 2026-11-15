@@ -366,21 +366,6 @@ describe('UC-COFUN-BILLING-001 Buy credits: the webhook', () => {
     expect((await credits(bob)).grants).toEqual([])
   })
 
-  it('[UC-COFUN-BILLING-001-S07] what the user overspent is taken out of the purchase first', async () => {
-    // 210 credits from the 200 free ones: 10 overspent.
-    await ask(alice, 210)
-    expect((await credits(alice)).balance).toBe(-10 * CREDIT)
-
-    await buy(alice, 5000)
-
-    const { balance, grants } = await credits(alice)
-    expect(balance).toBe(4990 * CREDIT)
-    expect(grants).toEqual([
-      { source: 'free', left: 0, expiresAt: START + 7 * DAY_MS },
-      { source: 'purchase', left: 4990 * CREDIT, expiresAt: yearAfter(START) },
-    ])
-  })
-
   it('[UC-COFUN-BILLING-001-S08] a refund or a dispute takes back what is left of the purchase, and nothing else', async () => {
     await answer(req('POST', '/v1/admin/accounts/user_alice/grants', admin, { credits: 300, days: 30 }))
     await buy(alice, 5000, 'pi_refunded')
@@ -516,53 +501,17 @@ describe('UC-COFUN-BILLING-001 Buy credits: the webhook', () => {
     ])
   })
 
-  it('[UC-COFUN-BILLING-001-S12] a refund that arrives before its payment is granted keeps the payment from granting', async () => {
-    await checkout(alice, 5000)
-    // The payment's own event fails for a while (the database is down), and the refund comes first.
-    db.failWith = new Error('D1_ERROR: Network connection lost.')
-    await answer(deliver(stripe.sessionEvent()), 500)
-    db.failWith = undefined
-    expect(await answer(deliver(refunded('pi_for_cs_test_1')))).toMatchObject({ done: 'recorded' })
-
-    // Stripe sends the payment's event again, hours later: it grants nothing.
-    clock = new Date(START + 3 * 60 * 60 * 1000)
-    expect(await answer(deliver(stripe.sessionEvent()))).toMatchObject({ done: 'ignored' })
-    expect(db.rows('grants')).toEqual([])
-    expect(billingLog).toEqual([
-      'refund for payment=pi_for_cs_test_1, which has no grant: recorded',
-      'purchase: user=user_alice payment=pi_for_cs_test_1 was refunded or disputed before it was granted: nothing granted',
-    ])
-    // The same refund, or a dispute after it, records nothing more.
-    expect(await answer(deliver(refunded('pi_for_cs_test_1')))).toMatchObject({ done: 'recorded' })
-    expect(await answer(deliver(disputed('pi_for_cs_test_1')))).toMatchObject({ done: 'recorded' })
-    expect(db.sqlite.prepare('SELECT * FROM revoked_payments').all()).toEqual([
-      { payment: 'pi_for_cs_test_1', revoked: 'refund', at: START },
-    ])
-  })
-
-  it('[@no-uc:money] a refund or dispute of a payment that made no grant is acknowledged, and takes nothing', async () => {
+  it('[@no-uc:money] a refund or dispute of a payment that made no grant is acknowledged, takes nothing, and is logged for an operator', async () => {
     await buy(alice, 5000)
+    billingLog.length = 0
     for (const evt of [refunded('pi_from_the_dashboard'), disputed('pi_from_the_dashboard')]) {
-      expect(await answer(deliver(evt))).toMatchObject({ done: 'recorded' })
+      expect(await answer(deliver(evt))).toMatchObject({ done: 'ignored' })
     }
     expect((await credits(alice)).balance).toBe(5200 * CREDIT)
-  })
-
-  it('[UC-COFUN-BILLING-001-S11] what a purchase paid back of an overspend is owed again when the purchase is taken back', async () => {
-    // 10 credits overspent, which the purchase pays back first.
-    await ask(alice, 210)
-    await buy(alice, 5000)
-    expect((await credits(alice)).balance).toBe(4990 * CREDIT)
-
-    clock = new Date(START + DAY_MS)
-    await answer(deliver(disputed('pi_for_cs_test_1')))
-
-    expect((await credits(alice)).balance).toBe(-10 * CREDIT)
-    const account = await answer(req('GET', '/v1/admin/accounts/user_alice', admin))
-    expect(account.debt).toBe(10 * CREDIT)
-    // The next grant pays it back, like any debt.
-    await answer(req('POST', '/v1/admin/accounts/user_alice/grants', admin, { credits: 100, days: 30 }))
-    expect((await credits(alice)).balance).toBe(90 * CREDIT)
+    expect(billingLog).toEqual([
+      'refund for payment=pi_from_the_dashboard, which has no grant: nothing taken back',
+      'dispute for payment=pi_from_the_dashboard, which has no grant: nothing taken back',
+    ])
   })
 
   it('[@no-uc:money] a purchase taken back the moment it was granted ends the millisecond after it began', async () => {
@@ -665,7 +614,6 @@ describe('UC-NOTICO-BILLING-001 buy credits: purchases in the history and on the
     expect(account).toEqual({
       userId: 'user_alice',
       balance: 5000 * CREDIT,
-      debt: 0,
       grants: [
         {
           source: 'purchase',

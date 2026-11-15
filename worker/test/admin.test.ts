@@ -94,7 +94,6 @@ describe("UC-COFUN-ADMIN-001 Look at an account's credits and grant credits by h
     expect(await account('user_alice')).toEqual({
       userId: 'user_alice',
       balance: 200 * CREDIT - FAKE_COST,
-      debt: 0,
       grants: [
         {
           source: 'free',
@@ -108,7 +107,7 @@ describe("UC-COFUN-ADMIN-001 Look at an account's credits and grant credits by h
   })
 
   it('[UC-COFUN-ADMIN-001-S02] credits granted by hand can be spent, beside the weekly free credits, until they expire', async () => {
-    // The user spends the whole free week and 10 credits more, and is out of credits.
+    // The user spends the whole free week (the 10 credits more the call cost are forgiven), and is out of credits.
     repliesCost(210)
     expect((await chat(alice)).status).toBe(200)
     expect((await chat(alice)).status).toBe(402)
@@ -119,7 +118,7 @@ describe("UC-COFUN-ADMIN-001 Look at an account's credits and grant credits by h
     expect(granted).toEqual({
       source: 'manual',
       amount: 100 * CREDIT,
-      left: 90 * CREDIT,
+      left: 100 * CREDIT,
       grantedAt: START.getTime(),
       expiresAt: START.getTime() + 30 * DAY_MS,
       by: 'user_root',
@@ -127,22 +126,22 @@ describe("UC-COFUN-ADMIN-001 Look at an account's credits and grant credits by h
 
     repliesCost(60)
     expect((await chat(alice)).status).toBe(200)
-    expect((await account('user_alice')).balance).toBe(30 * CREDIT)
+    expect((await account('user_alice')).balance).toBe(40 * CREDIT)
 
     // A week later the free credits arrive as always, and are spent first: they expire first.
     later(7 * DAY_MS)
     expect((await chat(alice)).status).toBe(200)
     const { balance, grants } = await account('user_alice')
-    expect(balance).toBe(170 * CREDIT)
+    expect(balance).toBe(180 * CREDIT)
     expect(grants.map((g: any) => [g.source, g.left / CREDIT])).toEqual([
       ['free', 0],
-      ['manual', 30],
+      ['manual', 40],
       ['free', 140],
     ])
 
     // Up to the moment they expire the granted credits count; after it they are gone.
     later(23 * DAY_MS - 1000)
-    expect((await account('user_alice')).balance).toBe(30 * CREDIT)
+    expect((await account('user_alice')).balance).toBe(40 * CREDIT)
     later(1000)
     expect((await account('user_alice')).balance).toBe(0)
     // Only the new free week is left to spend.
@@ -200,21 +199,9 @@ describe("UC-COFUN-ADMIN-001 Look at an account's credits and grant credits by h
     expect((await account('user_alice')).grants).toHaveLength(3)
   })
 
-  it('[UC-COFUN-ADMIN-001-S05] what an account overspent is taken out of a grant first', async () => {
-    repliesCost(150)
-    await chat(alice)
-    await chat(alice)
-    expect(await account('user_alice')).toMatchObject({ balance: -100 * CREDIT, debt: 100 * CREDIT })
-
-    await grant('user_alice', { credits: 300, days: 30 })
-    const { balance, debt, grants } = await account('user_alice')
-    expect({ balance, debt }).toEqual({ balance: 200 * CREDIT, debt: 0 })
-    expect(grants[1]).toMatchObject({ source: 'manual', amount: 300 * CREDIT, left: 200 * CREDIT })
-  })
-
   it('[UC-COFUN-ADMIN-001-S06] looking up and granting leave the free week to start when the user next asks', async () => {
     // An account the worker has not seen has nothing, and looking at it gives it nothing.
-    expect(await account('user_alice')).toEqual({ userId: 'user_alice', balance: 0, debt: 0, grants: [] })
+    expect(await account('user_alice')).toEqual({ userId: 'user_alice', balance: 0, grants: [] })
     await grant('user_alice', { credits: 50, days: 30 })
     expect((await account('user_alice')).grants.map((g: any) => g.source)).toEqual(['manual'])
 
@@ -236,7 +223,7 @@ describe("UC-COFUN-ADMIN-001 Look at an account's credits and grant credits by h
     repliesCost(210)
     await chat(alice)
     later(2 * DAY_MS)
-    await grant('user_alice', { credits: 40, days: 30 })
+    await grant('user_alice', { credits: 30, days: 30 })
     repliesCost(30)
     await chat(alice)
     const refused = await chat(alice)

@@ -248,7 +248,7 @@ describe('UC-COFUN-ADMIN-002 See granted and spent credits as a whole', () => {
 
   it('[UC-COFUN-ADMIN-002-S02] an operator sees the accounts of a period, the biggest spender first, with the balance their own record shows', async () => {
     await threeDays()
-    // Dave is only granted credits, and bob overspends his week by 40 credits and more.
+    // Dave is only granted credits, and bob's calls cost 40 credits and more beyond his week, which are forgiven.
     await grant('dave', 20, 30)
     repliesCost(240)
     await asks('bob')
@@ -264,7 +264,7 @@ describe('UC-COFUN-ADMIN-002 See granted and spent credits as a whole', () => {
           granted: 200 * CREDIT,
           spent: 240 * CREDIT + 2 * FAKE_COST,
           calls: 3,
-          balance: -40 * CREDIT - 2 * FAKE_COST,
+          balance: 0,
         },
         {
           userId: 'user_carol',
@@ -306,7 +306,7 @@ describe('UC-COFUN-ADMIN-002 See granted and spent credits as a whole', () => {
       listed.accounts.map((a: any) => [a.userId, a.granted, a.spent]),
     )
     expect(afterwards.accounts.map((a: any) => [a.userId, a.balance])).toEqual([
-      ['user_bob', -40 * CREDIT - 2 * FAKE_COST],
+      ['user_bob', 0],
       ['user_carol', 100 * CREDIT],
       ['user_alice', 0],
       ['user_dave', 20 * CREDIT],

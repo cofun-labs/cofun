@@ -131,26 +131,22 @@ describe("UC-NOTICO-CHAT-003 See credits, usage, and the plan, and UC-COFUN-CRED
     expect((await credits(alice)).balance).toBe(shown.balance - 30 * CREDIT)
   })
 
-  it('[UC-NOTICO-CHAT-003-S03] a user who overspent sees no credits left, and then the next free credits less what they owe', async () => {
+  it('[UC-NOTICO-CHAT-003-S03] a user whose call cost more than was left sees no credits left, and then the full free credits', async () => {
     await ask(alice, 150)
-    // 50 credits are left: the call goes ahead, and takes the balance 100 credits below zero.
+    // 50 credits are left: the call goes ahead, takes those 50, and the 100 beyond them are forgiven.
     await ask(alice, 150)
 
     expect(await credits(alice)).toMatchObject({
-      balance: -100 * CREDIT,
+      balance: 0,
       free: { started: true, until: START + WEEK_MS },
       grants: [{ source: 'free', left: 0, expiresAt: START + WEEK_MS }],
     })
 
     later(WEEK_MS)
     const shown = await credits(alice)
-    expect(shown).toMatchObject({ balance: 100 * CREDIT, free: { started: false, toCome: 100 * CREDIT }, grants: [] })
-
-    // Exactly 100 credits to start with: a call that costs 90 goes ahead, one of 30 more ends them.
+    expect(shown).toMatchObject({ balance: 200 * CREDIT, free: { started: false, toCome: 200 * CREDIT }, grants: [] })
     expect((await ask(alice, 90)).status).toBe(200)
     expect((await credits(alice)).balance).toBe(shown.balance - 90 * CREDIT)
-    expect((await ask(alice, 30)).status).toBe(200)
-    expect((await ask(alice)).status).toBe(402)
   })
 
   it('[UC-NOTICO-CHAT-003-S02] credits granted by hand show beside free credits that have not started', async () => {
@@ -238,7 +234,7 @@ describe("UC-NOTICO-CHAT-003 See credits, usage, and the plan, and UC-COFUN-CRED
       usage: { days: 30, byDay: [{ day: '2026-11-08', microCredits: 30 * CREDIT }] },
     })
     expect(await credits(alice)).toMatchObject({
-      balance: -100 * CREDIT,
+      balance: 0,
       usage: { byDay: [{ day: '2026-11-08', microCredits: 300 * CREDIT }] },
     })
     // Nobody's credits without a session, and no way to name another account.

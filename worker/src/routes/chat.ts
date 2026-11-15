@@ -138,10 +138,10 @@ export function chatRoutes({ now, priceOf: priceFor, logError }: Deps): App {
     if (!success) throw new HttpError(429, 'rate_limited', 'Too many requests at once. Wait a minute, then ask again.')
 
     // Charged after use: a call goes ahead while the user has credits, and its cost is taken when
-    // the reply ends. The last call may take the balance below zero; the next grant pays that back
-    // first. Calls sent at once all start on the same balance, so together they can overspend by
-    // more than one call: accepted, since one call costs little, CHAT_LIMIT caps how many there can
-    // be, and what was overspent is owed.
+    // the reply ends. The last call may cost more than what is left: it takes what is left, and the
+    // rest is forgiven, so the balance never goes below zero. Calls sent at once all start on the
+    // same balance, so together they can cost more than one call beyond it: accepted, since one call
+    // costs little, and CHAT_LIMIT and MAX_TOKENS bound how many there can be and what each costs.
     const maxTokens = max_tokens ?? MAX_TOKENS
     const ledger = new Ledger(c.env.DB, c.get('userId'))
     let balance: Balance

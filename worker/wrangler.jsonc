@@ -24,8 +24,8 @@
 
   // Per-user caps, keyed by user id. A namespace id is any number unique on the account.
   // CHAT_LIMIT: how many chat requests one user can start a minute, which bounds what calls sent at
-  // once can spend beyond the user's credits. Normal use, one question's calls one after another,
-  // stays far below it.
+  // once can cost beyond the user's credits (forgiven, never owed). Normal use, one question's
+  // calls one after another, stays far below it.
   // API_LIMIT: how many requests one user can make a minute to every other route under /v1 (their
   // credits, buying, the admin routes), so one account cannot keep D1 or Stripe busy. Normal use is
   // a few a minute: the side panel reads the credits when it loads, after each question, when the

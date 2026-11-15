@@ -21,8 +21,8 @@ const DAY_MS = 24 * HOUR_MS
 const WEEK_MS = 7 * DAY_MS
 /** A credit, in the micro-credits the worker answers in. */
 const CREDIT = 1_000_000
-/** How many grants one page holds. */
-const PAGE = 20
+/** How many grants the history holds at most. */
+const HISTORY_LIMIT = 200
 
 let clock = new Date(START)
 let logged: string[] = []
@@ -86,18 +86,6 @@ async function get(path: string, bearer: string): Promise<any> {
   return res.json()
 }
 
-/** Every page of a user's grants, read to the end. */
-async function allGrantPages(bearer: string): Promise<any[][]> {
-  const pages = []
-  let before: string | null = null
-  do {
-    const page = await get(`/v1/credits/grants${before ? `?before=${before}` : ''}`, bearer)
-    pages.push(page.grants)
-    before = page.next
-  } while (before)
-  return pages
-}
-
 const later = (ms: number) => {
   clock = new Date(clock.getTime() + ms)
 }
@@ -133,23 +121,24 @@ describe('UC-NOTICO-CHAT-003 the history of the credits a user was given, and UC
         },
         { source: 'free', amount: 200 * CREDIT, left: 140 * CREDIT, grantedAt: START, expiresAt: START + WEEK_MS },
       ],
+      // For the installed Notico 0.1.0, which reads the history a page at a time: there is no other page.
       next: null,
     })
   })
 
-  it('[UC-NOTICO-CHAT-003-S10] a grant spent to the end, and one that paid back what was overspent, are in the history', async () => {
+  it('[UC-NOTICO-CHAT-003-S10] a grant spent to the end is in the history', async () => {
     await ask(alice, 150)
-    // 50 credits are left: the call goes ahead, and overspends by 100.
+    // 50 credits are left: the call goes ahead, and takes only those 50.
     await ask(alice, 150)
     later(WEEK_MS)
     await ask(alice, 30)
 
     expect((await get('/v1/credits/grants', alice)).grants).toEqual([
-      // 100 of the 200 paid back what was overspent, and 30 were spent.
+      // Nothing of the new week went to the call that cost more than was left.
       {
         source: 'free',
         amount: 200 * CREDIT,
-        left: 70 * CREDIT,
+        left: 170 * CREDIT,
         grantedAt: START + WEEK_MS,
         expiresAt: START + 2 * WEEK_MS,
       },
@@ -157,30 +146,20 @@ describe('UC-NOTICO-CHAT-003 the history of the credits a user was given, and UC
     ])
   })
 
-  it('[UC-NOTICO-CHAT-003-S10] grants are read a page at a time, to the end, each once and in order', async () => {
-    // 45 grants, told apart by their amounts: 20 given an hour apart, then 25 in the same millisecond.
-    for (let credits = 1; credits <= 45; credits++) {
+  it('[UC-NOTICO-CHAT-003-S10] every grant is read at once, newest first, up to a limit', async () => {
+    // Grants told apart by their amounts: 20 given an hour apart, then the rest in the same millisecond.
+    const given = HISTORY_LIMIT + 5
+    for (let credits = 1; credits <= given; credits++) {
       await grant('user_alice', credits, 30)
       if (credits <= 20) later(HOUR_MS)
     }
 
-    const pages = await allGrantPages(alice)
+    const { grants } = await get('/v1/credits/grants', alice)
 
-    expect(pages.map((page) => page.length)).toEqual([PAGE, PAGE, 5])
-    // Newest first; of grants given at the same moment, the one made last first.
-    expect(pages.flat().map((g) => g.amount / CREDIT)).toEqual(Array.from({ length: 45 }, (_, i) => 45 - i))
-  })
-
-  it('[@no-uc:money] a grant made while the user pages through the history does not shift the pages after it', async () => {
-    for (let credits = 1; credits <= 25; credits++) await grant('user_alice', credits, 30)
-    const first = await get('/v1/credits/grants', alice)
-
-    later(HOUR_MS)
-    await grant('user_alice', 99, 30)
-    const second = await get(`/v1/credits/grants?before=${first.next}`, alice)
-
-    expect(second.grants.map((g: any) => g.amount / CREDIT)).toEqual([5, 4, 3, 2, 1])
-    expect(second.next).toBeNull()
+    // Newest first; of grants given at the same moment, the one made last first. The 5 oldest are past the limit.
+    expect(grants.map((g: any) => g.amount / CREDIT)).toEqual(
+      Array.from({ length: HISTORY_LIMIT }, (_, i) => given - i),
+    )
   })
 
   it('[@no-uc:money] a user who was given nothing and used nothing has an empty history, and reading it writes nothing', async () => {
@@ -196,13 +175,13 @@ describe('UC-NOTICO-CHAT-003 the history of the credits a user was given, and UC
 
     later(WEEK_MS + HOUR_MS)
     await get('/v1/credits/grants', alice)
-    await get(`/v1/credits/grants?before=${START}.0`, alice)
+    await get('/v1/credits/grants', alice)
 
     expect([db.rows('grants'), db.rows('model_calls')]).toEqual(before)
   })
 
   it('[UC-COFUN-CREDITS-002-S01] a user sees only their own history', async () => {
-    for (let credits = 1; credits <= 25; credits++) await grant('user_alice', credits, 30)
+    await grant('user_alice', 25, 30)
     await ask(alice, 150)
     await ask(bob, 30)
     later(40 * DAY_MS)
@@ -214,23 +193,10 @@ describe('UC-NOTICO-CHAT-003 the history of the credits a user was given, and UC
       { ...free, left: 170 * CREDIT, grantedAt: START },
     ])
 
-    // A place in another user's history leads into the caller's own, and there is no way to name another account.
-    const { next } = await get('/v1/credits/grants', alice)
-    expect(next).not.toBeNull()
-    // Alice's place is past her 20 newest grants of that moment; Bob has one, so nothing of his is left, and nothing of hers shows.
-    expect(await get(`/v1/credits/grants?before=${next}`, bob)).toEqual({ grants: [], next: null })
+    // There is no way to name another account.
     expect((await get('/v1/credits/grants?user_id=user_alice', bob)).grants).toHaveLength(2)
     // Nobody's history without a session.
     expect((await req('GET', '/v1/credits/grants')).status).toBe(401)
-  })
-
-  it('[@no-uc:money] a place in the grants that no page gave is refused', async () => {
-    for (const bad of ['abc', '', '12', '1.', '.1', '-1.0', '1.5.2', '1762603200000.12345', '1e3.0', '1762603200000']) {
-      const res = await req('GET', `/v1/credits/grants?before=${bad}`, alice)
-      const body: any = await res.json()
-      expect([bad, res.status, body.error?.message]).toEqual([bad, 400, 'before must be the next of an earlier page'])
-    }
-    expect((await req('GET', '/v1/credits/grants?before=1762603200000.0', alice)).status).toBe(200)
   })
 
   it('[@no-uc:money] a history that cannot be read is reported as unavailable, and the failure is logged', async () => {
@@ -242,7 +208,7 @@ describe('UC-NOTICO-CHAT-003 the history of the credits a user was given, and UC
     expect(logged).toEqual(['credit read failed: Error: D1_ERROR: Network connection lost.'])
   })
 
-  it('[@no-uc:money] each page of grants is read through an index, without sorting or reading the whole table', async () => {
+  it('[@no-uc:money] the history is read through an index, without sorting or reading the whole table', async () => {
     const plan = (sql: string, ...values: (string | number)[]) =>
       db.sqlite
         .prepare(`EXPLAIN QUERY PLAN ${sql}`)
@@ -251,12 +217,10 @@ describe('UC-NOTICO-CHAT-003 the history of the credits a user was given, and UC
         .join('; ')
 
     const grants = plan(
-      `SELECT source FROM grants WHERE user_id = ? AND granted_at <= ? ORDER BY granted_at DESC, id DESC LIMIT 21 OFFSET ?`,
+      `SELECT source FROM grants WHERE user_id = ? ORDER BY granted_at DESC, id DESC LIMIT ${HISTORY_LIMIT}`,
       'user_alice',
-      START,
-      0,
     )
-    expect(grants).toContain('USING INDEX grants_by_user_granted (user_id=? AND granted_at<?)')
+    expect(grants).toContain('USING INDEX grants_by_user_granted (user_id=?)')
     expect(grants).not.toMatch(/TEMP B-TREE|SCAN/)
   })
 })

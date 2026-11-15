@@ -23,7 +23,7 @@ export interface Env {
   /**
    * Caps how many chat requests one user can start per period (`ratelimits` in wrangler.jsonc), keyed
    * by user id. Counted per Cloudflare location and approximate: a cap on what calls sent at once can
-   * overspend, not an exact count.
+   * cost beyond the balance, not an exact count.
    */
   CHAT_LIMIT: RateLimiter
   /**

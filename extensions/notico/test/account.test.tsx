@@ -163,26 +163,23 @@ describe('the Credits page', () => {
     expect(await bySource()).toEqual(['Free this week140 · renew after Nov 17, 5:30 PM', 'Bought0'])
   })
 
-  it('[UC-NOTICO-CHAT-003-S03] shows a user who overspent that no credits are left, and then the next free credits less what they owe', async () => {
+  it('[UC-NOTICO-CHAT-003-S03] shows a user whose question cost more than was left that no credits are left, and then the full free credits', async () => {
     const { browser, user } = await openPanel()
     await ask(browser, user, 'First', 150)
-    // 50 credits are left: the question goes ahead, and overspends by 100.
+    // 50 credits are left: the question goes ahead, costs 100 more than that, and only the 50 are taken.
     await ask(browser, user, 'Second', 150)
 
     await openMenu(user)
     await waitFor(() => expect(creditsItem()).toHaveAccessibleName('Credits, 0 left'))
     await user.click(creditsItem())
-    const balance = within(section('Balance'))
-    expect(
-      await balance.findByText('You overspent 100 credits. They come out of the next credits you get.'),
-    ).toBeVisible()
     expect(await bySource()).toEqual(['Free this week0 · renew after Nov 15, 5:30 PM', 'Bought0'])
+    expect(screen.queryByText(/overspent|owe/i)).not.toBeInTheDocument()
 
-    // The week has ended: the panel is opened again.
+    // The week has ended: the panel is opened again, and nothing is owed.
     vi.setSystemTime(START.getTime() + 7 * DAY_MS)
     await browser.openPanel()
     await openCredits(user)
-    expect(await bySource()).toEqual(['Free this week100 · valid for 7 days from your next question', 'Bought0'])
+    expect(await bySource()).toEqual(['Free this week200 · valid for 7 days from your next question', 'Bought0'])
   })
 
   it('[UC-NOTICO-CHAT-003-S04] shows the credits used on each of the last 30 days, by the days of the user’s own clock, with the total and today’s', async () => {

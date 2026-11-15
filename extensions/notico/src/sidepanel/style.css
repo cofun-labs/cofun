@@ -1864,23 +1864,13 @@ button.secondary:focus-visible,
   color: var(--error);
 }
 
-/* Reads on in a list: a quiet pill, not the one thing to press. */
-.history-more {
-  margin-top: 4px;
-  padding: 7px 18px;
-  border-radius: 999px;
-  font-weight: 600;
-  background: var(--tint);
-  color: var(--accent-text);
-}
-
 /* While a read is under way the button stays, so the focus stays on it, but quiet. */
 .history button[aria-disabled='true'] {
   opacity: 0.5;
   cursor: default;
 }
 
-/* The status line is always there for screen readers; empty, it takes no room between the rows and the button. */
+/* The status line is always there for screen readers; empty, it takes no room between the rows and what follows. */
 .history-status:empty {
   margin: -3px 0;
 }
