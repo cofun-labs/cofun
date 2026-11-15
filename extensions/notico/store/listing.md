@@ -9,6 +9,7 @@ Ask Notion anything, right next to the page. Notico is an AI copilot that reads,
 
 ✓ Free to start: every account gets free credits each week
 ✓ Nothing to set up in Notion: no integration, no API token
+✓ Or answer with your own model on OpenRouter, with your own key
 ✓ Open source (Apache 2.0)
 
 WHAT YOU CAN ASK
@@ -33,13 +34,13 @@ HOW IT WORKS
 Notico works inside your own Notion tab, with the session you're already signed in with, so it can reach what you can reach and nothing else. Sign in to Notico once with Google or your email; nothing else to configure.
 
 CREDITS
-Asking the AI costs credits. Every account gets free credits each week, and the panel shows how many you have left and when they renew.
+Asking Cofun's AI model costs credits. Every account gets free credits each week, and the panel shows how many you have left and when they renew. When you need more, buy a pack in the panel: it opens Stripe's checkout, nothing renews, and bought credits last a year. Answering with your own model on OpenRouter spends no credits.
 
 PRIVACY
-Your questions, and the Notion content Notico reads to answer them, go to our server and on to an AI model running on Cloudflare Workers AI. The server does not store that content: it keeps only usage numbers, never the text of a question or an answer. Chats are saved only in Chrome on your device. Notico also reports which features are used and whether they worked, never the text of a question, an answer, or a page; you can turn that off in the settings. No ads.
+Your questions, and the Notion content Notico reads to answer them, go to our server and on to an AI model running on Cloudflare Workers AI, or, if you set up your own model, straight to OpenRouter with your key. The server does not store that content: it keeps only usage numbers, never the text of a question or an answer. Chats are saved only in Chrome on your device. Notico also reports which features are used and whether they worked, never the text of a question, an answer, or a page; you can turn that off in the settings. No ads.
 
 PLEASE NOTE
-• Notico edits pages as soon as it decides to; moving pages to the trash is the one thing it asks about first. Every change is shown in the side panel, and Notion's page history can undo edits.
+• Notico edits pages as soon as it decides to; moving pages to the trash is the one thing it asks about first. Every change is shown in the side panel, and Notion's page history can undo edits. Switch the message box to Read only to keep it from changing anything.
 • Be careful with pages written by others: text in them could steer the assistant.
 
 Source code and privacy policy: https://github.com/cofun-labs/cofun
@@ -66,7 +67,3 @@ Notico is an independent project. It is not made or endorsed by Notion.
 | Marquee promo tile | [marquee-promo-tile.png](images/marquee-promo-tile.png) | 1400×560 |
 
 The screenshots show the real side panel next to throwaway pages, made with `pnpm e2e`: the Notion page and the side panel are captured separately and set side by side, so they carry no browser frame. The screenshots and promo tiles are PNG without transparency, as the store requires for them.
-
-## For the next version
-
-The text above describes version 0.1.0, the one in the store. The next version adds credit packs bought through Stripe and answering with the user's own OpenRouter key: CREDITS, PRIVACY, and the list at the top change with it.
