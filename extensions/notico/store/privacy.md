@@ -21,7 +21,7 @@ The extension's whole interface is a side panel, where the user chats with the a
 ### storage
 
 ```text
-Keeps the user signed in (the sign-in client token) and a small setting: how long to wait after Notion asked it to slow down.
+Keeps the user signed in (the sign-in client token); the user's own OpenRouter key, if they set one up, with the models they switched on and the model chosen in the message box; and small settings: whether the assistant may change the user's pages (Edit or Read only), and whether usage data is shared.
 ```
 
 ### tabs
@@ -58,31 +58,24 @@ No, I am not using remote code. Everything the extension runs is in its package;
 |---|---|---|
 | Personally identifiable information | Yes | The account's name, email address, and avatar, shown in the panel |
 | Health information | No | |
-| Financial and payment information | No | |
-| Authentication information | Yes | The Clerk session token and cookie |
-| Personal communications | Yes | The user's conversation with the assistant goes to the worker and the model, and to the user's own Notion workspace when the user saves a chat or a reply there |
+| Financial and payment information | Yes | Each purchase of credits, kept by the worker under the account's id with its Stripe payment reference and whether it was refunded or disputed. Card details go to Stripe's Checkout page, never to the extension or the worker. When a payment adds credits, the worker also tells PostHog that a purchase was completed, with the account's id and the pack chosen, and no amount, currency, or payment reference; this comes from the worker, so the extension's usage-data switch does not cover it |
+| Authentication information | Yes | The Clerk session token and cookie, and the user's own OpenRouter key, which is sent only to OpenRouter |
+| Personal communications | Yes | The user's conversation with the assistant goes to the worker and the model, or to OpenRouter when the user answers with their own model, and to the user's own Notion workspace when the user saves a chat or a reply there |
 | Location | No | The clock's offset from UTC is sent to count credits used per day; it is not a location |
 | Web history | Yes | A tab's URL and title, when a question needs them, and the URL and title of a Notion page open in another tab that the user adds to a question |
 | User activity | Yes | Usage events sent to PostHog, unless the user turns them off in the settings: that the panel was opened, a question asked and how it ended, which tools ran, and which of the panel's actions were used. Names from a fixed list, counts, and yes/no values only: no text typed, no page content, title, or URL, no clicks or keystrokes recorded |
-| Website content | Yes | The Notion content the assistant reads goes to the worker and the model |
+| Website content | Yes | The Notion content the assistant reads goes to the worker and the model, or to OpenRouter when the user answers with their own model |
 
 All three certifications are checked: no selling or transfer of user data to third parties outside the approved use cases, no use or transfer for purposes unrelated to the single purpose, and none to determine creditworthiness or for lending.
 
 ## For the next version
 
-This page describes version 0.1.0, the one in the store. The version after it lets users answer with their own OpenRouter key, and buy credit packs through Stripe, so before it is submitted:
+This page describes version 0.2.0. The version after it adds optional host permissions for web sites, which the user grants one site at a time (none at install), so before it is submitted:
 
-- The **storage** justification also says that the user's own model keys, and the model chosen with each, are kept there.
-- The **storage** justification also names the setting for whether the assistant may change the user's pages (Edit or Read only).
-- The **storage** justification no longer names how long to wait after Notion asked the extension to slow down: that wait is kept in the side panel's memory now, not in storage.
-- **Financial and payment information** becomes Yes: the worker keeps each purchase, by Clerk user id, with its Stripe payment reference and whether it was refunded or disputed (see `PRIVACY.md`). The card details go to Stripe's Checkout page, never to the extension or the worker.
-- **User activity** becomes Yes, as the table above already says, and the **storage** justification also names the setting that turns usage data off (in `chrome.storage.local`). The random id usage is counted under before sign-in is kept in the extension's own `localStorage`, which needs no permission. PostHog (`us.i.posthog.com`) is reached under the content security policy, not through a host permission. Usage events hold no content and are used only to improve the extension, which is within the Limited Use policy; the certifications stay checked.
-- The rest of the data usage stays as it is: a user's own key is authentication information, and the conversation and the Notion content it holds go to the model service the user chose, which is personal communications and website content again. The privacy policy already says so.
-- The extension asks for no new permission at install: OpenRouter is reached under the content security policy, not through host permissions. It adds optional host permissions for web sites, which the user grants one site at a time, so before it is submitted:
-  - The **single purpose** reads: "Notico is an AI assistant in Chrome's side panel that reads and edits the user's Notion pages at the user's request, and reads the page the user is on, on a site they allowed, when a question is about it."
-  - The **scripting** justification adds: "On another site, and only on one the user allowed, it reads the text of the page in the current tab, inside that tab, when the user's question is about that page."
-  - The **Host permission** justification adds: "Optional host permissions for http and https sites: none is granted at install. When the user asks about the page they are on, the side panel asks them to allow that one site, and Chrome asks them again; only then is the page's text read, in the tab."
-  - **Website content** also names the text of a page on another site that the assistant reads, which goes to the worker and the model. **Web history** stays Yes, as it is: that page's URL and title go with it.
+- The **single purpose** reads: "Notico is an AI assistant in Chrome's side panel that reads and edits the user's Notion pages at the user's request, and reads the page the user is on, on a site they allowed, when a question is about it."
+- The **scripting** justification adds: "On another site, and only on one the user allowed, it reads the text of the page in the current tab, inside that tab, when the user's question is about that page."
+- The **Host permission** justification adds: "Optional host permissions for http and https sites: none is granted at install. When the user asks about the page they are on, the side panel asks them to allow that one site, and Chrome asks them again; only then is the page's text read, in the tab."
+- **Website content** also names the text of a page on another site that the assistant reads, which goes to the worker and the model (or to OpenRouter). **Web history** stays Yes, as it is: that page's URL and title go with it.
 
 ## Privacy policy URL
 

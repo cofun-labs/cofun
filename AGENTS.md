@@ -4,7 +4,8 @@ Cofun: Chrome extensions that each open an AI side panel next to one kind of pag
 
 **Before starting work, read [docs/architecture.md](docs/architecture.md)** for the architecture, auth flow, and code layout. The other docs:
 
-- [docs/development.md](docs/development.md): setup, testing infrastructure, merging, deployment, and releases.
+- [docs/development.md](docs/development.md): setup, testing infrastructure, merging, and deployment.
+- [docs/release.md](docs/release.md): releasing an extension to the Chrome Web Store.
 - [docs/security.md](docs/security.md): the security model, which a change to the agent, the extension's surface, or the worker's routes is checked against.
 - [docs/bdd.md](docs/bdd.md): use cases, scenarios, and what gets a test.
 - [docs/review.md](docs/review.md): how a PR is reviewed, with every rule numbered.

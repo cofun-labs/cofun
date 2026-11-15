@@ -99,6 +99,7 @@ describe('extension manifest', () => {
         'permissions',
         'side_panel',
         'version',
+        'version_name',
       ].sort(),
     )
   })
@@ -163,16 +164,19 @@ describe('extension manifest', () => {
   })
 
   // The Chrome Web Store signs the item with its own key, which sets the ID, so the zip uploaded
-  // there carries no `key`. Everything else is what local builds ship.
-  it('[@no-uc:access] leaves out only the key in the store build', () => {
+  // there carries no `key`, and no `version_name`, which marks a development build. Everything
+  // else is what local builds ship.
+  it('[@no-uc:access] leaves out only the key and the development mark in the store build', () => {
     const env = hostedEnv()
     const hosted = { ...env, VITE_CLERK_SYNC_HOST: env.VITE_CLERK_SYNC_HOST! }
     expect(env.CRX_PUBLIC_KEY).toBeTruthy()
     const local = buildManifest(hosted, '1.2.3')
     const store = buildManifest(hosted, '1.2.3', { store: true })
     expect(local).toHaveProperty('key', env.CRX_PUBLIC_KEY)
+    expect(local).toHaveProperty('version_name', '1.2.3 dev')
     expect(store).not.toHaveProperty('key')
-    const { key: _, ...rest } = local
+    expect(store).not.toHaveProperty('version_name')
+    const { key: _, version_name: __, ...rest } = local
     expect(store).toEqual(rest)
   })
 })

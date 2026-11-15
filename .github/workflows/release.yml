@@ -3,7 +3,7 @@ name: Release
 # Builds one extension from main for the Chrome Web Store and puts the zip on a draft GitHub
 # Release, tagged <extension>-v<version>, whose body is that version's entry in the extension's
 # CHANGELOG.md. Run by hand (Actions → Release → Run workflow); see
-# "Releases" in docs/development.md. Uploading the zip to the store is not automated yet (#28).
+# docs/release.md. The zip is uploaded to the store by hand.
 on:
   workflow_dispatch:
     inputs:
@@ -121,8 +121,9 @@ jobs:
       - name: Run checks
         run: pnpm check
 
-      # Replaces the build "Run checks" made: the version from the input, and no `key` in the
-      # manifest (the store sets the ID). package.json keeps its development version.
+      # Replaces the build "Run checks" made: the version from the input, and no `key` (the store
+      # sets the ID) or `version_name` (which marks a development build) in the manifest.
+      # package.json keeps its development version.
       - name: Build for the store
         env:
           CRX_STORE_BUILD: "1"
@@ -132,8 +133,8 @@ jobs:
       - name: Check the manifest
         run: |
           manifest="extensions/$EXTENSION/dist/manifest.json"
-          jq -e --arg v "$VERSION" '.version == $v and (has("key") | not)' "$manifest" >/dev/null || {
-            echo "::error::$manifest does not have version $VERSION and no key."
+          jq -e --arg v "$VERSION" '.version == $v and (has("key") | not) and (has("version_name") | not)' "$manifest" >/dev/null || {
+            echo "::error::$manifest does not have version $VERSION, no key, and no version_name."
             exit 1
           }
 
@@ -149,7 +150,7 @@ jobs:
       # Info-ZIP's zip reads $ZIP as default options, so it would write the archive into dist.
       # The zip's SHA-256 goes into the run's summary, which only this run writes, so the
       # maintainer can check the draft release's zip against it before uploading it to the store
-      # (see "Releases" in docs/development.md).
+      # (see docs/release.md).
       - name: Zip the build
         id: zip
         env:
@@ -171,7 +172,7 @@ jobs:
             echo "\`\`\`"
           } >>"$GITHUB_STEP_SUMMARY"
 
-      # The zip the release gets, and the one a later store upload job takes.
+      # The zip the release job attaches to the draft release.
       - name: Upload the zip
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
