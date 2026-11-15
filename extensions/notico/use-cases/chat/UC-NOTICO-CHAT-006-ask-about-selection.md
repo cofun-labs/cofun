@@ -1,4 +1,4 @@
-# UC-NOTICO-CHAT-005: Ask about text selected on a page
+# UC-NOTICO-CHAT-006: Ask about text selected on a page
 
 ## Behavior
 
@@ -17,14 +17,14 @@ Key constraints:
 
 | ID | Priority | Status | Scenario |
 | --- | --- | --- | --- |
-| UC-NOTICO-CHAT-005-S01 | P0 | ✅ | Given text selected on a page of a site Notico was never allowed to read; when the user picks "Ask Notico" and then asks about it; then the side panel opens with the selection in the message box, naming the site, nothing is sent until the question is, and the AI gets the text, line breaks kept, marked as data from that page with its address, without the user being asked to allow the site. |
-| UC-NOTICO-CHAT-005-S02 | P1 | ✅ | Given a selection in a frame from another site; when the user picks "Ask Notico"; then the question carries Chrome's own copy of the selection. |
-| UC-NOTICO-CHAT-005-S03 | P1 | ✅ | Given a selection in the message box; when the user sends another, then takes it off with its button, or with Backspace in an empty message; then the newer one replaces the first, and once taken off the question goes without it. |
-| UC-NOTICO-CHAT-005-S04 | P1 | ✅ | Given a question sent with a selection; when the session is reopened and the user clicks the selection in the question; then it still shows, and the current tab goes to the page, to the selected text. |
-| UC-NOTICO-CHAT-005-S05 | P2 | ✅ | Given a selection longer than a question may carry; when it is sent; then the AI gets its start and is told how much was left out. |
+| UC-NOTICO-CHAT-006-S01 | P0 | ✅ | Given text selected on a page of a site Notico was never allowed to read; when the user picks "Ask Notico" and then asks about it; then the side panel opens with the selection in the message box, naming the site, nothing is sent until the question is, and the AI gets the text, line breaks kept, marked as data from that page with its address, without the user being asked to allow the site. |
+| UC-NOTICO-CHAT-006-S02 | P1 | ✅ | Given a selection in a frame from another site; when the user picks "Ask Notico"; then the question carries Chrome's own copy of the selection. |
+| UC-NOTICO-CHAT-006-S03 | P1 | ✅ | Given a selection in the message box; when the user sends another, then takes it off with its button, or with Backspace in an empty message; then the newer one replaces the first, and once taken off the question goes without it. |
+| UC-NOTICO-CHAT-006-S04 | P1 | ✅ | Given a question sent with a selection; when the session is reopened and the user clicks the selection in the question; then it still shows, and the current tab goes to the page, to the selected text. |
+| UC-NOTICO-CHAT-006-S05 | P2 | ✅ | Given a selection longer than a question may carry; when it is sent; then the AI gets its start and is told how much was left out. |
 
 ### ai-e2e
 
 | ID | Priority | Status | Scenario |
 | --- | --- | --- | --- |
-| UC-NOTICO-CHAT-005-S06 | P1 | 🚧 | Given a paragraph selected on a web page in Chrome; when the user picks "Ask Notico" from the context menu and asks what it means; then the side panel opens with the selection in the message box, and the reply explains the paragraph and names the page's address. |
+| UC-NOTICO-CHAT-006-S06 | P1 | 🚧 | Given a paragraph selected on a web page in Chrome; when the user picks "Ask Notico" from the context menu and asks what it means; then the side panel opens with the selection in the message box, and the reply explains the paragraph and names the page's address. |

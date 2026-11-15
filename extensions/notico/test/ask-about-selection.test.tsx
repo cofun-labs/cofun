@@ -54,7 +54,7 @@ const selectionNote = (text: string, clipped?: string) =>
 const question = (note: string, typed: string) => `[The current tab is not a Notion page.]\n${note}\n\n${typed}`
 
 describe('asking about text selected on a page', () => {
-  it('[UC-NOTICO-CHAT-005-S01] the menu item opens the panel with the selection, and the question carries it as data from the page', async () => {
+  it('[UC-NOTICO-CHAT-006-S01] the menu item opens the panel with the selection, and the question carries it as data from the page', async () => {
     const { browser, tab, user } = await start()
     expect(tab.menuItems.get(MENU_ITEM)).toEqual({ title: 'Ask Notico about “%s”', contexts: ['selection'] })
 
@@ -91,7 +91,7 @@ describe('asking about text selected on a page', () => {
     expect(screen.queryByRole('list', { name: 'Pages to send' })).toBeNull()
   })
 
-  it('[UC-NOTICO-CHAT-005-S01] a selection sent while the panel is open joins the next question there', async () => {
+  it('[UC-NOTICO-CHAT-006-S01] a selection sent while the panel is open joins the next question there', async () => {
     const { browser, tab, user } = await start()
     await browser.openPanel()
 
@@ -104,7 +104,7 @@ describe('asking about text selected on a page', () => {
     expect(sentQuestions(browser)).toEqual([question(selectionNote('Rivers are rising.'), 'Is it true?')])
   })
 
-  it('[UC-NOTICO-CHAT-005-S02] a selection in a frame from another site goes as Chrome gives it', async () => {
+  it('[UC-NOTICO-CHAT-006-S02] a selection in a frame from another site goes as Chrome gives it', async () => {
     const { browser, tab, user } = await start()
     await browser.openPanel()
 
@@ -117,7 +117,7 @@ describe('asking about text selected on a page', () => {
     expect(sentQuestions(browser)).toEqual([question(selectionNote('Rivers are rising.'), 'Explain')])
   })
 
-  it('[UC-NOTICO-CHAT-005-S03] a newer selection replaces the first, and one taken off goes with no question', async () => {
+  it('[UC-NOTICO-CHAT-006-S03] a newer selection replaces the first, and one taken off goes with no question', async () => {
     const { browser, tab, user } = await start()
     await browser.openPanel()
 
@@ -142,7 +142,7 @@ describe('asking about text selected on a page', () => {
     expect(sentQuestions(browser)).toEqual(['[The current tab is not a Notion page.]\n\nHi'])
   })
 
-  it('[UC-NOTICO-CHAT-005-S04] a reopened question still shows its selection, which takes the tab to the text', async () => {
+  it('[UC-NOTICO-CHAT-006-S04] a reopened question still shows its selection, which takes the tab to the text', async () => {
     const { browser, tab, user } = await start()
     await browser.openPanel()
     tab.pickMenuItem(MENU_ITEM, 'Rivers are rising fast this spring, says the city, which has a plan.')
@@ -170,7 +170,7 @@ describe('asking about text selected on a page', () => {
     expect(browser.openedTabs).toEqual([])
   })
 
-  it('[UC-NOTICO-CHAT-005-S05] a long selection is clipped, and the AI is told how much was left out', async () => {
+  it('[UC-NOTICO-CHAT-006-S05] a long selection is clipped, and the AI is told how much was left out', async () => {
     const { browser, tab, user } = await start()
     await browser.openPanel()
     tab.pickMenuItem(MENU_ITEM, 'x'.repeat(25_000))
