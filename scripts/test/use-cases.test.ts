@@ -200,7 +200,7 @@ describe('checkUseCases', () => {
     ])
   })
 
-  it('fails on a test that names neither a scenario ID nor a kind of harm, in any way a test is written', () => {
+  it('fails on a test that names neither a scenario ID nor a kind of harm, in any way a test is written, a loop included', () => {
     const text = [
       "it('[@no-uc:privacy] logs nothing', () => {})",
       'it(',
@@ -219,6 +219,10 @@ describe('checkUseCases', () => {
       "it('[@no-uc:speed] guards a kind that is not one', () => {})",
       "it.each([1])('has no tag either', () => {})",
       "it.skip('is skipped, so it is not checked', () => {})",
+      "it.only('has no tag, though it runs alone', () => {})",
+      "it.skipIf(slow)('has no tag behind a condition', () => {})",
+      'for (const c of CASES) it(c.name, () => {})',
+      "it.concurrent('[@no-uc:privacy] runs with others', () => {})",
     ].join('\n')
     const report = checkUseCases([], [{ path: 'worker/test/api.test.ts', text }])
     expect(report.errors).toEqual([
@@ -227,6 +231,9 @@ describe('checkUseCases', () => {
       ),
       'worker/test/api.test.ts:15: [@no-uc:speed] is not a kind of harm; use one of data, notion-safety, money, access, privacy, contract',
       expect.stringMatching(/^worker\/test\/api\.test\.ts:16: a test that names no scenario ID/),
+      expect.stringMatching(/^worker\/test\/api\.test\.ts:18: a test that names no scenario ID/),
+      expect.stringMatching(/^worker\/test\/api\.test\.ts:19: a test that names no scenario ID/),
+      expect.stringMatching(/^worker\/test\/api\.test\.ts:20: a test that names no scenario ID/),
     ])
   })
 

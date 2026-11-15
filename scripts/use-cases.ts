@@ -122,22 +122,23 @@ const NO_UC = /\[@no-uc:([a-z-]*)\]/g
 const ANY_TEST_ID = new RegExp(`\\[${SCENARIO_ID}\\]`)
 
 /**
- * The line of each test's name: the `it(` or `test(` line, the next one when the formatter put the name
- * there, or the `])(` line that closes an `it.each` table.
+ * The line of each test's name: the line that starts it (`it(`, `test(`, `it.only(`, `it.each(…)(`, a
+ * loop that makes one, and every other form but `.skip` and `.todo`), the next one when the formatter
+ * put the name there, or the `])(` line that closes a table of cases. A form this doesn't know still
+ * counts as a test, so a test can't pass the check unread.
  */
 function testNameLines(lines: string[]): number[] {
   const found: number[] = []
   lines.forEach((line, index) => {
-    if (/^\s*(it|test)\(/.test(line)) found.push(line.trimEnd().endsWith('(') ? index + 1 : index)
-    else if (/^\s*(it|test)\.each\b/.test(line)) {
-      if (/\)\(\s*['"`]/.test(line)) found.push(index)
-      else if (line.trimEnd().endsWith(')(')) found.push(index + 1)
-      else {
-        let close = index + 1
-        while (close < lines.length && !/^\s*\]?\)\(/.test(lines[close])) close++
-        found.push(close)
-      }
-    }
+    if (/^\s*(it|test)\.(skip|todo)\b/.test(line)) return
+    if (!/^\s*(it|test)\b[.(]/.test(line) && !/^\s*for\b.*\b(it|test)\b[.(]/.test(line)) return
+    if (/\b(it|test)(\.\w+)*\(\s*['"`]/.test(line) || /\)\(\s*['"`]/.test(line)) found.push(index)
+    else if (line.trimEnd().endsWith('(')) found.push(index + 1)
+    else if (/^\s*(it|test)\.\w+\(\s*\[\s*$/.test(line)) {
+      let close = index + 1
+      while (close < lines.length && !/^\s*\]?\)\(/.test(lines[close])) close++
+      found.push(close)
+    } else found.push(index)
   })
   return found
 }
