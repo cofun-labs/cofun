@@ -374,136 +374,38 @@ const WRITES = new Set<NotionEndpoint>(['saveTransactionsFanout', 'enqueueTask',
 const LIMITED = new Set([429, 529])
 
 /**
- * Where the end of the wait is kept, so that every side panel of the browser keeps to it, and one
- * opened later too (see tab.ts for the one over chrome.storage).
- */
-export interface CooldownStore {
-  /** The end time kept, if any: whatever is there, checked by the cooldown. */
-  load(): Promise<unknown>
-  save(until: number): Promise<void>
-  /** Calls `listener` with the end time whenever one is saved, by any side panel. */
-  onChange(listener: (until: unknown) => void): void
-}
-
-/**
  * The wait Notion asks for when it turns a request away (Retry-After): until it is over, no
- * client sends anything, so asking again sooner doesn't press the account further. When Notion
- * doesn't say how long, there is no wait: the question has stopped, and only the user asking
- * again sends anything. A side panel has one for all its
- * clients, and with a `store` every side panel keeps to the same wait: another Notion tab's, and
- * one opened or reloaded later (see tab.ts). `now` is the clock, which tests set. The end is a
- * time of day, the only clock side panels share: a clock set forward ends the wait early.
+ * client of this side panel sends anything, so asking again sooner doesn't press the account
+ * further. When Notion doesn't say how long, there is no wait: the question has stopped, and only
+ * the user asking again sends anything. It lives in memory: another side panel, or this one
+ * reloaded, does not keep to it. `now` is the clock, which tests set.
  */
 export class NotionCooldown {
-  /** When the wait ends, by `now`'s clock; kept here so `left` needs no storage read. */
+  /** When the wait ends, by `now`'s clock. */
   private until = 0
-  private loading?: Promise<void>
-  /** Whether the store's changes are followed already. */
-  private following = false
 
-  constructor(
-    public now: () => number = () => Date.now(),
-    private readonly store?: CooldownStore,
-  ) {}
+  constructor(public now: () => number = () => Date.now()) {}
 
   /**
-   * Resolves once the wait kept in the store is known here, and later changes to it are followed.
-   * Nothing may be sent before. A store that fails is logged, and the wait is this panel's only
-   * until a later call loads it: each call tries again after a failure.
-   */
-  ready(): Promise<void> {
-    return (this.loading ??= this.load().then((loaded) => {
-      if (!loaded) this.loading = undefined
-    }))
-  }
-
-  /** Whether the store's wait was loaded, and its changes are followed. */
-  private async load(): Promise<boolean> {
-    if (!this.store) return true
-    try {
-      if (!this.following) this.store.onChange((until) => this.changed(until))
-      this.following = true
-      this.adopt(await this.store.load())
-      return true
-    } catch (err) {
-      console.error('Could not load the wait after Notion turned requests away', err)
-      return false
-    }
-  }
-
-  /**
-   * The store's end time changed. Side panels turned away at the same moment each save their own
-   * end, and the last one saved may be the earlier: the panel whose wait ends later saves it again,
-   * so that a panel opened afterwards loads the later end.
-   */
-  private changed(until: unknown): void {
-    this.adopt(until)
-    // `left` first cuts an end here that is too far ahead, so that one is never saved back.
-    if (this.left() > 0 && typeof until === 'number' && until < this.until) this.save()
-  }
-
-  /** Takes an end time from the store, unless the wait here ends later, or it isn't a time. */
-  private adopt(until: unknown): void {
-    if (typeof until === 'number' && Number.isFinite(until)) this.until = Math.max(this.until, until)
-  }
-
-  private save(): void {
-    this.store?.save(this.until).catch((err: unknown) => {
-      console.error('Could not keep the wait after Notion turned requests away', err)
-    })
-  }
-
-  /**
-   * Starts the wait Notion's Retry-After asks for (at most COOLDOWN_MAX_MS). Without one that is
-   * understood, no wait starts.
+   * Starts the wait Notion's Retry-After asks for, in whole seconds, up to COOLDOWN_MAX_MS. Anything
+   * else (an HTTP date included) starts no wait. A wait already running that ends later is kept.
    */
   start(retryAfter?: string): void {
-    // First cuts an end kept from before that is too far ahead, so the new wait is not lost behind it.
-    this.left()
-    const now = this.now()
-    const wait = waitFor(retryAfter, now)
-    if (!wait) return
-    this.until = Math.max(this.until, now + wait)
-    this.save()
+    const text = retryAfter?.trim() ?? ''
+    if (!/^\d+$/.test(text)) return
+    const wait = Math.min(Number(text) * 1000, COOLDOWN_MAX_MS)
+    this.until = Math.max(this.until, this.now() + wait)
   }
 
-  /**
-   * For tests, as a browser started anew: ends the wait in this side panel and in the store, and
-   * has the next `ready` load the store, and follow it, again.
-   */
+  /** For tests: ends the wait. */
   clear(): void {
     this.until = 0
-    this.loading = undefined
-    this.following = false
-    this.save()
   }
 
-  /** How long until requests may be sent again; 0 when they may. Never more than COOLDOWN_MAX_MS. */
+  /** How long until requests may be sent again; 0 when they may. */
   left(): number {
-    const now = this.now()
-    // No wait is ever longer, so an end further ahead means the clock was set back since. It is
-    // moved, not just reported shorter: the wait would otherwise last until the clock caught up.
-    if (this.until - now > COOLDOWN_MAX_MS) {
-      this.until = now + COOLDOWN_MAX_MS
-      this.save()
-    }
-    return Math.max(0, this.until - now)
+    return Math.max(0, this.until - this.now())
   }
-}
-
-/** Retry-After as a date, the only form HTTP still writes: `Tue, 10 Nov 2026 08:02:00 GMT`. */
-const HTTP_DATE =
-  /^(Mon|Tue|Wed|Thu|Fri|Sat|Sun), \d{2} (Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) \d{4} \d{2}:\d{2}:\d{2} GMT$/
-
-/**
- * The wait Retry-After asks for, in whole seconds or as an HTTP date, up to COOLDOWN_MAX_MS; 0
- * when there is none, it has passed, or it is anything else: that is not guessed at (Date.parse
- * alone would make a date of much that isn't one).
- */
-function waitFor(retryAfter: string | undefined, now: number): number {
-  const text = retryAfter?.trim() ?? ''
-  const ms = /^\d+$/.test(text) ? Number(text) * 1000 : HTTP_DATE.test(text) ? Date.parse(text) - now : Number.NaN
-  return Number.isNaN(ms) ? 0 : Math.min(Math.max(ms, 0), COOLDOWN_MAX_MS)
 }
 
 export class NotionClient {
