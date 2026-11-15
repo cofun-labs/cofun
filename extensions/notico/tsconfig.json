@@ -11,5 +11,13 @@
     "noEmit": true,
     "allowImportingTsExtensions": true
   },
-  "include": ["src", "test", "vite.config.ts", "vitest.config.ts", "manifest.ts"]
+  "include": [
+    "src",
+    "test",
+    "browser-test",
+    "playwright.config.ts",
+    "vite.config.ts",
+    "vitest.config.ts",
+    "manifest.ts"
+  ]
 }

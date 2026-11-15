@@ -1,4 +1,4 @@
-// Loads the built extension (extensions/notico/dist) into Chromium and checks that it still works there.
+// The browser tests (pnpm test:browser): loads the built extension (dist/) into Chromium and checks that it still works there.
 // Nothing leaves the machine: Notion, the other site, Clerk's Frontend API, and (signed in) the worker
 // and its model are answered from fixtures/ and fakes.ts, usage events are taken and dropped, and any other request fails the test. The extension's own code and its bundled
 // dependencies run unchanged.
@@ -15,8 +15,8 @@ import { existsSync, readFileSync } from 'node:fs'
 import path from 'node:path'
 import { PAGE, PAGE_TITLE, PAGE_URL, USER, completionStream, notionAnswer, type NotionRequest } from './fakes'
 
-const DIST = path.resolve(import.meta.dirname, '../../extensions/notico/dist')
-const FIXTURES = path.resolve(import.meta.dirname, '../fixtures')
+const DIST = path.resolve(import.meta.dirname, '../dist')
+const FIXTURES = path.resolve(import.meta.dirname, 'fixtures')
 
 const NOTION_URLS = ['https://www.notion.so/Smoke-Test-Page', 'https://app.notion.com/p/smoke-test-page']
 const OTHER_URL = 'https://example.com/'

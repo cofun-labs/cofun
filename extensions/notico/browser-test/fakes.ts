@@ -1,4 +1,4 @@
-// What the smoke test answers in place of Notion's API and the worker's model, signed in. Written by
+// What the browser tests answer in place of Notion's API and the worker's model, signed in. Written by
 // hand and kept small: the browser tests check that the built extension's paths work in Chrome, and
 // leave what Notion and the model answer in every other case to the extension's and the worker's tests.
 

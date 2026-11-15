@@ -6,11 +6,11 @@ Requires Node.js 24 and pnpm. The repository is one pnpm workspace: the [worker]
 pnpm install
 pnpm check        # lint, unused code check (knip), format check, use case coverage (pnpm use-cases), typecheck, extension build, and every package's tests
 pnpm knip         # unused files, exports, and dependencies (knip.jsonc lists what is kept, and why)
-pnpm smoke        # build the extension and load it into Chromium (first: pnpm --filter cofun-smoke exec playwright install chromium)
+pnpm test:browser # build the extensions and run their browser tests in Chromium (first: pnpm --filter notico-extension exec playwright install chromium)
 pnpm icons        # export extensions/notico/icons/icon.svg into extensions/notico/public/icons (needs the same Chromium); commit the PNGs
 ```
 
-A lefthook pre-commit hook runs `pnpm check`. GitHub Actions runs it and `pnpm smoke` on every pull request.
+A lefthook pre-commit hook runs `pnpm check`. GitHub Actions runs it and the browser tests on every pull request.
 
 See [AGENTS.md](../AGENTS.md) for the issue → PR → review → merge workflow.
 
@@ -85,7 +85,7 @@ shasum -a 256 extensions/notico/keys/pub.der | cut -c1-32 | tr '0-9a-f' 'a-p'  #
 
 The Clerk instance needs the Native API on; a production one also needs its DNS records, its own OAuth credentials, and its JWT public key as the worker's `CLERK_JWT_KEY` ([Clerk's Sync Host guide](https://clerk.com/docs/guides/sessions/sync-host)). When the sign-in page's registrable domain has more than two labels (such as `example.co.uk`), set it as `CLERK_COOKIE_DOMAIN` in `.env.local` (`manifest.ts`).
 
-Another extension goes through the same steps in its own folder. To release it, add its folder name to the `extension` choices in [`release.yml`](../.github/workflows/release.yml), once the smoke test covers it.
+Another extension goes through the same steps in its own folder. To release it, add its folder name to the `extension` choices in [`release.yml`](../.github/workflows/release.yml), once it has browser tests (`browser-test/` and a `test:browser` script).
 
 ## Releases
 
@@ -99,7 +99,7 @@ Before running it, add the version to the extension's `CHANGELOG.md` ([Notico's]
 
 The version goes into the manifest and is not committed: `package.json` keeps its development version, and the tags record what was released. It must be 1 to 4 dot-separated integers from 0 to 65535, without leading zeros, and higher than the version last uploaded to the store, which rejects any other.
 
-The workflow needs no secrets. It checks out `main`, runs `pnpm check`, builds the extension for the store, runs the smoke test against that build, and zips `extensions/<name>/dist`. Then it tags the commit `<name>-v<version>` (for example `notico-v0.2.0`) and creates a **draft** GitHub Release with the changelog entry as its body and the zip (`<name>-<version>.zip`) attached; the zip is also kept as the run's artifact. A tag that exists already stops the run, so each version is built once. To throw a run's result away, delete the draft release and its tag:
+The workflow needs no secrets. It checks out `main`, runs `pnpm check`, builds the extension for the store, runs its browser tests against that build, and zips `extensions/<name>/dist`. Then it tags the commit `<name>-v<version>` (for example `notico-v0.2.0`) and creates a **draft** GitHub Release with the changelog entry as its body and the zip (`<name>-<version>.zip`) attached; the zip is also kept as the run's artifact. A tag that exists already stops the run, so each version is built once. To throw a run's result away, delete the draft release and its tag:
 
 ```bash
 gh release delete notico-v0.2.0 --cleanup-tag

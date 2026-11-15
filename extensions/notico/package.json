@@ -7,7 +7,9 @@
     "dev": "vite build --watch --mode development",
     "build": "vite build",
     "test": "vitest run",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test:browser": "playwright test",
+    "icons": "node icons/export.ts"
   },
   "dependencies": {
     "@clerk/chrome-extension": "^3.1.105",
@@ -22,6 +24,7 @@
     "zod": "^4.6.7"
   },
   "devDependencies": {
+    "@playwright/test": "^1.65.0",
     "@testing-library/dom": "^10.4.2",
     "@testing-library/jest-dom": "^7.0.1",
     "@testing-library/react": "^16.3.3",
