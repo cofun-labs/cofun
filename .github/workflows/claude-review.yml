@@ -41,9 +41,9 @@ jobs:
             - Security issues
             - Performance problems
             - Adherence to the conventions in CLAUDE.md, if present
-            - Cost against value: the product has few users, so a trivial, rare, or low-priority
-              concern handled with a lot of code, state, edge-case handling, or tests gets the
-              simpler approach proposed
+            - Cost against value at the product's stage: a trivial, rare, or low-priority concern
+              handled with a lot of code, state, edge-case handling, or tests gets the simpler
+              approach proposed, never one that breaks a rule CLAUDE.md says must hold
 
             If you have reviewed this pull request before (a summary comment of yours names the
             head commit it reviewed), read the review threads first (`gh api
@@ -54,7 +54,7 @@ jobs:
             own: skip them. Don't raise again what a thread already covers or answered. Without
             an earlier summary of yours, review the whole pull request.
             Start each finding with **Blocking:** or **Suggestion:**, judged by step 8 of CLAUDE.md,
-            or with **Maintainer's call:** for a simpler approach that gives up something users
+            or with **User's call:** for a simpler approach that gives up something users
             would notice; say what they would lose.
 
             Use inline comments for specific issues in the code.
