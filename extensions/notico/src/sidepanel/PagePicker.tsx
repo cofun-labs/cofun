@@ -9,10 +9,11 @@ import { useMenu } from './menu'
 import { PageIcon, titleOf } from './Pages'
 
 /**
- * Which page a URL shows: a Notion page's id, or the URL when it has none (say, Notion's home), as
- * for a tab on another site, whose address may hold anything.
+ * Which page a URL shows: a Notion page's id, or the URL when it has none (say, Notion's home); for
+ * a tab on another site, which tab it is.
  */
-export const pageKey = (page: { url: string; web?: true }): string => (!page.web && pageIdFromUrl(page.url)) || page.url
+export const pageKey = (page: { url: string; web?: true; tab?: number }): string =>
+  page.web ? `tab ${page.tab ?? page.url}` : (pageIdFromUrl(page.url) ?? page.url)
 
 /** How long typing must pause before the workspace is searched. */
 const SEARCH_DELAY_MS = 300

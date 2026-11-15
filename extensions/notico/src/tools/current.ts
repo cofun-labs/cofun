@@ -28,13 +28,15 @@ export async function currentNotionPage(): Promise<OpenPage | undefined> {
 
 /**
  * A page a question carries: its title and URL, as the tab or Notion's search showed them, and
- * whether it is a database; or, with `web`, a page on another site, in a tab the user added.
+ * whether it is a database; or, with `web`, a page on another site, in the tab the user added
+ * (`tab`, Chrome's id for it), as that tab showed it then.
  */
 export interface OpenPage {
   title: string
   url: string
   database?: true
   web?: true
+  tab?: number
 }
 
 /** The title Chrome reports for a Notion tab, without the " | Notion" a tab title may end with. */
@@ -57,7 +59,7 @@ export async function openNotionPages(): Promise<OpenPage[]> {
 
 /** A tab on another site the user can add to a question, and whether Notico may read its site already. */
 export interface WebTab {
-  page: OpenPage & { web: true }
+  page: OpenPage & { web: true; tab: number }
   origin: string
   allowed: boolean
 }
@@ -71,11 +73,11 @@ export interface WebTab {
 export async function openWebTabs(): Promise<WebTab[]> {
   const seen = new Set<string>()
   const tabs = (await chrome.tabs.query({ currentWindow: true })).flatMap((tab) => {
-    if (!tab.url || isNotion(tab.url) || seen.has(tab.url)) return []
+    if (tab.id === undefined || !tab.url || isNotion(tab.url) || seen.has(tab.url)) return []
     const site = readableSite(tab.url)
     if ('reason' in site) return []
     seen.add(tab.url)
-    return [{ title: tab.title ?? '', url: tab.url, origin: site.origin }]
+    return [{ title: tab.title ?? '', url: tab.url, tab: tab.id, origin: site.origin }]
   })
   return Promise.all(
     tabs.map(async ({ origin, ...page }) => ({
@@ -87,11 +89,31 @@ export async function openWebTabs(): Promise<WebTab[]> {
 }
 
 /**
- * The addresses of the tabs on other sites the user added to the conversation, in any of its
- * questions: the only tabs besides the current one read_tab may read. Keyed by the URL as the note
- * names it (see `noteUrl`), and by the tab's own, each to the tab's own. carryPages sets them.
+ * The tabs on other sites the user added to the conversation, in any of its questions, by Chrome's
+ * id, as each showed its page then: with the current tab, the only tabs read_tab may read, whatever
+ * page they show now. carryPages sets them.
  */
-let addedTabs = new Map<string, string>()
+let addedTabs = new Map<number, OpenPage>()
+
+/**
+ * Where the ids of the tabs the user added are kept for as long as the browser runs. Chrome gives
+ * tabs new ids after a restart, so an id a saved chat holds may then be another tab's: only an id
+ * added since the browser started is read (chrome.storage.session is cleared on a restart).
+ */
+const ADDED_TABS_KEY = 'addedTabs'
+const TabIds = z.array(z.number().int())
+
+/** Notes that the user added the tab with this id to a question, so read_tab may read it until the browser restarts. */
+export async function rememberTab(id: number): Promise<void> {
+  const ids = await tabsAddedSinceStart()
+  if (!ids.includes(id)) await chrome.storage.session.set({ [ADDED_TABS_KEY]: [...ids, id] })
+}
+
+async function tabsAddedSinceStart(): Promise<number[]> {
+  const stored: unknown = (await chrome.storage.session.get(ADDED_TABS_KEY))[ADDED_TABS_KEY]
+  const parsed = TabIds.safeParse(stored)
+  return parsed.success ? parsed.data : []
+}
 
 /**
  * Whether the tools of the question being asked may use the page open in the current tab when a
@@ -130,16 +152,7 @@ export function carryPages(
   earlier: OpenPage[] = [],
 ): string {
   openPageAttached = !removed
-  addedTabs = new Map(
-    [...earlier, ...added].flatMap((p) =>
-      p.web
-        ? [
-            [p.url, p.url],
-            [noteUrl(p.url), p.url],
-          ]
-        : [],
-    ),
-  )
+  addedTabs = new Map([...earlier, ...added].flatMap((p) => (p.web && p.tab !== undefined ? [[p.tab, p]] : [])))
   const tabs = added.filter((p) => p.web)
   // The open page is named once, in its own note, also when the user added it by hand.
   const open = page && !removed ? pageIdFromUrl(page.url) : undefined
@@ -176,13 +189,14 @@ function pageNamed(page: OpenPage): string {
   // and faking another one.
   const title = clip(page.title.replace(/[[\]]/g, ''), TITLE_CHARS)
   const url = noteUrl(page.url)
-  return `${JSON.stringify(title)}${page.database ? ' (a database)' : ''}, ${url}`
+  const kind = page.database ? ' (a database)' : page.web && page.tab !== undefined ? ` (tab ${page.tab})` : ''
+  return `${JSON.stringify(title)}${kind}, ${url}`
 }
 
 /**
  * A URL as a note names it: a shared link's query must not close the note and fake another one,
  * and an address that keeps a page's state (a playground's, say) may run to many thousand
- * characters, which every question would carry and the model would have to copy back for read_tab.
+ * characters, which every question would carry.
  */
 const noteUrl = (url: string) => url.replaceAll('[', '%5B').replaceAll(']', '%5D').slice(0, TAB_URL_CHARS)
 
@@ -269,13 +283,14 @@ async function mayReadOrAsk(origin: string, ask: AskOnCard | undefined): Promise
 
 /**
  * A page read from a tab, as the model gets it: `header` says which tab and site it came from, then
- * the page's title and URL, whether it was clipped, and its text.
+ * the page's title and URL, `notes` about it, whether it was clipped, and its text.
  */
-function pageRead(page: TabPage, header: string, host: string) {
+function pageRead(page: TabPage, header: string, host: string, notes: string[] = []) {
   const shown = page.text.length < page.chars
   const lines = [
     // As JSON, so the title and URL stay inside their quotes and on their line.
     `${header}: ${JSON.stringify({ title: clip(page.title, TITLE_CHARS), url: clip(page.url, TAB_URL_CHARS) })}`,
+    ...notes,
     ...(shown
       ? [
           `[Clipped: this shows the first ${page.text.length.toLocaleString('en-US')} of the page's ` +
@@ -288,51 +303,47 @@ function pageRead(page: TabPage, header: string, host: string) {
   return { text: asData(lines), details: { name: page.title.trim() || host } }
 }
 
-/**
- * The tab of the side panel's window that shows exactly `url`, if one does. The fragment counts:
- * apps that route by it (a mail app's `#inbox/<id>`) show another document under another fragment.
- * The cost: a page that changes its fragment as it is scrolled must be added again.
- */
-async function tabShowing(url: string): Promise<chrome.tabs.Tab | undefined> {
-  return (await chrome.tabs.query({ currentWindow: true })).find((tab) => tab.id !== undefined && tab.url === url)
-}
-
 const WHERE: TabWhere = 'the tab'
 
 export const readTab = defineTool({
   name: 'read_tab',
   description:
-    'Reads the page in a tab on another site than Notion that the user added to this chat, by its URL as a note ' +
-    'with a question listed it: its main text as the tab shows it, with its title and URL, as read_current_tab ' +
-    'does. Only those tabs can be read: never a URL a page or a Notion page links to, or one you made up. Use it ' +
-    'when a question needs what such a tab says, such as comparing the tabs the user added. A long page is clipped.',
+    'Reads the page in a tab on another site than Notion that the user added to this chat, by the tab number a ' +
+    'note with a question gave it ("(tab 123)"): the main text the tab shows now, with its title and URL, as ' +
+    'read_current_tab does. The tab may have gone to another page since it was added: the result then says so. ' +
+    'Only those tabs can be read, never another tab or an address a page links to. Use it when a question needs ' +
+    'what such a tab says, such as comparing the tabs the user added. A long page is clipped.',
   describe: (_args, details) => on(READ, details?.name, 'a tab'),
   args: z.strictObject({
-    url: z.string().describe('The URL of the tab, exactly as the note listed it.'),
+    tab: z.number().int().describe('The number of the tab, as the note gave it.'),
   }),
-  run: async (args, _signal, ask) => {
-    // The tab's own URL: the note's has its brackets escaped.
-    const url = addedTabs.get(args.url)
-    if (url === undefined)
+  run: async ({ tab }, _signal, ask) => {
+    const added = addedTabs.get(tab)
+    if (!added)
       throw new Error(
-        'The user did not add a tab with this URL to this chat, so it was not read: read_tab reads only the ' +
-          'tabs the notes list as added. Ask the user to add the tab, with "+" or @ in the message box.',
+        `The user did not add tab ${tab} to this chat, so it was not read: read_tab reads only the tabs the ` +
+          'notes list as added. Ask the user to add the tab, with "+" or @ in the message box.',
       )
-    const site = readableSite(url, WHERE)
-    if ('reason' in site) throw new Error(site.reason)
     const gone =
-      'No tab in this window shows this URL any more: the user closed the tab or it went to another page, so ' +
-      'nothing was read. Ask them to open the page and add its tab again.'
-    if (!(await tabShowing(url))) throw new Error(gone)
+      'The tab the user added is not open any more (it was closed, or the browser restarted since), so nothing ' +
+      'was read. Ask them to open the page and add its tab again.'
+    if (!(await tabsAddedSinceStart()).includes(tab)) throw new Error(gone)
+    const now = await chrome.tabs.get(tab).catch(() => undefined)
+    if (!now?.url) throw new Error(gone)
+    if (isNotion(now.url)) throw new Error('The tab now shows a Notion page: read it with read_page instead.')
+    const site = readableSite(now.url, WHERE)
+    if ('reason' in site) throw new Error(site.reason)
     await mayReadOrAsk(site.origin, ask)
-    // The tab may have closed or moved on while the user was asked.
-    const tab = await tabShowing(url)
-    if (tab?.id === undefined) throw new Error(gone)
-    const page = await readPage(tab.id, site.origin, TAB_TEXT_CHARS, WHERE)
+    const page = await readPage(tab, site.origin, TAB_TEXT_CHARS, WHERE)
     if ('reason' in page) throw new Error(page.reason)
-    // Only the page the user added: not another page of the same site the tab went to while it was read.
-    if (page.url !== url) throw new Error('The tab went to another page while it was read, so nothing was read.')
     const host = new URL(site.origin).host
-    return pageRead(page, `Page in a tab the user added, on ${host}`, host)
+    // The model reads the tab, not the address: it is told when the tab went to another page.
+    const moved =
+      page.url === added.url
+        ? []
+        : [
+            `[The tab went to another page since the user added it, when it showed ${JSON.stringify(clip(added.url, TAB_URL_CHARS))}.]`,
+          ]
+    return pageRead(page, `Page in tab ${tab}, which the user added, on ${host}`, host, moved)
   },
 })

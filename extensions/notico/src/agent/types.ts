@@ -52,14 +52,15 @@ export interface QuestionExtras {
 }
 
 /**
- * A page a question was sent with: its title and URL, and whether it is a database, or a page on
- * another site than Notion, in a tab the user added (`web`).
+ * A page a question was sent with: its title and URL, and whether it is a database; or a page on
+ * another site than Notion (`web`), in the tab the user added (`tab`, Chrome's id for it).
  */
 const QuestionPage = z.object({
   title: z.string(),
   url: z.string(),
   database: z.literal(true).optional(),
   web: z.literal(true).optional(),
+  tab: z.number().int().optional(),
 })
 export type QuestionPage = z.infer<typeof QuestionPage>
 

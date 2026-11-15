@@ -49,9 +49,22 @@ type StorageListener = (changes: Record<string, { oldValue?: unknown; newValue?:
 
 /**
  * Stands in for chrome.storage: the `local` area, and the change events every document of the
- * extension gets, the one that made the change included.
+ * extension gets, the one that made the change included; and the `session` area, which Chrome
+ * clears when the browser restarts (`restart`).
  */
 export class FakeStorage {
+  sessionValues: Record<string, unknown> = {}
+
+  session = {
+    get: async (key: string) => (key in this.sessionValues ? { [key]: this.sessionValues[key] } : {}),
+    set: async (items: Record<string, unknown>) => void Object.assign(this.sessionValues, items),
+  }
+
+  /** The browser restarts: what the session area held is gone. */
+  restart(): void {
+    this.sessionValues = {}
+  }
+
   values: Record<string, unknown> = {}
   private listeners: StorageListener[] = []
 
@@ -123,7 +136,7 @@ export class FakeNotionTab {
    * The browser's other tabs, as chrome.tabs reports them, with ids from 20 on: in the side panel's
    * window unless `windowId` says another (2), each with the page's DOM for scripts that read it.
    */
-  otherTabs: { url: string; title: string; windowId?: number; dom?: object }[] = []
+  otherTabs: { url: string; title: string; windowId?: number; dom?: object; closed?: boolean }[] = []
 
   /** Scripts running in the tab, each until it returns. */
   private running = new Set<Promise<unknown>>()
@@ -223,13 +236,9 @@ export class FakeNotionTab {
           const current =
             this.url === undefined ? [] : [{ id: 7, windowId: 1, url: this.url, title: this.title, active: true }]
           if (info.active) return current
-          const others = this.otherTabs.map(({ url, title, windowId = 1 }, i) => ({
-            id: 20 + i,
-            url,
-            title,
-            windowId,
-            active: false,
-          }))
+          const others = this.otherTabs.flatMap(({ url, title, windowId = 1, closed }, i) =>
+            closed ? [] : [{ id: 20 + i, url, title, windowId, active: false }],
+          )
           const all = [...current, ...others].filter((tab) => !info.currentWindow || tab.windowId === 1)
           // Match patterns as the extension uses them: `https://<host>/*`.
           const hosts = info.url?.map((pattern) => /^https:\/\/([^/]+)\/\*$/.exec(pattern)?.[1])
@@ -240,14 +249,16 @@ export class FakeNotionTab {
         onUpdated: listeners(this.updated),
         onReplaced: listeners(this.replaced),
         get: async (tabId: number) => {
-          if (this.closed) throw new Error(`No tab with id: ${tabId}.`)
-          return { id: tabId, url: this.pageUrl ?? this.url }
+          const other = this.otherTabs[tabId - 20]
+          if (tabId === 7 ? this.closed : !other || other.closed) throw new Error(`No tab with id: ${tabId}.`)
+          return tabId === 7 ? { id: tabId, url: this.pageUrl ?? this.url } : { id: tabId, ...other }
         },
         // With no tab id, Chrome updates the current window's active tab: this one. Given another
         // tab's id, it makes that tab the active one.
         update: async (...args: [{ url: string }] | [number, { active: true }]) => {
           if (args.length === 1) return this.navigate(args[0].url, '')
           const other = this.otherTabs[args[0] - 20]
+          if (!other || other.closed) throw new Error(`No tab with id: ${args[0]}.`)
           this.switchTab(other.url, other.title)
         },
       },
@@ -297,7 +308,8 @@ export class FakeNotionTab {
   }) {
     // Another tab shows only a page on another site, read by its DOM.
     const other = target.tabId === 7 ? undefined : this.otherTabs[target.tabId - 20]
-    if ((target.tabId !== 7 && !other) || (!other && this.closed)) throw new Error(`No tab with id: ${target.tabId}.`)
+    if ((target.tabId !== 7 && (!other || other.closed)) || (!other && this.closed))
+      throw new Error(`No tab with id: ${target.tabId}.`)
     if (this.injectionError) throw new Error(this.injectionError)
     // Chrome runs scripts only on a site the extension may access.
     const at = new URL(other?.url ?? this.pageUrl ?? this.url!)

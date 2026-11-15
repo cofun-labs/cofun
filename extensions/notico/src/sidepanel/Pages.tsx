@@ -54,7 +54,7 @@ export function ComposerPages({ chips, onRemove }: { chips: Chip[]; onRemove: (c
 /**
  * The pages a question was sent with, in its bubble under what the user typed. Each is a link: a
  * Notion page's takes the current tab to the page, as a link in Notion would; a tab on another
- * site's goes to that tab while one in the window still shows it, else opens it in a new tab. A
+ * site's goes to that tab while it is open, else opens the page it showed in a new tab. A
  * modified click (to open it in a new tab or window) is left to the browser.
  */
 export function SentPages({ pages }: { pages?: QuestionPage[] }) {
@@ -63,12 +63,11 @@ export function SentPages({ pages }: { pages?: QuestionPage[] }) {
     if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
     event.preventDefault()
     if (!page.web) return void chrome.tabs.update({ url: page.url })
-    void chrome.tabs.query({ currentWindow: true }).then((tabs) => {
-      const tab = tabs.find((t) => t.url === page.url)
-      return tab?.id === undefined
-        ? chrome.tabs.create({ url: page.url })
-        : chrome.tabs.update(tab.id, { active: true })
-    })
+    const tab = page.tab
+    // The tab, whatever it shows now; once it is gone, the page it showed, in a new tab.
+    void (tab === undefined ? Promise.reject(new Error('No tab')) : chrome.tabs.update(tab, { active: true })).catch(
+      () => chrome.tabs.create({ url: page.url }),
+    )
   }
   return (
     <ul className="sent-pages" aria-label="Pages sent">
