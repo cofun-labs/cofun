@@ -40,12 +40,6 @@ export interface Env {
   CLERK_JWT_KEY?: string
   /** Comma-separated origins allowed to call, e.g. chrome-extension://<id>. Checked against the token's azp claim. */
   CLERK_AUTHORIZED_PARTIES?: string
-  /**
-   * Which product each extension is, by its origin: `{"chrome-extension://<id>": "notico"}`. A JSON
-   * object in wrangler.jsonc, so it arrives as an object; read through `Products`. A caller whose
-   * origin is not listed (the admin page) is the product `unknown`.
-   */
-  PRODUCTS?: unknown
   /** Every user's credits: their grants, and their model calls with what each cost (D1 database, schema in migrations/). */
   DB: Database
   /** Per-request usage records (Workers Analytics Engine dataset). Never holds message content. */
@@ -80,11 +74,10 @@ export interface AppOptions {
 }
 
 /**
- * What the session check (routes/session.ts) sets: the user, the allowed origin the token was issued
- * to, and the token's claims. `claims` is the verified session token's payload, as Clerk wrote it:
- * read it through a schema.
+ * What the session check (routes/session.ts) sets: the user, and the token's claims. `claims` is
+ * the verified session token's payload, as Clerk wrote it: read it through a schema.
  */
-type Vars = { userId: string; azp: string; claims: unknown }
+type Vars = { userId: string; claims: unknown }
 /** The bindings and variables of the worker's Hono app, and of each sub-app of routes. */
 export type AppEnv = { Bindings: Env; Variables: Vars }
 export type Ctx = Context<AppEnv>

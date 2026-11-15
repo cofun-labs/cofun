@@ -62,13 +62,20 @@ Chats, the Clerk client token, and the user's model keys are kept in the Chrome 
 - **Payments.** A Stripe event counts only with Stripe's signature, made within five minutes. What is granted is what Stripe says was sold, for the user and pack the worker itself wrote on the Checkout Session, and each payment grants once and is taken back once, in whatever order events arrive (`worker/src/stripe.ts`, `worker/src/billing.ts`).
 - **No content is stored or logged.** The ledger and the usage records hold ids, numbers, and times; of an error from a model call or a failed request, a short bounded part is logged; the gateway's logs and cache are off ([PRIVACY.md](../PRIVACY.md)).
 
+### Accepted: a session token that names no origin
+
+A token with no `azp` passes the session check, though it does not pass an admin route's. Clerk hands a side panel that just loaded such a token, and keeps it for the panel's first minute. Refusing it would gain little. A token with no `azp` comes only from Clerk's Frontend API, and so does one naming any origin. Outside a browser, whoever holds the user's Clerk client cookie can set any `Origin` and get either. A page in the browser cannot reach the Frontend API's answer at all, as long as two things stay true:
+
+- **Clerk's Frontend API refuses an origin the instance does not allow**: another website, an extension it does not list, and `null` get `origin_invalid`. This is the Clerk instance's configuration, outside this repository.
+- **No other host under `cofun.cc` serves code a browser runs** (rule 9 below), since every `cofun.cc` origin is one the Frontend API answers.
+
 ## Secrets and the repository
 
 - **What is committed is public by design**: the Clerk publishable key and JWT public key, the extension's public key and ID, the Stripe price id, and domain names. The worker's secrets live on Cloudflare; local ones (`.dev.vars`, `.env.local`, `keys/`) are git-ignored.
 - **`main` changes only through pull requests** with CI, dependency review, and workflow lint passing, through a merge queue. Every action is pinned to a commit. GitHub's settings are kept as code (`scripts/sync-github-settings.sh`).
-- **Deploys hold no Cloudflare credential on GitHub**: Cloudflare pulls the repository and deploys on merge. The Release workflow uses no secret and ends in a draft release, which a person uploads to the store.
+- **Deploys hold no Cloudflare credential on GitHub**: Cloudflare pulls the repository and deploys on merge. The Release workflow uses no secret and ends in a GitHub Release, whose zip a person uploads to the store.
 - **No workflow that reads untrusted text can push.** The one secret on GitHub is Claude's token, held by the review workflow alone. It runs on `pull_request`, so a fork's pull request gets no secret, and it may only read the diff and comment. There is no workflow that runs Claude on request with write access.
-- **The release zip can be checked.** The Release workflow records the zip's SHA-256 in its run's summary, and the maintainer compares it with the draft release's zip before uploading that to the store ([release.md](release.md)).
+- **The release zip can be checked.** The Release workflow records the zip's SHA-256 in its run's summary, and the maintainer compares it with the release's zip before uploading that to the store ([release.md](release.md)).
 - **The sign-in's domain serves nothing else a browser runs.** The public bucket at `static.cofun.cc` holds images and videos only (`scripts/upload-media.ts`).
 
 ## Rules for later changes

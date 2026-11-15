@@ -13,7 +13,7 @@ import {
   type StreamSummary,
   type UsageRecord,
 } from '../usage'
-import { HttpError, errorSummary, parse, type App, type Ctx, type Deps, type Env } from '../http'
+import { HttpError, errorSummary, parse, type App, type Ctx, type Deps } from '../http'
 import { Body, MAX_CONTENT_CHARS, MAX_TOKENS, MaxTokens, Stream, parseModelInputs } from './chat-request'
 
 /** A time as the out-of-credits message gives it: to the minute, in UTC, since the worker does not know the user's time zone. */
@@ -23,31 +23,29 @@ function utcMinute(ms: number): string {
   return `${iso.slice(0, 10)} at ${iso.slice(11, 16)} UTC`
 }
 
-/** The product of a model call whose caller is no listed extension. */
+/** The product of a model call that names none, or a name that is not one. */
 const UNKNOWN_PRODUCT = 'unknown'
 
-/** The PRODUCTS var: extension origins, each with a product name of lowercase letters. */
-const Products = z.record(
-  z.string().regex(/^chrome-extension:\/\/[a-p]{32}$/, { error: 'keys must be chrome-extension://<extension id>' }),
-  z
-    .string()
-    .regex(/^[a-z]{1,32}$/, { error: 'product names are 1 to 32 lowercase letters' })
-    .refine((name) => name !== UNKNOWN_PRODUCT, { error: `${UNKNOWN_PRODUCT} is not a product name` }),
-)
+/**
+ * The header in which an extension says who it is: its product and version, `X-Cofun-Client:
+ * notico/0.3.0`. Only the product is read; the version is not kept.
+ */
+export const CLIENT_HEADER = 'x-cofun-client'
+
+/** A product name: lowercase letters, never `unknown`. */
+const ProductName = z
+  .string()
+  .regex(/^[a-z]{1,32}$/)
+  .refine((name) => name !== UNKNOWN_PRODUCT)
 
 /**
- * The product a model call comes from: the one PRODUCTS lists for the origin the session token was
- * issued to (its `azp`, which Clerk signs, so a client cannot pick it), or `unknown` for an allowed
- * origin that is no listed extension (the admin page). Such a caller is not refused: the product
- * only sorts what was spent, credits are one balance across products.
+ * The product a model call comes from, as the extension names it in CLIENT_HEADER, or `unknown`
+ * when it names none (store builds up to Notico 0.2.0 send no header) or a name that is not one.
+ * The client's own word: the product only sorts what was spent, and credits are one balance across
+ * products, so a wrong name costs no one anything, and a call is never refused over it.
  */
-function productOf(env: Env, azp: string): string {
-  const products = Products.optional().safeParse(env.PRODUCTS)
-  if (!products.success) {
-    throw new HttpError(503, 'not_configured', `PRODUCTS is invalid: ${products.error.issues[0].message}`)
-  }
-  const listed = products.data ?? {}
-  return Object.hasOwn(listed, azp) ? listed[azp] : UNKNOWN_PRODUCT
+function productOf(header: string | undefined): string {
+  return ProductName.safeParse(header?.split('/')[0]).data ?? UNKNOWN_PRODUCT
 }
 
 /**
@@ -110,7 +108,7 @@ export function chatRoutes({ now, priceOf: priceFor, logError }: Deps): App {
    * Throws HttpError for refusals; the caller records those.
    */
   async function chatCompletion(c: Ctx, usage: UsageRecord, record: (outcome: string) => void): Promise<Response> {
-    const product = productOf(c.env, c.get('azp'))
+    const product = productOf(c.req.header(CLIENT_HEADER))
     usage.product = product
     const body = parse(Body, await c.req.json().catch(() => undefined))
     usage.stream = body.stream === true

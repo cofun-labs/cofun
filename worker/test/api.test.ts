@@ -45,15 +45,14 @@ beforeEach(async () => {
     AI_GATEWAY_ID: 'gw-test',
     CLERK_JWT_KEY: clerk.publicKeyPem,
     CLERK_AUTHORIZED_PARTIES: `${EXT}, https://cofun.example`,
-    PRODUCTS: { [EXT]: 'notico' },
   }
   token = await clerk.sessionToken({ userId: 'user_alice', azp: EXT })
 })
 
 const json = (res: Response): Promise<any> => res.json()
 
-function req(method: string, path: string, bearer?: string, body?: unknown) {
-  const headers: Record<string, string> = { 'content-type': 'application/json' }
+function req(method: string, path: string, bearer?: string, body?: unknown, more: Record<string, string> = {}) {
+  const headers: Record<string, string> = { 'content-type': 'application/json', ...more }
   if (bearer) headers.authorization = `Bearer ${bearer}`
   const init = { method, headers, body: body === undefined ? undefined : JSON.stringify(body) }
   return app.request(path, init, env, new FakeExecutionContext())
@@ -72,8 +71,10 @@ function inChunks(text: string): ReadableStream<Uint8Array> {
     },
   })
 }
-const chat = (bearer: string | undefined, body: unknown = { messages: hi }) =>
-  req('POST', '/v1/chat/completions', bearer, body)
+/** Notico's header naming its product, as it sends it with every model request. */
+const NOTICO = { 'x-cofun-client': 'notico/0.3.0' }
+const chat = (bearer: string | undefined, body: unknown = { messages: hi }, more: Record<string, string> = NOTICO) =>
+  req('POST', '/v1/chat/completions', bearer, body, more)
 /** The record of each model call, with its tokens and what it was charged. */
 const calls = () => db.rows('model_calls')
 
@@ -137,14 +138,19 @@ describe('worker API', () => {
     expect((await chat(web)).status).toBe(200)
   })
 
-  it('[@no-uc:access] a validly signed session that names no origin is refused', async () => {
+  it('[@no-uc:access] a validly signed session that names no origin is accepted', async () => {
+    // Clerk hands a side panel that just loaded such a token, for its first minute.
     const noOrigin = await clerk.sessionToken({ userId: 'user_alice' })
+    const res = await req('GET', '/v1/me', noOrigin)
+    expect(res.status).toBe(200)
+    expect(await json(res)).toEqual({ userId: 'user_alice', model: MODEL })
+  })
+
+  it('[@no-uc:access] a session whose origin is not text is refused', async () => {
     const notText = await clerk.sessionToken({ userId: 'user_alice', claims: { azp: [EXT] } })
-    for (const bearer of [noOrigin, notText]) {
-      const res = await req('GET', '/v1/me', bearer)
-      expect(res.status).toBe(401)
-      expect((await json(res)).error.code).toBe('unauthorized')
-    }
+    const res = await req('GET', '/v1/me', notText)
+    expect(res.status).toBe(401)
+    expect((await json(res)).error.code).toBe('unauthorized')
   })
 
   it('[@no-uc:access] API is off without the JWT key', async () => {
@@ -749,50 +755,37 @@ describe('error logs', () => {
 
 // Standalone tests for the product a model call is recorded under.
 describe('product of a model call', () => {
-  const OTHER = 'chrome-extension://ponmlkjihgfedcbaponmlkjihgfedcba'
   const products = () => db.rows('model_calls').map((r) => r.product)
 
-  it('[@no-uc:money] is the product listed for the origin the session token was issued to', async () => {
-    env.CLERK_AUTHORIZED_PARTIES += `, ${OTHER}`
-    env.PRODUCTS = { [EXT]: 'notico', [OTHER]: 'confluco' }
+  it('[@no-uc:money] is the product the extension names in its header, whatever its version', async () => {
     await chat(token)
-    await chat(await clerk.sessionToken({ userId: 'user_alice', azp: OTHER }))
+    await chat(token, { messages: hi }, { 'x-cofun-client': 'confluco/1.0.0' })
     expect(products()).toEqual(['notico', 'confluco'])
     expect(ai.calls.map((call) => call.options)).toMatchObject(
       ['notico', 'confluco'].map((product) => ({ gateway: { metadata: { product } } })),
     )
   })
 
-  it('[@no-uc:money] is never what the client says it is', async () => {
-    const res = await req('POST', '/v1/chat/completions?product=confluco', token, { messages: hi, product: 'confluco' })
+  it('[@no-uc:money] is not read from the body or the query, nor sent on to the model', async () => {
+    const res = await req(
+      'POST',
+      '/v1/chat/completions?product=confluco',
+      token,
+      { messages: hi, product: 'confluco' },
+      NOTICO,
+    )
     expect(res.status).toBe(200)
     expect(products()).toEqual(['notico'])
     expect(ai.calls[0].inputs).not.toHaveProperty('product')
   })
 
-  it('[@no-uc:money] is unknown for an allowed caller that is no listed extension, and the call goes ahead', async () => {
-    const web = await clerk.sessionToken({ userId: 'user_alice', azp: 'https://cofun.example' })
-    expect((await chat(web)).status).toBe(200)
-    expect(products()).toEqual(['unknown'])
-  })
-
-  it('[@no-uc:money] is unknown for every caller when no products are configured', async () => {
-    delete env.PRODUCTS
-    expect((await chat(token)).status).toBe(200)
-    expect(products()).toEqual(['unknown'])
-  })
-
-  it('[@no-uc:money] a products config that is not valid refuses the call before the model is asked, and says what is wrong', async () => {
-    for (const bad of ['notico', { [EXT]: 'Notico' }, { [EXT]: 'unknown' }, { 'https://cofun.example': 'notico' }]) {
-      env.PRODUCTS = bad
-      const res = await chat(token)
-      expect(res.status).toBe(503)
-      const { error } = await json(res)
-      expect(error.code).toBe('not_configured')
-      expect(error.message).toMatch(/^PRODUCTS is invalid: /)
+  it('[@no-uc:contract] is unknown when the header names none or no product name, and the call goes ahead', async () => {
+    // Store builds up to Notico 0.2.0 send no header.
+    expect((await chat(token, { messages: hi }, {})).status).toBe(200)
+    for (const bad of ['Notico/0.3.0', 'unknown/0.3.0', 'no tico/0.3.0', `${'a'.repeat(33)}/0.3.0`]) {
+      expect((await chat(token, { messages: hi }, { 'x-cofun-client': bad })).status, bad).toBe(200)
     }
-    expect(ai.calls).toHaveLength(0)
-    expect(db.rows('model_calls')).toHaveLength(0)
+    expect(products()).toEqual(Array(5).fill('unknown'))
   })
 })
 

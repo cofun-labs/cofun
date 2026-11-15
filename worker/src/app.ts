@@ -7,7 +7,7 @@ import { priceOf } from './pricing'
 import { HttpError, errorSummary, type App, type AppOptions, type Deps } from './http'
 import { adminRoutes } from './routes/admin'
 import { billingRoutes, stripeRoutes } from './routes/billing'
-import { chatRoutes } from './routes/chat'
+import { chatRoutes, CLIENT_HEADER } from './routes/chat'
 import { creditsRoutes } from './routes/credits'
 import { pageRoutes } from './routes/pages'
 import { defaultRateLimit } from './routes/rate-limit'
@@ -34,7 +34,7 @@ export function createApp({
   const app: App = new Hono()
 
   // The extension calls from a chrome-extension:// origin. Auth is a bearer token, not cookies.
-  app.use('*', cors({ origin: '*', allowHeaders: ['authorization', 'content-type'], maxAge: 86400 }))
+  app.use('*', cors({ origin: '*', allowHeaders: ['authorization', 'content-type', CLIENT_HEADER], maxAge: 86400 }))
   // A body over the limit is refused before it is read whole: by its content-length, or, sent
   // without one (chunked), as soon as the bytes read pass the limit.
   app.use(

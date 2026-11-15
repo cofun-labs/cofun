@@ -4,8 +4,7 @@ import type { MiddlewareHandler } from 'hono'
 import { HttpError, type AppEnv } from '../http'
 
 /**
- * Checks the request's Clerk session token, and sets the user it is for (`userId`), the origin it
- * was issued to (`azp`), and its claims.
+ * Checks the request's Clerk session token, and sets the user it is for (`userId`) and its claims.
  * The first handler of the /v1 sub-app (see app.ts), so it runs before every route under /v1.
  */
 export const requireSession: MiddlewareHandler<AppEnv> = async (c, next) => {
@@ -28,14 +27,16 @@ export const requireSession: MiddlewareHandler<AppEnv> = async (c, next) => {
     throw new HttpError(401, 'unauthorized', 'invalid or expired session')
   }
   // Clerk sets azp to the origin that requested the token: chrome-extension://<id> for an
-  // extension, this worker's origin for the admin page. Every token must name an allowed origin:
-  // one that names none is refused like one issued to an origin that is not listed.
+  // extension, this worker's origin for the admin page. A token that names an origin must name an
+  // allowed one. One that names none is let through: Clerk hands a side panel that just loaded such
+  // a token (the session's last active token, from /v1/client) and keeps it for its first minute.
+  // Refusing it gains little: docs/security.md ("Accepted: a session token that names no origin")
+  // says why, and what that rests on.
   const azp = claims.azp
-  if (typeof azp !== 'string' || !authorizedParties.includes(azp)) {
+  if (azp !== undefined && (typeof azp !== 'string' || !authorizedParties.includes(azp))) {
     throw new HttpError(401, 'unauthorized', 'invalid or expired session')
   }
   c.set('userId', claims.sub)
-  c.set('azp', azp)
   c.set('claims', claims)
   await next()
 }

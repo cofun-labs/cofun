@@ -220,6 +220,7 @@ export function Chat({ userId }: { userId: string }) {
   agentRef.current ??= new CopilotAgent({
     apiUrl: API_URL,
     getToken: () => tokenRef.current(),
+    client: `notico/${chrome.runtime.getManifest().version}`,
     model: async () => modelRef.current ?? (await modelLoad),
     systemPrompt: SYSTEM_PROMPT,
     tools: TOOLS,
