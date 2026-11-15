@@ -20,7 +20,6 @@ import {
   textList,
   type Operation,
 } from '../src/notion/api'
-import { pageIdFromUrl } from '../src/notion/hosts'
 import { COOLDOWN_KEY, activeNotionTab, chromeCooldownStore, notionCooldown, tabTransport } from '../src/notion/tab'
 import {
   BLOCKS,
@@ -39,29 +38,7 @@ import {
 afterEach(restoreGlobals)
 
 describe('the open page', () => {
-  it('reads the page id from Notion URLs', () => {
-    const hex = PAGE.replace(/-/g, '')
-    expect(pageIdFromUrl(`https://www.notion.so/team/Fixture-page-${hex}`)).toBe(PAGE)
-    expect(pageIdFromUrl(`https://app.notion.com/p/${hex}`)).toBe(PAGE)
-    expect(pageIdFromUrl(`https://www.notion.so/${PAGE}`)).toBe(PAGE)
-    expect(pageIdFromUrl(`https://www.notion.so/Cafe-${hex}?v=${'f'.repeat(32)}#${'e'.repeat(32)}`)).toBe(PAGE)
-    // A page open in side peek is the one the user is looking at.
-    expect(pageIdFromUrl(`https://www.notion.so/team/Board-${'a'.repeat(32)}?p=${hex}&pm=s`)).toBe(PAGE)
-    expect(pageIdFromUrl('https://www.notion.so/')).toBeUndefined()
-    expect(pageIdFromUrl('https://app.notion.com/team/home')).toBeUndefined()
-    expect(pageIdFromUrl('not a url')).toBeUndefined()
-  })
-
-  it('finds the Notion tab of the window and the page it shows', async () => {
-    new FakeNotionTab(PAGE_URL).install()
-    const tab = await activeNotionTab()
-    expect([tab.tabId, tab.url, tab.pageId]).toEqual([7, PAGE_URL, PAGE])
-
-    new FakeNotionTab('https://www.notion.so/').install()
-    expect((await activeNotionTab()).pageId).toBeUndefined()
-  })
-
-  it('reports no Notion tab for other sites, and never calls them', async () => {
+  it('[@no-uc:privacy] reports no Notion tab for other sites, and never calls them', async () => {
     for (const url of ['https://mail.example.com/inbox', 'https://www.notion.so.evil.example/x', undefined]) {
       const tab = new FakeNotionTab(url).install()
       const err = await notionError(activeNotionTab())
@@ -75,7 +52,7 @@ describe('the open page', () => {
 })
 
 describe('requests', () => {
-  it('run in the Notion tab, out of reach of the page, as the tab’s signed-in user', async () => {
+  it('[@no-uc:privacy] run in the Notion tab, out of reach of the page, as the tab’s signed-in user', async () => {
     const tab = pageTab()
     const { client } = await activeNotionTab()
     await client.loadPage(PAGE)
@@ -98,13 +75,13 @@ describe('requests', () => {
     })
   })
 
-  it('go to www.notion.so from a www.notion.so tab', async () => {
+  it('[@no-uc:access] go to www.notion.so from a www.notion.so tab', async () => {
     const tab = pageTab(`https://www.notion.so/team/Fixture-page-${PAGE.replace(/-/g, '')}`)
     await (await activeNotionTab()).client.loadPage(PAGE)
     expect(tab.sent[0].url).toBe('https://www.notion.so/api/v3/loadPageChunk')
   })
 
-  it('stop when the tab left Notion after it was picked', async () => {
+  it('[@no-uc:privacy] stop when the tab left Notion after it was picked', async () => {
     const tab = pageTab()
     const { client } = await activeNotionTab()
     tab.pageUrl = 'https://mail.example.com/inbox'
@@ -112,14 +89,7 @@ describe('requests', () => {
     expect(tab.sent).toEqual([])
   })
 
-  it('report no Notion tab when the tab is gone', async () => {
-    const tab = pageTab()
-    const { client } = await activeNotionTab()
-    tab.closed = true
-    expect((await notionError(client.loadPage(PAGE))).code).toBe('no_notion_tab')
-  })
-
-  it('ask for site access when Chrome refuses to run in the tab, and say nothing was sent', async () => {
+  it('[@no-uc:data] ask for site access when Chrome refuses to run in the tab, and say nothing was sent', async () => {
     const tab = pageTab()
     const { client } = await activeNotionTab()
     tab.injectionError = 'Cannot access contents of the page. Extension manifest must request permission.'
@@ -132,23 +102,14 @@ describe('requests', () => {
     expect(write.code).toBe('notion_error')
   })
 
-  it('report a tab that left Notion as no Notion tab, not missing site access', async () => {
-    const tab = pageTab()
-    const { client } = await activeNotionTab()
-    tab.pageUrl = 'https://mail.example.com/'
-    tab.injectionError = 'Cannot access contents of url "https://mail.example.com/".'
-    const err = await notionError(client.loadPage(PAGE))
-    expect([err.code, err.unanswered]).toEqual(['no_notion_tab', false])
-  })
-
-  it('treat other failures that mention permission as possibly sent', async () => {
+  it('[@no-uc:data] treat other failures that mention permission as possibly sent', async () => {
     const tab = pageTab()
     const { client } = await activeNotionTab()
     tab.injectionError = 'Frame was removed while checking permission.'
     expect((await notionError(client.loadPage(PAGE))).unanswered).toBe(true)
   })
 
-  it('report other failures to run in the tab as Notion errors, with the reason', async () => {
+  it('[@no-uc:notion-safety] report other failures to run in the tab as Notion errors, with the reason', async () => {
     const tab = pageTab()
     const { client } = await activeNotionTab()
     tab.injectionError = 'Frame with ID 0 was removed.'
@@ -159,7 +120,7 @@ describe('requests', () => {
     ])
   })
 
-  it('send the workspace of the request, not of an earlier one', async () => {
+  it('[@no-uc:data] send the workspace of the request, not of an earlier one', async () => {
     const other = '5b5b5b5b-0000-4000-8000-000000000009'
     const tab = pageTab()
       .respond('syncRecordValuesMain', 200, fixture('sync-record-values'))
@@ -173,14 +134,14 @@ describe('requests', () => {
     expect(tab.sent.map((r) => r.headers['x-notion-space-id'])).toEqual([undefined, SPACE, undefined, other, SPACE])
   })
 
-  it('give up on a stalled request instead of hanging', async () => {
+  it('[@no-uc:notion-safety] give up on a stalled request instead of hanging', async () => {
     const tab = pageTab()
     await (await activeNotionTab()).client.loadPage(PAGE)
     expect(tab.signals).toHaveLength(2)
     for (const signal of tab.signals) expect(signal).toBeInstanceOf(AbortSignal)
   })
 
-  it('do not follow a redirect, and report it', async () => {
+  it('[@no-uc:notion-safety] do not follow a redirect, and report it', async () => {
     const tab = new FakeNotionTab(PAGE_URL).respond('saveTransactionsFanout', 200, {}).install()
     tab.redirects = true
     const op: Operation = { pointer: { table: 'block', id: PAGE }, path: [], command: 'update', args: {} }
@@ -194,7 +155,7 @@ describe('requests', () => {
     expect((await notionError((await activeNotionTab()).client.loadPage(PAGE))).code).toBe('signed_out')
   })
 
-  it('report a network failure as a Notion error', async () => {
+  it('[@no-uc:notion-safety] report a network failure as a Notion error', async () => {
     const tab = pageTab()
     tab.networkDown = true
     const err = await notionError((await activeNotionTab()).client.loadPage(PAGE))
@@ -203,7 +164,7 @@ describe('requests', () => {
 })
 
 describe('loading a page', () => {
-  it('follows the cursor until the page is complete and unwraps every record once', async () => {
+  it('[@no-uc:data] follows the cursor until the page is complete and unwraps every record once', async () => {
     const tab = pageTab()
     const loaded = await (await activeNotionTab()).client.loadPage(PAGE)
 
@@ -237,7 +198,7 @@ describe('loading a page', () => {
     })
   })
 
-  it('stops after the chunk limit and says the page is incomplete', async () => {
+  it('[@no-uc:notion-safety] stops after the chunk limit and says the page is incomplete', async () => {
     pageTab()
     const loaded = await (await activeNotionTab()).client.loadPage(PAGE, { maxChunks: 1 })
     expect(loaded.complete).toBe(false)
@@ -246,16 +207,7 @@ describe('loading a page', () => {
     expect((await (await activeNotionTab()).client.loadPage(PAGE, { maxChunks: 0 })).complete).toBe(false)
   })
 
-  it('accepts page ids without dashes or in uppercase', async () => {
-    for (const id of [PAGE.replace(/-/g, ''), PAGE.toUpperCase()]) {
-      const tab = pageTab()
-      const loaded = await (await activeNotionTab()).client.loadPage(id)
-      expect(loaded.page.id).toBe(PAGE)
-      expect(tab.sent[0].body.page).toEqual({ id: PAGE })
-    }
-  })
-
-  it('refuses an id that is not a Notion id, without asking Notion or stopping the question', async () => {
+  it('[@no-uc:notion-safety] refuses an id that is not a Notion id, without asking Notion or stopping the question', async () => {
     const tab = pageTab()
     const err = await (await activeNotionTab()).client.loadPage('Q4 Roadmap').catch((e: unknown) => e)
     // The model gave the id and can give another one.
@@ -264,7 +216,7 @@ describe('loading a page', () => {
     expect(tab.sent).toEqual([])
   })
 
-  it('treats a page in the trash as unavailable', async () => {
+  it('[@no-uc:data] treats a page in the trash as unavailable', async () => {
     const chunk = fixture('load-page-chunk-0') as { recordMap: { block: Record<string, { value: { value: object } }> } }
     chunk.recordMap.block[PAGE].value.value = { ...chunk.recordMap.block[PAGE].value.value, alive: false }
     new FakeNotionTab(PAGE_URL).respond('loadPageChunk', 200, chunk).install()
@@ -272,7 +224,7 @@ describe('loading a page', () => {
     expect([err.code, err.message]).toEqual(['in_trash', 'The Notion page or block is in the trash.'])
   })
 
-  it('treats a page missing from the response as no access', async () => {
+  it('[@no-uc:notion-safety] treats a page missing from the response as no access', async () => {
     new FakeNotionTab(PAGE_URL).respond('loadPageChunk', 200, fixture('empty-record-map')).install()
     const err = await notionError((await activeNotionTab()).client.loadPage(PAGE))
     expect([err.code, err.message]).toEqual([
@@ -281,7 +233,7 @@ describe('loading a page', () => {
     ])
   })
 
-  it('treats a page missing from the response as signed out when no Notion user is signed in', async () => {
+  it('[@no-uc:notion-safety] treats a page missing from the response as signed out when no Notion user is signed in', async () => {
     const tab = new FakeNotionTab(PAGE_URL, 'notion_browser_id=b')
       .respond('loadPageChunk', 200, fixture('empty-record-map'))
       .install()
@@ -300,15 +252,15 @@ describe('Notion errors', () => {
     return notionError((await activeNotionTab()).client.loadPage(PAGE))
   }
 
-  it('maps an authentication error to signed out', async () => {
+  it('[@no-uc:notion-safety] maps an authentication error to signed out', async () => {
     expect((await failWith(401, fixture('error-unauthorized'))).code).toBe('signed_out')
   })
 
-  it('maps a permission error to no access', async () => {
+  it('[@no-uc:notion-safety] maps a permission error to no access', async () => {
     expect((await failWith(403, {})).code).toBe('no_access')
   })
 
-  it('passes on Notion’s explanation of other errors', async () => {
+  it('[@no-uc:notion-safety] passes on Notion’s explanation of other errors', async () => {
     const err = await failWith(400, fixture('error-validation'))
     expect([err.code, err.message]).toEqual([
       'notion_error',
@@ -319,13 +271,13 @@ describe('Notion errors', () => {
     )
   })
 
-  it('treats a success that is not a JSON object as a Notion error', async () => {
+  it('[@no-uc:notion-safety] treats a success that is not a JSON object as a Notion error', async () => {
     new FakeNotionTab(PAGE_URL).respondText('saveTransactionsFanout', 200, '<html>Sign in</html>').install()
     const err = await notionError((await activeNotionTab()).client.submitTransaction(SPACE, [], 'edit'))
     expect([err.code, err.message]).toEqual(['notion_error', 'Notion returned an unexpected response (200).'])
   })
 
-  it('handles errors that are not JSON', async () => {
+  it('[@no-uc:notion-safety] handles errors that are not JSON', async () => {
     new FakeNotionTab(PAGE_URL).respondText('loadPageChunk', 502, '<html>Bad gateway</html>').install()
     const err = await notionError((await activeNotionTab()).client.loadPage(PAGE))
     expect([err.code, err.message]).toEqual(['notion_error', 'Notion returned an error (502): no details'])
@@ -333,7 +285,7 @@ describe('Notion errors', () => {
 })
 
 describe('loading records', () => {
-  it('asks for the latest version of each record', async () => {
+  it('[@no-uc:data] asks for the latest version of each record', async () => {
     const tab = new FakeNotionTab(PAGE_URL)
       .respond('syncRecordValuesMain', 200, fixture('sync-record-values'))
       .install()
@@ -346,13 +298,13 @@ describe('loading records', () => {
     expect(records.block![BLOCKS[0]]).toMatchObject({ id: BLOCKS[0], version: 8, type: 'text' })
   })
 
-  it('asks Notion nothing for no records', async () => {
+  it('[@no-uc:notion-safety] asks Notion nothing for no records', async () => {
     const tab = new FakeNotionTab(PAGE_URL).install()
     expect(await (await activeNotionTab()).client.getRecords([])).toEqual({})
     expect(tab.sent).toEqual([])
   })
 
-  it('names the workspace when only some pointers do', async () => {
+  it('[@no-uc:data] names the workspace when only some pointers do', async () => {
     const tab = new FakeNotionTab(PAGE_URL)
       .respond('syncRecordValuesMain', 200, fixture('sync-record-values'))
       .install()
@@ -365,7 +317,7 @@ describe('loading records', () => {
     expect(tab.sent[0].headers['x-notion-space-id']).toBe(SPACE)
   })
 
-  it('treats a record in the trash as unavailable', async () => {
+  it('[@no-uc:data] treats a record in the trash as unavailable', async () => {
     const sync = fixture('sync-record-values') as { recordMap: { block: Record<string, { value: { value: object } }> } }
     sync.recordMap.block[BLOCKS[0]].value.value = { ...sync.recordMap.block[BLOCKS[0]].value.value, alive: false }
     new FakeNotionTab(PAGE_URL).respond('syncRecordValuesMain', 200, sync).install()
@@ -373,7 +325,7 @@ describe('loading records', () => {
     expect([err.code, err.message]).toEqual(['in_trash', 'The Notion page or block is in the trash.'])
   })
 
-  it('treats a record missing from the response as no access', async () => {
+  it('[@no-uc:notion-safety] treats a record missing from the response as no access', async () => {
     new FakeNotionTab(PAGE_URL).respond('syncRecordValuesMain', 200, fixture('sync-record-values')).install()
     const err = await notionError(
       (await activeNotionTab()).client.getRecords([
@@ -393,7 +345,7 @@ describe('submitting a transaction', () => {
     args: { primitiveOp: { command: 'update', args: { title: [['Renamed']] } } },
   }
 
-  it('sends the operations as one transaction in the page’s workspace', async () => {
+  it('[@no-uc:data] sends the operations as one transaction in the page’s workspace', async () => {
     const tab = new FakeNotionTab(PAGE_URL).respond('saveTransactionsFanout', 200, {}).install()
     await (await activeNotionTab()).client.submitTransaction(SPACE, [rename], 'rename page')
 
@@ -414,7 +366,7 @@ describe('submitting a transaction', () => {
     expect(body.transactions[0].id).not.toBe(body.requestId)
   })
 
-  it('sends record ids in Notion’s form and names the workspace on each pointer', async () => {
+  it('[@no-uc:data] sends record ids in Notion’s form and names the workspace on each pointer', async () => {
     const tab = new FakeNotionTab(PAGE_URL).respond('saveTransactionsFanout', 200, {}).install()
     const op: Operation = { ...rename, pointer: { table: 'block', id: PAGE.replace(/-/g, '').toUpperCase() } }
     await (await activeNotionTab()).client.submitTransaction(SPACE, [op], 'rename page')
@@ -422,7 +374,7 @@ describe('submitting a transaction', () => {
     expect(body.transactions[0].operations).toEqual([rename])
   })
 
-  it('sends workspace ids in Notion’s form and refuses a bad one before sending', async () => {
+  it('[@no-uc:data] sends workspace ids in Notion’s form and refuses a bad one before sending', async () => {
     const tab = new FakeNotionTab(PAGE_URL).respond('saveTransactionsFanout', 200, {}).install()
     const { client } = await activeNotionTab()
     const op: Operation = { ...rename, pointer: { table: 'block', id: PAGE, spaceId: SPACE.toUpperCase() } }
@@ -441,7 +393,7 @@ describe('submitting a transaction', () => {
     expect(tab.sent).toHaveLength(1)
   })
 
-  it('refuses an operation on an id that is not a Notion id, without asking Notion', async () => {
+  it('[@no-uc:notion-safety] refuses an operation on an id that is not a Notion id, without asking Notion', async () => {
     const tab = new FakeNotionTab(PAGE_URL).install()
     const op: Operation = { ...rename, pointer: { table: 'block', id: 'Q4 Roadmap' } }
     await expect((await activeNotionTab()).client.submitTransaction(SPACE, [op], 'rename page')).rejects.toThrow(
@@ -450,7 +402,7 @@ describe('submitting a transaction', () => {
     expect(tab.sent).toEqual([])
   })
 
-  it('reports a rejected transaction with Notion’s explanation', async () => {
+  it('[@no-uc:notion-safety] reports a rejected transaction with Notion’s explanation', async () => {
     new FakeNotionTab(PAGE_URL)
       .respond('saveTransactionsFanout', 400, {
         ...(fixture('error-validation') as object),
@@ -463,7 +415,7 @@ describe('submitting a transaction', () => {
     )
   })
 
-  it('says the outcome is unknown when Notion did not answer, so the change is not retried blindly', async () => {
+  it('[@no-uc:notion-safety] says the outcome is unknown when Notion did not answer, so the change is not retried blindly', async () => {
     for (const fail of [
       (tab: FakeNotionTab) => (tab.networkDown = true),
       (tab: FakeNotionTab) => (tab.closed = true),
@@ -479,26 +431,26 @@ describe('submitting a transaction', () => {
     }
   })
 
-  it('says the outcome is unknown when Notion answers a change with a server error', async () => {
+  it('[@no-uc:notion-safety] says the outcome is unknown when Notion answers a change with a server error', async () => {
     new FakeNotionTab(PAGE_URL).respondText('saveTransactionsFanout', 504, '<html>Gateway timeout</html>').install()
     const err = await notionError((await activeNotionTab()).client.submitTransaction(SPACE, [rename], 'rename page'))
     expect(err.code).toBe('outcome_unknown')
   })
 
-  it('reports a server error on a read as a Notion error', async () => {
+  it('[@no-uc:notion-safety] reports a server error on a read as a Notion error', async () => {
     new FakeNotionTab(PAGE_URL).respondText('loadPageChunk', 503, 'busy').install()
     const err = await notionError((await activeNotionTab()).client.loadPage(PAGE))
     expect([err.code, err.message]).toEqual(['notion_error', 'Notion returned an error (503): no details'])
   })
 
-  it('says nothing was saved when the tab left Notion before the change was sent', async () => {
+  it('[@no-uc:data] says nothing was saved when the tab left Notion before the change was sent', async () => {
     const tab = new FakeNotionTab(PAGE_URL).install()
     const { client } = await activeNotionTab()
     tab.pageUrl = 'https://mail.example.com/inbox'
     expect((await notionError(client.submitTransaction(SPACE, [rename], 'rename page'))).code).toBe('no_notion_tab')
   })
 
-  it('never writes CRDT data', async () => {
+  it('[@no-uc:data] never writes CRDT data', async () => {
     const tab = new FakeNotionTab(PAGE_URL).install()
     const { client } = await activeNotionTab()
     const pointer = { table: 'block' as const, id: BLOCKS[0] }
@@ -516,7 +468,7 @@ describe('submitting a transaction', () => {
 })
 
 describe('record maps', () => {
-  it('unwrap both the current and the older record shape and drop entries without a record', () => {
+  it('[@no-uc:data] unwrap both the current and the older record shape and drop entries without a record', () => {
     const record = { id: 'b1', version: 1, type: 'text' }
     expect(
       normalizeRecordMap({
@@ -530,7 +482,7 @@ describe('record maps', () => {
     ).toEqual({ block: { b1: record, b2: { ...record, id: 'b2' } } })
   })
 
-  it('read a field that is not what is expected as missing, and pass on every other field as it came', () => {
+  it('[@no-uc:data] read a field that is not what is expected as missing, and pass on every other field as it came', () => {
     const wrap = (value: unknown) => ({ spaceId: SPACE, value: { role: 'editor', value } })
     const map = normalizeRecordMap({
       block: {
@@ -573,7 +525,7 @@ describe('record maps', () => {
 })
 
 describe('fields inside a record', () => {
-  it('are read loosely: a pointer part that is not text is missing, and a list keeps its texts', () => {
+  it('[@no-uc:data] are read loosely: a pointer part that is not text is missing, and a list keeps its texts', () => {
     const format = {
       collection_pointer: { id: 'c1', spaceId: 's1', table: 'collection' },
       alias_pointer: { id: 5, spaceId: ['s'] },
@@ -597,7 +549,7 @@ describe('answers this client reads loosely', () => {
   const client = async () => (await activeNotionTab()).client
   const database = { collectionId: PAGE, viewId: PAGE, spaceId: SPACE }
 
-  it('lists no rows when queryCollection answers in another shape', async () => {
+  it('[@no-uc:data] lists no rows when queryCollection answers in another shape', async () => {
     for (const answer of [{}, { result: 'none' }, { result: { reducerResults: [] } }, { result: null, recordMap: 5 }]) {
       new FakeNotionTab(PAGE_URL).respond('queryCollection', 200, answer).install()
       const { collectionId, viewId, spaceId } = database
@@ -615,7 +567,7 @@ describe('answers this client reads loosely', () => {
     expect([rows.rowIds, rows.hasMore]).toEqual([['r1', 'r2'], false])
   })
 
-  it('finds nothing when search answers no list, and keeps only hits with an id', async () => {
+  it('[@no-uc:data] finds nothing when search answers no list, and keeps only hits with an id', async () => {
     new FakeNotionTab(PAGE_URL).respond('search', 200, { results: 'none', total: 'many' }).install()
     expect(await (await client()).search(SPACE, 'x', 5)).toEqual({ results: [], total: 0, recordMap: {} })
     const hits = [
@@ -650,7 +602,7 @@ describe('when Notion turns requests away', () => {
     args: { primitiveOp: { command: 'update', args: { title: [['Renamed']] } } },
   }
 
-  it('stops at the first refusal of a read, says so, and sends nothing more', async () => {
+  it('[@no-uc:notion-safety] stops at the first refusal of a read, says so, and sends nothing more', async () => {
     for (const status of [429, 529]) {
       const tab = new FakeNotionTab(PAGE_URL).limit('loadPageChunk', 1, status).install()
       tab.workspace = new FakeWorkspace([page], SPACE)
@@ -664,7 +616,7 @@ describe('when Notion turns requests away', () => {
     }
   })
 
-  it('starts no wait when Notion does not say how long: the next client sends', async () => {
+  it('[@no-uc:notion-safety] starts no wait when Notion does not say how long: the next client sends', async () => {
     for (const retryAfter of [undefined, 'soon', '0']) {
       const tab = new FakeNotionTab(PAGE_URL).limit('loadPageChunk', 1, 429, retryAfter).install()
       tab.workspace = new FakeWorkspace([page], SPACE)
@@ -683,7 +635,7 @@ describe('when Notion turns requests away', () => {
     }
   })
 
-  it('keeps every client from sending until the wait Notion asked for is over', async () => {
+  it('[@no-uc:notion-safety] keeps every client from sending until the wait Notion asked for is over', async () => {
     let now = Date.now()
     const tab = new FakeNotionTab(PAGE_URL).limit('loadPageChunk', 1, 429, '120').install()
     notionCooldown.now = () => now
@@ -705,7 +657,7 @@ describe('when Notion turns requests away', () => {
     expect(tab.sent).toHaveLength(2)
   })
 
-  it('waits as long as Retry-After asks, up to the longest wait, and not at all when it says nothing usable', () => {
+  it('[@no-uc:notion-safety] waits as long as Retry-After asks, up to the longest wait, and not at all when it says nothing usable', () => {
     const now = Date.parse('2026-11-10T08:00:00Z')
     // 0 is no wait: only what Notion asks for in a way that is understood starts one.
     const waits: [string | undefined, number][] = [
@@ -740,7 +692,7 @@ describe('when Notion turns requests away', () => {
     expect(cooldown.left()).toBe(120_000)
   })
 
-  it('keeps every side panel of the browser from sending during the wait, one opened later included', async () => {
+  it('[@no-uc:notion-safety] keeps every side panel of the browser from sending during the wait, one opened later included', async () => {
     let now = Date.now()
     const tab = new FakeNotionTab(PAGE_URL).limit('loadPageChunk', 1, 429, '120').install()
     tab.workspace = new FakeWorkspace([page], SPACE)
@@ -765,7 +717,7 @@ describe('when Notion turns requests away', () => {
     expect(tab.sent).toHaveLength(2)
   })
 
-  it('still keeps the wait in the side panel when the storage fails', async () => {
+  it('[@no-uc:notion-safety] still keeps the wait in the side panel when the storage fails', async () => {
     const now = Date.parse('2026-11-10T08:00:00Z')
     const broken: CooldownStore = {
       load: () => Promise.reject(new Error('storage is broken')),
@@ -778,7 +730,7 @@ describe('when Notion turns requests away', () => {
     expect(cooldown.left()).toBe(120_000)
   })
 
-  it('a side panel opened during the wait loads it before its first request', async () => {
+  it('[@no-uc:notion-safety] a side panel opened during the wait loads it before its first request', async () => {
     const tab = new FakeNotionTab(PAGE_URL).limit('loadPageChunk', 1, 429, '120').install()
     tab.workspace = new FakeWorkspace([page], SPACE)
     await notionError((await activeNotionTab()).client.loadPage(PAGE))
@@ -816,7 +768,7 @@ describe('when Notion turns requests away', () => {
     expect(tab.sent).toHaveLength(1)
   })
 
-  it('reports a refusal ahead of another failure that came first in parallel lookups', async () => {
+  it('[@no-uc:notion-safety] reports a refusal ahead of another failure that came first in parallel lookups', async () => {
     // 200 records go as 2 batches at once: Notion fails the first and turns the second away.
     const ids = Array.from({ length: 200 }, (_, i) => `1d1d1d1d-0000-4000-8000-${String(i).padStart(12, '0')}`)
     new FakeNotionTab(PAGE_URL)
@@ -867,7 +819,7 @@ describe('when Notion turns requests away', () => {
     }
   })
 
-  it('goes on after failures with a known meaning: the model is told', async () => {
+  it('[@no-uc:notion-safety] goes on after failures with a known meaning: the model is told', async () => {
     const cases: [number, string][] = [
       [401, 'signed_out'],
       [403, 'no_access'],

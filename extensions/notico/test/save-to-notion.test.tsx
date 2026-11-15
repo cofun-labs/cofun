@@ -169,7 +169,7 @@ describe('UC-NOTICO-SESSION-002 save a chat or a reply to Notion', () => {
     expect(screen.queryByRole('link', { name: 'Open the saved chat' })).not.toBeInTheDocument()
   })
 
-  it('once another question is answered, the chat can be saved again, with it', async () => {
+  it('[@no-uc:data] once another question is answered, the chat can be saved again, with it', async () => {
     const { tab, workspace } = workspaceTab()
     const { browser, user } = await openPanel(tab)
     browser.ai.script.push({ reply: 'Three milestones.' }, { reply: 'Alice owns them.' })
@@ -187,7 +187,7 @@ describe('UC-NOTICO-SESSION-002 save a chat or a reply to Notion', () => {
     expect(workspace.transactions).toHaveLength(2)
   })
 
-  it("a reply's save stays with its chat: another chat's reply at the same place can be saved on its own", async () => {
+  it("[@no-uc:data] a reply's save stays with its chat: another chat's reply at the same place can be saved on its own", async () => {
     const { tab, workspace } = workspaceTab()
     const { browser, user } = await openPanel(tab)
     browser.ai.script.push({ reply: 'First chat.' }, { reply: 'Second chat.' })
@@ -256,7 +256,7 @@ describe('UC-NOTICO-SESSION-002 save a chat or a reply to Notion', () => {
     ])
   })
 
-  it('a save still running starts no other: pressing again while it saves makes one page', async () => {
+  it('[@no-uc:data] a save still running starts no other: pressing again while it saves makes one page', async () => {
     const { tab, workspace } = workspaceTab()
     const { browser, user } = await openPanel(tab)
     browser.ai.script.push({ reply: 'An answer.' })

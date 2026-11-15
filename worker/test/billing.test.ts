@@ -195,13 +195,13 @@ describe('UC-COFUN-BILLING-001 Buy credits: the packs and Checkout', () => {
     expect(stripe.sessions).toEqual([])
   })
 
-  it('needs a session, like every /v1 route', async () => {
+  it('[@no-uc:access] needs a session, like every /v1 route', async () => {
     await answer(req('GET', '/v1/billing/packs'), 401)
     await answer(req('POST', '/v1/billing/checkout', undefined, { quantity: 5 }), 401)
     expect(stripe.sessions).toEqual([])
   })
 
-  it('is not configured without packs or a Stripe key, or with packs that are wrong', async () => {
+  it('[@no-uc:money] is not configured without packs or a Stripe key, or with packs that are wrong', async () => {
     const refused = async () => {
       const { error } = await answer(req('GET', '/v1/billing/packs', alice), 503)
       await answer(req('POST', '/v1/billing/checkout', alice, { quantity: 5 }), 503)
@@ -230,14 +230,14 @@ describe('UC-COFUN-BILLING-001 Buy credits: the packs and Checkout', () => {
     expect(stripe.sessions).toEqual([])
   })
 
-  it('a Checkout Session that Stripe does not make is a refusal the user can try again after', async () => {
+  it('[@no-uc:money] a Checkout Session that Stripe does not make is a refusal the user can try again after', async () => {
     stripe.failWith = new Error('Stripe answered 500: something broke')
     const { error } = await answer(req('POST', '/v1/billing/checkout', alice, { quantity: 5 }), 502)
     expect(error).toEqual({ code: 'payment_unavailable', message: 'Checkout is unavailable, try again in a moment.' })
     expect(logged).toEqual(['checkout failed: Error: Stripe answered 500: something broke'])
   })
 
-  it('serves the pages Checkout sends the buyer back to', async () => {
+  it('[@no-uc:money] serves the pages Checkout sends the buyer back to', async () => {
     const paid = await app.request('/billing/paid', {}, env)
     expect(paid.status).toBe(200)
     expect(await paid.text()).toContain('Go back to the side panel')
@@ -326,7 +326,7 @@ describe('UC-COFUN-BILLING-001 Buy credits: the webhook', () => {
     expect(db.rows('grants')).toEqual([])
   })
 
-  it('takes a signature among several, and allows for some clock skew', async () => {
+  it('[@no-uc:money] takes a signature among several, and allows for some clock skew', async () => {
     await checkout(alice, 5000)
     const evt = stripe.sessionEvent()
     const payload = JSON.stringify(evt)
@@ -478,7 +478,7 @@ describe('UC-COFUN-BILLING-001 Buy credits: the webhook', () => {
     ])
   })
 
-  it('a session made before the credit price changed still grants what it sold', async () => {
+  it('[@no-uc:money] a session made before the credit price changed still grants what it sold', async () => {
     await checkout(alice, 5000)
     // A later deploy sells credits at another price; the open session was made with the old one.
     env.CREDIT_PRICE = 'price_new'
@@ -488,7 +488,7 @@ describe('UC-COFUN-BILLING-001 Buy credits: the webhook', () => {
     ])
   })
 
-  it('takes no event without Stripe’s API, so Stripe sends it again later', async () => {
+  it('[@no-uc:money] takes no event without Stripe’s API, so Stripe sends it again later', async () => {
     await checkout(alice, 5000)
     env.STRIPE = undefined
     await answer(deliver(stripe.sessionEvent()), 503)
@@ -497,7 +497,7 @@ describe('UC-COFUN-BILLING-001 Buy credits: the webhook', () => {
     expect(db.rows('grants')).toHaveLength(1)
   })
 
-  it('still grants, refunds, and disputes past purchases after sales stop', async () => {
+  it('[@no-uc:money] still grants, refunds, and disputes past purchases after sales stop', async () => {
     await checkout(alice, 5000)
     await checkout(bob, 10_000)
     // An operator takes the packs off sale.
@@ -540,7 +540,7 @@ describe('UC-COFUN-BILLING-001 Buy credits: the webhook', () => {
     ])
   })
 
-  it('a refund or dispute of a payment that made no grant is acknowledged, and takes nothing', async () => {
+  it('[@no-uc:money] a refund or dispute of a payment that made no grant is acknowledged, and takes nothing', async () => {
     await buy(alice, 5000)
     for (const evt of [refunded('pi_from_the_dashboard'), disputed('pi_from_the_dashboard')]) {
       expect(await answer(deliver(evt))).toMatchObject({ done: 'recorded' })
@@ -565,7 +565,7 @@ describe('UC-COFUN-BILLING-001 Buy credits: the webhook', () => {
     expect((await credits(alice)).balance).toBe(90 * CREDIT)
   })
 
-  it('a purchase taken back the moment it was granted ends the millisecond after it began', async () => {
+  it('[@no-uc:money] a purchase taken back the moment it was granted ends the millisecond after it began', async () => {
     await buy(alice, 5000)
     await answer(deliver(refunded('pi_for_cs_test_1')))
     // A grant must end after it begins.
@@ -574,7 +574,7 @@ describe('UC-COFUN-BILLING-001 Buy credits: the webhook', () => {
     expect((await credits(alice)).grants).toEqual([])
   })
 
-  it('acknowledges the events it does not act on, and sessions it did not make', async () => {
+  it('[@no-uc:money] acknowledges the events it does not act on, and sessions it did not make', async () => {
     expect(await answer(deliver(event('customer.created', { id: 'cus_1', object: 'customer' })))).toEqual({
       received: true,
       done: 'ignored',
@@ -596,7 +596,7 @@ describe('UC-COFUN-BILLING-001 Buy credits: the webhook', () => {
     expect(db.rows('grants')).toEqual([])
   })
 
-  it('a paid session that can never grant is acknowledged and logged, not sent again', async () => {
+  it('[@no-uc:money] a paid session that can never grant is acknowledged and logged, not sent again', async () => {
     await checkout(alice, 5000)
     const evt = stripe.sessionEvent()
     // A session whose user and metadata disagree is not one the worker made.
@@ -612,7 +612,7 @@ describe('UC-COFUN-BILLING-001 Buy credits: the webhook', () => {
     ])
   })
 
-  it('an event it cannot handle fails, so Stripe sends it again, and the log says why', async () => {
+  it('[@no-uc:money] an event it cannot handle fails, so Stripe sends it again, and the log says why', async () => {
     await checkout(alice, 5000)
     const evt = stripe.sessionEvent()
     // The database is unreachable: Stripe sends it again, and then it grants.
@@ -624,7 +624,7 @@ describe('UC-COFUN-BILLING-001 Buy credits: the webhook', () => {
     expect(logged).toEqual(['stripe event failed: Error: D1_ERROR: Network connection lost.'])
   })
 
-  it('refuses an event too large to be Stripe’s, with or without its length, and reads one in chunks', async () => {
+  it('[@no-uc:money] refuses an event too large to be Stripe’s, with or without its length, and reads one in chunks', async () => {
     const big = event('customer.created', { id: 'cus_1', object: 'customer', note: 'x'.repeat(300 * 1024) })
     await answer(deliver(big, { sized: true }), 413)
     await answer(deliver(big, { chunked: true }), 413)
@@ -721,7 +721,7 @@ describe('Stripe over HTTP', () => {
     cancelUrl: 'https://api.example.test/billing/cancelled',
   }
 
-  it('makes a one-time Checkout Session with Managed Payments, for the user and the quantity of credits', async () => {
+  it('[@no-uc:money] makes a one-time Checkout Session with Managed Payments, for the user and the quantity of credits', async () => {
     const { sent, send } = fakeSend(200, { id: 'cs_1', url: 'https://checkout.stripe.com/c/pay/cs_1' })
 
     expect(await stripeOverHttp('sk_test_key', send).createCheckout(request)).toEqual({
@@ -750,7 +750,7 @@ describe('Stripe over HTTP', () => {
     })
   })
 
-  it('reads what a Checkout Session sells', async () => {
+  it('[@no-uc:money] reads what a Checkout Session sells', async () => {
     const { sent, send } = fakeSend(200, {
       object: 'list',
       data: [{ id: 'li_1', object: 'item', price: { id: 'price_credits', unit_amount: 100 }, quantity: 10 }],
@@ -767,7 +767,7 @@ describe('Stripe over HTTP', () => {
     })
   })
 
-  it('fails with what Stripe said, and on an answer it does not expect', async () => {
+  it('[@no-uc:money] fails with what Stripe said, and on an answer it does not expect', async () => {
     const refused = fakeSend(400, { error: { message: 'No such price' } })
     await expect(stripeOverHttp('sk', refused.send).createCheckout(request)).rejects.toThrow(
       'Stripe answered 400: No such price',

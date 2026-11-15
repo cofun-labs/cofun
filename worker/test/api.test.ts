@@ -121,22 +121,22 @@ describe('UC-COFUN-CHAT-001 Ask the hosted model', () => {
 
 // Standalone tests: implementation behavior worth guarding, not product contract (see docs/bdd.md).
 describe('worker API', () => {
-  it('GET /health needs no session (infrastructure)', async () => {
+  it('[@no-uc:access] GET /health needs no session (infrastructure)', async () => {
     expect((await req('GET', '/health')).status).toBe(200)
   })
 
-  it('/v1/me returns the Clerk user id and model', async () => {
+  it('[@no-uc:contract] /v1/me returns the Clerk user id and model', async () => {
     const res = await req('GET', '/v1/me', token)
     expect(res.status).toBe(200)
     expect(await json(res)).toEqual({ userId: 'user_alice', model: MODEL })
   })
 
-  it('a session from any allowed origin is accepted', async () => {
+  it('[@no-uc:access] a session from any allowed origin is accepted', async () => {
     const web = await clerk.sessionToken({ userId: 'user_alice', azp: 'https://cofun.example' })
     expect((await chat(web)).status).toBe(200)
   })
 
-  it('a validly signed session that names no origin is refused', async () => {
+  it('[@no-uc:access] a validly signed session that names no origin is refused', async () => {
     const noOrigin = await clerk.sessionToken({ userId: 'user_alice' })
     const notText = await clerk.sessionToken({ userId: 'user_alice', claims: { azp: [EXT] } })
     for (const bearer of [noOrigin, notText]) {
@@ -146,21 +146,21 @@ describe('worker API', () => {
     }
   })
 
-  it('API is off without the JWT key', async () => {
+  it('[@no-uc:access] API is off without the JWT key', async () => {
     env.CLERK_JWT_KEY = undefined
     const res = await chat(token)
     expect(res.status).toBe(503)
     expect((await json(res)).error.code).toBe('not_configured')
   })
 
-  it('API is off without allowed origins', async () => {
+  it('[@no-uc:access] API is off without allowed origins', async () => {
     env.CLERK_AUTHORIZED_PARTIES = ''
     const res = await chat(token)
     expect(res.status).toBe(503)
     expect((await json(res)).error.code).toBe('not_configured')
   })
 
-  it('extension origin passes CORS preflight', async () => {
+  it('[@no-uc:access] extension origin passes CORS preflight', async () => {
     const res = await app.request(
       '/v1/chat/completions',
       { method: 'OPTIONS', headers: { origin: EXT, 'access-control-request-method': 'POST' } },
@@ -170,7 +170,7 @@ describe('worker API', () => {
     expect(res.headers.get('access-control-allow-origin')).toBe('*')
   })
 
-  it('sign-in page loads Clerk with the publishable key', async () => {
+  it('[@no-uc:access] sign-in page loads Clerk with the publishable key', async () => {
     env.CLERK_PUBLISHABLE_KEY = 'pk_test_ZXhhbXBsZS5jbGVyay5hY2NvdW50cy5kZXYk' // example.clerk.accounts.dev
     const res = await req('GET', '/login')
     expect(res.status).toBe(200)
@@ -183,7 +183,7 @@ describe('worker API', () => {
     expect(html).toContain('src="https://example.clerk.accounts.dev/npm/@clerk/ui@1/dist/ui.browser.js"')
   })
 
-  it("sign-in page loads Clerk from a production instance's Frontend API", async () => {
+  it("[@no-uc:access] sign-in page loads Clerk from a production instance's Frontend API", async () => {
     // A production key: `clerk.example.com$` in base64, without the padding, as Clerk writes it.
     env.CLERK_PUBLISHABLE_KEY = 'pk_live_Y2xlcmsuZXhhbXBsZS5jb20k'
     let html = await (await req('GET', '/login')).text()
@@ -195,18 +195,18 @@ describe('worker API', () => {
     expect(html).toContain('src="https://clerk.sample.cc/npm/@clerk/ui@1/dist/ui.browser.js"')
   })
 
-  it('sign-in page turns Clerk SDK telemetry off', async () => {
+  it('[@no-uc:privacy] sign-in page turns Clerk SDK telemetry off', async () => {
     env.CLERK_PUBLISHABLE_KEY = 'pk_test_ZXhhbXBsZS5jbGVyay5hY2NvdW50cy5kZXYk'
     const html = await (await req('GET', '/login')).text()
     const options = /window\.Clerk\.load\(\{([^]*?)\}\)/.exec(html)?.[1]
     expect(options).toMatch(/^\s*telemetry: false,$/m)
   })
 
-  it('sign-in page is off without a publishable key', async () => {
+  it('[@no-uc:access] sign-in page is off without a publishable key', async () => {
     expect((await req('GET', '/login')).status).toBe(503)
   })
 
-  it('non-streamed reply goes through the gateway tagged with the user', async () => {
+  it('[@no-uc:money] non-streamed reply goes through the gateway tagged with the user', async () => {
     const res = await chat(token, { messages: hi, max_tokens: 50 })
     expect(res.status).toBe(200)
     expect((await json(res)).choices[0].message.content).toBe('Hello from Workers AI')
@@ -224,13 +224,7 @@ describe('worker API', () => {
     })
   })
 
-  it('without a gateway the model is called directly', async () => {
-    env.AI_GATEWAY_ID = ''
-    await chat(token)
-    expect(ai.calls[0].options).toBeUndefined()
-  })
-
-  it('a chat body too large is refused with 413 before it is read whole, with or without its length', async () => {
+  it('[@no-uc:money] a chat body too large is refused with 413 before it is read whole, with or without its length', async () => {
     const payload = JSON.stringify({ messages: [{ role: 'user', content: 'x'.repeat(5 * 1024 * 1024) }] })
     const send = (body: string | ReadableStream<Uint8Array>, headers: Record<string, string> = {}) => {
       // Node needs `duplex` to send a stream; the Workers types do not list it.
@@ -253,16 +247,16 @@ describe('worker API', () => {
     expect(ai.calls).toHaveLength(1)
   })
 
-  it('passes only role and content to the model, and defaults max_tokens when unset', async () => {
+  it('[@no-uc:contract] passes only role and content to the model, and defaults max_tokens when unset', async () => {
     await chat(token, { messages: [{ role: 'user', content: 'hi', name: 'x', extra: 1 }], max_tokens: null })
     expect(ai.calls[0].inputs).toEqual({ messages: [{ role: 'user', content: 'hi' }], max_tokens: 16_384 })
   })
 
-  it('naming the server model is allowed', async () => {
+  it('[@no-uc:contract] naming the server model is allowed', async () => {
     expect((await chat(token, { messages: hi, model: MODEL })).status).toBe(200)
   })
 
-  it('model failure returns 502', async () => {
+  it('[@no-uc:contract] model failure returns 502', async () => {
     ai.failWith = new Error('capacity')
     const res = await chat(token)
     expect(res.status).toBe(502)
@@ -370,7 +364,7 @@ describe('UC-COFUN-CREDITS-001 Spend credits on the hosted model', () => {
     ])
   })
 
-  it('a stream whose read fails says what it was charged before it errors', async () => {
+  it('[@no-uc:money] a stream whose read fails says what it was charged before it errors', async () => {
     ai.streamFailWith = new Error('connection reset')
     ai.usage = { prompt_tokens: 3, completion_tokens: 0 }
     const res = await chat(token, { messages: hi, stream: true })
@@ -409,7 +403,7 @@ describe('UC-COFUN-CREDITS-001 Spend credits on the hosted model', () => {
     expect(ai.calls).toHaveLength(3)
   })
 
-  it('concurrent requests neither lose a charge nor grant a week twice', async () => {
+  it('[@no-uc:money] concurrent requests neither lose a charge nor grant a week twice', async () => {
     const replies = await Promise.all(Array.from({ length: 8 }, () => chat(token)))
     expect(replies.map((res) => res.status)).toEqual(Array(8).fill(200))
     await Promise.all(replies.map((res) => res.text()))
@@ -418,7 +412,7 @@ describe('UC-COFUN-CREDITS-001 Spend credits on the hosted model', () => {
     expect(db.rows('grants')[0]).toMatchObject({ amount: 200_000_000, left: 200_000_000 - 8 * FAKE_COST })
   })
 
-  it('each model call leaves a record of how it ended, its tokens, and what it cost', async () => {
+  it('[@no-uc:money] each model call leaves a record of how it ended, its tokens, and what it cost', async () => {
     ai.usage = { prompt_tokens: 1000, completion_tokens: 5, prompt_tokens_details: { cached_tokens: 900 } }
     await chat(token)
     later(1000)
@@ -443,7 +437,7 @@ describe('UC-COFUN-CREDITS-001 Spend credits on the hosted model', () => {
     ])
   })
 
-  it('model calls that failed or cost nothing are recorded, and charge nothing', async () => {
+  it('[@no-uc:money] model calls that failed or cost nothing are recorded, and charge nothing', async () => {
     ai.failWith = new Error('capacity')
     await chat(token)
     ai.failWith = undefined
@@ -463,7 +457,7 @@ describe('UC-COFUN-CREDITS-001 Spend credits on the hosted model', () => {
     expect(db.rows('model_calls')).toHaveLength(3)
   })
 
-  it('a stream cut short is recorded with the estimate it was charged by', async () => {
+  it('[@no-uc:money] a stream cut short is recorded with the estimate it was charged by', async () => {
     const res = await chat(token, { messages: hi, stream: true })
     const reader = res.body!.getReader()
     // The first line: the first piece of the reply, "Hello ".
@@ -474,7 +468,7 @@ describe('UC-COFUN-CREDITS-001 Spend credits on the hosted model', () => {
     ])
   })
 
-  it('the part of a cost the grants did not cover is recorded as owed, and the next grant pays it back', async () => {
+  it('[@no-uc:money] the part of a cost the grants did not cover is recorded as owed, and the next grant pays it back', async () => {
     repliesCost(150)
     await chat(token)
     await chat(token)
@@ -491,7 +485,7 @@ describe('UC-COFUN-CREDITS-001 Spend credits on the hosted model', () => {
     ])
   })
 
-  it('grants and model calls of several users are kept apart in one database', async () => {
+  it('[@no-uc:money] grants and model calls of several users are kept apart in one database', async () => {
     const bob = await clerk.sessionToken({ userId: 'user_bob', azp: EXT })
     repliesCost(150)
     await chat(token)
@@ -512,7 +506,7 @@ describe('UC-COFUN-CREDITS-001 Spend credits on the hosted model', () => {
     expect((await chat(bob)).status).toBe(200)
   })
 
-  it('a charge is taken from the grant that expires first, then from the next', async () => {
+  it('[@no-uc:money] a charge is taken from the grant that expires first, then from the next', async () => {
     repliesCost(150)
     await chat(token)
     // 50 credits are left of the free week; an admin grants 100 more, that expire after it.
@@ -529,7 +523,7 @@ describe('UC-COFUN-CREDITS-001 Spend credits on the hosted model', () => {
     ])
   })
 
-  it('a stream that ended before the client stopped reading is charged its totals, not an estimate', async () => {
+  it('[@no-uc:money] a stream that ended before the client stopped reading is charged its totals, not an estimate', async () => {
     ai.usage = { prompt_tokens: 1000, completion_tokens: 5, prompt_tokens_details: { cached_tokens: 900 } }
     const res = await chat(token, { messages: hi, stream: true })
     const reader = res.body!.getReader()
@@ -548,7 +542,7 @@ describe('UC-COFUN-CREDITS-001 Spend credits on the hosted model', () => {
     ])
   })
 
-  it('a stream that breaks off before it reports or carries anything costs nothing', async () => {
+  it('[@no-uc:money] a stream that breaks off before it reports or carries anything costs nothing', async () => {
     ai.rawSse = ''
     await (await chat(token, { messages: hi, stream: true })).text()
     ai.rawSse = undefined
@@ -613,7 +607,7 @@ describe('UC-COFUN-CREDITS-001 Spend credits on the hosted model', () => {
     await refused(await chat(token))
   })
 
-  it('a request stamped a little before the week began gets no second grant', async () => {
+  it('[@no-uc:money] a request stamped a little before the week began gets no second grant', async () => {
     repliesCost(200)
     await chat(token)
     // Another instance whose clock is a second behind.
@@ -641,7 +635,7 @@ describe('UC-COFUN-CREDITS-001 Spend credits on the hosted model', () => {
     ])
   })
 
-  it('a stream cut short is charged the prompt it reported, 90% of it as cached, and the reply by its size', async () => {
+  it('[@no-uc:money] a stream cut short is charged the prompt it reported, 90% of it as cached, and the reply by its size', async () => {
     // Workers AI gives the prompt in its first chunk; how much of it was cached only comes at the end.
     ai.rawSse =
       'data: {"choices":[{"delta":{"content":""}}],"usage":{"prompt_tokens":1000,"completion_tokens":0}}\n\n' +
@@ -657,13 +651,13 @@ describe('UC-COFUN-CREDITS-001 Spend credits on the hosted model', () => {
     })
   })
 
-  it('a stream that carries a model error and no usage costs nothing', async () => {
+  it('[@no-uc:money] a stream that carries a model error and no usage costs nothing', async () => {
     ai.rawSse = 'data: {"error":{"message":"model overloaded"}}\n\n'
     await (await chat(token, { messages: hi, stream: true })).text()
     expect(records()[0]).toMatchObject({ outcome: 'provider_error', microCredits: 0 })
   })
 
-  it('an unreachable database refuses the request without calling the model', async () => {
+  it('[@no-uc:money] an unreachable database refuses the request without calling the model', async () => {
     db.failWith = new Error('D1_ERROR: Network connection lost.')
     const res = await chat(token)
     expect(res.status).toBe(503)
@@ -674,7 +668,7 @@ describe('UC-COFUN-CREDITS-001 Spend credits on the hosted model', () => {
     expect(ai.calls).toHaveLength(0)
   })
 
-  it('a model call whose record fails still sends the reply, is not charged, and the usage record says so', async () => {
+  it('[@no-uc:money] a model call whose record fails still sends the reply, is not charged, and the usage record says so', async () => {
     db.failOn = { sql: 'INSERT INTO model_calls', error: new Error('D1_ERROR: Network connection lost.') }
     expect((await chat(token)).status).toBe(200)
     expect(await (await chat(token, { messages: hi, stream: true })).text()).toContain('[DONE]')
@@ -686,7 +680,7 @@ describe('UC-COFUN-CREDITS-001 Spend credits on the hosted model', () => {
     expect(logged).toEqual(Array(2).fill('model call record failed: Error: D1_ERROR: Network connection lost.'))
   })
 
-  it('a model with no price is a configuration error, not a free call', async () => {
+  it('[@no-uc:money] a model with no price is a configuration error, not a free call', async () => {
     env.MODEL = '@cf/test/unpriced'
     const res = await chat(token)
     expect(res.status).toBe(503)
@@ -840,7 +834,7 @@ describe('error logs', () => {
     return Object.assign(err, { request: { messages } })
   }
 
-  it('a failed model call logs only the name and the start of the message', async () => {
+  it('[@no-uc:privacy] a failed model call logs only the name and the start of the message', async () => {
     const err = (ai.failWith = quotingError())
     err.name = 'ProviderError'
     expect((await chat(token, { messages })).status).toBe(502)
@@ -848,7 +842,7 @@ describe('error logs', () => {
     expect(logged.join()).not.toContain(SECRET)
   })
 
-  it('an unexpected error logs only the name and the start of the message', async () => {
+  it('[@no-uc:privacy] an unexpected error logs only the name and the start of the message', async () => {
     env.AI = {
       async run() {
         return {
@@ -863,7 +857,7 @@ describe('error logs', () => {
     expect(logged.join()).not.toContain(SECRET)
   })
 
-  it('a stream that fails partway logs the same summary and ends with an error that quotes nothing', async () => {
+  it('[@no-uc:privacy] a stream that fails partway logs the same summary and ends with an error that quotes nothing', async () => {
     ai.streamFailWith = quotingError()
     const res = await chat(token, { messages, stream: true })
     const failure: unknown = await res.text().catch((err: unknown) => err)
@@ -873,14 +867,14 @@ describe('error logs', () => {
     expect(logged).toEqual([`model stream failed: Error: ${'x'.repeat(200)}`])
   })
 
-  it('a long error name is cut too', async () => {
+  it('[@no-uc:privacy] a long error name is cut too', async () => {
     const err = (ai.failWith = new Error('capacity'))
     err.name = `${'n'.repeat(60)}${SECRET}`
     await chat(token, { messages })
     expect(logged).toEqual([`model call failed: ${'n'.repeat(60)}: capacity`])
   })
 
-  it('a thrown value that is not an error logs only its type', async () => {
+  it('[@no-uc:privacy] a thrown value that is not an error logs only its type', async () => {
     env.AI = {
       async run() {
         throw { message: `quoted ${SECRET}` }
@@ -890,7 +884,7 @@ describe('error logs', () => {
     expect(logged).toEqual(['model call failed: non-error value of type object'])
   })
 
-  it('a request that is refused logs nothing', async () => {
+  it('[@no-uc:privacy] a request that is refused logs nothing', async () => {
     expect((await chat(undefined, { messages })).status).toBe(401)
     expect((await chat(token, { messages: [] })).status).toBe(400)
     expect(logged).toEqual([])
@@ -903,7 +897,7 @@ describe('product of a model call', () => {
   const products = () => db.rows('model_calls').map((r) => r.product)
   const usageProducts = () => usage.points.map((point) => point.blobs?.[4])
 
-  it('is the product listed for the origin the session token was issued to', async () => {
+  it('[@no-uc:money] is the product listed for the origin the session token was issued to', async () => {
     env.CLERK_AUTHORIZED_PARTIES += `, ${OTHER}`
     env.PRODUCTS = { [EXT]: 'notico', [OTHER]: 'confluco' }
     await chat(token)
@@ -915,27 +909,27 @@ describe('product of a model call', () => {
     )
   })
 
-  it('is never what the client says it is', async () => {
+  it('[@no-uc:money] is never what the client says it is', async () => {
     const res = await req('POST', '/v1/chat/completions?product=confluco', token, { messages: hi, product: 'confluco' })
     expect(res.status).toBe(200)
     expect(products()).toEqual(['notico'])
     expect(ai.calls[0].inputs).not.toHaveProperty('product')
   })
 
-  it('is unknown for an allowed caller that is no listed extension, and the call goes ahead', async () => {
+  it('[@no-uc:money] is unknown for an allowed caller that is no listed extension, and the call goes ahead', async () => {
     const web = await clerk.sessionToken({ userId: 'user_alice', azp: 'https://cofun.example' })
     expect((await chat(web)).status).toBe(200)
     expect(products()).toEqual(['unknown'])
     expect(usageProducts()).toEqual(['unknown'])
   })
 
-  it('is unknown for every caller when no products are configured', async () => {
+  it('[@no-uc:money] is unknown for every caller when no products are configured', async () => {
     delete env.PRODUCTS
     expect((await chat(token)).status).toBe(200)
     expect(products()).toEqual(['unknown'])
   })
 
-  it('a products config that is not valid refuses the call before the model is asked, and says what is wrong', async () => {
+  it('[@no-uc:money] a products config that is not valid refuses the call before the model is asked, and says what is wrong', async () => {
     for (const bad of ['notico', { [EXT]: 'Notico' }, { [EXT]: 'unknown' }, { 'https://cofun.example': 'notico' }]) {
       env.PRODUCTS = bad
       const res = await chat(token)
@@ -951,13 +945,13 @@ describe('product of a model call', () => {
 
 // Standalone tests for usage records.
 describe('usage records', () => {
-  it('a stream that carries a model error is recorded as provider_error', async () => {
+  it('[@no-uc:money] a stream that carries a model error is recorded as provider_error', async () => {
     ai.rawSse = 'data: {"error":{"message":"model overloaded"}}\n\ndata: [DONE]\n\n'
     await (await chat(token, { messages: hi, stream: true })).text()
     expect(records().map((r) => r.outcome)).toEqual(['provider_error'])
   })
 
-  it('a reply that cannot be sent is recorded once', async () => {
+  it('[@no-uc:money] a reply that cannot be sent is recorded once', async () => {
     env.AI = {
       async run() {
         return { usage: { prompt_tokens: 1n } }
@@ -967,13 +961,13 @@ describe('usage records', () => {
     expect(records().map((r) => r.outcome)).toEqual(['internal'])
   })
 
-  it('requests that fail auth leave no record', async () => {
+  it('[@no-uc:money] requests that fail auth leave no record', async () => {
     await chat(undefined)
     await chat('not-a-jwt')
     expect(usage.points).toHaveLength(0)
   })
 
-  it('a stream the client cancels is recorded as cancelled', async () => {
+  it('[@no-uc:money] a stream the client cancels is recorded as cancelled', async () => {
     const res = await chat(token, { messages: hi, stream: true })
     const reader = res.body!.getReader()
     await reader.read()
@@ -981,7 +975,7 @@ describe('usage records', () => {
     expect(records().map((r) => r.outcome)).toEqual(['cancelled'])
   })
 
-  it('the stream reaches the client unchanged, with what it cost ahead of [DONE]', async () => {
+  it('[@no-uc:contract] the stream reaches the client unchanged, with what it cost ahead of [DONE]', async () => {
     const reply = 'data: {"choices":[{"delta":{"content":"a"}}]}\n\n'
     ai.rawSse = `${reply}data: [DONE]\n\n`
     const cost = 'data: {"choices":[],"cost":{"micro_credits":0,"estimated":false}}\n\n'
@@ -989,7 +983,7 @@ describe('usage records', () => {
     expect(records()[0]).toMatchObject({ outcome: 'ok', promptTokens: 0, completionTokens: 0, finishReason: '' })
   })
 
-  it('reads the totals from a Workers AI stream with per-chunk usage', async () => {
+  it('[@no-uc:money] reads the totals from a Workers AI stream with per-chunk usage', async () => {
     // Shape recorded from the production model: per-chunk usage, a zeroed chunk, then the totals.
     const usageOf = (p: number, c: number) => ({ prompt_tokens: p, completion_tokens: c, total_tokens: p + c })
     ai.rawSse = [
@@ -1010,14 +1004,14 @@ describe('usage records', () => {
     })
   })
 
-  it('unknown finish reasons and malformed token counts are not copied into records', async () => {
+  it('[@no-uc:money] unknown finish reasons and malformed token counts are not copied into records', async () => {
     ai.rawSse =
       'data: {"choices":[{"delta":{},"finish_reason":"free text"}],"usage":{"prompt_tokens":"9","completion_tokens":-1}}\n\ndata: [DONE]\n\n'
     await (await chat(token, { messages: hi, stream: true })).text()
     expect(records()[0]).toMatchObject({ finishReason: 'other', promptTokens: 0, completionTokens: 0 })
   })
 
-  it('non-object events in the stream are passed through and skipped', async () => {
+  it('[@no-uc:contract] non-object events in the stream are passed through and skipped', async () => {
     const events = 'data: null\n\ndata: 3\n\ndata: {"choices":[{"delta":{"content":"a"}}]}\n\n'
     ai.rawSse = `${events}data: [DONE]\n\n`
     const cost = 'data: {"choices":[],"cost":{"micro_credits":0,"estimated":false}}\n\n'
@@ -1025,7 +1019,7 @@ describe('usage records', () => {
     expect(records().map((r) => r.outcome)).toEqual(['ok'])
   })
 
-  it('reads the fields of a reply loosely: a field of another shape counts as missing', async () => {
+  it('[@no-uc:money] reads the fields of a reply loosely: a field of another shape counts as missing', async () => {
     const replies: [unknown, Record<string, unknown>][] = [
       [
         { choices: { 0: { finish_reason: 'length' } }, usage: [] },
@@ -1057,7 +1051,7 @@ describe('usage records', () => {
     }
   })
 
-  it('a non-streamed reply without usage is still recorded', async () => {
+  it('[@no-uc:money] a non-streamed reply without usage is still recorded', async () => {
     env.AI = {
       async run() {
         return null
@@ -1067,7 +1061,7 @@ describe('usage records', () => {
     expect(records()[0]).toMatchObject({ outcome: 'ok', promptTokens: 0, completionTokens: 0, finishReason: '' })
   })
 
-  it('a streamed request refused before the model is called is recorded as streamed', async () => {
+  it('[@no-uc:money] a streamed request refused before the model is called is recorded as streamed', async () => {
     await chat(token, { messages: [], stream: true })
     await chat(token, { messages: hi, max_tokens: 100_000, stream: true })
     expect(records().map((r) => [r.outcome, r.mode])).toEqual([
@@ -1076,7 +1070,7 @@ describe('usage records', () => {
     ])
   })
 
-  it('a failing usage dataset does not fail the request', async () => {
+  it('[@no-uc:money] a failing usage dataset does not fail the request', async () => {
     env.USAGE = {
       writeDataPoint() {
         throw new Error('dataset unavailable')
@@ -1225,7 +1219,7 @@ describe('UC-COFUN-CHAT-001 Ask the hosted model: tools', () => {
 })
 
 describe('tool calling', () => {
-  it('a streamed tool call leaves a record with its totals and finish reason', async () => {
+  it('[@no-uc:money] a streamed tool call leaves a record with its totals and finish reason', async () => {
     ai.toolCalls = [{ name: 'get_current_page', arguments: '{}' }]
     await (await chat(token, { messages: askPage, tools, stream: true })).text()
     expect(records()).toEqual([
@@ -1238,7 +1232,7 @@ describe('tool calling', () => {
     ])
   })
 
-  it('tool definitions and tool calls count toward the size limit and the record', async () => {
+  it('[@no-uc:money] tool definitions and tool calls count toward the size limit and the record', async () => {
     await chat(token, { messages: withToolResult('{"title":"x"}'), tools: [pageTool] })
     const { inputChars } = records()[0]
     const toolCalls = [{ id: 'call_1', type: 'function', function: { name: 'get_current_page', arguments: '{}' } }]
@@ -1271,7 +1265,7 @@ describe('tool calling', () => {
     expect(ai.calls).toHaveLength(1)
   })
 
-  it('passes only the tool fields the model needs', async () => {
+  it('[@no-uc:contract] passes only the tool fields the model needs', async () => {
     await chat(token, {
       messages: [
         ...askPage,
@@ -1304,7 +1298,7 @@ describe('tool calling', () => {
     })
   })
 
-  it('says what is wrong with each part of a request, and the first thing when several are', async () => {
+  it('[@no-uc:contract] says what is wrong with each part of a request, and the first thing when several are', async () => {
     const call = { id: 'c1', type: 'function', function: { name: 'f', arguments: '{}' } }
     const tool = { type: 'function', function: { name: 'f' } }
     const refused: [unknown, string][] = [
@@ -1401,27 +1395,27 @@ describe('tool calling', () => {
     expect(ai.calls).toHaveLength(0)
   })
 
-  it('tools without a description or parameters are allowed', async () => {
+  it('[@no-uc:contract] tools without a description or parameters are allowed', async () => {
     const bare = [{ type: 'function', function: { name: 'ping' } }]
     expect((await chat(token, { messages: askPage, tools: bare })).status).toBe(200)
     expect(ai.calls[0].inputs.tools).toEqual(bare)
   })
 
-  it('tool_choice auto and required are passed to the model', async () => {
+  it('[@no-uc:contract] tool_choice auto and required are passed to the model', async () => {
     for (const tool_choice of ['auto', 'required']) {
       expect((await chat(token, { messages: askPage, tools, tool_choice })).status).toBe(200)
     }
     expect(ai.calls.map((c) => c.inputs.tool_choice)).toEqual(['auto', 'required'])
   })
 
-  it('tool_choice none is refused, since the model does not honor it', async () => {
+  it('[@no-uc:contract] tool_choice none is refused, since the model does not honor it', async () => {
     const res = await chat(token, { messages: askPage, tools, tool_choice: 'none' })
     expect(res.status).toBe(400)
     expect((await json(res)).error.message).toContain('leave out tools')
     expect(ai.calls).toHaveLength(0)
   })
 
-  it('each tool call gets one result right after it', async () => {
+  it('[@no-uc:contract] each tool call gets one result right after it', async () => {
     const [question, call, result] = withToolResult('{}')
     const pageCall = { id: 'call_1', type: 'function', function: { name: 'get_current_page', arguments: '{}' } }
     const searchCall = { id: 'call_2', type: 'function', function: { name: 'search_pages', arguments: '{}' } }
@@ -1449,7 +1443,7 @@ describe('tool calling', () => {
     expect((await chat(token, { messages: [question, twoCalls, result2, result, later] })).status).toBe(200)
   })
 
-  it('an agent can run several tool rounds, even if ids repeat across rounds', async () => {
+  it('[@no-uc:contract] an agent can run several tool rounds, even if ids repeat across rounds', async () => {
     ai.toolCalls = [{ name: 'get_current_page', arguments: '{}' }]
     const messages: unknown[] = [...askPage]
     for (let round = 0; round < 2; round++) {
@@ -1473,14 +1467,14 @@ describe('tool calling', () => {
     expect((await chat(token, { messages: [question, call, result, call, result] })).status).toBe(200)
   })
 
-  it('tool_choice with a malformed name is refused without echoing it', async () => {
+  it('[@no-uc:privacy] tool_choice with a malformed name is refused without echoing it', async () => {
     const name = 'x'.repeat(1000)
     const res = await chat(token, { messages: askPage, tools, tool_choice: { type: 'function', function: { name } } })
     expect(res.status).toBe(400)
     expect((await json(res)).error.message).not.toContain(name)
   })
 
-  it('deeply nested tool parameters are refused, not a server error', async () => {
+  it('[@no-uc:contract] deeply nested tool parameters are refused, not a server error', async () => {
     // Built as text: parsing this much nesting works, serializing it again does not.
     const depth = 20_000
     const parameters = '{"a":'.repeat(depth) + '{}' + '}'.repeat(depth)

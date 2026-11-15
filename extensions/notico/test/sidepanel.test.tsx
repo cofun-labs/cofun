@@ -98,7 +98,7 @@ describe('asking the AI', () => {
 
   // UC-NOTICO-AGENT-001-S16 itself stays ai-e2e: whether the model answers from the note, without a tool, is its
   // own judgment. This is the panel's part of it.
-  it('a question goes to the model with a note naming the open page, and the panel shows only what the user typed', async () => {
+  it('[@no-uc:contract] a question goes to the model with a note naming the open page, and the panel shows only what the user typed', async () => {
     const { browser, user } = await openPanel()
     browser.ai.script.push({ reply: 'You are on "Fixture page".' })
 
@@ -217,23 +217,6 @@ describe('a formatted reply', () => {
     await answered()
 
     expect(owner.querySelector('br')).not.toBeNull()
-  })
-
-  it('a reply still coming in is formatted as it streams, an unclosed code block included', async () => {
-    const { browser, user } = await openPanel()
-    const resume = pausedReply(browser, 'Run:\n\n```\nnpm test now\n```\n\nThen wait.')
-
-    await ask(user, 'How do I test?')
-
-    // The first two words are in: the code block has started and is not closed yet.
-    const code = await screen.findByText(/^npm/)
-    expect(code.closest('pre')).not.toBeNull()
-    expect(screen.queryByText(/```/)).not.toBeInTheDocument()
-
-    resume()
-    expect(await screen.findByText('Then wait.')).toBeVisible()
-    await answered()
-    expect(screen.getByText('npm test now').closest('pre')).not.toBeNull()
   })
 
   it('[UC-NOTICO-CHAT-001-S17] HTML in a reply is shown as text, and only web links can be followed', async () => {
@@ -411,34 +394,6 @@ describe('on a tab that is not Notion', () => {
     expect(tab.injections).toHaveLength(injected)
     expect(tab.sent).toHaveLength(sent)
   })
-
-  // UC-NOTICO-PANEL-001-S07 itself stays ai-e2e: that Chrome keeps the panel open across tabs. This is
-  // the panel's part of it.
-  it('a conversation started on a Notion page goes on after the user switches to another site', async () => {
-    const { browser, user } = await openPanel()
-    browser.ai.script.push({ reply: 'It is a fixture.' }, { reply: 'You left Notion.' })
-
-    await ask(user, 'What is this page?')
-    await screen.findByText('It is a fixture.')
-    await answered()
-    act(() => browser.tab.switchTab(INBOX, 'Inbox (3)'))
-    // No page to send on another site.
-    await waitFor(() => expect(screen.queryByRole('list', { name: 'Pages to send' })).not.toBeInTheDocument())
-    await ask(user, 'And now?')
-
-    expect(await screen.findByText('You left Notion.')).toBeVisible()
-    await answered()
-    expect(conversation().getByText('What is this page?')).toBeVisible()
-    expect(
-      browser
-        .sentToModel()
-        .filter((m) => m.role === 'user')
-        .map((m) => m.content),
-    ).toEqual([
-      `[The Notion page open in the current tab: "Fixture page", ${PAGE_URL}]\n\nWhat is this page?`,
-      '[The current tab is not a Notion page.]\n\nAnd now?',
-    ])
-  })
 })
 
 describe('the page a question goes with', () => {
@@ -527,7 +482,7 @@ describe('the page a question goes with', () => {
     expect(pagesSent()).toEqual([])
   })
 
-  it('with a page taken off, a tab on another site is looked up and Notion tools say to switch to Notion, as without it', async () => {
+  it('[@no-uc:privacy] with a page taken off, a tab on another site is looked up and Notion tools say to switch to Notion, as without it', async () => {
     const { browser, user } = await openPanel()
     browser.ai.script.push(
       {
@@ -861,7 +816,7 @@ describe('sessions', () => {
     expect(conversation().queryByText(/\bcredits?$/)).not.toBeInTheDocument()
   })
 
-  it('a question in a new chat shows all it cost, even when the chat it left ends its question meanwhile', async () => {
+  it('[@no-uc:money] a question in a new chat shows all it cost, even when the chat it left ends its question meanwhile', async () => {
     // Each question reads the page, in two requests.
     const tab = pageTab()
       .respond('loadPageChunk', 200, fixture('load-page-chunk-0'))
@@ -927,21 +882,6 @@ describe('sessions', () => {
     expect(await navigator.clipboard.readText()).toBe('Let me look.\n\nIt has **two** items:\n\n- One\n- Two')
     expect(screen.getByRole('button', { name: 'Copied' })).toBeVisible()
     expect(screen.getByRole('status')).toHaveTextContent('Copied')
-  })
-
-  it('a reply that used no Notion tool says nothing about Notion under it', async () => {
-    const { browser, user } = await openPanel()
-    browser.ai.script.push({ reply: 'Hello.' })
-
-    await ask(user, 'Hi')
-    await screen.findByText('Hello.')
-    await answered()
-
-    expect(screen.queryByText(/Read \d+ page|Changed \d+ page/)).not.toBeInTheDocument()
-    // It sent nothing to Notion, so its details say only what the model used.
-    expect(await replyDetails(user)).toEqual(['Tokens: 12 in · 5 out'])
-    // The model that answered is in the reply's row, outside its details.
-    expect(screen.getByRole('note', { name: 'Answered by Auto' })).toHaveTextContent('Auto')
   })
 
   it('[UC-NOTICO-SESSION-001-S07] opening the side panel starts a new, empty session, with the earlier ones in the list', async () => {
@@ -1105,7 +1045,7 @@ describe('sessions', () => {
     expect(title()).toHaveTextContent(/^Roadmap milestones$/)
   })
 
-  it('the session list is searched by title, and deleting a session takes a second click', async () => {
+  it('[@no-uc:data] the session list is searched by title, and deleting a session takes a second click', async () => {
     const { browser, user } = await openPanel()
     browser.ai.script.push({ reply: 'Three milestones.' }, { reply: 'Alice.' })
     await ask(user, 'What is on the roadmap?')
@@ -1326,7 +1266,7 @@ describe('sessions', () => {
     expect(JSON.stringify(browser.sentToModel())).not.toMatch(/launch|first one/)
   })
 
-  it('a chat left while Notion still answers its question opens with that question once it has ended, and holds up no other chat', async () => {
+  it('[@no-uc:data] a chat left while Notion still answers its question opens with that question once it has ended, and holds up no other chat', async () => {
     const { browser, user } = await openPanel()
     await askAboutPage(browser, user)
     vi.setSystemTime(new Date(START.getTime() + 60_000))
@@ -1367,7 +1307,7 @@ describe('sessions', () => {
     expect(screen.queryByText(/saved as a separate chat/)).not.toBeInTheDocument()
   })
 
-  it('a chat deleted while a question the user left it for is still stopping is not saved back', async () => {
+  it('[@no-uc:data] a chat deleted while a question the user left it for is still stopping is not saved back', async () => {
     const { browser, user } = await openPanel()
     await askAboutPage(browser, user)
 
@@ -1517,7 +1457,7 @@ describe('signing in and out', () => {
     expect(screen.queryByRole('button', { name: 'Account' })).not.toBeInTheDocument()
   })
 
-  it('a signed-out panel offers only to sign in, on the sign-in page', async () => {
+  it('[@no-uc:access] a signed-out panel offers only to sign in, on the sign-in page', async () => {
     const browser = await FakeBrowser.start(pageTab())
     await browser.openPanel()
     const user = userEvent.setup()

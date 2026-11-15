@@ -132,7 +132,7 @@ describe('buying credits on the Credits page', () => {
     ])
   })
 
-  it('says when the packs cannot be read, and reads them again on request', async () => {
+  it('[@no-uc:money] says when the packs cannot be read, and reads them again on request', async () => {
     const { browser, user } = await openPanel()
     // Buying is not set up on the worker for a moment.
     const packs = browser.env.CREDIT_PACKS
@@ -149,7 +149,7 @@ describe('buying credits on the Credits page', () => {
     expect(await buy.findByRole('button', { name: 'Buy 5,000 credits for US$5' })).toBeVisible()
   })
 
-  it('says when Checkout cannot be opened, and opens no tab', async () => {
+  it('[@no-uc:money] says when Checkout cannot be opened, and opens no tab', async () => {
     const { browser, user } = await openPanel()
     await openCredits(user)
     browser.stripe.failWith = new Error('Stripe answered 500')

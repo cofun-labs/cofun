@@ -118,44 +118,7 @@ describe('the account menu', () => {
     await waitFor(() => expect(creditsItem()).toHaveAccessibleName('Credits, 110 left'))
   })
 
-  it('works with the keyboard', async () => {
-    const { user } = await openPanel()
-    // Closing the menu with Escape leaves the focus on the avatar: the keyboard takes over from there.
-    await user.click(accountButton())
-    await user.keyboard('{Escape}')
-    expect(accountButton()).toHaveFocus()
-
-    await user.keyboard('{Enter}')
-    expect(creditsItem()).toHaveFocus()
-    await user.keyboard('{ArrowDown}')
-    expect(screen.getByRole('menuitem', { name: 'Settings' })).toHaveFocus()
-    await user.keyboard('{ArrowDown}')
-    expect(screen.getByRole('menuitem', { name: 'Sign out' })).toHaveFocus()
-    await user.keyboard('{ArrowDown}')
-    expect(creditsItem()).toHaveFocus()
-    await user.keyboard('{ArrowUp}')
-    expect(screen.getByRole('menuitem', { name: 'Sign out' })).toHaveFocus()
-
-    // Escape closes the menu and gives the focus back to the avatar.
-    await user.keyboard('{Escape}')
-    expect(screen.queryByRole('menu')).not.toBeInTheDocument()
-    expect(accountButton()).toHaveFocus()
-    expect(accountButton()).toHaveAttribute('aria-expanded', 'false')
-
-    // A page opens from the keyboard, with the focus on Back, and Escape leads back to the chat, with the focus on the avatar again.
-    await user.keyboard('{Enter}{ArrowDown}{Enter}')
-    expect(await screen.findByRole('heading', { name: 'Settings' })).toBeVisible()
-    expect(screen.getByRole('button', { name: 'Back' })).toHaveFocus()
-    await user.keyboard('{Escape}')
-    expect(screen.queryByRole('heading', { name: 'Settings' })).not.toBeInTheDocument()
-    expect(accountButton()).toHaveFocus()
-    await user.keyboard('{Enter}{Enter}')
-    expect(await screen.findByRole('heading', { name: 'Credits' })).toBeVisible()
-    await user.keyboard('{Escape}')
-    expect(accountButton()).toHaveFocus()
-  })
-
-  it('reads the credits again each time it opens, and tells a screen reader who is signed in', async () => {
+  it('[@no-uc:money] reads the credits again each time it opens, and tells a screen reader who is signed in', async () => {
     const browser = await FakeBrowser.start(pageTab(), { signedInAs: 'user_alice' })
     // The read made when the panel loads fails.
     browser.db.failOn = { sql: 'GROUP BY day', error: new Error('D1_ERROR: Network connection lost.') }
@@ -170,28 +133,6 @@ describe('the account menu', () => {
 
     await waitFor(() => expect(creditsItem()).toHaveAccessibleName('Credits, 200 left'))
     expect(screen.getByRole('menu', { name: 'Account' })).toHaveAccessibleDescription('Alice Example alice@example.com')
-  })
-
-  it('opened over the session list, Escape closes only the menu, and the next Escape the list', async () => {
-    const { user } = await openPanel()
-    await user.click(screen.getByRole('button', { name: 'Chats' }))
-    await openMenu(user)
-
-    await user.keyboard('{Escape}')
-    expect(screen.queryByRole('menu')).not.toBeInTheDocument()
-    expect(screen.getByRole('dialog', { name: 'Chats' })).toBeVisible()
-
-    await user.keyboard('{Escape}')
-    expect(screen.queryByRole('dialog', { name: 'Chats' })).not.toBeInTheDocument()
-  })
-
-  it('closes when the user clicks elsewhere', async () => {
-    const { user } = await openPanel()
-    await openMenu(user)
-
-    await user.click(screen.getByRole('textbox', { name: 'Message' }))
-
-    expect(screen.queryByRole('menu')).not.toBeInTheDocument()
   })
 })
 

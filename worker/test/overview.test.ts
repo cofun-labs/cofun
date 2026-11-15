@@ -527,7 +527,7 @@ class RecordingDatabase implements Database {
 
 // Standalone tests: implementation behavior worth guarding, not product contract (see docs/bdd.md).
 describe('admin overview API', () => {
-  it('every query reads only the period’s rows, through the time indexes, and no whole table', async () => {
+  it('[@no-uc:money] every query reads only the period’s rows, through the time indexes, and no whole table', async () => {
     await threeDays()
     const recording = new RecordingDatabase(db)
     env.DB = recording
@@ -557,42 +557,7 @@ describe('admin overview API', () => {
     for (const step of others) expect(step).toMatch(/USING (COVERING )?INDEX \w+ \(user_id=\?/)
   })
 
-  it('the list shows 50 accounts unless asked for another number, and never more than 200', async () => {
-    for (let i = 0; i < 52; i++) await asks(`n${i}`)
-    const listed = await accounts('2026-11-08', '2026-11-08')
-    expect(listed.accounts).toHaveLength(50)
-    expect(listed.more).toBe(true)
-    expect((await accounts('2026-11-08', '2026-11-08', { limit: 200 })).accounts).toHaveLength(52)
-
-    for (const limit of ['0', '201', '-1', '1.5', 'all', '']) {
-      const res = await getAccounts(period('2026-11-08', '2026-11-08', { limit }))
-      expect(res.status).toBe(400)
-      expect((await json(res)).error.message).toBe('limit must be a whole number from 1 to 200')
-    }
-  })
-
-  it('accounts that spent the same are listed by what they were granted, then by user id', async () => {
-    await grant('zed', 10, 30)
-    await grant('amy', 10, 30)
-    await grant('kim', 30, 30)
-    expect((await accounts('2026-11-08', '2026-11-08')).accounts.map((a: any) => a.userId)).toEqual([
-      'user_kim',
-      'user_amy',
-      'user_zed',
-    ])
-  })
-
-  it('a period with nothing in it is all zeros, and has no accounts', async () => {
-    const { totals, days } = await overview('2026-11-01', '2026-11-02')
-    expect(totals).toEqual(NOTHING)
-    expect(days).toEqual([
-      { day: '2026-11-01', ...NOTHING },
-      { day: '2026-11-02', ...NOTHING },
-    ])
-    expect(await accounts('2026-11-01', '2026-11-02')).toMatchObject({ accounts: [], more: false })
-  })
-
-  it('looking at the overview logs nothing', async () => {
+  it('[@no-uc:privacy] looking at the overview logs nothing', async () => {
     await threeDays()
     logged = []
     await overview('2026-11-08', '2026-11-10')
@@ -601,18 +566,7 @@ describe('admin overview API', () => {
     expect(logged).toEqual([])
   })
 
-  it('admin page has the period form and the overview tables, and no id twice', async () => {
-    env.CLERK_PUBLISHABLE_KEY = 'pk_test_ZXhhbXBsZS5jbGVyay5hY2NvdW50cy5kZXYk' // example.clerk.accounts.dev
-    const html = await (await req('GET', '/admin')).text()
-    expect(html).toMatch(/<form id="period">[^]*<input id="from"[^>]* type="date"[^]*<input id="to"[^>]* type="date"/)
-    expect(html).toContain('<table id="per-day">')
-    expect(html).toContain('<table id="accounts">')
-    // The page's script finds everything by id: an id used twice would hand it the wrong element.
-    const ids = [...html.matchAll(/\sid="([^"]+)"/g)].map((match) => match[1])
-    expect(ids.filter((id, i) => ids.indexOf(id) !== i)).toEqual([])
-  })
-
-  it('an unreachable database refuses the overview and the accounts', async () => {
+  it('[@no-uc:money] an unreachable database refuses the overview and the accounts', async () => {
     db.failWith = new Error('D1_ERROR: Network connection lost.')
     for (const res of [
       await getOverview(period('2026-11-08', '2026-11-10')),

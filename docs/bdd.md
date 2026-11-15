@@ -15,19 +15,25 @@ Use cases are a structural aid: they make clear what is covered by tests and kee
 - Leave out bug reproduction steps and fix history, UI layout and wording, and implementation risks such as retries, timeouts, caching, and races.
 - Don't list every combination of parameters, roles, or inputs; one representative example per branch is enough.
 
-What is left out can still be worth testing. Write it as a **standalone test**: same integration-test style, but without a scenario ID in the name.
+What is left out can still be worth testing. Write it as a **standalone test**: same integration-test style, named with `[@no-uc:<kind>]` instead of a scenario ID.
 
 ## What gets a test
 
-Each ✅ `api-test` scenario has a test named with its ID; a second only when a branch of it needs a setup of its own. Anything else is a standalone test, and earns its place only if nothing else would catch the break it guards (not a type, a lint rule, or another test) and that break would:
+Every test in `worker/test/` and `extensions/*/test/` says what it guards, at the start of its name, and `pnpm check` fails on one that says neither:
 
-- lose, overwrite, or change the user's data in Notion without the user knowing;
-- make Notion see the extension as abuse: a request after a refusal, an unsafe retry, the request budget passed;
-- get money or access wrong: a wrong charge or grant, a request let through without a valid session;
-- let data out where it must not go: content in logs or usage data, a host outside the content security policy;
-- make the extension and the worker disagree on what goes between them.
+- **A scenario ID** when it checks a scenario's rule: `[UC-NOTICO-CHAT-001-S01]`. A test of another case of the same rule (another kind of block read, another filter) carries the same ID; a table of cases is better than a test per case.
+- **`[@no-uc:<kind>]`** when it guards what a use case leaves out on purpose: an implementation risk such as a retry, a timeout, a cache, a race, a status code, or a value from outside read loosely. Users may well feel such a break, but a product owner would not review its sentence if the implementation changed, so it is no scenario. The kind says which harm the break would do, and is one of:
 
-So what a use case leaves out (retries, timeouts, caching, races, status codes) is tested only where its failure is one of these. There is no test for:
+  | Kind | The break would |
+  |---|---|
+  | `data` | lose, overwrite, or change the user's data without the user knowing: in Notion, or the chats the panel keeps |
+  | `notion-safety` | make Notion see the extension as abuse: a request after a refusal, an unsafe retry, more requests than needed or than the budget allows |
+  | `money` | get money wrong: a wrong charge, grant, refund, or usage record, or figures the user or an operator reads |
+  | `access` | let a request through without a valid session or origin, or lock a signed-in user out |
+  | `privacy` | let data out where it must not go: content in logs or usage data, a page or account it must not touch, a host outside the content security policy |
+  | `contract` | make the extension and the worker disagree on what goes between them |
+
+A standalone test earns its place only if its break is one of these and nothing else would catch it (not a type, a lint rule, or another test). There is no test for:
 
 - finished work: a schema pinned after a migration, a data migration that has run;
 - a tool run by hand (the `pnpm e2e` driver, release scripts), or UI wording and behavior, which fail in plain sight;
@@ -120,11 +126,11 @@ A guard or rejection branch should not rank above its use case's success path un
 
 ## Coverage check
 
-`pnpm check` runs `pnpm use-cases` (`scripts/check-use-cases.ts`), which reads every scenario row in `extensions/*/use-cases/` and `worker/use-cases/`, and every scenario ID named in brackets in a test under `worker/test/` or `extensions/*/test/`. A scenario counts as tested only by a test that can verify it: an extension's by a test in its own `extensions/<name>/test/` or in `worker/test/`, the worker's by a test in `worker/test/`. It fails on one thing: an `api-test` scenario marked ✅ that no test names (and on a scenario row it can't read, so a typo can't hide one, and on a use case left in the old `docs/use-cases/`). It only warns about the rest, to tidy when convenient: a 🚧 `api-test` scenario that already has a test (mark it ✅), a P0 🚧 `api-test` scenario with no test yet (P0 is verified before merge), a test naming an ID no use case it can verify has, or an ID without its product, an ID in more than one row, an ID whose prefix doesn't match the product whose folder holds it, and a test naming an `ai-e2e` scenario. A P1 or P2 🚧 `api-test` scenario with no test and an `ai-e2e` scenario with none pass quietly.
+`pnpm check` runs `pnpm use-cases` (`scripts/check-use-cases.ts`), which reads every scenario row in `extensions/*/use-cases/` and `worker/use-cases/`, and every scenario ID named in brackets in a test under `worker/test/` or `extensions/*/test/`. A scenario counts as tested only by a test that can verify it: an extension's by a test in its own `extensions/<name>/test/` or in `worker/test/`, the worker's by a test in `worker/test/`. It fails on two things: an `api-test` scenario marked ✅ that no test names, and a test whose name has neither a scenario ID nor a `[@no-uc:<kind>]` of one of the kinds above (and on a scenario row it can't read, so a typo can't hide one, and on a use case left in the old `docs/use-cases/`). It only warns about the rest, to tidy when convenient: a 🚧 `api-test` scenario that already has a test (mark it ✅), a P0 🚧 `api-test` scenario with no test yet (P0 is verified before merge), a test naming an ID no use case it can verify has, or an ID without its product, an ID in more than one row, an ID whose prefix doesn't match the product whose folder holds it, and a test naming an `ai-e2e` scenario. A P1 or P2 🚧 `api-test` scenario with no test and an `ai-e2e` scenario with none pass quietly.
 
 ## Coverage audit
 
-Per-PR rules stay light; gaps are found by an audit run now and then, before a release or after a large feature: the `/bdd-audit` skill (`.agents/skills/bdd-audit/SKILL.md`; `.claude/skills/bdd-audit` links to it for Claude Code). It runs the coverage check and lists, by use case, promises in a Behavior or Key constraint with no scenario, untagged tests that guard a rule users would notice, and tests whose name doesn't match their scenario, each with a suggested scenario line and priority. It changes nothing: the maintainer picks what to fix, in one PR.
+Per-PR rules stay light; gaps are found by an audit run now and then, before a release or after a large feature: the `/bdd-audit` skill (`.agents/skills/bdd-audit/SKILL.md`; `.claude/skills/bdd-audit` links to it for Claude Code). It runs the coverage check and lists, by use case, promises in a Behavior or Key constraint with no scenario, `@no-uc` tests that guard a rule users would notice or no harm at all, and tests whose name doesn't match their scenario, each with a suggested scenario line and priority. It changes nothing: the maintainer picks what to fix, in one PR.
 
 ## File format
 

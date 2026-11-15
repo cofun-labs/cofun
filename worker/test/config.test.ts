@@ -29,18 +29,18 @@ function hostedEnv(): Record<string, string> {
 }
 
 describe("the deployed worker's address", () => {
-  it('is one custom domain, on api.cofun.cc', () => {
+  it('[@no-uc:access] is one custom domain, on api.cofun.cc', () => {
     expect(routes).toHaveLength(1)
     expect(ORIGIN).toBe('https://api.cofun.cc')
   })
 
-  it('is where the hosted extension signs in and calls the API', () => {
+  it('[@no-uc:access] is where the hosted extension signs in and calls the API', () => {
     const env = hostedEnv()
     expect(env.VITE_CLERK_SYNC_HOST).toBe(ORIGIN)
     expect(env.VITE_API_URL).toBe(`${ORIGIN}/v1`)
   })
 
-  it('accepts an admin session from the admin page on that address', async () => {
+  it('[@no-uc:access] accepts an admin session from the admin page on that address', async () => {
     const clerk = await FakeClerk.create()
     const env: Env = {
       AI: new FakeAiBinding(),
@@ -64,7 +64,7 @@ describe("the deployed worker's address", () => {
 })
 
 describe("the deployed worker's packs of credits", () => {
-  it('are the live credit price, sold in quantities of 1, 5, 20, and 100', () => {
+  it('[@no-uc:money] are the live credit price, sold in quantities of 1, 5, 20, and 100', () => {
     expect(offerOf(rawConfig.vars?.CREDIT_PRICE, rawConfig.vars?.CREDIT_PACKS)).toEqual({
       offer: { price: 'price_1UbLSMCT6MhL4FCmD4mRe680', quantities: [1, 5, 20, 100] },
     })

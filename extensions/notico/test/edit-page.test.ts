@@ -290,7 +290,7 @@ describe('edits only change the page as the AI read it, and as it still is', () 
     expect(ws.records.get(id(1))!.properties).toEqual({ title: [['Short']] })
   })
 
-  it('reads a block Notion sent without a version, and refuses to edit it: a change to it could not be seen', async () => {
+  it('[@no-uc:data] reads a block Notion sent without a version, and refuses to edit it: a change to it could not be seen', async () => {
     for (const version of [undefined, '7', null]) {
       const ws = workspace(
         [1, 2],
@@ -339,7 +339,7 @@ describe('edits only change the page as the AI read it, and as it still is', () 
     await expect(edit([{ action: 'delete', block: '^00000001' }])).rejects.toThrow('Read the page with read_page first')
   })
 
-  it('asks for a new read before changing a block an edit changed', async () => {
+  it('[@no-uc:data] asks for a new read before changing a block an edit changed', async () => {
     const ws = workspace([1], [block(1, 'text', 'Intro')])
     open(ws)
     await read()
@@ -352,7 +352,7 @@ describe('edits only change the page as the AI read it, and as it still is', () 
     expect(withoutRefs(body(await read()))).toBe('Again')
   })
 
-  it('does not count a block as seen because text or a code block on the page shows its reference', async () => {
+  it('[@no-uc:data] does not count a block as seen because text or a code block on the page shows its reference', async () => {
     const n = 300
     const last = n.toString(16).padStart(8, '0')
     const filler = (i: number) => `P${i} ${'u'.repeat(60)}`
@@ -379,7 +379,7 @@ describe('edits only change the page as the AI read it, and as it still is', () 
     }
   })
 
-  it('says a block that was not loaded cannot be edited, without asking to read again', async () => {
+  it('[@no-uc:data] says a block that was not loaded cannot be edited, without asking to read again', async () => {
     const ws = workspace([1, 9], [block(1, 'text', 'Intro')])
     open(ws)
     expect(body(await read())).toContain('[block not loaded] ^00000009')
@@ -388,7 +388,7 @@ describe('edits only change the page as the AI read it, and as it still is', () 
     )
   })
 
-  it('asks for a new read after an edit whose outcome is unknown, so a retry can’t apply it twice', async () => {
+  it('[@no-uc:notion-safety] asks for a new read after an edit whose outcome is unknown, so a retry can’t apply it twice', async () => {
     const ws = workspace([1], [block(1, 'text', 'Intro')])
     open(ws)
     await read()
@@ -403,7 +403,7 @@ describe('edits only change the page as the AI read it, and as it still is', () 
     expect(withoutRefs(body(await read()))).toBe(['Intro', 'Once'].join('\n'))
   })
 
-  it('sends nothing when the user stopped the question before the edit was sent', async () => {
+  it('[@no-uc:data] sends nothing when the user stopped the question before the edit was sent', async () => {
     const ws = workspace([1], [block(1, 'text', 'Intro')])
     open(ws)
     await read()
@@ -415,7 +415,7 @@ describe('edits only change the page as the AI read it, and as it still is', () 
     expect(ws.transactions).toEqual([])
   })
 
-  it('refuses to insert at the end of a page that did not load in full', async () => {
+  it('[@no-uc:data] refuses to insert at the end of a page that did not load in full', async () => {
     const ws = workspace([1], [block(1, 'text', 'Intro')])
     const tab = open(ws)
     // Notion reports more chunks than the client loads: the page is incomplete.
@@ -432,7 +432,7 @@ describe('edits only change the page as the AI read it, and as it still is', () 
     )
   })
 
-  it('inserts at the start of a page before blocks that were not loaded', async () => {
+  it('[@no-uc:data] inserts at the start of a page before blocks that were not loaded', async () => {
     const ws = workspace([9, 1], [block(1, 'text', 'Intro')])
     open(ws)
     await read()
@@ -452,7 +452,7 @@ describe('what edit_page refuses to remove or rewrite', () => {
     )
   })
 
-  it('previews what a delete takes with it, and refuses edits inside a block it deletes', async () => {
+  it('[@no-uc:data] previews what a delete takes with it, and refuses edits inside a block it deletes', async () => {
     const ws = workspace(
       [1],
       [
@@ -477,7 +477,7 @@ describe('what edit_page refuses to remove or rewrite', () => {
     expect(await edit([{ action: 'delete', block: '^00000001' }])).toContain('and the 2 blocks nested under it')
   })
 
-  it('refuses to edit a database page', async () => {
+  it('[@no-uc:data] refuses to edit a database page', async () => {
     const ws = new FakeWorkspace(
       [
         {
@@ -498,7 +498,7 @@ describe('what edit_page refuses to remove or rewrite', () => {
     expect(ws.transactions).toEqual([])
   })
 
-  it('refuses to delete a block whose nested blocks did not load', async () => {
+  it('[@no-uc:data] refuses to delete a block whose nested blocks did not load', async () => {
     const ws = workspace([1], [block(1, 'toggle', 'T', { content: [id(2), id(9)] }), block(2, 'text', 'A', {}, id(1))])
     // id(9) is named under the toggle but not in the workspace, as on a page that didn't load in full.
     open(ws)
@@ -509,7 +509,7 @@ describe('what edit_page refuses to remove or rewrite', () => {
     expect(ws.transactions).toEqual([])
   })
 
-  it('refuses to replace a block as another kind when nested blocks did not load', async () => {
+  it('[@no-uc:data] refuses to replace a block as another kind when nested blocks did not load', async () => {
     const ws = workspace([1], [block(1, 'text', 'Parent', { content: [id(9)] })])
     open(ws)
     await read()
@@ -519,7 +519,7 @@ describe('what edit_page refuses to remove or rewrite', () => {
     expect(ws.transactions).toEqual([])
   })
 
-  it('does not merge a quote’s nested blocks into its text when written back as shown', async () => {
+  it('[@no-uc:data] does not merge a quote’s nested blocks into its text when written back as shown', async () => {
     const ws = workspace([1], [block(1, 'quote', 'Quote', { content: [id(2)] }), block(2, 'text', 'Inside', {}, id(1))])
     open(ws)
     const shown = body(await read())
@@ -531,7 +531,7 @@ describe('what edit_page refuses to remove or rewrite', () => {
     expect(ws.records.get(id(1))!.properties).toEqual({ title: [['Quote']] })
   })
 
-  it('refuses to delete a synced block, or a block holding one', async () => {
+  it('[@no-uc:data] refuses to delete a synced block, or a block holding one', async () => {
     const ws = workspace(
       [1, 2],
       [
@@ -550,7 +550,7 @@ describe('what edit_page refuses to remove or rewrite', () => {
     expect(ws.transactions).toEqual([])
   })
 
-  it('refuses to empty a column', async () => {
+  it('[@no-uc:data] refuses to empty a column', async () => {
     const ws = workspace(
       [1],
       [
@@ -571,7 +571,7 @@ describe('what edit_page refuses to remove or rewrite', () => {
     expect(withoutRefs(body(await read()))).toBe(['- Left, as a list', 'Right'].join('\n'))
   })
 
-  it('refuses lines nested under a code block, divider, or table', async () => {
+  it('[@no-uc:data] refuses lines nested under a code block, divider, or table', async () => {
     const ws = workspace([1], [block(1, 'text', 'Intro')])
     open(ws)
     await read()
@@ -584,7 +584,7 @@ describe('what edit_page refuses to remove or rewrite', () => {
     expect(ws.transactions).toEqual([])
   })
 
-  it('refuses a line drawn inside a callout when it is written on its own, instead of making it a quote', async () => {
+  it('[@no-uc:data] refuses a line drawn inside a callout when it is written on its own, instead of making it a quote', async () => {
     const ws = workspace(
       [1],
       [
@@ -601,7 +601,7 @@ describe('what edit_page refuses to remove or rewrite', () => {
     expect(ws.records.get(id(2))).toMatchObject({ type: 'bulleted_list', properties: { title: [['Item changed']] } })
   })
 
-  it('rewrites a code block with a caption, keeping the caption', async () => {
+  it('[@no-uc:data] rewrites a code block with a caption, keeping the caption', async () => {
     const ws = workspace(
       [1],
       [
@@ -633,7 +633,7 @@ describe('what edit_page refuses to remove or rewrite', () => {
     expect(ws.records.get(id(1))!.properties).toMatchObject({ title: [['a = 3']], caption: [['Example']] })
   })
 
-  it('refuses a color Notion doesn’t have, naming the ones it has, and writes nothing', async () => {
+  it('[@no-uc:data] refuses a color Notion doesn’t have, naming the ones it has, and writes nothing', async () => {
     const ws = workspace([1], [block(1, 'text', 'Intro')])
     open(ws)
     await read()
@@ -827,7 +827,7 @@ describe('round trips of what read_page shows', () => {
   ]
 
   it.each(ROUND_TRIPS)(
-    'round-trips $what',
+    '[@no-uc:data] round-trips $what',
     async ({ block: stored, shown, change: [from, to], stored: after, inexact }) => {
       const ws = workspace([1], [stored])
       open(ws)
@@ -842,7 +842,7 @@ describe('round trips of what read_page shows', () => {
     },
   )
 
-  it('keeps mentions and formatting it can’t write when the text is unchanged', async () => {
+  it('[@no-uc:data] keeps mentions and formatting it can’t write when the text is unchanged', async () => {
     const title = [
       ['Call '],
       ['‣', [['u', USER]]],
@@ -864,7 +864,7 @@ describe('round trips of what read_page shows', () => {
     )
   })
 
-  it('previews multi-line quotes and code by their own text, and keeps an unchanged quote as it is', async () => {
+  it('[@no-uc:data] previews multi-line quotes and code by their own text, and keeps an unchanged quote as it is', async () => {
     const quote = [['line one\nline '], ['two', [['h', 'red']]]]
     const ws = workspace(
       [1, 2],
@@ -896,7 +896,7 @@ describe('round trips of what read_page shows', () => {
     expect(ws.records.get(id(1))!.properties).toEqual({ title: quote })
   })
 
-  it('keeps inline equations equations when written back as read_page shows them', async () => {
+  it('[@no-uc:data] keeps inline equations equations when written back as read_page shows them', async () => {
     // A line break in LaTeX, a `<br>` in it, and a backtick in it before code that holds a `<br>`.
     const title = [
       ['⁍', [['e', 'a\nb']]],
@@ -933,7 +933,7 @@ describe('round trips of what read_page shows', () => {
     expect(ws.records.get(id(2))!.properties).toEqual({ title: [['⁍', [['e', 'a b']]], ['\nlater']] })
   })
 
-  it('reads back a code block with a blank line nested in a callout, and keeps the callout when only its text changes', async () => {
+  it('[@no-uc:data] reads back a code block with a blank line nested in a callout, and keeps the callout when only its text changes', async () => {
     const ws = workspace(
       [1],
       [
@@ -1132,7 +1132,7 @@ describe('UC-NOTICO-NOTION-002 writing more of what read_page shows', () => {
 })
 
 describe('warnings about what read_page doesn’t show exactly', () => {
-  it('says when a replacement as another kind turns mentions into plain text', async () => {
+  it('[@no-uc:data] says when a replacement as another kind turns mentions into plain text', async () => {
     const ws = workspace(
       [1],
       [block(1, 'text', undefined, { properties: { title: [['Call '], ['‣', [['u', USER]]]] } })],
@@ -1144,7 +1144,7 @@ describe('warnings about what read_page doesn’t show exactly', () => {
     )
   })
 
-  it('warns in the preview that rewriting a block with mentions makes them plain text', async () => {
+  it('[@no-uc:data] warns in the preview that rewriting a block with mentions makes them plain text', async () => {
     const ws = workspace(
       [1],
       [block(1, 'text', undefined, { properties: { title: [['Ask '], ['‣', [['u', USER]]]] } })],
@@ -1156,7 +1156,7 @@ describe('warnings about what read_page doesn’t show exactly', () => {
     ).toContain("If its text changes, what read_page didn't show exactly, such as comments on it, is lost.")
   })
 
-  it('says so when text read_page showed doesn’t parse back to what is stored', async () => {
+  it('[@no-uc:data] says so when text read_page showed doesn’t parse back to what is stored', async () => {
     // A date mention followed by a time written as text reads back as a date with a time.
     const title = [['‣', [['d', { type: 'date', start_date: '2026-11-12' }]]], [' 10:00 meeting']]
     const ws = workspace([1], [block(1, 'text', undefined, { properties: { title } })])
@@ -1176,7 +1176,7 @@ describe('tables written by edit_page', () => {
     block(3, 'table_row', undefined, { properties: { a: cell } }, id(1)),
   ]
 
-  it('deletes a table with its rows', async () => {
+  it('[@no-uc:data] deletes a table with its rows', async () => {
     const ws = workspace(
       [1, 2],
       [
@@ -1191,7 +1191,7 @@ describe('tables written by edit_page', () => {
     expect(withoutRefs(body(await read()))).toBe('After')
   })
 
-  it('keeps pipes in table cells escaped, code and equations included', async () => {
+  it('[@no-uc:data] keeps pipes in table cells escaped, code and equations included', async () => {
     const ws = workspace(
       [1],
       [
@@ -1204,7 +1204,7 @@ describe('tables written by edit_page', () => {
     expect(body(await read()).split('\n')[2]).toBe('| `a\\|b` | $\\|x\\|$ |')
   })
 
-  it('writes an equation in a page table’s cell back as read_page shows it, its line break a space', async () => {
+  it('[@no-uc:data] writes an equation in a page table’s cell back as read_page shows it, its line break a space', async () => {
     const ws = workspace(
       [1],
       [
@@ -1224,7 +1224,7 @@ describe('tables written by edit_page', () => {
     expect(rows).toEqual([{ a: [['A']] }, { a: [['y '], ['⁍', [['e', 'a b']]]] }])
   })
 
-  it('removes rows and columns at the end, and adds columns', async () => {
+  it('[@no-uc:data] removes rows and columns at the end, and adds columns', async () => {
     const ws = workspace(
       [1],
       [
@@ -1247,7 +1247,7 @@ describe('tables written by edit_page', () => {
     expect(withoutRefs(body(await read()))).toBe(['| A | B | C |', '| --- | --- | --- |', '^00000001'].join('\n'))
   })
 
-  it('replaces a table with other content, its rows going with it', async () => {
+  it('[@no-uc:data] replaces a table with other content, its rows going with it', async () => {
     const ws = workspace(
       [1],
       [
@@ -1262,7 +1262,7 @@ describe('tables written by edit_page', () => {
     expect(ws.records.get(id(1))).toMatchObject({ alive: false })
   })
 
-  it('removes a row or column from the middle of a table without moving the others', async () => {
+  it('[@no-uc:data] removes a row or column from the middle of a table without moving the others', async () => {
     const ws = workspace(
       [1],
       [
@@ -1296,7 +1296,7 @@ describe('tables written by edit_page', () => {
     )
   })
 
-  it('adds a row in the middle of a table where it was written', async () => {
+  it('[@no-uc:data] adds a row in the middle of a table where it was written', async () => {
     const ws = workspace(
       [1],
       [
@@ -1314,7 +1314,7 @@ describe('tables written by edit_page', () => {
     )
   })
 
-  it('keeps a backslash in a link in a table cell when the table is rewritten', async () => {
+  it('[@no-uc:data] keeps a backslash in a link in a table cell when the table is rewritten', async () => {
     const href = 'https://example.com/a\\b|c'
     const ws = workspace(
       [1],
@@ -1351,7 +1351,7 @@ describe('tables written by edit_page', () => {
     expect(ws.records.get(id(3))!.properties).toEqual({ a: [['‣', [['u', GUEST]]]], b: [['2']] })
   })
 
-  it('says so when a table replaced by other content had cells read_page can’t show exactly', async () => {
+  it('[@no-uc:data] says so when a table replaced by other content had cells read_page can’t show exactly', async () => {
     // A comment on a cell's text, and a bold equation.
     for (const cell of [[['A', [['m', 'thread']]]], [['⁍', [['e', 'x'], ['b']]]]]) {
       open(workspace([1], table(cell)))
@@ -1362,7 +1362,7 @@ describe('tables written by edit_page', () => {
     }
   })
 
-  it('says so when a changed cell held text read_page showed in a way that doesn’t parse back', async () => {
+  it('[@no-uc:data] says so when a changed cell held text read_page showed in a way that doesn’t parse back', async () => {
     const date = [['‣', [['d', { type: 'date', start_date: '2026-11-12' }]]], [' 10:00 meeting']]
     const ws = workspace([1], table(date))
     open(ws)
@@ -1373,7 +1373,7 @@ describe('tables written by edit_page', () => {
     ).toContain("In the cells it changed, what read_page didn't show exactly")
   })
 
-  it('does not warn when a table’s cells all read back as stored', async () => {
+  it('[@no-uc:data] does not warn when a table’s cells all read back as stored', async () => {
     const ws = workspace([1], table([['Plain '], ['bold', [['b']]]]))
     open(ws)
     const shown = body(await read())
@@ -1401,7 +1401,7 @@ describe('tables written by edit_page', () => {
       ],
     )
 
-  it('moves a column with its cells, comments and all, when the columns are reordered', async () => {
+  it('[@no-uc:data] moves a column with its cells, comments and all, when the columns are reordered', async () => {
     const ws = ws3()
     open(ws)
     await read()
@@ -1419,7 +1419,7 @@ describe('tables written by edit_page', () => {
     expect(ws.records.get(id(3))!.properties).toEqual({ a: [['1', [['m', 'thread']]]], b: [['2']], c: [['3']] })
   })
 
-  it('says so when a column it removes held formatting read_page doesn’t show', async () => {
+  it('[@no-uc:data] says so when a column it removes held formatting read_page doesn’t show', async () => {
     const ws = ws3()
     open(ws)
     await read()
@@ -1430,7 +1430,7 @@ describe('tables written by edit_page', () => {
     expect(result).toContain("Columns it removed held formatting read_page doesn't show")
   })
 
-  it('warns on the card when a table it replaces has cells read_page can’t show exactly', async () => {
+  it('[@no-uc:data] warns on the card when a table it replaces has cells read_page can’t show exactly', async () => {
     const ws = ws3()
     open(ws)
     await read()
@@ -1441,7 +1441,7 @@ describe('tables written by edit_page', () => {
 })
 
 describe('edit_page details', () => {
-  it('runs without asking, and previews each change with the text it replaces', async () => {
+  it('[@no-uc:data] runs without asking, and previews each change with the text it replaces', async () => {
     expect(editPage.needsConfirmation).toBeUndefined()
     const ws = workspace([1, 2], [block(1, 'text', 'Intro'), block(2, 'text', 'Old note')])
     open(ws)
@@ -1492,7 +1492,7 @@ describe('edit_page details', () => {
     expect(ws.transactions).toHaveLength(1)
   })
 
-  it('keeps editing possible after an edit, with the new blocks’ references', async () => {
+  it('[@no-uc:data] keeps editing possible after an edit, with the new blocks’ references', async () => {
     const ws = workspace([1], [block(1, 'text', 'Intro')])
     open(ws)
     await read()
@@ -1503,7 +1503,7 @@ describe('edit_page details', () => {
     expect(withoutRefs(body(await read()))).toBe(['Intro', 'Second, rewritten'].join('\n'))
   })
 
-  it('appends in order and inserts several edits after the same block in order', async () => {
+  it('[@no-uc:data] appends in order and inserts several edits after the same block in order', async () => {
     const ws = workspace([1], [block(1, 'text', 'A')])
     open(ws)
     await read()
@@ -1515,7 +1515,7 @@ describe('edit_page details', () => {
     expect(withoutRefs(body(await read()))).toBe(['A', 'B', 'C', 'D', 'E'].join('\n'))
   })
 
-  it('lets the agent edit a nested block it just inserted, without reading again', async () => {
+  it('[@no-uc:data] lets the agent edit a nested block it just inserted, without reading again', async () => {
     const ws = workspace([1], [block(1, 'text', 'A')])
     open(ws)
     await read()
@@ -1528,7 +1528,7 @@ describe('edit_page details', () => {
     expect(withoutRefs(body(await read()))).toBe(['A', '- parent', '  - child, edited'].join('\n'))
   })
 
-  it('replaces a block with several blocks, or with another kind, in its place', async () => {
+  it('[@no-uc:data] replaces a block with several blocks, or with another kind, in its place', async () => {
     const ws = workspace([1, 2, 3], [block(1, 'text', 'A'), block(2, 'text', 'notes'), block(3, 'text', 'Z')])
     open(ws)
     await read()
@@ -1536,7 +1536,7 @@ describe('edit_page details', () => {
     expect(withoutRefs(body(await read()))).toBe(['A', '- [ ] one', '- [ ] two', 'Z'].join('\n'))
   })
 
-  it('refuses unclear edits before asking Notion anything', async () => {
+  it('[@no-uc:data] refuses unclear edits before asking Notion anything', async () => {
     const ws = workspace([1, 2], [block(1, 'text', 'A'), block(2, 'text', 'B')])
     const tab = open(ws)
     await read()
@@ -1573,7 +1573,7 @@ describe('edit_page details', () => {
     expect(ws.transactions).toEqual([])
   })
 
-  it('inserts at the start after deleting the first block in the same call', async () => {
+  it('[@no-uc:data] inserts at the start after deleting the first block in the same call', async () => {
     const ws = workspace([1, 2], [block(1, 'text', 'First'), block(2, 'text', 'Second')])
     open(ws)
     await read()
@@ -1584,7 +1584,7 @@ describe('edit_page details', () => {
     expect(withoutRefs(body(await read()))).toBe(['New first', 'Second'].join('\n'))
   })
 
-  it('keeps a code block’s language when a rewrite gives none', async () => {
+  it('[@no-uc:data] keeps a code block’s language when a rewrite gives none', async () => {
     const ws = workspace([1], [block(1, 'code', undefined, { properties: { title: [['a()']], language: [['Rust']] } })])
     open(ws)
     await read()
@@ -1592,7 +1592,7 @@ describe('edit_page details', () => {
     expect(ws.records.get(id(1))!.properties).toEqual({ title: [['b()']], language: [['Rust']] })
   })
 
-  it('writes links that look like placeholders, nested lists, and code languages as Notion names them', async () => {
+  it('[@no-uc:data] writes links that look like placeholders, nested lists, and code languages as Notion names them', async () => {
     const ws = workspace([1], [block(1, 'text', 'Intro')])
     open(ws)
     await read()
@@ -1611,7 +1611,7 @@ describe('edit_page details', () => {
     expect(code.properties).toEqual({ title: [['x()']], language: [['TypeScript']] })
   })
 
-  it('edits a to-do inside a callout', async () => {
+  it('[@no-uc:data] edits a to-do inside a callout', async () => {
     const ws = workspace(
       [1],
       [
@@ -1625,7 +1625,7 @@ describe('edit_page details', () => {
     expect(ws.records.get(id(2))!.properties).toEqual({ title: [['Inside']], checked: [['Yes']] })
   })
 
-  it('keeps the order when the first block is replaced and something is inserted at the start', async () => {
+  it('[@no-uc:data] keeps the order when the first block is replaced and something is inserted at the start', async () => {
     const ws = workspace([1, 2], [block(1, 'text', 'Old first'), block(2, 'text', 'Second')])
     open(ws)
     await read()
@@ -1636,14 +1636,7 @@ describe('edit_page details', () => {
     expect(withoutRefs(body(await read()))).toBe(['Top', '- New first', 'Second'].join('\n'))
   })
 
-  it('opens a page by the /<id> a link shows', async () => {
-    const ws = workspace([1], [block(1, 'text', 'Hi')])
-    const tab = open(ws)
-    await read({ page: `/${hex(PAGE)}` })
-    expect(tab.sent.at(-1)!.body).toMatchObject({ page: { id: PAGE } })
-  })
-
-  it('inserts after the block when no position is given', async () => {
+  it('[@no-uc:data] inserts after the block when no position is given', async () => {
     const ws = workspace([1, 2], [block(1, 'text', 'A'), block(2, 'text', 'C')])
     open(ws)
     await read()
@@ -1651,7 +1644,7 @@ describe('edit_page details', () => {
     expect(withoutRefs(body(await read()))).toBe(['A', 'B', 'C'].join('\n'))
   })
 
-  it('refuses arguments that are not what its schema says, before the page is read or Notion asked', async () => {
+  it('[@no-uc:data] refuses arguments that are not what its schema says, before the page is read or Notion asked', async () => {
     const tab = open(workspace([1], [block(1, 'text', 'A')]))
     const run = (args: Rec) => editPage.run(args)
     const insert = { action: 'insert', markdown: 'x' }
@@ -1688,7 +1681,7 @@ describe('edit_page details', () => {
     expect(tab.sent).toEqual([])
   })
 
-  it('writes nothing for a replacement with the same content', async () => {
+  it('[@no-uc:data] writes nothing for a replacement with the same content', async () => {
     const ws = workspace([1], [block(1, 'text', 'Intro')])
     open(ws)
     const shown = body(await read())
@@ -1706,7 +1699,7 @@ describe('edit_page details', () => {
     })
   })
 
-  it('are sent only when the new Markdown mentions someone', async () => {
+  it('[@no-uc:notion-safety] are sent only when the new Markdown mentions someone', async () => {
     const stranger = '0f0f0f0f-0000-4000-8000-000000000003'
     const ws = workspace(
       [1, 2],
@@ -1723,7 +1716,7 @@ describe('edit_page details', () => {
     expect(lookups()).toBe(before)
   })
 
-  it('names the signed-in user as the creator and last editor of what it writes', async () => {
+  it('[@no-uc:data] names the signed-in user as the creator and last editor of what it writes', async () => {
     const ws = workspace([1, 2], [block(1, 'text', 'Intro'), block(2, 'text', 'Old')])
     open(ws)
     await read()
@@ -1747,7 +1740,7 @@ describe('edit_page details', () => {
 })
 
 describe('Markdown to blocks', () => {
-  it('reads back the inline formatting read_page writes', () => {
+  it('[@no-uc:data] reads back the inline formatting read_page writes', () => {
     const page = 'f0f0f0f0-0000-4000-8000-000000000001'
     expect(inline('Ship **fast** and *safe*, see [docs](https://example.com/docs) or run `pnpm check`.')).toEqual([
       ['Ship '],
@@ -1770,7 +1763,7 @@ describe('Markdown to blocks', () => {
     ])
   })
 
-  it('parses each kind of block, nesting, and drops block references', () => {
+  it('[@no-uc:data] parses each kind of block, nesting, and drops block references', () => {
     expect(
       parseMarkdown(
         [
@@ -1816,11 +1809,11 @@ describe('Markdown to blocks', () => {
     ['dates and times that do not exist', '@2026-13-45 and @2026-02-29 and @2026-11-12 25:00'],
     ['protocol-relative links', '[x](//evil.example)'],
     ['a caret and hex digits that are not a reference', '2^deadbeef'],
-  ])('keeps %s as text', (_, text) => {
+  ])('[@no-uc:data] keeps %s as text', (_, text) => {
     expect(parseMarkdown(text)).toEqual([{ type: 'text', title: [[text]], children: [] }])
   })
 
-  it('writes only web, mail, and Notion page links as links', () => {
+  it('[@no-uc:data] writes only web, mail, and Notion page links as links', () => {
     expect(
       inline('[a](https://x.example) [b](mailto:a@x.example) [c](javascript:alert(1)) [d](data:text/html,x)'),
     ).toEqual([
@@ -1831,7 +1824,7 @@ describe('Markdown to blocks', () => {
     ])
   })
 
-  it('writes only emoji as callout icons, and links with parentheses whole', () => {
+  it('[@no-uc:data] writes only emoji as callout icons, and links with parentheses whole', () => {
     expect(parseMarkdown('> [!NOTE] Heads up')).toEqual([{ type: 'callout', title: [['Heads up']], children: [] }])
     expect(inline('[Foo](https://en.wikipedia.org/wiki/Foo_(bar)) and [a \\] b](https://x.example)')).toEqual([
       ['Foo', [['a', 'https://en.wikipedia.org/wiki/Foo_(bar)']]],
@@ -1840,7 +1833,7 @@ describe('Markdown to blocks', () => {
     ])
   })
 
-  it('reads blocks inside a quote or callout as nested in it, not as its text', () => {
+  it('[@no-uc:data] reads blocks inside a quote or callout as nested in it, not as its text', () => {
     expect(parseMarkdown('> [!💡] Box\n> - item')).toEqual([
       {
         type: 'callout',
@@ -1854,13 +1847,13 @@ describe('Markdown to blocks', () => {
     ])
   })
 
-  it('keeps a line break in inline code a line break', () => {
+  it('[@no-uc:data] keeps a line break in inline code a line break', () => {
     expect(parseMarkdown('Run `line 1`<br>`line 2`')).toEqual([
       { type: 'text', title: [['Run '], ['line 1', [['c']]], ['\n'], ['line 2', [['c']]]], children: [] },
     ])
   })
 
-  it('keeps bold, italic, and strikethrough over a line break', () => {
+  it('[@no-uc:data] keeps bold, italic, and strikethrough over a line break', () => {
     expect(parseMarkdown('**a<br>b** *c<br>d* ~~e<br>f~~')).toEqual([
       {
         type: 'text',
@@ -1870,7 +1863,7 @@ describe('Markdown to blocks', () => {
     ])
   })
 
-  it('refuses a code caption and the lines that stand for synced blocks or blocks not loaded', () => {
+  it('[@no-uc:data] refuses a code caption and the lines that stand for synced blocks or blocks not loaded', () => {
     // The caption line right after a fence belongs to the code block; anywhere else it is refused.
     expect(parseMarkdown('```js\nx\n```\n[caption: Example code] ^00000001')).toEqual([
       { type: 'code', title: [['x']], language: 'js', caption: 'Example code', children: [] },
@@ -1883,7 +1876,7 @@ describe('Markdown to blocks', () => {
     }
   })
 
-  it('refuses a row with more cells than the header, and a table nested under a line', () => {
+  it('[@no-uc:data] refuses a row with more cells than the header, and a table nested under a line', () => {
     expect(() => parseMarkdown('| a |\n| --- |\n| b | c |')).toThrow('more cells than the header')
     expect(parseMarkdown('| a | b |\n| c |')[0].rows).toEqual([
       [[['a']], [['b']]],
@@ -1892,7 +1885,7 @@ describe('Markdown to blocks', () => {
     expect(parseMarkdown('| `a\\|b` | x<br>y |')[0].rows).toEqual([[[['a|b', [['c']]]], [['x\ny']]]])
   })
 
-  it('takes a time given at one end of a date range for both ends', () => {
+  it('[@no-uc:data] takes a time given at one end of a date range for both ends', () => {
     expect(inline('@2026-11-12 10:00 → 2026-11-13')).toEqual([
       [
         '‣',
@@ -1912,14 +1905,14 @@ describe('Markdown to blocks', () => {
     ])
   })
 
-  it('nests a list written under a quote line that carries its reference, instead of starting a new quote', () => {
+  it('[@no-uc:data] nests a list written under a quote line that carries its reference, instead of starting a new quote', () => {
     expect(parseMarkdown('> Note ^1a2b3c4d\n> - new item\n> Next quote ^2b3c4d5e')).toEqual([
       { type: 'quote', title: [['Note']], children: [{ type: 'bulleted_list', title: [['new item']], children: [] }] },
       { type: 'quote', title: [['Next quote']], children: [] },
     ])
   })
 
-  it('writes only the colors Notion has, green as Notion stores it', () => {
+  it('[@no-uc:data] writes only the colors Notion has, green as Notion stores it', () => {
     expect(inline('<span color="green">a</span> and <span color="blue_background">b</span>')).toEqual([
       ['a', [['h', 'teal']]],
       [' and '],
@@ -1927,7 +1920,7 @@ describe('Markdown to blocks', () => {
     ])
   })
 
-  it('keeps a first row of single dashes as data, and takes a real separator line out', () => {
+  it('[@no-uc:data] keeps a first row of single dashes as data, and takes a real separator line out', () => {
     expect(parseMarkdown('| Name | Note |\n| - | - |\n| a | b |')[0].rows).toEqual([
       [[['Name']], [['Note']]],
       [[['-']], [['-']]],
@@ -1941,7 +1934,7 @@ describe('Markdown to blocks', () => {
     }
   })
 
-  it('keeps a span with any color inside inline code as code, and still refuses one outside it', () => {
+  it('[@no-uc:data] keeps a span with any color inside inline code as code, and still refuses one outside it', () => {
     expect(inline('use `<span color="x">a</span>` here')).toEqual([
       ['use '],
       ['<span color="x">a</span>', [['c']]],
@@ -1950,7 +1943,7 @@ describe('Markdown to blocks', () => {
     expect(() => inline('use <span color="x">a</span> here')).toThrow(`"x" isn't a Notion color.`)
   })
 
-  it('closes and opens again a code block indented in a quote when a part splits it', () => {
+  it('[@no-uc:data] closes and opens again a code block indented in a quote when a part splits it', () => {
     const code = Array.from({ length: 40 }, (_, n) => `>   line ${n} ${'x'.repeat(20)}`)
     const section = ['> [!💡] Box ^00000001', '>   - Item ^00000002', '>   ```js', ...code, '>   ```'].join('\n')
     const { parts } = splitSections([section], 400)
@@ -1959,7 +1952,7 @@ describe('Markdown to blocks', () => {
     for (const part of parts.slice(1)) expect(part.split('\n')[0]).toBe('>   ```js')
   })
 
-  it('gives a colliding short reference to the block read last', () => {
+  it('[@no-uc:data] gives a colliding short reference to the block read last', () => {
     const older = 'aaaaaaaa-0000-4000-8000-000012345678'
     const later = 'bbbbbbbb-0000-4000-8000-000012345678'
     const one = (blockId: string): PageRead => ({

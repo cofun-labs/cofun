@@ -2,7 +2,7 @@
 // shapes Notion's syncRecordValuesMain and queryCollection return (see the #64 spike).
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { QUERY_LOAD, QUERY_PART, localDate, queryDatabase } from '../src/tools/database'
-import { FakeNotionTab, PAGE_URL, SPACE, USER, restoreGlobals } from './notion-tab'
+import { FakeNotionTab, SPACE, USER, restoreGlobals } from './notion-tab'
 
 afterEach(restoreGlobals)
 
@@ -199,7 +199,7 @@ describe('UC-NOTICO-NOTION-006 read a database', () => {
 })
 
 describe('query_database values', () => {
-  it('compares people by name, and shows a checkbox never ticked as No', async () => {
+  it('[UC-NOTICO-NOTION-006-S02] compares people by name, and shows a checkbox never ticked as No', async () => {
     const rows = TASKS.map(rowRecord)
     delete (rows[3].properties as Record<string, unknown>)['e:e']
     database(rows)
@@ -212,7 +212,7 @@ describe('query_database values', () => {
     expect(tableRows(result)).toHaveLength(3)
   })
 
-  it('refuses to filter or sort by a formula, which it cannot read', async () => {
+  it('[UC-NOTICO-NOTION-006-S02] refuses to filter or sort by a formula, which it cannot read', async () => {
     const tab = new FakeNotionTab(`https://app.notion.com/${hex(DB)}`)
       .respond(
         'syncRecordValuesMain',
@@ -231,7 +231,7 @@ describe('query_database values', () => {
     expect(tab.sent.map((r) => r.url.split('/api/v3/')[1])).not.toContain('queryCollection')
   })
 
-  it('reads the view the URL names', async () => {
+  it('[UC-NOTICO-NOTION-006-S01] reads the view the URL names', async () => {
     const other = 'e0e0e0e0-0000-4000-8000-000000000002'
     const tab = new FakeNotionTab(`https://app.notion.com/${hex(DB)}?v=${hex(other)}`)
       .respond(
@@ -251,7 +251,7 @@ describe('query_database values', () => {
 })
 
 describe('query_database arguments', () => {
-  it('names the properties when a filter or sort names one that does not exist', async () => {
+  it('[UC-NOTICO-NOTION-006-S02] names the properties when a filter or sort names one that does not exist', async () => {
     database()
     await expect(query({ filter: [{ property: 'Priority', op: 'is', value: 'High' }] })).rejects.toThrow(
       'Filter 1: no property named "Priority". The properties are: Task (title), Status (status)',
@@ -263,23 +263,10 @@ describe('query_database arguments', () => {
     database()
     await expect(query({ filter: [{ property: 'Status', op: 'is' }] })).rejects.toThrow('Filter 1 needs `value`.')
   })
-
-  it('says when the page is not a database', async () => {
-    new FakeNotionTab(PAGE_URL)
-      .respond(
-        'syncRecordValuesMain',
-        200,
-        sync('block', [{ id: '1a1a1a1a-0000-4000-8000-000000000010', type: 'page' }]),
-      )
-      .install()
-    await expect(query()).rejects.toThrow(
-      "The open page is not a database. Give `database`: a database inside a page has its id in read_page's result.",
-    )
-  })
 })
 
 describe('query_database open page', () => {
-  it('reads the database under a row open in side peek', async () => {
+  it('[UC-NOTICO-NOTION-006-S01] reads the database under a row open in side peek', async () => {
     const tab = new FakeNotionTab(`https://app.notion.com/${hex(DB)}?v=${hex(VIEW)}&p=${hex(row(1))}`)
       .respond('syncRecordValuesMain', 200, sync('block', [rowRecord(TASKS[0])]))
       .respond(
@@ -300,7 +287,7 @@ describe('query_database open page', () => {
     expect(tab.sent.at(-1)!.body).toMatchObject({ collectionView: { id: VIEW } })
   })
 
-  it('counts rows Notion listed without their values', async () => {
+  it('[UC-NOTICO-NOTION-006-S01] counts rows Notion listed without their values', async () => {
     database(TASKS.map(rowRecord), false, SCHEMA, [row(99)])
     const result = await query()
     expect(result).toContain('Rows: 4 (showing 1–4).')
@@ -309,7 +296,7 @@ describe('query_database open page', () => {
 })
 
 describe('query_database dates and headers', () => {
-  it('compares dates with a time by their day', async () => {
+  it('[UC-NOTICO-NOTION-006-S02] compares dates with a time by their day', async () => {
     const rows = TASKS.map(rowRecord)
     ;(rows[0].properties as Record<string, unknown>)['b:b'] = [
       ['‣', [['d', { type: 'datetime', start_date: '2026-11-07', start_time: '10:00' }]]],
@@ -334,7 +321,7 @@ describe('query_database options, numbers, and code', () => {
     })
   const titles = (result: string) => tableRows(result).map((l) => l.split(' | ')[0].slice(2))
 
-  it('matches multi-select options one by one', async () => {
+  it('[UC-NOTICO-NOTION-006-S02] matches multi-select options one by one', async () => {
     const tags = ['Bug', 'Debug,UI', 'Bug,UI', '']
     database(tagged(tags), false, TAGGED)
     expect(titles(await query({ filter: [{ property: 'Tags', op: 'contains', value: 'bug' }] }))).toEqual([
@@ -354,7 +341,7 @@ describe('query_database options, numbers, and code', () => {
     ])
   })
 
-  it('compares a number property by value in is and is_not', async () => {
+  it('[UC-NOTICO-NOTION-006-S02] compares a number property by value in is and is_not', async () => {
     database()
     expect(titles(await query({ filter: [{ property: 'Points', op: 'is', value: '5.0' }] }))).toEqual([
       'Fix login \\| Safari',
@@ -363,7 +350,7 @@ describe('query_database options, numbers, and code', () => {
     expect(tableRows(await query({ filter: [{ property: 'Points', op: 'is_not', value: '5.00' }] }))).toHaveLength(3)
   })
 
-  it('keeps backslashes in code when filtering, and keeps a code cell with a pipe in one cell', async () => {
+  it('[UC-NOTICO-NOTION-006-S02] keeps backslashes in code when filtering, and keeps a code cell with a pipe in one cell', async () => {
     const notes = [[['C:\\temp', [['c']]]], [['a\\|b', [['c']]]], [['C:temp']]]
     database(tagged([], notes), false, TAGGED)
     expect(titles(await query({ filter: [{ property: 'Notes', op: 'is', value: 'C:\\temp' }] }))).toEqual([
@@ -378,7 +365,7 @@ describe('query_database options, numbers, and code', () => {
     expect(cells(line)).toBe(cells(result.split('\n').find((l) => l.startsWith('| Task |'))!))
   })
 
-  it('keeps a mentioned page or a link with a pipe in one cell', async () => {
+  it('[UC-NOTICO-NOTION-006-S01] keeps a mentioned page or a link with a pipe in one cell', async () => {
     // The row's notes mention the row titled "Fix login | Safari", and link to a URL with a pipe,
     // once as text and once as code.
     const notes = [
@@ -401,7 +388,7 @@ describe('query_database options, numbers, and code', () => {
     expect(cells(line)).toBe(cells(result.split('\n').find((l) => l.startsWith('| Task |'))!))
   })
 
-  it('compares a mentioned page by its title, brackets and backslashes included', async () => {
+  it('[UC-NOTICO-NOTION-006-S02] compares a mentioned page by its title, brackets and backslashes included', async () => {
     // Rows 2 and 4 mention rows 1 and 3, whose titles hold `]` and `\`.
     const rows = tagged([], [[], [['‣', [['p', row(1)]]]], [], [['‣', [['p', row(3)]]]]])
     rows[0].properties.title = [['[WIP] Plan']]
@@ -416,7 +403,7 @@ describe('query_database options, numbers, and code', () => {
     ])
   })
 
-  it('compares colored text and equations as Notion shows them, and prices as text', async () => {
+  it('[UC-NOTICO-NOTION-006-S02] compares colored text and equations as Notion shows them, and prices as text', async () => {
     const notes = [[['Urgent', [['h', 'red']]]], [['Costs 5$ and 6$ total']], [['⁍', [['e', 'a*b']]]], []]
     const filter = async (value: string) => {
       database(tagged([], notes), false, TAGGED)
@@ -466,7 +453,7 @@ describe('query_database options, numbers, and code', () => {
     await expect(query()).rejects.toMatchObject({ code: 'rate_limited' })
   })
 
-  it('looks up linked pages before people, and says when some were left unnamed', async () => {
+  it('[UC-NOTICO-NOTION-006-S07] looks up linked pages before people, and says when some were left unnamed', async () => {
     // More linked pages than one lookup takes: the first ones are named, and the result says so.
     const linked = Array.from({ length: 103 }, (_, i) => `b2b2b2b2-0000-4000-8000-${String(i).padStart(12, '0')}`)
     const schema = { ...SCHEMA, 'r:r': { name: 'Blocked by', type: 'relation' } }
@@ -490,7 +477,7 @@ describe('query_database options, numbers, and code', () => {
     expect(tableRows(result)[0]).toContain(`[P0](${hex(linked[0])})`)
   })
 
-  it('keeps a person with a pipe in the name in one cell', async () => {
+  it('[UC-NOTICO-NOTION-006-S01] keeps a person with a pipe in the name in one cell', async () => {
     const rows = TASKS.map((t) => ({ ...rowRecord(t), created_by_id: USER }))
     database(rows, false, { ...SCHEMA, 'i:i': { name: 'Creator', type: 'created_by' } }, [], 'Ana\\ | Ops')
     const result = await query()
@@ -506,21 +493,21 @@ describe('query_database options, numbers, and code', () => {
     expect(cells(line)).toBe(cells(result.split('\n').find((l) => l.startsWith('| Task |'))!))
   })
 
-  it('needs at least one option in a multi-select value', async () => {
+  it('[UC-NOTICO-NOTION-006-S02] needs at least one option in a multi-select value', async () => {
     database(tagged([]), false, TAGGED)
     await expect(query({ filter: [{ property: 'Tags', op: 'contains', value: ' , ' }] })).rejects.toThrow(
       'Filter 1 needs `value`.',
     )
   })
 
-  it('escapes a pipe in a property name in the table header', async () => {
+  it('[UC-NOTICO-NOTION-006-S01] escapes a pipe in a property name in the table header', async () => {
     database(TASKS.map(rowRecord), false, { ...SCHEMA, 'd:d': { name: 'Points | est', type: 'number' } })
     expect(await query()).toContain('| Task | Status | Due | Owner | Points \\| est | Done | Row |')
   })
 })
 
 describe('query_database numbers and linked views', () => {
-  it('compares numbers by value in before and after', async () => {
+  it('[UC-NOTICO-NOTION-006-S02] compares numbers by value in before and after', async () => {
     database()
     const result = await query({ filter: [{ property: 'Points', op: 'before', value: '5' }] })
     expect(tableRows(result).map((l) => l.split(' | ')[0].slice(2))).toEqual(['Write docs', 'Plan retro'])
@@ -529,7 +516,7 @@ describe('query_database numbers and linked views', () => {
     expect(tableRows(over)).toEqual([])
   })
 
-  it('reads a linked view in the workspace its database lives in', async () => {
+  it('[UC-NOTICO-NOTION-006-S01] reads a linked view in the workspace its database lives in', async () => {
     const OTHER = '5b5b5b5b-0000-4000-8000-000000000002'
     const tab = new FakeNotionTab(`https://app.notion.com/${hex(DB)}`)
       .respond(

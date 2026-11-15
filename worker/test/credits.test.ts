@@ -246,7 +246,7 @@ describe("UC-NOTICO-CHAT-003 See credits, usage, and the plan, and UC-COFUN-CRED
     expect(await credits(bob, '?user_id=user_alice')).toMatchObject({ balance: 170 * CREDIT })
   })
 
-  it('reading credits writes nothing, however often', async () => {
+  it('[@no-uc:money] reading credits writes nothing, however often', async () => {
     await ask(alice, 60)
     const before = [db.rows('grants'), db.rows('model_calls')]
 
@@ -257,7 +257,7 @@ describe("UC-NOTICO-CHAT-003 See credits, usage, and the plan, and UC-COFUN-CRED
     expect([db.rows('grants'), db.rows('model_calls')]).toEqual(before)
   })
 
-  it('calls that cost nothing do not show as a day of usage', async () => {
+  it('[@no-uc:money] calls that cost nothing do not show as a day of usage', async () => {
     ai.failWith = new Error('capacity')
     expect((await ask(alice)).status).toBe(502)
 
@@ -265,26 +265,7 @@ describe("UC-NOTICO-CHAT-003 See credits, usage, and the plan, and UC-COFUN-CRED
     expect((await credits(alice)).usage.byDay).toEqual([])
   })
 
-  it('an offset that is not a whole number of minutes within a day is refused', async () => {
-    for (const bad of ['abc', '1.5', '900', '-721', '', '1e2', '60&utc_offset=61']) {
-      const res = await req('GET', `/v1/credits?utc_offset=${bad}`, alice)
-      const body: any = await res.json()
-      if (bad.includes('&')) {
-        // The first value counts.
-        expect(res.status).toBe(200)
-        continue
-      }
-      expect([bad, res.status, body.error?.message]).toEqual([
-        bad,
-        400,
-        'utc_offset must be a whole number of minutes from -720 to 840',
-      ])
-    }
-    expect((await req('GET', '/v1/credits?utc_offset=840', alice)).status).toBe(200)
-    expect((await req('GET', '/v1/credits?utc_offset=-720', alice)).status).toBe(200)
-  })
-
-  it('credits that cannot be read are reported as unavailable, and the failure is logged', async () => {
+  it('[@no-uc:money] credits that cannot be read are reported as unavailable, and the failure is logged', async () => {
     db.failWith = new Error('D1_ERROR: Network connection lost.')
 
     const res = await req('GET', '/v1/credits', alice)

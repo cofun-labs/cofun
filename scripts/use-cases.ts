@@ -5,8 +5,9 @@
 // against the tests that can verify it: an extension's scenarios against its own tests and the
 // worker's, the worker's scenarios against the worker's tests.
 //
-// One rule fails: an api-test scenario marked ✅ must have such a test that names its ID. Everything
-// else the check notices is a warning, for whoever runs it to tidy when it suits them.
+// Two rules fail: an api-test scenario marked ✅ must have such a test that names its ID, and every test
+// names a scenario ID or says which harm it guards with [@no-uc:<kind>] (docs/bdd.md#what-gets-a-test).
+// Everything else the check notices is a warning, for whoever runs it to tidy when it suits them.
 
 /** A file's path, relative to the repository root, and its text. */
 export interface SourceFile {
@@ -115,6 +116,53 @@ function readRows(file: SourceFile, report: Report): Row[] {
   return rows
 }
 
+/** What a test without a scenario guards against, in `[@no-uc:<kind>]` (docs/bdd.md#what-gets-a-test). */
+const NO_UC_KINDS = ['data', 'notion-safety', 'money', 'access', 'privacy', 'contract']
+const NO_UC = /\[@no-uc:([a-z-]*)\]/g
+const ANY_TEST_ID = new RegExp(`\\[${SCENARIO_ID}\\]`)
+
+/**
+ * The line of each test's name: the `it(` or `test(` line, the next one when the formatter put the name
+ * there, or the `])(` line that closes an `it.each` table.
+ */
+function testNameLines(lines: string[]): number[] {
+  const found: number[] = []
+  lines.forEach((line, index) => {
+    if (/^\s*(it|test)\(/.test(line)) found.push(line.trimEnd().endsWith('(') ? index + 1 : index)
+    else if (/^\s*(it|test)\.each\b/.test(line)) {
+      if (/\)\(\s*['"`]/.test(line)) found.push(index)
+      else if (line.trimEnd().endsWith(')(')) found.push(index + 1)
+      else {
+        let close = index + 1
+        while (close < lines.length && !/^\s*\]?\)\(/.test(lines[close])) close++
+        found.push(close)
+      }
+    }
+  })
+  return found
+}
+
+/** Every test names a scenario ID or a kind of harm it guards; one that does neither fails. */
+function checkTestTags(file: SourceFile, report: Report): void {
+  const lines = file.text.split('\n')
+  for (const index of testNameLines(lines)) {
+    const line = lines[index] ?? ''
+    const at = `${file.path}:${index + 1}`
+    const kinds = [...line.matchAll(NO_UC)].map((match) => match[1])
+    for (const kind of kinds) {
+      if (!NO_UC_KINDS.includes(kind)) {
+        report.errors.push(`${at}: [@no-uc:${kind}] is not a kind of harm; use one of ${NO_UC_KINDS.join(', ')}`)
+      }
+    }
+    if (kinds.length === 0 && !ANY_TEST_ID.test(line)) {
+      report.errors.push(
+        `${at}: a test that names no scenario ID and no [@no-uc:<kind>] (${NO_UC_KINDS.join(', ')}); ` +
+          'see docs/bdd.md#what-gets-a-test',
+      )
+    }
+  }
+}
+
 /** A line that names an ID without testing it: a comment, or a skipped or to-do test. */
 const NOT_A_TEST = /^\s*(\/\/|\/?\*)|\.(skip|todo)\b/
 
@@ -149,6 +197,7 @@ export function checkUseCases(useCases: SourceFile[], tests: SourceFile[]): Repo
   const tested = new Map<string, TestId[]>()
   for (const file of tests) {
     for (const [id, found] of readTestIds(file, report)) tested.set(id, [...(tested.get(id) ?? []), ...found])
+    checkTestTags(file, report)
   }
 
   const byId = new Map<string, Row[]>()

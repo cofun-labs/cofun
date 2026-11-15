@@ -102,7 +102,7 @@ describe('the default rate limit of /v1', () => {
     expect(chatLimit.keys).toHaveLength(6)
   })
 
-  it('applies to every route under /v1 except the chat, before anything is read', async () => {
+  it('[@no-uc:access] applies to every route under /v1 except the chat, before anything is read', async () => {
     env.API_LIMIT = new FakeRateLimiter(0)
     nothingAnswers()
     const routes = new Map<string, { method: string; path: string }>()

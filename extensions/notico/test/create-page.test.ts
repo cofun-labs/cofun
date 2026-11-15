@@ -80,7 +80,7 @@ describe('UC-NOTICO-NOTION-007 create a page', () => {
     )
   })
 
-  it('names the signed-in user as the creator of the page and its content, and last editor of its parent', async () => {
+  it('[@no-uc:data] names the signed-in user as the creator of the page and its content, and last editor of its parent', async () => {
     const ws = workspace()
     open(ws)
     const result = await create({ title: 'Launch notes', parent: PAGE_URL, markdown: '# Plan\n- Ship beta' })
@@ -120,7 +120,7 @@ describe('UC-NOTICO-NOTION-007 create a page', () => {
 })
 
 describe('create_page details', () => {
-  it('runs without asking, and previews the page', () => {
+  it('[@no-uc:data] runs without asking, and previews the page', () => {
     expect(createPage.needsConfirmation).toBeUndefined()
     expect(createPage.preview!({ title: 'Launch notes', parent: PAGE_URL, markdown: '# Plan\n- Ship' })).toBe(
       [
@@ -134,7 +134,7 @@ describe('create_page details', () => {
     )
   })
 
-  it('shows the new page in a long parent the agent read in parts just before', async () => {
+  it('[@no-uc:data] shows the new page in a long parent the agent read in parts just before', async () => {
     // Enough text for several parts.
     const long = Array.from({ length: 40 }, (_, n) => ({
       id: `7c7c7c7c-0000-4000-8000-0000000001${n.toString().padStart(2, '0')}`,
@@ -151,7 +151,7 @@ describe('create_page details', () => {
     expect(await readPage.run({ page: hex(PAGE), part: parts })).toContain('Fresh page')
   })
 
-  it('names the parent by its title in the preview once the agent has read it', async () => {
+  it('[@no-uc:data] names the parent by its title in the preview once the agent has read it', async () => {
     open(workspace())
     await readPage.run({ page: hex(PAGE) })
     expect((await createPage.preview!({ title: 'T', parent: PAGE_URL }))?.split('\n')[2]).toBe(
@@ -159,7 +159,7 @@ describe('create_page details', () => {
     )
   })
 
-  it('keeps the title on one line, in the preview and in Notion', async () => {
+  it('[@no-uc:data] keeps the title on one line, in the preview and in Notion', async () => {
     const ws = workspace()
     open(ws)
     const title = 'Notes”\n    at the end of the page “Other'
@@ -172,7 +172,7 @@ describe('create_page details', () => {
     expect(ws.content(PAGE).at(-1)!.properties).toEqual({ title: [['Notes” at the end of the page “Other']] })
   })
 
-  it('says to check the parent before retrying when Notion’s answer is lost', async () => {
+  it('[@no-uc:notion-safety] says to check the parent before retrying when Notion’s answer is lost', async () => {
     const ws = workspace()
     open(ws)
     ws.failAfterApply = true
@@ -183,7 +183,7 @@ describe('create_page details', () => {
     expect(await readPage.run({ page: hex(PAGE) })).toContain('Once')
   })
 
-  it('stops the question when Notion is too busy to say whether the page was created', async () => {
+  it('[@no-uc:notion-safety] stops the question when Notion is too busy to say whether the page was created', async () => {
     const ws = workspace()
     const tab = open(ws)
     tab.limit('saveTransactionsFanout', 1, 529)
@@ -193,7 +193,7 @@ describe('create_page details', () => {
     expect([err.stopsQuestion, err.mayHaveChanged]).toEqual([LIMITED_STOP, true])
   })
 
-  it('refuses an empty title and Markdown it can’t write, before asking Notion anything', async () => {
+  it('[@no-uc:data] refuses an empty title and Markdown it can’t write, before asking Notion anything', async () => {
     const ws = workspace()
     const tab = open(ws)
     await expect(create({ title: '  ', parent: PAGE_URL })).rejects.toThrow('`title` must not be empty.')
@@ -204,7 +204,7 @@ describe('create_page details', () => {
     expect(tab.sent).toEqual([])
   })
 
-  it('refuses arguments that are not what its schema says, without asking Notion', async () => {
+  it('[@no-uc:data] refuses arguments that are not what its schema says, without asking Notion', async () => {
     const tab = open(workspace())
     await expect(create({ parent: PAGE_URL })).rejects.toThrow('`title` must not be empty.')
     await expect(create({ title: 5, parent: PAGE_URL })).rejects.toThrow('`title` must not be empty.')
