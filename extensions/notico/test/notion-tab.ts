@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url'
 import { expect } from 'vitest'
 import type { ToolResult } from '../src/agent'
 import { NotionError } from '../src/notion/api'
+import { isNotion } from '../src/notion/hosts'
 import { notionCooldown } from '../src/notion/tab'
 
 export const SPACE = '5a5a5a5a-0000-4000-8000-000000000001'
@@ -102,6 +103,21 @@ export class FakeNotionTab {
 
   /** The tab's title, as chrome.tabs reports it. */
   title = 'Fixture page'
+
+  /**
+   * The sites the user allowed the extension to read (optional host permissions), as match
+   * patterns such as `https://example.com/*`. Notion's hosts are the manifest's own: always allowed.
+   */
+  allowed = new Set<string>()
+
+  /** What the user answers in Chrome's own prompt when the extension asks to read a site. */
+  promptAnswer = true
+
+  /** While set, Chrome's prompt stays open: the user answers it once this resolves. */
+  promptOpen?: Promise<void>
+
+  /** The sites the extension asked Chrome to let it read, each request as its match patterns. */
+  accessRequests: string[][] = []
 
   /** The browser's other tabs, in any window, as chrome.tabs reports them. */
   otherTabs: { url: string; title: string }[] = []
@@ -219,6 +235,18 @@ export class FakeNotionTab {
         // With no tab id, Chrome updates the current window's active tab: this one.
         update: async ({ url }: { url: string }) => this.navigate(url, ''),
       },
+      permissions: {
+        contains: async ({ origins }: { origins: string[] }) => origins.every((o) => this.allowed.has(o)),
+        // Like Chrome, only in a user's click, while it is being handled; then the user answers its prompt.
+        request: async ({ origins }: { origins: string[] }) => {
+          if ((globalThis as { event?: Event }).event?.type !== 'click')
+            throw new Error('This function must be called during a user gesture')
+          this.accessRequests.push(origins)
+          await this.promptOpen
+          if (this.promptAnswer) for (const o of origins) this.allowed.add(o)
+          return this.promptAnswer
+        },
+      },
       scripting: {
         executeScript: (injection: { target: { tabId: number }; world?: string; func: Function; args: unknown[] }) => {
           const running = this.executeScript(injection)
@@ -251,6 +279,12 @@ export class FakeNotionTab {
   }) {
     if (this.closed) throw new Error(`No tab with id: ${target.tabId}.`)
     if (this.injectionError) throw new Error(this.injectionError)
+    // Chrome runs scripts only on a site the extension may access.
+    const at = new URL(this.pageUrl ?? this.url!)
+    if (!isNotion(at.href) && !this.allowed.has(`${at.origin}/*`))
+      throw new Error(
+        'Cannot access contents of the page. Extension manifest must request permission to access the respective host.',
+      )
     this.injections.push({ tabId: target.tabId, world })
     const location = new URL(this.pageUrl ?? this.url!)
     const document = Object.assign(this.dom ?? {}, { cookie: this.cookie })
@@ -755,5 +789,36 @@ function applyOperation(
     }
     default:
       throw new Error(`Unexpected command ${op.command}`)
+  }
+}
+
+/**
+ * The DOM of a page on another site, as far as read_current_tab's script reads it: its title, its
+ * type, the text its `main` element, first `article`, and body show (an element left out is
+ * not on the page), and how many frames it holds.
+ */
+export function webPage({
+  title,
+  main,
+  article,
+  body = '',
+  contentType = 'text/html',
+  frames = 0,
+}: {
+  title: string
+  main?: string
+  article?: string
+  body?: string
+  contentType?: string
+  frames?: number
+}): object {
+  const element = (text: string | undefined) => (text === undefined ? null : { innerText: text })
+  return {
+    title,
+    contentType,
+    body: element(body),
+    querySelector: (selector: string) =>
+      selector === 'article' ? element(article) : selector === 'main, [role="main"]' ? element(main) : null,
+    querySelectorAll: (selector: string) => ({ length: selector === 'iframe, frame' ? frames : 0 }),
   }
 }

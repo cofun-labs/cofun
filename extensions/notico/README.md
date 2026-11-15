@@ -5,7 +5,7 @@
 <h1 align="center">Notico: AI copilot for Notion</h1>
 
 <p align="center">
-  An AI side panel for Chrome that reads and edits your Notion pages with you.<br />
+  An AI side panel for Chrome that reads and edits your Notion pages with you, and brings in the page you're on.<br />
   Ask in plain words; it finds the pages, does the work, and shows you every change.
 </p>
 
@@ -28,13 +28,14 @@
 - **Databases:** Create databases, add rows, fill in properties, and add, rename, or remove properties and select options.
 - **Organize:** Move pages under another page, duplicate them, or move them to Notion's trash (it asks you first).
 - **Collaborate:** Add comments on a page or on a block, and mention workspace members by name.
+- **Bring in the web:** On another site, ask about the page you're on, or save it to Notion. Notico reads a site only once you allow it, and says which page it used.
 - **Stay in context:** It knows which page is open and what you selected in it. The panel stays open, with your chat, as you switch tabs. Past chats are saved, searchable, and can be picked up again.
 - **Keep the answer:** Save a reply, or a whole chat, as a new page under the Notion page you have open, with the save button under the reply or at the top of the panel.
 
 ## Get started
 
 1. **Install** [Notico from the Chrome Web Store](https://chromewebstore.google.com/detail/notico-ai-copilot-for-not/moblfnjjebknafkgoifncombfnbfghom).
-2. **Open a Notion page** and click the Notico icon in Chrome's toolbar (if it's hidden, pin it from the puzzle-piece Extensions menu). The side panel opens next to the page. It opens on any other tab too, and you can chat there, but reading and changing Notion works only while the tab you're on is a Notion page.
+2. **Open a Notion page** and click the Notico icon in Chrome's toolbar (if it's hidden, pin it from the puzzle-piece Extensions menu). The side panel opens next to the page. It opens on any other tab too, and you can chat there, but reading and changing Notion works only while the tab you're on is a Notion page. On another site it can read the page you're on, once you allow that site.
 3. **Sign in.** The panel opens a sign-in page in a new tab (Google is supported); once you're signed in, the panel picks it up.
 4. **Ask.** A few things to try:
    - _Summarize this page in five bullet points._
@@ -43,6 +44,7 @@
    - _Which tasks in this database are overdue? Add a comment on each one._
    - _Create a page for next week's meeting, with the agenda from the last one._
    - Select some text in the page, then: _Rewrite this to be shorter._
+   - On an article on another site: _Save the key points of this page to my reading notes._ (The first time on a site, Notico asks you to allow it.)
 
 There is nothing to connect on the Notion side: no integration to create, no token to paste.
 
@@ -62,7 +64,7 @@ There is nothing to connect on the Notion side: no integration to create, no tok
 
 ## Privacy and safety
 
-**What leaves your browser.** Your questions, and what Notico reads to answer them (pages, database rows, comments, search results), go to our server (one for every [Cofun](../../README.md) extension) and on to the AI model, which runs on Cloudflare Workers AI. On a tab that isn't Notion, Notico never reads the page; it sends that tab's address and title only when a question needs them. The server doesn't keep any of this: for each request it records who asked, sizes, token counts, and the outcome, never the text of a prompt or a reply. [Notico's privacy page](PRIVACY.md) has the full account of what is read and which hosts it goes to, and [Cofun's](../../PRIVACY.md) of what the server keeps.
+**What leaves your browser.** Your questions, and what Notico reads to answer them (pages, database rows, comments, search results, and a web page you asked about), go to our server (one for every [Cofun](../../README.md) extension) and on to the AI model, which runs on Cloudflare Workers AI. On a tab that isn't Notion, Notico sends that tab's address and title only when a question needs them, and reads the page only on a site you allowed: the first time, the side panel and then Chrome ask you. You can take the access back in Chrome's extension settings. The server doesn't keep any of this: for each request it records who asked, sizes, token counts, and the outcome, never the text of a prompt or a reply. [Notico's privacy page](PRIVACY.md) has the full account of what is read and which hosts it goes to, and [Cofun's](../../PRIVACY.md) of what the server keeps.
 
 **What stays on your device.** Chats are saved in Chrome on your device, per account, and kept after you sign out so you can pick up again. They are not encrypted: anyone who can use your Chrome profile can read them, including the page content Notico read.
 
@@ -70,7 +72,7 @@ There is nothing to connect on the Notion side: no integration to create, no tok
 > **It edits without asking first.** Notico edits pages, creates pages and rows, changes properties (it can remove a database property, with its values in every row), adds comments, and moves and duplicates pages as soon as it decides to. Moving pages to the trash is the one thing it asks you about, every time. Each change is shown in the side panel as it happens, and Notion's page history can undo edits. To keep it from changing anything, switch the message box to **Read only** with the pencil button at its bottom left: it then only reads and answers, until you switch back to Edit.
 
 > [!CAUTION]
-> **Be careful with pages you don't control.** Notico reads text written by other people: shared pages, guest content, search results. An instruction hidden in that text could make it act as you without anyone being asked, for example by copying something private into a page or a comment that others can read. Comments and mentions also notify people. Page history can undo a change, but not what someone read in the meantime. [More on this trade-off](../../docs/architecture.md#writes-without-approval).
+> **Be careful with pages you don't control.** Notico reads text written by other people: shared pages, guest content, search results, and web pages you ask about. An instruction hidden in that text could make it act as you without anyone being asked, for example by copying something private into a page or a comment that others can read. Comments and mentions also notify people. Page history can undo a change, but not what someone read in the meantime. [More on this trade-off](../../docs/architecture.md#writes-without-approval).
 
 ## For developers
 

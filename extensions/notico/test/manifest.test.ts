@@ -80,8 +80,11 @@ describe('extension manifest', () => {
     }
   })
 
-  it('[@no-uc:privacy] asks for no optional permissions and injects no content scripts', () => {
+  // Web sites are optional host permissions, granted one site at a time when the user allows it
+  // (read_current_tab): installing or updating asks for none, so the update keeps the extension on.
+  it('[@no-uc:privacy] asks for web sites only as optional host permissions, and injects no content scripts', () => {
     const json: Record<string, unknown> = manifest({ VITE_CLERK_SYNC_HOST: 'https://api.cofun.cc' })
+    expect(json.optional_host_permissions).toEqual(['https://*/*', 'http://*/*'])
     expect(Object.keys(json).sort()).toEqual(
       [
         'action',
@@ -92,6 +95,7 @@ describe('extension manifest', () => {
         'icons',
         'manifest_version',
         'name',
+        'optional_host_permissions',
         'permissions',
         'side_panel',
         'version',

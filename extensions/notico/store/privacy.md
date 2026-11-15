@@ -68,6 +68,15 @@ No, I am not using remote code. Everything the extension runs is in its package;
 
 All three certifications are checked: no selling or transfer of user data to third parties outside the approved use cases, no use or transfer for purposes unrelated to the single purpose, and none to determine creditworthiness or for lending.
 
+## For the next version
+
+This page describes version 0.2.0. The version after it adds optional host permissions for web sites, which the user grants one site at a time (none at install), so before it is submitted:
+
+- The **single purpose** reads: "Notico is an AI assistant in Chrome's side panel that reads and edits the user's Notion pages at the user's request, and reads the page the user is on, on a site they allowed, when a question is about it."
+- The **scripting** justification adds: "On another site, and only on one the user allowed, it reads the text of the page in the current tab, inside that tab, when the user's question is about that page."
+- The **Host permission** justification adds: "Optional host permissions for http and https sites: none is granted at install. When the user asks about the page they are on, the side panel asks them to allow that one site, and Chrome asks them again; only then is the page's text read, in the tab."
+- **Website content** also names the text of a page on another site that the assistant reads, which goes to the worker and the model (or to OpenRouter). **Web history** stays Yes, as it is: that page's URL and title go with it.
+
 ## Privacy policy URL
 
 ```text

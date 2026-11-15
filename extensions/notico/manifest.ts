@@ -90,7 +90,8 @@ export function buildManifest(env: ManifestEnv, version: string, { store = false
       'AI copilot for Notion: summarize and edit pages, update databases, search and organize your workspace. No subscription needed.',
     ...(env.CRX_PUBLIC_KEY && !store ? { key: env.CRX_PUBLIC_KEY } : {}),
     icons: ICONS,
-    // scripting: Notion calls run in the user's Notion tab (src/notion/tab.ts).
+    // scripting: Notion calls run in the user's Notion tab (src/notion/tab.ts), and the page of a tab on
+    // another site is read in that tab (src/web/tab.ts).
     // tabs: the side panel reads the current tab's URL and title, to tell a Notion tab from others
     // (src/notion/tab.ts) and for the get_current_tab tool (src/tools/current.ts). Host permissions would
     // expose a Notion tab's URL too, but not once the user limits the extension's site access; with
@@ -109,6 +110,11 @@ export function buildManifest(env: ManifestEnv, version: string, { store = false
       // cookies whose domain the extension has host permission for.
       clerkCookiePermission(env.VITE_CLERK_SYNC_HOST, env.CLERK_COOKIE_DOMAIN),
     ],
+    // Any web site, but only one the user allows, when the agent first reads a page on it
+    // (read_current_tab). Optional: installing or updating asks for none of them, so an update with
+    // these does not disable the extension. Granting one lets the extension read that site's pages;
+    // it sends no request there (the content security policy below doesn't name it).
+    optional_host_permissions: ['https://*/*', 'http://*/*'],
     content_security_policy: { extension_pages: contentSecurityPolicy(env) },
     background: { service_worker: 'background.js', type: 'module' },
     // One panel per window, on every tab: it stays open, with its conversation, as the user

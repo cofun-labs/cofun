@@ -1,7 +1,8 @@
-import { memo } from 'react'
+import { memo, useState } from 'react'
 import type { ToolDetails, ToolStatus } from '../agent'
 import type { Action } from '../tool'
 import { describeCall } from '../tools'
+import { allowSite } from '../web/tab'
 import { Icon, type IconName } from './icons'
 
 /** A tool call as the panel shows it. */
@@ -19,6 +20,8 @@ export interface ShownTool {
   preview?: string
   /** Set while `confirm` when the call is already running and asks this instead of whether to run. */
   question?: string
+  /** With `question`: the origin the call asks to read, which the user's yes allows (see CardQuestion). */
+  access?: string
 }
 
 const MARK: Record<ShownTool['status'], IconName> = {
@@ -148,7 +151,10 @@ export const ToolCall = memo(function ToolCall({
           )}
         </div>
       </details>
-      {asking && tool.question && (
+      {asking && tool.question && tool.access && (
+        <AccessCard question={tool.question} origin={tool.access} onAnswer={onAnswer} />
+      )}
+      {asking && tool.question && !tool.access && (
         <div className="tool-confirm" role="group" aria-label={tool.question}>
           <span>{tool.question}</span>
           <div className="tool-answers">
@@ -173,6 +179,46 @@ export const ToolCall = memo(function ToolCall({
     </>
   )
 })
+
+/**
+ * A call asking to read a site: Allow asks Chrome for that origin, whose own prompt has the last
+ * word. Chrome takes the request only in the click's own handler. While its prompt is open the
+ * buttons are off, so a second click can't queue another prompt behind it.
+ */
+function AccessCard({
+  question,
+  origin,
+  onAnswer,
+}: {
+  question: string
+  origin: string
+  onAnswer: (allow: boolean) => void
+}) {
+  const [inChrome, setInChrome] = useState(false)
+  return (
+    <div className="tool-confirm" role="group" aria-label={question} aria-busy={inChrome}>
+      <span>{inChrome ? `${question} Answer Chrome's prompt.` : question}</span>
+      <div className="tool-answers">
+        <button disabled={inChrome} onClick={() => onAnswer(false)}>
+          Deny
+        </button>
+        <button
+          className="primary"
+          disabled={inChrome}
+          onClick={() => {
+            setInChrome(true)
+            allowSite(origin).then(onAnswer, (err: unknown) => {
+              console.error('Could not ask Chrome for access to the site', err)
+              onAnswer(false)
+            })
+          }}
+        >
+          Allow
+        </button>
+      </div>
+    </div>
+  )
+}
 
 /** The call as a request, e.g. "move 1 page to the trash". */
 function asked({ verb, what, name, after }: Action): string {

@@ -67,3 +67,12 @@ Notico is an independent project. It is not made or endorsed by Notion.
 | Marquee promo tile | [marquee-promo-tile.png](images/marquee-promo-tile.png) | 1400×560 |
 
 The screenshots show the real side panel, answering with Cofun's model (Auto), next to throwaway pages, made with `pnpm e2e`: the Notion tab at 920×800 and the side panel at 360×800 are captured separately over the DevTools protocol and set side by side, so they carry no browser frame. Nothing else of the workspace may show: trash earlier throwaway pages first, since the assistant finds them too. Nothing of another product's AI may show either: Notion AI's round button at the bottom right of the Notion tab is painted out (white, over x 850–917 and y 735–799), and Notion's selection toolbar, which offers its AI, is closed before capturing. The marquee tile is the same tile with screenshot-1 scaled into its card (760×475 at 620,62, corners rounded at 14px). The screenshots and promo tiles are PNG without transparency, as the store requires for them.
+
+## For the next version
+
+The text above describes version 0.2.0. The version after it also reads the page the user is on when it is another site, so the description says Notico works around Notion, not only inside it:
+
+- The first paragraph reads: "Ask Notion anything, right next to the page. Notico is an AI copilot that reads, writes, and organizes your Notion pages from Chrome's side panel, and shows you every change it makes. It can also read the page you're on elsewhere, so you can ask about an article or save it to Notion."
+- WHAT YOU CAN ASK adds: "• Bring in the web: ask about the page you're on, or save it to Notion. Notico reads a site only after you allow it."
+- THINGS TO TRY adds: "• On an article: "Save the key points of this page to my Reading notes.""
+- PRIVACY reads "Your questions, and what Notico reads to answer them (Notion content, and a web page you asked about), go to our server…".

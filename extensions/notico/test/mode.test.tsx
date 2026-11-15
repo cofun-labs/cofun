@@ -73,6 +73,7 @@ const READING = [
   'list_pages',
   'read_comments',
   'get_current_tab',
+  'read_current_tab',
 ]
 const CHANGING = [
   'edit_page',
