@@ -95,7 +95,7 @@ export class CopilotAgent {
   /** What went with each question, by its user message; see QuestionExtras. */
   private readonly contexts = new WeakMap<AgentMessage, string>()
   private readonly pages = new WeakMap<AgentMessage, QuestionPage[]>()
-  private readonly selections = new WeakMap<AgentMessage, QuestionSelection>()
+  private readonly selections = new WeakMap<AgentMessage, QuestionSelection[]>()
   private readonly readOnly = new WeakSet<AgentMessage>()
   /** What each question used, by its user message; see QuestionDetails. */
   private readonly details = new WeakMap<AgentMessage, QuestionDetails>()
@@ -192,7 +192,7 @@ export class CopilotAgent {
     onUpdate: (update: AgentUpdate) => void,
     epoch: number,
     confirm: ConfirmTool | undefined,
-    { context, pages, selection, readOnly }: QuestionExtras,
+    { context, pages, selections, readOnly }: QuestionExtras,
   ): Promise<{ result: AskResult; kept: boolean; failure?: Failure }> {
     let agent: Agent
     try {
@@ -370,7 +370,7 @@ export class CopilotAgent {
     try {
       if (context) this.contexts.set(question, context)
       if (pages?.length) this.pages.set(question, pages)
-      if (selection) this.selections.set(question, selection)
+      if (selections?.length) this.selections.set(question, selections)
       if (readOnly) this.readOnly.add(question)
       await agent.prompt(question)
     } catch (err) {
@@ -456,14 +456,14 @@ export class CopilotAgent {
       case 'user': {
         const context = this.contexts.get(message)
         const pages = this.pages.get(message)
-        const selection = this.selections.get(message)
+        const selections = this.selections.get(message)
         return [
           {
             role: 'user',
             text: textOf(message.content),
             ...(context && { context }),
             ...(pages && { pages }),
-            ...(selection && { selection }),
+            ...(selections && { selections }),
             ...(this.readOnly.has(message) && { readOnly: true as const }),
             ...this.details.get(message),
           },
@@ -504,7 +504,7 @@ export class CopilotAgent {
         const question: AgentMessage = { role: 'user', content: m.text, timestamp }
         if (m.context) this.contexts.set(question, m.context)
         if (m.pages?.length) this.pages.set(question, m.pages)
-        if (m.selection) this.selections.set(question, m.selection)
+        if (m.selections?.length) this.selections.set(question, m.selections)
         if (m.readOnly) this.readOnly.add(question)
         const details = detailsOf(m)
         if (Object.keys(details).length) this.details.set(question, details)

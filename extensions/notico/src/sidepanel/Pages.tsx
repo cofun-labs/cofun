@@ -33,20 +33,21 @@ const linksTo = (url: string) => /^https?:\/\//.test(url)
 /**
  * The pages the next question goes with, at the top of the composer: the page open in the current
  * tab, dashed since the panel added it, and the pages the user added, each of which they can take
- * off the question; then the text the user selected on a page and sent with the context menu.
+ * off the question; then the text the user selected on pages and sent with the context menu.
  */
 export function ComposerPages({
   chips,
   onRemove,
-  selection,
+  selections,
   onRemoveSelection,
 }: {
   chips: Chip[]
   onRemove: (chip: Chip) => void
-  selection?: QuestionSelection
-  onRemoveSelection: () => void
+  selections: QuestionSelection[]
+  /** Takes the selection at this place in `selections` off the question. */
+  onRemoveSelection: (index: number) => void
 }) {
-  if (!chips.length && !selection) return null
+  if (!chips.length && !selections.length) return null
   return (
     <ul className="page-chips" aria-label="Pages to send">
       {chips.map((chip) => {
@@ -71,32 +72,32 @@ export function ComposerPages({
           </li>
         )
       })}
-      {selection && (
-        <li className="page-chip" title={selection.title || undefined}>
+      {selections.map((selection, i) => (
+        <li key={`${i}:${selection.url}`} className="page-chip" title={selection.title || undefined}>
           <Icon name="quote" />
           <span className="page-title">{selectionLabel(selection)}</span>
           <button
             type="button"
             className="page-remove"
-            aria-label="Remove the selected text"
+            aria-label={`Remove ${selectionLabel(selection)}`}
             title="Remove"
-            onClick={onRemoveSelection}
+            onClick={() => onRemoveSelection(i)}
           >
             <Icon name="close" />
           </button>
         </li>
-      )}
+      ))}
     </ul>
   )
 }
 
 /**
- * The pages a question was sent with, and the text selected on a page it was sent with, in its bubble
+ * The pages a question was sent with, and the text selected on pages it was sent with, in its bubble
  * under what the user typed. Each is a link that takes the current tab to the page, as a link in
  * Notion would; a modified click (to open it in a new tab or window) is left to the browser.
  */
-export function SentPages({ pages, selection }: { pages?: QuestionPage[]; selection?: QuestionSelection }) {
-  if (!pages?.length && !selection) return null
+export function SentPages({ pages, selections }: { pages?: QuestionPage[]; selections?: QuestionSelection[] }) {
+  if (!pages?.length && !selections?.length) return null
   const open = (event: MouseEvent<HTMLAnchorElement>, url: string) => {
     if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
     event.preventDefault()
@@ -112,8 +113,8 @@ export function SentPages({ pages, selection }: { pages?: QuestionPage[]; select
           </a>
         </li>
       ))}
-      {selection && (
-        <li title={selection.title || undefined}>
+      {selections?.map((selection, i) => (
+        <li key={`s${i}`} title={selection.title || undefined}>
           {/* A link takes the tab to the page, where Chrome finds the selection and marks it. */}
           {linksTo(selection.url) ? (
             <a href={selection.url} onClick={(event) => open(event, selection.url)}>
@@ -127,7 +128,7 @@ export function SentPages({ pages, selection }: { pages?: QuestionPage[]; select
             </span>
           )}
         </li>
-      )}
+      ))}
     </ul>
   )
 }

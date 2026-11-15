@@ -16,7 +16,10 @@ chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch((err) 
 // pages and local files: on the extension's own pages (the side panel) there is no tab to read.
 chrome.runtime.onInstalled.addListener(() => {
   void loadMenuShown()
-    .catch(() => true)
+    .catch((err: unknown) => {
+      console.error('Could not read the menu setting', err)
+      return true
+    })
     .then((visible) =>
       chrome.contextMenus.removeAll(() =>
         chrome.contextMenus.create({

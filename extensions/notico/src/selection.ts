@@ -1,6 +1,7 @@
 // Text the user selected on a page and sent to the side panel with the context menu's "Ask Notico"
 // item. The service worker (background.ts) reads it in the tab and leaves it in chrome.storage.session,
-// one entry per window; that window's side panel takes it from there into the next question. No
+// one key per selection, by window; that window's side panel takes them from there into the next
+// question, where each selection sent adds to the ones before. No
 // message listener carries it: storage.session is open only to the extension's own pages, and what
 // is read back is parsed, since the text comes from the page.
 
@@ -22,7 +23,8 @@ const URL_CHARS = 2000
 const Selection = z.object({ text: z.string(), chars: z.number(), url: z.string(), title: z.string() })
 export type Selection = z.infer<typeof Selection>
 
-const key = (windowId: number) => `selection:${windowId}`
+/** Where the selections sent to a window's side panel are kept, each under this and its number. */
+const prefix = (windowId: number) => `selection:${windowId}:`
 
 /**
  * Whether the menu item shows, as the settings page's switch says: on unless the user turned it off.
@@ -49,7 +51,14 @@ export function watchMenuShown(onChange: (shown: boolean) => void): () => void {
   return () => chrome.storage.onChanged.removeListener(onChanged)
 }
 
-/** Leaves `text`, selected on the page at `url`, for the side panel of the window `windowId`. */
+/** The order of the last selection this service worker handed over (see handOver). */
+let lastSent = 0
+
+/**
+ * Leaves `text`, selected on the page at `url`, for the side panel of the window `windowId`. Each
+ * selection gets a key of its own, numbered in the order sent, so one sent while the panel takes
+ * the others is neither lost nor taken twice.
+ */
 export async function handOver(windowId: number, text: string, url: string, title: string): Promise<void> {
   const selection: Selection = {
     text: text.slice(0, SELECTION_CHARS),
@@ -57,31 +66,43 @@ export async function handOver(windowId: number, text: string, url: string, titl
     url: url.slice(0, URL_CHARS),
     title,
   }
-  await chrome.storage.session.set({ [key(windowId)]: selection })
+  // The time, so the order holds across starts of the service worker; one more for a second in the same millisecond.
+  lastSent = Math.max(Date.now(), lastSent + 1)
+  await chrome.storage.session.set({ [`${prefix(windowId)}${lastSent}`]: selection })
 }
 
 /**
- * Calls `onSelection` with each selection sent to the side panel of window `windowId`: one sent
- * before the panel opened, and each one sent while it is open. Each is taken, so it is given once.
- * Returns a function that stops watching.
+ * Calls `onSelections` with the selections sent to the side panel of window `windowId`, in the order
+ * they were sent: those sent before the panel opened, and each one sent while it is open. Each is
+ * taken, so it is given once. Returns a function that stops watching.
  */
-export function watchSelection(windowId: number, onSelection: (selection: Selection) => void): () => void {
-  const name = key(windowId)
-  const take = (value: unknown) => {
-    if (value === undefined) return
-    void chrome.storage.session.remove(name).catch((err: unknown) => console.error(err))
-    const parsed = Selection.safeParse(value)
-    if (parsed.success) onSelection(parsed.data)
-    else console.error('Could not read the selection sent to the side panel', parsed.error)
+export function watchSelections(windowId: number, onSelections: (selections: Selection[]) => void): () => void {
+  const start = prefix(windowId)
+  // Keys already given: one written between watching and reading shows in both.
+  const taken = new Set<string>()
+  const take = (entries: [string, unknown][]) => {
+    const fresh = entries
+      .filter(([name, value]) => name.startsWith(start) && value !== undefined && !taken.has(name))
+      .sort(([a], [b]) => Number(a.slice(start.length)) - Number(b.slice(start.length)))
+    if (!fresh.length) return
+    const selections: Selection[] = []
+    for (const [name, value] of fresh) {
+      taken.add(name)
+      void chrome.storage.session.remove(name).catch((err: unknown) => console.error(err))
+      const parsed = Selection.safeParse(value)
+      if (parsed.success) selections.push(parsed.data)
+      else console.error('Could not read a selection sent to the side panel', parsed.error)
+    }
+    if (selections.length) onSelections(selections)
   }
   const onChanged = (changes: Record<string, chrome.storage.StorageChange>, area: string) => {
-    if (area === 'session' && name in changes) take(changes[name].newValue)
+    if (area === 'session') take(Object.entries(changes).map(([name, change]) => [name, change.newValue]))
   }
   // Watching first, then reading: a selection sent in between is not missed.
   chrome.storage.onChanged.addListener(onChanged)
   chrome.storage.session
-    .get(name)
-    .then((stored) => take(stored[name]))
+    .get(null)
+    .then((stored) => take(Object.entries(stored)))
     .catch((err: unknown) => console.error(err))
   return () => chrome.storage.onChanged.removeListener(onChanged)
 }

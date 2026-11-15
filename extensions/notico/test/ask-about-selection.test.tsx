@@ -128,22 +128,57 @@ describe('asking about text selected on a page', () => {
     expect(sentQuestions(browser)).toEqual([question(selectionNote('Rivers are rising.'), 'Explain')])
   })
 
-  it('[UC-NOTICO-CHAT-006-S03] a newer selection replaces the first, and one taken off goes with no question', async () => {
+  it('[UC-NOTICO-CHAT-006-S03] each selection sent adds to the question, and each can be taken off', async () => {
     const { browser, tab, user } = await start()
-    await browser.openPanel()
 
+    // Two sent before the panel has opened, then more while it is open.
     tab.pickMenuItem(MENU_ITEM, 'Rivers are rising.')
-    await screen.findByText('news.example.com: “Rivers are rising.”')
+    tab.pickMenuItem(MENU_ITEM, 'Bridges are closed.')
+    await browser.openPanel()
+    await screen.findByText('news.example.com: “Bridges are closed.”')
+    tab.pickMenuItem(MENU_ITEM, 'Rivers are rising.')
     tab.pickMenuItem(MENU_ITEM, 'The city has a plan.')
     await screen.findByText('news.example.com: “The city has a plan.”')
-    expect(toSend()).toEqual(['news.example.com: “The city has a plan.”'])
+    // The same text sent again is added again.
+    expect(toSend()).toEqual([
+      'news.example.com: “Rivers are rising.”',
+      'news.example.com: “Bridges are closed.”',
+      'news.example.com: “Rivers are rising.”',
+      'news.example.com: “The city has a plan.”',
+    ])
 
-    await user.click(screen.getByRole('button', { name: 'Remove the selected text' }))
-    expect(screen.queryByRole('list', { name: 'Pages to send' })).toBeNull()
+    await user.click(screen.getByRole('button', { name: 'Remove news.example.com: “Bridges are closed.”' }))
+    await user.click(screen.getAllByRole('button', { name: 'Remove news.example.com: “Rivers are rising.”' })[1])
+    expect(toSend()).toEqual(['news.example.com: “Rivers are rising.”', 'news.example.com: “The city has a plan.”'])
 
+    browser.ai.script.push({ reply: 'They go together.' })
+    await ask(user, 'How do these relate?')
+    await screen.findByText('They go together.')
+    await answered()
+    // In the order they were sent.
+    expect(sentQuestions(browser)).toEqual([
+      question(
+        `${selectionNote('Rivers are rising.')}\n${selectionNote('The city has a plan.')}`,
+        'How do these relate?',
+      ),
+    ])
+    expect(
+      within(conversation().getByRole('list', { name: 'Pages sent' }))
+        .getAllByRole('link')
+        .map((a) => a.textContent),
+    ).toEqual(['news.example.com: “Rivers are rising.”', 'news.example.com: “The city has a plan.”'])
+  })
+
+  it('[UC-NOTICO-CHAT-006-S03] Backspace in an empty message takes the selections off, the last first', async () => {
+    const { browser, tab, user } = await start()
+    await browser.openPanel()
     tab.pickMenuItem(MENU_ITEM, 'Rivers are rising.')
-    await screen.findByText('news.example.com: “Rivers are rising.”')
+    tab.pickMenuItem(MENU_ITEM, 'The city has a plan.')
+    await screen.findByText('news.example.com: “The city has a plan.”')
+
     await user.click(composer())
+    await user.keyboard('{Backspace}')
+    expect(toSend()).toEqual(['news.example.com: “Rivers are rising.”'])
     await user.keyboard('{Backspace}')
     expect(screen.queryByRole('list', { name: 'Pages to send' })).toBeNull()
 
@@ -196,6 +231,28 @@ describe('asking about text selected on a page', () => {
           'x'.repeat(20_000),
           "[Clipped: this shows the first 20,000 of the selection's 25,000 characters.]",
         ),
+        'What is this?',
+      ),
+    ])
+  })
+
+  it('[UC-NOTICO-CHAT-006-S05] once a question carries as much text from pages as one may, a further selection is left out, and the AI is told', async () => {
+    const { browser, tab, user } = await start()
+    await browser.openPanel()
+    for (const letter of ['a', 'b', 'c']) tab.pickMenuItem(MENU_ITEM, letter.repeat(20_000))
+    tab.pickMenuItem(MENU_ITEM, 'Rivers are rising.')
+    await screen.findByText('news.example.com: “Rivers are rising.”')
+
+    browser.ai.script.push({ reply: 'Many letters.' })
+    await ask(user, 'What is this?')
+    await screen.findByText('Many letters.')
+    expect(sentQuestions(browser)).toEqual([
+      question(
+        [
+          ...['a', 'b', 'c'].map((letter) => selectionNote(letter.repeat(20_000))),
+          '[The user sent more text selected on pages with this question, which is left out: the question ' +
+            'already carries as much text from pages outside Notion as one may.]',
+        ].join('\n'),
         'What is this?',
       ),
     ])

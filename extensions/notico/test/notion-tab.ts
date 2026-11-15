@@ -77,7 +77,9 @@ export class FakeStorage {
       for (const listener of this.listeners) listener(changes, name)
     }
     return {
-      get: async (key: string) => (key in values ? { [key]: values[key] } : {}),
+      // `null` gets all of it.
+      get: async (key: string | null) =>
+        key === null ? structuredClone(values) : key in values ? { [key]: values[key] } : {},
       set: async (items: Record<string, unknown>) => {
         const changes: Parameters<StorageListener>[0] = {}
         for (const [key, newValue] of Object.entries(items)) {

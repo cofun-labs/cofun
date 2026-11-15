@@ -42,14 +42,14 @@ interface QuestionMeter {
 /**
  * What goes with a question besides what the user typed, all saved with it. `context` is sent to the
  * model ahead of the question (say, which page is open); `pages` are the pages the user sent it with,
- * shown with the question; `selection`, text the user selected on a page and sent it with, shown with
+ * shown with the question; `selections`, text the user selected on pages and sent it with, shown with
  * it too (what the model gets of it is in `context`); `readOnly`: the question is asked in Read only,
  * so the model is offered no tool that changes data (`changesData`) for it.
  */
 export interface QuestionExtras {
   context?: string
   pages?: QuestionPage[]
-  selection?: QuestionSelection
+  selections?: QuestionSelection[]
   readOnly?: boolean
 }
 
@@ -246,7 +246,7 @@ export type AssistantPart = z.infer<typeof AssistantPart>
  */
 export const HistoryMessage = z.discriminatedUnion('role', [
   /**
-   * `context`, `pages`, `selection`, and `readOnly`: what went with the question (see QuestionExtras), besides what
+   * `context`, `pages`, `selections`, and `readOnly`: what went with the question (see QuestionExtras), besides what
    * the user typed.
    */
   QuestionDetails.extend({
@@ -254,7 +254,7 @@ export const HistoryMessage = z.discriminatedUnion('role', [
     text: z.string(),
     context: z.string().optional(),
     pages: z.array(QuestionPage).optional(),
-    selection: QuestionSelection.optional(),
+    selections: z.array(QuestionSelection).optional(),
     readOnly: z.literal(true).optional(),
   }),
   z.object({ role: z.literal('assistant'), parts: z.array(AssistantPart) }),

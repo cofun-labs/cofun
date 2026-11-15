@@ -35,7 +35,7 @@ import {
 } from '../models'
 import { pageIdFromUrl } from '../notion/hosts'
 import { countNotionRequests } from '../notion/tab'
-import { linkTo, watchSelection, type Selection } from '../selection'
+import { linkTo, watchSelections, type Selection } from '../selection'
 import { SessionStore, titleFor, type Session } from '../sessions'
 import {
   carryPages,
@@ -127,7 +127,7 @@ type Part = { type: 'text'; text: string } | { type: 'tool'; tool: ShownTool }
 
 // The agent keeps the conversation it sends to the model; this is only what the panel shows.
 type Shown =
-  | { role: 'user'; content: string; pages?: QuestionPage[]; selection?: QuestionSelection; readOnly?: true }
+  | { role: 'user'; content: string; pages?: QuestionPage[]; selections?: QuestionSelection[]; readOnly?: true }
   | {
       role: 'assistant'
       parts: Part[]
@@ -270,10 +270,10 @@ export function Chat({ userId }: { userId: string }) {
     }
   }, [])
 
-  // Text the user selected on a page and sent with the context menu, for the next question: one at
-  // a time, the latest replacing the one before. It stays as the user switches tabs or chats, until
-  // a question carries it or the user takes it off.
-  const [selection, setSelection] = useState<Selection>()
+  // Text the user selected on pages and sent with the context menu, for the next question, in the
+  // order sent: each adds to the ones before. They stay as the user switches tabs or chats, until a
+  // question carries them or the user takes them off.
+  const [selections, setSelections] = useState<Selection[]>([])
   useEffect(() => {
     let stop: (() => void) | undefined
     let gone = false
@@ -281,8 +281,8 @@ export function Chat({ userId }: { userId: string }) {
       .getCurrent()
       .then((window) => {
         if (gone || window.id === undefined) return
-        stop = watchSelection(window.id, (sent) => {
-          setSelection(sent)
+        stop = watchSelections(window.id, (sent) => {
+          setSelections((list) => [...list, ...sent])
           inputRef.current?.focus()
         })
       })
@@ -573,10 +573,10 @@ export function Chat({ userId }: { userId: string }) {
     if (!current) setCurrent(session)
     // What the composer shows is what the question carries.
     const sentPages = chips.map((c) => c.page)
-    const sentSelection = selection && shownSelection(selection)
+    const sentSelections = selections.map(shownSelection)
     // A page is off while the composer shows none for it: also on another site, until another page shows.
-    const context = carryPages(tabPage, removed !== undefined && !openPage, chosen, selection)
-    setSelection(undefined)
+    const context = carryPages(tabPage, removed !== undefined && !openPage, chosen, selections)
+    setSelections([])
     // The mode the composer showed; only right as the panel opens may it not be read yet.
     const sentMode = modeRef.current
     setInput('')
@@ -591,7 +591,7 @@ export function Chat({ userId }: { userId: string }) {
         role: 'user',
         content: text,
         ...(sentPages.length && { pages: sentPages }),
-        ...(sentSelection && { selection: sentSelection }),
+        ...(sentSelections.length && { selections: sentSelections }),
         ...(sentMode === 'read_only' && { readOnly: true }),
       },
       { role: 'assistant', parts: [] },
@@ -744,7 +744,7 @@ export function Chat({ userId }: { userId: string }) {
       const result = await agent.ask(text, onUpdate, confirm, {
         context,
         pages: sentPages,
-        selection: sentSelection,
+        selections: sentSelections,
         readOnly,
       })
       track({
@@ -955,10 +955,10 @@ export function Chat({ userId }: { userId: string }) {
 
   function onKeyDown(e: KeyboardEvent<HTMLTextAreaElement>) {
     if (picker?.from === '@' && pages.onKeyDown(e)) return
-    // Backspace in an empty message takes the last page off; the selection, shown last, first.
-    if (e.key === 'Backspace' && !input && (selection || chips.length)) {
+    // Backspace in an empty message takes the last page off; the selections, shown last, first.
+    if (e.key === 'Backspace' && !input && (selections.length || chips.length)) {
       e.preventDefault()
-      if (selection) setSelection(undefined)
+      if (selections.length) setSelections((list) => list.slice(0, -1))
       else removeChip(chips.at(-1)!)
       return
     }
@@ -1085,7 +1085,7 @@ export function Chat({ userId }: { userId: string }) {
             m.role === 'user' ? (
               <div key={i} className="msg user">
                 {m.content}
-                <SentPages pages={m.pages} selection={m.selection} />
+                <SentPages pages={m.pages} selections={m.selections} />
                 {m.readOnly && (
                   <p className="question-mode">
                     <Icon name="eye" />
@@ -1169,9 +1169,9 @@ export function Chat({ userId }: { userId: string }) {
           <ComposerPages
             chips={chips}
             onRemove={removeChip}
-            selection={selection && shownSelection(selection)}
-            onRemoveSelection={() => {
-              setSelection(undefined)
+            selections={selections.map(shownSelection)}
+            onRemoveSelection={(i) => {
+              setSelections((list) => list.filter((_, j) => j !== i))
               inputRef.current?.focus()
             }}
           />
@@ -1297,7 +1297,7 @@ function toShown(history: HistoryMessage[]): Shown[] {
         role: 'user',
         content: m.text,
         ...(m.pages?.length && { pages: m.pages }),
-        ...(m.selection && { selection: m.selection }),
+        ...(m.selections?.length && { selections: m.selections }),
         ...(m.readOnly && { readOnly: true }),
       })
       details = { requests: m.requests, tokens: m.tokens, model: m.model, cost: m.cost }
