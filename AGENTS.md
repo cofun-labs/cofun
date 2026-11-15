@@ -169,7 +169,9 @@ pnpm e2e --help   # drive the shared Chrome Canary for ai-e2e runs (maintainer's
 
 ## Key decisions
 
-- **No backward compatibility.** Pick the cleanest solution; delete old code instead of deprecating it.
-  - The one exception is the worker's API as the published extensions use it. The worker deploys as soon as a PR merges, but installed extensions update only after a Chrome Web Store review, so the worker keeps accepting what the extension version on the store sends and answering in a shape it parses. Keep what an older build needs with a comment saying when it can go, and a `[@no-uc:contract]` test that pins it.
+- **Backward compatibility only where it is asked for.** Pick the cleanest solution; delete old code instead of deprecating it.
+  - **Where a rule or the PR explicitly asks for it, keep it.** Today one rule does: the worker's API as the published extensions use it. The worker deploys as soon as a PR merges, but installed extensions update only after a Chrome Web Store review, so the worker keeps accepting what the extension version on the store sends and answering in a shape it parses.
+  - **Anywhere else, raise a break but don't keep it by default.** A change that breaks something users already have (data an earlier version stored, a setting, a link) is named in the PR, and compatibility code is written only once the user explicitly confirms it.
+  - Kept compatibility has a comment saying when it can go, and a `[@no-uc:contract]` test that pins it.
   - `pnpm knip` fails on unused files, exports, and dependencies: delete what it finds. List something in `knip.jsonc` only when it is a false positive or kept on purpose, with the reason.
 - **The worker fixes the hosted model.** Clients cannot make the worker use another model. A user's own model (OpenRouter, with their key) is asked from the extension directly, never through the worker.

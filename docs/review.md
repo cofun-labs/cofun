@@ -19,8 +19,8 @@ Start each finding with its weight and the IDs of the rules it breaks:
 ```
 
 - **Blocking** is a breach of a rule whose weight below is Blocking. It is fixed in this PR, or shown with evidence not to be a real problem.
-- **Rules that must hold** are never traded for something simpler and never excused by the PR body: A1 for a requirement left out, A2, B1, B2 for a P0 scenario, B3, C4, C5, every D, E, F, and G rule, H1, K1, K2 for a module boundary, and M3.
-- **User's call** is a simpler approach that gives up something users would notice (J1). Say what users would lose. The author hands it to the user and pushes neither way until they decide.
+- **Rules that must hold** are never traded for something simpler and never excused by the PR body: A1 for a requirement left out, A2, B1, B2 for a P0 scenario, B3, C4 for a half-landed write, C5, every D, E, F, and G rule, H1, K1, K2 for a module boundary, and M3.
+- **User's call** is a simpler approach that gives up something users would notice (J1), or a break of something users already have that nothing asks to keep (J3). Say what users would lose. The author hands it to the user and pushes neither way until they decide.
 - **Suggestion** is a breach of a rule whose weight is Suggestion, or anything else worth acting on.
 - A finding that fits no rule names none. A blocking one says which harm it does (a user-visible bug, data loss, a risk to the user's Notion account, a security problem, money wrong, a failing check). If such findings recur, the review proposes a rule for them.
 - A problem the PR didn't bring in, or an edge case in behavior the PR did not set out to change, is reported as **Follow-up:**, for an Issue, not as a finding against this PR. A bug in what the PR adds is a finding.
@@ -75,7 +75,7 @@ Each rule's weight is in brackets. **Blocking** unless it says otherwise.
 - **C1. It works for every input it accepts.** Check what the PR adds at its boundaries: empty, missing, very long, the maximum, an unexpected kind of block or property, a page that changed since it was read. A value from outside (what the model sends, what a page or the site answers, a request body, what is read back from storage) can always reach the code once its schema accepts it: the model or a page's author can send it. [Blocking for an input that can reach the code today, Suggestion for one nothing produces yet]
 - **C2. Errors are handled only where their meaning is known.** No error is swallowed; a `catch` rethrows what it doesn't handle, and a message shown to the user says what happened and what to do.
 - **C3. Async code is sound.** Every promise is awaited or deliberately handled; a stopped question or a closed panel stops the work it started; nothing updates state that is gone; two events in another order don't leave a wrong state. [Blocking for an order or timing that can happen today, Suggestion for one only a later change could bring]
-- **C4. Stored data stays readable.** A change to what is kept in IndexedDB, `chrome.storage`, or D1 still reads what an earlier version wrote, or handles it on purpose. A write that can half-land leaves nothing a later read misreads.
+- **C4. Stored data stays readable, or its break is raised.** A change to what is kept in IndexedDB, `chrome.storage`, or D1 still reads what an earlier version wrote when a rule or the PR asks for it; otherwise data an earlier version wrote that it no longer reads is raised (J3). A write that can half-land leaves nothing a later read misreads. [User's call for an earlier version's data nothing asks to keep, Blocking otherwise]
 - **C5. Money is right.** Credits are charged, granted, and refunded exactly once, whatever order events arrive in and however often Stripe sends them, and every figure a user or an operator reads matches the ledger.
 - **C6. The UI shows the state it is in.** Loading, empty, error, and stopped states are each shown, and nothing the user did is lost by a re-render, a reload, or a switch of tab.
 
@@ -142,7 +142,7 @@ The tools call their site's API as the user's own account, so the site must neve
 
 - **J1. The simplest approach that does the job.** A trivial, rare, or low-priority concern that the PR handles with a lot of code, state, edge-case handling, or tests gets a simpler approach proposed, with what users would notice losing, if anything. A rule that must hold (see How to report a finding) is never part of that trade. Complexity that was there before the PR is a Follow-up. [Blocking when nothing users would notice is lost, User's call otherwise]
 - **J2. Nothing is built for a need that doesn't exist yet**: an abstraction with one user, an option nothing sets, a layer that only passes calls on. [Same as J1]
-- **J3. No backward compatibility**, apart from H1: old code is deleted, not deprecated, and no shim keeps an old shape working.
+- **J3. Compatibility only where it is asked for.** Where a rule (H1) or the PR explicitly asks for it, an older client or older stored data keeps working, with a comment saying when the code can go and a `[@no-uc:contract]` test. Anywhere else, old code is deleted, not deprecated, and no shim keeps an old shape working; a change that breaks something users already have is named, and kept working only once the user confirms it. [Blocking for a shim nothing asked for, User's call for a break nothing asks to keep]
 - **J4. Unused code goes.** A file, export, or dependency nothing uses is deleted. An entry added to `knip.jsonc` is a false positive or kept on purpose, and says why.
 
 ## K. Code and conventions
