@@ -19,7 +19,7 @@ Start each finding with its weight and the IDs of the rules it breaks:
 ```
 
 - **Blocking** is a breach of a rule whose weight below is Blocking. It is fixed in this PR, or shown with evidence not to be a real problem.
-- **Rules that must hold** are never traded for something simpler and never excused by the PR body: B1, B2 for a P0 scenario, C4, C5, every D, E, F, and G rule, H1, K1, K2 for a module boundary, and M3.
+- **Rules that must hold** are never traded for something simpler and never excused by the PR body: A1 for a requirement left out, A2, B1, B2 for a P0 scenario, B3, C4, C5, every D, E, F, and G rule, H1, K1, K2 for a module boundary, and M3.
 - **User's call** is a simpler approach that gives up something users would notice (J1). Say what users would lose. The author hands it to the user and pushes neither way until they decide.
 - **Suggestion** is a breach of a rule whose weight is Suggestion, or anything else worth acting on.
 - A finding that fits no rule names none. A blocking one says which harm it does (a user-visible bug, data loss, a risk to the user's Notion account, a security problem, money wrong, a failing check). If such findings recur, the review proposes a rule for them.
@@ -27,7 +27,7 @@ Start each finding with its weight and the IDs of the rules it breaks:
 - Scenario IDs and the wording of use cases are not review points.
 - What lint, the type checker, `pnpm knip`, or `pnpm use-cases` already enforces is not a review point either, unless the PR works around the check (K1).
 - A trade-off the PR body states as chosen (a cost accepted for something simpler, say) is not reported as a breach of the rule it trades against. If its cost isn't said, a Suggestion asks the body to say it. This never covers a rule that must hold (above).
-- D, E, F, G, and H1 keep their own weights whatever C1 or C3 says: a security, site-safety, or privacy case is never downgraded by filing it under C1 or C3.
+- Every rule that must hold (above) keeps its own weight whatever C1 or C3 says: a security, site-safety, privacy, data, or money case is never downgraded by filing it under C1 or C3.
 - Be concise and skip praise. Don't raise again what a review thread already covers or answered.
 
 ## Submitting

@@ -83,4 +83,4 @@ A PR is checked against these, beside the reviewer's list in [AGENTS.md](../AGEN
 7. **A new route on the worker** goes under `/v1` unless it has its own proof of who is calling, as the Stripe webhook has, and takes a user id from the request only on an admin route.
 8. **Anything that costs the operator money** (a model, a search, a fetch) is charged or capped per user before it is offered.
 9. **Nothing a browser runs is served from another host under `cofun.cc`.**
-10. **A weakness that can be used is not written into a public Issue, PR, or this file.** A weakness in code not yet merged may be described in its own PR, so it gets fixed. A usable one goes to the maintainer privately ([#384](https://github.com/cofun-labs/cofun/issues/384) sets up how), and this file changes when the design does.
+10. **A weakness that can be used is not written into a public Issue, PR, or this file.** A weakness only a PR brings in, not yet merged, may be described in that PR, so it gets fixed. A usable one goes to the maintainer privately ([SECURITY.md](../SECURITY.md) says how), and this file changes when the design does.
