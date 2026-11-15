@@ -42,7 +42,7 @@ Only the maintainer's machine can upload: the script runs the `cf` CLI with the 
 
 The worker is one deployment for every extension: sign-in, the model, credits, and the admin page.
 
-Merging to `main` deploys it through Cloudflare Workers Builds (root directory `worker`), which runs the worker's tests, applies the [D1](#database) migrations not yet applied, and deploys, so new code never runs on an old schema. To deploy by hand, which does the same:
+Merging to `main` deploys it through Cloudflare Workers Builds (root directory `worker`), which runs the worker's tests, applies the [D1](#database) migrations not yet applied, and deploys, so new code never runs on an old schema. Its build command is `pnpm install --frozen-lockfile && pnpm test` (Node.js 24, for `node:sqlite`), its deploy command `pnpm run deploy`'s, and its API token needs **D1: Edit**, to apply migrations and to find `cofun-db` by name. To deploy by hand, which does the same:
 
 ```bash
 cd worker
@@ -73,7 +73,7 @@ In `chrome://extensions`, turn on Developer mode, click "Load unpacked", and pic
 
 `extensions/notico/.env` holds the public build config, each value explained by its comment; override values in `extensions/notico/.env.local`. A development build sends no usage events to PostHog; to try them from a local build, build it with `POSTHOG_IN_DEV=1`. The PostHog project keeps **Discard client IP data** on, which the privacy pages rely on.
 
-To run the extension against your own deployment under an ID of your own, generate a signing key and set its public half as `CRX_PUBLIC_KEY`, then allow its origin (`chrome-extension://<extension id>`) in the worker's `CLERK_AUTHORIZED_PARTIES` and `PRODUCTS` and in the Clerk instance's `allowed_origins`:
+To run the extension against your own deployment under an ID of your own, generate a signing key and set its public half as `CRX_PUBLIC_KEY`, then allow its origin (`chrome-extension://<extension id>`) in the worker's `CLERK_AUTHORIZED_PARTIES` and `PRODUCTS` and in the Clerk instance's `allowed_origins`. The Clerk instance needs the Native API on, and a production one its DNS records, its own OAuth credentials, and its JWT public key as `CLERK_JWT_KEY` ([Clerk's Sync Host guide](https://clerk.com/docs/guides/sessions/sync-host)):
 
 ```bash
 mkdir -p extensions/notico/keys
