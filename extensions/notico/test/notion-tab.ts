@@ -45,6 +45,14 @@ export function restoreGlobals(): void {
   }
 }
 
+/** A context menu item, as the extension made or updated it. */
+interface MenuItem {
+  title?: string
+  contexts?: string[]
+  documentUrlPatterns?: string[]
+  visible?: boolean
+}
+
 type StorageListener = (changes: Record<string, { oldValue?: unknown; newValue?: unknown }>, area: string) => void
 
 /**
@@ -56,10 +64,13 @@ export class FakeStorage {
   values: Record<string, unknown> = {}
   /** What `session` holds: what Chrome keeps until the browser closes. */
   sessionValues: Record<string, unknown> = {}
+  /** What `sync` holds: what Chrome sync takes to the user's other devices. */
+  syncValues: Record<string, unknown> = {}
   private listeners: StorageListener[] = []
 
   local = this.area(this.values, 'local')
   session = this.area(this.sessionValues, 'session')
+  sync = this.area(this.syncValues, 'sync')
 
   private area(values: Record<string, unknown>, name: string) {
     const change = (changes: Parameters<StorageListener>[0]) => {
@@ -150,7 +161,7 @@ export class FakeNotionTab {
   private activeTab = false
 
   /** The extension's context menu items, by id, as it made them. */
-  menuItems = new Map<string, { title?: string; contexts?: string[] }>()
+  menuItems = new Map<string, MenuItem>()
 
   /** The windows Chrome opened the side panel in, in order. */
   panelOpens: number[] = []
@@ -172,7 +183,8 @@ export class FakeNotionTab {
    * service worker, with its own copy of the selection, on one line.
    */
   pickMenuItem(id: string, text: string, frameId = 0): void {
-    if (!this.menuItems.has(id)) throw new Error(`no menu item ${id}`)
+    // Chrome shows only the items that are visible.
+    if (this.menuItems.get(id)?.visible === false || !this.menuItems.has(id)) throw new Error(`no menu item ${id}`)
     this.selected = text
     this.activeTab = true
     const info = { menuItemId: id, selectionText: text.replace(/\s+/g, ' ').trim(), pageUrl: this.url, frameId }
@@ -312,15 +324,20 @@ export class FakeNotionTab {
         },
       },
       windows: { getCurrent: async () => ({ id: 1 }) },
-      runtime: { onInstalled: listeners(this.installed) },
+      runtime: { onInstalled: listeners(this.installed), onStartup: listeners([]) },
       contextMenus: {
         removeAll: (done?: () => void) => {
           this.menuItems.clear()
           done?.()
         },
-        create: ({ id, ...item }: { id: string; title?: string; contexts?: string[] }) => {
+        create: ({ id, ...item }: MenuItem & { id: string }) => {
           if (this.menuItems.has(id)) throw new Error(`Cannot create item with duplicate id ${id}`)
           this.menuItems.set(id, item)
+        },
+        update: async (id: string, change: MenuItem) => {
+          const item = this.menuItems.get(id)
+          if (!item) throw new Error(`Cannot find menu item with id ${id}`)
+          this.menuItems.set(id, { ...item, ...change })
         },
         onClicked: listeners(this.menuClicks),
       },

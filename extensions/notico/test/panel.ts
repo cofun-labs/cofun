@@ -192,6 +192,10 @@ export class FakeBrowser {
     vi.resetModules()
     await import('../src/background')
     this.tab.extensionInstalled()
+    // It reads its settings before it makes its menu item.
+    await vi.waitFor(() => {
+      if (!this.tab.menuItems.size) throw new Error('no menu item yet')
+    })
   }
 
   /** The user signs in again, as the account the browser started with, on the sign-in page; Clerk tells the open panel. */

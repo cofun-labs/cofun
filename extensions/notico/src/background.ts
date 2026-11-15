@@ -6,18 +6,36 @@
 // it the selection (src/selection.ts). The click gives the extension the tab for a moment
 // (activeTab), which is how the selection is read there with its line breaks; where it can't be
 // (a frame from another site, say), Chrome's own copy of it, on one line, is used.
-import { handOver, MENU_ITEM } from './selection'
+import { handOver, loadMenuShown, MENU_ITEM, watchMenuShown } from './selection'
 import { selectedText } from './web/tab'
 
 chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch((err) => console.error(err))
 
 // Menu items stay from one start of the service worker to the next; they are made again when the
-// extension is installed or updated.
+// extension is installed or updated, shown unless the user turned them off in Settings. Only on web
+// pages and local files: on the extension's own pages (the side panel) there is no tab to read.
 chrome.runtime.onInstalled.addListener(() => {
-  chrome.contextMenus.removeAll(() =>
-    chrome.contextMenus.create({ id: MENU_ITEM, title: 'Ask Notico about “%s”', contexts: ['selection'] }),
-  )
+  void loadMenuShown()
+    .catch(() => true)
+    .then((visible) =>
+      chrome.contextMenus.removeAll(() =>
+        chrome.contextMenus.create({
+          id: MENU_ITEM,
+          title: 'Ask Notico about “%s”',
+          contexts: ['selection'],
+          documentUrlPatterns: ['https://*/*', 'http://*/*', 'file:///*'],
+          visible,
+        }),
+      ),
+    )
 })
+
+// The Settings switch, changed on this device or synced from another one. It is read again as the
+// browser starts, for a change that synced while Chrome was closed.
+const showMenu = (visible: boolean) =>
+  chrome.contextMenus.update(MENU_ITEM, { visible }).catch((err: unknown) => console.error(err))
+watchMenuShown(showMenu)
+chrome.runtime.onStartup.addListener(() => void loadMenuShown().then(showMenu, (err: unknown) => console.error(err)))
 
 chrome.contextMenus.onClicked.addListener((info, tab) => {
   if (info.menuItemId !== MENU_ITEM || tab?.id === undefined) return

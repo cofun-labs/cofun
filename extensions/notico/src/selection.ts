@@ -24,6 +24,31 @@ export type Selection = z.infer<typeof Selection>
 
 const key = (windowId: number) => `selection:${windowId}`
 
+/**
+ * Whether the menu item shows, as the settings page's switch says: on unless the user turned it off.
+ * Kept in chrome.storage.sync, so it follows the user's Chrome profile to their other devices, as the
+ * extension itself does; with Chrome sync off it stays on this device.
+ */
+const MENU_SETTING = 'contextMenu'
+
+export async function loadMenuShown(): Promise<boolean> {
+  const stored: unknown = (await chrome.storage.sync.get(MENU_SETTING))[MENU_SETTING]
+  return stored !== false
+}
+
+export async function saveMenuShown(shown: boolean): Promise<void> {
+  await chrome.storage.sync.set({ [MENU_SETTING]: shown })
+}
+
+/** Calls `onChange` when the setting changes, here or on another device. Returns a function that stops watching. */
+export function watchMenuShown(onChange: (shown: boolean) => void): () => void {
+  const onChanged = (changes: Record<string, chrome.storage.StorageChange>, area: string) => {
+    if (area === 'sync' && MENU_SETTING in changes) onChange(changes[MENU_SETTING].newValue !== false)
+  }
+  chrome.storage.onChanged.addListener(onChanged)
+  return () => chrome.storage.onChanged.removeListener(onChanged)
+}
+
 /** Leaves `text`, selected on the page at `url`, for the side panel of the window `windowId`. */
 export async function handOver(windowId: number, text: string, url: string, title: string): Promise<void> {
   const selection: Selection = {

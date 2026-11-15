@@ -1,6 +1,7 @@
 import { useAuth } from '@clerk/chrome-extension'
 import { useEffect, useState } from 'react'
 import { loadAnalyticsEnabled, saveAnalyticsEnabled } from '../analytics'
+import { loadMenuShown, saveMenuShown, watchMenuShown } from '../selection'
 import type { ModelSettings } from '../models'
 import { Avatar, useAccount } from './Account'
 import { Page } from './Header'
@@ -8,7 +9,7 @@ import { ModelCard, Switch } from './Model'
 
 /**
  * The Settings page: everything that isn't money. The model providers and their models, the account
- * with Sign out, and whether usage data is sent.
+ * with Sign out, whether the right-click menu has "Ask Notico", and whether usage data is sent.
  */
 export function Settings({
   model,
@@ -31,6 +32,8 @@ export function Settings({
     <Page id="settings" title="Settings" onBack={onClose}>
       <ModelCard settings={model} onChange={onModelChange} focus={at === 'providers'} />
 
+      <ContextMenu />
+
       <UsageData />
 
       <section className="page-section" aria-labelledby="settings-account">
@@ -47,6 +50,50 @@ export function Settings({
         </div>
       </section>
     </Page>
+  )
+}
+
+/**
+ * Whether the right-click menu has "Ask Notico" (see selection.ts): on until the user turns it off,
+ * for their Chrome profile, on every device it syncs to.
+ */
+function ContextMenu() {
+  // Not known until storage was read: no switch shows until then, so it never shows a state to take back.
+  const [shown, setShown] = useState<boolean>()
+
+  useEffect(() => {
+    let closed = false
+    loadMenuShown().then(
+      (stored) => !closed && setShown(stored),
+      (err: unknown) => console.error('Could not read the menu setting', err),
+    )
+    const stop = watchMenuShown((next) => setShown(next))
+    return () => {
+      closed = true
+      stop()
+    }
+  }, [])
+
+  function change(next: boolean) {
+    setShown(next)
+    saveMenuShown(next).catch((err: unknown) => console.error('Could not save the menu setting', err))
+  }
+
+  return (
+    <section className="page-section" aria-labelledby="settings-menu">
+      <h2 id="settings-menu">Right-click menu</h2>
+      <div className="settings-account">
+        <div className="grow">
+          <p>Show “Ask Notico”</p>
+          <p id="settings-menu-detail" className="account-detail">
+            Ask about text you select on any page. Applies on every device your Chrome profile syncs to.
+          </p>
+        </div>
+        {shown !== undefined && (
+          <Switch label="Show “Ask Notico”" checked={shown} describedBy="settings-menu-detail" onChange={change} />
+        )}
+      </div>
+    </section>
   )
 }
 

@@ -112,12 +112,14 @@ export const SELECTION_END = '[End of the selected text.]'
  * the text with its lines escaped as read_current_tab escapes a page's, and SELECTION_END.
  */
 function selectionNote(selection: Selection): string {
-  let where: string
+  let host = ''
   try {
-    where = `on ${new URL(selection.url).host}`
+    host = new URL(selection.url).host
   } catch {
-    where = 'on a page'
+    // Not a URL: the note says only that it is a page.
   }
+  // A local file has no host either.
+  const where = host ? `on ${host}` : 'on a page'
   const page = JSON.stringify({ title: clip(selection.title, TITLE_CHARS), url: clip(selection.url, TAB_URL_CHARS) })
   return [
     `[Text the user selected ${where} and sent with this question. It comes from that page, not from the ` +

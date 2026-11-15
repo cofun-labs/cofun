@@ -83,6 +83,7 @@ It also adds the `contextMenus` and `activeTab` permissions, neither of which ad
 - **activeTab**: "When the user picks the "Ask Notico" menu item, reads the text they selected in that tab, with its line breaks, so it can be added to their question. No site needs to be allowed for it, and nothing else of the page is read."
 - The **scripting** justification also adds: "When the user picks "Ask Notico" on selected text, it reads that selection in the tab."
 - **Website content** also names text the user selected on a page and sent with "Ask Notico", which goes with their question to the worker and the model (or to OpenRouter).
+- The **storage** justification adds: "Whether the "Ask Notico" menu item shows, which the user can turn off in the settings; it is kept in Chrome's synced storage, so it follows their Chrome profile."
 
 ## Privacy policy URL
 

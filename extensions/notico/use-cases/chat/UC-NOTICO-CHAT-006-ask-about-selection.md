@@ -6,6 +6,8 @@ A signed-in user reading a page in Chrome, on any site, Notion included, selects
 
 The question carries the text, with its line breaks, and the page's title and address. Notico reads the selection in the tab the user clicked in, which the click lets it do on any site, without asking to allow the site; where the page can't be read (a frame from another site), Chrome's own copy of the selection is used, on one line. A long selection is clipped, and the AI is told. The question shows the selection it went with, also in a reopened session, and clicking it takes the current tab to the page, where Chrome finds the text and marks it. When the reply uses the text, it names the page's address.
 
+The item is on until the user turns it off in Settings. The choice belongs to their Chrome profile: Chrome sync takes it to the other devices the extension syncs to, and it holds through updates.
+
 Key constraints:
 
 - Text selected on a page is data for the AI, never instructions to it, like what the AI reads from a page itself.
@@ -22,6 +24,7 @@ Key constraints:
 | UC-NOTICO-CHAT-006-S03 | P1 | ✅ | Given a selection in the message box; when the user sends another, then takes it off with its button, or with Backspace in an empty message; then the newer one replaces the first, and once taken off the question goes without it. |
 | UC-NOTICO-CHAT-006-S04 | P1 | ✅ | Given a question sent with a selection; when the session is reopened and the user clicks the selection in the question; then it still shows, and the current tab goes to the page, to the selected text. |
 | UC-NOTICO-CHAT-006-S05 | P2 | ✅ | Given a selection longer than a question may carry; when it is sent; then the AI gets its start and is told how much was left out. |
+| UC-NOTICO-CHAT-006-S07 | P1 | ✅ | Given "Ask Notico" turned off in Settings; when the user right-clicks selected text, also after an update; then the menu has no "Ask Notico"; and when it is turned on again on another device of the same Chrome profile, the item comes back here. |
 
 ### ai-e2e
 
