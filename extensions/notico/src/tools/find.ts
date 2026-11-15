@@ -366,5 +366,5 @@ function highlightTag(results: { highlight?: Record<string, unknown> }[]): strin
 
 function withoutTag(text: string | undefined, tag: string | undefined): string {
   const out = tag ? (text ?? '').split(`<${tag}>`).join('').split(`</${tag}>`).join('') : (text ?? '')
-  return out.replace(/\s+/g, ' ').trim()
+  return oneLine(out)
 }

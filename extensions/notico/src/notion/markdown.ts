@@ -482,7 +482,9 @@ class Context {
     for (const key of new Set([...order, ...keys])) {
       const { name, type } = schema[key]
       if (key === 'title' || type === 'title') continue
-      const shown = this.property(page, key, schema[key])
+      // One line each, as query_database shows a value: a text value's line breaks as `<br>`, as
+      // they are written back; other values' as spaces.
+      const shown = this.property(page, key, schema[key]).replace(/\n/g, type === 'text' ? '<br>' : ' ')
       if (shown) out.push(`${oneLine(name ?? key)}: ${shown}`)
     }
     return out
@@ -556,11 +558,13 @@ class Context {
     return ` ^${hexId(id)}`
   }
 
-  /** Rich text as plain text. */
+  /** Rich text as plain text, its line breaks as `\n`. */
   plain(value: unknown): string {
-    return runs(value)
-      .map(([text]) => text)
-      .join('')
+    return newlines(
+      runs(value)
+        .map(([text]) => text)
+        .join(''),
+    )
   }
 
   /** Rich text as Markdown, with mentions resolved to names. */
@@ -570,15 +574,19 @@ class Context {
    */
   rich(value: unknown, { table = false } = {}): string {
     let afterPerson = false
-    return runs(value)
-      .map(([text, marks = []]) => {
-        let out = this.run(text, marks, table)
-        // `@[Name](` would read as an @ before a link: the parenthesis after a mention stays literal.
-        if (afterPerson && out.startsWith('(')) out = `\\${out}`
-        afterPerson = /@\[.*\]$/s.test(out) && marks.some(([m]) => m === 'u')
-        return out
-      })
-      .join('')
+    // Line breaks as `\n`, mentioned names' too, so what keeps text on its line (`<br>`, quoting
+    // each line) finds every one.
+    return newlines(
+      runs(value)
+        .map(([text, marks = []]) => {
+          let out = this.run(text, marks, table)
+          // `@[Name](` would read as an @ before a link: the parenthesis after a mention stays literal.
+          if (afterPerson && out.startsWith('(')) out = `\\${out}`
+          afterPerson = /@\[.*\]$/s.test(out) && marks.some(([m]) => m === 'u')
+          return out
+        })
+        .join(''),
+    )
   }
 
   private run(text: string, marks: [string, unknown?][], table = false): string {
@@ -814,7 +822,16 @@ export function splitIntoParts(sections: string[], max: number): string[] {
  * tool wrote (a header, a note, a block reference).
  */
 export function oneLine(text: string): string {
-  return text.replace(/\s+/g, ' ').trim()
+  // `\s` leaves out NEL (U+0085), which a model may read as a line break.
+  return text.replace(/[\s\u0085]+/g, ' ').trim()
+}
+
+/**
+ * Text with each line break as `\n`: `\r\n`, `\r`, NEL, and Unicode's line and paragraph separators
+ * too, which a model reads as line breaks just as well.
+ */
+function newlines(text: string): string {
+  return text.replace(/\r\n?|[\u0085\u2028\u2029]/g, '\n')
 }
 
 /**
