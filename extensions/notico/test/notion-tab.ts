@@ -48,23 +48,41 @@ export function restoreGlobals(): void {
 type StorageListener = (changes: Record<string, { oldValue?: unknown; newValue?: unknown }>, area: string) => void
 
 /**
- * Stands in for chrome.storage: the `local` area, and the change events every document of the
- * extension gets, the one that made the change included.
+ * Stands in for chrome.storage: the `local` and `session` areas, and the change events every document
+ * of the extension gets, the one that made the change included.
  */
 export class FakeStorage {
+  /** What `local` holds. */
   values: Record<string, unknown> = {}
+  /** What `session` holds: what Chrome keeps until the browser closes. */
+  sessionValues: Record<string, unknown> = {}
   private listeners: StorageListener[] = []
 
-  local = {
-    get: async (key: string) => (key in this.values ? { [key]: this.values[key] } : {}),
-    set: async (items: Record<string, unknown>) => {
-      const changes: Parameters<StorageListener>[0] = {}
-      for (const [key, newValue] of Object.entries(items)) {
-        changes[key] = { oldValue: this.values[key], newValue }
-        this.values[key] = newValue
-      }
-      for (const listener of this.listeners) listener(changes, 'local')
-    },
+  local = this.area(this.values, 'local')
+  session = this.area(this.sessionValues, 'session')
+
+  private area(values: Record<string, unknown>, name: string) {
+    const change = (changes: Parameters<StorageListener>[0]) => {
+      for (const listener of this.listeners) listener(changes, name)
+    }
+    return {
+      get: async (key: string) => (key in values ? { [key]: values[key] } : {}),
+      set: async (items: Record<string, unknown>) => {
+        const changes: Parameters<StorageListener>[0] = {}
+        for (const [key, newValue] of Object.entries(items)) {
+          // Chrome hands each document a copy, as it stores one.
+          changes[key] = { oldValue: values[key], newValue: structuredClone(newValue) }
+          values[key] = newValue
+        }
+        change(changes)
+      },
+      remove: async (key: string) => {
+        if (!(key in values)) return
+        const oldValue = values[key]
+        delete values[key]
+        change({ [key]: { oldValue } })
+      },
+    }
   }
 
   onChanged = {
@@ -121,6 +139,50 @@ export class FakeNotionTab {
 
   /** The browser's other tabs, in any window, as chrome.tabs reports them. */
   otherTabs: { url: string; title: string }[] = []
+
+  /** The text selected in the page, as the page's getSelection gives it. */
+  selected = ''
+
+  /**
+   * activeTab: the extension may run scripts in the tab, whatever its site, until it goes to another
+   * page. A click on one of the extension's menu items grants it.
+   */
+  private activeTab = false
+
+  /** The extension's context menu items, by id, as it made them. */
+  menuItems = new Map<string, { title?: string; contexts?: string[] }>()
+
+  /** The windows Chrome opened the side panel in, in order. */
+  panelOpens: number[] = []
+
+  /** Set while Chrome hands the service worker a user's click (see `pickMenuItem`). */
+  private gesture = false
+
+  private installed: (() => void)[] = []
+  private menuClicks: ((info: object, tab: object) => void)[] = []
+
+  /** Chrome installs the extension: its service worker hears of it (runtime.onInstalled). */
+  extensionInstalled(): void {
+    for (const listener of this.installed) listener()
+  }
+
+  /**
+   * The user selects `text` in the page (in the frame `frameId`, 0 the top one), right-clicks it, and
+   * picks the extension's menu item `id`. Chrome gives the extension the tab (activeTab) and tells its
+   * service worker, with its own copy of the selection, on one line.
+   */
+  pickMenuItem(id: string, text: string, frameId = 0): void {
+    if (!this.menuItems.has(id)) throw new Error(`no menu item ${id}`)
+    this.selected = text
+    this.activeTab = true
+    const info = { menuItemId: id, selectionText: text.replace(/\s+/g, ' ').trim(), pageUrl: this.url, frameId }
+    this.gesture = true
+    try {
+      for (const listener of this.menuClicks) listener(info, { id: 7, windowId: 1, url: this.url, title: this.title })
+    } finally {
+      this.gesture = false
+    }
+  }
 
   /** Scripts running in the tab, each until it returns. */
   private running = new Set<Promise<unknown>>()
@@ -199,6 +261,7 @@ export class FakeNotionTab {
 
   /** The user switches to another tab, showing `url`; Chrome tells the side panel. */
   switchTab(url: string | undefined, title = ''): void {
+    this.activeTab = false
     this.url = url
     this.title = title
     for (const listener of this.activated) listener({ tabId: 7, windowId: 1 })
@@ -207,6 +270,7 @@ export class FakeNotionTab {
   /** The tab goes to `url` (or renames its page, given the same URL); Chrome tells the side panel. */
   navigate(url: string, title = this.title): void {
     const change = { ...(url !== this.url && { url }), ...(title !== this.title && { title }) }
+    if (url !== this.url) this.activeTab = false
     this.url = url
     this.title = title
     for (const listener of this.updated) listener(7, change, { id: 7, active: true, url, title })
@@ -247,8 +311,34 @@ export class FakeNotionTab {
           return this.promptAnswer
         },
       },
+      windows: { getCurrent: async () => ({ id: 1 }) },
+      runtime: { onInstalled: listeners(this.installed) },
+      contextMenus: {
+        removeAll: (done?: () => void) => {
+          this.menuItems.clear()
+          done?.()
+        },
+        create: ({ id, ...item }: { id: string; title?: string; contexts?: string[] }) => {
+          if (this.menuItems.has(id)) throw new Error(`Cannot create item with duplicate id ${id}`)
+          this.menuItems.set(id, item)
+        },
+        onClicked: listeners(this.menuClicks),
+      },
+      sidePanel: {
+        setPanelBehavior: async () => {},
+        // Like Chrome, only while a user's click is being handled.
+        open: async ({ windowId }: { windowId: number }) => {
+          if (!this.gesture) throw new Error('`sidePanel.open()` may only be called in response to a user gesture.')
+          this.panelOpens.push(windowId)
+        },
+      },
       scripting: {
-        executeScript: (injection: { target: { tabId: number }; world?: string; func: Function; args: unknown[] }) => {
+        executeScript: (injection: {
+          target: { tabId: number; frameIds?: number[] }
+          world?: string
+          func: Function
+          args?: unknown[]
+        }) => {
           const running = this.executeScript(injection)
           this.running.add(running)
           running.then(
@@ -272,22 +362,26 @@ export class FakeNotionTab {
     func,
     args,
   }: {
-    target: { tabId: number }
+    target: { tabId: number; frameIds?: number[] }
     world?: string
     func: Function
-    args: unknown[]
+    args?: unknown[]
   }) {
     if (this.closed) throw new Error(`No tab with id: ${target.tabId}.`)
     if (this.injectionError) throw new Error(this.injectionError)
-    // Chrome runs scripts only on a site the extension may access.
+    // Chrome runs scripts only on a site the extension may access. activeTab reaches the tab's own
+    // site only: in this fake, every frame but the top one is from another site.
     const at = new URL(this.pageUrl ?? this.url!)
-    if (!isNotion(at.href) && !this.allowed.has(`${at.origin}/*`))
+    const frame = target.frameIds?.[0] ?? 0
+    if (frame !== 0 || (!isNotion(at.href) && !this.allowed.has(`${at.origin}/*`) && !this.activeTab))
       throw new Error(
         'Cannot access contents of the page. Extension manifest must request permission to access the respective host.',
       )
     this.injections.push({ tabId: target.tabId, world })
     const location = new URL(this.pageUrl ?? this.url!)
-    const document = Object.assign(this.dom ?? {}, { cookie: this.cookie })
+    // The page's selection, unless the test gave the page a DOM of its own that has one.
+    const selected = () => ({ toString: () => this.selected })
+    const document = Object.assign({ getSelection: selected }, this.dom ?? {}, { cookie: this.cookie })
     const fetch = (input: string, init: RequestInit) => this.fetch(new URL(input, location).href, init)
     // The page's globals are the function's own: its `location`, `document`, and `fetch` are
     // the tab's, while code outside the tab (say, the agent calling the worker, or the side
@@ -297,7 +391,7 @@ export class FakeNotionTab {
       document,
       fetch,
     ) as Function
-    return [{ frameId: 0, result: await rebuilt(...(asChromeSends(args) as unknown[])) }]
+    return [{ frameId: frame, result: await rebuilt(...(asChromeSends(args ?? []) as unknown[])) }]
   }
 
   private async fetch(url: string, init: RequestInit): Promise<Response> {

@@ -1,5 +1,5 @@
 import type { MouseEvent } from 'react'
-import type { QuestionPage } from '../agent'
+import type { QuestionPage, QuestionSelection } from '../agent'
 import { Icon } from './icons'
 
 /** A page's title as the panel shows it; Notion shows a page without one as "Untitled". */
@@ -16,13 +16,37 @@ export interface Chip {
   auto: boolean
 }
 
+/** Where a selection is from and how it starts, as its chip says it: `example.com: “The text…”`. */
+function selectionLabel(selection: QuestionSelection): string {
+  let host = ''
+  try {
+    host = new URL(selection.url).host
+  } catch {
+    // Not a URL: the chip shows the text alone.
+  }
+  return `${host ? `${host}: ` : ''}“${selection.quote}”`
+}
+
+/** Whether the panel links to the page a selection is from: only to a web page. */
+const linksTo = (url: string) => /^https?:\/\//.test(url)
+
 /**
  * The pages the next question goes with, at the top of the composer: the page open in the current
  * tab, dashed since the panel added it, and the pages the user added, each of which they can take
- * off the question.
+ * off the question; then the text the user selected on a page and sent with the context menu.
  */
-export function ComposerPages({ chips, onRemove }: { chips: Chip[]; onRemove: (chip: Chip) => void }) {
-  if (!chips.length) return null
+export function ComposerPages({
+  chips,
+  onRemove,
+  selection,
+  onRemoveSelection,
+}: {
+  chips: Chip[]
+  onRemove: (chip: Chip) => void
+  selection?: QuestionSelection
+  onRemoveSelection: () => void
+}) {
+  if (!chips.length && !selection) return null
   return (
     <ul className="page-chips" aria-label="Pages to send">
       {chips.map((chip) => {
@@ -47,17 +71,32 @@ export function ComposerPages({ chips, onRemove }: { chips: Chip[]; onRemove: (c
           </li>
         )
       })}
+      {selection && (
+        <li className="page-chip" title={selection.title || undefined}>
+          <Icon name="quote" />
+          <span className="page-title">{selectionLabel(selection)}</span>
+          <button
+            type="button"
+            className="page-remove"
+            aria-label="Remove the selected text"
+            title="Remove"
+            onClick={onRemoveSelection}
+          >
+            <Icon name="close" />
+          </button>
+        </li>
+      )}
     </ul>
   )
 }
 
 /**
- * The pages a question was sent with, in its bubble under what the user typed. Each is a link that
- * takes the current tab to the page, as a link in Notion would; a modified click (to open it in a
- * new tab or window) is left to the browser.
+ * The pages a question was sent with, and the text selected on a page it was sent with, in its bubble
+ * under what the user typed. Each is a link that takes the current tab to the page, as a link in
+ * Notion would; a modified click (to open it in a new tab or window) is left to the browser.
  */
-export function SentPages({ pages }: { pages?: QuestionPage[] }) {
-  if (!pages?.length) return null
+export function SentPages({ pages, selection }: { pages?: QuestionPage[]; selection?: QuestionSelection }) {
+  if (!pages?.length && !selection) return null
   const open = (event: MouseEvent<HTMLAnchorElement>, url: string) => {
     if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
     event.preventDefault()
@@ -65,7 +104,7 @@ export function SentPages({ pages }: { pages?: QuestionPage[] }) {
   }
   return (
     <ul className="sent-pages" aria-label="Pages sent">
-      {pages.map((page, i) => (
+      {pages?.map((page, i) => (
         <li key={i}>
           <a href={page.url} onClick={(event) => open(event, page.url)}>
             <PageIcon page={page} />
@@ -73,6 +112,22 @@ export function SentPages({ pages }: { pages?: QuestionPage[] }) {
           </a>
         </li>
       ))}
+      {selection && (
+        <li title={selection.title || undefined}>
+          {/* A link takes the tab to the page, where Chrome finds the selection and marks it. */}
+          {linksTo(selection.url) ? (
+            <a href={selection.url} onClick={(event) => open(event, selection.url)}>
+              <Icon name="quote" />
+              <span className="page-title">{selectionLabel(selection)}</span>
+            </a>
+          ) : (
+            <span className="sent-quote">
+              <Icon name="quote" />
+              <span className="page-title">{selectionLabel(selection)}</span>
+            </span>
+          )}
+        </li>
+      )}
     </ul>
   )
 }

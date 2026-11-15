@@ -77,6 +77,13 @@ This page describes version 0.2.0. The version after it adds optional host permi
 - The **Host permission** justification adds: "Optional host permissions for http and https sites: none is granted at install. When the user asks about the page they are on, the side panel asks them to allow that one site, and Chrome asks them again; only then is the page's text read, in the tab."
 - **Website content** also names the text of a page on another site that the assistant reads, which goes to the worker and the model (or to OpenRouter). **Web history** stays Yes, as it is: that page's URL and title go with it.
 
+It also adds the `contextMenus` and `activeTab` permissions, neither of which adds an install warning, for the "Ask Notico" item on selected text:
+
+- **contextMenus**: "Adds an "Ask Notico" item to the menu Chrome shows when the user right-clicks selected text. Picking it opens the side panel with that text added to the user's next question; nothing is sent until the user sends the question."
+- **activeTab**: "When the user picks the "Ask Notico" menu item, reads the text they selected in that tab, with its line breaks, so it can be added to their question. No site needs to be allowed for it, and nothing else of the page is read."
+- The **scripting** justification also adds: "When the user picks "Ask Notico" on selected text, it reads that selection in the tab."
+- **Website content** also names text the user selected on a page and sent with "Ask Notico", which goes with their question to the worker and the model (or to OpenRouter).
+
 ## Privacy policy URL
 
 ```text
