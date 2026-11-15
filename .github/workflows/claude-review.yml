@@ -41,9 +41,9 @@ jobs:
             - Security issues
             - Performance problems
             - Adherence to the conventions in CLAUDE.md, if present
-            - Cost against value at the product's stage: a trivial, rare, or low-priority concern
-              handled with a lot of code, state, edge-case handling, or tests gets the simpler
-              approach proposed, never one that breaks a rule CLAUDE.md says must hold
+            - Implementation complexity, which we keep in check: a trivial, rare, or low-priority
+              concern handled with a lot of code, state, edge-case handling, or tests gets the
+              simpler approach proposed, never one that breaks a rule CLAUDE.md says must hold
 
             If you have reviewed this pull request before (a summary comment of yours names the
             head commit it reviewed), read the review threads first (`gh api

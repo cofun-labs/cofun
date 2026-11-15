@@ -51,7 +51,7 @@ Cofun: Chrome extensions that each open an AI side panel next to one kind of pag
    - Verifies that every business rule the PR adds or changes, one a user can notice, has a scenario and a test, and that the diff matches them (scenario IDs and use case wording are not review points)
    - Confirms there are no unrelated changes
    - Confirms no value from outside is used through a type assertion (see "Untrusted values" below); lint can't check this
-   - Judges whether the approach is correct and reasonable, and whether its cost fits its value at the product's stage: where a simpler approach would do, it proposes it and says what users would notice losing, if anything. Rules this file says must hold are not part of that trade
+   - Judges whether the approach is correct and reasonable, and keeps implementation complexity in check: where a simpler approach would do, it proposes it and says what users would notice losing, if anything. Rules this file says must hold are not part of that trade
    - Names the head commit it reviewed, and reads the PR's head again before submitting; if the head changed, it reviews the new head first
    - Submits the review with `gh pr review --comment` (GitHub blocks approving your own PR)
 
