@@ -1,8 +1,8 @@
 // Reads a public web page for a signed-in user: fetched plainly (fetchPage), or rendered in
 // Cloudflare's Browser Run for a page drawn by scripts (renderPage). The worker reads only what the
 // address gives to anyone: it sends no cookie and no credential, and refuses addresses on our own
-// domain, on a local network name, or written as an IP address. Which addresses may be read at all
-// (only those the user gave) is the extension's rule: the worker knows nothing of the conversation.
+// domain, on a local network name, or written as an IP address. Which addresses to read is the
+// extension's choice: the worker knows nothing of the conversation.
 import { Parser } from 'htmlparser2'
 import * as z from './zod'
 

@@ -101,7 +101,7 @@ async function readPageAt(
 }
 
 const Args = z.strictObject({
-  url: z.string().describe('The address of the page, exactly as the user wrote it in one of their messages.'),
+  url: z.string().describe('The address of the page (http or https).'),
 })
 
 export const readWebPage = defineTool({
