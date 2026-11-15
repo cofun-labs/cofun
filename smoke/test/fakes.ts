@@ -59,6 +59,8 @@ function find(id: unknown): NotionRecord | undefined {
 export interface NotionRequest {
   endpoint: string
   body: Record<string, unknown>
+  /** The user the request named (Notion's x-notion-active-user-header). */
+  user: string | undefined
 }
 
 /**
@@ -75,9 +77,12 @@ export function notionAnswer({ endpoint, body }: NotionRequest): unknown {
     }
   }
   if (endpoint === 'syncRecordValuesMain') {
+    // A body of another shape is left unanswered, so the test fails on a blocked request, not a hang.
+    if (!Array.isArray(body.requests)) return undefined
     const block: Record<string, unknown> = {}
-    for (const { pointer } of body.requests as { pointer: { id: string; table: string } }[]) {
-      const record = pointer.table === 'block' ? find(pointer.id) : undefined
+    for (const request of body.requests as unknown[]) {
+      const pointer = (request as { pointer?: { id?: unknown; table?: unknown } } | null)?.pointer
+      const record = pointer?.table === 'block' ? find(pointer.id) : undefined
       if (record) block[record.id] = wrap(record)
     }
     return { recordMap: { __version__: 3, block } }

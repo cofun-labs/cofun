@@ -139,8 +139,8 @@ const test = base.extend<Fixtures>({
       args: [`--disable-extensions-except=${DIST}`, `--load-extension=${DIST}`],
     })
     if (signedIn) {
-      await context.addCookies(
-        clerkHosts.map((host) => ({
+      await context.addCookies([
+        ...clerkHosts.map((host) => ({
           name: '__client',
           value: CLIENT_JWT,
           domain: host,
@@ -148,14 +148,20 @@ const test = base.extend<Fixtures>({
           secure: true,
           httpOnly: true,
         })),
-      )
+        // Signed in to Notion: the tab's requests name this user, as Notion's own client does.
+        ...NOTION_URLS.map((url) => ({ name: 'notion_user_id', value: USER, url })),
+      ])
     }
     await context.route('**/*', async (route) => {
       const request = route.request()
       const url = new URL(request.url())
       if (url.protocol === 'chrome-extension:') return route.continue()
       if (signedIn && NOTION_HOSTS.includes(url.hostname) && url.pathname.startsWith('/api/v3/')) {
-        const sent: NotionRequest = { endpoint: url.pathname.slice('/api/v3/'.length), body: request.postDataJSON() }
+        const sent: NotionRequest = {
+          endpoint: url.pathname.slice('/api/v3/'.length),
+          body: request.postDataJSON(),
+          user: request.headers()['x-notion-active-user-header'],
+        }
         const answer = request.method() === 'POST' ? notionAnswer(sent) : undefined
         if (answer !== undefined) {
           notion.push(sent)
@@ -331,7 +337,7 @@ test.describe('signed in', () => {
 
   test("a question gets the model's streamed reply", async ({ context, background, blocked, worker, replies }) => {
     const errors: string[] = []
-    // The reply, then the chat's title, which the panel asks for once the reply starts.
+    // The reply, then the chat's title, which the panel asks for once the reply is in.
     replies.push({ text: 'Hello from the smoke test.' }, { text: 'Smoke test greeting' })
     const panel = await openPanel(context, background, errors)
 
@@ -389,6 +395,8 @@ test.describe('signed in', () => {
         },
       ],
     })
+    // Every request ran in the tab as its Notion user, read from the tab's own cookie.
+    expect(notion.filter((request) => request.user !== USER)).toEqual([])
     expect(notion.find((request) => request.endpoint === 'deleteContentRecords')?.body).toMatchObject({
       records: [{ id: PAGE }],
       permanentlyDelete: false,
