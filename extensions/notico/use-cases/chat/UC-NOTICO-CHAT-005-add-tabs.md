@@ -29,4 +29,4 @@ Key constraints:
 
 | ID | Priority | Status | Scenario |
 | --- | --- | --- | --- |
-| UC-NOTICO-CHAT-005-S07 | P1 | 🚧 | Given three articles open in tabs in Chrome, on a site Notico may read; when the user adds the three tabs with "+" and asks to compare them; then the AI reads each of the three tabs and its reply compares them and names their addresses. |
+| UC-NOTICO-CHAT-005-S07 | P1 | ✅ | Given three articles open in tabs in Chrome, on a site Notico may read; when the user adds the three tabs with "+" and asks to compare them; then the AI reads each of the three tabs and its reply compares them and names their addresses. |
