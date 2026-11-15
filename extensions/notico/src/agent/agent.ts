@@ -6,7 +6,7 @@
 import { Agent, type AgentEvent, type AgentMessage, type AgentTool } from '@earendil-works/pi-agent-core'
 import type { AssistantMessage, Model } from '@earendil-works/pi-ai'
 import { streamSimple } from '@earendil-works/pi-ai/api/openai-completions'
-import { Credits, GrantsPage, Packs } from '../credits'
+import { Credits, Grants, Packs, type PastGrant } from '../credits'
 import { answering, HOSTED_ONLY, type OwnSetup } from '../models'
 import { askUser, previewCall, toAgentTool, type Reporter } from './calls'
 import { addUsage, detailsOf, recent, textOf, usedTools } from './history'
@@ -643,12 +643,9 @@ export class CopilotAgent {
     return readOwn(this.config, 'credits', { utc_offset: utcOffset() }, Credits)
   }
 
-  /**
-   * One page of every grant the user was given, newest first: the first page, or the one that
-   * `before` (the `next` of the page before it) starts. Read only when the user opens the history.
-   */
-  async creditGrants(before?: string): Promise<GrantsPage> {
-    return readOwn(this.config, 'credits/grants', { before }, GrantsPage)
+  /** Every grant the user was given, newest first. Read only when the user opens the history. */
+  async creditGrants(): Promise<PastGrant[]> {
+    return (await readOwn(this.config, 'credits/grants', {}, Grants)).grants
   }
 
   /** The packs of credits on offer. Read when the Credits page opens. */

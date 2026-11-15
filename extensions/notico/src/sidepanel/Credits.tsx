@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react'
 import { track } from '../analytics'
 import {
-  creditsText,
   dayText,
   daysText,
   leftFrom,
@@ -122,26 +121,15 @@ function Balance({ credits }: { credits: Credits }) {
   return (
     <>
       <p className="balance">
-        <span className="balance-value">{wholeCredits(Math.max(balance, 0))}</span>{' '}
-        <span className="account-detail">credits</span>
+        <span className="balance-value">{wholeCredits(balance)}</span> <span className="account-detail">credits</span>
       </p>
-      {balance < 0 && (
-        <p className="account-detail">
-          {free.started
-            ? `You overspent ${creditsText(-balance)}. They come out of the next credits you get.`
-            : // The balance already counts the free credits to come: this is what they leave unpaid.
-              `After your next free credits you still owe ${creditsText(-balance)}. They come out of the credits after those.`}
-        </p>
-      )}
       <ul className="balance-lines" aria-label="Credits by source">
         <li>
           <span>Free this week</span>
           <span className="account-detail">
             {free.started
               ? `${wholeCredits(leftFrom(credits, 'free'))} · renew after ${when(free.until)}`
-              : free.toCome > 0
-                ? `${wholeCredits(free.toCome)} · valid for ${daysText(free.lastsMs)} from your next question`
-                : 'Not started: they go to what you overspent'}
+              : `${wholeCredits(free.toCome)} · valid for ${daysText(free.lastsMs)} from your next question`}
           </span>
         </li>
         <li>

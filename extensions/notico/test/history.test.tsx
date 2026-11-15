@@ -3,7 +3,7 @@
 // what is on screen.
 // The tests' clock is 5:30 ahead of UTC (vitest.config.ts): 12:00 UTC, when a test starts, is 5:30 PM.
 import '@testing-library/jest-dom/vitest'
-import { screen, waitFor, within } from '@testing-library/react'
+import { screen, within } from '@testing-library/react'
 import userEvent, { type UserEvent } from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { usageCosting } from '../../../worker/test/fakes'
@@ -15,7 +15,7 @@ afterEach(closeBrowser)
 const HOUR_MS = 60 * 60 * 1000
 const DAY_MS = 24 * HOUR_MS
 const DOWN = new Error('D1_ERROR: Network connection lost.')
-/** What only the worker's read of a page of grants contains. */
+/** What only the worker's read of the history contains. */
 const GRANTS_READ = 'ORDER BY granted_at DESC'
 
 /** A browser signed in to Notico, with the side panel open. */
@@ -102,7 +102,7 @@ describe('the credit history', () => {
     expect(await lots()).toEqual(['Free weekly creditsNov 8 · expired Nov 15+200All used'])
   })
 
-  it('[UC-NOTICO-CHAT-003-S10] shows the newest lots first, and earlier ones when asked, to the end', async () => {
+  it('[UC-NOTICO-CHAT-003-S10] shows every lot at once, newest first', async () => {
     const { browser, user } = await openPanel()
     // 25 lots, told apart by how many credits each was.
     for (let credits = 1; credits <= 25; credits++) {
@@ -112,12 +112,8 @@ describe('the credit history', () => {
 
     await openHistory(user)
 
-    expect(amounts(await lots())).toEqual(Array.from({ length: 20 }, (_, i) => `${25 - i}`))
-    await user.click(screen.getByRole('button', { name: 'Show earlier' }))
-    await waitFor(async () => expect(await lots()).toHaveLength(25))
     expect(amounts(await lots())).toEqual(Array.from({ length: 25 }, (_, i) => `${25 - i}`))
-    // That was the last of them.
-    expect(screen.queryByRole('button', { name: 'Show earlier' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /earlier|more/i })).not.toBeInTheDocument()
   })
 
   it('[UC-NOTICO-CHAT-003-S11] shows the credits used longer ago than 30 days nowhere', async () => {
@@ -149,7 +145,6 @@ describe('the credit history', () => {
     await openHistory(user)
 
     expect(await screen.findByText('No credits yet. Your free credits start with your next question.')).toBeVisible()
-    expect(screen.queryByRole('button', { name: 'Show earlier' })).not.toBeInTheDocument()
 
     await user.keyboard('{Escape}')
     const lines = await within(section('Balance')).findByRole('list', { name: 'Credits by source' })
@@ -179,21 +174,5 @@ describe('the credit history', () => {
     expect(await within(section('Balance')).findByText('140')).toBeVisible()
     await user.keyboard('{Escape}')
     await ask(browser, user, 'Who owns the launch?', 30)
-  })
-
-  it('[@no-uc:money] when earlier lots cannot be read, the ones already shown stay, and trying again adds the rest', async () => {
-    const { browser, user } = await openPanel()
-    for (let credits = 1; credits <= 25; credits++) await browser.grantCredits('user_alice', credits, 30)
-    await openHistory(user)
-    expect(await lots()).toHaveLength(20)
-
-    browser.db.failOn = { sql: GRANTS_READ, error: DOWN }
-    await user.click(screen.getByRole('button', { name: 'Show earlier' }))
-    expect(await screen.findByRole('alert')).toHaveTextContent('Your credits could not be loaded.')
-    expect(await lots()).toHaveLength(20)
-
-    browser.db.failOn = undefined
-    await user.click(screen.getByRole('button', { name: 'Try again' }))
-    await waitFor(async () => expect(await lots()).toHaveLength(25))
   })
 })

@@ -20,8 +20,8 @@ const DayUsage = z.object({ day: Day, microCredits: z.int().min(0) })
 
 /** What the worker answers. The one definition of its shape: the type below comes from it. */
 export const Credits = z.object({
-  /** What the next question starts with. Below zero when the user overspent. */
-  balance: z.int(),
+  /** What the next question starts with. Never below zero: what a question costs beyond it is forgiven. */
+  balance: z.int().min(0),
   /**
    * The weekly free credits. Started: they run until `until`, and new ones can arrive from then.
    * Not started: the next question brings `toCome` (already part of `balance`), valid for `lastsMs`.
@@ -40,8 +40,8 @@ export const Credits = z.object({
 })
 export type Credits = z.infer<typeof Credits>
 
-/** One page of every grant the user was given, newest first, the expired ones included. */
-export const GrantsPage = z.object({
+/** Every grant the user was given, newest first, the expired ones included. */
+export const Grants = z.object({
   grants: z.array(
     z.object({
       source: Source,
@@ -59,11 +59,8 @@ export const GrantsPage = z.object({
       revoked: z.string().optional(),
     }),
   ),
-  /** Where the next page starts, to send back as it is; null on the last page. */
-  next: z.string().nullable(),
 })
-export type GrantsPage = z.infer<typeof GrantsPage>
-export type PastGrant = GrantsPage['grants'][number]
+export type PastGrant = z.infer<typeof Grants>['grants'][number]
 
 /**
  * The packs of credits on sale, smallest first, as the worker sells them: each a quantity of 1,000
@@ -104,7 +101,7 @@ export function wholeCredits(micro: number, rounding: 'down' | 'nearest' = 'down
 }
 
 /** "1 credit", "200 credits", "less than 1 credit". */
-export function creditsText(micro: number): string {
+function creditsText(micro: number): string {
   const whole = wholeCredits(micro)
   return `${whole} ${whole === '1' || whole === 'less than 1' ? 'credit' : 'credits'}`
 }

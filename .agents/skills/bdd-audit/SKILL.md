@@ -33,8 +33,8 @@ A short list grouped by use case, most important first, every item naming the fi
 - Behavior: "each call to the model costs what its tokens cost" is guarded only by a `@no-uc` test
   (worker/test/api.test.ts, "a call is charged what its tokens cost").
   Suggest: api-test P1 "Given a model call; when it is charged; then it costs what its tokens cost, with nothing added." and tag that test.
-- Behavior: "one account cannot run up unbounded model usage", but calls sent at once can each overspend
-  (worker/test/api.test.ts, "calls sent at once all start on the same balance, and what they overspent is owed").
+- Behavior: "one account cannot run up unbounded model usage", but calls sent at once can each cost more than is left
+  (worker/test/api.test.ts, "calls sent at once all start on the same balance, and what they cost beyond it is forgiven").
   Suggest: decide whether the constraint or the code changes, then a P1 scenario for the bound.
 
 ### UC-NOTICO-NOTION-002 (extensions/notico/use-cases/notion/UC-NOTICO-NOTION-002-edit-page.md)

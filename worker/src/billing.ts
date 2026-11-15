@@ -73,7 +73,7 @@ const Granting = z.object({
 
 /** What the webhook did with an event, for the response and the log. */
 export interface Handled {
-  done: 'granted' | 'granted already' | 'taken back' | 'taken back already' | 'recorded' | 'ignored'
+  done: 'granted' | 'granted already' | 'taken back' | 'taken back already' | 'ignored'
   log?: string
   /** Set when this event added a purchase's credits, and only then: who bought, and the pack's quantity. */
   purchase?: { userId: string; pack: number }
@@ -82,9 +82,9 @@ export interface Handled {
 /**
  * Handles one event Stripe sent and signed. Events may arrive more than once and in any order, and
  * each step is safe to repeat: a payment grants once, and a purchase is taken back once. A refund or
- * a dispute can only follow a payment, but its event can arrive first: then the refund is recorded
- * against the payment, and the payment never makes a grant. Events the worker does not act on are
- * acknowledged and ignored.
+ * a dispute can only follow a payment, but its event can arrive first: it then takes nothing back
+ * and is logged for an operator, and the payment still grants when its own event arrives (see
+ * below). Events the worker does not act on are acknowledged and ignored.
  */
 export async function handleEvent(db: Database, stripe: StripeApi, now: number, payload: unknown): Promise<Handled> {
   const event = StripeEvent.parse(payload)
@@ -137,12 +137,6 @@ export async function handleEvent(db: Database, stripe: StripeApi, now: number, 
         expiresAt: purchaseExpiry(now),
         payment: session.payment_intent,
       })
-      if (added === 'revoked before') {
-        return {
-          done: 'ignored',
-          log: `purchase: user=${userId} payment=${session.payment_intent} was refunded or disputed before it was granted: nothing granted`,
-        }
-      }
       if (added === 'granted already') return { done: added }
       return {
         done: 'granted',
@@ -162,10 +156,11 @@ export async function handleEvent(db: Database, stripe: StripeApi, now: number, 
       const taken = await takeBack(db, now, payment, why)
       if (taken === 'taken back already') return { done: taken, log: `purchase taken back already: payment=${payment}` }
       if (taken === 'no grant') {
-        // Nothing to take back: the payment's own event has not been handled yet, or the payment was
-        // never one that grants (another charge on the account, or a session that granted nothing).
-        // Either way it is recorded, so a grant that comes later is not made.
-        return { done: 'recorded', log: `${why} for payment=${payment}, which has no grant: recorded` }
+        // Nothing to take back: the payment was never one that grants (another charge on the
+        // account, or a session that granted nothing), or, rarely, its own event has not been handled
+        // yet. Nothing is recorded, so a grant that comes later stays: an operator who sees it granted
+        // resends this event from Stripe, which then takes it back.
+        return { done: 'ignored', log: `${why} for payment=${payment}, which has no grant: nothing taken back` }
       }
       return { done: 'taken back', log: `purchase taken back: payment=${payment} reason=${why}` }
     }

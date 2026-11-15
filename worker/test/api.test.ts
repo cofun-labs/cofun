@@ -304,14 +304,20 @@ describe('UC-COFUN-CREDITS-001 Spend credits on the hosted model', () => {
     expect((await chat(token)).status).toBe(200)
   })
 
-  it('[UC-COFUN-CREDITS-001-S03] what a call overspent is taken out of the next free credits', async () => {
+  it('[UC-COFUN-CREDITS-001-S03] a call that costs more than was left takes only what was left, and the next free credits arrive in full', async () => {
     repliesCost(150)
     await chat(token)
+    // 50 credits are left: the call costs 150, takes the 50, and the 100 beyond them are forgiven.
     await chat(token)
+    expect(db.rows('grants').map((r) => [r.left, r.repaid])).toEqual([[0, 0]])
+    expect(db.rows('model_calls').map((r) => [r.micro_credits, r.owed])).toEqual([
+      [150_000_000, 0],
+      [150_000_000, 0],
+    ])
     await refused(await chat(token))
-    // 100 credits overspent, so the new week has 100 to spend, not 200.
+    // The new week has all of its 200 credits to spend.
     later(WEEK_MS)
-    repliesCost(90)
+    repliesCost(180)
     expect((await chat(token)).status).toBe(200)
     repliesCost(20)
     expect((await chat(token)).status).toBe(200)
@@ -387,7 +393,7 @@ describe('UC-COFUN-CREDITS-001 Spend credits on the hosted model', () => {
     )
   })
 
-  it('[UC-COFUN-CREDITS-001-S11] calls sent at once all start on the same balance, and what they overspent is owed', async () => {
+  it('[UC-COFUN-CREDITS-001-S11] calls sent at once all start on the same balance, and what they cost beyond it is forgiven', async () => {
     repliesCost(190)
     await chat(token)
     // 10 credits are left, and two replies that cost 190 each are written at once.
@@ -397,10 +403,15 @@ describe('UC-COFUN-CREDITS-001 Spend credits on the hosted model', () => {
     ]
     expect(replies.map((res) => res.status)).toEqual([200, 200])
     for (const res of replies) await res.text()
-    // 370 credits overspent: the next week's 200 credits pay back part of it, and leave nothing to spend.
-    later(WEEK_MS)
+    // They took the 10 credits that were left, and nothing below zero.
+    expect(db.rows('grants').map((r) => r.left)).toEqual([0])
     await refused(await chat(token))
-    expect(ai.calls).toHaveLength(3)
+    // The next week's 200 credits are all there to spend.
+    later(WEEK_MS)
+    repliesCost(200)
+    expect((await chat(token)).status).toBe(200)
+    await refused(await chat(token))
+    expect(ai.calls).toHaveLength(4)
   })
 
   it('[@no-uc:money] concurrent requests neither lose a charge nor grant a week twice', async () => {
@@ -468,23 +479,6 @@ describe('UC-COFUN-CREDITS-001 Spend credits on the hosted model', () => {
     ])
   })
 
-  it('[@no-uc:money] the part of a cost the grants did not cover is recorded as owed, and the next grant pays it back', async () => {
-    repliesCost(150)
-    await chat(token)
-    await chat(token)
-    expect(db.rows('model_calls').map((r) => [r.micro_credits, r.owed])).toEqual([
-      [150_000_000, 0],
-      [150_000_000, 100_000_000],
-    ])
-    later(WEEK_MS)
-    repliesCost(30)
-    await chat(token)
-    expect(db.rows('grants').map((r) => [r.source, r.amount, r.repaid, r.left])).toEqual([
-      ['free', 200_000_000, 0, 0],
-      ['free', 200_000_000, 100_000_000, 70_000_000],
-    ])
-  })
-
   it('[@no-uc:money] grants and model calls of several users are kept apart in one database', async () => {
     const bob = await clerk.sessionToken({ userId: 'user_bob', azp: EXT })
     repliesCost(150)
@@ -496,12 +490,8 @@ describe('UC-COFUN-CREDITS-001 Spend credits on the hosted model', () => {
       ['user_alice', 0],
       ['user_bob', 170_000_000],
     ])
-    expect(db.rows('model_calls').map((r) => [r.user_id, r.owed])).toEqual([
-      ['user_alice', 0],
-      ['user_alice', 100_000_000],
-      ['user_bob', 0],
-    ])
-    // Alice's debt is hers: Bob can still ask, and she cannot.
+    expect(db.rows('model_calls').map((r) => r.user_id)).toEqual(['user_alice', 'user_alice', 'user_bob'])
+    // Alice is out of credits, not Bob: he can still ask, and she cannot.
     await refused(await chat(token))
     expect((await chat(bob)).status).toBe(200)
   })

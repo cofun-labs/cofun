@@ -84,7 +84,6 @@ const GrantRow = z
 /** The columns a grant is read with. */
 const GRANT_COLUMNS = 'source, amount, left, granted_at, expires_at, granted_by, payment, revoked'
 
-const DebtRow = z.object({ debt: z.int().min(0) })
 const BalanceRow = z.object({ balance: z.int(), free_until: z.int().nullable() })
 const UsageRow = z
   .object({ day: z.int(), micro_credits: z.int().min(0) })
@@ -98,7 +97,7 @@ function only<S extends z.ZodType>(schema: S, result: { results: unknown[] } | u
   return schema.parse(rows[0])
 }
 
-/** What a user can spend now, in micro-credits (below zero after an overdraft), and when their next free grant can arrive. */
+/** What a user can spend now, in micro-credits (never below zero), and when their next free grant can arrive. */
 export interface Balance {
   balance: number
   nextGrantAt: number
@@ -126,14 +125,11 @@ function spanOf(now: number, { days, offsetMs }: UsagePeriod) {
   return { from: first * DAY_MS - offsetMs, to: (last + 1) * DAY_MS - offsetMs }
 }
 
-/** Where a page of a user's grants starts: the grants given at `at` or before, without the `skip` newest of them, which an earlier page showed. */
-export interface GrantsCursor {
-  at: number
-  skip: number
-}
-
-/** How many grants one page of a user's history holds. */
-const GRANTS_PAGE = 20
+/**
+ * How many grants a user's history holds at most, newest first: a bound on the read, far above what
+ * an account gets (one free grant a week is 52 a year), so in practice the whole history.
+ */
+const HISTORY_LIMIT = 200
 
 /**
  * A user's credits as they see them. Amounts are in micro-credits. Unlike an `Account`, it looks
@@ -144,8 +140,8 @@ export interface Standing {
   balance: number
   /**
    * The weekly free grant. One that still counts ends at `until`, and the next one can arrive from
-   * then on. With none, the next call brings one: `toCome` is what it adds to spend, its amount
-   * less what the user owes, and it is already part of `balance`. Nothing is written until that call.
+   * then on. With none, the next call brings one: `toCome` is what it adds to spend, and it is
+   * already part of `balance`. Nothing is written until that call.
    */
   free: { started: true; until: number } | { started: false; toCome: number }
   /** The grants that still count, in the order they are spent. */
@@ -156,10 +152,8 @@ export interface Standing {
 
 /** A user's account at one moment. Amounts are in micro-credits. */
 export interface Account {
-  /** What the user can spend: what is left of the grants that have not expired, less the debt. */
+  /** What the user can spend: what is left of the grants that have not expired. */
   balance: number
-  /** What the user spent beyond their grants. The next grant pays it back first. */
-  debt: number
   /** Every grant the user was given, oldest first, the expired ones included. */
   grants: Grant[]
 }
@@ -200,72 +194,47 @@ export interface ModelCall {
 }
 
 // How the tables hold a ledger (worker/migrations/): `grants` has one row per grant with what is
-// left of it, and `model_calls` one row per model call with what it cost. What a user owes is not a
-// number of its own: it is what calls cost beyond the grants (`model_calls.owed`) less what grants
-// paid back (`grants.repaid`). In every statement below, ?1 is the user id and ?2 the time.
-
-/** What a user owes, as SQL. `user` is the SQL that names the user: a parameter, or a column of an outer query. */
-const debtOf = (user: string) =>
-  `((SELECT coalesce(sum(owed), 0) FROM model_calls WHERE user_id = ${user} AND owed > 0)
-  - (SELECT coalesce(sum(repaid), 0) FROM grants WHERE user_id = ${user} AND revoked IS NULL))`
+// left of it, and `model_calls` one row per model call with what it cost. A user never owes
+// anything: a call takes what it costs from what is left, and no more, so the balance never goes
+// below zero. The columns for debt (`grants.repaid`, `model_calls.owed`) and the `revoked_payments`
+// table are from when it did, and are left in place, unused: new rows hold 0 in both columns. In
+// every statement below, ?1 is the user id and ?2 the time.
 
 /**
- * What a user can spend at the time `now`, as SQL: what is left of the grants that still count,
- * less the debt. The one definition of a balance in SQL, for one user (below) and for a list of
- * them (overview.ts). `user` and `now` are SQL: parameters, or columns of an outer query.
+ * What a user can spend at the time `now`, as SQL: what is left of the grants that still count.
+ * The one definition of a balance in SQL, for one user (below) and for a list of them
+ * (overview.ts). `user` and `now` are SQL: parameters, or columns of an outer query.
  */
 export const balanceOf = (user: string, now: string) =>
-  `((SELECT coalesce(sum(left), 0) FROM grants WHERE user_id = ${user} AND expires_at > ${now}) - ${debtOf(user)})`
-
-/** What the user ?1 owes. */
-const DEBT = debtOf('?1')
+  `(SELECT coalesce(sum(left), 0) FROM grants WHERE user_id = ${user} AND expires_at > ${now})`
 
 /**
  * The weekly free grant, given lazily when a user shows up and has no free grant that still counts:
  * no schedule runs, nothing is written for users who don't come back, and a user who returns after
  * a month gets one grant, not four. A free grant with nothing left still marks the user's week.
  * Only free grants are looked at: credits granted by hand never stand in for the free week. It is
- * one statement, so two requests arriving together cannot both grant the week. Like any grant, it
- * pays back debt first. ?3 is the amount, ?4 how long it lasts.
+ * one statement, so two requests arriving together cannot both grant the week. ?3 is the amount, ?4
+ * how long it lasts.
  */
 const GIVE_FREE_GRANT = `INSERT INTO grants (user_id, source, amount, repaid, left, granted_at, expires_at)
-SELECT ?1, 'free', ?3, min(?3, debt), ?3 - min(?3, debt), ?2, ?2 + ?4
-FROM (SELECT ${DEBT} AS debt)
+SELECT ?1, 'free', ?3, 0, ?3, ?2, ?2 + ?4
 WHERE NOT EXISTS (SELECT 1 FROM grants WHERE user_id = ?1 AND source = 'free' AND expires_at > ?2)`
 
 /** A grant by hand. ?3 is the amount, ?4 when it expires, ?5 the admin's user id. */
 const GIVE_MANUAL_GRANT = `INSERT INTO grants (user_id, source, amount, repaid, left, granted_at, expires_at, granted_by)
-SELECT ?1, 'manual', ?3, min(?3, debt), ?3 - min(?3, debt), ?2, ?4, ?5
-FROM (SELECT ${DEBT} AS debt)`
+VALUES (?1, 'manual', ?3, 0, ?3, ?2, ?4, ?5)`
 
 /**
  * Credits bought. ?3 is the amount, ?4 when it expires, ?5 the payment. A payment grants once: the
  * unique index on `payment` makes the insert of a payment already granted do nothing, so a payment
- * Stripe reports twice, or two reports handled at once, add one grant. (`WHERE true` is SQLite's
- * way to put an upsert after a SELECT.)
+ * Stripe reports twice, or two reports handled at once, add one grant.
  */
 const GIVE_PURCHASE = `INSERT INTO grants (user_id, source, amount, repaid, left, granted_at, expires_at, payment)
-SELECT ?1, 'purchase', ?3, min(?3, debt), ?3 - min(?3, debt), ?2, ?4, ?5
-FROM (SELECT ${DEBT} AS debt)
-WHERE NOT EXISTS (SELECT 1 FROM revoked_payments WHERE payment = ?5)
+VALUES (?1, 'purchase', ?3, 0, ?3, ?2, ?4, ?5)
 ON CONFLICT (payment) DO NOTHING`
 
 /**
- * Records that the payment ?1 was refunded or disputed (?3) at ?2 before it made a grant, so it never
- * makes one. Only when it has no grant: one that has is taken back instead (TAKE_BACK). A payment
- * recorded already keeps its first reason.
- */
-const REVOKE_PAYMENT = `INSERT INTO revoked_payments (payment, revoked, at)
-SELECT ?1, ?3, ?2 WHERE NOT EXISTS (SELECT 1 FROM grants WHERE payment = ?1)
-ON CONFLICT (payment) DO NOTHING`
-
-/** Whether the payment ?1 was refunded or disputed before it made a grant. */
-const COUNT_REVOKED_PAYMENT = `SELECT count(*) AS n FROM revoked_payments WHERE payment = ?1`
-
-/**
- * Takes back what is left of the purchase made with the payment ?1, for the reason ?3. What it paid
- * back of the user's debt is owed again: a grant taken back no longer counts in what grants repaid
- * (see `debtOf`), since the money that paid it was returned. It ends at
+ * Takes back what is left of the purchase made with the payment ?1, for the reason ?3. It ends at
  * the time ?2 (never at or before the moment it was granted, which the table does not allow), and
  * `left` stays as the record of what was taken back. One that expired already only records why.
  * A purchase taken back once is not taken back again, so a second report changes nothing and the
@@ -280,11 +249,10 @@ const COUNT_PAYMENT = `SELECT count(*) AS n FROM grants WHERE payment = ?1`
 
 /**
  * What the user's next call starts with, and until when their free week runs (null when no free
- * grant still counts). With a free grant that counts, the balance is what is stored: the grants
- * that still count, less the debt. With none, it is that plus the free grant ?3 the next call
- * brings: a grant pays back debt out of its amount, so the balance after it is the balance before
- * it plus its amount, whatever is owed. `open` reads this right after giving the grant and `look`
- * reads it without, so what a user is shown and what their next call gets are one definition.
+ * grant still counts). With a free grant that counts, the balance is what is stored: what is left
+ * of the grants that still count. With none, it is that plus the free grant ?3 the next call
+ * brings. `open` reads this right after giving the grant and `look` reads it without, so what a
+ * user is shown and what their next call gets are one definition.
  */
 const READ_BALANCE = `SELECT stored + CASE WHEN free_until IS NULL THEN ?3 ELSE 0 END AS balance, free_until
 FROM (SELECT
@@ -306,36 +274,31 @@ FROM model_calls WHERE user_id = ?1 AND started_at >= ?2 AND started_at < ?3
 GROUP BY day HAVING sum(micro_credits) > 0 ORDER BY day DESC`
 
 /**
- * One page of the user's grants, newest first: those given at ?2 or before, without the first ?3
- * of them, and one more than a page holds, to tell whether more follow. The
- * `grants_by_user_granted` index gives them in this order, so a page reads only its own rows. The
- * casts keep the numbers whole however the database binds them.
+ * The user's grants, newest first, up to HISTORY_LIMIT of them. The `grants_by_user_granted` index
+ * gives them in this order, so the read stops at the limit.
  */
-const READ_GRANTS_PAGE = `SELECT ${GRANT_COLUMNS}
-FROM grants WHERE user_id = ?1 AND granted_at <= ?2
-ORDER BY granted_at DESC, id DESC LIMIT ${GRANTS_PAGE + 1} OFFSET CAST(?3 AS INTEGER)`
+const READ_HISTORY = `SELECT ${GRANT_COLUMNS}
+FROM grants WHERE user_id = ?1 ORDER BY granted_at DESC, id DESC LIMIT ${HISTORY_LIMIT}`
 
 const READ_GRANTS = `SELECT ${GRANT_COLUMNS}
 FROM grants WHERE user_id = ?1 ORDER BY granted_at, id`
 
-const READ_DEBT = `SELECT ${DEBT} AS debt`
-
 /**
- * The record of a model call, with the part of its cost the grants that still count do not cover:
- * what the user owes. It runs before SPEND, in the same batch, so both see the same grants. ?2 is
- * when the call ended, ?3 the model, ?4 when it started, ?5 whether it streamed, ?6 its outcome, ?7
- * its finish reason, ?8 to ?10 the prompt, cached, and completion tokens, ?11 whether they are
- * estimated, ?12 the cost, ?13 the product it came from.
+ * The record of a model call, with its full cost: what the grants that still count do not cover
+ * of it is not taken (see SPEND), and not owed, so `owed` is 0. ?2 is when the call ended, ?3 the
+ * model, ?4 when it started, ?5 whether it streamed, ?6 its outcome, ?7 its finish reason,
+ * ?8 to ?10 the prompt, cached, and completion tokens, ?11 whether they are estimated, ?12 the
+ * cost, ?13 the product it came from.
  */
 const RECORD_CALL = `INSERT INTO model_calls (user_id, ended_at, model, started_at, stream, outcome, finish_reason,
   prompt_tokens, cached_tokens, completion_tokens, estimated, micro_credits, owed, product)
-SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, max(0, ?12 - coalesce(sum(left), 0)), ?13
-FROM grants WHERE user_id = ?1 AND expires_at > ?2`
+VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, 0, ?13)`
 
 /**
  * Takes the cost ?3 from the grants that still count, from the one that expires first: each takes
- * what the grants before it did not cover, up to what it has left. A relative update, so calls that
- * end together each take their own cost and none is lost.
+ * what the grants before it did not cover, up to what it has left. What they all have left does not
+ * cover is forgiven: nothing goes below zero. A relative update, so calls that end together each
+ * take their own cost and none is lost.
  */
 const SPEND = `UPDATE grants SET left = grants.left - spend.take
 FROM (
@@ -359,7 +322,7 @@ export class Ledger {
   /**
    * What the user can spend before a model call, after giving them the weekly free grant if they
    * have none. A call may go ahead while the balance is above zero; calls that start together all
-   * see the same balance.
+   * see the same balance, and what they cost beyond it is forgiven.
    */
   async open(now: number): Promise<Balance> {
     const [, balance] = await this.db.batch([
@@ -397,34 +360,18 @@ export class Ledger {
   }
 
   /**
-   * One page of every grant the user was given, newest first, the expired ones included: the first
-   * page, or the one `from` starts. `next` starts the page after it, and is absent on the last
-   * one. Reading changes nothing.
-   *
-   * A page starts at a time, not at a grant: two grants can be given in the same millisecond, so
-   * the cursor also counts how many grants of that millisecond earlier pages showed.
+   * Every grant the user was given, newest first, the expired ones included, up to HISTORY_LIMIT of
+   * them. Reading changes nothing.
    */
-  async grantsPage(from?: GrantsCursor): Promise<{ grants: Grant[]; next?: GrantsCursor }> {
-    const { results } = await this.statement(
-      READ_GRANTS_PAGE,
-      from?.at ?? Number.MAX_SAFE_INTEGER,
-      from?.skip ?? 0,
-    ).all()
-    const rows = z.array(GrantRow).parse(results)
-    const grants = rows.slice(0, GRANTS_PAGE)
-    const following = rows[GRANTS_PAGE]
-    if (!following) return { grants }
-    const shown = grants.filter((grant) => grant.grantedAt === following.grantedAt).length
-    return {
-      grants,
-      next: { at: following.grantedAt, skip: shown + (from?.at === following.grantedAt ? from.skip : 0) },
-    }
+  async history(): Promise<Grant[]> {
+    const { results } = await this.statement(READ_HISTORY).all()
+    return z.array(GrantRow).parse(results)
   }
 
   /**
    * Records a model call that ended, and takes what it cost from the user, from the grant that
    * expires first, in one batch: both are written, or neither. What the grants don't cover is
-   * owed, and comes out of the next grant. The time is when the call ended.
+   * forgiven. The time is when the call ended.
    */
   async endCall(call: ModelCall): Promise<void> {
     const { promptTokens, cachedTokens, completionTokens, cost, startedAt, endedAt } = call
@@ -458,8 +405,7 @@ export class Ledger {
   }
 
   /**
-   * Grants credits by hand, beside the weekly free grant. Like any grant it pays back debt first.
-   * It does not give the user their weekly free grant either: that still starts with their own
+   * Grants credits by hand, beside the weekly free grant. It does not give the user their weekly free grant either: that still starts with their own
    * next call, so a grant by hand never uses up part of a user's free week.
    */
   async grant(now: number, { amount, expiresAt, by }: ManualGrant): Promise<Account> {
@@ -473,36 +419,27 @@ export class Ledger {
   }
 
   /**
-   * Adds credits bought with a payment, beside the other grants. Like any grant it pays back debt
-   * first. A payment that was granted already adds nothing, and is not an error: Stripe reports a
-   * payment more than once. Nor does one that was refunded or disputed before it was granted. Says
-   * which of these it was.
+   * Adds credits bought with a payment, beside the other grants. A payment that was granted already
+   * adds nothing, and is not an error: Stripe reports a payment more than once. Says which it was.
    */
-  async purchase(
-    now: number,
-    { amount, expiresAt, payment }: Purchase,
-  ): Promise<'granted' | 'granted already' | 'revoked before'> {
+  async purchase(now: number, { amount, expiresAt, payment }: Purchase): Promise<'granted' | 'granted already'> {
     if (!Number.isSafeInteger(amount) || amount <= 0) throw new Error('a grant must be a positive integer')
     if (!Number.isSafeInteger(expiresAt) || expiresAt <= now) throw new Error('a grant must expire after it is made')
-    const [before, , after, revoked] = await this.db.batch([
+    const [before] = await this.db.batch([
       this.db.prepare(COUNT_PAYMENT).bind(payment),
       this.statement(GIVE_PURCHASE, now, amount, expiresAt, payment),
-      this.db.prepare(COUNT_PAYMENT).bind(payment),
-      this.db.prepare(COUNT_REVOKED_PAYMENT).bind(payment),
     ])
-    if (only(CountRow, after).n === 0 && only(CountRow, revoked).n > 0) return 'revoked before'
     return only(CountRow, before).n === 0 ? 'granted' : 'granted already'
   }
 
   private reads(): Statement[] {
-    return [this.statement(READ_GRANTS), this.statement(READ_DEBT)]
+    return [this.statement(READ_GRANTS)]
   }
 
-  private account(now: number, [grantRows, debtRow]: { results: unknown[] }[]): Account {
+  private account(now: number, [grantRows]: { results: unknown[] }[]): Account {
     const grants = z.array(GrantRow).parse(grantRows?.results ?? [])
-    const { debt } = only(DebtRow, debtRow)
-    const left = grants.reduce((sum, grant) => sum + (grant.expiresAt > now ? grant.left : 0), 0)
-    return { balance: left - debt, debt, grants }
+    const balance = grants.reduce((sum, grant) => sum + (grant.expiresAt > now ? grant.left : 0), 0)
+    return { balance, grants }
   }
 
   /** A statement for this user: ?1 is the user id, and the values after it ?2, ?3, …. */
@@ -516,11 +453,9 @@ const COUNT_KEPT = `SELECT count(*) AS n FROM grants WHERE payment = ?1 AND revo
 
 /**
  * Takes back what is left of the purchase made with `payment`, after a refund or a dispute: see
- * TAKE_BACK. What was spent stays spent, and the user's other grants are untouched. A payment with
- * no grant yet is recorded instead (REVOKE_PAYMENT), so a grant that comes later is never made: both
- * happen in one batch, so a grant handled at the same moment either comes first and is taken back,
- * or comes after and is not made. Says what it found: a purchase it took back now, one taken back
- * already (nothing changes), or no grant.
+ * TAKE_BACK. What was spent stays spent, and the user's other grants are untouched. Says what it
+ * found: a purchase it took back now, one taken back already (nothing changes), or no grant (nothing
+ * changes either: nothing is recorded, so a grant the payment makes later stays).
  */
 export async function takeBack(
   db: Database,
@@ -528,10 +463,9 @@ export async function takeBack(
   payment: string,
   why: z.output<typeof Revoked>,
 ): Promise<'taken back' | 'taken back already' | 'no grant'> {
-  const [kept, , , count] = await db.batch([
+  const [kept, , count] = await db.batch([
     db.prepare(COUNT_KEPT).bind(payment),
     db.prepare(TAKE_BACK).bind(payment, now, why),
-    db.prepare(REVOKE_PAYMENT).bind(payment, now, why),
     db.prepare(COUNT_PAYMENT).bind(payment),
   ])
   if (only(CountRow, count).n === 0) return 'no grant'
