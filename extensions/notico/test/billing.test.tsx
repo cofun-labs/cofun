@@ -73,7 +73,7 @@ describe('buying credits on the Credits page', () => {
     await buy.findByRole('list', { name: 'Packs of credits' })
     expect(
       buy.getByText(
-        'One-time purchase, not a subscription, valid for a year, spent after your free credits. Questions answered with your own key (OpenRouter, DeepSeek) spend no credits. Tax may be added at checkout.',
+        'One-time purchase, not a subscription, valid for a year, spent after your free credits. Questions answered with your own key (OpenRouter) spend no credits. Tax may be added at checkout.',
       ),
     ).toBeVisible()
   })
