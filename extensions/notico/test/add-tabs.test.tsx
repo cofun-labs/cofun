@@ -238,7 +238,7 @@ describe('UC-NOTICO-CHAT-005 add open tabs to a conversation', () => {
     ])
   })
 
-  it('[UC-NOTICO-CHAT-005-S04] a long address is named clipped and read by that name, and a page that only moved to a part of itself is still read', async () => {
+  it('[UC-NOTICO-CHAT-005-S04] a long address is named clipped and read by that name', async () => {
     const LONG = `https://news.example.com/play#state=${'a'.repeat(3_000)}`
     const NAMED = LONG.slice(0, 2_000)
     const { browser, tab, user } = await openPanel((t) => {
@@ -248,8 +248,6 @@ describe('UC-NOTICO-CHAT-005 add open tabs to a conversation', () => {
 
     await addTab(user, 'Playground')
     await addTab(user, 'Lakes')
-    // Scrolled to a part of the page, which changes only the address's fragment.
-    tab.otherTabs[1].url = `${LAKES}#shore`
     await ask(user, 'What do these say?')
     await screen.findByText('Read both.')
 
@@ -259,7 +257,7 @@ describe('UC-NOTICO-CHAT-005 add open tabs to a conversation', () => {
     expect(toolResults(browser)[0]).toMatch(
       /^.*\nPage in a tab the user added, on news\.example\.com: .*\nText:\nSome code\.$/s,
     )
-    expect(toolResults(browser)[1]).toBe(tabResult('Lakes | News', `${LAKES}#shore`, 'Lakes are calm.'))
+    expect(toolResults(browser)[1]).toBe(tabResult('Lakes | News', LAKES, 'Lakes are calm.'))
     expect(tab.injections).toEqual([
       { tabId: 20, world: 'ISOLATED' },
       { tabId: 21, world: 'ISOLATED' },
@@ -272,7 +270,8 @@ describe('UC-NOTICO-CHAT-005 add open tabs to a conversation', () => {
 
     await addTab(user, 'Rivers')
     await addTab(user, 'Lakes')
-    tab.otherTabs[0].url = 'https://news.example.com/2026/front'
+    // A fragment counts: an app that routes by it shows another document under another one.
+    tab.otherTabs[0].url = `${RIVERS}#/inbox/2`
     tab.otherTabs.splice(1, 1)
     await ask(user, 'Compare these')
     await screen.findByText('They are gone.')

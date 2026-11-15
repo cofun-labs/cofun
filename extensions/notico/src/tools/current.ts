@@ -312,16 +312,13 @@ function pageRead(page: TabPage, header: string, host: string) {
 }
 
 /**
- * The tab of the side panel's window that shows the page at `url`, if one does: the same address,
- * but for the fragment, which a page may change as it is scrolled without showing another page.
+ * The tab of the side panel's window that shows exactly `url`, if one does. The fragment counts:
+ * apps that route by it (a mail app's `#inbox/<id>`) show another document under another fragment.
+ * The cost: a page that changes its fragment as it is scrolled must be added again.
  */
 async function tabShowing(url: string): Promise<chrome.tabs.Tab | undefined> {
-  return (await chrome.tabs.query({ currentWindow: true })).find(
-    (tab) => tab.id !== undefined && !!tab.url && samePage(tab.url, url),
-  )
+  return (await chrome.tabs.query({ currentWindow: true })).find((tab) => tab.id !== undefined && tab.url === url)
 }
-
-const samePage = (a: string, b: string) => a.split('#')[0] === b.split('#')[0]
 
 const WHERE: TabWhere = 'the tab'
 
@@ -358,8 +355,7 @@ export const readTab = defineTool({
     const page = await readPage(tab.id, site.origin, Math.min(TAB_TEXT_CHARS, left), WHERE)
     if ('reason' in page) throw new Error(page.reason)
     // Only the page the user added: not another page of the same site the tab went to while it was read.
-    if (!samePage(page.url, url))
-      throw new Error('The tab went to another page while it was read, so nothing was read.')
+    if (page.url !== url) throw new Error('The tab went to another page while it was read, so nothing was read.')
     const host = new URL(site.origin).host
     return pageRead(page, `Page in a tab the user added, on ${host}`, host)
   },
