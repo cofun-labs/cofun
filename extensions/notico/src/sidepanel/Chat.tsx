@@ -1273,7 +1273,6 @@ function ModeButton({ mode, onChange }: { mode: Mode; onChange: (mode: Mode) => 
   )
 }
 
-/** A saved conversation as the panel shows it: each question, then everything the agent did for it. */
 /** How much of a selection its chip shows, and keeps with the question. */
 const QUOTE_CHARS = 200
 
@@ -1287,6 +1286,7 @@ function shownSelection(selection: Selection): QuestionSelection {
   }
 }
 
+/** A saved conversation as the panel shows it: each question, then everything the agent did for it. */
 function toShown(history: HistoryMessage[]): Shown[] {
   const shown: Shown[] = []
   // Of the latest question, shown under its reply.

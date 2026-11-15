@@ -77,6 +77,9 @@ export function linkTo(selection: Selection): string | undefined {
   // A text fragment's own signs (`-`, `,`, `&`) are encoded too, so the words are taken as words.
   const part = (list: string[]) => encodeURIComponent(list.join(' ')).replaceAll('-', '%2D')
   const text = words.length <= 8 ? part(words) : `${part(words.slice(0, 4))},${part(words.slice(-4))}`
-  // A page's own fragment stays; the directive goes after it.
+  // A page's own fragment stays, and the directive goes after it; one the URL already had (from an
+  // earlier selection's link, say) is dropped, since a second one would make Chrome find neither.
+  const own = url.hash.replace(/:~:.*$/, '')
+  url.hash = own === '#' ? '' : own
   return `${url.href}${url.hash ? '' : '#'}:~:text=${text}`
 }
