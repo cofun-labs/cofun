@@ -155,7 +155,7 @@ export const ToolCall = memo(function ToolCall({
         <div className="tool-confirm" role="group" aria-label={tool.question}>
           <span>{tool.question}</span>
           <div className="tool-answers">
-            <button onClick={() => onAnswer(false)}>Not now</button>
+            <button onClick={() => onAnswer(false)}>Deny</button>
             <button
               className="primary"
               // Chrome takes the request only in the click's own handler; its prompt then has the last word.

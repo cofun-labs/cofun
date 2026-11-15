@@ -60,7 +60,7 @@ Using the hosted model costs credits. A credit is money, and a model call costs 
 
 The agent loop and its tools run in the side panel. The worker only checks who is asking and passes the conversation to the model. Notion requests are made inside the user's own Notion tab, with that tab's session. A user may instead have their own model answer, on OpenRouter with their own key: the side panel asks it directly, behind the agent's `ModelProvider` (`src/agent/`), so those questions never reach the worker and spend no credits. The providers, keys, and models switched on are kept per account in `chrome.storage.local` (`src/models.ts`).
 
-The panel is open on every tab, but the tools act on the current tab only: the active tab of the panel's window, looked up again for each question and each tool call. The Notion tools fail on a tab that is not on Notion, and never use a Notion page open in another tab. No tool reads another site's content; `get_current_tab` gives only its URL and title.
+The panel is open on every tab, but the tools act on the current tab only: the active tab of the panel's window, looked up again for each question and each tool call. The Notion tools fail on a tab that is not on Notion, and never use a Notion page open in another tab. On another site, `get_current_tab` gives the tab's URL and title, and `read_current_tab` reads the page's text inside the tab, through a second site layer (`src/web/`), on a site the user allowed: the manifest asks for web sites only as optional host permissions, and the tool's card asks Chrome for one origin when the user clicks Allow. No request goes to that site; the text goes to the model with the conversation.
 
 A question carries the pages it goes with (the open page, and pages the user adds with `@` or "+") as titles and URLs, not their content: the model reads them with its tools. The page picker suggests open tabs and pages from saved sessions without asking Notion, and searches the workspace through the same Notion layer as the tools, never while a question is being answered, so the picker and the agent never ask Notion at once.
 
@@ -101,9 +101,10 @@ extensions/<name>/        one Chrome extension, built and published by itself; n
   src/agent/              the agent loop and its model providers; the only folder that imports pi, and the
                           only one besides the site layer that uses fetch (the worker, the user's own model)
   src/tools/              the tools the agent runs (index.ts lists them)
-  src/notion/             the site layer: imports nothing from the agent, tools, sessions, or UI
+  src/notion/             the site layer for Notion: imports nothing from the agent, tools, sessions, or UI
     api.ts                the only module that knows Notion's endpoints and request shapes
-    tab.ts                runs requests in the user's Notion tab; the only use of chrome.scripting and site fetch
+    tab.ts                runs requests in the user's Notion tab; with src/web/tab.ts, the only use of chrome.scripting and site fetch
+  src/web/tab.ts          the site layer for any other site: reads the page in the current tab, once the user allowed its site
   src/sidepanel/          the React UI
   src/analytics.ts        usage events; the only module that imports the PostHog SDK
   src/zod.ts              the only module that imports zod

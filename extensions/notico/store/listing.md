@@ -70,3 +70,10 @@ The screenshots show the real side panel next to throwaway pages, made with `pnp
 ## For the next version
 
 The text above describes version 0.1.0, the one in the store. The next version adds credit packs bought through Stripe and answering with the user's own OpenRouter key: CREDITS, PRIVACY, and the list at the top change with it.
+
+It also reads the page the user is on when it is another site, so the description says Notico works around Notion, not only inside it:
+
+- The first paragraph reads: "Ask Notion anything, right next to the page. Notico is an AI copilot that reads, writes, and organizes your Notion pages from Chrome's side panel, and shows you every change it makes. It can also read the page you're on elsewhere, so you can ask about an article or save it to Notion."
+- WHAT YOU CAN ASK adds: "• Bring in the web: ask about the page you're on, or save it to Notion. Notico reads a site only after you allow it."
+- THINGS TO TRY adds: "• On an article: "Save the key points of this page to my Reading notes.""
+- PRIVACY reads "Your questions, and what Notico reads to answer them (Notion content, and a web page you asked about), go to our server…".

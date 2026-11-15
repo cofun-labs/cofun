@@ -279,6 +279,8 @@ async function clickButton(page: Target, selector: string, text: string): Promis
       return !!button
     },
     [selector, text],
+    // As a user's click: Chrome lets the side panel ask for a site's access only in one.
+    { userGesture: true },
   )
   if (!clicked) throw new E2eError(`No "${text}" button in the side panel.`)
 }
