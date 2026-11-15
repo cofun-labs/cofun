@@ -206,8 +206,8 @@ describe('UC-NOTICO-CHAT-004 add pages to a question', () => {
     const { browser, tab, user } = await openPanel()
     await user.type(composer(), 'Summarize')
 
-    await user.click(screen.getByRole('button', { name: 'Add a page' }))
-    await user.click(screen.getByRole('menuitem', { name: 'Add a page…' }))
+    await user.click(screen.getByRole('button', { name: 'Add a page or tab' }))
+    await user.click(screen.getByRole('menuitem', { name: 'Add a page or tab…' }))
     const field = screen.getByRole('searchbox', { name: 'Search pages' })
     expect(field).toHaveFocus()
     expect(await within(picker()!).findByRole('group', { name: 'Open tabs' })).toBeVisible()

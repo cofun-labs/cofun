@@ -1,8 +1,9 @@
-// Reads the page in the user's current tab when it is on another site than Notion: its main text,
-// as the tab shows it, in the tab itself (chrome.scripting, ISOLATED world). So it reaches what the
-// user sees there, pages behind their sign-in and content drawn by scripts included, and sends no
-// request of its own. Notico may read a site only once the user allowed it (optional host
-// permissions, one origin at a time), which only a click in the side panel can grant.
+// Reads the page in one of the user's tabs on another site than Notion (the current tab, or a tab
+// the user added to the conversation): its main text, as the tab shows it, in the tab itself
+// (chrome.scripting, ISOLATED world). So it reaches what the user sees there, pages behind their
+// sign-in and content drawn by scripts included, and sends no request of its own. Notico may read a
+// site only once the user allowed it (optional host permissions, one origin at a time), which only a
+// click in the side panel can grant.
 
 import { z } from '../zod'
 
@@ -13,26 +14,37 @@ const pattern = (origin: string) => `${origin}/*`
 const STORE = [/^https:\/\/chromewebstore\.google\.com\//, /^https:\/\/chrome\.google\.com\/webstore(\/|$)/]
 
 /**
+ * Which tab a reason is about, as the model reads it: the current tab, or a tab the user added to
+ * the conversation.
+ */
+export type TabWhere = 'the current tab' | 'the tab'
+
+const cap = (where: TabWhere) => where[0].toUpperCase() + where.slice(1)
+
+/**
  * The origin of the site a tab shows, when Notico can be allowed to read it; otherwise why not, in
  * words for the model.
  */
-export function readableSite(url: string): { origin: string } | { reason: string } {
+export function readableSite(
+  url: string,
+  where: TabWhere = 'the current tab',
+): { origin: string } | { reason: string } {
   let parsed: URL
   try {
     parsed = new URL(url)
   } catch {
-    return { reason: "The current tab's address is not one Notico can read." }
+    return { reason: `${cap(where)}'s address is not one Notico can read.` }
   }
   if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:')
     return {
       reason:
-        `The current tab shows a ${parsed.protocol.replace(/:$/, '')}: page (a browser or extension page, or a ` +
+        `${cap(where)} shows a ${parsed.protocol.replace(/:$/, '')}: page (a browser or extension page, or a ` +
         "local file), which Notico can't read: only web pages on http or https.",
     }
   if (STORE.some((store) => store.test(url)))
-    return { reason: "The current tab is the Chrome Web Store: Chrome doesn't let extensions read it." }
+    return { reason: `${cap(where)} is the Chrome Web Store: Chrome doesn't let extensions read it.` }
   // Told before the user is asked to allow the site; a PDF at another address shows only once read.
-  if (/\.pdf$/i.test(parsed.pathname)) return { reason: PDF }
+  if (/\.pdf$/i.test(parsed.pathname)) return { reason: pdf(where) }
   return { origin: parsed.origin }
 }
 
@@ -43,14 +55,14 @@ export async function mayRead(origin: string): Promise<boolean> {
 
 /**
  * Asks Chrome to let Notico read the site with this origin, which shows the user Chrome's own
- * prompt. Chrome takes the request only from a user's click: call it in the click's handler, before
- * anything is awaited. Resolves true once Chrome granted it.
+ * prompt. Chrome takes the request only during a user's click or key press: call it in its handler,
+ * before anything is awaited. Resolves true once Chrome granted it.
  */
 export function allowSite(origin: string): Promise<boolean> {
   return chrome.permissions.request({ origins: [pattern(origin)] })
 }
 
-const PDF = "The current tab shows a PDF in Chrome's viewer, which Notico can't read."
+const pdf = (where: TabWhere) => `${cap(where)} shows a PDF in Chrome's viewer, which Notico can't read.`
 
 /**
  * What the script in the tab returns. The page can reach the DOM it reads (a named element can
@@ -67,9 +79,14 @@ export type TabPage = Exclude<z.infer<typeof PageResult>, { pdf: true }>
 
 /**
  * Reads up to `maxChars` of the main text of the page in the tab, which must still be on `origin`;
- * otherwise, or when the tab can't be read, says why, for the model.
+ * otherwise, or when the tab can't be read, says why, for the model, naming the tab as `where`.
  */
-export async function readPage(tabId: number, origin: string, maxChars: number): Promise<TabPage | { reason: string }> {
+export async function readPage(
+  tabId: number,
+  origin: string,
+  maxChars: number,
+  where: TabWhere = 'the current tab',
+): Promise<TabPage | { reason: string }> {
   let raw: unknown
   try {
     // ISOLATED, not MAIN: the page can't see or patch this code. The top frame only: frames from
@@ -84,25 +101,23 @@ export async function readPage(tabId: number, origin: string, maxChars: number):
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
     if (/Cannot access contents of|Missing host permission/i.test(message))
-      return { reason: 'Chrome did not let Notico read the page in the current tab: it may have gone to another site.' }
+      return { reason: `Chrome did not let Notico read the page in ${where}: it may have gone to another site.` }
     if (/error page|chrome-error/i.test(message))
-      return { reason: 'The current tab shows an error page: there is nothing to read.' }
-    return { reason: `Could not read the page in the current tab: ${message}` }
+      return { reason: `${cap(where)} shows an error page: there is nothing to read.` }
+    return { reason: `Could not read the page in ${where}: ${message}` }
   }
   if (raw === undefined || raw === null)
-    return { reason: 'The current tab reloaded or went to another page while it was read.' }
+    return { reason: `${cap(where)} reloaded or went to another page while it was read.` }
   const parsed = PageResult.safeParse(raw)
-  if (!parsed.success) return { reason: 'The page in the current tab could not be read: it did not give its text.' }
+  if (!parsed.success) return { reason: `The page in ${where} could not be read: it did not give its text.` }
   const result = parsed.data
-  if ('pdf' in result) return { reason: PDF }
+  if ('pdf' in result) return { reason: pdf(where) }
   if (!result.text && result.frames)
     return {
-      reason:
-        "The page in the current tab shows no text of its own: its content is in frames, which Notico doesn't read.",
+      reason: `The page in ${where} shows no text of its own: its content is in frames, which Notico doesn't read.`,
     }
   // The tab may have moved on since it was looked at, to a site the user allowed for something else.
-  if (new URL(result.url).origin !== origin)
-    return { reason: 'The current tab went to another site while it was read.' }
+  if (new URL(result.url).origin !== origin) return { reason: `${cap(where)} went to another site while it was read.` }
   return result
 }
 

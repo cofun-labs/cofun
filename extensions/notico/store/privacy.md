@@ -76,6 +76,10 @@ This page describes version 0.2.0. The version after it adds optional host permi
 - The **scripting** justification adds: "On another site, and only on one the user allowed, it reads the text of the page in the current tab, inside that tab, when the user's question is about that page."
 - The **Host permission** justification adds: "Optional host permissions for http and https sites: none is granted at install. When the user asks about the page they are on, the side panel asks them to allow that one site, and Chrome asks them again; only then is the page's text read, in the tab."
 - **Website content** also names the text of a page on another site that the assistant reads, which goes to the worker and the model (or to OpenRouter). **Web history** stays Yes, as it is: that page's URL and title go with it.
+- The **tabs** justification adds: "When the user opens the page picker, it also reads the URLs and titles of the tabs in the side panel's window that show other sites, to offer them; one is sent only when the user adds it to a conversation, and its page's text is read, in the tab, only on a site the user allowed."
+- The **scripting** justification's addition also names "a tab the user added to the conversation", besides the current tab.
+- The **Host permission** justification's addition also says: "When the user adds a tab on a site not allowed yet to a conversation, Chrome asks them to allow that one site."
+- **Web history** also names the URL and title of a tab on another site that the user adds to a conversation.
 
 ## Privacy policy URL
 
