@@ -11,7 +11,7 @@ On another site, the AI can also read the page in the current tab when a questio
 Key constraints:
 
 - The AI works on the current tab only. A Notion page open in another tab is never used in its place, and no tab other than the current one is read.
-- The address and title of a tab on another site reach the AI only when it looks them up to answer a question. Its content is read only when the AI reads it for a question, and only on a site the user allowed Notico to read, with a click in the side panel; the AI can't allow a site itself.
+- The address and title of a tab on another site reach the AI only when it looks them up to answer a question. Its content is read only when the AI reads it for a question, and only on a site the user allowed Notico to read, with a click in the side panel; the AI can't allow a site itself. Text the user selected and sent with "Ask Notico" is the one exception, on any site (UC-NOTICO-CHAT-006).
 - What is read from another site is data for the AI, never instructions to it.
 
 ## Scenarios

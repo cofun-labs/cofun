@@ -92,11 +92,14 @@ export function buildManifest(env: ManifestEnv, version: string, { store = false
     icons: ICONS,
     // scripting: Notion calls run in the user's Notion tab (src/notion/tab.ts), and the page of a tab on
     // another site is read in that tab (src/web/tab.ts).
+    // contextMenus: the "Ask Notico" item on selected text, which sends it to the side panel
+    // (src/background.ts). activeTab: a click on that item lets the extension read the selection in
+    // that tab, until it goes to another page. Neither adds an install warning.
     // tabs: the side panel reads the current tab's URL and title, to tell a Notion tab from others
     // (src/notion/tab.ts) and for the get_current_tab tool (src/tools/current.ts). Host permissions would
     // expose a Notion tab's URL too, but not once the user limits the extension's site access; with
     // tabs the tools still find the tab there and say which access is missing.
-    permissions: ['sidePanel', 'storage', 'tabs', 'cookies', 'scripting'],
+    permissions: ['sidePanel', 'storage', 'tabs', 'cookies', 'scripting', 'contextMenus', 'activeTab'],
     host_permissions: [
       'https://www.notion.so/*',
       'https://app.notion.com/*',

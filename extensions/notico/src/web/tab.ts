@@ -2,7 +2,8 @@
 // as the tab shows it, in the tab itself (chrome.scripting, ISOLATED world). So it reaches what the
 // user sees there, pages behind their sign-in and content drawn by scripts included, and sends no
 // request of its own. Notico may read a site only once the user allowed it (optional host
-// permissions, one origin at a time), which only a click in the side panel can grant.
+// permissions, one origin at a time), which only a click in the side panel can grant. It also reads
+// the text selected in a tab, on any site, when the user sends it with the context menu.
 
 import { z } from '../zod'
 
@@ -104,6 +105,31 @@ export async function readPage(tabId: number, origin: string, maxChars: number):
   if (new URL(result.url).origin !== origin)
     return { reason: 'The current tab went to another site while it was read.' }
   return result
+}
+
+/**
+ * The text selected in one frame of the tab, as the page shows it, line breaks included; undefined
+ * when it can't be read there. Called on a click on the context menu's item, which gives the
+ * extension the tab until it goes to another page (activeTab): no site need be allowed for it.
+ */
+export async function selectedText(tabId: number, frameId: number): Promise<string | undefined> {
+  try {
+    const [frame] = await chrome.scripting.executeScript({
+      target: { tabId, frameIds: [frameId] },
+      world: 'ISOLATED',
+      func: selectionText,
+    })
+    const parsed = z.string().safeParse(frame?.result)
+    return parsed.success ? parsed.data : undefined
+  } catch {
+    // activeTab reaches the tab's own site only: a frame from another one, say.
+    return undefined
+  }
+}
+
+/** Runs in the tab (see pageText): the frame's selection as text. */
+function selectionText(): string {
+  return document.getSelection()?.toString() ?? ''
 }
 
 /**

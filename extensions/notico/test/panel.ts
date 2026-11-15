@@ -160,7 +160,11 @@ export class FakeBrowser {
 
     tab.install()
     const chrome = globals.chrome as { tabs: Record<string, unknown> } & Record<string, unknown>
-    chrome.runtime = { getURL: (path: string) => `${EXTENSION}/${path}`, getManifest: () => ({ version: '1.2.3' }) }
+    chrome.runtime = {
+      ...(chrome.runtime as object),
+      getURL: (path: string) => `${EXTENSION}/${path}`,
+      getManifest: () => ({ version: '1.2.3' }),
+    }
     chrome.tabs.create = async ({ url }: { url: string }) => void browser.openedTabs.push(url)
     // Clerk's cookie on the sign-in page, which the panel watches to notice a sign-in or sign-out there.
     chrome.cookies = {
@@ -188,6 +192,20 @@ export class FakeBrowser {
     const { fakeClerk } = await import('./clerk')
     if (this.session) fakeClerk.signIn(this.session)
     await act(() => import(/* @vite-ignore */ script.getAttribute('src')!))
+  }
+
+  /**
+   * Starts the extension's service worker (src/background.ts), as Chrome does once it installed the
+   * extension: it sets up its context menu item.
+   */
+  async startServiceWorker(): Promise<void> {
+    vi.resetModules()
+    await import('../src/background')
+    this.tab.extensionInstalled()
+    // It reads its settings before it makes its menu item.
+    await vi.waitFor(() => {
+      if (!this.tab.menuItems.size) throw new Error('no menu item yet')
+    })
   }
 
   /** The user signs in again, as the account the browser started with, on the sign-in page; Clerk tells the open panel. */
