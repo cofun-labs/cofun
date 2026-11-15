@@ -194,11 +194,9 @@ function problems(pr: PullRequest, owner: string, name: string): string[] {
     }
   }
 
-  const byAuthor = [
-    ...pr.comments.nodes,
-    ...pr.reviews.nodes,
-    ...pr.reviewThreads.nodes.flatMap((t) => t.comments.nodes),
-  ]
+  // Only replies: a review's body (the sub-agent's, under the author's account) may name commits as
+  // examples. A reply naming a fix is what must point at a pushed commit.
+  const byAuthor = [...pr.comments.nodes, ...pr.reviewThreads.nodes.flatMap((t) => t.comments.nodes)]
     .filter((c) => c.author?.login === author)
     .flatMap((c) => namedCommits(c.body))
   const unknown = [...new Set(byAuthor)].filter((c) => !commits.some((oid) => oid.startsWith(c)))
