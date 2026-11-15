@@ -172,10 +172,11 @@ function codeOnly(text: string): string {
  * after an operator, an opening bracket, a keyword such as `return` or `of`, or nothing.
  */
 function startsValue(text: string, i: number, previous: string): boolean {
-  if (/^$|[(,=:[!&|?{};<>+\-*%~^]$/.test(previous)) return true
-  return /(?:^|[^\w$.])(?:return|typeof|case|of|in|instanceof|delete|void|throw|new|do|else|yield|await)\s*$/.test(
-    text.slice(Math.max(0, i - 16), i),
-  )
+  const before = text.slice(Math.max(0, i - 16), i).trimEnd()
+  // Not after `<`, which in JSX is a closing tag's (`</p>`), nor after `++` or `--`, which end a value.
+  if (/(?:\+\+|--)$/.test(before)) return false
+  if (/^$|[(,=:[!&|?{};>+\-*%~^]$/.test(previous)) return true
+  return /(?:^|[^\w$.])(?:return|typeof|case|of|in|instanceof|delete|void|throw|new|do|else|yield|await)$/.test(before)
 }
 
 /** The offset just after the bracket that closes the one at `i`, in code with its strings blanked. */

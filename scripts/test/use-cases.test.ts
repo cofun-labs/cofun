@@ -243,6 +243,13 @@ describe('checkUseCases', () => {
       ['  return /`/.test(s)'],
       ['}'],
       ["it('has no tag after a regular expression', () => {})", 'no tag'],
+      // A JSX closing tag and `++` are followed by a division, if anything: a template after them is one.
+      ['render(<p>hi</p>); const s = `a'],
+      ['b`'],
+      ["it('has no tag after a closing tag', () => {})", 'no tag'],
+      ['const h = i++ / 2, t = `a'],
+      ['b`'],
+      ["it('has no tag after an increment', () => {})", 'no tag'],
     ]
     const text = lines.map(([line]) => line).join('\n')
     const report = checkUseCases([], [{ path: 'worker/test/api.test.ts', text }])
