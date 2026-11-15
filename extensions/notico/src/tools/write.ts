@@ -535,7 +535,7 @@ export const updatePages = defineTool({
           const old = block.properties?.[key]
           // A date mention keeps what the old text stored with it, which query_database doesn't show.
           // What else the old text held that query_database doesn't show goes, unless written back as shown.
-          const kept = rewriteRich(keepDates(rich, [old]), old, named.notion_user)
+          const kept = rewriteRich(keepDates(rich, [old]), old, named.notion_user, { title: key === 'title' })
           const name = key === 'title' ? 'The title' : (schema[key]?.name ?? key)
           if (kept.lost.length)
             notes.push(

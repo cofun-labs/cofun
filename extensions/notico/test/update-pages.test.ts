@@ -440,6 +440,18 @@ describe('update_pages details', () => {
     expect(props(ws, 1)).toEqual(stored)
   })
 
+  it('[UC-NOTICO-NOTION-008-S13] keeps what the Markdown does not show on a value written back as shown, spaces aside', async () => {
+    const ws = mentionable()
+    open(ws)
+    const title = [['Hello  '], ['world', [['_']]]]
+    const notes = [[' Hello '], ['world', [['_']]], [' ']]
+    ws.edit(row(1), { properties: { title, 'g:g': notes } })
+    const result = await update([{ page: hex(row(1)), title: 'Hello world', properties: { Notes: 'Hello world' } }])
+    expect(prop(ws, 1, 'title')).toEqual(title)
+    expect(prop(ws, 1, 'g:g')).toEqual(notes)
+    expect(result).not.toContain('held')
+  })
+
   it('[UC-NOTICO-NOTION-008-S14] writes a changed value as given, and says what it lost that the Markdown does not show', async () => {
     const ws = mentionable()
     open(ws)
@@ -462,9 +474,9 @@ describe('update_pages details', () => {
     expect(prop(ws, 3, 'title')).toEqual([['Ship '], ['odd', [['b']]], [' now']])
     expect(result.split('\n').slice(1)).toEqual([
       `^${hex(row(1))}: Notes`,
-      '    Notes held an underline on “key”; a comment on the text on “budget”; a link preview (it would become ' +
-        'an ordinary link) on “[Fix the build](https://x.example/pr/7)”; a link on a mention of a person on ' +
-        `“@[Ann]”; the workspace of a mentioned page on “[…](${hex(SPEC)})”, which reading it doesn’t show: it ` +
+      '    Notes held an underline on “key”; a comment on the text on “budget”; a link preview on ' +
+        '“[Fix the build](https://x.example/pr/7)”; a link on a mention of a person on “@[Ann]”;' +
+        ` the workspace of a mentioned page on “[…](${hex(SPEC)})”, which reading it doesn’t show: it ` +
         'is now as written, without that. Tell the user, who can add it back in Notion.',
       `^${hex(row(3))}: title`,
       '    The title held formatting of a kind that is not known on “odd”, which reading it doesn’t show: it is ' +

@@ -15,6 +15,7 @@ import {
   type RichText,
 } from './blocks'
 import { PAGE_TYPES, formatDate, hexId, richMarkdown, type PageMarkdown } from './markdown'
+import { oneLine } from './props'
 
 /**
  * What the agent saw of a page: the references it was shown, and the version of each block it saw.
@@ -830,7 +831,7 @@ function unshownIn(marks: unknown[][]): string[] {
   return [
     ...(has('_') ? ['an underline'] : []),
     ...(has('m') ? ['a comment on the text'] : []),
-    ...(has('lm') ? ['a link preview (it would become an ordinary link)'] : []),
+    ...(has('lm') ? ['a link preview'] : []),
     ...(has('u') && has('a') ? ['a link on a mention of a person'] : []),
     ...(has('u') && has('c') ? ['code formatting on a mention of a person'] : []),
     ...(marks.some((m) => m[0] === 'p' && m.length > 2) ? ['the workspace of a mentioned page'] : []),
@@ -858,19 +859,24 @@ export interface Unshown {
  * text, a link preview, a link on a mention of a person, a mentioned page's workspace) and that
  * writing it removes. A value that is the stored text as it was shown is the stored text, and
  * removes nothing; any other is written as given, without what its Markdown didn't show. `users`
- * names the people the stored text mentions.
+ * names the people the stored text mentions; a `title` is on one line, as the model's is.
  */
 export function rewriteRich(
   value: RichText,
   stored: unknown,
   users: Record<string, NotionRecord> = {},
+  { title = false } = {},
 ): { rich: unknown[]; lost: Unshown[] } {
   if (!Array.isArray(stored) || !holdsUnshown(stored)) return { rich: value, lost: [] }
   const ids = new Map(
-    Object.entries(users).flatMap(([id, u]) => (typeof u.name === 'string' && u.name ? [[u.name, id] as const] : [])),
+    Object.entries(users).flatMap(([id, u]) =>
+      typeof u.name === 'string' && u.name.trim() ? [[u.name.trim(), id] as const] : [],
+    ),
   )
   try {
-    const shown = inline(richMarkdown({ notion_user: users }, stored))
+    // The stored text as it was shown, with its spaces as the model's value has them.
+    const markdown = richMarkdown({ notion_user: users }, stored)
+    const shown = inline(title ? oneLine(markdown) : markdown.trim())
     if (canonical(keepDates(withPeople(shown, ids, { keep: true }), [stored])) === canonical(value))
       return { rich: stored, lost: [] }
   } catch (err) {
