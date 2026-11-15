@@ -30,4 +30,4 @@ Key constraints:
 
 | ID | Priority | Status | Scenario |
 | --- | --- | --- | --- |
-| UC-NOTICO-CHAT-006-S06 | P1 | 🚧 | Given a paragraph selected on a web page in Chrome; when the user picks "Ask Notico" from the context menu and asks what it means; then the side panel opens with the selection in the message box, and the reply explains the paragraph and names the page's address. |
+| UC-NOTICO-CHAT-006-S06 | P1 | ✅ | Given a paragraph selected on a web page in Chrome; when the user picks "Ask Notico" from the context menu and asks what it means; then the side panel opens with the selection in the message box, and the reply explains the paragraph and names the page's address. |
