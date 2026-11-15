@@ -1,6 +1,6 @@
 // Moving, duplicating, and trashing pages (move_page, duplicate_page, and trash_page in
 // extensions/notico/src/tools/organize.ts), against a fake Notion workspace that applies them the way Notion does.
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { forgetReads } from '../src/tools/memory'
 import { duplicatePage, movePage, trashPage } from '../src/tools/organize'
 import { readPage } from '../src/tools/read'
@@ -8,15 +8,34 @@ import { editPage } from '../src/tools/write'
 import { FakeNotionTab, FakeWorkspace, PAGE, PAGE_URL, SPACE, USER, notionError, restoreGlobals } from './notion-tab'
 import { DUPLICATE_POLLING, LIMITED_STOP, UNEXPECTED_STOP } from '../src/notion/api'
 
-// Notion's timing for checks on a copy, shortened so the tests run quickly; the number of checks stays.
-const polling = { ...DUPLICATE_POLLING }
-beforeEach(() => Object.assign(DUPLICATE_POLLING, { firstMs: 2, maxMs: 10 }))
+// The checks on a copy wait on a fake clock, which the tests move (see `copying`): nothing waits for real time.
+beforeEach(() =>
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'], now: new Date('2026-11-01T09:00:00Z') }),
+)
 
 afterEach(() => {
-  Object.assign(DUPLICATE_POLLING, polling)
+  vi.useRealTimers()
   restoreGlobals()
   forgetReads()
 })
+
+/** Moves the fake clock from one timer to the next until `done` holds. */
+async function until(done: () => boolean): Promise<void> {
+  while (!done()) await vi.advanceTimersToNextTimerAsync()
+}
+
+/** `run`'s outcome, with the clock moved through each wait between the checks on a copy. */
+async function copying<T>(run: Promise<T>): Promise<T> {
+  let settled = false
+  run.then(
+    () => (settled = true),
+    () => (settled = true),
+  )
+  await until(() => settled)
+  return run
+}
+
+const sentTo = (tab: FakeNotionTab, endpoint: string) => tab.sent.filter((r) => r.url.endsWith(`/${endpoint}`))
 
 const hex = (s: string) => s.replace(/-/g, '')
 const id = (n: number) => `b0b0b0b0-0000-4000-8000-${n.toString(16).padStart(12, '0')}`
@@ -152,7 +171,7 @@ describe('UC-NOTICO-NOTION-010 reorganize pages', () => {
     const ws = workspace()
     open(ws)
     expect(duplicatePage.needsConfirmation).toBeFalsy()
-    const result = (await duplicatePage.run({ page: hex(PLAN) })) as string
+    const result = (await copying(duplicatePage.run({ page: hex(PLAN) }))) as string
     const [, copy] = contentOf(ws, PROJECTS)
     expect(contentOf(ws, PROJECTS)).toEqual([PLAN, copy, NOTE])
     expect(result).toBe(
@@ -308,7 +327,7 @@ describe('duplicating pages', () => {
     const ws = workspace()
     const tab = open(ws)
     tab.respond('getTasks', 502, { name: 'BadGateway' })
-    const err = await notionError(duplicatePage.run({ page: PLAN }))
+    const err = await notionError(copying(duplicatePage.run({ page: PLAN })))
     expect([err.code, err.mayHaveChanged]).toEqual(['outcome_unknown', true])
     expect(err.message).toContain('it may still appear')
     expect(err.stopsQuestion).toBe(`${UNEXPECTED_STOP} Notion returned an error (502 BadGateway): no details.`)
@@ -319,7 +338,7 @@ describe('duplicating pages', () => {
     const ws = workspace()
     const tab = open(ws)
     tab.respond('getTasks', 400, { name: 'ValidationError', debugMessage: 'Unknown task.' })
-    const err = await notionError(duplicatePage.run({ page: PLAN }))
+    const err = await notionError(copying(duplicatePage.run({ page: PLAN })))
     expect(err.code).toBe('outcome_unknown')
     expect(tab.sent.filter((r) => r.url.endsWith('/getTasks'))).toHaveLength(1)
   })
@@ -328,7 +347,7 @@ describe('duplicating pages', () => {
     const ws = workspace()
     const tab = open(ws)
     tab.respond('getTasks', 401, { name: 'UnauthorizedError' })
-    const err = await notionError(duplicatePage.run({ page: PLAN }))
+    const err = await notionError(copying(duplicatePage.run({ page: PLAN })))
     expect(err.code).toBe('outcome_unknown')
     expect(err.message).toContain('it may still appear')
   })
@@ -337,22 +356,23 @@ describe('duplicating pages', () => {
     const ws = workspace()
     const tab = open(ws)
     const stop = new AbortController()
+    // The task is queued; then Notion does not answer the check on it.
+    tab.hold('getTasks')
     const running = duplicatePage.run({ page: PLAN }, stop.signal)
-    // The task is queued; then Notion stops answering.
-    while (!tab.sent.some((r) => r.url.endsWith('/enqueueTask'))) await new Promise((r) => setTimeout(r, 5))
-    tab.stalled = true
-    setTimeout(() => stop.abort(), 300)
-    const started = Date.now()
+    await until(() => sentTo(tab, 'getTasks').length > 0)
+    const at = Date.now()
+    stop.abort()
     const err = await notionError(running)
     expect(err.code).toBe('outcome_unknown')
-    expect(Date.now() - started).toBeLessThan(2_000)
+    // No time passed: the answer came from Stop, not from the deadline on the check.
+    expect(Date.now()).toBe(at)
   })
 
   it('gives up early on a copy that keeps reporting an error, with what Notion said', async () => {
     const ws = workspace()
     ws.stuckTask = 'Invalid input.'
     const tab = open(ws)
-    const err = await notionError(duplicatePage.run({ page: PLAN }))
+    const err = await notionError(copying(duplicatePage.run({ page: PLAN })))
     expect(err.code).toBe('outcome_unknown')
     expect(err.message).toContain('Notion reports an error while copying the page: Invalid input.')
     expect(err.message).toContain('it may still appear')
@@ -364,7 +384,7 @@ describe('duplicating pages', () => {
     const ws = workspace()
     ws.failTask = true
     open(ws)
-    const err = await notionError(duplicatePage.run({ page: PLAN }))
+    const err = await notionError(copying(duplicatePage.run({ page: PLAN })))
     expect(err.code).toBe('notion_error')
     expect(err.message).toBe('Notion could not copy the page: Copy failed.')
   })
@@ -372,10 +392,12 @@ describe('duplicating pages', () => {
   it('stopped while Notion copies, says the copy may still appear and where to look', async () => {
     const ws = workspace()
     ws.endlessTask = true
-    open(ws)
+    const tab = open(ws)
     const stop = new AbortController()
     const running = duplicatePage.run({ page: PLAN }, stop.signal)
-    setTimeout(() => stop.abort(), 20)
+    // Stopped once Notion is copying the page and has been checked on.
+    await until(() => sentTo(tab, 'getTasks').length > 0)
+    stop.abort()
     const err = await notionError(running)
     expect(err.code).toBe('outcome_unknown')
     expect(err.message).toContain('it may still appear')
@@ -385,7 +407,7 @@ describe('duplicating pages', () => {
   it('names the page workspace on the request, so Notion copies it where it lives', async () => {
     const ws = workspace()
     const tab = open(ws)
-    await duplicatePage.run({ page: PLAN })
+    await copying(duplicatePage.run({ page: PLAN }))
     const sent = tab.sent.find((r) => r.url.endsWith('/enqueueTask'))!
     expect(sent.headers['x-notion-space-id']).toBe(SPACE)
     expect(sent.body).toMatchObject({
@@ -532,7 +554,7 @@ describe('when Notion turns requests away', () => {
   it('a copy Notion is too busy to start stops the question, and nothing more is sent', async () => {
     const ws = workspace()
     const tab = open(ws).limit('enqueueTask', 1, 529)
-    const err = await notionError(duplicatePage.run({ page: PLAN }))
+    const err = await notionError(copying(duplicatePage.run({ page: PLAN })))
     expect(err.code).toBe('outcome_unknown')
     expect(err.stopsQuestion).toBe(LIMITED_STOP)
     expect(err.mayHaveChanged).toBe(true)
@@ -542,7 +564,7 @@ describe('when Notion turns requests away', () => {
   it('a check on a copy that is turned away stops the question without asking again', async () => {
     const ws = workspace()
     const tab = open(ws).limit('getTasks', 1)
-    const err = await notionError(duplicatePage.run({ page: PLAN }))
+    const err = await notionError(copying(duplicatePage.run({ page: PLAN })))
     expect(err.code).toBe('outcome_unknown')
     expect(err.stopsQuestion).toBe(LIMITED_STOP)
     expect(err.message).toContain('it may still appear')
@@ -596,7 +618,7 @@ describe('when Notion turns requests away', () => {
     const ws = workspace()
     ws.endlessTask = true
     const tab = open(ws)
-    const err = await notionError(duplicatePage.run({ page: PLAN }))
+    const err = await notionError(copying(duplicatePage.run({ page: PLAN })))
     expect(err.code).toBe('outcome_unknown')
     expect(err.message).toContain('it may still appear')
     expect(tab.sent.filter((r) => r.url.endsWith('/getTasks'))).toHaveLength(DUPLICATE_POLLING.polls)

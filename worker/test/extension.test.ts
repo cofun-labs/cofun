@@ -2123,18 +2123,19 @@ describe('Notion requests per question', () => {
     const before = lookups(REQUEST_BUDGET - 2)
     const parallel = lookups(5, { parallel: true })
     let runs = 0
+    let looking: Promise<unknown> | undefined
     const tool: ToolSpec = {
       ...before,
       run: async (args) => {
         if (runs++ === 0) return before.run(args)
         // The first of the two that still fit under the budget is turned away.
         tab.limit('syncRecordValuesMain', 1)
-        return parallel.run(args)
+        return (looking = parallel.run(args))
       },
     }
     const { result } = await ask(makeAgent({ tools: [tool], meter: countNotionRequests }), 'Look it up', async () => {
-      // Let the two sent requests come back before answering.
-      await new Promise((r) => setTimeout(r, 20))
+      // Answers once the request turned away has come back, which ends the parallel lookups.
+      await looking?.catch(() => {})
       return true
     })
     expect(result).toEqual({ status: 'error', message: LIMITED_STOP, requests: REQUEST_BUDGET })
