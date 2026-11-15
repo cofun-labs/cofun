@@ -40,12 +40,6 @@ export interface Env {
   CLERK_JWT_KEY?: string
   /** Comma-separated origins allowed to call, e.g. chrome-extension://<id>. Checked against the token's azp claim. */
   CLERK_AUTHORIZED_PARTIES?: string
-  /**
-   * Which product each extension is, by its origin: `{"chrome-extension://<id>": "notico"}`. A JSON
-   * object in wrangler.jsonc, so it arrives as an object; read through `Products`. A caller whose
-   * origin is not listed (the admin page, a token with no azp) is the product `unknown`.
-   */
-  PRODUCTS?: unknown
   /** Every user's credits: their grants, and their model calls with what each cost (D1 database, schema in migrations/). */
   DB: Database
   /** Per-request usage records (Workers Analytics Engine dataset). Never holds message content. */
