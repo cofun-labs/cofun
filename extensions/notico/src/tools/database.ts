@@ -21,7 +21,7 @@ import {
 import { activeNotionTab } from '../notion/tab'
 import { needsAttachedPage } from './current'
 import { loadRowMentions, resolveDatabase } from './load'
-import { forgetLoads, forgetRead, forgetSeenRow, keepSeenDatabase, keepSeenRow, lastRead, seenDatabase } from './memory'
+import { forgetRead, forgetSeenRow, keepSeenDatabase, keepSeenRow, lastRead, seenDatabase } from './memory'
 import {
   CHANGE,
   CREATE,
@@ -464,8 +464,6 @@ export const createDatabase = defineTool({
         )
       }
       throw err
-    } finally {
-      forgetLoads(parentId)
     }
     keepSeenDatabase(ids.page, title)
     const hex = hexId(ids.page)
@@ -595,8 +593,7 @@ export const updateDatabaseSchema = defineTool({
         )
       throw err
     } finally {
-      // Reads of the database and its rows show the old properties.
-      forgetLoads(id)
+      // Rows query_database showed have the old properties.
       for (const row of renamedRows) forgetSeenRow(row)
     }
     return [

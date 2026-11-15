@@ -13,31 +13,19 @@ import {
 import { collectionId, oneLine, unnamedMentions, unnamedRowMentions, type Schema } from '../notion/markdown'
 import { notionUserIn, type NotionTab } from '../notion/tab'
 import { runsText } from '../notion/tree'
-import { freshLoad, keepLoad, keepWorkspace, knownWorkspace, type Loaded } from './memory'
+import { keepWorkspace, knownWorkspace } from './memory'
 
-/**
- * Part 1 always reads the page fresh. Later parts reuse that read for a while, so reading a long
- * page part by part loads it once, and the parts fit together even if the page changes meanwhile.
- */
-export async function loadForPart(tab: NotionTab, id: string, part: number): Promise<Loaded> {
-  const key = `${tab.tabId}:${id}`
-  const recent = part > 1 ? freshLoad(key) : undefined
-  if (recent) {
-    // The account in the tab may have changed since: check it can still open the page.
-    await tab.client.getRecords([{ table: 'block', id, spaceId: recent.loaded.spaceId }])
-    return recent
-  }
-  const result = await loadWithDatabase(tab, id)
-  keepLoad(key, result)
-  // A later part read fresh may not fit with earlier parts the model got from another read.
-  return part > 1 ? { ...result, reloaded: true } : result
+/** A page as loaded, and whether it is a row whose database couldn't be opened. */
+interface Loaded {
+  loaded: LoadedPage
+  databaseMissing: boolean
 }
 
 /**
  * Loads a page, and for a database row also its database, which names the row's properties. People
  * and pages it mentions that the page's load left out are loaded too, so they show by name.
  */
-async function loadWithDatabase(tab: NotionTab, id: string): Promise<Loaded> {
+export async function loadWithDatabase(tab: NotionTab, id: string): Promise<Loaded> {
   const loaded = await tab.client.loadPage(id)
   const { page, spaceId, recordMap } = loaded
   let databaseMissing = false

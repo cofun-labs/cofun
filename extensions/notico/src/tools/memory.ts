@@ -1,23 +1,8 @@
-// What the agent remembers between calls: the pages it read, the rows and databases it saw, and
-// cached loads. A new or another conversation forgets it all (see forgetReads). The maps are this
-// module's own: tools read and change them only through the functions below.
-import type { LoadedPage } from '../notion/api'
+// What the agent remembers between calls: the pages it read, and the rows and databases it saw. A
+// new or another conversation forgets it all (see forgetReads). The maps are this module's own:
+// tools read and change them only through the functions below.
 import type { PageRead } from '../notion/edit'
 import type { Schema } from '../notion/markdown'
-
-export interface Loaded {
-  loaded: LoadedPage
-  databaseMissing: boolean
-  /** A later part was read from a fresh load, not from the read of part 1. */
-  reloaded?: boolean
-}
-
-/** How long the parts after the first come from the page as it was when part 1 was read. */
-const PARTS_REUSE_MS = 5 * 60_000
-/** Pages whose part 1 was read last, so reading two long pages in turn keeps both. */
-const PARTS_PAGES = 5
-/** Loads of part 1 of a page, by tab and page id (`<tab>:<page>`, so a key ends with the page id). */
-const recentReads = new Map<string, { at: number; result: Loaded }>()
 
 /** How many rows and databases the agent saw are remembered, for previews; the oldest go first. */
 const SEEN_KEPT = 500
@@ -45,8 +30,6 @@ function keep<T>(map: Map<string, T>, key: string, value: T) {
 
 /** The last read of each page, by page id: what edit_page checks edits against. */
 const pageReads = new Map<string, PageRead>()
-/** The parts of each page read since its part 1 was. */
-const partsRead = new Map<string, Set<number>>()
 /** Counts the times reads were forgotten, so a read that ends after that isn't kept. */
 let forgotten = 0
 
@@ -62,8 +45,6 @@ const WORKSPACE_PAGES = 20
 export function forgetReads(): void {
   forgotten++
   pageReads.clear()
-  partsRead.clear()
-  recentReads.clear()
   seenRows.clear()
   seenDatabases.clear()
   pageWorkspaces.clear()
@@ -71,7 +52,7 @@ export function forgetReads(): void {
 
 /**
  * How many times reads were forgotten so far. A call takes it as it starts, and gives it to
- * `remember` and `keepPartsRead`, so a read made while the conversation changed is not kept.
+ * `remember`, so a read made while the conversation changed is not kept.
  */
 export function generation(): number {
   return forgotten
@@ -88,11 +69,7 @@ export function remember(read: PageRead, since = forgotten) {
   if (since !== forgotten) return
   pageReads.delete(read.pageId)
   pageReads.set(read.pageId, read)
-  if (pageReads.size > READS_KEPT) {
-    const oldest = pageReads.keys().next().value!
-    pageReads.delete(oldest)
-    partsRead.delete(oldest)
-  }
+  if (pageReads.size > READS_KEPT) pageReads.delete(pageReads.keys().next().value!)
 }
 
 /** The page as the agent last read it, if it did. */
@@ -109,34 +86,6 @@ export function forgetRead(id: string): void {
 export function renameRead(id: string, title: string): void {
   const read = pageReads.get(id)
   if (read) read.title = title
-}
-
-/** The parts of a page read since its part 1 was. */
-export function partsReadOf(id: string): Set<number> | undefined {
-  return partsRead.get(id)
-}
-
-/** Keeps which parts of a page were read, unless reads were forgotten since `since`. */
-export function keepPartsRead(id: string, parts: Set<number>, since: number): void {
-  if (since === forgotten) partsRead.set(id, parts)
-}
-
-/** The load of part 1 of a page in a tab, while later parts may still come from it. */
-export function freshLoad(key: string): Loaded | undefined {
-  const recent = recentReads.get(key)
-  return recent && Date.now() - recent.at < PARTS_REUSE_MS ? recent.result : undefined
-}
-
-/** Keeps a load of part 1 of a page in a tab, as the most recent one. */
-export function keepLoad(key: string, result: Loaded): void {
-  recentReads.delete(key)
-  recentReads.set(key, { at: Date.now(), result })
-  if (recentReads.size > PARTS_PAGES) recentReads.delete(recentReads.keys().next().value!)
-}
-
-/** Forgets the cached loads of a page, in every tab: the page changed. */
-export function forgetLoads(id: string): void {
-  for (const key of recentReads.keys()) if (key.endsWith(`:${id}`)) recentReads.delete(key)
 }
 
 /** A row as query_database last showed it, if it did. */
@@ -190,7 +139,6 @@ export function forgetPages(ids: Iterable<string>) {
   for (const id of ids) {
     pageReads.delete(id)
     seenRows.delete(id)
-    forgetLoads(id)
     for (const key of pageWorkspaces.keys()) if (key.endsWith(`:${id}`)) pageWorkspaces.delete(key)
   }
 }

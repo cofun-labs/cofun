@@ -72,11 +72,6 @@ function chunk(children: string[], records: Records = {}, page: Fields = {}) {
   }
 }
 
-/** Notion's answer when a later part checks the page can still be opened: the page record. */
-function stillOpen(page: { recordMap: { block: Record<string, unknown> } }, pageId = PAGE) {
-  return { recordMap: { __version__: 3, block: { [pageId]: page.recordMap.block[pageId] } } }
-}
-
 function openPage(...pages: unknown[]): FakeNotionTab {
   const tab = new FakeNotionTab(PAGE_URL)
   for (const page of pages) tab.respond('loadPageChunk', 200, page)
@@ -272,9 +267,9 @@ describe('UC-NOTICO-NOTION-001 read a page', () => {
     const ids = Array.from({ length: count }, (_, i) => id(i + 1))
     const blocks = Object.assign({}, ...ids.map((b, i) => block(b, 'text', `Paragraph ${i + 1} ${'x'.repeat(60)}`)))
     const page = chunk(ids, { block: blocks })
-    // The page is loaded once: later parts come from the same read, so they fit together.
-    const tab = openPage(page)
-    for (let i = 0; i < 10; i++) tab.respond('syncRecordValuesMain', 200, stillOpen(page))
+    // Each part loads the page again: from the second load on, the last paragraph was changed.
+    const changed = chunk(ids, { block: { ...blocks, ...block(ids.at(-1)!, 'text', `Paragraph ${count} changed`) } })
+    const tab = openPage(page, ...Array<unknown>(10).fill(changed))
 
     const first = await read()
     const parts = Number(/^Part 1 of (\d+)\. Read part 2 for more\.$/m.exec(first)?.[1])
@@ -292,8 +287,9 @@ describe('UC-NOTICO-NOTION-001 read a page', () => {
     const lines = texts.join('\n').split('\n')
     expect(lines).toHaveLength(count)
     expect(lines.map((l) => Number(/^Paragraph (\d+) /.exec(l)?.[1]))).toEqual(ids.map((_, i) => i + 1))
-
-    expect(tab.sent.filter((r) => r.url.endsWith('/loadPageChunk'))).toHaveLength(1)
+    // The last part shows the page as it was when that part was read.
+    expect(lines.at(-1)).toBe(`Paragraph ${count} changed ^${hex(ids.at(-1)!).slice(-8)}`)
+    expect(tab.sent.filter((r) => r.url.endsWith('/loadPageChunk'))).toHaveLength(parts)
 
     await expect(read({ part: parts + 1 })).rejects.toThrow(
       `This page has ${parts} parts; there is no part ${parts + 1}.`,
@@ -683,44 +679,6 @@ describe('more converter and argument details', () => {
     expect(tab.sent.map((r) => (r.body.page as { id: string }).id)).toEqual([PAGE, PAGE, PAGE, PAGE])
   })
 
-  it('[UC-NOTICO-NOTION-001-S03] keeps several long pages for their later parts', async () => {
-    const long = (pageId: string) => {
-      const ids = Array.from({ length: 300 }, (_, i) => id(i + 1))
-      const blocks = Object.assign({}, ...ids.map((b, i) => block(b, 'text', `P${i} ${'y'.repeat(60)}`, {}, pageId)))
-      blocks[pageId] = wrapped({ id: pageId, type: 'page', properties: { title: [['Long']] }, content: ids })
-      return { cursor: { stack: [] }, recordMap: { __version__: 3, block: blocks } }
-    }
-    const a = '2a2a2a2a-0000-4000-8000-000000000021'
-    const b = '2a2a2a2a-0000-4000-8000-000000000022'
-    const c = '2a2a2a2a-0000-4000-8000-000000000023'
-    const tab = openPage(long(a), long(b), long(c))
-      .respond('syncRecordValuesMain', 200, stillOpen(long(a), a))
-      .respond('syncRecordValuesMain', 200, stillOpen(long(b), b))
-    await read({ page: a })
-    await read({ page: b })
-    // Part 2 of each comes from its first read, though another page was read in between.
-    expect(await read({ page: a, part: 2 })).not.toContain('new read')
-    expect(await read({ page: b, part: 2 })).not.toContain('new read')
-    expect(tab.sent.filter((r) => r.url.endsWith('/loadPageChunk'))).toHaveLength(2)
-    // A later part read fresh says so: the model may hold parts of another read.
-    expect(await read({ page: c, part: 2 })).toContain(
-      'This part comes from a new read of the page; parts you have from an earlier read may not match it.',
-    )
-  })
-
-  it('[UC-NOTICO-NOTION-001-S06] checks the account in the tab can still open the page before giving a later part', async () => {
-    const ids = Array.from({ length: 300 }, (_, i) => id(i + 1))
-    const page = chunk(ids, {
-      block: Object.assign({}, ...ids.map((b, i) => block(b, 'text', `P${i} ${'z'.repeat(60)}`))),
-    })
-    // Between the parts, the tab switched to a Notion account that can't open the page.
-    openPage(page).respond('syncRecordValuesMain', 200, fixture('empty-record-map'))
-    await read({ page: PAGE })
-    await expect(read({ page: PAGE, part: 2 })).rejects.toThrow(
-      "The Notion page doesn't exist, or the signed-in Notion account has no access to it.",
-    )
-  })
-
   it('[UC-NOTICO-NOTION-004-S03] shows links to Notion pages as /<page id>, which read_page opens', async () => {
     const target = '3a3a3a3a-0000-4000-8000-000000000031'
     openPage(
@@ -893,7 +851,7 @@ describe('faithful details', () => {
         properties: { title: [['Row']], 'n:n': [['n'.repeat(PART_CHARS - 1000)]] },
       },
     )
-    openPage(row).respond('syncRecordValuesMain', 200, stillOpen(row))
+    openPage(row, row)
     const first = await read()
     expect(first).toContain('Part 1 of 2. Read part 2 for more.')
     expect(body(first).length).toBeLessThanOrEqual(PART_CHARS)
@@ -911,8 +869,7 @@ describe('faithful details', () => {
         ...block(id(2), 'quote', 'q'.repeat(PART_CHARS * 2)),
       },
     })
-    const tab = openPage(page)
-    for (let i = 0; i < 10; i++) tab.respond('syncRecordValuesMain', 200, stillOpen(page))
+    openPage(...Array<unknown>(10).fill(page))
     const first = await read()
     const parts = Number(/^Part 1 of (\d+)\./m.exec(first)?.[1])
     const texts = [body(first)]

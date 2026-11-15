@@ -1,15 +1,14 @@
 // Reading pages: read_page, and get_selection for what the user selected.
 import { defineTool } from '../tool'
 import { z } from '../zod'
-import type { LoadedPage } from '../notion/api'
 import { pageLink, toUuid } from '../notion/hosts'
 import { mergeReads, pageRead } from '../notion/edit'
 import { clip, quote, threadCount } from '../notion/comments'
 import { PAGE_TYPES, hexId, pageToMarkdown, splitSections } from '../notion/markdown'
 import { activeNotionTab, selectionIn } from '../notion/tab'
 import { needsAttachedPage } from './current'
-import { loadForPart, loadMentioned } from './load'
-import { generation, keepPartsRead, lastRead, partsReadOf, remember } from './memory'
+import { loadMentioned, loadWithDatabase } from './load'
+import { generation, lastRead, remember } from './memory'
 import { NONE, PART_CHARS, READ, filled, asData, idIn, named, on, pageArg, partArg, plainTitle, plural } from './shared'
 
 export const readPage = defineTool({
@@ -48,14 +47,12 @@ export const readPage = defineTool({
       )
     }
 
-    const { loaded, databaseMissing, reloaded } = await loadForPart(tab, id, part)
+    // Each part loads the page afresh, so it stands on its own.
+    const { loaded, databaseMissing } = await loadWithDatabase(tab, id)
     if (!PAGE_TYPES.has(loaded.page.type)) {
       throw new Error('That id is a block inside a page, not a page. Read the page it is on instead.')
     }
-    if (!mentionsLoaded.has(loaded)) {
-      await loadMentioned(tab, loaded)
-      mentionsLoaded.add(loaded)
-    }
+    await loadMentioned(tab, loaded)
     const md = pageToMarkdown(loaded)
     // A row's properties come first, as front matter, and count toward the size of the first part.
     const front = md.properties.length ? [['---', ...md.properties, '---'].join('\n')] : []
@@ -80,34 +77,24 @@ export const readPage = defineTool({
           ]
         : []),
       ...(loaded.complete ? [] : ['The page is too long to load in full; only its beginning is shown.']),
-      ...(reloaded
-        ? ['This part comes from a new read of the page; parts you have from an earlier read may not match it.']
-        : []),
       ...(databaseMissing
         ? ["This is a database row, but its database can't be opened, so its properties are not shown."]
         : []),
     ]
     const body = parts[part - 1]
     const empty = md.kind === 'page' && !md.sections.length ? ['(This page is empty.)'] : []
-    // What edit_page checks edits against: only the blocks this read showed, as they were. Part 1
-    // starts a new read; later parts add to it.
-    // The blocks this part drew, as the renderer reports them: never inferred from page text.
+    // What edit_page checks edits against: only the blocks this part drew, as they were. Part 1
+    // starts a new read; later parts add to it. The blocks a part drew are those the renderer
+    // reports, never inferred from page text. Only a block no other part draws was seen in full: one
+    // split across parts never is, so it can't be edited.
     const drawnIn = members.map((m) => new Set(m.flatMap(({ section, from, to }) => owners[section].slice(from, to))))
     const drawn = drawnIn[part - 1]
-    // A block drawn in several parts (a paragraph longer than a part, say) is seen in full only
-    // once each of them was read since part 1 (or since the page was loaded again).
-    const read = part === 1 || reloaded ? new Set<number>() : (partsReadOf(loaded.page.id) ?? new Set<number>())
-    read.add(part)
-    const whole = (b: string) => drawnIn.every((d, n) => !d.has(b) || read.has(n + 1))
+    const whole = (b: string) => drawnIn.every((d, n) => n === part - 1 || !d.has(b))
     const seen = pageRead(loaded, md, (b) => drawn.has(b), whole)
-    keepPartsRead(loaded.page.id, read, since)
     remember(part === 1 ? seen : mergeReads(lastRead(loaded.page.id), seen), since)
     return asData([...header, '', ...(body ? [body] : []), ...(part === 1 ? empty : [])])
   },
 })
-
-/** Loads whose mentioned people and pages were looked up, so later parts don't look again. */
-const mentionsLoaded = new WeakSet<LoadedPage>()
 
 export const getSelection = defineTool({
   name: 'get_selection',

@@ -47,7 +47,6 @@ import { PAGE_TYPES, hexId, isEmoji, oneLine, pageToMarkdown, type Schema } from
 import { activeNotionTab } from '../notion/tab'
 import { loadMentioned, resolveDatabase } from './load'
 import {
-  forgetLoads,
   forgetRead,
   forgetSeenRow,
   generation,
@@ -179,16 +178,12 @@ export const editPage = defineTool({
     } catch (err) {
       // The edit may have been saved: a retry from the same read could apply it twice, so the
       // page must be read again first, which also shows whether it landed.
-      if (err instanceof NotionError && err.code === 'outcome_unknown') {
-        forgetRead(id)
-        forgetLoads(id)
-      }
+      if (err instanceof NotionError && err.code === 'outcome_unknown') forgetRead(id)
       throw err
     }
 
-    // The page changed: forget cached parts. What the agent saw stays as it was, except for what
-    // this edit changed, so a block the user changed meanwhile is still refused.
-    forgetLoads(id)
+    // What the agent saw stays as it was, except for what this edit changed, so a block the user
+    // changed meanwhile is still refused.
     // Blocks it changed or deleted need a new read before they are edited again.
     let next = forget(read, [...plan.deleted, ...plan.changed.filter((b) => b !== id)])
     let newRefs = ''
@@ -353,8 +348,7 @@ export const createPage = defineTool({
       properties,
     })
     signal?.throwIfAborted()
-    // The parent's list changes: cached parts of it would hide the new page, and after an unknown
-    // outcome the agent must see whether it was created before it tries again.
+    // After an unknown outcome the agent must see whether the page was created before it tries again.
     try {
       await tab.client.submitTransaction(spaceId, operations, 'Notico: create_page')
     } catch (err) {
@@ -370,8 +364,6 @@ export const createPage = defineTool({
         )
       }
       throw err
-    } finally {
-      forgetLoads(parentId)
     }
     const hex = hexId(pageId)
     return [
@@ -565,10 +557,7 @@ export const updatePages = defineTool({
       if (err instanceof NotionError && err.code === 'outcome_unknown') for (const id of ids) forgetRead(id)
       throw err
     } finally {
-      for (const id of ids) {
-        forgetSeenRow(id)
-        forgetLoads(id)
-      }
+      for (const id of ids) forgetSeenRow(id)
     }
     // A read's title shows in later previews; keep it current.
     for (const u of updates) if (u.title !== undefined) renameRead(u.id, u.title.shown)
