@@ -381,7 +381,7 @@ describe('duplicating pages', () => {
     expect(err.message).toBe('Notion could not copy the page: Copy failed.')
   })
 
-  it('[@no-uc:notion-safety] stopped while Notion copies, says the copy may still appear and where to look', async () => {
+  it('[@no-uc:data] stopped while Notion copies, says the copy may still appear and where to look', async () => {
     const ws = workspace()
     ws.endlessTask = true
     const tab = open(ws)

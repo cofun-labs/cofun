@@ -837,7 +837,7 @@ describe('faithful details', () => {
     expect(tab.sent).toHaveLength(2)
   })
 
-  it('[UC-NOTICO-NOTION-001-S04] counts a row’s properties toward the first part', async () => {
+  it('[UC-NOTICO-NOTION-001-S03] counts a row’s properties toward the first part', async () => {
     const collection = {
       [COLLECTION]: wrapped({
         id: COLLECTION,

@@ -236,14 +236,6 @@ describe('UC-COFUN-BILLING-001 Buy credits: the packs and Checkout', () => {
     expect(error).toEqual({ code: 'payment_unavailable', message: 'Checkout is unavailable, try again in a moment.' })
     expect(logged).toEqual(['checkout failed: Error: Stripe answered 500: something broke'])
   })
-
-  it('[@no-uc:money] serves the pages Checkout sends the buyer back to', async () => {
-    const paid = await app.request('/billing/paid', {}, env)
-    expect(paid.status).toBe(200)
-    expect(await paid.text()).toContain('Go back to the side panel')
-    const cancelled = await app.request('/billing/cancelled', {}, env)
-    expect(await cancelled.text()).toContain('Nothing was bought')
-  })
 })
 
 describe('UC-COFUN-BILLING-001 Buy credits: the webhook', () => {

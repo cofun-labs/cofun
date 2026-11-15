@@ -192,7 +192,7 @@ describe('checkUseCases', () => {
   it('warns when a test names an ID without its product, which counts for nothing', () => {
     const report = checkUseCases([useCase(['| UC-NOTICO-CHAT-001-S01 | P1 | ✅ | … |'])], [test('UC-PAGES-001-S01')])
     expect(report.errors).toEqual([
-      expect.stringContaining('worker/test/api.test.ts:1: a test that names no scenario ID'),
+      expect.stringContaining('worker/test/api.test.ts:1: a test whose name starts with no scenario ID'),
       'extensions/notico/use-cases/chat/UC-NOTICO-CHAT-001-ask.md:6: UC-NOTICO-CHAT-001-S01 is ✅ api-test, but no test names it',
     ])
     expect(report.warnings).toEqual([
@@ -200,41 +200,69 @@ describe('checkUseCases', () => {
     ])
   })
 
-  it('fails on a test that names neither a scenario ID nor a kind of harm, in any way a test is written, a loop included', () => {
-    const text = [
-      "it('[@no-uc:privacy] logs nothing', () => {})",
-      'it(',
-      "  '[@no-uc:money] a name the formatter moved to its own line',",
-      '  () => {},',
-      ')',
-      "it.each([1, 2])('[@no-uc:data] keeps %s', () => {})",
-      'it.each(CASES)(',
-      "  '[@no-uc:access] refuses $what',",
-      '  () => {},',
-      ')',
-      'it.each([',
-      '  [1],',
-      "])('[@no-uc:contract] reads %s', () => {})",
-      "it('has no tag', () => {})",
-      "it('[@no-uc:speed] guards a kind that is not one', () => {})",
-      "it.each([1])('has no tag either', () => {})",
-      "it.skip('is skipped, so it is not checked', () => {})",
-      "it.only('has no tag, though it runs alone', () => {})",
-      "it.skipIf(slow)('has no tag behind a condition', () => {})",
-      'for (const c of CASES) it(c.name, () => {})',
-      "it.concurrent('[@no-uc:privacy] runs with others', () => {})",
-    ].join('\n')
+  it('fails on a test whose name starts with neither a scenario ID nor a kind of harm, in any form it is written in', () => {
+    const lines: [string, string?][] = [
+      ["it('[@no-uc:privacy] logs nothing', () => {})"],
+      ['it('],
+      ["  '[@no-uc:money] a name the formatter moved to its own line',"],
+      ['  () => {},'],
+      [')'],
+      ["it.each([1, 2])('[@no-uc:data] keeps %s', () => {})"],
+      ['it.each(CASES)('],
+      ["  '[@no-uc:access] refuses $what',"],
+      ['  () => {},'],
+      [')'],
+      ['it.each(['],
+      ["  ['a (b)', \"it's\"],"],
+      ["])('[@no-uc:contract] reads %s', () => {})"],
+      ['it.each`'],
+      ['  a    | b'],
+      ['  ${1} | ${2}'],
+      ["`('[UC-COFUN-CHAT-001-S01] adds $a and $b', () => {})"],
+      ["// it('in a comment is no test')"],
+      ['const words = "it(\'in a string is no test\')"'],
+      ["it.skip('is skipped, so it is not checked', () => {})"],
+      ['it.concurrent(`[@no-uc:privacy] runs with ${others}`, () => {})'],
+      ["it('has no tag', () => {})", 'no tag'],
+      ["it('[@no-uc:speed] guards a kind that is not one', () => {})", 'speed'],
+      ["it('says [@no-uc:data] past the start of its name', () => {})", 'no tag'],
+      ["it.each([1])('has no tag either', () => {})", 'no tag'],
+      ["it.only('has no tag, though it runs alone', () => {})", 'no tag'],
+      ["it.skipIf(slow)('has no tag behind a condition', () => {})", 'no tag'],
+      ['for (const c of CASES) it(c.name, () => {})', 'no tag'],
+      ['CASES.forEach(([name]) => it(name, () => {}))', 'no tag'],
+      ["if (FLAG) it('has no tag behind an if', () => {})", 'no tag'],
+      ["describe('a block', () => it('has no tag inside it', () => {}))", 'no tag'],
+      ['it.each`'],
+      ['  a'],
+      ['  ${1}'],
+      // A tagged template table's name is on the line that closes it.
+      ["`('has no tag after a table', () => {})", 'no tag'],
+      // A regular expression after a keyword, with a backtick in it, opens no template.
+      ['function quoted(s: string) {'],
+      ['  return /`/.test(s)'],
+      ['}'],
+      ["it('has no tag after a regular expression', () => {})", 'no tag'],
+      // A JSX closing tag and `++` are followed by a division, if anything: a template after them is one.
+      ['render(<p>hi</p>); const s = `a'],
+      ['b`'],
+      ["it('has no tag after a closing tag', () => {})", 'no tag'],
+      ['const h = i++ / 2, t = `a'],
+      ['b`'],
+      ["it('has no tag after an increment', () => {})", 'no tag'],
+    ]
+    const text = lines.map(([line]) => line).join('\n')
     const report = checkUseCases([], [{ path: 'worker/test/api.test.ts', text }])
-    expect(report.errors).toEqual([
-      expect.stringMatching(
-        /^worker\/test\/api\.test\.ts:14: a test that names no scenario ID and no \[@no-uc:<kind>\]/,
-      ),
-      'worker/test/api.test.ts:15: [@no-uc:speed] is not a kind of harm; use one of data, notion-safety, money, access, privacy, contract',
-      expect.stringMatching(/^worker\/test\/api\.test\.ts:16: a test that names no scenario ID/),
-      expect.stringMatching(/^worker\/test\/api\.test\.ts:18: a test that names no scenario ID/),
-      expect.stringMatching(/^worker\/test\/api\.test\.ts:19: a test that names no scenario ID/),
-      expect.stringMatching(/^worker\/test\/api\.test\.ts:20: a test that names no scenario ID/),
-    ])
+    const expected = lines.flatMap(([, error], index) => {
+      if (!error) return []
+      const at = `worker/test/api.test.ts:${index + 1}`
+      return [
+        error === 'speed'
+          ? `${at}: [@no-uc:speed] is not a kind of harm; use one of data, notion-safety, money, access, privacy, contract`
+          : expect.stringMatching(new RegExp(`^${at}: a test whose name starts with no scenario ID`)),
+      ]
+    })
+    expect(report.errors).toEqual(expected)
   })
 
   it("refuses an extension folder whose name can't be an ID prefix", () => {

@@ -26,8 +26,8 @@ Every test in `worker/test/` and `extensions/*/test/` says what it guards, at th
 
   | Kind | The break would |
   |---|---|
-  | `data` | lose, overwrite, or change the user's data without the user knowing: in Notion, or the chats the panel keeps |
-  | `notion-safety` | make Notion see the extension as abuse: a request after a refusal, an unsafe retry, more requests than needed or than the budget allows |
+  | `data` | lose, overwrite, or change the user's data without the user knowing: in Notion, or the chats the panel keeps. This includes letting text from a page pass for the tool's own lines or notes (prompt injection), which could lead the AI into a change the user didn't ask for |
+  | `notion-safety` | make Notion see the extension as abuse, or let it go on past a failure it doesn't understand: a request after a refusal, an unsafe retry, more requests than needed or than the budget allows, a failure taken for one whose meaning is known |
   | `money` | get money wrong: a wrong charge, grant, refund, or usage record, or figures the user or an operator reads |
   | `access` | let a request through without a valid session or origin, or lock a signed-in user out |
   | `privacy` | let data out where it must not go: content in logs or usage data, a page or account it must not touch, a host outside the content security policy |
