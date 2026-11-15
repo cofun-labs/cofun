@@ -106,6 +106,18 @@ export class FakeNotionTab {
   /** The browser's other tabs, in any window, as chrome.tabs reports them. */
   otherTabs: { url: string; title: string }[] = []
 
+  /** Scripts running in the tab, each until it returns. */
+  private running = new Set<Promise<unknown>>()
+
+  /**
+   * Resolves once no script runs in the tab: every request sent so far has had its answer. A test
+   * that moves a fake clock waits for this first, so the next timer is never one that only a
+   * request still in flight would have cleared. Never resolves while a held request is waiting.
+   */
+  async answered(): Promise<void> {
+    while (this.running.size) await Promise.allSettled(this.running)
+  }
+
   /** Requests held until the test lets them through, by endpoint (see `hold`). */
   private held: Record<string, Promise<void>[]> = {}
 
@@ -208,32 +220,14 @@ export class FakeNotionTab {
         update: async ({ url }: { url: string }) => this.navigate(url, ''),
       },
       scripting: {
-        executeScript: async ({
-          target,
-          world,
-          func,
-          args,
-        }: {
-          target: { tabId: number }
-          world?: string
-          func: Function
-          args: unknown[]
-        }) => {
-          if (this.closed) throw new Error(`No tab with id: ${target.tabId}.`)
-          if (this.injectionError) throw new Error(this.injectionError)
-          this.injections.push({ tabId: target.tabId, world })
-          const location = new URL(this.pageUrl ?? this.url!)
-          const document = Object.assign(this.dom ?? {}, { cookie: this.cookie })
-          const fetch = (input: string, init: RequestInit) => this.fetch(new URL(input, location).href, init)
-          // The page's globals are the function's own: its `location`, `document`, and `fetch` are
-          // the tab's, while code outside the tab (say, the agent calling the worker, or the side
-          // panel's own document) keeps the real ones.
-          const rebuilt = new Function('location', 'document', 'fetch', `return (${func.toString()})`)(
-            location,
-            document,
-            fetch,
-          ) as Function
-          return [{ frameId: 0, result: await rebuilt(...(asChromeSends(args) as unknown[])) }]
+        executeScript: (injection: { target: { tabId: number }; world?: string; func: Function; args: unknown[] }) => {
+          const running = this.executeScript(injection)
+          this.running.add(running)
+          running.then(
+            () => this.running.delete(running),
+            () => this.running.delete(running),
+          )
+          return running
         },
       },
     }
@@ -241,6 +235,35 @@ export class FakeNotionTab {
     notionCooldown.clear()
     notionCooldown.now = () => Date.now()
     return this
+  }
+
+  /** Runs an injected script the way Chrome does (see the class). */
+  private async executeScript({
+    target,
+    world,
+    func,
+    args,
+  }: {
+    target: { tabId: number }
+    world?: string
+    func: Function
+    args: unknown[]
+  }) {
+    if (this.closed) throw new Error(`No tab with id: ${target.tabId}.`)
+    if (this.injectionError) throw new Error(this.injectionError)
+    this.injections.push({ tabId: target.tabId, world })
+    const location = new URL(this.pageUrl ?? this.url!)
+    const document = Object.assign(this.dom ?? {}, { cookie: this.cookie })
+    const fetch = (input: string, init: RequestInit) => this.fetch(new URL(input, location).href, init)
+    // The page's globals are the function's own: its `location`, `document`, and `fetch` are
+    // the tab's, while code outside the tab (say, the agent calling the worker, or the side
+    // panel's own document) keeps the real ones.
+    const rebuilt = new Function('location', 'document', 'fetch', `return (${func.toString()})`)(
+      location,
+      document,
+      fetch,
+    ) as Function
+    return [{ frameId: 0, result: await rebuilt(...(asChromeSends(args) as unknown[])) }]
   }
 
   private async fetch(url: string, init: RequestInit): Promise<Response> {

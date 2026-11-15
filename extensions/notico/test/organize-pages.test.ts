@@ -29,9 +29,19 @@ afterEach(() => {
   forgetReads()
 })
 
-/** Moves the fake clock from one timer to the next until `done` holds. */
+// The tab the test opened (see `open`).
+let current: FakeNotionTab
+
+/**
+ * Moves the fake clock from one timer to the next until `done` holds. Each move waits for the tab to
+ * answer first: moved while a check is in flight, the clock would reach the deadline that only a
+ * stalled check meets.
+ */
 async function until(done: () => boolean): Promise<void> {
-  while (!done()) await vi.advanceTimersToNextTimerAsync()
+  while (!done()) {
+    await current.answered()
+    await vi.advanceTimersToNextTimerAsync()
+  }
 }
 
 /** `run`'s outcome, with the clock moved through each wait between the checks on a copy. */
@@ -110,9 +120,9 @@ function workspace() {
 }
 
 function open(ws: FakeWorkspace) {
-  const tab = new FakeNotionTab(PAGE_URL)
-  tab.workspace = ws
-  return tab.install()
+  current = new FakeNotionTab(PAGE_URL)
+  current.workspace = ws
+  return current.install()
 }
 
 const contentOf = (ws: FakeWorkspace, parent: string) => ws.records.get(parent)!.content as string[]
