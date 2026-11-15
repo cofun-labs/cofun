@@ -107,10 +107,10 @@ export function checkAddress(raw: string): URL {
  */
 export async function fetchPage(web: WebFetcher, url: URL, maxChars: number): Promise<WebPage> {
   const signal = AbortSignal.timeout(FETCH_TIMEOUT_MS)
-  try {
-    let at = url
-    for (let hop = 0; ; hop++) {
-      const res = await web.fetch(
+  let at = url
+  for (let hop = 0; ; hop++) {
+    const res = await reach(
+      web.fetch(
         new Request(at, {
           redirect: 'manual',
           signal,
@@ -119,17 +119,27 @@ export async function fetchPage(web: WebFetcher, url: URL, maxChars: number): Pr
             accept: 'text/html,application/xhtml+xml,text/plain;q=0.9,*/*;q=0.1',
           },
         }),
-      )
-      if (res.status >= 300 && res.status < 400 && res.headers.has('location')) {
-        await res.body?.cancel()
-        if (hop >= MAX_REDIRECTS) throw new PageError('too_many_redirects', 'the page redirects too many times')
-        at = checkAddress(new URL(res.headers.get('location') ?? '', at).href)
-        continue
-      }
-      return await pageOf(res, at, maxChars)
+      ),
+    )
+    if (res.status >= 300 && res.status < 400 && res.headers.has('location')) {
+      await res.body?.cancel()
+      if (hop >= MAX_REDIRECTS) throw new PageError('too_many_redirects', 'the page redirects too many times')
+      // The address checkAddress gets is what URL makes of it: one that isn't a URL is refused there.
+      at = checkAddress(URL.parse(res.headers.get('location') ?? '', at)?.href ?? '')
+      continue
     }
+    return await pageOf(res, at, maxChars)
+  }
+}
+
+/**
+ * Waits for a request to the site, or for its body: a failure there is the site's, said as a
+ * PageError. Only these are wrapped, so a bug in the worker's own reading still fails as one.
+ */
+async function reach<T>(work: Promise<T>): Promise<T> {
+  try {
+    return await work
   } catch (err) {
-    if (err instanceof PageError) throw err
     if (err instanceof Error && (err.name === 'TimeoutError' || err.name === 'AbortError'))
       throw new PageError('timeout', 'the site took too long to answer')
     throw new PageError('unreachable', 'the site could not be reached')
@@ -148,7 +158,7 @@ async function pageOf(res: Response, url: URL, maxChars: number): Promise<WebPag
     await res.body?.cancel()
     throw new PageError('unsupported_type', `the page is ${type || 'of no stated type'}, not HTML or text`)
   }
-  const bytes = await readBytes(res, MAX_BYTES)
+  const bytes = await reach(readBytes(res, MAX_BYTES))
   const decoded = decode(bytes, res.headers.get('content-type'), html)
   const page = html ? htmlText(decoded) : { title: '', text: tidy(decoded), scripted: false }
   if (!page.text) throw new PageError('no_text', 'the page shows no text without running its scripts')
@@ -204,7 +214,7 @@ async function readBytes(res: Response, max: number): Promise<Uint8Array> {
 function decode(bytes: Uint8Array, contentType: string | null, html: boolean): string {
   const named = /charset\s*=\s*"?([\w-]+)/i.exec(contentType ?? '')?.[1]
   const meta = html
-    ? /<meta[^>]+charset\s*=\s*["']?([\w-]+)/i.exec(new TextDecoder('latin1').decode(bytes.subarray(0, 2048)))?.[1]
+    ? /<meta[^>]+charset\s*=\s*["']?([\w-]+)/i.exec(String.fromCharCode(...bytes.subarray(0, 2048)))?.[1]
     : undefined
   for (const charset of [named, meta, 'utf-8']) {
     if (!charset) continue
@@ -385,7 +395,8 @@ export async function renderPage(
   if (!res.ok || !answer.success) throw new PageError('render_failed', 'the page could not be rendered')
   const text = tidy(answer.data.result)
   if (!text) throw new PageError('no_text', 'the page shows no text, even rendered')
-  const used = Number(res.headers.get('x-browser-ms-used'))
+  // Browser Run reports it on every answer; an answer without it is charged the time the render took.
+  const used = Number(res.headers.get('x-browser-ms-used') ?? NaN)
   return {
     url: url.href,
     title: /^#\s+(.+)$/m.exec(text)?.[1].trim().slice(0, TITLE_CHARS) ?? '',

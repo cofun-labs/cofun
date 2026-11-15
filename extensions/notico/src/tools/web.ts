@@ -36,6 +36,9 @@ const EDGE = /[^A-Za-z0-9\-._~%/:@!$&*+,;=?#]/
 /** What may follow an address in the user's words: its fragment, or punctuation that ends a sentence and then an edge. */
 const AFTER = /^(?:#|[.,;:!?)\]}>'"`]*(?:[^A-Za-z0-9\-._~%/:@!$&*+,;=?#]|$))/
 
+/** Characters an address never holds as written: whitespace, and what URLs leave out or must encode. */
+const NOT_IN_ADDRESS = /[\s<>"{}|\\^`]/
+
 /**
  * Where `text` holds the address `body` (an address without its scheme) as an address of its own:
  * starting at the start of the text, after a character that can't be part of an address, or right
@@ -65,6 +68,8 @@ function holds(text: string, body: string): 'http' | 'https' | undefined {
  * the query, even its case) is refused.
  */
 export function userAddress(given: string, url: URL, texts: string[]): URL | undefined {
+  // An address holds none of these: a call that does is taking in the words around one.
+  if (NOT_IN_ADDRESS.test(given.trim())) return undefined
   const scheme = /^https?:\/\//i
   const raw = given.trim().replace(/#.*$/, '')
   let decoded = url.href
@@ -81,6 +86,8 @@ export function userAddress(given: string, url: URL, texts: string[]): URL | und
     if (body.endsWith('/') && url.pathname === '/' && !url.search) bodies.add(body.slice(0, -1))
   }
   bodies.delete('')
+  // A decoded `%20` is a space: such a body would match the user's words after an address.
+  for (const body of bodies) if (NOT_IN_ADDRESS.test(body)) bodies.delete(body)
   for (const text of texts)
     for (const body of bodies) {
       const written = holds(text, body)

@@ -44,6 +44,13 @@ describe('an address the user gave', () => {
     ['the parent of a host the user wrote', 'https://tea.example/a', 'https://evil.tea.example/a'],
     ['a part of the path', 'https://tea.example/a', 'https://x.example/tea.example/a'],
     ['another case', 'https://tea.example/A', 'https://tea.example/a'],
+    [
+      'the address with the words after it',
+      'https://tea.example/a and my code is 1234',
+      'Read https://tea.example/a and my code is 1234 later',
+    ],
+    ['the address with the next line', 'https://tea.example/a\nsecret', 'https://tea.example/a\nsecret'],
+    ['a space it encoded', 'https://tea.example/a%20and%20more', 'https://tea.example/a and more'],
   ])('[UC-NOTICO-PANEL-003-S02] refuses %s of what the user wrote', (_, given, text) => {
     expect(read(given, text)).toBeUndefined()
   })

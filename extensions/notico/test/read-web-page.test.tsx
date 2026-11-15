@@ -199,7 +199,7 @@ describe('reading a web page the user gives', () => {
     ['the worker turns reads away for coming too often', /Notico read too many web pages in a minute/],
     ['the site turns requests away for coming too often', /turned away Notico's requests for coming too often/],
     ['the worker answers with a reason the extension does not know', /^Notico could not read a web page: /],
-  ])('[@no-uc:notion-safety] the question stops when %s, and nothing more is sent', async (what, told) => {
+  ])('[UC-NOTICO-PANEL-003-S06] the question stops when %s, and nothing more is sent', async (what, told) => {
     const { browser, user } = await open()
     if (what.startsWith('the worker turns')) browser.env.WEB_LIMIT = { limit: async () => ({ success: false }) }
     else if (what.startsWith('the site')) browser.web.serve(ARTICLE, { status: 429 })

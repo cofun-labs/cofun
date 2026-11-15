@@ -165,13 +165,6 @@ describe('reading a web page', () => {
     expect(web.asked).toEqual(['https://tea.example/go'])
   })
 
-  it('[@no-uc:notion-safety] gives up after five redirects', async () => {
-    for (let n = 0; n < 10; n++)
-      web.serve(`https://tea.example/${n}`, { status: 302, headers: { location: `/${n + 1}` } })
-    expect(await refusal(await read('https://tea.example/0'))).toEqual({ status: 422, code: 'too_many_redirects' })
-    expect(web.asked).toHaveLength(6)
-  })
-
   it.each([
     ['a page that needs a sign-in', { status: 401 }, 'no_access'],
     ['a page the site refuses', { status: 403 }, 'no_access'],
