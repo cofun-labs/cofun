@@ -58,7 +58,7 @@ Update `docs/architecture.md` only when a change adds, moves, or removes a modul
 
 8. **Handle PR comments.** Findings are **Blocking**, **User's call**, **Suggestion**, or **Follow-up**, as [docs/review.md](docs/review.md#how-to-report-a-finding) defines them. A change the user or a maintainer explicitly asks for is always blocking; comments from anyone else, bots and sub-agents included, are judged by those definitions.
    - **Blocking:** fix it, or show with evidence that it isn't a real problem. A problem the PR didn't bring in, or an edge case in behavior it did not set out to change, is a Follow-up instead; a bug in what the PR adds is fixed here.
-   - **Follow-up:** open an Issue for it: `P0` to `P2` when the rule it breaks is Blocking, and `later` allowed otherwise.
+   - **Follow-up:** open an Issue for it: `P0` to `P2` when it would be Blocking (by its rule's weight, or by one of the harms in [docs/review.md](docs/review.md#how-to-report-a-finding)), and `later` allowed otherwise. A usable weakness (D10) never goes into an Issue: it goes to a private report ([SECURITY.md](SECURITY.md)).
    - **User's call:** hand it to the user with what they would lose, and push neither way until they decide.
    - **Suggestion:** answer with a short reason (for example, that it isn't worth another round of CI and review) and resolve it without pushing, since every push restarts both. A trivial one may ride along with a push you make anyway; one worth recording gets a `later` Issue.
    - Reply to each comment with the fix commit, the verification, or the follow-up Issue. Before a reply names a fix commit, check that the PR has it (`gh pr view {PR} --json commits`).
