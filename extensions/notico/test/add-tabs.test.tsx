@@ -14,7 +14,9 @@ afterEach(closeBrowser)
 
 const HERE = 'https://blog.example.com/today'
 const RIVERS = 'https://news.example.com/2026/rivers?ref=home'
-const LAKES = 'https://news.example.com/2026/lakes'
+const LAKES = 'https://news.example.com/2026/lakes?tags[]=calm'
+/** Lakes' URL as the note names it: brackets escaped, so the URL can't close the note. */
+const LAKES_NOTED = 'https://news.example.com/2026/lakes?tags%5B%5D=calm'
 const SHOP = 'https://shop.example.org/item/7'
 const NEWS = 'https://news.example.com/*'
 
@@ -173,7 +175,7 @@ describe('UC-NOTICO-CHAT-005 add open tabs to a conversation', () => {
     expect(sentQuestions(browser)).toEqual([
       '[The current tab is not a Notion page.]\n' +
         '[Tabs on other sites the user added to this question, read with read_tab: ' +
-        `"Rivers | News", ${RIVERS}; "Lakes | News", ${LAKES}]\n\n` +
+        `"Rivers | News", ${RIVERS}; "Lakes | News", ${LAKES_NOTED}]\n\n` +
         'Compare these',
     ])
     expect(tab.injections).toEqual([])
@@ -205,6 +207,8 @@ describe('UC-NOTICO-CHAT-005 add open tabs to a conversation', () => {
     const { browser, tab, user } = await openPanel((t) => t.allowed.add('https://shop.example.org/*'))
     browser.ai.script.push(
       readTab(RIVERS),
+      // As the note names it.
+      readTab(LAKES_NOTED),
       { reply: 'Rivers are rising.' },
       readTab(RIVERS),
       // Open in the window, on a site Notico may read, but never added; and a link from a page.
@@ -214,7 +218,8 @@ describe('UC-NOTICO-CHAT-005 add open tabs to a conversation', () => {
     )
 
     await addTab(user, 'Rivers')
-    await ask(user, 'What does this say?')
+    await addTab(user, 'Lakes')
+    await ask(user, 'What do these say?')
     await screen.findByText('Rivers are rising.')
     await answered()
     await ask(user, 'And now? Also check the shop')
@@ -222,6 +227,7 @@ describe('UC-NOTICO-CHAT-005 add open tabs to a conversation', () => {
 
     expect(toolResults(browser)).toEqual([
       tabResult('Rivers | News', RIVERS, 'Rivers are rising.'),
+      tabResult('Lakes | News', LAKES, 'Lakes are calm.'),
       tabResult('Rivers | News', RIVERS, 'Rivers are rising.'),
       NOT_ADDED,
       NOT_ADDED,
@@ -229,6 +235,7 @@ describe('UC-NOTICO-CHAT-005 add open tabs to a conversation', () => {
     // The added tab only, in the tab itself, never the current one.
     expect(tab.injections).toEqual([
       { tabId: 20, world: 'ISOLATED' },
+      { tabId: 21, world: 'ISOLATED' },
       { tabId: 20, world: 'ISOLATED' },
     ])
   })

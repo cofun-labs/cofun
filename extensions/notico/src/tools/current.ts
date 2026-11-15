@@ -88,9 +88,10 @@ export async function openWebTabs(): Promise<WebTab[]> {
 
 /**
  * The addresses of the tabs on other sites the user added to the conversation, in any of its
- * questions: the only tabs besides the current one read_tab may read. carryPages sets them.
+ * questions: the only tabs besides the current one read_tab may read. Keyed by the URL as the note
+ * names it (see `noteUrl`), and by the tab's own, each to the tab's own. carryPages sets them.
  */
-let addedTabs = new Set<string>()
+let addedTabs = new Map<string, string>()
 
 /**
  * Whether the tools of the question being asked may use the page open in the current tab when a
@@ -130,7 +131,16 @@ export function carryPages(
 ): string {
   openPageAttached = !removed
   outsideRead = 0
-  addedTabs = new Set([...earlier, ...added].flatMap((p) => (p.web ? [p.url] : [])))
+  addedTabs = new Map(
+    [...earlier, ...added].flatMap((p) =>
+      p.web
+        ? [
+            [p.url, p.url],
+            [noteUrl(p.url), p.url],
+          ]
+        : [],
+    ),
+  )
   const tabs = added.filter((p) => p.web)
   // The open page is named once, in its own note, also when the user added it by hand.
   const open = page && !removed ? pageIdFromUrl(page.url) : undefined
@@ -166,9 +176,12 @@ function pageNamed(page: OpenPage): string {
   // The page's author picks its title, and a shared link its query: keep both from closing the note
   // and faking another one.
   const title = clip(page.title.replace(/[[\]]/g, ''), TITLE_CHARS)
-  const url = page.url.replaceAll('[', '%5B').replaceAll(']', '%5D')
+  const url = noteUrl(page.url)
   return `${JSON.stringify(title)}${page.database ? ' (a database)' : ''}, ${url}`
 }
+
+/** A URL as a note names it: a shared link's query must not close the note and fake another one. */
+const noteUrl = (url: string) => url.replaceAll('[', '%5B').replaceAll(']', '%5D')
 
 const TITLE_CHARS = 200
 
@@ -312,8 +325,10 @@ export const readTab = defineTool({
   args: z.strictObject({
     url: z.string().describe('The URL of the tab, exactly as the note listed it.'),
   }),
-  run: async ({ url }, _signal, ask) => {
-    if (!addedTabs.has(url))
+  run: async (args, _signal, ask) => {
+    // The tab's own URL: the note's has its brackets escaped.
+    const url = addedTabs.get(args.url)
+    if (url === undefined)
       throw new Error(
         'The user did not add a tab with this URL to this chat, so it was not read: read_tab reads only the ' +
           'tabs the notes list as added. Ask the user to add the tab, with "+" or @ in the message box.',

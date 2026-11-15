@@ -27,6 +27,7 @@ import {
   otherTab,
   ownNotionTab,
   ownPanel,
+  addTab,
 } from './panel'
 import { formatReply } from './reply'
 import { CanaryLock, checkOwner } from './lock'
@@ -151,6 +152,15 @@ async function browserCommand(
       )
       return 0
     }
+    case 'tab': {
+      state.tabTargets.push(await browser.open(command.url, { background: true }))
+      console.log(`Opened ${command.url} in a tab in the background.`)
+      return 0
+    }
+    case 'add': {
+      console.log(await addTab(await ownPanel(browser, state), command.title))
+      return 0
+    }
     case 'ask': {
       const panel = await ownPanel(browser, state)
       // The panel works on the active tab of its window, which may have changed since panel or
@@ -215,10 +225,15 @@ async function browserCommand(
       return 0
     }
     case 'close': {
-      const ids = [await ownNotionTab(browser, state), (await browser.find(state.otherTarget))?.targetId]
+      const ids = [
+        await ownNotionTab(browser, state),
+        (await browser.find(state.otherTarget))?.targetId,
+        ...(await Promise.all(state.tabTargets.map(async (t) => (await browser.find(t))?.targetId))),
+      ]
       const open = ids.filter((id): id is string => !!id)
       for (const id of open) await browser.close(id)
       state.notionTarget = state.otherTarget = state.panelTarget = undefined
+      state.tabTargets = []
       console.log(open.length ? 'Closed the tabs pnpm e2e opened.' : 'No tab opened by pnpm e2e is open.')
       return 0
     }

@@ -10,6 +10,8 @@ export interface State {
   notionTarget?: string
   /** CDP target id of the tab on another site this tool opened. */
   otherTarget?: string
+  /** CDP target ids of the tabs `tab` opened. */
+  tabTargets: string[]
   /** CDP target id of the side panel this tool opened. */
   panelTarget?: string
   /** Ids of pages and databases this tool created and hasn't trashed. */
@@ -32,10 +34,11 @@ export async function loadState(path: string): Promise<State> {
       notionTarget: typeof raw.notionTarget === 'string' ? raw.notionTarget : undefined,
       otherTarget: typeof raw.otherTarget === 'string' ? raw.otherTarget : undefined,
       panelTarget: typeof raw.panelTarget === 'string' ? raw.panelTarget : undefined,
+      tabTargets: Array.isArray(raw.tabTargets) ? raw.tabTargets.filter((id) => typeof id === 'string') : [],
       created: Array.isArray(raw.created) ? raw.created.filter((id) => typeof id === 'string') : [],
     }
   } catch {
-    return { created: [] }
+    return { tabTargets: [], created: [] }
   }
 }
 

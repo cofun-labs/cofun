@@ -9,6 +9,8 @@ export type Command =
   | { name: 'reload' }
   | { name: 'panel'; url?: string }
   | { name: 'elsewhere' }
+  | { name: 'tab'; url: string }
+  | { name: 'add'; title: string }
   | { name: 'ask'; question?: string; answer?: Answer; timeoutMs: number; json: boolean }
   | { name: 'page'; title: string; markdown: string }
   | { name: 'db'; title: string; rows: string[] }
@@ -44,6 +46,10 @@ Commands:
   elsewhere                    Bring a tab on another site (example.com) to the front, opening it if
                                there is none; the side panel stays open with its chat, or opens
                                with a new one if none was open. The Notion tools can't run there
+  tab <url>                    Open a tab on another site in the background, to add to a question
+  add <title>                  Add the open tab whose title starts with <title> to the next question,
+                               from the side panel's "+" picker; a site not allowed yet shows Chrome's
+                               prompt, which a person must answer
   ask [question]               Send the question in the side panel, wait for the reply, and print it
                                with each tool call; without a question, keep waiting for the last reply
       --allow | --deny         Answer every approval prompt this way (otherwise stop at the first one)
@@ -125,6 +131,22 @@ export function parseArgs(argv: string[]): Parsed {
     case 'close':
       most(0)
       return { command: { name }, owner }
+    case 'tab': {
+      most(1)
+      const [url] = rest
+      let parsed: URL | undefined
+      try {
+        parsed = url ? new URL(url) : undefined
+      } catch {}
+      if (!parsed || !/^https?:$/.test(parsed.protocol) || isNotion(url))
+        throw new UsageError(url ? `Not a web page on another site than Notion: ${url}` : 'tab needs a URL.')
+      return { command: { name, url }, owner }
+    }
+    case 'add': {
+      const title = rest.join(' ').trim()
+      if (!title) throw new UsageError('add needs the start of a tab title.')
+      return { command: { name, title }, owner }
+    }
     case 'panel': {
       most(1)
       const [url] = rest
