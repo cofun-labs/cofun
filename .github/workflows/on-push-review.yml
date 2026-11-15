@@ -1,4 +1,4 @@
-name: Claude Code Review
+name: On-push review
 
 on:
   pull_request:
@@ -9,7 +9,7 @@ permissions: {}
 # A new push cancels the review of an older head. That loses nothing: the next review covers
 # everything since the head its last summary comment names.
 concurrency:
-  group: claude-review-${{ github.event.pull_request.number }}
+  group: on-push-review-${{ github.event.pull_request.number }}
   cancel-in-progress: true
 
 jobs:
