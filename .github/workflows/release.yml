@@ -220,14 +220,17 @@ jobs:
         run: |
           echo "$ZIP_SHA256  $ARCHIVE" | sha256sum --check --strict
 
-      # The tag is made here, on the commit that was built, before the release that names it. It fails if the tag exists, so a version is released only once.
+      # The tag is made here, on the commit that was built, before the release that names it. It
+      # fails if the tag exists, so a version is released only once.
       - name: Tag the commit
         run: gh api "repos/$REPO/git/refs" -f "ref=refs/tags/$TAG" -f "sha=$SHA" --silent
 
       # Published, not a draft: a release records that a version was built and released, whether or
       # not the store accepts it. One the store turns down is followed by the next version.
+      # The title names the product as users see it: the folder name with a capital letter
+      # (notico → Notico).
       - name: Publish the release
         run: |
           gh release create "$TAG" "$ARCHIVE" --repo "$REPO" --verify-tag \
-            --title "$EXTENSION $VERSION" \
+            --title "${EXTENSION^} $VERSION" \
             --notes-file "$NOTES"
