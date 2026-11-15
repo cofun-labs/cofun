@@ -123,7 +123,7 @@ gh workflow run release.yml --ref main -f extension=notico -f version=0.2.0
 
 Before running it, add the version to the extension's `CHANGELOG.md` ([Notico's](../extensions/notico/CHANGELOG.md)) through a PR: what changed for users since the last release (`git log <name>-v<last version>..main`), worker changes they notice included, written for them rather than copied from commit titles. The workflow uses that entry (the text under the `## <version> (<date>)` heading) as the body of the GitHub Release, and stops before it builds or tags anything if the changelog has no entry for the version.
 
-The version goes into the manifest and is not committed: `package.json` keeps its development version, and the tags record what was released. It must be 1 to 4 dot-separated integers from 0 to 65535, without leading zeros, and higher than the version last uploaded to the store, which rejects any other.
+The version goes into the manifest and is not committed: `package.json` keeps the development version 0.0.1, below every released one, and the tags record what was released. It must be 1 to 4 dot-separated integers from 0 to 65535, without leading zeros, and higher than the version last uploaded to the store, which rejects any other.
 
 The workflow needs no secrets. It checks out `main`, runs `pnpm check`, builds the extension for the store, runs its browser tests against that build, and zips `extensions/<name>/dist`. Then it tags the commit `<name>-v<version>` (for example `notico-v0.2.0`) and creates a **draft** GitHub Release with the changelog entry as its body and the zip (`<name>-<version>.zip`) attached; the zip is also kept as the run's artifact. A tag that exists already stops the run, so each version is built once. To throw a run's result away, delete the draft release and its tag:
 
@@ -131,7 +131,7 @@ The workflow needs no secrets. It checks out `main`, runs `pnpm check`, builds t
 gh release delete notico-v0.2.0 --cleanup-tag
 ```
 
-The store build is the normal build with two variables set, which you can also set by hand to look at one: `EXTENSION_VERSION` replaces the version, and `CRX_STORE_BUILD=1` leaves `key` out of the manifest. The Chrome Web Store signs the item with a key of its own, which sets its ID.
+The store build is the normal build with two variables set, which you can also set by hand to look at one: `EXTENSION_VERSION` replaces the version, and `CRX_STORE_BUILD=1` leaves `key` and `version_name` out of the manifest (every other build has `version_name` `<version> dev`, which `chrome://extensions` shows). The Chrome Web Store signs the item with a key of its own, which sets its ID.
 
 ```bash
 CRX_STORE_BUILD=1 EXTENSION_VERSION=0.2.0 pnpm --filter ./extensions/notico build

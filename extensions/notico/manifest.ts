@@ -74,7 +74,9 @@ function contentSecurityPolicy(env: ManifestEnv): string {
 
 /**
  * The manifest for the given env and version. The store build (`store: true`, for the Chrome Web
- * Store) leaves out `key`: the store signs the item with a key of its own, which sets its ID.
+ * Store) leaves out `key`: the store signs the item with a key of its own, which sets its ID. It
+ * also leaves out `version_name`, which marks every other build as a development one where Chrome
+ * shows the version (chrome://extensions).
  */
 export function buildManifest(env: ManifestEnv, version: string, { store = false }: { store?: boolean } = {}) {
   const clerkHost = clerkFrontendApi(env.VITE_CLERK_PUBLISHABLE_KEY ?? '')
@@ -82,6 +84,7 @@ export function buildManifest(env: ManifestEnv, version: string, { store = false
     manifest_version: 3,
     name: 'Notico: AI copilot for Notion',
     version,
+    ...(store ? {} : { version_name: `${version} dev` }),
     // The store's summary line: at most 132 characters, which the manifest test pins.
     description:
       'AI copilot for Notion: summarize and edit pages, update databases, search and organize your workspace. No subscription needed.',
