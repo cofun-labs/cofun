@@ -220,8 +220,10 @@ jobs:
         run: |
           echo "$ZIP_SHA256  $ARCHIVE" | sha256sum --check --strict
 
-      # The tag is made here, on the commit that was built, before the release that names it. It
-      # fails if the tag exists, so a version is released only once.
+      # The tag is made here, on the commit that was built: given a tag that doesn't exist,
+      # `gh release create` would make it on the default branch's head, which may be a later commit
+      # (--verify-tag below refuses that instead). It fails if the tag exists, so a version is
+      # released only once.
       - name: Tag the commit
         run: gh api "repos/$REPO/git/refs" -f "ref=refs/tags/$TAG" -f "sha=$SHA" --silent
 
