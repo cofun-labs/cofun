@@ -14,6 +14,7 @@ import { createApp, type Env } from '../src/app'
 import { priceOf } from '../src/pricing'
 import { FakeClerk } from './clerk'
 import {
+  FAKE_COST,
   FakeAiBinding,
   FakeD1Database,
   FakeExecutionContext,
@@ -332,5 +333,17 @@ describe('tokens per question', () => {
     const resumed = makeAgent()
     await resumed.reset(saved)
     expect(resumed.history()).toEqual(saved)
+  })
+
+  it('[UC-NOTICO-CHAT-003-S14] a question that failed has no cost; one that ended normally has its exact cost', async () => {
+    const agent = makeAgent()
+    ai.script = [{ toolCalls: [{ name: 'lookup_page', arguments: '{}' }] }, { reply: 'Hi.' }]
+    expect((await ask(agent, 'Which page?')).used.cost).toEqual({ microCredits: 2 * FAKE_COST })
+    // The first call answers, the second breaks off: the worker charges it from estimated tokens.
+    ai.script = [{ toolCalls: [{ name: 'lookup_page', arguments: '{}' }] }]
+    ai.rawSse = 'data: {"choices":[{"delta":{"content":"abc"}}]}\n\n'
+    const { result, used } = await ask(agent, 'And now?')
+    expect(result.status).toBe('error')
+    expect(used.cost).toBeUndefined()
   })
 })
