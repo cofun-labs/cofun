@@ -1,0 +1,80 @@
+{
+  "response": {
+    "object": "client",
+    "id": "client_smoke",
+    "sessions": [
+      {
+        "object": "session",
+        "id": "sess_smoke",
+        "status": "active",
+        "expire_at": 4102444800000,
+        "abandon_at": 4102444800000,
+        "last_active_at": 1767225600000,
+        "last_active_organization_id": null,
+        "actor": null,
+        "user": {
+          "object": "user",
+          "id": "user_smoke",
+          "first_name": "Smoke",
+          "last_name": "Test",
+          "username": null,
+          "image_url": "",
+          "has_image": false,
+          "primary_email_address_id": "idn_smoke",
+          "primary_phone_number_id": null,
+          "primary_web3_wallet_id": null,
+          "email_addresses": [
+            {
+              "object": "email_address",
+              "id": "idn_smoke",
+              "email_address": "smoke@example.com",
+              "verification": {
+                "status": "verified",
+                "strategy": "email_code"
+              },
+              "linked_to": []
+            }
+          ],
+          "phone_numbers": [],
+          "web3_wallets": [],
+          "external_accounts": [],
+          "passkeys": [],
+          "enterprise_accounts": [],
+          "saml_accounts": [],
+          "organization_memberships": [],
+          "public_metadata": {},
+          "unsafe_metadata": {},
+          "password_enabled": false,
+          "two_factor_enabled": false,
+          "totp_enabled": false,
+          "backup_code_enabled": false,
+          "create_organization_enabled": false,
+          "delete_self_enabled": true,
+          "last_sign_in_at": 1767225600000,
+          "created_at": 1767225600000,
+          "updated_at": 1767225600000
+        },
+        "public_user_data": {
+          "first_name": "Smoke",
+          "last_name": "Test",
+          "image_url": "",
+          "has_image": false,
+          "identifier": "smoke@example.com"
+        },
+        "factor_verification_age": null,
+        "created_at": 1767225600000,
+        "updated_at": 1767225600000,
+        "last_active_token": {
+          "object": "token",
+          "jwt": "eyJhbGciOiJSUzI1NiIsImtpZCI6Imluc19zbW9rZSIsInR5cCI6IkpXVCJ9.eyJzaWQiOiJzZXNzX3Ntb2tlIiwic3ViIjoidXNlcl9zbW9rZSIsImlzcyI6Imh0dHBzOi8vY2xlcmsuZXhhbXBsZS50ZXN0IiwiaWF0IjoxNzY3MjI1NjAwLCJuYmYiOjE3NjcyMjU2MDAsImV4cCI6NDEwMjQ0NDgwMCwidiI6Mn0.c21va2U"
+        }
+      }
+    ],
+    "sign_in": null,
+    "sign_up": null,
+    "last_active_session_id": "sess_smoke",
+    "created_at": 1767225600000,
+    "updated_at": 1767225600000
+  },
+  "client": null
+}

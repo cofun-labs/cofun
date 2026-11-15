@@ -118,47 +118,133 @@ function readRows(file: SourceFile, report: Report): Row[] {
 
 /** What a test without a scenario guards against, in `[@no-uc:<kind>]` (docs/bdd.md#what-gets-a-test). */
 const NO_UC_KINDS = ['data', 'notion-safety', 'money', 'access', 'privacy', 'contract']
-const NO_UC = /\[@no-uc:([a-z-]*)\]/g
-const ANY_TEST_ID = new RegExp(`\\[${SCENARIO_ID}\\]`)
+/** A tag at the start of a test's name: a scenario ID, or `@no-uc:` and the kind of harm. */
+const NAME_TAG = new RegExp(`^\\[(?:${SCENARIO_ID.replace('(', '(?:')}|@no-uc:([a-z-]*))\\]`)
 
 /**
- * The line of each test's name: the line that starts it (`it(`, `test(`, `it.only(`, `it.each(…)(`, a
- * loop that makes one, and every other form but `.skip` and `.todo`), the next one when the formatter
- * put the name there, or the `])(` line that closes a table of cases. A form this doesn't know still
- * counts as a test, so a test can't pass the check unread.
+ * The text of a test file with what can't hold a test blanked out (comments, and the inside of
+ * strings, templates, and regular expressions), so `it(` in a comment or a string is no test. Offsets
+ * and lines stay where they were; quotes stay, so a name is found where it starts.
  */
-function testNameLines(lines: string[]): number[] {
-  const found: number[] = []
-  lines.forEach((line, index) => {
-    if (/^\s*(it|test)\.(skip|todo)\b/.test(line)) return
-    if (!/^\s*(it|test)\b[.(]/.test(line) && !/^\s*for\b.*\b(it|test)\b[.(]/.test(line)) return
-    if (/\b(it|test)(\.\w+)*\(\s*['"`]/.test(line) || /\)\(\s*['"`]/.test(line)) found.push(index)
-    else if (line.trimEnd().endsWith('(')) found.push(index + 1)
-    else if (/^\s*(it|test)\.\w+\(\s*\[\s*$/.test(line)) {
-      let close = index + 1
-      while (close < lines.length && !/^\s*\]?\)\(/.test(lines[close])) close++
-      found.push(close)
-    } else found.push(index)
-  })
-  return found
+function codeOnly(text: string): string {
+  const out = text.split('')
+  const blank = (from: number, to: number) => {
+    for (let k = from; k < to; k++) if (out[k] !== '\n') out[k] = ' '
+  }
+  let i = 0
+  let previous = ''
+  while (i < text.length) {
+    const c = text[i]
+    if (c === '/' && text[i + 1] === '/') {
+      const end = text.indexOf('\n', i)
+      const to = end === -1 ? text.length : end
+      blank(i, to)
+      i = to
+    } else if (c === '/' && text[i + 1] === '*') {
+      const end = text.indexOf('*/', i + 2)
+      const to = end === -1 ? text.length : end + 2
+      blank(i, to)
+      i = to
+    } else if (c === "'" || c === '"' || c === '`' || (c === '/' && startsValue(text, i, previous))) {
+      let j = i + 1
+      let inClass = false
+      while (j < text.length && (text[j] !== c || inClass)) {
+        if (text[j] === '\\') j++
+        else if (c === '/' && text[j] === '[') inClass = true
+        else if (c === '/' && text[j] === ']') inClass = false
+        else if (c !== '`' && text[j] === '\n') break
+        j++
+      }
+      blank(i + 1, j)
+      previous = c
+      i = j + 1
+      continue
+    } else {
+      if (!/\s/.test(c)) previous = c
+      i++
+    }
+  }
+  return out.join('')
 }
 
-/** Every test names a scenario ID or a kind of harm it guards; one that does neither fails. */
-function checkTestTags(file: SourceFile, report: Report): void {
-  const lines = file.text.split('\n')
-  for (const index of testNameLines(lines)) {
-    const line = lines[index] ?? ''
-    const at = `${file.path}:${index + 1}`
-    const kinds = [...line.matchAll(NO_UC)].map((match) => match[1])
-    for (const kind of kinds) {
-      if (!NO_UC_KINDS.includes(kind)) {
-        report.errors.push(`${at}: [@no-uc:${kind}] is not a kind of harm; use one of ${NO_UC_KINDS.join(', ')}`)
-      }
+/**
+ * Whether a `/` at `i` starts a regular expression, not a division: it does where a value may start,
+ * after an operator, an opening bracket, a keyword such as `return` or `of`, or nothing.
+ */
+function startsValue(text: string, i: number, previous: string): boolean {
+  const before = text.slice(Math.max(0, i - 16), i).trimEnd()
+  // Not after `<`, which in JSX is a closing tag's (`</p>`), nor after `++` or `--`, which end a value.
+  if (/(?:\+\+|--)$/.test(before)) return false
+  if (/^$|[(,=:[!&|?{};>+\-*%~^]$/.test(previous)) return true
+  return /(?:^|[^\w$.])(?:return|typeof|case|of|in|instanceof|delete|void|throw|new|do|else|yield|await)$/.test(before)
+}
+
+/** The offset just after the bracket that closes the one at `i`, in code with its strings blanked. */
+function closing(code: string, i: number): number {
+  const pairs: Record<string, string> = { '(': ')', '[': ']', '{': '}', '`': '`' }
+  const close = pairs[code[i]]
+  if (close === '`') return code.indexOf('`', i + 1) + 1 || code.length
+  let depth = 0
+  for (let j = i; j < code.length; j++) {
+    if (code[j] === code[i]) depth++
+    else if (code[j] === close && --depth === 0) return j + 1
+  }
+  return code.length
+}
+
+/**
+ * Every test in a file, in every form it may be written in (`it(`, `test(`, `it.only(`,
+ * `it.each(…)(`, `it.each`…`(`, in a loop or a callback), but `.skip` and `.todo`: the offset where
+ * its name starts, and the name, or `undefined` when it isn't written out as a string. A test is the
+ * last call of an `it` or `test` chain, and its name that call's first argument.
+ */
+function readTests(text: string): { at: number; name: string | undefined }[] {
+  const code = codeOnly(text)
+  const tests: { at: number; name: string | undefined }[] = []
+  for (const match of code.matchAll(/(?<![\w$.])(?:it|test)\b(?=\s*[.(`])/g)) {
+    let i = match.index + match[0].length
+    let skipped = false
+    let lastCall: number | undefined
+    for (;;) {
+      while (/\s/.test(code[i] ?? '')) i++
+      if (code[i] === '.') {
+        const word = /^\.\s*(\w+)/.exec(code.slice(i))
+        if (!word) break
+        if (word[1] === 'skip' || word[1] === 'todo') skipped = true
+        i += word[0].length
+      } else if (code[i] === '(') {
+        lastCall = i
+        i = closing(code, i)
+      } else if (code[i] === '`') {
+        i = closing(code, i)
+      } else break
     }
-    if (kinds.length === 0 && !ANY_TEST_ID.test(line)) {
+    if (skipped || lastCall === undefined) continue
+    let start = lastCall + 1
+    while (/\s/.test(code[start] ?? '')) start++
+    const quote = text[start]
+    if (quote !== "'" && quote !== '"' && quote !== '`') {
+      tests.push({ at: start, name: undefined })
+      continue
+    }
+    let end = start + 1
+    while (end < text.length && text[end] !== quote) end += text[end] === '\\' ? 2 : 1
+    tests.push({ at: start, name: text.slice(start + 1, end) })
+  }
+  return tests
+}
+
+/** Every test's name starts with a scenario ID or a kind of harm it guards; one that does neither fails. */
+function checkTestTags(file: SourceFile, report: Report): void {
+  for (const { at: offset, name } of readTests(file.text)) {
+    const at = `${file.path}:${file.text.slice(0, offset).split('\n').length}`
+    const tag = name === undefined ? null : NAME_TAG.exec(name)
+    if (tag?.[1] !== undefined && !NO_UC_KINDS.includes(tag[1])) {
+      report.errors.push(`${at}: [@no-uc:${tag[1]}] is not a kind of harm; use one of ${NO_UC_KINDS.join(', ')}`)
+    } else if (!tag) {
       report.errors.push(
-        `${at}: a test that names no scenario ID and no [@no-uc:<kind>] (${NO_UC_KINDS.join(', ')}); ` +
-          'see docs/bdd.md#what-gets-a-test',
+        `${at}: a test whose name starts with no scenario ID and no [@no-uc:<kind>] ` +
+          `(${NO_UC_KINDS.join(', ')}), or is not written out; see docs/bdd.md#what-gets-a-test`,
       )
     }
   }

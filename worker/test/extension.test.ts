@@ -240,7 +240,7 @@ describe('extension agent against the worker', () => {
     expect(ai.calls).toHaveLength(0)
   })
 
-  it('[@no-uc:access] shows the server reason for a rejected session', async () => {
+  it('[@no-uc:contract] shows the server reason for a rejected session', async () => {
     const { result } = await ask(makeAgent({ getToken: async () => 'not-a-jwt' }), 'hi')
     expect(result).toEqual({ status: 'error', message: 'invalid or expired session' })
   })

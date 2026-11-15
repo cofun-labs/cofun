@@ -1,6 +1,6 @@
 // Loads the built extension (extensions/notico/dist) into Chromium and checks that it still works there.
-// Nothing leaves the machine: Notion, the other site, and Clerk's Frontend API are answered from
-// fixtures/, usage events are taken and dropped, and any other request fails the test. The extension's own code and its bundled
+// Nothing leaves the machine: Notion, the other site, Clerk's Frontend API, and (signed in) the worker
+// are answered from fixtures/, usage events are taken and dropped, and any other request fails the test. The extension's own code and its bundled
 // dependencies run unchanged.
 import { chromium, expect, test as base, type BrowserContext, type Request, type Worker } from '@playwright/test'
 import { existsSync, readFileSync } from 'node:fs'
@@ -13,10 +13,41 @@ const NOTION_URLS = ['https://www.notion.so/Smoke-Test-Page', 'https://app.notio
 const OTHER_URL = 'https://example.com/'
 const PAGE_HOSTS = [...NOTION_URLS, OTHER_URL].map((url) => new URL(url).hostname)
 
-// What Clerk asks its Frontend API for while loading, answered as a signed-out client would be.
+// What Clerk asks its Frontend API for while loading, answered as a signed-out client would be
+// (signed in, /v1/client is answered from SIGNED_IN_CLIENT instead).
 const CLERK_FIXTURES: Record<string, string> = {
   '/v1/environment': 'clerk-environment.json',
   '/v1/client': 'clerk-client.json',
+}
+
+/**
+ * Signed in, Clerk's Sync Host finds this client cookie, and the bundled Clerk sends it to the
+ * Frontend API as a bearer token; /v1/client then answers with the fixture's active session.
+ */
+const CLIENT_JWT = 'client_smoke_jwt'
+const SIGNED_IN_CLIENT = 'clerk-client-signed-in.json'
+/** The session token the signed-in fixture hands out: what the panel must send the worker. */
+const SESSION_TOKEN = (
+  JSON.parse(readFileSync(path.join(FIXTURES, SIGNED_IN_CLIENT), 'utf8')) as {
+    response: { sessions: { last_active_token: { jwt: string } }[] }
+  }
+).response.sessions[0]!.last_active_token.jwt
+
+// What the signed-in panel asks the worker for while loading.
+const WORKER_FIXTURES: Record<string, string> = {
+  '/v1/credits': 'worker-credits.json',
+}
+
+/** Hosts the extension's pages may fetch from, as its content security policy lists them. The worker is one. */
+function connectHosts(): string[] {
+  const manifest = JSON.parse(readFileSync(path.join(DIST, 'manifest.json'), 'utf8')) as {
+    content_security_policy: { extension_pages: string }
+  }
+  const connect = manifest.content_security_policy.extension_pages
+    .split(';')
+    .map((directive) => directive.trim().split(/\s+/))
+    .find(([name]) => name === 'connect-src')
+  return (connect ?? []).filter((source) => source.startsWith('https://')).map((source) => new URL(source).hostname)
 }
 
 /**
@@ -39,9 +70,13 @@ function corsHeaders(request: Request): Record<string, string> {
 }
 
 interface Fixtures {
+  /** Whether Clerk's Sync Host finds a signed-in client: the client cookie is set, and /v1/client answers with a session. */
+  signedIn: boolean
   context: BrowserContext
   /** The extension's service worker (background.ts). */
   background: Worker
+  /** Requests the worker fixtures answered: the path, and the session token they carried. */
+  worker: { path: string; token: string | undefined }[]
   /** Requests the fixtures don't answer. They are blocked, and a test expects none. */
   blocked: string[]
   /**
@@ -52,31 +87,61 @@ interface Fixtures {
 }
 
 const test = base.extend<Fixtures>({
+  signedIn: [false, { option: true }],
   // Playwright reads a fixture's dependencies from this destructuring pattern, so it can't be `_`.
   // oxlint-disable-next-line no-empty-pattern
   blocked: async ({}, use) => {
     await use([])
   },
-  context: async ({ blocked }, use) => {
+  // Playwright reads a fixture's dependencies from this destructuring pattern, so it can't be `_`.
+  // oxlint-disable-next-line no-empty-pattern
+  worker: async ({}, use) => {
+    await use([])
+  },
+  context: async ({ blocked, signedIn, worker }, use) => {
     if (!existsSync(path.join(DIST, 'manifest.json'))) {
       throw new Error(`No built extension at ${DIST}. Run pnpm build first.`)
     }
     // Extensions need a persistent context, and Playwright's own Chromium: Chrome and Edge
     // no longer take --load-extension.
     const clerkHosts = apiHosts()
+    const workerHosts = connectHosts()
     const context = await chromium.launchPersistentContext('', {
       channel: 'chromium',
       args: [`--disable-extensions-except=${DIST}`, `--load-extension=${DIST}`],
     })
+    if (signedIn) {
+      await context.addCookies(
+        clerkHosts.map((host) => ({
+          name: '__client',
+          value: CLIENT_JWT,
+          domain: host,
+          path: '/',
+          secure: true,
+          httpOnly: true,
+        })),
+      )
+    }
     await context.route('**/*', async (route) => {
       const request = route.request()
       const url = new URL(request.url())
       if (url.protocol === 'chrome-extension:') return route.continue()
       if (PAGE_HOSTS.includes(url.hostname)) return route.fulfill({ path: path.join(FIXTURES, 'page.html') })
-      const clerkFixture =
+      let clerkFixture =
         request.method() === 'GET' && clerkHosts.includes(url.hostname) ? CLERK_FIXTURES[url.pathname] : undefined
+      if (clerkFixture === 'clerk-client.json' && request.headers().authorization === `Bearer ${CLIENT_JWT}`) {
+        clerkFixture = SIGNED_IN_CLIENT
+      }
       if (clerkFixture) {
         return route.fulfill({ path: path.join(FIXTURES, clerkFixture), headers: corsHeaders(request) })
+      }
+      const workerFixture =
+        signedIn && request.method() === 'GET' && workerHosts.includes(url.hostname)
+          ? WORKER_FIXTURES[url.pathname]
+          : undefined
+      if (workerFixture) {
+        worker.push({ path: url.pathname, token: request.headers().authorization?.replace(/^Bearer /, '') })
+        return route.fulfill({ path: path.join(FIXTURES, workerFixture), headers: corsHeaders(request) })
       }
       // A usage event (src/analytics.ts), when the build has a PostHog key: taken as PostHog takes
       // it, and sent nowhere. Anything else to PostHog (a script, its configuration) is blocked.
@@ -180,4 +245,26 @@ test('the side panel page shows the signed-out state', async ({ context, backgro
   expect(clerkRequests.toSorted()).toEqual(Object.keys(CLERK_FIXTURES).toSorted())
   expect(errors).toEqual([])
   expect(blocked).toEqual([])
+})
+
+test.describe('signed in', () => {
+  test.use({ signedIn: true })
+
+  test('the side panel shows the chat to a signed-in user', async ({ context, background, blocked, worker }) => {
+    const errors: string[] = []
+    const page = await context.newPage()
+    page.on('pageerror', (error) => errors.push(`pageerror: ${error.message}`))
+    page.on('console', (message) => {
+      if (message.type() === 'error') errors.push(`console.error: ${message.text()}`)
+    })
+
+    await page.goto(`chrome-extension://${new URL(background.url()).host}/sidepanel.html`)
+
+    await expect(page.getByRole('button', { name: 'New chat' })).toBeVisible()
+    await expect(page.getByRole('textbox')).toBeVisible()
+    // Clerk took the session from the fixture, and the panel asked the worker with its token.
+    await expect.poll(() => worker).toContainEqual({ path: '/v1/credits', token: SESSION_TOKEN })
+    expect(errors).toEqual([])
+    expect(blocked).toEqual([])
+  })
 })
