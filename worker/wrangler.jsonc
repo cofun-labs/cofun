@@ -18,7 +18,7 @@
   "ai": { "binding": "AI" },
 
   // Every user's credits: grants, and model calls with what each cost; the schema is in migrations/
-  // (see docs/development.md).
+  // (see "Database" in docs/development.md).
   // The database is found by its name on the deploying account, so its id is not kept here.
   "d1_databases": [{ "binding": "DB", "database_name": "cofun-db", "migrations_dir": "migrations" }],
 
@@ -55,7 +55,7 @@
     // What is on sale: the live Stripe price of 1,000 credits for US$1 (one product, "Cofun Credits"),
     // and the quantities of it sold as packs: US$1, 5, 20, and 100. Price ids are not secret.
     // STRIPE_SECRET_KEY and STRIPE_WEBHOOK_SECRET are worker secrets, never kept here (see
-    // docs/development.md).
+    // "Worker" in docs/development.md).
     "CREDIT_PRICE": "price_1UbLSMCT6MhL4FCmD4mRe680",
     "CREDIT_PACKS": [1, 5, 20, 100],
     // Product analytics: PostHog's ingestion host (US region) and the project's key (phc_…, public
