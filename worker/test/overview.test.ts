@@ -322,6 +322,7 @@ describe('UC-COFUN-ADMIN-002 See granted and spent credits as a whole', () => {
       await clerk.sessionToken({ userId: 'user_eve', azp: WORKER }),
       // An admin's session, but not one issued to the admin page.
       await clerk.sessionToken({ userId: 'user_root', azp: EXT, claims: { role: 'admin' } }),
+      await clerk.sessionToken({ userId: 'user_root', claims: { role: 'admin' } }),
     ]
     for (const stranger of strangers) {
       const answers = [

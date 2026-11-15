@@ -38,16 +38,16 @@ const Products = z.record(
 /**
  * The product a model call comes from: the one PRODUCTS lists for the origin the session token was
  * issued to (its `azp`, which Clerk signs, so a client cannot pick it), or `unknown` for an allowed
- * origin that is no listed extension (the admin page). Such a caller is not refused: the product
+ * origin that is no listed extension (the admin page) and a token that names no origin. Such a caller is not refused: the product
  * only sorts what was spent, credits are one balance across products.
  */
-function productOf(env: Env, azp: string): string {
+function productOf(env: Env, azp: string | undefined): string {
   const products = Products.optional().safeParse(env.PRODUCTS)
   if (!products.success) {
     throw new HttpError(503, 'not_configured', `PRODUCTS is invalid: ${products.error.issues[0].message}`)
   }
   const listed = products.data ?? {}
-  return Object.hasOwn(listed, azp) ? listed[azp] : UNKNOWN_PRODUCT
+  return azp !== undefined && Object.hasOwn(listed, azp) ? listed[azp] : UNKNOWN_PRODUCT
 }
 
 /**

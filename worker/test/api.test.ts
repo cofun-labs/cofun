@@ -137,14 +137,19 @@ describe('worker API', () => {
     expect((await chat(web)).status).toBe(200)
   })
 
-  it('[@no-uc:access] a validly signed session that names no origin is refused', async () => {
+  it('[@no-uc:access] a validly signed session that names no origin is accepted', async () => {
+    // Clerk hands a side panel that just loaded such a token, for its first minute.
     const noOrigin = await clerk.sessionToken({ userId: 'user_alice' })
+    const res = await req('GET', '/v1/me', noOrigin)
+    expect(res.status).toBe(200)
+    expect(await json(res)).toEqual({ userId: 'user_alice', model: MODEL })
+  })
+
+  it('[@no-uc:access] a session whose origin is not text is refused', async () => {
     const notText = await clerk.sessionToken({ userId: 'user_alice', claims: { azp: [EXT] } })
-    for (const bearer of [noOrigin, notText]) {
-      const res = await req('GET', '/v1/me', bearer)
-      expect(res.status).toBe(401)
-      expect((await json(res)).error.code).toBe('unauthorized')
-    }
+    const res = await req('GET', '/v1/me', notText)
+    expect(res.status).toBe(401)
+    expect((await json(res)).error.code).toBe('unauthorized')
   })
 
   it('[@no-uc:access] API is off without the JWT key', async () => {
@@ -770,10 +775,11 @@ describe('product of a model call', () => {
     expect(ai.calls[0].inputs).not.toHaveProperty('product')
   })
 
-  it('[@no-uc:money] is unknown for an allowed caller that is no listed extension, and the call goes ahead', async () => {
+  it('[@no-uc:money] is unknown for an allowed caller that is no listed extension or names no origin, and the call goes ahead', async () => {
     const web = await clerk.sessionToken({ userId: 'user_alice', azp: 'https://cofun.example' })
     expect((await chat(web)).status).toBe(200)
-    expect(products()).toEqual(['unknown'])
+    expect((await chat(await clerk.sessionToken({ userId: 'user_alice' }))).status).toBe(200)
+    expect(products()).toEqual(['unknown', 'unknown'])
   })
 
   it('[@no-uc:money] is unknown for every caller when no products are configured', async () => {
