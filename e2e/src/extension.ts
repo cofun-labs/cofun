@@ -44,7 +44,7 @@ export function problem(status: ExtensionStatus): string | undefined {
 }
 
 /** Whether a manifest.json is this extension's build, so its folder is safe to build over. */
-export function isOurManifest(text: string): boolean {
+function isOurManifest(text: string): boolean {
   return manifestOf(text)?.name === EXTENSION_NAME
 }
 
@@ -53,7 +53,7 @@ export function isOurManifest(text: string): boolean {
  * the extension id; a build with another key (or none) would load as another extension, without the
  * shared profile's storage and Notico sign-in.
  */
-export function replaceProblem(loaded: string, built: string): string | undefined {
+function replaceProblem(loaded: string, built: string): string | undefined {
   const key = (text: string) => manifestOf(text)?.key
   if (key(built) === key(loaded)) return undefined
   return (
