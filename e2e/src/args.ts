@@ -22,7 +22,7 @@ export interface Parsed {
   owner?: string
 }
 
-export const DEFAULT_TIMEOUT_S = 300
+const DEFAULT_TIMEOUT_S = 300
 
 export class UsageError extends Error {
   constructor(message: string) {

@@ -4,7 +4,7 @@ How Cofun's extensions and the backend they share are built, and why. For setup 
 
 Each Cofun extension is an AI side panel for one kind of page, in its own folder under `extensions/` (Notico, for Notion, is the first), built and published by itself. All of them call one Cloudflare Worker (`worker/`), which signs users in, checks who is asking, keeps their credits, and passes the conversation to the model. The worker knows nothing about any site: it never talks to Notion or any other page's service. The agent and its tools run in the extension, next to the page they act on.
 
-Each extension keeps its own copy of the side panel code (UI, agent, sign-in, settings, credits), and duplication between extensions is accepted: a fix or feature in one is applied to the others by hand, and `worker/test/extension.test.ts` runs an extension's own agent against the worker so the part that faces the worker cannot drift. One account and one balance of credits serve every extension.
+Each extension keeps its own copy of the side panel code (UI, agent, sign-in, settings, credits), and duplication between extensions is accepted: a fix or feature in one is applied to the others by hand, and an extension's tests run its own agent against the worker so the part that faces the worker cannot drift. One account and one balance of credits serve every extension.
 
 ## Single source of truth
 

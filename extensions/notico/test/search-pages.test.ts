@@ -159,8 +159,8 @@ describe('search_pages arguments', () => {
     expect(tab.sent).toEqual([])
   })
 
-  // A null is dropped before a tool gets its arguments: see "read_page gets the model's arguments
-  // as its schema reads them" in worker/test/extension.test.ts.
+  // A null is dropped before a tool gets its arguments: see "a null where the schema takes none is
+  // refused" in agent.test.ts.
   it('passes the limit, and uses the default without one', async () => {
     const tab = open()
       .respond('search', 200, SEARCH)

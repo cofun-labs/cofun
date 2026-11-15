@@ -7,7 +7,7 @@ import { homedir } from 'node:os'
 import { join } from 'node:path'
 
 const LOCK_DIR = join(homedir(), '.cache', 'cofun', 'canary.lock')
-export const STALE_MS = 30 * 60_000
+const STALE_MS = 30 * 60_000
 
 /** How old a takeover guard must be to count as left behind by a session that died taking over. */
 const GUARD_STALE_MS = 60_000

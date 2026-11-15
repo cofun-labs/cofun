@@ -1,6 +1,4 @@
 // The current tab and the Notion page open in it: what a question carries, and get_current_tab.
-// The worker's tests import this file too, and their tsconfig has no chrome types.
-/// <reference types="chrome" />
 import { defineTool } from '../tool'
 import { z } from '../zod'
 import { NOTION_HOSTS, isNotion, pageIdFromUrl, showsDatabase } from '../notion/hosts'

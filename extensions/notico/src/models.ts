@@ -2,6 +2,8 @@
 // on, each with the user's own key and the models it offers; the composer picks one of those, or Auto,
 // the hosted model. Kept in chrome.storage.local per account: on this device only, never synced, and
 // not encrypted, like the Clerk client token.
+// The worker's tests import this file too, through the agent, and their tsconfig has no chrome types.
+/// <reference types="chrome" />
 import { z } from './zod'
 
 /** A model the user asks with their own key (on OpenRouter), as the panel offers it. */
