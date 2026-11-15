@@ -1,6 +1,5 @@
 // Reads one version's entry out of an extension's CHANGELOG.md, for the Release workflow, which
-// uses it as the body of the GitHub Release (see release-notes.ts and "Releases" in
-// docs/development.md).
+// uses it as the body of the GitHub Release (see release-notes.ts and docs/release.md).
 
 /**
  * The text under the `## <version> (<date>)` heading, up to the next `## ` heading or the end of
