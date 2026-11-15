@@ -6,7 +6,7 @@ import { NOTION_HOSTS, isNotion, pageIdFromUrl, showsDatabase } from '../notion/
 import { clip } from '../notion/comments'
 import type { Selection } from '../selection'
 import { mayRead, readPage, readableSite } from '../web/tab'
-import { LOOK, READ, asData, count, on } from './shared'
+import { LOOK, READ, asData, asPageText, count, on } from './shared'
 
 /** The title and URL of the current tab: the active tab of the side panel's window, on any site. */
 async function currentTab(): Promise<{ title: string; url: string } | undefined> {
@@ -89,7 +89,6 @@ export function carryPages(
   selections: Selection[] = [],
 ): string {
   openPageAttached = !removed
-  outsideRead = 0
   // The open page is named once, in its own note, also when the user added it by hand.
   const open = page && !removed ? pageIdFromUrl(page.url) : undefined
   const others = added.filter((p) => !open || pageIdFromUrl(p.url) !== open)
@@ -97,25 +96,25 @@ export function carryPages(
   if (others.length)
     notes.push(`[Pages the user added to this question: ${others.map((p) => pageNamed(p)).join('; ')}]`)
   const carried = selectionsCarried(selections)
-  for (const { selection, text } of carried) {
-    outsideRead += text.length
-    notes.push(selectionNote(selection, text))
-  }
+  for (const { selection, text } of carried) notes.push(selectionNote(selection, text))
   if (carried.length < selections.length)
     notes.push(
       '[The user sent more text selected on pages with this question, which is left out: the question ' +
-        'already carries as much text from pages outside Notion as one may.]',
+        'already carries as much selected text as one may.]',
     )
   return notes.join('\n')
 }
 
+/** How much selected text one question carries, over all its selections. */
+const SELECTION_CHARS = 60_000
+
 /**
  * The selections a question carries, of those sent with it, each with as much of its text as goes:
- * they count toward what one question reads outside Notion, so past that limit the last is cut and
- * the rest are left out. The panel shows the question with these only.
+ * past SELECTION_CHARS the last is cut and the rest are left out. The panel shows the question with
+ * these only.
  */
 export function selectionsCarried(selections: Selection[]): { selection: Selection; text: string }[] {
-  let left = QUESTION_OUTSIDE_CHARS
+  let left = SELECTION_CHARS
   const carried = []
   for (const selection of selections) {
     if (left <= 0) break
@@ -209,21 +208,6 @@ export const getCurrentTab = defineTool({
 /** How much of a page read_current_tab returns. */
 const TAB_TEXT_CHARS = 20_000
 
-/**
- * How much text from pages outside Notion one question may read, over all its reads: a question
- * that goes on reading the same tab must not fill the conversation, or spend credits on it.
- */
-const QUESTION_OUTSIDE_CHARS = 60_000
-
-/** Characters of pages outside Notion the question being asked has read; carryPages starts it at 0. */
-let outsideRead = 0
-
-/**
- * Keeps the page's lines from passing for the tool's own: a line that opens like a note in
- * brackets or a block reference gets a backslash first.
- */
-const asPageText = (text: string) => text.replace(/^([^\S\n]*)(\[|\^)/gm, '$1\\$2')
-
 export const readCurrentTab = defineTool({
   name: 'read_current_tab',
   description:
@@ -234,22 +218,16 @@ export const readCurrentTab = defineTool({
     'as summarizing it or saving it to Notion; never for a Notion page (use read_page). A long page is clipped.',
   describe: (_args, details) => on(READ, details?.name, 'the current tab'),
   args: z.strictObject({}),
-  run: async (_args, _signal, ask) => {
+  run: async (_args, _signal, context) => {
     await needsAttachedPage()
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true })
     if (tab?.id === undefined || !tab.url) throw new Error('Could not tell which tab is the current one.')
     if (isNotion(tab.url)) throw new Error('The current tab is a Notion page: read it with read_page instead.')
     const site = readableSite(tab.url)
     if ('reason' in site) throw new Error(site.reason)
-    const left = QUESTION_OUTSIDE_CHARS - outsideRead
-    if (left <= 0)
-      throw new Error(
-        `This question has read as much from pages outside Notion as one question may (${QUESTION_OUTSIDE_CHARS.toLocaleString('en-US')} ` +
-          "characters). Answer from what was read; don't read the page again in this question.",
-      )
     const host = new URL(site.origin).host
     if (!(await mayRead(site.origin))) {
-      const allowed = await ask?.({ text: `Allow Notico to read ${host}?`, access: site.origin })
+      const allowed = await context?.ask({ text: `Allow Notico to read ${host}?`, access: site.origin })
       // Chrome granted it only if the user allowed it in its own prompt too.
       if (!allowed || !(await mayRead(site.origin)))
         throw new Error(
@@ -265,9 +243,8 @@ export const readCurrentTab = defineTool({
         'The current tab changed while Notico waited (the user switched tabs or went to another page), so ' +
           'nothing was read. Ask them to go back to the page and ask again.',
       )
-    const page = await readPage(tab.id, site.origin, Math.min(TAB_TEXT_CHARS, left))
+    const page = await readPage(tab.id, site.origin, TAB_TEXT_CHARS)
     if ('reason' in page) throw new Error(page.reason)
-    outsideRead += page.text.length
     const shown = page.text.length < page.chars
     const lines = [
       // As JSON, so the title and URL stay inside their quotes and on their line.

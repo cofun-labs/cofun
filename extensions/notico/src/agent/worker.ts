@@ -3,7 +3,7 @@
 import { CheckoutPage } from '../credits'
 import { z } from '../zod'
 import { HOSTED_HISTORY, looseText, parseError, type CallCost, type ModelProvider } from './provider'
-import type { AgentConfig } from './types'
+import { WebError, WebPage, type AgentConfig } from './types'
 
 const SIGN_IN = 'Please sign in first.'
 
@@ -127,4 +127,71 @@ export async function readOwn<S extends z.ZodType>(
   const body: unknown = await res.json().catch(() => undefined)
   if (!res.ok) throw new Error(ErrorReply.safeParse(body).data?.error?.message ?? `HTTP ${res.status}`)
   return schema.parse(body)
+}
+
+/** A refusal from the worker, with its code. */
+const CodedError = z.object({ error: z.object({ code: looseText, message: looseText }) })
+
+/** What the user is told when the worker's limit on pages read stops a question. */
+const TOO_MANY_PAGES = 'Notico read too many web pages in a minute. Wait a minute, then ask again.'
+
+/**
+ * The worker's reasons a page could not be read that the model can act on (tell the user, render
+ * the page, have it opened in a tab): these come back to the model. Any other reason stops the question.
+ */
+const PAGE_REASONS = new Set([
+  'not_allowed',
+  'unreachable',
+  'timeout',
+  'too_many_redirects',
+  'no_access',
+  'bot_check',
+  'not_found',
+  'site_error',
+  'unsupported_type',
+  'no_text',
+  'render_failed',
+])
+
+/**
+ * What the user is told when the worker's answer stops the question (see PAGE_REASONS), or
+ * undefined when it doesn't. A stopped question sends nothing more, so the model can't try again.
+ */
+function stopsFor(code: string, message: string): string | undefined {
+  if (PAGE_REASONS.has(code)) return undefined
+  if (code === 'rate_limited') return TOO_MANY_PAGES
+  if (code === 'site_busy')
+    return "A site turned away Notico's requests for coming too often. Wait a while, then ask again."
+  return `Notico could not read a web page: ${message}`
+}
+
+/**
+ * Has the worker read the web page at `url` (see ToolContext.readWeb): fetched plainly, or rendered
+ * in a browser when `render` is set. Resolves with the page;
+ * throws a WebError when the worker could not read it, which stops the question unless the model
+ * can act on the reason (see PAGE_REASONS).
+ */
+export async function readWebPage(
+  { apiUrl, getToken, client }: Pick<AgentConfig, 'apiUrl' | 'getToken' | 'client'>,
+  url: string,
+  maxChars: number,
+  render: boolean,
+  signal?: AbortSignal,
+): Promise<WebPage> {
+  const token = await getToken()
+  if (!token) throw new Error(SIGN_IN)
+  const res = await fetch(`${apiUrl.replace(/\/+$/, '')}/web/${render ? 'render' : 'read'}`, {
+    method: 'POST',
+    headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json', 'x-cofun-client': client },
+    body: JSON.stringify({ url, max_chars: maxChars }),
+    signal,
+  })
+  const body: unknown = await res.json().catch(() => undefined)
+  if (!res.ok) {
+    const refusal = CodedError.safeParse(body).data?.error
+    const code = refusal?.code ?? `http_${res.status}`
+    const message = refusal?.message ?? `HTTP ${res.status}`
+    throw new WebError(code, message, stopsFor(code, message))
+  }
+  return WebPage.parse(body)
 }

@@ -1,0 +1,129 @@
+// Web pages read by their address: read_web_page has the worker fetch a page plainly, and
+// render_web_page has it render one drawn by scripts in a browser, which is slower and limited to a
+// few a minute. The model chooses the address: one the user gave, a link it found, or one it
+// thinks of (docs/security.md, "Accepted: web pages at any address").
+import { WebError, type ToolContext } from '../agent'
+import { isNotion } from '../notion/hosts'
+import { clip } from '../notion/comments'
+import { defineTool } from '../tool'
+import { z } from '../zod'
+import { READ, asData, asPageText, on, verb } from './shared'
+
+/** How much of a page one read returns. */
+const PAGE_CHARS = 20_000
+const TITLE_CHARS = 200
+const URL_CHARS = 2000
+
+const RENDER = verb('render', 'rendering', 'rendered')
+
+/** The address the model gave, as the worker would read it, or undefined when it is not a web address. */
+function addressOf(given: string): URL | undefined {
+  const raw = given.trim()
+  try {
+    // A bare host (`example.com/notes`), as people write them, is read over https.
+    const url = new URL(/^[a-z][a-z\d+.-]*:/i.test(raw) ? raw : `https://${raw}`)
+    if (url.protocol !== 'https:' && url.protocol !== 'http:') return undefined
+    url.hash = ''
+    return url
+  } catch {
+    return undefined
+  }
+}
+
+/** In a tab, the user's own browser shows what a sign-in or a bot check stops the worker from reading. */
+const OPEN_IN_TAB =
+  'Ask the user to open the page in a tab and ask again there: read_current_tab reads the page they are on.'
+
+/** What the model is told when the worker could not read the page, by the worker's code. */
+function refusal(err: WebError, render: boolean): string {
+  switch (err.code) {
+    case 'not_allowed':
+      return `Notico can't read this address: ${err.message}.`
+    case 'no_access':
+      return `The site would not show the page to Notico, which reads public pages only: it may need a sign-in. ${OPEN_IN_TAB}`
+    case 'bot_check':
+      return `The site asked for a bot check, so Notico could not read the page. ${OPEN_IN_TAB}`
+    case 'no_text':
+      return render
+        ? `The page shows no text, even rendered. ${OPEN_IN_TAB}`
+        : 'The page shows no text without running its scripts. render_web_page can render it in a browser (slower), ' +
+            `or: ${OPEN_IN_TAB}`
+    case 'not_found':
+      return 'The site has no page at this address. Check the address with the user.'
+    case 'unsupported_type':
+      return `Notico reads only web pages and plain text, and ${err.message}.`
+    default:
+      return `Could not read the page: ${err.message}.`
+  }
+}
+
+/** Reads the page for a tool: checks the address, the question's limit, and turns what was read into the result. */
+async function readPageAt(
+  given: string,
+  render: boolean,
+  signal: AbortSignal | undefined,
+  context: ToolContext | undefined,
+) {
+  const url = addressOf(given)
+  if (!url) throw new Error('Not read: the address is not a web address (http or https).')
+  if (isNotion(url.href)) throw new Error('This is a Notion page: read it with read_page instead.')
+  if (!context) throw new Error('Could not read the page: there is no worker to read it with.')
+  let page
+  try {
+    page = await context.readWeb(url.href, PAGE_CHARS, render, signal)
+  } catch (err) {
+    // The worker's limit stops the question: thrown as it is, with what the user is told.
+    if (err instanceof WebError && !err.stopsQuestion) throw new Error(refusal(err, render), { cause: err })
+    throw err
+  }
+  const host = new URL(page.url).host
+  const clipped = page.text.length < page.chars
+  const lines = [
+    // As JSON, so the title and URL stay inside their quotes and on their line.
+    `Web page${render ? ', rendered,' : ''} on ${host}: ${JSON.stringify({ title: clip(page.title, TITLE_CHARS), url: clip(page.url, URL_CHARS) })}`,
+    ...(page.url !== url.href ? [`[The address redirected here from ${clip(url.href, URL_CHARS)}.]`] : []),
+    ...(clipped
+      ? [
+          `[Clipped: this shows the first ${page.text.length.toLocaleString('en-US')} of the page's ` +
+            `${page.chars.toLocaleString('en-US')} characters.]`,
+        ]
+      : []),
+    ...(page.scripted && !render
+      ? [
+          '[The page shows little text and runs scripts: it may show more once they run. If this is not what the ' +
+            'question needs, render_web_page can render it (slower).]',
+        ]
+      : []),
+    'Text:',
+    asPageText(page.text),
+  ]
+  return { text: asData(lines), details: { name: page.title.trim() || host } }
+}
+
+const Args = z.strictObject({
+  url: z.string().describe('The address of the page (http or https).'),
+})
+
+export const readWebPage = defineTool({
+  name: 'read_web_page',
+  description:
+    "Reads a web page by its address: the page's title and main text, as anyone sees it without signing in. " +
+    'For a page the user is on, use read_current_tab; for a Notion page, ' +
+    'read_page. A page that needs a sign-in or a bot check cannot be read; a page drawn by scripts shows no text ' +
+    'here, and render_web_page can render it. A long page is clipped.',
+  describe: (_args, details) => on(READ, details?.name, 'a web page'),
+  args: Args,
+  run: ({ url }, signal, context) => readPageAt(url, false, signal, context),
+})
+
+export const renderWebPage = defineTool({
+  name: 'render_web_page',
+  description:
+    'Renders a web page in a browser and reads its text as Markdown: what the page shows once its scripts run. ' +
+    'It reads pages drawn by scripts, which read_web_page reads with no text or too little. It is slower than ' +
+    'read_web_page, and only a few pages can be rendered a minute, so read_web_page is usually the better first ' +
+    'try; render right away when the page is likely drawn by scripts (a web app, say).',
+  describe: (_args, details) => on(RENDER, details?.name, 'a web page'),
+  args: Args,
+  run: ({ url }, signal, context) => readPageAt(url, true, signal, context),
+})

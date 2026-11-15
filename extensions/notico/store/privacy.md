@@ -70,12 +70,12 @@ All three certifications are checked: no selling or transfer of user data to thi
 
 ## For the next version
 
-This page describes version 0.2.0. The version after it adds optional host permissions for web sites, which the user grants one site at a time (none at install), so before it is submitted:
+This page describes version 0.2.0. The version after it adds optional host permissions for web sites, which the user grants one site at a time (none at install), and reads web pages whose address the user gives (through the worker, with no new permission), so before it is submitted:
 
-- The **single purpose** reads: "Notico is an AI assistant in Chrome's side panel that reads and edits the user's Notion pages at the user's request, and reads the page the user is on, on a site they allowed, when a question is about it."
+- The **single purpose** reads: "Notico is an AI assistant in Chrome's side panel that reads and edits the user's Notion pages at the user's request, and reads the page the user is on, on a site they allowed, or a web page by its address, when a question needs it."
 - The **scripting** justification adds: "On another site, and only on one the user allowed, it reads the text of the page in the current tab, inside that tab, when the user's question is about that page."
 - The **Host permission** justification adds: "Optional host permissions for http and https sites: none is granted at install. When the user asks about the page they are on, the side panel asks them to allow that one site, and Chrome asks them again; only then is the page's text read, in the tab."
-- **Website content** also names the text of a page on another site that the assistant reads, which goes to the worker and the model (or to OpenRouter). **Web history** stays Yes, as it is: that page's URL and title go with it.
+- **Website content** also names the text of a page on another site that the assistant reads, and of a web page the assistant read by its address, which goes to the worker and the model (or to OpenRouter; a page read by its address is read through the worker either way). **Web history** stays Yes, as it is: that page's URL and title go with it, and the address of a web page the assistant reads goes to the worker, which reads it.
 
 It also adds the `contextMenus` and `activeTab` permissions, neither of which adds an install warning, for the "Ask Notico" item on selected text:
 

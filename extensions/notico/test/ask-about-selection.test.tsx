@@ -251,7 +251,7 @@ describe('asking about text selected on a page', () => {
         [
           ...['a', 'b', 'c'].map((letter) => selectionNote(letter.repeat(20_000))),
           '[The user sent more text selected on pages with this question, which is left out: the question ' +
-            'already carries as much text from pages outside Notion as one may.]',
+            'already carries as much selected text as one may.]',
         ].join('\n'),
         'What is this?',
       ),

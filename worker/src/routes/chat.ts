@@ -44,7 +44,7 @@ const ProductName = z
  * The client's own word: the product only sorts what was spent, and credits are one balance across
  * products, so a wrong name costs no one anything, and a call is never refused over it.
  */
-function productOf(header: string | undefined): string {
+export function productOf(header: string | undefined): string {
   return ProductName.safeParse(header?.split('/')[0]).data ?? UNKNOWN_PRODUCT
 }
 
