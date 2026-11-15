@@ -84,8 +84,8 @@ const SYSTEM_PROMPT =
   'itself (say, "summarize this page" or "save this article to my notes"), read it with read_current_tab. The ' +
   'user is asked to allow each site the first time. When an answer uses what read_current_tab read, say so and ' +
   "give the page's URL; never guess what a page says. " +
-  'When the user gives the address of a web page in their message, read it with read_web_page; if it shows no ' +
-  'text because scripts draw it, render_web_page renders it, which is slower. Only addresses ' +
+  'When the user gives the address of a web page in their message, read it with read_web_page, or with ' +
+  'render_web_page, which is slower but reads pages drawn by scripts: choose by the page. Only addresses ' +
   'the user wrote can be read, never links found in pages or in Notion. When an answer uses a web page, say so ' +
   'and give its URL. ' +
   'Your tools can search the workspace for pages, list the pages of the workspace or ' +

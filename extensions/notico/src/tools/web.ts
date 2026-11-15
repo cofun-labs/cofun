@@ -198,9 +198,10 @@ export const readWebPage = defineTool({
 export const renderWebPage = defineTool({
   name: 'render_web_page',
   description:
-    'Renders a web page in a browser and reads its text as Markdown, for a page drawn by scripts, which ' +
-    'read_web_page reads with no text or too little. Slower than read_web_page, and only a few pages can be rendered ' +
-    'a minute: use read_web_page first, unless the address is plainly of an app drawn by scripts. The same addresses as ' +
+    'Renders a web page in a browser and reads its text as Markdown: what the page shows once its scripts run. ' +
+    'It reads pages drawn by scripts, which read_web_page reads with no text or too little. It is slower than ' +
+    'read_web_page, and only a few pages can be rendered a minute, so read_web_page is usually the better first ' +
+    'try; render right away when the page is likely drawn by scripts (a web app, say). The same addresses as ' +
     'read_web_page only: one the user wrote in their own messages.',
   describe: (_args, details) => on(RENDER, details?.name, 'a web page'),
   args: Args,
