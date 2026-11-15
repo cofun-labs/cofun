@@ -357,13 +357,14 @@ class Context {
       case 'quote':
         return this.quoted(block, pad, '', text, ref)
       case 'callout': {
-        // Only an emoji is a label; uploaded and custom icons are URLs.
+        // Only an emoji is a label: uploaded and custom icons are URLs, and other text could end the
+        // label or start a line of its own.
         const icon = block.format?.page_icon
-        const label = typeof icon === 'string' && !/[/:]/.test(icon) ? icon : 'callout'
+        const label = typeof icon === 'string' && isEmoji(icon) ? icon : 'callout'
         return this.quoted(block, pad, `[!${label}] `, text, ref)
       }
       case 'code': {
-        const language = this.plain(block.properties?.language).toLowerCase()
+        const language = oneLine(this.plain(block.properties?.language)).toLowerCase()
         const code = this.plain(block.properties?.title)
         // The fence is longer than any run of backticks in the code, so the code can't close it.
         const fence = '`'.repeat(Math.max(3, longestRun(code) + 1))
@@ -380,13 +381,16 @@ class Context {
       case 'divider':
         return [`${pad}---${ref}`]
       case 'equation':
-        return [`${pad}$$${this.plain(block.properties?.title)}$$${ref}`]
+        // On one line, as an inline equation's is: LaTeX reads a line break as a space.
+        return [`${pad}$$${oneLine(this.plain(block.properties?.title))}$$${ref}`]
       case 'bookmark': {
-        const link = this.plain(block.properties?.link)
-        return line('', `[${this.plain(block.properties?.title) || link}](${link})`)
+        const link = oneLine(this.plain(block.properties?.link))
+        // The title is the linked site's, escaped as a link's text in rich text is.
+        const title = oneLine(this.plain(block.properties?.title))
+        return line('', `[${escapeMarkdown(title || link)}](${link})`)
       }
       case 'embed':
-        return line('', `[embed: ${this.plain(block.properties?.source)}]`)
+        return line('', `[embed: ${oneLine(this.plain(block.properties?.source))}]`)
       case 'page':
         // A child page's own content stays in that page.
         return [
@@ -398,7 +402,8 @@ class Context {
       case 'alias': {
         const target = pointerIn(block.format, 'alias_pointer')?.id
         if (!target) return line('', '[link to a page]')
-        return line('↗ ', `[${this.pageTitle(target)}](${hexId(target)})`)
+        // Escaped as a page mention's title is.
+        return line('↗ ', `[${escapeMarkdown(this.pageTitle(target))}](${hexId(target)})`)
       }
       case 'table':
         return [...this.table(block, pad), ...refLine(pad, ref)]
@@ -419,7 +424,7 @@ class Context {
       }
       default:
         if (MEDIA_TYPES.has(block.type)) {
-          const caption = this.rich(block.properties?.caption) || this.plain(block.properties?.title)
+          const caption = this.rich(block.properties?.caption) || oneLine(this.plain(block.properties?.title))
           return line('', `[${block.type}${caption ? `: ${caption}` : ''}]`)
         }
         // A block we can't show: say what it is, so the model knows something is there.
@@ -479,8 +484,10 @@ class Context {
     for (const key of new Set([...order, ...keys])) {
       const { name, type } = schema[key]
       if (key === 'title' || type === 'title') continue
-      const shown = this.property(page, key, schema[key])
-      if (shown) out.push(`${name ?? key}: ${shown}`)
+      // One line each, as query_database shows a value: a text value's line breaks as `<br>`, as
+      // they are written back; other values' as spaces.
+      const shown = this.property(page, key, schema[key]).replace(/\n/g, type === 'text' ? '<br>' : ' ')
+      if (shown) out.push(`${oneLine(name ?? key)}: ${shown}`)
     }
     return out
   }
@@ -525,7 +532,8 @@ class Context {
         const shown = this.rich(page.properties?.[key], { table })
         const fallback = def.defaultOption
         if (shown || typeof fallback !== 'string' || !def.options?.some((o) => o.value === fallback)) return shown
-        return escapeMarkdown(fallback)
+        // The option's name, on one line as the options are matched (see `option` in props.ts).
+        return escapeMarkdown(oneLine(fallback))
       }
       default:
         return this.rich(page.properties?.[key], { table })
@@ -535,7 +543,7 @@ class Context {
   databaseName(block: Block): string {
     const id = collectionId(block)
     const collection = id ? this.recordMap.collection?.[id] : undefined
-    return this.plain(collection?.name) || 'Untitled database'
+    return oneLine(this.plain(collection?.name)) || 'Untitled database'
   }
 
   private pageTitle(id: string): string {
@@ -553,11 +561,13 @@ class Context {
     return ` ^${hexId(id)}`
   }
 
-  /** Rich text as plain text. */
+  /** Rich text as plain text, its line breaks as `\n`. */
   plain(value: unknown): string {
-    return runs(value)
-      .map(([text]) => text)
-      .join('')
+    return newlines(
+      runs(value)
+        .map(([text]) => text)
+        .join(''),
+    )
   }
 
   /** Rich text as Markdown, with mentions resolved to names. */
@@ -567,15 +577,20 @@ class Context {
    */
   rich(value: unknown, { table = false } = {}): string {
     let afterPerson = false
-    return runs(value)
-      .map(([text, marks = []]) => {
-        let out = this.run(text, marks, table)
-        // `@[Name](` would read as an @ before a link: the parenthesis after a mention stays literal.
-        if (afterPerson && out.startsWith('(')) out = `\\${out}`
-        afterPerson = /@\[.*\]$/s.test(out) && marks.some(([m]) => m === 'u')
-        return out
-      })
-      .join('')
+    // Line breaks as `\n`, mentioned names' too, so what keeps text on its line (`<br>`, quoting
+    // each line) finds every one.
+    return newlines(
+      runs(value)
+        .map(([text, marks = []]) => {
+          // Before the run is drawn, so inline code and equations see its line breaks too.
+          let out = this.run(newlines(text), marks, table)
+          // `@[Name](` would read as an @ before a link: the parenthesis after a mention stays literal.
+          if (afterPerson && out.startsWith('(')) out = `\\${out}`
+          afterPerson = /@\[.*\]$/s.test(out) && marks.some(([m]) => m === 'u')
+          return out
+        })
+        .join(''),
+    )
   }
 
   private run(text: string, marks: [string, unknown?][], table = false): string {
@@ -608,7 +623,7 @@ class Context {
         case 'd':
           return `@${formatDate(arg)}`
         case 'e':
-          return `$${raw(equation(String(arg)))}$`
+          return `$${raw(equation(newlines(String(arg))))}$`
         case 'h':
           if (typeof arg === 'string' && COLOR.test(arg)) color = arg
           break
@@ -807,6 +822,30 @@ export function splitSections(
 /** The text of each part, as `splitSections` groups them. */
 export function splitIntoParts(sections: string[], max: number): string[] {
   return splitSections(sections, max).parts
+}
+
+/**
+ * Text on one line, as Notion keeps a title. Text from Notion that is shown as it is (a database's
+ * name, a bookmark's link) goes through it, so it can't start a line of its own and pass for one the
+ * tool wrote (a header, a note, a block reference).
+ */
+export function oneLine(text: string): string {
+  // `\s` leaves out NEL (U+0085), which a model may read as a line break.
+  return text.replace(/[\s\u0085]+/g, ' ').trim()
+}
+
+/**
+ * Text with each line break as `\n`: `\r\n`, `\r`, NEL, and Unicode's line and paragraph separators
+ * too, which a model reads as line breaks just as well.
+ */
+function newlines(text: string): string {
+  return text.replace(/\r\n?|[\u0085\u2028\u2029]/g, '\n')
+}
+
+/** Whether `text` is exactly one emoji (flags and keycaps included), as Notion takes for an icon. */
+export function isEmoji(text: string): boolean {
+  const graphemes = [...new Intl.Segmenter(undefined, { granularity: 'grapheme' }).segment(text)]
+  return graphemes.length === 1 && /\p{Extended_Pictographic}|\p{Regional_Indicator}|\u20e3/u.test(text)
 }
 
 /**

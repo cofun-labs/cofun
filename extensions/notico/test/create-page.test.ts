@@ -74,7 +74,7 @@ describe('UC-NOTICO-NOTION-007 create a page', () => {
     expect(ws.content(PAGE).map((b) => b.type)).toEqual(['text', 'page'])
     expect(ws.transactions).toHaveLength(1)
     const page = (await readPage.run({ page: created })) as string
-    expect(page.split('\n')[0]).toBe(`Page: Launch notes ^${created}`)
+    expect(page.split('\n')[1]).toBe(`Page: Launch notes ^${created}`)
     expect(page.slice(page.indexOf('\n\n') + 2).replace(/ \^[0-9a-f]+$/gm, '')).toBe(
       ['# Plan', '- Ship beta', '  - Fix Safari', '- [ ] Write post'].join('\n'),
     )

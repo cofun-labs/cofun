@@ -5,6 +5,7 @@ import '@testing-library/jest-dom/vitest'
 import { act, screen, waitFor, within } from '@testing-library/react'
 import userEvent, { type UserEvent } from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { DATA_LINE } from '../src/tools/shared'
 import { FakeNotionTab, FakeWorkspace, PAGE, PAGE_URL, SPACE, fixture, pageTab } from './notion-tab'
 import { closeBrowser, FakeBrowser, START } from './panel'
 
@@ -339,7 +340,7 @@ describe('on a tab that is not Notion', () => {
     expect(await screen.findByText('You are in your inbox.')).toBeVisible()
     await answered()
     expect(screen.getByRole('img', { name: 'Done' })).toBeVisible()
-    expect(toolResults(browser)).toEqual([JSON.stringify({ title: 'Inbox (3)', url: INBOX })])
+    expect(toolResults(browser)).toEqual([`${DATA_LINE}\n${JSON.stringify({ title: 'Inbox (3)', url: INBOX })}`])
     // Only what Chrome says about the tab: nothing ran in it.
     expect(browser.tab.injections).toEqual([])
   })
@@ -355,7 +356,7 @@ describe('on a tab that is not Notion', () => {
 
     expect(await screen.findByText('You are on the fixture page.')).toBeVisible()
     await answered()
-    expect(toolResults(browser)).toEqual([JSON.stringify({ title: 'Fixture page', url: PAGE_URL })])
+    expect(toolResults(browser)).toEqual([`${DATA_LINE}\n${JSON.stringify({ title: 'Fixture page', url: PAGE_URL })}`])
     expect(browser.tab.sent).toEqual([])
   })
 
@@ -505,7 +506,7 @@ describe('the page a question goes with', () => {
       .filter((m) => m.role === 'tool')
       .map((m) => m.content)
     expect(results).toEqual([
-      JSON.stringify({ title: 'Inbox', url: INBOX }),
+      `${DATA_LINE}\n${JSON.stringify({ title: 'Inbox', url: INBOX })}`,
       expect.stringMatching(/The current tab is not a Notion page.*Tell the user to switch to a Notion page/),
     ])
     expect(browser.tab.injections).toEqual([])

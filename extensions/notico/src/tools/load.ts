@@ -10,7 +10,7 @@ import {
   type NotionRecord,
   type RecordMap,
 } from '../notion/api'
-import { collectionId, unnamedMentions, unnamedRowMentions, type Schema } from '../notion/markdown'
+import { collectionId, oneLine, unnamedMentions, unnamedRowMentions, type Schema } from '../notion/markdown'
 import { notionUserIn, type NotionTab } from '../notion/tab'
 import { runsText } from '../notion/tree'
 import { freshLoad, keepLoad, keepWorkspace, knownWorkspace, type Loaded } from './memory'
@@ -101,7 +101,7 @@ export async function resolveDatabase(client: NotionTab['client'], block: Block)
     collectionId: id,
     spaceId,
     schema: (collection.schema ?? {}) as Schema,
-    name: runsText(collection.name) || 'Untitled database',
+    name: oneLine(runsText(collection.name)) || 'Untitled database',
     views: textList(block.view_ids),
   }
 }
@@ -151,7 +151,7 @@ export async function databaseNames(tab: NotionTab, blocks: (Block | undefined)[
     throw err
   }
   for (const b of databases) {
-    const name = runsText(collections[collectionId(b) ?? '']?.name)
+    const name = oneLine(runsText(collections[collectionId(b) ?? '']?.name))
     if (name) names.set(b.id, name)
   }
   return names

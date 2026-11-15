@@ -8,6 +8,7 @@ import { readPage } from '../src/tools/read'
 import { updatePages } from '../src/tools/write'
 import { FakeNotionTab, FakeWorkspace, PAGE, PAGE_URL, SPACE, USER, notionError, restoreGlobals } from './notion-tab'
 import { LIMITED_STOP, NO_USER_MAP, UNEXPECTED_STOP } from '../src/notion/api'
+import { DATA_LINE } from '../src/tools/shared'
 
 afterEach(() => {
   restoreGlobals()
@@ -120,6 +121,7 @@ describe('UC-NOTICO-NOTION-005 browse the workspace', () => {
 
     expect(await run()).toBe(
       [
+        DATA_LINE,
         'Pages in the workspace “Fixture workspace”:',
         '',
         'Private',
@@ -157,6 +159,7 @@ describe('UC-NOTICO-NOTION-005 browse the workspace', () => {
 
     expect(await run()).toBe(
       [
+        DATA_LINE,
         'Pages in the workspace “Fixture workspace”:',
         '',
         'Private',
@@ -190,6 +193,7 @@ describe('UC-NOTICO-NOTION-005 browse the workspace', () => {
 
     expect(await run({ page: hex(id(10)), depth: 2 })).toBe(
       [
+        DATA_LINE,
         `Pages under “Projects” ^${hex(id(10))}:`,
         '',
         `- 📄 Alpha ^${hex(id(11))}`,
@@ -219,7 +223,7 @@ describe('UC-NOTICO-NOTION-005 browse the workspace', () => {
     expect(first).toContain(`List them with \`offset: ${next}\`.`)
     notion(blocks).install()
     const result = await run({ page: hex(id(10)), offset: next })
-    expect(result.split('\n')[0]).toBe(`Pages under “Big” ^${hex(id(10))}, from entry ${next}:`)
+    expect(result.split('\n')[1]).toBe(`Pages under “Big” ^${hex(id(10))}, from entry ${next}:`)
     expect(listed(result)).toEqual(many.slice(next).map((m, i) => `- 📄 Page ${LIST_LIMIT + i} ^${hex(m)}`))
     expect(result).not.toContain('Cut off')
   })
@@ -271,6 +275,7 @@ describe('UC-NOTICO-NOTION-005 browse the workspace', () => {
     const rest = await run({ section: 'Teamspace: Engineering', offset: SECTION_LIMIT })
     expect(rest).toBe(
       [
+        DATA_LINE,
         `Teamspace: Engineering, in the workspace “Fixture workspace”, from entry ${SECTION_LIMIT}:`,
         '',
         ...many.slice(SECTION_LIMIT).map((m, i) => `- 📄 Eng ${SECTION_LIMIT + i} ^${hex(m)}`),
@@ -333,7 +338,7 @@ describe('list_pages arguments', () => {
     )
     const section = async (name: string) => {
       workspace()
-      return (await run({ section: name })).split('\n').slice(2)
+      return (await run({ section: name })).split('\n').slice(3)
     }
     expect(await section('Private')).toEqual([`- 📄 Notes ^${hex(id(1))}`])
     expect(await section('Teamspace: Private')).toEqual([`- 📄 Team notes ^${hex(id(11))}`])
@@ -561,7 +566,7 @@ describe('list_pages workspace', () => {
     workspace()
     expect(await run()).toContain(`List them with \`section: "Shared"\` and \`offset: ${SECTION_LIMIT}\`.)`)
     workspace()
-    const rest = (await run({ section: 'Shared', offset: SECTION_LIMIT })).split('\n').slice(2)
+    const rest = (await run({ section: 'Shared', offset: SECTION_LIMIT })).split('\n').slice(3)
     expect(rest).toEqual(blocks.slice(SECTION_LIMIT).map((b, i) => `- 📄 Shared ${SECTION_LIMIT + i} ^${hex(b.id)}`))
   })
 
@@ -583,6 +588,7 @@ describe('list_pages workspace', () => {
       .install()
     expect(await run()).toBe(
       [
+        DATA_LINE,
         'Pages in the workspace “Fixture workspace”:',
         '',
         'Private',
@@ -607,7 +613,7 @@ describe('list_pages workspace', () => {
       .respond('getSpaces', 200, spaces({ settings: { is_teams_enabled: false } }, { private_pages: [id(1)] }))
       .install()
     expect(await run()).toBe(
-      ['Pages in the workspace “Fixture workspace”:', '', 'Private', `- 📄 Notes ^${hex(id(1))}`].join('\n'),
+      [DATA_LINE, 'Pages in the workspace “Fixture workspace”:', '', 'Private', `- 📄 Notes ^${hex(id(1))}`].join('\n'),
     )
     expect(endpoints(tab)).not.toContain('getTeamsV2')
   })

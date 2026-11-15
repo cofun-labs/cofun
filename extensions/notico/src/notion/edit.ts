@@ -14,8 +14,7 @@ import {
   type NewBlock,
   type RichText,
 } from './blocks'
-import { PAGE_TYPES, formatDate, hexId, richMarkdown, type PageMarkdown } from './markdown'
-import { oneLine } from './props'
+import { PAGE_TYPES, formatDate, hexId, oneLine, richMarkdown, type PageMarkdown } from './markdown'
 
 /**
  * What the agent saw of a page: the references it was shown, and the version of each block it saw.
