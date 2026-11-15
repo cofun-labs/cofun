@@ -3,7 +3,7 @@ name: Release
 # Builds one extension from main for the Chrome Web Store and puts the zip on a draft GitHub
 # Release, tagged <extension>-v<version>, whose body is that version's entry in the extension's
 # CHANGELOG.md. Run by hand (Actions → Release → Run workflow); see
-# "Releases" in docs/development.md. The zip is uploaded to the store by hand.
+# docs/release.md. The zip is uploaded to the store by hand.
 on:
   workflow_dispatch:
     inputs:
@@ -150,7 +150,7 @@ jobs:
       # Info-ZIP's zip reads $ZIP as default options, so it would write the archive into dist.
       # The zip's SHA-256 goes into the run's summary, which only this run writes, so the
       # maintainer can check the draft release's zip against it before uploading it to the store
-      # (see "Releases" in docs/development.md).
+      # (see docs/release.md).
       - name: Zip the build
         id: zip
         env:

@@ -62,8 +62,8 @@ Notico is an independent project. It is not made or endorsed by Notion.
 | Field | File | Size |
 |---|---|---|
 | Store icon | [`../public/icons/icon-128.png`](../public/icons/icon-128.png) | 128×128 |
-| Screenshots, in this order | [screenshot-1.png](images/screenshot-1.png) (action items added to a page), [screenshot-2.png](images/screenshot-2.png) (overdue tasks in a database, with comments), [screenshot-3.png](images/screenshot-3.png) (a page summarized) | 1280×800 |
+| Screenshots, in this order | [screenshot-1.png](images/screenshot-1.png) (action items added to a page), [screenshot-2.png](images/screenshot-2.png) (overdue tasks in a database, with comments), [screenshot-3.png](images/screenshot-3.png) (next week's meeting page made from this one), [screenshot-4.png](images/screenshot-4.png) (selected text rewritten shorter) | 1280×800 |
 | Small promo tile | [small-promo-tile.png](images/small-promo-tile.png) | 440×280 |
 | Marquee promo tile | [marquee-promo-tile.png](images/marquee-promo-tile.png) | 1400×560 |
 
-The screenshots show the real side panel next to throwaway pages, made with `pnpm e2e`: the Notion page and the side panel are captured separately and set side by side, so they carry no browser frame. The screenshots and promo tiles are PNG without transparency, as the store requires for them.
+The screenshots show the real side panel, answering with Cofun's model (Auto), next to throwaway pages, made with `pnpm e2e`: the Notion tab at 920×800 and the side panel at 360×800 are captured separately over the DevTools protocol and set side by side, so they carry no browser frame. Nothing else of the workspace may show: trash earlier throwaway pages first, since the assistant finds them too. The marquee tile is the same tile with screenshot-1 scaled into its card (760×475 at 620,62, corners rounded at 14px). The screenshots and promo tiles are PNG without transparency, as the store requires for them.
