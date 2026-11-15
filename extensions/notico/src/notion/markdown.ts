@@ -357,9 +357,10 @@ class Context {
       case 'quote':
         return this.quoted(block, pad, '', text, ref)
       case 'callout': {
-        // Only an emoji is a label; uploaded and custom icons are URLs.
+        // Only an emoji is a label: uploaded and custom icons are URLs, and other text could end the
+        // label or start a line of its own.
         const icon = block.format?.page_icon
-        const label = typeof icon === 'string' && !/[/:]/.test(icon) ? icon : 'callout'
+        const label = typeof icon === 'string' && isEmoji(icon) ? icon : 'callout'
         return this.quoted(block, pad, `[!${label}] `, text, ref)
       }
       case 'code': {
@@ -401,7 +402,8 @@ class Context {
       case 'alias': {
         const target = pointerIn(block.format, 'alias_pointer')?.id
         if (!target) return line('', '[link to a page]')
-        return line('↗ ', `[${this.pageTitle(target)}](${hexId(target)})`)
+        // Escaped as a page mention's title is.
+        return line('↗ ', `[${escapeMarkdown(this.pageTitle(target))}](${hexId(target)})`)
       }
       case 'table':
         return [...this.table(block, pad), ...refLine(pad, ref)]
@@ -530,7 +532,8 @@ class Context {
         const shown = this.rich(page.properties?.[key], { table })
         const fallback = def.defaultOption
         if (shown || typeof fallback !== 'string' || !def.options?.some((o) => o.value === fallback)) return shown
-        return escapeMarkdown(fallback)
+        // The option's name, on one line as the options are matched (see `option` in props.ts).
+        return escapeMarkdown(oneLine(fallback))
       }
       default:
         return this.rich(page.properties?.[key], { table })
@@ -579,7 +582,8 @@ class Context {
     return newlines(
       runs(value)
         .map(([text, marks = []]) => {
-          let out = this.run(text, marks, table)
+          // Before the run is drawn, so inline code and equations see its line breaks too.
+          let out = this.run(newlines(text), marks, table)
           // `@[Name](` would read as an @ before a link: the parenthesis after a mention stays literal.
           if (afterPerson && out.startsWith('(')) out = `\\${out}`
           afterPerson = /@\[.*\]$/s.test(out) && marks.some(([m]) => m === 'u')
@@ -619,7 +623,7 @@ class Context {
         case 'd':
           return `@${formatDate(arg)}`
         case 'e':
-          return `$${raw(equation(String(arg)))}$`
+          return `$${raw(equation(newlines(String(arg))))}$`
         case 'h':
           if (typeof arg === 'string' && COLOR.test(arg)) color = arg
           break
@@ -832,6 +836,12 @@ export function oneLine(text: string): string {
  */
 function newlines(text: string): string {
   return text.replace(/\r\n?|[\u0085\u2028\u2029]/g, '\n')
+}
+
+/** Whether `text` is exactly one emoji (flags and keycaps included), as Notion takes for an icon. */
+export function isEmoji(text: string): boolean {
+  const graphemes = [...new Intl.Segmenter(undefined, { granularity: 'grapheme' }).segment(text)]
+  return graphemes.length === 1 && /\p{Extended_Pictographic}|\p{Regional_Indicator}|\u20e3/u.test(text)
 }
 
 /**

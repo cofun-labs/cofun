@@ -43,7 +43,7 @@ import {
   type PropertyDef,
   type PropertyInput,
 } from '../notion/props'
-import { PAGE_TYPES, hexId, oneLine, pageToMarkdown, type Schema } from '../notion/markdown'
+import { PAGE_TYPES, hexId, isEmoji, oneLine, pageToMarkdown, type Schema } from '../notion/markdown'
 import { activeNotionTab } from '../notion/tab'
 import { loadMentioned, resolveDatabase } from './load'
 import {
@@ -628,12 +628,6 @@ function previewValue(seen: SeenRow | undefined, name: string, input: PropertyIn
   if (def.type === 'date' && seen.reminders.has(property))
     return `${now || '(empty)'} (${was === now ? 'same date' : `was ${was || 'empty'}`}; its reminder is removed)`
   return (now || '(empty)') + change(was, now)
-}
-
-/** Whether `text` is exactly one emoji (flags and keycaps included), as Notion takes for an icon. */
-function isEmoji(text: string): boolean {
-  const graphemes = [...new Intl.Segmenter(undefined, { granularity: 'grapheme' }).segment(text)]
-  return graphemes.length === 1 && /\p{Extended_Pictographic}|\p{Regional_Indicator}|\u20E3/u.test(text)
 }
 
 /** update_pages' `pages`, checked before anything is asked of Notion. */
