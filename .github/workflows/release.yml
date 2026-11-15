@@ -121,8 +121,9 @@ jobs:
       - name: Run checks
         run: pnpm check
 
-      # Replaces the build "Run checks" made: the version from the input, and no `key` in the
-      # manifest (the store sets the ID). package.json keeps its development version.
+      # Replaces the build "Run checks" made: the version from the input, and no `key` (the store
+      # sets the ID) or `version_name` (which marks a development build) in the manifest.
+      # package.json keeps its development version.
       - name: Build for the store
         env:
           CRX_STORE_BUILD: "1"
