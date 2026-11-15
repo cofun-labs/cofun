@@ -3,7 +3,7 @@ name: Release
 # Builds one extension from main for the Chrome Web Store and puts the zip on a draft GitHub
 # Release, tagged <extension>-v<version>, whose body is that version's entry in the extension's
 # CHANGELOG.md. Run by hand (Actions → Release → Run workflow); see
-# "Releases" in docs/development.md. Uploading the zip to the store is not automated yet (#28).
+# "Releases" in docs/development.md. The zip is uploaded to the store by hand.
 on:
   workflow_dispatch:
     inputs:
@@ -171,7 +171,7 @@ jobs:
             echo "\`\`\`"
           } >>"$GITHUB_STEP_SUMMARY"
 
-      # The zip the release gets, and the one a later store upload job takes.
+      # The zip the release job attaches to the draft release.
       - name: Upload the zip
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:

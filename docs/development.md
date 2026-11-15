@@ -137,7 +137,7 @@ The store build is the normal build with two variables set, which you can also s
 CRX_STORE_BUILD=1 EXTENSION_VERSION=0.2.0 pnpm --filter ./extensions/notico build
 ```
 
-Uploading to the store is done by hand ([#298](https://github.com/cofun-labs/cofun/issues/298) would automate it). First check that the draft release's zip is the one the run built: the run's summary page gives its SHA-256, which must match the zip you download.
+Uploading to the store is done by hand. First check that the draft release's zip is the one the run built: the run's summary page gives its SHA-256, which must match the zip you download.
 
 ```bash
 gh release download notico-v0.2.0 --pattern '*.zip' --dir /tmp/notico-release
