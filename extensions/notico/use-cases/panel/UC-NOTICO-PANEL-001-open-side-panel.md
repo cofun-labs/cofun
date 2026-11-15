@@ -28,7 +28,6 @@ Key constraints:
 | UC-NOTICO-PANEL-001-S11 | P0 | ✅ | Given a tab on a site the user allowed Notico to read; when the AI reads the current tab; then it gets the page's main text, clipped when long, marked as data from that page with its address and title, and the user is not asked anything. |
 | UC-NOTICO-PANEL-001-S12 | P0 | ✅ | Given a tab on a site the user has not allowed; when the AI reads the current tab; then nothing of the page is read until the user allows the site on the tool's card and in Chrome's prompt, after which the page is read and the site is not asked about again; when the user denies it, or leaves the page while asked, nothing is read and the AI is told why. |
 | UC-NOTICO-PANEL-001-S13 | P1 | ✅ | Given a tab Notico can't read (a browser page, the Chrome Web Store, a PDF at an address ending in .pdf) or a Notion page, or a page on an allowed site that turns out to be a PDF in Chrome's viewer or to show its content only in frames; when the AI reads the current tab; then it is told why, the user is not asked to allow anything, and nothing is asked of Notion. |
-| UC-NOTICO-PANEL-001-S14 | P1 | ✅ | Given a question that has read as much from other sites as one question may; when the AI reads the current tab again; then nothing more is read and the AI is told so, and the next question can read again. |
 
 ### ai-e2e
 

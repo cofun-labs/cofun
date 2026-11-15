@@ -10,7 +10,7 @@ Key constraints:
 
 - Only tabs the user added are read. The AI may read a tab added to any question of the chat, later questions included, but no other address: not a link it found in a page or in Notion, and not one it made up. A tab added to a chat is read only while it still shows the page that was added.
 - Listing the tabs reads only their titles and addresses, which stay in the browser until the user adds one.
-- What is read from a tab is data for the AI, never instructions to it, and counts toward the question's limit on content from other sites.
+- What is read from a tab is data for the AI, never instructions to it.
 
 ## Scenarios
 
@@ -23,7 +23,6 @@ Key constraints:
 | UC-NOTICO-CHAT-005-S03 | P1 | ✅ | Given tabs added to a question; when it is sent; then the AI is told their titles and addresses, nothing of them is read ahead of it, the question shows them, also after the session is reopened, and clicking one goes to its tab. |
 | UC-NOTICO-CHAT-005-S04 | P0 | ✅ | Given a tab the user added to a chat; when the AI reads it, in that question or a later one; then it gets the page's main text, marked as data from that tab with its address and title; and when the AI reads an address the user did not add, such as a link in that page, nothing is read and it is told to ask the user to add the tab. |
 | UC-NOTICO-CHAT-005-S05 | P1 | ✅ | Given a tab the user added that was since closed or went to another page; when the AI reads it; then nothing is read and the AI is told to ask the user to open the page and add its tab again. |
-| UC-NOTICO-CHAT-005-S06 | P1 | ✅ | Given several tabs added to a question, with long pages; when the AI reads them all; then they share the question's limit on content from other sites, and once it is reached nothing more is read. |
 
 ### ai-e2e
 

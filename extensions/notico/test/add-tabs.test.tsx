@@ -279,25 +279,4 @@ describe('UC-NOTICO-CHAT-005 add open tabs to a conversation', () => {
     expect(toolResults(browser)).toEqual([GONE, GONE])
     expect(tab.injections).toEqual([])
   })
-
-  it("[UC-NOTICO-CHAT-005-S06] tabs read in one question share the question's limit on content from other sites", async () => {
-    const long = (title: string, c: string) => ({ title, dom: webPage({ title, main: c.repeat(25_000) }) })
-    const { browser, tab, user } = await openPanel((t) => {
-      Object.assign(t.otherTabs[0], long('Rivers | News', 'r'))
-      Object.assign(t.otherTabs[1], long('Lakes | News', 'l'))
-    })
-    browser.ai.script.push(readTab(RIVERS), readTab(LAKES), readTab(RIVERS), readTab(LAKES), { reply: 'Enough.' })
-
-    await addTab(user, 'Rivers')
-    await addTab(user, 'Lakes')
-    await ask(user, 'Compare these, twice')
-    await screen.findByText('Enough.')
-
-    const results = toolResults(browser)
-    expect(results.slice(0, 3).map((r) => r?.split('\n').at(-1)?.length)).toEqual([20_000, 20_000, 20_000])
-    expect(results[3]).toBe(
-      "This question has read as much from pages outside Notion as one question may (60,000 characters). Answer from what was read; don't read the page again in this question.",
-    )
-    expect(tab.injections).toHaveLength(3)
-  })
 })

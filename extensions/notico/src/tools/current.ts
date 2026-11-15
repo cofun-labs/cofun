@@ -130,7 +130,6 @@ export function carryPages(
   earlier: OpenPage[] = [],
 ): string {
   openPageAttached = !removed
-  outsideRead = 0
   addedTabs = new Map(
     [...earlier, ...added].flatMap((p) =>
       p.web
@@ -214,15 +213,6 @@ export const getCurrentTab = defineTool({
 const TAB_TEXT_CHARS = 20_000
 
 /**
- * How much text from pages outside Notion one question may read, over all its reads: a question
- * that goes on reading the same tab must not fill the conversation, or spend credits on it.
- */
-const QUESTION_OUTSIDE_CHARS = 60_000
-
-/** Characters of pages outside Notion the question being asked has read; carryPages starts it at 0. */
-let outsideRead = 0
-
-/**
  * Keeps the page's lines from passing for the tool's own: a line that opens like a note in
  * brackets or a block reference gets a backslash first.
  */
@@ -245,7 +235,6 @@ export const readCurrentTab = defineTool({
     if (isNotion(tab.url)) throw new Error('The current tab is a Notion page: read it with read_page instead.')
     const site = readableSite(tab.url)
     if ('reason' in site) throw new Error(site.reason)
-    const left = outsideLeft()
     const host = new URL(site.origin).host
     await mayReadOrAsk(site.origin, ask)
     // The user may have moved to another tab or page while they were asked: only the page they
@@ -256,7 +245,7 @@ export const readCurrentTab = defineTool({
         'The current tab changed while Notico waited (the user switched tabs or went to another page), so ' +
           'nothing was read. Ask them to go back to the page and ask again.',
       )
-    const page = await readPage(tab.id, site.origin, Math.min(TAB_TEXT_CHARS, left))
+    const page = await readPage(tab.id, site.origin, TAB_TEXT_CHARS)
     if ('reason' in page) throw new Error(page.reason)
     return pageRead(page, `Page in the current tab, on ${host}`, host)
   },
@@ -278,23 +267,11 @@ async function mayReadOrAsk(origin: string, ask: AskOnCard | undefined): Promise
     )
 }
 
-/** What's left of the question's outside characters; throws once none is. */
-function outsideLeft(): number {
-  const left = QUESTION_OUTSIDE_CHARS - outsideRead
-  if (left <= 0)
-    throw new Error(
-      `This question has read as much from pages outside Notion as one question may (${QUESTION_OUTSIDE_CHARS.toLocaleString('en-US')} ` +
-        "characters). Answer from what was read; don't read the page again in this question.",
-    )
-  return left
-}
-
 /**
  * A page read from a tab, as the model gets it: `header` says which tab and site it came from, then
- * the page's title and URL, whether it was clipped, and its text. Counts the text against the question.
+ * the page's title and URL, whether it was clipped, and its text.
  */
 function pageRead(page: TabPage, header: string, host: string) {
-  outsideRead += page.text.length
   const shown = page.text.length < page.chars
   const lines = [
     // As JSON, so the title and URL stay inside their quotes and on their line.
@@ -343,7 +320,6 @@ export const readTab = defineTool({
       )
     const site = readableSite(url, WHERE)
     if ('reason' in site) throw new Error(site.reason)
-    const left = outsideLeft()
     const gone =
       'No tab in this window shows this URL any more: the user closed the tab or it went to another page, so ' +
       'nothing was read. Ask them to open the page and add its tab again.'
@@ -352,7 +328,7 @@ export const readTab = defineTool({
     // The tab may have closed or moved on while the user was asked.
     const tab = await tabShowing(url)
     if (tab?.id === undefined) throw new Error(gone)
-    const page = await readPage(tab.id, site.origin, Math.min(TAB_TEXT_CHARS, left), WHERE)
+    const page = await readPage(tab.id, site.origin, TAB_TEXT_CHARS, WHERE)
     if ('reason' in page) throw new Error(page.reason)
     // Only the page the user added: not another page of the same site the tab went to while it was read.
     if (page.url !== url) throw new Error('The tab went to another page while it was read, so nothing was read.')
