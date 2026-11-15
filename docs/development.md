@@ -40,16 +40,13 @@ Only the maintainer's machine can upload: the script runs the `cf` CLI with the 
 
 ## Merging
 
-`pnpm pr` runs `gh` with the login on this machine:
+`gh` has no command to resolve a review thread; GraphQL does it, with the thread's ID from the pull request's `reviewThreads`:
 
 ```bash
-pnpm pr resolve 367   # resolve every review thread the PR author answered last, except a user's call
-pnpm pr ready 367     # check that the PR can merge, and print the merge command
+gh api graphql -f query='mutation($id: ID!) { resolveReviewThread(input: { threadId: $id }) { thread { isResolved } } }' -f id=PRRT_…
 ```
 
-`pnpm pr ready` passes when the PR is open, not a draft, and based on `main`; every check has passed; every review thread is resolved; every checklist item in the PR body and the Issues it closes is ticked; the latest Claude review names the head commit and a full review by the PR's author (the sub-agent's, [AGENTS.md](../AGENTS.md) step 7) exists, or, on a PR that changes the review workflow (which claude-code-action refuses to run on), the author's latest review names the head; every commit the author's replies name is on GitHub (a fix committed but never pushed is caught); and auto-merge is off. It can't tell whether the PR needs a demo recording; that stays with you.
-
-`main` uses a merge queue, and `gh pr merge {PR} --match-head-commit {SHA}` adds a PR to it through GitHub's auto-merge, which is why the repository allows auto-merge. `--match-head-commit` makes sure a commit pushed after the review can't ride along. The command prints the same message ("will be added to the merge queue … when ready") whether it queued the PR or only armed auto-merge on a PR that isn't ready yet, so readiness is checked before it, not after. The queue runs CI again on top of the latest `main` and squash-merges the PR if CI passes. GitHub then deletes the branch, and `Closes #ID` closes the Issue.
+`main` uses a merge queue, and `gh pr merge {PR} --match-head-commit {SHA}` adds a PR to it through GitHub's auto-merge, which is why the repository allows auto-merge. `--match-head-commit` makes sure a commit pushed after the review can't ride along; the SHA is the reviewed head, or a merge of `origin/main` on top of it with no conflict resolved by hand. The command prints the same message ("will be added to the merge queue … when ready") whether it queued the PR or only armed auto-merge on a PR that isn't ready yet, so readiness is checked before it, not after. The queue runs CI again on top of the latest `main` and squash-merges the PR if CI passes. GitHub then deletes the branch, and `Closes #ID` closes the Issue.
 
 ## Worker
 
