@@ -115,7 +115,7 @@ export class FakeNotionTab {
    * request still in flight would have cleared. Never resolves while a held request is waiting.
    */
   async answered(): Promise<void> {
-    while (this.running.size) await Promise.allSettled([...this.running])
+    while (this.running.size) await Promise.allSettled(this.running)
   }
 
   /** Requests held until the test lets them through, by endpoint (see `hold`). */
