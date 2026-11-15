@@ -17,6 +17,18 @@ export function changelogEntry(changelog: string, version: string): string | und
   return entry === '' ? undefined : entry
 }
 
+/**
+ * The version of the newest entry: the first `## ` heading's first word, since a changelog lists the
+ * newest version first. Undefined when it has no entry.
+ */
+export function latestVersion(changelog: string): string | undefined {
+  for (const line of changelog.split(/\r?\n/)) {
+    const version = headingVersion(line)
+    if (version !== undefined) return version
+  }
+  return undefined
+}
+
 /** The first word of a `## ` heading (the version, in a changelog), or undefined for any other line. */
 function headingVersion(line: string): string | undefined {
   if (!line.startsWith('## ')) return undefined

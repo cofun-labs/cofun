@@ -1,10 +1,14 @@
 name: Release
 
-# Builds one extension from main for the Chrome Web Store and puts the zip on a draft GitHub
-# Release, tagged <extension>-v<version>, whose body is that version's entry in the extension's
-# CHANGELOG.md. Run by hand (Actions → Release → Run workflow); see
-# docs/release.md. The zip is uploaded to the store by hand.
+# Builds one extension for the Chrome Web Store and publishes a GitHub Release with the zip, tagged
+# <extension>-v<version>, whose body is that version's entry in the extension's CHANGELOG.md. It
+# runs when a push to main changes an extension's changelog and its newest entry has no tag yet
+# (the release PR merging), or by hand (Actions → Release → Run workflow) to release a version
+# again after a failed run. See docs/release.md. The zip is uploaded to the store by hand.
 on:
+  push:
+    branches: [main]
+    paths: ["extensions/*/CHANGELOG.md"]
   workflow_dispatch:
     inputs:
       extension:
@@ -18,20 +22,85 @@ on:
         type: string
         required: true
 
-run-name: Release ${{ inputs.extension }} ${{ inputs.version }}
+run-name: ${{ inputs.extension && format('Release {0} {1}', inputs.extension, inputs.version) || 'Release from the changelog' }}
 
 permissions: {}
 
-# One release of an extension at a time. A run is never cancelled halfway through tagging.
+# One release at a time. A run is never cancelled halfway through tagging.
 concurrency:
-  group: release-${{ inputs.extension }}
+  group: release
   cancel-in-progress: false
 
 jobs:
-  build:
-    name: Build for the store
+  pick:
+    name: Pick the version
     # Only the workflow as it is on main may release, so what runs was reviewed.
     if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      release: ${{ steps.pick.outputs.release }}
+      extension: ${{ steps.pick.outputs.extension }}
+      version: ${{ steps.pick.outputs.version }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          package-manager-cache: false
+
+      # By hand: the inputs. On a push: each releasable extension (the choices above) whose
+      # changelog's newest version has no tag yet. A push that only edits older entries releases
+      # nothing; one that adds a version to two changelogs stops, and each is released by hand.
+      - name: Pick the version
+        id: pick
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          EVENT: ${{ github.event_name }}
+          INPUT_EXTENSION: ${{ inputs.extension }}
+          INPUT_VERSION: ${{ inputs.version }}
+          RELEASABLE: notico
+        run: |
+          if [ "$EVENT" = workflow_dispatch ]; then
+            picked=("$INPUT_EXTENSION $INPUT_VERSION")
+          else
+            picked=()
+            for ext in $RELEASABLE; do
+              version=$(node scripts/release-version.ts "extensions/$ext/CHANGELOG.md")
+              tag="$ext-v$version"
+              if ! gh api "repos/$REPO/git/matching-refs/tags/$tag" --jq '.[].ref' | grep -qx "refs/tags/$tag"; then
+                picked+=("$ext $version")
+              fi
+            done
+          fi
+          if [ "${#picked[@]}" -eq 0 ]; then
+            echo "Every changelog's newest version is tagged already: nothing to release."
+            echo "release=false" >>"$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [ "${#picked[@]}" -gt 1 ]; then
+            echo "::error::More than one extension has a new version (${picked[*]}): release each by hand."
+            exit 1
+          fi
+          read -r ext version <<<"${picked[0]}"
+          echo "Releasing $ext $version."
+          {
+            echo "release=true"
+            echo "extension=$ext"
+            echo "version=$version"
+          } >>"$GITHUB_OUTPUT"
+
+  build:
+    name: Build for the store
+    needs: pick
+    if: needs.pick.outputs.release == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -42,8 +111,8 @@ jobs:
       zip-sha256: ${{ steps.zip.outputs.sha256 }}
       notes: ${{ steps.inputs.outputs.notes }}
     env:
-      EXTENSION: ${{ inputs.extension }}
-      VERSION: ${{ inputs.version }}
+      EXTENSION: ${{ needs.pick.outputs.extension }}
+      VERSION: ${{ needs.pick.outputs.version }}
 
     steps:
       # Chrome's rule for a manifest version: 1 to 4 integers from 0 to 65535, without leading
@@ -83,10 +152,11 @@ jobs:
             echo "notes=$EXTENSION-$VERSION-notes.md"
           } >>"$GITHUB_OUTPUT"
 
-      - name: Checkout main
+      # The commit that started the run: the merge that added the changelog entry, or main's head
+      # when run by hand.
+      - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: main
           persist-credentials: false
 
       - name: Record the commit
@@ -127,7 +197,7 @@ jobs:
       - name: Build for the store
         env:
           CRX_STORE_BUILD: "1"
-          EXTENSION_VERSION: ${{ inputs.version }}
+          EXTENSION_VERSION: ${{ needs.pick.outputs.version }}
         run: pnpm --filter "./extensions/$EXTENSION" build
 
       - name: Check the manifest
@@ -149,7 +219,7 @@ jobs:
       # The store wants manifest.json at the root of the zip. The variable is not named ZIP:
       # Info-ZIP's zip reads $ZIP as default options, so it would write the archive into dist.
       # The zip's SHA-256 goes into the run's summary, which only this run writes, so the
-      # maintainer can check the draft release's zip against it before uploading it to the store
+      # maintainer can check the release's zip against it before uploading it to the store
       # (see docs/release.md).
       - name: Zip the build
         id: zip
@@ -172,7 +242,7 @@ jobs:
             echo "\`\`\`"
           } >>"$GITHUB_STEP_SUMMARY"
 
-      # The zip the release job attaches to the draft release.
+      # The zip the release job attaches to the release.
       - name: Upload the zip
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
@@ -188,16 +258,16 @@ jobs:
           if-no-files-found: error
 
   release:
-    name: Tag and draft the release
-    needs: build
+    name: Tag and publish the release
+    needs: [pick, build]
     runs-on: ubuntu-latest
     permissions:
-      contents: write # creates the tag and the draft release
+      contents: write # creates the tag and the release
     env:
       GH_TOKEN: ${{ github.token }}
       REPO: ${{ github.repository }}
-      EXTENSION: ${{ inputs.extension }}
-      VERSION: ${{ inputs.version }}
+      EXTENSION: ${{ needs.pick.outputs.extension }}
+      VERSION: ${{ needs.pick.outputs.version }}
       SHA: ${{ needs.build.outputs.sha }}
       TAG: ${{ needs.build.outputs.tag }}
       ARCHIVE: ${{ needs.build.outputs.zip }}
@@ -220,13 +290,15 @@ jobs:
         run: |
           echo "$ZIP_SHA256  $ARCHIVE" | sha256sum --check --strict
 
-      # A draft release creates its tag only when published, so the tag is made here, on the
-      # commit that was built. It fails if the tag exists, so a version is released only once.
+      # The tag is made here, on the commit that was built, before the release that names it. It
+      # fails if the tag exists, so a version is released only once.
       - name: Tag the commit
         run: gh api "repos/$REPO/git/refs" -f "ref=refs/tags/$TAG" -f "sha=$SHA" --silent
 
-      - name: Create the draft release
+      # Published, not a draft: a release records that a version was built and released, whether or
+      # not the store accepts it. One the store turns down is followed by the next version.
+      - name: Publish the release
         run: |
-          gh release create "$TAG" "$ARCHIVE" --repo "$REPO" --draft --verify-tag \
+          gh release create "$TAG" "$ARCHIVE" --repo "$REPO" --verify-tag \
             --title "$EXTENSION $VERSION" \
             --notes-file "$NOTES"
