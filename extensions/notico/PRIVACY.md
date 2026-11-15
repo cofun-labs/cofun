@@ -90,4 +90,4 @@ The side panel's account menu shows how many credits are left, and its Credits p
 
 ## Changes and contact
 
-This file changes in the same pull request as any change to what data leaves the browser or where it goes; its [history](https://github.com/cofun-labs/cofun/commits/main/extensions/notico/PRIVACY.md) shows every change. Questions and reports: [open an issue](https://github.com/cofun-labs/cofun/issues).
+This file changes in the same pull request as any change to what data leaves the browser or where it goes; its [history](https://github.com/cofun-labs/cofun/commits/main/extensions/notico/PRIVACY.md) shows every change. Questions and reports: [open an issue](https://github.com/cofun-labs/cofun/issues). Report a security vulnerability privately instead, as [SECURITY.md](../../SECURITY.md) says.

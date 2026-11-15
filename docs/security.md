@@ -1,6 +1,6 @@
 # Security model
 
-What Cofun protects, who it protects it from, and how each part does so. It describes the design, not a list of bugs: a weakness that can be used is reported privately and fixed, not written here. The trade-offs the design accepts on purpose are named, with the reason for each.
+What Cofun protects, who it protects it from, and how each part does so. It describes the design, not a list of bugs: a weakness that can be used is [reported privately](../SECURITY.md) and fixed, not written here. The trade-offs the design accepts on purpose are named, with the reason for each.
 
 A change that touches one of the areas below is checked against this file, and updates it in the same PR when it changes what is said here (see [Rules for later changes](#rules-for-later-changes)). It was first written from a review of the code and its tests in November 2026 ([#107](https://github.com/cofun-labs/cofun/issues/107)).
 
