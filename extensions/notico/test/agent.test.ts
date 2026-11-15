@@ -82,7 +82,7 @@ function pageTool(page = { title: 'Q4 Roadmap', url: 'https://www.notion.so/Q4-R
     parameters: { type: 'object', properties: {}, additionalProperties: false },
     run: async (args) => {
       runs.push(args)
-      return page
+      return JSON.stringify(page)
     },
   }
   return { tool, runs }
@@ -217,7 +217,6 @@ describe('extension agent against the worker', () => {
     const tool = defineTool({
       name: 'post_notes',
       describe: () => ({ verb: { base: 'post', ing: 'posting', past: 'posted' }, what: 'notes' }),
-      touched: () => ({}),
       description: 'Posts notes.',
       args: z.strictObject({
         text: z.string(),
@@ -781,7 +780,6 @@ describe('extension agent against the worker', () => {
     const tool = defineTool({
       name: 'tag_pages',
       describe: () => ({ verb: { base: 'tag', ing: 'tagging', past: 'tagged' }, what: 'pages' }),
-      touched: () => ({}),
       description: 'Tags pages.',
       args: z.object({ pages: z.array(z.object({ page: z.string().optional() })) }),
       preview: (args) => `Tag ${args.pages.length} page(s); ${runs.length} run(s) so far`,
@@ -1123,7 +1121,8 @@ describe('Notion requests per question', () => {
         const { client } = await activeNotionTab()
         await client.submitTransaction(SPACE, [], 'test')
         tab.limit('syncRecordValuesMain', 1)
-        return client.getRecords([{ table: 'block', id: PAGE }])
+        await client.getRecords([{ table: 'block', id: PAGE }])
+        return 'Looked up.'
       },
     }
     ai.script = [{ toolCalls: [LOOK_UP] }]
@@ -1142,7 +1141,8 @@ describe('Notion requests per question', () => {
           const send = client as unknown as { request(endpoint: string, body: unknown): Promise<unknown> }
           await send.request(endpoint, {})
           tab.limit('syncRecordValuesMain', 1)
-          return client.getRecords([{ table: 'block', id: PAGE }])
+          await client.getRecords([{ table: 'block', id: PAGE }])
+          return 'Looked up.'
         },
       }
       ai.script = [{ toolCalls: [LOOK_UP] }]

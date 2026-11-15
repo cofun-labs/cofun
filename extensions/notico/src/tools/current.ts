@@ -3,7 +3,7 @@ import { defineTool } from '../tool'
 import { z } from '../zod'
 import { NOTION_HOSTS, isNotion, pageIdFromUrl, showsDatabase } from '../notion/hosts'
 import { clip } from '../notion/comments'
-import { LOOK, NONE, asData } from './shared'
+import { LOOK, asData } from './shared'
 
 /** The title and URL of the current tab: the active tab of the side panel's window, on any site. */
 async function currentTab(): Promise<{ title: string; url: string } | undefined> {
@@ -127,7 +127,6 @@ export const getCurrentTab = defineTool({
     "or not. It reads nothing else: not the page's content, and no other tab. Use it only when a question needs " +
     'to know which page or site the user is on and the note with the question does not say, such as saving a ' +
     'link to it.',
-  touched: () => NONE,
   describe: () => ({ verb: LOOK, what: 'the current tab' }),
   args: z.strictObject({}),
   run: async () => {

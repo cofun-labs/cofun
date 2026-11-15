@@ -1,6 +1,6 @@
 // What the tools share: their common arguments, how the side panel words a call, and reading the
 // pages a call names.
-import type { Action, Touched, Verb } from '../tool'
+import type { Action, Verb } from '../tool'
 import { z } from '../zod'
 import { isNotion, pageIdFromUrl, toUuid } from '../notion/hosts'
 import { hexId } from '../notion/markdown'
@@ -56,18 +56,8 @@ export const DATA_LINE =
 /** A result that shows text from outside: its lines, after DATA_LINE. */
 export const asData = (lines: string[]): string => [DATA_LINE, ...lines].join('\n')
 
-/** A result without the DATA_LINE it opens with, if it has one. */
-const ownLines = (result: string): string =>
-  result.startsWith(`${DATA_LINE}\n`) ? result.slice(DATA_LINE.length + 1) : result
-
-/**
- * The first group of `line` in a result: a name the result gives. Anchor it to the result's first
- * line, the one after DATA_LINE.
- */
-export function named(result: string | undefined, line: RegExp): string | undefined {
-  const name = result === undefined ? undefined : ownLines(result).match(line)?.[1]?.trim()
-  return name || undefined
-}
+/** A name for a call's card (see ToolDetails): the text trimmed, none when it is blank. */
+export const nameOf = (text: string): string | undefined => text.trim() || undefined
 
 /** What a backslash keeps literal in a title, as read_page escapes it (see `inline` in notion/blocks.ts). */
 const ESCAPED = '\\`*_~[]^|#><$@'
@@ -108,33 +98,9 @@ export function plainTitle(markdown: string): string {
   return out
 }
 
-/** A name a result gives in quotes as `quote` writes it (JSON), read back. */
-export function quoted(result: string | undefined, line: RegExp): string | undefined {
-  const text = named(result, line)
-  if (!text) return undefined
-  try {
-    const value: unknown = JSON.parse(text)
-    return typeof value === 'string' && value.trim() ? value : undefined
-  } catch {
-    return undefined
-  }
-}
-
-/** A name in quotes as `quote` writes it, for a pattern that reads it back with `quoted`. */
-export const QUOTED = '"(?:[^"\\\\]|\\\\.)*"'
-
 /** The action on a thing by its name when known, else on what the fallback words say. */
 export function on(verb: Verb, name: string | undefined, fallback: string, what?: string): Action {
   return name ? { verb, what, name } : { verb, what: what ? `${what} ${fallback}` : fallback }
-}
-
-/**
- * The id a result names on the line that `line` matches, its first group: a page the call acted on.
- * As in `named`, a result's first line is the one after DATA_LINE.
- */
-export function idIn(result: string, line: RegExp): string[] {
-  const id = ownLines(result).match(line)?.[1]
-  return id ? [id] : []
 }
 
 /** Pages given as ids or URLs, as ids; what isn't a page is left out. */
@@ -144,8 +110,6 @@ export function idsOf(pages: string[] | undefined): string[] {
     return id ? [hexId(id)] : []
   })
 }
-
-export const NONE: Touched = {}
 
 /**
  * A page id from what the model gave: a Notion URL (with or without `https://`), an id, a page

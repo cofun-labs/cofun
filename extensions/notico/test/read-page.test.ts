@@ -8,7 +8,7 @@ import { carryPages } from '../src/tools/current'
 import { readPage } from '../src/tools/read'
 import { DATA_LINE, PART_CHARS } from '../src/tools/shared'
 import { editPage } from '../src/tools/write'
-import { FakeNotionTab, PAGE, PAGE_URL, SPACE, USER, fixture, restoreGlobals } from './notion-tab'
+import { FakeNotionTab, PAGE, PAGE_URL, SPACE, USER, fixture, restoreGlobals, resultText } from './notion-tab'
 
 afterEach(restoreGlobals)
 
@@ -84,7 +84,7 @@ function openPage(...pages: unknown[]): FakeNotionTab {
 }
 
 async function read(args: Record<string, unknown> = {}): Promise<string> {
-  return (await readPage.run(args)) as string
+  return resultText(await readPage.run(args))
 }
 
 /** The page content of a read_page result, without its header. */

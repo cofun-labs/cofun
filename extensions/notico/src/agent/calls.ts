@@ -1,7 +1,7 @@
 // Tool calls as the agent runs them: each tool as pi runs it, its preview, the user's OK, and the
 // errors that stop a question.
 import type { AgentTool } from '@earendil-works/pi-agent-core'
-import type { ConfirmTool, ToolCallRequest, ToolSpec } from './types'
+import type { ConfirmTool, ToolCallRequest, ToolResult, ToolSpec } from './types'
 
 /**
  * What a call changes, in words; a broken preview must not stop the call, so it gives none. A
@@ -158,7 +158,7 @@ export function toAgentTool(spec: ToolSpec, reporter: () => Reporter): AgentTool
     },
     execute: async (_id, params, signal) => {
       const report = reporter()
-      let result: unknown
+      let result: string | ToolResult
       try {
         result = await spec.run(params, signal)
       } catch (err) {
@@ -171,9 +171,9 @@ export function toAgentTool(spec: ToolSpec, reporter: () => Reporter): AgentTool
         throw err
       }
       if (spec.changesData) report.changed()
-      // JSON.stringify(undefined) is undefined; tool results must be strings.
-      const text = typeof result === 'string' ? result : (JSON.stringify(result) ?? '')
-      return { content: [{ type: 'text', text }], details: undefined }
+      // The details go with the result message, for the side panel; the model gets the text only.
+      const { text, details } = typeof result === 'string' ? { text: result, details: undefined } : result
+      return { content: [{ type: 'text', text }], details }
     },
   }
 }

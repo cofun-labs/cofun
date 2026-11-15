@@ -6,7 +6,17 @@ import { LIST_LIMIT, LIST_LOOKUPS, SECTION_LIMIT, listPages } from '../src/tools
 import { forgetReads } from '../src/tools/memory'
 import { readPage } from '../src/tools/read'
 import { updatePages } from '../src/tools/write'
-import { FakeNotionTab, FakeWorkspace, PAGE, PAGE_URL, SPACE, USER, notionError, restoreGlobals } from './notion-tab'
+import {
+  FakeNotionTab,
+  FakeWorkspace,
+  PAGE,
+  PAGE_URL,
+  SPACE,
+  USER,
+  notionError,
+  restoreGlobals,
+  resultText,
+} from './notion-tab'
 import { LIMITED_STOP, NO_USER_MAP, UNEXPECTED_STOP } from '../src/notion/api'
 import { DATA_LINE } from '../src/tools/shared'
 
@@ -57,7 +67,7 @@ function notion(blocks: Rec[], { collections = [] as Rec[], cookie = undefined a
   return tab
 }
 
-const run = async (args: Rec = {}) => (await listPages.run(args)) as string
+const run = async (args: Rec = {}) => resultText(await listPages.run(args))
 const listed = (result: string) => result.split('\n').filter((l) => l.trimStart().startsWith('- '))
 
 const VIEW = 'b0b0b0b0-0000-4000-8000-000000000001'
@@ -630,7 +640,7 @@ describe('titles as Markdown', () => {
     const listedTitle = listed(await run({ page: hex(PAGE) }))[0]
     expect(listedTitle).toBe(`- 📄 ${shown} ^${hex(id(11))}`)
     // read_page's line for a child page shows it the same way.
-    expect((await readPage.run({})) as string).toContain(`📄 ${shown} ^${hex(id(11))}`)
+    expect(resultText(await readPage.run({}))).toContain(`📄 ${shown} ^${hex(id(11))}`)
 
     await updatePages.run({ pages: [{ page: hex(id(11)), title: shown }] })
     expect(tab.workspace!.records.get(id(11))!.properties).toEqual({ title: [[title]] })

@@ -10,7 +10,7 @@ import { activeNotionTab, type NotionTab } from '../notion/tab'
 import { runsText } from '../notion/tree'
 import { databaseNames } from './load'
 import { forgetPages, knownTitle } from './memory'
-import { DUPLICATE, MOVE, PAGES_LIST, QUOTED, count, idIn, idsOf, on, pageArg, quoted } from './shared'
+import { DUPLICATE, MOVE, PAGES_LIST, count, nameOf, on, pageArg } from './shared'
 
 /** How many pages one move_page or trash_page call takes at most, so its preview stays readable. */
 const ORGANIZE_MAX = 50
@@ -114,7 +114,6 @@ export const movePage = defineTool({
     'Moves pages, or databases that are pages of their own, to the end of another page, with everything in them, ' +
     'as Notion\'s "Move to" does. Several pages can go in one call. A page can\'t go into itself or a page ' +
     "inside it, and database rows and pages at the top of a teamspace can't be moved.",
-  touched: (args) => ({ changed: idsOf(args?.pages) }),
   describe: (args) => ({ verb: MOVE, what: args ? count(args.pages.length, 'page') : 'pages' }),
   args: z.strictObject({
     pages: pagesArg('Ids or URLs of the pages to move.'),
@@ -188,10 +187,11 @@ export const movePage = defineTool({
     } finally {
       forgetPages([destId, ...parents, ...ids, ...[...above.values()].flat()])
     }
-    return [
+    const text = [
       `Moved ${moving.length} page${moving.length === 1 ? '' : 's'} to the end of ^${hexId(destId)}: ${moving.map((id) => `^${hexId(id)}`).join(', ')}.`,
       ...[...nested].map(([id, outer]) => `^${hexId(id)} went along inside ^${hexId(outer)}.`),
     ].join('\n')
+    return { text, details: { changed: ids.map(hexId) } }
   },
 })
 
@@ -265,10 +265,6 @@ function nestedIn(above: Map<string, string[]>, ids: string[]): Map<string, stri
 
 const DUPLICATE_PAGE = '`page` is required: the id or URL of the page to duplicate.'
 
-/** The first line of a duplicate_page result: the page duplicated, by name when known, and the copy. */
-const DUPLICATED_PAGE = new RegExp(`^Duplicated (${QUOTED}) \\^`, 'm')
-const DUPLICATED_AS = new RegExp(`^Duplicated (?:${QUOTED} )?\\^[0-9a-f]{32} as \\^([0-9a-f]{32}),`, 'm')
-
 export const duplicatePage = defineTool({
   name: 'duplicate_page',
   changesData: true,
@@ -277,9 +273,8 @@ export const duplicatePage = defineTool({
     "databases inside), as Notion's Duplicate does: the copy goes right after the page, and Notion adds a number " +
     "to its title. Returns the copy's id and URL. Database rows and pages at the top of the sidebar can't be " +
     'duplicated with this tool.',
-  // The copy is the page it made.
-  touched: (_args, result) => ({ changed: idIn(result, DUPLICATED_AS) }),
-  describe: (_args, result) => on(DUPLICATE, quoted(result, DUPLICATED_PAGE), 'a page'),
+  // Named by the page duplicated; the copy is the page it changed.
+  describe: (_args, details) => on(DUPLICATE, details?.name, 'a page'),
   args: z.strictObject({
     page: z.string({ error: DUPLICATE_PAGE }).describe('Id or URL of the page to duplicate.'),
   }),
@@ -315,10 +310,11 @@ export const duplicatePage = defineTool({
       const hex = hexId(copy)
       // A database's name is not in its block: only a name the agent has seen is given for one.
       const title = knownTitle(id) || runsText(page.properties?.title)
-      return [
+      const text = [
         `Duplicated ${title ? `${quote(title)} ` : ''}^${hexId(id)} as ^${hex}, right after it in ^${hexId(near)}.`,
         `URL: ${pageLink(tab.url, hex)}`,
       ].join('\n')
+      return { text, details: { name: nameOf(title), changed: [hex] } }
     } catch (err) {
       // A retry would make a second copy if this one was made: the agent must look first.
       if (err instanceof NotionError && err.code === 'outcome_unknown')
@@ -375,7 +371,6 @@ export const trashPage = defineTool({
     "is asked first, each time. Nothing is deleted for good: the pages can be restored from Notion's trash. " +
     "Database rows and pages at the top of a teamspace can't be trashed with this tool.",
   needsConfirmation: true,
-  touched: (args) => ({ changed: idsOf(args?.pages) }),
   describe: (args) => ({ verb: MOVE, what: `${args ? count(args.pages.length, 'page') : 'pages'} to the trash` }),
   args: z.strictObject({ pages: pagesArg('Ids or URLs of the pages to trash.') }),
   // The user agrees from this, so it names each page as Notion has it now, not as the agent saw it.
@@ -459,10 +454,11 @@ export const trashPage = defineTool({
     } finally {
       forgetPages([...ids, ...[...above.values()].flat()])
     }
-    return [
+    const text = [
       `Moved ${ids.length} page${ids.length === 1 ? '' : 's'} to Notion's trash: ${ids.map((id) => `^${hexId(id)}`).join(', ')}.`,
       ...[...nested].map(([id, outer]) => `^${hexId(id)} went inside ^${hexId(outer)}.`),
       "They can be restored from Notion's trash.",
     ].join('\n')
+    return { text, details: { changed: ids.map(hexId) } }
   },
 })

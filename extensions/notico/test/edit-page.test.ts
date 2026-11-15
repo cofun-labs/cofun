@@ -10,7 +10,17 @@ import { forgetReads } from '../src/tools/memory'
 import { readPage } from '../src/tools/read'
 import { editPage } from '../src/tools/write'
 import { LIMITED_STOP, UNEXPECTED_STOP } from '../src/notion/api'
-import { FakeNotionTab, FakeWorkspace, PAGE, PAGE_URL, SPACE, USER, notionError, restoreGlobals } from './notion-tab'
+import {
+  FakeNotionTab,
+  FakeWorkspace,
+  PAGE,
+  PAGE_URL,
+  SPACE,
+  USER,
+  notionError,
+  restoreGlobals,
+  resultText,
+} from './notion-tab'
 
 afterEach(restoreGlobals)
 
@@ -49,8 +59,8 @@ function open(ws: FakeWorkspace, url = PAGE_URL): FakeNotionTab {
   return tab.install()
 }
 
-const read = async (args: Rec = {}) => (await readPage.run(args)) as string
-const edit = async (edits: Rec[], args: Rec = {}) => (await editPage.run({ page: hex(PAGE), edits, ...args })) as string
+const read = async (args: Rec = {}) => resultText(await readPage.run(args))
+const edit = async (edits: Rec[], args: Rec = {}) => resultText(await editPage.run({ page: hex(PAGE), edits, ...args }))
 const body = (result: string) => result.slice(result.indexOf('\n\n') + 2)
 const withoutRefs = (text: string) => text.replace(/ \^[0-9a-f]{8,32}$/gm, '')
 
@@ -1685,18 +1695,22 @@ describe('edit_page details', () => {
     const ws = workspace([1], [block(1, 'text', 'Intro')])
     open(ws)
     const shown = body(await read())
-    const result = await edit([{ action: 'replace', block: '^00000001', markdown: shown }])
-    expect(result).toContain('^00000001 already had that content; nothing changed.')
+    const unchanged = await editPage.run({
+      page: hex(PAGE),
+      edits: [{ action: 'replace', block: '^00000001', markdown: shown }],
+    })
+    expect(resultText(unchanged)).toContain('^00000001 already had that content; nothing changed.')
     expect(ws.records.get(id(1))!.version).toBe(1)
     // Nothing was sent at all: not even the page's edit time.
     expect(ws.transactions).toEqual([])
     // The side panel counts no page as changed for it.
-    expect(editPage.touched({ page: hex(PAGE), edits: [{ action: 'delete', block: '^00000001' }] }, result)).toEqual({})
+    expect(unchanged).toHaveProperty('details', { name: 'Fixture page' })
     // Still as read, so it can be edited right away.
-    const edited = await edit([{ action: 'replace', block: '^00000001', markdown: 'Intro, edited' }])
-    expect(editPage.touched({ page: hex(PAGE), edits: [{ action: 'delete', block: '^00000001' }] }, edited)).toEqual({
-      changed: [hex(PAGE)],
+    const edited = await editPage.run({
+      page: hex(PAGE),
+      edits: [{ action: 'replace', block: '^00000001', markdown: 'Intro, edited' }],
     })
+    expect(edited).toMatchObject({ details: { changed: [hex(PAGE)] } })
   })
 
   it('[@no-uc:notion-safety] are sent only when the new Markdown mentions someone', async () => {

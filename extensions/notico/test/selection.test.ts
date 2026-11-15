@@ -5,7 +5,7 @@ import { forgetReads } from '../src/tools/memory'
 import { getSelection } from '../src/tools/read'
 import { DATA_LINE, PART_CHARS } from '../src/tools/shared'
 import { editPage } from '../src/tools/write'
-import { FakeNotionTab, FakeWorkspace, PAGE, PAGE_URL, SPACE, restoreGlobals } from './notion-tab'
+import { FakeNotionTab, FakeWorkspace, PAGE, PAGE_URL, SPACE, restoreGlobals, resultText } from './notion-tab'
 
 afterEach(() => {
   restoreGlobals()
@@ -227,7 +227,7 @@ function setup(
   return { ws, els }
 }
 
-const run = async (args: Record<string, unknown> = {}) => (await getSelection.run(args)) as string
+const run = async (args: Record<string, unknown> = {}) => resultText(await getSelection.run(args))
 
 describe('UC-NOTICO-NOTION-003 work on the selection', () => {
   it('[UC-NOTICO-NOTION-003-S01] gets the selected text and the blocks it covers, across two blocks', async () => {

@@ -8,7 +8,7 @@ import { activeNotionTab } from '../notion/tab'
 import { PageLookups, contentOf, lookUpPages, pageTree, runsText, treeLines, type PageTree } from '../notion/tree'
 import type { OpenPage } from './current'
 import { databaseNames, workspaceOf } from './load'
-import { LIST, NONE, SEARCH, filled, asData, on, pageArg, wholeArg } from './shared'
+import { LIST, SEARCH, filled, asData, on, pageArg, wholeArg } from './shared'
 
 const LIST_MAX_DEPTH = 3
 /** How many pages one list shows, so a large workspace still fits the conversation. */
@@ -29,7 +29,6 @@ export const listPages = defineTool({
     'one of those sections; with `page`, the pages and databases under it. Titles and ids only, no content: ' +
     'read a page with read_page. With `page` or `section`, `depth` also lists the pages under those, up to 3 ' +
     'levels. A long list is cut off; `section` and `offset` list the rest.',
-  touched: () => NONE,
   describe: (args) =>
     args?.page
       ? { verb: LIST, what: 'the pages under a page' }
@@ -240,7 +239,6 @@ export const searchPages = defineTool({
     "Searches the Notion workspace of the open page for pages by title and content, as Notion's search does. " +
     'Returns each page with its id, where it is, when it was last edited, and the matching text. Read a page it ' +
     'finds with read_page and its id.',
-  touched: () => NONE,
   describe: (args) => on(SEARCH, args?.query.trim() || undefined, 'pages', 'for'),
   args: z.strictObject({
     query: z.string({ error: QUERY_WORDS }).describe('Words to search for.'),

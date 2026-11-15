@@ -29,8 +29,7 @@ import {
   TITLE_EMPTY,
   filled,
   asData,
-  idIn,
-  named,
+  nameOf,
   on,
   pageArg,
   partArg,
@@ -99,14 +98,8 @@ export const queryDatabase = defineTool({
     'Yes/No; multi-select by whole options: `contains` "A, B" keeps rows with both, `is` rows with exactly ' +
     "those); `sort` orders them as Notion's own sort does. Formulas and rollups can't be used. Long results come in parts; ask for " +
     'the next with `part`.',
-  touched: (_args, result) => ({ read: idIn(result, /^Database: .* \^([0-9a-f]{32})(?:\n|$)/) }),
-  describe: (args, result) =>
-    on(
-      READ,
-      named(result, /^Database: (.+) \^[0-9a-f]+(?:\n|$)/),
-      !args || args.database ? 'a database' : 'the open database',
-      'rows of',
-    ),
+  describe: (args, details) =>
+    on(READ, details?.name, !args || args.database ? 'a database' : 'the open database', 'rows of'),
   args: QUERY_ARGS,
   run: async ({ database, filter, sort: sortBy, part = 1 }) => {
     const given = filled(database)
@@ -205,7 +198,8 @@ export const queryDatabase = defineTool({
       }
       keepSeenRow(r.id, seen)
     }
-    if (!shown.length) return asData([...header, '', '(no rows)'])
+    const details = { name: nameOf(name), read: [hexId(dbId)] }
+    if (!shown.length) return { text: asData([...header, '', '(no rows)']), details }
     const table = [
       `| ${[...columns, 'Row'].join(' | ')} |`,
       `|${[...columns, 'Row'].map(() => ' --- ').join('|')}|`,
@@ -218,7 +212,7 @@ export const queryDatabase = defineTool({
         return `| ${[...cells, `^${hexId(r.id)}`].join(' | ')} |`
       }),
     ]
-    return asData([...header, '', ...table])
+    return { text: asData([...header, '', ...table]), details }
   },
 })
 
@@ -386,7 +380,6 @@ export const createDatabase = defineTool({
     "Creates a Notion database (a table) as a page at the end of `parent`, a page (the open page's URL, or " +
     'another page): a title column (`title_property`, "Name" if left out), then `properties` in order, with ' +
     "options for selects. Add rows afterwards with create_page. Returns the new database's id and URL.",
-  touched: (_args, result) => ({ changed: idIn(result, /^Created the database “.*” \^([0-9a-f]{32}) /) }),
   describe: (args) => {
     const name = args?.title.trim()
     return name ? { verb: CREATE, what: 'the database', name } : { verb: CREATE, what: 'a database' }
@@ -469,11 +462,12 @@ export const createDatabase = defineTool({
     }
     keepSeenDatabase(ids.page, title)
     const hex = hexId(ids.page)
-    return [
+    const text = [
       `Created the database “${title}” ^${hex} at the end of ^${hexId(parentId)}.`,
       `Properties: ${rowValuesHeader(schema)}`,
       `URL: ${pageLink(tab.url, hex)}`,
     ].join('\n')
+    return { text, details: { changed: [hex] } }
   },
 })
 
@@ -489,14 +483,7 @@ export const updateDatabaseSchema = defineTool({
     'loses its values in every row: remove one only when the user asked to remove exactly it. A property ' +
     "can't change its type, and status options can't be changed. Give the database by id or URL, or leave it " +
     'out when the open page is a database. Nothing changes if any change is refused.',
-  touched: (_args, result) => ({ changed: idIn(result, /^Changed the properties of “.*” \^([0-9a-f]{32}):(?:\n|$)/) }),
-  describe: (_args, result) =>
-    on(
-      CHANGE,
-      named(result, /^Changed the properties of “(.+)” \^[0-9a-f]+:(?:\n|$)/),
-      'a database',
-      'the properties of',
-    ),
+  describe: (_args, details) => on(CHANGE, details?.name, 'a database', 'the properties of'),
   args: z.strictObject({
     database: z.string().describe('Id or URL of the database. Leave out for the open page.').optional(),
     changes: z
@@ -599,11 +586,12 @@ export const updateDatabaseSchema = defineTool({
       forgetLoads(id)
       for (const row of renamedRows) forgetSeenRow(row)
     }
-    return [
+    const text = [
       `Changed the properties of “${db.name}” ^${hexId(id)}:`,
       ...plan.lines,
       ...(plan.renames.length ? [`Rows renamed with their options: ${renamedRows.length}.`] : []),
       `Properties now: ${rowValuesHeader(plan.schema)}`,
     ].join('\n')
+    return { text, details: { name: nameOf(db.name), changed: [hexId(id)] } }
   },
 })

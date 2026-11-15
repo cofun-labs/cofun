@@ -10,7 +10,7 @@ import { activeNotionTab, selectionIn } from '../notion/tab'
 import { needsAttachedPage } from './current'
 import { loadForPart, loadMentioned } from './load'
 import { generation, keepPartsRead, lastRead, partsReadOf, remember } from './memory'
-import { NONE, PART_CHARS, READ, filled, asData, idIn, named, on, pageArg, partArg, plainTitle, plural } from './shared'
+import { PART_CHARS, READ, filled, asData, nameOf, on, pageArg, partArg, plainTitle, plural } from './shared'
 
 export const readPage = defineTool({
   name: 'read_page',
@@ -18,14 +18,10 @@ export const readPage = defineTool({
     'Reads a Notion page as Markdown: the page open in the current tab, or another page by URL or id. ' +
     'Each block ends with a reference such as ^1a2b3c4d. Child pages, databases, and links to pages end with ' +
     'the page id, which this tool accepts. A long page comes in parts; ask for the next one with `part`.',
-  touched: (_args, result) => ({ read: idIn(result, /^Page: .* \^([0-9a-f]{32})(?:\n|$)/) }),
-  describe: (args, result) =>
+  describe: (args, details) =>
     on(
       READ,
-      // A database's name is plain text already; the header (up to the first blank line) says which it is.
-      result?.split('\n\n')[0].includes('\nThis page is a database:')
-        ? named(result, /^Page: (.+) \^[0-9a-f]+(?:\n|$)/)
-        : plainTitle(named(result, /^Page: (.+) \^[0-9a-f]+(?:\n|$)/) ?? '') || undefined,
+      details?.name,
       // Arguments that don't parse may have named another page.
       !args || args.page ? 'a page' : 'the open page',
       args?.part && args.part > 1 ? `part ${args.part} of` : undefined,
@@ -102,7 +98,14 @@ export const readPage = defineTool({
     const seen = pageRead(loaded, md, (b) => drawn.has(b), whole)
     keepPartsRead(loaded.page.id, read, since)
     remember(part === 1 ? seen : mergeReads(lastRead(loaded.page.id), seen), since)
-    return asData([...header, '', ...(body ? [body] : []), ...(part === 1 ? empty : [])])
+    return {
+      text: asData([...header, '', ...(body ? [body] : []), ...(part === 1 ? empty : [])]),
+      // A database's name is plain text already.
+      details: {
+        name: nameOf(md.kind === 'database' ? md.titleMarkdown : plainTitle(md.titleMarkdown)),
+        read: [pageHex],
+      },
+    }
   },
 })
 
@@ -116,7 +119,6 @@ export const getSelection = defineTool({
     'Markdown with its reference, ready for edit_page (no read_page needed for those blocks). Use it when the user ' +
     'refers to what they selected: "the selection", "the highlighted text", or "this" on its own (as in "rewrite ' +
     'this"), not "this page". Nothing selected is a normal answer.',
-  touched: () => NONE,
   describe: () => ({ verb: READ, what: 'the selection' }),
   args: z.strictObject({}),
   run: async () => {
