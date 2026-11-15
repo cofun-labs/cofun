@@ -145,8 +145,7 @@ function codeOnly(text: string): string {
       const to = end === -1 ? text.length : end + 2
       blank(i, to)
       i = to
-    } else if (c === "'" || c === '"' || c === '`' || (c === '/' && /^$|[(,=:[!&|?{};]$/.test(previous))) {
-      // A regular expression starts where a value may, after an operator or an opening bracket.
+    } else if (c === "'" || c === '"' || c === '`' || (c === '/' && startsValue(text, i, previous))) {
       let j = i + 1
       let inClass = false
       while (j < text.length && (text[j] !== c || inClass)) {
@@ -166,6 +165,17 @@ function codeOnly(text: string): string {
     }
   }
   return out.join('')
+}
+
+/**
+ * Whether a `/` at `i` starts a regular expression, not a division: it does where a value may start,
+ * after an operator, an opening bracket, a keyword such as `return` or `of`, or nothing.
+ */
+function startsValue(text: string, i: number, previous: string): boolean {
+  if (/^$|[(,=:[!&|?{};<>+\-*%~^]$/.test(previous)) return true
+  return /(?:^|[^\w$.])(?:return|typeof|case|of|in|instanceof|delete|void|throw|new|do|else|yield|await)\s*$/.test(
+    text.slice(Math.max(0, i - 16), i),
+  )
 }
 
 /** The offset just after the bracket that closes the one at `i`, in code with its strings blanked. */

@@ -233,17 +233,22 @@ describe('checkUseCases', () => {
       ['CASES.forEach(([name]) => it(name, () => {}))', 'no tag'],
       ["if (FLAG) it('has no tag behind an if', () => {})", 'no tag'],
       ["describe('a block', () => it('has no tag inside it', () => {}))", 'no tag'],
-      ['it.each`', 'no tag'],
+      ['it.each`'],
       ['  a'],
       ['  ${1}'],
-      ["`('has no tag after a table', () => {})"],
+      // A tagged template table's name is on the line that closes it.
+      ["`('has no tag after a table', () => {})", 'no tag'],
+      // A regular expression after a keyword, with a backtick in it, opens no template.
+      ['function quoted(s: string) {'],
+      ['  return /`/.test(s)'],
+      ['}'],
+      ["it('has no tag after a regular expression', () => {})", 'no tag'],
     ]
     const text = lines.map(([line]) => line).join('\n')
     const report = checkUseCases([], [{ path: 'worker/test/api.test.ts', text }])
     const expected = lines.flatMap(([, error], index) => {
       if (!error) return []
-      // A tagged template table's name is on the line that closes it.
-      const at = `worker/test/api.test.ts:${error && lines[index][0] === 'it.each`' ? index + 4 : index + 1}`
+      const at = `worker/test/api.test.ts:${index + 1}`
       return [
         error === 'speed'
           ? `${at}: [@no-uc:speed] is not a kind of harm; use one of data, notion-safety, money, access, privacy, contract`
