@@ -347,7 +347,7 @@ export class FakeNotionTab {
           return this.promptAnswer
         },
       },
-      windows: { getCurrent: async () => ({ id: 1 }) },
+      windows: { getCurrent: async () => ({ id: 1 }), update: async () => ({ id: 1 }) },
       runtime: { onInstalled: listeners(this.installed), onStartup: listeners([]) },
       contextMenus: {
         removeAll: (done?: () => void) => {

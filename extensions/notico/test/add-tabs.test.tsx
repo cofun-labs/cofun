@@ -272,6 +272,43 @@ describe('UC-NOTICO-CHAT-005 add open tabs to a conversation', () => {
     expect(sentQuestions(browser)[0]).toContain(`"Playground" (tab 20), ${LONG.slice(0, 2_000)}]`)
   })
 
+  it('[UC-NOTICO-CHAT-005-S05] after a restart, a tab a saved chat holds is not read, even once another chat adds a tab with its id', async () => {
+    const { browser, tab, user } = await openPanel()
+    browser.ai.script.push({ reply: 'First chat.' }, { reply: 'Second chat.' }, readTab(20), { reply: 'Not that one.' })
+
+    await addTab(user, 'Rivers')
+    await ask(user, 'Remember this tab')
+    await screen.findByText('First chat.')
+    await answered()
+
+    // The browser restarts; in a new chat the user adds a tab Chrome gave the same id to.
+    tab.storage.restart()
+    await user.click(screen.getByRole('button', { name: 'New chat' }))
+    await addTab(user, 'Rivers')
+    await ask(user, 'Another chat')
+    await screen.findByText('Second chat.')
+    await answered()
+
+    // Back in the first chat, that id is not the tab it was added as.
+    await user.click(screen.getByRole('button', { name: 'Chats' }))
+    await user.click(
+      await within(screen.getByRole('dialog', { name: 'Chats' })).findByRole('button', { name: /^Remember this tab/ }),
+    )
+    await conversation().findByText('Remember this tab')
+    await ask(user, 'What does it say now?')
+    await screen.findByText('Not that one.')
+
+    expect(toolResults(browser)).toEqual([GONE])
+    expect(tab.injections).toEqual([])
+    // Its link opens the page again, rather than going to the tab that has its id now.
+    await user.click(
+      within(conversation().getAllByRole('list', { name: 'Pages sent' })[0]).getByRole('link', {
+        name: 'Rivers | News',
+      }),
+    )
+    expect(browser.openedTabs).toEqual([RIVERS])
+  })
+
   it('[UC-NOTICO-CHAT-005-S05] a tab added that was closed, or added before the browser restarted, is not read', async () => {
     const { browser, tab, user } = await openPanel()
     browser.ai.script.push(readTab(20), { reply: 'It is gone.' }, readTab(21), { reply: 'Gone too.' })

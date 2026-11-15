@@ -20,7 +20,7 @@ export {
   currentNotionPage,
   openNotionPages,
   openWebTabs,
-  rememberTab,
+  addedTabNow,
   SELECTION_END,
   selectionsCarried,
   type OpenPage,

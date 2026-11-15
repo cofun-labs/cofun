@@ -44,7 +44,6 @@ import {
   forgetReads,
   OPEN_A_PAGE,
   pagesIn,
-  rememberTab,
   chatTitle,
   replyTitle,
   savePage,
@@ -354,9 +353,6 @@ export function Chat({ userId }: { userId: string }) {
     // The open page, taken off before, goes with the question again: the user chose it.
     if (tabPage && pageKey(tabPage) === key) setRemoved(undefined)
     setChosen((list) => (list.some((p) => pageKey(p) === key) ? list : [...list, page]))
-    // read_tab reads an added tab only until the browser restarts, when Chrome reuses tab ids.
-    if (page.web && page.tab !== undefined)
-      void rememberTab(page.tab).catch((err: unknown) => console.error('Could not note the tab added', err))
     track({ event: 'page_added', how: picker?.from === '@' ? 'mention' : 'button' })
     if (picker?.from === '@') {
       const end = picker.start + 1 + picker.query.length

@@ -38,6 +38,8 @@ export interface OpenPage {
   database?: true
   web?: true
   tab?: number
+  /** The run of the browser the tab was added in (see browserRun). */
+  run?: string
 }
 
 /** The title Chrome reports for a Notion tab, without the " | Notion" a tab title may end with. */
@@ -60,7 +62,7 @@ export async function openNotionPages(): Promise<OpenPage[]> {
 
 /** A tab on another site the user can add to a question, and whether Notico may read its site already. */
 export interface WebTab {
-  page: OpenPage & { web: true; tab: number }
+  page: OpenPage & { web: true; tab: number; run: string }
   origin: string
   allowed: boolean
 }
@@ -80,9 +82,10 @@ export async function openWebTabs(): Promise<WebTab[]> {
     seen.add(tab.url)
     return [{ title: tab.title ?? '', url: tab.url, tab: tab.id, origin: site.origin }]
   })
+  const run = await browserRun()
   return Promise.all(
     tabs.map(async ({ origin, ...page }) => ({
-      page: { ...page, web: true as const },
+      page: { ...page, web: true as const, run },
       origin,
       allowed: await mayRead(origin).catch(() => false),
     })),
@@ -97,23 +100,31 @@ export async function openWebTabs(): Promise<WebTab[]> {
 let addedTabs = new Map<number, OpenPage>()
 
 /**
- * Where the ids of the tabs the user added are kept for as long as the browser runs. Chrome gives
- * tabs new ids after a restart, so an id a saved chat holds may then be another tab's: only an id
- * added since the browser started is read (chrome.storage.session is cleared on a restart).
+ * Names this run of the browser, from its start until it closes: chrome.storage.session keeps the
+ * name, and Chrome clears it when the browser closes. Chrome gives tabs new ids after a restart, so
+ * a tab a saved chat holds is the same tab only when it was added in this run (see `run` on the
+ * pages a question carries). Two panels that name a run at once may both write a name: each reads
+ * the one stored after writing, so they agree but for a write that lands in between.
  */
-const ADDED_TABS_KEY = 'addedTabs'
-const TabIds = z.array(z.number().int())
+const RUN_KEY = 'browserRun'
 
-/** Notes that the user added the tab with this id to a question, so read_tab may read it until the browser restarts. */
-export async function rememberTab(id: number): Promise<void> {
-  const ids = await tabsAddedSinceStart()
-  if (!ids.includes(id)) await chrome.storage.session.set({ [ADDED_TABS_KEY]: [...ids, id] })
+async function browserRun(): Promise<string> {
+  const read = async () => z.string().safeParse((await chrome.storage.session.get(RUN_KEY))[RUN_KEY])
+  const stored = await read()
+  if (stored.success) return stored.data
+  const named = crypto.randomUUID()
+  await chrome.storage.session.set({ [RUN_KEY]: named })
+  const now = await read()
+  return now.success ? now.data : named
 }
 
-async function tabsAddedSinceStart(): Promise<number[]> {
-  const stored: unknown = (await chrome.storage.session.get(ADDED_TABS_KEY))[ADDED_TABS_KEY]
-  const parsed = TabIds.safeParse(stored)
-  return parsed.success ? parsed.data : []
+/**
+ * The tab with this id, when the page `page` names it was added in this run of the browser and the
+ * tab is still open; whatever page it shows now.
+ */
+export async function addedTabNow(page: Pick<OpenPage, 'tab' | 'run'>): Promise<chrome.tabs.Tab | undefined> {
+  if (page.tab === undefined || page.run === undefined || page.run !== (await browserRun())) return undefined
+  return chrome.tabs.get(page.tab).catch(() => undefined)
 }
 
 /**
@@ -392,8 +403,8 @@ export const readTab = defineTool({
     const gone =
       'The tab the user added is not open any more (it was closed, or the browser restarted since), so nothing ' +
       'was read. Ask them to open the page and add its tab again.'
-    if (!(await tabsAddedSinceStart()).includes(tab)) throw new Error(gone)
-    const now = await chrome.tabs.get(tab).catch(() => undefined)
+    // Added in an earlier run of the browser, the id may be another tab's now.
+    const now = await addedTabNow(added)
     if (!now?.url) throw new Error(gone)
     if (isNotion(now.url)) throw new Error('The tab now shows a Notion page: read it with read_page instead.')
     const site = readableSite(now.url, WHERE)

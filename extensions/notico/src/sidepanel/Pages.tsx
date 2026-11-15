@@ -1,5 +1,6 @@
 import type { MouseEvent } from 'react'
 import type { QuestionPage, QuestionSelection } from '../agent'
+import { addedTabNow } from '../tools'
 import { Icon } from './icons'
 
 /** A page's title as the panel shows it; Notion shows a page without one as "Untitled". */
@@ -100,15 +101,19 @@ export function ComposerPages({
  */
 export function SentPages({ pages, selections }: { pages?: QuestionPage[]; selections?: QuestionSelection[] }) {
   if (!pages?.length && !selections?.length) return null
-  const open = (event: MouseEvent<HTMLAnchorElement>, page: Pick<QuestionPage, 'url' | 'web' | 'tab'>) => {
+  const open = (event: MouseEvent<HTMLAnchorElement>, page: Pick<QuestionPage, 'url' | 'web' | 'tab' | 'run'>) => {
     if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
     event.preventDefault()
     if (!page.web) return void chrome.tabs.update({ url: page.url })
-    const tab = page.tab
-    // The tab, whatever it shows now; once it is gone, the page it showed, in a new tab.
-    void (tab === undefined ? Promise.reject(new Error('No tab')) : chrome.tabs.update(tab, { active: true })).catch(
-      () => chrome.tabs.create({ url: page.url }),
-    )
+    // The tab, whatever it shows now, in its window; once it is gone (or the browser restarted since
+    // it was added, when its id may be another tab's), the page it showed, in a new tab.
+    void addedTabNow(page)
+      .then(async (tab) => {
+        if (tab?.id === undefined) return void (await chrome.tabs.create({ url: page.url }))
+        await chrome.tabs.update(tab.id, { active: true })
+        await chrome.windows.update(tab.windowId, { focused: true }).catch(() => undefined)
+      })
+      .catch((err: unknown) => console.error('Could not go to the tab', err))
   }
   return (
     <ul className="sent-pages" aria-label="Pages sent">
