@@ -112,7 +112,7 @@ jobs:
           NOTES: ${{ steps.inputs.outputs.notes }}
         run: |
           node scripts/release-notes.ts "extensions/$EXTENSION/CHANGELOG.md" "$VERSION" >"$NOTES"
-          printf '\n---\n\nChrome Web Store build of %s %s, from %s.\n' "$EXTENSION" "$VERSION" "$SHA" >>"$NOTES"
+          printf '\n---\n\nChrome Web Store build of %s %s, from %s.\n' "${EXTENSION^}" "$VERSION" "$SHA" >>"$NOTES"
           cat "$NOTES"
 
       - name: Install dependencies
