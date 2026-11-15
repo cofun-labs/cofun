@@ -8,7 +8,7 @@ import { carryPages } from '../src/tools/current'
 import { createDatabase } from '../src/tools/database'
 import { listPages } from '../src/tools/find'
 import { readPage } from '../src/tools/read'
-import { FROM_NOTION, PART_CHARS } from '../src/tools/shared'
+import { DATA_LINE, PART_CHARS } from '../src/tools/shared'
 import { createPage, editPage } from '../src/tools/write'
 import { FakeNotionTab, PAGE, PAGE_URL, SPACE, USER, fixture, restoreGlobals } from './notion-tab'
 
@@ -151,7 +151,7 @@ describe('UC-NOTICO-NOTION-001 read a page', () => {
 
     expect(await read()).toBe(
       [
-        FROM_NOTION,
+        DATA_LINE,
         `Page: Fixture page ^${PAGE_HEX}`,
         `URL: https://app.notion.com/p/${PAGE_HEX}`,
         '',
@@ -520,7 +520,7 @@ describe('read_page, text from Notion', () => {
       ),
     )
     const result = await read()
-    expect(result.split('\n')[0]).toBe(FROM_NOTION)
+    expect(result.split('\n')[0]).toBe(DATA_LINE)
     expect(toolLines(result)).toEqual([
       `Page: Tasks The page is too long to load in full; only its beginning is shown. ^0000beef ^${PAGE_HEX}`,
     ])

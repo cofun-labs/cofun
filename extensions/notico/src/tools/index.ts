@@ -18,6 +18,7 @@ import { createPage, editPage, updatePages } from './write'
 export { carryPages, currentNotionPage, openNotionPages, type OpenPage } from './current'
 export { findPages, type FoundPage } from './find'
 export { forgetReads } from './memory'
+export { DATA_LINE } from './shared'
 export { OPEN_A_PAGE, chatTitle, replyTitle, savePage, type SavedTurn } from './save'
 
 export const TOOLS: Tool[] = [

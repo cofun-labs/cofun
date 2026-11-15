@@ -3,7 +3,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { QUERY_LOAD, QUERY_PART, localDate, queryDatabase } from '../src/tools/database'
 import { FakeNotionTab, PAGE_URL, SPACE, USER, restoreGlobals } from './notion-tab'
-import { FROM_NOTION } from '../src/tools/shared'
+import { DATA_LINE } from '../src/tools/shared'
 
 afterEach(restoreGlobals)
 
@@ -95,7 +95,7 @@ describe('UC-NOTICO-NOTION-006 read a database', () => {
     const tab = database()
     expect(await query()).toBe(
       [
-        FROM_NOTION,
+        DATA_LINE,
         `Database: Tasks ^${hex(DB)}`,
         `Today: ${today}`,
         'Properties: Task (title), Status (status), Due (date), Owner (person), Points (number), Done (checkbox)',

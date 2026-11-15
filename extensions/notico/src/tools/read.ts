@@ -10,20 +10,7 @@ import { activeNotionTab, selectionIn } from '../notion/tab'
 import { needsAttachedPage } from './current'
 import { loadForPart, loadMentioned } from './load'
 import { generation, keepPartsRead, lastRead, partsReadOf, remember } from './memory'
-import {
-  NONE,
-  PART_CHARS,
-  READ,
-  filled,
-  fromNotion,
-  idIn,
-  named,
-  on,
-  pageArg,
-  partArg,
-  plainTitle,
-  plural,
-} from './shared'
+import { NONE, PART_CHARS, READ, filled, asData, idIn, named, on, pageArg, partArg, plainTitle, plural } from './shared'
 
 export const readPage = defineTool({
   name: 'read_page',
@@ -115,7 +102,7 @@ export const readPage = defineTool({
     const seen = pageRead(loaded, md, (b) => drawn.has(b), whole)
     keepPartsRead(loaded.page.id, read, since)
     remember(part === 1 ? seen : mergeReads(lastRead(loaded.page.id), seen), since)
-    return fromNotion([...header, '', ...(body ? [body] : []), ...(part === 1 ? empty : [])])
+    return asData([...header, '', ...(body ? [body] : []), ...(part === 1 ? empty : [])])
   },
 })
 
@@ -203,7 +190,7 @@ export const getSelection = defineTool({
       ),
     )
     const pageHex = hexId(loaded.page.id)
-    return fromNotion([
+    return asData([
       `Selection on the page “${md.titleMarkdown}” ^${pageHex}:`,
       '',
       ...(selection.text === undefined ? [] : [`Selected text: ${quote(clip(selection.text, 2000))}`, '']),

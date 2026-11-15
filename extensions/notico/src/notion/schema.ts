@@ -119,13 +119,13 @@ function nameArg(value: string, what: string): string {
   return name
 }
 
-const same = (a: string, b: string) => a.toLowerCase() === b.toLowerCase()
+const same = (a: string, b: string) => oneLine(a).toLowerCase() === oneLine(b).toLowerCase()
 
 /** The property named `name` (any case) as [key, def]. */
 function propertyNamed(defs: Defs, name: string): [string, PropertyDef] {
   const found = Object.entries(defs).find(([key, def]) => def && same(def.name ?? key, name))
   if (!found) {
-    const names = Object.entries(defs).flatMap(([key, def]) => (def ? [def.name ?? key] : []))
+    const names = Object.entries(defs).flatMap(([key, def]) => (def ? [oneLine(def.name ?? key)] : []))
     throw new SchemaError(`There is no property “${name}”. The properties are: ${names.join(', ')}.`)
   }
   return found
@@ -133,7 +133,7 @@ function propertyNamed(defs: Defs, name: string): [string, PropertyDef] {
 
 function checkFreeName(defs: Defs, name: string, except?: string) {
   const clash = Object.entries(defs).find(([key, def]) => def && key !== except && same(def.name ?? key, name))
-  if (clash) throw new SchemaError(`There is already a property “${clash[1].name ?? clash[0]}”.`)
+  if (clash) throw new SchemaError(`There is already a property “${oneLine(clash[1].name ?? clash[0])}”.`)
 }
 
 /** Option names for a select or multi-select, checked: on one line, no commas, none twice. */
@@ -157,7 +157,8 @@ function optionNamed(def: PropertyDef, name: string): SchemaOption {
   if (!found) {
     const names = (def.options ?? []).map((o) => o.value).filter(Boolean)
     throw new SchemaError(
-      `“${def.name}” has no option “${name}”.` + (names.length ? ` Its options are: ${names.join(', ')}.` : ''),
+      `“${oneLine(def.name ?? '')}” has no option “${name}”.` +
+        (names.length ? ` Its options are: ${names.join(', ')}.` : ''),
     )
   }
   return found
@@ -313,8 +314,12 @@ export function planSchemaChanges(
     const def = defs[key]
     if (def.type === 'select' || def.type === 'multi_select') return def
     if (def.type === 'status')
-      throw new SchemaError(`“${def.name}” is a status: its options and their groups can only be changed in Notion.`)
-    throw new SchemaError(`“${def.name}” is a ${String(def.type).replace(/_/g, ' ')} property; it has no options.`)
+      throw new SchemaError(
+        `“${oneLine(def.name ?? '')}” is a status: its options and their groups can only be changed in Notion.`,
+      )
+    throw new SchemaError(
+      `“${oneLine(def.name ?? '')}” is a ${String(def.type).replace(/_/g, ' ')} property; it has no options.`,
+    )
   }
   for (const change of changes) {
     const given = nameArg(change.property, 'A property name')
@@ -326,14 +331,14 @@ export function planSchemaChanges(
         defs[key] = def
         operations.push(op.addProperty(key, def))
         const shown = def.type === 'select' || def.type === 'multi_select' ? optionList(def) : ''
-        lines.push(`Add the property “${def.name}” (${String(def.type).replace(/_/g, ' ')}${shown})`)
+        lines.push(`Add the property “${oneLine(def.name ?? '')}” (${String(def.type).replace(/_/g, ' ')}${shown})`)
         break
       }
       case 'rename_property': {
         const [key, def] = propertyNamed(defs, given)
         const to = nameArg(change.to, 'The new name')
         checkFreeName(defs, to, key)
-        lines.push(`Rename the property “${def.name}” to “${to}”`)
+        lines.push(`Rename the property “${oneLine(def.name ?? '')}” to “${to}”`)
         def.name = to
         operations.push(op.renameProperty(key, to))
         break
@@ -341,10 +346,12 @@ export function planSchemaChanges(
       case 'remove_property': {
         const [key, def] = propertyNamed(defs, given)
         if (key === 'title' || def.type === 'title')
-          throw new SchemaError(`“${def.name}” is the title column: every database has one, so it can't be removed.`)
+          throw new SchemaError(
+            `“${oneLine(def.name ?? '')}” is the title column: every database has one, so it can't be removed.`,
+          )
         operations.push(...op.removeProperty(key, structuredClone(def)))
         delete defs[key]
-        lines.push(`Remove the property “${def.name}”: its values in every row are lost`)
+        lines.push(`Remove the property “${oneLine(def.name ?? '')}”: its values in every row are lost`)
         break
       }
       case 'add_options': {
@@ -353,7 +360,7 @@ export function planSchemaChanges(
         const added = newOptions(optionNames(change.options, def.name!, def.options), newId, def.options?.length ?? 0)
         def.options = [...(def.options ?? []), ...added]
         for (const o of added) operations.push(op.addOption(key, o))
-        lines.push(`Add options to “${def.name}”: ${added.map((o) => o.value).join(', ')}`)
+        lines.push(`Add options to “${oneLine(def.name ?? '')}”: ${added.map((o) => o.value).join(', ')}`)
         break
       }
       case 'rename_option': {
@@ -364,8 +371,11 @@ export function planSchemaChanges(
         if (to.includes(',')) throw new SchemaError(`Option names can't contain commas: “${to}”.`)
         const clash = (def.options ?? []).find((o) => o.id !== option.id && same(o.value, to))
         // Two options with one name would merge their rows' values for good.
-        if (clash) throw new SchemaError(`“${def.name}” already has an option “${clash.value}”.`)
-        lines.push(`Rename the option “${option.value}” of “${def.name}” to “${to}”, in every row that has it`)
+        if (clash)
+          throw new SchemaError(`“${oneLine(def.name ?? '')}” already has an option “${oneLine(clash.value ?? '')}”.`)
+        lines.push(
+          `Rename the option “${option.value}” of “${oneLine(def.name ?? '')}” to “${to}”, in every row that has it`,
+        )
         const earlier = renames.find((r) => r.key === key && r.to === option.value)
         if (earlier) earlier.to = to
         else renames.push({ key, type: String(def.type), from: option.value, to })
@@ -379,7 +389,7 @@ export function planSchemaChanges(
         const option = optionNamed(def, nameArg(change.option, 'The option'))
         def.options = (def.options ?? []).filter((o) => o.id !== option.id)
         operations.push(op.removeOption(key, option.id))
-        lines.push(`Remove the option “${option.value}” of “${def.name}”: rows that have it lose it`)
+        lines.push(`Remove the option “${option.value}” of “${oneLine(def.name ?? '')}”: rows that have it lose it`)
         break
       }
     }

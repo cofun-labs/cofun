@@ -8,7 +8,7 @@ import { readPage } from '../src/tools/read'
 import { updatePages } from '../src/tools/write'
 import { FakeNotionTab, FakeWorkspace, PAGE, PAGE_URL, SPACE, USER, notionError, restoreGlobals } from './notion-tab'
 import { LIMITED_STOP, NO_USER_MAP, UNEXPECTED_STOP } from '../src/notion/api'
-import { FROM_NOTION } from '../src/tools/shared'
+import { DATA_LINE } from '../src/tools/shared'
 
 afterEach(() => {
   restoreGlobals()
@@ -121,7 +121,7 @@ describe('UC-NOTICO-NOTION-005 browse the workspace', () => {
 
     expect(await run()).toBe(
       [
-        FROM_NOTION,
+        DATA_LINE,
         'Pages in the workspace “Fixture workspace”:',
         '',
         'Private',
@@ -159,7 +159,7 @@ describe('UC-NOTICO-NOTION-005 browse the workspace', () => {
 
     expect(await run()).toBe(
       [
-        FROM_NOTION,
+        DATA_LINE,
         'Pages in the workspace “Fixture workspace”:',
         '',
         'Private',
@@ -193,7 +193,7 @@ describe('UC-NOTICO-NOTION-005 browse the workspace', () => {
 
     expect(await run({ page: hex(id(10)), depth: 2 })).toBe(
       [
-        FROM_NOTION,
+        DATA_LINE,
         `Pages under “Projects” ^${hex(id(10))}:`,
         '',
         `- 📄 Alpha ^${hex(id(11))}`,
@@ -275,7 +275,7 @@ describe('UC-NOTICO-NOTION-005 browse the workspace', () => {
     const rest = await run({ section: 'Teamspace: Engineering', offset: SECTION_LIMIT })
     expect(rest).toBe(
       [
-        FROM_NOTION,
+        DATA_LINE,
         `Teamspace: Engineering, in the workspace “Fixture workspace”, from entry ${SECTION_LIMIT}:`,
         '',
         ...many.slice(SECTION_LIMIT).map((m, i) => `- 📄 Eng ${SECTION_LIMIT + i} ^${hex(m)}`),
@@ -412,7 +412,7 @@ describe('list_pages arguments', () => {
 
   it('says a page with nothing under it has no pages', async () => {
     notion([page(10, 'Empty')]).install()
-    expect(await run({ page: hex(id(10)) })).toBe(`${FROM_NOTION}\nPages under “Empty” ^${hex(id(10))}:\n\n(no pages)`)
+    expect(await run({ page: hex(id(10)) })).toBe(`${DATA_LINE}\nPages under “Empty” ^${hex(id(10))}:\n\n(no pages)`)
   })
 })
 
@@ -684,7 +684,7 @@ describe('list_pages workspace', () => {
       .install()
     expect(await run()).toBe(
       [
-        FROM_NOTION,
+        DATA_LINE,
         'Pages in the workspace “Fixture workspace”:',
         '',
         'Private',
@@ -709,9 +709,7 @@ describe('list_pages workspace', () => {
       .respond('getSpaces', 200, spaces({ settings: { is_teams_enabled: false } }, { private_pages: [id(1)] }))
       .install()
     expect(await run()).toBe(
-      [FROM_NOTION, 'Pages in the workspace “Fixture workspace”:', '', 'Private', `- 📄 Notes ^${hex(id(1))}`].join(
-        '\n',
-      ),
+      [DATA_LINE, 'Pages in the workspace “Fixture workspace”:', '', 'Private', `- 📄 Notes ^${hex(id(1))}`].join('\n'),
     )
     expect(endpoints(tab)).not.toContain('getTeamsV2')
   })

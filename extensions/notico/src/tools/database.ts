@@ -28,7 +28,7 @@ import {
   READ,
   TITLE_EMPTY,
   filled,
-  fromNotion,
+  asData,
   idIn,
   named,
   on,
@@ -205,7 +205,7 @@ export const queryDatabase = defineTool({
       }
       keepSeenRow(r.id, seen)
     }
-    if (!shown.length) return fromNotion([...header, '', '(no rows)'])
+    if (!shown.length) return asData([...header, '', '(no rows)'])
     const table = [
       `| ${[...columns, 'Row'].join(' | ')} |`,
       `|${[...columns, 'Row'].map(() => ' --- ').join('|')}|`,
@@ -218,7 +218,7 @@ export const queryDatabase = defineTool({
         return `| ${[...cells, `^${hexId(r.id)}`].join(' | ')} |`
       }),
     ]
-    return fromNotion([...header, '', ...table])
+    return asData([...header, '', ...table])
   },
 })
 

@@ -8,7 +8,7 @@ import { activeNotionTab } from '../notion/tab'
 import { PageLookups, contentOf, lookUpPages, pageTree, runsText, treeLines, type PageTree } from '../notion/tree'
 import type { OpenPage } from './current'
 import { databaseNames, workspaceOf } from './load'
-import { LIST, NONE, SEARCH, filled, fromNotion, on, pageArg, wholeArg } from './shared'
+import { LIST, NONE, SEARCH, filled, asData, on, pageArg, wholeArg } from './shared'
 
 const LIST_MAX_DEPTH = 3
 /** How many pages one list shows, so a large workspace still fits the conversation. */
@@ -89,7 +89,7 @@ export const listPages = defineTool({
         skip: offset,
       })
       const title = titleMarkdown(records, root.properties?.title) || 'Untitled'
-      return fromNotion([
+      return asData([
         `Pages under “${title}” ^${hexId(rootId)}${offset ? `, from entry ${offset}` : ''}:`,
         '',
         ...(tree.nodes.length ? treeLines(tree.nodes) : ['(no pages)']),
@@ -150,7 +150,7 @@ export const listPages = defineTool({
         budget: { left: LIST_LOOKUPS },
         skip: offset,
       })
-      return fromNotion([
+      return asData([
         `${label}, in the workspace “${oneLine(space.name)}”${offset ? `, from entry ${offset}` : ''}:`,
         '',
         ...(tree.nodes.length ? treeLines(tree.nodes) : ['(no pages)']),
@@ -198,7 +198,7 @@ export const listPages = defineTool({
       out.push('', `Not listed, to keep the list short: ${skipped.join(', ')}. List one with \`section\`.`)
     if (!any) out.push('', '(no pages)')
     if (teamsNote.length) out.push('', ...teamsNote)
-    return fromNotion(out)
+    return asData(out)
   },
 })
 
@@ -303,7 +303,7 @@ export const searchPages = defineTool({
     // others beyond them may be in it still, so the rest is only an upper bound then.
     const total = found.total - trashed
     const more = !complete && total > shown ? ` (${trashed ? 'up to ' : ''}${total} in all; showing ${shown})` : ''
-    return fromNotion([`Pages found for "${query}"${more}:`, '', ...lines])
+    return asData([`Pages found for "${query}"${more}:`, '', ...lines])
   },
 })
 

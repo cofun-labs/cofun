@@ -3,7 +3,7 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { forgetReads } from '../src/tools/memory'
 import { getSelection } from '../src/tools/read'
-import { FROM_NOTION, PART_CHARS } from '../src/tools/shared'
+import { DATA_LINE, PART_CHARS } from '../src/tools/shared'
 import { editPage } from '../src/tools/write'
 import { FakeNotionTab, FakeWorkspace, PAGE, PAGE_URL, SPACE, restoreGlobals } from './notion-tab'
 
@@ -234,7 +234,7 @@ describe('UC-NOTICO-NOTION-003 work on the selection', () => {
     setup((els) => ({ from: [els[0], 6], to: [els[1], 6] }))
     expect(await run()).toBe(
       [
-        FROM_NOTION,
+        DATA_LINE,
         `Selection on the page “Fixture page” ^${hex(PAGE)}:`,
         '',
         'Selected text: "paragraph.Second"',
@@ -264,7 +264,7 @@ describe('UC-NOTICO-NOTION-003 work on the selection', () => {
     })
     expect(await run()).toBe(
       [
-        FROM_NOTION,
+        DATA_LINE,
         `Selection on the page “Fixture page” ^${hex(PAGE)}:`,
         '',
         'Selected block:',
@@ -386,7 +386,7 @@ describe('UC-NOTICO-NOTION-003 work on the selection', () => {
     setup((els, _, __, title) => ({ from: [title, 8], to: [els[0], 5] }))
     expect(await run()).toBe(
       [
-        FROM_NOTION,
+        DATA_LINE,
         `Selection on the page “Fixture page” ^${hex(PAGE)}:`,
         '',
         'Selected text: "pageFirst"',

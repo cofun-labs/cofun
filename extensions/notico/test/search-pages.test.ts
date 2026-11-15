@@ -6,7 +6,7 @@ import { searchPages } from '../src/tools/find'
 import { forgetReads } from '../src/tools/memory'
 import { readPage } from '../src/tools/read'
 import { FakeNotionTab, PAGE, PAGE_URL, SPACE, notionError, restoreGlobals } from './notion-tab'
-import { FROM_NOTION } from '../src/tools/shared'
+import { DATA_LINE } from '../src/tools/shared'
 
 afterEach(restoreGlobals)
 
@@ -67,7 +67,7 @@ describe('UC-NOTICO-NOTION-004 find and read other pages', () => {
     // Notion has more than the two asked for.
     expect(await search({ query: 'beta plan', limit: 2 })).toBe(
       [
-        FROM_NOTION,
+        DATA_LINE,
         'Pages found for "beta plan" (5 in all; showing 2):',
         '',
         `1. 📄 Launch plan ^${hex(FOUND)}`,

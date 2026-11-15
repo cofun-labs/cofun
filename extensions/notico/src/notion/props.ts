@@ -126,12 +126,12 @@ export function sameMarkdown(seen: string, given: string, { lines = false } = {}
 
 /** The schema entry for a property name (any case), as [key, def]. */
 export function schemaEntry(schema: Schema, name: string): [string, PropertyDef] {
-  const want = name.trim().toLowerCase()
+  const want = oneLine(name).toLowerCase()
   const found = Object.entries(schema as Record<string, PropertyDef>).find(
-    ([key, def]) => (def.name ?? key).toLowerCase() === want,
+    ([key, def]) => oneLine(def.name ?? key).toLowerCase() === want,
   )
   if (!found) {
-    const names = Object.entries(schema as Record<string, PropertyDef>).map(([key, def]) => def.name ?? key)
+    const names = Object.entries(schema as Record<string, PropertyDef>).map(([key, def]) => oneLine(def.name ?? key))
     throw new PropertyError(`There is no property “${name}”. The properties are: ${names.join(', ')}.`)
   }
   return found
@@ -143,7 +143,7 @@ export function schemaEntry(schema: Schema, name: string): [string, PropertyDef]
  * titles are Markdown (see richValue); URLs, emails, and phone numbers are plain text.
  */
 export function propertyValue(def: PropertyDef, input: PropertyInput): RichText {
-  const name = def.name ?? 'This property'
+  const name = oneLine(def.name ?? 'This property')
   const type = def.type ?? 'text'
   if (READ_ONLY.has(type)) throw new PropertyError(`${name} is a ${type.replace(/_/g, ' ')} property; it can't be set.`)
   const text = typeof input === 'string' ? input.trim() : input
