@@ -31,6 +31,7 @@ Start each finding with its weight and the IDs of the rules it breaks:
 
 - Name the head commit you reviewed. Read the PR's head again before submitting; if it changed, review the new head first.
 - List each finding with its weight and rule IDs, as above.
+- The full review submits one review with `gh pr review --comment` (GitHub blocks approving your own PR) that names the head commit, lists each finding with its rule IDs, and says what it checked.
 
 ## Rule IDs
 
@@ -108,7 +109,7 @@ The tools call Notion's internal API as the user's own account, so Notion must n
 - **F2. One schema is the single source.** The type, the runtime check, and any description of the shape given to someone else (such as a tool's JSON Schema for the model) all come from it.
 - **F3. Validation is at the boundary only.** Code behind it takes the parsed type and does not check again.
 - **F4. A value that fails says what is wrong**, specifically enough for whoever sent it to correct it: a tool's argument error lets the model fix its call.
-- **F5. Notion's property definitions and rich text are read with care.** These two are read where they are used, with checks written by hand. New code checks what it reads, asserts nothing wider than it checked, and doesn't copy an older assertion that checks less.
+- **F5. Notion's property definitions and rich text are read with care.** These two are read where they are used, with checks written by hand. The type assertions already on them stay: the code that writes them back relies on what a missing part means today. New code checks what it reads, asserts nothing wider than it checked, and doesn't copy an older assertion that checks less.
 
 ## G. Privacy and usage data
 
