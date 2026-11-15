@@ -19,7 +19,7 @@ Start each finding with its weight and the IDs of the rules it breaks:
 ```
 
 - **Blocking** is a breach of a rule whose weight below is Blocking. It is fixed in this PR, or shown with evidence not to be a real problem.
-- **Rules that must hold** are never traded for something simpler and never excused by the PR body: A1 for a requirement left out, A2, B1, B2 for a P0 scenario, B3, C4 for a half-landed write, C5, every D, E, F, and G rule, H1, K1, K2 for a module boundary, and M3.
+- **Rules that must hold** are never traded for something simpler and never excused by the PR body: A1 for a requirement left out, A2, B1, B2 for a P0 scenario, B3, C4 for a half-landed write, C5, every D, E, F, and G rule, H1, K1, and K2 for a module boundary.
 - **User's call** is a simpler approach that gives up something users would notice (J1), or a break of something users already have that nothing asks to keep (J3). Say what users would lose. The author hands it to the user and pushes neither way until they decide.
 - **Suggestion** is a breach of a rule whose weight is Suggestion, or anything else worth acting on.
 - A finding that fits no rule names none. A blocking one says which harm it does (a user-visible bug, data loss, a risk to the user's Notion account, a security problem, money wrong, a failing check). If such findings recur, the review proposes a rule for them.
@@ -134,7 +134,7 @@ The tools call their site's API as the user's own account, so the site must neve
 ## I. Performance
 
 - **I1. No needless work on a hot path**: per streamed token, per block of a long page, per render. No work that grows with the square of a page's size. [Suggestion, or Blocking when users would notice it]
-- **I2. No needless round trip** to the worker, the model, or the database: what one call or one query can do is not split across several. [Suggestion]
+- **I2: removed** (rarely broken, and a needless round trip a user would notice is caught by I1).
 - **I3. What grows per user is indexed.** A D1 query over a table that grows with use reads through an index. [Suggestion]
 - **I4. A new dependency is worth its size** in the extension's bundle, and is not added for what a few lines do. [Suggestion]
 
@@ -149,7 +149,7 @@ The tools call their site's API as the user's own account, so the site must neve
 
 - **K1. Checks are not worked around.** No `oxlint-disable`, `@ts-ignore`, `@ts-expect-error`, or `any` to get past a check; a module boundary that has to change changes `.oxlintrc.json` and the list in `AGENTS.md` together.
 - **K2. Code is where the architecture puts it.** Only `src/agent/` imports pi, one model provider per module; tools in `src/tools/`, one module per area, listed in `src/tools/index.ts`; worker routes as one Hono sub-app per area in `src/routes/`. No extension imports another, and the site layer imports nothing from the agent, the tools, the sessions, or the side panel. [Suggestion, or Blocking for a module boundary]
-- **K3. TypeScript and pnpm.** New code is TypeScript; commands, scripts, and docs use `pnpm`, never `npm` or `yarn`.
+- **K3: removed** (TypeScript and pnpm are settled in the architecture and enforced by the tooling).
 - **K4. Everything is in English**: code, comments, docs, commit messages, the PR, and error messages.
 - **K5. Comments say why.** A limit, a constant, or an edge case's behavior is explained in a comment next to it; a comment doesn't restate the code. [Suggestion]
 - **K6. The PR title is a Conventional Commit** (`feat:`, `fix:`, `docs:`, `chore:`, `refactor:`, `test:`): it becomes the squash commit's message.
@@ -166,5 +166,5 @@ The tools call their site's API as the user's own account, so the site must neve
 ## M. Repository
 
 - **M1. GitHub settings are code.** A change to the `main` ruleset or a repository option is made in `.github/rulesets/main.json` or `scripts/sync-github-settings.sh`.
-- **M2. No media on a git branch.** A PR's GIFs and screenshots are uploaded with `pnpm media`; only showcase images for a README or an extension's help pages are committed.
-- **M3. A change to how a PR merges keeps merging safe.** Nothing merges a PR without the user asking, enables auto-merge on a PR that isn't ready, or lets a commit pushed after the review ride along.
+- **M2: removed** (G7 says how demo media is uploaded, and AGENTS.md step 9 keeps it off git branches).
+- **M3: removed** (merging is the author's step, kept by AGENTS.md step 9, not something a PR's diff changes).
