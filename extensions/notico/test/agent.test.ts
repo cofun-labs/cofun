@@ -533,6 +533,23 @@ describe('extension agent against the worker', () => {
     expect(result).toEqual({ status: 'error', message: `Wait a minute. ${MAY_HAVE_CHANGED}` })
   })
 
+  it('finds a possible change in any cause, even under a wrapper that says none', async () => {
+    const lost = Object.assign(new Error('Notion did not answer.'), { mayHaveChanged: true })
+    const wrapped = Object.assign(new Error('Could not finish.', { cause: lost }), {
+      mayHaveChanged: false,
+      stopsQuestion: 'Wait a minute.',
+    })
+    // Without changesData: the error alone says data may have changed.
+    const writing: ToolSpec = {
+      ...renameTool().tool,
+      needsConfirmation: false,
+      run: async () => Promise.reject(wrapped),
+    }
+    ai.script = [{ toolCalls: [RENAME_CALL] }]
+    const { result } = await ask(makeAgent({ tools: [writing] }), 'Rename this page')
+    expect(result).toEqual({ status: 'error', message: `Wait a minute. ${MAY_HAVE_CHANGED}` })
+  })
+
   it('tools the model asked for after a refused one, in the same reply, do not run', async () => {
     const tab = new FakeNotionTab(PAGE_URL).limit('loadPageChunk', 1).install()
     const { tool, runs } = pageTool()
@@ -802,6 +819,23 @@ describe('extension agent against the worker', () => {
         preview: 'Tag 1 page(s); 0 run(s) so far',
       },
     ])
+  })
+
+  it('a tool that runs without asking does not start when Stop lands during its preview', async () => {
+    let agent: CopilotAgent
+    const { tool, runs } = pageTool()
+    const slow: ToolSpec = {
+      ...tool,
+      preview: async () => {
+        agent.stop()
+        return 'Looks up the page'
+      },
+    }
+    agent = makeAgent({ tools: [slow] })
+    ai.script = [{ toolCalls: [{ name: 'lookup_page', arguments: '{}' }] }]
+    const { result } = await ask(agent, 'Which page am I on?')
+    expect(result).toEqual({ status: 'stopped' })
+    expect(runs).toEqual([])
   })
 
   it('[UC-NOTICO-AGENT-001-S10] a tool the user agrees to runs, and the answer uses its result', async () => {
