@@ -1,20 +1,14 @@
 # Test instructions
 
-For the store's reviewers. No test account is given: sign-up is open, and reviewers use a Notion account of their own.
+For the store's reviewers. No test account is given: sign-up is open, and reviewers use a Notion account of their own. The Dashboard's Additional instructions field takes at most 500 characters, so the text below stays under that.
 
 ```text
-No test account is needed. Notico works with any Notion account (a free one is enough) and its own sign-in is open to anyone.
+No test account is needed: any Notion account works (a free one is fine), and Notico's sign-in is open to anyone.
 
-1. Sign in to Notion at https://www.notion.so in a normal tab and open any page (for example, create a new page with a few lines of text).
-2. Click the Notico icon in Chrome's toolbar (pin it from the puzzle-piece Extensions menu if it is hidden). The side panel opens next to the page.
-3. Click "Sign in". A sign-in page opens in a new tab: sign in with any Google account, or with an email address and the code sent to it. Return to the Notion tab; the panel shows you as signed in. New accounts get free weekly credits, so nothing needs to be bought.
-4. Ask in the panel, for example:
-   - "Summarize this page in five bullet points." (reads the page)
-   - "Add a short list of next steps at the end of this page." (edits the page; the change appears in Notion right away)
-   - "Find pages about onboarding in my workspace." (searches)
+1. Sign in at https://www.notion.so and open any page.
+2. Click the Notico icon in the toolbar: the side panel opens.
+3. Click "Sign in": use Google or an email code. New accounts get free credits.
+4. Ask: "Summarize this page." or "Add a short list of next steps to this page."
 
-Notes for review:
-- The Notion tools work only while the current tab is a Notion page; on other tabs the panel says so.
-- All requests to Notion are made from inside the user's own Notion tab with their existing Notion session; no Notion credentials or tokens are entered in the extension.
-- Notico edits pages without a confirmation step (moving pages to the trash is the only action it asks about first). Please test on a page you don't mind changing.
+Notico edits pages without asking first (only trashing asks), so use a page you don't mind changing.
 ```
