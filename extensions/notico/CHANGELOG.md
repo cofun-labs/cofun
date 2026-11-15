@@ -8,7 +8,7 @@ What changed in each version of Notico on the Chrome Web Store, newest first.
 
 - Use your own model: add an OpenRouter key in Settings, check that it works, and pick its models. Switch between Cofun's hosted model and yours from the message box. Answers from your own model spend no credits.
 - Buy credits: packs of 1,000, 5,000, 20,000, or 100,000 credits through Stripe's checkout. Nothing renews, and bought credits last a year.
-- Each reply shows what it cost in credits, under it.
+- Each answer from Cofun's model shows what it cost in credits, under it.
 - Save a reply, or a whole chat, as a new page under the Notion page you have open.
 - Add Notion pages to a question with @ or the + button. The open page shows in the message box as a chip you can remove.
 - Read only: switch the message box between Edit and Read only, and Notico only reads and answers until you switch back.
@@ -31,7 +31,9 @@ What changed in each version of Notico on the Chrome Web Store, newest first.
 ### Fixed
 
 - Inline equations stay equations when written back, with a line break, a backtick, or spaces at either end.
-- After opening a chat from the list, you can type straight away; the list's tips are no longer cut off; the keyboard focus stays put as the credit history loads.
+- After opening a chat from the list, you can type straight away, and the keyboard focus stays put as the credit history loads.
+- A page title with a date, a link, a mention, or characters like `*` in it is written back as it was, instead of being turned into formatting.
+- The panel names the page an edit or a duplicate was made to, instead of saying "a page".
 
 ## 0.1.0 (2026-11-13)
 
