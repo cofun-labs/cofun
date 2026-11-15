@@ -157,7 +157,7 @@ let outsideRead = 0
  * Keeps the page's lines from passing for the tool's own: a line that opens like a note in
  * brackets or a block reference gets a backslash first.
  */
-const asPageText = (text: string) => text.replace(/^([ \t]*)(\[|\^)/gm, '$1\\$2')
+const asPageText = (text: string) => text.replace(/^([^\S\n]*)(\[|\^)/gm, '$1\\$2')
 
 export const readCurrentTab = defineTool({
   name: 'read_current_tab',
