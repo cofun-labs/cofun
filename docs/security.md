@@ -63,7 +63,7 @@ Chats, the Clerk client token, and the user's model keys are kept in the Chrome 
 
 ### Accepted: a session token that names no origin
 
-A token with no `azp` passes the session check, though it does not pass an admin route's. Clerk hands a side panel that just loaded such a token, and keeps it for the panel's first minute. Refusing it would gain little. A token with no `azp` comes only from Clerk's Frontend API, and so does one naming any origin. Outside a browser, whoever holds the user's Clerk client cookie can set any `Origin` and get either. A page in the browser cannot reach the Frontend API's answer at all unless two things stay true:
+A token with no `azp` passes the session check, though it does not pass an admin route's. Clerk hands a side panel that just loaded such a token, and keeps it for the panel's first minute. Refusing it would gain little. A token with no `azp` comes only from Clerk's Frontend API, and so does one naming any origin. Outside a browser, whoever holds the user's Clerk client cookie can set any `Origin` and get either. A page in the browser cannot reach the Frontend API's answer at all, as long as two things stay true:
 
 - **Clerk's Frontend API refuses an origin the instance does not allow**: another website, an extension it does not list, and `null` get `origin_invalid`. This is the Clerk instance's configuration, outside this repository.
 - **No other host under `cofun.cc` serves code a browser runs** (rule 9 below), since every `cofun.cc` origin is one the Frontend API answers.
