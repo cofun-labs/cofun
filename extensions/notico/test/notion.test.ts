@@ -730,6 +730,58 @@ describe('when Notion turns requests away', () => {
     expect(cooldown.left()).toBe(120_000)
   })
 
+  it('[@no-uc:notion-safety] loads the kept wait on a later try when the first load failed', async () => {
+    const now = Date.parse('2026-11-10T08:00:00Z')
+    let loads = 0
+    let listeners = 0
+    const flaky: CooldownStore = {
+      load: async () => {
+        if (loads++ === 0) throw new Error('storage is busy')
+        return now + 120_000
+      },
+      save: async () => {},
+      onChange: () => void listeners++,
+    }
+    const cooldown = new NotionCooldown(() => now, flaky)
+    await cooldown.ready()
+    expect(cooldown.left()).toBe(0)
+    await cooldown.ready()
+    expect(cooldown.left()).toBe(120_000)
+    // Loaded: not loaded again, and the store's changes are followed once.
+    await cooldown.ready()
+    expect([loads, listeners]).toEqual([2, 1])
+  })
+
+  it('[@no-uc:notion-safety] keeps the later end when two side panels are turned away at the same moment', async () => {
+    const now = Date.parse('2026-11-10T08:00:00Z')
+    // A storage whose change events arrive later, as chrome.storage's do.
+    let kept: unknown
+    const events: number[] = []
+    const listeners: ((until: unknown) => void)[] = []
+    const store: CooldownStore = {
+      load: async () => kept,
+      save: async (until) => {
+        kept = until
+        events.push(until)
+      },
+      onChange: (listener) => void listeners.push(listener),
+    }
+    const openPanel = async () => {
+      const cooldown = new NotionCooldown(() => now, store)
+      await cooldown.ready()
+      return cooldown
+    }
+    const [first, second] = [await openPanel(), await openPanel()]
+    // Both turned away before either hears of the other: the shorter wait is saved last.
+    first.start('600')
+    second.start('60')
+    expect(kept).toBe(now + 60_000)
+    while (events.length) for (const until of events.splice(0)) for (const listener of listeners) listener(until)
+    expect([first.left(), second.left()]).toEqual([COOLDOWN_MAX_MS, COOLDOWN_MAX_MS])
+    // A panel opened afterwards waits as long as Notion asked.
+    expect((await openPanel()).left()).toBe(COOLDOWN_MAX_MS)
+  })
+
   it('[@no-uc:notion-safety] a side panel opened during the wait loads it before its first request', async () => {
     const tab = new FakeNotionTab(PAGE_URL).limit('loadPageChunk', 1, 429, '120').install()
     tab.workspace = new FakeWorkspace([page], SPACE)

@@ -1308,6 +1308,10 @@ describe('tool calling', () => {
       [{ messages: Array.from({ length: 201 }, () => askPage[0]) }, 'at most 200 messages'],
       [{ messages: ['hi'] }, 'each message must be an object'],
       [{ messages: [{ content: 'hi' }] }, 'each message needs a role: system, user, assistant, or tool'],
+      [
+        { messages: [{ role: 'developer', content: 'hi' }] },
+        'each message needs a role: system, user, assistant, or tool',
+      ],
       [{ messages: [{ role: 'user', content: 5 }] }, 'user messages need string content'],
       [{ messages: [{ role: 'system' }] }, 'system messages need string content'],
       [{ messages: [{ role: 'assistant' }] }, 'assistant messages need string content or tool_calls'],
@@ -1316,6 +1320,14 @@ describe('tool calling', () => {
         'assistant content must be a string or null',
       ],
       [{ messages: [{ role: 'assistant', tool_calls: [] }] }, 'tool_calls must be an array of 1 to 32 calls'],
+      [
+        {
+          messages: [
+            { role: 'assistant', tool_calls: Array.from({ length: 33 }, (_, i) => ({ ...call, id: `c${i}` })) },
+          ],
+        },
+        'tool_calls must be an array of 1 to 32 calls',
+      ],
       [
         { messages: [{ role: 'assistant', tool_calls: [{ ...call, type: 'tool' }] }] },
         'each tool call needs an id, type "function", and a function with a name and string arguments',
@@ -1340,6 +1352,17 @@ describe('tool calling', () => {
       ],
       [{ messages: [{ role: 'assistant', tool_calls: [call, call] }] }, 'tool call ids in one message must be unique'],
       [{ messages: askPage, tools: [] }, 'tools must be an array of 1 to 64 tools'],
+      [
+        {
+          messages: askPage,
+          tools: Array.from({ length: 65 }, (_, i) => ({ type: 'function', function: { name: `t${i}` } })),
+        },
+        'tools must be an array of 1 to 64 tools',
+      ],
+      [
+        { messages: askPage, tools: [{ type: 'function', function: { name: 'x'.repeat(65) } }] },
+        'tool names are 1 to 64 letters, digits, underscores, or dashes',
+      ],
       [
         { messages: askPage, tools: [{ type: 'function' }] },
         'each tool needs type "function" and a function definition',
