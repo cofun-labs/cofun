@@ -1955,10 +1955,6 @@ button.secondary:focus-visible,
   background: #6b5bd6;
 }
 
-.provider-mark-d {
-  background: #4d6bfe;
-}
-
 .provider-name {
   flex: 1;
   min-width: 0;

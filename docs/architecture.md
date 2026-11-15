@@ -61,7 +61,7 @@ Using the hosted model costs credits. A credit is money (1,000 credits to the US
 └─────────────────────────────────────────────────────────┘
 ```
 
-The agent loop and its tools run in the side panel. The worker only checks who is asking and passes the conversation to the model; it never talks to Notion. A user may instead have their own model answer: on OpenRouter or DeepSeek, with their own key, which the side panel asks directly (both hosts are in the content security policy). Each is a provider behind the agent's `ModelProvider`. Settings decides which providers and models are on, and the composer's model menu picks one of them, or Auto, the hosted model; a key is saved only once it passes a free check against the provider's own account endpoint. All of it is kept per account in `chrome.storage.local` (`models.ts`) and read as each question starts. Such questions never reach the worker and spend no credits. Notion requests are made inside the user's own Notion tab, with that tab's session.
+The agent loop and its tools run in the side panel. The worker only checks who is asking and passes the conversation to the model; it never talks to Notion. A user may instead have their own model answer: on OpenRouter, with their own key, which the side panel asks directly (`openrouter.ai` is in the content security policy). It is a provider behind the agent's `ModelProvider`. Settings decides which providers and models are on, and the composer's model menu picks one of them, or Auto, the hosted model; a key is saved only once it passes a free check against the provider's own account endpoint. All of it is kept per account in `chrome.storage.local` (`models.ts`) and read as each question starts. Such questions never reach the worker and spend no credits. Notion requests are made inside the user's own Notion tab, with that tab's session.
 
 The panel is open on every tab, but the tools work on the current tab only: the active tab of the panel's window, looked up again for each question and each tool call, since the user can switch tabs at any time. Each question tells the model whether that tab is a Notion page (and which), and nothing else about a tab on another site. The Notion tools are offered everywhere; when the current tab is not on Notion they fail with `no_notion_tab`, which tells the model to send the user to a Notion page, and they never use a Notion page open in another tab instead. `get_current_tab` gives the model the current tab's URL and title on any site when a question needs them; no tool reads another site's content.
 
@@ -126,7 +126,6 @@ extensions/notico/        Notico, the extension for Notion
     provider.ts           ModelProvider: where model requests go, and how a service's errors read
     worker.ts             the worker: the hosted model's provider, and the user's credits and purchases
     openrouter.ts         OpenRouter with the user's own key, and its models
-    deepseek.ts           DeepSeek with the user's own key, and its models from pi's catalog
     own.ts                the user's own model, and the Settings page's check of its key
   src/models.ts           the providers, their keys and models, and the composer's choice, kept per account on the device
   src/analytics.ts        usage events sent to PostHog, and the switch that turns them off; the only

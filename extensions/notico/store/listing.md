@@ -69,4 +69,4 @@ The screenshots show the real side panel next to throwaway pages, made with `pnp
 
 ## For the next version
 
-The text above describes version 0.1.0, the one in the store. The next version adds credit packs bought through Stripe and answering with the user's own OpenRouter or DeepSeek key: CREDITS, PRIVACY, and the list at the top change with it.
+The text above describes version 0.1.0, the one in the store. The next version adds credit packs bought through Stripe and answering with the user's own OpenRouter key: CREDITS, PRIVACY, and the list at the top change with it.

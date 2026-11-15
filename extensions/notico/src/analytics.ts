@@ -27,7 +27,7 @@ const HOST: string | undefined = import.meta.env.VITE_POSTHOG_HOST
 const oneOf = (known: readonly string[]) => z.string().transform((value) => (known.includes(value) ? value : 'other'))
 
 /** Where a question's model runs. */
-const Provider = z.enum(['hosted', 'openrouter', 'deepseek'])
+const Provider = z.enum(['hosted', 'openrouter'])
 /** A tool by its name, as the extension defines it. The model may ask for a tool that does not exist: its name is not sent. */
 const ToolName = oneOf(TOOLS.map((tool) => tool.name))
 /** Why a tool failed: a Notion error's code. */
@@ -79,7 +79,7 @@ const AnalyticsEvent = z.discriminatedUnion('event', [
     error_code: ToolError.optional(),
   }),
   z.strictObject({ event: z.literal('model_switched'), provider: Provider }),
-  z.strictObject({ event: z.literal('own_key_saved'), provider: z.enum(['openrouter', 'deepseek']) }),
+  z.strictObject({ event: z.literal('own_key_saved'), provider: z.enum(['openrouter']) }),
   z.strictObject({ event: z.literal('settings_opened') }),
   /** `pack`: the pack's quantity, in units of 1,000 credits. */
   z.strictObject({ event: z.literal('credits_buy_clicked'), pack: Count }),
