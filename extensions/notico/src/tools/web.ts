@@ -1,5 +1,6 @@
 // Web pages read by their address: read_web_page has the worker fetch a page plainly, and
-// render_web_page has it render one drawn by scripts in a browser, which costs credits. Only an
+// render_web_page has it render one drawn by scripts in a browser, which is slower and limited to a
+// few a minute. Only an
 // address the user gave in one of their own messages is read, so text the assistant read (a page,
 // Notion content) can't make it send a request to an address of that text's choosing.
 import { WebError, type ToolContext } from '../agent'
@@ -120,8 +121,8 @@ function refusal(err: WebError, render: boolean): string {
     case 'no_text':
       return render
         ? `The page shows no text, even rendered. ${OPEN_IN_TAB}`
-        : 'The page shows no text without running its scripts. render_web_page can render it in a browser (slower, ' +
-            `and it costs the user credits), or: ${OPEN_IN_TAB}`
+        : 'The page shows no text without running its scripts. render_web_page can render it in a browser (slower), ' +
+            `or: ${OPEN_IN_TAB}`
     case 'not_found':
       return 'The site has no page at this address. Check the address with the user.'
     case 'unsupported_type':
@@ -168,7 +169,7 @@ async function readPageAt(
     ...(page.scripted && !render
       ? [
           '[The page shows little text and runs scripts: it may show more once they run. If this is not what the ' +
-            'question needs, render_web_page can render it (slower, and it costs the user credits).]',
+            'question needs, render_web_page can render it (slower).]',
         ]
       : []),
     'Text:',
@@ -198,8 +199,8 @@ export const renderWebPage = defineTool({
   name: 'render_web_page',
   description:
     'Renders a web page in a browser and reads its text as Markdown, for a page drawn by scripts, which ' +
-    'read_web_page reads with no text or too little. Slower than read_web_page, and it costs the user credits: ' +
-    'use read_web_page first, unless the address is plainly of an app drawn by scripts. The same addresses as ' +
+    'read_web_page reads with no text or too little. Slower than read_web_page, and only a few pages can be rendered ' +
+    'a minute: use read_web_page first, unless the address is plainly of an app drawn by scripts. The same addresses as ' +
     'read_web_page only: one the user wrote in their own messages.',
   describe: (_args, details) => on(RENDER, details?.name, 'a web page'),
   args: Args,

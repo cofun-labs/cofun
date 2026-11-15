@@ -12,7 +12,6 @@ import {
   FakeRateLimiter,
   FakeWeb,
   MODEL,
-  usageCosting,
 } from './fakes'
 
 const EXT = 'chrome-extension://abcdefghijklmnopabcdefghijklmnop'
@@ -32,7 +31,6 @@ let clerk: FakeClerk
 let web: FakeWeb
 let browser: FakeBrowserRun
 let db: FakeD1Database
-let ai: FakeAiBinding
 let usage: RecordingUsage
 let env: Env
 let token: string
@@ -44,12 +42,13 @@ beforeAll(async () => {
 beforeEach(async () => {
   logged = []
   env = {
-    AI: (ai = new FakeAiBinding()),
+    AI: new FakeAiBinding(),
     DB: (db = new FakeD1Database()),
     USAGE: (usage = new RecordingUsage()),
     CHAT_LIMIT: new FakeRateLimiter(),
     API_LIMIT: new FakeRateLimiter(),
     WEB_LIMIT: new FakeRateLimiter(),
+    RENDER_LIMIT: new FakeRateLimiter(),
     WEB: (web = new FakeWeb()),
     BROWSER: (browser = new FakeBrowserRun()),
     MODEL,
@@ -90,11 +89,6 @@ const ARTICLE = `<!doctype html><html><head><title>Tea &amp; history</title><scr
 <main><h1>Tea</h1><p>Tea was first   drunk in China.</p><ul><li>Green</li><li>Black</li></ul>
 <div hidden>secret draft</div></main><footer>© Tea site</footer></body></html>`
 
-/** What the user can spend, in micro-credits: what is left of their grants. */
-function balance(): number {
-  return db.rows('grants').reduce((sum, g) => sum + Number(g.left), 0)
-}
-
 describe('reading a web page', () => {
   it("[UC-COFUN-WEB-001-S01] gives the page's title and main text, without menus, footers, scripts, or hidden text, at no cost", async () => {
     web.serve('https://tea.example/history', ARTICLE)
@@ -107,7 +101,6 @@ describe('reading a web page', () => {
       chars: 53,
       // Short, and it runs a script: the client is told the page may show more once rendered.
       scripted: true,
-      cost: { micro_credits: 0 },
     })
     // Nothing is recorded as spent.
     expect(db.rows('model_calls')).toEqual([])
@@ -204,52 +197,25 @@ describe('reading a web page', () => {
     expect(await (await read('https://app.example/home')).json()).toMatchObject({ text: 'Loading…', scripted: true })
   })
 
-  it("[UC-COFUN-WEB-001-S05] a render costs its browser time at list price, is counted with the user's spending, and says what it cost", async () => {
-    // 4 seconds of browser time at US$0.09 an hour: 0.1 credit.
-    browser.render('https://app.example/board', '# Board', 4000)
-    const res = await render('https://app.example/board')
-    const body: { cost: { micro_credits: number } } = await res.json()
-    expect(body.cost).toEqual({ micro_credits: 100_000 })
-    const [call] = db.rows('model_calls')
-    expect(call).toMatchObject({
-      user_id: 'user_alice',
-      model: 'web/render',
-      micro_credits: 100_000,
-      product: 'notico',
-    })
-    expect(balance()).toBe(200_000_000 - 100_000)
-  })
-
-  it('[UC-COFUN-WEB-001-S06] a user with no credits left is told when the next arrive, and nothing is rendered', async () => {
-    ai.usage = usageCosting(201)
-    const chat = await app.request(
-      '/v1/chat/completions',
-      {
-        method: 'POST',
-        headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
-        body: JSON.stringify({ messages: [{ role: 'user', content: 'hi' }] }),
-      },
-      env,
-      new FakeExecutionContext(),
-    )
-    expect(chat.status).toBe(200)
-    await chat.text()
-    expect(balance()).toBe(0)
+  it('[UC-COFUN-WEB-001-S05] a render is free, and a user can have only a few pages rendered a minute', async () => {
+    env.RENDER_LIMIT = new FakeRateLimiter(2)
     browser.render('https://app.example/board', '# Board')
-    const res = await render('https://app.example/board')
-    const body: { error: { code: string; message: string } } = await res.json()
-    expect(res.status).toBe(402)
-    expect(body.error.code).toBe('out_of_credits')
-    expect(body.error.message).toMatch(/2026-11-21 at 12:00 UTC/)
-    expect(browser.calls).toEqual([])
-  })
-
-  it('[UC-COFUN-WEB-001-S06] a render that fails costs nothing', async () => {
-    expect(await refusal(await render('https://app.example/broken'))).toEqual({ status: 422, code: 'render_failed' })
+    expect((await render('https://app.example/board')).status).toBe(200)
+    expect((await render('https://app.example/board')).status).toBe(200)
+    expect(await refusal(await render('https://app.example/board'))).toEqual({ status: 429, code: 'rate_limited' })
+    expect(browser.calls).toHaveLength(2)
+    // Reads are not held by it, and nothing was charged.
+    web.serve('https://tea.example/history', ARTICLE)
+    expect((await read('https://tea.example/history')).status).toBe(200)
     expect(db.rows('model_calls')).toEqual([])
+    expect(db.rows('grants')).toEqual([])
   })
 
-  it('[UC-COFUN-WEB-001-S07] a user over their limit of pages a minute is told to wait, and nothing is read', async () => {
+  it('[UC-COFUN-WEB-001-S04] a page Browser Run could not render is refused with the reason', async () => {
+    expect(await refusal(await render('https://app.example/broken'))).toEqual({ status: 422, code: 'render_failed' })
+  })
+
+  it('[UC-COFUN-WEB-001-S06] a user over their limit of pages a minute is told to wait, and nothing is read', async () => {
     env.WEB_LIMIT = new FakeRateLimiter(1)
     web.serve('https://tea.example/history', ARTICLE)
     expect((await read('https://tea.example/history')).status).toBe(200)
@@ -274,14 +240,5 @@ describe('reading a web page', () => {
       ['web/render', 'render_failed'],
     ])
     for (const leak of ['tea.example', 'app.example', 'Tea', 'Board']) expect(written).not.toContain(leak)
-  })
-
-  it('[@no-uc:money] a render whose record fails is not charged, and the page still goes out', async () => {
-    browser.render('https://app.example/board', '# Board')
-    db.failOn = { sql: 'INSERT INTO model_calls', error: new Error('D1 is down') }
-    const res = await render('https://app.example/board')
-    expect(res.status).toBe(200)
-    expect(await res.json()).toMatchObject({ cost: { micro_credits: 0 } })
-    expect(logged).toEqual(['render record failed: Error: D1 is down'])
   })
 })

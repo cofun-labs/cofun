@@ -133,7 +133,7 @@ export interface ToolContext {
   userText: () => string[]
   /**
    * Reads the web page at `url` through the worker, up to `maxChars` of its text; `render` renders
-   * it in a browser first, which costs credits, counted with the question's cost. Throws a WebError
+   * it in a browser first, for a page drawn by scripts. Throws a WebError
    * when the worker could not read it.
    */
   readWeb: (url: string, maxChars: number, render: boolean, signal?: AbortSignal) => Promise<WebPage>

@@ -365,22 +365,11 @@ function tidy(text: string): string {
 /** What Browser Run's markdown action answers when it rendered the page, as far as the worker reads it. */
 const RenderAnswer = z.object({ success: z.literal(true), result: z.string() })
 
-/** A page rendered in Browser Run, and the browser time it used, which it is charged by. */
-export interface RenderedPage extends WebPage {
-  browserMs: number
-}
-
 /**
  * Renders the page at `url` in Browser Run, which runs its scripts, and gives its text as Markdown,
- * clipped to `maxChars`. `elapsedMs` says how long the render took, for when Browser Run does not
- * say how much browser time it used.
+ * clipped to `maxChars`.
  */
-export async function renderPage(
-  browser: BrowserBinding,
-  url: URL,
-  maxChars: number,
-  elapsedMs: () => number,
-): Promise<RenderedPage> {
+export async function renderPage(browser: BrowserBinding, url: URL, maxChars: number): Promise<WebPage> {
   let res: Response
   try {
     res = await browser.quickAction('markdown', {
@@ -395,14 +384,11 @@ export async function renderPage(
   if (!res.ok || !answer.success) throw new PageError('render_failed', 'the page could not be rendered')
   const text = tidy(answer.data.result)
   if (!text) throw new PageError('no_text', 'the page shows no text, even rendered')
-  // Browser Run reports it on every answer; an answer without it is charged the time the render took.
-  const used = Number(res.headers.get('x-browser-ms-used') ?? NaN)
   return {
     url: url.href,
     title: /^#\s+(.+)$/m.exec(text)?.[1].trim().slice(0, TITLE_CHARS) ?? '',
     text: text.slice(0, maxChars),
     chars: text.length,
     scripted: false,
-    browserMs: Number.isFinite(used) && used >= 0 ? Math.ceil(used) : Math.max(0, Math.ceil(elapsedMs())),
   }
 }

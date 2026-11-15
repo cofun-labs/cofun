@@ -42,6 +42,7 @@ beforeEach(async () => {
     CHAT_LIMIT: new FakeRateLimiter(),
     API_LIMIT: new FakeRateLimiter(),
     WEB_LIMIT: new FakeRateLimiter(),
+    RENDER_LIMIT: new FakeRateLimiter(),
     MODEL,
     AI_GATEWAY_ID: 'gw-test',
     CLERK_JWT_KEY: clerk.publicKeyPem,

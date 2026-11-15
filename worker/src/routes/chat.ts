@@ -17,7 +17,7 @@ import { HttpError, errorSummary, parse, type App, type Ctx, type Deps } from '.
 import { Body, MAX_CONTENT_CHARS, MAX_TOKENS, MaxTokens, Stream, parseModelInputs } from './chat-request'
 
 /** A time as the out-of-credits message gives it: to the minute, in UTC, since the worker does not know the user's time zone. */
-export function utcMinute(ms: number): string {
+function utcMinute(ms: number): string {
   // Rounded up, so the time named is never before the credits arrive.
   const iso = new Date(Math.ceil(ms / 60_000) * 60_000).toISOString()
   return `${iso.slice(0, 10)} at ${iso.slice(11, 16)} UTC`

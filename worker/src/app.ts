@@ -81,6 +81,6 @@ function v1Routes(deps: Deps): App {
   v1.get('/me', (c) => c.json({ userId: c.get('userId'), model: c.env.MODEL }))
   v1.route('/billing', billingRoutes(deps))
   v1.route('/credits', creditsRoutes(deps))
-  v1.route('/web', webRoutes(deps))
+  v1.route('/web', webRoutes())
   return v1
 }

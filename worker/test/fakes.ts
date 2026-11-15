@@ -331,24 +331,23 @@ export class FakeWeb implements WebFetcher {
 }
 
 /**
- * Stands in for Browser Run (env.BROWSER): renders the pages a test set as Markdown, reporting the
- * browser time each used, and fails for any other as Browser Run does for a page it could not load.
+ * Stands in for Browser Run (env.BROWSER): renders the pages a test set as Markdown, and fails for
+ * any other as Browser Run does for a page it could not load.
  */
 export class FakeBrowserRun implements BrowserBinding {
-  readonly pages = new Map<string, { markdown: string; browserMs?: number }>()
+  readonly pages = new Map<string, string>()
   readonly calls: { action: string; options: Record<string, unknown> }[] = []
 
-  render(url: string, markdown: string, browserMs = 4000): this {
-    this.pages.set(url, { markdown, browserMs })
+  render(url: string, markdown: string): this {
+    this.pages.set(url, markdown)
     return this
   }
 
   async quickAction(action: 'markdown', options: Record<string, unknown>): Promise<Response> {
     this.calls.push({ action, options })
-    const page = typeof options.url === 'string' ? this.pages.get(options.url) : undefined
-    if (!page)
+    const markdown = typeof options.url === 'string' ? this.pages.get(options.url) : undefined
+    if (markdown === undefined)
       return Response.json({ success: false, errors: [{ code: 5000, message: 'navigation failed' }] }, { status: 422 })
-    const headers = page.browserMs === undefined ? undefined : { 'x-browser-ms-used': String(page.browserMs) }
-    return Response.json({ success: true, result: page.markdown }, { headers })
+    return Response.json({ success: true, result: markdown }, { headers: { 'x-browser-ms-used': '4000' } })
   }
 }

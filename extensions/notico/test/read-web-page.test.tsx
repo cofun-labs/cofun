@@ -140,12 +140,11 @@ describe('reading a web page the user gives', () => {
     },
   )
 
-  it('[UC-NOTICO-PANEL-003-S04] a page drawn by scripts reads as empty, renders with its text, and the reply costs what rendering did', async () => {
+  it('[UC-NOTICO-PANEL-003-S04] a page drawn by scripts reads as empty, and renders with its text', async () => {
     const { browser, user } = await open()
     const app = 'https://app.example/board'
     browser.web.serve(app, '<body><div id="root"></div><script src="/app.js"></script></body>')
-    // 4 seconds of browser time: 0.1 credit.
-    browser.browserRun.render(app, '# Board\n\nThree cards: Plan, Build, Ship.', 4000)
+    browser.browserRun.render(app, '# Board\n\nThree cards: Plan, Build, Ship.')
     browser.ai.script.push(readCall(app), renderCall(app), { reply: 'Three cards.' })
 
     await ask(user, `What is on ${app}?`)
@@ -156,8 +155,6 @@ describe('reading a web page the user gives', () => {
     expect(rendered).toContain(`Web page, rendered, on app.example: ${JSON.stringify({ title: 'Board', url: app })}`)
     expect(rendered).toContain('Three cards: Plan, Build, Ship.')
     expect(screen.getByText('Board')).toBeVisible()
-    // Three model calls at 0.0096 credits each, and the render's 0.1.
-    expect(screen.getByText('0.13 credits')).toBeVisible()
   })
 
   it("[UC-NOTICO-PANEL-003-S05] one question reads only so much from outside Notion, the current tab's page included", async () => {

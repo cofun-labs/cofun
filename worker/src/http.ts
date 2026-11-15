@@ -39,6 +39,12 @@ export interface Env {
    * CHAT_LIMIT.
    */
   WEB_LIMIT: RateLimiter
+  /**
+   * Caps how many web pages one user can have rendered per period (`ratelimits` in wrangler.jsonc),
+   * keyed by user id, far below WEB_LIMIT: a render is free to the user and costs the operator
+   * browser time (#464). Renders count toward WEB_LIMIT and API_LIMIT too. Approximate, like CHAT_LIMIT.
+   */
+  RENDER_LIMIT: RateLimiter
   /** Browser Run (`browser` in wrangler.jsonc), which renders pages drawn by scripts. Without it, nothing is rendered. */
   BROWSER?: BrowserBinding
   /** What reads web pages. Tests pass a fake; deployed, it is not set, and the global `fetch` reads them. */

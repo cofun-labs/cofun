@@ -131,6 +131,7 @@ export class FakeBrowser {
       CHAT_LIMIT: new FakeRateLimiter(),
       API_LIMIT: new FakeRateLimiter(),
       WEB_LIMIT: new FakeRateLimiter(),
+      RENDER_LIMIT: new FakeRateLimiter(),
       WEB: browser.web,
       BROWSER: browser.browserRun,
       MODEL,

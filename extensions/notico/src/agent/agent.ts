@@ -107,8 +107,6 @@ export class CopilotAgent {
   private askOnCard?: AskOnCard
   /** Takes each chunk of the model's streams while a question runs: what the calls cost is in them. */
   private onChunk?: (chunk: unknown) => void
-  /** Adds what a tool's request to the worker cost (a page it rendered) to the question running, in micro-credits. */
-  private onToolCost?: (microCredits: number) => void
 
   constructor(private readonly config: AgentConfig) {
     this.provider = hostedProvider(config)
@@ -238,10 +236,6 @@ export class CopilotAgent {
       else if (call) cost = { microCredits: (cost?.microCredits ?? 0) + call.microCredits }
     }
     this.onChunk = onChunk
-    const onToolCost = (microCredits: number) => {
-      cost = { microCredits: (cost?.microCredits ?? 0) + microCredits }
-    }
-    this.onToolCost = onToolCost
     const refused = new Set<string>()
     const declined = new Set<string>()
     // How the latest call with each id ended, kept with its result message when that arrives.
@@ -383,7 +377,6 @@ export class CopilotAgent {
       agent.beforeToolCall = undefined
       agent.finishTurn = undefined
       if (this.onChunk === onChunk) this.onChunk = undefined
-      if (this.onToolCost === onToolCost) this.onToolCost = undefined
     }
     // Also stopped when the abort landed after a model reply that asked for tools, e.g. while a tool
     // finished. A stop after the final answer keeps it: the user has already read it.
@@ -564,11 +557,7 @@ export class CopilotAgent {
         userText: () =>
           (this.agent?.state.messages ?? []).flatMap((m) => (m.role === 'user' ? [textOf(m.content)] : [])),
         // Always through the worker, whichever model answers: the page is read by the worker either way.
-        readWeb: async (url, maxChars, render, signal) => {
-          const { page, microCredits } = await readWebPage(this.config, url, maxChars, render, signal)
-          if (epoch === this.epoch && microCredits > 0) this.onToolCost?.(microCredits)
-          return page
-        },
+        readWeb: (url, maxChars, render, signal) => readWebPage(this.config, url, maxChars, render, signal),
       },
     }
   }

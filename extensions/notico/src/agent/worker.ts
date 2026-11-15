@@ -129,9 +129,6 @@ export async function readOwn<S extends z.ZodType>(
   return schema.parse(body)
 }
 
-/** The worker's answer to a page it read: the page, and what reading it cost. */
-const WebReply = WebPage.extend({ cost: z.object({ micro_credits: z.number().int().nonnegative() }) })
-
 /** A refusal from the worker, with its code. */
 const CodedError = z.object({ error: z.object({ code: looseText, message: looseText }) })
 
@@ -163,8 +160,6 @@ const PAGE_REASONS = new Set([
 function stopsFor(code: string, message: string): string | undefined {
   if (PAGE_REASONS.has(code)) return undefined
   if (code === 'rate_limited') return TOO_MANY_PAGES
-  // The worker's message says when the next free credits arrive.
-  if (code === 'out_of_credits') return message
   if (code === 'site_busy')
     return "A site turned away Notico's requests for coming too often. Wait a while, then ask again."
   return `Notico could not read a web page: ${message}`
@@ -172,7 +167,7 @@ function stopsFor(code: string, message: string): string | undefined {
 
 /**
  * Has the worker read the web page at `url` (see ToolContext.readWeb): fetched plainly, or rendered
- * in a browser when `render` is set. Resolves with the page and what it cost, in micro-credits;
+ * in a browser when `render` is set. Resolves with the page;
  * throws a WebError when the worker could not read it, which stops the question unless the model
  * can act on the reason (see PAGE_REASONS).
  */
@@ -182,7 +177,7 @@ export async function readWebPage(
   maxChars: number,
   render: boolean,
   signal?: AbortSignal,
-): Promise<{ page: WebPage; microCredits: number }> {
+): Promise<WebPage> {
   const token = await getToken()
   if (!token) throw new Error(SIGN_IN)
   const res = await fetch(`${apiUrl.replace(/\/+$/, '')}/web/${render ? 'render' : 'read'}`, {
@@ -198,6 +193,5 @@ export async function readWebPage(
     const message = refusal?.message ?? `HTTP ${res.status}`
     throw new WebError(code, message, stopsFor(code, message))
   }
-  const { cost, ...page } = WebReply.parse(body)
-  return { page, microCredits: cost.micro_credits }
+  return WebPage.parse(body)
 }
