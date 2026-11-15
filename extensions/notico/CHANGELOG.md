@@ -1,6 +1,6 @@
 # Changelog
 
-What changed in each release of Notico, newest first. Each is built for the Chrome Web Store and uploaded there by hand.
+What changed in each version of Notico on the Chrome Web Store, newest first.
 
 ## 0.2.0 (2026-11-15)
 
