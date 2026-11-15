@@ -4,8 +4,7 @@ import type { MiddlewareHandler } from 'hono'
 import { HttpError, type AppEnv } from '../http'
 
 /**
- * Checks the request's Clerk session token, and sets the user it is for (`userId`), the origin it
- * was issued to (`azp`, when it names one), and its claims.
+ * Checks the request's Clerk session token, and sets the user it is for (`userId`) and its claims.
  * The first handler of the /v1 sub-app (see app.ts), so it runs before every route under /v1.
  */
 export const requireSession: MiddlewareHandler<AppEnv> = async (c, next) => {
@@ -38,7 +37,6 @@ export const requireSession: MiddlewareHandler<AppEnv> = async (c, next) => {
     throw new HttpError(401, 'unauthorized', 'invalid or expired session')
   }
   c.set('userId', claims.sub)
-  c.set('azp', azp)
   c.set('claims', claims)
   await next()
 }

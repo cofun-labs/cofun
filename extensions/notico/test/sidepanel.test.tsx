@@ -97,6 +97,20 @@ describe('asking the AI', () => {
     await answered()
   })
 
+  it('[@no-uc:contract] the worker records a question under Notico, as the panel names it', async () => {
+    const { browser, user } = await openPanel()
+    browser.ai.script.push({ reply: 'Hello.' })
+
+    await ask(user, 'Hi')
+
+    expect(await screen.findByText('Hello.')).toBeVisible()
+    await answered()
+    // The reply, and the chat's title if the panel has asked for it yet: each under Notico.
+    const products = browser.db.rows('model_calls').map((call) => call.product)
+    expect(products.length).toBeGreaterThan(0)
+    expect(products.every((product) => product === 'notico')).toBe(true)
+  })
+
   // UC-NOTICO-AGENT-001-S16 itself stays ai-e2e: whether the model answers from the note, without a tool, is its
   // own judgment. This is the panel's part of it.
   it('[@no-uc:contract] a question goes to the model with a note naming the open page, and the panel shows only what the user typed', async () => {

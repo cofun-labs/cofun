@@ -102,6 +102,7 @@ function makeAgent(
   return new CopilotAgent({
     apiUrl: 'https://nk.example.dev/v1/',
     getToken: options.getToken ?? (async () => token),
+    client: 'notico/1.2.3',
     systemPrompt: options.systemPrompt ?? 'You are Notico.',
     tools: options.tools ?? [pageTool().tool],
     maxSteps: options.maxSteps,

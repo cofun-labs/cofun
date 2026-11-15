@@ -59,15 +59,16 @@ beforeEach(async () => {
     MODEL,
     CLERK_JWT_KEY: clerk.publicKeyPem,
     CLERK_AUTHORIZED_PARTIES: `${EXT}, ${WORKER}`,
-    PRODUCTS: { [EXT]: 'notico' },
   }
   admin = await clerk.sessionToken({ userId: 'user_root', azp: WORKER, claims: { role: 'admin' } })
 })
 
 const json = (res: Response): Promise<any> => res.json()
+/** Notico's header naming its product, as it sends it with every model request. */
+const NOTICO = { 'x-cofun-client': 'notico/0.3.0' }
 
-function req(method: string, path: string, bearer?: string, body?: unknown) {
-  const headers: Record<string, string> = { 'content-type': 'application/json' }
+function req(method: string, path: string, bearer?: string, body?: unknown, more: Record<string, string> = {}) {
+  const headers: Record<string, string> = { 'content-type': 'application/json', ...more }
   if (bearer) headers.authorization = `Bearer ${bearer}`
   const init = { method, headers, body: body === undefined ? undefined : JSON.stringify(body) }
   return app.request(path, init, env, new FakeExecutionContext())
@@ -86,7 +87,7 @@ const repliesCost = (amount: number) => {
 /** The user with this name, signed in to the extension, asks the AI something. */
 const ask = async (name: string) => {
   const bearer = await clerk.sessionToken({ userId: `user_${name}`, azp: EXT })
-  return req('POST', '/v1/chat/completions', bearer, { messages: [{ role: 'user', content: 'hi' }] })
+  return req('POST', '/v1/chat/completions', bearer, { messages: [{ role: 'user', content: 'hi' }] }, NOTICO)
 }
 const asks = async (name: string) => expect((await ask(name)).status).toBe(200)
 const grant = async (name: string, credits: number, days: number) =>
@@ -192,22 +193,26 @@ describe('UC-COFUN-ADMIN-002 See granted and spent credits as a whole', () => {
     })
   })
 
-  it('[UC-COFUN-ADMIN-002-S10] an operator sees what each product spent, and what came from no known product', async () => {
-    const CONFLUCO = 'chrome-extension://ponmlkjihgfedcbaponmlkjihgfedcba'
-    env.CLERK_AUTHORIZED_PARTIES += `, ${CONFLUCO}`
-    env.PRODUCTS = { [EXT]: 'notico', [CONFLUCO]: 'confluco' }
-    const askFrom = async (name: string, azp: string) => {
-      const bearer = await clerk.sessionToken({ userId: `user_${name}`, azp })
-      const res = await req('POST', '/v1/chat/completions', bearer, { messages: [{ role: 'user', content: 'hi' }] })
+  it('[UC-COFUN-ADMIN-002-S10] an operator sees what each product spent, and what named no product', async () => {
+    const askFrom = async (name: string, product: Record<string, string>) => {
+      const bearer = await clerk.sessionToken({ userId: `user_${name}`, azp: EXT })
+      const res = await req(
+        'POST',
+        '/v1/chat/completions',
+        bearer,
+        { messages: [{ role: 'user', content: 'hi' }] },
+        product,
+      )
       expect(res.status).toBe(200)
     }
+    const CONFLUCO = { 'x-cofun-client': 'confluco/1.0.0' }
     // Alice uses both extensions, on two days.
     await asks('alice')
     await askFrom('alice', CONFLUCO)
     await askFrom('bob', CONFLUCO)
-    // The same account, twice from the admin page, which is none of the products.
-    await askFrom('carol', WORKER)
-    await askFrom('carol', WORKER)
+    // The same account, twice from a build that names no product.
+    await askFrom('carol', {})
+    await askFrom('carol', {})
     later(DAY_MS)
     await askFrom('alice', CONFLUCO)
 

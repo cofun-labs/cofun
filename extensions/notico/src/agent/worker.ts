@@ -11,7 +11,11 @@ const SIGN_IN = 'Please sign in first.'
  * Our worker. It fixes the model, so the agent asks it which one; each request carries a fresh Clerk
  * session token (they expire within minutes).
  */
-export function hostedProvider({ apiUrl, getToken }: Pick<AgentConfig, 'apiUrl' | 'getToken'>): ModelProvider {
+export function hostedProvider({
+  apiUrl,
+  getToken,
+  client,
+}: Pick<AgentConfig, 'apiUrl' | 'getToken' | 'client'>): ModelProvider {
   const baseUrl = apiUrl.replace(/\/+$/, '')
   const token = async () => {
     const value = await getToken()
@@ -34,6 +38,8 @@ export function hostedProvider({ apiUrl, getToken }: Pick<AgentConfig, 'apiUrl' 
         reasoning: false,
         input: ['text'],
         cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+        // Which extension asks, so the worker records the call under its product.
+        headers: { 'x-cofun-client': client },
         contextWindow: 128_000,
         maxTokens: 16_384,
         // What the worker accepts: system (not developer) messages, max_tokens, no store field.

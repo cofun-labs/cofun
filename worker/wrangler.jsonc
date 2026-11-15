@@ -49,9 +49,6 @@
     "MODEL": "@cf/deepseek-ai/deepseek-v4.1-flash-1017",
     // Origins allowed to call (the token's azp claim). Comma-separated.
     "CLERK_AUTHORIZED_PARTIES": "chrome-extension://moblfnjjebknafkgoifncombfnbfghom,https://api.cofun.cc",
-    // Which product each extension is, by its origin (the token's azp). Model calls from any other
-    // caller are recorded as the product "unknown".
-    "PRODUCTS": { "chrome-extension://moblfnjjebknafkgoifncombfnbfghom": "notico" },
     // What is on sale: the live Stripe price of 1,000 credits for US$1 (one product, "Cofun Credits"),
     // and the quantities of it sold as packs: US$1, 5, 20, and 100. Price ids are not secret.
     // STRIPE_SECRET_KEY and STRIPE_WEBHOOK_SECRET are worker secrets, never kept here (see

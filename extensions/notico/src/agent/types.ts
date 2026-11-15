@@ -9,6 +9,11 @@ export interface AgentConfig {
   /** Returns a fresh Clerk session token. Called before every request to the worker. */
   getToken: () => Promise<string | null>
   /**
+   * The extension and its version, `notico/0.3.0`: sent to the worker with each model request as
+   * X-Cofun-Client, which records the call under that product.
+   */
+  client: string
+  /**
    * Which model answers, read as each question starts, so a change applies from the next question
    * on and the conversation goes on with it. The hosted model when not given.
    */
