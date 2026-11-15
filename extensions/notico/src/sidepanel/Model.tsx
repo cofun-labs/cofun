@@ -1,5 +1,5 @@
 import { useEffect, useId, useRef, useState, type FormEvent } from 'react'
-import { checkKey, DEEPSEEK_MODELS, openRouterModels, type KeyCheck, type ListedModel } from '../agent'
+import { checkKey, openRouterModels, type KeyCheck, type ListedModel } from '../agent'
 import { answering, RECOMMENDED, SERVICE_NAME, type ModelSettings, type OwnModel, type Service } from '../models'
 import { Icon, Mark } from './icons'
 import { useMenu } from './menu'
@@ -41,16 +41,13 @@ const errorText = (err: unknown) => (err instanceof Error ? err.message : String
 const balances = new Map<string, string>()
 
 /** Where to get a key, as the user knows the provider's site. */
-const KEY_SITE: Record<Service, string> = { openrouter: 'openrouter.ai', deepseek: 'platform.deepseek.com' }
+const KEY_SITE: Record<Service, string> = { openrouter: 'openrouter.ai' }
 
 /** A model as the menu and the settings page show it: its provider, and how the provider names it. */
 interface Offered {
   service: Service
   model: OwnModel
 }
-
-/** A DeepSeek model by its id, from DeepSeek's catalog; undefined once the catalog no longer has it. */
-const deepSeekModel = (id: string) => DEEPSEEK_MODELS.find((m) => m.id === id)
 
 /** OpenRouter's switched-on models, the recommended ones first, in their order. */
 function openRouterOrder(models: OwnModel[]): OwnModel[] {
@@ -63,21 +60,16 @@ function openRouterOrder(models: OwnModel[]): OwnModel[] {
 
 /** Each provider that is on, with its switched-on models, as the menu lists them. */
 function offered(settings: ModelSettings): { service: Service; models: OwnModel[] }[] {
-  const { openRouter, deepSeek } = settings
+  const { openRouter } = settings
   const groups: { service: Service; models: OwnModel[] }[] = []
   if (openRouter?.on) groups.push({ service: 'openrouter', models: openRouterOrder(openRouter.models) })
-  if (deepSeek?.on)
-    groups.push({ service: 'deepseek', models: DEEPSEEK_MODELS.filter((m) => deepSeek.models.includes(m.id)) })
   return groups.filter((g) => g.models.length > 0)
 }
 
 /** The own model that answers, with its provider; undefined when Auto does. */
 function inUse(settings: ModelSettings): Offered | undefined {
   const setup = answering(settings)
-  if (!setup) return undefined
-  if (setup.service === 'openrouter') return { service: 'openrouter', model: setup.model }
-  const model = deepSeekModel(setup.model)
-  return model && { service: 'deepseek', model }
+  return setup && { service: setup.service, model: setup.model }
 }
 
 /**
@@ -183,12 +175,11 @@ export function ModelMenu({
 export function ModelNote({ settings }: { settings?: ModelSettings }) {
   const chosen = settings?.chosen
   if (!settings || !chosen || answering(settings)) return null
-  const name = chosen.service === 'deepseek' ? (deepSeekModel(chosen.model)?.name ?? chosen.name) : chosen.name
   return (
     <p className="model-note" role="status">
       <Icon name="info" />
       <span>
-        {shortName({ id: chosen.model, name })} was switched off in Settings, so questions use {HOSTED}.
+        {shortName({ id: chosen.model, name: chosen.name })} was switched off in Settings, so questions use {HOSTED}.
       </span>
     </p>
   )
@@ -231,22 +222,19 @@ export function ModelCard({
     )
   }
 
-  const { openRouter, deepSeek } = settings
+  const { openRouter } = settings
   /**
-   * Saves a change to one provider's part, made to the settings as they are when it is saved, not
-   * as they were when it started: a key check takes a while, and meanwhile the other provider, the
-   * composer, or another window's panel may save. `change` returns undefined to remove the part, or
-   * the settings unchanged (`same`) when the part it changes is gone.
+   * Saves a change to OpenRouter's part, made to the settings as they are when it is saved, not as
+   * they were when it started: a key check takes a while, and meanwhile the composer, or another
+   * window's panel, may save. `change` returns undefined to remove the part, or the settings
+   * unchanged (`same`) when the part it changes is gone.
    */
-  function update<S extends 'openRouter' | 'deepSeek'>(
-    name: S,
-    change: (part: ModelSettings[S]) => ModelSettings[S] | typeof same,
-  ) {
+  function update(change: (part: ModelSettings['openRouter']) => ModelSettings['openRouter'] | typeof same) {
     onChange((now) => {
-      const part = change(now[name])
+      const part = change(now.openRouter)
       if (part === same) return now
-      const { [name]: _, ...rest } = now
-      return part ? { ...rest, [name]: part } : rest
+      const { openRouter: _, ...rest } = now
+      return part ? { ...rest, openRouter: part } : rest
     })
   }
 
@@ -269,16 +257,16 @@ export function ModelCard({
           // is usable at once; a new key keeps the models switched on.
           const listed = openRouter ? [] : await modelList().catch((): ListedModel[] => [])
           const first = RECOMMENDED.map((r) => listed.find((m) => m.id === r.id && m.tools)).find((m) => m)
-          update('openRouter', (now) => ({ on: true, key, models: now?.models ?? (first ? [ownModel(first)] : []) }))
+          update((now) => ({ on: true, key, models: now?.models ?? (first ? [ownModel(first)] : []) }))
         }}
-        onSwitch={(on) => update('openRouter', (now) => (now ? { ...now, on } : same))}
-        onRemove={() => update('openRouter', () => undefined)}
+        onSwitch={(on) => update((now) => (now ? { ...now, on } : same))}
+        onRemove={() => update(() => undefined)}
       >
         {openRouter && (
           <OpenRouterModels
             on={openRouter.models}
             onSwitch={(model, on) =>
-              update('openRouter', (now) =>
+              update((now) =>
                 now
                   ? {
                       ...now,
@@ -290,49 +278,6 @@ export function ModelCard({
               )
             }
           />
-        )}
-      </ProviderSetup>
-      <ProviderSetup
-        service="deepseek"
-        saved={deepSeek}
-        onKey={async (key) =>
-          update('deepSeek', (now) => ({
-            on: true,
-            key,
-            // The catalog's first model starts switched on, so the provider is usable at once.
-            models: now?.models ?? DEEPSEEK_MODELS.slice(0, 1).map((m) => m.id),
-          }))
-        }
-        onSwitch={(on) => update('deepSeek', (now) => (now ? { ...now, on } : same))}
-        onRemove={() => update('deepSeek', () => undefined)}
-      >
-        {deepSeek && (
-          <ModelList label="DeepSeek's models" count={deepSeek.models.length} total={DEEPSEEK_MODELS.length}>
-            {DEEPSEEK_MODELS.map((model) => {
-              const checked = deepSeek.models.includes(model.id)
-              return (
-                <ModelRow
-                  key={model.id}
-                  name={model.name}
-                  detail={priceText(model)}
-                  checked={checked}
-                  last={checked && deepSeek.models.length === 1}
-                  onSwitch={(on) =>
-                    update('deepSeek', (now) =>
-                      now
-                        ? {
-                            ...now,
-                            models: on
-                              ? [...now.models.filter((id) => id !== model.id), model.id]
-                              : now.models.filter((id) => id !== model.id),
-                          }
-                        : same,
-                    )
-                  }
-                />
-              )
-            })}
-          </ModelList>
         )}
       </ProviderSetup>
     </section>
@@ -420,7 +365,7 @@ function ProviderSetup({
     setCheck({ status: 'checking' })
     let result: KeyCheck
     try {
-      result = await checkKey(service, key)
+      result = await checkKey(key)
       if (result.status === 'ok') {
         if (result.balance) balances.set(key, result.balance)
         else balances.delete(key)
@@ -711,22 +656,12 @@ function OpenRouterModels({ on, onSwitch }: { on: OwnModel[]; onSwitch: (model: 
 }
 
 /** A provider's models, each with its switch, and how many are on. */
-function ModelList({
-  label,
-  count,
-  total,
-  children,
-}: {
-  label: string
-  count: number
-  total?: number
-  children: React.ReactNode
-}) {
+function ModelList({ label, count, children }: { label: string; count: number; children: React.ReactNode }) {
   return (
     <div className="model-list">
       <p className="model-list-head">
         <span>Models · price per 1M tokens</span>
-        <span>{total === undefined ? `${count} on` : `${count} of ${total} on`}</span>
+        <span>{count} on</span>
       </p>
       <ul className="provider-models" aria-label={label}>
         {children}
