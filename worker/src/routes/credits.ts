@@ -88,6 +88,9 @@ export function creditsRoutes({ now, logError }: Deps): App {
         // A purchase taken back ended at `expiresAt`, and `left` is what was taken back.
         ...(revoked ? { revoked } : {}),
       })),
+      // Always null: the history is no longer paged. Notico 0.1.0, already installed, requires the
+      // field; drop it once no installed build reads it.
+      next: null,
     })
   })
 

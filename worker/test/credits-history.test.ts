@@ -121,6 +121,8 @@ describe('UC-NOTICO-CHAT-003 the history of the credits a user was given, and UC
         },
         { source: 'free', amount: 200 * CREDIT, left: 140 * CREDIT, grantedAt: START, expiresAt: START + WEEK_MS },
       ],
+      // For the installed Notico 0.1.0, which reads the history a page at a time: there is no other page.
+      next: null,
     })
   })
 
@@ -161,7 +163,7 @@ describe('UC-NOTICO-CHAT-003 the history of the credits a user was given, and UC
   })
 
   it('[@no-uc:money] a user who was given nothing and used nothing has an empty history, and reading it writes nothing', async () => {
-    expect(await get('/v1/credits/grants', alice)).toEqual({ grants: [] })
+    expect(await get('/v1/credits/grants', alice)).toEqual({ grants: [], next: null })
     // Looking at the history does not start the week of free credits.
     expect(db.rows('grants')).toEqual([])
     expect(db.rows('model_calls')).toEqual([])

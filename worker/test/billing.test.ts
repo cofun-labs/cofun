@@ -600,6 +600,7 @@ describe('UC-NOTICO-BILLING-001 buy credits: purchases in the history and on the
           usdCents: 500,
         },
       ],
+      next: null,
     })
   })
 
