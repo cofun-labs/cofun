@@ -34,7 +34,7 @@ async function setup() {
 }
 
 describe('routes and sessions', () => {
-  it('lists only the open routes outside /v1', async () => {
+  it('[@no-uc:access] lists only the open routes outside /v1', async () => {
     const { app } = await setup()
     const open = routesOf(app)
       .filter((r) => !r.path.startsWith('/v1'))
@@ -52,7 +52,7 @@ describe('routes and sessions', () => {
     )
   })
 
-  it('refuses every route under /v1 without a session', async () => {
+  it('[@no-uc:access] refuses every route under /v1 without a session', async () => {
     const { app, env } = await setup()
     const v1 = routesOf(app).filter((r) => r.path.startsWith('/v1'))
     expect(v1.length).toBeGreaterThanOrEqual(10)
@@ -62,7 +62,7 @@ describe('routes and sessions', () => {
     }
   })
 
-  it('refuses every route under /v1 with a token that is not a valid session', async () => {
+  it('[@no-uc:access] refuses every route under /v1 with a token that is not a valid session', async () => {
     const { app, env } = await setup()
     for (const { method, path } of routesOf(app).filter((r) => r.path.startsWith('/v1'))) {
       const res = await app.request(pathFor(path), { method, headers: { authorization: 'Bearer not-a-jwt' } }, env)

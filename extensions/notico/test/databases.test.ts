@@ -196,7 +196,7 @@ describe('UC-NOTICO-NOTION-012 create and change databases', () => {
     expect(ws.records.get(PAGE)!.content).toEqual([TEXT])
   })
 
-  it('names the signed-in user as the creator of a new database, and last editor of a changed one', async () => {
+  it('[@no-uc:data] names the signed-in user as the creator of a new database, and last editor of a changed one', async () => {
     const ws = workspace()
     open(ws)
     await createDatabase.run({ parent: PAGE_URL, title: 'Content calendar' })
@@ -414,7 +414,7 @@ describe('UC-NOTICO-NOTION-012 create and change databases', () => {
 })
 
 describe('create_database and update_database_schema', () => {
-  it('never gives a new property an all-digit key, which would move it first', () => {
+  it('[@no-uc:data] never gives a new property an all-digit key, which would move it first', () => {
     // A key of four digits comes first, then letters: ABCD for the first property, EFGH for the second.
     const at = (c: string) => '0123456789ABCDEFGH'.indexOf(c)
     const picks = [...'1111ABCD2222EFGH'].map((c) => (c >= 'A' ? at(c) - 10 : 52 + at(c)) + 0.5)
@@ -431,7 +431,7 @@ describe('create_database and update_database_schema', () => {
     expect(Object.values(schema).map((d) => d.name)).toEqual(['Name', 'A', 'B'])
   })
 
-  it('refuses a database or a block as the parent, and bad properties, before writing', async () => {
+  it('[@no-uc:data] refuses a database or a block as the parent, and bad properties, before writing', async () => {
     const ws = workspace()
     open(ws)
     await expect(createDatabase.run({ parent: hex(DB), title: 'Nested' })).rejects.toThrow('That parent is a database')
@@ -455,7 +455,7 @@ describe('create_database and update_database_schema', () => {
     expect(ws.transactions).toHaveLength(0)
   })
 
-  it('reports an unknown outcome so the agent looks before trying again', async () => {
+  it('[@no-uc:notion-safety] reports an unknown outcome so the agent looks before trying again', async () => {
     const ws = workspace()
     open(ws)
     ws.failAfterApply = true
@@ -470,7 +470,7 @@ describe('create_database and update_database_schema', () => {
     })
   })
 
-  it('renames an option with one read of the rows, in one change', async () => {
+  it('[@no-uc:data] renames an option with one read of the rows, in one change', async () => {
     const ws = workspace()
     const tab = open(ws)
     await change([{ action: 'rename_option', property: 'Stage', option: 'Idea', to: 'Someday' }])
@@ -485,7 +485,7 @@ describe('create_database and update_database_schema', () => {
 })
 
 describe('create_database and update_database_schema arguments', () => {
-  it('create_database refuses arguments that are not what its schema says, without asking Notion', async () => {
+  it('[@no-uc:data] create_database refuses arguments that are not what its schema says, without asking Notion', async () => {
     const tab = open(workspace())
     const create = (args: Record<string, unknown>) =>
       createDatabase.run({ parent: PAGE_URL, title: 'Tracker', ...args })
@@ -516,7 +516,7 @@ describe('create_database and update_database_schema arguments', () => {
     expect(tab.sent).toEqual([])
   })
 
-  it('update_database_schema refuses arguments that are not what its schema says, without asking Notion', async () => {
+  it('[@no-uc:data] update_database_schema refuses arguments that are not what its schema says, without asking Notion', async () => {
     const tab = open(workspace())
     const many = Array.from({ length: 31 }, (_, n) => ({ action: 'remove_property', property: `P${n}` }))
     const refused: [unknown, string][] = [

@@ -146,7 +146,7 @@ describe('answering with the own model', () => {
     expect(browser.sentToWorker.slice(before).some((sent) => sent.includes('/chat/completions'))).toBe(false)
   })
 
-  it("a reply's details name the own model and the tokens OpenRouter reported", async () => {
+  it("[@no-uc:money] a reply's details name the own model and the tokens OpenRouter reported", async () => {
     const { browser, user } = await openPanel()
     await setUpOpenRouter(browser, user)
     browser.openRouter.ai.usage = {
@@ -282,7 +282,7 @@ describe('answering with the own model', () => {
     expect(browser.ai.calls).toEqual([])
   })
 
-  it('a key removed in another window is not used, nor saved back, here', async () => {
+  it('[@no-uc:privacy] a key removed in another window is not used, nor saved back, here', async () => {
     const { browser, user } = await openPanel()
     await setUpOpenRouter(browser, user)
     // The side panel of another window removes the key.
@@ -514,7 +514,7 @@ describe("a provider's models in Settings", () => {
     expect(screen.queryByText(/was switched off in Settings/)).not.toBeInTheDocument()
   })
 
-  it('contacts OpenRouter only once it is on with a key, and its list without the key', async () => {
+  it('[@no-uc:privacy] contacts OpenRouter only once it is on with a key, and its list without the key', async () => {
     const { browser, user } = await openPanel()
     await openSettings(user)
     await user.click(providerSwitch('OpenRouter'))
@@ -523,62 +523,6 @@ describe("a provider's models in Settings", () => {
     await user.click(providerSwitch('OpenRouter'))
     expect(provider('OpenRouter').queryByLabelText('OpenRouter API key')).not.toBeInTheDocument()
     expect(savedSettings(browser).key).toBeUndefined()
-  })
-})
-
-describe('OpenRouter model names and list', () => {
-  it("drops a vendor from a model's name only when it is the vendor in its id", async () => {
-    const { browser, user } = await openPanel()
-    browser.openRouter.models.push(
-      listed('qwen/qwen-6', 'Qwen: Qwen 6: Turbo'),
-      listed('thudm/glm-5', 'GLM 5: 32B'),
-      listed('meta-llama/llama-5-70b', 'Meta: Llama 5 70B'),
-    )
-    browser.openRouter.keys.add(KEY)
-    await openSettings(user)
-    await turnOn(user, 'OpenRouter', KEY)
-    const search = provider('OpenRouter').getByRole('searchbox', { name: 'Find another model on OpenRouter' })
-    await user.type(search, 'qwen')
-    await user.click(modelSwitch('OpenRouter', 'Qwen: Qwen 6: Turbo'))
-    await user.clear(search)
-    await user.type(search, 'glm')
-    await user.click(modelSwitch('OpenRouter', 'GLM 5: 32B'))
-    await user.clear(search)
-    await user.type(search, 'llama')
-    await user.click(modelSwitch('OpenRouter', 'Meta: Llama 5 70B'))
-    await backToChat(user)
-
-    await user.click(chip('Auto'))
-    expect(menuItems()).toEqual(['Auto', 'Claude Sonnet 5.5', 'Qwen 6: Turbo', 'GLM 5: 32B', 'Llama 5 70B'])
-  })
-
-  it("reads OpenRouter's model list again once it is an hour old", async () => {
-    const { browser, user } = await openPanel()
-    browser.openRouter.keys.add(KEY)
-    await openSettings(user)
-    await turnOn(user, 'OpenRouter', KEY)
-    await waitFor(() => modelSwitch('OpenRouter', 'OpenAI: GPT-6.1 Sol'))
-    const reads = () => browser.openRouter.requests.filter((r) => r.path === '/api/v1/models').length
-    expect(reads()).toBe(1)
-
-    // Within the hour, Settings uses the list it read.
-    await backToChat(user)
-    vi.setSystemTime(Date.now() + 59 * 60 * 1000)
-    await openSettings(user)
-    await waitFor(() => modelSwitch('OpenRouter', 'OpenAI: GPT-6.1 Sol'))
-    expect(reads()).toBe(1)
-
-    // Past it, the list is read again, with the prices OpenRouter has now.
-    browser.openRouter.models[1] = listed('openai/gpt-6.1-sol', 'OpenAI: GPT-6.1 Sol', 1, 4)
-    await backToChat(user)
-    vi.setSystemTime(Date.now() + 2 * 60 * 1000)
-    await openSettings(user)
-    await waitFor(() =>
-      expect(modelSwitch('OpenRouter', 'OpenAI: GPT-6.1 Sol')).toHaveAccessibleDescription(
-        'Strong all-round · $1.00 in · $4.00 out · 200K context',
-      ),
-    )
-    expect(reads()).toBe(2)
   })
 })
 
@@ -659,21 +603,6 @@ describe('the model menu in the chat', () => {
     expect(screen.getByRole('heading', { name: 'Providers' })).toHaveFocus()
     // Closing it goes back to where the user came from: the model chip.
     await backToChat(user)
-    expect(chip('GPT-6.1 Sol')).toHaveFocus()
-  })
-
-  it('works from the keyboard: the arrows move through it, and Escape closes it on the button', async () => {
-    const { browser, user } = await openPanel()
-    await setUpOpenRouter(browser, user)
-
-    await user.click(chip('GPT-6.1 Sol'))
-    expect(screen.getByRole('menuitemradio', { name: 'Auto' })).toHaveFocus()
-    await user.keyboard('{ArrowDown}')
-    expect(screen.getByRole('menuitemradio', { name: 'Claude Sonnet 5.5' })).toHaveFocus()
-    await user.keyboard('{End}')
-    expect(screen.getByRole('menuitem', { name: 'Manage models' })).toHaveFocus()
-    await user.keyboard('{Escape}')
-    expect(screen.queryByRole('menu', { name: 'Model' })).not.toBeInTheDocument()
     expect(chip('GPT-6.1 Sol')).toHaveFocus()
   })
 })

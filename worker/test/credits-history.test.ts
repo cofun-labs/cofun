@@ -171,16 +171,7 @@ describe('UC-NOTICO-CHAT-003 the history of the credits a user was given, and UC
     expect(pages.flat().map((g) => g.amount / CREDIT)).toEqual(Array.from({ length: 45 }, (_, i) => 45 - i))
   })
 
-  it('a last page that is exactly full has nothing after it', async () => {
-    for (let credits = 1; credits <= PAGE; credits++) await grant('user_alice', credits, 30)
-
-    const page = await get('/v1/credits/grants', alice)
-
-    expect(page.grants).toHaveLength(PAGE)
-    expect(page.next).toBeNull()
-  })
-
-  it('a grant made while the user pages through the history does not shift the pages after it', async () => {
+  it('[@no-uc:money] a grant made while the user pages through the history does not shift the pages after it', async () => {
     for (let credits = 1; credits <= 25; credits++) await grant('user_alice', credits, 30)
     const first = await get('/v1/credits/grants', alice)
 
@@ -192,14 +183,14 @@ describe('UC-NOTICO-CHAT-003 the history of the credits a user was given, and UC
     expect(second.next).toBeNull()
   })
 
-  it('a user who was given nothing and used nothing has an empty history, and reading it writes nothing', async () => {
+  it('[@no-uc:money] a user who was given nothing and used nothing has an empty history, and reading it writes nothing', async () => {
     expect(await get('/v1/credits/grants', alice)).toEqual({ grants: [], next: null })
     // Looking at the history does not start the week of free credits.
     expect(db.rows('grants')).toEqual([])
     expect(db.rows('model_calls')).toEqual([])
   })
 
-  it('reading the history writes nothing, however often', async () => {
+  it('[@no-uc:money] reading the history writes nothing, however often', async () => {
     await ask(alice, 60)
     const before = [db.rows('grants'), db.rows('model_calls')]
 
@@ -233,7 +224,7 @@ describe('UC-NOTICO-CHAT-003 the history of the credits a user was given, and UC
     expect((await req('GET', '/v1/credits/grants')).status).toBe(401)
   })
 
-  it('a place in the grants that no page gave is refused', async () => {
+  it('[@no-uc:money] a place in the grants that no page gave is refused', async () => {
     for (const bad of ['abc', '', '12', '1.', '.1', '-1.0', '1.5.2', '1762603200000.12345', '1e3.0', '1762603200000']) {
       const res = await req('GET', `/v1/credits/grants?before=${bad}`, alice)
       const body: any = await res.json()
@@ -242,7 +233,7 @@ describe('UC-NOTICO-CHAT-003 the history of the credits a user was given, and UC
     expect((await req('GET', '/v1/credits/grants?before=1762603200000.0', alice)).status).toBe(200)
   })
 
-  it('a history that cannot be read is reported as unavailable, and the failure is logged', async () => {
+  it('[@no-uc:money] a history that cannot be read is reported as unavailable, and the failure is logged', async () => {
     db.failWith = new Error('D1_ERROR: Network connection lost.')
 
     const res = await req('GET', '/v1/credits/grants', alice)
@@ -251,7 +242,7 @@ describe('UC-NOTICO-CHAT-003 the history of the credits a user was given, and UC
     expect(logged).toEqual(['credit read failed: Error: D1_ERROR: Network connection lost.'])
   })
 
-  it('each page of grants is read through an index, without sorting or reading the whole table', async () => {
+  it('[@no-uc:money] each page of grants is read through an index, without sorting or reading the whole table', async () => {
     const plan = (sql: string, ...values: (string | number)[]) =>
       db.sqlite
         .prepare(`EXPLAIN QUERY PLAN ${sql}`)

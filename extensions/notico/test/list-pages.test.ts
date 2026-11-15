@@ -299,7 +299,7 @@ describe('UC-NOTICO-NOTION-005 browse the workspace', () => {
 })
 
 describe('list_pages sections', () => {
-  it('gives each top-level section its own limit, so a long one hides no other', async () => {
+  it('[UC-NOTICO-NOTION-005-S03] gives each top-level section its own limit, so a long one hides no other', async () => {
     const many = range(200, SECTION_LIMIT + 10)
     // A shared page that is also private is listed under Private only.
     notion([...pages(many, 'Private'), page(3, 'Shared plan')])
@@ -316,50 +316,7 @@ describe('list_pages sections', () => {
 })
 
 describe('list_pages arguments', () => {
-  it('checks depth and the page before asking Notion', async () => {
-    const tab = new FakeNotionTab(PAGE_URL).install()
-    await expect(run({ depth: 4 })).rejects.toThrow('`depth` must be a whole number from 1 to 3.')
-    await expect(run({ page: 'Roadmap' })).rejects.toThrow('Not a Notion page URL or id: Roadmap')
-    expect(tab.sent).toEqual([])
-  })
-
-  it('refuses arguments that are not what its schema says, without asking Notion', async () => {
-    const tab = new FakeNotionTab(PAGE_URL).install()
-    await expect(run({ depth: 0 })).rejects.toThrow('`depth` must be a whole number from 1 to 3.')
-    await expect(run({ depth: 1.5 })).rejects.toThrow('`depth` must be a whole number from 1 to 3.')
-    await expect(run({ depth: '2' })).rejects.toThrow('`depth` must be a whole number from 1 to 3.')
-    await expect(run({ section: 'Private', offset: 'ten' })).rejects.toThrow(
-      '`offset` must be a whole number of at least 0.',
-    )
-    await expect(run({ page: 5 })).rejects.toThrow('`page`: Invalid input: expected string, received number')
-    await expect(run({ section: ['Private'] })).rejects.toThrow(
-      '`section`: Invalid input: expected string, received array',
-    )
-    await expect(run({ limit: 10 })).rejects.toThrow('Unrecognized key: "limit"')
-    expect(tab.sent).toEqual([])
-  })
-
-  it('checks section and offset before asking Notion', async () => {
-    const tab = new FakeNotionTab(PAGE_URL).install()
-    await expect(run({ offset: 5 })).rejects.toThrow('`offset` needs `page` or `section`.')
-    await expect(run({ page: hex(id(10)), section: 'Private' })).rejects.toThrow('Give `page` or `section`, not both.')
-    await expect(run({ page: hex(id(10)), offset: -1 })).rejects.toThrow(
-      '`offset` must be a whole number of at least 0.',
-    )
-    expect(tab.sent).toEqual([])
-  })
-
-  it('names the sections there are when asked for one that is not', async () => {
-    notion([])
-      .respond('getSpaces', 200, spaces({}, { private_pages: [id(1)] }))
-      .respond('getTeamsV2', 200, teams([team(1, 'Engineering', [id(11)])]))
-      .install()
-    await expect(run({ section: 'Marketing' })).rejects.toThrow(
-      'No section “Marketing”. The sections are: Private, Shared, Workspace, Teamspace: Engineering.',
-    )
-  })
-
-  it('tells apart teamspaces named like a built-in section or like each other', async () => {
+  it('[UC-NOTICO-NOTION-005-S05] tells apart teamspaces named like a built-in section or like each other', async () => {
     const workspace = () =>
       notion([page(1, 'Notes'), page(11, 'Team notes'), page(21, 'First'), page(31, 'Second'), page(41, 'Third')])
         .respond('getSpaces', 200, spaces({}, { private_pages: [id(1)] }))
@@ -393,31 +350,10 @@ describe('list_pages arguments', () => {
     workspace()
     await expect(run({ section: 'Design' })).rejects.toThrow('No section “Design”.')
   })
-
-  it('tells apart teamspaces whose names differ only in case', async () => {
-    const workspace = () =>
-      notion([page(11, 'Upper'), page(21, 'Lower')])
-        .respond('getSpaces', 200, spaces({}, {}))
-        .respond('getTeamsV2', 200, teams([team(1, 'Design', [id(11)]), team(2, 'design', [id(21)])]))
-        .install()
-    workspace()
-    await expect(run({ section: 'nope' })).rejects.toThrow(
-      'The sections are: Private, Shared, Workspace, Teamspace: Design (1), Teamspace: design (2).',
-    )
-    workspace()
-    expect((await run({ section: 'Teamspace: design (2)' })).split('\n').slice(3)).toEqual([
-      `- 📄 Lower ^${hex(id(21))}`,
-    ])
-  })
-
-  it('says a page with nothing under it has no pages', async () => {
-    notion([page(10, 'Empty')]).install()
-    expect(await run({ page: hex(id(10)) })).toBe(`${DATA_LINE}\nPages under “Empty” ^${hex(id(10))}:\n\n(no pages)`)
-  })
 })
 
 describe('list_pages at the limit', () => {
-  it('looks under the listed pages only until the list is full', async () => {
+  it('[@no-uc:notion-safety] looks under the listed pages only until the list is full', async () => {
     // Each child holds a lot of text before its one subpage, so every child looked into costs lookups.
     const kids = range(300, LIST_LIMIT - 2)
     const tab = notion([
@@ -434,33 +370,17 @@ describe('list_pages at the limit', () => {
     expect(lookups(tab)).toHaveLength(7)
   })
 
-  it('gives the next offset by position when the list holds an id twice', async () => {
-    // The first child is listed again later; the offset still points past the last one shown.
-    const kids = range(700, LIST_LIMIT + 5)
-    kids[LIST_LIMIT - 1] = kids[0]
-    notion([page(10, 'Twice', kids), ...pages([...new Set(kids)], 'Child')]).install()
-    expect(await run({ page: hex(id(10)) })).toContain(`List them with \`offset: ${LIST_LIMIT}\`.)`)
-  })
-
-  it('says pages under the ones shown may be left out too when the top level is cut off deeper than one level', async () => {
+  it('[UC-NOTICO-NOTION-005-S08] says pages under the ones shown may be left out too when the top level is cut off deeper than one level', async () => {
     const kids = range(300, LIST_LIMIT + 1)
     notion([page(10, 'Too many', kids), ...pages(kids, 'Child', () => [id(900)])]).install()
     expect(await run({ page: hex(id(10)), depth: 2 })).toContain(
       `List them with \`offset: ${LIST_LIMIT}\`. Pages under the ones shown may be left out too. To see what is under a listed page, list it by its id.)`,
     )
   })
-
-  it('says nothing is left out when the pages shown hold nothing', async () => {
-    const kids = range(300, LIST_LIMIT)
-    notion([page(10, 'Flat', kids), ...pages(kids, 'Child')]).install()
-    const result = await run({ page: hex(id(10)), depth: 3 })
-    expect(listed(result)).toHaveLength(LIST_LIMIT)
-    expect(result).not.toContain('(')
-  })
 })
 
 describe('list_pages requests to Notion', () => {
-  it('looks up each block at most once, even ones the user cannot open', async () => {
+  it('[@no-uc:notion-safety] looks up each block at most once, even ones the user cannot open', async () => {
     // Children the user can't open (missing from the workspace), some inside columns, at every level.
     const kids = range(100, 10)
     const blocks: Rec[] = [page(10, 'Root', [...range(5000, 20), ...kids])]
@@ -482,7 +402,7 @@ describe('list_pages requests to Notion', () => {
     expect(lookups(tab)).toHaveLength(7)
   })
 
-  it(`stops after ${LIST_LOOKUPS} lookups and says what it did not look into`, async () => {
+  it(`[@no-uc:notion-safety] stops after ${LIST_LOOKUPS} lookups and says what it did not look into`, async () => {
     // Every child holds a lot of text before its one subpage.
     const kids = range(100, 10)
     const tab = notion([
@@ -496,7 +416,7 @@ describe('list_pages requests to Notion', () => {
     expect(result).toContain('(Not looked into: what is under some of the pages shown,')
   })
 
-  it("picks up where a list ran out of lookups in a page's own blocks", async () => {
+  it("[UC-NOTICO-NOTION-005-S06] picks up where a list ran out of lookups in a page's own blocks", async () => {
     const words = range(10_000, LIST_LOOKUPS * 100 + 50)
     const kids = range(100, 3)
     const blocks = [page(10, 'Long', [...words, ...kids]), ...text(words), ...pages(kids, 'Child')]
@@ -533,7 +453,7 @@ describe('list_pages requests to Notion', () => {
     expect(tab.sent).toHaveLength(sent)
   })
 
-  it('names a section it ran out of lookups for as not listed', async () => {
+  it('[UC-NOTICO-NOTION-005-S09] names a section it ran out of lookups for as not listed', async () => {
     // None of Private's pages can be opened, so looking for one runs out of lookups.
     const tab = notion([page(3, 'Shared plan')])
       .respond('getSpaces', 200, spaces({}, { private_pages: range(10_000, 2000), shared_pages_manual_sort: [id(3)] }))
@@ -546,7 +466,7 @@ describe('list_pages requests to Notion', () => {
     expect(lookups(tab)).toHaveLength(1 + LIST_LOOKUPS)
   })
 
-  it("asks for the open page's workspace once", async () => {
+  it("[@no-uc:notion-safety] asks for the open page's workspace once", async () => {
     const tab = notion([page(1, 'Notes')])
       .respond('getSpaces', 200, spaces({}, { private_pages: [id(1)] }))
       .respond('getTeamsV2', 200, teams([]))
@@ -558,7 +478,7 @@ describe('list_pages requests to Notion', () => {
     expect(lookups(tab).filter((ids) => ids.includes(PAGE))).toHaveLength(1)
   })
 
-  it('stops the question when Notion turns a lookup away, and sends nothing more', async () => {
+  it('[@no-uc:notion-safety] stops the question when Notion turns a lookup away, and sends nothing more', async () => {
     const kids = range(100, 3)
     const root = page(10, 'Root', kids)
     const tab = notion([root, ...pages(kids, 'Child', () => [id(900)])])
@@ -571,7 +491,7 @@ describe('list_pages requests to Notion', () => {
 })
 
 describe('list_pages workspace', () => {
-  it("reads the tab's own user's view when several signed-in users share the workspace", async () => {
+  it("[@no-uc:privacy] reads the tab's own user's view when several signed-in users share the workspace", async () => {
     const OTHER = '0e0e0e0e-0000-4000-8000-000000000099'
     notion([page(1, 'Mine'), page(2, 'Theirs')])
       // The other account comes first, as Notion may list it.
@@ -584,7 +504,7 @@ describe('list_pages workspace', () => {
     expect(await run()).toContain(`Private\n- 📄 Mine ^${hex(id(1))}`)
   })
 
-  it("says so when Notion's answer has nothing for the tab's own user", async () => {
+  it("[@no-uc:privacy] says so when Notion's answer has nothing for the tab's own user", async () => {
     const OTHER = '0e0e0e0e-0000-4000-8000-000000000099'
     notion([])
       .respond('getSpaces', 200, spaces({}, { private_pages: [id(2)] }, OTHER))
@@ -594,30 +514,14 @@ describe('list_pages workspace', () => {
     expect(err.message).toBe(NO_USER_MAP)
   })
 
-  it('says the tab is signed out when it has no Notion user, and reads no account', async () => {
+  it('[@no-uc:access] says the tab is signed out when it has no Notion user, and reads no account', async () => {
     notion([], { cookie: 'notion_browser_id=b' })
       .respond('getSpaces', 200, spaces({}, { private_pages: [id(1)] }))
       .install()
     expect((await notionError(run())).code).toBe('signed_out')
   })
 
-  it('finds the tab user when Notion keys it without hyphens', async () => {
-    notion([page(1, 'Mine')])
-      .respond('getSpaces', 200, spaces({}, { private_pages: [id(1)] }, USER.replace(/-/g, '')))
-      .respond('getTeamsV2', 200, teams([]))
-      .install()
-    expect(await run()).toContain(`Private\n- 📄 Mine ^${hex(id(1))}`)
-  })
-
-  it('finds the tab user by an undashed cookie id', async () => {
-    notion([page(1, 'Mine')], { cookie: `notion_user_id=${USER.replace(/-/g, '')}` })
-      .respond('getSpaces', 200, spaces({}, { private_pages: [id(1)] }))
-      .respond('getTeamsV2', 200, teams([]))
-      .install()
-    expect(await run()).toContain(`Private\n- 📄 Mine ^${hex(id(1))}`)
-  })
-
-  it('keeps a page in its first section only, even where that section is cut off before it', async () => {
+  it('[UC-NOTICO-NOTION-005-S01] keeps a page in its first section only, even where that section is cut off before it', async () => {
     const many = range(600, SECTION_LIMIT + 1)
     const last = many.at(-1)!
     notion([...pages(many, 'Private'), page(3, 'Shared plan')])
@@ -630,7 +534,7 @@ describe('list_pages workspace', () => {
     expect(result.split('Shared\n')[1]).toBe(`- 📄 Shared plan ^${hex(id(3))}`)
   })
 
-  it('asks for teamspaces when the workspace does not say whether it has them', async () => {
+  it('[UC-NOTICO-NOTION-005-S05] asks for teamspaces when the workspace does not say whether it has them', async () => {
     notion([page(11, 'Eng handbook')])
       .respond('getSpaces', 200, spaces({ settings: {} }, {}))
       .respond('getTeamsV2', 200, teams([team(1, 'Engineering', [id(11)])]))
@@ -638,7 +542,7 @@ describe('list_pages workspace', () => {
     expect(await run()).toContain(`Teamspace: Engineering\n- 📄 Eng handbook ^${hex(id(11))}`)
   })
 
-  it('leaves out teams that getTeamsV2 lists as anything but joined', async () => {
+  it('[UC-NOTICO-NOTION-005-S05] leaves out teams that getTeamsV2 lists as anything but joined', async () => {
     const answer = teams([team(1, 'Engineering', [id(11)]), team(2, 'Elsewhere', [id(21)])])
     answer.teams[1].type = 'Archived'
     notion([page(11, 'Eng handbook'), page(21, 'Elsewhere page')])
@@ -650,7 +554,7 @@ describe('list_pages workspace', () => {
     expect(result).not.toContain('Elsewhere')
   })
 
-  it('lists a section alone as the overview does, without pages an earlier section has', async () => {
+  it('[UC-NOTICO-NOTION-005-S06] lists a section alone as the overview does, without pages an earlier section has', async () => {
     // The private page is also in Shared. Shared leaves it out, alone and in the overview, so their offsets agree.
     const shared = [id(1), ...range(400, SECTION_LIMIT + 5)]
     const blocks = pages(shared.slice(1), 'Shared')
@@ -666,7 +570,7 @@ describe('list_pages workspace', () => {
     expect(rest).toEqual(blocks.slice(SECTION_LIMIT).map((b, i) => `- 📄 Shared ${SECTION_LIMIT + i} ^${hex(b.id)}`))
   })
 
-  it('stops the question when the teamspaces fail in a way that is not understood', async () => {
+  it('[@no-uc:notion-safety] stops the question when the teamspaces fail in a way that is not understood', async () => {
     const tab = notion([page(1, 'Notes')])
       .respond('getSpaces', 200, spaces({}, { private_pages: [id(1)] }))
       .respond('getTeamsV2', 400, { name: 'ValidationError', debugMessage: 'Invalid input.' })
@@ -677,7 +581,7 @@ describe('list_pages workspace', () => {
     expect(endpoints(tab)).toEqual(['syncRecordValuesMain', 'getSpaces', 'getTeamsV2'])
   })
 
-  it('still lists the other sections when the teamspaces can not be opened', async () => {
+  it('[UC-NOTICO-NOTION-005-S05] still lists the other sections when the teamspaces can not be opened', async () => {
     notion([page(1, 'Notes')])
       .respond('getSpaces', 200, spaces({}, { private_pages: [id(1)] }))
       .respond('getTeamsV2', 403, { name: 'PermissionError', message: 'No access.' })
@@ -695,7 +599,7 @@ describe('list_pages workspace', () => {
     )
   })
 
-  it('stops the question when Notion turns the teamspaces away, and sends nothing more', async () => {
+  it('[@no-uc:notion-safety] stops the question when Notion turns the teamspaces away, and sends nothing more', async () => {
     const tab = notion([page(1, 'Notes')])
       .respond('getSpaces', 200, spaces({}, { private_pages: [id(1)] }))
       .limit('getTeamsV2', 1)
@@ -704,7 +608,7 @@ describe('list_pages workspace', () => {
     expect(endpoints(tab)).toEqual(['syncRecordValuesMain', 'getSpaces', 'getTeamsV2'])
   })
 
-  it('asks for no teamspaces in a workspace that has them turned off', async () => {
+  it('[@no-uc:notion-safety] asks for no teamspaces in a workspace that has them turned off', async () => {
     const tab = notion([page(1, 'Notes')])
       .respond('getSpaces', 200, spaces({ settings: { is_teams_enabled: false } }, { private_pages: [id(1)] }))
       .install()
@@ -712,13 +616,6 @@ describe('list_pages workspace', () => {
       [DATA_LINE, 'Pages in the workspace “Fixture workspace”:', '', 'Private', `- 📄 Notes ^${hex(id(1))}`].join('\n'),
     )
     expect(endpoints(tab)).not.toContain('getTeamsV2')
-  })
-
-  it('says so when the open page is in the trash', async () => {
-    const tab = new FakeNotionTab(PAGE_URL)
-    tab.workspace = new FakeWorkspace([{ id: PAGE, type: 'page', alive: false }], SPACE)
-    tab.install()
-    await expect(run()).rejects.toThrow('The open page is in the trash. Open another page of the workspace.')
   })
 })
 

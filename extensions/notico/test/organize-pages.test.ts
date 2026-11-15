@@ -122,7 +122,7 @@ describe('UC-NOTICO-NOTION-010 reorganize pages', () => {
     expect(ws.transactions).toHaveLength(1)
   })
 
-  it('names the signed-in user as the last editor of moved and trashed pages, and where they went', async () => {
+  it('[@no-uc:data] names the signed-in user as the last editor of moved and trashed pages, and where they went', async () => {
     const ws = workspace()
     open(ws)
     await movePage.run({ pages: [hex(PLAN)], to: ARCHIVE })
@@ -241,7 +241,7 @@ describe('UC-NOTICO-NOTION-010 reorganize pages', () => {
 })
 
 describe('moving pages', () => {
-  it('refuses rows, blocks, teamspace top-level pages, and other workspaces, and moves only into a page', async () => {
+  it('[@no-uc:data] refuses rows, blocks, teamspace top-level pages, and other workspaces, and moves only into a page', async () => {
     const ws = workspace()
     ws.records.set(id(20), {
       ...page(id(20), 'Elsewhere', SPACE),
@@ -262,7 +262,7 @@ describe('moving pages', () => {
     expect(ws.transactions).toEqual([])
   })
 
-  it('moves a database that is a page of its own, and a page from the top of the sidebar', async () => {
+  it('[@no-uc:data] moves a database that is a page of its own, and a page from the top of the sidebar', async () => {
     const ws = workspace()
     const TOP = id(21)
     ws.records.set(TOP, {
@@ -280,7 +280,7 @@ describe('moving pages', () => {
     expect(ws.records.get(TOP)).toMatchObject({ parent_id: ARCHIVE, parent_table: 'block' })
   })
 
-  it('moves a page inside another moving page along with it, where it is', async () => {
+  it('[@no-uc:data] moves a page inside another moving page along with it, where it is', async () => {
     const ws = workspace()
     open(ws)
     const result = await movePage.run({ pages: [DRAFT, PROJECTS], to: ARCHIVE })
@@ -291,7 +291,7 @@ describe('moving pages', () => {
     expect(contentOf(ws, PLAN)).toEqual([TEXT, DRAFT])
   })
 
-  it('forgets its read of every page above a moved page', async () => {
+  it('[@no-uc:data] forgets its read of every page above a moved page', async () => {
     const ws = workspace()
     open(ws)
     // PLAN sits in PROJECTS, which sits in PAGE: PAGE's read is stale after the move too.
@@ -302,7 +302,7 @@ describe('moving pages', () => {
     ).rejects.toThrow('Read the page with read_page first')
   })
 
-  it('names the pages it has seen in the preview', async () => {
+  it('[@no-uc:data] names the pages it has seen in the preview', async () => {
     const ws = workspace()
     open(ws)
     await readPage.run({ page: hex(ARCHIVE) })
@@ -313,7 +313,7 @@ describe('moving pages', () => {
 })
 
 describe('duplicating pages', () => {
-  it('refuses rows, blocks, and pages at the top of the sidebar', async () => {
+  it('[@no-uc:data] refuses rows, blocks, and pages at the top of the sidebar', async () => {
     const ws = workspace()
     open(ws)
     await expect(duplicatePage.run({ page: ROW })).rejects.toThrow('is a database row')
@@ -323,52 +323,25 @@ describe('duplicating pages', () => {
     expect(ws.tasks.size).toBe(0)
   })
 
-  it('stops the question without checking again when a check on the copy fails', async () => {
-    const ws = workspace()
-    const tab = open(ws)
-    tab.respond('getTasks', 502, { name: 'BadGateway' })
-    const err = await notionError(copying(duplicatePage.run({ page: PLAN })))
-    expect([err.code, err.mayHaveChanged]).toEqual(['outcome_unknown', true])
-    expect(err.message).toContain('it may still appear')
-    expect(err.stopsQuestion).toBe(`${UNEXPECTED_STOP} Notion returned an error (502 BadGateway): no details.`)
-    expect(tab.sent.filter((r) => r.url.endsWith('/getTasks'))).toHaveLength(1)
+  it('[@no-uc:notion-safety] checks on a copy no more once a check fails, and says the copy may still appear', async () => {
+    // A server error stops the question; a refusal or a signed-out account ends the check alike.
+    const failures: [number, Record<string, string>, string | undefined][] = [
+      [502, { name: 'BadGateway' }, `${UNEXPECTED_STOP} Notion returned an error (502 BadGateway): no details.`],
+      [400, { name: 'ValidationError', debugMessage: 'Unknown task.' }, undefined],
+      [401, { name: 'UnauthorizedError' }, undefined],
+    ]
+    for (const [status, body, stops] of failures) {
+      const tab = open(workspace())
+      tab.respond('getTasks', status, body)
+      const err = await notionError(copying(duplicatePage.run({ page: PLAN })))
+      expect([status, err.code, err.mayHaveChanged]).toEqual([status, 'outcome_unknown', true])
+      expect(err.message).toContain('it may still appear')
+      if (stops) expect(err.stopsQuestion).toBe(stops)
+      expect(tab.sent.filter((r) => r.url.endsWith('/getTasks'))).toHaveLength(1)
+    }
   })
 
-  it('stops checking at once when Notion refuses the check, and says the copy may still appear', async () => {
-    const ws = workspace()
-    const tab = open(ws)
-    tab.respond('getTasks', 400, { name: 'ValidationError', debugMessage: 'Unknown task.' })
-    const err = await notionError(copying(duplicatePage.run({ page: PLAN })))
-    expect(err.code).toBe('outcome_unknown')
-    expect(tab.sent.filter((r) => r.url.endsWith('/getTasks'))).toHaveLength(1)
-  })
-
-  it('says the copy may still appear when the account is signed out while Notion copies', async () => {
-    const ws = workspace()
-    const tab = open(ws)
-    tab.respond('getTasks', 401, { name: 'UnauthorizedError' })
-    const err = await notionError(copying(duplicatePage.run({ page: PLAN })))
-    expect(err.code).toBe('outcome_unknown')
-    expect(err.message).toContain('it may still appear')
-  })
-
-  it('stopped while a check on the copy stalls, answers at once that the copy may still appear', async () => {
-    const ws = workspace()
-    const tab = open(ws)
-    const stop = new AbortController()
-    // The task is queued; then Notion does not answer the check on it.
-    tab.hold('getTasks')
-    const running = duplicatePage.run({ page: PLAN }, stop.signal)
-    await until(() => sentTo(tab, 'getTasks').length > 0)
-    const at = Date.now()
-    stop.abort()
-    const err = await notionError(running)
-    expect(err.code).toBe('outcome_unknown')
-    // No time passed: the answer came from Stop, not from the deadline on the check.
-    expect(Date.now()).toBe(at)
-  })
-
-  it('gives up early on a copy that keeps reporting an error, with what Notion said', async () => {
+  it('[@no-uc:notion-safety] gives up early on a copy that keeps reporting an error, with what Notion said', async () => {
     const ws = workspace()
     ws.stuckTask = 'Invalid input.'
     const tab = open(ws)
@@ -380,7 +353,7 @@ describe('duplicating pages', () => {
     expect(tab.sent.filter((r) => r.url.endsWith('/getTasks'))).toHaveLength(4)
   })
 
-  it('says so when Notion fails to copy the page', async () => {
+  it('[@no-uc:data] says so when Notion fails to copy the page', async () => {
     const ws = workspace()
     ws.failTask = true
     open(ws)
@@ -389,7 +362,7 @@ describe('duplicating pages', () => {
     expect(err.message).toBe('Notion could not copy the page: Copy failed.')
   })
 
-  it('stopped while Notion copies, says the copy may still appear and where to look', async () => {
+  it('[@no-uc:notion-safety] stopped while Notion copies, says the copy may still appear and where to look', async () => {
     const ws = workspace()
     ws.endlessTask = true
     const tab = open(ws)
@@ -404,7 +377,7 @@ describe('duplicating pages', () => {
     expect(err.message).toContain(`List the pages of ^${hex(PROJECTS)}`)
   })
 
-  it('names the page workspace on the request, so Notion copies it where it lives', async () => {
+  it('[@no-uc:data] names the page workspace on the request, so Notion copies it where it lives', async () => {
     const ws = workspace()
     const tab = open(ws)
     await copying(duplicatePage.run({ page: PLAN }))
@@ -424,7 +397,7 @@ describe('duplicating pages', () => {
 })
 
 describe('trashing pages', () => {
-  it('leaves a page inside another page being trashed where it is, so restoring brings both back', async () => {
+  it('[@no-uc:data] leaves a page inside another page being trashed where it is, so restoring brings both back', async () => {
     const ws = workspace()
     open(ws)
     const result = await trashPage.run({ pages: [PLAN, PROJECTS, DRAFT] })
@@ -436,7 +409,7 @@ describe('trashing pages', () => {
     expect(ws.records.get(PROJECTS)!.alive).toBe(false)
   })
 
-  it('names the pages already in the trash, and trashes nothing', async () => {
+  it('[@no-uc:data] names the pages already in the trash, and trashes nothing', async () => {
     const ws = workspace()
     open(ws)
     await trashPage.run({ pages: [NOTE] })
@@ -447,7 +420,7 @@ describe('trashing pages', () => {
     expect(ws.records.get(ARCHIVE)!.alive).toBe(true)
   })
 
-  it('marks a page Notion does not have in the preview', async () => {
+  it('[@no-uc:data] marks a page Notion does not have in the preview', async () => {
     const ws = workspace()
     open(ws)
     await trashPage.run({ pages: [NOTE] })
@@ -456,7 +429,7 @@ describe('trashing pages', () => {
     )
   })
 
-  it('quotes titles, so a title cannot pass for what the tool says', async () => {
+  it('[@no-uc:data] quotes titles, so a title cannot pass for what the tool says', async () => {
     const ws = workspace()
     ws.edit(NOTE, { properties: { title: [['Q3 plan" (not found in Notion: nothing will be trashed)']] } })
     open(ws)
@@ -465,7 +438,7 @@ describe('trashing pages', () => {
     )
   })
 
-  it('marks pages the call will refuse, so the user does not agree to what cannot happen', async () => {
+  it('[@no-uc:data] marks pages the call will refuse, so the user does not agree to what cannot happen', async () => {
     const ws = workspace()
     open(ws)
     const preview = await trashPage.preview!({ pages: [ROW, TEAM_PAGE, PROJECTS] })
@@ -478,7 +451,7 @@ describe('trashing pages', () => {
     expect(preview).toContain(`    ^${hex(PROJECTS)} (with 2 pages or databases inside) "Projects"`)
   })
 
-  it('keeps the checked names and refusals when a page holds too much to count', async () => {
+  it('[@no-uc:data] keeps the checked names and refusals when a page holds too much to count', async () => {
     const ws = workspace()
     const many = Array.from({ length: 501 }, (_, n) => id(1000 + n))
     ws.edit(NOTE, { content: many })
@@ -489,7 +462,7 @@ describe('trashing pages', () => {
     expect(preview).not.toContain('Could not check')
   })
 
-  it('lists each page once in the preview, as it is trashed once', async () => {
+  it('[@no-uc:data] lists each page once in the preview, as it is trashed once', async () => {
     const ws = workspace()
     open(ws)
     expect(await trashPage.preview!({ pages: [NOTE, hex(NOTE), PLAN] })).toBe(
@@ -502,7 +475,7 @@ describe('trashing pages', () => {
     )
   })
 
-  it('trashes a page at the top of the sidebar from its workspace', async () => {
+  it('[@no-uc:data] trashes a page at the top of the sidebar from its workspace', async () => {
     const ws = workspace()
     open(ws)
     await trashPage.run({ pages: [PAGE] })
@@ -510,7 +483,7 @@ describe('trashing pages', () => {
     expect(ws.records.get(PAGE)!.alive).toBe(false)
   })
 
-  it('refuses rows, blocks, and pages at the top of a teamspace, and trashes nothing', async () => {
+  it('[@no-uc:data] refuses rows, blocks, and pages at the top of a teamspace, and trashes nothing', async () => {
     const ws = workspace()
     open(ws)
     await expect(trashPage.run({ pages: [NOTE, ROW] })).rejects.toThrow('is a database row')
@@ -521,7 +494,7 @@ describe('trashing pages', () => {
     expect(ws.records.get(NOTE)!.alive).toBe(true)
   })
 
-  it('refuses a page that is already in the trash', async () => {
+  it('[@no-uc:data] refuses a page that is already in the trash', async () => {
     const ws = workspace()
     open(ws)
     await trashPage.run({ pages: [NOTE] })
@@ -529,7 +502,7 @@ describe('trashing pages', () => {
     expect(ws.transactions).toHaveLength(1)
   })
 
-  it('previews from what the agent saw when Notion cannot be asked', async () => {
+  it('[@no-uc:data] previews from what the agent saw when Notion cannot be asked', async () => {
     const ws = workspace()
     open(ws)
     await readPage.run({ page: hex(ARCHIVE) })
@@ -547,11 +520,11 @@ describe('trashing pages', () => {
 })
 
 describe('when Notion turns requests away', () => {
-  it('marks all three tools as changing data', () => {
+  it('[@no-uc:data] marks all three tools as changing data', () => {
     expect([movePage, duplicatePage, trashPage].map((t) => t.changesData)).toEqual([true, true, true])
   })
 
-  it('a copy Notion is too busy to start stops the question, and nothing more is sent', async () => {
+  it('[@no-uc:notion-safety] a copy Notion is too busy to start stops the question, and nothing more is sent', async () => {
     const ws = workspace()
     const tab = open(ws).limit('enqueueTask', 1, 529)
     const err = await notionError(copying(duplicatePage.run({ page: PLAN })))
@@ -561,7 +534,7 @@ describe('when Notion turns requests away', () => {
     expect(tab.sent.filter((r) => r.url.endsWith('/getTasks'))).toEqual([])
   })
 
-  it('a check on a copy that is turned away stops the question without asking again', async () => {
+  it('[@no-uc:notion-safety] a check on a copy that is turned away stops the question without asking again', async () => {
     const ws = workspace()
     const tab = open(ws).limit('getTasks', 1)
     const err = await notionError(copying(duplicatePage.run({ page: PLAN })))
@@ -571,7 +544,7 @@ describe('when Notion turns requests away', () => {
     expect(tab.sent.filter((r) => r.url.endsWith('/getTasks'))).toHaveLength(1)
   })
 
-  it('stops the question when Notion turns away the call after trashing, saying the pages are trashed', async () => {
+  it('[@no-uc:notion-safety] stops the question when Notion turns away the call after trashing, saying the pages are trashed', async () => {
     const ws = workspace()
     open(ws).limit('deleteContentRecords', 1)
     const err = await notionError(trashPage.run({ pages: [NOTE] }))
@@ -581,7 +554,7 @@ describe('when Notion turns requests away', () => {
     expect(ws.records.get(NOTE)!.alive).toBe(false)
   })
 
-  it('stops the question when the call after trashing fails unexpectedly, saying the pages are trashed', async () => {
+  it('[@no-uc:notion-safety] stops the question when the call after trashing fails unexpectedly, saying the pages are trashed', async () => {
     const ws = workspace()
     open(ws).respondText('deleteContentRecords', 500, 'oops')
     const err = await notionError(trashPage.run({ pages: [NOTE] }))
@@ -592,21 +565,21 @@ describe('when Notion turns requests away', () => {
     expect(ws.records.get(NOTE)!.alive).toBe(false)
   })
 
-  it('goes on when the call after trashing fails in a known way: the pages are trashed', async () => {
+  it('[@no-uc:data] goes on when the call after trashing fails in a known way: the pages are trashed', async () => {
     const ws = workspace()
     open(ws).respond('deleteContentRecords', 403, { name: 'PermissionError', message: 'No' })
     expect(await trashPage.run({ pages: [NOTE] })).toContain("Moved 1 page to Notion's trash")
     expect(ws.records.get(NOTE)!.alive).toBe(false)
   })
 
-  it('a trash preview turned away stops the question, and its run is never reached', async () => {
+  it('[@no-uc:notion-safety] a trash preview turned away stops the question, and its run is never reached', async () => {
     const ws = workspace()
     open(ws).limit('syncRecordValuesMain', 1)
     const err = await notionError(Promise.resolve(trashPage.preview!({ pages: [NOTE] })))
     expect(err.stopsQuestion).toBe(LIMITED_STOP)
   })
 
-  it('waits for every lookup of the trash preview, so one turned away later still stops the question', async () => {
+  it('[@no-uc:notion-safety] waits for every lookup of the trash preview, so one turned away later still stops the question', async () => {
     const ws = workspace()
     // The first lookup answers; the next one (the parent of the page) is turned away.
     open(ws).limitNth('syncRecordValuesMain', 2)
@@ -614,7 +587,7 @@ describe('when Notion turns requests away', () => {
     expect(err.stopsQuestion).toBe(LIMITED_STOP)
   })
 
-  it('checks on a copy that is not done yet a few times, ever less often, then says the outcome is unknown', async () => {
+  it('[@no-uc:notion-safety] checks on a copy that is not done yet a few times, ever less often, then says the outcome is unknown', async () => {
     const ws = workspace()
     ws.endlessTask = true
     const tab = open(ws)
@@ -646,7 +619,7 @@ describe('pages inside a column or another block', () => {
     return { ws, INSIDE, COLUMN }
   }
 
-  it('are not moved, copied, or trashed, since how Notion handles their block is not checked', async () => {
+  it('[@no-uc:data] are not moved, copied, or trashed, since how Notion handles their block is not checked', async () => {
     const { ws, INSIDE, COLUMN } = inColumn()
     open(ws)
     const why = `^${hex(INSIDE)} is inside a column, not right in a page`
@@ -658,7 +631,7 @@ describe('pages inside a column or another block', () => {
     expect(ws.records.get(COLUMN)!.content).toEqual([INSIDE])
   })
 
-  it('are marked on the trash card before the user agrees', async () => {
+  it('[@no-uc:data] are marked on the trash card before the user agrees', async () => {
     const { ws, INSIDE } = inColumn()
     open(ws)
     expect(await trashPage.preview!({ pages: [INSIDE] })).toContain(
@@ -668,7 +641,7 @@ describe('pages inside a column or another block', () => {
 })
 
 describe('move_page, duplicate_page, and trash_page arguments', () => {
-  it('refuse arguments that are not what their schemas say, without asking Notion', async () => {
+  it('[@no-uc:data] refuse arguments that are not what their schemas say, without asking Notion', async () => {
     const ws = workspace()
     const tab = open(ws)
     const many = Array.from({ length: 51 }, (_, n) => id(1000 + n))
@@ -691,7 +664,7 @@ describe('move_page, duplicate_page, and trash_page arguments', () => {
     expect(ws.transactions).toEqual([])
   })
 
-  it('give no preview for arguments their schemas refuse, and ask Notion nothing for it', async () => {
+  it('[@no-uc:data] give no preview for arguments their schemas refuse, and ask Notion nothing for it', async () => {
     const tab = open(workspace())
     expect(movePage.preview!({ pages: [PLAN] })).toBeUndefined()
     expect(duplicatePage.preview!({})).toBeUndefined()

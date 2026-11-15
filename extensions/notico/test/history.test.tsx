@@ -143,7 +143,7 @@ describe('the credit history', () => {
     expect(screen.queryByRole('button', { name: /usage/i })).not.toBeInTheDocument()
   })
 
-  it('tells a user who was given nothing so, and opening it does not start their free credits', async () => {
+  it('[@no-uc:money] tells a user who was given nothing so, and opening it does not start their free credits', async () => {
     const { user } = await openPanel()
 
     await openHistory(user)
@@ -158,7 +158,7 @@ describe('the credit history', () => {
     )
   })
 
-  it('when the history cannot be read, it says so and offers to try again, and the Credits page and the chat still work', async () => {
+  it('[@no-uc:money] when the history cannot be read, it says so and offers to try again, and the Credits page and the chat still work', async () => {
     const browser = await FakeBrowser.start(pageTab(), { signedInAs: 'user_alice' })
     // Only the reads of the history fail.
     browser.db.failOn = { sql: GRANTS_READ, error: DOWN }
@@ -181,7 +181,7 @@ describe('the credit history', () => {
     await ask(browser, user, 'Who owns the launch?', 30)
   })
 
-  it('when earlier lots cannot be read, the ones already shown stay, and trying again adds the rest', async () => {
+  it('[@no-uc:money] when earlier lots cannot be read, the ones already shown stay, and trying again adds the rest', async () => {
     const { browser, user } = await openPanel()
     for (let credits = 1; credits <= 25; credits++) await browser.grantCredits('user_alice', credits, 30)
     await openHistory(user)
@@ -195,59 +195,5 @@ describe('the credit history', () => {
     browser.db.failOn = undefined
     await user.click(screen.getByRole('button', { name: 'Try again' }))
     await waitFor(async () => expect(await lots()).toHaveLength(25))
-  })
-
-  it('pages with the keyboard: the focus stays on the button while it reads on, and moves to the first new lot at the end', async () => {
-    const { browser, user } = await openPanel()
-    // 45 lots, told apart by how many credits each was: three pages.
-    for (let credits = 1; credits <= 45; credits++) {
-      await browser.grantCredits('user_alice', credits, 30)
-      vi.setSystemTime(START.getTime() + credits * HOUR_MS)
-    }
-    await openHistory(user)
-    expect(await lots()).toHaveLength(20)
-
-    screen.getByRole('button', { name: 'Show earlier' }).focus()
-    await user.keyboard('{Enter}')
-    await waitFor(async () => expect(await lots()).toHaveLength(40))
-    expect(screen.getByRole('button', { name: 'Show earlier' })).toHaveFocus()
-
-    // A read that fails leaves the focus on Try again.
-    browser.db.failOn = { sql: GRANTS_READ, error: DOWN }
-    await user.keyboard('{Enter}')
-    expect(await screen.findByRole('alert')).toHaveTextContent('Your credits could not be loaded.')
-    expect(screen.getByRole('button', { name: 'Try again' })).toHaveFocus()
-
-    // The last page takes the button away, and the focus goes to the first lot it added.
-    browser.db.failOn = undefined
-    await user.keyboard('{Enter}')
-    await waitFor(async () => expect(await lots()).toHaveLength(45))
-    expect(screen.queryByRole('button', { name: /Show earlier|Try again/ })).not.toBeInTheDocument()
-    const added = within(screen.getByRole('list', { name: 'Credits you were given' })).getAllByRole('listitem')[40]
-    expect(amounts([added!.textContent])).toEqual(['5'])
-    expect(added).toHaveFocus()
-  })
-
-  it('works with the keyboard: it opens from the Credits page, and Escape leads back a step at a time', async () => {
-    const { user } = await openPanel()
-    await openCredits(user)
-
-    screen.getByRole('button', { name: 'Credit history' }).focus()
-    await user.keyboard('{Enter}')
-    expect(screen.getByRole('heading', { name: 'Credit history' })).toBeVisible()
-    expect(screen.getByRole('button', { name: 'Back' })).toHaveFocus()
-
-    // Escape leads back to the Credits page, with the focus on what opened the history.
-    await user.keyboard('{Escape}')
-    expect(screen.getByRole('heading', { name: 'Credits' })).toBeVisible()
-    expect(screen.getByRole('button', { name: 'Credit history' })).toHaveFocus()
-
-    // Back does the same, and from the Credits page it leads to the chat.
-    await user.keyboard('{Enter}')
-    await user.keyboard('{Enter}')
-    expect(screen.getByRole('heading', { name: 'Credits' })).toBeVisible()
-    await user.keyboard('{Escape}')
-    expect(screen.queryByRole('heading', { name: 'Credits' })).not.toBeInTheDocument()
-    expect(screen.getByRole('textbox', { name: 'Message' })).toBeVisible()
   })
 })

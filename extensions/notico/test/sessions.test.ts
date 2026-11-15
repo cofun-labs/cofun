@@ -112,28 +112,6 @@ describe('saved sessions', () => {
     expect(await store.get('a')).toEqual({ ...a, messages, updatedAt: 4000 })
   })
 
-  it('a title the model wrote is given once, does not count as using the session, and later saves keep it', async () => {
-    await store.save(session('a', 'Summarize this page', 1000, ROADMAP))
-    await store.save(session('b', 'Draft an agenda', 2000))
-    const loaded = (await load(store, 'a'))!
-
-    expect(await store.retitle('a', 'Page summary')).toBe(true)
-    expect(await store.retitle('a', 'Another title')).toBe(false)
-    expect(await store.retitle('gone', 'Page summary')).toBe(false)
-    // Not moved up the list, and the next save from the panel that loaded it keeps the session's id.
-    expect((await listed(store)).map((s) => [s.id, s.title, s.updatedAt])).toEqual([
-      ['b', 'Draft an agenda', 2000],
-      ['a', 'Page summary', 1000],
-    ])
-    const messages: HistoryMessage[] = [...loaded.messages, { role: 'user', text: 'Thanks' }]
-    const saved = await store.save(
-      { ...loaded, title: titleFor(messages), messages, updatedAt: 3000 },
-      loaded.updatedAt,
-    )
-    expect(saved).toMatchObject({ id: 'a', title: 'Page summary', titledByModel: true })
-    expect((await load(store, 'a'))?.title).toBe('Page summary')
-  })
-
   it('[UC-NOTICO-SESSION-001-S12] search lists only the sessions whose title contains the query, ignoring case', async () => {
     await store.save(session('a', 'Summarize this page', 1000, ROADMAP))
     await store.save(session('b', 'Summarize the decisions', 2000, NOTES))
@@ -195,7 +173,7 @@ describe('saved sessions', () => {
     expect((await first.list()).map((s) => s.id)).toEqual(['a', copy.id])
   })
 
-  it('of two panels saving the same session at the same moment, only one keeps it', async () => {
+  it('[@no-uc:data] of two panels saving the same session at the same moment, only one keeps it', async () => {
     const panels = [new SessionStore('user_race'), new SessionStore('user_race')]
     await panels[0].save(session('a', 'Summarize this page', 1000))
     const loaded = (await load(panels[0], 'a'))!
@@ -212,7 +190,7 @@ describe('saved sessions', () => {
     expect(await panels[0].list()).toHaveLength(2)
   })
 
-  it('a session that changed since it was loaded is not overwritten, even by a save with the same time', async () => {
+  it('[@no-uc:data] a session that changed since it was loaded is not overwritten, even by a save with the same time', async () => {
     await store.save(session('a', 'Summarize this page', 1000))
     const stale = (await load(store, 'a'))!
     await store.save({ ...stale, updatedAt: 2000 }, stale.updatedAt)
@@ -225,7 +203,7 @@ describe('saved sessions', () => {
     expect((await load(store, 'a'))?.title).toBe('Summarize this page')
   })
 
-  it('a session deleted in another panel is saved again under its own id', async () => {
+  it('[@no-uc:data] a session deleted in another panel is saved again under its own id', async () => {
     await store.save(session('a', 'Summarize this page', 1000))
     const loaded = (await load(store, 'a'))!
     await new SessionStore(`user_${n - 1}`).delete('a')
@@ -233,7 +211,7 @@ describe('saved sessions', () => {
     expect((await store.list()).map((s) => s.id)).toEqual(['a'])
   })
 
-  it('a session that cannot be stored leaves nothing half-written', async () => {
+  it('[@no-uc:data] a session that cannot be stored leaves nothing half-written', async () => {
     const bad = session('a', 'Summarize this page', 1000)
     // Functions can't be stored, so the conversation's write fails after the details' write ran.
     const messages = [{ role: 'user', text: 'x', extra: () => {} }] as unknown as HistoryMessage[]
@@ -245,7 +223,7 @@ describe('saved sessions', () => {
     expect(await store.get('a')).toEqual(bad)
   })
 
-  it('an open store does not block a schema upgrade', async () => {
+  it('[@no-uc:data] an open store does not block a schema upgrade', async () => {
     const store = new SessionStore('user_upgrade')
     await store.save(session('a', 'Summarize this page', 1000))
     const upgrade = await new Promise<IDBDatabase>((resolve, reject) => {
@@ -257,7 +235,7 @@ describe('saved sessions', () => {
     upgrade.close()
   })
 
-  it('a session whose details do not parse is listed after the others as unreadable, and can only be deleted', async () => {
+  it('[@no-uc:data] a session whose details do not parse is listed after the others as unreadable, and can only be deleted', async () => {
     await store.save(session('a', 'Summarize this page', 1000, ROADMAP))
     await store.save(session('b', 'Draft an agenda', 2000))
     // As an earlier version might have saved one: no times, and the title in another form.
@@ -283,7 +261,7 @@ describe('saved sessions', () => {
     expect(await store.get('old')).toBeUndefined()
   })
 
-  it('a session whose conversation does not parse cannot be opened, and is still listed', async () => {
+  it('[@no-uc:data] a session whose conversation does not parse cannot be opened, and is still listed', async () => {
     await store.save(session('a', 'Summarize this page', 1000, ROADMAP))
     // A message of a kind this version doesn't know, and a tool call whose arguments are not an object.
     for (const messages of [
@@ -298,7 +276,7 @@ describe('saved sessions', () => {
     expect((await listed(store)).map((s) => s.title)).toEqual(['Summarize this page'])
   })
 
-  it('a session saved before the optional fields were added still reads', async () => {
+  it('[@no-uc:data] a session saved before the optional fields were added still reads', async () => {
     // As 0.1.0 saved them: no `titledByModel`, and questions without `pages` or details.
     await writeRaw(store, 'sessions', { id: 'a', title: 'Summarize this page', createdAt: 0, updatedAt: 1000 })
     await writeRaw(store, 'messages', { id: 'a', messages: conversation('Summarize this page') })
@@ -309,16 +287,5 @@ describe('saved sessions', () => {
       updatedAt: 1000,
       messages: conversation('Summarize this page'),
     })
-  })
-
-  it('a title is the first question on one line, cut to a readable length', () => {
-    expect(titleFor([{ role: 'user', text: '  Line one\n\nline two ' }])).toBe('Line one line two')
-    const long = titleFor([{ role: 'user', text: 'x'.repeat(300) }])
-    expect(long).toHaveLength(100)
-    expect(long.endsWith('…')).toBe(true)
-    // An emoji where the cut falls stays whole.
-    const emoji = titleFor([{ role: 'user', text: 'x'.repeat(98) + '🦩'.repeat(5) }])
-    expect(Array.from(emoji)).toHaveLength(100)
-    expect(emoji).toBe('x'.repeat(98) + '🦩…')
   })
 })

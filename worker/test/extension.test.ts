@@ -162,7 +162,7 @@ describe('extension agent against the worker', () => {
     ])
   })
 
-  it("reads only what it can from the worker's replies: anything else is an error, never a wrong value", async () => {
+  it("[@no-uc:contract] reads only what it can from the worker's replies: anything else is an error, never a wrong value", async () => {
     const routed = globalThis.fetch
     const answer = (status: number, body: unknown) => new Response(JSON.stringify(body), { status })
     try {
@@ -201,7 +201,7 @@ describe('extension agent against the worker', () => {
     }
   })
 
-  it('a panel left open across a model change looks the model up again', async () => {
+  it('[@no-uc:contract] a panel left open across a model change looks the model up again', async () => {
     const agent = makeAgent()
     expect((await ask(agent, 'first')).result).toEqual({ status: 'done' })
     env.MODEL = NEXT_MODEL
@@ -213,7 +213,7 @@ describe('extension agent against the worker', () => {
     expect(sentMessages(1).map((m) => m.content)).toEqual(['You are Notico.', 'first', '你好 来自 worker ', 'second'])
   })
 
-  it('a model change after a tool ran is reported, not retried', async () => {
+  it('[@no-uc:data] a model change after a tool ran is reported, not retried', async () => {
     const { tool, runs } = pageTool()
     const changing: ToolSpec = {
       ...tool,
@@ -234,13 +234,13 @@ describe('extension agent against the worker', () => {
     expect(ai.calls.at(-1)!.model).toBe(NEXT_MODEL)
   })
 
-  it('asks to sign in when there is no session', async () => {
+  it('[@no-uc:access] asks to sign in when there is no session', async () => {
     const { result } = await ask(makeAgent({ getToken: async () => null }), 'hi')
     expect(result).toEqual({ status: 'error', message: 'Please sign in first.' })
     expect(ai.calls).toHaveLength(0)
   })
 
-  it('shows the server reason for a rejected session', async () => {
+  it('[@no-uc:access] shows the server reason for a rejected session', async () => {
     const { result } = await ask(makeAgent({ getToken: async () => 'not-a-jwt' }), 'hi')
     expect(result).toEqual({ status: 'error', message: 'invalid or expired session' })
   })
@@ -303,7 +303,7 @@ describe('extension agent against the worker', () => {
     expect(ai.calls).toHaveLength(1)
   })
 
-  it('surfaces an error event in the stream', async () => {
+  it('[@no-uc:contract] surfaces an error event in the stream', async () => {
     ai.rawSse = `data: ${JSON.stringify({ error: { message: 'model overloaded' } })}\n\n`
     const { result } = await ask(makeAgent(), 'hi')
     expect(result).toMatchObject({ status: 'error', message: expect.stringContaining('model overloaded') })

@@ -232,7 +232,7 @@ describe('UC-NOTICO-NOTION-011 mention people', () => {
 })
 
 describe('mention details', () => {
-  it('asks Notion for no members when nothing is mentioned', async () => {
+  it('[@no-uc:notion-safety] asks Notion for no members when nothing is mentioned', async () => {
     const ws = workspace([block(1, 'text', [['Intro']])])
     const tab = open(ws)
     await read()
@@ -241,7 +241,7 @@ describe('mention details', () => {
     expect(endpoints(tab)).not.toContain('getVisibleUsers')
   })
 
-  it('lists no members for a letter or two, and at most ten in one refusal', async () => {
+  it('[@no-uc:privacy] lists no members for a letter or two, and at most ten in one refusal', async () => {
     const many: [string, string][] = Array.from({ length: 30 }, (_, n) => [person(100 + n), `Sam ${n}`])
     const ws = workspace([block(1, 'text', [['Intro']])], [...many, [KIM, 'Kim Lee']])
     open(ws)
@@ -257,7 +257,7 @@ describe('mention details', () => {
     expect(lines.find((l) => l.startsWith('@[Sam Kim]'))).toContain('mention fewer people at once')
   })
 
-  it('asks Notion for no members when the edit is refused anyway', async () => {
+  it('[@no-uc:notion-safety] asks Notion for no members when the edit is refused anyway', async () => {
     const ws = workspace([block(1, 'text', [['Intro']])])
     const tab = open(ws)
     await read()
@@ -266,7 +266,7 @@ describe('mention details', () => {
     expect(endpoints(tab)).not.toContain('getVisibleUsers')
   })
 
-  it('looks the members up once per question', async () => {
+  it('[@no-uc:notion-safety] looks the members up once per question', async () => {
     const ws = workspace([block(1, 'text', [['Intro']])])
     const tab = open(ws)
     await read()
@@ -283,7 +283,7 @@ describe('mention details', () => {
     expect(lookups()).toEqual(['getVisibleUsers', 'syncRecordValuesMain', 'getVisibleUsers', 'syncRecordValuesMain'])
   })
 
-  it('looks the members up again in the same question after a lookup failed', async () => {
+  it('[@no-uc:notion-safety] looks the members up again in the same question after a lookup failed', async () => {
     const ws = workspace([block(1, 'text', [['Intro']])])
     const tab = open(ws)
     await read()
@@ -295,7 +295,7 @@ describe('mention details', () => {
     expect((ws.content(PAGE).at(-1)!.properties as Rec).title).toEqual([['‣', [['u', KIM]]]])
   })
 
-  it('looks up only the people the user can see', async () => {
+  it('[@no-uc:privacy] looks up only the people the user can see', async () => {
     const ws = workspace([block(1, 'text', [['Intro']])])
     ws.visibleUsers = [ALEX, USER]
     open(ws)
@@ -305,7 +305,7 @@ describe('mention details', () => {
     )
   })
 
-  it('loads the names of many members in batches', async () => {
+  it('[@no-uc:notion-safety] loads the names of many members in batches', async () => {
     const many: [string, string][] = Array.from({ length: 150 }, (_, n) => [person(100 + n), `Member ${n}`])
     const ws = workspace([block(1, 'text', [['Intro']])], [...many, [KIM, 'Kim Lee']])
     const tab = open(ws)
@@ -320,7 +320,7 @@ describe('mention details', () => {
     expect((ws.content(PAGE).at(-1)!.properties as Rec).title).toEqual([['‣', [['u', KIM]]]])
   })
 
-  it('loads at most 500 people, and refuses mentions in a larger workspace', async () => {
+  it('[@no-uc:notion-safety] loads at most 500 people, and refuses mentions in a larger workspace', async () => {
     const people = (count: number): [string, string][] => [
       [KIM, 'Kim Lee'],
       ...Array.from({ length: count - 1 }, (_, n): [string, string] => [person(1000 + n), `Member ${n}`]),
@@ -353,7 +353,7 @@ describe('mention details', () => {
     expect(ws.transactions).toEqual([])
   })
 
-  it('stops the question, writing nothing, when Notion turns the member lookup away', async () => {
+  it('[@no-uc:notion-safety] stops the question, writing nothing, when Notion turns the member lookup away', async () => {
     const ws = workspace([block(1, 'text', [['Intro']])])
     const tab = open(ws)
     await read()
@@ -363,7 +363,7 @@ describe('mention details', () => {
     expect(ws.transactions).toEqual([])
   })
 
-  it('keeps an @ before a link, and a parenthesis after a mention, as they are', async () => {
+  it('[@no-uc:data] keeps an @ before a link, and a parenthesis after a mention, as they are', async () => {
     const ws = workspace([
       block(1, 'text', [['@'], ['docs', [['a', 'https://example.com']]]]),
       block(2, 'text', [['‣', [['u', KIM]]], ['(lead)']]),
@@ -380,7 +380,7 @@ describe('mention details', () => {
     expect((mention.properties as Rec).title).toEqual([['‣', [['u', KIM]]], ['(lead)']])
   })
 
-  it('reads back a name with brackets and marks in it as the same mention', async () => {
+  it('[@no-uc:data] reads back a name with brackets and marks in it as the same mention', async () => {
     const ws = workspace([block(1, 'text', [['‣', [['u', KIM]]]])], [[KIM, 'Ops [EU] *on call*']])
     open(ws)
     const shown = await read()
@@ -389,7 +389,7 @@ describe('mention details', () => {
     expect((ws.content(PAGE)[1].properties as Rec).title).toEqual([['‣', [['u', KIM]]]])
   })
 
-  it('reads a bold mention back with its marks', async () => {
+  it('[@no-uc:data] reads a bold mention back with its marks', async () => {
     const ws = workspace([block(1, 'text', [['‣', [['b'], ['u', KIM]]], [' and '], ['‣', [['s'], ['u', KIM]]]])])
     open(ws)
     const shown = await read()
@@ -402,7 +402,7 @@ describe('mention details', () => {
     ])
   })
 
-  it('keeps a backslash before a parenthesis that does not follow a mention', async () => {
+  it('[@no-uc:data] keeps a backslash before a parenthesis that does not follow a mention', async () => {
     const ws = workspace([block(1, 'text', [['Intro']])])
     open(ws)
     await read()
@@ -410,7 +410,7 @@ describe('mention details', () => {
     expect((ws.content(PAGE).at(-1)!.properties as Rec).title).toEqual([['Inline math \\(x\\)']])
   })
 
-  it('shows a mention in inline code as a mention, and says rewriting it drops the code', async () => {
+  it('[@no-uc:data] shows a mention in inline code as a mention, and says rewriting it drops the code', async () => {
     const ws = workspace([block(1, 'text', [['Call '], ['‣', [['u', KIM], ['c']]]])])
     open(ws)
     expect(await read()).toBe('Call @[Kim Lee] ^00000001')
@@ -420,7 +420,7 @@ describe('mention details', () => {
     expect(title(ws, id(1))).toEqual([['Call '], ['‣', [['u', KIM]]], [' now']])
   })
 
-  it('says when rewriting a block drops the link on a mention, which read_page does not show', async () => {
+  it('[@no-uc:data] says when rewriting a block drops the link on a mention, which read_page does not show', async () => {
     const ws = workspace([
       block(1, 'text', [
         ['Call '],
@@ -440,7 +440,7 @@ describe('mention details', () => {
     )
   })
 
-  it('shows a person whose name is unknown as plain @someone, which is not a mention', async () => {
+  it('[@no-uc:data] shows a person whose name is unknown as plain @someone, which is not a mention', async () => {
     const ws = workspace([block(1, 'text', [['Call '], ['‣', [['u', person(99)]]]])])
     open(ws)
     expect(await read()).toBe('Call @someone ^00000001')

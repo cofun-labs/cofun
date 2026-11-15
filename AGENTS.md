@@ -34,7 +34,7 @@ Cofun: Chrome extensions that each open an AI side panel next to one kind of pag
      it('[UC-NOTICO-CHAT-001-S01] signed-in user gets a streamed reply', async () => {
      ```
    - `pnpm check` fails when an `api-test` scenario marked ✅ has no test named with its ID, or when it can't read a scenario row, and only warns about the rest ([Coverage check](docs/bdd.md#coverage-check)). A scenario's ID may change; rename its tests with it. When a scenario is deleted, delete its tests or take the ID out of their names.
-   - Implementation details worth guarding (status codes, CORS, config errors, regressions) get standalone tests without a scenario ID.
+   - Implementation details worth guarding get standalone tests, named with `[@no-uc:<kind>]` for the harm they guard (`data`, `notion-safety`, `money`, `access`, `privacy`, or `contract`; see [What gets a test](docs/bdd.md#what-gets-a-test)). `pnpm check` fails on a test that names neither a scenario ID nor a kind.
 
    Gaps that slip past a PR are found by the `/bdd-audit` skill (`.agents/skills/bdd-audit/SKILL.md`, linked from `.claude/skills/` for Claude Code), run before a release or after a large feature ([Coverage audit](docs/bdd.md#coverage-audit)), not by per-PR bookkeeping.
 
@@ -119,7 +119,7 @@ Tools call Notion's internal API as the user's own account, so **stability comes
 
 ## Testing
 
-- **Write a test only when it earns its place.** More tests are not better: each one costs time to run, read, and change. A test guards a business rule, or an implementation detail whose breaking would hurt and would not be noticed otherwise. Don't test what a type, a lint rule, or another test already covers, and don't test a small tool that is run by hand and fails in plain sight.
+- **Write a test only when it earns its place.** More tests are not better: each one costs time to run, read, and change. [What gets a test](docs/bdd.md#what-gets-a-test) decides, together with what goes into a use case: a test of a scenario's rule, named with its ID, or a `[@no-uc:<kind>]` test whose break nothing else would catch and would do one of the harms listed there.
 - Backend tests are REST integration tests: they call the Hono app over HTTP and assert on status codes and JSON bodies.
 - **No mocking.** Do not use `vi.mock()` or spies. Replace external dependencies with fake objects that implement the same interface, and inject them through `env`:
   - `FakeAiBinding` (`worker/test/fakes.ts`) stands in for the Workers AI binding.

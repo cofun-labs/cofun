@@ -192,10 +192,48 @@ describe('checkUseCases', () => {
   it('warns when a test names an ID without its product, which counts for nothing', () => {
     const report = checkUseCases([useCase(['| UC-NOTICO-CHAT-001-S01 | P1 | ✅ | … |'])], [test('UC-PAGES-001-S01')])
     expect(report.errors).toEqual([
+      expect.stringContaining('worker/test/api.test.ts:1: a test that names no scenario ID'),
       'extensions/notico/use-cases/chat/UC-NOTICO-CHAT-001-ask.md:6: UC-NOTICO-CHAT-001-S01 is ✅ api-test, but no test names it',
     ])
     expect(report.warnings).toEqual([
       'worker/test/api.test.ts:1: names UC-PAGES-001-S01, which has no product in it and counts for nothing (IDs are like UC-NOTICO-CHAT-001-S01)',
+    ])
+  })
+
+  it('fails on a test that names neither a scenario ID nor a kind of harm, in any way a test is written, a loop included', () => {
+    const text = [
+      "it('[@no-uc:privacy] logs nothing', () => {})",
+      'it(',
+      "  '[@no-uc:money] a name the formatter moved to its own line',",
+      '  () => {},',
+      ')',
+      "it.each([1, 2])('[@no-uc:data] keeps %s', () => {})",
+      'it.each(CASES)(',
+      "  '[@no-uc:access] refuses $what',",
+      '  () => {},',
+      ')',
+      'it.each([',
+      '  [1],',
+      "])('[@no-uc:contract] reads %s', () => {})",
+      "it('has no tag', () => {})",
+      "it('[@no-uc:speed] guards a kind that is not one', () => {})",
+      "it.each([1])('has no tag either', () => {})",
+      "it.skip('is skipped, so it is not checked', () => {})",
+      "it.only('has no tag, though it runs alone', () => {})",
+      "it.skipIf(slow)('has no tag behind a condition', () => {})",
+      'for (const c of CASES) it(c.name, () => {})',
+      "it.concurrent('[@no-uc:privacy] runs with others', () => {})",
+    ].join('\n')
+    const report = checkUseCases([], [{ path: 'worker/test/api.test.ts', text }])
+    expect(report.errors).toEqual([
+      expect.stringMatching(
+        /^worker\/test\/api\.test\.ts:14: a test that names no scenario ID and no \[@no-uc:<kind>\]/,
+      ),
+      'worker/test/api.test.ts:15: [@no-uc:speed] is not a kind of harm; use one of data, notion-safety, money, access, privacy, contract',
+      expect.stringMatching(/^worker\/test\/api\.test\.ts:16: a test that names no scenario ID/),
+      expect.stringMatching(/^worker\/test\/api\.test\.ts:18: a test that names no scenario ID/),
+      expect.stringMatching(/^worker\/test\/api\.test\.ts:19: a test that names no scenario ID/),
+      expect.stringMatching(/^worker\/test\/api\.test\.ts:20: a test that names no scenario ID/),
     ])
   })
 

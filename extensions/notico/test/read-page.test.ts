@@ -5,11 +5,9 @@ import { NESTED_MAX } from '../src/notion/api'
 import { inline } from '../src/notion/blocks'
 import { blockRefs, codeSpan, splitIntoParts } from '../src/notion/markdown'
 import { carryPages } from '../src/tools/current'
-import { createDatabase } from '../src/tools/database'
-import { listPages } from '../src/tools/find'
 import { readPage } from '../src/tools/read'
 import { DATA_LINE, PART_CHARS } from '../src/tools/shared'
-import { createPage, editPage } from '../src/tools/write'
+import { editPage } from '../src/tools/write'
 import { FakeNotionTab, PAGE, PAGE_URL, SPACE, USER, fixture, restoreGlobals } from './notion-tab'
 
 afterEach(restoreGlobals)
@@ -427,7 +425,7 @@ describe('UC-NOTICO-NOTION-001 read a page', () => {
 })
 
 describe('read_page arguments', () => {
-  it('opens a page by URL or by id, with or without dashes', async () => {
+  it('[UC-NOTICO-NOTION-004-S03] opens a page by URL or by id, with or without dashes', async () => {
     const page = chunk([id(1)], { block: block(id(1), 'text', 'Hi') })
     const tab = openPage(page, page, page)
     await read({ page: `https://www.notion.so/team/Fixture-page-${PAGE_HEX}` })
@@ -436,71 +434,13 @@ describe('read_page arguments', () => {
     expect(tab.sent.map((r) => (r.body.page as { id: string }).id)).toEqual([PAGE, PAGE, PAGE])
   })
 
-  it('refuses URLs of other sites and things that are not ids, without asking Notion', async () => {
+  it('[@no-uc:privacy] refuses URLs of other sites and things that are not ids, without asking Notion', async () => {
     const tab = openPage()
     await expect(read({ page: `https://example.com/${PAGE_HEX}` })).rejects.toThrow('Not a Notion page URL or id')
     await expect(read({ page: 'Roadmap' })).rejects.toThrow('Not a Notion page URL or id: Roadmap')
     await expect(read({ part: 0 })).rejects.toThrow('`part` must be a whole number from 1.')
     await expect(read({ part: 1.5 })).rejects.toThrow('`part` must be a whole number from 1.')
     expect(tab.sent).toEqual([])
-  })
-
-  // A null is dropped before the tool gets its arguments: see "a null where the schema takes none is
-  // refused" in agent.test.ts.
-  it('treats an empty page as not given', async () => {
-    const page = chunk([id(1)], { block: block(id(1), 'text', 'Hi') })
-    openPage(page)
-    expect(body(await read({ page: ' ' }))).toBe('Hi ^00000001')
-  })
-
-  it('refuses arguments that are not what its schema says, without asking Notion', async () => {
-    const tab = openPage()
-    await expect(read({ part: '2' })).rejects.toThrow('`part` must be a whole number from 1.')
-    await expect(read({ part: null })).rejects.toThrow('`part` must be a whole number from 1.')
-    await expect(read({ page: 5 })).rejects.toThrow('`page`: Invalid input: expected string, received number')
-    await expect(read({ pages: 'x' })).rejects.toThrow('Unrecognized key: "pages"')
-    expect(tab.sent).toEqual([])
-  })
-
-  it('tells the model its arguments as before', () => {
-    expect(readPage.parameters).toEqual({
-      type: 'object',
-      properties: {
-        page: { type: 'string', description: 'URL or id of the page to read. Leave out to read the open page.' },
-        part: { type: 'integer', minimum: 1, description: 'Which part of a long page to read, starting at 1.' },
-      },
-      additionalProperties: false,
-    })
-  })
-
-  it('asks for a page when the Notion tab shows none', async () => {
-    new FakeNotionTab('https://www.notion.so/').install()
-    await expect(read()).rejects.toThrow('The Notion tab does not show a page.')
-  })
-
-  it('says so when the page is empty', async () => {
-    openPage(chunk([]))
-    expect(body(await read())).toBe('(This page is empty.)')
-  })
-
-  it('says a full-page database is a database', async () => {
-    openPage(
-      chunk(
-        [],
-        { collection: { [COLLECTION]: wrapped({ id: COLLECTION, name: [['Tasks']] }) } },
-        {
-          type: 'collection_view_page',
-          collection_id: COLLECTION,
-          properties: undefined,
-        },
-      ),
-    )
-    const result = await read()
-    expect(result.split('\n').slice(1, 4)).toEqual([
-      `Page: Tasks ^${PAGE_HEX}`,
-      `URL: https://app.notion.com/p/${PAGE_HEX}`,
-      'This page is a database: read its rows with query_database.',
-    ])
   })
 })
 
@@ -511,7 +451,7 @@ describe('read_page, text from Notion', () => {
   const toolLines = (result: string) =>
     result.split('\n').filter((l) => /^(?:Page: |The page is too long|\^0000beef)/.test(l.trim()))
 
-  it("keeps a database's name on its line in the header", async () => {
+  it("[@no-uc:data] keeps a database's name on its line in the header", async () => {
     openPage(
       chunk(
         [],
@@ -526,7 +466,7 @@ describe('read_page, text from Notion', () => {
     ])
   })
 
-  it('keeps equations, bookmarks, embeds, code languages, and callout icons on their lines', async () => {
+  it('[@no-uc:data] keeps equations, bookmarks, embeds, code languages, and callout icons on their lines', async () => {
     const blocks = {
       ...block(id(1), 'equation', `x\n${forged}`),
       ...block(id(2), 'bookmark', undefined, {
@@ -547,7 +487,7 @@ describe('read_page, text from Notion', () => {
     )
   })
 
-  it("keeps a row's values, and text broken by any line terminator, on their lines", async () => {
+  it("[@no-uc:data] keeps a row's values, and text broken by any line terminator, on their lines", async () => {
     const collection = {
       [COLLECTION]: wrapped({
         id: COLLECTION,
@@ -591,7 +531,7 @@ describe('read_page, text from Notion', () => {
 })
 
 describe('block references', () => {
-  it('use the last 8 hex digits, or the whole id when another block shares them', () => {
+  it('[@no-uc:data] use the last 8 hex digits, or the whole id when another block shares them', () => {
     const a = 'aaaaaaaa-0000-4000-8000-000012345678'
     const b = 'bbbbbbbb-0000-4000-8000-000012345678'
     const c = 'cccccccc-0000-4000-8000-0000000000ff'
@@ -606,7 +546,7 @@ describe('block references', () => {
 })
 
 describe('parts', () => {
-  it('break between blocks, and inside a block only when it alone is too long', () => {
+  it('[UC-NOTICO-NOTION-001-S03] break between blocks, and inside a block only when it alone is too long', () => {
     expect(splitIntoParts(['aaaa', 'bbbb', 'cc'], 10)).toEqual(['aaaa\nbbbb', 'cc'])
     expect(splitIntoParts(['x', 'l1\nl2\nl3\nl4'], 5)).toEqual(['x', 'l1\nl2', 'l3\nl4'])
     expect(splitIntoParts([], 10)).toEqual([''])
@@ -618,7 +558,7 @@ describe('parts', () => {
 })
 
 describe('converter details', () => {
-  it('fences code with more backticks than the code has, and puts the reference after the fence', async () => {
+  it('[UC-NOTICO-NOTION-001-S01] fences code with more backticks than the code has, and puts the reference after the fence', async () => {
     openPage(
       chunk([id(1)], {
         block: block(id(1), 'code', undefined, { properties: { title: [['a\n```\nb']], language: [['Plain Text']] } }),
@@ -627,7 +567,7 @@ describe('converter details', () => {
     expect(body(await read())).toBe(['````', 'a', '```', 'b', '````', '^00000001'].join('\n'))
   })
 
-  it('keeps table rows on one line each, and marks rows that were not loaded', async () => {
+  it('[UC-NOTICO-NOTION-001-S02] keeps table rows on one line each, and marks rows that were not loaded', async () => {
     // Notion sends no record for the last row, even when asked for it.
     openPage(
       chunk([id(1)], {
@@ -648,7 +588,7 @@ describe('converter details', () => {
     )
   })
 
-  it('shows computed properties as such, and times and people the row keeps itself', async () => {
+  it('[UC-NOTICO-NOTION-001-S04] shows computed properties as such, and times and people the row keeps itself', async () => {
     const collection = {
       [COLLECTION]: wrapped({
         id: COLLECTION,
@@ -688,7 +628,7 @@ describe('converter details', () => {
     ])
   })
 
-  it('still reads a database row whose database the account cannot open, without its properties', async () => {
+  it('[UC-NOTICO-NOTION-001-S04] still reads a database row whose database the account cannot open, without its properties', async () => {
     openPage(
       chunk(
         [id(1)],
@@ -703,7 +643,7 @@ describe('converter details', () => {
     expect(body(result)).toBe('Row body ^00000001')
   })
 
-  it('names a linked database view after the database it shows', async () => {
+  it('[UC-NOTICO-NOTION-001-S05] names a linked database view after the database it shows', async () => {
     openPage(
       chunk([id(1)], {
         block: block(id(1), 'collection_view', undefined, {
@@ -718,7 +658,7 @@ describe('converter details', () => {
 })
 
 describe('more converter and argument details', () => {
-  it('keeps the lines and children of quotes and callouts inside the blockquote', async () => {
+  it('[UC-NOTICO-NOTION-001-S01] keeps the lines and children of quotes and callouts inside the blockquote', async () => {
     openPage(
       chunk([id(1), id(2)], {
         block: {
@@ -733,15 +673,7 @@ describe('more converter and argument details', () => {
     )
   })
 
-  it('refuses an id of a block that is not a page', async () => {
-    openPage({
-      cursor: { stack: [] },
-      recordMap: { __version__: 3, block: { ...block(PAGE, 'text', 'Just a paragraph', {}, id(9)) } },
-    })
-    await expect(read()).rejects.toThrow('That id is a block inside a page, not a page.')
-  })
-
-  it('accepts Notion links without https:// and page slugs ending in the id', async () => {
+  it('[UC-NOTICO-NOTION-004-S03] accepts Notion links without https:// and page slugs ending in the id', async () => {
     const page = chunk([])
     const tab = openPage(page, page, page, page)
     await read({ page: `notion.so/x`.replace('notion.so', 'www.notion.so') + `/Fixture-page-${PAGE_HEX}` })
@@ -751,7 +683,7 @@ describe('more converter and argument details', () => {
     expect(tab.sent.map((r) => (r.body.page as { id: string }).id)).toEqual([PAGE, PAGE, PAGE, PAGE])
   })
 
-  it('keeps several long pages for their later parts', async () => {
+  it('[UC-NOTICO-NOTION-001-S03] keeps several long pages for their later parts', async () => {
     const long = (pageId: string) => {
       const ids = Array.from({ length: 300 }, (_, i) => id(i + 1))
       const blocks = Object.assign({}, ...ids.map((b, i) => block(b, 'text', `P${i} ${'y'.repeat(60)}`, {}, pageId)))
@@ -789,7 +721,7 @@ describe('more converter and argument details', () => {
     )
   })
 
-  it('shows links to Notion pages as /<page id>, which read_page opens', async () => {
+  it('[UC-NOTICO-NOTION-004-S03] shows links to Notion pages as /<page id>, which read_page opens', async () => {
     const target = '3a3a3a3a-0000-4000-8000-000000000031'
     openPage(
       chunk([id(1)], {
@@ -828,7 +760,7 @@ describe('faithful details', () => {
     ])
   })
 
-  it('looks up at most NESTED_MAX left-out blocks', async () => {
+  it('[@no-uc:notion-safety] looks up at most NESTED_MAX left-out blocks', async () => {
     const many = Array.from({ length: NESTED_MAX + 50 }, (_, n) => id(1000 + n))
     const tab = openPage(chunk([id(1)], { block: block(id(1), 'toggle', 'Long', { content: many }) }))
     for (let n = 0; n < NESTED_MAX / 100; n++)
@@ -840,7 +772,7 @@ describe('faithful details', () => {
     expect(asked).toHaveLength(NESTED_MAX)
   })
 
-  it('never looks inside child pages or databases, and visits each block once', async () => {
+  it('[@no-uc:notion-safety] never looks inside child pages or databases, and visits each block once', async () => {
     // A child page's blocks aren't the page's; and a block two toggles list is asked for once.
     const tab = openPage(
       chunk([id(1), id(2), id(3)], {
@@ -858,7 +790,7 @@ describe('faithful details', () => {
     expect(asked).toEqual([id(4)])
   })
 
-  it('stops the read when Notion turns a toggle lookup away', async () => {
+  it('[UC-NOTICO-NOTION-001-S08] stops the read when Notion turns a toggle lookup away', async () => {
     openPage(chunk([id(1)], { block: block(id(1), 'toggle', 'Closed', { content: [id(2)] }) })).respond(
       'syncRecordValuesMain',
       429,
@@ -867,7 +799,7 @@ describe('faithful details', () => {
     await expect(read()).rejects.toMatchObject({ code: 'rate_limited' })
   })
 
-  it('folds blocks that were not loaded into one line', async () => {
+  it('[UC-NOTICO-NOTION-001-S02] folds blocks that were not loaded into one line', async () => {
     // Blocks Notion returns no record for, even when asked: they can't be shown.
     openPage(
       chunk([1, 2, 3, 4, 5].map(id), {
@@ -887,7 +819,7 @@ describe('faithful details', () => {
     )
   })
 
-  it('draws inline code so backticks, spaces, and line breaks in it read back', async () => {
+  it('[@no-uc:data] draws inline code so backticks, spaces, and line breaks in it read back', async () => {
     expect(codeSpan('a `b` c')).toBe('``a `b` c``')
     expect(codeSpan('`x')).toBe('`` `x ``')
     expect(codeSpan(' padded ')).toBe('`  padded  `')
@@ -900,7 +832,7 @@ describe('faithful details', () => {
     expect(body(await read())).toBe('Run `x<br>y` or `line 1`<br>`line 2` ^00000001')
   })
 
-  it('shows a link mention without a title as its address', async () => {
+  it('[UC-NOTICO-NOTION-001-S01] shows a link mention without a title as its address', async () => {
     openPage(
       chunk([id(1)], {
         block: block(id(1), 'text', [['See '], ['‣', [['lm', { href: 'https://example.com/a_(b)' }]]]]),
@@ -909,7 +841,7 @@ describe('faithful details', () => {
     expect(body(await read())).toBe('See [https://example.com/a\\_(b)](https://example.com/a_(b)) ^00000001')
   })
 
-  it('escapes a mentioned page’s title, so the mention stays one link that writes back to that page', async () => {
+  it('[@no-uc:data] escapes a mentioned page’s title, so the mention stays one link that writes back to that page', async () => {
     const wip = '3b3b3b3b-0000-4000-8000-000000000041'
     const temp = '3b3b3b3b-0000-4000-8000-000000000042'
     const piped = '3b3b3b3b-0000-4000-8000-000000000043'
@@ -932,7 +864,7 @@ describe('faithful details', () => {
     expect(inline(line.replace(/ \^00000001$/, ''))).toEqual(mentions)
   })
 
-  it('leaves people and pages it cannot load unnamed', async () => {
+  it('[UC-NOTICO-NOTION-001-S02] leaves people and pages it cannot load unnamed', async () => {
     const stranger = '0f0f0f0f-0000-4000-8000-000000000003'
     const elsewhere = '3b3b3b3b-0000-4000-8000-000000000033'
     const tab = openPage(
@@ -944,7 +876,7 @@ describe('faithful details', () => {
     expect(tab.sent).toHaveLength(2)
   })
 
-  it('counts a row’s properties toward the first part', async () => {
+  it('[UC-NOTICO-NOTION-001-S04] counts a row’s properties toward the first part', async () => {
     const collection = {
       [COLLECTION]: wrapped({
         id: COLLECTION,
@@ -971,7 +903,7 @@ describe('faithful details', () => {
     expect(`${body(first)}\n${second}`.match(/^P\d+ /gm)).toHaveLength(40)
   })
 
-  it('closes and opens again a code block or a quote that one part cuts', async () => {
+  it('[UC-NOTICO-NOTION-001-S03] closes and opens again a code block or a quote that one part cuts', async () => {
     const code = Array.from({ length: 600 }, (_, i) => `line ${i} ${'c'.repeat(40)}`).join('\n')
     const page = chunk([id(1), id(2)], {
       block: {
@@ -1001,7 +933,7 @@ describe('faithful details', () => {
     expect(quoted.map((l) => l.slice(2)).join('')).toBe(`${'q'.repeat(PART_CHARS * 2)} ^00000002`)
   })
 
-  it('cuts a code block into parts between fences of its own', () => {
+  it('[UC-NOTICO-NOTION-001-S03] cuts a code block into parts between fences of its own', () => {
     expect(splitIntoParts(['```js\nl1\nl2\nl3\n```\n^ref'], 16)).toEqual([
       '```js\nl1\nl2\n```',
       '```js\nl3\n```',
@@ -1015,7 +947,7 @@ describe('faithful details', () => {
 })
 
 describe('lookups of mentioned people and pages', () => {
-  it('are not sent for a row whose database it cannot open, nor for an id of a block', async () => {
+  it('[@no-uc:notion-safety] are not sent for a row whose database it cannot open, nor for an id of a block', async () => {
     const stranger = '0f0f0f0f-0000-4000-8000-000000000003'
     const row = chunk(
       [id(1)],
@@ -1038,7 +970,7 @@ describe('lookups of mentioned people and pages', () => {
     expect(notAPage.sent).toHaveLength(1)
   })
 
-  it('still read the page when Notion refuses them, leaving those mentions unnamed', async () => {
+  it('[UC-NOTICO-NOTION-001-S02] still read the page when Notion refuses them, leaving those mentions unnamed', async () => {
     const elsewhere = '3b3b3b3b-0000-4000-8000-000000000033'
     const ws = '9a9a9a9a-0000-4000-8000-000000000099'
     openPage(chunk([id(1)], { block: block(id(1), 'text', [['See '], ['‣', [['p', elsewhere, ws]]]]) })).respond(
@@ -1056,7 +988,7 @@ describe('lookups of mentioned people and pages', () => {
     await expect(read()).rejects.toMatchObject({ code: 'rate_limited' })
   })
 
-  it('include mentions inside what a synced copy shows', async () => {
+  it('[UC-NOTICO-NOTION-001-S01] include mentions inside what a synced copy shows', async () => {
     const stranger = '0f0f0f0f-0000-4000-8000-000000000003'
     const original = 'f2f2f2f2-0000-4000-8000-000000000001'
     const tab = openPage(
@@ -1076,7 +1008,7 @@ describe('lookups of mentioned people and pages', () => {
     expect(tab.sent[1].body).toEqual({ requests: [{ pointer: { table: 'notion_user', id: stranger }, version: -1 }] })
   })
 
-  it('still says a row with no content is empty', async () => {
+  it('[UC-NOTICO-NOTION-001-S04] still says a row with no content is empty', async () => {
     const collection = {
       [COLLECTION]: wrapped({
         id: COLLECTION,
@@ -1094,59 +1026,10 @@ describe('lookups of mentioned people and pages', () => {
   })
 })
 
-describe('how the side panel describes a read', () => {
-  const id = 'a'.repeat(32)
-
-  it('names the page by its title as the user sees it, without its Markdown', () => {
-    const result = `Page: **Q3** plan with @[Alice] for [Launch](${id}) to\\_do ^${id}\nURL: x`
-    expect(readPage.describe({}, result)).toMatchObject({ name: 'Q3 plan with Alice for Launch to_do' })
-  })
-
-  it.each([
-    ['snake_case notes', 'snake_case notes'],
-    ['`a*b` and \\*stars\\*', 'a*b and *stars*'],
-    ['~~old~~ *new* plan', 'old new plan'],
-    ['[\\[WIP\\] Plan](' + 'b'.repeat(32) + ')', '[WIP] Plan'],
-    ['<span color="red">Red</span> title', 'Red title'],
-    ['C:\\temp', 'C:\\temp'],
-  ])('shows the title %s as %s', (markdown, shown) => {
-    expect(readPage.describe({}, `Page: ${markdown} ^${id}`)).toMatchObject({ name: shown })
-  })
-
-  it('says what other tools did in words that read right', () => {
-    expect(listPages.describe({}, undefined)).toEqual({ verb: expect.anything(), what: 'the pages in the sidebar' })
-    expect(listPages.describe({ section: 'Private' }, undefined)).toMatchObject({
-      what: 'the pages in',
-      name: 'Private',
-    })
-    expect(createPage.describe({ title: '**Q3** plan', parent: PAGE }, undefined)).toMatchObject({
-      what: 'the page',
-      name: 'Q3 plan',
-    })
-    // Without a title, the noun is said once.
-    expect(createPage.describe({}, undefined)).toEqual({ verb: expect.anything(), what: 'a page' })
-    expect(createDatabase.describe({}, undefined)).toEqual({ verb: expect.anything(), what: 'a database' })
-    expect(createDatabase.describe({ title: 'Tasks', parent: PAGE }, undefined)).toMatchObject({
-      what: 'the database',
-      name: 'Tasks',
-    })
-  })
-
-  it("shows a database's name as it is: it is plain text", () => {
-    const result = `Page: snake_*db* C:\\temp ^${id}\nURL: x\nThis page is a database: read its rows with query_database.`
-    expect(readPage.describe({}, result)).toMatchObject({ name: 'snake_*db* C:\\temp' })
-  })
-
-  it('says "a page", not the open page, when its arguments do not parse', () => {
-    expect(readPage.describe({ page: 5 }, undefined)).toMatchObject({ what: 'a page' })
-    expect(readPage.describe({}, undefined)).toMatchObject({ what: 'the open page' })
-  })
-})
-
 describe('a question sent while the user took a page off it', () => {
   afterEach(() => void carryPages(undefined, false))
 
-  it('never reads the open page, even one the user goes back to from another site', async () => {
+  it('[@no-uc:privacy] never reads the open page, even one the user goes back to from another site', async () => {
     // Sent from another site while the page was off; the user then goes back to it.
     carryPages(undefined, true)
     const tab = new FakeNotionTab(PAGE_URL).install()

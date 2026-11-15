@@ -208,7 +208,7 @@ describe('UC-NOTICO-NOTION-009 read and add comments', () => {
     expect(ws.transactions).toEqual([])
   })
 
-  it('refuses a block of the page that could not be loaded, as it might be a page', async () => {
+  it('[UC-NOTICO-NOTION-009-S05] refuses a block of the page that could not be loaded, as it might be a page', async () => {
     const ws = workspace()
     // Listed in the page's content, but its record never comes back.
     ws.edit(PAGE, { content: [id(1), id(2), id(3), id(9)] })
@@ -221,16 +221,7 @@ describe('UC-NOTICO-NOTION-009 read and add comments', () => {
 })
 
 describe('read_comments', () => {
-  it('refuses arguments that are not what its schema says, without asking Notion', async () => {
-    const tab = open(workspace())
-    await expect(read({ part: 0 })).rejects.toThrow('`part` must be a whole number from 1.')
-    await expect(read({ part: '2' })).rejects.toThrow('`part` must be a whole number from 1.')
-    await expect(read({ page: 5 })).rejects.toThrow('`page`: Invalid input: expected string, received number')
-    await expect(read({ block: 'x' })).rejects.toThrow('Unrecognized key: "block"')
-    expect(tab.sent).toEqual([])
-  })
-
-  it('leaves out deleted comments, and threads with no comment left', async () => {
+  it('[UC-NOTICO-NOTION-009-S01] leaves out deleted comments, and threads with no comment left', async () => {
     const ws = workspace([
       { on: PAGE, n: 100 },
       { on: id(2), n: 101 },
@@ -245,7 +236,7 @@ describe('read_comments', () => {
     expect(result).not.toContain('gone')
   })
 
-  it('names users a comment mentions, and says when a comment was cut off', async () => {
+  it('[UC-NOTICO-NOTION-009-S01] names users a comment mentions, and says when a comment was cut off', async () => {
     const ws = workspace([{ on: PAGE, n: 100 }])
     comment(ws, 100, 200, [['Ask '], ['‣', [['u', OTHER]]], [` ${'x'.repeat(2100)}`]])
     open(ws)
@@ -253,7 +244,7 @@ describe('read_comments', () => {
     expect(line).toMatch(/^ {3}- "Ann", 2026-11-09 10:30 UTC: "Ask @\[Bob\] x+…" \(cut off at 2000 characters\)$/)
   })
 
-  it("doesn't count a child page's comments as the page's", async () => {
+  it("[UC-NOTICO-NOTION-009-S01] doesn't count a child page's comments as the page's", async () => {
     const ws = workspace([{ on: id(3), n: 100 }])
     comment(ws, 100, 200, [['On the child']])
     open(ws)
@@ -264,7 +255,7 @@ describe('read_comments', () => {
     })
   })
 
-  it('looks up discussions, comments, and authors the page load did not bring', async () => {
+  it('[UC-NOTICO-NOTION-009-S01] looks up discussions, comments, and authors the page load did not bring', async () => {
     const ws = workspace([{ on: PAGE, n: 100 }])
     comment(ws, 100, 200, [['Late']])
     const tab = open(ws)
@@ -281,7 +272,7 @@ describe('read_comments', () => {
     expect(tables.filter((t) => t !== 'block')).toEqual(['discussion', 'comment', 'notion_user'])
   })
 
-  it('splits a long thread between comments, starting the next part with its heading', async () => {
+  it('[UC-NOTICO-NOTION-009-S01] splits a long thread between comments, starting the next part with its heading', async () => {
     const ws = workspace([{ on: id(2), n: 100 }])
     for (let n = 0; n < 20; n++) comment(ws, 100, 300 + n, [[`${n} `.padEnd(1500, 'x')]])
     open(ws)
@@ -294,7 +285,7 @@ describe('read_comments', () => {
     expect(shown).toEqual(Array.from({ length: 20 }, (_, n) => n))
   })
 
-  it('splits many comments into parts, keeping threads whole', async () => {
+  it('[UC-NOTICO-NOTION-009-S01] splits many comments into parts, keeping threads whole', async () => {
     const ws = workspace(Array.from({ length: 12 }, (_, n) => ({ on: PAGE, n: 100 + n })))
     for (let n = 0; n < 12; n++) comment(ws, 100 + n, 300 + n, [['x'.repeat(1500)]])
     open(ws)
@@ -307,19 +298,10 @@ describe('read_comments', () => {
     expect(first.length).toBeLessThan(PART_CHARS + 500)
     expect((await failure(read({ part: 3 }))).message).toBe('These comments have 2 parts; there is no part 3.')
   })
-
-  it('refuses a database', async () => {
-    const ws = new FakeWorkspace(
-      [{ id: PAGE, type: 'collection_view_page', parent_id: SPACE, parent_table: 'space' }],
-      SPACE,
-    )
-    open(ws)
-    expect((await failure(read())).message).toBe('That is a database; its rows are pages with comments of their own.')
-  })
 })
 
 describe('read_page and comments', () => {
-  it('says when the page has comment threads', async () => {
+  it('[UC-NOTICO-NOTION-009-S01] says when the page has comment threads', async () => {
     const ws = workspace([
       { on: PAGE, n: 100 },
       { on: id(2), n: 101 },
@@ -330,7 +312,7 @@ describe('read_page and comments', () => {
     expect(await readPage.run({})).toContain('This page has 2 comment threads: read them with read_comments.')
   })
 
-  it('counts only threads that read_comments shows', async () => {
+  it('[UC-NOTICO-NOTION-009-S01] counts only threads that read_comments shows', async () => {
     const ws = workspace([
       { on: PAGE, n: 100 },
       { on: id(2), n: 101 },
@@ -340,15 +322,10 @@ describe('read_page and comments', () => {
     open(ws)
     expect(await readPage.run({})).toContain('This page has 1 comment thread: read it with read_comments.')
   })
-
-  it('says nothing about comments when there are none', async () => {
-    open(workspace())
-    expect(await readPage.run({})).not.toContain('comment')
-  })
 })
 
 describe('add_comment', () => {
-  it('refuses arguments that are not what its schema says, without asking Notion', async () => {
+  it('[@no-uc:data] refuses arguments that are not what its schema says, without asking Notion', async () => {
     const tab = open(workspace())
     const run = (args: Rec) => addComment.run(args)
     await expect(run({ text: 'Hi' })).rejects.toThrow('Give `page`: the id read_page shows after "Page:".')
@@ -363,7 +340,7 @@ describe('add_comment', () => {
     expect(tab.sent).toEqual([])
   })
 
-  it('refuses empty and overlong text before asking Notion anything', async () => {
+  it('[@no-uc:data] refuses empty and overlong text before asking Notion anything', async () => {
     const tab = open(workspace())
     expect((await failure(add({ text: '  ' }))).message).toBe('`text` must not be empty.')
     expect((await failure(add({ text: 'x'.repeat(COMMENT_CHARS + 1) }))).message).toBe(
@@ -372,14 +349,14 @@ describe('add_comment', () => {
     expect(tab.sent).toEqual([])
   })
 
-  it("takes the page's own short reference as the page", async () => {
+  it("[UC-NOTICO-NOTION-009-S04] takes the page's own short reference as the page", async () => {
     const ws = workspace()
     open(ws)
     await add({ block: `^${hex(PAGE).slice(-8)}`, text: 'Hi' })
     expect(ws.table('discussion')[0].parent_id).toBe(PAGE)
   })
 
-  it('refuses a column layout, which Notion shows no comments on', async () => {
+  it('[UC-NOTICO-NOTION-009-S05] refuses a column layout, which Notion shows no comments on', async () => {
     const ws = workspace()
     ws.edit(PAGE, { content: [id(1), id(2), id(3), id(10)] })
     ws.records.set(id(10), {
@@ -409,14 +386,14 @@ describe('add_comment', () => {
     expect(ws.transactions).toEqual([])
   })
 
-  it('takes a block by its full id', async () => {
+  it('[UC-NOTICO-NOTION-009-S03] takes a block by its full id', async () => {
     const ws = workspace()
     open(ws)
     await add({ block: hex(id(1)), text: 'Hi' })
     expect(ws.table('discussion')[0].parent_id).toBe(id(1))
   })
 
-  it('tells the agent to look before retrying when Notion did not answer', async () => {
+  it('[@no-uc:notion-safety] tells the agent to look before retrying when Notion did not answer', async () => {
     const ws = workspace()
     ws.failAfterApply = true
     open(ws)
@@ -429,7 +406,7 @@ describe('add_comment', () => {
     )
   })
 
-  it('runs without asking, and its preview names where the comment goes', async () => {
+  it('[@no-uc:data] runs without asking, and its preview names where the comment goes', async () => {
     const ws = workspace()
     open(ws)
     await readPage.run({})

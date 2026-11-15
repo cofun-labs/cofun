@@ -133,7 +133,7 @@ describe('UC-NOTICO-NOTION-008 change properties and rows', () => {
     expect(props(ws, 1)).toEqual(rowRecord(1, 'Write docs', 'Done').properties)
   })
 
-  it('names the signed-in user as the last editor of the pages it changes', async () => {
+  it('[@no-uc:data] names the signed-in user as the last editor of the pages it changes', async () => {
     const ws = workspace()
     open(ws)
     await update([{ page: hex(row(2)), properties: { Status: 'done' } }])
@@ -342,7 +342,7 @@ describe('update_pages details', () => {
     expect(tab.sent.map((r) => r.url.split('/api/v3/')[1])).not.toContain('saveTransactionsFanout')
   })
 
-  it('keeps the person a text value already mentions when two members share the name, and what its dates stored', async () => {
+  it('[@no-uc:data] keeps the person a text value already mentions when two members share the name, and what its dates stored', async () => {
     const ws = mentionable()
     ws.put('notion_user', { id: ANN2, name: 'Ann' })
     const tab = open(ws)
@@ -367,7 +367,7 @@ describe('update_pages details', () => {
     expect(tab.sent.filter((r) => r.url.endsWith('/getVisibleUsers'))).toHaveLength(1)
   })
 
-  it('refuses to write @someone over a person whose name it could not read', async () => {
+  it('[@no-uc:data] refuses to write @someone over a person whose name it could not read', async () => {
     const ws = mentionable()
     const tab = open(ws, `https://app.notion.com/${hex(DB)}`)
     const gone = 'f0f0f0f0-0000-4000-8000-00000000dead'
@@ -484,7 +484,7 @@ describe('update_pages details', () => {
     ])
   })
 
-  it('stores two link previews of one page side by side as they were', async () => {
+  it('[@no-uc:data] stores two link previews of one page side by side as they were', async () => {
     const ws = mentionable()
     open(ws)
     const notes = [UNSHOWN.preview, UNSHOWN.preview]
@@ -513,7 +513,7 @@ describe('update_pages details', () => {
     expect(props(ws, 1)).toEqual(stored)
   })
 
-  it('stores a literal <br> in a text value as text, and one in inline code, apart from its line breaks', async () => {
+  it('[@no-uc:data] stores a literal <br> in a text value as text, and one in inline code, apart from its line breaks', async () => {
     const ws = mentionable()
     const tab = open(ws, `https://app.notion.com/${hex(DB)}`)
     const notes = [['Use <br> for\nbreaks, '], ['a<br>b', [['c']]], [' and a\\\nend']]
@@ -529,7 +529,7 @@ describe('update_pages details', () => {
     expect(props(ws, 1)).toEqual(stored)
   })
 
-  it('keeps an inline equation in a text value an equation: its line break shows as a space', async () => {
+  it('[@no-uc:data] keeps an inline equation in a text value an equation: its line break shows as a space', async () => {
     const ws = mentionable()
     const tab = open(ws, `https://app.notion.com/${hex(DB)}`)
     const notes = [['x '], ['⁍', [['e', 'a\nb']]], ['\nend\n']]
@@ -547,7 +547,7 @@ describe('update_pages details', () => {
     expect((await updatePages.preview!({ pages }))?.split('\n')[2]).toBe('    Notes: x a b end (unchanged)')
   })
 
-  it('keeps a <br> in an equation’s LaTeX, and a backtick in it before inline code, as they are', async () => {
+  it('[@no-uc:data] keeps a <br> in an equation’s LaTeX, and a backtick in it before inline code, as they are', async () => {
     const ws = mentionable()
     const tab = open(ws, `https://app.notion.com/${hex(DB)}`)
     const notes = [['⁍', [['e', 'c<br>d']]], [' '], ['⁍', [['e', 'x`y']]], [' '], ['p<br>q', [['c']]], ['\nend']]
@@ -565,7 +565,7 @@ describe('update_pages details', () => {
     [[['Cost 5$\nTax 1$\nTotal 6$']], 'Cost 5$<br>Tax 1$<br>Total 6\\$'],
     [[['Paid in US$\nor CA$ only']], 'Paid in US$<br>or CA$ only'],
     [[['x$\n'], ['code$', [['c']]], [' y']], 'x$<br>`code$` y'],
-  ])('stores dollar signs at the ends of a text value’s lines as text: %j', async (notes, cell) => {
+  ])('[@no-uc:data] stores dollar signs at the ends of a text value’s lines as text: %j', async (notes, cell) => {
     const ws = mentionable()
     const tab = open(ws, `https://app.notion.com/${hex(DB)}`)
     ws.edit(row(1), { properties: { title: [['Write docs']], 'a:a': [['Done']], 'g:g': notes } })
@@ -581,7 +581,7 @@ describe('update_pages details', () => {
     expect(prop(ws, 1, 'g:g')).toEqual([['Cost: 5$\nTax: 1$']])
   })
 
-  it('reads <br> as a line break in a text value the model writes, in a new row too, and shows it as a space', async () => {
+  it('[@no-uc:data] reads <br> as a line break in a text value the model writes, in a new row too, and shows it as a space', async () => {
     const ws = mentionable()
     const tab = open(ws, `https://app.notion.com/${hex(DB)}`)
     await query(tab, [ws.records.get(row(1)) as never])
@@ -597,7 +597,7 @@ describe('update_pages details', () => {
     })
   })
 
-  it('keeps a title on one line: its line break shows as a space, and a <br> written in one is text', async () => {
+  it('[@no-uc:data] keeps a title on one line: its line break shows as a space, and a <br> written in one is text', async () => {
     const ws = mentionable()
     const tab = open(ws, `https://app.notion.com/${hex(DB)}`)
     ws.edit(row(1), {
@@ -612,7 +612,7 @@ describe('update_pages details', () => {
     expect(prop(ws, 2, 'title')).toEqual([['Fix<br>login']])
   })
 
-  it('stores a text value of several lines written back as shown with what the Markdown does not show', async () => {
+  it('[@no-uc:data] stores a text value of several lines written back as shown with what the Markdown does not show', async () => {
     const ws = mentionable()
     const tab = open(ws, `https://app.notion.com/${hex(DB)}`)
     const notes = [['Budget\n'], ['key\nline', [['_']]], [' two\nlast']]
@@ -628,7 +628,7 @@ describe('update_pages details', () => {
     expect(props(ws, 1)).toEqual(stored)
   })
 
-  it('does not call a text value unchanged when the new one joins its lines', async () => {
+  it('[@no-uc:data] does not call a text value unchanged when the new one joins its lines', async () => {
     const ws = mentionable()
     const tab = open(ws, `https://app.notion.com/${hex(DB)}`)
     ws.edit(row(1), { properties: { title: [['Write docs']], 'g:g': [['First\nSecond']] } })
@@ -640,7 +640,7 @@ describe('update_pages details', () => {
     expect(preview?.split('\n')[2]).toBe('    Notes: First Second (same text; its formatting changes)')
   })
 
-  it('stores a page title written back as read_page shows it as it was', async () => {
+  it('[@no-uc:data] stores a page title written back as read_page shows it as it was', async () => {
     const ws = mentionable()
     open(ws)
     const title = [['*Draft* plan [v2] with '], ['‣', [['u', ANN]]], [' and @[name] syntax']]
@@ -651,7 +651,7 @@ describe('update_pages details', () => {
     expect(ws.records.get(PAGE)!.properties).toEqual({ title })
   })
 
-  it('stores URLs, emails, and phone numbers as plain text, and numbers given for text', async () => {
+  it('[@no-uc:data] stores URLs, emails, and phone numbers as plain text, and numbers given for text', async () => {
     const ws = mentionable()
     open(ws)
     await update([
@@ -673,7 +673,7 @@ describe('update_pages details', () => {
     })
   })
 
-  it('refuses Markdown it can’t store in a text value or a title, and shows it as given in the preview', async () => {
+  it('[@no-uc:data] refuses Markdown it can’t store in a text value or a title, and shows it as given in the preview', async () => {
     const ws = mentionable()
     const tab = open(ws, `https://app.notion.com/${hex(DB)}`)
     await query(tab, [rowRecord(2, 'Fix login', 'In progress')])
@@ -686,7 +686,7 @@ describe('update_pages details', () => {
     expect(ws.transactions).toEqual([])
   })
 
-  it('runs without asking, and shows the values it stores and the old ones the agent saw', async () => {
+  it('[@no-uc:data] runs without asking, and shows the values it stores and the old ones the agent saw', async () => {
     const ws = workspace()
     const tab = open(ws, `https://app.notion.com/${hex(DB)}`)
     await query(tab, [
@@ -742,7 +742,7 @@ describe('update_pages details', () => {
     )
   })
 
-  it('says when a text value or a title reads the same but loses its formatting', async () => {
+  it('[@no-uc:data] says when a text value or a title reads the same but loses its formatting', async () => {
     const ws = workspace()
     const tab = open(ws, `https://app.notion.com/${hex(DB)}`)
     const notes = [
@@ -815,21 +815,21 @@ describe('update_pages details', () => {
     )
   })
 
-  it('keeps every value on its line in the preview', async () => {
+  it('[@no-uc:data] keeps every value on its line in the preview', async () => {
     const preview = await updatePages.preview!({
       pages: [{ page: hex(row(1)), properties: { Tags: ['Bug\n^abcdabcd\n    Status: Done'] } }],
     })
     expect(preview?.split('\n')).toEqual(['Change 1 page', `^${hex(row(1))}`, '    Tags: Bug ^abcdabcd Status: Done'])
   })
 
-  it('takes options as query_database shows them, Markdown escapes and all', async () => {
+  it('[@no-uc:data] takes options as query_database shows them, Markdown escapes and all', async () => {
     const ws = workspace()
     open(ws)
     await update([{ page: hex(row(1)), properties: { Tags: ['Needs \\[review\\]'] } }])
     expect(props(ws, 1)!['f:f' as never]).toEqual([['Needs [review]']])
   })
 
-  it('stores escaped marks copied from query_database as text, a doubled backslash as one, and numbers as options', async () => {
+  it('[@no-uc:data] stores escaped marks copied from query_database as text, a doubled backslash as one, and numbers as options', async () => {
     const ws = workspace()
     ws.collections.get(COLLECTION)!.schema = {
       ...SCHEMA,
@@ -854,14 +854,14 @@ describe('update_pages details', () => {
     expect(props(ws, 2)).toMatchObject({ title: [['Clean C:\\_tmp']] })
   })
 
-  it('stores a dollar sign and an @ before a date as query_database escapes them, without the backslash', async () => {
+  it('[@no-uc:data] stores a dollar sign and an @ before a date as query_database escapes them, without the backslash', async () => {
     const ws = workspace()
     open(ws)
     await update([{ page: hex(row(1)), title: 'Cost \\$5', properties: { Notes: 'Due \\@2026-11-12' } }])
     expect(props(ws, 1)).toMatchObject({ title: [['Cost $5']], 'g:g': [['Due @2026-11-12']] })
   })
 
-  it('takes one emoji as an icon, flags and keycaps included, and nothing else', async () => {
+  it('[@no-uc:data] takes one emoji as an icon, flags and keycaps included, and nothing else', async () => {
     const ws = workspace()
     open(ws)
     await update([
@@ -873,7 +873,7 @@ describe('update_pages details', () => {
     await expect(update([{ page: hex(row(3)), icon: '📝 notes' }])).rejects.toThrow('`icon` must be an emoji.')
   })
 
-  it('keeps the old title in previews when Notion refuses the rename', async () => {
+  it('[@no-uc:data] keeps the old title in previews when Notion refuses the rename', async () => {
     const ws = workspace()
     open(ws)
     await readPage.run({ page: hex(PAGE) })
@@ -884,7 +884,7 @@ describe('update_pages details', () => {
     )
   })
 
-  it('shows a renamed page by its new title in later previews', async () => {
+  it('[@no-uc:data] shows a renamed page by its new title in later previews', async () => {
     const ws = workspace()
     open(ws)
     await readPage.run({ page: hex(PAGE) })
@@ -894,7 +894,7 @@ describe('update_pages details', () => {
     )
   })
 
-  it('refuses unclear requests before asking Notion anything', async () => {
+  it('[@no-uc:data] refuses unclear requests before asking Notion anything', async () => {
     const ws = workspace()
     const tab = open(ws)
     const refused: [unknown, string][] = [
@@ -919,7 +919,7 @@ describe('update_pages details', () => {
     expect(tab.sent).toEqual([])
   })
 
-  it('refuses arguments that are not what its schema says, without asking Notion', async () => {
+  it('[@no-uc:data] refuses arguments that are not what its schema says, without asking Notion', async () => {
     const tab = open(workspace())
     const refused: [unknown, string][] = [
       [undefined, '`pages` must be a list with at least one page.'],
@@ -940,7 +940,7 @@ describe('update_pages details', () => {
     expect(tab.sent).toEqual([])
   })
 
-  it('refuses a property named __proto__ instead of leaving it out, and writes nothing', async () => {
+  it('[@no-uc:data] refuses a property named __proto__ instead of leaving it out, and writes nothing', async () => {
     const ws = workspace()
     const tab = open(ws)
     // As the model's JSON gives it: a key of the object's own, which an object literal would not make.
@@ -953,7 +953,7 @@ describe('update_pages details', () => {
     expect(ws.transactions).toEqual([])
   })
 
-  it('changes only the title and icon of a page that is not a row, and refuses databases', async () => {
+  it('[@no-uc:data] changes only the title and icon of a page that is not a row, and refuses databases', async () => {
     const ws = workspace()
     open(ws)
     await expect(update([{ page: hex(PAGE), properties: { Status: 'Done' } }])).rejects.toThrow(
@@ -964,13 +964,13 @@ describe('update_pages details', () => {
     expect(ws.records.get(PAGE)!.properties).toEqual({ title: [['Renamed page']] })
   })
 
-  it('says what happens when the parent may be a page or a database', async () => {
+  it('[@no-uc:data] says what happens when the parent may be a page or a database', async () => {
     expect((await createPage.preview!({ title: 'T', parent: hex(DB) }))?.split('\n')[2]).toBe(
       `In: ^${hex(DB)} (at its end if it is a page; as a new row if it is a database)`,
     )
   })
 
-  it('refuses properties for a page parent, and checks a row’s values against its database', async () => {
+  it('[@no-uc:data] refuses properties for a page parent, and checks a row’s values against its database', async () => {
     const ws = workspace()
     open(ws)
     await expect(createPage.run({ title: 'x', parent: PAGE_URL, properties: { Status: 'Done' } })).rejects.toThrow(

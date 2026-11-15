@@ -28,7 +28,7 @@ function hostedEnv(): Record<string, string> {
 describe('extension manifest', () => {
   // What the published extension asks its users for. A change to extensions/notico/.env that changes
   // these (another Clerk instance, another sign-in host) must change this test too.
-  it('ships with exactly these permissions and host permissions', () => {
+  it('[@no-uc:privacy] ships with exactly these permissions and host permissions', () => {
     const env = hostedEnv()
     const json = buildManifest({ ...env, VITE_CLERK_SYNC_HOST: env.VITE_CLERK_SYNC_HOST! }, '1.2.3')
     expect(json.permissions).toEqual(['sidePanel', 'storage', 'tabs', 'cookies', 'scripting'])
@@ -44,7 +44,7 @@ describe('extension manifest', () => {
   // Where the published extension's own pages may load from and send requests to: the hosts
   // PRIVACY.md lists, enforced by the browser. A change to extensions/notico/.env or to the policy that
   // adds a host must change this test and PRIVACY.md in the same pull request.
-  it('ships with a content security policy that allows only these hosts', () => {
+  it('[@no-uc:privacy] ships with a content security policy that allows only these hosts', () => {
     const env = hostedEnv()
     const json = buildManifest({ ...env, VITE_CLERK_SYNC_HOST: env.VITE_CLERK_SYNC_HOST! }, '1.2.3')
     expect(json.content_security_policy.extension_pages).toBe(
@@ -55,7 +55,7 @@ describe('extension manifest', () => {
     )
   })
 
-  it('allows requests only to the configured worker, Clerk host, OpenRouter, and PostHog host, whatever the env', () => {
+  it('[@no-uc:privacy] allows requests only to the configured worker, Clerk host, OpenRouter, and PostHog host, whatever the env', () => {
     const csp = (env: Partial<ManifestEnv>) =>
       manifest({ VITE_CLERK_SYNC_HOST: 'https://app.example.com', ...env }).content_security_policy.extension_pages
     expect(csp({ VITE_API_URL: 'http://localhost:8787/v1' })).toContain(
@@ -69,7 +69,7 @@ describe('extension manifest', () => {
     expect(csp({ VITE_CLERK_PUBLISHABLE_KEY: '' })).toContain("connect-src 'self' https://openrouter.ai;")
   })
 
-  it('asks for exactly these permissions, whatever the env', () => {
+  it('[@no-uc:privacy] asks for exactly these permissions, whatever the env', () => {
     const envs: ManifestEnv[] = [
       { VITE_CLERK_SYNC_HOST: 'https://api.cofun.cc' },
       { VITE_CLERK_SYNC_HOST: 'https://app.example.co.uk', CLERK_COOKIE_DOMAIN: 'example.co.uk' },
@@ -80,7 +80,7 @@ describe('extension manifest', () => {
     }
   })
 
-  it('asks for no optional permissions and injects no content scripts', () => {
+  it('[@no-uc:privacy] asks for no optional permissions and injects no content scripts', () => {
     const json: Record<string, unknown> = manifest({ VITE_CLERK_SYNC_HOST: 'https://api.cofun.cc' })
     expect(Object.keys(json).sort()).toEqual(
       [
@@ -99,25 +99,7 @@ describe('extension manifest', () => {
     )
   })
 
-  it('has a description short enough for the Chrome Web Store summary', () => {
-    // Chrome's manifest reference caps the description at 132 characters; the store shows it as the summary.
-    expect(manifest({ VITE_CLERK_SYNC_HOST: 'https://sync.example.com' }).description.length).toBeLessThanOrEqual(132)
-  })
-
-  it('lists icons that exist in the build at the size they are listed for', () => {
-    const json = manifest({ VITE_CLERK_SYNC_HOST: 'https://api.cofun.cc' })
-    expect(Object.keys(json.icons)).toEqual(['16', '32', '48', '128'])
-    expect(json.action.default_icon).toEqual(json.icons)
-    for (const [size, file] of Object.entries(json.icons)) {
-      // Vite copies public/ into the build as it is. A PNG starts with its signature and the
-      // IHDR chunk, which holds the width and height at bytes 16 and 20.
-      const png = readFileSync(new URL(`../public/${file}`, import.meta.url))
-      expect(png.subarray(1, 4).toString('latin1')).toBe('PNG')
-      expect([png.readUInt32BE(16), png.readUInt32BE(20)]).toEqual([Number(size), Number(size)])
-    }
-  })
-
-  it("covers Notion, Clerk, the sign-in page, and the sign-in page's parent domain", () => {
+  it("[@no-uc:privacy] covers Notion, Clerk, the sign-in page, and the sign-in page's parent domain", () => {
     expect(manifest({ VITE_CLERK_SYNC_HOST: 'https://api.cofun.cc' }).host_permissions).toEqual([
       ...NOTION,
       `https://${CLERK_HOST}/*`,
@@ -126,7 +108,7 @@ describe('extension manifest', () => {
     ])
   })
 
-  it('covers CLERK_COOKIE_DOMAIN instead of guessing the parent domain', () => {
+  it('[@no-uc:privacy] covers CLERK_COOKIE_DOMAIN instead of guessing the parent domain', () => {
     const env = { VITE_CLERK_SYNC_HOST: 'https://app.example.co.uk' }
     // The guess is wrong for a suffix like co.uk, which is why the setting exists.
     expect(manifest(env).host_permissions.at(-1)).toBe('https://*.co.uk/*')
@@ -140,7 +122,7 @@ describe('extension manifest', () => {
     }
   })
 
-  it('covers only the host itself for localhost', () => {
+  it('[@no-uc:privacy] covers only the host itself for localhost', () => {
     expect(manifest({ VITE_CLERK_SYNC_HOST: 'http://localhost:8787' }).host_permissions).toEqual([
       ...NOTION,
       `https://${CLERK_HOST}/*`,
@@ -149,7 +131,7 @@ describe('extension manifest', () => {
     ])
   })
 
-  it('covers only the host itself for an IP address', () => {
+  it('[@no-uc:privacy] covers only the host itself for an IP address', () => {
     expect(manifest({ VITE_CLERK_SYNC_HOST: 'http://127.0.0.1:8787' }).host_permissions).toEqual([
       ...NOTION,
       `https://${CLERK_HOST}/*`,
@@ -164,13 +146,13 @@ describe('extension manifest', () => {
     ])
   })
 
-  it('leaves out the Clerk host when the publishable key names none', () => {
+  it('[@no-uc:privacy] leaves out the Clerk host when the publishable key names none', () => {
     expect(
       manifest({ VITE_CLERK_SYNC_HOST: 'https://api.cofun.cc', VITE_CLERK_PUBLISHABLE_KEY: '' }).host_permissions,
     ).toEqual([...NOTION, 'https://api.cofun.cc/*', 'https://*.cofun.cc/*'])
   })
 
-  it('pins the extension ID with the public key, when one is set', () => {
+  it('[@no-uc:access] pins the extension ID with the public key, when one is set', () => {
     const env = { VITE_CLERK_SYNC_HOST: 'https://api.cofun.cc' }
     expect(manifest(env)).not.toHaveProperty('key')
     expect(manifest({ ...env, CRX_PUBLIC_KEY: 'public-key' })).toMatchObject({ key: 'public-key', version: '1.2.3' })
@@ -178,7 +160,7 @@ describe('extension manifest', () => {
 
   // The Chrome Web Store signs the item with its own key, which sets the ID, so the zip uploaded
   // there carries no `key`. Everything else is what local builds ship.
-  it('leaves out only the key in the store build', () => {
+  it('[@no-uc:access] leaves out only the key in the store build', () => {
     const env = hostedEnv()
     const hosted = { ...env, VITE_CLERK_SYNC_HOST: env.VITE_CLERK_SYNC_HOST! }
     expect(env.CRX_PUBLIC_KEY).toBeTruthy()

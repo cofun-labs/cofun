@@ -9,7 +9,7 @@ const COPY = '2b2b2b2b000040008000000000000020'
 const ORIGIN = 'https://app.notion.com'
 
 describe('recent pages', () => {
-  it('names a page only by the call that read it, never a copy by its original’s title', () => {
+  it('[@no-uc:data] names a page only by the call that read it, never a copy by its original’s title', () => {
     const history: HistoryMessage[] = [
       { role: 'user', text: 'Copy the launch plan' },
       {

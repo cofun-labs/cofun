@@ -276,7 +276,7 @@ describe("UC-COFUN-ADMIN-001 Look at an account's credits and grant credits by h
 
 // Standalone tests: implementation behavior worth guarding, not product contract (see docs/bdd.md).
 describe('admin API', () => {
-  it('each grant by hand is logged: who granted, to whom, how much, until when', async () => {
+  it('[@no-uc:money] each grant by hand is logged: who granted, to whom, how much, until when', async () => {
     await grant('user_alice', { credits: 100, days: 30 })
     expect(adminLog).toEqual([
       'manual grant: admin=user_root user=user_alice credits=100 expires=2026-12-08T12:00:00.000Z',
@@ -284,12 +284,12 @@ describe('admin API', () => {
     expect(logged).toEqual([])
   })
 
-  it('looking up an account logs nothing', async () => {
+  it('[@no-uc:privacy] looking up an account logs nothing', async () => {
     await account('user_alice')
     expect(adminLog).toEqual([])
   })
 
-  it('a user id that is not shaped like one is refused', async () => {
+  it('[@no-uc:money] a user id that is not shaped like one is refused', async () => {
     for (const id of ['alice', 'user_', 'user_a-b', 'org_abc', `user_${'a'.repeat(65)}`]) {
       const res = await lookUp(id)
       expect(res.status).toBe(400)
@@ -299,7 +299,7 @@ describe('admin API', () => {
     expect(adminLog).toEqual([])
   })
 
-  it('an unreachable database refuses the lookup and the grant, and nothing is logged as granted', async () => {
+  it('[@no-uc:money] an unreachable database refuses the lookup and the grant, and nothing is logged as granted', async () => {
     db.failWith = new Error('D1_ERROR: Network connection lost.')
     const answers: [Response, string][] = [
       [await lookUp('user_alice'), 'Credits are unavailable, try again in a moment.'],
@@ -320,7 +320,7 @@ describe('admin API', () => {
     ])
   })
 
-  it('an admin session works from the origin the worker is reached on, whatever that is', async () => {
+  it('[@no-uc:access] an admin session works from the origin the worker is reached on, whatever that is', async () => {
     const elsewhere = 'https://api.example'
     env.CLERK_AUTHORIZED_PARTIES = `${EXT}, ${WORKER}, ${elsewhere}`
     const token = await clerk.sessionToken({ userId: 'user_root', azp: elsewhere, claims: { role: 'admin' } })
@@ -330,7 +330,7 @@ describe('admin API', () => {
     expect((await lookUp('user_alice', token)).status).toBe(403)
   })
 
-  it('admin page loads Clerk with the publishable key, and cannot be framed', async () => {
+  it('[@no-uc:access] admin page loads Clerk with the publishable key, and cannot be framed', async () => {
     env.CLERK_PUBLISHABLE_KEY = 'pk_test_ZXhhbXBsZS5jbGVyay5hY2NvdW50cy5kZXYk' // example.clerk.accounts.dev
     const res = await req('GET', '/admin')
     expect(res.status).toBe(200)
@@ -345,7 +345,7 @@ describe('admin API', () => {
     expect(/window\.Clerk\.load\(\{([^]*?)\}\)/.exec(html)?.[1]).toMatch(/^\s*telemetry: false,$/m)
   })
 
-  it('admin page is off without a publishable key', async () => {
+  it('[@no-uc:access] admin page is off without a publishable key', async () => {
     expect((await req('GET', '/admin')).status).toBe(503)
   })
 })
