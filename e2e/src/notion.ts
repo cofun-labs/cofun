@@ -59,7 +59,7 @@ export async function privateSpace(client: NotionClient, tabUrl: string, userId?
 }
 
 /** Picks the view of the workspace asked for (or the only one), of the tab's user when known. */
-export function findSpaceView(views: SpaceView[], spaceId?: string, tabUser?: string): PrivateSpace {
+function findSpaceView(views: SpaceView[], spaceId?: string, tabUser?: string): PrivateSpace {
   // Several signed-in accounts may share a workspace; the page belongs to the tab's account.
   const found = views.filter((v) => (!tabUser || v.userId === tabUser) && (!spaceId || v.spaceId === spaceId))
   if (found.length === 1) return found[0]
@@ -68,7 +68,7 @@ export function findSpaceView(views: SpaceView[], spaceId?: string, tabUser?: st
 }
 
 /** The operations creating a private page titled `title` that holds `blocks`. */
-export function privatePageOps(
+function privatePageOps(
   space: PrivateSpace,
   title: string,
   blocks: NewBlock[],
@@ -105,7 +105,7 @@ export function parseRow(text: string): TaskRow {
 }
 
 /** The operations creating a private task database (Name, Status, Due) with `rows`. */
-export function taskDatabaseOps(
+function taskDatabaseOps(
   space: PrivateSpace,
   title: string,
   rows: TaskRow[],

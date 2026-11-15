@@ -128,7 +128,7 @@ Tools call Notion's internal API as the user's own account, so **stability comes
 - Tests live with the package they cover. Each extension has its own tests, fixtures, and fakes in `extensions/<name>/test/`. `extensions/notico/test/` tests Notico's client code against a fake Notion tab (`extensions/notico/test/notion-tab.ts`) that answers with sanitized fixtures (`extensions/notico/test/fixtures/notion/`). `worker/test/` tests the worker.
 - **UI tests run the whole side panel and act as a user.** Never test a component on its own. A test only types, clicks, and reads the screen, and finds things by role, accessible name, or visible text: never through component state, the agent, the session store, or a test id. If an element can't be found that way, improve its accessibility. Fakes stay at the edges, as above.
 - **Tests never wait for time to pass.** Use a fake clock with an explicit start time and move it; no sleeps, and no assertion that depends on how long something took. Waiting for the screen to change is fine.
-- `worker/test/extension.test.ts` runs Notico's own agent (`extensions/notico/src/agent/`) against the worker so client and server cannot drift.
+- Notico's client tests run its real agent against the real worker app (`createApp()` behind `fetch`), so client and server cannot drift: the side panel's tests through `extensions/notico/test/panel.ts`, and the agent loop's rules in `extensions/notico/test/agent.test.ts`. `worker/test/extension.test.ts` keeps only what the two sides must agree on: the streamed reply, the tool-call round trip, sessions, credits, a question's cost, and a model change.
 - `smoke/` is the extension smoke test (`pnpm smoke`, also run in CI): Playwright loads the built extension into Chromium and checks that the service worker starts, the side panel is enabled on every tab, and the side panel page renders signed out. It catches builds that compile but break in Chrome, such as dependency bumps. Nothing leaves the machine: Notion pages and Clerk's Frontend API are answered from `smoke/fixtures/`. Its tests are standalone (no scenario IDs); what needs real Chrome or real accounts (the panel opening from the toolbar icon and staying open across tabs, Google sign-in, real Notion pages) stays `ai-e2e`.
 
 ## Commands
@@ -139,7 +139,7 @@ pnpm check        # lint, unused code check (knip), format check, use case cover
 pnpm knip         # unused files, exports, and dependencies (knip.jsonc lists what is kept, and why)
 pnpm use-cases    # every ✅ api-test scenario has a test; warns about other mismatches (docs/bdd.md)
 pnpm format:fix   # format all files
-pnpm test         # extension and worker tests, and the unit tests of the e2e tool and scripts/
+pnpm test         # extension and worker tests, and the unit tests of scripts/
 pnpm build        # build every extension into extensions/<name>/dist
 pnpm smoke        # build the extension and run the smoke test in Chromium (also runs in CI)
 pnpm media 367 demo.gif   # upload a PR's demo GIF or screenshots and print their URLs (maintainer's machine only)
