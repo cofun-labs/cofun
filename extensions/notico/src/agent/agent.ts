@@ -554,8 +554,6 @@ export class CopilotAgent {
       },
       context: {
         ask: async (question) => (epoch === this.epoch && this.askOnCard ? this.askOnCard(question) : false),
-        userText: () =>
-          (this.agent?.state.messages ?? []).flatMap((m) => (m.role === 'user' ? [textOf(m.content)] : [])),
         // Always through the worker, whichever model answers: the page is read by the worker either way.
         readWeb: (url, maxChars, render, signal) => readWebPage(this.config, url, maxChars, render, signal),
       },

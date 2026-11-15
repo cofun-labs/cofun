@@ -127,11 +127,6 @@ export interface ToolContext {
   /** Puts a question to the user on the call's card (see AskOnCard). */
   ask: AskOnCard
   /**
-   * What the user typed in each question of the conversation, oldest first: their own words only,
-   * without the notes the extension sends with them, and nothing a tool or the model wrote.
-   */
-  userText: () => string[]
-  /**
    * Reads the web page at `url` through the worker, up to `maxChars` of its text; `render` renders
    * it in a browser first, for a page drawn by scripts. Throws a WebError
    * when the worker could not read it.

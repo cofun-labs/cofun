@@ -4,7 +4,7 @@
 
 A signed-in user's client can have the service read a web page for them by its address: the page's title and main text, as anyone who opens the address without signing in would see it, clipped to as much as the client asks for. Reading a page this way is free. A page drawn by scripts shows no text this way; the client can then ask for it to be rendered in a browser, which shows what it draws. Rendering is free too, and a user can have only a few pages rendered a minute. The service never keeps or logs the address or the page.
 
-Which addresses a user may have read is the client's rule (for Notico, only those the user gave: UC-NOTICO-PANEL-003); the service only refuses those that are never read.
+Which addresses to read is the client's choice (UC-NOTICO-PANEL-003); the service only refuses those that are never read.
 
 Key constraints:
 

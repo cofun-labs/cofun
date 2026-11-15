@@ -1,8 +1,7 @@
 // Web pages read by their address: read_web_page has the worker fetch a page plainly, and
 // render_web_page has it render one drawn by scripts in a browser, which is slower and limited to a
-// few a minute. Only an
-// address the user gave in one of their own messages is read, so text the assistant read (a page,
-// Notion content) can't make it send a request to an address of that text's choosing.
+// few a minute. The model chooses the address: one the user gave, a link it found, or one it
+// thinks of (docs/security.md, "Accepted: web pages at any address").
 import { WebError, type ToolContext } from '../agent'
 import { isNotion } from '../notion/hosts'
 import { clip } from '../notion/comments'
@@ -30,79 +29,6 @@ function addressOf(given: string): URL | undefined {
     return undefined
   }
 }
-
-/** A character that can't be part of an address where it touches one, so an address the user wrote ends or starts there. */
-const EDGE = /[^A-Za-z0-9\-._~%/:@!$&*+,;=?#]/
-/** What may follow an address in the user's words: its fragment, or punctuation that ends a sentence and then an edge. */
-const AFTER = /^(?:#|[.,;:!?)\]}>'"`]*(?:[^A-Za-z0-9\-._~%/:@!$&*+,;=?#]|$))/
-
-/** Characters an address never holds as written: whitespace, and what URLs leave out or must encode. */
-const NOT_IN_ADDRESS = /[\s<>"{}|\\^`]/
-
-/**
- * Where `text` holds the address `body` (an address without its scheme) as an address of its own:
- * starting at the start of the text, after a character that can't be part of an address, or right
- * after `http://` or `https://` that start at such a place; and ending where the text's address ends.
- * So a part of a longer address the user wrote (its host alone, a shorter path, another query) is not
- * one. Gives the scheme the user wrote it with, `https` when they wrote none; undefined when the text
- * does not hold it.
- */
-function holds(text: string, body: string): 'http' | 'https' | undefined {
-  for (let at = text.indexOf(body); at >= 0; at = text.indexOf(body, at + 1)) {
-    const before = text.slice(0, at)
-    const scheme = /(^|[^A-Za-z0-9\-._~%/:@!$&*+,;=?#])(https?):\/\/$/i.exec(before)
-    const starts = at === 0 || EDGE.test(before.at(-1) ?? '') || scheme !== null
-    if (starts && AFTER.test(text.slice(at + body.length)))
-      return scheme?.[2].toLowerCase() === 'http' ? 'http' : 'https'
-  }
-  return undefined
-}
-
-/**
- * The address as the user wrote it in one of `texts`, their own messages, when the model's `given`
- * (parsed as `url`) is one of theirs; undefined when it is not. It counts when the user wrote it
- * whole, with or without its scheme, with or without the fragment, and with its non-ASCII characters
- * encoded or not. What is read is the user's own form, never the model's: their scheme (https when
- * they wrote none) and their characters, so the model can't carry data in which characters it
- * encodes or which scheme it picks. A model that changes any other part of it (the host, the path,
- * the query, even its case) is refused.
- */
-export function userAddress(given: string, url: URL, texts: string[]): URL | undefined {
-  // An address holds none of these: a call that does is taking in the words around one.
-  if (NOT_IN_ADDRESS.test(given.trim())) return undefined
-  const scheme = /^https?:\/\//i
-  const raw = given.trim().replace(/#.*$/, '')
-  let decoded = url.href
-  try {
-    decoded = decodeURI(url.href)
-  } catch {
-    // Not a valid encoding: the encoded form is the one to look for.
-  }
-  const bodies = new Set<string>()
-  for (const form of [url.href, decoded, raw]) {
-    const body = form.replace(scheme, '')
-    bodies.add(body)
-    // `https://example.com` is read as `https://example.com/`: the user may have written either.
-    if (body.endsWith('/') && url.pathname === '/' && !url.search) bodies.add(body.slice(0, -1))
-  }
-  bodies.delete('')
-  // A decoded `%20` is a space: such a body would match the user's words after an address.
-  for (const body of bodies) if (NOT_IN_ADDRESS.test(body)) bodies.delete(body)
-  for (const text of texts)
-    for (const body of bodies) {
-      const written = holds(text, body)
-      if (!written) continue
-      // `body` is a part of the user's text: the address is built from what they wrote.
-      const address = addressOf(`${written}://${body}`)
-      if (address) return address
-    }
-  return undefined
-}
-
-const NOT_GIVEN =
-  'Not read: this address is not one the user gave. Notico reads only web pages whose address the user wrote in ' +
-  'their own messages, never a link from a page, from Notion, or made up. Give the address exactly as the user ' +
-  'wrote it, or ask the user for it.'
 
 /** In a tab, the user's own browser shows what a sign-in or a bot check stops the worker from reading. */
 const OPEN_IN_TAB =
@@ -141,11 +67,10 @@ async function readPageAt(
   const url = addressOf(given)
   if (!url) throw new Error('Not read: the address is not a web address (http or https).')
   if (isNotion(url.href)) throw new Error('This is a Notion page: read it with read_page instead.')
-  const address = context && userAddress(given, url, context.userText())
-  if (!context || !address) throw new Error(NOT_GIVEN)
+  if (!context) throw new Error('Could not read the page: there is no worker to read it with.')
   let page
   try {
-    page = await context.readWeb(address.href, PAGE_CHARS, render, signal)
+    page = await context.readWeb(url.href, PAGE_CHARS, render, signal)
   } catch (err) {
     // The worker's limit stops the question: thrown as it is, with what the user is told.
     if (err instanceof WebError && !err.stopsQuestion) throw new Error(refusal(err, render), { cause: err })
@@ -156,7 +81,7 @@ async function readPageAt(
   const lines = [
     // As JSON, so the title and URL stay inside their quotes and on their line.
     `Web page${render ? ', rendered,' : ''} on ${host}: ${JSON.stringify({ title: clip(page.title, TITLE_CHARS), url: clip(page.url, URL_CHARS) })}`,
-    ...(page.url !== address.href ? [`[The address redirected here from ${clip(address.href, URL_CHARS)}.]`] : []),
+    ...(page.url !== url.href ? [`[The address redirected here from ${clip(url.href, URL_CHARS)}.]`] : []),
     ...(clipped
       ? [
           `[Clipped: this shows the first ${page.text.length.toLocaleString('en-US')} of the page's ` +
@@ -182,9 +107,8 @@ const Args = z.strictObject({
 export const readWebPage = defineTool({
   name: 'read_web_page',
   description:
-    "Reads a web page by its address, when the user gave that address in one of their own messages: the page's " +
-    'title and main text, as anyone sees it without signing in. Only addresses the user wrote are read; a link ' +
-    'found in a page or in Notion is refused. For a page the user is on, use read_current_tab; for a Notion page, ' +
+    "Reads a web page by its address: the page's title and main text, as anyone sees it without signing in. " +
+    'For a page the user is on, use read_current_tab; for a Notion page, ' +
     'read_page. A page that needs a sign-in or a bot check cannot be read; a page drawn by scripts shows no text ' +
     'here, and render_web_page can render it. A long page is clipped.',
   describe: (_args, details) => on(READ, details?.name, 'a web page'),
@@ -198,8 +122,7 @@ export const renderWebPage = defineTool({
     'Renders a web page in a browser and reads its text as Markdown: what the page shows once its scripts run. ' +
     'It reads pages drawn by scripts, which read_web_page reads with no text or too little. It is slower than ' +
     'read_web_page, and only a few pages can be rendered a minute, so read_web_page is usually the better first ' +
-    'try; render right away when the page is likely drawn by scripts (a web app, say). The same addresses as ' +
-    'read_web_page only: one the user wrote in their own messages.',
+    'try; render right away when the page is likely drawn by scripts (a web app, say).',
   describe: (_args, details) => on(RENDER, details?.name, 'a web page'),
   args: Args,
   run: ({ url }, signal, context) => readPageAt(url, true, signal, context),

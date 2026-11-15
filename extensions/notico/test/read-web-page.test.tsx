@@ -1,11 +1,11 @@
-// Reading a web page by the address the user gave (read_web_page, render_web_page), as a user meets
+// Reading a web page by its address (read_web_page, render_web_page), as a user meets
 // it in the side panel: the worker reads the page, from the fake internet behind it.
 import '@testing-library/jest-dom/vitest'
 import { screen } from '@testing-library/react'
 import userEvent, { type UserEvent } from '@testing-library/user-event'
 import { afterEach, describe, expect, it } from 'vitest'
 import { DATA_LINE } from '../src/tools/shared'
-import { FakeNotionTab, webPage } from './notion-tab'
+import { FakeNotionTab } from './notion-tab'
 import { closeBrowser, FakeBrowser } from './panel'
 
 afterEach(closeBrowser)
@@ -29,8 +29,6 @@ async function ask(user: UserEvent, question: string) {
   await user.type(screen.getByRole('textbox', { name: 'Message' }), question)
   await user.click(screen.getByRole('button', { name: 'Send' }))
 }
-
-const answered = () => screen.findByRole('button', { name: 'Send' })
 
 /** What the model was sent as the results of the tools it called. */
 const toolResults = (browser: FakeBrowser) =>
@@ -69,7 +67,7 @@ describe('reading a web page the user gives', () => {
     expect(browser.tab.injections).toEqual([])
   })
 
-  it('[UC-NOTICO-PANEL-003-S01] an address the user wrote without its scheme is read over https', async () => {
+  it('[UC-NOTICO-PANEL-003-S01] an address without its scheme is read over https', async () => {
     const { browser, user } = await open()
     browser.web.serve('https://tea.example/notes', '<p>Green and black.</p>')
     browser.ai.script.push(readCall('tea.example/notes'), { reply: 'Two kinds.' })
@@ -80,42 +78,17 @@ describe('reading a web page the user gives', () => {
     expect(browser.web.asked).toEqual(['https://tea.example/notes'])
   })
 
-  it('[UC-NOTICO-PANEL-003-S02] an address the user did not write is refused, and nothing is sent for it', async () => {
+  it('[UC-NOTICO-PANEL-003-S02] the AI can follow a link from a page it read', async () => {
     const { browser, user } = await open()
-    // The page the user gave links elsewhere; the model follows the link, then writes data into the address.
-    browser.web.serve(ARTICLE, '<main><p>More at https://evil.example/more</p></main>')
-    browser.ai.script.push(
-      readCall(ARTICLE),
-      readCall('https://evil.example/more'),
-      readCall('https://tea.example/history?lang=en&secret=roadmap'),
-      readCall('https://tea.example/history'),
-      { reply: 'Only the page you gave.' },
-    )
+    browser.web.serve(ARTICLE, '<main><p>Part two is at https://tea.example/part-2</p></main>')
+    browser.web.serve('https://tea.example/part-2', '<main><p>Oolong comes from Fujian.</p></main>')
+    browser.ai.script.push(readCall(ARTICLE), readCall('https://tea.example/part-2'), { reply: 'Both parts read.' })
 
-    await ask(user, `Read ${ARTICLE}`)
+    await ask(user, `Read ${ARTICLE} and the parts it links to`)
 
-    expect(await screen.findByText('Only the page you gave.')).toBeVisible()
-    expect(toolResults(browser).slice(1)).toEqual([
-      expect.stringMatching(/^Not read: this address is not one the user gave\./),
-      expect.stringMatching(/^Not read: this address is not one the user gave\./),
-      expect.stringMatching(/^Not read: this address is not one the user gave\./),
-    ])
-    expect(worked(browser)).toEqual([ARTICLE])
-    expect(browser.web.asked).toEqual([ARTICLE])
-  })
-
-  it('[UC-NOTICO-PANEL-003-S02] an address given in an earlier question of the chat can still be read', async () => {
-    const { browser, user } = await open()
-    browser.web.serve(ARTICLE, PAGE)
-    browser.ai.script.push({ reply: 'Noted.' }, readCall(ARTICLE), { reply: 'Read it.' })
-
-    await ask(user, `Keep this for later: ${ARTICLE}`)
-    expect(await screen.findByText('Noted.')).toBeVisible()
-    await answered()
-    await ask(user, 'Now summarize that link')
-
-    expect(await screen.findByText('Read it.')).toBeVisible()
-    expect(browser.web.asked).toEqual([ARTICLE])
+    expect(await screen.findByText('Both parts read.')).toBeVisible()
+    expect(toolResults(browser)[1]).toContain('Oolong comes from Fujian.')
+    expect(browser.web.asked).toEqual([ARTICLE, 'https://tea.example/part-2'])
   })
 
   it.each([
