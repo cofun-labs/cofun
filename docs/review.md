@@ -14,7 +14,7 @@ Every PR gets two reviews ([AGENTS.md](../AGENTS.md), step 7). They follow this 
 - **Ready** means CI passes, every Claude review comment so far is handled (step 8), and nothing more is planned for the PR. The demo recording comes after the full review, since a review can still change the code.
 - **The sub-agent is started fresh**, with the PR number and this guide only, never as a fork of the session that wrote the PR. A reviewer that shares the author's reasoning shares its blind spots: it would accept what the author decided without seeing why, where a fresh reader has to understand it from the code, the Issue, and the PR body, and stops where those don't explain it.
 - **After the full review**, a fix for one of its findings is checked by the next Claude review. The full review does not run again unless a fix changes the PR's approach.
-- **A PR that changes `claude-review.yml` gets no Claude review**: claude-code-action refuses to run a workflow that differs from the one on `main`, and its check still passes. The full review is that PR's only review, and runs again after each fix.
+- **A PR that changes `claude-review.yml` gets no Claude review**: claude-code-action refuses to run a workflow that differs from the one on `main`, and its check still passes. The full review is that PR's only review, and runs again on every new head, a merge of `origin/main` included.
 - **Changes that came in by merging the base branch are not the PR's own**: skip them. A push that only merges `origin/main`, with no conflict resolved by hand, needs no new review.
 
 ## Which rules apply

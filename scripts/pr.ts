@@ -1,7 +1,7 @@
 // pnpm pr <ready|resolve> <pr-number>: the steps before a merge, so they are not done by hand
 // (see "Merging" in docs/development.md). `ready` checks that a PR can merge and prints the merge
-// command, without running it; `resolve` resolves every review thread the PR's author has
-// answered. Both run `gh` with the login on this machine.
+// command, without running it; `resolve` resolves every review thread the PR's author
+// answered last, except a user's call, which waits for the user. Both run `gh` with the login on this machine.
 import { execFileSync } from 'node:child_process'
 import * as z from 'zod'
 
@@ -170,11 +170,11 @@ function problems(pr: PullRequest, owner: string, name: string): string[] {
 
   const commits = pr.commits.nodes.map((node) => node.commit.oid)
   const short = head.slice(0, 7)
-  const byTheAuthor = pr.reviews.nodes.filter((review) => review.author?.login === author)
+  const authorReviews = pr.reviews.nodes.filter((review) => review.author?.login === author)
   // claude-code-action refuses to run when the PR changes its own workflow, and the check still
   // passes: such a PR has only the full review, so that review must have seen the head.
   if (pr.files.nodes.some((file) => file.path === REVIEW_WORKFLOW)) {
-    const latest = byTheAuthor.at(-1)
+    const latest = authorReviews.at(-1)
     if (latest === undefined || !namedCommits(latest.body).some((c) => head.startsWith(c))) {
       found.push(
         `The PR changes ${REVIEW_WORKFLOW}, so the full review is its only one, and the latest review by ${author ?? 'the PR author'} does not name the head commit ${short}: review the head.`,
@@ -186,7 +186,7 @@ function problems(pr: PullRequest, owner: string, name: string): string[] {
     else if (!claude.body.includes(short)) {
       found.push(`The latest Claude review summary does not name the head commit ${short}.`)
     }
-    const fullReview = byTheAuthor.some((review) =>
+    const fullReview = authorReviews.some((review) =>
       namedCommits(review.body).some((c) => commits.some((oid) => oid.startsWith(c))),
     )
     if (!fullReview) {
