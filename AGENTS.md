@@ -124,7 +124,7 @@ A value the code does not control is `unknown` until it is validated where it ar
 - One schema is the single source: the type, the runtime check, and any description of the shape given to someone else (such as a tool's JSON Schema) all come from it.
 - Validate at the boundary, and only there: code behind it takes the parsed type and does not check again.
 - A value that fails says what is wrong, specifically enough for whoever sent it to correct it.
-- The one exception: a Notion database's property definitions and the runs and marks of rich text are read where they are used, with checks written by hand ([F5](docs/review.md#f-untrusted-values)). New code that reads them asserts nothing wider than it checked.
+- The one exception: a Notion database's property definitions and the runs and marks of rich text are read where they are used, with checks written by hand ([B10](docs/review.md#b-correctness)). New code that reads them asserts nothing wider than it checked.
 
 ## Usage data: never content
 
@@ -135,13 +135,13 @@ An extension sends product analytics to PostHog only through `src/analytics.ts`,
 - A new event or property is added to the schema, to the list of properties the module keeps, and to the extension's `PRIVACY.md` in the same PR.
 - Never turn on autocapture, session replay, or exception capture: each would send text from the panel.
 
-## Calling a site as the user: stop, don't work around
+## Calling outside services: stop, don't work around
 
-An extension's tools call its site's own API, often an internal one, as the user's own account, through the site layer (`src/<site>/`). So **stability comes first**: the site must never see the extension as automated abuse, since a mistake lands on the user's account. These rules hold for every site; how Notico keeps them for Notion is in [review rules E](docs/review.md#e-calling-a-site-as-the-user).
+The extensions and the worker call outside services: the site an extension acts on as the user's own account, through its site layer (`src/<site>/`), a model provider, and Stripe. So **stability comes first**: a mistake can get the user's account barred as automated abuse, apply a change or a charge twice, or spend the user's money. The site is the riskiest: its API is often an internal one. These rules hold for every service; how they are checked is in [review rules E](docs/review.md#e-calling-outside-services).
 
-- **Retry only when it is clearly safe and would fix the problem**: a retry must not be able to apply a change twice, and the cause must be one a retry can fix. When in doubt, don't. Never fall back to another endpoint or another way of getting the same result.
+- **Retry only when it is clearly safe and would fix the problem**: a retry must not be able to apply a change or a charge twice, and the cause must be one a retry can fix. When in doubt, don't. Never fall back to another endpoint or another way of getting the same result.
 - **Stop on what we don't understand.** A failure we can't identify, or a response we didn't expect, stops the question and is reported to the user; don't guess a workaround. Give a failure a code of its own only when its meaning is known and the model can act on it, and throw a plain error for bad input from the model.
-- **Rate limits stop the question, with no retry.** When the site turns a request away for coming too fast, the client sends nothing more, the agent ends the question, and the user is told to wait. A tool error does this by carrying `stopsQuestion` (read by `src/agent/calls.ts`); code that catches the site's errors must rethrow one that carries it, never swallow it.
+- **A request turned away stops the question, with no retry.** When a service turns a request away, for coming too fast or for a balance that ran out, the client sends nothing more to it, the agent ends the question, and the user is told why. A tool error does this by carrying `stopsQuestion` (read by `src/agent/calls.ts`); code that catches a service's errors must rethrow one that carries it, never swallow it.
 - **A tool that changes the user's data sets `changesData`** (see `ToolSpec` in `src/agent/types.ts`), and an error after a change that may have landed sets `mayHaveChanged`, so a question that stops tells the user to check before asking again.
 - Handle only failures whose meaning is known, such as signed out, no access, or a page that changed since it was read.
 

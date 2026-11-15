@@ -1,4 +1,4 @@
-// The extensions' module boundaries (AGENTS.md: "Architecture" and "Calling a site as the user"), as lint errors.
+// The extensions' module boundaries (AGENTS.md: "Architecture" and "Calling outside services"), as lint errors.
 // Oxlint's default rules stay on: this file only adds rules.
 //
 // Each rule is written once for every extension, with extensions/*/ globs: an extension is
