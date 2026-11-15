@@ -121,8 +121,9 @@ jobs:
       - name: Run checks
         run: pnpm check
 
-      # Replaces the build "Run checks" made: the version from the input, and no `key` in the
-      # manifest (the store sets the ID). package.json keeps its development version.
+      # Replaces the build "Run checks" made: the version from the input, and no `key` (the store
+      # sets the ID) or `version_name` (which marks a development build) in the manifest.
+      # package.json keeps its development version.
       - name: Build for the store
         env:
           CRX_STORE_BUILD: "1"
@@ -132,8 +133,8 @@ jobs:
       - name: Check the manifest
         run: |
           manifest="extensions/$EXTENSION/dist/manifest.json"
-          jq -e --arg v "$VERSION" '.version == $v and (has("key") | not)' "$manifest" >/dev/null || {
-            echo "::error::$manifest does not have version $VERSION and no key."
+          jq -e --arg v "$VERSION" '.version == $v and (has("key") | not) and (has("version_name") | not)' "$manifest" >/dev/null || {
+            echo "::error::$manifest does not have version $VERSION, no key, and no version_name."
             exit 1
           }
 
