@@ -10,13 +10,13 @@ pnpm use-cases    # every ✅ api-test scenario has a test; warns about other mi
 pnpm format:fix   # format all files
 pnpm test         # extension and worker tests, and the unit tests of scripts/
 pnpm build        # build every extension into extensions/<name>/dist
-pnpm smoke        # build the extension and load it into Chromium (first: pnpm --filter cofun-smoke exec playwright install chromium)
+pnpm test:browser # build the extensions and run their browser tests in Chromium (first: pnpm --filter notico-extension exec playwright install chromium)
 pnpm icons        # export extensions/notico/icons/icon.svg into extensions/notico/public/icons (needs the same Chromium); commit the PNGs
 pnpm media 367 demo.gif   # upload a PR's demo GIF or screenshots and print their URLs (maintainer's machine only; see PR media)
 pnpm e2e --help   # drive the shared Chrome Canary for ai-e2e runs (maintainer's machine only)
 ```
 
-A lefthook pre-commit hook runs `pnpm check`. GitHub Actions runs it and `pnpm smoke` on every pull request.
+A lefthook pre-commit hook runs `pnpm check`. GitHub Actions runs it and the browser tests on every pull request.
 
 See [AGENTS.md](../AGENTS.md) for the issue → PR → review → merge workflow.
 
@@ -52,7 +52,7 @@ The rules for tests are in [AGENTS.md](../AGENTS.md#testing) and [docs/bdd.md](b
 - **Clerk's React SDK** is the one module replaced whole: the side panel imports its components directly, so the extension's vitest config resolves `@clerk/chrome-extension` to `extensions/notico/test/clerk.tsx`, for the UI tests only.
 - **Notion:** `extensions/notico/test/` tests Notico's client code against a fake Notion tab (`extensions/notico/test/notion-tab.ts`) that answers with sanitized fixtures (`extensions/notico/test/fixtures/notion/`).
 - **Client and worker together:** Notico's client tests run its real agent against the real worker app (`createApp()` behind `fetch`), so the two cannot drift: the side panel's tests through `extensions/notico/test/panel.ts`, and the agent loop's rules in `extensions/notico/test/agent.test.ts`. `worker/test/extension.test.ts` keeps only what the two sides must agree on: the streamed reply, the tool-call round trip, sessions, credits, a question's cost, and a model change.
-- **Smoke test** (`smoke/`, `pnpm smoke`, also in CI): Playwright loads the built extension into Chromium and checks that the service worker starts, the side panel is enabled on every tab, the side panel page renders signed out, and, with a signed-in Clerk session answered from fixtures, shows the chat, renders the model's streamed reply, and runs a Notion read and a trash that asks first through `chrome.scripting` in a real Notion tab. It catches builds that compile but break in Chrome, such as dependency bumps. Nothing leaves the machine: Notion pages and its API, Clerk's Frontend API, and the worker and its model are answered from `smoke/fixtures/` and `smoke/test/fakes.ts`. Its tests are standalone (no scenario IDs); what needs real Chrome or real accounts (the panel opening from the toolbar icon and staying open across tabs, Google sign-in, real Notion pages) stays `ai-e2e`.
+- **Browser tests** (`extensions/<name>/browser-test/`, `pnpm test:browser`, also in CI and before a release): Playwright loads the built extension into Chromium and checks, in Notico's (`extensions/notico/browser-test/`), that the service worker starts, the side panel is enabled on every tab, the side panel page renders signed out, and, with a signed-in Clerk session answered from fixtures, shows the chat, renders the model's streamed reply, and runs a Notion read and a trash that asks first through `chrome.scripting` in a real Notion tab. It catches builds that compile but break in Chrome, such as dependency bumps. Nothing leaves the machine: Notion pages and its API, Clerk's Frontend API, and the worker and its model are answered from `browser-test/fixtures/` and `browser-test/fakes.ts`. Its tests are standalone (no scenario IDs); what needs real Chrome or real accounts (the panel opening from the toolbar icon and staying open across tabs, Google sign-in, real Notion pages) stays `ai-e2e`.
 
 ## Merging
 
@@ -111,7 +111,7 @@ shasum -a 256 extensions/notico/keys/pub.der | cut -c1-32 | tr '0-9a-f' 'a-p'  #
 
 The Clerk instance needs the Native API on; a production one also needs its DNS records, its own OAuth credentials, and its JWT public key as the worker's `CLERK_JWT_KEY` ([Clerk's Sync Host guide](https://clerk.com/docs/guides/sessions/sync-host)). When the sign-in page's registrable domain has more than two labels (such as `example.co.uk`), set it as `CLERK_COOKIE_DOMAIN` in `.env.local` (`manifest.ts`).
 
-Another extension goes through the same steps in its own folder. To release it, add its folder name to the `extension` choices in [`release.yml`](../.github/workflows/release.yml), once the smoke test covers it.
+Another extension goes through the same steps in its own folder. To release it, add its folder name to the `extension` choices in [`release.yml`](../.github/workflows/release.yml), once it has browser tests (`browser-test/` and a `test:browser` script).
 
 ## Releases
 
@@ -125,7 +125,7 @@ Before running it, add the version to the extension's `CHANGELOG.md` ([Notico's]
 
 The version goes into the manifest and is not committed: `package.json` keeps its development version, and the tags record what was released. It must be 1 to 4 dot-separated integers from 0 to 65535, without leading zeros, and higher than the version last uploaded to the store, which rejects any other.
 
-The workflow needs no secrets. It checks out `main`, runs `pnpm check`, builds the extension for the store, runs the smoke test against that build, and zips `extensions/<name>/dist`. Then it tags the commit `<name>-v<version>` (for example `notico-v0.2.0`) and creates a **draft** GitHub Release with the changelog entry as its body and the zip (`<name>-<version>.zip`) attached; the zip is also kept as the run's artifact. A tag that exists already stops the run, so each version is built once. To throw a run's result away, delete the draft release and its tag:
+The workflow needs no secrets. It checks out `main`, runs `pnpm check`, builds the extension for the store, runs its browser tests against that build, and zips `extensions/<name>/dist`. Then it tags the commit `<name>-v<version>` (for example `notico-v0.2.0`) and creates a **draft** GitHub Release with the changelog entry as its body and the zip (`<name>-<version>.zip`) attached; the zip is also kept as the run's artifact. A tag that exists already stops the run, so each version is built once. To throw a run's result away, delete the draft release and its tag:
 
 ```bash
 gh release delete notico-v0.2.0 --cleanup-tag

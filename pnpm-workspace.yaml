@@ -2,7 +2,6 @@ packages:
   - e2e
   - extensions/*
   - scripts
-  - smoke
   - worker
 
 # Install scripts: true runs them, false skips them (pnpm fails on unlisted ones).
