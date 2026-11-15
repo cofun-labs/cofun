@@ -5,7 +5,7 @@ import { chromium } from '@playwright/test'
 import { mkdirSync, readFileSync } from 'node:fs'
 import path from 'node:path'
 
-const EXTENSION = path.resolve(import.meta.dirname, '../extensions/notico')
+const EXTENSION = path.resolve(import.meta.dirname, '..')
 const OUT = path.join(EXTENSION, 'public/icons')
 /** The sizes extensions/notico/manifest.ts lists. */
 const SIZES = [16, 32, 48, 128]

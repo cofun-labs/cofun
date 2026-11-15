@@ -42,11 +42,11 @@ jobs:
       - name: Run checks
         run: pnpm check
 
-      # The smoke test loads the extension that "Run checks" just built into Playwright's Chromium.
+      # Each extension's browser tests load the build that "Run checks" just made into Playwright's Chromium.
       # No --with-deps: the runner image already has the libraries Chromium needs, and the only
       # packages it would add are fonts, which took most of a minute and the test doesn't need.
       - name: Install Chromium
-        run: pnpm --filter cofun-smoke exec playwright install --no-shell chromium
+        run: pnpm --filter notico-extension exec playwright install --no-shell chromium
 
-      - name: Run the extension smoke test
-        run: pnpm --filter cofun-smoke smoke
+      - name: Run the extensions' browser tests
+        run: pnpm -r --filter './extensions/*' test:browser
