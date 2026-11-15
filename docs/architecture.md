@@ -1,6 +1,6 @@
 # Architecture
 
-How Cofun's extensions and the backend they share are built, and why. This file holds the core design only: the parts, the boundaries between them, and where data flows. Update it when a change adds or moves a module boundary, adds a top-level folder or a boundary module listed under [Layout](#layout), or changes where data goes or comes from (a new host, store, or route). Limits, constants, index names, UI details, and edge-case behavior belong in code comments, next to the code they describe. For setup and deployment see [development.md](development.md); for the workflow and coding rules see [AGENTS.md](../AGENTS.md); for the security model see [security.md](security.md).
+How Cofun's extensions and the backend they share are built, and why. This file holds the core design only: the parts, the boundaries between them, and where data flows. Update it when a change adds, moves, or removes a module boundary or anything listed under [Layout](#layout), or changes where data goes or comes from (a new host, store, or route). Limits, constants, index names, UI details, and edge-case behavior belong in code comments, next to the code they describe. For setup and deployment see [development.md](development.md); for the workflow and coding rules see [AGENTS.md](../AGENTS.md); for the security model see [security.md](security.md).
 
 Each Cofun extension is an AI side panel for one kind of page, in its own folder under `extensions/` (Notico, for Notion, is the first), built and published by itself. All of them call one Cloudflare Worker (`worker/`), which signs users in, checks who is asking, keeps their credits, and passes the conversation to the model. The worker knows nothing about any site: it never talks to Notion or any other page's service. The agent and its tools run in the extension, next to the page they act on.
 
@@ -10,7 +10,7 @@ Each extension keeps its own copy of the side panel code (UI, agent, sign-in, se
 
 Each fact is stored in one place, and everything else is worked out from it when it is read. A copy, a cache, or a stored total is added only when reading the source is too slow or costs too much, and then the code says which is the source and how the copy is kept right. Two stores that each hold part of the same fact drift apart, and then nobody can say which one is right.
 
-For example, a user's balance and what they owe are not stored: they are worked out from their grants and model calls each time. The one stored running value in the credits is what is left of each grant (`grants.left`), written in the same transaction as the call that spends it. Data kept only for watching the service, such as the usage records in Analytics Engine, is not a copy in this sense: nothing the service does reads it.
+For example, a user's balance and what they owe are not stored: they are worked out from their grants and model calls each time. The one stored running value in the credits is what is left of each grant (`grants.left`): working it out would mean replaying every call in the order grants are spent, so it is written in the same transaction as the call that spends it. Data kept only for watching the service, such as the usage records in Analytics Engine, is not a copy in this sense: nothing the service does reads it.
 
 ## Shared by every extension: the worker, sign-in, and credits
 
@@ -25,7 +25,7 @@ For example, a user's balance and what they owe are not stored: they are worked 
 ### Auth flow
 
 1. The user clicks "Sign in" in an extension's side panel. The extension opens `https://api.cofun.cc/login` in a new tab; the worker serves this page with Clerk's sign-in UI.
-2. Sign-in runs against Clerk's instance (Frontend API `clerk.cofun.cc`), which sets its cookies on `cofun.cc`. The extension is configured with `syncHost` and reads that session with the `cookies` permission (`src/clerk.ts`). Clerk doesn't refresh an already-open side panel, so the extension watches those cookies and reloads the panel when they change.
+2. Sign-in runs against Clerk's instance, whose Frontend API is `clerk.cofun.cc`: Clerk's client cookie lives on that host, and a cookie saying whether anyone is signed in on the parent domain `cofun.cc`. The extension is configured with `syncHost` and reads that session with the `cookies` permission (`src/clerk.ts`). Clerk doesn't refresh an already-open side panel, so the extension watches those cookies and reloads the panel when they change.
 3. Before each request, the extension gets a short-lived session JWT with `getToken()` and sends it as `Authorization: Bearer`.
 4. The worker verifies the JWT locally with Clerk's JWT public key (signature, expiry). The token's `azp` (the origin that requested it: `chrome-extension://<id>` for the extension, the worker's own origin for the admin page) must be an allowed origin, and a token with no `azp` is refused, which stops other websites from using a session they obtained in the browser. No network call to Clerk is needed.
 5. The worker checks the user's credits (see [Credits](#credits)) and refuses the request when none are left.
@@ -79,7 +79,7 @@ The user can save a reply, or the whole chat, as a new Notion page under the ope
 
 ### Writes without approval
 
-The agent changes Notion without asking first; moving pages to the trash is the one thing it asks for each time. Each change shows on its tool card, and Notion's page history can undo edits. Text the user doesn't control can carry an instruction that makes the agent write as the user: the trade-off, and what limits it, are in [security.md](security.md#accepted-writes-without-approval).
+The agent changes Notion without asking first; moving pages to the trash is the one thing it asks for each time. Each change shows on its tool card, and Notion's page history can undo edits. The trade-off: text the user doesn't control (shared pages, guest content, search results) can carry an instruction that makes the agent write as the user without anyone being asked. It could change many pages, move a private page under one others can read, or copy what the user can see where someone else can read it, and a comment or mention notifies other people. Read only is the switch for a user who does not accept this; what else limits it is in [security.md](security.md#accepted-writes-without-approval).
 
 ### Usage data
 
@@ -98,7 +98,8 @@ extensions/<name>/        one Chrome extension, built and published by itself; n
   manifest.ts             builds manifest.json from .env; a test pins its permissions and content security policy
   PRIVACY.md, README.md   for the extension's users
   store/                  what the Chrome Web Store Dashboard says
-  src/agent/              the agent loop and its model providers; the only folder that imports pi
+  src/agent/              the agent loop and its model providers; the only folder that imports pi, and the
+                          only one besides the site layer that uses fetch (the worker, the user's own model)
   src/tools/              the tools the agent runs (index.ts lists them)
   src/notion/             the site layer: imports nothing from the agent, tools, sessions, or UI
     api.ts                the only module that knows Notion's endpoints and request shapes
