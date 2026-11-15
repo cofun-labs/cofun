@@ -42,7 +42,7 @@ Only the maintainer's machine can upload: the script runs the `cf` CLI with the 
 
 The worker is one deployment for every extension: sign-in, the model, credits, and the admin page.
 
-Merging to `main` deploys it through Cloudflare Workers Builds (root directory `worker`), which runs the worker's tests, applies the [D1](#database) migrations not yet applied, and deploys, so new code never runs on an old schema. Its build command is `pnpm install --frozen-lockfile && pnpm test` (Node.js 24, for `node:sqlite`), its deploy command `pnpm run deploy`'s, and its API token needs **D1: Edit**, to apply migrations and to find `cofun-db` by name. To deploy by hand, which does the same:
+Merging to `main` deploys it through Cloudflare Workers Builds, which runs the worker's tests, applies the [D1](#database) migrations not yet applied, and deploys, so new code never runs on an old schema. The build is set up in the dashboard with root directory `worker`, build command `pnpm install --frozen-lockfile && pnpm test` (on Node.js 24, for `node:sqlite`), deploy command `npx wrangler d1 migrations apply cofun-db --remote && npx wrangler deploy` (what `pnpm run deploy` runs), and an API token with **D1: Edit**, which applying migrations and finding `cofun-db` by name need. To deploy by hand:
 
 ```bash
 cd worker
@@ -51,7 +51,7 @@ pnpm exec wrangler login
 CLOUDFLARE_ACCOUNT_ID=<account id> pnpm run deploy
 ```
 
-To run it locally, `pnpm dev` in `worker/`; local overrides go in `worker/.dev.vars` (to use the admin page there, add `http://localhost:8787` to `CLERK_AUTHORIZED_PARTIES`).
+Run it locally with `pnpm dev` in `worker/`. Local overrides go in `worker/.dev.vars` (to use the admin page there, add `http://localhost:8787` to `CLERK_AUTHORIZED_PARTIES`).
 
 Configuration is the `vars` in [`worker/wrangler.jsonc`](../worker/wrangler.jsonc), each explained by its comment. The two secrets, `STRIPE_SECRET_KEY` and `STRIPE_WEBHOOK_SECRET`, are set with `pnpm exec wrangler secret put <name>` and never committed; without them nothing can be bought. How admins are recognized (a `role` claim in the Clerk session token) is in `worker/src/routes/admin.ts`.
 
@@ -71,9 +71,9 @@ pnpm build        # builds every extension; Notico's goes to extensions/notico/d
 
 In `chrome://extensions`, turn on Developer mode, click "Load unpacked", and pick `extensions/notico/dist`.
 
-`extensions/notico/.env` holds the public build config, each value explained by its comment; override values in `extensions/notico/.env.local`. A development build sends no usage events to PostHog; to try them from a local build, build it with `POSTHOG_IN_DEV=1`. The PostHog project keeps **Discard client IP data** on, which the privacy pages rely on.
+`extensions/notico/.env` holds the public build config, each value explained by its comment; override values in `extensions/notico/.env.local`. A development build sends no usage events to PostHog; to try them from a local build, build it with `POSTHOG_IN_DEV=1`. The PostHog project keeps **Discard client IP data** on, which the privacy pages rely on. Don't run PostHog's setup wizard on this repository: it adds the SDK with defaults that send page titles and URLs.
 
-To run the extension against your own deployment under an ID of your own, generate a signing key and set its public half as `CRX_PUBLIC_KEY`, then allow its origin (`chrome-extension://<extension id>`) in the worker's `CLERK_AUTHORIZED_PARTIES` and `PRODUCTS` and in the Clerk instance's `allowed_origins`. The Clerk instance needs the Native API on, and a production one its DNS records, its own OAuth credentials, and its JWT public key as `CLERK_JWT_KEY` ([Clerk's Sync Host guide](https://clerk.com/docs/guides/sessions/sync-host)):
+To run the extension against your own deployment under an ID of your own, generate a signing key and set its public half as `CRX_PUBLIC_KEY`, then allow its origin (`chrome-extension://<extension id>`) in the worker's `CLERK_AUTHORIZED_PARTIES` and `PRODUCTS` and in the Clerk instance's `allowed_origins`:
 
 ```bash
 mkdir -p extensions/notico/keys
@@ -82,6 +82,8 @@ openssl rsa -in extensions/notico/keys/crx-private.pem -pubout -outform DER > ex
 base64 -i extensions/notico/keys/pub.der | tr -d '\n'                          # CRX_PUBLIC_KEY
 shasum -a 256 extensions/notico/keys/pub.der | cut -c1-32 | tr '0-9a-f' 'a-p'  # extension ID
 ```
+
+The Clerk instance needs the Native API on; a production one also needs its DNS records, its own OAuth credentials, and its JWT public key as the worker's `CLERK_JWT_KEY` ([Clerk's Sync Host guide](https://clerk.com/docs/guides/sessions/sync-host)). When the sign-in page's registrable domain has more than two labels (such as `example.co.uk`), set it as `CLERK_COOKIE_DOMAIN` in `.env.local` (`manifest.ts`).
 
 Another extension goes through the same steps in its own folder. To release it, add its folder name to the `extension` choices in [`release.yml`](../.github/workflows/release.yml), once the smoke test covers it.
 
