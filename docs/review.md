@@ -19,7 +19,7 @@ Start each finding with its weight and the IDs of the rules it breaks:
 ```
 
 - **Blocking** is a breach of a rule whose weight below is Blocking. It is fixed in this PR, or shown with evidence not to be a real problem.
-- **Rules that must hold** are never traded for something simpler and never excused by the PR body: A1 for a requirement left out, A2, B1, B2 for a P0 scenario, B3, C4 for a half-landed write, C5, every D, E, F, and G rule, H1, K1, and K2 for a module boundary.
+- **Rules that must hold** are never traded for something simpler and never excused by the PR body: A1 for a requirement left out, A2, B1, B2 for a P0 scenario, B3, C4 for a half-landed write, C5, C7, every D, E, F, and G rule, H1, K1, and K2 for a module boundary.
 - **User's call** is a simpler approach that gives up something users would notice (J1), or a break of something users already have that nothing asks to keep (J3). Say what users would lose. The author hands it to the user and pushes neither way until they decide.
 - **Suggestion** is a breach of a rule whose weight is Suggestion, or anything else worth acting on.
 - A finding that fits no rule names none. A blocking one says which harm it does (a user-visible bug, data loss, a risk to the user's Notion account, a security problem, money wrong, a failing check). If such findings recur, the review proposes a rule for them.
@@ -36,6 +36,7 @@ Start each finding with its weight and the IDs of the rules it breaks:
 - List each finding with its weight and rule IDs, as above.
 - When the author has replied that a finding is fixed, check the fix in the diff: that the commit it names is on the PR, and that it does what the reply says.
 - The full review submits one review with `gh pr review --comment` (GitHub blocks approving your own PR), which also says what it checked.
+- Name what you could not verify (an Issue you could not read, CI still running, how the published extension parses an answer) instead of assuming it is fine, and give no clean verdict on it.
 
 ## Rule IDs
 
@@ -73,11 +74,12 @@ Each rule's weight is in brackets. **Blocking** unless it says otherwise.
 ## C. Correctness
 
 - **C1. It works for every input it accepts.** Check what the PR adds at its boundaries: empty, missing, very long, the maximum, an unexpected kind of block or property, a page that changed since it was read. A value from outside (what the model sends, what a page or the site answers, a request body, what is read back from storage) can always reach the code once its schema accepts it: the model or a page's author can send it. [Blocking for an input that can reach the code today, Suggestion for one nothing produces yet]
-- **C2. Errors are handled only where their meaning is known.** No error is swallowed; a `catch` rethrows what it doesn't handle, and a message shown to the user says what happened and what to do.
-- **C3. Async code is sound.** Every promise is awaited or deliberately handled; a stopped question or a closed panel stops the work it started; nothing updates state that is gone; two events in another order don't leave a wrong state. [Blocking for an order or timing that can happen today, Suggestion for one only a later change could bring]
+- **C2. Errors are handled only where their meaning is known.** No error is swallowed; a `catch` rethrows what it doesn't handle, and a message shown to the user says what happened and what to do. Code branches on an error's code or type, never on its message text, and an error translated into another keeps the original as its cause.
+- **C3. Async code is sound.** Every promise is awaited or deliberately handled; a stopped question or a closed panel stops the work it started; nothing updates state that is gone; two events in another order don't leave a wrong state. Cancellation is passed down to every wait it started and is never caught, retried, or reported as an ordinary failure; a finite wait on an outside system has a timeout. [Blocking for an order or timing that can happen today, Suggestion for one only a later change could bring]
 - **C4. Stored data stays readable, or its break is raised.** A change to what is kept in IndexedDB, `chrome.storage`, or D1 still reads what an earlier version wrote when a rule or the PR asks for it; otherwise data an earlier version wrote that it no longer reads is raised (J3). A write that can half-land leaves nothing a later read misreads. [User's call for an earlier version's data nothing asks to keep, Blocking otherwise]
 - **C5. Money is right.** Credits are charged, granted, and refunded exactly once, whatever order events arrive in and however often Stripe sends them, and every figure a user or an operator reads matches the ledger.
 - **C6. The UI shows the state it is in.** Loading, empty, error, and stopped states are each shown, and nothing the user did is lost by a re-render, a reload, or a switch of tab.
+- **C7. A committed migration is never changed.** D1 migrations that are on `main` are history the production database has run; a schema change is a new migration.
 
 ## D. Security
 
@@ -128,7 +130,7 @@ The tools call their site's API as the user's own account, so the site must neve
 
 ## H. The extension and the worker
 
-- **H1. The worker keeps working with the published extension.** It deploys as soon as a PR merges, but installed extensions update only after a Chrome Web Store review: the worker keeps accepting what the extension version on the store sends and answering in a shape it parses. What an older build needs is kept with a comment saying when it can go, and a `[@no-uc:contract]` test that pins it.
+- **H1. The worker keeps working with the published extension.** It deploys as soon as a PR merges, but installed extensions update only after a Chrome Web Store review: the worker keeps accepting what the extension version on the store sends and answering in a shape it parses. Check against the actual reader on the store: the extension's zod schemas at the released tag. A new required field, or a new value in an enum the old build parses, breaks it as surely as a removed field. What an older build needs is kept with a comment saying when it can go, and a `[@no-uc:contract]` test that pins it.
 - **H2. Both sides change together.** A change to what goes between the extension and the worker changes the client, the worker, and the tests that pin what they agree on (`worker/test/extension.test.ts`).
 
 ## I. Performance
@@ -159,7 +161,7 @@ The tools call their site's API as the user's own account, so the site must neve
 
 - **L1. `docs/architecture.md` changes only with the core design**: when a change adds, moves, or removes a module boundary or anything its Layout lists, or changes where data goes or comes from (a new host, store, or route). Then it does change. Limits, constants, index names, UI details, and edge-case behavior go in code comments. [Blocking when a needed update is missing, Suggestion for detail added there]
 - **L2. User docs follow what users see.** A change to what an extension does or how it is used updates its `README.md`, which is written for users, with little technical detail. [Suggestion]
-- **L3. Docs say how to use something**, not the history of how it came to be or one-time setup steps that are done. Configuration that lives only outside the repository (a dashboard setting a deploy needs, say) stays written down, since nothing else would bring it back. [Suggestion]
+- **L3. Docs say how to use something**, not the history of how it came to be or one-time setup steps that are done. Configuration that lives only outside the repository (a dashboard setting a deploy needs, say) stays written down, since nothing else would bring it back. Docs keep no inventory of source files and no copy of fields, request shapes, or state machines: the code's names, types, and comments say those. [Suggestion]
 - **L4: removed**
 - **L5. A rule says the same everywhere.** A rule changed in one place is changed wherever else it is stated: `AGENTS.md`, this guide, the other docs, the review workflow's prompt, and the lint config. Two copies that disagree are a breach. [Blocking when they disagree on what to do, Suggestion when only the wording differs]
 
@@ -168,3 +170,13 @@ The tools call their site's API as the user's own account, so the site must neve
 - **M1. GitHub settings are code.** A change to the `main` ruleset or a repository option is made in `.github/rulesets/main.json` or `scripts/sync-github-settings.sh`.
 - **M2: removed**
 - **M3: removed**
+
+## N. State and computation
+
+State is anything a later step reads back: IndexedDB and `chrome.storage`, D1 rows, React state and stores, caches, and long-lived fields. It costs more than code: code can be rewritten, stored data has to be migrated.
+
+- **N1. Only what can't be computed is stored.** No count kept beside its list, no copy of a selected object beside its id, no flag that mirrors other fields, and no effect or subscription whose only job is to keep two values in step: compute one from the other. A fact of its moment (what a question cost when it ran) is stored, since it must not change when its source does. [Suggestion]
+- **N2. Each record and each rule has one owner.** One module changes a store, table, or record; others call it instead of writing it. A business rule is decided in one place, and every caller asks that place instead of deciding it again.
+- **N3. Illegal states can't be represented.** A lifecycle or protocol state is a discriminated union, each variant holding only what is valid in it, not a mix of optional fields and booleans. Decisions over it are exhaustive, so a new variant fails to compile where it isn't handled. No `Partial` or non-null assertion (`!`) gets past a state's invariant.
+- **N4. A business rule is a pure function.** It takes the inputs it needs and returns a result; reading state, I/O, and saving the result are the caller's. Its result never depends on what ran before it: whether a component mounted, which effect ran first, or whether a request already updated a store. [Suggestion]
+- **N5. An invariant is kept by the side that owns the state, at once.** What one operation must guarantee (a credit spent once, one default of a kind) is enforced inside that operation, atomically, where the state lives, such as the worker for credits, not by a sequence of client calls a failure can leave half done. A disabled button doesn't replace a check on the owning side.
