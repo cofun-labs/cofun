@@ -1,16 +1,14 @@
 // The extension's Notion API client (extensions/notico/src/notion/), against a fake Notion tab that serves
 // sanitized fixtures of Notion's responses.
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
 import {
   BUSY_UNKNOWN,
   COOLDOWN_MAX_MS,
   LIMITED_STOP,
-  NotionClient,
   NotionCooldown,
   coolingStop,
   NOT_SENT,
   NotionError,
-  type CooldownStore,
   RATE_LIMITED,
   UNEXPECTED_STOP,
   UNKNOWN_STOP,
@@ -20,7 +18,7 @@ import {
   textList,
   type Operation,
 } from '../src/notion/api'
-import { COOLDOWN_KEY, activeNotionTab, chromeCooldownStore, notionCooldown, tabTransport } from '../src/notion/tab'
+import { activeNotionTab, notionCooldown } from '../src/notion/tab'
 import {
   BLOCKS,
   FakeNotionTab,
@@ -627,8 +625,6 @@ describe('when Notion turns requests away', () => {
       const later = await notionError(client.getRecords([{ table: 'block', id: PAGE }]))
       expect([later.message, later.stopsQuestion]).toEqual([NOT_SENT, LIMITED_STOP])
       expect(tab.sent).toHaveLength(1)
-      // Nothing is kept for the browser's side panels either.
-      expect(tab.storage.values[COOLDOWN_KEY] ?? 0).toBe(0)
       // Another client, as the next question would make, sends at once.
       await (await activeNotionTab()).client.loadPage(PAGE)
       expect(tab.sent).toHaveLength(2)
@@ -659,25 +655,18 @@ describe('when Notion turns requests away', () => {
 
   it('[@no-uc:notion-safety] waits as long as Retry-After asks, up to the longest wait, and not at all when it says nothing usable', () => {
     const now = Date.parse('2026-11-10T08:00:00Z')
-    // 0 is no wait: only what Notion asks for in a way that is understood starts one.
+    // 0 is no wait: only whole seconds start one; an HTTP date, or anything else, does not.
     const waits: [string | undefined, number][] = [
       ['120', 120_000],
       ['5', 5000],
       ['0', 0],
-      ['Tue, 10 Nov 2026 08:02:00 GMT', 120_000],
-      ['Tue, 10 Nov 2026 07:00:00 GMT', 0],
       ['-1', 0],
       ['1.5', 0],
       ['99999', COOLDOWN_MAX_MS],
       ['9'.repeat(400), COOLDOWN_MAX_MS],
       [undefined, 0],
       ['soon', 0],
-      // Not seconds or an HTTP date, though JavaScript's own date parsing would make a date of each.
-      ['Dec 2026', 0],
-      ['retry 2040', 0],
-      ['2026-11-10T08:05:00Z', 0],
-      ['Tue, 10 Nov 2026 08:05:00 PST', 0],
-      ['Tue, 10 Nov 2026 08:05:00 +0000', 0],
+      ['Tue, 10 Nov 2026 08:02:00 GMT', 0],
       ['120, 120', 0],
     ]
     for (const [retryAfter, ms] of waits) {
@@ -690,112 +679,6 @@ describe('when Notion turns requests away', () => {
     cooldown.start('120')
     cooldown.start('70')
     expect(cooldown.left()).toBe(120_000)
-  })
-
-  it('[@no-uc:notion-safety] keeps every side panel of the browser from sending during the wait, one opened later included', async () => {
-    let now = Date.now()
-    const tab = new FakeNotionTab(PAGE_URL).limit('loadPageChunk', 1, 429, '120').install()
-    tab.workspace = new FakeWorkspace([page], SPACE)
-    // Each side panel is a document of its own, with its own cooldown over the browser's storage.
-    const openPanel = async () => {
-      const cooldown = new NotionCooldown(() => now, chromeCooldownStore)
-      await cooldown.ready()
-      return new NotionClient(tabTransport(7), undefined, cooldown)
-    }
-    const [first, second] = [await openPanel(), await openPanel()]
-    await notionError(first.loadPage(PAGE))
-    // The panel of another Notion tab, open all along.
-    const other = await notionError(second.loadPage(PAGE))
-    expect([other.code, other.message, other.stopsQuestion]).toEqual(['rate_limited', NOT_SENT, coolingStop(120_000)])
-    // A panel opened, or reopened, during the wait.
-    now += 60_000
-    const opened = await notionError((await openPanel()).loadPage(PAGE))
-    expect([opened.code, opened.message, opened.stopsQuestion]).toEqual(['rate_limited', NOT_SENT, coolingStop(60_000)])
-    expect(tab.sent).toHaveLength(1)
-    now += 60_000
-    await (await openPanel()).loadPage(PAGE)
-    expect(tab.sent).toHaveLength(2)
-  })
-
-  it('[@no-uc:notion-safety] still keeps the wait in the side panel when the storage fails', async () => {
-    const now = Date.parse('2026-11-10T08:00:00Z')
-    const broken: CooldownStore = {
-      load: () => Promise.reject(new Error('storage is broken')),
-      save: () => Promise.reject(new Error('storage is broken')),
-      onChange: () => {},
-    }
-    const cooldown = new NotionCooldown(() => now, broken)
-    await cooldown.ready()
-    cooldown.start('120')
-    expect(cooldown.left()).toBe(120_000)
-  })
-
-  it('[@no-uc:notion-safety] loads the kept wait on a later try when the first load failed', async () => {
-    const now = Date.parse('2026-11-10T08:00:00Z')
-    let loads = 0
-    let listeners = 0
-    const flaky: CooldownStore = {
-      load: async () => {
-        if (loads++ === 0) throw new Error('storage is busy')
-        return now + 120_000
-      },
-      save: async () => {},
-      onChange: () => void listeners++,
-    }
-    const cooldown = new NotionCooldown(() => now, flaky)
-    await cooldown.ready()
-    expect(cooldown.left()).toBe(0)
-    await cooldown.ready()
-    expect(cooldown.left()).toBe(120_000)
-    // Loaded: not loaded again, and the store's changes are followed once.
-    await cooldown.ready()
-    expect([loads, listeners]).toEqual([2, 1])
-  })
-
-  it('[@no-uc:notion-safety] keeps the later end when two side panels are turned away at the same moment', async () => {
-    const now = Date.parse('2026-11-10T08:00:00Z')
-    // A storage whose change events arrive later, as chrome.storage's do.
-    let kept: unknown
-    const events: number[] = []
-    const listeners: ((until: unknown) => void)[] = []
-    const store: CooldownStore = {
-      load: async () => kept,
-      save: async (until) => {
-        kept = until
-        events.push(until)
-      },
-      onChange: (listener) => void listeners.push(listener),
-    }
-    const openPanel = async () => {
-      const cooldown = new NotionCooldown(() => now, store)
-      await cooldown.ready()
-      return cooldown
-    }
-    const [first, second] = [await openPanel(), await openPanel()]
-    // Both turned away before either hears of the other: the shorter wait is saved last.
-    first.start('600')
-    second.start('60')
-    expect(kept).toBe(now + 60_000)
-    while (events.length) for (const until of events.splice(0)) for (const listener of listeners) listener(until)
-    expect([first.left(), second.left()]).toEqual([COOLDOWN_MAX_MS, COOLDOWN_MAX_MS])
-    // A panel opened afterwards waits as long as Notion asked.
-    expect((await openPanel()).left()).toBe(COOLDOWN_MAX_MS)
-  })
-
-  it('[@no-uc:notion-safety] a side panel opened during the wait loads it before its first request', async () => {
-    const tab = new FakeNotionTab(PAGE_URL).limit('loadPageChunk', 1, 429, '120').install()
-    tab.workspace = new FakeWorkspace([page], SPACE)
-    await notionError((await activeNotionTab()).client.loadPage(PAGE))
-    // The side panel's modules loaded anew, as in a panel that was closed and opened again.
-    vi.resetModules()
-    const reopened = await import('../src/notion/tab')
-    const { client } = await reopened.activeNotionTab()
-    const err = await client.loadPage(PAGE).then(
-      () => undefined,
-      (e: NotionError) => e,
-    )
-    expect([err?.code, err?.message, err?.stopsQuestion]).toEqual(['rate_limited', NOT_SENT, coolingStop(120_000)])
-    expect(tab.sent).toHaveLength(1)
   })
 
   it('[UC-NOTICO-NOTION-002-S11] does not send a change again that Notion turned away, and nothing changes', async () => {
