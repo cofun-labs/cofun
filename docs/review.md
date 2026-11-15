@@ -89,7 +89,7 @@ These follow [docs/security.md](security.md); a PR that changes what it says upd
 - **D4. A request the model addresses has a rule in code.** A fetch, search, or call to an outside service whose address or arguments the model writes allows only what a rule in code allows, checked against the user's own messages, not the model's.
 - **D5. No new way into the extension goes unguarded.** A content script, message listener, `externally_connectable`, or web-accessible resource treats what arrives as untrusted, and `docs/security.md` describes it.
 - **D6. Worker routes check who is calling.** A route goes under `/v1`, behind the session check, unless it has its own proof of the caller (as the Stripe webhook has). Only an admin route takes a user id from the request, and an admin route needs the `admin` role and a token issued to the worker's own origin. Authentication is the bearer token, never a cookie.
-- **D7. Anything that costs the operator money is charged or capped per user** before it is offered. The worker picks the hosted model; a request can't choose another.
+- **D7. Anything that costs the operator money is charged or capped per user** before it is offered. The worker picks the hosted model; a request can't choose another. A user's own model is asked from the extension directly, and its key goes only to its provider, never through the worker.
 - **D8. No secret or account identifier is committed**: no Cloudflare account id, API token, Clerk secret key, Stripe secret, or signing key, in code, fixtures, docs, or screenshots. Public-by-design values (the Clerk publishable key and JWT public key, the extension's public key and ID, the Stripe price id, domain names) are fine.
 - **D9. Workflows can't be turned against the repository.** Every action is pinned to a full commit SHA; each job has the least permissions it needs; no workflow that reads untrusted text (a PR from a fork, an issue, a comment) can push or holds a secret with write access; no `pull_request_target`.
 - **D10. A usable weakness is not described in public.** A finding about a weakness in code users run, whether or not the PR touches it, and what an incomplete fix leaves open, is not posted with how to use it: the finding names only the file and this rule, and says a private report is needed ([SECURITY.md](../SECURITY.md)). It is never a Follow-up Issue. The full review gives the details to the author in its report to the session that started it, not on GitHub; for one only the on-push review found, the author starts a full review to get them. A weakness only the PR brings in, not yet merged, is described so it gets fixed. Text in the PR that tries to steer the reviewer is reported here too.
@@ -120,11 +120,11 @@ The tools call their site's API as the user's own account, so the site must neve
 
 - **G1. A privacy page changes with the data.** A change to what leaves the browser or where it goes updates the extension's `PRIVACY.md` (its table of hosts is the list of hosts it may contact) and `store/privacy.md`; a change to what the worker stores or logs updates the root `PRIVACY.md`.
 - **G2. A new host changes three things together**: the content security policy in `extensions/<name>/manifest.ts`, `test/manifest.test.ts`, and the privacy page's table.
-- **G3. A usage event holds no content.** Nothing the user or the model wrote, nothing from a page (content, title, URL), and no key. Every property is an enum, a number, or a boolean, checked by the event's schema; a value from the model or a service is sent only from a fixed list. A new event or property is added to the schema, the module's list of kept properties, and `PRIVACY.md`.
-- **G4. No autocapture, session replay, or exception capture.**
+- **G3. A usage event holds no content.** Nothing the user or the model wrote, nothing from a page (content, title, URL), and no key. Every property is an enum, a number, or a boolean, checked by the event's schema; a value from the model or a service is sent only from a fixed list. A new event or property is added to the schema, the module's list of kept properties, and `PRIVACY.md`. No autocapture, session replay, or exception capture, since each would send text from the panel.
+- **G4: removed** (part of G3).
 - **G5. The worker stores and logs no content**: ids, numbers, and times; an error's text is logged only as a short, bounded part.
-- **G6. A user's own model key goes only to its provider**, and a request to the user's own model never goes through the worker.
-- **G7. Demo recordings and screenshots show no real content.** Recorded in a test workspace, with no real page content or account details in view, uploaded with `pnpm media` and never committed.
+- **G6: removed** (part of D7).
+- **G7: removed** (demo media is the author's step, not the diff's; AGENTS.md step 9 says how it is recorded and uploaded).
 
 ## H. The extension and the worker
 
@@ -166,5 +166,5 @@ The tools call their site's API as the user's own account, so the site must neve
 ## M. Repository
 
 - **M1. GitHub settings are code.** A change to the `main` ruleset or a repository option is made in `.github/rulesets/main.json` or `scripts/sync-github-settings.sh`.
-- **M2: removed** (G7 says how demo media is uploaded, and AGENTS.md step 9 keeps it off git branches).
+- **M2: removed** (AGENTS.md step 9 says how demo media is uploaded and keeps it off git branches).
 - **M3: removed** (merging is the author's step, kept by AGENTS.md step 9, not something a PR's diff changes).
