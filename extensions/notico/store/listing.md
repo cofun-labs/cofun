@@ -37,7 +37,7 @@ CREDITS
 Asking Cofun's AI model costs credits. Every account gets free credits each week, and the panel shows how many you have left and when they renew. When you need more, buy a pack in the panel: it opens Stripe's checkout, nothing renews, and bought credits last a year. Answering with your own model on OpenRouter spends no credits.
 
 PRIVACY
-Your questions, and the Notion content Notico reads to answer them, go to our server and on to an AI model running on Cloudflare Workers AI, or, if you set up your own model, straight to OpenRouter with your key. The server does not store that content: it keeps only usage numbers, never the text of a question or an answer. Chats are saved only in Chrome on your device. Notico also reports which features are used and whether they worked, never the text of a question, an answer, or a page; you can turn that off in the settings. No ads.
+Your questions, and the Notion content Notico reads to answer them, go to our server and on to an AI model running on Cloudflare Workers AI, or, if you set up your own model, straight to OpenRouter with your key. The server does not store that content: it keeps only usage numbers and your purchases, never the text of a question or an answer. Chats are saved only in Chrome on your device. Notico also reports which features are used and whether they worked, never the text of a question, an answer, or a page; you can turn that off in the settings. No ads.
 
 PLEASE NOTE
 • Notico edits pages as soon as it decides to; moving pages to the trash is the one thing it asks about first. Every change is shown in the side panel, and Notion's page history can undo edits. Switch the message box to Read only to keep it from changing anything.

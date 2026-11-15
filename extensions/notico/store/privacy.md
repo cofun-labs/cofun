@@ -58,7 +58,7 @@ No, I am not using remote code. Everything the extension runs is in its package;
 |---|---|---|
 | Personally identifiable information | Yes | The account's name, email address, and avatar, shown in the panel |
 | Health information | No | |
-| Financial and payment information | Yes | Each purchase of credits, kept by the worker under the account's id with its Stripe payment reference and whether it was refunded or disputed. Card details go to Stripe's Checkout page, never to the extension or the worker |
+| Financial and payment information | Yes | Each purchase of credits, kept by the worker under the account's id with its Stripe payment reference and whether it was refunded or disputed. Card details go to Stripe's Checkout page, never to the extension or the worker. When a payment adds credits, the worker also tells PostHog that a purchase was completed, with the account's id and the pack chosen, and no amount, currency, or payment reference; this comes from the worker, so the extension's usage-data switch does not cover it |
 | Authentication information | Yes | The Clerk session token and cookie, and the user's own OpenRouter key, which is sent only to OpenRouter |
 | Personal communications | Yes | The user's conversation with the assistant goes to the worker and the model, or to OpenRouter when the user answers with their own model, and to the user's own Notion workspace when the user saves a chat or a reply there |
 | Location | No | The clock's offset from UTC is sent to count credits used per day; it is not a location |
