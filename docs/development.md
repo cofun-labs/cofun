@@ -38,6 +38,19 @@ pnpm media 367 demo.gif before.png
 
 Only the maintainer's machine can upload: the script runs the `cf` CLI with the Cloudflare login there (with several accounts in it, `CLOUDFLARE_ACCOUNT_ID` picks the one that has the bucket; don't commit it). Showcase GIFs meant for the README or an extension's help pages are committed in the repository instead.
 
+## Merging
+
+`pnpm pr` runs `gh` with the login on this machine:
+
+```bash
+pnpm pr resolve 367   # resolve every review thread whose last comment is the PR author's reply
+pnpm pr ready 367     # check that the PR can merge, and print the merge command
+```
+
+`pnpm pr ready` passes when the PR is open, not a draft, and based on `main`; every check has passed; every review thread is resolved; every checklist item in the PR body and the Issues it closes is ticked; the latest Claude review names the head commit (except on a PR that changes the review workflow, which claude-code-action refuses to run on); a full review by the PR's author (the sub-agent's, [AGENTS.md](../AGENTS.md) step 7) exists; every commit the author's comments name is on GitHub (a fix committed but never pushed is caught); and auto-merge is off. It can't tell whether the PR needs a demo recording; that stays with you.
+
+`main` uses a merge queue, and `gh pr merge {PR} --match-head-commit {SHA}` adds a PR to it through GitHub's auto-merge, which is why the repository allows auto-merge. `--match-head-commit` makes sure a commit pushed after the review can't ride along. The command prints the same message ("will be added to the merge queue … when ready") whether it queued the PR or only armed auto-merge on a PR that isn't ready yet, so readiness is checked before it, not after. The queue runs CI again on top of the latest `main` and squash-merges the PR if CI passes. GitHub then deletes the branch, and `Closes #ID` closes the Issue.
+
 ## Worker
 
 The worker is one deployment for every extension: sign-in, the model, credits, and the admin page.
