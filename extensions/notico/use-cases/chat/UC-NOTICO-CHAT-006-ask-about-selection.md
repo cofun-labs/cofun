@@ -23,7 +23,7 @@ Key constraints:
 | UC-NOTICO-CHAT-006-S02 | P1 | ✅ | Given a selection in a frame from another site; when the user picks "Ask Notico"; then the question carries Chrome's own copy of the selection. |
 | UC-NOTICO-CHAT-006-S03 | P1 | ✅ | Given two selections sent before the side panel opened; when the user sends two more, takes two off with their buttons, and asks; then the question carries the others in the order sent; and Backspace in an empty message takes the selections off, the last first. |
 | UC-NOTICO-CHAT-006-S04 | P1 | ✅ | Given a question sent with a selection; when the session is reopened and the user clicks the selection in the question; then it still shows, and the current tab goes to the page, to the selected text. |
-| UC-NOTICO-CHAT-006-S05 | P2 | ✅ | Given a selection longer than one may be, or more selections than a question may carry in all; when the question is sent; then the AI gets the start of the long one, and the selections up to the limit, and is told what was left out. |
+| UC-NOTICO-CHAT-006-S05 | P2 | ✅ | Given a selection longer than one may be, or more selections than a question may carry in all; when the question is sent; then the AI gets the start of the long one, and the selections up to the limit, and is told what was left out; the question shows only the selections it carried. |
 | UC-NOTICO-CHAT-006-S07 | P1 | ✅ | Given "Ask Notico" turned off in Settings; when the user right-clicks selected text, also after an update; then the menu has no "Ask Notico"; and when it is turned on again on another device of the same Chrome profile, the item comes back here. |
 
 ### ai-e2e

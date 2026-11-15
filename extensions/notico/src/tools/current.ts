@@ -96,22 +96,34 @@ export function carryPages(
   const notes = [openNote(page, removed, others.length > 0)]
   if (others.length)
     notes.push(`[Pages the user added to this question: ${others.map((p) => pageNamed(p)).join('; ')}]`)
-  for (const selection of selections) {
-    // Text from a page like any other: it counts toward what one question reads outside Notion, and
-    // the selections after the limit is reached are cut, or left out.
-    const left = QUESTION_OUTSIDE_CHARS - outsideRead
-    if (left <= 0) {
-      notes.push(
-        '[The user sent more text selected on pages with this question, which is left out: the question ' +
-          'already carries as much text from pages outside Notion as one may.]',
-      )
-      break
-    }
-    const text = selection.text.slice(0, left)
+  const carried = selectionsCarried(selections)
+  for (const { selection, text } of carried) {
     outsideRead += text.length
     notes.push(selectionNote(selection, text))
   }
+  if (carried.length < selections.length)
+    notes.push(
+      '[The user sent more text selected on pages with this question, which is left out: the question ' +
+        'already carries as much text from pages outside Notion as one may.]',
+    )
   return notes.join('\n')
+}
+
+/**
+ * The selections a question carries, of those sent with it, each with as much of its text as goes:
+ * they count toward what one question reads outside Notion, so past that limit the last is cut and
+ * the rest are left out. The panel shows the question with these only.
+ */
+export function selectionsCarried(selections: Selection[]): { selection: Selection; text: string }[] {
+  let left = QUESTION_OUTSIDE_CHARS
+  const carried = []
+  for (const selection of selections) {
+    if (left <= 0) break
+    const text = selection.text.slice(0, left)
+    left -= text.length
+    carried.push({ selection, text })
+  }
+  return carried
 }
 
 /** Ends the text of a selection the question carries (see selectionNote); a line of the text can't fake it. */

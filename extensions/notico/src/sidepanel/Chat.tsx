@@ -48,6 +48,7 @@ import {
   replyTitle,
   savePage,
   SELECTION_END,
+  selectionsCarried,
   TOOLS,
   touchedBy,
   type OpenPage,
@@ -573,7 +574,8 @@ export function Chat({ userId }: { userId: string }) {
     if (!current) setCurrent(session)
     // What the composer shows is what the question carries.
     const sentPages = chips.map((c) => c.page)
-    const sentSelections = selections.map(shownSelection)
+    // Those the question has room for: the others never reach the model, so the question doesn't show them.
+    const sentSelections = selectionsCarried(selections).map(({ selection }) => shownSelection(selection))
     // A page is off while the composer shows none for it: also on another site, until another page shows.
     const context = carryPages(tabPage, removed !== undefined && !openPage, chosen, selections)
     setSelections([])

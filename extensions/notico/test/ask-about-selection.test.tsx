@@ -256,6 +256,12 @@ describe('asking about text selected on a page', () => {
         'What is this?',
       ),
     ])
+    // The question shows only those it carried.
+    expect(
+      within(conversation().getByRole('list', { name: 'Pages sent' }))
+        .getAllByRole('link')
+        .map((a) => a.textContent?.slice(0, 20)),
+    ).toEqual(['news.example.com: “a', 'news.example.com: “b', 'news.example.com: “c'])
   })
 
   it('[UC-NOTICO-CHAT-006-S07] turned off in Settings, the menu has no "Ask Notico", on this device and those it syncs to, until turned on', async () => {
