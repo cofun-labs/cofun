@@ -313,6 +313,39 @@ describe('edits only change the page as the AI read it, and as it still is', () 
     }
   })
 
+  it('[UC-NOTICO-NOTION-002-S02] refuses to rewrite a table from an earlier part when a row changed and a later part shows it split', async () => {
+    const n = 150
+    const rows = Array.from({ length: n }, (_, i) =>
+      block(100 + i, 'table_row', undefined, { properties: { a: [[`row ${i} ${'r'.repeat(50)}`]] } }, id(2)),
+    )
+    const ws = workspace(
+      [1, 2],
+      [
+        block(1, 'text', 'Intro'),
+        block(2, 'table', undefined, {
+          content: rows.map((r) => r.id),
+          format: { table_block_column_order: ['a'] },
+        }),
+        ...rows,
+      ],
+    )
+    open(ws)
+    const first = body(await read())
+    const table = first
+      .split('\n')
+      .filter((l) => l.startsWith('|'))
+      .join('\n')
+      .replace('row 0 ', 'row ZERO ')
+    // The user types into a row, enough that the table no longer fits in one part.
+    const typed = `Typed by the user ${'t'.repeat(5000)}`
+    ws.edit(id(100 + n - 1), { properties: { a: [[typed]] } })
+    expect(await read({ part: 2 })).toContain('Part 2 of')
+    await expect(edit([{ action: 'replace', block: '^00000002', markdown: table }])).rejects.toThrow(
+      'was changed since you read the page',
+    )
+    expect(ws.records.get(id(100 + n - 1))!.properties).toEqual({ a: [[typed]] })
+  })
+
   it('[UC-NOTICO-NOTION-002-S02] refuses to delete a block when something nested under it changed', async () => {
     const ws = workspace([1], [block(1, 'toggle', 'T', { content: [id(2)] }), block(2, 'text', 'Inside', {}, id(1))])
     open(ws)

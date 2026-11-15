@@ -56,8 +56,11 @@ export function pageRead(
     if (blocks[id] && (id === loaded.page.id || whole(id))) versions.set(id, blocks[id].version)
   }
   // Table rows and layout columns are drawn as part of the block around them, without references
-  // of their own; they were seen with it.
+  // of their own; they were seen with it, so only when it was seen in full. Otherwise a later
+  // part, read from a new load, would give the rows of a table split across parts that load's
+  // versions, and a rewrite from an earlier part could overwrite a row changed in between.
   for (const id of refs.keys()) {
+    if (!whole(id)) continue
     for (const d of descendants(blocks, id)) {
       if (DRAWN_WITH_PARENT.has(blocks[d].type)) versions.set(d, blocks[d].version)
     }
