@@ -74,7 +74,7 @@ Each rule's weight is in brackets. **Blocking** unless it says otherwise.
 - **B1. A rule users notice has a scenario.** Every business rule a user can notice that the PR adds or changes has a scenario, in the use cases of the product that decides it: `extensions/<name>/use-cases/` for an extension, `worker/use-cases/` for a rule only the worker decides ([bdd.md](bdd.md#products)). An existing scenario that already says it is reused or edited, not repeated.
 - **B2. The scenario is verified.** An `api-test` scenario has a test whose name starts with its ID; an `ai-e2e` scenario has a run recorded in the PR (the commit, the commands, and what shows the "then"). P0 scenarios are verified before merge. [Blocking for P0, Suggestion for P1 and P2]
 - **B3. The diff matches its scenarios.** What a scenario's "then" says is what the code does. A changed rule changes its scenario; a deleted scenario's tests are deleted or lose its ID.
-- **B4. Every new test earns its place.** It names a scenario ID, or `[@no-uc:<kind>]` for a break that does one of the harms in [bdd.md](bdd.md#what-gets-a-test) and that nothing else would catch. No test of finished work, of a tool run by hand, of UI wording, or of the same check once per tool; a table of cases rather than a test per case. [Suggestion]
+- **B4. Every new test earns its place.** It names a scenario ID, or `[@no-uc:<kind>]` for a break that does one of the harms in [bdd.md](bdd.md#what-gets-a-test) and that nothing else would catch. No test of finished work, of a tool run by hand, of UI wording, or of the same check once per tool; a table of cases rather than a test per case.
 - **B5. No mocking.** No `vi.mock()` and no spies. An external dependency is replaced with a fake that implements its interface, injected through `env`; Clerk's React SDK is the one module replaced whole.
 - **B6. UI tests act as a user.** They run the whole side panel and only type, click, and read the screen, finding things by role, accessible name, label, or visible text: never by component state, the agent, the session store, or a test id. A component is never rendered on its own.
 - **B7. Tests never wait for time to pass.** A fake clock with a fixed start, moved explicitly; no sleeps, and no assertion on how long something took.
@@ -122,8 +122,8 @@ The tools call Notion's internal API as the user's own account, so Notion must n
 
 - **F1. A value from outside is parsed, never asserted.** What the model sends, what Notion answers, a network request or response body, and what is read back from storage are `unknown` until a zod schema parses them where they arrive. A type assertion (`as`) on such a value is a breach; lint can't see it, so read every line the PR touches.
 - **F2. One schema is the single source.** The type, the runtime check, and any description of the shape given to someone else (such as a tool's JSON Schema for the model) all come from it.
-- **F3. Validation is at the boundary only.** Code behind it takes the parsed type and does not check again. [Suggestion]
-- **F4. A value that fails says what is wrong**, specifically enough for whoever sent it to correct it: a tool's argument error lets the model fix its call. [Suggestion]
+- **F3. Validation is at the boundary only.** Code behind it takes the parsed type and does not check again.
+- **F4. A value that fails says what is wrong**, specifically enough for whoever sent it to correct it: a tool's argument error lets the model fix its call.
 - **F5. Notion's property definitions and rich text are read with care.** These two are read where they are used, with checks written by hand. New code checks what it reads, asserts nothing wider than it checked, and doesn't copy an older assertion that checks less.
 
 ## G. Privacy and usage data

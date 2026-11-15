@@ -137,7 +137,7 @@ pnpm test         # extension and worker tests, and the unit tests of scripts/
 pnpm build        # build every extension into extensions/<name>/dist
 pnpm smoke        # build the extension and run the smoke test in Chromium (also runs in CI)
 pnpm media 367 demo.gif   # upload a PR's demo GIF or screenshots and print their URLs (maintainer's machine only)
-pnpm pr resolve 367       # resolve every review thread the PR's author has answered
+pnpm pr resolve 367       # resolve the review threads the PR's author answered, except a user's call
 pnpm pr ready 367         # check that a PR can merge, and print the merge command
 pnpm e2e --help   # drive the shared Chrome Canary for ai-e2e runs (maintainer's machine only)
 ```

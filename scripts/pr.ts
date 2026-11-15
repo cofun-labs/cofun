@@ -32,9 +32,9 @@ query($owner: String!, $name: String!, $number: Int!) {
       state isDraft baseRefName headRefOid body
       author { login }
       autoMergeRequest { enabledAt }
-      closingIssuesReferences(first: 20) { nodes { number body } }
-      commits(last: 100) { totalCount nodes { commit { oid } } }
-      files(first: 100) { nodes { path } }
+      closingIssuesReferences(first: 20) { pageInfo { hasNextPage } nodes { number body } }
+      commits(last: 100) { pageInfo: pageInfo { hasNextPage: hasPreviousPage } nodes { commit { oid } } }
+      files(first: 100) { pageInfo { hasNextPage } nodes { path } }
       head: commits(last: 1) { nodes { commit { statusCheckRollup { state } } } }
       comments(last: 100) { pageInfo: pageInfo { hasNextPage: hasPreviousPage } nodes { author { login } body } }
       reviews(last: 100) { pageInfo: pageInfo { hasNextPage: hasPreviousPage } nodes { author { login } body } }
@@ -61,12 +61,12 @@ const pullRequestSchema = z.object({
       body: z.string(),
       author: login,
       autoMergeRequest: z.object({ enabledAt: z.string().nullable() }).nullable(),
-      closingIssuesReferences: z.object({ nodes: z.array(z.object({ number: z.number(), body: z.string() })) }),
-      files: z.object({ nodes: z.array(z.object({ path: z.string() })) }),
-      commits: z.object({
-        totalCount: z.number(),
-        nodes: z.array(z.object({ commit: z.object({ oid: z.string() }) })),
+      closingIssuesReferences: z.object({
+        pageInfo: page,
+        nodes: z.array(z.object({ number: z.number(), body: z.string() })),
       }),
+      files: z.object({ pageInfo: page, nodes: z.array(z.object({ path: z.string() })) }),
+      commits: z.object({ pageInfo: page, nodes: z.array(z.object({ commit: z.object({ oid: z.string() }) })) }),
       head: z.object({
         nodes: z.array(
           z.object({ commit: z.object({ statusCheckRollup: z.object({ state: z.string() }).nullable() }) }),
@@ -122,10 +122,13 @@ function namedCommits(text: string): string[] {
  */
 function pushed(owner: string, name: string, commit: string): boolean {
   try {
-    gh(['api', `repos/${owner}/${name}/commits/${commit}`, '--jq', '.sha'])
+    execFileSync('gh', ['api', `repos/${owner}/${name}/commits/${commit}`, '--jq', '.sha'], { stdio: 'pipe' })
     return true
-  } catch {
-    return false
+  } catch (error) {
+    // Only GitHub saying it has no such commit means that; any other failure is not an answer.
+    const stderr = error instanceof Error && 'stderr' in error ? String(error.stderr) : ''
+    if (/HTTP (404|422)/.test(stderr)) return false
+    throw error
   }
 }
 
@@ -146,9 +149,11 @@ function problems(pr: PullRequest, owner: string, name: string): string[] {
   const checks = pr.head.nodes[0]?.commit.statusCheckRollup?.state ?? 'none'
   if (checks !== 'SUCCESS') found.push(`The checks on the head commit are ${checks.toLowerCase()}, not all passed.`)
 
-  for (const list of [pr.comments, pr.reviews, pr.reviewThreads]) {
-    if (list.pageInfo.hasNextPage)
-      found.push('The PR has more than 100 comments, reviews, or threads: check it by hand.')
+  const lists = [pr.comments, pr.reviews, pr.reviewThreads, pr.commits, pr.files, pr.closingIssuesReferences]
+  if (lists.some((list) => list.pageInfo.hasNextPage)) {
+    found.push(
+      'The PR has more comments, reviews, threads, commits, files, or closed Issues than one read covers: check it by hand.',
+    )
   }
   const open = pr.reviewThreads.nodes.filter((thread) => !thread.isResolved)
   if (open.length > 0) {
@@ -163,23 +168,31 @@ function problems(pr: PullRequest, owner: string, name: string): string[] {
     for (const line of unticked) found.push(`${where} has an unticked item: ${line.trim()}`)
   }
 
-  // claude-code-action refuses to run when the PR changes its own workflow, and the check still
-  // passes: such a PR has only the full review.
-  const reviewsItself = pr.files.nodes.some((file) => file.path === REVIEW_WORKFLOW)
-  const claude = pr.comments.nodes.filter((c) => CLAUDE.test(c.author?.login ?? '')).at(-1)
-  if (!reviewsItself && claude === undefined) found.push('The Claude review has posted no summary comment.')
-  else if (!reviewsItself && claude !== undefined && !claude.body.includes(head.slice(0, 7))) {
-    found.push(`The latest Claude review summary does not name the head commit ${head.slice(0, 7)}.`)
-  }
-
   const commits = pr.commits.nodes.map((node) => node.commit.oid)
-  const fullReview = pr.reviews.nodes.some(
-    (review) =>
-      review.author?.login === author &&
+  const short = head.slice(0, 7)
+  const byTheAuthor = pr.reviews.nodes.filter((review) => review.author?.login === author)
+  // claude-code-action refuses to run when the PR changes its own workflow, and the check still
+  // passes: such a PR has only the full review, so that review must have seen the head.
+  if (pr.files.nodes.some((file) => file.path === REVIEW_WORKFLOW)) {
+    const latest = byTheAuthor.at(-1)
+    if (latest === undefined || !namedCommits(latest.body).some((c) => head.startsWith(c))) {
+      found.push(
+        `The PR changes ${REVIEW_WORKFLOW}, so the full review is its only one, and the latest review by ${author ?? 'the PR author'} does not name the head commit ${short}: review the head.`,
+      )
+    }
+  } else {
+    const claude = pr.comments.nodes.filter((c) => CLAUDE.test(c.author?.login ?? '')).at(-1)
+    if (claude === undefined) found.push('The Claude review has posted no summary comment.')
+    else if (!claude.body.includes(short)) {
+      found.push(`The latest Claude review summary does not name the head commit ${short}.`)
+    }
+    const fullReview = byTheAuthor.some((review) =>
       namedCommits(review.body).some((c) => commits.some((oid) => oid.startsWith(c))),
-  )
-  if (!fullReview)
-    found.push(`No review by ${author ?? 'the PR author'} names a commit of the PR: the full review is missing.`)
+    )
+    if (!fullReview) {
+      found.push(`No review by ${author ?? 'the PR author'} names a commit of the PR: the full review is missing.`)
+    }
+  }
 
   const byAuthor = [
     ...pr.comments.nodes,
@@ -224,14 +237,21 @@ function resolve(number: number): number {
   const pr = pullRequest(number)
   const author = pr.author?.login
   const open = pr.reviewThreads.nodes.filter((thread) => !thread.isResolved)
-  const answered = open.filter((thread) => thread.comments.nodes.at(-1)?.author?.login === author)
+  // A user's call stays open until the user decides it, whoever replied last.
+  const answered = open.filter(
+    (thread) =>
+      thread.comments.nodes.at(-1)?.author?.login === author &&
+      !/^\s*\*\*User's call/.test(thread.comments.nodes[0]?.body ?? ''),
+  )
   for (const thread of answered) {
     graphql(RESOLVE, { thread: thread.id }, z.unknown())
     console.log(`Resolved the thread on ${thread.path}.`)
   }
   const left = open.length - answered.length
   if (left > 0)
-    console.log(`${left} thread(s) left open: their last comment is not a reply from ${author ?? 'the PR author'}.`)
+    console.log(
+      `${left} thread(s) left open: a user's call, or a thread whose last comment is not a reply from ${author ?? 'the PR author'}.`,
+    )
   return left > 0 ? 1 : 0
 }
 
