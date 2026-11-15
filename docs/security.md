@@ -66,7 +66,8 @@ Chats, the Clerk client token, and the user's model keys are kept in the Chrome 
 - **What is committed is public by design**: the Clerk publishable key and JWT public key, the extension's public key and ID, the Stripe price id, and domain names. The worker's secrets live on Cloudflare; local ones (`.dev.vars`, `.env.local`, `keys/`) are git-ignored.
 - **`main` changes only through pull requests** with CI, dependency review, and workflow lint passing, through a merge queue. Every action is pinned to a commit. GitHub's settings are kept as code (`scripts/sync-github-settings.sh`).
 - **Deploys hold no Cloudflare credential on GitHub**: Cloudflare pulls the repository and deploys on merge. The Release workflow uses no secret and ends in a draft release, which a person uploads to the store.
-- **One workflow holds a secret and can push**: the one that runs Claude on request (`.github/workflows/claude.yml`). It starts only when the owner, a member, or a collaborator asks. The review workflow runs on `pull_request`, so a fork's pull request gets no secret, and it may only read the diff and comment.
+- **No workflow that reads untrusted text can push.** The one secret on GitHub is Claude's token, held by the review workflow alone. It runs on `pull_request`, so a fork's pull request gets no secret, and it may only read the diff and comment. There is no workflow that runs Claude on request with write access.
+- **The release zip can be checked.** The Release workflow records the zip's SHA-256 in its run's summary, and the maintainer compares it with the draft release's zip before uploading that to the store ([development.md](development.md#releases)).
 - **The sign-in's domain serves nothing else a browser runs.** The public bucket at `static.cofun.cc` holds images and videos only (`scripts/upload-media.ts`).
 
 ## Rules for later changes

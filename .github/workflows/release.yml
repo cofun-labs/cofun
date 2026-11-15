@@ -39,6 +39,7 @@ jobs:
       sha: ${{ steps.commit.outputs.sha }}
       tag: ${{ steps.inputs.outputs.tag }}
       zip: ${{ steps.inputs.outputs.zip }}
+      zip-sha256: ${{ steps.zip.outputs.sha256 }}
       notes: ${{ steps.inputs.outputs.notes }}
     env:
       EXTENSION: ${{ inputs.extension }}
@@ -146,13 +147,29 @@ jobs:
 
       # The store wants manifest.json at the root of the zip. The variable is not named ZIP:
       # Info-ZIP's zip reads $ZIP as default options, so it would write the archive into dist.
+      # The zip's SHA-256 goes into the run's summary, which only this run writes, so the
+      # maintainer can check the draft release's zip against it before uploading it to the store
+      # (see "Releases" in docs/development.md).
       - name: Zip the build
+        id: zip
         env:
           ARCHIVE: ${{ steps.inputs.outputs.zip }}
+          SHA: ${{ steps.commit.outputs.sha }}
         run: |
           cd "extensions/$EXTENSION/dist"
           zip -r -X -q "$GITHUB_WORKSPACE/$ARCHIVE" .
           ls -l "$GITHUB_WORKSPACE/$ARCHIVE"
+          sha256=$(sha256sum "$GITHUB_WORKSPACE/$ARCHIVE" | cut -d' ' -f1)
+          echo "sha256=$sha256" >>"$GITHUB_OUTPUT"
+          {
+            echo "## $ARCHIVE"
+            echo
+            echo "Built from \`$SHA\`. SHA-256:"
+            echo
+            echo "\`\`\`"
+            echo "$sha256"
+            echo "\`\`\`"
+          } >>"$GITHUB_STEP_SUMMARY"
 
       # The zip the release gets, and the one a later store upload job takes.
       - name: Upload the zip
@@ -183,6 +200,7 @@ jobs:
       SHA: ${{ needs.build.outputs.sha }}
       TAG: ${{ needs.build.outputs.tag }}
       ARCHIVE: ${{ needs.build.outputs.zip }}
+      ZIP_SHA256: ${{ needs.build.outputs.zip-sha256 }}
       NOTES: ${{ needs.build.outputs.notes }}
 
     steps:
@@ -195,6 +213,11 @@ jobs:
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: ${{ needs.build.outputs.notes }}
+
+      # The release gets the zip the build job made and summarized, or none.
+      - name: Check the zip
+        run: |
+          echo "$ZIP_SHA256  $ARCHIVE" | sha256sum --check --strict
 
       # A draft release creates its tag only when published, so the tag is made here, on the
       # commit that was built. It fails if the tag exists, so a version is released only once.
