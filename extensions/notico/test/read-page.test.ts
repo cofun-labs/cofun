@@ -280,6 +280,9 @@ describe('UC-NOTICO-NOTION-001 read a page', () => {
       expect(result).toContain(
         part < parts ? `Part ${part} of ${parts}. Read part ${part + 1} for more.` : `Part ${part} of ${parts}.`,
       )
+      expect(result).toContain(
+        'This part is read from the page as it is now: if the page changed since an earlier part',
+      )
       texts.push(body(result))
     }
     for (const text of texts) expect(text.length).toBeLessThanOrEqual(PART_CHARS)
@@ -854,6 +857,7 @@ describe('faithful details', () => {
     openPage(row, row)
     const first = await read()
     expect(first).toContain('Part 1 of 2. Read part 2 for more.')
+    expect(first).not.toContain('as it is now')
     expect(body(first).length).toBeLessThanOrEqual(PART_CHARS)
     expect(body(first).startsWith('---\nNotes: nnn')).toBe(true)
     const second = body(await read({ part: 2 }))

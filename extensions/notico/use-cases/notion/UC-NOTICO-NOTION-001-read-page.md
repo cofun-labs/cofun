@@ -21,7 +21,7 @@ Key constraints:
 | --- | --- | --- | --- |
 | UC-NOTICO-NOTION-001-S01 | P0 | ✅ | Given a page with common kinds of content; when the AI reads it; then it gets the content in page order, with its structure, and each piece marked so it can be referred to. |
 | UC-NOTICO-NOTION-001-S02 | P1 | ✅ | Given a page with content that can't be shown; when the AI reads it; then that content is marked as being there, and nothing after it is lost. |
-| UC-NOTICO-NOTION-001-S03 | P1 | ✅ | Given a page too long for one read; when the AI reads it; then it gets the first part, is told there is more, and can read the rest part by part, each from the page as it is when that part is read. |
+| UC-NOTICO-NOTION-001-S03 | P1 | ✅ | Given a page too long for one read; when the AI reads it; then it gets the first part, is told there is more, and can read the rest part by part, each from the page as it is when that part is read, and is told that parts may overlap or leave a gap if the page changed in between. |
 | UC-NOTICO-NOTION-001-S04 | P1 | ✅ | Given a database row; when the AI reads it; then the row's properties come with its content. |
 | UC-NOTICO-NOTION-001-S05 | P1 | ✅ | Given a page with child pages and databases; when the AI reads it; then they appear by name with a way to open them, and their content is not included. |
 | UC-NOTICO-NOTION-001-S06 | P0 | ✅ | Given a page the user's Notion account can't open; when the AI tries to read it; then it is told the page can't be read and gets none of its content. |

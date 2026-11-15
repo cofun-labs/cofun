@@ -70,6 +70,12 @@ export const readPage = defineTool({
       ...(parts.length > 1
         ? [`Part ${part} of ${parts.length}${part < parts.length ? `. Read part ${part + 1} for more.` : '.'}`]
         : []),
+      // Each part is cut from a load of its own, so a change between two reads moves where parts start.
+      ...(part > 1
+        ? [
+            'This part is read from the page as it is now: if the page changed since an earlier part, the parts may overlap or leave a gap.',
+          ]
+        : []),
       ...(md.kind === 'database' ? ['This page is a database: read its rows with query_database.'] : []),
       ...(part === 1 && threads
         ? [
