@@ -134,7 +134,7 @@ These follow [docs/security.md](security.md); a PR that changes what it says upd
 - **F11. `docs/security.md` changes with the design.** A PR that changes what it says, or adds something its rules for later changes cover, updates it.
 - **F12. Nothing a browser runs is served from another host under `cofun.cc`.**
 - **F13. Notico's requests go only to the active Notion tab's own origin**, after checking it is still on a Notion host, without following redirects.
-- **F14. Data kept on the device belongs to the signed-in account.** Chats, the user's own model keys, settings, and drafts are kept per account, so another account signed in on the same browser never reads them, and nothing kept before the account is known is handed to whoever signs in next.
+- **F14. An account's data on the device stays with that account.** What belongs to an account (its chats, its own model keys, and its settings, such as the mode) is kept per account, so another account signed in on the same browser never reads it, and nothing kept before the account is known is handed to whoever signs in next. A setting that holds nothing of an account and has to work before sign-in, such as the usage-data switch, may be kept for the whole device.
 
 ## G. Privacy and usage data
 
