@@ -108,6 +108,7 @@ extensions/<name>/        one Chrome extension, built and published by itself; n
   src/analytics.ts        usage events; the only module that imports the PostHog SDK
   src/zod.ts              the only module that imports zod
   test/                   the extension's client and UI tests, with fakes and sanitized fixtures
+  browser-test/           pnpm test:browser: the built extension in Chromium, the network answered by fakes (runs in CI)
   use-cases/              the extension's use cases (docs/bdd.md)
 worker/                   the Cloudflare Worker every extension shares
   src/app.ts              the Hono app, composed from src/routes/; everything under /v1 is behind
@@ -119,7 +120,6 @@ worker/                   the Cloudflare Worker every extension shares
   test/                   REST integration tests with fakes, and an extension's agent run against the worker
   use-cases/              rules only the worker decides
 e2e/                      pnpm e2e: drives the shared Chrome Canary for ai-e2e runs
-smoke/                    pnpm smoke: loads the built extension into Chromium (runs in CI)
 scripts/                  repository scripts (use case coverage, GitHub settings, PR media, changelog)
 docs/                     this file, development, security, and BDD
 .oxlintrc.json            lint rules, including the module boundaries

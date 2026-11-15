@@ -11,8 +11,8 @@
 // Oxlint's regexes have no lookahead (a pattern with one is ignored without a warning), so the rule
 // that an extension never imports another one is written per place: in src/, a relative path that
 // climbs to another folder's src/ or test/ (src/ is up to two levels deep, so the depth is not
-// known); in test/, a path that climbs two levels, to the extensions/ folder (the worker, which
-// tests run against, is three levels up); in the extension's root files, one level. A package
+// known); in test/ and browser-test/, a path that climbs two levels, to the extensions/ folder (the
+// worker, which tests run against, is three levels up); in the extension's root files, one level. A package
 // name can't reach another extension: no extension depends on another, and pnpm resolves only
 // declared dependencies.
 {
@@ -91,8 +91,8 @@
       }
     },
     {
-      // An extension's tests, which sit directly in test/.
-      "files": ["extensions/*/test/**"],
+      // An extension's tests, which sit directly in test/ (vitest) and browser-test/ (Playwright).
+      "files": ["extensions/*/test/**", "extensions/*/browser-test/**"],
       "rules": {
         "no-restricted-imports": [
           "error",
