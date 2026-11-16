@@ -78,4 +78,4 @@ The text above describes version 0.2.0. The version after it also works beyond N
   - "• Ask about a selection: select text on any page, right-click it, and pick "Ask Notico"."
 - THINGS TO TRY adds: "• On an article: "Save the key points of this page to my Reading notes.""
 - CREDITS reads "…Answering with your own model on OpenRouter spends no credits, except on web pages rendered in a browser and web searches made for a question."
-- PRIVACY reads "Your questions, and what Notico reads to answer them (Notion content, web pages you asked about, and web searches, whose queries may hold text from your Notion pages), go to our server…".
+- PRIVACY's first sentence reads "Your questions, and what Notico reads to answer them (Notion content, the web pages it reads, and its web searches, whose queries may hold text from your Notion pages), go to our server and on to an AI model running on Cloudflare Workers AI, or, if you set up your own model, straight to OpenRouter with your key. Web pages and searches go through our server whichever model answers, and searches on to a search provider that keeps no data of them."
