@@ -2,9 +2,7 @@
 
 ## Behavior
 
-A signed-in user brings pages from other sites into a chat, for questions like "compare these three pages", by adding the tabs that show them, instead of reading each one out to the AI. The page picker that adds Notion pages (UC-NOTICO-CHAT-004), opened with `@` or "+", also lists the tabs of the side panel's window on other sites, by their titles and sites; tabs Notico can't read (browser pages, the Chrome Web Store, PDFs) are not offered. Picking a tab on a site Notico may not read yet asks Chrome, right then, to let Notico read that site; the tab is added only once the user allowed it there, and a site allowed once is not asked about again.
-
-An added tab shows as a chip with the question, like an added page, and the question carries its title and address to the AI, which reads the page with its tools when the question needs it; nothing is read ahead of the question. The question shows the tabs it carried, also in a reopened session, and clicking one goes to that tab, or opens the page again once the tab is closed. The AI reads the tab, not the address: the page the tab shows when it is read, as the tab shows it, and it is told when the tab went to another page since it was added; it reads it the same way it reads the current tab (UC-NOTICO-PANEL-001), and says which page an answer used.
+A signed-in user brings pages from other sites into a chat, for questions like "compare these three pages", by adding the tabs that show them. The page picker (UC-NOTICO-CHAT-004) also lists the window's tabs on other sites that Notico can read; picking one on a site Notico may not read yet asks Chrome for the user's permission first. The question carries the tabs' titles and addresses, and the AI reads a tab, as it shows its page then, only when the question needs it. Clicking a tab in a sent question goes to it, or opens its page again once the tab is closed.
 
 Key constraints:
 

@@ -2,13 +2,7 @@
 
 ## Behavior
 
-The operator needs to know how the service's credits move as a whole, not one account at a time (UC-COFUN-ADMIN-001). On the admin page they pick a period of days and see, for the whole period and for each of its days: the credits granted, by where they came from (the weekly free credits, granted by hand, or bought), the credits spent, the number of calls made to the AI model with how many of them failed, the tokens those calls used, and the pages rendered in a browser for users, with how many gave no page, the browser time they used, and what they cost, and the web searches made for users, with how many gave no results and what they cost. Every call that did not end well is a failed call, the ones the user stopped included; those are also counted on their own, as cancelled. Of the credits spent, they also see what no credits covered and so was forgiven: a spend that costs more than what is left takes what is left, so requests sent at once can together spend beyond an account's balance.
-
-For the period they also see what was spent through each product (Notico, and each extension that follows it), with the number of model calls, of pages rendered, and of web searches, and what the renders and the searches cost, the product that spent the most first. A call is counted under the product the extension says it was made from; a call that names no product is counted on its own, as unknown. The service takes the extension's word for it: the product only sorts what was spent, so a wrong one costs no one anything. Credits are one balance per account, whichever products spend them.
-
-For the same period they see the accounts that were granted or spent credits in it: what each was granted and spent in the period, its model calls, the pages it had rendered and the web searches it made, what each cost, what of it was forgiven, and its balance now, with the account that spent the most first. From there they open an account's own record (UC-COFUN-ADMIN-001). An account is shown by its user id only.
-
-A day is a calendar day on the operator's own clock. A grant belongs to the day it was made, and a model call, a render, or a search, with what it cost, to the day it ended, when it was charged.
+The operator needs to know how the service's credits move as a whole, not one account at a time (UC-COFUN-ADMIN-001). For a period of days, and for each of its days on the operator's own clock, the admin page shows the credits granted by source and spent, what was forgiven, the model calls with their failures and tokens, and the pages rendered and web searches made, with what they cost. It also shows what was spent through each product, as the extension names it, and the accounts that were granted or spent credits, the one that spent the most first, each by its user id only.
 
 Key constraints:
 

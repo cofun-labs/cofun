@@ -2,21 +2,9 @@
 
 ## Behavior
 
-A signed-in user can have the AI answered by a model of their own choice, with their own key, instead of by Cofun's hosted model: through their OpenRouter account, which offers many models. These models usually use tools better than the hosted one; the user pays OpenRouter for what they use, and spends no credits on the model (only on web pages rendered in a browser and web searches made for a question, UC-NOTICO-PANEL-003 and UC-NOTICO-PANEL-004; see UC-NOTICO-CHAT-001).
+A signed-in user can have questions answered by a model of their own choice, through their own OpenRouter account and key, instead of by Cofun's hosted model (Auto, the default). Settings decides which providers and models are offered, and saves a key only after checking that it works; the composer's model menu picks which of them answers the next question, and the conversation carries on across a switch.
 
-Two places do two jobs. **Settings decides where models come from**: which providers are on, their keys, and which of their models to offer. **The composer's model menu decides which of those answers** the next question.
-
-**Providers in Settings.** Providers are switches, and any number can be on. Cofun is always on, needs no key, spends credits, and offers Auto, the hosted model, which stays the default, so nothing needs setting up. OpenRouter needs the user's key: switching it on opens its key field.
-
-**The key is checked before it is saved.** Checking asks the provider whether the key works, through the provider's own account endpoint, which is free and asks no model anything. While the check runs, the field and the button are locked, and the check gives up after about 15 seconds. Only a key that passes is saved; the provider then says the key works, with the balance where the provider reports one, and shows its models, the first recommended one switched on so the provider is usable at once. A key that fails is not saved, and the user is told which of these happened: the provider rejected the key, the account has no money left, the check timed out, or the provider couldn't be reached. What was pasted stays in the field, so it can be fixed.
-
-**Models under each provider.** Each provider that is on lists its models, each with a switch and its price per million tokens. OpenRouter shows a few recommended models and a search over its whole list; a model found there that is switched on joins the list. Models that can't use tools can't be switched on, and say why. At least one model stays on for each provider that is on.
-
-**The composer's model menu** lists Auto first, on its own, then each provider that is on, under its name, with its switched-on models by name only: who pays and the state of the key are not shown there. "Manage models" opens Settings at the providers. The user can switch at any time, without leaving the chat. The next question goes to the model chosen then, and the conversation goes on: it gets everything said and done so far. A question already running ends with the model it started with. When the model chosen in the composer is no longer offered (switched off in Settings, its provider switched off, or its key removed), questions go to Auto, and the composer says so in one line instead of switching silently.
-
-**A key that stops working.** A provider that refuses a question says why: a key it turns away, a balance that ran out, too many requests, which ends the question without trying again, or a question the model's moderation flagged, said in the provider's own words. When a question is turned away for its key, and only then, Settings also marks the provider "Key stopped working", with "Check again" and "Remove key".
-
-Settings are kept on this device for the account that set them up: another account signed in on the same browser does not see or use them, and they are still there the next time the user opens the side panel. Switching a provider off keeps its key, so switching it back on needs no paste. "Remove key" deletes it.
+The user pays OpenRouter for their model and spends credits only on web pages rendered and web searches (UC-NOTICO-PANEL-003, UC-NOTICO-PANEL-004). Settings are kept on this device for the account that set them up.
 
 Key constraints:
 

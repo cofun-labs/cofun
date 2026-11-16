@@ -2,7 +2,7 @@
 
 ## Behavior
 
-A Notion user signs in once on the web sign-in page, including with Google, and is then signed in inside the side panel without reopening it. Signing out from the side panel signs them out. Notico uses the sign-in only to know who the user is: the side panel shows which account is signed in and lets the user sign out, and offers nothing to change the account. Only signed-in users can use the AI; the service refuses anyone else (UC-COFUN-CHAT-001).
+A Notion user signs in once on the web sign-in page, including with Google, and is then signed in inside the side panel without reopening it; signing out from the side panel signs them out. Notico uses the sign-in only to know who the user is. Only signed-in users can use the AI; the service refuses anyone else (UC-COFUN-CHAT-001).
 
 ## Scenarios
 

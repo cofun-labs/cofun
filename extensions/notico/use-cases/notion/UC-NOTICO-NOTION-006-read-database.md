@@ -2,11 +2,7 @@
 
 ## Behavior
 
-A signed-in user asks the AI about a Notion database: "which tasks are overdue?", "what's in progress?", "summarize this tracker". The AI reads the database (the one open, or one it names) as a table: its properties, with their names and kinds, and each row's values, with a way to open the row (UC-NOTICO-NOTION-001). It can keep only the rows whose values match some conditions, and order them by a property; to judge dates like "overdue", it is told today's date.
-
-Values read as Notion shows them, and conditions compare against that: a status left unset shows the database's default status, and a relation shows the titles of the pages it links to (those the account can't open stay unnamed).
-
-A big database is read in parts, and the AI is told when it holds more rows than one read covers; when it asked for an order, the rows read are the first ones in that order. As with reading pages, it reads as the user's own Notion account, so it sees only rows that account can open.
+A signed-in user asks the AI about a Notion database: "which tasks are overdue?", "summarize this tracker". The AI reads the database, the one open or one it names, as a table of properties and rows, and can keep only the rows that match some conditions and order them by a property. Values read as Notion shows them, and conditions compare against that; a relation names only the linked pages the account can open. A big database is read in parts, as the user's own Notion account.
 
 ## Scenarios
 

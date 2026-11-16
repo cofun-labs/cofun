@@ -2,11 +2,7 @@
 
 ## Behavior
 
-A signed-in user keeps what the AI answered in Notion itself, without asking the AI to write it: they save one reply from the button under it, or the whole chat so far from the button at the top of the panel. Either way the result is a new page at the end of the Notion page open in the current tab at that moment; to save somewhere else, the user opens that page first. Saving to a database is not supported.
-
-A whole chat is titled with the chat's title; a single reply with the chat's title followed by the question it answers, cut to a sensible length. The page holds each question and its reply as formatted text, without the details of the tools the AI ran: a reply that read or changed pages ends with one line saying how many, linking the pages it changed. A person a reply names is written as their name, and nobody is mentioned or notified.
-
-The page is created as soon as the user saves, with no step to confirm, and a link to it takes the button's place. When a save fails, the user is told why and can save again. Saving is the user's own action, so it works in Read only too (UC-NOTICO-AGENT-003): Read only limits only what the AI may change.
+A signed-in user keeps what the AI answered in Notion itself, without asking the AI to write it: they save one reply, or the whole chat so far. The result is a new page at the end of the Notion page open in the current tab, holding each question and its reply as formatted text, without the details of the tools the AI ran. The page is created as soon as the user saves, and saving works in Read only too, since Read only limits only what the AI may change (UC-NOTICO-AGENT-003).
 
 Key constraint:
 

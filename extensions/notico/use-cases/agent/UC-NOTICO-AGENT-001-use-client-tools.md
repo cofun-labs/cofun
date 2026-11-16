@@ -2,17 +2,9 @@
 
 ## Behavior
 
-A signed-in user asks the AI something it can only answer with information or actions the extension has, such as what a Notion page says. The extension offers the AI a set of tools. Instead of guessing, the AI asks the extension to run one; the extension runs it and sends back the result, and the AI uses that result to answer. The AI may use several tools, one after another, before it answers.
+A signed-in user asks the AI something it can only answer with what the extension has, such as what a Notion page says. The AI asks the extension to run tools, one after another if needed, and answers from their results. Each question is told which Notion page it goes with: the one open in the current tab, unless the user takes it off.
 
-With each question, the AI is also told which Notion page is open in the current tab, or that the current tab is not a Notion page, so it knows what "this page" means without using a tool. The message box shows that page before the question is sent, as the page it goes with, and follows the user as they switch tabs or move to another page; on another site it shows none. The user can take the page off a question that is about something else: the AI is then told only that no page goes with the question, and the agent can't fall back on the open page for it, so it asks the user which page they mean or searches for one. The page stays off for the chat's next questions until the user goes to another page or starts a new chat. Each question is told the page it went with, and shows that page with the question, also in a reopened session.
-
-Each question gets a bounded number of steps, so a model that keeps calling tools cannot run on forever, and the user can stop the agent at any time.
-
-A question that fails or is stopped leaves no half-finished exchange behind, but what the agent already did stays: each tool it used, and how that ended (its result, a failure, the user declining it, or the user stopping it), remains part of the conversation, so the AI knows about it in the next question. The unfinished reply, and tools the agent had not reached yet, are left out.
-
-The user can always see what the agent did, in the order it happened within the reply: each tool it used, said in words (what it did, and on which page or what it searched for when that is known) and whether it worked, with the tool itself, its input, and what it returned one step further, for whoever wants them.
-
-Each question's use of Notion is visible and bounded, so heavy use of the user's Notion account never goes unnoticed. When a question ends, whether answered, failed, or stopped, the side panel shows what it touched: how many pages and databases it read and how many it changed. Behind the reply's details, one step further, are how many requests it made to Notion, how many tokens the model used for it (its input, how much of that was cached when the model says, and its output), and which model answered; a reopened session still shows all of it. A page counts once however often it was read or changed; searching and listing pages are not reading them; and only changes that were made count, not one that failed, was declined, or was stopped. A question may make only so many Notion requests before the user is asked whether to go on. Until they answer, nothing more is sent to Notion. If they go on, the question may make as many again before they are asked next; if they stop, the question ends there, and the AI is told not to get around the limit.
+The user can stop the agent at any time, and a question gets a bounded number of steps and of Notion requests. The reply shows what the agent did and how much of Notion it read and changed (searching and listing pages are not reading them).
 
 Key constraints:
 

@@ -2,11 +2,7 @@
 
 ## Behavior
 
-A signed-in user reading a page in Chrome, on any site, Notion included, selects some text, right-clicks it, and picks "Ask Notico". The side panel opens next to the page, if it was not open already, with the selected text added to the next question: it shows at the top of the message box like a page added with `@`, as the site and the start of the text, and the user can take it off. The user then asks what they want about it ("explain this", "save this to my notes") and sends the question; nothing is sent before that. Each selection sent adds to the next question, after the ones before, so one question can bring together text from several places, and each can be taken off on its own. They stay with the next question as the user switches tabs or chats, until a question carries them or the user takes them off.
-
-The question carries the text, with its line breaks, and the page's title and address. Notico reads the selection in the tab the user clicked in, which the click lets it do on any site, without asking to allow the site; where the page can't be read (a frame from another site), Chrome's own copy of the selection is used, on one line. A long selection is clipped, and the AI is told; so is a question's text from pages as a whole, past which a further selection is left out. The question shows the selection it went with, also in a reopened session, and clicking it takes the current tab to the page, where Chrome finds the text and marks it. When the reply uses the text, it names the page's address.
-
-The item is on until the user turns it off in Settings. The choice belongs to their Chrome profile: Chrome sync takes it to the other devices the extension syncs to, and it holds through updates.
+A signed-in user reading a page in Chrome, on any site, selects some text, right-clicks it, and picks "Ask Notico". The side panel opens with the selection added to the next question, which the user then writes and sends; selections add up, across tabs and chats, until a question carries them or the user takes them off. The question carries the text and the page's title and address, and Notico reads the selection without asking to allow the site. The menu item can be turned off in Settings, a choice Chrome sync takes to the user's other devices.
 
 Key constraints:
 

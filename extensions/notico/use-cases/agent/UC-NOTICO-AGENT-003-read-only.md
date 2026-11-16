@@ -2,13 +2,7 @@
 
 ## Behavior
 
-A signed-in user chooses, from the message box, whether the agent may change their Notion workspace. There are two modes. In Edit, the default, the agent may change pages as UC-NOTICO-AGENT-001 describes, and still asks before it moves pages to the trash. In Read only, the agent can only look things up and answer: a question that needs a change gets an answer saying it can't make changes in Read only, and how to switch back to Edit.
-
-The message box always shows which mode the next question is asked in. The user can switch at any time; the switch applies from the next question, and a question already running ends in the mode it started in. The conversation goes on across a switch.
-
-A question asked in Read only says so in the conversation, also in a reopened session, so the user can tell later why nothing was changed.
-
-The mode is kept on this device for the account that chose it, like the choice of model (UC-NOTICO-AGENT-002): it is still set the next time the user opens the side panel, and another account signed in on the same browser starts in Edit.
+A signed-in user chooses from the message box whether the agent may change their Notion workspace. In Edit, the default, it changes pages as UC-NOTICO-AGENT-001 describes; in Read only it can only look things up, and a question that needs a change is answered with why it can't and how to switch back. A switch applies from the next question, and the mode is kept on this device for the account that chose it.
 
 Key constraint:
 

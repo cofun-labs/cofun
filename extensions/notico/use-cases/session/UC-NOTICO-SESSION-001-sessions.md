@@ -2,17 +2,9 @@
 
 ## Behavior
 
-Each conversation in the side panel is a session, which the panel calls a chat. Each question in a session is sent with the conversation so far, so the user can ask a follow-up. A signed-in user can start a new session at any time, and opening the side panel starts one. The top of the panel shows the open session's title, or "New chat" until its first question. Past sessions are kept in a list, most recently used first, each with its title and the Notion page it started on. The user can search the list by title and delete sessions they no longer want.
+Each conversation in the side panel is a session. Each question is sent with the conversation so far, so the user can ask a follow-up; a signed-in user can start a new session at any time, and opening the side panel starts one. Past sessions are kept in a list the user can search, reopen, and delete, each titled by the model in a few words, in the question's language, once its first reply is in. Reopening a session shows the whole conversation, tools included, and the next question continues it as if it had never been closed.
 
-Once a session's first reply has come in, the model the user is asking with (the hosted one, which spends credits as any request does, or their own) is asked for a short title of a few words, in the language of the question, from the first question and the start of the reply. The title is written once and does not change as the conversation goes on. Until it arrives, or if the model gives none that can be used, the session is titled with its first question; that is not shown to the user as a failure and does not stop the conversation.
-
-Reopening a session shows the whole conversation, including the tools the agent used and what they returned, and the next question continues it: the AI has the earlier conversation as context, as if the session had never been closed. Switching to another session, or starting a new one, while a question is still being answered is the same as stopping that question: it never lands in the wrong session, and the session it was asked in keeps what a stopped question keeps (see UC-NOTICO-AGENT-001), the tools it used and how they ended, so a follow-up there does not repeat a change already made. A question stopped before it used a tool leaves its session as it was.
-
-Each browser window has its own side panel, and the same session can be open in more than one. If it is continued in two windows, neither conversation replaces the other: the one saved later is kept as a separate session in the list, and that window tells the user so.
-
-A saved session the panel can no longer read, such as one kept in a form an earlier version wrote and this one does not understand, never stops the user from using the others. It stays in the list, marked as unreadable, and the only thing the user can do with it is delete it. A session whose conversation can't be read is not opened and nothing of it is sent to the AI: the user is told it can't be opened and is offered to delete it.
-
-Sessions are kept on the user's device and do not follow them to other devices. They stay there after the user signs out, so they can pick up again after signing back in. The service never stores them; it only sees the conversation the AI needs to answer the current question (see UC-NOTICO-AGENT-001).
+Sessions are kept on the user's device, also after they sign out, and the service never stores them.
 
 Key constraints:
 

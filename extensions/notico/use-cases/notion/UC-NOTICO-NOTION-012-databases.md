@@ -2,9 +2,7 @@
 
 ## Behavior
 
-A signed-in user asks the AI to set up a database from a description, such as a task tracker or a content calendar, or to change the properties of one they have: add a property, rename one, or add, rename, or remove the options of a select. The AI creates the database as a page at the end of a page it names, with a title column and the properties and options it chose, and changes an existing database's properties and options; both happen right away, and the side panel shows what was created or changed. Renaming an option renames it in every row that has it. (Adding and changing rows is UC-NOTICO-NOTION-008.)
-
-Removing a property or an option takes its values away from every row, so the AI removes one only when the user asked to remove exactly that property or option, and the side panel says plainly that its values go with it. A change that would lose values in another way is refused before anything changes, and the AI is told why: a property can't change its type, the title column can't be removed, two properties or two options of one property can't end up with the same name, and an option can't be renamed when the AI can't reach every row that has it.
+A signed-in user asks the AI to set up a database from a description, such as a task tracker, or to change the properties and select options of one they have. The AI creates the database at the end of a page it names, or changes its properties and options, right away (adding and changing rows is UC-NOTICO-NOTION-008). It removes a property or an option, and the values with it, only when the user asked to remove exactly that one; any other change that would lose values is refused before anything changes.
 
 Key constraint:
 

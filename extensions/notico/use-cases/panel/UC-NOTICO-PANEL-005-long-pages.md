@@ -2,9 +2,7 @@
 
 ## Behavior
 
-A page the AI reads from a tab (UC-NOTICO-PANEL-001) or by its address (UC-NOTICO-PANEL-003) can be far longer than what one answer can take in: a long article, a spec, a report. A page no longer than one part (20,000 characters) comes whole. A longer one comes as its first part, with an outline of its headings and the part each starts in, and the AI can read any other part of it, or find the lines that hold some text, when the question needs what the rest says. Its full text is kept on the device, with the chat, so another part never reads the page again; up to 2,000,000 characters are kept, and the AI is told when a page was longer still.
-
-A page kept for a chat is read only in that chat. It is kept for 7 days, whatever happens to the chat: once the side panel opens after that, it is deleted, and a chat continued later has the page read again.
+A page the AI reads from a tab (UC-NOTICO-PANEL-001) or by its address (UC-NOTICO-PANEL-003) can be far longer than one answer can take in: a long article, a spec, a report. Such a page comes as its first part with an outline of its headings, and the AI can read any other part, or find the lines that hold some text, when the question needs what the rest says. Its full text is kept on the device, for that chat only, for 7 days.
 
 Key constraints:
 

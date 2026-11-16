@@ -2,7 +2,7 @@
 
 ## Behavior
 
-A signed-in user asks the AI something another page of their Notion workspace answers: "where did we write about the launch?", "what did the last retro decide?". The AI searches the workspace of the open page by words, as Notion's own search does, and gets the matching pages: each one's title, where it sits in the workspace, when it was last edited, and the text that matched. It can then read any of them (UC-NOTICO-NOTION-001) and answer from what they say, naming the page it used. As with reading, the search runs as the user's own Notion account, so it finds only pages that account can open.
+A signed-in user asks the AI something another page of their Notion workspace answers: "where did we write about the launch?". The AI searches the open page's workspace by words, as Notion's own search does, gets the matching pages with the text that matched, and reads any of them (UC-NOTICO-NOTION-001) to answer, naming the page it used. The search runs as the user's own Notion account, so it finds only pages that account can open.
 
 ## Scenarios
 

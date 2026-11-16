@@ -87,6 +87,24 @@ describe('checkUseCases', () => {
     expect(report.warnings).toEqual([])
   })
 
+  it('warns when a Behavior runs past 150 words, not counting its Key constraints', () => {
+    const behavior = (words: number) => ({
+      path: 'worker/use-cases/admin/UC-COFUN-ADMIN-001-account.md',
+      text: [
+        '# UC-COFUN-ADMIN-001: Look up an account',
+        '## Behavior',
+        'word '.repeat(words),
+        'Key constraint:',
+        '- a constraint '.repeat(100),
+        '## Scenarios',
+      ].join('\n'),
+    })
+    expect(checkUseCases([behavior(150)], []).warnings).toEqual([])
+    expect(checkUseCases([behavior(151)], []).warnings).toEqual([
+      'worker/use-cases/admin/UC-COFUN-ADMIN-001-account.md: its Behavior is 151 words; keep it to a few sentences (docs/bdd.md#structure)',
+    ])
+  })
+
   it('warns when a 🚧 api-test scenario already has a test', () => {
     const report = checkUseCases(
       [useCase(['| UC-NOTICO-CHAT-001-S01 | P1 | 🚧 | … |'])],

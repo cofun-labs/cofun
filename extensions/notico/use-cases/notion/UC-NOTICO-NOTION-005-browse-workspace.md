@@ -2,9 +2,7 @@
 
 ## Behavior
 
-A signed-in user asks the AI how their Notion workspace is organized: "what projects do I have?", "what's under this page?", "where does the roadmap live?". The AI lists pages and databases the way Notion's sidebar shows them: the top level of the open page's workspace, by section (the user's private pages and shared pages, the workspace's pages, and each teamspace the user joined, leaving out archived ones), or one of those sections or the pages and databases under a page, a few levels deep if asked. The whole workspace is listed one level deep only; to look further, the AI lists a section or a page. It gets titles and a way to open each one, never their content; reading a page is UC-NOTICO-NOTION-001.
-
-A large workspace is listed only up to a limit, and the AI is told when the list was cut off and how to list the rest: one section at a time, the pages under a listed page, or the entries after the ones shown. To spare the user's Notion account, a list also looks only so far into the pages it shows, and the whole workspace's top level costs Notion about the same few requests however many teamspaces it has; when it stops before the asked depth, the AI is told what it didn't look into, not that pages were cut off. As with reading, the listing runs as the user's own Notion account, so it shows only pages that account can open.
+A signed-in user asks the AI how their Notion workspace is organized: "what projects do I have?", "what's under this page?". The AI lists pages and databases the way Notion's sidebar shows them: the workspace's top level, by section and teamspace, or the pages under a section or a page, a few levels deep if asked. It gets titles and a way to open each one, never their content. A large list is cut off at a limit, and the AI is told how to list the rest. The listing runs as the user's own Notion account, so it shows only pages that account can open.
 
 ## Scenarios
 

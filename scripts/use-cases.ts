@@ -277,8 +277,23 @@ function verifies(test: TestId, row: Row): boolean {
   return test.product === row.product || test.product === WORKER
 }
 
+/** Words past which a Behavior section is likely a list of rules, not a few sentences (docs/bdd.md#structure). */
+const BEHAVIOR_WORDS = 150
+
+/** Warns when a use case's Behavior, up to its Key constraints or the next heading, runs past BEHAVIOR_WORDS. */
+function checkBehavior(file: SourceFile, report: Report): void {
+  const behavior = /^## Behavior\n([\s\S]*?)(?=^Key constraints?:|^#)/m.exec(file.text)
+  const words = behavior?.[1].split(/\s+/).filter(Boolean).length ?? 0
+  if (words > BEHAVIOR_WORDS) {
+    report.warnings.push(
+      `${file.path}: its Behavior is ${words} words; keep it to a few sentences (docs/bdd.md#structure)`,
+    )
+  }
+}
+
 export function checkUseCases(useCases: SourceFile[], tests: SourceFile[]): Report {
   const report: Report = { errors: [], warnings: [], scenarios: { 'api-test': 0, 'ai-e2e': 0 } }
+  for (const file of useCases) checkBehavior(file, report)
 
   const rows = useCases.flatMap((file) => readRows(file, report))
   const tested = new Map<string, TestId[]>()
