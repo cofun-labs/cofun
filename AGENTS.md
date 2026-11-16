@@ -1,6 +1,6 @@
 # Cofun
 
-Cofun: Chrome extensions that each open an AI side panel next to one kind of page, backed by one Cloudflare Worker they share. The repository holds the extensions, one per folder in `extensions/` (Notico, for Notion, in `extensions/notico/`), and the worker. This file covers the development workflow and coding conventions.
+Cofun: Chrome extensions that each open an AI side panel next to one kind of page, backed by one Cloudflare Worker they share. The repository holds the extensions, one per folder in `extensions/` (Notico for Notion in `extensions/notico/` and Confluco for self-managed Confluence in `extensions/confluco/`), and the worker. This file covers the development workflow and coding conventions.
 
 **Before starting work, read [docs/architecture.md](docs/architecture.md)** for the architecture, auth flow, and code layout. The other docs:
 

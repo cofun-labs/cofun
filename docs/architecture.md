@@ -2,7 +2,7 @@
 
 How Cofun's extensions and the backend they share are built, and why. This file holds the core design only: the parts, the boundaries between them, and where data flows. Update it when a change adds, moves, or removes a module boundary or anything listed under [Layout](#layout), or changes where data goes or comes from (a new host, store, or route). Limits, constants, index names, UI details, and edge-case behavior belong in code comments, next to the code they describe. For setup and deployment see [development.md](development.md); for the workflow and coding rules see [AGENTS.md](../AGENTS.md); for the security model see [security.md](security.md).
 
-Each Cofun extension is an AI side panel for one kind of page, in its own folder under `extensions/` (Notico, for Notion, is the first), built and published by itself. All of them call one Cloudflare Worker (`worker/`), which signs users in, checks who is asking, keeps their credits, passes the conversation to the model, and reads public web pages and searches the web for an extension. It never talks to Notion or acts as the user on any site. The agent and its tools run in the extension, next to the page they act on.
+Each Cofun extension is an AI side panel for one kind of page, in its own folder under `extensions/` (Notico for Notion and Confluco for self-managed Confluence), built and published by itself. All of them call one Cloudflare Worker (`worker/`), which signs users in, checks who is asking, keeps their credits, passes the conversation to the model, and reads public web pages and searches the web for an extension. It never talks to Notion or acts as the user on any site. The agent and its tools run in the extension, next to the page they act on.
 
 Each extension keeps its own copy of the side panel code (UI, agent, sign-in, settings, credits), and duplication between extensions is accepted: a fix or feature in one is applied to the others by hand, and an extension's tests run its own agent against the worker so the part that faces the worker cannot drift. One account and one balance of credits serve every extension.
 
@@ -91,6 +91,12 @@ Notico sends product analytics to [PostHog](https://posthog.com) straight from t
 
 Clerk's own account management is not used: Notico needs Clerk only for who the user is, and disconnecting the only sign-in method could leave a user unable to get back to their account and its credits. The panel reads the credits from the worker; a read that fails never touches the chat.
 
+## Confluco: the extension for self-managed Confluence
+
+Confluco's panel and agent are based on Notico's. Confluco calls the same Worker for sign-in, hosted chat, and credits. The panel keeps the conversation in memory and stores one instance base URL per Cofun account in Chrome local storage.
+
+The user grants Chrome access to the connected instance. The Confluence site layer reads, searches, and updates published pages from the active instance tab using its browser session. The agent can propose a text replacement, which the panel presents for approval before an update. Page context and tool results go to the hosted model through the Worker. The Worker never makes a request to Confluence.
+
 ## Layout
 
 The folders, and the modules that hold a boundary; other files are found by their folder and name.
@@ -114,6 +120,11 @@ extensions/<name>/        one Chrome extension, built and published by itself; n
     chat-session.ts       a ChatSession per chat: what it shows, its agent, its question, and its saves;
                           imports no React either
   src/analytics.ts        usage events; the only module that imports the PostHog SDK
+extensions/confluco/      same side panel and agent boundaries as Notico; only uses the hosted model
+  src/tools.ts            registers Confluence tools and binds an approved edit to its prepared change
+  src/confluence/         the site layer for Confluence; has no dependencies on the panel or agent
+    instance.ts           stores the account's instance URL and manages optional Chrome host permissions
+    tab.ts                makes Confluence REST requests in the connected Chrome tab
   src/zod.ts              the only module that imports zod
   test/                   the extension's client and UI tests, with fakes and sanitized fixtures
   browser-test/           pnpm test:browser: the built extension in Chromium, the network answered by fakes (runs in CI)

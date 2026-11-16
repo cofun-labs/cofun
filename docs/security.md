@@ -48,6 +48,10 @@ The web tools read whatever address the model gives: one the user wrote, a link 
 
 The search tool sends the query the model writes, which may hold anything the conversation holds. This is an exception to rule 4 below: an instruction in text the user did not write can have the model put what the user can see into a query. What limits it: the query goes only to one provider fixed in the worker, never to a host the model or a page chooses, and the provider keeps no data of what it serves, so whoever planted the instruction can't read it there. The worker keeps and logs neither the query nor the results, each query is shown on its card, and searches are rate limited per user.
 
+### Confluco's text replacements
+
+Confluco takes the exact replacement from a direct user message. The model can request a preview, which identifies the page and shows both passages. The panel must receive approval before the tool sends an update. After approval it checks the connected instance, active tab, and published revision against the preview. Confluence requests use the browser session on that site. The tool verifies the resulting revision and reports an uncertain outcome if it cannot verify the write.
+
 ## The extension
 
 - **Permissions** are the ones the manifest lists, with host access to Notion, the worker, Clerk, and the sign-in's parent domain (`*.cofun.cc`, to see one Clerk cookie), and any web site only as an optional host permission, granted one site at a time when the user allows it. A test pins them and the content security policy, so neither changes unnoticed.

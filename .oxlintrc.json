@@ -259,7 +259,7 @@
       // The site layer knows nothing about the agent, the tools, sessions, or the UI. One directory
       // per site: src/sidepanel/ sits next to them and is not one, so each site is named here
       // (Notico's are Notion, and src/web/ for the page of a tab on any other site).
-      "files": ["extensions/*/src/notion/**", "extensions/*/src/web/**"],
+      "files": ["extensions/*/src/notion/**", "extensions/*/src/confluence/**", "extensions/*/src/web/**"],
       "rules": {
         "no-restricted-imports": [
           "error",
@@ -343,9 +343,9 @@
       }
     },
     {
-      // The one module that sends requests to Notion, named by its path (a tab.ts elsewhere, such
+      // The modules that send requests to their own site, named by path (a tab.ts elsewhere, such
       // as in src/sidepanel/, is not exempt). Its import restrictions (the site block) still hold.
-      "files": ["extensions/*/src/notion/tab.ts"],
+      "files": ["extensions/*/src/notion/tab.ts", "extensions/*/src/confluence/tab.ts"],
       "rules": {
         "no-restricted-globals": "off",
         "no-restricted-properties": [
