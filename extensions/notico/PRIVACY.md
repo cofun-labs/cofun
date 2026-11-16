@@ -58,7 +58,7 @@ An event says that something happened, never what was written or read: every val
 | The settings, credits page, or credit history was opened; a pack of credits was chosen | For a pack, its size |
 | A chat was started, opened, or deleted; a page was added to a question; a reply was stopped or copied | For an added page, whether with `@` or "+" |
 
-Each event also holds the extension's name and version, the time, your browser and operating system, and who it is counted under: a random id made on your device, joined to your Clerk user id once you sign in. It holds no URL, page title, name, email address, or location.
+Each event also holds the extension's name and version, the time, a random id of its own and one for the stretch of use it belongs to, our PostHog project's public key, the analytics code's name and version, your browser and operating system, and who it is counted under: a random id made on your device, joined to your Clerk user id once you sign in. It holds no URL, page title, name, email address, or location.
 
 Notico does not record clicks, keystrokes, or the screen, and loads no code from PostHog. [PostHog's privacy policy](https://posthog.com/privacy) says how PostHog handles what it is sent.
 
