@@ -93,8 +93,8 @@ async function refusal(res: Response) {
 const CREDIT = 1_000_000
 /** What a render of 4 s of browser time costs, in micro-credits: 25 a ms. */
 const RENDER_COST = 100_000
-/** What a web search costs, in micro-credits: 0.25 credit. */
-const SEARCH_COST = 250_000
+/** What a web search costs, in micro-credits: 5 credits. */
+const SEARCH_COST = 5_000_000
 
 const ARTICLE = `<!doctype html><html><head><title>Tea &amp; history</title><script>track()</script></head>
 <body><nav><a href="/">Home</a> <a href="/about">About</a></nav>
@@ -400,7 +400,7 @@ describe('searching the web', () => {
     expect(results[1].description).toHaveLength(1000)
     expect(results[1].description.endsWith('…')).toBe(true)
     // One search, through the gateway, with the fixed provider.
-    expect(ai.searches).toEqual([{ gatewayId: 'gw-test', query: 'tea history', provider: 'ceramic', limit: 2 }])
+    expect(ai.searches).toEqual([{ gatewayId: 'gw-test', query: 'tea history', provider: 'linkup', limit: 2 }])
     // The search is a spend of its own, taken from the free grant it started.
     expect(db.webSearches()).toEqual([
       {

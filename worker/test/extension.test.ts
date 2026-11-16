@@ -383,7 +383,7 @@ describe('web reads and searches', () => {
     expect(await render('https://app.example/board')).toEqual(busy)
 
     ai.found.set('tea', [{ url: 'https://tea.example/', title: 'Tea', description: 'About tea.' }])
-    expect(await search()).toMatchObject({ result: [{ url: 'https://tea.example/' }], costs: [250_000] })
+    expect(await search()).toMatchObject({ result: [{ url: 'https://tea.example/' }], costs: [5_000_000] })
     ai.searchReply = () => Response.json({ results: [] })
     expect(await search()).toEqual({ error: { code: 'search_failed', stops: false, charged: false }, costs: [0] })
   })

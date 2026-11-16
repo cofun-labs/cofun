@@ -42,9 +42,9 @@
     // balance, so this bounds what they can cost beyond it: up to 0.75 credit each (a 30 s timeout).
     // A question renders one or two at most.
     { "name": "RENDER_LIMIT", "namespace_id": "1004", "simple": { "limit": 10, "period": 60 } },
-    // SEARCH_LIMIT: how many web searches one user can make a minute. Searches are charged 0.25
-    // credit each, but those sent at once all start on the same balance, so this bounds what they
-    // can cost beyond it. A question searches a few times at most.
+    // SEARCH_LIMIT: how many web searches one user can make a minute. Searches are charged 5
+    // credits each, but those sent at once all start on the same balance, so this bounds what they
+    // can cost beyond it: up to 50 credits a minute. A question searches a few times at most.
     { "name": "SEARCH_LIMIT", "namespace_id": "1005", "simple": { "limit": 10, "period": 60 } },
   ],
 

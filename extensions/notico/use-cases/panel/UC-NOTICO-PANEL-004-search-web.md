@@ -2,7 +2,7 @@
 
 ## Behavior
 
-A user asks something that needs current information or sources beyond their Notion and the pages they gave, and the AI searches the web, whichever model answers. The service makes the search (UC-COFUN-WEB-002); the AI gets each result's address, title, and description, can read a result's page in full (UC-NOTICO-PANEL-003), and names the URL of each result it uses. Searches cost credits, as part of what the reply cost.
+A user asks something that needs current information or sources beyond their Notion and the pages they gave, and the AI searches the web, whichever model answers. The service makes the search (UC-COFUN-WEB-002); the AI gets each result's address, title, and description, can read a result's page in full (UC-NOTICO-PANEL-003), and names the URL of each result it uses. The AI searches with a few keywords, not the user's question as asked. Searches cost credits, as part of what the reply cost.
 
 When searches are turned away for coming too often, web search is unavailable, or credits run out, the question stops; any other failure goes to the AI, and the question goes on.
 
@@ -28,3 +28,4 @@ Key constraint:
 | ID | Priority | Status | Scenario |
 | --- | --- | --- | --- |
 | UC-NOTICO-PANEL-004-S04 | P1 | ✅ | Given a user who asks about something recent that no page in the chat says; when the AI answers; then it searches the web, answers from what it found, and names the URLs it used. |
+| UC-NOTICO-PANEL-004-S08 | P1 | ✅ | Given a user who asks, as a natural question, about something current that no page in the chat says; when the AI searches; then its query is a few keywords, not the question. |

@@ -1,6 +1,6 @@
 // Searches the web for a signed-in user, with Cloudflare's Web Search API in AI Gateway
 // (https://developers.cloudflare.com/web-search/), through the AI binding. The provider is fixed
-// here: Ceramic, which keeps no data of the requests it serves (zero data retention), so a query,
+// here: Linkup, which keeps no data of the requests it serves (zero data retention), so a query,
 // which may hold text from the user's Notion, is not kept by whoever answers it. The worker keeps
 // and logs neither the query nor the results. Nor does the gateway, only because its log collection
 // is off for the whole gateway (docs/development.md, "Worker"): unlike a model call, a search can't
@@ -9,13 +9,13 @@
 import * as z from './zod'
 
 /** The search provider. One, fixed: the privacy page names it. */
-const PROVIDER = 'ceramic'
+const PROVIDER = 'linkup'
 
 /** The longest query the API takes. */
 export const MAX_QUERY_CHARS = 1024
 /** The most results the API gives for one search. */
 export const MAX_RESULTS = 10
-/** Characters of a result's title and description kept: Ceramic describes a page in up to 8,000. */
+/** Characters of a result's title and description kept: Linkup describes a page in up to 4,500. */
 const TITLE_CHARS = 300
 const DESCRIPTION_CHARS = 1000
 /** The longest result address kept: what the extension shows its model of one, uncut. */

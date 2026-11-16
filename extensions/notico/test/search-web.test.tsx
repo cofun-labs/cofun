@@ -94,8 +94,8 @@ describe('searching the web', () => {
     await ask(user, 'Where does oolong tea come from?')
 
     expect(await screen.findByText('Oolong comes from Fujian.')).toBeVisible()
-    // Two searches, one with no results, at 0.25 credit each.
-    expect(screen.getByText('0.5 credits')).toBeVisible()
+    // Two searches, one with no results, at 5 credits each.
+    expect(screen.getByText('10 credits')).toBeVisible()
   })
 
   it('[UC-NOTICO-PANEL-004-S06] a user with no credits left for a search is told so, the question stops, and they can buy credits', async () => {
