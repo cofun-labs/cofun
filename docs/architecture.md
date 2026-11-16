@@ -117,6 +117,10 @@ extensions/<name>/        one Chrome extension, built and published by itself; n
   src/web/tab.ts          the site layer for any other site: reads the page a tab shows, once the user allowed its site; sends no request
   src/web/markdown.ts     turns the HTML a tab gives into Markdown, in the side panel, in an inert document
   src/sidepanel/          the React UI
+    panel.ts              the Panel: the open chat, the saved sessions, the credits, the model and the mode;
+                          imports no React, which subscribes to it
+    chat-session.ts       a ChatSession per chat: what it shows, its agent, its question, and its saves;
+                          imports no React either
   src/analytics.ts        usage events; the only module that imports the PostHog SDK
   test/                   the extension's client and UI tests, with fakes and sanitized fixtures
   browser-test/           pnpm test:browser: the built extension in Chromium, the network answered by fakes (runs in CI)

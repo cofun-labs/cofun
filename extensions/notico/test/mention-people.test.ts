@@ -1,10 +1,10 @@
 // Mentions of people in what the agent writes (edit_page, create_page, add_comment), against a fake
 // Notion workspace whose members getVisibleUsers lists, as Notion's own @ menu sees them.
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { ToolChat } from './tool-chat'
 import { LIMITED_STOP } from '../src/notion/api'
 import { countNotionRequests } from '../src/notion/tab'
 import { addComment } from '../src/tools/comments'
-import { forgetReads } from '../src/tools/memory'
 import { readPage } from '../src/tools/read'
 import { createPage, editPage } from '../src/tools/write'
 import {
@@ -19,6 +19,9 @@ import {
   resultText,
 } from './notion-tab'
 
+/** The chat the tools run in; a new one for each test. */
+let chat = new ToolChat()
+
 // Each test is one question, as the side panel starts one per message.
 beforeEach(() => {
   countNotionRequests()
@@ -26,7 +29,7 @@ beforeEach(() => {
 
 afterEach(() => {
   restoreGlobals()
-  forgetReads()
+  chat = new ToolChat()
 })
 
 const id = (n: number) => `e0e0e0e0-0000-4000-8000-${n.toString(16).padStart(12, '0')}`
@@ -71,10 +74,10 @@ function open(ws: FakeWorkspace): FakeNotionTab {
 
 const endpoints = (tab: FakeNotionTab, from = 0) => tab.sent.slice(from).map((r) => r.url.split('/api/v3/')[1])
 const read = async () => {
-  const result = resultText(await readPage.run({}))
+  const result = resultText(await chat.run(readPage, {}))
   return result.slice(result.indexOf('\n\n') + 2)
 }
-const edit = async (edits: Rec[]) => resultText(await editPage.run({ page: hex(PAGE), edits }))
+const edit = async (edits: Rec[]) => resultText(await chat.run(editPage, { page: hex(PAGE), edits }))
 const title = (ws: FakeWorkspace, blockId: string) => (ws.records.get(blockId)!.properties as Rec).title
 
 describe('UC-NOTICO-NOTION-011 mention people', () => {
@@ -175,7 +178,7 @@ describe('UC-NOTICO-NOTION-011 mention people', () => {
     const ws = workspace([block(1, 'text', [['Intro']])])
     open(ws)
     const result = resultText(
-      await createPage.run({
+      await chat.run(createPage, {
         title: 'Follow-ups',
         parent: hex(PAGE),
         markdown: '- [ ] @[Kim Lee] sends the notes',
@@ -190,7 +193,7 @@ describe('UC-NOTICO-NOTION-011 mention people', () => {
   it('[UC-NOTICO-NOTION-011-S03] mentions a member in a comment', async () => {
     const ws = workspace([block(1, 'text', [['Intro']])])
     open(ws)
-    await addComment.run({ page: hex(PAGE), block: '^00000001', text: '@[Kim Lee], can you check this?' })
+    await chat.run(addComment, { page: hex(PAGE), block: '^00000001', text: '@[Kim Lee], can you check this?' })
     const [added] = ws.table('comment')
     expect(added.text).toEqual([['‣', [['u', KIM]]], [', can you check this?']])
   })
@@ -217,10 +220,10 @@ describe('UC-NOTICO-NOTION-011 mention people', () => {
   it('[UC-NOTICO-NOTION-011-S04] refuses a mention in a new page or a comment before writing anything', async () => {
     const ws = workspace([block(1, 'text', [['Intro']])])
     open(ws)
-    await expect(createPage.run({ title: 'Notes', parent: hex(PAGE), markdown: '@[Nobody]' })).rejects.toThrow(
+    await expect(chat.run(createPage, { title: 'Notes', parent: hex(PAGE), markdown: '@[Nobody]' })).rejects.toThrow(
       '@[Nobody]: no workspace member has that name.',
     )
-    await expect(addComment.run({ page: hex(PAGE), text: 'Hi @[Nobody]' })).rejects.toThrow(
+    await expect(chat.run(addComment, { page: hex(PAGE), text: 'Hi @[Nobody]' })).rejects.toThrow(
       '@[Nobody]: no workspace member has that name.',
     )
     expect(ws.transactions).toEqual([])
@@ -249,7 +252,7 @@ describe('mention details', () => {
     const tab = open(ws)
     await read()
     await edit([{ action: 'insert', position: 'end', markdown: 'Mail me@example.com, or @ me' }])
-    await addComment.run({ page: hex(PAGE), text: 'Looks good' })
+    await chat.run(addComment, { page: hex(PAGE), text: 'Looks good' })
     expect(endpoints(tab)).not.toContain('getVisibleUsers')
   })
 
@@ -286,12 +289,12 @@ describe('mention details', () => {
     await edit([{ action: 'insert', position: 'end', markdown: '- [ ] @[Kim Lee] sends the notes' }])
     expect(lookups()).toEqual(['getVisibleUsers', 'syncRecordValuesMain'])
     // A later call in the same question, mentioning someone else, sends no lookup.
-    await addComment.run({ page: hex(PAGE), text: '@[Alex Kim], please review' })
+    await chat.run(addComment, { page: hex(PAGE), text: '@[Alex Kim], please review' })
     expect(lookups()).toEqual(['getVisibleUsers', 'syncRecordValuesMain'])
     expect(ws.table('comment')[0].text).toEqual([['‣', [['u', ALEX]]], [', please review']])
     // The next question looks them up again.
     countNotionRequests()
-    await addComment.run({ page: hex(PAGE), text: '@[Ann], thanks' })
+    await chat.run(addComment, { page: hex(PAGE), text: '@[Ann], thanks' })
     expect(lookups()).toEqual(['getVisibleUsers', 'syncRecordValuesMain', 'getVisibleUsers', 'syncRecordValuesMain'])
   })
 
@@ -350,7 +353,7 @@ describe('mention details', () => {
 
     // 501 people: only their list, then the mention is refused, and again later in the question.
     restoreGlobals()
-    forgetReads()
+    chat = new ToolChat()
     countNotionRequests()
     ws = workspace([block(1, 'text', [['Intro']])], people(501))
     tab = open(ws)

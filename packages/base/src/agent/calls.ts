@@ -17,13 +17,14 @@ const OUT_OF_CREDITS = 'out_of_credits'
  * What a call changes, in words; a broken preview must not stop the call, so it gives none. A
  * preview error that stops the question (see `stopsQuestion`) comes back as `stop`.
  */
-export async function previewCall(
-  tool: ToolSpec | undefined,
+export async function previewCall<M>(
+  tool: ToolSpec<M> | undefined,
   args: unknown,
+  context: ToolContext<M>,
   signal?: AbortSignal,
 ): Promise<{ preview?: string; stop?: string }> {
   try {
-    const preview = tool?.preview?.(args)
+    const preview = tool?.preview?.(args, context)
     if (typeof preview === 'string' || preview === undefined) return { preview }
     // Stop must not wait for a preview that looks things up.
     return {
@@ -135,14 +136,14 @@ function admitsNull(schema: unknown): boolean {
   return [schema.anyOf, schema.oneOf].some((branches) => Array.isArray(branches) && branches.some(admitsNull))
 }
 
-export interface Reporter {
+export interface Reporter<M = unknown> {
   /** The question stops: what the user is told, and the code of the error that stopped it, if it has one. */
   stop(reason: string, code?: string): void
   changed(): void
   /** The tool failed with an error that has a code (a site error's, such as Notion's `no_access`). */
   failed(code: string): void
   /** What the call gets while it runs; its `ask` resolves false once the question it was asked in is over. */
-  context: ToolContext
+  context: ToolContext<M>
 }
 
 /**
@@ -157,7 +158,7 @@ export interface Reporter {
  * with that, so a page could be titled "null". Such a call is refused like any other that does not
  * fit, and the model is told where the nulls are.
  */
-export function toAgentTool(spec: ToolSpec, reporter: () => Reporter): AgentTool {
+export function toAgentTool<M>(spec: ToolSpec<M>, reporter: () => Reporter<M>): AgentTool {
   return {
     name: spec.name,
     label: spec.name,

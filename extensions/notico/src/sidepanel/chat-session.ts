@@ -8,14 +8,36 @@ import {
   type QuestionDetails,
   type QuestionPage,
   type QuestionSelection,
+  type ToolDetails,
+  type ToolStatus,
 } from '@cofun/base/agent'
 import { track } from '../analytics'
 import type { Mode } from '../mode'
 import { answering, type ModelSettings, type OwnSetup } from '@cofun/base/models'
 import { titleFor, type Session, type SessionStore } from '@cofun/base/sessions'
-import { currentNotionPage } from '../tools'
-import type { SaveState } from './Save'
-import type { ShownTool } from './ToolCall'
+import { currentNotionPage, type ToolMemory } from '../tools'
+
+/** A tool call as the panel shows it. */
+export interface ShownTool {
+  id: string
+  name: string
+  args: unknown
+  /** `confirm`: waiting for the user to allow or deny it. */
+  status: 'running' | 'confirm' | ToolStatus
+  /** What the model got back, or the error. Empty while running. */
+  result: string
+  /** What the tool said about the call for the panel, once it ended (see ToolDetails). */
+  details?: ToolDetails
+  /** What the call changes, in words, as the tool saw things before it ran. */
+  preview?: string
+  /** Set while `confirm` when the call is already running and asks this instead of whether to run. */
+  question?: string
+  /** With `question`: the origin the call asks to read, which the user's yes allows (see CardQuestion). */
+  access?: string
+}
+
+/** How saving a reply or a chat to Notion is going: running, or done with a link to the page. */
+export type SaveState = { status: 'saving' } | { status: 'saved'; url: string }
 
 /** A reply in the order it happened: text the model wrote and the tools it ran in between. */
 export type Part = { type: 'text'; text: string } | { type: 'tool'; tool: ShownTool }
@@ -66,7 +88,7 @@ export interface ChatSnapshot {
 export interface ChatPanel {
   store: SessionStore
   /** Each chat asks its own agent, made with this. */
-  agent: AgentConfig
+  agent: AgentConfig<ToolMemory>
   /** Aborted when the panel unmounts: it cuts a title request short, which leaving the chat does not. */
   closed: AbortSignal
   /** Sessions deleted in this panel: a save still waiting to write must not bring one back. */
@@ -124,7 +146,7 @@ export interface Question {
 export class ChatSession {
   private snapshot: ChatSnapshot
   private readonly listeners = new Set<() => void>()
-  private readonly agent: CopilotAgent
+  private readonly agent: CopilotAgent<ToolMemory>
   /** Aborted by leave(): the question stops, and one still waiting to be asked is not asked. */
   private readonly lifetime = new AbortController()
   /** The question being answered, if any: aborted by Stop. */
@@ -177,6 +199,14 @@ export class ChatSession {
   /** The user left the chat (see leave). */
   get left(): boolean {
     return this.lifetime.signal.aborted
+  }
+
+  /**
+   * What the chat's tools remember of its conversation, its agent's own: the composer sets in it what
+   * each question carries (carryPages), and the page picker the workspaces it searched.
+   */
+  get memory(): ToolMemory {
+    return this.agent.memory
   }
 
   /** The conversation so far, as the agent holds it. Read it between questions: while one runs, it is still changing. */

@@ -1,15 +1,18 @@
 // The get_selection tool (extensions/notico/src/tools/read.ts): the selection read from the Notion tab's page,
 // against a small fake DOM with the parts the in-tab script uses, and the page from a fake workspace.
 import { afterEach, describe, expect, it } from 'vitest'
-import { forgetReads } from '../src/tools/memory'
+import { ToolChat } from './tool-chat'
 import { getSelection } from '../src/tools/read'
 import { DATA_LINE, PART_CHARS } from '../src/tools/shared'
 import { editPage } from '../src/tools/write'
 import { FakeNotionTab, FakeWorkspace, PAGE, PAGE_URL, SPACE, restoreGlobals, resultText } from './notion-tab'
 
+/** The chat the tools run in; a new one for each test. */
+let chat = new ToolChat()
+
 afterEach(() => {
   restoreGlobals()
-  forgetReads()
+  chat = new ToolChat()
 })
 
 const hex = (s: string) => s.replace(/-/g, '')
@@ -227,7 +230,7 @@ function setup(
   return { ws, els }
 }
 
-const run = async (args: Record<string, unknown> = {}) => resultText(await getSelection.run(args))
+const run = async (args: Record<string, unknown> = {}) => resultText(await chat.run(getSelection, args))
 
 describe('UC-NOTICO-NOTION-003 work on the selection', () => {
   it('[UC-NOTICO-NOTION-003-S01] gets the selected text and the blocks it covers, across two blocks', async () => {
@@ -251,7 +254,7 @@ describe('UC-NOTICO-NOTION-003 work on the selection', () => {
     setup((els) => ({ from: [els[0], 0], to: [els[1], 0] }))
     expect((await run()).split('\n').slice(-2)).toEqual(['Selected block:', 'First paragraph. ^00000001'])
     restoreGlobals()
-    forgetReads()
+    chat = new ToolChat()
     // A drag that starts at the very end of a block.
     setup((els) => ({ from: [els[0], 'First paragraph.'.length], to: [els[1], 6] }))
     expect((await run()).split('\n').slice(-2)).toEqual(['Selected block:', 'Second paragraph. ^00000002'])
@@ -288,7 +291,7 @@ describe('UC-NOTICO-NOTION-003 work on the selection', () => {
     ])
     // Selecting only inside the nested block leaves its parent out.
     restoreGlobals()
-    forgetReads()
+    chat = new ToolChat()
     setup(() => ({ from: [child, 0], to: [child, 6] }), {
       blocks: [block(4, 'toggle', 'A toggle', { content: [id(5)] }), block(5, 'text', 'Inside the toggle', {}, id(4))],
       els: [toggle],
@@ -311,9 +314,9 @@ describe('UC-NOTICO-NOTION-003 work on the selection', () => {
     const result = await run()
     expect(result.split('\n').slice(-4)).toEqual(['Selected block:', '| cell |', '| --- |', '^00000006'])
     // The row itself wasn't shown, so it can't be edited by this read.
-    await expect(editPage.run({ page: hex(PAGE), edits: [{ action: 'delete', block: '^00000007' }] })).rejects.toThrow(
-      'is not a block of the page as you last read it',
-    )
+    await expect(
+      chat.run(editPage, { page: hex(PAGE), edits: [{ action: 'delete', block: '^00000007' }] }),
+    ).rejects.toThrow('is not a block of the page as you last read it')
     expect(ws.transactions).toEqual([])
   })
 
@@ -346,7 +349,7 @@ describe('UC-NOTICO-NOTION-003 work on the selection', () => {
     expect(more).toBeGreaterThan(0)
     // The last selected block wasn't shown, so it can't be edited by this read.
     await expect(
-      editPage.run({ page: hex(PAGE), edits: [{ action: 'delete', block: `^${hex(id(129)).slice(-8)}` }] }),
+      chat.run(editPage, { page: hex(PAGE), edits: [{ action: 'delete', block: `^${hex(id(129)).slice(-8)}` }] }),
     ).rejects.toThrow('is not a block of the page as you last read it')
   })
 
@@ -363,7 +366,7 @@ describe('UC-NOTICO-NOTION-003 work on the selection', () => {
     expect((await run()).split('\n').slice(-4)).toEqual(['Selected block:', '- [ ] A task ^00000003', '', notice])
     // The first block drawn is selected, and the page has blocks before it.
     restoreGlobals()
-    forgetReads()
+    chat = new ToolChat()
     setup(
       (els) => {
         els[1].halo = true
@@ -374,7 +377,7 @@ describe('UC-NOTICO-NOTION-003 work on the selection', () => {
     expect((await run()).split('\n').slice(-4)).toEqual(['Selected block:', 'Second paragraph. ^00000002', '', notice])
     // Drawn blocks on both sides: nothing more to say.
     restoreGlobals()
-    forgetReads()
+    chat = new ToolChat()
     setup((els) => {
       els[1].halo = true
       return undefined
@@ -418,7 +421,7 @@ describe('UC-NOTICO-NOTION-003 work on the selection', () => {
   it('[UC-NOTICO-NOTION-003-S03] lets the agent change exactly the selected block, without reading the whole page', async () => {
     const { ws } = setup((els) => across(els[1], els[1]))
     await run()
-    await editPage.run({
+    await chat.run(editPage, {
       page: hex(PAGE),
       edits: [{ action: 'replace', block: '^00000002', markdown: 'Second paragraph, rewritten.' }],
     })
@@ -428,8 +431,8 @@ describe('UC-NOTICO-NOTION-003 work on the selection', () => {
       { title: [['A task']], checked: [['No']] },
     ])
     // Blocks outside the selection weren't shown, so they can't be edited by this read.
-    await expect(editPage.run({ page: hex(PAGE), edits: [{ action: 'delete', block: '^00000001' }] })).rejects.toThrow(
-      'is not a block of the page as you last read it',
-    )
+    await expect(
+      chat.run(editPage, { page: hex(PAGE), edits: [{ action: 'delete', block: '^00000001' }] }),
+    ).rejects.toThrow('is not a block of the page as you last read it')
   })
 })

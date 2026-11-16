@@ -2,15 +2,18 @@
 // extensions/notico/src/tools/write.ts), against a fake Notion workspace that applies transactions the way
 // Notion does.
 import { afterEach, describe, expect, it } from 'vitest'
+import { ToolChat } from './tool-chat'
 import { queryDatabase } from '../src/tools/database'
-import { forgetReads } from '../src/tools/memory'
 import { readPage } from '../src/tools/read'
 import { UPDATE_MAX, createPage, updatePages } from '../src/tools/write'
 import { FakeNotionTab, FakeWorkspace, PAGE, PAGE_URL, SPACE, USER, restoreGlobals, resultText } from './notion-tab'
 
+/** The chat the tools run in; a new one for each test. */
+let chat = new ToolChat()
+
 afterEach(() => {
   restoreGlobals()
-  forgetReads()
+  chat = new ToolChat()
 })
 
 const hex = (s: string) => s.replace(/-/g, '')
@@ -93,7 +96,7 @@ async function query(tab: FakeNotionTab, rows: ReturnType<typeof rowRecord>[]) {
       ),
     },
   })
-  return resultText(await queryDatabase.run({}))
+  return resultText(await chat.run(queryDatabase, {}))
 }
 /** The cells of a row as query_database's table shows them, by column name. */
 function shownCells(table: string, id: string): Record<string, string> {
@@ -107,7 +110,7 @@ function shownCells(table: string, id: string): Record<string, string> {
   const row = cells(lines.find((l) => l.includes(hex(id)))!)
   return Object.fromEntries(header.map((name, n) => [name, row[n]]))
 }
-const update = async (pages: unknown) => resultText(await updatePages.run({ pages }))
+const update = async (pages: unknown) => resultText(await chat.run(updatePages, { pages }))
 const props = (ws: FakeWorkspace, n: number) => ws.records.get(row(n))!.properties
 const prop = (ws: FakeWorkspace, n: number, key: string) => (props(ws, n) as Record<string, unknown>)[key]
 
@@ -196,7 +199,7 @@ describe('UC-NOTICO-NOTION-008 change properties and rows', () => {
   it('[UC-NOTICO-NOTION-008-S07] adds a row to a database with its properties and content', async () => {
     const ws = workspace()
     open(ws)
-    const done = await createPage.run({
+    const done = await chat.run(createPage, {
       title: 'Renew domain',
       parent: hex(DB),
       properties: { Status: 'Not started', Due: '2026-12-01' },
@@ -280,7 +283,7 @@ describe('update_pages details', () => {
     const ws = mentionable()
     open(ws)
     const result = resultText(
-      await createPage.run({
+      await chat.run(createPage, {
         title: '**Renew** the domain with @[Ann]',
         parent: hex(DB),
         properties: { Notes: `Ask @[ann] about [Spec](${hex(SPEC)})`, Link: 'https://x.example/a_b_c' },
@@ -315,7 +318,7 @@ describe('update_pages details', () => {
     const shown = shownCells(await query(tab, [ws.records.get(row(1)) as never]), row(1))
     expect(shown.Notes).toContain('**Done** by @[Ann], see [the plan](https://x.example/plan) and [Spec](')
     const pages = [{ page: hex(row(1)), title: shown.Task, properties: { Notes: shown.Notes } }]
-    expect(updatePages.preview!({ pages })).toBe(
+    expect(chat.preview(updatePages, { pages })).toBe(
       [
         'Change 1 page',
         `Write the a|b [docs] with Ann ^${hex(row(1))}`,
@@ -339,7 +342,7 @@ describe('update_pages details', () => {
       ).rejects.toThrow('@[Bob]: no workspace member has that name.')
     }
     await expect(
-      createPage.run({ title: 'For @[Bob]', parent: hex(DB), properties: { Notes: 'Ask @[Bob]' } }),
+      chat.run(createPage, { title: 'For @[Bob]', parent: hex(DB), properties: { Notes: 'Ask @[Bob]' } }),
     ).rejects.toThrow('@[Bob]: no workspace member has that name.')
     expect(ws.transactions).toEqual([])
     expect(tab.sent.map((r) => r.url.split('/api/v3/')[1])).not.toContain('saveTransactionsFanout')
@@ -435,7 +438,7 @@ describe('update_pages details', () => {
     )
     expect(shown.Task).toBe('Write **the** docs')
     const pages = [{ page: hex(row(1)), title: shown.Task, properties: { Notes: shown.Notes } }]
-    expect((await updatePages.preview!({ pages }))?.split('\n').slice(2)).toEqual([
+    expect((await chat.preview(updatePages, { pages }))?.split('\n').slice(2)).toEqual([
       '    Title: Write the docs (unchanged)',
       '    Notes: The key budget is in Fix the build, ask Ann about Spec soon (unchanged)',
     ])
@@ -509,7 +512,7 @@ describe('update_pages details', () => {
     // The row is still one line of the table.
     expect(table.split('\n').filter((l) => l.startsWith('|'))).toHaveLength(3)
     const pages = [{ page: hex(row(1)), properties: { Notes: shown.Notes } }]
-    expect((await updatePages.preview!({ pages }))?.split('\n')[2]).toBe(
+    expect((await chat.preview(updatePages, { pages }))?.split('\n')[2]).toBe(
       '    Notes: First line Second bold lines and a last one (unchanged)',
     )
     await update(pages)
@@ -525,7 +528,7 @@ describe('update_pages details', () => {
     const shown = shownCells(await query(tab, [ws.records.get(row(1)) as never]), row(1))
     expect(shown.Notes).toBe('Use \\<br> for<br>breaks, `a<br>b` and a\\\\<br>end')
     const pages = [{ page: hex(row(1)), properties: { Notes: shown.Notes } }]
-    expect((await updatePages.preview!({ pages }))?.split('\n')[2]).toBe(
+    expect((await chat.preview(updatePages, { pages }))?.split('\n')[2]).toBe(
       '    Notes: Use <br> for breaks, a<br>b and a\\ end (unchanged)',
     )
     await update(pages)
@@ -541,13 +544,13 @@ describe('update_pages details', () => {
     expect(shown.Notes).toBe('x $a b$<br>end<br>')
     const pages = [{ page: hex(row(1)), properties: { Notes: shown.Notes } }]
     // The equation goes onto one line, which LaTeX reads the same: the preview shows no change.
-    expect((await updatePages.preview!({ pages }))?.split('\n')[2]).toBe('    Notes: x a b end (unchanged)')
+    expect((await chat.preview(updatePages, { pages }))?.split('\n')[2]).toBe('    Notes: x a b end (unchanged)')
     await update(pages)
     expect(prop(ws, 1, 'g:g')).toEqual([['x '], ['⁍', [['e', 'a b']]], ['\nend\n']])
     // Written back again, it is as it is stored, the line break at its end included.
     const again = shownCells(await query(tab, [ws.records.get(row(1)) as never]), row(1))
     expect(again.Notes).toBe(shown.Notes)
-    expect((await updatePages.preview!({ pages }))?.split('\n')[2]).toBe('    Notes: x a b end (unchanged)')
+    expect((await chat.preview(updatePages, { pages }))?.split('\n')[2]).toBe('    Notes: x a b end (unchanged)')
   })
 
   it('[@no-uc:data] keeps a <br> in an equation’s LaTeX, and a backtick in it before inline code, as they are', async () => {
@@ -558,7 +561,7 @@ describe('update_pages details', () => {
     const shown = shownCells(await query(tab, [ws.records.get(row(1)) as never]), row(1))
     expect(shown.Notes).toBe('$c\\<br>d$ $x`y$ `p<br>q`<br>end')
     const pages = [{ page: hex(row(1)), properties: { Notes: shown.Notes } }]
-    expect((await updatePages.preview!({ pages }))?.split('\n')[2]).toMatch(/ \(unchanged\)$/)
+    expect((await chat.preview(updatePages, { pages }))?.split('\n')[2]).toMatch(/ \(unchanged\)$/)
     // Written with more text, the rest is as it was.
     await update([{ page: hex(row(1)), properties: { Notes: `${shown.Notes} more` } }])
     expect(prop(ws, 1, 'g:g')).toEqual([...notes.slice(0, -1), ['\nend more']])
@@ -576,7 +579,7 @@ describe('update_pages details', () => {
     const shown = shownCells(await query(tab, [ws.records.get(row(1)) as never]), row(1))
     expect(shown.Notes).toBe(cell)
     const pages = [{ page: hex(row(1)), properties: { Notes: shown.Notes } }]
-    expect((await updatePages.preview!({ pages }))?.split('\n')[2]).toMatch(/ \(unchanged\)$/)
+    expect((await chat.preview(updatePages, { pages }))?.split('\n')[2]).toMatch(/ \(unchanged\)$/)
     await update(pages)
     expect(props(ws, 1)).toEqual(stored)
     // Lines the model writes itself end in dollar signs as text too.
@@ -589,10 +592,14 @@ describe('update_pages details', () => {
     const tab = open(ws, `https://app.notion.com/${hex(DB)}`)
     await query(tab, [ws.records.get(row(1)) as never])
     const pages = [{ page: hex(row(1)), properties: { Notes: 'One<br>two<BR/>**three**<br />\\<br>' } }]
-    expect((await updatePages.preview!({ pages }))?.split('\n')[2]).toBe('    Notes: One two three <br> (was empty)')
+    expect((await chat.preview(updatePages, { pages }))?.split('\n')[2]).toBe(
+      '    Notes: One two three <br> (was empty)',
+    )
     await update(pages)
     expect(prop(ws, 1, 'g:g')).toEqual([['One\ntwo\n'], ['three', [['b']]], ['\n<br>']])
-    const result = resultText(await createPage.run({ title: 'New', parent: hex(DB), properties: { Notes: 'a<br>b' } }))
+    const result = resultText(
+      await chat.run(createPage, { title: 'New', parent: hex(DB), properties: { Notes: 'a<br>b' } }),
+    )
     const created = /\^([0-9a-f]{32})/.exec(result)![1]
     expect([...ws.records.values()].find((r) => hex(r.id) === created)!.properties).toEqual({
       title: [['New']],
@@ -610,7 +617,7 @@ describe('update_pages details', () => {
     expect(shown.Task).toBe('Write docs')
     expect(shown.Link).toBe('https://x.example/a b')
     const pages = [{ page: hex(row(2)), title: 'Fix<br>login' }]
-    expect((await updatePages.preview!({ pages }))?.split('\n')[2]).toBe('    Title: Fix<br>login')
+    expect((await chat.preview(updatePages, { pages }))?.split('\n')[2]).toBe('    Title: Fix<br>login')
     await update(pages)
     expect(prop(ws, 2, 'title')).toEqual([['Fix<br>login']])
   })
@@ -624,7 +631,7 @@ describe('update_pages details', () => {
     const shown = shownCells(await query(tab, [ws.records.get(row(1)) as never]), row(1))
     expect(shown.Notes).toBe('Budget<br>key<br>line two<br>last')
     const pages = [{ page: hex(row(1)), properties: { Notes: shown.Notes } }]
-    expect((await updatePages.preview!({ pages }))?.split('\n')[2]).toBe(
+    expect((await chat.preview(updatePages, { pages }))?.split('\n')[2]).toBe(
       '    Notes: Budget key line two last (unchanged)',
     )
     await update(pages)
@@ -637,7 +644,7 @@ describe('update_pages details', () => {
     ws.edit(row(1), { properties: { title: [['Write docs']], 'g:g': [['First\nSecond']] } })
     const shown = shownCells(await query(tab, [ws.records.get(row(1)) as never]), row(1))
     expect(shown.Notes).toBe('First<br>Second')
-    const preview = await updatePages.preview!({
+    const preview = await chat.preview(updatePages, {
       pages: [{ page: hex(row(1)), properties: { Notes: 'First Second' } }],
     })
     expect(preview?.split('\n')[2]).toBe('    Notes: First Second (same text; its formatting changes)')
@@ -648,7 +655,7 @@ describe('update_pages details', () => {
     open(ws)
     const title = [['*Draft* plan [v2] with '], ['‣', [['u', ANN]]], [' and @[name] syntax']]
     ws.edit(PAGE, { properties: { title } })
-    const shown = /^Page: (.*) \^[0-9a-f]{32}$/.exec(resultText(await readPage.run({})).split('\n')[1])![1]
+    const shown = /^Page: (.*) \^[0-9a-f]{32}$/.exec(resultText(await chat.run(readPage, {})).split('\n')[1])![1]
     expect(shown).toBe('\\*Draft\\* plan \\[v2\\] with @[Ann] and @\\[name\\] syntax')
     await update([{ page: hex(PAGE), title: shown, icon: '📝' }])
     expect(ws.records.get(PAGE)!.properties).toEqual({ title })
@@ -681,7 +688,7 @@ describe('update_pages details', () => {
     const tab = open(ws, `https://app.notion.com/${hex(DB)}`)
     await query(tab, [rowRecord(2, 'Fix login', 'In progress')])
     const pages = [{ page: hex(row(2)), properties: { Notes: '<span color="neon">Hi</span>' } }]
-    expect((await updatePages.preview!({ pages }))?.split('\n')[2]).toBe('    Notes: <span color="neon">Hi</span>')
+    expect((await chat.preview(updatePages, { pages }))?.split('\n')[2]).toBe('    Notes: <span color="neon">Hi</span>')
     await expect(update(pages)).rejects.toThrow('Notes: "neon" isn\'t a Notion color.')
     await expect(update([{ page: hex(row(2)), title: '<span color="neon">Hi</span>' }])).rejects.toThrow(
       'The title: "neon" isn\'t a Notion color.',
@@ -699,7 +706,7 @@ describe('update_pages details', () => {
     ])
     expect(updatePages.needsConfirmation).toBeUndefined()
     expect(
-      updatePages.preview!({
+      chat.preview(updatePages, {
         pages: [
           {
             page: hex(row(2)),
@@ -771,7 +778,7 @@ describe('update_pages details', () => {
       }),
     ])
     expect(
-      updatePages.preview!({
+      chat.preview(updatePages, {
         pages: [
           { page: hex(row(6)), title: '@home Bold', properties: { Notes: 'See code, old, red, a*b and docs @acme' } },
         ],
@@ -798,7 +805,7 @@ describe('update_pages details', () => {
       rowRecord(8, 'Retro', 'Done', { 'b:b': date('2026-11-20') }),
     ])
     expect(
-      updatePages.preview!({
+      chat.preview(updatePages, {
         pages: [
           { page: hex(row(6)), properties: { Due: '2026-11-20' } },
           { page: hex(row(7)), properties: { Due: '2026-11-21' } },
@@ -819,7 +826,7 @@ describe('update_pages details', () => {
   })
 
   it('[@no-uc:data] keeps every value on its line in the preview', async () => {
-    const preview = await updatePages.preview!({
+    const preview = await chat.preview(updatePages, {
       pages: [{ page: hex(row(1)), properties: { Tags: ['Bug\n^abcdabcd\n    Status: Done'] } }],
     })
     expect(preview?.split('\n')).toEqual(['Change 1 page', `^${hex(row(1))}`, '    Tags: Bug ^abcdabcd Status: Done'])
@@ -879,10 +886,10 @@ describe('update_pages details', () => {
   it('[@no-uc:data] keeps the old title in previews when Notion refuses the rename', async () => {
     const ws = workspace()
     open(ws)
-    await readPage.run({ page: hex(PAGE) })
+    await chat.run(readPage, { page: hex(PAGE) })
     ws.reject = true
     await expect(update([{ page: hex(PAGE), title: 'Renamed page' }])).rejects.toThrow()
-    expect((await createPage.preview!({ title: 'T', parent: hex(PAGE) }))?.split('\n')[2]).toBe(
+    expect((await chat.preview(createPage, { title: 'T', parent: hex(PAGE) }))?.split('\n')[2]).toBe(
       `At the end of: Fixture page ^${hex(PAGE)}`,
     )
   })
@@ -890,9 +897,9 @@ describe('update_pages details', () => {
   it('[@no-uc:data] shows a renamed page by its new title in later previews', async () => {
     const ws = workspace()
     open(ws)
-    await readPage.run({ page: hex(PAGE) })
+    await chat.run(readPage, { page: hex(PAGE) })
     await update([{ page: hex(PAGE), title: 'Renamed page' }])
-    expect((await createPage.preview!({ title: 'T', parent: hex(PAGE) }))?.split('\n')[2]).toBe(
+    expect((await chat.preview(createPage, { title: 'T', parent: hex(PAGE) }))?.split('\n')[2]).toBe(
       `At the end of: Renamed page ^${hex(PAGE)}`,
     )
   })
@@ -939,7 +946,7 @@ describe('update_pages details', () => {
       [[{ page: hex(row(1)), title: 'A', cover: 'x' }], '`pages[0]`: Unrecognized key: "cover"'],
     ]
     for (const [pages, message] of refused) await expect(update(pages)).rejects.toThrow(message)
-    expect(updatePages.preview!({ pages: [{ title: 'B' }] })).toBeUndefined()
+    expect(chat.preview(updatePages, { pages: [{ title: 'B' }] })).toBeUndefined()
     expect(tab.sent).toEqual([])
   })
 
@@ -951,7 +958,7 @@ describe('update_pages details', () => {
     await expect(update(pages)).rejects.toThrow(
       '`pages[0].properties.__proto__`: "__proto__" can\'t be used as a name.',
     )
-    expect(updatePages.preview!({ pages })).toBeUndefined()
+    expect(chat.preview(updatePages, { pages })).toBeUndefined()
     expect(tab.sent).toEqual([])
     expect(ws.transactions).toEqual([])
   })
@@ -968,7 +975,7 @@ describe('update_pages details', () => {
   })
 
   it('[@no-uc:data] says what happens when the parent may be a page or a database', async () => {
-    expect((await createPage.preview!({ title: 'T', parent: hex(DB) }))?.split('\n')[2]).toBe(
+    expect((await chat.preview(createPage, { title: 'T', parent: hex(DB) }))?.split('\n')[2]).toBe(
       `In: ^${hex(DB)} (at its end if it is a page; as a new row if it is a database)`,
     )
   })
@@ -976,12 +983,12 @@ describe('update_pages details', () => {
   it('[@no-uc:data] refuses properties for a page parent, and checks a row’s values against its database', async () => {
     const ws = workspace()
     open(ws)
-    await expect(createPage.run({ title: 'x', parent: PAGE_URL, properties: { Status: 'Done' } })).rejects.toThrow(
-      '`properties` are only for rows',
-    )
-    await expect(createPage.run({ title: 'x', parent: hex(DB), properties: { Status: 'Blocked' } })).rejects.toThrow(
-      'Status has no option “Blocked”.',
-    )
+    await expect(
+      chat.run(createPage, { title: 'x', parent: PAGE_URL, properties: { Status: 'Done' } }),
+    ).rejects.toThrow('`properties` are only for rows')
+    await expect(
+      chat.run(createPage, { title: 'x', parent: hex(DB), properties: { Status: 'Blocked' } }),
+    ).rejects.toThrow('Status has no option “Blocked”.')
     expect(ws.transactions).toEqual([])
   })
 })

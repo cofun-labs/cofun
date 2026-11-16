@@ -1,9 +1,13 @@
 // The query_database tool (extensions/notico/src/tools/database.ts) against a fake Notion tab answering in the
 // shapes Notion's syncRecordValuesMain and queryCollection return (see the #64 spike).
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { ToolChat } from './tool-chat'
 import { QUERY_LOAD, QUERY_PART, localDate, queryDatabase } from '../src/tools/database'
 import { FakeNotionTab, SPACE, USER, restoreGlobals, resultText } from './notion-tab'
 import { DATA_LINE } from '../src/tools/shared'
+
+/** The chat the tools run in. */
+const chat = new ToolChat()
 
 afterEach(restoreGlobals)
 
@@ -85,7 +89,7 @@ function database(
     .install()
 }
 
-const query = async (args: Record<string, unknown> = {}) => resultText(await queryDatabase.run(args))
+const query = async (args: Record<string, unknown> = {}) => resultText(await chat.run(queryDatabase, args))
 const tableRows = (result: string) =>
   result.split('\n').filter((l) => l.startsWith('| ') && !l.startsWith('| Task | Status |') && !l.startsWith('| ---'))
 const today = localDate(new Date())
@@ -282,7 +286,7 @@ describe('query_database open page', () => {
         recordMap: {},
       })
       .install()
-    const done = await queryDatabase.run({})
+    const done = await chat.run(queryDatabase, {})
     expect(resultText(done)).toContain(`Database: Tasks ^${hex(DB)}`)
     // The side panel names the database and counts it as read.
     expect(done).toMatchObject({ details: { name: 'Tasks', read: [hex(DB)] } })

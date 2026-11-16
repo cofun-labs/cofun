@@ -1,7 +1,11 @@
 // Defines a tool from one zod schema of its arguments: the JSON Schema the model is sent, the check
 // before the tool runs, and the type its code works with all come from that schema.
-import type { ToolContext, ToolDetails, ToolResult, ToolSpec } from '@cofun/base/agent'
+import type { ToolContext as AgentToolContext, ToolDetails, ToolResult, ToolSpec } from '@cofun/base/agent'
 import { z } from '@cofun/base/zod'
+import type { ToolMemory } from './tools/memory'
+
+/** What the agent gives a running call of Notico's, with Notico's tool memory. */
+export type ToolContext = AgentToolContext<ToolMemory>
 
 /** A verb in the forms a tool call's description needs: "read", "reading", "read". */
 export interface Verb {
@@ -25,7 +29,7 @@ export interface Action {
 }
 
 /** A tool as the extension has it: what the agent runs, and how the side panel describes a call. */
-export interface Tool extends ToolSpec {
+export interface Tool extends ToolSpec<ToolMemory> {
   /**
    * A call in words, from the arguments the model gave (which may not parse) and, once it has worked,
    * the details its run gave (see ToolDetails). Also used for calls in saved sessions.
@@ -36,7 +40,10 @@ export interface Tool extends ToolSpec {
 /** A tool's arguments: an object schema, so the model is sent `type: "object"`. */
 type ArgsSchema = z.ZodObject
 
-export interface ToolDefinition<S extends ArgsSchema> extends Omit<ToolSpec, 'parameters' | 'run' | 'preview'> {
+export interface ToolDefinition<S extends ArgsSchema> extends Omit<
+  ToolSpec<ToolMemory>,
+  'parameters' | 'run' | 'preview'
+> {
   /**
    * The call in the user's words (see `Tool.describe`): from its arguments, or undefined when they
    * don't parse, and its run's details once it has worked. A name it gives comes from the arguments
@@ -52,11 +59,11 @@ export interface ToolDefinition<S extends ArgsSchema> extends Omit<ToolSpec, 'pa
    * Runs the tool with the arguments as the schema gives them. The details say which pages and
    * databases it read and changed (searching and listing pages read none; a change counts the pages
    * it changed or made), and the name its card shows. `context` is what the agent gives a running
-   * call (see ToolContext); without it, nobody can be asked.
+   * call (see ToolContext).
    */
-  run: (args: z.output<S>, signal?: AbortSignal, context?: ToolContext) => Promise<string | ToolResult>
-  /** What a call does, in words (see `ToolSpec.preview`), from the same arguments as `run` gets. */
-  preview?: (args: z.output<S>) => string | undefined | Promise<string | undefined>
+  run: (args: z.output<S>, signal: AbortSignal | undefined, context: ToolContext) => Promise<string | ToolResult>
+  /** What a call does, in words (see `ToolSpec.preview`), from the same arguments and context as `run` gets. */
+  preview?: (args: z.output<S>, context: ToolContext) => string | undefined | Promise<string | undefined>
 }
 
 /**
@@ -82,10 +89,10 @@ export function defineTool<S extends ArgsSchema>({ args, run, preview, describe,
       return run(parsed.args, signal, context)
     },
     ...(preview && {
-      preview: (given: unknown) => {
+      preview: (given: unknown, context) => {
         // Arguments that don't parse have no preview: the run refuses them, and says why.
         const parsed = parseArgs(args, given)
-        return parsed.ok ? preview(parsed.args) : undefined
+        return parsed.ok ? preview(parsed.args, context) : undefined
       },
     }),
   }

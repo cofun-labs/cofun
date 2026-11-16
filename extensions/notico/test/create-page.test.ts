@@ -1,8 +1,8 @@
 // The create_page tool (extensions/notico/src/tools/write.ts) against a fake Notion workspace that applies
 // transactions the way Notion does.
 import { afterEach, describe, expect, it } from 'vitest'
+import { ToolChat } from './tool-chat'
 import { LIMITED_STOP } from '../src/notion/api'
-import { forgetReads } from '../src/tools/memory'
 import { readPage } from '../src/tools/read'
 import { createPage } from '../src/tools/write'
 import { toUuid } from '../src/notion/hosts'
@@ -18,9 +18,12 @@ import {
   resultText,
 } from './notion-tab'
 
+/** The chat the tools run in; a new one for each test. */
+let chat = new ToolChat()
+
 afterEach(() => {
   restoreGlobals()
-  forgetReads()
+  chat = new ToolChat()
 })
 
 const hex = (s: string) => s.replace(/-/g, '')
@@ -63,13 +66,13 @@ function open(ws: FakeWorkspace) {
   tab.workspace = ws
   return tab.install()
 }
-const create = async (args: Record<string, unknown>) => resultText(await createPage.run(args))
+const create = async (args: Record<string, unknown>) => resultText(await chat.run(createPage, args))
 
 describe('UC-NOTICO-NOTION-007 create a page', () => {
   it('[UC-NOTICO-NOTION-007-S06] creates a page with its content at the end of the open page', async () => {
     const ws = workspace()
     open(ws)
-    const done = await createPage.run({
+    const done = await chat.run(createPage, {
       title: 'Launch notes',
       parent: PAGE_URL,
       markdown: '# Plan\n- Ship beta\n  - Fix Safari\n- [ ] Write post',
@@ -84,7 +87,7 @@ describe('UC-NOTICO-NOTION-007 create a page', () => {
     // It is the open page's last block, and reads back with its content.
     expect(ws.content(PAGE).map((b) => b.type)).toEqual(['text', 'page'])
     expect(ws.transactions).toHaveLength(1)
-    const page = resultText(await readPage.run({ page: created }))
+    const page = resultText(await chat.run(readPage, { page: created }))
     expect(page.split('\n')[1]).toBe(`Page: Launch notes ^${created}`)
     expect(page.slice(page.indexOf('\n\n') + 2).replace(/ \^[0-9a-f]+$/gm, '')).toBe(
       ['# Plan', '- Ship beta', '  - Fix Safari', '- [ ] Write post'].join('\n'),
@@ -133,7 +136,7 @@ describe('UC-NOTICO-NOTION-007 create a page', () => {
 describe('create_page details', () => {
   it('[@no-uc:data] runs without asking, and previews the page', () => {
     expect(createPage.needsConfirmation).toBeUndefined()
-    expect(createPage.preview!({ title: 'Launch notes', parent: PAGE_URL, markdown: '# Plan\n- Ship' })).toBe(
+    expect(chat.preview(createPage, { title: 'Launch notes', parent: PAGE_URL, markdown: '# Plan\n- Ship' })).toBe(
       [
         'Create a page',
         'Title: Launch notes',
@@ -155,17 +158,17 @@ describe('create_page details', () => {
       parent_table: 'block',
     }))
     open(workspace(long))
-    const first = resultText(await readPage.run({ page: hex(PAGE) }))
+    const first = resultText(await chat.run(readPage, { page: hex(PAGE) }))
     const parts = Number(/^Part 1 of (\d+)/m.exec(first)![1])
-    expect(resultText(await readPage.run({ page: hex(PAGE), part: parts }))).not.toContain('Fresh page')
+    expect(resultText(await chat.run(readPage, { page: hex(PAGE), part: parts }))).not.toContain('Fresh page')
     await create({ title: 'Fresh page', parent: hex(PAGE) })
-    expect(resultText(await readPage.run({ page: hex(PAGE), part: parts }))).toContain('Fresh page')
+    expect(resultText(await chat.run(readPage, { page: hex(PAGE), part: parts }))).toContain('Fresh page')
   })
 
   it('[@no-uc:data] names the parent by its title in the preview once the agent has read it', async () => {
     open(workspace())
-    await readPage.run({ page: hex(PAGE) })
-    expect((await createPage.preview!({ title: 'T', parent: PAGE_URL }))?.split('\n')[2]).toBe(
+    await chat.run(readPage, { page: hex(PAGE) })
+    expect((await chat.preview(createPage, { title: 'T', parent: PAGE_URL }))?.split('\n')[2]).toBe(
       `At the end of: Fixture page ^${hex(PAGE)}`,
     )
   })
@@ -175,7 +178,7 @@ describe('create_page details', () => {
     open(ws)
     const title = 'Notes”\n    at the end of the page “Other'
     // The title stays on its line; where the page goes is always the line after it.
-    expect((await createPage.preview!({ title, parent: PAGE_URL }))?.split('\n').slice(1, 3)).toEqual([
+    expect((await chat.preview(createPage, { title, parent: PAGE_URL }))?.split('\n').slice(1, 3)).toEqual([
       'Title: Notes” at the end of the page “Other',
       `In: ^${hex(PAGE)} (at its end if it is a page; as a new row if it is a database)`,
     ])
@@ -191,7 +194,7 @@ describe('create_page details', () => {
       `the page may or may not have been created. Read ^${hex(PAGE)} and check for “Once” before trying again.`,
     )
     // It was saved: the read the agent is pointed to shows it.
-    expect(resultText(await readPage.run({ page: hex(PAGE) }))).toContain('Once')
+    expect(resultText(await chat.run(readPage, { page: hex(PAGE) }))).toContain('Once')
   })
 
   it('[@no-uc:notion-safety] stops the question when Notion is too busy to say whether the page was created', async () => {
@@ -234,7 +237,7 @@ describe('create_page details', () => {
       'The value for “Tags” must be text, a number, Yes/No, or a list.',
     )
     await expect(create({ title: 'T', parent: PAGE_URL, icon: '📝' })).rejects.toThrow('Unrecognized key: "icon"')
-    expect(createPage.preview!({ title: 'T' })).toBeUndefined()
+    expect(chat.preview(createPage, { title: 'T' })).toBeUndefined()
     expect(tab.sent).toEqual([])
   })
 })

@@ -2,9 +2,9 @@
 // on the device (KeptResult, in the saved sessions' store), and the model gets its first part, an
 // outline, and an id, with which read_result reads another part and search_result finds text in it.
 // Notion's tools read Notion live, in parts of their own, and keep nothing.
-import type { KeptResult, ToolContext, ToolResult } from '@cofun/base/agent'
+import type { KeptResult, ToolResult } from '@cofun/base/agent'
 import { clip } from '../notion/comments'
-import { defineTool } from '../tool'
+import { defineTool, type ToolContext } from '../tool'
 import { z } from '@cofun/base/zod'
 import { READ, SEARCH, asData, asPageText, count, nameOf, partArg } from './shared'
 
@@ -146,7 +146,7 @@ export async function withText(
   header: string[],
   read: ReadText,
   name: string,
-  context: ToolContext | undefined,
+  context: ToolContext,
 ): Promise<ToolResult> {
   const { longer = false, ...rest } = read
   const kept = { ...rest, text: read.text.slice(0, KEPT_CHARS) }
@@ -158,7 +158,7 @@ export async function withText(
   const first = partText(kept.text, starts, 1)
   let id: string | undefined
   try {
-    id = await context?.keep(kept)
+    id = await context.keep(kept)
   } catch (err) {
     console.error('Could not keep a long result', err)
   }
@@ -192,9 +192,9 @@ function clippedNote(shown: { text: string; chars: number }, longer: boolean): s
 const ResultArg = z.string().describe('The id of the kept result, as its note gave it ("r_…").')
 
 /** The kept result the model named, or why it can't be read. */
-async function keptResult(id: string, context: ToolContext | undefined): Promise<KeptResult> {
+async function keptResult(id: string, context: ToolContext): Promise<KeptResult> {
   const given = id.trim()
-  const kept = context ? await context.kept(given) : 'unknown'
+  const kept = await context.kept(given)
   if (kept === 'unknown')
     throw new Error(
       `No result ${JSON.stringify(clip(given, 40))} was kept in this chat: give an id a note in this chat gave ` +
@@ -231,7 +231,7 @@ export const readResult = defineTool({
     const text = partText(kept.text, starts, part)
     // A question's own tool results are all sent with each step, and the hosted model takes
     // MAX_CONTENT_CHARS in all (worker/src/routes/chat-request.ts): past this, read no more parts.
-    const used = context?.questionChars() ?? 0
+    const used = context.questionChars()
     if (used + text.length > QUESTION_PART_CHARS)
       throw new Error(
         `Not read: this question already holds ${en(used)} characters of results, and another part would leave no ` +

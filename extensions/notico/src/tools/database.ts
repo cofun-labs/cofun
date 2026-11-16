@@ -21,7 +21,6 @@ import {
 import { activeNotionTab } from '../notion/tab'
 import { needsAttachedPage } from './current'
 import { loadRowMentions, resolveDatabase } from './load'
-import { forgetRead, forgetSeenRow, keepSeenDatabase, keepSeenRow, lastRead, seenDatabase } from './memory'
 import {
   CHANGE,
   CREATE,
@@ -101,9 +100,9 @@ export const queryDatabase = defineTool({
   describe: (args, details) =>
     on(READ, details?.name, !args || args.database ? 'a database' : 'the open database', 'rows of'),
   args: QUERY_ARGS,
-  run: async ({ database, filter, sort: sortBy, part = 1 }) => {
+  run: async ({ database, filter, sort: sortBy, part = 1 }, _signal, { memory }) => {
     const given = filled(database)
-    if (!given) await needsAttachedPage()
+    if (!given) await needsAttachedPage(memory)
     const tab = await activeNotionTab()
     const id = given ? pageArg(given) : tab.pageId
     if (given && !id) throw new Error(`Not a Notion database URL or id: ${given}`)
@@ -129,7 +128,7 @@ export const queryDatabase = defineTool({
     const viewInUrl = urlView(given ?? tab.url)
     const viewId = views.find((v) => toUuid(v) === viewInUrl) ?? views[0]
     if (!viewId) throw new Error("This database's rows can't be read: it has no view.")
-    keepSeenDatabase(dbId, name)
+    memory.keepSeenDatabase(dbId, name)
 
     const filters = parseFilters(filter, schema)
     const sort = parseSort(sortBy, schema)
@@ -196,7 +195,7 @@ export const queryDatabase = defineTool({
         schema,
         reminders: dateReminders(r.block, schema),
       }
-      keepSeenRow(r.id, seen)
+      memory.keepSeenRow(r.id, seen)
     }
     const details = { name: nameOf(name), read: [hexId(dbId)] }
     if (!shown.length) return { text: asData([...header, '', '(no rows)']), details }
@@ -396,10 +395,10 @@ export const createDatabase = defineTool({
       .max(SCHEMA_MAX, { error: `A database can be created with at most ${SCHEMA_MAX} properties.` })
       .optional(),
   }),
-  preview: (args) => {
+  preview: (args, { memory }) => {
     const given = args.parent.trim()
     const id = given ? pageArg(given) : undefined
-    const known = id ? lastRead(id)?.title : undefined
+    const known = id ? memory.lastRead(id)?.title : undefined
     const parent = id ? `${known ? `${oneLine(known)} ` : ''}^${hexId(id)}` : given || '(none given)'
     const titleColumn = args.title_property === undefined ? '' : titleArg(args.title_property)
     return [
@@ -414,7 +413,7 @@ export const createDatabase = defineTool({
       }),
     ].join('\n')
   },
-  run: async (args, signal) => {
+  run: async (args, signal, { memory }) => {
     const title = titleArg(args.title)
     if (!title) throw new Error(TITLE_EMPTY)
     const given = args.parent.trim()
@@ -448,7 +447,7 @@ export const createDatabase = defineTool({
     } catch (err) {
       // A retry would create a second database if this one was saved: the agent must look first.
       if (err instanceof NotionError && err.code === 'outcome_unknown') {
-        forgetRead(parentId)
+        memory.forgetRead(parentId)
         throw new NotionError(
           'outcome_unknown',
           `Notion did not confirm it, so the database may or may not have been created. Read ^${hexId(parentId)} ` +
@@ -458,7 +457,7 @@ export const createDatabase = defineTool({
       }
       throw err
     }
-    keepSeenDatabase(ids.page, title)
+    memory.keepSeenDatabase(ids.page, title)
     const hex = hexId(ids.page)
     const text = [
       `Created the database “${title}” ^${hex} at the end of ^${hexId(parentId)}.`,
@@ -489,10 +488,10 @@ export const updateDatabaseSchema = defineTool({
       .min(1, { error: CHANGES_LIST })
       .max(SCHEMA_MAX, { error: `At most ${SCHEMA_MAX} changes can be made in one call.` }),
   }),
-  preview: ({ database, changes }) => {
+  preview: ({ database, changes }, { memory }) => {
     const given = database?.trim() ?? ''
     const id = given ? pageArg(given) : undefined
-    const known = id ? seenDatabase(id) : undefined
+    const known = id ? memory.seenDatabase(id) : undefined
     const name = (v: string | undefined) => `“${titleArg(v ?? '')}”`
     const list = (v: string[] | undefined) => (v ?? []).map((o) => oneLine(o)).join(', ')
     return [
@@ -515,7 +514,7 @@ export const updateDatabaseSchema = defineTool({
       }),
     ].join('\n')
   },
-  run: async (args, signal) => {
+  run: async (args, signal, { memory }) => {
     let changes
     try {
       changes = parseChanges(args.changes)
@@ -523,7 +522,7 @@ export const updateDatabaseSchema = defineTool({
       schemaRefusal(err)
     }
     const given = filled(args.database)
-    if (!given) await needsAttachedPage()
+    if (!given) await needsAttachedPage(memory)
     const tab = await activeNotionTab()
     const id = given ? pageArg(given) : tab.pageId
     if (given && !id) throw new Error(`Not a Notion database URL or id: ${given}`)
@@ -581,7 +580,7 @@ export const updateDatabaseSchema = defineTool({
       throw err
     } finally {
       // Rows query_database showed have the old properties.
-      for (const row of renamedRows) forgetSeenRow(row)
+      for (const row of renamedRows) memory.forgetSeenRow(row)
     }
     const text = [
       `Changed the properties of “${db.name}” ^${hexId(id)}:`,

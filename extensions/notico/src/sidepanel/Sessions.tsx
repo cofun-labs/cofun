@@ -14,7 +14,7 @@ export function Sessions({
   saved,
   onOpen,
   onClose,
-  onDeleted,
+  onDelete,
 }: {
   store: SessionStore
   currentId?: string
@@ -22,8 +22,8 @@ export function Sessions({
   saved: number
   onOpen: (id: string) => Promise<OpenResult>
   onClose: () => void
-  /** Called before the session is deleted. */
-  onDeleted: (id: string) => void
+  /** Deletes the session. */
+  onDelete: (id: string) => Promise<void>
 }) {
   const [sessions, setSessions] = useState<ListedSession[] | null>(null)
   // Sessions whose details read fine but whose conversation didn't, found when the user opened them.
@@ -70,9 +70,7 @@ export function Sessions({
     if (confirming !== id) return setConfirming(id)
     setConfirming(undefined)
     try {
-      // First, so a reply still coming in for the open session stops and can't save it back.
-      onDeleted(id)
-      await store.delete(id)
+      await onDelete(id)
       await load()
     } catch (err) {
       setError(`Could not delete the chat: ${(err as Error).message}`)

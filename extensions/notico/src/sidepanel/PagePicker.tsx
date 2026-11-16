@@ -2,7 +2,7 @@ import { useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode 
 import type { QuestionPage } from '@cofun/base/agent'
 import { LIMITED_STOP, NotionError } from '../notion/api'
 import { pageIdFromUrl } from '../notion/hosts'
-import { findPages, openNotionPages, openWebTabs, type FoundPage, type WebTab } from '../tools'
+import { findPages, openNotionPages, openWebTabs, type FoundPage, type ToolMemory, type WebTab } from '../tools'
 import { allowSite } from '../web/tab'
 import { Icon } from './icons'
 import { useMenu } from './menu'
@@ -77,6 +77,8 @@ export interface PickerOptions {
   onPick: (page: QuestionPage) => void
   /** Escape, or Tab: the picker closes, and what was typed stays as text. */
   onClose: () => void
+  /** The open chat's memory (ChatSession.memory), where a search finds the workspace its tools looked up. */
+  memory: ToolMemory
 }
 
 /**
@@ -103,6 +105,7 @@ export function usePagePicker({
   onStop,
   onPick,
   onClose,
+  memory,
 }: PickerOptions): {
   element: ReactNode
   onKeyDown: (e: KeyboardEvent) => boolean
@@ -128,6 +131,8 @@ export function usePagePicker({
   const [active, setActive] = useState(0)
   const onStopRef = useRef(onStop)
   onStopRef.current = onStop
+  const memoryRef = useRef(memory)
+  memoryRef.current = memory
   // The query the next search sends, if one should; cleared when no search is wanted any more.
   const wanted = useRef<string>(undefined)
   const running = useRef(false)
@@ -197,7 +202,7 @@ export function usePagePicker({
     out.current = new Promise<string | undefined>((resolve) => (turnedAway = resolve))
     let stopsQuestion: string | undefined
     try {
-      const pages = await findPages(sending, SEARCH_LIMIT)
+      const pages = await findPages(sending, SEARCH_LIMIT, memoryRef.current)
       if (wanted.current === sending) setSearch({ status: 'done', pages })
     } catch (err) {
       const limited = err instanceof NotionError && err.code === 'rate_limited'

@@ -8,6 +8,7 @@ import { activeNotionTab } from '../notion/tab'
 import { PageLookups, contentOf, lookUpPages, pageTree, runsText, treeLines, type PageTree } from '../notion/tree'
 import type { OpenPage } from './current'
 import { databaseNames, workspaceOf } from './load'
+import type { ToolMemory } from './memory'
 import { LIST, SEARCH, filled, asData, on, pageArg, wholeArg } from './shared'
 
 const LIST_MAX_DEPTH = 3
@@ -55,7 +56,7 @@ export const listPages = defineTool({
       0,
     ),
   }),
-  run: async ({ page, section, depth = 1, offset = 0 }) => {
+  run: async ({ page, section, depth = 1, offset = 0 }, _signal, { memory }) => {
     const named = filled(page)
     const rootId = named ? pageArg(named) : undefined
     if (named && !rootId) throw new Error(`Not a Notion page URL or id: ${named}`)
@@ -97,7 +98,7 @@ export const listPages = defineTool({
     }
 
     if (!tab.pageId) throw new Error('Open a page of the workspace to list it.')
-    const space = await tab.client.getSpace(await workspaceOf(tab))
+    const space = await tab.client.getSpace(await workspaceOf(tab, memory))
     const cache = new PageLookups(tab.client)
     // Every label is unique, ignoring case, so `section` can name any one of them: teamspaces whose
     // names match are numbered until their label is free.
@@ -249,13 +250,13 @@ export const searchPages = defineTool({
       SEARCH_MAX,
     ),
   }),
-  run: async ({ query: words, limit = SEARCH_DEFAULT }) => {
+  run: async ({ query: words, limit = SEARCH_DEFAULT }, _signal, { memory }) => {
     const query = words.trim()
     if (!query) throw new Error(QUERY_WORDS)
     const tab = await activeNotionTab()
     if (!tab.pageId) throw new Error('Open a page of the workspace to search it.')
     // The workspace to search is the open page's; it is looked up once per page.
-    const spaceId = await workspaceOf(tab)
+    const spaceId = await workspaceOf(tab, memory)
 
     const found = await tab.client.search(spaceId, query, limit)
     // A page in the trash can't be read, so it isn't offered.
@@ -319,12 +320,13 @@ export interface FoundPage extends OpenPage {
  * Searches the workspace of the open page for the composer's page picker, as search_pages does,
  * for the user rather than the model: no tool runs, and the requests count toward no question.
  * Pages in the trash are left out. A failure throws as any Notion call does and is never retried;
- * a database is named as the search names it, with no request for its name.
+ * a database is named as the search names it, with no request for its name. `memory` is the open
+ * chat's, whose tools and searches look the workspace up once per page.
  */
-export async function findPages(words: string, limit: number): Promise<FoundPage[]> {
+export async function findPages(words: string, limit: number, memory: ToolMemory): Promise<FoundPage[]> {
   const tab = await activeNotionTab({ counted: false })
   if (!tab.pageId) throw new Error('Open a page of the workspace to search it.')
-  const spaceId = await workspaceOf(tab)
+  const spaceId = await workspaceOf(tab, memory)
   const found = await tab.client.search(spaceId, words.trim(), limit)
   const tag = highlightTag(found.results)
   const plain = (text: unknown) => withoutTag(typeof text === 'string' ? text : undefined, tag)

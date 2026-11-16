@@ -4,10 +4,10 @@
 // found, or one it thinks of (docs/security.md, "Accepted: web pages at any address"). search_web
 // has the worker search the web, with a query the model writes (docs/security.md, "Accepted: web
 // searches").
-import { WebError, type ToolContext } from '@cofun/base/agent'
+import { WebError } from '@cofun/base/agent'
 import { isNotion } from '../notion/hosts'
 import { clip, quote } from '../notion/comments'
-import { defineTool } from '../tool'
+import { defineTool, type ToolContext } from '../tool'
 import { z } from '@cofun/base/zod'
 import { KEPT_CHARS, withText } from './results'
 import { READ, SEARCH, asData, count, noteUrl, on, verb } from './shared'
@@ -73,16 +73,10 @@ function failed(reason: string, err: WebError, repeat: string): string {
 }
 
 /** Reads the page for a tool: checks the address, the question's limit, and turns what was read into the result. */
-async function readPageAt(
-  given: string,
-  render: boolean,
-  signal: AbortSignal | undefined,
-  context: ToolContext | undefined,
-) {
+async function readPageAt(given: string, render: boolean, signal: AbortSignal | undefined, context: ToolContext) {
   const url = addressOf(given)
   if (!url) throw new Error('Not read: the address is not a web address (http or https).')
   if (isNotion(url.href)) throw new Error('This is a Notion page: read it with read_page instead.')
-  if (!context) throw new Error('Could not read the page: there is no worker to read it with.')
   let page
   try {
     page = await context.readWeb(url.href, KEPT_CHARS, render, signal)
@@ -173,7 +167,6 @@ export const searchWeb = defineTool({
       throw new Error(
         `Not searched: \`query\` is ${asked.length} characters long; at most ${QUERY_CHARS} are searched.`,
       )
-    if (!context) throw new Error('Could not search the web: there is no worker to search with.')
     let results
     try {
       results = await context.searchWeb(asked, SEARCH_RESULTS, signal)

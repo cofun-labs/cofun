@@ -8,7 +8,6 @@ import { PAGE_TYPES, hexId, pageToMarkdown, splitSections } from '../notion/mark
 import { activeNotionTab, selectionIn } from '../notion/tab'
 import { needsAttachedPage } from './current'
 import { loadMentioned, loadWithDatabase } from './load'
-import { generation, lastRead, remember } from './memory'
 import { PART_CHARS, READ, filled, asData, nameOf, on, pageArg, partArg, plainTitle, plural } from './shared'
 
 export const readPage = defineTool({
@@ -29,10 +28,9 @@ export const readPage = defineTool({
     page: z.string().describe('URL or id of the page to read. Leave out to read the open page.').optional(),
     part: partArg('Which part of a long page to read, starting at 1.'),
   }),
-  run: async ({ page, part = 1 }) => {
-    const since = generation()
+  run: async ({ page, part = 1 }, _signal, { memory }) => {
     const pageText = filled(page)
-    if (pageText === undefined) await needsAttachedPage()
+    if (pageText === undefined) await needsAttachedPage(memory)
     const tab = await activeNotionTab()
     const id = pageText === undefined ? tab.pageId : pageArg(pageText)
     if (!id) {
@@ -93,7 +91,7 @@ export const readPage = defineTool({
     const drawn = drawnIn[part - 1]
     const whole = (b: string) => drawnIn.every((d, n) => n === part - 1 || !d.has(b))
     const seen = pageRead(loaded, md, (b) => drawn.has(b), whole)
-    remember(part === 1 ? seen : mergeReads(lastRead(loaded.page.id), seen), since)
+    memory.remember(part === 1 ? seen : mergeReads(memory.lastRead(loaded.page.id), seen))
     return {
       text: asData([...header, '', ...(body ? [body] : []), ...(part === 1 ? empty : [])]),
       // A database's name is plain text already.
@@ -114,8 +112,8 @@ export const getSelection = defineTool({
     'this"), not "this page". Nothing selected is a normal answer.',
   describe: () => ({ verb: READ, what: 'the selection' }),
   args: z.strictObject({}),
-  run: async () => {
-    await needsAttachedPage()
+  run: async (_args, _signal, { memory }) => {
+    await needsAttachedPage(memory)
     const tab = await activeNotionTab()
     if (!tab.pageId) throw new Error('The Notion tab does not show a page.')
     const selection = await selectionIn(tab.tabId)
@@ -178,9 +176,9 @@ export const getSelection = defineTool({
     const more = ids.length - lines.length
     // The blocks shown count as read, so edit_page can change them by these references.
     const chosen = new Set(ids.slice(0, lines.length))
-    remember(
+    memory.remember(
       mergeReads(
-        lastRead(loaded.page.id),
+        memory.lastRead(loaded.page.id),
         pageRead(loaded, md, (b) => chosen.has(b)),
       ),
     )

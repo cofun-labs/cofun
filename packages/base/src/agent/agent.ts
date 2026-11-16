@@ -82,7 +82,7 @@ const readOnlyNote = ({ name, site }: Product) =>
 const editNote = ({ name, site }: Product) =>
   `[Edit: the user switched ${name} back to Edit, so the tools that change ${site} are available again.]`
 
-export class CopilotAgent {
+export class CopilotAgent<M = unknown> {
   private agent?: Agent
   private model?: Model<'openai-completions'>
   /** Where model requests go, and the settings it was made from. */
@@ -91,7 +91,7 @@ export class CopilotAgent {
   private readonly maxSteps: number
   /** Names of the tools that need the user's OK before each run. */
   private readonly confirmed: Set<string>
-  private readonly tools: Map<string, ToolSpec>
+  private readonly tools: Map<string, ToolSpec<M>>
   /** The tools as the agent runtime takes them: every one in Edit, and those that change no data in Read only. */
   private readonly allTools: AgentTool[]
   private readonly readingTools: AgentTool[]
@@ -128,15 +128,22 @@ export class CopilotAgent {
   private onCost?: (microCredits: number | undefined) => void
   /** Which chat and question the requests of the question running are for. */
   private turn?: Turn
+  /**
+   * What the tools remember of this conversation, given to every call (see ToolContext.memory): an
+   * agent of its own, so a memory of its own, for each chat. The extension may set in it what each
+   * question carries (Notico's carryPages).
+   */
+  readonly memory: M
 
   /**
    * One agent holds one conversation: a new one, or `initial` to continue a saved one (see
    * history()). Another conversation gets another agent.
    */
   constructor(
-    private readonly config: AgentConfig,
+    private readonly config: AgentConfig<M>,
     private readonly initial: HistoryMessage[] = [],
   ) {
+    this.memory = config.memory()
     this.provider = hostedProvider(config)
     this.maxSteps = config.maxSteps ?? DEFAULT_MAX_STEPS
     this.confirmed = new Set(config.tools.filter((t) => t.needsConfirmation).map((t) => t.name))
@@ -342,7 +349,7 @@ export class CopilotAgent {
       // they ask the user on this call's card.
       running = { id: toolCall.id, name: toolCall.name, args }
       // From the arguments the tool runs with, and before it runs: the run may change what the preview reads.
-      const { preview, stop } = await previewCall(this.tools.get(toolCall.name), args, signal)
+      const { preview, stop } = await previewCall(this.tools.get(toolCall.name), args, this.reporter().context, signal)
       // Stopped while the preview looked things up: the tool must not start.
       if (signal?.aborted || epoch !== this.epoch) {
         running = undefined
@@ -600,7 +607,7 @@ export class CopilotAgent {
    * reason for the user) or changed data. A tool still running from a question that was stopped
    * reports nothing to the next one.
    */
-  private reporter(): Reporter {
+  private reporter(): Reporter<M> {
     const epoch = this.epoch
     // The question the tool runs for: its requests to the worker say so.
     const turn = this.turn
@@ -644,6 +651,7 @@ export class CopilotAgent {
             .slice(question + 1)
             .reduce((n, m) => n + (m.role === 'toolResult' ? textOf(m.content).length : 0), 0)
         },
+        memory: this.memory,
       },
     }
   }

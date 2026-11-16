@@ -9,7 +9,6 @@ import { COMMENT_CHARS, loadThreads, quote, threadLines } from '../notion/commen
 import { LAYOUT_TYPES, PAGE_TYPES, hexId, oneLine, pageToMarkdown } from '../notion/markdown'
 import { activeNotionTab, type NotionTab } from '../notion/tab'
 import { needsAttachedPage } from './current'
-import { lastRead } from './memory'
 import { ADD, GIVE_PAGE, asData, PART_CHARS, READ, filled, nameOf, on, pageArg, partArg, plural } from './shared'
 
 /** The page a call names, or the open page when it names none. */
@@ -47,8 +46,8 @@ export const readComments = defineTool({
     page: z.string().describe('URL or id of the page. Leave out for the open page.').optional(),
     part: partArg('Which part of many comments to read, starting at 1.'),
   }),
-  run: async ({ page, part = 1 }) => {
-    if (filled(page) === undefined) await needsAttachedPage()
+  run: async ({ page, part = 1 }, _signal, { memory }) => {
+    if (filled(page) === undefined) await needsAttachedPage(memory)
     const tab = await activeNotionTab()
     const id = commentsPage(tab, filled(page))
     const loaded = await tab.client.loadPage(id)
@@ -121,10 +120,10 @@ export const addComment = defineTool({
     block: z.string().describe('Reference of the block to comment on. Leave out for the page itself.').optional(),
     text: z.string({ error: TEXT_EMPTY }).describe('The comment.'),
   }),
-  preview: (args) => {
+  preview: (args, { memory }) => {
     const given = filled(args.page)
     const id = given ? pageArg(given) : undefined
-    const read = id ? lastRead(id) : undefined
+    const read = id ? memory.lastRead(id) : undefined
     const page = id ? `${read ? `${oneLine(read.title)} ` : ''}^${hexId(id)}` : oneLine(given ?? '') || '(none given)'
     const ref = blockArg(args.block)
     const blockId = ref ? read?.ids.get(ref) : undefined

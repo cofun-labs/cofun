@@ -30,7 +30,7 @@ export {
   type WebTab,
 } from './current'
 export { findPages, type FoundPage } from './find'
-export { forgetReads } from './memory'
+export { ToolMemory } from './memory'
 export { DATA_LINE } from './shared'
 export { OPEN_A_PAGE, chatTitle, replyTitle, savePage, type SavedTurn } from './save'
 

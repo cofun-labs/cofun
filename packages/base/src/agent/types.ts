@@ -1,9 +1,10 @@
-// The agent's types, as the rest of the extension uses them: its configuration, the tools it runs,
-// what it reports while it works, and the conversation as saved sessions keep it.
+// The agent's types, as an extension uses them: its configuration, the tools it runs, what it
+// reports while it works, and the conversation as saved sessions keep it. `M` is what the
+// extension's tools remember of one conversation (Notico's ToolMemory): the agent only holds it.
 import type { ModelSettings, OwnSetup } from '../models'
 import { z } from '../zod'
 
-export interface AgentConfig {
+export interface AgentConfig<M = unknown> {
   /** Base URL including /v1. */
   apiUrl: string
   /** Returns a fresh Clerk session token. Called before every request to the worker. */
@@ -24,7 +25,12 @@ export interface AgentConfig {
    */
   model?: () => Promise<ModelSettings>
   systemPrompt: string
-  tools: ToolSpec[]
+  tools: ToolSpec<M>[]
+  /**
+   * A new memory for the tools of one conversation (see ToolContext.memory): called once per agent,
+   * so each chat has its own.
+   */
+  memory: () => M
   /** Model calls allowed per question. */
   maxSteps?: number
   /**
@@ -127,7 +133,7 @@ export interface ToolResult {
 }
 
 /** A tool the model can ask the extension to run. */
-export interface ToolSpec {
+export interface ToolSpec<M = unknown> {
   name: string
   description: string
   /**
@@ -142,7 +148,7 @@ export interface ToolSpec {
    * The arguments come from the model: a tool parses them before it uses them. Text alone is a
    * result with no details. `context` is what the agent gives a running call (see ToolContext).
    */
-  run: (args: unknown, signal?: AbortSignal, context?: ToolContext) => Promise<string | ToolResult>
+  run: (args: unknown, signal: AbortSignal | undefined, context: ToolContext<M>) => Promise<string | ToolResult>
   /** The tool does what is hard to undo, such as deleting a page, so the user must agree each time before it runs. */
   needsConfirmation?: boolean
   /**
@@ -154,9 +160,10 @@ export interface ToolSpec {
   changesData?: boolean
   /**
    * What a call does, in words, from the state before it runs: shown on the call's card, and to the
-   * user before agreeing when the tool needs confirmation. It may look things up first.
+   * user before agreeing when the tool needs confirmation. It may look things up first. `context` is
+   * the one the call will run with.
    */
-  preview?: (args: unknown) => string | undefined | Promise<string | undefined>
+  preview?: (args: unknown, context: ToolContext<M>) => string | undefined | Promise<string | undefined>
 }
 
 /**
@@ -176,7 +183,7 @@ interface CardQuestion {
 export type AskOnCard = (question: CardQuestion) => Promise<boolean>
 
 /** What the agent gives a call while it runs. */
-export interface ToolContext {
+export interface ToolContext<M = unknown> {
   /** Puts a question to the user on the call's card (see AskOnCard). */
   ask: AskOnCard
   /**
@@ -203,6 +210,11 @@ export interface ToolContext {
   kept: (id: string) => Promise<KeptResult | 'unknown' | 'gone'>
   /** How many characters the question being answered holds in tool results so far. */
   questionChars: () => number
+  /**
+   * What the tools remember of the conversation (AgentConfig.memory made it): the agent's own, the
+   * same for every call it runs, so the pages one chat read never count as read in another.
+   */
+  memory: M
 }
 
 /**

@@ -13,7 +13,7 @@ import {
 import { collectionId, oneLine, unnamedMentions, unnamedRowMentions, type Schema } from '../notion/markdown'
 import { notionUserIn, type NotionTab } from '../notion/tab'
 import { runsText } from '../notion/tree'
-import { keepWorkspace, knownWorkspace } from './memory'
+import type { ToolMemory } from './memory'
 
 /** A page as loaded, and whether it is a row whose database couldn't be opened. */
 interface Loaded {
@@ -94,14 +94,14 @@ export async function resolveDatabase(client: NotionTab['client'], block: Block)
   }
 }
 
-/** The workspace of the page open in the tab, which must show one. */
-export async function workspaceOf(tab: NotionTab): Promise<string> {
+/** The workspace of the page open in the tab, which must show one, as remembered in `memory` or looked up. */
+export async function workspaceOf(tab: NotionTab, memory: ToolMemory): Promise<string> {
   const pageId = tab.pageId!
   // Remembered for the tab's Notion user only: after the tab switched accounts, the page is looked
   // up again as the new one, which may not open it. Without a user, nothing is remembered.
   const user = await notionUserIn(tab.tabId)
   const key = user ? `${tab.tabId}:${user}:${pageId}` : undefined
-  const known = key ? knownWorkspace(key) : undefined
+  const known = key ? memory.knownWorkspace(key) : undefined
   if (known) return known
   let spaceId: string | undefined
   try {
@@ -114,7 +114,7 @@ export async function workspaceOf(tab: NotionTab): Promise<string> {
     throw err
   }
   if (!spaceId) throw new Error('Could not tell which workspace the open page is in.')
-  if (key) keepWorkspace(key, spaceId)
+  if (key) memory.keepWorkspace(key, spaceId)
   return spaceId
 }
 
