@@ -95,7 +95,7 @@ An extension's Chrome Web Store privacy policy is written in two parts: [PRIVACY
 
 **A PR updates the privacy page it concerns when it adds a kind of data that leaves the browser, a recipient or host, or something stored or logged.** A feature that sends a kind of data already listed to a recipient already listed changes nothing there.
 
-- A new kind of data, or a new host, updates the extension's `PRIVACY.md`. Its table of hosts is the list of hosts the extension may contact.
+- A new kind of data, a new host, or something new the extension keeps on the device updates the extension's `PRIVACY.md`. Its table of hosts is the list of hosts the extension may contact.
 - A new host also changes the content security policy (`extensions/notico/manifest.ts`), which enforces that list for the extension's pages, and `extensions/notico/test/manifest.test.ts`, which pins the policy and the host permissions.
 - A new recipient of what the worker receives, or a change to what the worker stores or logs, updates `PRIVACY.md`.
 - What the Chrome Web Store asks about the same things (permission justifications, data usage) is in `extensions/<name>/store/privacy.md`, which changes with them.

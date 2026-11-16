@@ -87,7 +87,7 @@ Keeps the user signed in (the sign-in client token); the user's own OpenRouter k
 **tabs**
 
 ```text
-Reads the current tab's URL and title to tell whether it is a Notion page, and to find the Notion tab the assistant works in. A non-Notion tab's URL and title are sent only when the user's question needs them. When the user opens the page picker in the message box, it also reads the URLs and titles of the other tabs that show Notion pages, to offer them; one is sent only when the user adds it to a question. When the user opens the page picker, it also reads the URLs and titles of the tabs in the side panel's window that show other sites, to offer them; one is sent only when the user adds it to a conversation, and its page's text is read, in the tab, only on a site the user allowed.
+Reads the current tab's URL and title to tell whether it is a Notion page, and to find the Notion tab the assistant works in. A non-Notion tab's URL and title are sent only when the user's question needs them. When the user opens the page picker in the message box, it also reads the URLs and titles of the other tabs that show Notion pages, and of the tabs in the side panel's window that show other sites, to offer them; one is sent only when the user adds it to a question, and a page on another site is read, in the tab, only on a site the user allowed.
 ```
 
 **scripting**
