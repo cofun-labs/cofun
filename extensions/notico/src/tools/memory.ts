@@ -6,7 +6,7 @@
 // them only through its methods.
 import type { PageRead } from '../notion/edit'
 import type { Schema } from '../notion/markdown'
-import type { OpenPage } from './current'
+import type { OpenPage } from './carry'
 
 /** How many rows and databases the agent saw are remembered, for previews; the oldest go first. */
 const SEEN_KEPT = 500

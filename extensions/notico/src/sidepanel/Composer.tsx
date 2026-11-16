@@ -13,9 +13,6 @@ import type { Panel, PanelSnapshot } from './panel'
 import { SaveToast } from './Save'
 import type { StartContext } from './Suggestions'
 
-/** Pages links are made on when no Notion tab says which host the user's Notion is on. */
-const NOTION_ORIGIN = 'https://www.notion.so'
-
 /** What the composer holds, made by useComposer and shown by Composer. */
 export type Composing = ReturnType<typeof useComposer>
 
@@ -32,17 +29,19 @@ export function useComposer({
 }: {
   panel: Panel
   chat: ChatSession
-  /** The Notion page open in the current tab, if one is. */
+  /** The site's page open in the current tab, if one is. */
   tabPage?: OpenPage
   /** The open chat's question has not ended yet. */
   busy: boolean
 }) {
+  const { site } = panel
+  const keyOf = (page: Parameters<typeof pageKey>[1]) => pageKey(site, page)
   const [input, setInput] = useState('')
   const inputRef = useRef<HTMLTextAreaElement>(null)
   // The page the user took off the question, by `pageKey`. It stays off for this chat until the tab
   // shows another page or a new chat starts.
   const [removed, setRemoved] = useState<string>()
-  const openPage = tabPage && pageKey(tabPage) !== removed ? tabPage : undefined
+  const openPage = tabPage && keyOf(tabPage) !== removed ? tabPage : undefined
 
   // Text the user selected on pages and sent with the context menu, for the next question, in the
   // order sent: each adds to the ones before. They stay as the user switches tabs or chats, until a
@@ -99,7 +98,7 @@ export function useComposer({
 
   const chips: Chip[] = [
     // The open page is the panel's until the user adds it by hand.
-    ...(openPage && !chosen.some((p) => pageKey(p) === pageKey(openPage)) ? [{ page: openPage, auto: true }] : []),
+    ...(openPage && !chosen.some((p) => keyOf(p) === keyOf(openPage)) ? [{ page: openPage, auto: true }] : []),
     ...chosen.map((page) => ({ page, auto: false })),
   ]
 
@@ -114,8 +113,8 @@ export function useComposer({
     query: picker?.query ?? '',
     onQuery: picker?.from === 'menu' ? (query) => setPicker({ from: 'menu', query }) : undefined,
     thisPage: tabPage,
-    added: new Set(chips.map((c) => pageKey(c.page))),
-    recent: () => panel.recentPages(tabPage ? new URL(tabPage.url).origin : NOTION_ORIGIN),
+    added: new Set(chips.map((c) => keyOf(c.page))),
+    recent: () => panel.recentPages(tabPage ? new URL(tabPage.url).origin : site.origin),
     stop: searchStop,
     paused: busy,
     onStop: (stop) => {
@@ -137,10 +136,10 @@ export function useComposer({
 
   /** Adds a page from the picker to the next question; one picked after an `@` replaces the `@…` text. */
   function addPage(page: QuestionPage) {
-    const key = pageKey(page)
+    const key = keyOf(page)
     // The open page, taken off before, goes with the question again: the user chose it.
-    if (tabPage && pageKey(tabPage) === key) setRemoved(undefined)
-    setChosen((list) => (list.some((p) => pageKey(p) === key) ? list : [...list, page]))
+    if (tabPage && keyOf(tabPage) === key) setRemoved(undefined)
+    setChosen((list) => (list.some((p) => keyOf(p) === key) ? list : [...list, page]))
     track({ event: 'page_added', how: picker?.from === '@' ? 'mention' : 'button' })
     if (picker?.from === '@') {
       const end = picker.start + 1 + picker.query.length
@@ -153,10 +152,10 @@ export function useComposer({
 
   /** Takes a page off the next question. */
   function removeChip(chip: Chip) {
-    const key = pageKey(chip.page)
-    if (!chip.auto) setChosen((list) => list.filter((p) => pageKey(p) !== key))
+    const key = keyOf(chip.page)
+    if (!chip.auto) setChosen((list) => list.filter((p) => keyOf(p) !== key))
     // The open page stays off, also when the user had added it by hand.
-    if (tabPage && pageKey(tabPage) === key) setRemoved(key)
+    if (tabPage && keyOf(tabPage) === key) setRemoved(key)
     inputRef.current?.focus()
   }
 
@@ -199,7 +198,7 @@ export function useComposer({
   // Another Notion page brings its chip back. A tab on another site, or a read of the tab that
   // failed, shows no page and keeps the one taken off: coming back to it, it is still off.
   useEffect(() => {
-    if (removed !== undefined && tabPage && pageKey(tabPage) !== removed) setRemoved(undefined)
+    if (removed !== undefined && tabPage && keyOf(tabPage) !== removed) setRemoved(undefined)
   }, [tabPage, removed])
 
   function send() {
@@ -212,7 +211,15 @@ export function useComposer({
     // A page is off while the composer shows none for it: also on another site, until another page shows.
     // The tabs the chat's earlier questions carried stay readable for this one.
     const earlier = chat.getSnapshot().messages.flatMap((m) => (m.role === 'user' ? (m.pages ?? []) : []))
-    const context = carryPages(chat.memory, tabPage, removed !== undefined && !openPage, chosen, selections, earlier)
+    const context = carryPages(
+      site,
+      chat.memory,
+      tabPage,
+      removed !== undefined && !openPage,
+      chosen,
+      selections,
+      earlier,
+    )
     setSelections([])
     setInput('')
     resetPicker()

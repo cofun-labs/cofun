@@ -102,9 +102,11 @@ extensions/<name>/        one Chrome extension, built and published by itself; n
   store/                  what the Chrome Web Store Dashboard says
   src/agent/              the agent loop and its model providers; the only folder that imports pi, and the
                           only one besides the site layer that uses fetch (the worker, the user's own model)
-  src/tools/              the tools the agent runs
-  src/notico.ts           the product: its name and site, the tools its agent is offered, and its system prompt;
-                          the side panel, the agent, and usage data read it only as a Product (src/product.ts)
+  src/tools/              the tools the agent runs; carry.ts holds what a question carries, for any product
+  src/notico.ts           the product: its name, the tools its agent is offered, its system prompt, and Notion as
+                          its site (what the panel asks of Notion). The shared code (side panel, agent, usage
+                          data, sessions) imports neither it, src/notion/, nor the Notion tools: it reads them
+                          as a Product (src/product.ts), given by the entry points (a lint rule)
   src/notion/             the site layer for Notion: imports nothing from the agent, tools, sessions, or UI
     api.ts                the only module that knows Notion's endpoints and request shapes
     tab.ts                runs requests in the user's Notion tab: the only use of site fetch, and with src/web/tab.ts of chrome.scripting

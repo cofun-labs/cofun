@@ -8,7 +8,7 @@ import { findPeople } from '../notion/people'
 import { COMMENT_CHARS, loadThreads, quote, threadLines } from '../notion/comments'
 import { LAYOUT_TYPES, PAGE_TYPES, hexId, oneLine, pageToMarkdown } from '../notion/markdown'
 import { activeNotionTab, type NotionTab } from '../notion/tab'
-import { needsAttachedPage } from './current'
+import { needsAttachedPage } from './notion-tabs'
 import { ADD, GIVE_PAGE, asData, PART_CHARS, READ, filled, nameOf, on, pageArg, partArg, plural } from './shared'
 
 /** The page a call names, or the open page when it names none. */

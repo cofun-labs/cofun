@@ -6,7 +6,7 @@ import { clip, quote } from '../notion/comments'
 import { PAGE_TYPES, hexId, oneLine, titleMarkdown } from '../notion/markdown'
 import { activeNotionTab } from '../notion/tab'
 import { PageLookups, contentOf, lookUpPages, pageTree, runsText, treeLines, type PageTree } from '../notion/tree'
-import type { OpenPage } from './current'
+import type { FoundPage } from './carry'
 import { databaseNames, workspaceOf } from './load'
 import type { ToolMemory } from './memory'
 import { LIST, SEARCH, filled, asData, on, pageArg, wholeArg } from './shared'
@@ -309,11 +309,6 @@ export const searchPages = defineTool({
 /** Where a search hit is: its path, which may end with the page itself (a top-level page's is only its own title). */
 function whereFound(path: string, title: string): string {
   return path === title ? '' : path.endsWith(` / ${title}`) ? path.slice(0, -title.length - 3) : path
-}
-
-/** A page Notion's search found for the composer's page picker, with where it is. */
-export interface FoundPage extends OpenPage {
-  path?: string
 }
 
 /**

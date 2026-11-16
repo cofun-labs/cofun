@@ -7,16 +7,7 @@ import { planNewPage } from '../notion/edit'
 import { pageLink, toUuid } from '../notion/hosts'
 import { hexId } from '../notion/markdown'
 import { activeNotionTab, notionCooldown } from '../notion/tab'
-
-/** One question and its reply, as the page holds them. */
-export interface SavedTurn {
-  question: string
-  /** What the reply wrote, as the model's Markdown, without the tools it ran in between. */
-  markdown: string
-  /** How many pages the reply's tools read, and the ids of those they changed. */
-  read: number
-  changed: string[]
-}
+import type { SavedTurn } from '../product'
 
 /** For the user: the current tab is not a Notion page, or shows none (say, Notion's home). */
 export const OPEN_A_PAGE = 'Open a Notion page to save under it.'
