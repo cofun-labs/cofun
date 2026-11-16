@@ -14,7 +14,7 @@ Each recipient gets only what is listed for it.
 
 - **[Clerk](https://clerk.com/legal/privacy)**, which holds your account: your email address, name, and avatar, as your sign-in provider gives them. You sign in on our page `https://api.cofun.cc/login`, which runs Clerk's sign-in code, including its check that you are not a bot. What you enter there goes to Clerk and the sign-in provider you choose, such as Google, not to our worker. The worker checks each request's session token without calling Clerk, and uses only your Clerk user id from it, and for an operator, that the account is one.
 - **[Cloudflare](https://www.cloudflare.com/privacypolicy/)**, which runs the worker and holds everything it keeps and logs (below). It processes:
-  - **your conversation**, which the worker passes to the AI model on Workers AI through Cloudflare's AI Gateway. The gateway keeps no messages or replies, only request analytics (counts, tokens, cost) under your Clerk user id;
+  - **your conversation**, which the worker passes to the AI model on Workers AI through Cloudflare's AI Gateway. The gateway keeps no messages or replies, only request analytics (counts, tokens, cost) under your Clerk user id and the extension;
   - **the address of a web page** the assistant reads. The worker fetches it from Cloudflare, or has Cloudflare's Browser Run load it in a browser for a page drawn by scripts, and returns its title and text;
   - **the query of a web search** the assistant makes, which may hold text from the conversation. The worker sends it to Cloudflare's Web Search through the same gateway, which keeps no query or results, only request analytics and its billing record, and returns each result's address, title, and description;
   - **a visit to the sign-in page**, which Cloudflare's Web Analytics counts (`static.cloudflareinsights.com`): the page's address, the page you came from, your browser and operating system, and how fast it loaded.
@@ -32,7 +32,7 @@ The worker never stores or logs your conversation, the address or text of a web 
   - each paid call (a call to the AI model, a page rendered, a web search), whether it succeeded or failed: when, which extension, how it ended, what it used (such as the model and its tokens, or browser time), and what it cost, with the random ids of the chat and the question it was for. These ids say nothing about what you asked.
 
   They are kept with no end date, as the account's record. Operators can see and total them, per account or across accounts, and grant credits. Showing you your credits stores nothing new: the worker works them out from these records.
-- **Usage records**, one for each model request, web page, and web search, in Cloudflare Workers Analytics Engine, which deletes them after 90 days: your Clerk user id, which extension, the outcome, sizes and counts (characters, tokens, results), the credits, the duration, and the chat and question ids. Never text.
+- **Usage records**, one for each model request, web page, and web search, in Cloudflare Workers Analytics Engine, which deletes them after 90 days: figures such as your Clerk user id, which extension, the model, the outcome, sizes and counts (characters, tokens, results), the credits, the duration, and the chat and question ids. Never text.
 
 ## What the worker logs
 

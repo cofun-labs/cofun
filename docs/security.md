@@ -28,7 +28,7 @@ The agent loop and its tools run in the side panel. The model sees the system pr
 - **Text the user did not write is data.** Whatever a tool returns from Notion, another site, a web page or search, or a selection sent with "Ask Notico" is marked as data for the model, and written so it cannot pass for the tool's own notes. This guides the model; it does not bind it, which is why the limits below are in code.
 - **What the model can do is the tool list.** Each tool's arguments are parsed before anything runs. In Read only, the tools that change data are not offered at all. Moving pages to the trash asks the user each time, naming each page. Saving a chat to Notion is the user's own action, not a tool.
 - **Nothing the model writes makes a request to a host it chose**, but for the web pages it reads ([below](#accepted-web-pages-at-any-address)). What the tools write into Notion is text, and links a reader must click; nothing written makes Notion or a reader's browser fetch an address by being looked at. In the panel, a reply is rendered with no HTML, and its images are never loaded.
-- **Notion only in the user's Notion tab.** Requests run inside that tab, to its own origin, after checking it is still on Notion, and follow no redirect.
+- **Only the active tab, only on Notion.** Notion requests run inside the user's active Notion tab, to its own origin, after checking it is still on Notion, and follow no redirect.
 - **Another site only once the user allowed it, and only tabs the user chose.** The agent reads the page in the current tab, or in a tab the user added to the chat, only on a site the user allowed in the side panel and in Chrome's own prompt, which Chrome takes only during the user's gesture, so the model can't grant a site. The tools take no address, only which added tab to read, so never a link found in a page. Nothing is sent to the site. The page reaches the panel as inert HTML, where no script runs and nothing loads, and its links are kept without their fragment, which can carry a token.
 - **A web page at any address, and a web search with any query**, through the worker ([accepted below](#accepted-web-pages-at-any-address)). A failure goes to the model as a source that wasn't read, unless the request was turned away, which stops the question ([AGENTS.md](../AGENTS.md), "Calling outside services").
 - **One question is bounded**: it has caps on model turns, on pages per bulk call, and on Notion requests before the user is asked whether to go on. A rate limit from Notion stops the question; nothing is retried or worked around.
@@ -50,7 +50,7 @@ The search tool sends the query the model writes, which may hold anything the co
 
 ## The extension
 
-- **Permissions** are the ones the manifest lists, with host access to Notion, the worker, and Clerk, and any web site only as an optional host permission, granted one site at a time when the user allows it. A test pins them and the content security policy, so neither changes unnoticed.
+- **Permissions** are the ones the manifest lists, with host access to Notion, the worker, Clerk, and the sign-in's parent domain (`*.cofun.cc`, to see one Clerk cookie), and any web site only as an optional host permission, granted one site at a time when the user allows it. A test pins them and the content security policy, so neither changes unnoticed.
 - **No way into the extension's code from a page.** There is no content script, no `externally_connectable`, no web-accessible resource, and no message listener: a web page, Notion included, has no channel to the side panel or the service worker. What a page can reach is the model, as text a tool returns, or as text the user selected in it and sent with "Ask Notico", which only the extension's own pages can read and which is parsed when read.
 - **Code in the user's tabs** runs in Chrome's isolated world, out of the page's reach, and is fixed. In the Notion tab, the model's arguments reach it only as the body of a request to Notion's endpoints; on another site it only reads the page, and takes no argument from the model. "Ask Notico" gives the extension the tab it was used in, once, to read the selection; it does not count as allowing the site.
 - **The content security policy** lets the extension's pages run only their own scripts and connect only to the hosts in the [privacy page](../extensions/notico/PRIVACY.md#where-data-goes). No remote code is loaded.
@@ -59,7 +59,7 @@ The search tool sends the query the model writes, which may hold anything the co
 
 ### Accepted: nothing on the device is encrypted
 
-Chats, the Clerk client token, and the user's model keys are kept in the Chrome profile, unencrypted, and stay after sign-out. A key kept in the same profile would not protect them from someone who has the profile. The privacy page says so.
+Chats, the Clerk client token, and the user's model keys are kept in the Chrome profile, unencrypted; chats and keys stay after sign-out. A key kept in the same profile would not protect them from someone who has the profile. The privacy page says so.
 
 ## Sign-in and the worker
 
@@ -68,7 +68,7 @@ Chats, the Clerk client token, and the user's model keys are kept in the Chrome 
 - **A user reaches only their own account.** No route takes a user id from the request except the admin's.
 - **Admin routes** need the `admin` role, which comes from Clerk metadata users cannot write, and a token issued to the worker's own origin. Everything else gets one and the same refusal. Hand grants are bounded and logged with the admin's id.
 - **The model is the worker's choice.** A request naming another is refused, and only the fields the model needs are passed on.
-- **Web pages the worker reads** are public only and never the worker's own: it sends no cookie or credential, and refuses our own domain, local network names, addresses given as an IP, and addresses with another port or a user name, at every redirect. A page rendered in Browser Run is loaded by a browser outside these checks, with no session of ours, so what it can reach is what anyone can.
+- **Web pages the worker reads** are public only and never the worker's own: it sends no cookie or credential, and refuses our own domain, local network names, addresses given as an IP, and addresses with another port or a user name, at every redirect, and a Workers subrequest can't reach a private network. A page rendered in Browser Run is loaded by a browser outside these checks, with no session of ours, so what it can reach is what anyone can.
 - **Web searches** go to one provider, fixed in the worker; the client chooses only the query and how many results.
 - **What costs the operator money is charged and capped per user**: model calls, renders, and searches are charged in credits, go ahead only while the balance is above zero, and are rate limited, which also bounds what calls sent at once can cost beyond the balance. A paid call that failed costs the user nothing, so a user could have failing calls made at the operator's cost: accepted, bounded by the same limits. A paid call is never retried.
 - **Payments.** A Stripe event counts only with Stripe's recent signature. What is granted is what Stripe says was sold, for the user and pack the worker itself wrote on the checkout, and each payment grants once and is taken back once, in whatever order events arrive.
@@ -85,7 +85,7 @@ A token with no `azp` passes the session check, though not an admin route's, bec
 
 - **Nothing secret is committed** ([AGENTS.md](../AGENTS.md), "Public repository"): the worker's secrets live on Cloudflare.
 - **`main` changes only through pull requests and a merge queue**, with every action pinned to a commit and GitHub's settings kept as code.
-- **GitHub holds no deploy or store credential.** Cloudflare pulls the repository and deploys on merge; a person uploads the release zip to the store after checking its hash ([release.md](release.md)). The one secret on GitHub is Claude's token, held by the review workflow, which a fork's pull request can't reach and which can only comment.
+- **No workflow that reads untrusted text can push, and GitHub holds no deploy or store credential.** Cloudflare pulls the repository and deploys on merge; a person uploads the release zip to the store after checking its hash ([release.md](release.md)). The one secret on GitHub is Claude's token, held by the review workflow, which a fork's pull request can't reach and which can only comment.
 - **The public media bucket under `cofun.cc` holds images and videos only** (rule 9).
 
 ## Rules for later changes

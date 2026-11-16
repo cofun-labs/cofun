@@ -19,7 +19,7 @@ What is read for a question becomes part of **your conversation**, which goes to
 - **Your OpenRouter key, if you set one up**, sent only to OpenRouter.
 - **Usage data**, unless you turn it off: see [Usage data](#usage-data).
 
-It never reads tabs other than the current one and those you added to a chat, a site you did not allow (other than text you sent with "Ask Notico"), your browsing history, or what you type outside the side panel.
+It never reads the content of tabs other than the current one and those you added to a chat, a site you did not allow (other than text you sent with "Ask Notico"), your browsing history, or what you type outside the side panel.
 
 ## Where data goes
 
@@ -43,7 +43,7 @@ Your Notion session never leaves Notion, and Notion content never goes to Clerk.
 
 ## Usage data
 
-Notico sends usage events to PostHog, so that we can see how it is used: whether people get as far as asking a question, which tools are used and how often they fail, and which of the panel's actions are used. **It is on until you turn it off**: switch off "Share usage data" in the settings. While it is off, nothing is sent to PostHog, and nothing held back is sent later.
+Notico sends usage events to PostHog, so that we can see how it is used: whether people get as far as asking a question, which tools are used and how often they fail, and which of the panel's actions are used. **It is on until you turn it off**: switch off "Share usage data" in the settings. While it is off, the extension sends PostHog nothing, and nothing held back is sent later. The one event our worker sends when a payment adds credits is not covered by this switch ([Cofun's privacy page](../../PRIVACY.md#who-receives-your-data)).
 
 An event says that something happened, never what was written or read: every value in it is a name from a fixed list, a number, or yes/no. These are all the events:
 
@@ -68,9 +68,9 @@ Notico does not record clicks, keystrokes, or the screen, and loads no code from
 - **Your sign-in**: Clerk's token that keeps you signed in.
 - **Your own model, if you set one up**: your OpenRouter key and the models you chose, for the account that set them up. Removing the key in the settings deletes it.
 - **Settings**: whether the assistant may change your pages (Edit or Read only), whether usage data is shared, and whether the right-click menu shows "Ask Notico". That last one is synced to your other devices if you use Chrome sync.
-- **Usage ids**, while usage data is on: the random id your events are counted under, and your Clerk user id once you sign in.
+- **Usage ids**: the random id your events are counted under, and your Clerk user id while you are signed in (signing out clears it). After you turn usage data off they stay on the device and are sent nowhere.
 
-None of this is **encrypted**, and it **stays after you sign out**: anyone with access to your Chrome profile can read it, your OpenRouter key included. Removing the extension removes it all.
+None of this is **encrypted**, and your chats and OpenRouter key **stay after you sign out**: anyone with access to your Chrome profile can read them. Removing the extension removes it all.
 
 ## What is never collected
 
