@@ -770,6 +770,7 @@ export function Chat({ userId }: { userId: string }) {
         pages: sentPages,
         selections: sentSelections,
         readOnly,
+        chat: session.id,
       })
       track({
         event: 'question_ended',
@@ -865,7 +866,7 @@ export function Chat({ userId }: { userId: string }) {
    */
   async function title(session: Current, messages: HistoryMessage[]) {
     const chat = chatId.current
-    const written = await agent.title(messages)
+    const written = await agent.title(messages, session.id)
     // On the hosted model the request spent credits; the read after the question was too early for it.
     void readCredits()
     if (!written) return

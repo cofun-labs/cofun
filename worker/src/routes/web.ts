@@ -11,7 +11,7 @@ import { HttpError, errorSummary, parse, type App, type Ctx, type Deps } from '.
 import { MAX_QUERY_CHARS, MAX_RESULTS, SearchError, searchWeb, type SearchResult } from '../search'
 import { PageError, checkAddress, fetchPage, renderPage, type WebPage } from '../web'
 import { SEARCH_COST, renderCostOf } from '../pricing'
-import { CLIENT_HEADER, openLedger, productOf } from './chat'
+import { CLIENT_HEADER, openLedger, productOf, turnOf, type Turn } from './chat'
 
 /**
  * The most characters of a page's text the worker returns: what the extension keeps of a long page
@@ -49,12 +49,18 @@ export function webRoutes({ now, logError }: Pick<Deps, 'now' | 'logError'>): Ap
       throw new HttpError(429, 'rate_limited', 'Too many pages read at once. Wait a minute, then try again.')
   }
 
-  /** A usage record for a read: the outcome, the characters returned, and what it cost. Never the address. */
-  function usageOf(c: Ctx, model: string): { usage: UsageRecord; record: (outcome: string) => void } {
+  /**
+   * A usage record for a read: the outcome, the characters returned, and what it cost. Never the
+   * address. `turn` reads the chat and question the request names, into the record too; it throws
+   * on a header that is not a UUID, so it is read where a refusal is recorded.
+   */
+  function usageOf(c: Ctx, model: string): { usage: UsageRecord; record: (outcome: string) => void; turn: () => Turn } {
     const started = Date.now()
     const usage: UsageRecord = {
       userId: c.get('userId'),
       product: productOf(c.req.header(CLIENT_HEADER)),
+      chatId: '',
+      turnId: '',
       model,
       stream: false,
       outcome: '',
@@ -69,6 +75,12 @@ export function webRoutes({ now, logError }: Pick<Deps, 'now' | 'logError'>): Ap
     }
     return {
       usage,
+      turn: () => {
+        const turn = turnOf(c)
+        usage.chatId = turn.chatId ?? ''
+        usage.turnId = turn.turnId ?? ''
+        return turn
+      },
       record: (outcome) => {
         usage.outcome = outcome
         usage.durationMs = Date.now() - started
@@ -81,8 +93,10 @@ export function webRoutes({ now, logError }: Pick<Deps, 'now' | 'logError'>): Ap
   const refused = (err: PageError) => new HttpError(422, err.code, err.message)
 
   routes.post('/read', async (c) => {
-    const { usage, record } = usageOf(c, 'web/fetch')
+    const { usage, record, turn } = usageOf(c, 'web/fetch')
     try {
+      // A plain read spends nothing, so only its usage record has them.
+      turn()
       const body = parse(ReadBody, await c.req.json().catch(() => undefined))
       await limit(c)
       const page = await fetchPage(
@@ -100,8 +114,9 @@ export function webRoutes({ now, logError }: Pick<Deps, 'now' | 'logError'>): Ap
   })
 
   routes.post('/render', async (c) => {
-    const { usage, record } = usageOf(c, 'web/render')
+    const { usage, record, turn } = usageOf(c, 'web/render')
     try {
+      const ids = turn()
       const body = parse(ReadBody, await c.req.json().catch(() => undefined))
       const url = checkAddress(body.url)
       const browser = c.env.BROWSER
@@ -127,7 +142,7 @@ export function webRoutes({ now, logError }: Pick<Deps, 'now' | 'logError'>): Ap
         // user is not charged a guess.
         const cost = render.answered ? renderCostOf(browserMs) : 0
         try {
-          await ledger.spend({ product, cost, at: now().getTime() }, { kind: 'web_render', outcome, browserMs })
+          await ledger.spend({ product, ...ids, cost, at: now().getTime() }, { kind: 'web_render', outcome, browserMs })
           usage.microCredits = cost
           return { result, charged: { cost: { micro_credits: cost } } }
         } catch (err) {
@@ -156,8 +171,9 @@ export function webRoutes({ now, logError }: Pick<Deps, 'now' | 'logError'>): Ap
   })
 
   routes.post('/search', async (c) => {
-    const { usage, record } = usageOf(c, 'web/search')
+    const { usage, record, turn } = usageOf(c, 'web/search')
     try {
+      const ids = turn()
       const body = parse(SearchBody, await c.req.json().catch(() => undefined))
       const gateway = c.env.AI_GATEWAY_ID
       if (!gateway) throw new HttpError(503, 'not_configured', 'web search is not set up')
@@ -186,7 +202,7 @@ export function webRoutes({ now, logError }: Pick<Deps, 'now' | 'logError'>): Ap
         const outcome = error?.code ?? 'ok'
         try {
           await ledger.spend(
-            { product, cost, at: now().getTime() },
+            { product, ...ids, cost, at: now().getTime() },
             { kind: 'web_search', outcome, results: results.length },
           )
           usage.microCredits = cost

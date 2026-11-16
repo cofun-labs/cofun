@@ -2,6 +2,7 @@
 // how much of a conversation to send, and how a failed request's error reads.
 import type { ClientIdentity, Model } from '@earendil-works/pi-ai'
 import { z } from '../zod'
+import type { Turn } from './types'
 
 /**
  * Where the agent's model requests go, and what is particular to the service behind them: which
@@ -28,6 +29,11 @@ export interface ModelProvider {
    * worker.ts). Only the hosted provider has it: a user's own model spends no credits on its calls.
    */
   callCost?(chunk: unknown): CallCost | undefined
+  /**
+   * The headers that tell the service which chat and question a model request is for (see Turn).
+   * Only the hosted provider has it: a user's own model's service is never told.
+   */
+  turnHeaders?(turn: Turn): Record<string, string>
 }
 
 /** What one model call cost, as the worker charged it: in micro-credits, and whether from estimated tokens. */

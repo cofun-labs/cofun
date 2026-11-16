@@ -49,6 +49,39 @@ export function productOf(header: string | undefined): string {
 }
 
 /**
+ * The headers in which an extension says which chat (`X-Cofun-Chat-Id`, the session's own id) and
+ * which question of it (`X-Cofun-Turn-Id`, one per question, the same across all its requests) a
+ * request is for. Random ids, recorded with what the request spent; they say nothing about the content.
+ */
+export const CHAT_HEADER = 'x-cofun-chat-id'
+export const TURN_HEADER = 'x-cofun-turn-id'
+
+/** Which chat and question a request is for: null where it names none. */
+export interface Turn {
+  chatId: string | null
+  turnId: string | null
+}
+
+const Id = z.uuid()
+
+/**
+ * The chat and question a request names in its headers. A header left out is null: Notico builds
+ * released before #466 send neither, and their requests go ahead as before (the fallback can go
+ * once every build on the store sends both). A header that is there but not a UUID is a client's
+ * bug, refused with 400 so it shows.
+ */
+export function turnOf(c: Ctx): Turn {
+  const read = (name: string) => {
+    const value = c.req.header(name)
+    if (value === undefined) return null
+    const id = Id.safeParse(value)
+    if (!id.success) throw new HttpError(400, 'bad_request', `${name} must be a UUID`)
+    return id.data
+  }
+  return { chatId: read(CHAT_HEADER), turnId: read(TURN_HEADER) }
+}
+
+/**
  * Whether a value can be read as a stream. Judged by the method the worker calls, not by class: the
  * AI binding's stream need not be an instance of this module's `ReadableStream`.
  */
@@ -103,6 +136,8 @@ export function chatRoutes({ now, priceOf: priceFor, logError }: Deps): App {
     const usage: UsageRecord = {
       userId: c.get('userId'),
       product: UNKNOWN_PRODUCT,
+      chatId: '',
+      turnId: '',
       model: c.env.MODEL,
       stream: false,
       outcome: '',
@@ -135,6 +170,9 @@ export function chatRoutes({ now, priceOf: priceFor, logError }: Deps): App {
   async function chatCompletion(c: Ctx, usage: UsageRecord, record: (outcome: string) => void): Promise<Response> {
     const product = productOf(c.req.header(CLIENT_HEADER))
     usage.product = product
+    const turn = turnOf(c)
+    usage.chatId = turn.chatId ?? ''
+    usage.turnId = turn.turnId ?? ''
     const body = parse(Body, await c.req.json().catch(() => undefined))
     usage.stream = body.stream === true
     const { inputs: modelInputs, chars } = parseModelInputs(body)
@@ -182,7 +220,7 @@ export function chatRoutes({ now, priceOf: priceFor, logError }: Deps): App {
       const cost = costOf(price, tokens)
       try {
         await ledger.spend(
-          { product, cost, at: Math.max(startedAt, now().getTime()) },
+          { product, ...turn, cost, at: Math.max(startedAt, now().getTime()) },
           {
             kind: 'model_call',
             model: c.env.MODEL,

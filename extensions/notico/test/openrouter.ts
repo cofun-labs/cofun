@@ -64,6 +64,8 @@ export class FakeOpenRouter {
   checks?: Promise<void>
   /** Every request, model list included, in order: its path and the key it carried. */
   readonly requests: { path: string; key: string | undefined }[] = []
+  /** The names of the headers of ours (`x-cofun-*`) that any request carried: meant for our worker only. */
+  readonly cofunHeaders: string[] = []
   /** The model calls that got through. */
   readonly calls: Call[] = []
 
@@ -71,6 +73,7 @@ export class FakeOpenRouter {
     const url = new URL(request.url)
     const key = request.headers.get('authorization')?.replace(/^Bearer /, '')
     this.requests.push({ path: url.pathname, key })
+    for (const [name] of request.headers) if (name.startsWith('x-cofun-')) this.cofunHeaders.push(name)
     if (this.unreachable) throw new TypeError('Failed to fetch')
     if (request.method === 'GET' && url.pathname === '/api/v1/models') return Response.json({ data: this.models })
     if (request.method === 'GET' && url.pathname === '/api/v1/key') {
