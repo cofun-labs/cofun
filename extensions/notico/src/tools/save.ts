@@ -1,3 +1,4 @@
+import type { SavedTurn } from '@cofun/app/product'
 // Saving a reply, or a whole chat, as a new Notion page at the end of the page open in the current
 // tab. The user starts it from the side panel; it is not a tool the agent is offered, so Read only
 // (which limits what the agent may change) doesn't apply to it.
@@ -9,15 +10,6 @@ import { hexId } from '../notion/markdown'
 import { activeNotionTab, notionCooldown } from '../notion/tab'
 
 /** One question and its reply, as the page holds them. */
-export interface SavedTurn {
-  question: string
-  /** What the reply wrote, as the model's Markdown, without the tools it ran in between. */
-  markdown: string
-  /** How many pages the reply's tools read, and the ids of those they changed. */
-  read: number
-  changed: string[]
-}
-
 /** For the user: the current tab is not a Notion page, or shows none (say, Notion's home). */
 export const OPEN_A_PAGE = 'Open a Notion page to save under it.'
 /** For the user: the open page is a database, which a save can't go into. */

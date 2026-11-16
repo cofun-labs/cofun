@@ -13,7 +13,7 @@ import {
   type QuestionDetails,
   type ToolCallRequest,
   type ToolSpec,
-} from '../src/agent'
+} from '@cofun/app/agent'
 import {
   BUDGET_STOP,
   LIMITED_STOP,
@@ -24,13 +24,13 @@ import {
   budgetQuestion,
 } from '../src/notion/api'
 import { activeNotionTab, countNotionRequests, notionCooldown } from '../src/notion/tab'
-import { defineTool } from '../src/tool'
+import { defineTool } from '@cofun/app/tool'
 import { carryPages, currentNotionPage } from '../src/tools/current'
 import { ToolMemory } from '../src/tools/memory'
 import { trashPage } from '../src/tools/organize'
 import { readPage } from '../src/tools/read'
 import { editPage } from '../src/tools/write'
-import { z } from '../src/zod'
+import { z } from '@cofun/app/zod'
 import { createApp, type Env } from '../../../worker/src/app'
 import { FakeClerk } from '../../../worker/test/clerk'
 import {

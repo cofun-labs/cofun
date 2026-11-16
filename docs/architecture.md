@@ -2,9 +2,9 @@
 
 How Cofun's extensions and the backend they share are built, and why. This file holds the core design only: the parts, the boundaries between them, and where data flows. Update it when a change adds, moves, or removes a module boundary or anything listed under [Layout](#layout), or changes where data goes or comes from (a new host, store, or route). Limits, constants, index names, UI details, and edge-case behavior belong in code comments, next to the code they describe. For setup and deployment see [development.md](development.md); for the workflow and coding rules see [AGENTS.md](../AGENTS.md); for the security model see [security.md](security.md).
 
-Each Cofun extension is an AI side panel for one kind of page, in its own folder under `extensions/` (Notico, for Notion, is the first), built and published by itself. All of them call one Cloudflare Worker (`worker/`), which signs users in, checks who is asking, keeps their credits, passes the conversation to the model, and reads public web pages and searches the web for an extension. It never talks to Notion or acts as the user on any site. The agent and its tools run in the extension, next to the page they act on.
+Each Cofun extension builds its own Chrome side panel from `@cofun/app`. The Cofun prototype has browser and public web tools. Notico adds Notion tools, page context, workspace search, saving, and usage analytics. Each product entry provides the product name, prompt, tools, and welcome screen. Vite bundles the app into each extension at build time. All of them call one Cloudflare Worker (`worker/`), which signs users in, checks who is asking, keeps their credits, passes the conversation to the model, and reads public web pages and searches the web for an extension. It never talks to Notion or acts as the user on any site. The agent and its tools run in the extension, next to the page they act on.
 
-Each extension keeps its own copy of the side panel code (UI, agent, sign-in, settings, credits), and duplication between extensions is accepted: a fix or feature in one is applied to the others by hand, and an extension's tests run its own agent against the worker so the part that faces the worker cannot drift. One account and one balance of credits serve every extension.
+The shared app implements the UI, agent, sign-in, settings, and credits. Each extension has its own manifest and local storage. One account and one balance of credits serve every extension configured against the same Clerk instance and Worker.
 
 ## Single source of truth
 
@@ -62,7 +62,7 @@ An extension can have the worker read a public web page by its address, plainly 
 
 The agent loop and its tools run in the side panel. Notion requests are made inside the user's own Notion tab, with that tab's session. A user may instead have their own model answer, on OpenRouter with their own key: the side panel asks it directly, behind the agent's `ModelProvider`, so those questions never reach the worker; web pages and searches still go through the worker, and renders and searches are still charged.
 
-The panel is open on every tab, but the tools act on the current tab, and on the tabs on other sites the user added to the chat. The Notion tools work only while the current tab is on Notion. On another site, the agent reads the page inside the tab, through a second site layer (`src/web/`), only on a site the user allowed: web sites are optional host permissions, asked for one at a time. No request goes to that site. The "Ask Notico" context menu item adds text selected in any page to the next question. Web pages and searches go through the worker, with addresses and queries the model chooses ([security.md](security.md#accepted-web-pages-at-any-address)).
+The panel is open on every tab, but the tools act on the current tab, and on the tabs on other sites the user added to the chat. The Notion tools work only while the current tab is on Notion. On another site, the agent reads the page inside the tab, through the shared app’s tab reader (`packages/cofun-app/src/web/tab.ts`), only on a site the user allowed: web sites are optional host permissions, asked for one at a time. No request goes to that site. The extension’s context menu item adds text selected in any page to the next question. Web pages and searches go through the worker, with addresses and queries the model chooses ([security.md](security.md#accepted-web-pages-at-any-address)).
 
 A question carries the pages it goes with (the open page, and pages and tabs the user adds) as titles and URLs, not their content: the model reads them with its tools.
 
@@ -70,7 +70,7 @@ A question carries the pages it goes with (the open page, and pages and tabs the
 |---|---|---|
 | Extension | Chrome MV3 + [Side Panel API](https://developer.chrome.com/docs/extensions/reference/api/sidePanel) | Sits next to the page without covering Notion. One panel per window, on every tab, so the conversation stays as the user switches tabs |
 | Extension build | Vite + React + TypeScript | Clerk's extension SDK is React-based; Vite needs little config and no extension framework |
-| Agent runtime | [`@earendil-works/pi-agent-core`](https://www.npmjs.com/package/@earendil-works/pi-agent-core), wrapped in `src/agent/` | Tool loop, events, abort, and tool hooks in a small package; it runs in the side panel because tools act on the browser. Only `src/agent/` imports it, so it can be replaced |
+| Agent runtime | [`@earendil-works/pi-agent-core`](https://www.npmjs.com/package/@earendil-works/pi-agent-core), wrapped in `packages/cofun-app/src/agent/` | Tool loop, events, abort, and tool hooks in a small package; it runs in the side panel because tools act on the browser. Only the shared app’s agent imports it, so it can be replaced |
 | Notion read/write | Notion's own internal endpoints, called from inside the user's Notion tab with `chrome.scripting` | Requests are same-origin and carry the tab's own Notion session, so no Notion integration token is needed. They run in an isolated world, out of the page's reach. No `chrome.debugger` (which shows a permanent "debugging this browser" banner). The trade-off: these are not public APIs and may change |
 
 ### Sessions
@@ -96,28 +96,28 @@ Clerk's own account management is not used: Notico needs Clerk only for who the 
 The folders, and the modules that hold a boundary; other files are found by their folder and name.
 
 ```
-extensions/<name>/        one Chrome extension, built and published by itself; never imports another
-  manifest.ts             builds manifest.json from .env; a test pins its permissions and content security policy
+extensions/<name>/        one Chrome extension, with its own manifest, identity and build
+  manifest.ts             product metadata and site permissions, composed with the shared manifest
+  src/product.ts(x)       product prompt, tool list, and site or analytics integration
+  src/sidepanel/main.tsx  mounts the shared side panel with that product
+  src/notion/             Notico's site layer
+    api.ts                knows Notion's endpoints and request shapes
+    tab.ts                runs requests in the user's Notion tab
+  src/tools/              product-specific tools
+  src/analytics.ts        Notico's usage events and PostHog adapter
   PRIVACY.md, README.md   for the extension's users
-  store/                  what the Chrome Web Store Dashboard says
-  src/agent/              the agent loop and its model providers; the only folder that imports pi, and the
-                          only one besides the site layer that uses fetch (the worker, the user's own model)
-  src/tools/              the tools the agent runs (index.ts lists them)
-  src/notion/             the site layer for Notion: imports nothing from the agent, tools, sessions, or UI
-    api.ts                the only module that knows Notion's endpoints and request shapes
-    tab.ts                runs requests in the user's Notion tab: the only use of site fetch, and with src/web/tab.ts of chrome.scripting
-  src/web/tab.ts          the site layer for any other site: reads the page a tab shows, once the user allowed its site; sends no request
-  src/web/markdown.ts     turns the HTML a tab gives into Markdown, in the side panel, in an inert document
-  src/sidepanel/          the React UI
-    panel.ts              the Panel: the open chat, the saved sessions, the credits, the model and the mode;
-                          imports no React, which subscribes to it
-    chat-session.ts       a ChatSession per chat: what it shows, its agent, its question, and its saves;
-                          imports no React either
-  src/analytics.ts        usage events; the only module that imports the PostHog SDK
-  src/zod.ts              the only module that imports zod
-  test/                   the extension's client and UI tests, with fakes and sanitized fixtures
-  browser-test/           pnpm test:browser: the built extension in Chromium, the network answered by fakes (runs in CI)
+  store/                  Chrome Web Store materials for a published extension
+  test/, browser-test/   client and UI tests with fakes, plus built-extension tests where configured
   use-cases/              the extension's use cases (docs/bdd.md)
+packages/cofun-app/       the shared extension app, used as source by each build
+  src/sidepanel/          React UI, Panel (account state), and ChatSession (per-chat work)
+  src/agent/              model providers, tool loop, and Worker client
+  src/sessions.ts         browser-local chat history and kept results, per extension and account
+  src/tools/              browser tabs, public web tools, and long-result tools
+  src/web/                reads a tab with Chrome's permission and converts its HTML in an inert document
+  src/manifest.ts         common permissions, Clerk hosts, and extension content security policy
+  src/vite.ts             common build configuration
+  src/zod.ts              the extension schema setup
 worker/                   the Cloudflare Worker every extension shares
   src/app.ts              the Hono app, composed from src/routes/; everything under /v1 is behind
                           the session check (src/routes/session.ts)

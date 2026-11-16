@@ -1,7 +1,8 @@
+import { notionMemory } from './memory'
 // Databases: query_database reads the rows, create_database and update_database_schema change
 // the properties.
-import { defineTool } from '../tool'
-import { z } from '../zod'
+import { defineTool } from '@cofun/app/tool'
+import { z } from '@cofun/app/zod'
 import { NotionError, blockOps, type Block, type NotionRecord } from '../notion/api'
 import { pageLink, pathPageIdFromUrl, toUuid } from '../notion/hosts'
 import { EditError } from '../notion/edit'
@@ -128,7 +129,7 @@ export const queryDatabase = defineTool({
     const viewInUrl = urlView(given ?? tab.url)
     const viewId = views.find((v) => toUuid(v) === viewInUrl) ?? views[0]
     if (!viewId) throw new Error("This database's rows can't be read: it has no view.")
-    memory.keepSeenDatabase(dbId, name)
+    notionMemory(memory).keepSeenDatabase(dbId, name)
 
     const filters = parseFilters(filter, schema)
     const sort = parseSort(sortBy, schema)
@@ -195,7 +196,7 @@ export const queryDatabase = defineTool({
         schema,
         reminders: dateReminders(r.block, schema),
       }
-      memory.keepSeenRow(r.id, seen)
+      notionMemory(memory).keepSeenRow(r.id, seen)
     }
     const details = { name: nameOf(name), read: [hexId(dbId)] }
     if (!shown.length) return { text: asData([...header, '', '(no rows)']), details }
@@ -398,7 +399,7 @@ export const createDatabase = defineTool({
   preview: (args, { memory }) => {
     const given = args.parent.trim()
     const id = given ? pageArg(given) : undefined
-    const known = id ? memory.lastRead(id)?.title : undefined
+    const known = id ? notionMemory(memory).lastRead(id)?.title : undefined
     const parent = id ? `${known ? `${oneLine(known)} ` : ''}^${hexId(id)}` : given || '(none given)'
     const titleColumn = args.title_property === undefined ? '' : titleArg(args.title_property)
     return [
@@ -447,7 +448,7 @@ export const createDatabase = defineTool({
     } catch (err) {
       // A retry would create a second database if this one was saved: the agent must look first.
       if (err instanceof NotionError && err.code === 'outcome_unknown') {
-        memory.forgetRead(parentId)
+        notionMemory(memory).forgetRead(parentId)
         throw new NotionError(
           'outcome_unknown',
           `Notion did not confirm it, so the database may or may not have been created. Read ^${hexId(parentId)} ` +
@@ -457,7 +458,7 @@ export const createDatabase = defineTool({
       }
       throw err
     }
-    memory.keepSeenDatabase(ids.page, title)
+    notionMemory(memory).keepSeenDatabase(ids.page, title)
     const hex = hexId(ids.page)
     const text = [
       `Created the database “${title}” ^${hex} at the end of ^${hexId(parentId)}.`,
@@ -491,7 +492,7 @@ export const updateDatabaseSchema = defineTool({
   preview: ({ database, changes }, { memory }) => {
     const given = database?.trim() ?? ''
     const id = given ? pageArg(given) : undefined
-    const known = id ? memory.seenDatabase(id) : undefined
+    const known = id ? notionMemory(memory).seenDatabase(id) : undefined
     const name = (v: string | undefined) => `“${titleArg(v ?? '')}”`
     const list = (v: string[] | undefined) => (v ?? []).map((o) => oneLine(o)).join(', ')
     return [
@@ -580,7 +581,7 @@ export const updateDatabaseSchema = defineTool({
       throw err
     } finally {
       // Rows query_database showed have the old properties.
-      for (const row of renamedRows) memory.forgetSeenRow(row)
+      for (const row of renamedRows) notionMemory(memory).forgetSeenRow(row)
     }
     const text = [
       `Changed the properties of “${db.name}” ^${hexId(id)}:`,

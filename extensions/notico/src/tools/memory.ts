@@ -6,7 +6,8 @@
 // them only through its methods.
 import type { PageRead } from '../notion/edit'
 import type { Schema } from '../notion/markdown'
-import type { OpenPage } from './current'
+import type { ToolMemory } from '@cofun/app/tools/memory'
+export { ToolMemory } from '@cofun/app/tools/memory'
 
 /** How many rows and databases the agent saw are remembered, for previews; the oldest go first. */
 const SEEN_KEPT = 500
@@ -26,23 +27,13 @@ export interface SeenRow {
   reminders: Set<string>
 }
 
-/**
- * What the question being asked carries (see carryPages in current.ts): whether its tools may use
- * the page open in the current tab when a call names none, and the tabs on other sites the user
- * added to the conversation, in any of its questions, by Chrome's id, as each showed its page then.
- */
-export interface Carried {
-  openPage: boolean
-  tabs: ReadonlyMap<number, OpenPage>
-}
-
 function keep<T>(map: Map<string, T>, key: string, value: T, kept: number) {
   map.delete(key)
   map.set(key, value)
   if (map.size > kept) map.delete(map.keys().next().value!)
 }
 
-export class ToolMemory {
+class NotionMemory {
   /** The last read of each page, by page id: what edit_page checks edits against. */
   private readonly pageReads = new Map<string, PageRead>()
   /** The rows query_database showed, by row id. */
@@ -54,9 +45,6 @@ export class ToolMemory {
    * page id), so searching or listing from the same page doesn't look it up again.
    */
   private readonly pageWorkspaces = new Map<string, string>()
-  /** Until the first question carries pages, nothing was left out and no tab was added. */
-  carried: Carried = { openPage: true, tabs: new Map() }
-
   /** Keeps a read, as the most recent one. */
   remember(read: PageRead): void {
     keep(this.pageReads, read.pageId, read, READS_KEPT)
@@ -129,4 +117,15 @@ export class ToolMemory {
       for (const key of this.pageWorkspaces.keys()) if (key.endsWith(`:${id}`)) this.pageWorkspaces.delete(key)
     }
   }
+}
+
+const caches = new WeakMap<ToolMemory, NotionMemory>()
+
+export function notionMemory(memory: ToolMemory): NotionMemory {
+  let cache = caches.get(memory)
+  if (!cache) {
+    cache = new NotionMemory()
+    caches.set(memory, cache)
+  }
+  return cache
 }

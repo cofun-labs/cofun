@@ -1,6 +1,7 @@
+import { notionMemory } from './memory'
 // Reading pages: read_page, and get_selection for what the user selected.
-import { defineTool } from '../tool'
-import { z } from '../zod'
+import { defineTool } from '@cofun/app/tool'
+import { z } from '@cofun/app/zod'
 import { pageLink, toUuid } from '../notion/hosts'
 import { mergeReads, pageRead } from '../notion/edit'
 import { clip, quote, threadCount } from '../notion/comments'
@@ -91,7 +92,7 @@ export const readPage = defineTool({
     const drawn = drawnIn[part - 1]
     const whole = (b: string) => drawnIn.every((d, n) => n === part - 1 || !d.has(b))
     const seen = pageRead(loaded, md, (b) => drawn.has(b), whole)
-    memory.remember(part === 1 ? seen : mergeReads(memory.lastRead(loaded.page.id), seen))
+    notionMemory(memory).remember(part === 1 ? seen : mergeReads(notionMemory(memory).lastRead(loaded.page.id), seen))
     return {
       text: asData([...header, '', ...(body ? [body] : []), ...(part === 1 ? empty : [])]),
       // A database's name is plain text already.
@@ -176,9 +177,9 @@ export const getSelection = defineTool({
     const more = ids.length - lines.length
     // The blocks shown count as read, so edit_page can change them by these references.
     const chosen = new Set(ids.slice(0, lines.length))
-    memory.remember(
+    notionMemory(memory).remember(
       mergeReads(
-        memory.lastRead(loaded.page.id),
+        notionMemory(memory).lastRead(loaded.page.id),
         pageRead(loaded, md, (b) => chosen.has(b)),
       ),
     )

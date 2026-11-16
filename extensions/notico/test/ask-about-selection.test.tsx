@@ -4,7 +4,7 @@ import '@testing-library/jest-dom/vitest'
 import { screen, waitFor, within } from '@testing-library/react'
 import userEvent, { type UserEvent } from '@testing-library/user-event'
 import { afterEach, describe, expect, it } from 'vitest'
-import { MENU_ITEM } from '../src/selection'
+import { MENU_ITEM } from '@cofun/app/selection'
 import { FakeNotionTab, webPage } from './notion-tab'
 import { closeBrowser, FakeBrowser } from './panel'
 

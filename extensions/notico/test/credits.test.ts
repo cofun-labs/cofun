@@ -1,7 +1,7 @@
 // How the panel reads and words credits the worker reports, where the whole panel cannot show it:
 // the tests' worker never names a source of credits the panel does not know.
 import { describe, expect, it } from 'vitest'
-import { Credits, Grants } from '../src/credits'
+import { Credits, Grants } from '@cofun/app/credits'
 
 describe('a source of credits the panel does not know yet', () => {
   const grant = { source: 'subscription', amount: 5_000_000_000, left: 1_000_000, grantedAt: 1, expiresAt: 2 }

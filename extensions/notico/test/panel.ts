@@ -20,7 +20,7 @@ import {
   MODEL,
 } from '../../../worker/test/fakes'
 import { FakeStripe, signature, WEBHOOK_SECRET } from '../../../worker/test/stripe'
-import type { FakeSession } from './clerk'
+import type { FakeSession } from '@cofun/app/test-clerk'
 import { restoreGlobals, type FakeNotionTab } from './notion-tab'
 import { FakeOpenRouter, OPENROUTER } from './openrouter'
 import { FakePostHog, POSTHOG } from './posthog'
@@ -194,7 +194,7 @@ export class FakeBrowser {
     const script = page.querySelector('script[type="module"]')!
     script.remove()
     document.body.innerHTML = page.body.innerHTML
-    const { fakeClerk } = await import('./clerk')
+    const { fakeClerk } = await import('@cofun/app/test-clerk')
     if (this.session) fakeClerk.signIn(this.session)
     await act(() => import(/* @vite-ignore */ script.getAttribute('src')!))
   }
@@ -216,7 +216,7 @@ export class FakeBrowser {
   /** The user signs in again, as the account the browser started with, on the sign-in page; Clerk tells the open panel. */
   async signInAgain(): Promise<void> {
     if (!this.session) throw new Error('this browser started signed out')
-    const { fakeClerk } = await import('./clerk')
+    const { fakeClerk } = await import('@cofun/app/test-clerk')
     act(() => fakeClerk.signIn(this.session!))
   }
 

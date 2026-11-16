@@ -19,7 +19,7 @@ export default defineConfig({
       // The side panel's UI, in a DOM. Only here is Clerk a fake; see test/clerk.tsx.
       {
         resolve: {
-          alias: { '@clerk/chrome-extension': fileURLToPath(new URL('./test/clerk.tsx', import.meta.url)) },
+          alias: { '@clerk/chrome-extension': fileURLToPath(import.meta.resolve('@cofun/app/test-clerk')) },
         },
         // The panel shows times on the user's own clock and tells the worker how far it is from UTC.
         // The tests pin a clock that is not UTC, and not a whole number of hours from it.

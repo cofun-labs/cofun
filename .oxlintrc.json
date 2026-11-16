@@ -1,9 +1,8 @@
 // The extensions' module boundaries (AGENTS.md: "Architecture" and "Calling outside services"), as lint errors.
 // Oxlint's default rules stay on: this file only adds rules.
 //
-// Each rule is written once for every extension, with extensions/*/ globs: an extension is
-// extensions/<name>/, and it reaches its site only through src/<site>/tab.ts (src/notion/tab.ts in
-// Notico).
+// The shared app and each extension obey the same boundaries. An extension reaches its site only
+// through src/<site>/tab.ts (src/notion/tab.ts in Notico).
 //
 // An override replaces a rule's whole configuration, it does not merge with the one before it. So
 // each block below repeats the restrictions that still hold for its files, and a later block wins.
@@ -31,7 +30,7 @@
               "@earendil-works/pi-ai",
               "@earendil-works/pi-ai/**"
             ],
-            "message": "Only an extension's src/agent/ imports pi. Import what you need from src/agent/ (its index.ts), or add it there."
+            "message": "Only the shared app's agent module imports pi. Import through @cofun/app/agent."
           },
           {
             "group": ["posthog-js", "posthog-js/**"],
@@ -43,7 +42,7 @@
   },
   "overrides": [
     {
-      "files": ["extensions/**"],
+      "files": ["extensions/**", "packages/cofun-app/src/**"],
       "rules": {
         "no-restricted-properties": [
           "error",
@@ -71,7 +70,7 @@
                   "@earendil-works/pi-ai",
                   "@earendil-works/pi-ai/**"
                 ],
-                "message": "Only an extension's src/agent/ imports pi. Import what you need from src/agent/ (its index.ts), or add it there."
+                "message": "Only the shared app's agent module imports pi. Import through @cofun/app/agent."
               },
               {
                 "group": ["posthog-js", "posthog-js/**"],
@@ -79,11 +78,11 @@
               },
               {
                 "regex": "^\\.\\./[^./]",
-                "message": "An extension never imports another extension: each one in extensions/<name>/ keeps its own copy of what it needs."
+                "message": "Extensions never import each other, and the shared app never imports an extension."
               },
               {
                 "regex": "^(\\.\\./)+extensions/",
-                "message": "An extension never imports another extension: each one in extensions/<name>/ keeps its own copy of what it needs."
+                "message": "Extensions never import each other, and the shared app never imports an extension."
               }
             ]
           }
@@ -105,7 +104,7 @@
                   "@earendil-works/pi-ai",
                   "@earendil-works/pi-ai/**"
                 ],
-                "message": "Only an extension's src/agent/ imports pi. Import what you need from src/agent/ (its index.ts), or add it there."
+                "message": "Only the shared app's agent module imports pi. Import through @cofun/app/agent."
               },
               {
                 "group": ["posthog-js", "posthog-js/**"],
@@ -113,11 +112,11 @@
               },
               {
                 "regex": "^\\.\\./\\.\\./[^./]",
-                "message": "An extension never imports another extension: each one in extensions/<name>/ keeps its own copy of what it needs."
+                "message": "Extensions never import each other, and the shared app never imports an extension."
               },
               {
                 "regex": "^(\\.\\./)+extensions/",
-                "message": "An extension never imports another extension: each one in extensions/<name>/ keeps its own copy of what it needs."
+                "message": "Extensions never import each other, and the shared app never imports an extension."
               }
             ]
           }
@@ -125,7 +124,7 @@
       }
     },
     {
-      "files": ["extensions/*/src/**"],
+      "files": ["extensions/*/src/**", "packages/cofun-app/src/**"],
       "rules": {
         "no-restricted-imports": [
           "error",
@@ -138,7 +137,7 @@
                   "@earendil-works/pi-ai",
                   "@earendil-works/pi-ai/**"
                 ],
-                "message": "Only an extension's src/agent/ imports pi. Import what you need from src/agent/ (its index.ts), or add it there."
+                "message": "Only the shared app's agent module imports pi. Import through @cofun/app/agent."
               },
               {
                 "group": ["posthog-js", "posthog-js/**"],
@@ -146,15 +145,15 @@
               },
               {
                 "regex": "^zod(/|$)",
-                "message": "Import z from the extension's src/zod.ts: it sets zod up for the extension's content security policy before any schema is built."
+                "message": "Import z through the shared app's zod.ts, which configures it for extension content security policy."
               },
               {
                 "regex": "^(\\.\\./)+[^./][^/]*/(src|test)(/|$)",
-                "message": "An extension never imports another extension: each one in extensions/<name>/ keeps its own copy of what it needs."
+                "message": "Extensions never import each other, and the shared app never imports an extension."
               },
               {
                 "regex": "^(\\.\\./)+extensions/",
-                "message": "An extension never imports another extension: each one in extensions/<name>/ keeps its own copy of what it needs."
+                "message": "Extensions never import each other, and the shared app never imports an extension."
               }
             ]
           }
@@ -200,7 +199,7 @@
       // The side panel's state outside React: one ChatSession per chat, and the Panel that holds the
       // open one. React subscribes to them, so they import no React, nor anything that renders. Their
       // other restrictions (the extensions/*/src block) still hold.
-      "files": ["extensions/*/src/sidepanel/chat-session.ts", "extensions/*/src/sidepanel/panel.ts"],
+      "files": ["packages/cofun-app/src/sidepanel/chat-session.ts", "packages/cofun-app/src/sidepanel/panel.ts"],
       "rules": {
         "no-restricted-imports": [
           "error",
@@ -232,7 +231,7 @@
                   "@earendil-works/pi-ai",
                   "@earendil-works/pi-ai/**"
                 ],
-                "message": "Only an extension's src/agent/ imports pi. Import what you need from src/agent/ (its index.ts), or add it there."
+                "message": "Only the shared app's agent module imports pi. Import through @cofun/app/agent."
               },
               {
                 "group": ["posthog-js", "posthog-js/**"],
@@ -240,15 +239,15 @@
               },
               {
                 "regex": "^zod(/|$)",
-                "message": "Import z from the extension's src/zod.ts: it sets zod up for the extension's content security policy before any schema is built."
+                "message": "Import z through the shared app's zod.ts, which configures it for extension content security policy."
               },
               {
                 "regex": "^(\\.\\./)+[^./][^/]*/(src|test)(/|$)",
-                "message": "An extension never imports another extension: each one in extensions/<name>/ keeps its own copy of what it needs."
+                "message": "Extensions never import each other, and the shared app never imports an extension."
               },
               {
                 "regex": "^(\\.\\./)+extensions/",
-                "message": "An extension never imports another extension: each one in extensions/<name>/ keeps its own copy of what it needs."
+                "message": "Extensions never import each other, and the shared app never imports an extension."
               }
             ]
           }
@@ -259,7 +258,7 @@
       // The site layer knows nothing about the agent, the tools, sessions, or the UI. One directory
       // per site: src/sidepanel/ sits next to them and is not one, so each site is named here
       // (Notico's are Notion, and src/web/ for the page of a tab on any other site).
-      "files": ["extensions/*/src/notion/**", "extensions/*/src/web/**"],
+      "files": ["extensions/*/src/notion/**", "packages/cofun-app/src/web/**"],
       "rules": {
         "no-restricted-imports": [
           "error",
@@ -272,11 +271,15 @@
                   "@earendil-works/pi-ai",
                   "@earendil-works/pi-ai/**"
                 ],
-                "message": "Only an extension's src/agent/ imports pi. Import what you need from src/agent/ (its index.ts), or add it there."
+                "message": "Only the shared app's agent module imports pi. Import through @cofun/app/agent."
               },
               {
                 "group": ["posthog-js", "posthog-js/**"],
                 "message": "Only an extension's src/analytics.ts imports the PostHog SDK. Call its track(), whose events are the only ones that can be sent."
+              },
+              {
+                "regex": "^@cofun/app/(agent|tool|tools|sessions|sidepanel)(/|$)",
+                "message": "The site layer imports nothing from the agent, tools, sessions, or side panel."
               },
               {
                 "regex": "^(\\.\\./)+(agent|tool|tools|sessions|sidepanel)(\\.|/|$)",
@@ -284,15 +287,15 @@
               },
               {
                 "regex": "^zod(/|$)",
-                "message": "Import z from the extension's src/zod.ts: it sets zod up for the extension's content security policy before any schema is built."
+                "message": "Import z through the shared app's zod.ts, which configures it for extension content security policy."
               },
               {
                 "regex": "^(\\.\\./)+[^./][^/]*/(src|test)(/|$)",
-                "message": "An extension never imports another extension: each one in extensions/<name>/ keeps its own copy of what it needs."
+                "message": "Extensions never import each other, and the shared app never imports an extension."
               },
               {
                 "regex": "^(\\.\\./)+extensions/",
-                "message": "An extension never imports another extension: each one in extensions/<name>/ keeps its own copy of what it needs."
+                "message": "Extensions never import each other, and the shared app never imports an extension."
               }
             ]
           }
@@ -301,7 +304,7 @@
     },
     {
       // The one folder that imports pi, and the one that calls the worker: the agent, src/agent/.
-      "files": ["extensions/*/src/agent/**"],
+      "files": ["packages/cofun-app/src/agent/**"],
       "rules": {
         "no-restricted-imports": [
           "error",
@@ -313,15 +316,15 @@
               },
               {
                 "regex": "^zod(/|$)",
-                "message": "Import z from the extension's src/zod.ts: it sets zod up for the extension's content security policy before any schema is built."
+                "message": "Import z through the shared app's zod.ts, which configures it for extension content security policy."
               },
               {
                 "regex": "^(\\.\\./)+[^./][^/]*/(src|test)(/|$)",
-                "message": "An extension never imports another extension: each one in extensions/<name>/ keeps its own copy of what it needs."
+                "message": "Extensions never import each other, and the shared app never imports an extension."
               },
               {
                 "regex": "^(\\.\\./)+extensions/",
-                "message": "An extension never imports another extension: each one in extensions/<name>/ keeps its own copy of what it needs."
+                "message": "Extensions never import each other, and the shared app never imports an extension."
               }
             ]
           }
@@ -362,7 +365,7 @@
       // The site layer for any other site reads the page in the user's tab with chrome.scripting,
       // and sends no request to the site, so fetch stays off limits here. Its import restrictions
       // (the site block) still hold.
-      "files": ["extensions/*/src/web/tab.ts"],
+      "files": ["packages/cofun-app/src/web/tab.ts"],
       "rules": {
         "no-restricted-globals": [
           "error",
@@ -398,7 +401,7 @@
     },
     {
       // The one module that imports zod. Its other restrictions (the extensions/*/src block) still hold.
-      "files": ["extensions/*/src/zod.ts"],
+      "files": ["packages/cofun-app/src/zod.ts"],
       "rules": {
         "no-restricted-imports": [
           "error",
@@ -411,7 +414,7 @@
                   "@earendil-works/pi-ai",
                   "@earendil-works/pi-ai/**"
                 ],
-                "message": "Only an extension's src/agent/ imports pi. Import what you need from src/agent/ (its index.ts), or add it there."
+                "message": "Only the shared app's agent module imports pi. Import through @cofun/app/agent."
               },
               {
                 "group": ["posthog-js", "posthog-js/**"],
@@ -419,11 +422,11 @@
               },
               {
                 "regex": "^(\\.\\./)+[^./][^/]*/(src|test)(/|$)",
-                "message": "An extension never imports another extension: each one in extensions/<name>/ keeps its own copy of what it needs."
+                "message": "Extensions never import each other, and the shared app never imports an extension."
               },
               {
                 "regex": "^(\\.\\./)+extensions/",
-                "message": "An extension never imports another extension: each one in extensions/<name>/ keeps its own copy of what it needs."
+                "message": "Extensions never import each other, and the shared app never imports an extension."
               }
             ]
           }
@@ -445,19 +448,19 @@
                   "@earendil-works/pi-ai",
                   "@earendil-works/pi-ai/**"
                 ],
-                "message": "Only an extension's src/agent/ imports pi. Import what you need from src/agent/ (its index.ts), or add it there."
+                "message": "Only the shared app's agent module imports pi. Import through @cofun/app/agent."
               },
               {
                 "regex": "^zod(/|$)",
-                "message": "Import z from the extension's src/zod.ts: it sets zod up for the extension's content security policy before any schema is built."
+                "message": "Import z through the shared app's zod.ts, which configures it for extension content security policy."
               },
               {
                 "regex": "^(\\.\\./)+[^./][^/]*/(src|test)(/|$)",
-                "message": "An extension never imports another extension: each one in extensions/<name>/ keeps its own copy of what it needs."
+                "message": "Extensions never import each other, and the shared app never imports an extension."
               },
               {
                 "regex": "^(\\.\\./)+extensions/",
-                "message": "An extension never imports another extension: each one in extensions/<name>/ keeps its own copy of what it needs."
+                "message": "Extensions never import each other, and the shared app never imports an extension."
               }
             ]
           }
@@ -479,7 +482,7 @@
                   "@earendil-works/pi-ai",
                   "@earendil-works/pi-ai/**"
                 ],
-                "message": "Only an extension's src/agent/ imports pi. Import what you need from src/agent/ (its index.ts), or add it there."
+                "message": "Only the shared app's agent module imports pi. Import through @cofun/app/agent."
               },
               {
                 "group": ["posthog-js", "posthog-js/**"],
@@ -509,7 +512,7 @@
                   "@earendil-works/pi-ai",
                   "@earendil-works/pi-ai/**"
                 ],
-                "message": "Only an extension's src/agent/ imports pi. Import what you need from src/agent/ (its index.ts), or add it there."
+                "message": "Only the shared app's agent module imports pi. Import through @cofun/app/agent."
               },
               {
                 "group": ["posthog-js", "posthog-js/**"],

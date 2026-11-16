@@ -1,3 +1,4 @@
+import { notionMemory } from './memory'
 // Loading from Notion what several tools need: a page with its database and the people and pages it
 // mentions, a database's data source, and the workspace of the open page.
 import {
@@ -101,7 +102,7 @@ export async function workspaceOf(tab: NotionTab, memory: ToolMemory): Promise<s
   // up again as the new one, which may not open it. Without a user, nothing is remembered.
   const user = await notionUserIn(tab.tabId)
   const key = user ? `${tab.tabId}:${user}:${pageId}` : undefined
-  const known = key ? memory.knownWorkspace(key) : undefined
+  const known = key ? notionMemory(memory).knownWorkspace(key) : undefined
   if (known) return known
   let spaceId: string | undefined
   try {
@@ -114,7 +115,7 @@ export async function workspaceOf(tab: NotionTab, memory: ToolMemory): Promise<s
     throw err
   }
   if (!spaceId) throw new Error('Could not tell which workspace the open page is in.')
-  if (key) memory.keepWorkspace(key, spaceId)
+  if (key) notionMemory(memory).keepWorkspace(key, spaceId)
   return spaceId
 }
 

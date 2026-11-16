@@ -1,6 +1,7 @@
+import { notionMemory } from './memory'
 // Organizing pages: move_page, duplicate_page, and trash_page.
-import { defineTool } from '../tool'
-import { z } from '../zod'
+import { defineTool } from '@cofun/app/tool'
+import { z } from '@cofun/app/zod'
 import { NotionError, blockOps, type Block, type NotionRecord } from '../notion/api'
 import { pageLink } from '../notion/hosts'
 import { EditError } from '../notion/edit'
@@ -58,7 +59,7 @@ function previewIds(pages: string[]): { given: string; id?: string }[] {
 /** A page for a preview: its title when known, and its reference. */
 function shownPage(memory: ToolMemory, given: string, id: string | undefined): string {
   if (!id) return oneLine(given) || '(no page given)'
-  const title = memory.knownTitle(id)
+  const title = notionMemory(memory).knownTitle(id)
   return `${title ? `${oneLine(title)} ` : ''}^${hexId(id)}`
 }
 
@@ -186,7 +187,7 @@ export const movePage = defineTool({
         'Notico: move_page',
       )
     } finally {
-      memory.forgetPages([destId, ...parents, ...ids, ...[...above.values()].flat()])
+      notionMemory(memory).forgetPages([destId, ...parents, ...ids, ...[...above.values()].flat()])
     }
     const text = [
       `Moved ${moving.length} page${moving.length === 1 ? '' : 's'} to the end of ^${hexId(destId)}: ${moving.map((id) => `^${hexId(id)}`).join(', ')}.`,
@@ -310,7 +311,7 @@ export const duplicatePage = defineTool({
       const copy = await tab.client.duplicatePage(String(page.space_id), id, page.parent_id, { signal })
       const hex = hexId(copy)
       // A database's name is not in its block: only a name the agent has seen is given for one.
-      const title = memory.knownTitle(id) || runsText(page.properties?.title)
+      const title = notionMemory(memory).knownTitle(id) || runsText(page.properties?.title)
       const text = [
         `Duplicated ${title ? `${quote(title)} ` : ''}^${hexId(id)} as ^${hex}, right after it in ^${hexId(near)}.`,
         `URL: ${pageLink(tab.url, hex)}`,
@@ -326,7 +327,7 @@ export const duplicatePage = defineTool({
         )
       throw err
     } finally {
-      memory.forgetPages([page.parent_id, ...above])
+      notionMemory(memory).forgetPages([page.parent_id, ...above])
     }
   },
 })
@@ -404,7 +405,7 @@ export const trashPage = defineTool({
         // A page's editors choose its title: it goes last and in quotes, so it can't pass for what the
         // tool says. A page Notion doesn't have (already trashed, or out of reach) makes the call fail.
         if (!p.id) return `    ${JSON.stringify(oneLine(p.given) || '(no page given)')}`
-        const name = title ?? memory.knownTitle(p.id)
+        const name = title ?? notionMemory(memory).knownTitle(p.id)
         // Pages the call will refuse are marked, so the user doesn't agree to what can't happen.
         const refused = !checked ? undefined : !block ? 'not found in Notion' : trashRefusal(block, parents[block.id])
         const marker = refused ? `[${refused}: this call will fail, and nothing will be trashed] ` : ''
@@ -453,7 +454,7 @@ export const trashPage = defineTool({
       // After a lost answer, a retry names the pages already in the trash and trashes nothing.
       await tab.client.trashPages([...spaces][0], trashing)
     } finally {
-      memory.forgetPages([...ids, ...[...above.values()].flat()])
+      notionMemory(memory).forgetPages([...ids, ...[...above.values()].flat()])
     }
     const text = [
       `Moved ${ids.length} page${ids.length === 1 ? '' : 's'} to Notion's trash: ${ids.map((id) => `^${hexId(id)}`).join(', ')}.`,

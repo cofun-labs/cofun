@@ -1,6 +1,7 @@
 // Comments on a Notion page, as the model reads them. Comments are written by anyone who can open
 // the page, so everything in them is quoted: a comment can't end its line, start another thread, or
 // pass for the tool's own words.
+import { clip, quote } from '@cofun/app/text'
 import { mergeRecordMaps, type NotionClient, type LoadedPage, type NotionRecord, type Pointer } from './api'
 import { LAYOUT_TYPES, PAGE_TYPES, hexId, richMarkdown, userName, type PageMarkdown } from './markdown'
 
@@ -147,23 +148,8 @@ export function threadLines(
   }
 }
 
-/**
- * Text (or an object of text) as JSON: quotes, backslashes, and line breaks escaped, so it stays on
- * its line and inside its quotes. JSON leaves Unicode's own line separators as they are; those are
- * escaped too.
- */
-export function quote(text: string | Record<string, string>): string {
-  return JSON.stringify(text).replace(
-    /[\u0085\u2028\u2029]/g,
-    (c) => `\\u${c.charCodeAt(0).toString(16).padStart(4, '0')}`,
-  )
-}
-
 function when(time: number): string {
   return `${new Date(time).toISOString().slice(0, 16).replace('T', ' ')} UTC`
 }
 
-/** Text cut to `max` characters, ending with … when cut. */
-export function clip(text: string, max: number): string {
-  return text.length > max ? `${text.slice(0, max - 1)}…` : text
-}
+export { clip, quote } from '@cofun/app/text'

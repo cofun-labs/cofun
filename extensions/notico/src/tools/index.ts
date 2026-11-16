@@ -3,36 +3,20 @@
 // comments (comments.ts), the current tab, on Notion or another site, and the tabs the user added
 // (current.ts), web pages by their address and web searches (web.ts), and the long results those
 // keep on the device (results.ts). This module lists them, and says for the side panel what a call did.
-import type { HistoryMessage, ToolDetails } from '../agent'
+import type { HistoryMessage } from '@cofun/app/agent'
 import { pageLink } from '../notion/hosts'
-import type { Action, Tool } from '../tool'
+import type { Tool } from '@cofun/app/tool'
 import { addComment, readComments } from './comments'
-import { getCurrentTab, readCurrentTab, readTab } from './current'
+import { tabTools } from '@cofun/app/tools/current'
+import { notionPages } from './current'
 import { createDatabase, queryDatabase, updateDatabaseSchema } from './database'
 import { listPages, searchPages } from './find'
 import { duplicatePage, movePage, trashPage } from './organize'
 import { getSelection, readPage } from './read'
 import type { OpenPage } from './current'
-import { verb } from './shared'
-import { readResult, searchResult } from './results'
-import { readWebPage, renderWebPage, searchWeb } from './web'
+import { readResult, searchResult } from '@cofun/app/tools/results'
+import { webTools } from '@cofun/app/tools/web'
 import { createPage, editPage, updatePages } from './write'
-
-export {
-  carryPages,
-  currentNotionPage,
-  openNotionPages,
-  openWebTabs,
-  addedTabNow,
-  SELECTION_END,
-  selectionsCarried,
-  type OpenPage,
-  type WebTab,
-} from './current'
-export { findPages, type FoundPage } from './find'
-export type { ToolMemory } from './memory'
-export { DATA_LINE } from './shared'
-export { OPEN_A_PAGE, chatTitle, replyTitle, savePage, type SavedTurn } from './save'
 
 export const TOOLS: Tool[] = [
   readPage,
@@ -50,36 +34,11 @@ export const TOOLS: Tool[] = [
   trashPage,
   readComments,
   addComment,
-  getCurrentTab,
-  readCurrentTab,
-  readTab,
-  readWebPage,
-  renderWebPage,
-  searchWeb,
+  ...tabTools('Notico', notionPages),
+  ...webTools(notionPages),
   readResult,
   searchResult,
 ]
-
-/** A call in the user's words, also one from a saved session whose tool is gone. */
-export function describeCall(name: string, args: unknown, details?: ToolDetails): Action {
-  return (
-    TOOLS.find((t) => t.name === name)?.describe(args, details) ?? {
-      verb: verb('use', 'using', 'used'),
-      what: 'a tool',
-    }
-  )
-}
-
-/** What a question's calls that worked read and changed: the distinct pages and databases of each. */
-export function touchedBy(calls: { details?: ToolDetails }[]): {
-  read: number
-  /** The ids of the pages and databases changed, each once. */
-  changed: string[]
-} {
-  const read = new Set(calls.flatMap((call) => call.details?.read ?? []))
-  const changed = new Set(calls.flatMap((call) => call.details?.changed ?? []))
-  return { read: read.size, changed: [...changed] }
-}
 
 /**
  * The tools whose card names the very page the call read or changed. Others may name another page

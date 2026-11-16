@@ -1,7 +1,7 @@
-// The side panel's saved sessions (extensions/notico/src/sessions.ts), on an in-memory IndexedDB.
+// The side panel's saved sessions (packages/cofun-app/src/sessions.ts), on an in-memory IndexedDB.
 import 'fake-indexeddb/auto'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { HistoryMessage } from '../src/agent'
+import type { HistoryMessage } from '@cofun/app/agent'
 import {
   filterSessions,
   SessionStore,
@@ -9,7 +9,7 @@ import {
   type ListedSession,
   type Session,
   type SessionInfo,
-} from '../src/sessions'
+} from '@cofun/app/sessions'
 
 const ROADMAP = { title: 'Q4 Roadmap', url: 'https://www.notion.so/team/Q4-Roadmap-0a1b2c3d4e5f60718293a4b5c6d7e8f9' }
 const NOTES_ID = '1111aaaa2222bbbb3333cccc4444dddd'

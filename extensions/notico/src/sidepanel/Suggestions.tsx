@@ -1,9 +1,9 @@
-import type { Mode } from '../mode'
-import type { OpenPage } from '../tools'
+import type { StartContext } from '@cofun/app/product'
+import type { OpenPage } from '@cofun/app/tools/current'
 // Notico's own icon, the one in the toolbar and the store; the Cofun mark alone means Cofun.
 import noticoIcon from '../../icons/icon.svg'
-import { Icon, type IconName } from './icons'
-import { titleOf } from './Pages'
+import { Icon, type IconName } from '@cofun/app/sidepanel/icons'
+import { titleOf } from '@cofun/app/sidepanel/Pages'
 
 /** A suggestion: its words, and where the user goes on typing, if they finish it (the "…"). */
 interface Suggestion {
@@ -12,16 +12,6 @@ interface Suggestion {
 }
 
 /** Where the chat starts: what the next question goes with, as the composer shows it. */
-export interface StartContext {
-  /** The page open in the tab, while it goes with the question. */
-  page?: OpenPage
-  /** The tab shows a Notion page, which the user took off the question. */
-  removed: boolean
-  /** The user added pages to the question by hand. */
-  added: boolean
-  mode?: Mode
-}
-
 interface StartSet {
   heading: string
   /** What Notico can do here; a quoted page title is the page's. */

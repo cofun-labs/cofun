@@ -1,12 +1,12 @@
+import type { FoundPage } from '@cofun/app/product'
 // Finding pages: list_pages as the sidebar shows them, and search_pages as Notion's search does.
-import { defineTool } from '../tool'
-import { z } from '../zod'
+import { defineTool } from '@cofun/app/tool'
+import { z } from '@cofun/app/zod'
 import { pageLink } from '../notion/hosts'
 import { clip, quote } from '../notion/comments'
 import { PAGE_TYPES, hexId, oneLine, titleMarkdown } from '../notion/markdown'
 import { activeNotionTab } from '../notion/tab'
 import { PageLookups, contentOf, lookUpPages, pageTree, runsText, treeLines, type PageTree } from '../notion/tree'
-import type { OpenPage } from './current'
 import { databaseNames, workspaceOf } from './load'
 import type { ToolMemory } from './memory'
 import { LIST, SEARCH, filled, asData, on, pageArg, wholeArg } from './shared'
@@ -312,10 +312,6 @@ function whereFound(path: string, title: string): string {
 }
 
 /** A page Notion's search found for the composer's page picker, with where it is. */
-export interface FoundPage extends OpenPage {
-  path?: string
-}
-
 /**
  * Searches the workspace of the open page for the composer's page picker, as search_pages does,
  * for the user rather than the model: no tool runs, and the requests count toward no question.

@@ -2,7 +2,7 @@
 // against its schema. A change that would lose values the user didn't ask to remove is refused
 // before anything is sent: no type changes, no removing the title, no two properties or options
 // with one name.
-import { z } from '../zod'
+import { z } from '@cofun/app/zod'
 import { blockOps, collectionOps, type Operation, type RecordMap, type SchemaOption } from './api'
 import { oneLine, type Schema } from './markdown'
 import { plainText } from './props'

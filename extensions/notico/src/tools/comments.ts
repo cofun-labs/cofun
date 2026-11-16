@@ -1,6 +1,7 @@
+import { notionMemory } from './memory'
 // Comments: read_comments reads a page's threads, add_comment starts one.
-import { defineTool } from '../tool'
-import { z } from '../zod'
+import { defineTool } from '@cofun/app/tool'
+import { z } from '@cofun/app/zod'
 import { NotionError, SIGNED_OUT, commentOps, type LoadedPage } from '../notion/api'
 import { EditError } from '../notion/edit'
 import { MarkdownError, inline, personNames, withPeople, type RichText } from '../notion/blocks'
@@ -123,7 +124,7 @@ export const addComment = defineTool({
   preview: (args, { memory }) => {
     const given = filled(args.page)
     const id = given ? pageArg(given) : undefined
-    const read = id ? memory.lastRead(id) : undefined
+    const read = id ? notionMemory(memory).lastRead(id) : undefined
     const page = id ? `${read ? `${oneLine(read.title)} ` : ''}^${hexId(id)}` : oneLine(given ?? '') || '(none given)'
     const ref = blockArg(args.block)
     const blockId = ref ? read?.ids.get(ref) : undefined

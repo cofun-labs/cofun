@@ -1,0 +1,56 @@
+{
+  "name": "@cofun/app",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./agent": "./src/agent/index.ts",
+    "./agent/types": "./src/agent/types.ts",
+    "./agent/worker": "./src/agent/worker.ts",
+    "./analytics": "./src/analytics.ts",
+    "./background": "./src/background.ts",
+    "./clerk": "./src/clerk.ts",
+    "./credits": "./src/credits.ts",
+    "./manifest": "./src/manifest.ts",
+    "./product": "./src/product.ts",
+    "./selection": "./src/selection.ts",
+    "./sessions": "./src/sessions.ts",
+    "./sidepanel": "./src/sidepanel/main.tsx",
+    "./sidepanel/Pages": "./src/sidepanel/Pages.tsx",
+    "./sidepanel/icons": "./src/sidepanel/icons.tsx",
+    "./test-clerk": "./test-support/clerk.tsx",
+    "./text": "./src/text.ts",
+    "./tool": "./src/tool.ts",
+    "./tools/current": "./src/tools/current.ts",
+    "./tools/memory": "./src/tools/memory.ts",
+    "./tools/results": "./src/tools/results.ts",
+    "./tools/shared": "./src/tools/shared.ts",
+    "./tools/web": "./src/tools/web.ts",
+    "./vite": "./src/vite.ts",
+    "./zod": "./src/zod.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@clerk/chrome-extension": "^3.1.105",
+    "@earendil-works/pi-agent-core": "1.5.2",
+    "@earendil-works/pi-ai": "1.5.2",
+    "@vitejs/plugin-react": "^6.3.0",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0",
+    "react-markdown": "^10.1.0",
+    "remark-breaks": "^4.0.0",
+    "remark-gfm": "^4.0.1",
+    "turndown": "7.2.5",
+    "vite": "^8.3.8",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@types/chrome": "^0.3.7",
+    "@types/node": "^26.6.6",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@types/turndown": "5.0.6",
+    "typescript": "^7.0.2"
+  }
+}

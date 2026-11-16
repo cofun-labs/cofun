@@ -1,0 +1,8 @@
+<!-- The Cofun mark used in the side panel, on a blue tile for the toolbar. -->
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="-21 -21 42 42">
+  <rect x="-21" y="-21" width="42" height="42" rx="9" fill="#2383e2" />
+  <g transform="scale(.77)" fill="#fff">
+    <path d="M12.9 -1.6A13 13 0 1 1 1.6 -12.9" fill="none" stroke="#fff" stroke-width="7" stroke-linecap="round" />
+    <circle cx="12" cy="-12" r="5" />
+  </g>
+</svg>

@@ -49,7 +49,7 @@ Only the maintainer's machine can upload: the script runs the `cf` CLI with the 
 The rules for tests are in [AGENTS.md](../AGENTS.md#testing) and [docs/bdd.md](bdd.md#what-gets-a-test); this is how the pieces fit.
 
 - **Fakes, injected through `env`:** `FakeAiBinding` (`worker/test/fakes.ts`) stands in for the Workers AI binding. `FakeClerk` (`worker/test/clerk.ts`) signs real RS256 session tokens with a local key pair, which the worker verifies like real Clerk tokens.
-- **Clerk's React SDK** is the one module replaced whole: the side panel imports its components directly, so the extension's vitest config resolves `@clerk/chrome-extension` to `extensions/notico/test/clerk.tsx`, for the UI tests only.
+- **Clerk's React SDK** is the one module replaced whole: the side panel imports its components directly, so the extension's vitest config resolves `@clerk/chrome-extension` to `packages/cofun-app/test-support/clerk.tsx`, for the UI tests only.
 - **Notion:** `extensions/notico/test/` tests Notico's client code against a fake Notion tab (`extensions/notico/test/notion-tab.ts`) that answers with sanitized fixtures (`extensions/notico/test/fixtures/notion/`).
 - **Client and worker together:** Notico's client tests run its real agent against the real worker app (`createApp()` behind `fetch`), so the two cannot drift: the side panel's tests through `extensions/notico/test/panel.ts`, and the agent loop's rules in `extensions/notico/test/agent.test.ts`. `worker/test/extension.test.ts` keeps only what the two sides must agree on: the streamed reply, the tool-call round trip, sessions, credits, a question's cost, and a model change.
 - **Browser tests** (`extensions/<name>/browser-test/`, `pnpm test:browser`, also in CI and before a release): Playwright loads the built extension into Chromium and checks, in Notico's (`extensions/notico/browser-test/`), that the service worker starts, the side panel is enabled on every tab, the side panel page renders signed out, and, with a signed-in Clerk session answered from fixtures, shows the chat, renders the model's streamed reply, and runs a Notion read and a trash that asks first through `chrome.scripting` in a real Notion tab. It catches builds that compile but break in Chrome, such as dependency bumps. Nothing leaves the machine: Notion pages and its API, Clerk's Frontend API, and the worker and its model are answered from `browser-test/fixtures/` and `browser-test/fakes.ts`. Its tests are standalone (no scenario IDs); what needs real Chrome or real accounts (the panel opening from the toolbar icon and staying open across tabs, Google sign-in, real Notion pages) stays `ai-e2e`.
@@ -91,13 +91,13 @@ Grants and spends of credits are kept in the D1 database `cofun-db` (binding `DB
 
 Per-request usage records go to the Analytics Engine dataset `cofun_api_usage` (binding `USAGE`), queried with the [SQL API](https://developers.cloudflare.com/analytics/analytics-engine/sql-api/); the order of its columns is `recordUsage` in `worker/src/usage.ts`. They are for watching the service, never for charging.
 
-## Notico
+## Extensions
 
 ```bash
-pnpm build        # builds every extension; Notico's goes to extensions/notico/dist
+pnpm build        # builds Cofun and Notico into extensions/<name>/dist
 ```
 
-In `chrome://extensions`, turn on Developer mode, click "Load unpacked", and pick `extensions/notico/dist`.
+In `chrome://extensions`, turn on Developer mode, click "Load unpacked", and pick the extension’s `dist` folder. You can load both builds at the same time.
 
 `extensions/notico/.env` holds the public build config, each value explained by its comment; override values in `extensions/notico/.env.local`. A development build sends no usage events to PostHog; to try them from a local build, build it with `POSTHOG_IN_DEV=1`. The PostHog project keeps **Discard client IP data** on, which the privacy pages rely on. Don't run PostHog's setup wizard on this repository: it adds the SDK with defaults that send page titles and URLs.
 
@@ -112,6 +112,8 @@ shasum -a 256 extensions/notico/keys/pub.der | cut -c1-32 | tr '0-9a-f' 'a-p'  #
 ```
 
 The Clerk instance needs the Native API on; a production one also needs its DNS records, its own OAuth credentials, and its JWT public key as the worker's `CLERK_JWT_KEY` ([Clerk's Sync Host guide](https://clerk.com/docs/guides/sessions/sync-host)). When the sign-in page's registrable domain has more than two labels (such as `example.co.uk`), set it as `CLERK_COOKIE_DOMAIN` in `.env.local` (`manifest.ts`).
+
+For the Cofun prototype, use `extensions/cofun/.env.local` and the same steps above with the Cofun folder. To sign in and use hosted chat, allow the Cofun build’s separate origin in your Clerk instance and Worker. Use the same Clerk instance and Worker for both extensions to share an account and its credits. Chrome keeps each extension’s chats and settings separately.
 
 Another extension goes through the same steps in its own folder. To release it, add its folder name to the `extension` choices in [`release.yml`](../.github/workflows/release.yml), once it has browser tests (`browser-test/` and a `test:browser` script).
 

@@ -16,84 +16,22 @@
 import { PostHog, type CaptureResult } from 'posthog-js/dist/module.no-external'
 import { NOTION_ERROR_CODES } from './notion/api'
 import { TOOLS } from './tools'
-import { z } from './zod'
+import { analyticsEvents, type AnalyticsEvent } from '@cofun/app/analytics'
 
 /** The PostHog project events go to. Public by design; without it nothing is sent. */
 const KEY: string | undefined = import.meta.env.VITE_POSTHOG_KEY
 /** PostHog's ingestion host, which the content security policy names (manifest.ts). */
 const HOST: string | undefined = import.meta.env.VITE_POSTHOG_HOST
 
-/** A value the event may carry as it is, or `other`: what is not on the list is never sent. */
-const oneOf = (known: readonly string[]) => z.string().transform((value) => (known.includes(value) ? value : 'other'))
-
-/** Where a question's model runs. */
-const Provider = z.enum(['hosted', 'openrouter'])
-/** A tool by its name, as the extension defines it. The model may ask for a tool that does not exist: its name is not sent. */
-const ToolName = oneOf(TOOLS.map((tool) => tool.name))
-/** Why a tool failed: a Notion error's code. */
-const ToolError = oneOf(NOTION_ERROR_CODES)
-/** Why a question failed: the worker's error code. */
-const QuestionError = oneOf([
-  'out_of_credits',
-  'credits_unavailable',
-  'unsupported_model',
-  'unauthorized',
-  'provider_error',
-  'rate_limited',
-  'bad_request',
-  'too_large',
-  'not_configured',
-  'internal',
-])
-const Count = z.int().min(0).max(10_000)
-
-/**
- * Every event, with all it may carry. An event that does not fit is not sent. Each says only that
- * something happened, never its text: `reply_copied` not the reply, `chat_opened` not its title.
- */
-const AnalyticsEvent = z.discriminatedUnion('event', [
-  z.strictObject({ event: z.literal('panel_opened') }),
-  z.strictObject({ event: z.literal('sign_in_opened') }),
-  /**
-   * The device's usage was joined to an account: usually a sign-in, but also the first panel this
-   * version opens for someone already signed in, and usage data turned on again by someone who signed
-   * in while it was off. The panel reloads when a sign-in happens, so it never sees one as it happens.
-   */
-  z.strictObject({ event: z.literal('signed_in') }),
-  /** `notion_tab`: whether the current tab showed a Notion page. */
-  z.strictObject({ event: z.literal('question_asked'), provider: Provider, notion_tab: z.boolean() }),
-  /** `rounds`: the model calls the question took. `tool_calls`: the tool calls that ended, however they did. */
-  z.strictObject({
-    event: z.literal('question_ended'),
-    provider: Provider,
-    outcome: z.enum(['done', 'stopped', 'step_limit', 'error']),
-    error_code: QuestionError.optional(),
-    rounds: Count,
-    tool_calls: Count,
-  }),
-  z.strictObject({
-    event: z.literal('tool_called'),
-    tool: ToolName,
-    ok: z.boolean(),
-    status: z.enum(['done', 'failed', 'skipped', 'stopped', 'declined']),
-    error_code: ToolError.optional(),
-  }),
-  z.strictObject({ event: z.literal('model_switched'), provider: Provider }),
-  z.strictObject({ event: z.literal('own_key_saved'), provider: z.enum(['openrouter']) }),
-  z.strictObject({ event: z.literal('settings_opened') }),
-  /** `pack`: the pack's quantity, in units of 1,000 credits. */
-  z.strictObject({ event: z.literal('credits_buy_clicked'), pack: Count }),
-  z.strictObject({ event: z.literal('credits_opened') }),
-  z.strictObject({ event: z.literal('credits_history_opened') }),
-  z.strictObject({ event: z.literal('chat_created') }),
-  z.strictObject({ event: z.literal('chat_opened') }),
-  z.strictObject({ event: z.literal('chat_deleted') }),
-  /** `how`: with `@` in the message, or the "+" button. */
-  z.strictObject({ event: z.literal('page_added'), how: z.enum(['mention', 'button']) }),
-  z.strictObject({ event: z.literal('reply_stopped') }),
-  z.strictObject({ event: z.literal('reply_copied') }),
-])
-export type AnalyticsEvent = z.input<typeof AnalyticsEvent>
+const AnalyticsEvent = analyticsEvents(
+  TOOLS.map((tool) => tool.name),
+  NOTION_ERROR_CODES,
+).transform((event) => {
+  if (event.event !== 'question_asked') return event
+  // Keep Notico's existing event property when mapping the shared application's site context.
+  const { site_tab, ...question } = event
+  return { ...question, notion_tab: site_tab }
+})
 
 /** Every property an event of ours may carry, besides the two all of them do. */
 const OWN_PROPERTIES = [
