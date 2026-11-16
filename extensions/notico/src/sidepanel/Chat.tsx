@@ -199,18 +199,23 @@ export function Chat({ userId }: { userId: string }) {
   // Opened from the model menu's "Manage models": the Settings page puts the focus on Providers.
   const [settingsAt, setSettingsAt] = useState<'providers'>()
   const [credits, setCredits] = useState<CreditsState>({ status: 'loading' })
-  // Reads can overlap (a question ends while the Credits page loads); only the newest one counts.
-  const creditReads = useRef(0)
+  // The newest read of the credits: reads can overlap (a question ends while the Credits page loads),
+  // and a newer one aborts the one before.
+  const creditRead = useRef<AbortController>(undefined)
   // Opening the panel starts a new session; it gets an id when its first question is sent.
   const [current, setCurrent] = useState<Current>()
   // The title the model wrote for the open session, once it has one.
   const [modelTitle, setModelTitle] = useState<string>()
   const [saved, setSaved] = useState(0)
+  // How work still out is told it no longer counts. A signal stands for work that can be cancelled:
+  // the panel (`panel`), the question being answered (`question`), a read of the credits. An id
+  // stands for which one is newest, where a wait (on IndexedDB, say) can't be cut short: `chatId`,
+  // `opening`. After an await that took no signal, check the one that applies before setting state.
   // Bumped when another session opens, so updates still arriving for the old one are dropped.
   const chatId = useRef(0)
-  // Bumped by every Stop, and every switch to another chat: a question still waiting to be asked
-  // (see `send`) is not asked then.
-  const stopped = useRef(0)
+  // Aborted by Stop, by every switch to another chat, and by the panel unmounting: the question
+  // stops, and one still waiting to be asked (see `send`) is not asked.
+  const question = useRef<AbortController>(undefined)
   // Bumped by every open() and by sending: a session still loading when either happens is not opened.
   const opening = useRef(0)
   // Sessions deleted in this panel; a save still waiting to write must not bring one back.
@@ -499,21 +504,22 @@ export function Chat({ userId }: { userId: string }) {
       track({ event: 'own_key_saved', provider: 'openrouter' })
     modelRef.current = settings
     // A question the unmount stopped may still mark a key rejected: saved, but not shown.
-    if (!gone.current) setModel(settings)
+    if (!gone()) setModel(settings)
     saveModelSettings(userId, settings).catch((err: unknown) => console.error('Could not save the model settings', err))
   }
 
-  // True once the panel has unmounted. Work that ends after that (a question the unmount stopped, a
+  // Aborted once the panel has unmounted. Work that ends after that (a question the unmount stopped, a
   // read or a save still out) sets no state: in the tests, it could land after the DOM is gone.
-  const gone = useRef(false)
+  const panel = useRef(new AbortController())
+  const gone = () => panel.current.signal.aborted
   useEffect(() => {
-    gone.current = false
+    // Mounted again (StrictMode does that): the last unmount aborted the one before.
+    if (gone()) panel.current = new AbortController()
     // The panel unmounts on sign-out; don't leave a question running tools in the background, nor
-    // let one still waiting to be asked (see `send`) start.
+    // let one still waiting to be asked (see `send`) start, nor a request for the credits or a title.
     return () => {
-      gone.current = true
-      stopped.current++
-      agentRef.current?.stop()
+      panel.current.abort()
+      question.current?.abort()
     }
   }, [])
 
@@ -525,15 +531,18 @@ export function Chat({ userId }: { userId: string }) {
    * fails never touches the chat: the menu and the Credits page say the credits are unavailable.
    */
   async function readCredits() {
-    if (gone.current) return
-    const read = ++creditReads.current
+    if (gone()) return
+    creditRead.current?.abort()
+    const read = new AbortController()
+    creditRead.current = read
+    const signal = AbortSignal.any([read.signal, panel.current.signal])
     let next: CreditsState
     try {
-      next = { status: 'ready', credits: await agent.credits() }
+      next = { status: 'ready', credits: await agent.credits({ signal }) }
     } catch {
       next = { status: 'unavailable' }
     }
-    if (read === creditReads.current && !gone.current) setCredits(next)
+    if (!signal.aborted) setCredits(next)
   }
 
   useEffect(() => void readCredits(), [])
@@ -630,7 +639,7 @@ export function Chat({ userId }: { userId: string }) {
       { role: 'assistant', parts: [] },
     ])
     const updateReply = (fn: (m: Extract<Shown, { role: 'assistant' }>) => Shown) => {
-      if (gone.current) return
+      if (gone()) return
       setMessages((ms) => {
         const last = ms.at(-1)
         if (chatId.current !== id || last?.role !== 'assistant') return ms
@@ -748,15 +757,16 @@ export function Chat({ userId }: { userId: string }) {
     let conversation: HistoryMessage[] | undefined
     let answered = false
     let ended!: () => void
-    const question = { session, ended: new Promise<void>((resolve) => (ended = resolve)) }
-    asking.current.add(question)
+    const unended = { session, ended: new Promise<void>((resolve) => (ended = resolve)) }
+    asking.current.add(unended)
+    const stop = new AbortController()
+    question.current = stop
     try {
       // A page search still out goes first: Notion is asked one thing at a time. If it was turned
       // away, so is the question, which sends nothing; and so it does when the user stopped it, or
       // went to another chat, meanwhile.
-      const stops = stopped.current
       const turnedAway = await pages.settled()
-      if (stopped.current !== stops) {
+      if (stop.signal.aborted) {
         updateReply((m) => ({ ...m, stopped: true }))
         return
       }
@@ -765,7 +775,7 @@ export function Chat({ userId }: { userId: string }) {
         return
       }
       const readOnly = (sentMode ?? (await modeLoad)) === 'read_only'
-      if (readOnly && !sentMode && !gone.current)
+      if (readOnly && !sentMode && !gone())
         setMessages((ms) =>
           chatId.current !== id
             ? ms
@@ -776,19 +786,25 @@ export function Chat({ userId }: { userId: string }) {
       // The service the question is asked of, as the agent reads it when the question starts.
       const provider = askedWith?.service ?? 'hosted'
       // The mode and the model may have been loading: a Stop, a switch, or the panel closing meanwhile
-      // stops the question too. The agent only stops one that has started.
-      if (stopped.current !== stops) {
+      // stops the question too, before it counts as asked.
+      if (stop.signal.aborted) {
         updateReply((m) => ({ ...m, stopped: true }))
         return
       }
       track({ event: 'question_asked', provider, notion_tab: !!tabPage })
-      const result = await agent.ask(text, onUpdate, confirm, {
-        context,
-        pages: sentPages,
-        selections: sentSelections,
-        readOnly,
-        chat: session.id,
-      })
+      const result = await agent.ask(
+        text,
+        onUpdate,
+        confirm,
+        {
+          context,
+          pages: sentPages,
+          selections: sentSelections,
+          readOnly,
+          chat: session.id,
+        },
+        { signal: stop.signal },
+      )
       track({
         event: 'question_ended',
         provider,
@@ -822,7 +838,7 @@ export function Chat({ userId }: { userId: string }) {
       void readCredits()
       // Another session that opened meanwhile already unlocked the composer, and the agent holds
       // that session now.
-      const here = chatId.current === id && !gone.current
+      const here = chatId.current === id && !gone()
       if (here) setBusy(false)
       // A question that failed or was stopped before using a tool leaves the conversation as it
       // was; don't move the session to the top of the list for it. One that used tools keeps them,
@@ -838,7 +854,7 @@ export function Chat({ userId }: { userId: string }) {
           void title(session, messages)
         }
       }
-      asking.current.delete(question)
+      asking.current.delete(unended)
       ended()
     }
   }
@@ -866,7 +882,7 @@ export function Chat({ userId }: { userId: string }) {
       )
       session.id = saved.id
       session.updatedAt = saved.updatedAt
-      if (gone.current) return
+      if (gone()) return
       // Also shows the session's new id, if it got one, to the list.
       setSaved((n) => n + 1)
       if (saved.id !== id && chatId.current === chat)
@@ -884,7 +900,8 @@ export function Chat({ userId }: { userId: string }) {
    */
   async function title(session: Current, messages: HistoryMessage[]) {
     const chat = chatId.current
-    const written = await agent.title(messages, session.id)
+    // Not cut short by a switch to another chat, which still gets the title; only by the panel unmounting.
+    const written = await agent.title(messages, { chat: session.id, signal: panel.current.signal })
     // On the hosted model the request spent credits; the read after the question was too early for it.
     void readCredits()
     if (!written) return
@@ -892,7 +909,7 @@ export function Chat({ userId }: { userId: string }) {
     saving.current = saving.current.then(async () => {
       try {
         if (deleted.current.has(session.id)) return
-        if ((await store.retitle(session.id, written)) && !gone.current) {
+        if ((await store.retitle(session.id, written)) && !gone()) {
           setSaved((n) => n + 1)
           if (chatId.current === chat) setModelTitle(written)
         }
@@ -910,7 +927,7 @@ export function Chat({ userId }: { userId: string }) {
     chatId.current++
     // A failed save's message belongs to the chat it was for.
     setSaveFailure(undefined)
-    stopped.current++
+    question.current?.abort()
     declineAll()
     // Another conversation: the agent must read pages again before it edits them.
     forgetReads()
@@ -962,8 +979,7 @@ export function Chat({ userId }: { userId: string }) {
     if (found === 'unreadable') return 'unreadable'
     // Stop the reply now, not once the session has loaded again: it must not finish in the meantime.
     declineAll()
-    stopped.current++
-    agent.stop()
+    question.current?.abort()
     // A question asked in this very session may still be ending (the user left it for a new chat, and
     // comes back): it is saved to the session once it has, so wait for it. That save, like any of this
     // panel's still waiting to write, would otherwise look like another window's later, and the
@@ -986,8 +1002,7 @@ export function Chat({ userId }: { userId: string }) {
       track({ event: 'reply_stopped' })
       setStopping(true)
       declineAll()
-      stopped.current++
-      agent.stop()
+      question.current?.abort()
     } else send()
   }
 

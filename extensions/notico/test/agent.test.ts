@@ -679,6 +679,35 @@ describe('extension agent against the worker', () => {
     expect(sentMessages(2).map((m) => m.role)).toEqual(['system', 'user'])
   })
 
+  it('[@no-uc:notion-safety] a signal stops the question it went with, and only that one', async () => {
+    const { tool: rename, runs } = renameTool()
+    const agent = makeAgent({ tools: [rename] })
+    // Aborted before the question was asked (Stop while a page search was still out): nothing is sent.
+    const early = new AbortController()
+    early.abort()
+    const none = await agent.ask(
+      'Rename this page to Q4 Plan',
+      () => {},
+      async () => true,
+      {},
+      { signal: early.signal },
+    )
+    expect(none.status).toBe('stopped')
+    expect(ai.calls).toHaveLength(0)
+
+    // Aborted only once its question ended, a signal leaves the next question alone.
+    const first = new AbortController()
+    ai.script = [{ reply: 'Hello.' }]
+    expect((await agent.ask('Hi', () => {}, undefined, {}, { signal: first.signal })).status).toBe('done')
+    ai.script = [{ toolCalls: [RENAME_CALL] }, { reply: 'Renamed it.' }]
+    const next = await ask(agent, 'Rename this page to Q4 Plan', async () => {
+      first.abort()
+      return true
+    })
+    expect(next.result).toEqual({ status: 'done' })
+    expect(runs).toHaveLength(1)
+  })
+
   it('[UC-NOTICO-AGENT-001-S12] stopping during a tool keeps the tools used so far, and drops what had not started', async () => {
     let agent: CopilotAgent
     const { tool: rename, runs } = renameTool()

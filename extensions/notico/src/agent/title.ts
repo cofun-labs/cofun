@@ -63,7 +63,7 @@ export async function writeTitle(
   provider: ModelProvider,
   model: Model<'openai-completions'>,
   history: HistoryMessage[],
-  chat?: string,
+  { chat, signal }: { chat?: string; signal?: AbortSignal } = {},
 ): Promise<string | undefined> {
   const first = history.findIndex((m) => m.role === 'user')
   const question = history[first]
@@ -90,7 +90,9 @@ export async function writeTitle(
       headers: provider.turnHeaders?.({ chat, turn: question.turn }),
       maxTokens: TITLE_MAX_TOKENS,
       // A stalled model must not keep the request open; the session keeps its first question.
-      signal: AbortSignal.timeout(TITLE_TIMEOUT_MS),
+      signal: signal
+        ? AbortSignal.any([signal, AbortSignal.timeout(TITLE_TIMEOUT_MS)])
+        : AbortSignal.timeout(TITLE_TIMEOUT_MS),
     })
     for await (const _event of stream);
     const answer = await stream.result()
