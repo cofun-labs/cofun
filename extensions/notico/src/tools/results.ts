@@ -202,7 +202,8 @@ async function keptResult(id: string, context: ToolContext | undefined): Promise
     )
   if (kept === 'gone')
     throw new Error(
-      `Result ${given} is not kept on this device any more (a result is kept for 7 days): read the page again.`,
+      `Result ${given} is not kept on this device any more (a result is kept for 7 days, and site data may ` +
+        'have been cleared): read the page again.',
     )
   return kept
 }
