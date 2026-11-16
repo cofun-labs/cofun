@@ -65,7 +65,7 @@ describe('buying credits on the Credits page', () => {
     expect(browser.stripe.sessions).toMatchObject([{ userId: 'user_alice', quantity: 5, price: 'price_credits' }])
   })
 
-  it('[UC-NOTICO-BILLING-001-S15] the packs on offer say bought credits last one year, nothing renews, and questions answered with the user’s own key spend none', async () => {
+  it('[UC-NOTICO-BILLING-001-S15] the packs on offer say bought credits last one year, nothing renews, and questions answered with the user’s own key spend credits only on rendered pages', async () => {
     const { user } = await openPanel()
     await openCredits(user)
 

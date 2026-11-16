@@ -2,7 +2,7 @@
 
 ## Behavior
 
-A signed-in user can have the AI answered by a model of their own choice, with their own key, instead of by Cofun's hosted model: through their OpenRouter account, which offers many models. These models usually use tools better than the hosted one; the user pays OpenRouter for what they use, and spends no credits (see UC-NOTICO-CHAT-001).
+A signed-in user can have the AI answered by a model of their own choice, with their own key, instead of by Cofun's hosted model: through their OpenRouter account, which offers many models. These models usually use tools better than the hosted one; the user pays OpenRouter for what they use, and spends no credits on the model (only on web pages rendered in a browser for a question, UC-NOTICO-PANEL-003; see UC-NOTICO-CHAT-001).
 
 Two places do two jobs. **Settings decides where models come from**: which providers are on, their keys, and which of their models to offer. **The composer's model menu decides which of those answers** the next question.
 
@@ -21,7 +21,7 @@ Settings are kept on this device for the account that set them up: another accou
 Key constraints:
 
 - The user's own key leaves the device only in requests to the provider it belongs to. It never reaches Cofun's service.
-- A question answered by the user's own model spends no credits.
+- A question answered by the user's own model spends no credits on its model calls; a web page rendered for it costs credits as it does on the hosted model (UC-NOTICO-PANEL-003).
 - Checking a key asks no model anything, so it costs nothing.
 
 ## Scenarios
@@ -30,13 +30,13 @@ Key constraints:
 
 | ID | Priority | Status | Scenario |
 | --- | --- | --- | --- |
-| UC-NOTICO-AGENT-002-S01 | P0 | ✅ | Given a user who turned OpenRouter on with their key and chose one of its models in the composer; when they ask a question that needs a tool; then their model is asked with their key, the AI uses the tool and answers, Cofun's service never gets the key or the question, and no credits are spent. |
+| UC-NOTICO-AGENT-002-S01 | P0 | ✅ | Given a user who turned OpenRouter on with their key and chose one of its models in the composer; when they ask a question that needs a tool; then their model is asked with their key, the AI uses the tool and answers, Cofun's service never gets the key or the question, and no credits are spent on the model. |
 | UC-NOTICO-AGENT-002-S02 | P0 | ✅ | Given a user who set up their own model; when another account signs in on the same browser and asks something; then the hosted model answers, and that account cannot see the key. |
 | UC-NOTICO-AGENT-002-S03 | P1 | ✅ | Given a user whose saved key OpenRouter now turns away; when they ask something; then they are told the key was turned away, and Settings marks OpenRouter "Key stopped working", with "Check again" and "Remove key". |
 | UC-NOTICO-AGENT-002-S25 | P1 | ✅ | Given a user whose OpenRouter account is getting too many requests; when they ask something; then the question stops, they are told why, and nothing is sent again. |
 | UC-NOTICO-AGENT-002-S26 | P1 | ✅ | Given a user whose OpenRouter account has no credits left; when they ask something; then they are told so and where to add credits, and Settings still counts the key as working. |
 | UC-NOTICO-AGENT-002-S04 | P1 | ✅ | Given a user who set up their own model; when they remove their key and ask something; then the hosted model answers. |
-| UC-NOTICO-AGENT-002-S05 | P1 | ✅ | Given a conversation with the hosted model; when the user switches to their own model and asks a follow-up; then their model answers it with the conversation so far, and the follow-up spends no credits. |
+| UC-NOTICO-AGENT-002-S05 | P1 | ✅ | Given a conversation with the hosted model; when the user switches to their own model and asks a follow-up; then their model answers it with the conversation so far, and the follow-up spends no credits on the model. |
 | UC-NOTICO-AGENT-002-S06 | P1 | ✅ | Given a user who set up their own model; when they open the side panel again later; then their own model still answers. |
 | UC-NOTICO-AGENT-002-S07 | P1 | ✅ | Given a user with OpenRouter on; when they look for a model by name; then they see the models that match, each with its price, those that can't use tools can't be switched on and say why, and one switched on joins the list and the composer's menu. |
 | UC-NOTICO-AGENT-002-S08 | P0 | ✅ | Given a user who switches OpenRouter on and pastes a key OpenRouter accepts; when they check it; then the field and the button are locked while it runs, no model is asked anything, the key is saved, they are told it works with what it has left, and the first recommended model is switched on. |
