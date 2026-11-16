@@ -4,6 +4,7 @@ import '@testing-library/jest-dom/vitest'
 import { screen } from '@testing-library/react'
 import userEvent, { type UserEvent } from '@testing-library/user-event'
 import { afterEach, describe, expect, it } from 'vitest'
+import { usageCosting } from '../../../worker/test/fakes'
 import { DATA_LINE } from '../src/tools/shared'
 import { FakeNotionTab } from './notion-tab'
 import { closeBrowser, FakeBrowser } from './panel'
@@ -81,6 +82,40 @@ describe('searching the web', () => {
     expect(await screen.findByText('From Wuyi.')).toBeVisible()
     expect(toolResults(browser)[1]).toContain('Oolong is grown in the Wuyi Mountains.')
     expect(browser.web.asked).toEqual(['https://tea.example/oolong'])
+  })
+
+  it('[UC-NOTICO-PANEL-004-S05] what the searches for a question cost, failed ones too, is part of what the reply cost', async () => {
+    const { browser, user } = await open()
+    browser.ai.found.set(QUERY, RESULTS)
+    // The model calls cost nothing here: the reply's cost is the searches'.
+    browser.ai.usage = usageCosting(0)
+    browser.ai.script.push(searchCall(QUERY), searchCall('tea'), { reply: 'Oolong comes from Fujian.' })
+
+    await ask(user, 'Where does oolong tea come from?')
+
+    expect(await screen.findByText('Oolong comes from Fujian.')).toBeVisible()
+    // Two searches, one with no results, at 0.25 credit each.
+    expect(screen.getByText('0.5 credits')).toBeVisible()
+  })
+
+  it('[UC-NOTICO-PANEL-004-S06] a user with no credits left for a search is told so, the question stops, and they can buy credits', async () => {
+    const { browser, user } = await open()
+    // The model call that asks for the search spends all 200 free credits.
+    browser.ai.usage = usageCosting(200)
+    browser.ai.script.push(searchCall(QUERY), { reply: 'Never sent.' })
+
+    await ask(user, 'Where does oolong tea come from?')
+
+    // On the search's card, and as why the reply stopped.
+    const told = await screen.findAllByText(
+      /You have no credits left\. Your next 200 free credits arrive on .+, or you can buy credits\./,
+    )
+    expect(told).toHaveLength(2)
+    expect(screen.queryByText('Never sent.')).not.toBeInTheDocument()
+    expect(browser.ai.calls).toHaveLength(1)
+    expect(browser.ai.searches).toEqual([])
+    await user.click(screen.getByRole('button', { name: 'Buy credits' }))
+    expect(await screen.findByRole('heading', { name: 'Credits' })).toBeVisible()
   })
 
   it.each([

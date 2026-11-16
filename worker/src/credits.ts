@@ -1,3 +1,4 @@
+import type { SearchOutcome } from './search'
 import type { RenderOutcome } from './web'
 import * as z from './zod'
 
@@ -205,8 +206,15 @@ interface WebRender {
   browserMs: number
 }
 
+/** A web search sent to the provider, however it ended, and how many results went back. Never the query. */
+interface WebSearch {
+  kind: 'web_search'
+  outcome: SearchOutcome
+  results: number
+}
+
 /** What is particular to a spend, by its kind: the row of the kind's own table. */
-export type SpendDetail = ModelCall | WebRender
+export type SpendDetail = ModelCall | WebRender | WebSearch
 
 // How the tables hold a ledger (worker/migrations/0005_spends.sql): a grant is written once, and
 // every spend is a row of `spends`, with what it took from each grant in `spend_grants`. What is
@@ -350,6 +358,10 @@ VALUES ((SELECT max(id) FROM spends), ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)`
 const RECORD_WEB_RENDER = `INSERT INTO web_renders (spend_id, outcome, browser_ms)
 VALUES ((SELECT max(id) FROM spends), ?1, ?2)`
 
+/** The search of the spend just written, in the same batch, as RECORD_MODEL_CALL. ?1 is its outcome, ?2 how many results it gave. */
+const RECORD_WEB_SEARCH = `INSERT INTO web_searches (spend_id, outcome, results)
+VALUES ((SELECT max(id) FROM spends), ?1, ?2)`
+
 /** Whether every value is a non-negative whole number, as a spend's amounts, times, and counts must be. */
 const wholeNumbers = (...values: number[]) => values.every((n) => Number.isSafeInteger(n) && n >= 0)
 
@@ -462,6 +474,9 @@ export class Ledger {
       case 'web_render':
         if (!wholeNumbers(detail.browserMs)) throw new Error('a spend needs non-negative integers')
         return this.db.prepare(RECORD_WEB_RENDER).bind(detail.outcome, detail.browserMs)
+      case 'web_search':
+        if (!wholeNumbers(detail.results)) throw new Error('a spend needs non-negative integers')
+        return this.db.prepare(RECORD_WEB_SEARCH).bind(detail.outcome, detail.results)
     }
   }
 

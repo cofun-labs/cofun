@@ -1,16 +1,16 @@
 // Web pages read for a signed-in user (/v1/web): fetched plainly, or rendered in Browser Run, and
 // web searches. A plain read is free. A render is charged in credits, the browser time it used at
-// Browser Run's price, and has a cap of its own. A search is free for now, and costs the operator the
-// provider's price, so it has a cap of its own too, until it is charged in credits (#474). None keeps
-// or logs the address, the query, the page, or the results: the usage record holds the outcome and
-// sizes only, and a render's record in the ledger its outcome and browser time.
+// Browser Run's price, and a search the provider's price for it; each has a cap of its own. None
+// keeps or logs the address, the query, the page, or the results: the usage record holds the outcome
+// and sizes only, a render's record in the ledger its outcome and browser time, and a search's its
+// outcome and how many results it gave.
 import { Hono } from 'hono'
 import * as z from '../zod'
 import { recordUsage, type UsageRecord } from '../usage'
 import { HttpError, errorSummary, parse, type App, type Ctx, type Deps } from '../http'
-import { MAX_QUERY_CHARS, MAX_RESULTS, SearchError, searchWeb } from '../search'
+import { MAX_QUERY_CHARS, MAX_RESULTS, SearchError, searchWeb, type SearchResult } from '../search'
 import { PageError, checkAddress, fetchPage, renderPage, type WebPage } from '../web'
-import { renderCostOf } from '../pricing'
+import { SEARCH_COST, renderCostOf } from '../pricing'
 import { CLIENT_HEADER, openLedger, productOf } from './chat'
 
 /** The most characters of a page's text the worker returns; the extension asks for no more. */
@@ -157,18 +157,59 @@ export function webRoutes({ now, logError }: Pick<Deps, 'now' | 'logError'>): Ap
       const body = parse(SearchBody, await c.req.json().catch(() => undefined))
       const gateway = c.env.AI_GATEWAY_ID
       if (!gateway) throw new HttpError(503, 'not_configured', 'web search is not set up')
+      // Searches sent at once all start on the same balance (see below), so how many one user can
+      // make a minute is capped. Checked before the credits, so a refused request reads nothing.
       const { success } = await c.env.SEARCH_LIMIT.limit({ key: c.get('userId') })
       if (!success)
         throw new HttpError(429, 'rate_limited', 'Too many web searches at once. Wait a minute, then try again.')
-      const results = await searchWeb(c.env.AI, gateway, body.query, body.limit)
+      // Charged after use, as a render is: a search goes ahead while the user has credits. Searches
+      // sent at once can together cost more than what is left: what the grants don't cover is
+      // forgiven, and SEARCH_LIMIT bounds it.
+      const ledger = await openLedger(c, now().getTime(), logError)
+      const product = usage.product
+      const work = (async () => {
+        let results: SearchResult[] = []
+        let error: SearchError | undefined
+        try {
+          results = await searchWeb(c.env.AI, gateway, body.query, body.limit)
+        } catch (err) {
+          if (!(err instanceof SearchError)) throw err
+          error = err
+        }
+        // What the provider bills: a search that gave results (none included), or an answer the
+        // worker does not understand. One the gateway turned away, or with no response, costs nothing.
+        const cost = error && !error.billed ? 0 : SEARCH_COST
+        const outcome = error?.code ?? 'ok'
+        try {
+          await ledger.spend(
+            { product, cost, at: now().getTime() },
+            { kind: 'web_search', outcome, results: results.length },
+          )
+          usage.microCredits = cost
+          return { results, error, charged: { cost: { micro_credits: cost } } }
+        } catch (err) {
+          // The results are out already: they still go to the client, uncharged, and the answer
+          // says no cost, so the client does not count one the ledger never took.
+          logError(`web search record failed: ${errorSummary(err)}`)
+          return { results, error, charged: {} }
+        }
+      })()
+      // The search is charged even if the client goes away meanwhile.
+      c.executionCtx.waitUntil(work.catch(() => {}))
+      const { results, error, charged } = await work
+      // What it cost goes with the answer, results or why there are none.
+      if (error) {
+        record(error.code)
+        logError(`web search failed: ${error.logged}`)
+        const status = error.code === 'search_failed' ? 502 : 503
+        return c.json({ error: { code: error.code, message: error.message }, ...charged }, status)
+      }
       usage.inputChars = results.reduce((n, r) => n + r.title.length + r.description.length, 0)
       record('ok')
-      return c.json({ results })
+      return c.json({ results, ...charged })
     } catch (err) {
-      record(err instanceof HttpError || err instanceof SearchError ? err.code : 'internal')
-      if (!(err instanceof SearchError)) throw err
-      logError(`web search failed: ${err.logged}`)
-      throw new HttpError(err.code === 'search_failed' ? 502 : 503, err.code, err.message)
+      record(err instanceof HttpError ? err.code : 'internal')
+      throw err
     }
   })
 

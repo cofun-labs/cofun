@@ -93,6 +93,8 @@ async function refusal(res: Response) {
 const CREDIT = 1_000_000
 /** What a render of 4 s of browser time costs, in micro-credits: 25 a ms. */
 const RENDER_COST = 100_000
+/** What a web search costs, in micro-credits: 0.25 credit. */
+const SEARCH_COST = 250_000
 
 const ARTICLE = `<!doctype html><html><head><title>Tea &amp; history</title><script>track()</script></head>
 <body><nav><a href="/">Home</a> <a href="/about">About</a></nav>
@@ -346,11 +348,13 @@ const TEA_RESULTS = [
 ]
 
 describe('searching the web', () => {
-  it("[UC-COFUN-WEB-002-S01] gives each result's address, title, and description, as many as asked for, at no cost", async () => {
+  it("[UC-COFUN-WEB-002-S01] gives each result's address, title, and description, as many as asked for, and charges the search", async () => {
     ai.found.set('tea history', TEA_RESULTS)
     const res = await search('  tea history ', 2)
     expect(res.status).toBe(200)
-    const { results }: { results: { url: string; title: string; description: string }[] } = await res.json()
+    const { results, cost }: { results: { url: string; title: string; description: string }[]; cost: unknown } =
+      await res.json()
+    expect(cost).toEqual({ micro_credits: SEARCH_COST })
     expect(results.map((r) => [r.url, r.title])).toEqual([
       ['https://tea.example/history', 'Tea history'],
       ['https://leaves.example/green', 'Green tea'],
@@ -361,8 +365,20 @@ describe('searching the web', () => {
     expect(results[1].description.endsWith('…')).toBe(true)
     // One search, through the gateway, with the fixed provider.
     expect(ai.searches).toEqual([{ gatewayId: 'gw-test', query: 'tea history', provider: 'ceramic', limit: 2 }])
+    // The search is a spend of its own, taken from the free grant it started.
+    expect(db.webSearches()).toEqual([
+      {
+        user_id: 'user_alice',
+        product: 'notico',
+        kind: 'web_search',
+        micro_credits: SEARCH_COST,
+        created_at: clock.getTime(),
+        outcome: 'ok',
+        results: 2,
+      },
+    ])
+    expect(db.grants()).toMatchObject([{ source: 'free', left: 200 * CREDIT - SEARCH_COST }])
     expect(db.rows('model_calls')).toEqual([])
-    expect(db.rows('grants')).toEqual([])
   })
 
   it('[UC-COFUN-WEB-002-S01] a result whose address is too long to hand on uncut is left out', async () => {
@@ -374,9 +390,40 @@ describe('searching the web', () => {
     expect(results.map((r) => r.url)).toEqual(['https://tea.example/history'])
   })
 
-  it('[UC-COFUN-WEB-002-S01] a search that finds nothing gives no results', async () => {
+  it('[UC-COFUN-WEB-002-S01] a search that finds nothing gives no results, and is charged', async () => {
     const res = await search('nothing at all')
-    expect(await res.json()).toEqual({ results: [] })
+    expect(await res.json()).toEqual({ results: [], cost: { micro_credits: SEARCH_COST } })
+    expect(db.webSearches()).toMatchObject([{ outcome: 'ok', results: 0, micro_credits: SEARCH_COST }])
+  })
+
+  it('[UC-COFUN-WEB-002-S04] a user with no credits left is refused a search, and nothing is searched', async () => {
+    // A reply that costs all 200 free credits.
+    ai.usage = usageCosting(200)
+    expect((await post('/v1/chat/completions', { messages: [{ role: 'user', content: 'hi' }] })).status).toBe(200)
+    const res = await search('tea')
+    expect(res.status).toBe(402)
+    const { error }: { error: { code: string; message: string } } = await res.json()
+    expect(error.code).toBe('out_of_credits')
+    expect(error.message).toContain('free credits arrive on 2026-11-21 at 12:00 UTC')
+    expect(ai.searches).toEqual([])
+    expect(db.webSearches()).toEqual([])
+  })
+
+  it('[@no-uc:money] a search is refused when the credits cannot be read, and one whose record fails still gives results', async () => {
+    ai.found.set('tea', TEA_RESULTS)
+    db.failWith = new Error('D1 is down')
+    expect(await refusal(await search('tea'))).toEqual({ status: 503, code: 'credits_unavailable' })
+    expect(ai.searches).toEqual([])
+    db.failWith = undefined
+    db.failOn = { sql: 'INSERT INTO web_searches', error: new Error('D1 write failed') }
+    const res = await search('tea')
+    expect(res.status).toBe(200)
+    // Nothing was charged, so the answer says no cost.
+    const answer: Record<string, unknown> = await res.json()
+    expect(answer.results).toHaveLength(3)
+    expect(answer).not.toHaveProperty('cost')
+    expect(db.rows('spends')).toEqual([])
+    expect(logged.some((line) => line.startsWith('web search record failed'))).toBe(true)
   })
 
   it('[UC-COFUN-WEB-002-S02] a user over their limit of searches a minute is told to wait, and nothing is searched', async () => {
@@ -401,11 +448,12 @@ describe('searching the web', () => {
       gatewayRefusal(402, 'web_search_payment_required'),
       503,
       'search_unavailable',
+      0,
     ],
-    ['the provider is busy', gatewayRefusal(429, 'rate_limited'), 503, 'search_busy'],
-    ['the gateway fails', gatewayRefusal(500, 'internal_error'), 502, 'search_failed'],
-    ['the answer is not JSON', () => new Response('<html>oops</html>'), 502, 'search_failed'],
-    ['the answer has another shape', () => Response.json({ results: [] }), 502, 'search_failed'],
+    ['the provider is busy', gatewayRefusal(429, 'rate_limited'), 503, 'search_busy', 0],
+    ['the gateway fails', gatewayRefusal(500, 'internal_error'), 502, 'search_failed', 0],
+    ['the answer is not JSON', () => new Response('<html>oops</html>'), 502, 'search_failed', SEARCH_COST],
+    ['the answer has another shape', () => Response.json({ results: [] }), 502, 'search_failed', SEARCH_COST],
     [
       'the binding throws',
       () => {
@@ -413,12 +461,20 @@ describe('searching the web', () => {
       },
       502,
       'search_failed',
+      0,
     ],
-  ])('[UC-COFUN-WEB-002-S03] a search is refused when %s, and not tried again', async (_, reply, status, code) => {
-    ai.searchReply = reply
-    expect(await refusal(await search('tea'))).toEqual({ status, code })
-    expect(ai.searches).toHaveLength(1)
-  })
+  ])(
+    '[UC-COFUN-WEB-002-S03] [UC-COFUN-WEB-002-S05] a search is refused when %s, not tried again, and costs what the provider bills',
+    async (_, reply, status, code, cost) => {
+      ai.searchReply = reply
+      const res = await search('tea')
+      // The refusal says what the search cost, as results do.
+      expect(await res.clone().json()).toMatchObject({ cost: { micro_credits: cost } })
+      expect(await refusal(res)).toEqual({ status, code })
+      expect(ai.searches).toHaveLength(1)
+      expect(db.webSearches()).toMatchObject([{ kind: 'web_search', outcome: code, results: 0, micro_credits: cost }])
+    },
+  )
 
   it('[@no-uc:privacy] usage records and logs hold neither the query nor the results', async () => {
     ai.found.set('oolong secrets', TEA_RESULTS)

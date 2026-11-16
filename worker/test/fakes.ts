@@ -252,7 +252,8 @@ export class FakeD1Database implements Database {
       | 'spends'
       | 'spend_grants'
       | 'model_calls'
-      | 'web_renders',
+      | 'web_renders'
+      | 'web_searches',
   ): Record<string, unknown>[] {
     return this.sqlite.prepare(`SELECT * FROM ${table} ORDER BY id`).all()
   }
@@ -274,6 +275,16 @@ export class FakeD1Database implements Database {
       .prepare(
         `SELECT s.user_id, s.product, s.kind, s.micro_credits, s.created_at, r.outcome, r.browser_ms
         FROM web_renders r JOIN spends s ON s.id = r.spend_id ORDER BY r.id`,
+      )
+      .all()
+  }
+
+  /** Every web search with its spend, as one row each: what a test looks at for a search and what it cost. */
+  webSearches(): Record<string, unknown>[] {
+    return this.sqlite
+      .prepare(
+        `SELECT s.user_id, s.product, s.kind, s.micro_credits, s.created_at, w.outcome, w.results
+        FROM web_searches w JOIN spends s ON s.id = w.spend_id ORDER BY w.id`,
       )
       .all()
   }

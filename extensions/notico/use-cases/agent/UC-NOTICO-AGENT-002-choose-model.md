@@ -2,7 +2,7 @@
 
 ## Behavior
 
-A signed-in user can have the AI answered by a model of their own choice, with their own key, instead of by Cofun's hosted model: through their OpenRouter account, which offers many models. These models usually use tools better than the hosted one; the user pays OpenRouter for what they use, and spends no credits on the model (only on web pages rendered in a browser for a question, UC-NOTICO-PANEL-003; see UC-NOTICO-CHAT-001).
+A signed-in user can have the AI answered by a model of their own choice, with their own key, instead of by Cofun's hosted model: through their OpenRouter account, which offers many models. These models usually use tools better than the hosted one; the user pays OpenRouter for what they use, and spends no credits on the model (only on web pages rendered in a browser and web searches made for a question, UC-NOTICO-PANEL-003 and UC-NOTICO-PANEL-004; see UC-NOTICO-CHAT-001).
 
 Two places do two jobs. **Settings decides where models come from**: which providers are on, their keys, and which of their models to offer. **The composer's model menu decides which of those answers** the next question.
 
@@ -21,7 +21,7 @@ Settings are kept on this device for the account that set them up: another accou
 Key constraints:
 
 - The user's own key leaves the device only in requests to the provider it belongs to. It never reaches Cofun's service.
-- A question answered by the user's own model spends no credits on its model calls; a web page rendered for it costs credits as it does on the hosted model (UC-NOTICO-PANEL-003).
+- A question answered by the user's own model spends no credits on its model calls; a web page rendered or a web search made for it costs credits as it does on the hosted model (UC-NOTICO-PANEL-003, UC-NOTICO-PANEL-004).
 - Checking a key asks no model anything, so it costs nothing.
 
 ## Scenarios

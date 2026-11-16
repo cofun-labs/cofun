@@ -76,19 +76,20 @@ export function adminPage(publishableKey: string): string {
       <dt>Model calls</dt><dd id="calls"></dd>
       <dt>Tokens</dt><dd id="tokens"></dd>
       <dt>Pages rendered</dt><dd id="renders"></dd>
+      <dt>Web searches</dt><dd id="searches"></dd>
     </dl>
     <h2>Per product</h2>
     <p id="no-products" class="muted">Nothing was spent in this period.</p>
     <div class="scroll">
       <table id="per-product">
-        <thead><tr><th>Product</th><th>Spent</th><th>Calls</th><th>Renders</th><th>Spent on renders</th></tr></thead>
+        <thead><tr><th>Product</th><th>Spent</th><th>Calls</th><th>Renders</th><th>Spent on renders</th><th>Searches</th><th>Spent on searches</th></tr></thead>
         <tbody></tbody>
       </table>
     </div>
     <h2>Per day</h2>
     <div class="scroll">
       <table id="per-day">
-        <thead><tr><th>Day</th><th>Granted, free</th><th>Granted, by hand</th><th>Bought</th><th>Spent</th><th>Calls</th><th>Failed</th><th>Cancelled</th><th>Prompt tokens</th><th>Cached</th><th>Completion tokens</th><th>Renders</th><th>Failed renders</th><th>Browser time</th><th>Spent on renders</th></tr></thead>
+        <thead><tr><th>Day</th><th>Granted, free</th><th>Granted, by hand</th><th>Bought</th><th>Spent</th><th>Calls</th><th>Failed</th><th>Cancelled</th><th>Prompt tokens</th><th>Cached</th><th>Completion tokens</th><th>Renders</th><th>Failed renders</th><th>Browser time</th><th>Spent on renders</th><th>Searches</th><th>Failed searches</th><th>Spent on searches</th></tr></thead>
         <tbody></tbody>
       </table>
     </div>
@@ -96,7 +97,7 @@ export function adminPage(publishableKey: string): string {
     <p id="no-accounts" class="muted">No account was granted or spent credits in this period.</p>
     <div class="scroll">
       <table id="accounts">
-        <thead><tr><th>Clerk user id</th><th>Granted</th><th>Spent</th><th>Calls</th><th>Renders</th><th>Spent on renders</th><th>Balance now</th></tr></thead>
+        <thead><tr><th>Clerk user id</th><th>Granted</th><th>Spent</th><th>Calls</th><th>Renders</th><th>Spent on renders</th><th>Searches</th><th>Spent on searches</th><th>Balance now</th></tr></thead>
         <tbody></tbody>
       </table>
     </div>
@@ -309,6 +310,8 @@ export function adminPage(publishableKey: string): string {
     el('renders').textContent =
       count(totals.renders) + ', ' + count(totals.failedRenders) + ' failed, ' + browserTime(totals.renderMs) +
       ' of browser time, ' + credits(totals.renderSpent)
+    el('searches').textContent =
+      count(totals.searches) + ', ' + count(totals.failedSearches) + ' failed, ' + credits(totals.searchSpent)
 
     el('no-products').style.display = overview.products.length ? 'none' : 'block'
     el('per-product').style.display = overview.products.length ? 'table' : 'none'
@@ -316,7 +319,15 @@ export function adminPage(publishableKey: string): string {
     products.replaceChildren()
     for (const each of overview.products) {
       const row = products.insertRow()
-      const cells = [each.product, credits(each.spent), count(each.calls), count(each.renders), credits(each.renderSpent)]
+      const cells = [
+        each.product,
+        credits(each.spent),
+        count(each.calls),
+        count(each.renders),
+        credits(each.renderSpent),
+        count(each.searches),
+        credits(each.searchSpent),
+      ]
       for (const text of cells) row.insertCell().textContent = text
     }
 
@@ -340,6 +351,9 @@ export function adminPage(publishableKey: string): string {
         count(each.failedRenders),
         browserTime(each.renderMs),
         credits(each.renderSpent),
+        count(each.searches),
+        count(each.failedSearches),
+        credits(each.searchSpent),
       ]
       const row = days.insertRow()
       for (const text of cells) row.insertCell().textContent = text
@@ -369,6 +383,8 @@ export function adminPage(publishableKey: string): string {
         count(account.calls),
         count(account.renders),
         credits(account.renderSpent),
+        count(account.searches),
+        credits(account.searchSpent),
         credits(account.balance),
       ]
       for (const text of cells) row.insertCell().textContent = text

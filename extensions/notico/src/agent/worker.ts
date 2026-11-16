@@ -133,8 +133,9 @@ export async function readOwn<S extends z.ZodType>(
 const CodedError = z.object({ error: z.object({ code: looseText, message: looseText }) })
 
 /**
- * What a render cost, as the worker says in its answer: a page, or why there is none (both were
- * charged). A plain read is free, and a request turned away before rendering cost nothing: neither says.
+ * What a render or a search cost, as the worker says in its answer: a page or results, or why there
+ * are none (both were charged). A plain read is free, and a request turned away before rendering or
+ * searching cost nothing: neither says.
  */
 const Charged = z.object({ cost: z.object({ micro_credits: z.number().int().nonnegative() }).optional() })
 
@@ -227,13 +228,16 @@ const WebSearch = z.object({ results: z.array(WebSearchResult) })
 /**
  * Has the worker search the web for `query` (see ToolContext.searchWeb), for at most `limit`
  * results. Throws a WebError that stops the question when the worker could not: a search that
- * failed is not tried again, and the model can't search another way.
+ * failed is not tried again, and the model can't search another way. A search that was charged
+ * calls `charged` with what it cost in micro-credits, or with undefined when its answer could not
+ * be read, so what it cost is not known.
  */
 export async function searchWebFor(
   { apiUrl, getToken, client }: Pick<AgentConfig, 'apiUrl' | 'getToken' | 'client'>,
   query: string,
   limit: number,
   signal?: AbortSignal,
+  charged?: (microCredits: number | undefined) => void,
 ): Promise<WebSearchResult[]> {
   const token = await getToken()
   if (!token) throw new Error(SIGN_IN)
@@ -252,9 +256,15 @@ export async function searchWebFor(
       signal,
     })
   } catch (err) {
+    // The worker may have made the search and charged it.
+    charged?.(undefined)
     throw failed(err)
   }
   const body: unknown = await res.json().catch(() => undefined)
+  const cost = Charged.safeParse(body)
+  // Results always say what they cost; a refusal only when the search was made.
+  if (!cost.success || (res.ok && !cost.data.cost)) charged?.(undefined)
+  else if (cost.data.cost) charged?.(cost.data.cost.micro_credits)
   if (!res.ok) {
     const refusal = CodedError.safeParse(body).data?.error
     const code = refusal?.code ?? `http_${res.status}`
@@ -264,7 +274,10 @@ export async function searchWebFor(
       message,
       code === 'rate_limited'
         ? 'Notico searched the web too many times in a minute. Wait a minute, then ask again.'
-        : `Notico could not search the web: ${message}.`,
+        : // The worker's own words: they say when the next free credits arrive.
+          code === 'out_of_credits'
+          ? message
+          : `Notico could not search the web: ${message}.`,
     )
   }
   const answer = WebSearch.safeParse(body)

@@ -145,7 +145,8 @@ export const searchWeb = defineTool({
   description:
     'Searches the web, for current information or sources beyond Notion and the pages the user gave. Gives up to ' +
     `${SEARCH_RESULTS} results, each with its page's URL, title, and a description of the page. To read a result's ` +
-    'page in full, use read_web_page with its URL. Each search is a request: search only when the question needs it.',
+    'page in full, use read_web_page with its URL. Each search costs the user credits: search only when the question ' +
+    'needs it.',
   describe: (args, details) => {
     const query = details?.name ?? args?.query.trim()
     return query ? { verb: SEARCH, what: 'the web for', name: query } : { verb: SEARCH, what: 'the web' }
