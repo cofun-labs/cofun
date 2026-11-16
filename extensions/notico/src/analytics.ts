@@ -14,8 +14,7 @@
 // carry what the SDK adds to every event (the page's URL, the user agent, the time zone, the screen
 // size, …), so `onlyKept` drops every property that is not listed.
 import { PostHog, type CaptureResult } from 'posthog-js/dist/module.no-external'
-import { NOTION_ERROR_CODES } from './notion/api'
-import { TOOLS } from './tools'
+import type { Product } from './product'
 import { z } from './zod'
 
 /** The PostHog project events go to. Public by design; without it nothing is sent. */
@@ -28,10 +27,6 @@ const oneOf = (known: readonly string[]) => z.string().transform((value) => (kno
 
 /** Where a question's model runs. */
 const Provider = z.enum(['hosted', 'openrouter'])
-/** A tool by its name, as the extension defines it. The model may ask for a tool that does not exist: its name is not sent. */
-const ToolName = oneOf(TOOLS.map((tool) => tool.name))
-/** Why a tool failed: a Notion error's code. */
-const ToolError = oneOf(NOTION_ERROR_CODES)
 /** Why a question failed: the worker's error code. */
 const QuestionError = oneOf([
   'out_of_credits',
@@ -50,50 +45,70 @@ const Count = z.int().min(0).max(10_000)
 /**
  * Every event, with all it may carry. An event that does not fit is not sent. Each says only that
  * something happened, never its text: `reply_copied` not the reply, `chat_opened` not its title.
+ * A tool is named only when it is one of the product's `tools` (the model may ask for a tool that
+ * does not exist), and a tool's error code only when it is one of its site's `errorCodes`.
  */
-const AnalyticsEvent = z.discriminatedUnion('event', [
-  z.strictObject({ event: z.literal('panel_opened') }),
-  z.strictObject({ event: z.literal('sign_in_opened') }),
-  /**
-   * The device's usage was joined to an account: usually a sign-in, but also the first panel this
-   * version opens for someone already signed in, and usage data turned on again by someone who signed
-   * in while it was off. The panel reloads when a sign-in happens, so it never sees one as it happens.
-   */
-  z.strictObject({ event: z.literal('signed_in') }),
-  /** `notion_tab`: whether the current tab showed a Notion page. */
-  z.strictObject({ event: z.literal('question_asked'), provider: Provider, notion_tab: z.boolean() }),
-  /** `rounds`: the model calls the question took. `tool_calls`: the tool calls that ended, however they did. */
-  z.strictObject({
-    event: z.literal('question_ended'),
-    provider: Provider,
-    outcome: z.enum(['done', 'stopped', 'step_limit', 'error']),
-    error_code: QuestionError.optional(),
-    rounds: Count,
-    tool_calls: Count,
-  }),
-  z.strictObject({
-    event: z.literal('tool_called'),
-    tool: ToolName,
-    ok: z.boolean(),
-    status: z.enum(['done', 'failed', 'skipped', 'stopped', 'declined']),
-    error_code: ToolError.optional(),
-  }),
-  z.strictObject({ event: z.literal('model_switched'), provider: Provider }),
-  z.strictObject({ event: z.literal('own_key_saved'), provider: z.enum(['openrouter']) }),
-  z.strictObject({ event: z.literal('settings_opened') }),
-  /** `pack`: the pack's quantity, in units of 1,000 credits. */
-  z.strictObject({ event: z.literal('credits_buy_clicked'), pack: Count }),
-  z.strictObject({ event: z.literal('credits_opened') }),
-  z.strictObject({ event: z.literal('credits_history_opened') }),
-  z.strictObject({ event: z.literal('chat_created') }),
-  z.strictObject({ event: z.literal('chat_opened') }),
-  z.strictObject({ event: z.literal('chat_deleted') }),
-  /** `how`: with `@` in the message, or the "+" button. */
-  z.strictObject({ event: z.literal('page_added'), how: z.enum(['mention', 'button']) }),
-  z.strictObject({ event: z.literal('reply_stopped') }),
-  z.strictObject({ event: z.literal('reply_copied') }),
-])
-export type AnalyticsEvent = z.input<typeof AnalyticsEvent>
+const eventSchema = (tools: readonly string[], errorCodes: readonly string[]) => {
+  const ToolName = oneOf(tools)
+  const ToolError = oneOf(errorCodes)
+  return z.discriminatedUnion('event', [
+    z.strictObject({ event: z.literal('panel_opened') }),
+    z.strictObject({ event: z.literal('sign_in_opened') }),
+    /**
+     * The device's usage was joined to an account: usually a sign-in, but also the first panel this
+     * version opens for someone already signed in, and usage data turned on again by someone who signed
+     * in while it was off. The panel reloads when a sign-in happens, so it never sees one as it happens.
+     */
+    z.strictObject({ event: z.literal('signed_in') }),
+    /** `notion_tab`: whether the current tab showed a Notion page. */
+    z.strictObject({ event: z.literal('question_asked'), provider: Provider, notion_tab: z.boolean() }),
+    /** `rounds`: the model calls the question took. `tool_calls`: the tool calls that ended, however they did. */
+    z.strictObject({
+      event: z.literal('question_ended'),
+      provider: Provider,
+      outcome: z.enum(['done', 'stopped', 'step_limit', 'error']),
+      error_code: QuestionError.optional(),
+      rounds: Count,
+      tool_calls: Count,
+    }),
+    z.strictObject({
+      event: z.literal('tool_called'),
+      tool: ToolName,
+      ok: z.boolean(),
+      status: z.enum(['done', 'failed', 'skipped', 'stopped', 'declined']),
+      error_code: ToolError.optional(),
+    }),
+    z.strictObject({ event: z.literal('model_switched'), provider: Provider }),
+    z.strictObject({ event: z.literal('own_key_saved'), provider: z.enum(['openrouter']) }),
+    z.strictObject({ event: z.literal('settings_opened') }),
+    /** `pack`: the pack's quantity, in units of 1,000 credits. */
+    z.strictObject({ event: z.literal('credits_buy_clicked'), pack: Count }),
+    z.strictObject({ event: z.literal('credits_opened') }),
+    z.strictObject({ event: z.literal('credits_history_opened') }),
+    z.strictObject({ event: z.literal('chat_created') }),
+    z.strictObject({ event: z.literal('chat_opened') }),
+    z.strictObject({ event: z.literal('chat_deleted') }),
+    /** `how`: with `@` in the message, or the "+" button. */
+    z.strictObject({ event: z.literal('page_added'), how: z.enum(['mention', 'button']) }),
+    z.strictObject({ event: z.literal('reply_stopped') }),
+    z.strictObject({ event: z.literal('reply_copied') }),
+  ])
+}
+export type AnalyticsEvent = z.input<ReturnType<typeof eventSchema>>
+
+/** The product events are sent for, and what its events may name; set once, where the panel starts. */
+let configured: { id: string; schema: ReturnType<typeof eventSchema> } | undefined
+
+/** Sets the product usage data is sent for, before the first event: until then, none is sent. */
+export function configureAnalytics(product: Product): void {
+  configured = {
+    id: product.id,
+    schema: eventSchema(
+      product.tools.map((tool) => tool.name),
+      product.errorCodes,
+    ),
+  }
+}
 
 /** Every property an event of ours may carry, besides the two all of them do. */
 const OWN_PROPERTIES = [
@@ -243,7 +258,11 @@ function withClient(task: (posthog: PostHog) => void): void {
 }
 
 function capture(posthog: PostHog, event: AnalyticsEvent): void {
-  const parsed = AnalyticsEvent.safeParse(event)
+  if (!configured) {
+    console.error('Not sent: usage data has no product yet')
+    return
+  }
+  const parsed = configured.schema.safeParse(event)
   if (!parsed.success) {
     console.error('Not sent: not a usage event', parsed.error)
     return
@@ -252,7 +271,7 @@ function capture(posthog: PostHog, event: AnalyticsEvent): void {
   posthog.capture(name, {
     ...properties,
     version: chrome.runtime.getManifest().version,
-    product: 'notico',
+    product: configured.id,
   })
 }
 
