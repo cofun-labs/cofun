@@ -14,6 +14,8 @@ export interface AgentConfig {
    * X-Cofun-Client, which records the call under that product.
    */
   client: string
+  /** The product's name and its site's, as the notes on the mode name them: `Notico` and `Notion`. */
+  names: { product: string; site: string }
   /**
    * Which model answers, read as each question starts, so a change applies from the next question
    * on and the conversation goes on with it. The hosted model when not given.

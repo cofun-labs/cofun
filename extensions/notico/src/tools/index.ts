@@ -2,21 +2,13 @@
 // them (find.ts), writing them (write.ts), databases (database.ts), organizing pages (organize.ts),
 // comments (comments.ts), the current tab, on Notion or another site, and the tabs the user added
 // (current.ts), web pages by their address and web searches (web.ts), and the long results those
-// keep on the device (results.ts). This module lists them, and says for the side panel what a call did.
+// keep on the device (results.ts). This module says for the side panel what a call did; the product
+// lists the tools its agent is offered (src/notico.ts).
 import type { HistoryMessage, ToolDetails } from '../agent'
 import { pageLink } from '../notion/hosts'
 import type { Action, Tool } from '../tool'
-import { addComment, readComments } from './comments'
-import { getCurrentTab, readCurrentTab, readTab } from './current'
-import { createDatabase, queryDatabase, updateDatabaseSchema } from './database'
-import { listPages, searchPages } from './find'
-import { duplicatePage, movePage, trashPage } from './organize'
-import { getSelection, readPage } from './read'
 import type { OpenPage } from './current'
 import { verb } from './shared'
-import { readResult, searchResult } from './results'
-import { readWebPage, renderWebPage, searchWeb } from './web'
-import { createPage, editPage, updatePages } from './write'
 
 export {
   carryPages,
@@ -34,36 +26,10 @@ export type { ToolMemory } from './memory'
 export { DATA_LINE } from './shared'
 export { OPEN_A_PAGE, chatTitle, replyTitle, savePage, type SavedTurn } from './save'
 
-export const TOOLS: Tool[] = [
-  readPage,
-  editPage,
-  createPage,
-  searchPages,
-  getSelection,
-  queryDatabase,
-  updatePages,
-  createDatabase,
-  updateDatabaseSchema,
-  listPages,
-  movePage,
-  duplicatePage,
-  trashPage,
-  readComments,
-  addComment,
-  getCurrentTab,
-  readCurrentTab,
-  readTab,
-  readWebPage,
-  renderWebPage,
-  searchWeb,
-  readResult,
-  searchResult,
-]
-
-/** A call in the user's words, also one from a saved session whose tool is gone. */
-export function describeCall(name: string, args: unknown, details?: ToolDetails): Action {
+/** A call in the user's words, by the tool of `tools` it names; also one from a saved session whose tool is gone. */
+export function describeCall(tools: Tool[], name: string, args: unknown, details?: ToolDetails): Action {
   return (
-    TOOLS.find((t) => t.name === name)?.describe(args, details) ?? {
+    tools.find((t) => t.name === name)?.describe(args, details) ?? {
       verb: verb('use', 'using', 'used'),
       what: 'a tool',
     }

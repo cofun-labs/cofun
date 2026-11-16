@@ -73,13 +73,14 @@ const STOPPED_BEFORE = 'Not run: the user stopped the question before this actio
 const STOPPED_DURING =
   'Stopped by the user while this action was running; it may have partly happened. Check before trying it again.'
 /** Ahead of a question asked in Read only, for the model: it has no tool that changes data for it. */
-const READ_ONLY_NOTE =
-  '[Read only: the user set Notico to Read only for this question, so you have no tools that change Notion. ' +
+const readOnlyNote = ({ product, site }: AgentConfig['names']) =>
+  `[Read only: the user set ${product} to Read only for this question, so you have no tools that change ${site}. ` +
   "If the question asks for a change, make none and don't describe one as done: say you can't make changes in " +
   'Read only, and that the user can switch to Edit with the mode button at the bottom left of the message box ' +
   'and ask again. You can still read and answer.]'
 /** Ahead of a question asked in Edit right after one in Read only: the tools that change data are back. */
-const EDIT_NOTE = '[Edit: the user switched Notico back to Edit, so the tools that change Notion are available again.]'
+const editNote = ({ product, site }: AgentConfig['names']) =>
+  `[Edit: the user switched ${product} back to Edit, so the tools that change ${site} are available again.]`
 
 export class CopilotAgent {
   private agent?: Agent
@@ -730,7 +731,7 @@ export class CopilotAgent {
     return messages.map((message) => {
       if (message.role !== 'user') return message
       const readOnly = this.readOnly.has(message)
-      const mode = readOnly ? READ_ONLY_NOTE : readOnlyBefore ? EDIT_NOTE : undefined
+      const mode = readOnly ? readOnlyNote(this.config.names) : readOnlyBefore ? editNote(this.config.names) : undefined
       readOnlyBefore = readOnly
       const notes = [mode, this.contexts.get(message)].filter(Boolean).join('\n')
       return notes ? { ...message, content: `${notes}\n\n${textOf(message.content)}` } : message
