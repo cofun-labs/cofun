@@ -4,7 +4,7 @@
 
 A page the AI reads from a tab (UC-NOTICO-PANEL-001) or by its address (UC-NOTICO-PANEL-003) can be far longer than what one answer can take in: a long article, a spec, a report. A page no longer than one part (20,000 characters) comes whole. A longer one comes as its first part, with an outline of its headings and the part each starts in, and the AI can read any other part of it, or find the lines that hold some text, when the question needs what the rest says. Its full text is kept on the device, with the chat, so another part never reads the page again; up to 2,000,000 characters are kept, and the AI is told when a page was longer still.
 
-A page kept for a chat is read only in that chat. It is deleted with the chat, once no copy of the chat holds it any more, and one kept for a chat that was never saved is deleted after a day.
+A page kept for a chat is read only in that chat. It is kept for 7 days, whatever happens to the chat: once the side panel opens after that, it is deleted, and a chat continued later has the page read again.
 
 Key constraints:
 
@@ -21,7 +21,7 @@ Key constraints:
 | UC-NOTICO-PANEL-005-S02 | P1 | ✅ | Given a page the AI read in parts; when it reads another part; then it gets that part, marked as data from that page. |
 | UC-NOTICO-PANEL-005-S03 | P1 | ✅ | Given a page the AI read in parts; when it searches it for some text; then it gets the lines that hold the text, ignoring case, at most 20, each with the part it is in. |
 | UC-NOTICO-PANEL-005-S04 | P1 | ✅ | Given a page read in parts in one chat; when the AI in another chat asks for it by its id; then it is refused, as an id it was never given. |
-| UC-NOTICO-PANEL-005-S05 | P1 | ✅ | Given a saved chat in which the AI read a page in parts; when the user deletes the chat; then the page's full text is deleted from the device, unless a copy of the chat another panel saved still holds it. |
+| UC-NOTICO-PANEL-005-S05 | P1 | ✅ | Given a page the AI read in parts more than 7 days ago; when the side panel opens; then the page's full text is deleted from the device, whether the chat is still saved or was deleted. |
 | UC-NOTICO-PANEL-005-S06 | P2 | ✅ | Given a page longer than what is kept of it; when the AI reads it; then it is told how much of the page was kept. |
 
 ### ai-e2e
