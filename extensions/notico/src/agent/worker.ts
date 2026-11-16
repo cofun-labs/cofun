@@ -124,12 +124,13 @@ export async function readOwn<S extends z.ZodType>(
   path: string,
   query: Record<string, string | undefined>,
   schema: S,
+  signal?: AbortSignal,
 ): Promise<z.output<S>> {
   const token = await getToken()
   if (!token) throw new Error(SIGN_IN)
   const url = new URL(`${apiUrl.replace(/\/+$/, '')}/${path}`)
   for (const [name, value] of Object.entries(query)) if (value !== undefined) url.searchParams.set(name, value)
-  const res = await fetch(url, { headers: { authorization: `Bearer ${token}` } })
+  const res = await fetch(url, { headers: { authorization: `Bearer ${token}` }, signal })
   const body: unknown = await res.json().catch(() => undefined)
   if (!res.ok) throw new Error(ErrorReply.safeParse(body).data?.error?.message ?? `HTTP ${res.status}`)
   return schema.parse(body)

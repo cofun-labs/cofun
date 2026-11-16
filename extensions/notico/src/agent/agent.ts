@@ -137,21 +137,30 @@ export class CopilotAgent {
    * save: after a reset() that stopped the question, history() is the next conversation's.
    *
    * `confirm` is asked before each run of a tool that needs confirmation. Without it, such tools
-   * are declined. `extras` go with the question, and are saved with it.
+   * are declined. `extras` go with the question, and are saved with it. `signal` stops the question
+   * as stop() does; one already aborted asks nothing and resolves `stopped`.
    */
   async ask(
     text: string,
     onUpdate: (update: AgentUpdate) => void,
     confirm?: ConfirmTool,
     extras: QuestionExtras = {},
+    { signal }: { signal?: AbortSignal } = {},
   ): Promise<AskResult> {
     // One question at a time: an overlapping run would roll back the other's messages.
     if (this.running) return { status: 'error', message: 'Already answering a question.', rounds: 0 }
+    if (signal?.aborted) return { status: 'stopped', rounds: 0 }
     const question = {}
     this.running = question
+    // Only while this question runs: aborted after it ended, the signal must not stop the next one.
+    const onAbort = () => {
+      if (this.running === question) this.stop()
+    }
+    signal?.addEventListener('abort', onAbort)
     try {
       return await this.askWithRetry(text, onUpdate, confirm, extras)
     } finally {
+      signal?.removeEventListener('abort', onAbort)
       if (this.running === question) this.running = undefined
     }
   }
@@ -717,21 +726,25 @@ export class CopilotAgent {
    * only where the conversation already went, and on the hosted model it spends credits like any
    * request. Resolves undefined, never rejects, when there is no title to use: the request failed,
    * or the model's answer is not a title (see `ModelTitle` in title.ts). `chat` is the session's id:
-   * on the hosted model, the request counts toward the chat's first question (see Turn).
+   * on the hosted model, the request counts toward the chat's first question (see Turn). `signal`
+   * cuts the request short, which also resolves undefined.
    */
-  async title(history: HistoryMessage[], chat?: string): Promise<string | undefined> {
+  async title(
+    history: HistoryMessage[],
+    { chat, signal }: { chat?: string; signal?: AbortSignal } = {},
+  ): Promise<string | undefined> {
     // Read now: the next question may change the provider while this request is out.
     const { provider, model } = this
     if (!model) return undefined
-    return writeTitle(provider, model, history, chat)
+    return writeTitle(provider, model, history, { chat, signal })
   }
 
   /**
    * The signed-in user's credits, as the worker reports them. Reading them changes nothing. Throws
-   * when they can't be read, or when the answer is not what the panel expects.
+   * when they can't be read, when the answer is not what the panel expects, or when `signal` aborts.
    */
-  async credits(): Promise<Credits> {
-    return readOwn(this.config, 'credits', { utc_offset: utcOffset() }, Credits)
+  async credits({ signal }: { signal?: AbortSignal } = {}): Promise<Credits> {
+    return readOwn(this.config, 'credits', { utc_offset: utcOffset() }, Credits, signal)
   }
 
   /** Every grant the user was given, newest first. Read only when the user opens the history. */

@@ -438,7 +438,7 @@ describe('chat and question of what a question spends', () => {
     expect((await ask(agent, 'What is tea?', undefined, { chat })).result).toEqual({ status: 'done' })
     // The title is part of what the first question cost.
     ai.script = [{ reply: 'About tea' }]
-    expect(await agent.title(agent.history(), chat)).toBe('About tea')
+    expect(await agent.title(agent.history(), { chat })).toBe('About tea')
     ai.script = [{ reply: 'Green tea.' }]
     await ask(agent, 'And green tea?', undefined, { chat })
 
