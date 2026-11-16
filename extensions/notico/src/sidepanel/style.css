@@ -1050,7 +1050,6 @@ a.icon-button {
   height: 13px;
 }
 
-/* The "+" menu opens upward from the box, flush with its left edge. */
 /* The "+" menu opens just above its button, flush with the button's left edge. */
 .add-menu {
   position: relative;
