@@ -44,13 +44,27 @@ interface QuestionMeter {
  * model ahead of the question (say, which page is open); `pages` are the pages the user sent it with,
  * shown with the question; `selections`, text the user selected on pages and sent it with, shown with
  * it too (what the model gets of it is in `context`); `readOnly`: the question is asked in Read only,
- * so the model is offered no tool that changes data (`changesData`) for it.
+ * so the model is offered no tool that changes data (`changesData`) for it. `chat`, the id of the
+ * session it is asked in, is not saved with it: it goes to the worker with the question's requests
+ * (see Turn).
  */
 export interface QuestionExtras {
   context?: string
   pages?: QuestionPage[]
   selections?: QuestionSelection[]
   readOnly?: boolean
+  chat?: string
+}
+
+/**
+ * Which chat (the session's id) and which question of it (an id made for the question) a request to
+ * the worker is for, sent as X-Cofun-Chat-Id and X-Cofun-Turn-Id, so the worker records what the
+ * request spent with them. Random ids: they say nothing about the content. Never sent to a user's own
+ * model's service.
+ */
+export interface Turn {
+  chat?: string
+  turn?: string
 }
 
 /**
@@ -303,11 +317,13 @@ export type AssistantPart = z.infer<typeof AssistantPart>
 export const HistoryMessage = z.discriminatedUnion('role', [
   /**
    * `context`, `pages`, `selections`, and `readOnly`: what went with the question (see QuestionExtras), besides what
-   * the user typed.
+   * the user typed. `turn`: the id its requests to the worker carried (see Turn), to match the question
+   * to what they spent; a question asked before ids were sent has none.
    */
   QuestionDetails.extend({
     role: z.literal('user'),
     text: z.string(),
+    turn: z.string().optional(),
     context: z.string().optional(),
     pages: z.array(QuestionPage).optional(),
     selections: z.array(QuestionSelection).optional(),

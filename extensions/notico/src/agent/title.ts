@@ -56,12 +56,14 @@ const ModelTitle = z
 /**
  * The title `model` on `provider` writes for the conversation `history`, from its first question and
  * the start of the reply to it; undefined, never a rejection, when there is none to use (see
- * `CopilotAgent.title`).
+ * `CopilotAgent.title`). The request is for the chat `chat` and counts toward the first question
+ * (see Turn): it is part of what asking that question cost.
  */
 export async function writeTitle(
   provider: ModelProvider,
   model: Model<'openai-completions'>,
   history: HistoryMessage[],
+  chat?: string,
 ): Promise<string | undefined> {
   const first = history.findIndex((m) => m.role === 'user')
   const question = history[first]
@@ -85,6 +87,7 @@ export async function writeTitle(
     const stream = streamSimple(model, context, {
       apiKey: await provider.apiKey(),
       identity: provider.identity,
+      headers: provider.turnHeaders?.({ chat, turn: question.turn }),
       maxTokens: TITLE_MAX_TOKENS,
       // A stalled model must not keep the request open; the session keeps its first question.
       signal: AbortSignal.timeout(TITLE_TIMEOUT_MS),

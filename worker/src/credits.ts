@@ -174,10 +174,13 @@ export interface ManualGrant {
 
 /**
  * A spend of credits, to record with what it cost: the product it came from (see `productOf` in
- * routes/chat.ts), its cost in micro-credits (0 when it cost nothing), and when it was charged.
+ * routes/chat.ts), the chat and question it was for (see `turnOf` there; null when the request named
+ * none), its cost in micro-credits (0 when it cost nothing), and when it was charged.
  */
 export interface Spend {
   product: string
+  chatId: string | null
+  turnId: string | null
   cost: number
   at: number
 }
@@ -340,9 +343,12 @@ WHERE g.user_id = ?1 ORDER BY g.granted_at DESC, g.id DESC LIMIT ${HISTORY_LIMIT
 const READ_GRANTS = `${READ_GRANT}
 WHERE g.user_id = ?1 ORDER BY g.granted_at, g.id`
 
-/** The record of a spend, with its full cost. ?3 is the product, ?4 the kind, ?5 the cost. */
-const RECORD_SPEND = `INSERT INTO spends (user_id, created_at, product, kind, micro_credits)
-VALUES (?1, ?2, ?3, ?4, ?5)`
+/**
+ * The record of a spend, with its full cost. ?3 is the product, ?4 the kind, ?5 the cost, ?6 and ?7
+ * the chat and the question it was for.
+ */
+const RECORD_SPEND = `INSERT INTO spends (user_id, created_at, product, kind, micro_credits, chat_id, turn_id)
+VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)`
 
 /**
  * The model call of the spend just written, in the same batch: the newest spend. Batches run one at
@@ -443,9 +449,12 @@ export class Ledger {
    * grant that expires first, in one batch: all of it is written, or none. What the grants don't
    * cover is forgiven. The one way credits are spent.
    */
-  async spend({ product, cost, at }: Spend, detail: SpendDetail): Promise<void> {
+  async spend({ product, chatId, turnId, cost, at }: Spend, detail: SpendDetail): Promise<void> {
     if (!wholeNumbers(cost, at)) throw new Error('a spend needs non-negative integers')
-    const statements = [this.statement(RECORD_SPEND, at, product, detail.kind, cost), this.detail(detail, at)]
+    const statements = [
+      this.statement(RECORD_SPEND, at, product, detail.kind, cost, chatId, turnId),
+      this.detail(detail, at),
+    ]
     await this.db.batch(cost === 0 ? statements : [...statements, this.statement(SPEND, at, cost)])
   }
 

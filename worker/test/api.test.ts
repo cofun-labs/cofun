@@ -172,7 +172,7 @@ describe('worker API', () => {
     expect((await json(res)).error.code).toBe('not_configured')
   })
 
-  it('[@no-uc:access] extension origin passes CORS preflight', async () => {
+  it('[@no-uc:access] extension origin passes CORS preflight, with the headers the extension sends', async () => {
     const res = await app.request(
       '/v1/chat/completions',
       { method: 'OPTIONS', headers: { origin: EXT, 'access-control-request-method': 'POST' } },
@@ -180,6 +180,9 @@ describe('worker API', () => {
     )
     expect(res.status).toBe(204)
     expect(res.headers.get('access-control-allow-origin')).toBe('*')
+    expect(res.headers.get('access-control-allow-headers')?.split(',')).toEqual(
+      expect.arrayContaining(['authorization', 'x-cofun-client', 'x-cofun-chat-id', 'x-cofun-turn-id']),
+    )
   })
 
   it('[@no-uc:access] sign-in page loads Clerk with the publishable key', async () => {
@@ -801,6 +804,38 @@ describe('product of a model call', () => {
       expect((await chat(token, { messages: hi }, { 'x-cofun-client': bad })).status, bad).toBe(200)
     }
     expect(products()).toEqual(Array(5).fill('unknown'))
+  })
+})
+
+// Standalone tests for the chat and question a spend is recorded with.
+describe('chat and question of a spend', () => {
+  const CHAT = '7f0c1a52-3b9e-4d2f-9a61-0c5e8b7d4f21'
+  const TURN = 'c2d4e6f8-1a3b-4c5d-8e7f-90a1b2c3d4e5'
+  const ids = () => db.rows('spends').map(({ chat_id, turn_id }) => ({ chat_id, turn_id }))
+
+  it('[@no-uc:contract] are the ids the extension names in its headers', async () => {
+    const res = await chat(token, { messages: hi }, { ...NOTICO, 'x-cofun-chat-id': CHAT, 'x-cofun-turn-id': TURN })
+    expect(res.status).toBe(200)
+    expect(ids()).toEqual([{ chat_id: CHAT, turn_id: TURN }])
+  })
+
+  it('[@no-uc:contract] are none when the request names none, and the call goes ahead', async () => {
+    // Builds released before the headers existed send neither.
+    expect((await chat(token)).status).toBe(200)
+    expect(ids()).toEqual([{ chat_id: null, turn_id: null }])
+  })
+
+  it('[@no-uc:contract] a header that is not a UUID is refused, before the model is called', async () => {
+    for (const [name, bad] of [
+      ['x-cofun-chat-id', 'chat-1'],
+      ['x-cofun-turn-id', ''],
+    ]) {
+      const res = await chat(token, { messages: hi }, { ...NOTICO, [name]: bad })
+      expect(res.status, name).toBe(400)
+      expect((await json(res)).error.message).toBe(`${name} must be a UUID`)
+    }
+    expect(ai.calls).toHaveLength(0)
+    expect(ids()).toEqual([])
   })
 })
 
