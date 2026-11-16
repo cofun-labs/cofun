@@ -97,7 +97,10 @@ export class FakeAiBinding implements AiBinding {
       }
     }
 
-    if (this.rawSse !== undefined) return new Response(this.rawSse).body
+    if (this.rawSse !== undefined)
+      return this.pause
+        ? sliced(new TextEncoder().encode(this.rawSse), undefined, this.pause)
+        : new Response(this.rawSse).body
 
     const events: unknown[] = reply.split(' ').map((w) => ({ choices: [{ index: 0, delta: { content: w + ' ' } }] }))
     events.push({ choices: [{ index: 0, delta: {}, finish_reason: 'stop' }] })
@@ -414,6 +417,8 @@ export class FakeBrowserRun implements BrowserBinding {
   failWith?: Error
   /** Runs while a page renders, for a test that moves its clock. */
   during?: () => void
+  /** When set, answers every render with this, as Browser Run does when it turns one away. */
+  reply?: () => Response
 
   render(url: string, markdown: string, browserMs = 4000): this {
     this.pages.set(url, { markdown, browserMs })
@@ -424,6 +429,7 @@ export class FakeBrowserRun implements BrowserBinding {
     this.calls.push({ action, options })
     this.during?.()
     if (this.failWith) throw this.failWith
+    if (this.reply) return this.reply()
     const page = typeof options.url === 'string' ? this.pages.get(options.url) : undefined
     const used = (ms: number): Record<string, string> => (this.reportsTime ? { 'x-browser-ms-used': String(ms) } : {})
     if (page === undefined)

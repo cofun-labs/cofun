@@ -131,7 +131,7 @@ describe('reading a web page the user gives', () => {
     expect(screen.getByText('Board')).toBeVisible()
   })
 
-  it('[UC-NOTICO-PANEL-003-S09] what the pages rendered for a question cost, failed ones too, is part of what the reply cost', async () => {
+  it('[UC-NOTICO-PANEL-003-S09] what the pages rendered for a question cost is part of what the reply cost, and a failed one costs nothing', async () => {
     const { browser, user } = await open()
     const app = 'https://app.example/board'
     browser.browserRun.render(app, '# Board\n\nThree cards.', 4000)
@@ -143,8 +143,8 @@ describe('reading a web page the user gives', () => {
     await ask(user, `What is on ${app}?`)
 
     expect(await screen.findByText('Three cards.')).toBeVisible()
-    // 4 s and 1.5 s of browser time at 25 micro-credits a ms: 0.1375 credits.
-    expect(screen.getByText('0.14 credits')).toBeVisible()
+    // 4 s of browser time at 25 micro-credits a ms: 0.1 credits. The render that failed costs nothing.
+    expect(screen.getByText('0.1 credits')).toBeVisible()
   })
 
   it('[UC-NOTICO-PANEL-003-S10] a user with no credits left for a render is told so, the question stops, and they can buy credits', async () => {
@@ -173,21 +173,29 @@ describe('reading a web page the user gives', () => {
     ['the worker turns reads away for coming too often', /Notico read too many web pages in a minute/],
     ['the site turns requests away for coming too often', /turned away Notico's requests for coming too often/],
     ['a 429 without a code turns reads away', /^Notico's service turned away its requests for coming too often\./],
+    [
+      'the browser that renders pages turns renders away',
+      /^Notico could not render the page: the browser that renders pages is busy\.$/,
+    ],
   ])('[UC-NOTICO-PANEL-003-S06] the question stops when %s, and nothing more is sent', async (what, told) => {
     const { browser, user } = await open()
+    const render = what.startsWith('the browser')
     if (what.startsWith('the worker turns')) browser.env.WEB_LIMIT = { limit: async () => ({ success: false }) }
+    else if (render) browser.browserRun.reply = () => Response.json({ success: false }, { status: 429 })
     else if (what.startsWith('a 429')) {
       const worker = browser.worker
       browser.worker = async (request) =>
         /\/v1\/web\//.test(request.url) ? new Response('Too Many Requests', { status: 429 }) : worker(request)
     } else browser.web.serve(ARTICLE, { status: 429 })
-    browser.ai.script.push(readCall(ARTICLE), readCall(ARTICLE), { reply: 'Never sent.' })
+    const call = render ? renderCall : readCall
+    browser.ai.script.push(call(ARTICLE), call(ARTICLE), { reply: 'Never sent.' })
 
     await ask(user, `Read ${ARTICLE}`)
 
     expect(await screen.findByText(told)).toBeVisible()
     expect(screen.queryByText('Never sent.')).toBeNull()
-    expect(worked(browser)).toEqual([ARTICLE])
+    if (render) expect(browser.browserRun.calls).toHaveLength(1)
+    else expect(worked(browser)).toEqual([ARTICLE])
   })
 
   const COST = " It may have cost the user credits: don't render this page again in this question."

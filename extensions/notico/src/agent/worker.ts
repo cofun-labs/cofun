@@ -134,8 +134,8 @@ const CodedError = z.object({ error: z.object({ code: looseText, message: looseT
 
 /**
  * What a render or a search cost, as the worker says in its answer: a page or results, or why there
- * are none (both were charged). A plain read is free, and a request turned away before rendering or
- * searching cost nothing: neither says.
+ * are none (one that failed costs nothing, and says so). A plain read is free, and a request turned
+ * away before rendering or searching cost nothing: neither says.
  */
 const Charged = z.object({ cost: z.object({ micro_credits: z.number().int().nonnegative() }).optional() })
 
@@ -188,55 +188,10 @@ function stopsReading(code: string, message: string): string | undefined {
   if (code === 'out_of_credits') return message
   if (code === 'site_busy')
     return "A site turned away Notico's requests for coming too often. Wait a while, then ask again."
+  // The browser that renders pages turned the render away: another would be turned away too.
+  if (code === 'render_busy') return `Notico could not render the page: ${message}.`
   return undefined
 }
-
-/**
- * Has the worker read the web page at `url` (see ToolContext.readWeb): fetched plainly, or rendered
- * in a browser when `render` is set. Resolves with the page; throws a WebError when the worker
- * could not read it, which stops the question only when the request was turned away (see
- * stopsReading), and is `charged` when a render was or may have been. A render calls `charged`
- * with what it cost in micro-credits, or with undefined when what it cost is not known. A question
- * stopped by the user throws what `fetch` threw.
- */
-export async function readWebPage(
-  { apiUrl, getToken, client }: Pick<AgentConfig, 'apiUrl' | 'getToken' | 'client'>,
-  url: string,
-  maxChars: number,
-  render: boolean,
-  signal?: AbortSignal,
-  charged?: (microCredits: number | undefined) => void,
-): Promise<WebPage> {
-  const token = await getToken()
-  if (!token) throw new Error(SIGN_IN)
-  let res: Response
-  let body: unknown
-  try {
-    res = await fetch(`${apiUrl.replace(/\/+$/, '')}/web/${render ? 'render' : 'read'}`, {
-      method: 'POST',
-      headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json', 'x-cofun-client': client },
-      body: JSON.stringify({ url, max_chars: maxChars }),
-      signal,
-    })
-    body = await res.json().catch(() => undefined)
-  } catch (err) {
-    // The worker may have rendered the page and charged it.
-    if (render) charged?.(undefined)
-    if (signal?.aborted) throw err
-    throw new WebError('read_failed', UNREACHABLE, { charged: render, cause: err })
-  }
-  const paid = render && chargedBy(res, body, charged)
-  if (!res.ok) {
-    const { code, message } = refusalOf(res, body)
-    throw new WebError(code, message, { stopsQuestion: stopsReading(code, message), charged: paid })
-  }
-  const page = WebPage.safeParse(body)
-  if (!page.success) throw new WebError('read_failed', UNREADABLE, { charged: paid, cause: page.error })
-  return page.data
-}
-
-/** The worker's answer to a search. */
-const WebSearch = z.object({ results: z.array(WebSearchResult) })
 
 /**
  * What the user is told when the worker's answer to a search stops the question, or undefined when
@@ -255,42 +210,102 @@ function stopsSearching(code: string, message: string): string | undefined {
 }
 
 /**
+ * Asks the worker's web route `path` (/web/read, /web/render, /web/search) with `payload`, and
+ * gives its answer when it succeeded, with whether it was or may have been charged. Throws a WebError coded `failed` when the worker could not be
+ * reached, or its refusal's code, which stops the question when `stops` says so. A render and a
+ * search are `paid`: `charged` is called with what one cost, as its answer says, or with undefined
+ * when that is not known, and the WebError is `charged` when it was or may have been. A question
+ * stopped by the user throws what `fetch` or reading the answer threw.
+ */
+async function askWeb(
+  { apiUrl, getToken, client }: Pick<AgentConfig, 'apiUrl' | 'getToken' | 'client'>,
+  path: string,
+  payload: unknown,
+  {
+    paid,
+    failed,
+    stops,
+  }: { paid: boolean; failed: string; stops: (code: string, message: string) => string | undefined },
+  signal?: AbortSignal,
+  charged?: (microCredits: number | undefined) => void,
+): Promise<{ body: unknown; paid: boolean }> {
+  const token = await getToken()
+  if (!token) throw new Error(SIGN_IN)
+  let res: Response
+  try {
+    res = await fetch(`${apiUrl.replace(/\/+$/, '')}/${path}`, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json', 'x-cofun-client': client },
+      body: JSON.stringify(payload),
+      signal,
+    })
+  } catch (err) {
+    // The worker may have rendered or searched, and charged it.
+    if (paid) charged?.(undefined)
+    if (signal?.aborted) throw err
+    throw new WebError(failed, UNREACHABLE, { charged: paid, cause: err })
+  }
+  let body: unknown
+  try {
+    body = await res.json()
+  } catch (err) {
+    // A Stop while the answer is read is a Stop, not an answer that could not be read.
+    if (signal?.aborted) {
+      if (paid) charged?.(undefined)
+      throw err
+    }
+  }
+  const cost = paid && chargedBy(res, body, charged)
+  if (!res.ok) {
+    const { code, message } = refusalOf(res, body)
+    throw new WebError(code, message, { stopsQuestion: stops(code, message), charged: cost })
+  }
+  return { body, paid: cost }
+}
+
+/**
+ * Has the worker read the web page at `url` (see ToolContext.readWeb): fetched plainly, or rendered
+ * in a browser when `render` is set. Resolves with the page; throws a WebError when the worker
+ * could not read it, which stops the question only when the request was turned away (see
+ * stopsReading). A render calls `charged` with what it cost in micro-credits, or with undefined
+ * when what it cost is not known (see askWeb). A question stopped by the user throws what `fetch`
+ * threw.
+ */
+export async function readWebPage(
+  config: Pick<AgentConfig, 'apiUrl' | 'getToken' | 'client'>,
+  url: string,
+  maxChars: number,
+  render: boolean,
+  signal?: AbortSignal,
+  charged?: (microCredits: number | undefined) => void,
+): Promise<WebPage> {
+  const how = { paid: render, failed: 'read_failed', stops: stopsReading }
+  const path = `web/${render ? 'render' : 'read'}`
+  const { body, paid } = await askWeb(config, path, { url, max_chars: maxChars }, how, signal, charged)
+  const page = WebPage.safeParse(body)
+  if (!page.success) throw new WebError('read_failed', UNREADABLE, { charged: paid, cause: page.error })
+  return page.data
+}
+
+/** The worker's answer to a search. */
+const WebSearch = z.object({ results: z.array(WebSearchResult) })
+
+/**
  * Has the worker search the web for `query` (see ToolContext.searchWeb), for at most `limit`
  * results. Throws a WebError when the worker could not, which stops the question only when the
- * search was turned away (see stopsSearching), and is `charged` when the search was or may have
- * been. Calls `charged` with what the search cost in micro-credits, or with undefined when what it
- * cost is not known. A failed search is not tried again. A question stopped by the user throws
- * what `fetch` threw.
+ * search was turned away (see stopsSearching). Calls `charged` with what the search cost in
+ * micro-credits, or with undefined when what it cost is not known (see askWeb). A failed search is
+ * not tried again. A question stopped by the user throws what `fetch` threw.
  */
 export async function searchWebFor(
-  { apiUrl, getToken, client }: Pick<AgentConfig, 'apiUrl' | 'getToken' | 'client'>,
+  config: Pick<AgentConfig, 'apiUrl' | 'getToken' | 'client'>,
   query: string,
   limit: number,
   signal?: AbortSignal,
   charged?: (microCredits: number | undefined) => void,
 ): Promise<WebSearchResult[]> {
-  const token = await getToken()
-  if (!token) throw new Error(SIGN_IN)
-  let res: Response
-  try {
-    res = await fetch(`${apiUrl.replace(/\/+$/, '')}/web/search`, {
-      method: 'POST',
-      headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json', 'x-cofun-client': client },
-      body: JSON.stringify({ query, limit }),
-      signal,
-    })
-  } catch (err) {
-    // The worker may have made the search and charged it.
-    charged?.(undefined)
-    if (signal?.aborted) throw err
-    throw new WebError('search_failed', UNREACHABLE, { charged: true, cause: err })
-  }
-  const body: unknown = await res.json().catch(() => undefined)
-  const paid = chargedBy(res, body, charged)
-  if (!res.ok) {
-    const { code, message } = refusalOf(res, body)
-    throw new WebError(code, message, { stopsQuestion: stopsSearching(code, message), charged: paid })
-  }
+  const how = { paid: true, failed: 'search_failed', stops: stopsSearching }
+  const { body, paid } = await askWeb(config, 'web/search', { query, limit }, how, signal, charged)
   const answer = WebSearch.safeParse(body)
   if (!answer.success) throw new WebError('search_failed', UNREADABLE, { charged: paid, cause: answer.error })
   return answer.data.results

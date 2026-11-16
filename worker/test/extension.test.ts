@@ -10,12 +10,15 @@ import {
   type ConfirmTool,
   type ToolSpec,
 } from '../../extensions/notico/src/agent'
+import { WebError } from '../../extensions/notico/src/agent/types'
+import { readWebPage, searchWebFor } from '../../extensions/notico/src/agent/worker'
 import { createApp, type Env } from '../src/app'
 import { priceOf } from '../src/pricing'
 import { FakeClerk } from './clerk'
 import {
   FAKE_COST,
   FakeAiBinding,
+  FakeBrowserRun,
   FakeD1Database,
   FakeExecutionContext,
   FakeUsageDataset,
@@ -32,6 +35,7 @@ const app = createApp({ now: () => clock, priceOf: (model) => priceOf(model === 
 let clerk: FakeClerk
 let env: Env
 let ai: FakeAiBinding
+let browser: FakeBrowserRun
 let token: string
 
 const realFetch = globalThis.fetch
@@ -52,6 +56,8 @@ beforeEach(async () => {
   clock = new Date('2026-11-08T12:00:00Z')
   env = {
     AI: (ai = new FakeAiBinding('你好 来自 worker')),
+    BROWSER: (browser = new FakeBrowserRun()),
+    AI_GATEWAY_ID: 'gw-test',
     DB: new FakeD1Database(),
     USAGE: new FakeUsageDataset(),
     CHAT_LIMIT: new FakeRateLimiter(),
@@ -343,11 +349,91 @@ describe('tokens per question', () => {
     const agent = makeAgent()
     ai.script = [{ toolCalls: [{ name: 'lookup_page', arguments: '{}' }] }, { reply: 'Hi.' }]
     expect((await ask(agent, 'Which page?')).used.cost).toEqual({ microCredits: 2 * FAKE_COST })
-    // The first call answers, the second breaks off: the worker charges it from estimated tokens.
+    // The first call answers, the second breaks off: it costs nothing, and the question has no cost.
     ai.script = [{ toolCalls: [{ name: 'lookup_page', arguments: '{}' }] }]
     ai.rawSse = 'data: {"choices":[{"delta":{"content":"abc"}}]}\n\n'
     const { result, used } = await ask(agent, 'And now?')
     expect(result.status).toBe('error')
     expect(used.cost).toBeUndefined()
+  })
+})
+
+describe('web reads and searches', () => {
+  const config = { apiUrl: 'https://nk.example.dev/v1/', getToken: async () => token, client: 'notico/1.2.3' }
+  /** What a read, a render, or a search gave the extension: its result or its WebError, and what it was told it cost. */
+  async function outcome<T>(call: (charged: (microCredits: number | undefined) => void) => Promise<T>) {
+    const costs: (number | undefined)[] = []
+    try {
+      return { result: await call((cost) => costs.push(cost)), costs }
+    } catch (err) {
+      if (!(err instanceof WebError)) throw err
+      return { error: { code: err.code, stops: !!err.stopsQuestion, charged: err.charged }, costs }
+    }
+  }
+  const render = (url: string) => outcome((charged) => readWebPage(config, url, 1000, true, undefined, charged))
+  const search = () => outcome((charged) => searchWebFor(config, 'tea', 5, undefined, charged))
+
+  it('[@no-uc:contract] a render and a search that succeed say what they cost; ones that fail cost nothing, and go to the model', async () => {
+    browser.render('https://app.example/board', '# Board', 4000)
+    browser.render('https://app.example/blank', ' ', 2000)
+    expect(await render('https://app.example/board')).toMatchObject({ result: { title: 'Board' }, costs: [100_000] })
+    for (const [url, code] of [
+      ['https://app.example/blank', 'no_text'],
+      ['https://app.example/broken', 'render_failed'],
+    ])
+      expect(await render(url)).toEqual({ error: { code, stops: false, charged: false }, costs: [0] })
+
+    ai.found.set('tea', [{ url: 'https://tea.example/', title: 'Tea', description: 'About tea.' }])
+    expect(await search()).toMatchObject({ result: [{ url: 'https://tea.example/' }], costs: [250_000] })
+    ai.searchReply = () => Response.json({ results: [] })
+    expect(await search()).toEqual({ error: { code: 'search_failed', stops: false, charged: false }, costs: [0] })
+  })
+
+  it('[@no-uc:contract] a render or a search the service turns away stops the question, and costs nothing', async () => {
+    browser.render('https://app.example/board', '# Board')
+    browser.reply = () => Response.json({ success: false }, { status: 429 })
+    expect(await render('https://app.example/board')).toEqual({
+      error: { code: 'render_busy', stops: true, charged: false },
+      costs: [0],
+    })
+    ai.searchReply = () => Response.json({ ok: false, error: { code: 'rate_limited' } }, { status: 429 })
+    expect(await search()).toEqual({ error: { code: 'search_busy', stops: true, charged: false }, costs: [0] })
+    ai.searchReply = () => Response.json({ ok: false, error: { code: 'web_search_payment_required' } }, { status: 402 })
+    expect(await search()).toEqual({ error: { code: 'search_unavailable', stops: true, charged: false }, costs: [0] })
+    // Turned away by the worker before anything was rendered or searched: no cost is said, none is counted.
+    env.RENDER_LIMIT = new FakeRateLimiter(0)
+    env.SEARCH_LIMIT = new FakeRateLimiter(0)
+    expect(await render('https://app.example/board')).toEqual({
+      error: { code: 'rate_limited', stops: true, charged: false },
+      costs: [],
+    })
+    expect(await search()).toEqual({ error: { code: 'rate_limited', stops: true, charged: false }, costs: [] })
+  })
+
+  it('[@no-uc:money] a Stop while the answer of a render is read throws the Stop, not an answer that could not be read', async () => {
+    browser.render('https://app.example/board', '# Board')
+    const controller = new AbortController()
+    const worker = globalThis.fetch
+    // As fetch does: once the request is aborted, reading its answer's body throws the abort.
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const res = await worker(input, init)
+      const body = new ReadableStream({
+        start(stream) {
+          init?.signal?.addEventListener('abort', () => stream.error(init.signal?.reason))
+          controller.abort()
+        },
+      })
+      return new Response(body, { status: res.status, headers: res.headers })
+    }) as typeof fetch
+    try {
+      const costs: (number | undefined)[] = []
+      const read = readWebPage(config, 'https://app.example/board', 1000, true, controller.signal, (cost) =>
+        costs.push(cost),
+      )
+      await expect(read).rejects.toMatchObject({ name: 'AbortError' })
+      expect(costs).toEqual([undefined])
+    } finally {
+      globalThis.fetch = worker
+    }
   })
 })

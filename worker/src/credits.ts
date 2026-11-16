@@ -199,7 +199,12 @@ interface ModelCall {
   estimated: boolean
 }
 
-/** A page rendered in Browser Run, however it ended, and the browser time it used, which is what it is charged by. */
+/**
+ * A page rendered in Browser Run, however it ended, and the browser time Browser Run reported for it,
+ * which is what it bills: 0 when it reported none. (Rows written before #494 hold the time the
+ * render took when Browser Run reported none, as migration 0006 says.) A render that gave a page is
+ * charged by that time; one that did not costs the user nothing.
+ */
 interface WebRender {
   kind: 'web_render'
   outcome: RenderOutcome
