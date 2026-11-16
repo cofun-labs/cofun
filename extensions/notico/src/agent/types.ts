@@ -184,7 +184,8 @@ export interface ToolContext {
  * that read it; `title` and `url`, the page's; `markdown`, whether `text` is the extension's own
  * Markdown (src/web/markdown.ts), escaped as such (asPageMarkdown), else as text; `chars`, how
  * long the whole text was, which is more than `text` when only the first part of it was kept.
- * `chats` are the saved sessions that name it, and `unnamedAt` is set while there are none.
+ * `chats` are the saved sessions that name it, and `unnamedAt`, the time it was kept, is set while
+ * there are none.
  */
 export const KeptResult = z.object({
   id: z.string(),
@@ -195,7 +196,6 @@ export const KeptResult = z.object({
   markdown: z.boolean(),
   text: z.string(),
   chars: z.number().int().nonnegative(),
-  createdAt: z.number(),
   unnamedAt: z.number().optional(),
 })
 export type KeptResult = z.infer<typeof KeptResult>

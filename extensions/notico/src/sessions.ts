@@ -178,8 +178,7 @@ export class SessionStore {
    */
   async keep(result: ResultToKeep): Promise<string> {
     const id = `r_${crypto.randomUUID().replace(/-/g, '').slice(0, 16)}`
-    const now = Date.now()
-    const record: KeptResult = { ...result, id, chats: [], createdAt: now, unnamedAt: now }
+    const record: KeptResult = { ...result, id, chats: [], unnamedAt: Date.now() }
     await this.run('readwrite', (_infos, _all, results) => {
       results.add(record)
       return () => undefined
