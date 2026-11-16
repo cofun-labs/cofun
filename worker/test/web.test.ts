@@ -412,6 +412,14 @@ describe('searching the web', () => {
     expect(results.map((r) => r.url)).toEqual(['https://tea.example/history'])
   })
 
+  it('[UC-COFUN-WEB-002-S01] an item that is not a result is left out, and the others still go back', async () => {
+    ai.searchReply = () =>
+      Response.json({ items: [{ url: 'https://tea.example/broken', title: null }, 'oops', TEA_RESULTS[0]] })
+    const { results }: { results: { url: string }[] } = await (await search('tea')).json()
+    expect(results.map((r) => r.url)).toEqual(['https://tea.example/history'])
+    expect(db.webSearches()).toMatchObject([{ outcome: 'ok', results: 1 }])
+  })
+
   it('[UC-COFUN-WEB-002-S01] a search that finds nothing gives no results, and is charged', async () => {
     const res = await search('nothing at all')
     expect(await res.json()).toEqual({ results: [], cost: { micro_credits: SEARCH_COST } })

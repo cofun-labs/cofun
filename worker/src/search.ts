@@ -60,10 +60,11 @@ export class SearchError extends Error {
   }
 }
 
-/** The answer of a search, as the docs give it; fields beyond these are not read. */
-const Answer = z.object({
-  items: z.array(z.object({ url: z.string(), title: z.string(), description: z.string() })),
-})
+/** The answer of a search, as the docs give it: its items are checked one by one (see Item). */
+const Answer = z.object({ items: z.array(z.unknown()) })
+
+/** One item of an answer, as the docs give it; fields beyond these are not read. */
+const Item = z.object({ url: z.string(), title: z.string(), description: z.string() })
 
 /** A refusal from AI Gateway: `{ ok: false, error: { code, … } }`. Only a code that is an identifier is read. */
 const Refusal = z.object({ error: z.object({ code: z.string().regex(/^[a-z_]{1,64}$/) }) })
@@ -107,8 +108,12 @@ export async function searchWeb(
       'bad answer',
       true,
     )
-  // A result with a longer address is left out, rather than handed on cut short or failing the rest.
-  const kept = answer.data.items.filter((item) => item.url.length <= URL_CHARS)
+  // An item that is not a result, or whose address is longer, is left out, rather than handed on
+  // cut short or failing the rest.
+  const kept = answer.data.items.flatMap((value) => {
+    const item = Item.safeParse(value)
+    return item.success && item.data.url.length <= URL_CHARS ? [item.data] : []
+  })
   return kept.slice(0, limit).map((item) => ({
     url: item.url,
     title: clip(item.title.trim(), TITLE_CHARS),
