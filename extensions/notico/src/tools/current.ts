@@ -8,6 +8,7 @@ import { clip } from '../notion/comments'
 import type { Selection } from '../selection'
 import { mayRead, readPage, readableSite, type TabPage, type TabWhere } from '../web/tab'
 import type { AskOnCard, ToolContext } from '../agent'
+import type { ToolMemory } from './memory'
 import { KEPT_CHARS, withText } from './results'
 import { LOOK, READ, asData, asPageText, count, noteTitle, noteUrl, on } from './shared'
 
@@ -94,13 +95,6 @@ export async function openWebTabs(): Promise<WebTab[]> {
 }
 
 /**
- * The tabs on other sites the user added to the conversation, in any of its questions, by Chrome's
- * id, as each showed its page then: with the current tab, the only tabs read_tab may read, whatever
- * page they show now. carryPages sets them.
- */
-let addedTabs = new Map<number, OpenPage>()
-
-/**
  * Names this run of the browser, from its start until it closes: chrome.storage.session keeps the
  * name, and Chrome clears it when the browser closes. Chrome gives tabs new ids after a restart, so
  * a tab a saved chat holds is the same tab only when it was added in this run (see `run` on the
@@ -128,30 +122,26 @@ export async function addedTabNow(page: Pick<OpenPage, 'tab' | 'run'>): Promise<
   return chrome.tabs.get(page.tab).catch(() => undefined)
 }
 
-/**
- * Whether the tools of the question being asked may use the page open in the current tab when a
- * call names none. False once the user took that page off the question: then such a call is refused,
- * so a page the user left out is never read in its place.
- */
-let openPageAttached = true
-
 const LEFT_OUT =
   'No page is attached to this question: the user took the page open in the current tab off it, so that page ' +
   "can't be used. Ask the user which page they mean, or search for it, and give it to this tool."
 
 /**
  * Refuses a call that names no page while the question carries none and the current tab shows a
- * Notion page (see `openPageAttached`). On another site there is no page to leave out: Notion tools
- * fail there as everywhere off Notion, and get_current_tab gives that site's tab.
+ * Notion page: once the user took the page open in the current tab off the question (see
+ * Carried.openPage, which `memory` holds), a page the user left out is never read in its place. On
+ * another site there is no page to leave out: Notion tools fail there as everywhere off Notion, and
+ * get_current_tab gives that site's tab.
  */
-export async function needsAttachedPage(): Promise<void> {
-  if (!openPageAttached && (await currentNotionPage())) throw new Error(LEFT_OUT)
+export async function needsAttachedPage(memory: ToolMemory): Promise<void> {
+  if (!memory.carried.openPage && (await currentNotionPage())) throw new Error(LEFT_OUT)
 }
 
 /**
- * Sets up the next question from what its composer showed: `page`, the Notion page open in the
- * current tab (if one is), whether the user took a page off the question, and the pages and tabs
- * they added to it by hand; `earlier`, the pages the conversation's earlier questions carried.
+ * Sets up the next question of the chat whose agent has `memory` from what its composer showed:
+ * `page`, the Notion page open in the current tab (if one is), whether the user took a page off the
+ * question, and the pages and tabs they added to it by hand; `earlier`, the pages the conversation's
+ * earlier questions carried.
  * Returns the note the model is told with the question: which page is open, that the user left it
  * out, or that the current tab is not a Notion page; then the pages and the tabs added, if any.
  * Until the next question, its tools follow the same choice: a question sent while a page is off
@@ -159,14 +149,18 @@ export async function needsAttachedPage(): Promise<void> {
  * page while it runs; and read_tab reads only the tabs this question or an earlier one carried.
  */
 export function carryPages(
+  memory: ToolMemory,
   page: OpenPage | undefined,
   removed: boolean,
   added: OpenPage[] = [],
   selections: Selection[] = [],
   earlier: OpenPage[] = [],
 ): string {
-  openPageAttached = !removed
-  addedTabs = new Map([...earlier, ...added].flatMap((p) => (p.web && p.tab !== undefined ? [[p.tab, p]] : [])))
+  // With the current tab, the tabs added are the only ones read_tab may read, whatever page they show now.
+  memory.carried = {
+    openPage: !removed,
+    tabs: new Map([...earlier, ...added].flatMap((p) => (p.web && p.tab !== undefined ? [[p.tab, p]] : []))),
+  }
   const tabs = added.filter((p) => p.web)
   // The open page is named once, in its own note, also when the user added it by hand.
   const open = page && !removed ? pageIdFromUrl(page.url) : undefined
@@ -288,8 +282,8 @@ export const getCurrentTab = defineTool({
     'does not say, such as saving a link to it.',
   describe: () => ({ verb: LOOK, what: 'the current tab' }),
   args: z.strictObject({}),
-  run: async () => {
-    await needsAttachedPage()
+  run: async (_args, _signal, { memory }) => {
+    await needsAttachedPage(memory)
     const tab = await currentTab()
     if (!tab) throw new Error('Could not tell which tab is the current one.')
     // As JSON, so the title and URL stay inside their quotes and on their line.
@@ -311,14 +305,14 @@ export const readCurrentTab = defineTool({
   describe: (_args, details) => on(READ, details?.name, 'the current tab'),
   args: z.strictObject({}),
   run: async (_args, _signal, context) => {
-    await needsAttachedPage()
+    await needsAttachedPage(context.memory)
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true })
     if (tab?.id === undefined || !tab.url) throw new Error('Could not tell which tab is the current one.')
     if (isNotion(tab.url)) throw new Error('The current tab is a Notion page: read it with read_page instead.')
     const site = readableSite(tab.url)
     if ('reason' in site) throw new Error(site.reason)
     const host = new URL(site.origin).host
-    await mayReadOrAsk(site.origin, context?.ask)
+    await mayReadOrAsk(site.origin, context.ask)
     // The user may have moved to another tab or page while they were asked: only the page they
     // asked about, in the current tab, is read.
     const [now] = await chrome.tabs.query({ active: true, currentWindow: true })
@@ -337,10 +331,10 @@ export const readCurrentTab = defineTool({
  * Throws, for the model, unless Notico may read the site with this origin: when it may not yet, the
  * call's card asks the user, whose Allow asks Chrome.
  */
-async function mayReadOrAsk(origin: string, ask: AskOnCard | undefined): Promise<void> {
+async function mayReadOrAsk(origin: string, ask: AskOnCard): Promise<void> {
   if (await mayRead(origin)) return
   const host = new URL(origin).host
-  const allowed = await ask?.({ text: `Allow Notico to read ${host}?`, access: origin })
+  const allowed = await ask({ text: `Allow Notico to read ${host}?`, access: origin })
   // Chrome granted it only if the user allowed it in its own prompt too.
   if (!allowed || !(await mayRead(origin)))
     throw new Error(
@@ -358,7 +352,7 @@ async function pageRead(
   page: TabPage,
   header: string,
   host: string,
-  context: ToolContext | undefined,
+  context: ToolContext,
   tool: string,
   notes: string[] = [],
 ) {
@@ -390,7 +384,7 @@ export const readTab = defineTool({
     tab: z.number().int().describe('The number of the tab, as the note gave it.'),
   }),
   run: async ({ tab }, _signal, context) => {
-    const added = addedTabs.get(tab)
+    const added = context.memory.carried.tabs.get(tab)
     if (!added)
       throw new Error(
         `The user did not add tab ${tab} to this chat, so it was not read: read_tab reads only the tabs the ` +
@@ -405,7 +399,7 @@ export const readTab = defineTool({
     if (isNotion(now.url)) throw new Error('The tab now shows a Notion page: read it with read_page instead.')
     const site = readableSite(now.url, WHERE)
     if ('reason' in site) throw new Error(site.reason)
-    await mayReadOrAsk(site.origin, context?.ask)
+    await mayReadOrAsk(site.origin, context.ask)
     const page = await readPage(tab, site.origin, KEPT_CHARS, WHERE)
     if ('reason' in page) throw new Error(page.reason)
     const host = new URL(site.origin).host

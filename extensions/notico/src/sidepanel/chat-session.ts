@@ -15,7 +15,7 @@ import { track } from '../analytics'
 import type { Mode } from '../mode'
 import { answering, type ModelSettings, type OwnSetup } from '../models'
 import { titleFor, type Session, type SessionStore } from '../sessions'
-import { currentNotionPage } from '../tools'
+import { currentNotionPage, type ToolMemory } from '../tools'
 
 /** A tool call as the panel shows it. */
 export interface ShownTool {
@@ -199,6 +199,14 @@ export class ChatSession {
   /** The user left the chat (see leave). */
   get left(): boolean {
     return this.lifetime.signal.aborted
+  }
+
+  /**
+   * What the chat's tools remember of its conversation, its agent's own: the composer sets in it what
+   * each question carries (carryPages), and the page picker the workspaces it searched.
+   */
+  get memory(): ToolMemory {
+    return this.agent.memory
   }
 
   /** The conversation so far, as the agent holds it. Read it between questions: while one runs, it is still changing. */

@@ -125,6 +125,7 @@ export function useComposer({
     },
     onPick: addPage,
     onClose: closePicker,
+    memory: chat.memory,
   })
 
   /** Closes the picker: what was typed after an `@` stays as text. */
@@ -211,7 +212,7 @@ export function useComposer({
     // A page is off while the composer shows none for it: also on another site, until another page shows.
     // The tabs the chat's earlier questions carried stay readable for this one.
     const earlier = chat.getSnapshot().messages.flatMap((m) => (m.role === 'user' ? (m.pages ?? []) : []))
-    const context = carryPages(tabPage, removed !== undefined && !openPage, chosen, selections, earlier)
+    const context = carryPages(chat.memory, tabPage, removed !== undefined && !openPage, chosen, selections, earlier)
     setSelections([])
     setInput('')
     resetPicker()

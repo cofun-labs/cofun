@@ -13,7 +13,7 @@ import {
 } from '../models'
 import { countNotionRequests } from '../notion/tab'
 import { SessionStore, type Session } from '../sessions'
-import { DATA_LINE, forgetReads, pagesIn, SELECTION_END, TOOLS } from '../tools'
+import { DATA_LINE, pagesIn, SELECTION_END, TOOLS } from '../tools'
 import { ChatSession, type Question } from './chat-session'
 
 const API_URL = import.meta.env.VITE_API_URL as string
@@ -375,8 +375,6 @@ export class Panel {
     was.leave()
     this.leaving.add(was)
     void was.settled().then(() => this.leaving.delete(was))
-    // Another conversation: the agent must read pages again before it edits them.
-    forgetReads()
     // A failed save's message belongs to the chat it was for.
     this.update({ chat: this.newSession(session), saveFailure: undefined })
   }

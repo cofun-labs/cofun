@@ -52,11 +52,11 @@ export interface ToolDefinition<S extends ArgsSchema> extends Omit<ToolSpec, 'pa
    * Runs the tool with the arguments as the schema gives them. The details say which pages and
    * databases it read and changed (searching and listing pages read none; a change counts the pages
    * it changed or made), and the name its card shows. `context` is what the agent gives a running
-   * call (see ToolContext); without it, nobody can be asked.
+   * call (see ToolContext).
    */
-  run: (args: z.output<S>, signal?: AbortSignal, context?: ToolContext) => Promise<string | ToolResult>
-  /** What a call does, in words (see `ToolSpec.preview`), from the same arguments as `run` gets. */
-  preview?: (args: z.output<S>) => string | undefined | Promise<string | undefined>
+  run: (args: z.output<S>, signal: AbortSignal | undefined, context: ToolContext) => Promise<string | ToolResult>
+  /** What a call does, in words (see `ToolSpec.preview`), from the same arguments and context as `run` gets. */
+  preview?: (args: z.output<S>, context: ToolContext) => string | undefined | Promise<string | undefined>
 }
 
 /**
@@ -82,10 +82,10 @@ export function defineTool<S extends ArgsSchema>({ args, run, preview, describe,
       return run(parsed.args, signal, context)
     },
     ...(preview && {
-      preview: (given: unknown) => {
+      preview: (given: unknown, context) => {
         // Arguments that don't parse have no preview: the run refuses them, and says why.
         const parsed = parseArgs(args, given)
-        return parsed.ok ? preview(parsed.args) : undefined
+        return parsed.ok ? preview(parsed.args, context) : undefined
       },
     }),
   }

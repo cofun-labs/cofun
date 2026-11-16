@@ -1,6 +1,7 @@
 // The read_page tool (extensions/notico/src/tools/read.ts) against a fake Notion tab, with pages built in the
 // shape Notion's loadPageChunk returns them (see fixtures/notion/ for recorded examples).
 import { afterEach, describe, expect, it } from 'vitest'
+import { ToolChat } from './tool-chat'
 import { NESTED_MAX } from '../src/notion/api'
 import { inline } from '../src/notion/blocks'
 import { blockRefs, codeSpan, splitIntoParts } from '../src/notion/markdown'
@@ -9,6 +10,9 @@ import { readPage } from '../src/tools/read'
 import { DATA_LINE, PART_CHARS } from '../src/tools/shared'
 import { editPage } from '../src/tools/write'
 import { FakeNotionTab, PAGE, PAGE_URL, SPACE, USER, fixture, restoreGlobals, resultText } from './notion-tab'
+
+/** The chat the tools run in. */
+const chat = new ToolChat()
 
 afterEach(restoreGlobals)
 
@@ -79,7 +83,7 @@ function openPage(...pages: unknown[]): FakeNotionTab {
 }
 
 async function read(args: Record<string, unknown> = {}): Promise<string> {
-  return resultText(await readPage.run(args))
+  return resultText(await chat.run(readPage, args))
 }
 
 /** The page content of a read_page result, without its header. */
@@ -236,7 +240,7 @@ describe('UC-NOTICO-NOTION-001 read a page', () => {
     )
     // So edit_page can't change them from this page; the copy itself it can delete.
     const edit = (block: string) =>
-      editPage.run({ page: RECORDED.syncedCopy, edits: [{ action: 'replace', block, markdown: 'Changed' }] })
+      chat.run(editPage, { page: RECORDED.syncedCopy, edits: [{ action: 'replace', block, markdown: 'Changed' }] })
     await expect(edit('^00000112')).rejects.toThrow('^00000112 is not a block of the page as you last read it.')
     await expect(edit(hex('f1f1f1f1-0000-4000-8000-000000000112'))).rejects.toThrow('is not a block of the page')
   })
@@ -988,14 +992,14 @@ describe('lookups of mentioned people and pages', () => {
 })
 
 describe('a question sent while the user took a page off it', () => {
-  afterEach(() => void carryPages(undefined, false))
+  afterEach(() => void carryPages(chat.memory, undefined, false))
 
   it('[@no-uc:privacy] never reads the open page, even one the user goes back to from another site', async () => {
     // Sent from another site while the page was off; the user then goes back to it.
-    carryPages(undefined, true)
+    carryPages(chat.memory, undefined, true)
     const tab = new FakeNotionTab(PAGE_URL).install()
 
-    await expect(readPage.run({})).rejects.toThrow(/No page is attached to this question/)
+    await expect(chat.run(readPage, {})).rejects.toThrow(/No page is attached to this question/)
     expect(tab.sent).toEqual([])
   })
 })

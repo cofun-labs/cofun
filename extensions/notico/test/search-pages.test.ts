@@ -1,12 +1,15 @@
 // The search_pages tool (extensions/notico/src/tools/find.ts) against a fake Notion tab answering with search
 // results in the shape Notion's /api/v3/search returns (see the #64 spike).
 import { afterEach, describe, expect, it } from 'vitest'
+import { ToolChat } from './tool-chat'
 import { LIMITED_STOP, NO_ACCESS } from '../src/notion/api'
 import { searchPages } from '../src/tools/find'
-import { forgetReads } from '../src/tools/memory'
 import { readPage } from '../src/tools/read'
 import { FakeNotionTab, PAGE, PAGE_URL, SPACE, notionError, restoreGlobals, resultText } from './notion-tab'
 import { DATA_LINE } from '../src/tools/shared'
+
+/** The chat the tools run in; a test that needs another conversation starts a new one. */
+let chat = new ToolChat()
 
 afterEach(restoreGlobals)
 
@@ -59,7 +62,7 @@ function open(): FakeNotionTab {
   return new FakeNotionTab(PAGE_URL).respond('syncRecordValuesMain', 200, OPEN_PAGE).install()
 }
 
-const search = async (args: Record<string, unknown>) => resultText(await searchPages.run(args))
+const search = async (args: Record<string, unknown>) => resultText(await chat.run(searchPages, args))
 
 describe('UC-NOTICO-NOTION-004 find and read other pages', () => {
   it('[UC-NOTICO-NOTION-004-S01] finds pages with their titles, where they are, the matching text, and their ids', async () => {
@@ -118,7 +121,7 @@ describe('UC-NOTICO-NOTION-004 find and read other pages', () => {
         },
       },
     })
-    const page = resultText(await readPage.run({ page: `^${ref}` }))
+    const page = resultText(await chat.run(readPage, { page: `^${ref}` }))
     expect(page.split('\n')[1]).toBe(`Page: Launch plan ^${hex(FOUND)}`)
     expect(page).toContain('Ship on Friday. ^000000aa')
   })
@@ -327,7 +330,9 @@ describe('search_pages, tags and trash', () => {
 })
 
 describe('search_pages, the open page’s workspace', () => {
-  afterEach(forgetReads)
+  afterEach(() => {
+    chat = new ToolChat()
+  })
 
   /** A tab showing `id` as `user`, whose workspace lookup answers with `block` (none: no access). */
   function openAs(id: string, user: string, block?: Record<string, unknown>): FakeNotionTab {
@@ -356,7 +361,9 @@ describe('search_pages, the open page’s workspace', () => {
 })
 
 describe('search_pages, the count of results', () => {
-  afterEach(forgetReads)
+  afterEach(() => {
+    chat = new ToolChat()
+  })
 
   const here = 'f9f9f9f9-0000-4000-8000-000000000001'
   const gone = 'f9f9f9f9-0000-4000-8000-000000000002'
