@@ -116,7 +116,7 @@ describe('the credit history', () => {
     expect(screen.queryByRole('button', { name: /earlier|more/i })).not.toBeInTheDocument()
   })
 
-  it('[UC-NOTICO-CHAT-003-S11] shows the credits used longer ago than 30 days nowhere', async () => {
+  it('[UC-NOTICO-CHAT-003-S04] shows the credits used longer ago than 30 days nowhere', async () => {
     const { browser, user } = await openPanel()
     await ask(browser, user, 'First', 30)
     // 31 days later, on the user's clock.

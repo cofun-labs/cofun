@@ -92,7 +92,7 @@ describe('reading a long page in parts', () => {
     expect(first).not.toContain('secret')
   })
 
-  it('[UC-NOTICO-PANEL-005-S02] another part is read from the device, marked as data from the page', async () => {
+  it('[UC-NOTICO-PANEL-005-S01] another part is read from the device, marked as data from the page', async () => {
     const { browser, user } = await open()
     const id = await readGuide(browser, user)
 
@@ -116,7 +116,7 @@ describe('reading a long page in parts', () => {
     expect(screen.getAllByText('Brewing guide')).toHaveLength(2)
   })
 
-  it('[UC-NOTICO-PANEL-005-S02] a part past the last is refused, with how many there are', async () => {
+  it('[UC-NOTICO-PANEL-005-S01] a part past the last is refused, with how many there are', async () => {
     const { browser, user } = await open()
     const id = await readGuide(browser, user)
 

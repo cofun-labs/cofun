@@ -299,7 +299,7 @@ describe('UC-COFUN-ADMIN-002 See granted and spent credits as a whole', () => {
     ])
   })
 
-  it('[UC-COFUN-ADMIN-002-S13] an operator sees the web searches, the failed ones, and what they cost', async () => {
+  it('[UC-COFUN-ADMIN-002-S12] an operator sees the web searches, the failed ones, and what they cost', async () => {
     env.AI_GATEWAY_ID = 'gw-test'
     ai.found.set('tea', [{ url: 'https://tea.example/', title: 'Tea', description: 'About tea.' }])
     const searchAs = async (name: string, product: Record<string, string> = NOTICO) => {

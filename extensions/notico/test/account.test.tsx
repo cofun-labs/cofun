@@ -242,7 +242,7 @@ describe('the Credits page', () => {
 })
 
 describe('the Settings page', () => {
-  it('[UC-NOTICO-CHAT-003-S16] shows the model providers and the account, with Sign out, and nothing about credits', async () => {
+  it('[UC-NOTICO-CHAT-003-S12] shows the model providers and the account, with Sign out, and nothing about credits', async () => {
     const { user } = await openPanel()
 
     await openSettings(user)

@@ -193,7 +193,7 @@ describe('UC-NOTICO-NOTION-009 read and add comments', () => {
     )
   })
 
-  it('[UC-NOTICO-NOTION-009-S04] adds a comment on the page itself, without reading it first', async () => {
+  it('[UC-NOTICO-NOTION-009-S03] adds a comment on the page itself, without reading it first', async () => {
     const ws = workspace()
     open(ws)
     const added = await chat.run(addComment, { page: hex(PAGE), text: 'Nice page' })
@@ -365,7 +365,7 @@ describe('add_comment', () => {
     expect(tab.sent).toEqual([])
   })
 
-  it("[UC-NOTICO-NOTION-009-S04] takes the page's own short reference as the page", async () => {
+  it("[UC-NOTICO-NOTION-009-S03] takes the page's own short reference as the page", async () => {
     const ws = workspace()
     open(ws)
     await add({ block: `^${hex(PAGE).slice(-8)}`, text: 'Hi' })

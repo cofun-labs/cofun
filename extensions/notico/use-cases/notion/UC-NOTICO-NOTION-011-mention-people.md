@@ -6,7 +6,7 @@ A signed-in user asks the AI to write something that names a workspace member, s
 
 Key constraint:
 
-- A mention always names exactly one member. A name that matches no member, or more than one, is refused before anything is written, and the AI is told which members it could mean.
+- A mention always names exactly one member. A name that matches no member, or more than one, is refused before anything is written: for no match the AI is told the members with a similar name, and for more than one that the name is ambiguous.
 
 ## Scenarios
 
@@ -14,9 +14,8 @@ Key constraint:
 
 | ID | Priority | Status | Scenario |
 | --- | --- | --- | --- |
-| UC-NOTICO-NOTION-011-S01 | P0 | ✅ | Given a workspace with a member named Kim Lee; when the AI writes a line on a page that mentions Kim Lee; then the page has a mention of that member, and reading the page shows it the way the AI wrote it. |
+| UC-NOTICO-NOTION-011-S01 | P0 | ✅ | Given a workspace with a member named Kim Lee; when the AI writes a line on a page, creates a page, or adds a comment that mentions Kim Lee; then it mentions that member, and reading the page shows the mention the way the AI wrote it. |
 | UC-NOTICO-NOTION-011-S02 | P1 | ✅ | Given a page with a mention of a member; when the AI changes other text in that block; then the block still mentions that member. |
-| UC-NOTICO-NOTION-011-S03 | P1 | ✅ | Given a workspace with a member named Kim Lee; when the AI creates a page or adds a comment that mentions Kim Lee; then the new page or comment mentions that member. |
 | UC-NOTICO-NOTION-011-S04 | P0 | ✅ | Given no member with the name the AI wrote; when it writes the mention; then nothing is written, and the AI is told the members with a similar name. |
 | UC-NOTICO-NOTION-011-S05 | P0 | ✅ | Given two members with the same name; when the AI mentions that name; then nothing is written, and the AI is told the name is ambiguous. |
 

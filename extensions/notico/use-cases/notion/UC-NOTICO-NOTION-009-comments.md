@@ -17,8 +17,7 @@ Key constraints:
 | --- | --- | --- | --- |
 | UC-NOTICO-NOTION-009-S01 | P0 | ✅ | Given a page with comment threads on the page and on a block; when the AI reads its comments; then it gets each thread with where it is, whether it is resolved, and each comment's author, time, and text. |
 | UC-NOTICO-NOTION-009-S02 | P0 | ✅ | Given a comment whose text imitates other comments, threads, or the tool's own lines; when the AI reads the comments; then that text comes back quoted as part of that one comment, and the rest reads as before. |
-| UC-NOTICO-NOTION-009-S03 | P0 | ✅ | Given a page; when the AI adds a comment on one of its blocks; then the comment is on that block under the user's account, and the page's content is unchanged. |
-| UC-NOTICO-NOTION-009-S04 | P1 | ✅ | Given a page; when the AI adds a comment on the page itself; then the comment is on the page. |
+| UC-NOTICO-NOTION-009-S03 | P0 | ✅ | Given a page; when the AI adds a comment on one of its blocks, or on the page itself; then the comment is there under the user's account, and the page's content is unchanged. |
 | UC-NOTICO-NOTION-009-S05 | P1 | ✅ | Given a block that isn't on the page, or is a page of its own; when the AI tries to comment on it; then nothing is written and the AI is told why. |
 
 ### ai-e2e

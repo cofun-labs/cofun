@@ -60,7 +60,7 @@ describe('the start of a chat', () => {
     expect(browser.tab.sent).toEqual([])
   })
 
-  it('[UC-NOTICO-CHAT-001-S21] on a database, the suggestions are about its entries, adding one included', async () => {
+  it('[UC-NOTICO-CHAT-001-S20] on a database, the suggestions are about its entries, adding one included', async () => {
     const { browser } = await openPanel(databaseTab())
 
     expect(await screen.findByText('What should we do with this database?')).toBeVisible()
@@ -74,7 +74,7 @@ describe('the start of a chat', () => {
     expect(browser.tab.sent).toEqual([])
   })
 
-  it('[UC-NOTICO-CHAT-001-S22] on another site, the suggestions are about the workspace, with a line saying to open a page', async () => {
+  it('[UC-NOTICO-CHAT-001-S20] on another site, the suggestions are about the workspace, with a line saying to open a page', async () => {
     await openPanel(otherSiteTab())
 
     expect(await screen.findByText('What are you looking for?')).toBeVisible()
@@ -84,7 +84,7 @@ describe('the start of a chat', () => {
     ).toBeVisible()
   })
 
-  it('[UC-NOTICO-CHAT-001-S23] in Read only, no suggestion asks for a change, on a page or a database', async () => {
+  it('[UC-NOTICO-CHAT-001-S20] in Read only, no suggestion asks for a change, on a page or a database', async () => {
     const { browser, user } = await openPanel()
     await screen.findByText('What should we do with this page?')
     await user.click(screen.getByRole('button', { name: 'Mode: Edit' }))
@@ -107,7 +107,7 @@ describe('the start of a chat', () => {
     ])
   })
 
-  it('[UC-NOTICO-CHAT-001-S24] taking the page off the question switches to the workspace suggestions, and adding it back to the page ones', async () => {
+  it('[UC-NOTICO-CHAT-001-S20] taking the page off the question switches to the workspace suggestions, and adding it back to the page ones', async () => {
     const tab = pageTab()
     tab.otherTabs = [{ url: ROADMAP_URL, title: 'Roadmap | Notion' }]
     const { user } = await openPanel(tab)

@@ -71,7 +71,7 @@ describe('searching the web', () => {
     expect(browser.web.asked).toEqual([])
   })
 
-  it("[UC-NOTICO-PANEL-004-S02] the model can read a result's page by its address", async () => {
+  it("[UC-NOTICO-PANEL-004-S01] the model can read a result's page by its address", async () => {
     const { browser, user } = await open()
     browser.ai.found.set(QUERY, RESULTS)
     browser.web.serve('https://tea.example/oolong', '<main><p>Oolong is grown in the Wuyi Mountains.</p></main>')

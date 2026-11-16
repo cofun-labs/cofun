@@ -458,7 +458,7 @@ describe('update_pages details', () => {
     expect(result).not.toContain('held')
   })
 
-  it('[UC-NOTICO-NOTION-008-S14] writes a changed value as given, and says what it lost that the Markdown does not show', async () => {
+  it('[UC-NOTICO-NOTION-008-S13] writes a changed value as given, and says what it lost that the Markdown does not show', async () => {
     const ws = mentionable()
     open(ws)
     ws.edit(row(1), { properties: { title: [['Write docs']], 'g:g': HIDDEN } })
@@ -500,7 +500,7 @@ describe('update_pages details', () => {
     expect(prop(ws, 1, 'g:g')).toEqual(notes)
   })
 
-  it('[UC-NOTICO-NOTION-008-S15] stores a text value of several lines written back as query_database shows it as it was', async () => {
+  it('[UC-NOTICO-NOTION-008-S11] stores a text value of several lines written back as query_database shows it as it was', async () => {
     const ws = mentionable()
     const tab = open(ws, `https://app.notion.com/${hex(DB)}`)
     const notes = [['First line\nSecond '], ['bold\nlines', [['b']]], ['\n\nand a last one']]

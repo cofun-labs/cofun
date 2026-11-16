@@ -16,7 +16,7 @@ Key constraint:
 | --- | --- | --- | --- |
 | UC-NOTICO-NOTION-003-S01 | P0 | ✅ | Given text selected across two blocks, or blocks selected as blocks; when the AI asks for the selection; then it gets the selected text and those blocks, each with its reference. |
 | UC-NOTICO-NOTION-003-S02 | P1 | ✅ | Given nothing selected; when the AI asks for the selection; then it is told nothing is selected. |
-| UC-NOTICO-NOTION-003-S03 | P0 | ✅ | Given a selected block; when the AI rewrites it and the user agrees; then only that block changes, and blocks outside the selection can't be changed without a read. |
+| UC-NOTICO-NOTION-003-S03 | P0 | ✅ | Given a selected block; when the AI rewrites it; then only that block changes, and blocks outside the selection can't be changed without a read. |
 | UC-NOTICO-NOTION-003-S05 | P2 | ✅ | Given blocks selected as blocks that reach the first or last block Notion has drawn of a page that goes on past it; when the AI asks for the selection; then it gets those blocks and is told the selection may go on. |
 | UC-NOTICO-NOTION-003-S06 | P2 | ✅ | Given text selected from the page title into its content, or from the page into a side peek; when the AI asks for the selection; then it gets the selected text and the open page's blocks it covers. |
 
@@ -24,5 +24,4 @@ Key constraint:
 
 | ID | Priority | Status | Scenario |
 | --- | --- | --- | --- |
-| UC-NOTICO-NOTION-003-S04 | P0 | ✅ | Given a paragraph selected in a Notion page; when the user asks in the side panel to rewrite it and agrees; then only that paragraph changes. |
-| UC-NOTICO-NOTION-003-S07 | P1 | ✅ | Given blocks selected as blocks in a Notion page; when the user asks in the side panel to rewrite them and agrees; then only those blocks change. |
+| UC-NOTICO-NOTION-003-S04 | P0 | ✅ | Given a paragraph, or blocks selected as blocks, in a Notion page; when the user asks in the side panel to rewrite the selection; then only what was selected changes. |

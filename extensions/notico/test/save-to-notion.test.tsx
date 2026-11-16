@@ -223,7 +223,7 @@ describe('UC-NOTICO-SESSION-002 save a chat or a reply to Notion', () => {
     expect(tab.sent).toEqual([])
   })
 
-  it('[UC-NOTICO-SESSION-002-S04] a database open in the tab is not saved into, and the user is told why', async () => {
+  it('[UC-NOTICO-SESSION-002-S03] a database open in the tab is not saved into, and the user is told why', async () => {
     const { tab, workspace } = workspaceTab(`https://app.notion.com/p/Tasks-${hex(TASKS)}`)
     const { browser, user } = await openPanel(tab)
     browser.ai.script.push({ reply: 'An answer.' })

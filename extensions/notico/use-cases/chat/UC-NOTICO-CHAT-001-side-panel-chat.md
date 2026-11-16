@@ -23,15 +23,10 @@ Key constraints:
 | UC-NOTICO-CHAT-001-S12 | P1 | ✅ | Given a user whose credits run out after the agent used a tool; when the agent asks the model again; then the question ends with a message saying when the next free credits arrive, and no model is called. |
 | UC-NOTICO-CHAT-001-S03 | P0 | ✅ | Given a signed-in user with the side panel open on Notion; when they send a message; then the message appears and the reply streams in below it. |
 | UC-NOTICO-CHAT-001-S08 | P2 | ✅ | Given a session with no question yet; when the user picks a suggestion; then it is in the message box, not sent, and the user can change it before sending; one that ends in "…" leaves the cursor where the "…" was. |
-| UC-NOTICO-CHAT-001-S20 | P1 | ✅ | Given a new chat with a Notion page open in Edit; when the panel shows it; then the suggestions name the page by its title and include ones that change it, and neither the AI nor Notion is asked anything. |
-| UC-NOTICO-CHAT-001-S21 | P1 | ✅ | Given a new chat with a Notion database open; when the panel shows it; then the suggestions are about its entries, including adding one. |
-| UC-NOTICO-CHAT-001-S22 | P1 | ✅ | Given a new chat on a tab that is not a Notion page; when the panel shows it; then the suggestions are about the whole workspace, with a line saying to open a Notion page to work on one. |
-| UC-NOTICO-CHAT-001-S23 | P1 | ✅ | Given a new chat in Read only on a page or a database; when the panel shows it; then no suggestion asks for a change. |
-| UC-NOTICO-CHAT-001-S24 | P1 | ✅ | Given a new chat on a Notion page; when the user takes the page off the question; then the suggestions are about the whole workspace, and when they add it back, about the page again. |
-| UC-NOTICO-CHAT-001-S16 | P1 | ✅ | Given a reply written in Markdown; when it is shown in the side panel; then it reads formatted (headings, emphasis, lists, tables, code, quotes, links), and the user's question is shown as typed. |
+| UC-NOTICO-CHAT-001-S20 | P1 | ✅ | Given a new chat; when the panel shows it; then its suggestions fit what the question goes with: a page by its title, with ones that change it in Edit and none in Read only; a database, about its entries; or, with no page (another site, or the page taken off), the whole workspace, with a line saying to open a Notion page to work on one; and neither the AI nor Notion is asked anything. |
+| UC-NOTICO-CHAT-001-S16 | P1 | ✅ | Given a reply written in Markdown; when it is shown in the side panel; then it reads formatted (headings, emphasis, lists, tables, code, quotes, links), the user's question is shown as typed, and the reply's Copy button puts its Markdown on the clipboard, without its tool calls or what it read and changed. |
 | UC-NOTICO-CHAT-001-S17 | P0 | ✅ | Given a reply with HTML and non-web links in it; when it is shown; then the HTML is shown as text, and only its web links can be followed. |
 | UC-NOTICO-CHAT-001-S18 | P0 | ✅ | Given a reply with an image in it; when it is shown; then the image is not loaded, and its description links to it instead. |
-| UC-NOTICO-CHAT-001-S19 | P1 | ✅ | Given a finished reply; when the user presses its Copy button; then the reply's Markdown is on the clipboard, without its tool calls or what it read and changed, and the button says it was copied. |
 
 ### ai-e2e
 
