@@ -46,7 +46,7 @@ Using the hosted model, rendering a web page, and searching the web cost credits
 
 ### Web pages
 
-An extension can have the worker read a web page by its address: the worker fetches it with no cookie or credential and turns it into text, or, for a page drawn by scripts, has Cloudflare's Browser Run render it. It reads only public addresses, never our own domain or a local network, at every redirect. An extension can also have the worker search the web, through the same AI Gateway as the model, with one search provider fixed in code. Which address to read or what to search is the extension's choice (Notico: the model's), since the worker does not see the conversation. A plain read is free; renders and searches are charged ([Credits](#credits)). The worker keeps and logs neither addresses, pages, queries, nor results.
+An extension can have the worker read a public web page by its address, plainly or, for a page drawn by scripts, rendered in Cloudflare's Browser Run, and search the web through the same AI Gateway as the model, with one search provider fixed in code. Which address to read or what to search is the extension's choice (Notico: the model's), since the worker does not see the conversation. A plain read is free; renders and searches are charged ([Credits](#credits)). What the worker refuses to read, and what it never keeps, is in [security.md](security.md#sign-in-and-the-worker).
 
 ## Notico: the extension for Notion
 
@@ -81,7 +81,7 @@ The user can save a reply, or the whole chat, as a new Notion page. It is the us
 
 ### Writes without approval
 
-The agent changes Notion without asking first; moving pages to the trash is the one thing it asks for each time. Each change shows on its tool card, and Notion's page history can undo edits. The trade-off: text the user doesn't control can carry an instruction that makes the agent write as the user without anyone being asked. Read only is the switch for a user who does not accept this (it stops changes to Notion only, not what the web tools send out); the rest is in [security.md](security.md#accepted-writes-without-approval).
+The agent changes Notion without asking first, except to move pages to the trash; Read only is the switch for a user who does not want that. The trade-off is in [security.md](security.md#accepted-writes-without-approval).
 
 ### Usage data
 

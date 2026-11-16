@@ -76,18 +76,17 @@ Chats, the Clerk client token, and the user's model keys are kept in the Chrome 
 
 ### Accepted: a session token that names no origin
 
-A token with no `azp` passes the session check, though not an admin route's. Clerk hands a side panel that just loaded such a token, for the panel's first minute. Refusing it would gain little: a token with no `azp` comes only from Clerk's Frontend API, and so does one naming any origin, and outside a browser, whoever holds the user's Clerk client cookie can set any `Origin` and get either. A page in the browser cannot reach the Frontend API's answer at all, as long as two things stay true:
+A token with no `azp` passes the session check, though not an admin route's, because Clerk hands one to a side panel that just loaded. Refusing it would gain little: such a token, like one naming any origin, comes only from Clerk's Frontend API, which anyone holding the user's Clerk client cookie can ask outside a browser. A page in the browser cannot reach the Frontend API's answer at all, as long as two things stay true:
 
 - **Clerk's Frontend API refuses an origin the instance does not allow** (another website, an extension it does not list, `null`). This is the Clerk instance's configuration, outside this repository.
 - **No other host under `cofun.cc` serves code a browser runs** (rule 9 below), since every `cofun.cc` origin is one the Frontend API answers.
 
 ## Secrets and the repository
 
-- **What is committed is public by design** ([AGENTS.md](../AGENTS.md), "Public repository"). The worker's secrets live on Cloudflare; local ones are git-ignored.
-- **`main` changes only through pull requests** with CI passing, through a merge queue. Every action is pinned to a commit, and GitHub's settings are kept as code.
-- **Deploys hold no Cloudflare credential on GitHub**: Cloudflare pulls the repository and deploys on merge. The Release workflow uses no secret and ends in a GitHub Release, whose zip a person uploads to the store after checking its hash against the one the workflow recorded ([release.md](release.md)).
-- **No workflow that reads untrusted text can push.** The one secret on GitHub is Claude's token, held by the review workflow alone, which runs on `pull_request`, so a fork's pull request gets no secret, and may only read the diff and comment.
-- **The sign-in's domain serves nothing else a browser runs.** The public media bucket under `cofun.cc` holds images and videos only.
+- **Nothing secret is committed** ([AGENTS.md](../AGENTS.md), "Public repository"): the worker's secrets live on Cloudflare.
+- **`main` changes only through pull requests and a merge queue**, with every action pinned to a commit and GitHub's settings kept as code.
+- **GitHub holds no deploy or store credential.** Cloudflare pulls the repository and deploys on merge; a person uploads the release zip to the store after checking its hash ([release.md](release.md)). The one secret on GitHub is Claude's token, held by the review workflow, which a fork's pull request can't reach and which can only comment.
+- **The public media bucket under `cofun.cc` holds images and videos only** (rule 9).
 
 ## Rules for later changes
 
