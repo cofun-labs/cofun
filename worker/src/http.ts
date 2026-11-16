@@ -50,8 +50,8 @@ export interface Env {
   RENDER_LIMIT: RateLimiter
   /**
    * Caps how many web searches one user can make per period (`ratelimits` in wrangler.jsonc), keyed
-   * by user id. A search is free to the user and costs the operator the provider's price, so this
-   * bounds what one account can cost. Searches count toward API_LIMIT too, not WEB_LIMIT.
+   * by user id. Searches are charged in credits, but those sent at once all start on the same
+   * balance, so this bounds what they can cost beyond it. Searches count toward API_LIMIT too, not WEB_LIMIT.
    * Approximate, like CHAT_LIMIT.
    */
   SEARCH_LIMIT: RateLimiter
