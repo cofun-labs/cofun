@@ -416,7 +416,7 @@ export type AskResult = (
     rounds: number
     /**
      * The conversation the question was asked in, as it stands now that the question is part of it,
-     * to save: still that conversation when reset() started another one meanwhile. Not set when the
+     * to save. Not set when the
      * question left the conversation as it was (it failed or was stopped before it used a tool).
      */
     conversation?: HistoryMessage[]

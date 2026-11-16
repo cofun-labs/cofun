@@ -683,6 +683,35 @@ describe('sessions', () => {
     await user.click(await screen.findByRole('button', { name: title }))
   }
 
+  it('[UC-NOTICO-SESSION-001-S02] a new or other session sends nothing from earlier sessions', async () => {
+    const { browser, user } = await openPanel()
+    const questions = () =>
+      browser
+        .sentToModel()
+        .filter((m) => m.role === 'user')
+        .map((m) => String(m.content))
+    browser.ai.script.push({ reply: 'Noted.' })
+    await ask(user, 'secret plans')
+    await screen.findByText('Noted.')
+    await answered()
+
+    await user.click(screen.getByRole('button', { name: 'New chat' }))
+    browser.ai.script.push({ reply: 'Hi.' })
+    await ask(user, 'hi')
+    await screen.findByText('Hi.')
+    await answered()
+    expect(questions()).toEqual([expect.stringMatching(/\bhi$/)])
+
+    // Back in the first session, the question of the one in between is not sent either.
+    await openSession(user, /^secret plans/)
+    await conversation().findByText('secret plans')
+    browser.ai.script.push({ reply: 'More.' })
+    await ask(user, 'more')
+    await screen.findByText('More.')
+    await answered()
+    expect(questions()).toEqual([expect.stringMatching(/\bsecret plans$/), expect.stringMatching(/\bmore$/)])
+  })
+
   it('[UC-NOTICO-SESSION-001-S06] a reopened session shows its tool calls, and a follow-up continues it', async () => {
     const { browser, user } = await openPanel()
     await askAboutPage(browser, user)

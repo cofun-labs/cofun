@@ -93,14 +93,12 @@ export class CopilotAgent {
   /** The tools as the agent runtime takes them: every one in Edit, and those that change no data in Read only. */
   private readonly allTools: AgentTool[]
   private readonly readingTools: AgentTool[]
-  /** Bumped by stop() and reset(), so a question still waiting to start knows it was cancelled. */
+  /** Bumped by stop(), so a question still waiting to start knows it was cancelled. */
   private epoch = 0
   /** Aborted with each epoch bump, so waits that pi doesn't cut short end too. */
   private cancel = new AbortController()
-  /** The question this agent is answering; reset() clears it, since the next one gets a new pi agent. */
+  /** The question this agent is answering. */
   private running?: object
-  /** The conversation to start from, used when the next pi agent is set up. */
-  private initial: HistoryMessage[] = []
   /** How each tool call ended, by its result message; pi itself only knows whether it failed. */
   private readonly statuses = new WeakMap<AgentMessage, ToolStatus>()
   /** What went with each question, by its user message; see QuestionExtras. */
@@ -129,7 +127,14 @@ export class CopilotAgent {
   /** Which chat and question the requests of the question running are for. */
   private turn?: Turn
 
-  constructor(private readonly config: AgentConfig) {
+  /**
+   * One agent holds one conversation: a new one, or `initial` to continue a saved one (see
+   * history()). Another conversation gets another agent.
+   */
+  constructor(
+    private readonly config: AgentConfig,
+    private readonly initial: HistoryMessage[] = [],
+  ) {
     this.provider = hostedProvider(config)
     this.maxSteps = config.maxSteps ?? DEFAULT_MAX_STEPS
     this.confirmed = new Set(config.tools.filter((t) => t.needsConfirmation).map((t) => t.name))
@@ -144,7 +149,7 @@ export class CopilotAgent {
    * only the tools it used and how they ended, so the model learns what already happened (a tool may
    * have changed a page) but never sees a half-finished reply. If it used no tool, it is dropped.
    * The result carries the conversation with the question in it (`conversation`), which is the one to
-   * save: after a reset() that stopped the question, history() is the next conversation's.
+   * save.
    *
    * `confirm` is asked before each run of a tool that needs confirmation. Without it, such tools
    * are declined. `extras` go with the question, and are saved with it. `signal` stops the question
@@ -231,7 +236,7 @@ export class CopilotAgent {
     } catch (err) {
       return { result: { status: 'error', message: (err as Error).message, rounds: 0 }, kept: false }
     }
-    // Stopped, or a new chat started, while the agent was being set up.
+    // Stopped while the agent was being set up.
     if (epoch !== this.epoch) return { result: { status: 'stopped', rounds: 0 }, kept: false }
     // Offered for this question only, and taken as the question starts: a mode switched while it runs
     // applies from the next one. pi tells the model of the change in the conversation.
@@ -259,7 +264,7 @@ export class CopilotAgent {
     let cost: QuestionCost | undefined
     let costUnknown = false
     const provider = this.provider
-    // The model the question is asked of, read now: a new chat started while this one ends changes it.
+    // The model the question is asked of, read now, as the question starts.
     const model = this.answeredBy()
     // Cleared below only while it is still this question's: another may have started meanwhile.
     const onChunk = (chunk: unknown) => {
@@ -478,26 +483,7 @@ export class CopilotAgent {
   }
 
   /**
-   * Starts another conversation: a new one, or `history` to continue a saved one. A question still
-   * running is stopped first, as stop() stops it: its ask() resolves with the conversation it was
-   * asked in, which this agent no longer holds. It looks up the model again.
-   */
-  async reset(history: HistoryMessage[] = []): Promise<void> {
-    this.epoch++
-    this.cancel.abort()
-    this.cancel = new AbortController()
-    const agent = this.agent
-    this.agent = undefined
-    this.model = undefined
-    this.running = undefined
-    this.initial = history
-    if (!agent) return
-    agent.abort()
-    await agent.waitForIdle()
-  }
-
-  /**
-   * The conversation so far, to save and later continue with reset(). Of a question that failed or
+   * The conversation so far, to save and later continue with another agent. Of a question that failed or
    * was stopped, only the tools it used are part of it. Read it between questions: while one runs, it
    * is still changing.
    */
@@ -605,7 +591,7 @@ export class CopilotAgent {
   /**
    * For a tool starting now: how it reports to the running question that it stops it (with a
    * reason for the user) or changed data. A tool still running from a question that was stopped
-   * or reset reports nothing to the next one.
+   * reports nothing to the next one.
    */
   private reporter(): Reporter {
     const epoch = this.epoch

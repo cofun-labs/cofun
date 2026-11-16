@@ -1,7 +1,7 @@
 // Reading a web page by its address (read_web_page, render_web_page), as a user meets
 // it in the side panel: the worker reads the page, from the fake internet behind it.
 import '@testing-library/jest-dom/vitest'
-import { screen } from '@testing-library/react'
+import { screen, waitFor } from '@testing-library/react'
 import userEvent, { type UserEvent } from '@testing-library/user-event'
 import { afterEach, describe, expect, it } from 'vitest'
 import { usageCosting } from '../../../worker/test/fakes'
@@ -158,10 +158,13 @@ describe('reading a web page the user gives', () => {
     await ask(user, `What is on ${app}?`)
 
     // On the render's card, and as why the reply stopped.
-    const told = await screen.findAllByText(
-      /You have no credits left\. Your next 200 free credits arrive on .+, or you can buy credits\./,
+    await waitFor(() =>
+      expect(
+        screen.getAllByText(
+          /You have no credits left\. Your next 200 free credits arrive on .+, or you can buy credits\./,
+        ),
+      ).toHaveLength(2),
     )
-    expect(told).toHaveLength(2)
     expect(screen.queryByText('Never sent.')).not.toBeInTheDocument()
     expect(browser.ai.calls).toHaveLength(1)
     expect(browser.browserRun.calls).toEqual([])

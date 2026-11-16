@@ -101,18 +101,22 @@ function makeAgent(
     meter?: AgentConfig['meter']
     model?: AgentConfig['model']
   } = {},
+  conversation?: HistoryMessage[],
 ) {
-  return new CopilotAgent({
-    apiUrl: 'https://nk.example.dev/v1/',
-    getToken: options.getToken ?? (async () => token),
-    client: 'notico/1.2.3',
-    systemPrompt: options.systemPrompt ?? 'You are Notico.',
-    tools: options.tools ?? [pageTool().tool],
-    maxSteps: options.maxSteps,
-    history: options.history,
-    meter: options.meter,
-    model: options.model,
-  })
+  return new CopilotAgent(
+    {
+      apiUrl: 'https://nk.example.dev/v1/',
+      getToken: options.getToken ?? (async () => token),
+      client: 'notico/1.2.3',
+      systemPrompt: options.systemPrompt ?? 'You are Notico.',
+      tools: options.tools ?? [pageTool().tool],
+      maxSteps: options.maxSteps,
+      history: options.history,
+      meter: options.meter,
+      model: options.model,
+    },
+    conversation,
+  )
 }
 
 /** What a question of `calls` model calls on the hosted model used, each reporting FAKE_USAGE. */
@@ -206,8 +210,7 @@ describe('extension agent against the worker', () => {
     ])
 
     // A reopened session tells the model the same as before.
-    const reopened = makeAgent()
-    await reopened.reset(saved)
+    const reopened = makeAgent({}, saved)
     await ask(reopened, 'Thanks', undefined, { context: none })
     expect(sentMessages(2).filter((m) => m.role === 'user')).toEqual([
       { role: 'user', content: `${roadmap}\n\nSummarize this` },
@@ -950,8 +953,7 @@ describe('extension agent against the worker', () => {
     ])
 
     // Another panel, later: the session is reopened and continued.
-    const resumed = makeAgent()
-    await resumed.reset(saved)
+    const resumed = makeAgent({}, saved)
     expect(resumed.history()).toEqual(saved)
     const { result } = await ask(resumed, 'And its URL?')
     expect(result).toEqual({ status: 'done' })
@@ -972,26 +974,6 @@ describe('extension agent against the worker', () => {
       { role: 'user', text: 'And its URL?', turn: expect.any(String), ...usedOnHosted(1) },
       { role: 'assistant', parts: [{ type: 'text', text: '你好 来自 worker ' }] },
     ])
-  })
-
-  it('[UC-NOTICO-SESSION-001-S02] a new or other session sends nothing from earlier sessions', async () => {
-    const agent = makeAgent()
-    await ask(agent, 'secret plans')
-    const earlier = agent.history()
-
-    await agent.reset()
-    expect(agent.history()).toEqual([])
-    await ask(agent, 'hi')
-    expect(sentMessages(1).map((m) => m.content)).toEqual(['You are Notico.', 'hi'])
-
-    // Switching from one saved session to another leaves the first one behind.
-    await agent.reset(earlier)
-    await agent.reset([
-      { role: 'user', text: 'other' },
-      { role: 'assistant', parts: [{ type: 'text', text: 'ok' }] },
-    ])
-    await ask(agent, 'more')
-    expect(sentMessages(2).map((m) => m.content)).toEqual(['You are Notico.', 'other', 'ok', 'more'])
   })
 })
 
@@ -1110,8 +1092,7 @@ describe('Notion requests per question', () => {
       { role: 'user', text: 'Summarize this page', requests: 2, turn: expect.any(String), ...usedOnHosted(2) },
       { role: 'user', text: 'Thanks', requests: 0, turn: expect.any(String), ...usedOnHosted(1) },
     ])
-    const resumed = makeAgent({ tools: [readPage], meter: countNotionRequests })
-    await resumed.reset(saved)
+    const resumed = makeAgent({ tools: [readPage], meter: countNotionRequests }, saved)
     expect(resumed.history()).toEqual(saved)
   })
 

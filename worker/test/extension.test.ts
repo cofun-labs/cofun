@@ -8,6 +8,7 @@ import {
   type AgentUpdate,
   type QuestionExtras,
   type ConfirmTool,
+  type HistoryMessage,
   type ToolSpec,
 } from '../../extensions/notico/src/agent'
 import { WebError } from '../../extensions/notico/src/agent/types'
@@ -97,18 +98,22 @@ function makeAgent(
     meter?: AgentConfig['meter']
     model?: AgentConfig['model']
   } = {},
+  conversation?: HistoryMessage[],
 ) {
-  return new CopilotAgent({
-    apiUrl: 'https://nk.example.dev/v1/',
-    getToken: options.getToken ?? (async () => token),
-    client: 'notico/1.2.3',
-    systemPrompt: options.systemPrompt ?? 'You are Notico.',
-    tools: options.tools ?? [pageTool().tool],
-    maxSteps: options.maxSteps,
-    history: options.history,
-    meter: options.meter,
-    model: options.model,
-  })
+  return new CopilotAgent(
+    {
+      apiUrl: 'https://nk.example.dev/v1/',
+      getToken: options.getToken ?? (async () => token),
+      client: 'notico/1.2.3',
+      systemPrompt: options.systemPrompt ?? 'You are Notico.',
+      tools: options.tools ?? [pageTool().tool],
+      maxSteps: options.maxSteps,
+      history: options.history,
+      meter: options.meter,
+      model: options.model,
+    },
+    conversation,
+  )
 }
 
 /**
@@ -340,8 +345,7 @@ describe('tokens per question', () => {
     await agent.title(agent.history())
     const saved = structuredClone(agent.history())
     expect(saved[0]).toEqual({ role: 'user', text: 'Which page am I on?', turn: expect.any(String), ...details })
-    const resumed = makeAgent()
-    await resumed.reset(saved)
+    const resumed = makeAgent({}, saved)
     expect(resumed.history()).toEqual(saved)
   })
 
@@ -456,8 +460,7 @@ describe('chat and question of what a question spends', () => {
       { kind: 'model_call', chat_id: chat, turn_id: second },
     ])
     // A session saved and opened again keeps each question's id.
-    const resumed = makeAgent()
-    await resumed.reset(structuredClone(agent.history()))
+    const resumed = makeAgent({}, structuredClone(agent.history()))
     expect(resumed.history().flatMap((m) => (m.role === 'user' ? [m.turn] : []))).toEqual(turns)
   })
 })
