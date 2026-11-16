@@ -233,9 +233,10 @@ describe('the Credits page', () => {
       'Your credits could not be loaded. You can still ask questions.',
     )
 
-    // Once the worker can read them again, trying again shows them.
+    // Once the worker can read them again, opening the page again shows them.
     browser.db.failOn = undefined
-    await user.click(balance.getByRole('button', { name: 'Try again' }))
+    await user.keyboard('{Escape}')
+    await openCredits(user)
     expect(await bySource()).toEqual(['Free this week140 · renew after Nov 15, 5:30 PM', 'Bought0'])
   })
 })

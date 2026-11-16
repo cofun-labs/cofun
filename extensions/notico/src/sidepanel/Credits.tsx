@@ -33,14 +33,11 @@ export interface Buying {
  */
 export function CreditsPage({
   credits,
-  onRetry,
   grants,
   buying,
   onClose,
 }: {
   credits: CreditsState
-  /** Reads the credits again, after a read that failed. */
-  onRetry: () => void
   /** Reads the history of the credits, when the user opens it. */
   grants: ReadGrants
   buying: Buying
@@ -72,13 +69,9 @@ export function CreditsPage({
           <section className="page-section" aria-labelledby="credits-balance">
             <h2 id="credits-balance">Balance</h2>
             {credits.status === 'loading' && <p className="account-detail">Loading credits…</p>}
+            {/* No Try again: opening the page reads the credits again. */}
             {credits.status === 'unavailable' && (
-              <>
-                <p role="alert">Your credits could not be loaded. You can still ask questions.</p>
-                <button className="primary" onClick={onRetry}>
-                  Try again
-                </button>
-              </>
+              <p role="alert">Your credits could not be loaded. You can still ask questions.</p>
             )}
             {credits.status === 'ready' && <Balance credits={credits.credits} />}
             {/* Read only when it is opened, so it is there to open whether or not the credits could be read. */}
@@ -164,24 +157,15 @@ function BuyCredits({ buying }: { buying: Buying }) {
     { status: 'loading' },
   )
   const [checkout, setCheckout] = useState<'idle' | 'opening' | 'opened' | 'failed'>('idle')
-  const reads = useRef(0)
-
-  async function read() {
-    const mine = ++reads.current
-    setPacks({ status: 'loading' })
-    let next: typeof packs
-    try {
-      next = { status: 'ready', packs: (await buying.packs()).packs }
-    } catch {
-      next = { status: 'failed' }
-    }
-    if (mine === reads.current) setPacks(next)
-  }
 
   useEffect(() => {
-    void read()
     // A page that closed takes no answer.
-    return () => void reads.current++
+    let open = true
+    buying.packs().then(
+      ({ packs }) => open && setPacks({ status: 'ready', packs }),
+      () => open && setPacks({ status: 'failed' }),
+    )
+    return () => void (open = false)
   }, [])
 
   async function buy(quantity: number) {
@@ -198,14 +182,8 @@ function BuyCredits({ buying }: { buying: Buying }) {
     <section className="page-section" aria-labelledby="credits-buy">
       <h2 id="credits-buy">Buy credits</h2>
       {packs.status === 'loading' && <p className="account-detail">Loading…</p>}
-      {packs.status === 'failed' && (
-        <>
-          <p role="alert">Buying credits is unavailable right now.</p>
-          <button className="primary" onClick={() => void read()}>
-            Try again
-          </button>
-        </>
-      )}
+      {/* No Try again: opening the page reads the packs again. */}
+      {packs.status === 'failed' && <p role="alert">Buying credits is unavailable right now.</p>}
       {packs.status === 'ready' && (
         <>
           <ul className="packs" aria-label="Packs of credits">

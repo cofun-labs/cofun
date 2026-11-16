@@ -153,7 +153,7 @@ describe('the credit history', () => {
     )
   })
 
-  it('[@no-uc:money] when the history cannot be read, it says so and offers to try again, and the Credits page and the chat still work', async () => {
+  it('[@no-uc:money] when the history cannot be read, it says so until it is opened again, and the Credits page and the chat still work', async () => {
     const browser = await FakeBrowser.start(pageTab(), { signedInAs: 'user_alice' })
     // Only the reads of the history fail.
     browser.db.failOn = { sql: GRANTS_READ, error: DOWN }
@@ -164,9 +164,10 @@ describe('the credit history', () => {
     await openHistory(user)
     expect(await screen.findByRole('alert')).toHaveTextContent('Your credits could not be loaded.')
 
-    // Once the worker can read them again, trying again shows them.
+    // Once the worker can read them again, opening the history again shows them.
     browser.db.failOn = undefined
-    await user.click(screen.getByRole('button', { name: 'Try again' }))
+    await user.keyboard('{Escape}')
+    await user.click(within(section('Balance')).getByRole('button', { name: 'Credit history' }))
     expect(await lots()).toEqual(['Free weekly creditsNov 8 · expire Nov 15+200140 left'])
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
 
