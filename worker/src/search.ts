@@ -60,10 +60,11 @@ export class SearchError extends Error {
   }
 }
 
-/** The answer of a search, as the docs give it; fields beyond these are not read. */
-const Answer = z.object({
-  items: z.array(z.object({ url: z.string(), title: z.string(), description: z.string() })),
-})
+/** The answer of a search, as the docs give it: its items are checked one by one (see Item). */
+const Answer = z.object({ items: z.array(z.unknown()) })
+
+/** One item of an answer, as the docs give it; fields beyond these are not read. */
+const Item = z.object({ url: z.string(), title: z.string(), description: z.string() })
 
 /** A refusal from AI Gateway: `{ ok: false, error: { code, … } }`. Only a code that is an identifier is read. */
 const Refusal = z.object({ error: z.object({ code: z.string().regex(/^[a-z_]{1,64}$/) }) })
@@ -107,8 +108,18 @@ export async function searchWeb(
       'bad answer',
       true,
     )
-  // A result with a longer address is left out, rather than handed on cut short or failing the rest.
-  const kept = answer.data.items.filter((item) => item.url.length <= URL_CHARS)
+  // An item that is not a result is left out, rather than failing the rest; but when none is one,
+  // the answer is not what the worker understands (say, a field the provider renamed).
+  const items = answer.data.items.flatMap((value) => Item.safeParse(value).data ?? [])
+  if (items.length === 0 && answer.data.items.length > 0)
+    throw new SearchError(
+      'search_failed',
+      'the search gave an answer the worker does not understand',
+      'bad items',
+      true,
+    )
+  // A result with a longer address is left out, rather than handed on cut short.
+  const kept = items.filter((item) => item.url.length <= URL_CHARS)
   return kept.slice(0, limit).map((item) => ({
     url: item.url,
     title: clip(item.title.trim(), TITLE_CHARS),
