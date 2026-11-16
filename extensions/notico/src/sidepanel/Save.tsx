@@ -1,49 +1,8 @@
-import { useEffect, useId, useRef, useState } from 'react'
+import { useEffect, useId, useRef } from 'react'
 import { Icon } from './icons'
 
 /** How saving a reply or a chat to Notion is going: running, or done with a link to the page. */
 export type SaveState = { status: 'saving' } | { status: 'saved'; url: string }
-
-/** Saves something to Notion, resolving with the new page's link; it rejects with what to tell the user. */
-type Save = () => Promise<{ url: string }>
-
-/**
- * The state of each thing's save, by key, and a function that starts one. A save that is running
- * starts no other for its key: one click creates at most one page. A failure leaves the key as it
- * was before, so the save can be tried again, and goes to `onFail` with what to tell the user.
- * Keep it where it outlives what shows it (a reply's row that shows another chat), so neither the
- * guard nor the link is lost.
- */
-export function useSaves(
-  onFail: (message: string) => void,
-): [Record<string, SaveState>, (key: string, save: Save) => void] {
-  const [states, setStates] = useState<Record<string, SaveState>>({})
-  const running = useRef(new Set<string>())
-  const fail = useRef(onFail)
-  fail.current = onFail
-  function start(key: string, save: Save) {
-    if (running.current.has(key)) return
-    running.current.add(key)
-    const set = (state?: SaveState) =>
-      setStates((all) => {
-        const next = { ...all }
-        if (state) next[key] = state
-        else delete next[key]
-        return next
-      })
-    set({ status: 'saving' })
-    save()
-      .then(
-        ({ url }) => set({ status: 'saved', url }),
-        (err: unknown) => {
-          set(undefined)
-          fail.current(err instanceof Error ? err.message : String(err))
-        },
-      )
-      .finally(() => running.current.delete(key))
-  }
-  return [states, start]
-}
 
 /**
  * The icon that saves a reply or the chat to Notion, with a tooltip saying what it does; once the
