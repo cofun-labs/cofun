@@ -81,7 +81,7 @@ Notico is an AI assistant in Chrome's side panel that reads and edits the user's
 **storage**
 
 ```text
-Keeps the user signed in (the sign-in client token); the user's own OpenRouter key, if they set one up, with the models they switched on and the model chosen in the message box; and small settings: whether the assistant may change the user's pages (Edit or Read only), and whether usage data is shared. Whether the "Ask Notico" menu item shows, which the user can turn off in the settings; it is kept in Chrome's synced storage, so it follows their Chrome profile.
+Keeps the user signed in (the sign-in client token); the user's own OpenRouter key, if they set one up, with the models they switched on and the model chosen in the message box; and small settings: whether the assistant may change the user's pages (Edit or Read only), and whether usage data is shared. It keeps whether the "Ask Notico" menu item shows, which the user can turn off in the settings, in Chrome's synced storage, so it follows their Chrome profile. While the browser is open, it also holds text the user selected with "Ask Notico" until they send it, and an id for the browser's current run, so a tab added to a question is not mistaken for another after a restart.
 ```
 
 **tabs**
