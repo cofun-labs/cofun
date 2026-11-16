@@ -423,7 +423,7 @@ describe('extension agent against the worker', () => {
     })
   })
 
-  it('[UC-NOTICO-NOTION-001-S13] asked again before the wait Notion asked for is over, nothing is sent and the user is told how long to wait', async () => {
+  it('[UC-NOTICO-NOTION-001-S08] asked again before the wait Notion asked for is over, nothing is sent and the user is told how long to wait', async () => {
     let now = Date.now()
     const tab = new FakeNotionTab(PAGE_URL).limit('loadPageChunk', 1, 429, '120').install()
     notionCooldown.now = () => now
@@ -627,7 +627,7 @@ describe('extension agent against the worker', () => {
     })
   })
 
-  it('[UC-NOTICO-SESSION-001-S19] the conversation carries over to the next question', async () => {
+  it('[UC-NOTICO-SESSION-001-S01] the conversation carries over to the next question', async () => {
     const agent = makeAgent()
     await ask(agent, 'first')
     await ask(agent, 'second')
@@ -793,7 +793,7 @@ describe('extension agent against the worker', () => {
     ])
   })
 
-  it('[UC-NOTICO-AGENT-001-S14] a question stopped or failed before any tool ran is left out', async () => {
+  it('[UC-NOTICO-AGENT-001-S13] a question stopped or failed before any tool ran is left out', async () => {
     // Fails on the first model request.
     ai.failWith = new Error('capacity')
     const agent = makeAgent()
@@ -888,7 +888,7 @@ describe('extension agent against the worker', () => {
     expect(runs).toEqual([])
   })
 
-  it('[UC-NOTICO-AGENT-001-S10] a tool the user agrees to runs, and the answer uses its result', async () => {
+  it('[UC-NOTICO-AGENT-001-S09] a tool the user agrees to runs, and the answer uses its result', async () => {
     const { tool, runs } = renameTool()
     ai.script = [{ toolCalls: [RENAME_CALL] }, { reply: 'Renamed to Q4 Plan' }]
     const { result, updates, reply } = await ask(
@@ -1163,7 +1163,7 @@ describe('Notion requests per question', () => {
     expect(tab.sent).toHaveLength(REQUEST_BUDGET + 3)
   })
 
-  it('[UC-NOTICO-AGENT-001-S19] stopping at the budget sends nothing more, ends the question, and tells the AI not to work around it', async () => {
+  it('[UC-NOTICO-AGENT-001-S18] stopping at the budget sends nothing more, ends the question, and tells the AI not to work around it', async () => {
     const tab = workspaceTab()
     // The model would try again, with fewer requests.
     ai.script = [{ toolCalls: [LOOK_UP] }, { toolCalls: [LOOK_UP] }, { reply: 'Trying another way.' }]

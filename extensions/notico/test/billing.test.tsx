@@ -166,7 +166,7 @@ describe('buying credits on the Credits page', () => {
 })
 
 describe('a question refused for lack of credits', () => {
-  it('[UC-NOTICO-BILLING-001-S12] offers to buy credits beside saying when the free ones return', async () => {
+  it('[UC-NOTICO-CHAT-003-S07] offers to buy credits beside saying when the free ones return', async () => {
     const { browser, user } = await openPanel()
     browser.ai.usage = usageCosting(210)
     browser.ai.script.push({ reply: 'Answer' })

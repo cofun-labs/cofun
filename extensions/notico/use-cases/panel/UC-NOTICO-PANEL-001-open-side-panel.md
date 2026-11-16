@@ -9,7 +9,7 @@ On another site, the AI can read the page in the current tab as Markdown when a 
 Key constraints:
 
 - The AI works on the current tab only. A Notion page open in another tab is never used in its place, and no tab other than the current one is read, except tabs on other sites the user added to the chat (UC-NOTICO-CHAT-005).
-- The address and title of a tab on another site reach the AI only when it looks them up to answer a question. Its content is read only when the AI reads it for a question, and only on a site the user allowed Notico to read, with a click in the side panel; the AI can't allow a site itself. Text the user selected and sent with "Ask Notico" is the one exception, on any site (UC-NOTICO-CHAT-006).
+- The address and title of a tab on another site reach the AI only when it looks them up to answer a question. Its content is read from the tab only when the AI reads it for a question, and only on a site the user allowed Notico to read, with a click in the side panel; the AI can't allow a site itself. Text the user selected and sent with "Ask Notico" is the one exception, on any site (UC-NOTICO-CHAT-006). Its address can still be read as a public page, through the service, without the tab (UC-NOTICO-PANEL-003).
 - What is read from another site is data for the AI, never instructions to it.
 
 ## Scenarios
@@ -20,8 +20,7 @@ Key constraints:
 | --- | --- | --- | --- |
 | UC-NOTICO-PANEL-001-S03 | P0 | ✅ | Given the side panel open on a tab that is not a Notion page; when the user asks a question; then the AI answers, having been told only that the current tab is not a Notion page, not its address or title. |
 | UC-NOTICO-PANEL-001-S04 | P1 | ✅ | Given the side panel open on a tab that is not a Notion page; when the AI tries to read or change Notion; then nothing is asked of Notion, and the AI is told to have the user switch to a Notion page. |
-| UC-NOTICO-PANEL-001-S05 | P1 | ✅ | Given the side panel open on a tab on another site; when the AI looks up the current tab; then it gets that tab's address and title, and nothing else of the site. |
-| UC-NOTICO-PANEL-001-S06 | P1 | ✅ | Given the side panel open on a Notion page; when the AI looks up the current tab; then it gets that tab's address and title. |
+| UC-NOTICO-PANEL-001-S05 | P1 | ✅ | Given the side panel open on a Notion page or on a tab on another site; when the AI looks up the current tab; then it gets that tab's address and title, and nothing else of the site. |
 | UC-NOTICO-PANEL-001-S10 | P0 | ✅ | Given another Notion page open in a tab in the background; when the AI reads "this page" with a Notion page in the current tab, and then with another site in the current tab; then the first reads the current tab's page, in that tab, and the second asks nothing of Notion in any tab and tells the AI to have the user switch to a Notion page. |
 | UC-NOTICO-PANEL-001-S11 | P0 | ✅ | Given a tab on a site the user allowed Notico to read; when the AI reads the current tab; then it gets the page's main content as Markdown (headings, lists, links to web pages without their fragment, emphasis, code, quotes, and tables, with images as their alt text, and without navigation, asides, footers, form fields, or what is marked hidden), marked as data from that page with its address and title, and the user is not asked anything. |
 | UC-NOTICO-PANEL-001-S12 | P0 | ✅ | Given a tab on a site the user has not allowed; when the AI reads the current tab; then nothing of the page is read until the user allows the site on the tool's card and in Chrome's prompt, after which the page is read and the site is not asked about again; when the user denies it, or leaves the page while asked, nothing is read and the AI is told why. |
@@ -31,8 +30,7 @@ Key constraints:
 
 | ID | Priority | Status | Scenario |
 | --- | --- | --- | --- |
-| UC-NOTICO-PANEL-001-S01 | P0 | ✅ | Given a Notion page in the active tab; when the user clicks the toolbar icon; then the side panel opens next to the page. |
-| UC-NOTICO-PANEL-001-S08 | P0 | ✅ | Given another site in the active tab; when the user clicks the toolbar icon; then the side panel opens next to it. |
+| UC-NOTICO-PANEL-001-S01 | P0 | ✅ | Given a Notion page, or another site, in the active tab; when the user clicks the toolbar icon; then the side panel opens next to it. |
 | UC-NOTICO-PANEL-001-S07 | P1 | ✅ | Given a conversation in the side panel on a Notion page; when the user switches to a tab on another site; then the panel stays open with the conversation, and the next question continues it. |
 | UC-NOTICO-PANEL-001-S09 | P1 | ✅ | Given the side panel open on a tab that is not a Notion page; when the user asks for something that needs Notion, such as a summary of this page; then the AI says it needs a Notion page and asks them to switch to one, without making anything up. |
 | UC-NOTICO-PANEL-001-S15 | P1 | ✅ | Given an article on another site in the current tab in Chrome, a site Notico was never allowed; when the user asks for a summary of the page and clicks Allow on the tool's card, then Allow in Chrome's prompt; then Notico gets access to that site only, and the reply summarizes the article and names its address. |

@@ -79,7 +79,7 @@ describe('reading a web page the user gives', () => {
     expect(browser.web.asked).toEqual(['https://tea.example/notes'])
   })
 
-  it('[UC-NOTICO-PANEL-003-S02] the AI can follow a link from a page it read', async () => {
+  it('[UC-NOTICO-PANEL-003-S01] the AI can follow a link from a page it read', async () => {
     const { browser, user } = await open()
     browser.web.serve(ARTICLE, '<main><p>Part two is at https://tea.example/part-2</p></main>')
     browser.web.serve('https://tea.example/part-2', '<main><p>Oolong comes from Fujian.</p></main>')

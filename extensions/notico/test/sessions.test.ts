@@ -112,7 +112,7 @@ describe('saved sessions', () => {
     expect(await store.get('a')).toEqual({ ...a, messages, updatedAt: 4000 })
   })
 
-  it('[UC-NOTICO-SESSION-001-S12] search lists only the sessions whose title contains the query, ignoring case', async () => {
+  it('[UC-NOTICO-SESSION-001-S13] search lists only the sessions whose title contains the query, ignoring case', async () => {
     await store.save(session('a', 'Summarize this page', 1000, ROADMAP))
     await store.save(session('b', 'Summarize the decisions', 2000, NOTES))
     await store.save(session('c', 'Draft an agenda', 3000, NOTES))

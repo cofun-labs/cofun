@@ -766,7 +766,7 @@ describe('when Notion turns requests away', () => {
     }
   })
 
-  it('[UC-NOTICO-NOTION-002-S18] stops the question when a change gets no answer, saying it may have been saved', async () => {
+  it('[UC-NOTICO-NOTION-002-S12] stops the question when a change gets no answer, saying it may have been saved', async () => {
     for (const setUp of [
       (t: FakeNotionTab) => t.respondText('saveTransactionsFanout', 504, 'Gateway timeout'),
       (t: FakeNotionTab) => (t.networkDown = true),

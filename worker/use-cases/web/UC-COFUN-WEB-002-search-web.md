@@ -19,9 +19,8 @@ Key constraint:
 | --- | --- | --- | --- |
 | UC-COFUN-WEB-002-S01 | P0 | ✅ | Given a signed-in user; when their client searches the web; then it gets each result's address, title, and description, no more results than it asked for, and the search is charged 5 credits, as the answer says. |
 | UC-COFUN-WEB-002-S02 | P1 | ✅ | Given a user who has made as many searches as they may in a minute; when their client searches again; then they are told to wait, and nothing is searched. |
-| UC-COFUN-WEB-002-S03 | P1 | ✅ | Given a search the provider turns away or answers in a way the service does not understand; when a client searches; then it is told the search failed, and it is not tried again. |
+| UC-COFUN-WEB-002-S03 | P1 | ✅ | Given a search that fails, whether the provider turned it away, answered in a way the service does not understand, or brought no answer; when a client searches; then it is told the search failed, it is not tried again, and it costs nothing, as the refusal says. |
 | UC-COFUN-WEB-002-S04 | P0 | ✅ | Given a user with no credits left; when their client searches the web; then it is told they have no credits and when free ones arrive, and nothing is searched. |
-| UC-COFUN-WEB-002-S05 | P1 | ✅ | Given a search that fails, whether the provider turned it away, answered in a way the service does not understand, or brought no answer; when a client searches; then it costs nothing, and the refusal says so. |
 
 ### ai-e2e
 

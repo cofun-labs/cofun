@@ -16,10 +16,9 @@ Key constraint:
 
 | ID | Priority | Status | Scenario |
 | --- | --- | --- | --- |
-| UC-NOTICO-BILLING-001-S01 | P0 | ✅ | Given a signed-in user on the Credits page; when they choose a pack; then the payment page for that pack opens in a new tab, for their account. |
+| UC-NOTICO-BILLING-001-S01 | P0 | ✅ | Given a signed-in user on the Credits page; when they choose a pack; then the payment provider's own page for that pack opens in a new tab, for their account, and the side panel asks for no payment details. |
 | UC-NOTICO-BILLING-001-S10 | P1 | ✅ | Given a user who paid in the tab the side panel opened; when they come back to the side panel; then it shows their new credits. |
 | UC-NOTICO-BILLING-001-S11 | P1 | ✅ | Given a user who bought credits; when they look at their credits and their history; then the purchase shows as such, with what they paid and the day it expires, and a refunded purchase shows what was taken back. |
-| UC-NOTICO-BILLING-001-S12 | P1 | ✅ | Given a user with no credits left; when a question of theirs is refused; then the refusal offers to buy credits beside saying when the free ones return. |
 | UC-NOTICO-BILLING-001-S15 | P1 | ✅ | Given a signed-in user on the Credits page; when they look at the packs on offer; then they are told that bought credits last one year from the purchase, that nothing renews, and that questions answered with their own key spend credits only on pages rendered and web searches made for them. |
 
 ### ai-e2e

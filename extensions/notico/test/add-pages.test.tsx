@@ -167,7 +167,7 @@ describe('UC-NOTICO-CHAT-004 add pages to a question', () => {
     expect(tab.injections).toHaveLength(injected)
   })
 
-  it('[UC-NOTICO-CHAT-004-S02] a page chosen with the keys becomes a chip in place of the @ text, and Escape leaves the text as it is', async () => {
+  it('[UC-NOTICO-CHAT-004-S01] a page chosen with the keys becomes a chip in place of the @ text, and Escape leaves the text as it is', async () => {
     const { user } = await openPanel()
 
     await user.type(composer(), 'Compare this with @')
@@ -251,7 +251,7 @@ describe('UC-NOTICO-CHAT-004 add pages to a question', () => {
     expect(sentQuestions(browser)).toEqual([expect.stringMatching(/^\[No Notion page is attached to this question/)])
   })
 
-  it('[UC-NOTICO-CHAT-004-S05] the workspace is searched once typing pauses, one search at a time, with the newest text', async () => {
+  it('[@no-uc:notion-safety] the workspace is searched once typing pauses, one search at a time, with the newest text', async () => {
     const { tab, user } = await openPanel()
     tab.respond('search', 200, searchAnswer()).respond('search', 200, searchAnswer())
 
@@ -359,7 +359,7 @@ describe('UC-NOTICO-CHAT-004 add pages to a question', () => {
     expect(pagesSent()).toEqual([['Fixture page', 'Roadmap']])
   })
 
-  it('[UC-NOTICO-CHAT-004-S12] clicking a page in a question takes the current tab to it', async () => {
+  it('[UC-NOTICO-CHAT-004-S07] clicking a page in a question takes the current tab to it', async () => {
     const { browser, tab, user } = await openPanel()
     browser.ai.script.push({ reply: 'They differ.' })
 

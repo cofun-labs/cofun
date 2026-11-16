@@ -359,7 +359,7 @@ describe('on a tab that is not Notion', () => {
     expect(browser.tab.injections).toEqual([])
   })
 
-  it('[UC-NOTICO-PANEL-001-S06] the model gets the address and title of a Notion tab the same way', async () => {
+  it('[UC-NOTICO-PANEL-001-S05] the model gets the address and title of a Notion tab the same way', async () => {
     const { browser, user } = await openPanel()
     browser.ai.script.push(
       { toolCalls: [{ name: 'get_current_tab', arguments: JSON.stringify({}) }] },
@@ -570,7 +570,7 @@ describe('the page a question goes with', () => {
     ])
   })
 
-  it('[UC-NOTICO-AGENT-001-S29] a question shows the page it went with, also after the session is reopened', async () => {
+  it('[UC-NOTICO-AGENT-001-S28] a question shows the page it went with, also after the session is reopened', async () => {
     const { browser, user } = await openPanel()
     browser.ai.script.push({ reply: 'With the page.' }, { reply: 'Without it.' })
 
@@ -611,7 +611,7 @@ describe('a tool that needs confirmation', () => {
     return { browser, user, workspace, prompt }
   }
 
-  it('[UC-NOTICO-AGENT-001-S11] asks first, showing what the tool will do, and runs it only after the user agrees', async () => {
+  it('[UC-NOTICO-AGENT-001-S09] asks first, showing what the tool will do, and runs it only after the user agrees', async () => {
     const { browser, user, workspace, prompt } = await askToTrash()
     browser.ai.script.push({ reply: 'The old notes are in the trash.' })
 
@@ -633,7 +633,7 @@ describe('a tool that needs confirmation', () => {
     expect(screen.queryByRole('group', { name: 'Allow this? Move 1 page to the trash' })).not.toBeInTheDocument()
   })
 
-  it('[UC-NOTICO-AGENT-001-S24] a reply says how many pages it changed', async () => {
+  it('[UC-NOTICO-AGENT-001-S23] a reply says how many pages it changed', async () => {
     const first = await askToTrash()
     first.browser.ai.script.push({ reply: 'Done.' })
     await first.user.click(within(first.prompt).getByRole('button', { name: 'Allow' }))
@@ -642,7 +642,7 @@ describe('a tool that needs confirmation', () => {
     expect(await replyDetails(first.user)).toContain('Changed 1 page')
   })
 
-  it('[UC-NOTICO-AGENT-001-S24] a change the user declined is not counted as changed', async () => {
+  it('[UC-NOTICO-AGENT-001-S23] a change the user declined is not counted as changed', async () => {
     const { browser, user, prompt } = await askToTrash()
     browser.ai.script.push({ reply: 'Left it.' })
     await user.click(within(prompt).getByRole('button', { name: 'Deny' }))
@@ -651,7 +651,7 @@ describe('a tool that needs confirmation', () => {
     expect((await replyDetails(user)).join('\n')).not.toMatch(/Changed \d+ page/)
   })
 
-  it('[UC-NOTICO-AGENT-001-S11] does not run the tool when the user declines, and the agent goes on without it', async () => {
+  it('[UC-NOTICO-AGENT-001-S09] does not run the tool when the user declines, and the agent goes on without it', async () => {
     const { browser, user, workspace, prompt } = await askToTrash()
     browser.ai.script.push({ reply: 'I left the old notes where they are.' })
 
@@ -912,7 +912,7 @@ describe('sessions', () => {
     expect(await replyDetails(user)).toContain('Read 2 pages')
   })
 
-  it('[UC-NOTICO-CHAT-001-S19] copying a reply puts its Markdown on the clipboard, without its tool calls or what it read', async () => {
+  it('[UC-NOTICO-CHAT-001-S16] copying a reply puts its Markdown on the clipboard, without its tool calls or what it read', async () => {
     const { browser, user } = await openPanel()
     browser.ai.script.push(
       { reply: 'Let me look.', toolCalls: [{ name: 'read_page', arguments: JSON.stringify({ part: 1 }) }] },
@@ -928,7 +928,7 @@ describe('sessions', () => {
     expect(screen.getByRole('status')).toHaveTextContent('Copied')
   })
 
-  it('[UC-NOTICO-SESSION-001-S07] opening the side panel starts a new, empty session, with the earlier ones in the list', async () => {
+  it('[UC-NOTICO-SESSION-001-S02] opening the side panel starts a new, empty session, with the earlier ones in the list', async () => {
     const { browser, user } = await openPanel()
     browser.ai.script.push({ reply: 'Three milestones.' }, { reply: 'Alice.' })
     await ask(user, 'What is on the roadmap?')
@@ -1020,7 +1020,7 @@ describe('sessions', () => {
     expect(browser.titles.calls).toHaveLength(1)
   })
 
-  it('[UC-NOTICO-SESSION-001-S15] a session whose title request fails, or gives no title, keeps its first question, with no error shown', async () => {
+  it('[UC-NOTICO-SESSION-001-S14] a session whose title request fails, or gives no title, keeps its first question, with no error shown', async () => {
     const { browser, user } = await openPanel()
     browser.ai.script.push({ reply: 'Three milestones.' }, { reply: 'Alice.' })
     // The title model fails.
@@ -1060,7 +1060,7 @@ describe('sessions', () => {
     expect(await screen.findByText('Next week.')).toBeVisible()
   })
 
-  it('[UC-NOTICO-SESSION-001-S16] the header shows the open session\'s title, or "New chat" before its first question', async () => {
+  it('[UC-NOTICO-SESSION-001-S14] the header shows the open session\'s title, or "New chat" before its first question', async () => {
     const { browser, user } = await openPanel()
     const title = () => screen.getByRole('heading', { level: 1 })
     expect(title()).toHaveTextContent(/^New chat$/)
@@ -1214,7 +1214,7 @@ describe('sessions', () => {
     ])
   })
 
-  it('[UC-NOTICO-SESSION-001-S21] a new chat stops a question, which keeps the change it made in the session it was asked in', async () => {
+  it('[UC-NOTICO-SESSION-001-S08] a new chat stops a question, which keeps the change it made in the session it was asked in', async () => {
     const { tab } = workspaceTab()
     const { browser, user } = await openPanel(tab)
     browser.ai.script.push(
@@ -1272,7 +1272,7 @@ describe('sessions', () => {
     ])
   })
 
-  it('[UC-NOTICO-SESSION-001-S22] a question that used no tool when the user leaves its session leaves that session as it was', async () => {
+  it('[UC-NOTICO-SESSION-001-S08] a question that used no tool when the user leaves its session leaves that session as it was', async () => {
     const { browser, user } = await openPanel()
     browser.ai.script.push({ reply: 'Three milestones.' })
     await ask(user, 'What is on the roadmap?')
@@ -1435,7 +1435,7 @@ describe('a saved session that can no longer be read', () => {
     expect(list.getAllByRole('button', { name: /Fixture page/ })).toHaveLength(2)
   })
 
-  it("[UC-NOTICO-SESSION-001-S18] a session whose conversation can't be read is not opened, nothing goes to the AI, and it can be deleted", async () => {
+  it("[UC-NOTICO-SESSION-001-S17] a session whose conversation can't be read is not opened, nothing goes to the AI, and it can be deleted", async () => {
     const { browser, user } = await openPanel()
     await twoSessions(browser, user)
     // The first session's conversation, as this version can't read it.

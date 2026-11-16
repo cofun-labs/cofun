@@ -98,7 +98,7 @@ const savedSettings = (browser: FakeBrowser) => {
 }
 
 describe('answering with the own model', () => {
-  it('[UC-NOTICO-AGENT-002-S01][UC-NOTICO-CHAT-003-S15] the own model answers with the user key and a tool, and the worker never gets the key or the question', async () => {
+  it('[UC-NOTICO-AGENT-002-S01][UC-NOTICO-CHAT-003-S14] the own model answers with the user key and a tool, and the worker never gets the key or the question', async () => {
     const { browser, user } = await openPanel()
     await setUpOpenRouter(browser, user)
     browser.openRouter.ai.script.push(
@@ -111,7 +111,7 @@ describe('answering with the own model', () => {
     expect(await screen.findByText('It is a fixture.')).toBeVisible()
     await answered()
 
-    // [UC-NOTICO-CHAT-003-S15] The user's own model spends no credits on its calls, and no page was rendered or search made: the reply shows no cost.
+    // [UC-NOTICO-CHAT-003-S14] The user's own model spends no credits on its calls, and no page was rendered or search made: the reply shows no cost.
     expect(screen.queryByText(/\bcredits?$/)).not.toBeInTheDocument()
     // Both model calls went to OpenRouter, with the user's key, for the chosen model.
     const { calls } = browser.openRouter
@@ -267,7 +267,7 @@ describe('answering with the own model', () => {
     expect(provider('OpenRouter').queryByText('Key stopped working')).not.toBeInTheDocument()
   })
 
-  it("[UC-NOTICO-AGENT-002-S27] a question flagged by the model's moderation is said in OpenRouter's words, and Settings still counts the key as working", async () => {
+  it("[UC-NOTICO-AGENT-002-S26] a question flagged by the model's moderation is said in OpenRouter's words, and Settings still counts the key as working", async () => {
     const { browser, user } = await openPanel()
     await setUpOpenRouter(browser, user)
     browser.openRouter.refuses = 'moderated'
@@ -280,7 +280,7 @@ describe('answering with the own model', () => {
     expect(provider('OpenRouter').queryByText('Key stopped working')).not.toBeInTheDocument()
   })
 
-  it('[UC-NOTICO-AGENT-002-S22] checking a key that stopped working again clears the mark, and removing it deletes it', async () => {
+  it('[UC-NOTICO-AGENT-002-S03] checking a key that stopped working again clears the mark, and removing it deletes it', async () => {
     const { browser, user } = await openPanel()
     await setUpOpenRouter(browser, user)
     browser.openRouter.keys.clear()
@@ -343,7 +343,7 @@ describe('answering with the own model', () => {
     expect(browser.ai.calls).toHaveLength(1)
   })
 
-  it('[UC-NOTICO-AGENT-002-S06] the own model still answers after the side panel is opened again', async () => {
+  it('[UC-NOTICO-AGENT-002-S01] the own model still answers after the side panel is opened again', async () => {
     const { browser, user } = await openPanel()
     await setUpOpenRouter(browser, user)
 
@@ -538,7 +538,7 @@ describe("a provider's models in Settings", () => {
     expect(browser.openRouter.calls.map((c) => c.model)).toEqual(['google/gemma-5-27b'])
   })
 
-  it("[UC-NOTICO-AGENT-002-S20] the menu offers exactly the models that are on, and a provider's last one stays on", async () => {
+  it("[UC-NOTICO-AGENT-002-S17] the menu offers exactly the models that are on, and a provider's last one stays on", async () => {
     const { browser, user } = await openPanel()
     browser.openRouter.keys.add(KEY)
     await openSettings(user)
@@ -602,7 +602,7 @@ describe("a provider's models in Settings", () => {
 })
 
 describe('the model menu in the chat', () => {
-  it('[UC-NOTICO-AGENT-002-S10] a follow-up goes to the model picked from the chat, with the conversation so far', async () => {
+  it('[UC-NOTICO-AGENT-002-S05] a follow-up goes to the model picked from the chat, with the conversation so far', async () => {
     const { browser, user } = await openPanel()
     await setUpOpenRouter(browser, user)
     browser.openRouter.ai.script.push({ reply: 'From Sol.' }, { reply: 'From Sonnet.' })

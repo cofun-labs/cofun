@@ -341,7 +341,7 @@ describe('UC-COFUN-CREDITS-001 Spend credits on the hosted model', () => {
     expect(await refused(await chat(token))).toContain('2026-11-22 at 12:00 UTC')
   })
 
-  it('[UC-COFUN-CREDITS-001-S04] credits left when the week ends are gone', async () => {
+  it('[UC-COFUN-CREDITS-001-S02] credits left when the week ends are gone', async () => {
     repliesCost(50)
     await chat(token)
     // 150 credits were left. The new week has 200, not 350.
@@ -607,7 +607,7 @@ describe('UC-COFUN-CREDITS-001 Spend credits on the hosted model', () => {
     expect((await chat(bob)).status).toBe(200)
   })
 
-  it('[UC-COFUN-CREDITS-001-S09] a user who comes back after a month gets one grant, not one for each week away', async () => {
+  it('[UC-COFUN-CREDITS-001-S02] a user who comes back after a month gets one grant, not one for each week away', async () => {
     repliesCost(150)
     await chat(token)
     later(30 * 24 * 60 * 60 * 1000)

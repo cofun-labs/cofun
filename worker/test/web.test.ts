@@ -141,7 +141,7 @@ describe('reading a web page', () => {
     expect(await res.json()).toMatchObject({ url: 'https://tea.example/notes.txt', text: 'Oolong\n\nPu-erh' })
   })
 
-  it('[@no-uc:privacy] sends the site no cookie or credential, and names itself', async () => {
+  it('[UC-COFUN-WEB-001-S01] sends the site no cookie or credential, and names itself', async () => {
     web.serve('https://tea.example/history', ARTICLE)
     await read('https://tea.example/history')
     const [request] = web.requests
@@ -297,7 +297,7 @@ describe('reading a web page', () => {
     expect(db.grants()).toMatchObject([{ source: 'free', left: 200 * CREDIT }])
   })
 
-  it('[UC-COFUN-WEB-001-S09] a render Browser Run turns away for coming too often is busy, and costs nothing', async () => {
+  it('[UC-COFUN-WEB-001-S08] a render Browser Run turns away for coming too often is busy, and costs nothing', async () => {
     browser.render('https://app.example/board', '# Board')
     browser.reply = () =>
       Response.json({ success: false, errors: [{ code: 429, message: 'Rate limit exceeded' }] }, { status: 429 })
@@ -515,7 +515,7 @@ describe('searching the web', () => {
       0,
     ],
   ])(
-    '[UC-COFUN-WEB-002-S03] [UC-COFUN-WEB-002-S05] a search is refused when %s, not tried again, and costs nothing',
+    '[UC-COFUN-WEB-002-S03] a search is refused when %s, not tried again, and costs nothing',
     async (_, reply, status, code, cost) => {
       ai.searchReply = reply
       const res = await search('tea')

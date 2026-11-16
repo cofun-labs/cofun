@@ -190,7 +190,7 @@ describe('Read only', () => {
     expect(offered(browser, 0)).toEqual(expect.arrayContaining(CHANGING))
   })
 
-  it('[UC-NOTICO-AGENT-003-S05] a reopened session shows which question was asked in Read only', async () => {
+  it('[UC-NOTICO-AGENT-003-S04] a reopened session shows which question was asked in Read only', async () => {
     const { tab } = workspaceTab()
     const { browser, user } = await openPanel(tab)
     browser.ai.script.push({ reply: 'First answer.' }, { reply: 'Second answer.' })

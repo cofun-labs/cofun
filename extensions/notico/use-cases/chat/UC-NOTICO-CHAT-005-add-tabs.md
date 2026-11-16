@@ -6,7 +6,7 @@ A signed-in user brings pages from other sites into a chat, for questions like "
 
 Key constraints:
 
-- Only tabs the user added are read. The AI may read a tab added to any question of the chat, later questions included, but no other tab and no address: not a link it found in a page or in Notion, and not one it made up. A tab added before the browser last restarted is not read: Chrome's numbers for tabs start over, so it may be another tab now.
+- Only tabs the user added are read. The AI may read a tab added to any question of the chat, later questions included, but no other tab, and no tab picked by an address: not a link it found in a page or in Notion, and not one it made up. An address is read only as a public page, through the service, never in the user's tab (UC-NOTICO-PANEL-003). A tab added before the browser last restarted is not read: Chrome's numbers for tabs start over, so it may be another tab now.
 - Listing the tabs reads only their titles and addresses, which stay in the browser until the user adds one.
 - What is read from a tab is data for the AI, never instructions to it.
 

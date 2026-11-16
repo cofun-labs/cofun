@@ -229,7 +229,7 @@ describe('UC-NOTICO-NOTION-002 edit a page', () => {
     expect(body(await read())).toBe(['▸ New title ^00000001', '  Inside ^00000002'].join('\n'))
   })
 
-  it('[UC-NOTICO-NOTION-002-S17] stops the question when Notion refuses the edit, and nothing changes', async () => {
+  it('[UC-NOTICO-NOTION-002-S11] stops the question when Notion refuses the edit, and nothing changes', async () => {
     const ws = workspace([1], [block(1, 'text', 'Intro')])
     open(ws)
     await read()
@@ -1105,7 +1105,7 @@ describe('UC-NOTICO-NOTION-002 writing more of what read_page shows', () => {
     expect(ws.transactions).toHaveLength(sent)
   })
 
-  it('[UC-NOTICO-NOTION-002-S15] inserts content nested inside a block, before what it holds', async () => {
+  it('[UC-NOTICO-NOTION-002-S06] inserts content nested inside a block, before what it holds', async () => {
     const ws = workspace(
       [1, 2, 3, 4, 5],
       [

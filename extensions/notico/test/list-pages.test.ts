@@ -226,7 +226,7 @@ describe('UC-NOTICO-NOTION-005 browse the workspace', () => {
     expect(result).toContain(`(Cut off: more entries follow. List them with \`offset: ${LIST_LIMIT}\`.)`)
   })
 
-  it('[UC-NOTICO-NOTION-005-S06] lists the entries after the ones a cut-off list showed', async () => {
+  it('[UC-NOTICO-NOTION-005-S03] lists the entries after the ones a cut-off list showed', async () => {
     // A text block among the children counts as an entry, so the offset lines up with the page's own list.
     const many = [id(99), ...range(100, LIST_LIMIT + 20)]
     const blocks = [page(10, 'Big', many), ...text([id(99)]), ...pages(many.slice(1), 'Page')]
@@ -241,7 +241,7 @@ describe('UC-NOTICO-NOTION-005 browse the workspace', () => {
     expect(result).not.toContain('Cut off')
   })
 
-  it('[UC-NOTICO-NOTION-005-S06] picks up inside columns that hold more pages than one list shows', async () => {
+  it('[UC-NOTICO-NOTION-005-S03] picks up inside columns that hold more pages than one list shows', async () => {
     // Two pages before the columns, and more pages in them than one list shows.
     const inside = range(100, LIST_LIMIT + 50)
     const blocks = [
@@ -271,7 +271,7 @@ describe('UC-NOTICO-NOTION-005 browse the workspace', () => {
     ])
   })
 
-  it('[UC-NOTICO-NOTION-005-S06] lists one top-level section from where it was cut off', async () => {
+  it('[UC-NOTICO-NOTION-005-S03] lists one top-level section from where it was cut off', async () => {
     const many = range(200, SECTION_LIMIT + 10)
     const workspace = () =>
       notion([page(1, 'Notes'), ...pages(many, 'Eng')])
@@ -429,7 +429,7 @@ describe('list_pages requests to Notion', () => {
     expect(result).toContain('(Not looked into: what is under some of the pages shown,')
   })
 
-  it("[UC-NOTICO-NOTION-005-S06] picks up where a list ran out of lookups in a page's own blocks", async () => {
+  it("[UC-NOTICO-NOTION-005-S03] picks up where a list ran out of lookups in a page's own blocks", async () => {
     const words = range(10_000, LIST_LOOKUPS * 100 + 50)
     const kids = range(100, 3)
     const blocks = [page(10, 'Long', [...words, ...kids]), ...text(words), ...pages(kids, 'Child')]
@@ -567,7 +567,7 @@ describe('list_pages workspace', () => {
     expect(result).not.toContain('Elsewhere')
   })
 
-  it('[UC-NOTICO-NOTION-005-S06] lists a section alone as the overview does, without pages an earlier section has', async () => {
+  it('[UC-NOTICO-NOTION-005-S03] lists a section alone as the overview does, without pages an earlier section has', async () => {
     // The private page is also in Shared. Shared leaves it out, alone and in the overview, so their offsets agree.
     const shared = [id(1), ...range(400, SECTION_LIMIT + 5)]
     const blocks = pages(shared.slice(1), 'Shared')

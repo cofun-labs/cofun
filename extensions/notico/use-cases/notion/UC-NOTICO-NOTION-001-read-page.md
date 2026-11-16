@@ -23,10 +23,9 @@ Key constraints:
 | UC-NOTICO-NOTION-001-S04 | P1 | ✅ | Given a database row; when the AI reads it; then the row's properties come with its content. |
 | UC-NOTICO-NOTION-001-S05 | P1 | ✅ | Given a page with child pages and databases; when the AI reads it; then they appear by name with a way to open them, and their content is not included. |
 | UC-NOTICO-NOTION-001-S06 | P0 | ✅ | Given a page the user's Notion account can't open; when the AI tries to read it; then it is told the page can't be read and gets none of its content. |
-| UC-NOTICO-NOTION-001-S08 | P1 | ✅ | Given Notion turns a request away because it is limiting requests; when the AI reads a page; then nothing is tried again, nothing more is sent to Notion, the question stops, and the user is told to wait before asking again. |
+| UC-NOTICO-NOTION-001-S08 | P1 | ✅ | Given Notion turns a request away because it is limiting requests; when the AI reads a page; then nothing is tried again, nothing more is sent to Notion, the question stops, and the user is told to wait; and a question asked in the same side panel before the wait Notion named is over sends nothing to Notion and says how long to wait. |
 | UC-NOTICO-NOTION-001-S09 | P1 | ✅ | Given a page with closed toggles; when the AI reads it; then it gets what is inside them too, nested toggles included. |
 | UC-NOTICO-NOTION-001-S11 | P1 | ✅ | Given Notion fails a request in a way that isn't understood (a server error, an error it doesn't explain, an answer that isn't what Notion sends); when the AI reads a page; then nothing is tried again, the question stops, and the user is told what went wrong. |
-| UC-NOTICO-NOTION-001-S13 | P1 | ✅ | Given Notion turned a request away and said how long to wait; when the user asks again in the same side panel before that wait is over; then nothing is sent to Notion, the question stops, and the user is told how long to wait. |
 
 ### ai-e2e
 

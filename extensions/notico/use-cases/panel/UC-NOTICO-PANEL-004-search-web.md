@@ -16,8 +16,7 @@ Key constraint:
 
 | ID | Priority | Status | Scenario |
 | --- | --- | --- | --- |
-| UC-NOTICO-PANEL-004-S01 | P0 | ✅ | Given a question that needs the web; when the AI searches; then it gets each result's address, title, and description, marked as data from the search, and the tool's card shows the query. |
-| UC-NOTICO-PANEL-004-S02 | P1 | ✅ | Given results of a search; when the AI reads a result's page by its address; then it gets the page's text. |
+| UC-NOTICO-PANEL-004-S01 | P0 | ✅ | Given a question that needs the web; when the AI searches; then it gets each result's address, title, and description, marked as data from the search, the tool's card shows the query, and the AI can read a result's page by its address. |
 | UC-NOTICO-PANEL-004-S05 | P1 | ✅ | Given a question for which the AI searches the web, one search finding nothing; when the reply ends; then what it cost includes what each search cost. |
 | UC-NOTICO-PANEL-004-S06 | P0 | ✅ | Given a user whose credits run out as the AI asks for a search; when it searches; then nothing is searched, the question stops, and the user is told they have no credits, when free ones arrive, and can buy some. |
 | UC-NOTICO-PANEL-004-S03 | P1 | ✅ | Given the service or the provider turning searches away for coming too often, or web search not available; when the AI searches; then the question stops, the user is told why, and nothing more is searched for it. |

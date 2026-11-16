@@ -174,7 +174,7 @@ describe('UC-NOTICO-NOTION-011 mention people', () => {
     expect(ws.transactions).toEqual([])
   })
 
-  it('[UC-NOTICO-NOTION-011-S03] mentions a member in a new page', async () => {
+  it('[UC-NOTICO-NOTION-011-S01] mentions a member in a new page', async () => {
     const ws = workspace([block(1, 'text', [['Intro']])])
     open(ws)
     const result = resultText(
@@ -190,7 +190,7 @@ describe('UC-NOTICO-NOTION-011 mention people', () => {
     expect((first.properties as Rec).title).toEqual([['‣', [['u', KIM]]], [' sends the notes']])
   })
 
-  it('[UC-NOTICO-NOTION-011-S03] mentions a member in a comment', async () => {
+  it('[UC-NOTICO-NOTION-011-S01] mentions a member in a comment', async () => {
     const ws = workspace([block(1, 'text', [['Intro']])])
     open(ws)
     await chat.run(addComment, { page: hex(PAGE), block: '^00000001', text: '@[Kim Lee], can you check this?' })
