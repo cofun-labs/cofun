@@ -1,3 +1,6 @@
+export { CofunAgent, MAY_HAVE_CHANGED } from './agent'
+export type * from './types'
+export { HistoryMessage, ToolDetails, WebError } from './types'
 export {
   HOSTED_HISTORY,
   looseText,
@@ -15,5 +18,6 @@ export {
   readCredits,
   requireToken,
   turnHeaders,
+  workerBaseUrl,
   type WorkerConfig,
 } from './worker'

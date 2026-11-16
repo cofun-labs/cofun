@@ -1,28 +1,10 @@
 // Defines a tool from one zod schema of its arguments: the JSON Schema the model is sent, the check
 // before the tool runs, and the type its code works with all come from that schema.
 import type { ToolContext, ToolDetails, ToolResult, ToolSpec } from './agent'
-import { z } from './zod'
+import { z } from '@cofun/base/zod'
 
-/** A verb in the forms a tool call's description needs: "read", "reading", "read". */
-export interface Verb {
-  base: string
-  ing: string
-  past: string
-}
-
-/**
- * What a tool call does, in the user's words: the verb, then what it acts on. `name` is the name of
- * the thing, shown set apart, when the call knows it: "Searched for *roadmap draft*" is
- * `{ verb: SEARCH, what: 'for', name: 'roadmap draft' }`, and "Moved 2 pages to the trash" is
- * `{ verb: MOVE, what: '2 pages to the trash' }`.
- */
-export interface Action {
-  verb: Verb
-  what?: string
-  name?: string
-  /** Words after the name: "Moved *Notes* to the trash". */
-  after?: string
-}
+import type { Action } from '@cofun/base/ui'
+export type { Action, Verb } from '@cofun/base/ui'
 
 /** A tool as the extension has it: what the agent runs, and how the side panel describes a call. */
 export interface Tool extends ToolSpec {
@@ -64,7 +46,7 @@ export interface ToolDefinition<S extends ArgsSchema> extends Omit<ToolSpec, 'pa
  * them first; arguments that don't parse are a plain error, which the model gets back and can correct.
  *
  * The agent runtime has already checked the model's arguments against `parameters` and converted
- * them where it could (see `toAgentTool` in agent/calls.ts), so in a question this parse refuses next to
+ * them where it could (see `toAgentTool` in the shared agent), so in a question this parse refuses next to
  * nothing (only what JSON Schema can't say, such as a whole number too large to be exact): it is
  * what turns the value into its type, and what a caller without the runtime gets.
  */

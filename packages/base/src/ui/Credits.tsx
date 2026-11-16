@@ -11,9 +11,8 @@ import {
   type CreditsState,
   type Pack,
   type Packs,
-} from '@cofun/base/credits'
+} from '../credits'
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react'
-import { track } from '../analytics'
 import { Page } from './Header'
 import { History, type ReadGrants } from './History'
 import { Icon } from './icons'
@@ -35,12 +34,14 @@ export function CreditsPage({
   credits,
   grants,
   buying,
+  onHistoryOpen,
   onClose,
 }: {
   credits: CreditsState
   /** Reads the history of the credits, when the user opens it. */
   grants: ReadGrants
   buying: Buying
+  onHistoryOpen?: () => void
   onClose: () => void
 }) {
   const [historyOpen, setHistoryOpen] = useState(false)
@@ -80,7 +81,7 @@ export function CreditsPage({
               type="button"
               className="row-link"
               onClick={() => {
-                track({ event: 'credits_history_opened' })
+                onHistoryOpen?.()
                 setHistoryOpen(true)
               }}
             >

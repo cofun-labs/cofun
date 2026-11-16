@@ -1,11 +1,10 @@
+import { Icon, useMenu } from '@cofun/base/ui'
 import { useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
 import type { QuestionPage } from '../agent'
 import { LIMITED_STOP, NotionError } from '../notion/api'
 import { pageIdFromUrl } from '../notion/hosts'
 import { findPages, openNotionPages, openWebTabs, type FoundPage, type WebTab } from '../tools'
 import { allowSite } from '../web/tab'
-import { Icon } from './icons'
-import { useMenu } from './menu'
 import { PageIcon, titleOf } from './Pages'
 
 /**

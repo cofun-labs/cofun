@@ -5,7 +5,7 @@
 // another form. One that doesn't parse is unreadable. It is listed as such, so it can be deleted,
 // and it is never opened: nothing of it reaches the chat or the model.
 import { HistoryMessage, KeptResult, type ResultToKeep } from './agent'
-import { z } from './zod'
+import { z } from '@cofun/base/zod'
 
 /** What the session list shows; the conversation itself is loaded only when a session opens. */
 const SessionInfo = z.object({

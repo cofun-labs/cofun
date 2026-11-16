@@ -1,10 +1,9 @@
+import { Avatar, useAccount, Page } from '@cofun/base/ui'
 import { useAuth } from '@clerk/chrome-extension'
 import { useEffect, useState } from 'react'
 import { loadAnalyticsEnabled, saveAnalyticsEnabled } from '../analytics'
 import { loadMenuShown, saveMenuShown, watchMenuShown } from '../selection'
 import type { ModelSettings } from '../models'
-import { Avatar, useAccount } from './Account'
-import { Page } from './Header'
 import { ModelCard, Switch } from './Model'
 
 /**

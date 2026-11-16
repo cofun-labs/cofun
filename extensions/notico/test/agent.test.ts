@@ -29,7 +29,7 @@ import { carryPages, currentNotionPage } from '../src/tools/current'
 import { trashPage } from '../src/tools/organize'
 import { readPage } from '../src/tools/read'
 import { editPage } from '../src/tools/write'
-import { z } from '../src/zod'
+import { z } from '@cofun/base/zod'
 import { createApp, type Env } from '../../../worker/src/app'
 import { FakeClerk } from '../../../worker/test/clerk'
 import {

@@ -92,8 +92,7 @@ export function detailsOf({ requests, tokens, model, cost }: QuestionDetails): Q
 const tokenCount = z.number().int().nonnegative()
 
 /**
- * The token counts pi read from a model reply. They come from the service (the worker, or
- * OpenRouter), so they are checked like any value from outside.
+ * The token counts pi read from a model reply. They come from the service (the worker or another model provider), so they are checked like any value from outside.
  */
 const ReportedUsage = z.object({ input: tokenCount, output: tokenCount, cacheRead: tokenCount, cacheWrite: tokenCount })
 

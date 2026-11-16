@@ -4,7 +4,7 @@ How Cofun's extensions and the backend they share are built, and why. This file 
 
 Each Cofun extension is an AI side panel for one kind of page, in its own folder under `extensions/` (Notico, for Notion, is the first), built and published by itself. All of them call one Cloudflare Worker (`worker/`), which signs users in, checks who is asking, keeps their credits, passes the conversation to the model, and reads public web pages and searches the web for an extension. It never talks to Notion or acts as the user on any site. The agent and its tools run in the extension, next to the page they act on.
 
-Each extension owns its side panel, agent loop, and site integration. The internal `@cofun/base` package provides the Cofun hosted model and credits client, the credits schemas and formatting, and the Clerk host helpers. Vite bundles the code each extension uses into that extension. Each extension tests its agent against the worker. One account and one balance of credits serve every extension.
+Each extension owns its side panel composition, site integration, and saved chats. The internal `@cofun/base` package runs the agent, provides the Cofun client, and renders the shared parts of the side panel. The extension supplies the tools, model selection, prompts, and context. Vite bundles the code it uses into the extension. Each extension tests its agent against the worker. One account and one balance of credits serve every extension.
 
 ## Single source of truth
 
@@ -70,7 +70,7 @@ A question carries the pages it goes with (the open page, and pages and tabs the
 |---|---|---|
 | Extension | Chrome MV3 + [Side Panel API](https://developer.chrome.com/docs/extensions/reference/api/sidePanel) | Sits next to the page without covering Notion. One panel per window, on every tab, so the conversation stays as the user switches tabs |
 | Extension build | Vite + React + TypeScript | Clerk's extension SDK is React-based; Vite needs little config and no extension framework |
-| Agent runtime | [`@earendil-works/pi-agent-core`](https://www.npmjs.com/package/@earendil-works/pi-agent-core), wrapped in `src/agent/` | Tool loop, events, abort, and tool hooks in a small package; it runs in the side panel because tools act on the browser. The runtime stays in Notico's `src/agent/`, so it can be replaced |
+| Agent runtime | [`@earendil-works/pi-agent-core`](https://www.npmjs.com/package/@earendil-works/pi-agent-core), wrapped in `packages/base/src/agent/` | Tool loop, events, abort, and tool hooks run in the side panel because tools act on the browser. The extension agent folder supplies its own model providers and tool context |
 | Notion read/write | Notion's own internal endpoints, called from inside the user's Notion tab with `chrome.scripting` | Requests are same-origin and carry the tab's own Notion session, so no Notion integration token is needed. They run in an isolated world, out of the page's reach. No `chrome.debugger` (which shows a permanent "debugging this browser" banner). The trade-off: these are not public APIs and may change |
 
 ### Sessions
@@ -100,25 +100,26 @@ extensions/<name>/        one Chrome extension, built and published by itself; n
   manifest.ts             builds manifest.json from .env; a test pins its permissions and content security policy
   PRIVACY.md, README.md   for the extension's users
   store/                  what the Chrome Web Store Dashboard says
-  src/agent/              the agent loop and its model providers; uses @cofun/base/agent for the
-                          hosted model and credits and calls optional services from this folder
+  src/agent/              supplies model selection, tool context, and prompts to @cofun/base/agent;
+                          calls the extension's optional services
   src/tools/              the tools the agent runs (index.ts lists them)
   src/notion/             the site layer for Notion: imports nothing from the agent, tools, sessions, or UI
     api.ts                the only module that knows Notion's endpoints and request shapes
     tab.ts                runs requests in the user's Notion tab: the only use of site fetch, and with src/web/tab.ts of chrome.scripting
   src/web/tab.ts          the site layer for any other site: reads the page a tab shows, once the user allowed its site; sends no request
   src/web/markdown.ts     turns the HTML a tab gives into Markdown, in the side panel, in an inert document
-  src/sidepanel/          the React UI
+  src/sidepanel/          the React UI, composed with @cofun/base/ui
   src/analytics.ts        usage events; the only module that imports the PostHog SDK
-  src/zod.ts              the shared zod wrapper used by the extension's schemas
   test/                   the extension's client and UI tests, with fakes and sanitized fixtures
   browser-test/           pnpm test:browser: the built extension in Chromium, the network answered by fakes (runs in CI)
   use-cases/              the extension's use cases (docs/bdd.md)
 packages/base/            internal package bundled into extensions, with no extension dependency
-  src/agent/              hosted model provider and authenticated Worker client for credits and purchases
+  src/agent/              conversation runtime, tool execution, model providers, and Cofun Worker client
+  src/ui/                 sign-in, account and credits views, Markdown replies, tool cards, and shared CSS
   src/clerk.ts            Clerk host helpers used by the manifest and side panel
   src/credits.ts          schemas and formatting for the credits the Worker returns
   src/zod.ts              zod configured for extension content security policies
+  test/                   standalone tests of shared contracts and helpers
 worker/                   the Cloudflare Worker every extension shares
   src/app.ts              the Hono app, composed from src/routes/; everything under /v1 is behind
                           the session check (src/routes/session.ts)

@@ -15,7 +15,11 @@ function read(patterns: string[]): SourceFile[] {
 
 const report = checkUseCases(
   read(['extensions/*/use-cases/**/UC-*.md', 'worker/use-cases/**/UC-*.md']),
-  read(['worker/test/**/*.test.{ts,tsx}', 'extensions/*/test/**/*.test.{ts,tsx}']),
+  read([
+    'worker/test/**/*.test.{ts,tsx}',
+    'extensions/*/test/**/*.test.{ts,tsx}',
+    'packages/base/test/**/*.test.{ts,tsx}',
+  ]),
 )
 
 // Use cases lived in docs/use-cases/ before they moved next to their code. One still there, from a

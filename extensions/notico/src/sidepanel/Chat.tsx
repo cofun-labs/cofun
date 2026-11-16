@@ -1,3 +1,4 @@
+import { CopyButton, CostNote, AccountMenu, Header, Icon, Markdown, useMenu, CreditsPage } from '@cofun/base/ui'
 import type { CreditsState } from '@cofun/base/credits'
 import { useAuth } from '@clerk/chrome-extension'
 import {
@@ -17,7 +18,6 @@ import {
   type AgentUpdate,
   type ConfirmTool,
   type HistoryMessage,
-  type QuestionCost,
   type QuestionDetails,
   type QuestionPage,
   type QuestionSelection,
@@ -54,18 +54,12 @@ import {
   type OpenPage,
   type SavedTurn,
 } from '../tools'
-import { AccountMenu } from './Account'
-import { Header } from './Header'
-import { Icon } from './icons'
-import { Markdown } from './Markdown'
-import { useMenu } from './menu'
 import { HOSTED, ModelMenu, ModelNote } from './Model'
 import { AddMenu, pageKey, usePagePicker, type SearchStop } from './PagePicker'
 import { ComposerPages, SentPages, type Chip } from './Pages'
 import { SaveButton, SaveToast, useSaves, type SaveState } from './Save'
 import { Sessions, type OpenResult } from './Sessions'
 import { ChatStart } from './Suggestions'
-import { CreditsPage } from './Credits'
 import { Settings } from './Settings'
 import { ToolCall, type ShownTool } from './ToolCall'
 
@@ -1300,6 +1294,7 @@ export function Chat({ userId }: { userId: string }) {
           credits={credits}
           grants={() => agent.creditGrants()}
           buying={{ packs: () => agent.creditPacks(), buy: buyCredits }}
+          onHistoryOpen={() => track({ event: 'credits_history_opened' })}
           onClose={closePage}
         />
       )}
@@ -1447,7 +1442,7 @@ const ReplyFoot = memo(function ReplyFoot({
   const modelName = model && (model.service === 'hosted' ? HOSTED : model.name)
   return (
     <div className="reply-foot">
-      {text && <CopyButton text={text} />}
+      {text && <CopyButton text={text} onCopied={() => track({ event: 'reply_copied' })} />}
       {text && (
         <SaveButton
           what="reply"
@@ -1474,59 +1469,7 @@ const ReplyFoot = memo(function ReplyFoot({
   )
 })
 
-/** Copies `text` to the clipboard, and says for a moment whether it worked. */
-function CopyButton({ text }: { text: string }) {
-  const [state, setState] = useState<'idle' | 'copied' | 'failed'>('idle')
-  useEffect(() => {
-    if (state === 'idle') return
-    const timer = setTimeout(() => setState('idle'), 2000)
-    return () => clearTimeout(timer)
-  }, [state])
-
-  const label = state === 'copied' ? 'Copied' : state === 'failed' ? "Couldn't copy" : 'Copy reply'
-  return (
-    <>
-      <button
-        type="button"
-        className="reply-action"
-        aria-label={label}
-        data-tip={label}
-        onClick={() =>
-          navigator.clipboard.writeText(text).then(
-            () => {
-              track({ event: 'reply_copied' })
-              setState('copied')
-            },
-            () => setState('failed'),
-          )
-        }
-      >
-        <Icon name={state === 'copied' ? 'check' : 'copy'} />
-      </button>
-      {/* Read out when it changes: the button's own name is not announced again while it has focus. */}
-      <span className="sr-only" role="status">
-        {state === 'copied' ? 'Copied' : state === 'failed' ? "Couldn't copy the reply" : ''}
-      </span>
-    </>
-  )
-}
-
 const counted = (n: number, noun: string) => `${n} ${noun}${n === 1 ? '' : 's'}`
-
-/**
- * What a reply cost in credits, as the worker charged it: short, to two significant digits below one
- * credit ("0.48 credits") and one decimal above.
- */
-function CostNote({ cost }: { cost: QuestionCost }) {
-  const credits = cost.microCredits / 1_000_000
-  const digits = credits < 1 ? { maximumSignificantDigits: 2 } : { maximumFractionDigits: 1 }
-  const shown = credits.toLocaleString('en-US', digits)
-  return (
-    <span className="note reply-cost" data-tip="What this reply cost">
-      {shown} {shown === '1' ? 'credit' : 'credits'}
-    </span>
-  )
-}
 
 /**
  * What a question touched in Notion: the distinct pages and databases its tools read and changed

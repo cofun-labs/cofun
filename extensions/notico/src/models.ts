@@ -4,7 +4,7 @@
 // not encrypted, like the Clerk client token.
 // The worker's tests import this file too, through the agent, and their tsconfig has no chrome types.
 /// <reference types="chrome" />
-import { z } from './zod'
+import { z } from '@cofun/base/zod'
 
 /** A model the user asks with their own key (on OpenRouter), as the panel offers it. */
 export const OwnModel = z.object({

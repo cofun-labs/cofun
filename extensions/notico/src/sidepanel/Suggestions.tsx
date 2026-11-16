@@ -1,8 +1,8 @@
+import { Icon, type IconName } from '@cofun/base/ui'
 import type { Mode } from '../mode'
 import type { OpenPage } from '../tools'
 // Notico's own icon, the one in the toolbar and the store; the Cofun mark alone means Cofun.
 import noticoIcon from '../../icons/icon.svg'
-import { Icon, type IconName } from './icons'
 import { titleOf } from './Pages'
 
 /** A suggestion: its words, and where the user goes on typing, if they finish it (the "…"). */

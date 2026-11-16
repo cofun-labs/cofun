@@ -1,12 +1,12 @@
 // A short title for a conversation, written by the model that answered it.
-import type { ModelProvider } from '@cofun/base/agent'
+import type { ModelProvider } from './provider'
 import { normalizeContext, type Model } from '@earendil-works/pi-ai'
 import { streamSimple } from '@earendil-works/pi-ai/api/openai-completions'
 import { z } from '../zod'
 import { textOf } from './history'
 import type { HistoryMessage } from './types'
 
-// The title request (`CopilotAgent.title`): small on purpose, since every one costs the user.
+// The title request (`CofunAgent.title`): small on purpose, since every one costs the user.
 const TITLE_PROMPT =
   'Write a title of 3 to 6 words for the conversation that starts with the question and the reply below, in ' +
   'the language of the question. Answer with the title alone, on one line, with no quotes and no full stop. ' +
@@ -35,7 +35,11 @@ function unquoted(text: string): string {
   return chars.length > 2 && close && chars.at(-1) === close ? chars.slice(1, -1).join('').trim() : text
 }
 
-const withoutFullStop = (text: string) => text.replace(/[.。]+$/u, '').trim()
+function withoutFullStop(text: string): string {
+  let end = text.length
+  while (text[end - 1] === '.' || text[end - 1] === '。') end--
+  return text.slice(0, end).trim()
+}
 
 /**
  * The model's answer to the title request, as a title: one line, without the quotes or the full stop

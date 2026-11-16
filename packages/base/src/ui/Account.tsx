@@ -1,10 +1,10 @@
-import { wholeCredits, type CreditsState } from '@cofun/base/credits'
+import { wholeCredits, type CreditsState } from '../credits'
 import { useAuth, useUser } from '@clerk/chrome-extension'
 import { useState, type Ref } from 'react'
 import { Icon } from './icons'
 import { useMenu } from './menu'
 
-/** Who is signed in, as Clerk knows them. Notico only shows it: there is nothing here to change the account. */
+/** Who is signed in, as Clerk knows them. The panel uses it to identify the account. */
 export function useAccount(): { name: string; email: string; imageUrl: string } {
   const { user } = useUser()
   const email = user?.primaryEmailAddress?.emailAddress ?? ''
@@ -36,7 +36,7 @@ function balanceOf(state: CreditsState): { shown: string; spoken: string } {
 /**
  * The avatar in the header and the menu it opens: who is signed in, then Credits (with the balance)
  * and Settings, each opening its page, and Sign out. The panel's own, in place of Clerk's user menu:
- * Notico offers no account management.
+ * the extension uses Clerk to identify the user.
  */
 export function AccountMenu({
   credits,

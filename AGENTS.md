@@ -108,7 +108,7 @@ An extension's Chrome Web Store privacy policy is written in two parts: [PRIVACY
 - **A site is called only through its site layer**: one module knows the site's endpoints and request shapes (Notico's `src/notion/api.ts`), and requests run inside the user's tab for that site (`src/<site>/tab.ts`, `chrome.scripting` in the ISOLATED world), so they go to that tab's host with its session. Tools never `fetch` the site's URLs themselves. Never use `chrome.debugger`: it shows a permanent "debugging this browser" banner.
 - **Every worker route under `/v1` sits behind the session check** (`src/routes/session.ts`); `worker/test/session.test.ts` checks that each refuses a request without a session.
 - **Module boundaries are lint errors** in `.oxlintrc.json`, run by `pnpm check`. In every extension:
-  - only an extension's `src/agent/` or `packages/base/src/agent/` imports pi. An extension uses `@cofun/base/agent` only from its own `src/agent/`;
+  - only `packages/base/src/agent/` and an extension's `src/agent/` import pi. An extension uses `@cofun/base/agent` through its own `src/agent/`;
   - `fetch` is used only in the agent folders and in the `tab.ts` of a site layer that sends requests to its site (Notico's `src/notion/tab.ts`); `chrome.scripting` only in `src/<site>/tab.ts`; `chrome.debugger` nowhere;
   - `zod` is imported only through `@cofun/base/zod` in extension code (the worker's through `worker/src/zod.ts`);
   - `posthog-js` is imported only in `src/analytics.ts`;
@@ -152,7 +152,7 @@ The extensions and the worker call outside services: the site an extension acts 
 How the fakes and test helpers fit together is in [Testing](docs/development.md#testing).
 
 - **Write a test only when it earns its place.** More tests are not better: each one costs time to run, read, and change. [What gets a test](docs/bdd.md#what-gets-a-test) decides.
-- **Tests live with the package they cover**: `extensions/<name>/test/` and `worker/test/`. Backend tests are REST integration tests that call the Hono app over HTTP and assert on status codes and JSON bodies.
+- **Tests live with the package they cover**: `extensions/<name>/test/`, `packages/base/test/`, and `worker/test/`. Shared code used in a product scenario is exercised through that product's tests. Backend tests are REST integration tests that call the Hono app over HTTP and assert on status codes and JSON bodies.
 - **No mocking.** No `vi.mock()` and no spies. Replace an external dependency with a fake that implements the same interface, injected through `env`. The one module replaced whole is Clerk's React SDK, for the UI tests only; replace no other module this way.
 - **UI tests run the whole side panel and act as a user** ([Testing the side panel's UI](docs/bdd.md#testing-the-side-panels-ui)). Never test a component on its own, and find things by role, accessible name, or visible text, never through component state, the agent, the session store, or a test id. If an element can't be found that way, improve its accessibility.
 - **Tests never wait for time to pass.** Use a fake clock with an explicit start time and move it: no sleeps, and no assertion that depends on how long something took. Waiting for the screen to change is fine.

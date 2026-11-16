@@ -56,6 +56,7 @@ const OLD_TEST_ID = /\[(UC-[A-Z]+-\d+-S\d+)\]/g
 /** The product a use case or test file belongs to, from its folder. */
 function productOf(file: string): string {
   if (file.startsWith(`${WORKER}/`)) return WORKER
+  if (file.startsWith('packages/base/test/')) return 'base'
   const extension = /^extensions\/([^/]+)\//.exec(file)
   if (!extension) throw new Error(`${file} is not in an extension's folder or the worker's`)
   // The folder name, in capitals, is the product's ID prefix, which may hold letters only.

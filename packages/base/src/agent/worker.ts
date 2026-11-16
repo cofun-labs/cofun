@@ -18,6 +18,13 @@ export interface WorkerConfig {
 
 const SIGN_IN = 'Please sign in first.'
 
+/** Remove trailing slashes in one pass before appending a Worker route. */
+export function workerBaseUrl(url: string): string {
+  let end = url.length
+  while (url[end - 1] === '/') end--
+  return url.slice(0, end)
+}
+
 /** Get a fresh Clerk session token for a Worker request. */
 export async function requireToken(getToken: WorkerConfig['getToken']): Promise<string> {
   const token = await getToken()
@@ -35,7 +42,7 @@ export function turnHeaders({ chat, turn }: Turn = {}): Record<string, string> {
  * session token (they expire within minutes).
  */
 export function hostedProvider({ apiUrl, getToken, client }: WorkerConfig): ModelProvider {
-  const baseUrl = apiUrl.replace(/\/+$/, '')
+  const baseUrl = workerBaseUrl(apiUrl)
   const token = () => requireToken(getToken)
   return {
     name: 'Cofun',
@@ -114,7 +121,7 @@ export async function checkout(
   quantity: number,
 ): Promise<string> {
   const token = await requireToken(getToken)
-  const res = await fetch(`${apiUrl.replace(/\/+$/, '')}/billing/checkout`, {
+  const res = await fetch(`${workerBaseUrl(apiUrl)}/billing/checkout`, {
     method: 'POST',
     headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
     body: JSON.stringify({ quantity }),
@@ -136,7 +143,7 @@ async function readOwn<S extends z.ZodType>(
   signal?: AbortSignal,
 ): Promise<z.output<S>> {
   const token = await requireToken(getToken)
-  const url = new URL(`${apiUrl.replace(/\/+$/, '')}/${path}`)
+  const url = new URL(`${workerBaseUrl(apiUrl)}/${path}`)
   for (const [name, value] of Object.entries(query)) if (value !== undefined) url.searchParams.set(name, value)
   const res = await fetch(url, { headers: { authorization: `Bearer ${token}` }, signal })
   const body: unknown = await res.json().catch(() => undefined)

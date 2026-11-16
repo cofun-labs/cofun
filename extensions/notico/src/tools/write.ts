@@ -1,7 +1,7 @@
 // Writing pages: edit_page changes a page's content, create_page makes a page or a row, and
 // update_pages changes titles, icons, and properties.
 import { defineTool } from '../tool'
-import { z } from '../zod'
+import { z } from '@cofun/base/zod'
 import { NotionError, blockOps, type Operation, type RecordMap } from '../notion/api'
 import { pageLink } from '../notion/hosts'
 import {

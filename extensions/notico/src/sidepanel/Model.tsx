@@ -1,8 +1,7 @@
+import { Icon, Mark, useMenu } from '@cofun/base/ui'
 import { useEffect, useId, useRef, useState, type FormEvent } from 'react'
 import { checkKey, openRouterModels, type KeyCheck, type ListedModel } from '../agent'
 import { answering, RECOMMENDED, SERVICE_NAME, type ModelSettings, type OwnModel, type Service } from '../models'
-import { Icon, Mark } from './icons'
-import { useMenu } from './menu'
 
 /** The hosted model, as the panel names it. */
 export const HOSTED = 'Auto'

@@ -104,7 +104,7 @@ State is anything a later step reads back: IndexedDB and `chrome.storage`, D1 ro
 - **D2. No mocking.** No `vi.mock()` and no spies. An external dependency is replaced with a fake that implements its interface, injected through `env`; Clerk's React SDK is the one module replaced whole.
 - **D3. UI tests act as a user.** They run the whole side panel and only type, click, and read the screen, finding things by role, accessible name, label, or visible text: never by component state, the agent, the session store, or a test id. A component is never rendered on its own.
 - **D4. Tests never wait for time to pass.** A fake clock with a fixed start, moved explicitly; no sleeps, and no assertion on how long something took.
-- **D5. Tests live with what they cover**, at the edges of the real code: the extension's client code against the fake Notion tab and its sanitized fixtures, and the worker over HTTP. A fixture holds no real page content or account data.
+- **D5. Tests live with what they cover**, at the edges of the real code: the extension's client code against its fake site and sanitized fixtures, standalone shared tests in `packages/base/test/`, and the worker over HTTP. A fixture holds no real page content or account data.
 - **D6. A removed test leaves its rule guarded.** A test that names a scenario ID or a `[@no-uc:<kind>]` is removed only with its scenario, when the code whose break it guards is gone, when another test still guards the same rule, or when [bdd.md](bdd.md#what-gets-a-test) says it is not a test to keep; the PR says which.
 
 ## E. Calling outside services

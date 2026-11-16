@@ -1,5 +1,5 @@
+import { Icon } from '@cofun/base/ui'
 import { useEffect, useId, useRef, useState } from 'react'
-import { Icon } from './icons'
 
 /** How saving a reply or a chat to Notion is going: running, or done with a link to the page. */
 export type SaveState = { status: 'saving' } | { status: 'saved'; url: string }

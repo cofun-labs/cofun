@@ -1,6 +1,6 @@
 // Organizing pages: move_page, duplicate_page, and trash_page.
 import { defineTool } from '../tool'
-import { z } from '../zod'
+import { z } from '@cofun/base/zod'
 import { NotionError, blockOps, type Block, type NotionRecord } from '../notion/api'
 import { pageLink } from '../notion/hosts'
 import { EditError } from '../notion/edit'
@@ -384,7 +384,7 @@ export const trashPage = defineTool({
     let checked = false
     try {
       // Waited for in full, Stop aside, so nothing it asks of Notion goes unheard: Notion turning a
-      // lookup away stops the question before the user is asked (see previewCall in agent/calls.ts).
+      // lookup away stops the question before the user is asked (see previewCall in the shared agent).
       const tab = await activeNotionTab()
       found = (await tab.client.findRecords(ids.map((id) => ({ table: 'block' as const, id })))).block ?? {}
       parents = await blockParents(tab, found, Object.values(found))

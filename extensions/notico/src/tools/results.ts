@@ -5,7 +5,7 @@
 import type { KeptResult, ToolContext, ToolResult } from '../agent'
 import { clip } from '../notion/comments'
 import { defineTool } from '../tool'
-import { z } from '../zod'
+import { z } from '@cofun/base/zod'
 import { READ, SEARCH, asData, asPageText, count, nameOf, partArg } from './shared'
 
 /** How much of a kept result one part holds; a result no longer than this is given whole, and not kept. */

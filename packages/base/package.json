@@ -6,10 +6,30 @@
     "./agent": "./src/agent/index.ts",
     "./clerk": "./src/clerk.ts",
     "./credits": "./src/credits.ts",
+    "./style.css": "./src/ui/style.css",
+    "./ui": "./src/ui/index.ts",
     "./zod": "./src/zod.ts"
   },
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
   "dependencies": {
+    "@earendil-works/pi-agent-core": "1.5.2",
     "@earendil-works/pi-ai": "1.5.2",
+    "react-markdown": "^10.1.0",
+    "remark-breaks": "^4.0.0",
+    "remark-gfm": "^4.0.1",
     "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@types/chrome": "^0.3.7",
+    "@types/react": "^19.3.0",
+    "typescript": "^7.0.2",
+    "vitest": "^5.1.0"
+  },
+  "peerDependencies": {
+    "@clerk/chrome-extension": "^3.1.105",
+    "react": "^19.3.0"
   }
 }

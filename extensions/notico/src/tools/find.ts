@@ -1,6 +1,6 @@
 // Finding pages: list_pages as the sidebar shows them, and search_pages as Notion's search does.
 import { defineTool } from '../tool'
-import { z } from '../zod'
+import { z } from '@cofun/base/zod'
 import { pageLink } from '../notion/hosts'
 import { clip, quote } from '../notion/comments'
 import { PAGE_TYPES, hexId, oneLine, titleMarkdown } from '../notion/markdown'

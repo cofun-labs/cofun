@@ -1,6 +1,6 @@
 // Notico's public web tools combine Worker calls with the messages shown on the tool cards.
-import { looseText, requireToken, turnHeaders, type Turn, type WorkerConfig } from '@cofun/base/agent'
-import { z } from '../zod'
+import { looseText, requireToken, turnHeaders, workerBaseUrl, type Turn, type WorkerConfig } from '@cofun/base/agent'
+import { z } from '@cofun/base/zod'
 import { WebError, WebPage, WebSearchResult } from './types'
 
 /** A refusal from the worker, with its code. */
@@ -103,7 +103,7 @@ async function askWeb(
   const token = await requireToken(getToken)
   let res: Response
   try {
-    res = await fetch(`${apiUrl.replace(/\/+$/, '')}/${path}`, {
+    res = await fetch(`${workerBaseUrl(apiUrl)}/${path}`, {
       method: 'POST',
       headers: {
         authorization: `Bearer ${token}`,

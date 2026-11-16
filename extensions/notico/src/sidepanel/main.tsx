@@ -1,11 +1,10 @@
-import { clerkSyncHost } from '@cofun/base/clerk'
-import { ClerkProvider, Show, useAuth } from '@clerk/chrome-extension'
+import { CofunAuth, openSignIn, watchSignIn, Header, Mark } from '@cofun/base/ui'
+import { Show, useAuth } from '@clerk/chrome-extension'
 import { StrictMode, useEffect } from 'react'
 import { createRoot } from 'react-dom/client'
 import { identify, track } from '../analytics'
 import { Chat } from './Chat'
-import { Header } from './Header'
-import { Mark } from './icons'
+import '@cofun/base/style.css'
 import './style.css'
 
 const PUBLISHABLE_KEY = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY as string
@@ -13,51 +12,11 @@ const PUBLISHABLE_KEY = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY as string
 const SIGN_IN_HOST = import.meta.env.VITE_CLERK_SYNC_HOST as string
 const PANEL_URL = chrome.runtime.getURL('sidepanel.html')
 
-// Clerk doesn't fully sync auth state into an open side panel, so reload the
-// panel when the sign-in page signs in or out. Only react to a change in
-// signed-in state: other session cookies are rewritten on every token refresh,
-// and reloading then would wipe the conversation.
-//
-// Clerk's __client_uat_<suffix> cookie is "0" when signed out and a timestamp
-// when signed in. It lives on the sign-in page's parent domain, which other
-// Clerk apps may share, so watch only the name suffixed for this publishable
-// key, and read it by URL so parent-domain cookies are included.
-async function uatCookieName(): Promise<string> {
-  // Same as Clerk's getCookieSuffix: first 8 chars of base64url(SHA-1(publishable key)).
-  const digest = await crypto.subtle.digest('SHA-1', new TextEncoder().encode(PUBLISHABLE_KEY))
-  const suffix = btoa(String.fromCharCode(...new Uint8Array(digest)))
-    .replace(/\+/g, '-')
-    .replace(/\//g, '_')
-    .slice(0, 8)
-  return `__client_uat_${suffix}`
-}
+watchSignIn(PUBLISHABLE_KEY, SIGN_IN_HOST)
 
-// Reading by URL can return both a host-only and a parent-domain cookie with this name, in no
-// fixed order. A stale "0" left on one of them must not hide a live session on the other.
-async function readSignedIn(name: string): Promise<boolean> {
-  const cookies = await chrome.cookies.getAll({ url: SIGN_IN_HOST, name })
-  return cookies.some((cookie) => cookie.value !== '' && cookie.value !== '0')
-}
-
-uatCookieName()
-  .then(async (name) => {
-    let signedIn = await readSignedIn(name)
-    let reloadTimer: number | undefined
-    chrome.cookies.onChanged.addListener(({ cookie }) => {
-      if (cookie.name !== name) return
-      clearTimeout(reloadTimer)
-      reloadTimer = window.setTimeout(async () => {
-        const now = await readSignedIn(name)
-        if (now !== signedIn) location.reload()
-        signedIn = now
-      }, 500)
-    })
-  })
-  .catch(console.error)
-
-function openSignIn() {
+function signIn() {
   track({ event: 'sign_in_opened' })
-  chrome.tabs.create({ url: `${SIGN_IN_HOST}/login` })
+  openSignIn(SIGN_IN_HOST)
 }
 
 // Each account gets its own chat and sessions; keyed so a change of account starts over.
@@ -83,17 +42,7 @@ function Identity() {
 
 function App() {
   return (
-    <ClerkProvider
-      publishableKey={PUBLISHABLE_KEY}
-      syncHost={clerkSyncHost(PUBLISHABLE_KEY, SIGN_IN_HOST)}
-      // Clerk's SDK reports its own usage to clerk-telemetry.com when the instance is a
-      // development one. The extension contacts only the hosts PRIVACY.md lists, so it is off
-      // whatever the instance.
-      telemetry={false}
-      afterSignOutUrl={PANEL_URL}
-      signInFallbackRedirectUrl={PANEL_URL}
-      signUpFallbackRedirectUrl={PANEL_URL}
-    >
+    <CofunAuth publishableKey={PUBLISHABLE_KEY} signInHost={SIGN_IN_HOST} panelUrl={PANEL_URL}>
       <WhileLoading />
       <Identity />
 
@@ -102,7 +51,7 @@ function App() {
         <div className="signed-out">
           <Mark className="hero-mark" />
           <p>Sign in to use Notico.</p>
-          <button className="primary" onClick={openSignIn}>
+          <button className="primary" onClick={signIn}>
             Sign in
           </button>
         </div>
@@ -111,7 +60,7 @@ function App() {
       <Show when="signed-in">
         <SignedInChat />
       </Show>
-    </ClerkProvider>
+    </CofunAuth>
   )
 }
 

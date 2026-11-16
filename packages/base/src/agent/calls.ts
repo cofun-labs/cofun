@@ -1,14 +1,7 @@
 // Tool calls as the agent runs them: each tool as pi runs it, its preview, the user's OK, and the
 // errors that stop a question.
 import type { AgentTool } from '@earendil-works/pi-agent-core'
-import {
-  WebError,
-  type ConfirmTool,
-  type ToolCallRequest,
-  type ToolContext,
-  type ToolResult,
-  type ToolSpec,
-} from './types'
+import { WebError, type ConfirmTool, type ToolCallRequest, type ToolResult, type ToolSpec } from './types'
 
 /** The worker's code for a request refused because the user has no credits left. */
 const OUT_OF_CREDITS = 'out_of_credits'
@@ -18,7 +11,7 @@ const OUT_OF_CREDITS = 'out_of_credits'
  * preview error that stops the question (see `stopsQuestion`) comes back as `stop`.
  */
 export async function previewCall(
-  tool: ToolSpec | undefined,
+  tool: Pick<ToolSpec<unknown>, 'preview'> | undefined,
   args: unknown,
   signal?: AbortSignal,
 ): Promise<{ preview?: string; stop?: string }> {
@@ -35,7 +28,7 @@ export async function previewCall(
       }),
     }
   } catch (err) {
-    // A preview turned away by Notion stops the question, like a tool's error would.
+    // A preview turned away by the site stops the question, like a tool's error would.
     const stop = stopsQuestion(err)
     if (stop) return { stop }
     console.error('Could not preview the tool call', err)
@@ -135,14 +128,14 @@ function admitsNull(schema: unknown): boolean {
   return [schema.anyOf, schema.oneOf].some((branches) => Array.isArray(branches) && branches.some(admitsNull))
 }
 
-export interface Reporter {
+export interface Reporter<Context> {
   /** The question stops: what the user is told, and the code of the error that stopped it, if it has one. */
   stop(reason: string, code?: string): void
   changed(): void
-  /** The tool failed with an error that has a code (a Notion error's, such as `no_access`). */
+  /** The tool failed with an error that has a code (such as `no_access`). */
   failed(code: string): void
   /** What the call gets while it runs; its `ask` resolves false once the question it was asked in is over. */
-  context: ToolContext
+  context: Context
 }
 
 /**
@@ -150,14 +143,14 @@ export interface Reporter {
  * for an optional argument is dropped, "2" becomes 2 for a number, one value becomes a list of one)
  * and checks the result against `parameters`. A call that does not fit never reaches the tool or
  * `beforeToolCall`: the model gets pi's list of what is wrong with each argument. The tool gets the
- * converted copy, which it parses itself when it is defined with `defineTool` (src/tool.ts).
+ * converted copy, which it parses itself using the schema the extension defines for the tool.
  *
  * One conversion is stopped before pi makes it: a null where the schema takes none, for a required
  * argument or an entry of a list. pi would turn it into the text "null", 0, or false and run the tool
  * with that, so a page could be titled "null". Such a call is refused like any other that does not
  * fit, and the model is told where the nulls are.
  */
-export function toAgentTool(spec: ToolSpec, reporter: () => Reporter): AgentTool {
+export function toAgentTool<Context>(spec: ToolSpec<Context>, reporter: () => Reporter<Context>): AgentTool {
   return {
     name: spec.name,
     label: spec.name,

@@ -6,7 +6,7 @@
 // click in the side panel can grant. It also reads the text selected in a tab, on any site, when the
 // user sends it with the context menu.
 
-import { z } from '../zod'
+import { z } from '@cofun/base/zod'
 import { pageMarkdown } from './markdown'
 
 /** The match pattern of a site's origin, as host permissions name it. */

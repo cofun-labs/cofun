@@ -1,5 +1,5 @@
+import { Icon } from '@cofun/base/ui'
 import { useEffect, useRef, useState } from 'react'
-import { Icon } from './icons'
 import { filterSessions, type ListedSession, type SessionStore } from '../sessions'
 
 /** How opening a session went: `gone` when it no longer exists, `unreadable` when it can't be read. */

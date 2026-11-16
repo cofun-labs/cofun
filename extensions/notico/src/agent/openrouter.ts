@@ -2,7 +2,7 @@
 import { HOSTED_HISTORY, parseError, type Failure, type ModelProvider } from '@cofun/base/agent'
 import type { Model } from '@earendil-works/pi-ai'
 import type { OwnModel } from '../models'
-import { z } from '../zod'
+import { z } from '@cofun/base/zod'
 import type { KeyCheck } from './own'
 
 /**

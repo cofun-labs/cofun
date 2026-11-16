@@ -1,5 +1,4 @@
-// zod for extension code. Import `z` from this wrapper so the setting
-// below must be in place before any schema is built.
+// Import `z` from this wrapper so the extension's CSP setting is in place before any schema is built.
 import { z } from 'zod'
 
 // zod would otherwise compile its object parsers with `new Function`, which the extension's content

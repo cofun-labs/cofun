@@ -1,7 +1,7 @@
 // Whether the agent may change the user's Notion workspace (UC-NOTICO-AGENT-003): Edit, the default, or
 // Read only. Kept in chrome.storage.local per account, on this device only, like the model settings
 // (models.ts).
-import { z } from './zod'
+import { z } from '@cofun/base/zod'
 
 const Mode = z.enum(['edit', 'read_only'])
 export type Mode = z.infer<typeof Mode>
