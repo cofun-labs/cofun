@@ -508,9 +508,11 @@ export function Chat({ userId }: { userId: string }) {
   const gone = useRef(false)
   useEffect(() => {
     gone.current = false
-    // The panel unmounts on sign-out; don't leave a question running tools in the background.
+    // The panel unmounts on sign-out; don't leave a question running tools in the background, nor
+    // let one still waiting to be asked (see `send`) start.
     return () => {
       gone.current = true
+      stopped.current++
       agentRef.current?.stop()
     }
   }, [])
@@ -773,6 +775,12 @@ export function Chat({ userId }: { userId: string }) {
       const askedWith = answering(modelRef.current ?? (await modelLoad))
       // The service the question is asked of, as the agent reads it when the question starts.
       const provider = askedWith?.service ?? 'hosted'
+      // The mode and the model may have been loading: a Stop, a switch, or the panel closing meanwhile
+      // stops the question too. The agent only stops one that has started.
+      if (stopped.current !== stops) {
+        updateReply((m) => ({ ...m, stopped: true }))
+        return
+      }
       track({ event: 'question_asked', provider, notion_tab: !!tabPage })
       const result = await agent.ask(text, onUpdate, confirm, {
         context,
