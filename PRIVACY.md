@@ -46,11 +46,11 @@ The worker does not store or log your conversation, the address or text of a web
 
 Cloudflare keeps the worker's logs: the request logs Cloudflare records for every Worker (such as the time, URL, and status of a request) and the errors the worker prints when a request fails. The worker does not write the conversation to them.
 
-- When a model call fails, before or partway through a reply, the credit ledger fails, or a request fails in a way the worker did not expect, it logs only the first 60 characters of the error's name and the first 200 characters of its message, never the whole error: if the model provider's error quoted part of a request, no more than that could reach the logs.
+- It logs only the first 60 characters of the error's name and the first 200 characters of its message, never the whole error, when a model call fails before or partway through a reply, a record of a model call or a render fails, the credits cannot be checked or read, a checkout or a Stripe event fails, the purchase event cannot be sent to PostHog, an operator's read or grant fails, or a request fails in a way the worker did not expect: if the model provider's error quoted part of a request, no more than that could reach the logs. That is every failure it logs except the two below.
 - When a web search fails, it logs only the HTTP status and the error code AI Gateway answered with, or the name of the error, never the query.
 - When the usage record fails, it logs that error whole; it is never given the conversation.
 - When an operator grants credits by hand, it logs the operator's Clerk user id, the account's Clerk user id, the number of credits, and when they expire.
-- It logs each purchase with your Clerk user id, the credits, and the payment's reference, and each purchase taken back with the payment's reference and why.
+- It logs each purchase with your Clerk user id, the credits, and the payment's reference, and each purchase taken back with the payment's reference and why. It also logs a payment it grants nothing for: the Stripe reference of its checkout, and, when what was paid does not match the pack, how many units were paid for, how many were asked, and the price; or, for a refund or dispute of a payment that has no grant, the payment's reference and why.
 
 ## Changes and contact
 
