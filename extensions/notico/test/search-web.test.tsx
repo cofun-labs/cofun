@@ -86,12 +86,25 @@ describe('searching the web', () => {
   it.each([
     ['the worker turns searches away for coming too often', /Notico searched the web too many times in a minute/],
     ['the search fails', /^Notico could not search the web: web search is not available right now\.$/],
+    ['the request to the worker fails', /^Notico could not search the web: the search failed, or its answer/],
+    [
+      'the worker answers what the panel cannot read',
+      /^Notico could not search the web: the search failed, or its answer/,
+    ],
   ])('[UC-NOTICO-PANEL-004-S03] the question stops when %s, and nothing more is searched', async (what, told) => {
     const { browser, user } = await open()
     if (what.includes('too often')) browser.env.SEARCH_LIMIT = { limit: async () => ({ success: false }) }
-    else
+    else if (what.includes('search fails'))
       browser.ai.searchReply = () =>
         Response.json({ ok: false, error: { code: 'web_search_payment_required' } }, { status: 402 })
+    else {
+      const worker = browser.worker
+      browser.worker = async (request) => {
+        if (!request.url.endsWith('/v1/web/search')) return worker(request)
+        if (what.includes('fails')) throw new TypeError('Failed to fetch')
+        return Response.json({ items: [] })
+      }
+    }
     browser.ai.script.push(searchCall(QUERY), searchCall(QUERY), { reply: 'Never sent.' })
 
     await ask(user, 'Where does oolong tea come from?')

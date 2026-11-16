@@ -212,12 +212,23 @@ export async function searchWebFor(
 ): Promise<WebSearchResult[]> {
   const token = await getToken()
   if (!token) throw new Error(SIGN_IN)
-  const res = await fetch(`${apiUrl.replace(/\/+$/, '')}/web/search`, {
-    method: 'POST',
-    headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json', 'x-cofun-client': client },
-    body: JSON.stringify({ query, limit }),
-    signal,
-  })
+  /** A failure whose cause is not known: the worker may have made the search, so it is not made again. */
+  const failed = (cause: unknown) => {
+    if (signal?.aborted) return cause
+    const message = 'the search failed, or its answer could not be read'
+    return new WebError('search_failed', message, `Notico could not search the web: ${message}.`, { cause })
+  }
+  let res: Response
+  try {
+    res = await fetch(`${apiUrl.replace(/\/+$/, '')}/web/search`, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json', 'x-cofun-client': client },
+      body: JSON.stringify({ query, limit }),
+      signal,
+    })
+  } catch (err) {
+    throw failed(err)
+  }
   const body: unknown = await res.json().catch(() => undefined)
   if (!res.ok) {
     const refusal = CodedError.safeParse(body).data?.error
@@ -231,5 +242,7 @@ export async function searchWebFor(
         : `Notico could not search the web: ${message}.`,
     )
   }
-  return WebSearch.parse(body).results
+  const answer = WebSearch.safeParse(body)
+  if (!answer.success) throw failed(answer.error)
+  return answer.data.results
 }

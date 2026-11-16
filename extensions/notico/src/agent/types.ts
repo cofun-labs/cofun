@@ -180,8 +180,9 @@ export class WebError extends Error {
     message: string,
     /** Set when the question must stop (the worker's rate limit, a failed search): what the user is told. */
     readonly stopsQuestion?: string,
+    options?: ErrorOptions,
   ) {
-    super(message)
+    super(message, options)
   }
 }
 

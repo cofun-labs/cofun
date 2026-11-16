@@ -69,7 +69,8 @@ export class FakeBrowser {
   readonly sentToWorker: string[] = []
 
   /** Asks the worker something outside the panel; set when the browser starts. */
-  private worker!: (request: Request) => Response | Promise<Response>
+  /** Answers the panel's requests to the worker: the worker app. A test may wrap it, to fail a request on the way. */
+  worker!: (request: Request) => Response | Promise<Response>
   /** The worker's configuration; a test may change it, such as taking buying credits away. */
   env!: Env
   private issuer!: FakeClerk
