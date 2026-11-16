@@ -60,7 +60,7 @@ There is nothing to connect on the Notion side: no integration to create, no tok
 </p>
 
 - **It works as you, in your own Notion tab.** Pages are read and changed from inside the Notion tab you already have open, with the session you're already signed in with. Notico can reach what you can reach, and nothing else. The trade-off: it uses the same internal API as Notion's own web app, which is not a public API and may change.
-- **The server never talks to Notion.** It checks who you are and passes the conversation to the model. The work on your pages happens in your browser.
+- **The server never talks to Notion.** It checks who you are, passes the conversation to the model, and reads public web pages and searches the web for the assistant. The work on your pages happens in your browser.
 - **It is careful with your Notion account.** If Notion asks it to slow down, or answers with something it doesn't understand, it stops and tells you instead of pushing on or working around it.
 
 ## Privacy and safety
