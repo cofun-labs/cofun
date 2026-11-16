@@ -235,8 +235,9 @@ export class CopilotAgent {
     this.failedWith = undefined
     let steps = 0
     let hitLimit = false
-    // Tool calls of this question that failed on their own (see MAX_FAILED_CALLS).
+    // Tool calls of this question that failed on their own, and whether that stopped it (see MAX_FAILED_CALLS).
     let failedCalls = 0
+    let tooManyFailed = false
     let failure: Failure | undefined
     let stopped = false
     // The model gave its final answer; a Stop after this point is too late to drop it.
@@ -302,7 +303,7 @@ export class CopilotAgent {
         const reason =
           previewStop !== undefined
             ? stoppedInPreview(previewStop, true)
-            : this.stopReason === TOO_MANY_FAILED
+            : tooManyFailed
               ? NOT_RUN_FAILED
               : STOPPED_BY_ERROR
         return { block: true, reason, terminate: true }
@@ -382,7 +383,10 @@ export class CopilotAgent {
           update.result = started.has(update.id) ? `${STOPPED_DURING}\n${update.result}` : STOPPED_BEFORE
         }
         // Counted after the status is settled: a call refused, declined, or stopped did not fail on its own.
-        if (update.status === 'failed' && ++failedCalls >= MAX_FAILED_CALLS) this.stopReason ??= TOO_MANY_FAILED
+        if (update.status === 'failed' && ++failedCalls >= MAX_FAILED_CALLS && !this.stopReason) {
+          this.stopReason = TOO_MANY_FAILED
+          tooManyFailed = true
+        }
         started.delete(update.id)
         if (running?.id === update.id) running = undefined
         ended.set(update.id, { status: update.status, result: update.result })
