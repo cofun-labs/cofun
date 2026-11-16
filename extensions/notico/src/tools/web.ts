@@ -10,7 +10,7 @@ import { clip } from '../notion/comments'
 import { defineTool } from '../tool'
 import { z } from '../zod'
 import { KEPT_CHARS, withText } from './results'
-import { READ, SEARCH, asData, asPageText, count, on, verb } from './shared'
+import { READ, SEARCH, asData, count, noteUrl, on, verb } from './shared'
 
 const TITLE_CHARS = 200
 const URL_CHARS = 2000
@@ -96,7 +96,7 @@ async function readPageAt(
   const lines = [
     // As JSON, so the title and URL stay inside their quotes and on their line.
     `Web page${render ? ', rendered,' : ''} on ${host}: ${JSON.stringify({ title: clip(page.title, TITLE_CHARS), url: clip(page.url, URL_CHARS) })}`,
-    ...(page.url !== url.href ? [`[The address redirected here from ${clip(url.href, URL_CHARS)}.]`] : []),
+    ...(page.url !== url.href ? [`[The address redirected here from ${noteUrl(clip(url.href, URL_CHARS))}.]`] : []),
     ...(page.scripted && !render
       ? [
           '[The page shows little text and runs scripts: it may show more once they run. If this is not what the ' +
@@ -106,8 +106,8 @@ async function readPageAt(
   ]
   const { title, text, chars } = page
   const tool = render ? 'render_web_page' : 'read_web_page'
-  // Text as the worker gives it, escaped as text: a render's Markdown is Browser Run's, which does not
-  // escape the page's own brackets as the extension's does (asPageMarkdown).
+  // Text as the worker gives it: a render's Markdown is Browser Run's, which does not escape the page's
+  // own brackets as the extension's does (src/web/markdown.ts).
   const read = { tool, title, url: page.url, markdown: false, text, chars }
   return withText(lines, read, page.title.trim() || host, context)
 }
@@ -179,12 +179,13 @@ export const searchWeb = defineTool({
       throw err
     }
     const lines = [
-      // As JSON, so the query, titles, and URLs stay inside their quotes and on their line.
+      // As JSON, so the query and each result stay inside their quotes and on their line.
       `Web search for ${JSON.stringify(clip(asked, QUERY_CHARS))}: ${results.length ? count(results.length, 'result') : 'no results'}.`,
-      ...results.flatMap((r, n) => [
-        `${n + 1}. ${JSON.stringify({ title: clip(r.title, TITLE_CHARS), url: clip(r.url, URL_CHARS) })}`,
-        asPageText(r.description),
-      ]),
+      // The description too: on a line of its own, it could start with a result's number and fake one.
+      ...results.map(
+        (r, n) =>
+          `${n + 1}. ${JSON.stringify({ title: clip(r.title, TITLE_CHARS), url: clip(r.url, URL_CHARS), description: r.description })}`,
+      ),
     ]
     return { text: asData(lines), details: { name: asked } }
   },
