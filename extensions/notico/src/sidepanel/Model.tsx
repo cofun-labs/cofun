@@ -454,7 +454,7 @@ function ProviderSetup({
     <div className="provider" role="group" aria-label={name}>
       <ProviderHead
         name={name}
-        detail="Your own key. No credits spent."
+        detail="Your own key. Credits only for rendered pages."
         mark={name[0]}
         tone={name[0].toLowerCase()}
         status={on ? status : undefined}

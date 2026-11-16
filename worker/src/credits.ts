@@ -1,3 +1,4 @@
+import type { RenderOutcome } from './web'
 import * as z from './zod'
 
 /**
@@ -197,13 +198,10 @@ interface ModelCall {
   estimated: boolean
 }
 
-/**
- * A page rendered in Browser Run, however it ended (`ok`, `no_text`, or `render_failed`), and the
- * browser time it used, which is what it is charged by.
- */
+/** A page rendered in Browser Run, however it ended, and the browser time it used, which is what it is charged by. */
 interface WebRender {
   kind: 'web_render'
-  outcome: string
+  outcome: RenderOutcome
   browserMs: number
 }
 

@@ -116,12 +116,12 @@ export function webRoutes({ now, logError }: Pick<Deps, 'now' | 'logError'>): Ap
       const product = usage.product
       const work = (async () => {
         const render = await renderPage(browser, url, body.max_chars, () => now().getTime())
-        const { result, browserMs } = render
+        const { outcome, browserMs } = render
+        const result = render.outcome === 'ok' ? render.page : render.error
         // What Browser Run bills, however the render ended: a page with no text and one that failed
         // used the browser too. When no response came back, what it billed is not known, and the
         // user is not charged a guess.
         const cost = render.answered ? renderCostOf(browserMs) : 0
-        const outcome = result instanceof PageError ? result.code : 'ok'
         try {
           await ledger.spend({ product, cost, at: now().getTime() }, { kind: 'web_render', outcome, browserMs })
           usage.microCredits = cost

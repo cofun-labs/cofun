@@ -365,17 +365,19 @@ function tidy(text: string): string {
 /** What Browser Run's markdown action answers when it rendered the page, as far as the worker reads it. */
 const RenderAnswer = z.object({ success: z.literal(true), result: z.string() })
 
+/** How a render ended: it gave a page, the page showed no text, or it could not be rendered. */
+export type RenderOutcome = 'ok' | 'no_text' | 'render_failed'
+
 /**
- * A render, however it ended: the page, or why there is none (`no_text`, `render_failed`), and the
- * browser time it used in ms. That is the time Browser Run reported (`X-Browser-Ms-Used`), what it
- * bills, or the time the render took when it reported none. `answered` is false when no response
- * came back at all, so what Browser Run billed for it is not known.
+ * A render, however it ended: the page, or why there is none, and the browser time it used in ms.
+ * That is the time Browser Run reported (`X-Browser-Ms-Used`), what it bills, or the time the
+ * render took when it reported none. `answered` is false when no response came back at all, so
+ * what Browser Run billed for it is not known.
  */
-export interface Render {
-  result: WebPage | PageError
-  browserMs: number
-  answered: boolean
-}
+export type Render = { browserMs: number; answered: boolean } & (
+  | { outcome: 'ok'; page: WebPage }
+  | { outcome: Exclude<RenderOutcome, 'ok'>; error: PageError }
+)
 
 /** The browser time a Browser Run response reports, or undefined when it reports none it can be read as. */
 function browserTimeOf(res: Response): number | undefined {
@@ -398,7 +400,8 @@ export async function renderPage(
 ): Promise<Render> {
   const started = now()
   const took = () => Math.max(0, now() - started)
-  const failed = new PageError('render_failed', 'the page could not be rendered')
+  const failed = () =>
+    ({ outcome: 'render_failed', error: new PageError('render_failed', 'the page could not be rendered') }) as const
   let res: Response
   try {
     res = await browser.quickAction('markdown', {
@@ -407,14 +410,16 @@ export async function renderPage(
       gotoOptions: { waitUntil: 'networkidle2', timeout: RENDER_TIMEOUT_MS },
     })
   } catch {
-    return { result: failed, browserMs: took(), answered: false }
+    return { ...failed(), browserMs: took(), answered: false }
   }
   const answer = RenderAnswer.safeParse(await res.json().catch(() => undefined))
   const browserMs = browserTimeOf(res) ?? took()
-  if (!res.ok || !answer.success) return { result: failed, browserMs, answered: true }
+  if (!res.ok || !answer.success) return { ...failed(), browserMs, answered: true }
   const text = tidy(answer.data.result)
-  if (!text)
-    return { result: new PageError('no_text', 'the page shows no text, even rendered'), browserMs, answered: true }
+  if (!text) {
+    const error = new PageError('no_text', 'the page shows no text, even rendered')
+    return { outcome: 'no_text', error, browserMs, answered: true }
+  }
   const page: WebPage = {
     url: url.href,
     title: /^#\s+(.+)$/m.exec(text)?.[1].trim().slice(0, TITLE_CHARS) ?? '',
@@ -422,5 +427,5 @@ export async function renderPage(
     chars: text.length,
     scripted: false,
   }
-  return { result: page, browserMs, answered: true }
+  return { outcome: 'ok', page, browserMs, answered: true }
 }
