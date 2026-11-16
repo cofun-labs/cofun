@@ -1,5 +1,5 @@
 // Reads the page in one of the user's tabs on another site than Notion (the current tab, or a tab
-// the user added to the conversation): its main text, as the tab shows it, in the tab itself
+// the user added to the conversation): its main content, as the tab shows it, in the tab itself
 // (chrome.scripting, ISOLATED world). So it reaches what the user sees there, pages behind their
 // sign-in and content drawn by scripts included, and sends no request of its own. Notico may read a
 // site only once the user allowed it (optional host permissions, one origin at a time), which only a
@@ -7,6 +7,7 @@
 // user sends it with the context menu.
 
 import { z } from '../zod'
+import { pageMarkdown } from './markdown'
 
 /** The match pattern of a site's origin, as host permissions name it. */
 const pattern = (origin: string) => `${origin}/*`
@@ -67,20 +68,30 @@ const pdf = (where: TabWhere) => `${cap(where)} shows a PDF in Chrome's viewer, 
 
 /**
  * What the script in the tab returns. The page can reach the DOM it reads (a named element can
- * stand in for `document.title`), so the result is parsed, not trusted. `frames`: how many frames
- * the page holds, which are not read.
+ * stand in for `document.title`), so the result is parsed, not trusted. `html`: the page's main
+ * content (see pageHtml); `frames`: how many frames the page holds, which are not read.
  */
 const PageResult = z.union([
   z.object({ pdf: z.literal(true) }),
-  z.object({ title: z.string(), url: z.string(), text: z.string(), chars: z.number(), frames: z.number() }),
+  z.object({ title: z.string(), url: z.string(), html: z.string(), frames: z.number() }),
 ])
 
-/** The page a tab shows, as read from it: its main text up to the characters asked for, and how long it all is. */
-export type TabPage = Exclude<z.infer<typeof PageResult>, { pdf: true }>
+/**
+ * The page a tab shows, as read from it: its main content as Markdown, up to the characters asked
+ * for, and how long it all is.
+ */
+export interface TabPage {
+  title: string
+  url: string
+  text: string
+  chars: number
+  frames: number
+}
 
 /**
- * Reads up to `maxChars` of the main text of the page in the tab, which must still be on `origin`;
- * otherwise, or when the tab can't be read, says why, for the model, naming the tab as `where`.
+ * Reads up to `maxChars` of the main content of the page in the tab, as Markdown; the tab must
+ * still be on `origin`. Otherwise, or when the tab can't be read, says why, for the model, naming
+ * the tab as `where`.
  */
 export async function readPage(
   tabId: number,
@@ -92,12 +103,7 @@ export async function readPage(
   try {
     // ISOLATED, not MAIN: the page can't see or patch this code. The top frame only: frames from
     // other sites are other sites, which the user may not have allowed.
-    const [frame] = await chrome.scripting.executeScript({
-      target: { tabId },
-      world: 'ISOLATED',
-      func: pageText,
-      args: [maxChars],
-    })
+    const [frame] = await chrome.scripting.executeScript({ target: { tabId }, world: 'ISOLATED', func: pageHtml })
     raw = frame?.result
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
@@ -113,13 +119,20 @@ export async function readPage(
   if (!parsed.success) return { reason: `The page in ${where} could not be read: it did not give its text.` }
   const result = parsed.data
   if ('pdf' in result) return { reason: pdf(where) }
-  if (!result.text && result.frames)
+  const text = pageMarkdown(result.html)
+  if (!text && result.frames)
     return {
       reason: `The page in ${where} shows no text of its own: its content is in frames, which Notico doesn't read.`,
     }
   // The tab may have moved on since it was looked at, to a site the user allowed for something else.
   if (new URL(result.url).origin !== origin) return { reason: `${cap(where)} went to another site while it was read.` }
-  return result
+  return {
+    title: result.title,
+    url: result.url,
+    text: text.slice(0, maxChars),
+    chars: text.length,
+    frames: result.frames,
+  }
 }
 
 /**
@@ -142,27 +155,69 @@ export async function selectedText(tabId: number, frameId: number): Promise<stri
   }
 }
 
-/** Runs in the tab (see pageText): the frame's selection as text. */
+/** Runs in the tab (see pageHtml): the frame's selection as text. */
 function selectionText(): string {
   return document.getSelection()?.toString() ?? ''
 }
 
 /**
  * Runs in the tab. Chrome serializes this function on its own, so it must not use anything from
- * outside its body, and it must not throw. The main text is the page's `main` element (or its main
- * landmark), else its first `article`, else the whole body, as the page shows it (innerText: what is
- * hidden is left out).
+ * outside its body, and it must not throw. The main content is the page's `main` element (or its
+ * main landmark), else its first `article`, else the whole body: the first of them that shows any
+ * text. It is given as HTML, for the side panel to turn into Markdown (src/web/markdown.ts), from a
+ * copy without what the page doesn't show, what is not part of its text (scripts, styles, frames,
+ * media, form controls), and its navigation, asides, and footers; its links made absolute, without
+ * their fragment, and only on links to http(s) pages.
  */
-function pageText(maxChars: number): z.input<typeof PageResult> | null {
+function pageHtml(): z.input<typeof PageResult> | null {
   if (document.contentType === 'application/pdf') return { pdf: true }
-  // An element's text as shown: only HTML elements have it (an SVG's `main` has none).
-  const shown = (el: Element | null) =>
-    el && 'innerText' in el && typeof el.innerText === 'string' ? el.innerText.trim() : ''
-  const main = shown(document.querySelector('main, [role="main"]')) || shown(document.querySelector('article'))
-  // Three or more line breaks in a row say nothing more than two.
-  const text = (main || shown(document.body)).replace(/\n{3,}/g, '\n\n')
+  const LEFT_OUT =
+    'script, style, noscript, template, svg, math, canvas, iframe, frame, object, embed, video, audio, map, ' +
+    'nav, aside, footer, button, input, select, textarea, dialog:not([open]), [hidden], [aria-hidden="true"]'
+  // What the user would not see. Chrome finds that from the layout, element by element, without
+  // computing every node's style; an element shown as its children only (display: contents) has no
+  // box of its own but is shown. Where the browser can't tell (no checkVisibility), it is shown.
+  const unseen = (el: Element) =>
+    typeof el.checkVisibility === 'function' &&
+    !el.checkVisibility({ visibilityProperty: true }) &&
+    getComputedStyle(el).display !== 'contents'
+  const shown = (root: Element | null): string => {
+    if (!root) return ''
+    const copy = root.cloneNode(true)
+    if (!(copy instanceof Element)) return ''
+    // The copy has the same elements in the same order, but no layout: the page's own say what is shown.
+    const from = [root, ...root.querySelectorAll('*')]
+    const to = [copy, ...copy.querySelectorAll('*')]
+    for (let i = 0; i < from.length; i++) {
+      if (!from[i].matches(LEFT_OUT) && !unseen(from[i])) continue
+      if (i === 0) return ''
+      to[i].remove()
+      // Its descendants go with it.
+      i += from[i].querySelectorAll('*').length
+    }
+    for (const link of copy.querySelectorAll('a')) {
+      const href = link.getAttribute('href') ?? ''
+      let url: URL | undefined
+      try {
+        // A link to a place on the same page leads nowhere new.
+        url = href.startsWith('#') ? undefined : new URL(href, document.baseURI)
+      } catch {
+        url = undefined
+      }
+      if (url && (url.protocol === 'https:' || url.protocol === 'http:')) {
+        // A fragment rarely says more than where on the page to look; it can carry a token.
+        url.hash = ''
+        link.setAttribute('href', url.href)
+      } else link.removeAttribute('href')
+    }
+    return copy.textContent?.trim() ? copy.innerHTML : ''
+  }
+  const html =
+    shown(document.querySelector('main, [role="main"]')) ||
+    shown(document.querySelector('article')) ||
+    shown(document.body)
   // A named element can stand in for the title; the tab then gives none.
   const title = typeof document.title === 'string' ? document.title : ''
   const frames = document.querySelectorAll('iframe, frame').length
-  return { title, url: location.href, text: text.slice(0, maxChars), chars: text.length, frames }
+  return { title, url: location.href, html, frames }
 }

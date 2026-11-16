@@ -162,3 +162,11 @@ export function plural(n: number, word: string): string {
  * like a note in brackets or a block reference gets a backslash first.
  */
 export const asPageText = (text: string) => text.replace(/^([^\S\n]*)(\[|\^)/gm, '$1\\$2')
+
+/**
+ * Escapes a page's Markdown (src/web/markdown.ts) as asPageText escapes text, but for a line that
+ * opens with a link to a web page: the Markdown escapes every `[` of the page's own text, so such a
+ * `[` opens a link it wrote, and a backslash would undo the link.
+ */
+export const asPageMarkdown = (text: string) =>
+  text.replace(/^([^\S\n]*)(\^|\[(?!(?:[^\]\\\n]|\\.)*\]\(https?:\/\/))/gm, '$1\\$2')

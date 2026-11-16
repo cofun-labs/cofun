@@ -934,32 +934,35 @@ function applyOperation(
 }
 
 /**
- * The DOM of a page on another site, as far as read_current_tab's script reads it: its title, its
- * type, the text its `main` element, first `article`, and body show (an element left out is
- * not on the page), and how many frames it holds.
+ * The DOM of a page on another site, as far as the script that reads a tab uses it: its title, its
+ * type, and a real document (jsdom's, with no layout, so nothing is hidden by style) whose body holds
+ * `html`, or `main` in a `main` element, at `url`, and as many frames as asked.
  */
 export function webPage({
   title,
   main,
-  article,
-  body = '',
+  html = main === undefined ? '' : `<main>${main}</main>`,
   contentType = 'text/html',
   frames = 0,
+  url = 'https://news.example.com/',
 }: {
   title: string
   main?: string
-  article?: string
-  body?: string
+  html?: string
   contentType?: string
   frames?: number
+  url?: string
 }): object {
-  const element = (text: string | undefined) => (text === undefined ? null : { innerText: text })
+  const doc = new DOMParser().parseFromString(
+    `<!doctype html><head><base href="${url}"></head><body>${html}${'<iframe></iframe>'.repeat(frames)}</body>`,
+    'text/html',
+  )
   return {
     title,
     contentType,
-    body: element(body),
-    querySelector: (selector: string) =>
-      selector === 'article' ? element(article) : selector === 'main, [role="main"]' ? element(main) : null,
-    querySelectorAll: (selector: string) => ({ length: selector === 'iframe, frame' ? frames : 0 }),
+    body: doc.body,
+    baseURI: doc.baseURI,
+    querySelector: (selector: string) => doc.querySelector(selector),
+    querySelectorAll: (selector: string) => doc.querySelectorAll(selector),
   }
 }
