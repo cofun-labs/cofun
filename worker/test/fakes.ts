@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import type { Database, Statement } from '../src/credits'
 import type { UsageDataset } from '../src/usage'
+import type { SearchOptions } from '../src/search'
 import type { BrowserBinding, WebFetcher } from '../src/web'
 
 type Call = { model: string; inputs: Record<string, unknown>; options?: Record<string, unknown> }
@@ -61,7 +62,22 @@ export class FakeAiBinding implements AiBinding {
   usage: Record<string, unknown> = FAKE_USAGE
   private nextToolCallId = 0
 
+  /** Every web search asked for (`websearch`), with its options. */
+  searches: SearchOptions[] = []
+  /** The results a search for a query finds; a query not set finds none. */
+  readonly found = new Map<string, { url: string; title: string; description: string }[]>()
+  /** When set, every search answers this instead of results: a refusal, or an answer of another shape. */
+  searchReply?: () => Response
+
   constructor(private reply = 'Hello from Workers AI') {}
+
+  /** Answers a search the way AI Gateway's Web Search API does, from `found`. */
+  async websearch(options: SearchOptions): Promise<Response> {
+    this.searches.push(options)
+    if (this.searchReply) return this.searchReply()
+    const items = (this.found.get(options.query) ?? []).slice(0, options.limit)
+    return Response.json({ items, metadata: { query: options.query, requestId: 'req-1', latencyMs: 300 } })
+  }
 
   async run(model: string, inputs: Record<string, unknown>, options?: Record<string, unknown>): Promise<unknown> {
     this.calls.push({ model, inputs, options })

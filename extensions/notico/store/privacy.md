@@ -80,6 +80,8 @@ This page describes version 0.2.0. The version after it adds optional host permi
 - The **scripting** justification's addition also names "a tab the user added to the conversation", besides the current tab.
 - The **Host permission** justification's addition also says: "When the user adds a tab on a site not allowed yet to a conversation, Chrome asks them to allow that one site."
 - **Web history** also names the URL and title of a tab on another site that the user adds to a conversation.
+- The **single purpose** also says the assistant "searches the web": "…or a web page by its address, and searches the web, when a question needs it."
+- **Website content** also names the queries of web searches the assistant makes, which may hold Notion content, and their results (each one's address, title, and description), which go to the worker, on to Cloudflare's Web Search and its provider for the query, and to the model (or to OpenRouter; a search is made through the worker either way).
 
 It also adds the `contextMenus` and `activeTab` permissions, neither of which adds an install warning, for the "Ask Notico" item on selected text:
 

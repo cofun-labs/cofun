@@ -79,6 +79,8 @@ CLOUDFLARE_ACCOUNT_ID=<account id> pnpm run deploy
 
 Run it locally with `pnpm dev` in `worker/`. Local overrides go in `worker/.dev.vars` (to use the admin page there, add `http://localhost:8787` to `CLERK_AUTHORIZED_PARTIES`).
 
+The AI Gateway (`AI_GATEWAY_ID`) has **log collection turned off** in the dashboard (Settings > Collect logs). Model calls also turn it off per request, but a web search can't (`worker/src/search.ts`), and with it on the gateway would keep every search query, which may hold Notion text. Its cache is off too.
+
 Configuration is the `vars` in [`worker/wrangler.jsonc`](../worker/wrangler.jsonc), each explained by its comment. The two secrets, `STRIPE_SECRET_KEY` and `STRIPE_WEBHOOK_SECRET`, are set with `pnpm exec wrangler secret put <name>` and never committed; without them nothing can be bought. How admins are recognized (a `role` claim in the Clerk session token) is in `worker/src/routes/admin.ts`.
 
 There is no test environment: the one worker runs with the live Stripe account. After a deploy that changes buying, the maintainer checks it once by hand: buy the US$5 pack with a real card, see the credits arrive in the side panel, refund the payment in the Stripe Dashboard, and see what was left taken back. It costs one payment's fees, so it is never part of `pnpm e2e`.

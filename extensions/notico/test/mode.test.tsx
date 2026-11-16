@@ -77,6 +77,7 @@ const READING = [
   'read_tab',
   'read_web_page',
   'render_web_page',
+  'search_web',
 ]
 const CHANGING = [
   'edit_page',

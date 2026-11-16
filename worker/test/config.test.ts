@@ -50,6 +50,7 @@ describe("the deployed worker's address", () => {
       API_LIMIT: new FakeRateLimiter(),
       WEB_LIMIT: new FakeRateLimiter(),
       RENDER_LIMIT: new FakeRateLimiter(),
+      SEARCH_LIMIT: new FakeRateLimiter(),
       MODEL,
       CLERK_JWT_KEY: clerk.publicKeyPem,
       CLERK_AUTHORIZED_PARTIES: AUTHORIZED_PARTIES,

@@ -7,11 +7,14 @@ import type { Database } from './credits'
 import type { priceOf } from './pricing'
 import type { StripeApi } from './stripe'
 import type { UsageDataset } from './usage'
+import type { SearchOptions } from './search'
 import type { BrowserBinding, WebFetcher } from './web'
 
 /** The slice of the Workers AI binding this worker uses. */
 export interface AiBinding {
   run(model: string, inputs: Record<string, unknown>, options?: Record<string, unknown>): Promise<unknown>
+  /** Searches the web through AI Gateway (see search.ts). */
+  websearch(options: SearchOptions): Promise<Response>
 }
 
 /** The slice of a Workers rate limiting binding this worker uses: one count per key, over the binding's period. */
@@ -45,6 +48,13 @@ export interface Env {
    * browser time (#464). Renders count toward WEB_LIMIT and API_LIMIT too. Approximate, like CHAT_LIMIT.
    */
   RENDER_LIMIT: RateLimiter
+  /**
+   * Caps how many web searches one user can make per period (`ratelimits` in wrangler.jsonc), keyed
+   * by user id. A search is free to the user and costs the operator the provider's price, so this
+   * bounds what one account can cost. Searches count toward API_LIMIT too, not WEB_LIMIT.
+   * Approximate, like CHAT_LIMIT.
+   */
+  SEARCH_LIMIT: RateLimiter
   /** Browser Run (`browser` in wrangler.jsonc), which renders pages drawn by scripts. Without it, nothing is rendered. */
   BROWSER?: BrowserBinding
   /** What reads web pages. Tests pass a fake; deployed, it is not set, and the global `fetch` reads them. */

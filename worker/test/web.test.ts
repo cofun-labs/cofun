@@ -1,5 +1,5 @@
-// Web pages read for a signed-in user (/v1/web/read, /v1/web/render), through HTTP, with the
-// internet and Browser Run answered by fakes.
+// Web pages read for a signed-in user (/v1/web/read, /v1/web/render) and web searches
+// (/v1/web/search), through HTTP, with the internet, Browser Run, and AI Gateway answered by fakes.
 import { beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import { createApp, type Env } from '../src/app'
 import type { UsageDataset } from '../src/usage'
@@ -30,6 +30,7 @@ class RecordingUsage implements UsageDataset {
 let clerk: FakeClerk
 let web: FakeWeb
 let browser: FakeBrowserRun
+let ai: FakeAiBinding
 let db: FakeD1Database
 let usage: RecordingUsage
 let env: Env
@@ -42,16 +43,18 @@ beforeAll(async () => {
 beforeEach(async () => {
   logged = []
   env = {
-    AI: new FakeAiBinding(),
+    AI: (ai = new FakeAiBinding()),
     DB: (db = new FakeD1Database()),
     USAGE: (usage = new RecordingUsage()),
     CHAT_LIMIT: new FakeRateLimiter(),
     API_LIMIT: new FakeRateLimiter(),
     WEB_LIMIT: new FakeRateLimiter(),
     RENDER_LIMIT: new FakeRateLimiter(),
+    SEARCH_LIMIT: new FakeRateLimiter(),
     WEB: (web = new FakeWeb()),
     BROWSER: (browser = new FakeBrowserRun()),
     MODEL,
+    AI_GATEWAY_ID: 'gw-test',
     CLERK_JWT_KEY: clerk.publicKeyPem,
     CLERK_AUTHORIZED_PARTIES: EXT,
   }
@@ -240,5 +243,108 @@ describe('reading a web page', () => {
       ['web/render', 'render_failed'],
     ])
     for (const leak of ['tea.example', 'app.example', 'Tea', 'Board']) expect(written).not.toContain(leak)
+  })
+})
+
+const search = (query: string, limit = 10) => post('/v1/web/search', { query, limit })
+
+const TEA_RESULTS = [
+  { url: 'https://tea.example/history', title: 'Tea history', description: 'Tea was first drunk in China.' },
+  { url: 'https://leaves.example/green', title: ' Green tea ', description: `${'Steamed leaves. '.repeat(200)}` },
+  { url: 'https://cups.example/', title: 'Cups', description: 'Cups for tea.' },
+]
+
+describe('searching the web', () => {
+  it("[UC-COFUN-WEB-002-S01] gives each result's address, title, and description, as many as asked for, at no cost", async () => {
+    ai.found.set('tea history', TEA_RESULTS)
+    const res = await search('  tea history ', 2)
+    expect(res.status).toBe(200)
+    const { results }: { results: { url: string; title: string; description: string }[] } = await res.json()
+    expect(results.map((r) => [r.url, r.title])).toEqual([
+      ['https://tea.example/history', 'Tea history'],
+      ['https://leaves.example/green', 'Green tea'],
+    ])
+    expect(results[0].description).toBe('Tea was first drunk in China.')
+    // A long description is clipped.
+    expect(results[1].description).toHaveLength(1000)
+    expect(results[1].description.endsWith('…')).toBe(true)
+    // One search, through the gateway, with the fixed provider.
+    expect(ai.searches).toEqual([{ gatewayId: 'gw-test', query: 'tea history', provider: 'ceramic', limit: 2 }])
+    expect(db.rows('model_calls')).toEqual([])
+    expect(db.rows('grants')).toEqual([])
+  })
+
+  it('[UC-COFUN-WEB-002-S01] a result whose address is too long to hand on uncut is left out', async () => {
+    ai.found.set('tea', [
+      { url: `https://tea.example/${'a'.repeat(2000)}`, title: 'Long', description: '' },
+      TEA_RESULTS[0],
+    ])
+    const { results }: { results: { url: string }[] } = await (await search('tea')).json()
+    expect(results.map((r) => r.url)).toEqual(['https://tea.example/history'])
+  })
+
+  it('[UC-COFUN-WEB-002-S01] a search that finds nothing gives no results', async () => {
+    const res = await search('nothing at all')
+    expect(await res.json()).toEqual({ results: [] })
+  })
+
+  it('[UC-COFUN-WEB-002-S02] a user over their limit of searches a minute is told to wait, and nothing is searched', async () => {
+    env.SEARCH_LIMIT = new FakeRateLimiter(1)
+    expect((await search('tea')).status).toBe(200)
+    expect(await refusal(await search('tea'))).toEqual({ status: 429, code: 'rate_limited' })
+    expect(ai.searches).toHaveLength(1)
+    // Pages can still be read.
+    web.serve('https://tea.example/history', ARTICLE)
+    expect((await read('https://tea.example/history')).status).toBe(200)
+  })
+
+  const gatewayRefusal = (status: number, code: string) => () =>
+    Response.json(
+      { ok: false, error: { category: 'gateway', code, status, retryable: false, message: 'no' } },
+      { status },
+    )
+
+  it.each([
+    [
+      'the gateway has no credits to pay for it',
+      gatewayRefusal(402, 'web_search_payment_required'),
+      503,
+      'search_unavailable',
+    ],
+    ['the provider is busy', gatewayRefusal(429, 'rate_limited'), 503, 'search_busy'],
+    ['the gateway fails', gatewayRefusal(500, 'internal_error'), 502, 'search_failed'],
+    ['the answer is not JSON', () => new Response('<html>oops</html>'), 502, 'search_failed'],
+    ['the answer has another shape', () => Response.json({ results: [] }), 502, 'search_failed'],
+    [
+      'the binding throws',
+      () => {
+        throw new Error('boom')
+      },
+      502,
+      'search_failed',
+    ],
+  ])('[UC-COFUN-WEB-002-S03] a search is refused when %s, and not tried again', async (_, reply, status, code) => {
+    ai.searchReply = reply
+    expect(await refusal(await search('tea'))).toEqual({ status, code })
+    expect(ai.searches).toHaveLength(1)
+  })
+
+  it('[@no-uc:privacy] usage records and logs hold neither the query nor the results', async () => {
+    ai.found.set('oolong secrets', TEA_RESULTS)
+    await search('oolong secrets')
+    ai.searchReply = gatewayRefusal(402, 'web_search_payment_required')
+    await search('oolong secrets')
+    ai.searchReply = () => {
+      throw new Error('failed for oolong secrets')
+    }
+    await search('oolong secrets')
+    expect(usage.points.map((p) => p.blobs?.slice(0, 2))).toEqual([
+      ['web/search', 'ok'],
+      ['web/search', 'search_unavailable'],
+      ['web/search', 'search_failed'],
+    ])
+    expect(logged).toEqual(['web search failed: 402 web_search_payment_required', 'web search failed: threw Error'])
+    const written = JSON.stringify([usage.points, logged])
+    for (const leak of ['oolong', 'tea.example', 'Tea history', 'China']) expect(written).not.toContain(leak)
   })
 })

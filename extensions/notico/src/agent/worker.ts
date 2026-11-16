@@ -3,7 +3,7 @@
 import { CheckoutPage } from '../credits'
 import { z } from '../zod'
 import { HOSTED_HISTORY, looseText, parseError, type CallCost, type ModelProvider } from './provider'
-import { WebError, WebPage, type AgentConfig } from './types'
+import { WebError, WebPage, WebSearchResult, type AgentConfig } from './types'
 
 const SIGN_IN = 'Please sign in first.'
 
@@ -194,4 +194,55 @@ export async function readWebPage(
     throw new WebError(code, message, stopsFor(code, message))
   }
   return WebPage.parse(body)
+}
+
+/** The worker's answer to a search. */
+const WebSearch = z.object({ results: z.array(WebSearchResult) })
+
+/**
+ * Has the worker search the web for `query` (see ToolContext.searchWeb), for at most `limit`
+ * results. Throws a WebError that stops the question when the worker could not: a search that
+ * failed is not tried again, and the model can't search another way.
+ */
+export async function searchWebFor(
+  { apiUrl, getToken, client }: Pick<AgentConfig, 'apiUrl' | 'getToken' | 'client'>,
+  query: string,
+  limit: number,
+  signal?: AbortSignal,
+): Promise<WebSearchResult[]> {
+  const token = await getToken()
+  if (!token) throw new Error(SIGN_IN)
+  /** A failure whose cause is not known: the worker may have made the search, so it is not made again. */
+  const failed = (cause: unknown) => {
+    if (signal?.aborted) return cause
+    const message = 'the search failed, or its answer could not be read'
+    return new WebError('search_failed', message, `Notico could not search the web: ${message}.`, { cause })
+  }
+  let res: Response
+  try {
+    res = await fetch(`${apiUrl.replace(/\/+$/, '')}/web/search`, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json', 'x-cofun-client': client },
+      body: JSON.stringify({ query, limit }),
+      signal,
+    })
+  } catch (err) {
+    throw failed(err)
+  }
+  const body: unknown = await res.json().catch(() => undefined)
+  if (!res.ok) {
+    const refusal = CodedError.safeParse(body).data?.error
+    const code = refusal?.code ?? `http_${res.status}`
+    const message = refusal?.message ?? `HTTP ${res.status}`
+    throw new WebError(
+      code,
+      message,
+      code === 'rate_limited'
+        ? 'Notico searched the web too many times in a minute. Wait a minute, then ask again.'
+        : `Notico could not search the web: ${message}.`,
+    )
+  }
+  const answer = WebSearch.safeParse(body)
+  if (!answer.success) throw failed(answer.error)
+  return answer.data.results
 }
