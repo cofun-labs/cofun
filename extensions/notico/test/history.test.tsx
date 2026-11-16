@@ -16,7 +16,7 @@ const HOUR_MS = 60 * 60 * 1000
 const DAY_MS = 24 * HOUR_MS
 const DOWN = new Error('D1_ERROR: Network connection lost.')
 /** What only the worker's read of the history contains. */
-const GRANTS_READ = 'ORDER BY granted_at DESC'
+const GRANTS_READ = 'ORDER BY g.granted_at DESC'
 
 /** A browser signed in to Notico, with the side panel open. */
 async function openPanel() {

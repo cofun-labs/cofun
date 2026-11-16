@@ -158,8 +158,8 @@ export function chatRoutes({ now, priceOf: priceFor, logError }: Deps): App {
     }
 
     /**
-     * Ends the call, once: records it in the database with how it ended and its tokens, takes what
-     * it cost from the user's credits, and puts the cost in the usage record. Every call that
+     * Ends the call, once: records it in the database as a spend, with how it ended and its tokens,
+     * takes what it cost from the user's credits, and puts the cost in the usage record. Every call that
      * reached the model is recorded, failed ones too; one that failed costs nothing. A record that
      * fails is logged and the reply still goes out: the model has already answered.
      */
@@ -170,18 +170,19 @@ export function chatRoutes({ now, priceOf: priceFor, logError }: Deps): App {
       ended = true
       const cost = costOf(price, tokens)
       try {
-        await ledger.endCall({
-          product,
-          model: c.env.MODEL,
-          startedAt,
-          endedAt: Math.max(startedAt, now().getTime()),
-          stream: stream === true,
-          outcome,
-          finishReason: finish,
-          ...tokens,
-          estimated,
-          cost,
-        })
+        await ledger.spend(
+          { product, cost, at: Math.max(startedAt, now().getTime()) },
+          {
+            kind: 'model_call',
+            model: c.env.MODEL,
+            startedAt,
+            stream: stream === true,
+            outcome,
+            finishReason: finish,
+            ...tokens,
+            estimated,
+          },
+        )
         usage.microCredits = cost
       } catch (err) {
         logError(`model call record failed: ${errorSummary(err)}`)
