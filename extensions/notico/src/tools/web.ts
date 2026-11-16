@@ -9,10 +9,9 @@ import { isNotion } from '../notion/hosts'
 import { clip } from '../notion/comments'
 import { defineTool } from '../tool'
 import { z } from '../zod'
+import { KEPT_CHARS, withText } from './results'
 import { READ, SEARCH, asData, asPageText, count, on, verb } from './shared'
 
-/** How much of a page one read returns. */
-const PAGE_CHARS = 20_000
 const TITLE_CHARS = 200
 const URL_CHARS = 2000
 
@@ -60,8 +59,17 @@ function refusal(err: WebError, render: boolean): string {
     case 'unsupported_type':
       return `Notico reads only web pages and plain text, and ${err.message}.`
     default:
-      return `Could not read the page: ${err.message}.`
+      // A reason the extension doesn't know, or a worker it could not reach or read: the page was not read.
+      return `Could not ${render ? 'render' : 'read'} the page: ${err.message}.`
   }
+}
+
+/**
+ * What the model is told when the worker could not read a page or search: the reason, and, when it
+ * may have cost the user credits, not to `repeat` the call (CLAUDE.md, "Calling outside services").
+ */
+function failed(reason: string, err: WebError, repeat: string): string {
+  return err.charged ? `${reason} It may have cost the user credits: don't ${repeat} again in this question.` : reason
 }
 
 /** Reads the page for a tool: checks the address, the question's limit, and turns what was read into the result. */
@@ -77,34 +85,31 @@ async function readPageAt(
   if (!context) throw new Error('Could not read the page: there is no worker to read it with.')
   let page
   try {
-    page = await context.readWeb(url.href, PAGE_CHARS, render, signal)
+    page = await context.readWeb(url.href, KEPT_CHARS, render, signal)
   } catch (err) {
-    // The worker's limit stops the question: thrown as it is, with what the user is told.
-    if (err instanceof WebError && !err.stopsQuestion) throw new Error(refusal(err, render), { cause: err })
+    // A request turned away stops the question: thrown as it is, with what the user is told.
+    if (err instanceof WebError && !err.stopsQuestion)
+      throw new Error(failed(refusal(err, render), err, 'render this page'), { cause: err })
     throw err
   }
   const host = new URL(page.url).host
-  const clipped = page.text.length < page.chars
   const lines = [
     // As JSON, so the title and URL stay inside their quotes and on their line.
     `Web page${render ? ', rendered,' : ''} on ${host}: ${JSON.stringify({ title: clip(page.title, TITLE_CHARS), url: clip(page.url, URL_CHARS) })}`,
     ...(page.url !== url.href ? [`[The address redirected here from ${clip(url.href, URL_CHARS)}.]`] : []),
-    ...(clipped
-      ? [
-          `[Clipped: this shows the first ${page.text.length.toLocaleString('en-US')} of the page's ` +
-            `${page.chars.toLocaleString('en-US')} characters.]`,
-        ]
-      : []),
     ...(page.scripted && !render
       ? [
           '[The page shows little text and runs scripts: it may show more once they run. If this is not what the ' +
             'question needs, render_web_page can render it (slower).]',
         ]
       : []),
-    'Text:',
-    asPageText(page.text),
   ]
-  return { text: asData(lines), details: { name: page.title.trim() || host } }
+  const { title, text, chars } = page
+  const tool = render ? 'render_web_page' : 'read_web_page'
+  // Text as the worker gives it, escaped as text: a render's Markdown is Browser Run's, which does not
+  // escape the page's own brackets as the extension's does (asPageMarkdown).
+  const read = { tool, title, url: page.url, markdown: false, text, chars }
+  return withText(lines, read, page.title.trim() || host, context)
 }
 
 const Args = z.strictObject({
@@ -117,7 +122,8 @@ export const readWebPage = defineTool({
     "Reads a web page by its address: the page's title and main text, as anyone sees it without signing in. " +
     'For a page the user is on, use read_current_tab; for a Notion page, ' +
     'read_page. A page that needs a sign-in or a bot check cannot be read; a page drawn by scripts shows no text ' +
-    'here, and render_web_page can render it. A long page is clipped.',
+    'here, and render_web_page can render it. A long page is kept on the device and given in parts: its first ' +
+    'part comes with an id that read_result and search_result take.',
   describe: (_args, details) => on(READ, details?.name, 'a web page'),
   args: Args,
   run: ({ url }, signal, context) => readPageAt(url, false, signal, context),
@@ -130,7 +136,8 @@ export const renderWebPage = defineTool({
     'It reads pages drawn by scripts, which read_web_page reads with no text or too little. It is slower than ' +
     'read_web_page, costs the user credits for the browser time it uses, and only a few pages can be rendered a ' +
     'minute, so read_web_page is usually the better first ' +
-    'try; render right away when the page is likely drawn by scripts (a web app, say).',
+    'try; render right away when the page is likely drawn by scripts (a web app, say). A long page is kept and ' +
+    'given in parts, as read_web_page does.',
   describe: (_args, details) => on(RENDER, details?.name, 'a web page'),
   args: Args,
   run: ({ url }, signal, context) => readPageAt(url, true, signal, context),
@@ -160,7 +167,17 @@ export const searchWeb = defineTool({
         `Not searched: \`query\` is ${asked.length} characters long; at most ${QUERY_CHARS} are searched.`,
       )
     if (!context) throw new Error('Could not search the web: there is no worker to search with.')
-    const results = await context.searchWeb(asked, SEARCH_RESULTS, signal)
+    let results
+    try {
+      results = await context.searchWeb(asked, SEARCH_RESULTS, signal)
+    } catch (err) {
+      // A search turned away stops the question: thrown as it is, with what the user is told.
+      if (err instanceof WebError && !err.stopsQuestion)
+        throw new Error(failed(`Could not search the web: ${err.message}.`, err, 'search for the same query'), {
+          cause: err,
+        })
+      throw err
+    }
     const lines = [
       // As JSON, so the query, titles, and URLs stay inside their quotes and on their line.
       `Web search for ${JSON.stringify(clip(asked, QUERY_CHARS))}: ${results.length ? count(results.length, 'result') : 'no results'}.`,

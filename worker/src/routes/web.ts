@@ -13,8 +13,12 @@ import { PageError, checkAddress, fetchPage, renderPage, type WebPage } from '..
 import { SEARCH_COST, renderCostOf } from '../pricing'
 import { CLIENT_HEADER, openLedger, productOf, turnOf, type Turn } from './chat'
 
-/** The most characters of a page's text the worker returns; the extension asks for no more. */
-const MAX_CHARS = 20_000
+/**
+ * The most characters of a page's text the worker returns: what the extension keeps of a long page
+ * (KEPT_CHARS in its src/tools/results.ts). A plain read is bounded by MAX_BYTES in web.ts too.
+ * Versions of the extension that clip a page themselves ask for 20,000, and get that.
+ */
+const MAX_CHARS = 2_000_000
 
 /** What the extension asks to read: the address, and how much of its text to return at most. */
 const ReadBody = z.object({

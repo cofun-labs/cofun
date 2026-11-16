@@ -22,6 +22,11 @@ export interface AgentConfig {
   tools: ToolSpec[]
   /** Model calls allowed per question. */
   maxSteps?: number
+  /**
+   * Where long tool results are kept on the device (see KeptResult): the saved sessions' store.
+   * Without it, a long result is clipped.
+   */
+  results?: ResultStore
   /** How much of a long conversation to send. Defaults stay well under the provider's limits. */
   history?: { messages: number; chars: number }
   /**
@@ -92,12 +97,15 @@ export type QuestionSelection = z.infer<typeof QuestionSelection>
 /**
  * What a call that worked says about itself for the side panel, apart from the text the model gets:
  * `name`, the name of the thing its card names (a page's title, say), and the pages and databases it
- * `read` and `changed`, by id (32 hex digits, no dashes). Saved with the call's result.
+ * `read` and `changed`, by id (32 hex digits, no dashes); and `result`, the id of the result it kept
+ * on the device when it was long (see KeptResult), which the conversation names it by. Saved with
+ * the call's result.
  */
 export const ToolDetails = z.object({
   name: z.string().optional(),
   read: z.array(z.string()).optional(),
   changed: z.array(z.string()).optional(),
+  result: z.string().optional(),
 })
 export type ToolDetails = z.infer<typeof ToolDetails>
 
@@ -163,14 +171,59 @@ export interface ToolContext {
   /**
    * Reads the web page at `url` through the worker, up to `maxChars` of its text; `render` renders
    * it in a browser first, for a page drawn by scripts. Throws a WebError
-   * when the worker could not read it.
+   * when the worker could not read it, which stops the question only when it carries `stopsQuestion`.
    */
   readWeb: (url: string, maxChars: number, render: boolean, signal?: AbortSignal) => Promise<WebPage>
   /**
    * Searches the web for `query` through the worker, for at most `limit` results. Throws a WebError
-   * that stops the question when the search failed.
+   * when the search failed, which stops the question only when it carries `stopsQuestion`.
    */
   searchWeb: (query: string, limit: number, signal?: AbortSignal) => Promise<WebSearchResult[]>
+  /**
+   * Keeps a long result on the device and resolves with its id; rejects when there is no store or
+   * it can't be written.
+   */
+  keep: (result: ResultToKeep) => Promise<string>
+  /**
+   * A kept result by its id, only when the conversation's tool results name it (see
+   * ToolDetails.result): `'unknown'` when they don't, `'gone'` when they do but it is not kept any
+   * more (site data cleared).
+   */
+  kept: (id: string) => Promise<KeptResult | 'unknown' | 'gone'>
+  /** How many characters the question being answered holds in tool results so far. */
+  questionChars: () => number
+}
+
+/**
+ * The full text of a long tool result, kept on the device with the saved sessions that name it, so
+ * the model can read the parts it was not given (read_result, search_result). `tool` is the tool
+ * that read it; `title` and `url`, the page's; `markdown`, whether `text` is the extension's own
+ * Markdown (src/web/markdown.ts), escaped as such (asPageMarkdown), else as text; `chars`, how
+ * long the whole text was, which is more than `text` when only the first part of it was kept.
+ * `chats` are the saved sessions that name it, and `unnamedAt`, the time it was kept, is set while
+ * there are none.
+ */
+export const KeptResult = z.object({
+  id: z.string(),
+  chats: z.array(z.string()),
+  tool: z.string(),
+  title: z.string(),
+  url: z.string(),
+  markdown: z.boolean(),
+  text: z.string(),
+  chars: z.number().int().nonnegative(),
+  unnamedAt: z.number().optional(),
+})
+export type KeptResult = z.infer<typeof KeptResult>
+
+/** What a tool gives to keep (see KeptResult). */
+export type ResultToKeep = Pick<KeptResult, 'tool' | 'title' | 'url' | 'markdown' | 'text' | 'chars'>
+
+/** Where long results are kept: the saved sessions' store (src/sessions.ts). */
+interface ResultStore {
+  keep(result: ResultToKeep): Promise<string>
+  /** `undefined` when it is gone or can't be read. */
+  result(id: string): Promise<KeptResult | undefined>
 }
 
 /** A web page the worker read (see ToolContext.readWeb). `scripted`: it showed little text and runs scripts. */
@@ -187,16 +240,24 @@ export type WebPage = z.infer<typeof WebPage>
 export const WebSearchResult = z.object({ url: z.string(), title: z.string(), description: z.string() })
 export type WebSearchResult = z.infer<typeof WebSearchResult>
 
-/** Why the worker could not read a web page: its code (`no_access`, `no_text`, …) and message. */
+/**
+ * Why the worker could not read a web page or search the web: its code (`no_access`, `no_text`, …)
+ * and message.
+ */
 export class WebError extends Error {
+  /** Set when the question must stop (a rate limit, no credits left): what the user is told. */
+  readonly stopsQuestion?: string
+  /** Set when the call was or may have been charged (a render, a search), so the model is told not to repeat it. */
+  readonly charged: boolean
+
   constructor(
     readonly code: string,
     message: string,
-    /** Set when the question must stop (the worker's rate limit, a failed search): what the user is told. */
-    readonly stopsQuestion?: string,
-    options?: ErrorOptions,
+    { stopsQuestion, charged = false, cause }: { stopsQuestion?: string; charged?: boolean; cause?: unknown } = {},
   ) {
-    super(message, options)
+    super(message, { cause })
+    if (stopsQuestion) this.stopsQuestion = stopsQuestion
+    this.charged = charged
   }
 }
 

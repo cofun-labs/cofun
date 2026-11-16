@@ -149,44 +149,61 @@ const Charged = z.object({ cost: z.object({ micro_credits: z.number().int().nonn
 const TOO_MANY_PAGES = 'Notico read too many web pages in a minute. Wait a minute, then ask again.'
 
 /**
- * The worker's reasons a page could not be read that the model can act on (tell the user, render
- * the page, have it opened in a tab): these come back to the model. Any other reason stops the question.
+ * What the user is told when a 429 without a code of the worker's turns a read or a search away:
+ * one sent before the worker (by Cloudflare, say), for coming too often.
  */
-const PAGE_REASONS = new Set([
-  'not_allowed',
-  'unreachable',
-  'timeout',
-  'too_many_redirects',
-  'no_access',
-  'bot_check',
-  'not_found',
-  'site_error',
-  'unsupported_type',
-  'no_text',
-  'render_failed',
-])
+const TURNED_AWAY = "Notico's service turned away its requests for coming too often. Wait a minute, then ask again."
+
+/** What the model is told when the worker could not be reached, or its answer could not be read. */
+const UNREACHABLE = "Notico's service could not be reached"
+const UNREADABLE = "Notico's service gave an answer Notico could not read"
 
 /**
- * What the user is told when the worker's answer stops the question (see PAGE_REASONS), or
- * undefined when it doesn't. A stopped question sends nothing more, so the model can't try again.
+ * Whether a render or a search was or may have been charged, by the worker's answer, after calling
+ * `charged` with what it cost in micro-credits, or with undefined when the answer does not say so,
+ * so what it cost is not known. Results always say what they cost; a refusal only when the worker
+ * rendered or searched.
  */
-function stopsFor(code: string, message: string): string | undefined {
-  if (PAGE_REASONS.has(code)) return undefined
+function chargedBy(res: Response, body: unknown, charged?: (microCredits: number | undefined) => void): boolean {
+  const cost = Charged.safeParse(body)
+  if (!cost.success || (res.ok && !cost.data.cost)) {
+    charged?.(undefined)
+    return true
+  }
+  if (!cost.data.cost) return false
+  charged?.(cost.data.cost.micro_credits)
+  return cost.data.cost.micro_credits > 0
+}
+
+/** The worker's refusal: its code and message, or the HTTP status when it gave none. */
+function refusalOf(res: Response, body: unknown): { code: string; message: string } {
+  const refusal = CodedError.safeParse(body).data?.error
+  return { code: refusal?.code ?? `http_${res.status}`, message: refusal?.message ?? `HTTP ${res.status}` }
+}
+
+/**
+ * What the user is told when the worker's answer to a read stops the question, or undefined when
+ * it doesn't. Only a request turned away stops it: for coming too often, or for credits that ran
+ * out. Any other failure goes to the model: a read changes nothing and involves no account of the
+ * user's (CLAUDE.md, "Calling outside services"). A stopped question sends nothing more.
+ */
+function stopsReading(code: string, message: string): string | undefined {
   if (code === 'rate_limited') return TOO_MANY_PAGES
+  if (code === 'http_429') return TURNED_AWAY
   // The worker's own words: they say when the next free credits arrive.
   if (code === 'out_of_credits') return message
   if (code === 'site_busy')
     return "A site turned away Notico's requests for coming too often. Wait a while, then ask again."
-  return `Notico could not read a web page: ${message}`
+  return undefined
 }
 
 /**
  * Has the worker read the web page at `url` (see ToolContext.readWeb): fetched plainly, or rendered
- * in a browser when `render` is set. Resolves with the page;
- * throws a WebError when the worker could not read it, which stops the question unless the model
- * can act on the reason (see PAGE_REASONS). A render that was charged calls `charged` with what it
- * cost in micro-credits, or with undefined when its answer could not be read, so what it cost is
- * not known.
+ * in a browser when `render` is set. Resolves with the page; throws a WebError when the worker
+ * could not read it, which stops the question only when the request was turned away (see
+ * stopsReading), and is `charged` when a render was or may have been. A render calls `charged`
+ * with what it cost in micro-credits, or with undefined when what it cost is not known. A question
+ * stopped by the user throws what `fetch` threw.
  */
 export async function readWebPage(
   { apiUrl, getToken, client, turn }: Pick<AgentConfig, 'apiUrl' | 'getToken' | 'client'> & { turn?: Turn },
@@ -216,32 +233,45 @@ export async function readWebPage(
   } catch (err) {
     // The worker may have rendered the page and charged it.
     if (render) charged?.(undefined)
-    throw err
+    if (signal?.aborted) throw err
+    throw new WebError('read_failed', UNREACHABLE, { charged: render, cause: err })
   }
-  if (render) {
-    const cost = Charged.safeParse(body)
-    // A page always says what it cost; a refusal only when the page was rendered.
-    if (!cost.success || (res.ok && !cost.data.cost)) charged?.(undefined)
-    else if (cost.data.cost) charged?.(cost.data.cost.micro_credits)
-  }
+  const paid = render && chargedBy(res, body, charged)
   if (!res.ok) {
-    const refusal = CodedError.safeParse(body).data?.error
-    const code = refusal?.code ?? `http_${res.status}`
-    const message = refusal?.message ?? `HTTP ${res.status}`
-    throw new WebError(code, message, stopsFor(code, message))
+    const { code, message } = refusalOf(res, body)
+    throw new WebError(code, message, { stopsQuestion: stopsReading(code, message), charged: paid })
   }
-  return WebPage.parse(body)
+  const page = WebPage.safeParse(body)
+  if (!page.success) throw new WebError('read_failed', UNREADABLE, { charged: paid, cause: page.error })
+  return page.data
 }
 
 /** The worker's answer to a search. */
 const WebSearch = z.object({ results: z.array(WebSearchResult) })
 
 /**
+ * What the user is told when the worker's answer to a search stops the question, or undefined when
+ * it doesn't: as for a read (see stopsReading), only a search turned away stops it, by the worker
+ * or by the provider, for coming too often or for a balance that ran out.
+ */
+function stopsSearching(code: string, message: string): string | undefined {
+  if (code === 'rate_limited')
+    return 'Notico searched the web too many times in a minute. Wait a minute, then ask again.'
+  if (code === 'http_429') return TURNED_AWAY
+  // The worker's own words: they say when the next free credits arrive.
+  if (code === 'out_of_credits') return message
+  // The provider is busy, or the account's credits for it ran out: another search would be turned away too.
+  if (code === 'search_busy' || code === 'search_unavailable') return `Notico could not search the web: ${message}.`
+  return undefined
+}
+
+/**
  * Has the worker search the web for `query` (see ToolContext.searchWeb), for at most `limit`
- * results. Throws a WebError that stops the question when the worker could not: a search that
- * failed is not tried again, and the model can't search another way. A search that was charged
- * calls `charged` with what it cost in micro-credits, or with undefined when its answer could not
- * be read, so what it cost is not known.
+ * results. Throws a WebError when the worker could not, which stops the question only when the
+ * search was turned away (see stopsSearching), and is `charged` when the search was or may have
+ * been. Calls `charged` with what the search cost in micro-credits, or with undefined when what it
+ * cost is not known. A failed search is not tried again. A question stopped by the user throws
+ * what `fetch` threw.
  */
 export async function searchWebFor(
   { apiUrl, getToken, client, turn }: Pick<AgentConfig, 'apiUrl' | 'getToken' | 'client'> & { turn?: Turn },
@@ -252,12 +282,6 @@ export async function searchWebFor(
 ): Promise<WebSearchResult[]> {
   const token = await getToken()
   if (!token) throw new Error(SIGN_IN)
-  /** A failure whose cause is not known: the worker may have made the search, so it is not made again. */
-  const failed = (cause: unknown) => {
-    if (signal?.aborted) return cause
-    const message = 'the search failed, or its answer could not be read'
-    return new WebError('search_failed', message, `Notico could not search the web: ${message}.`, { cause })
-  }
   let res: Response
   try {
     res = await fetch(`${apiUrl.replace(/\/+$/, '')}/web/search`, {
@@ -274,29 +298,16 @@ export async function searchWebFor(
   } catch (err) {
     // The worker may have made the search and charged it.
     charged?.(undefined)
-    throw failed(err)
+    if (signal?.aborted) throw err
+    throw new WebError('search_failed', UNREACHABLE, { charged: true, cause: err })
   }
   const body: unknown = await res.json().catch(() => undefined)
-  const cost = Charged.safeParse(body)
-  // Results always say what they cost; a refusal only when the search was made.
-  if (!cost.success || (res.ok && !cost.data.cost)) charged?.(undefined)
-  else if (cost.data.cost) charged?.(cost.data.cost.micro_credits)
+  const paid = chargedBy(res, body, charged)
   if (!res.ok) {
-    const refusal = CodedError.safeParse(body).data?.error
-    const code = refusal?.code ?? `http_${res.status}`
-    const message = refusal?.message ?? `HTTP ${res.status}`
-    throw new WebError(
-      code,
-      message,
-      code === 'rate_limited'
-        ? 'Notico searched the web too many times in a minute. Wait a minute, then ask again.'
-        : // The worker's own words: they say when the next free credits arrive.
-          code === 'out_of_credits'
-          ? message
-          : `Notico could not search the web: ${message}.`,
-    )
+    const { code, message } = refusalOf(res, body)
+    throw new WebError(code, message, { stopsQuestion: stopsSearching(code, message), charged: paid })
   }
   const answer = WebSearch.safeParse(body)
-  if (!answer.success) throw failed(answer.error)
+  if (!answer.success) throw new WebError('search_failed', UNREADABLE, { charged: paid, cause: answer.error })
   return answer.data.results
 }

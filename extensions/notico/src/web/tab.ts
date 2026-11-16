@@ -96,6 +96,11 @@ export interface TabPage {
  * full only for its first characters to be kept.
  */
 const HTML_PER_CHAR = 50
+/**
+ * The most HTML the tab hands over, whatever is asked for: a page kept whole (see KEPT_CHARS in
+ * src/tools/results.ts) would otherwise hand over a hundred million characters to be converted.
+ */
+const MAX_HTML_CHARS = 10_000_000
 
 /**
  * Reads up to `maxChars` of the main content of the page in the tab, as Markdown; the tab must
@@ -116,7 +121,7 @@ export async function readPage(
       target: { tabId },
       world: 'ISOLATED',
       func: pageHtml,
-      args: [maxChars * HTML_PER_CHAR],
+      args: [Math.min(maxChars * HTML_PER_CHAR, MAX_HTML_CHARS)],
     })
     raw = frame?.result
   } catch (err) {

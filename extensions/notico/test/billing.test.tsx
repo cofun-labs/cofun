@@ -132,7 +132,7 @@ describe('buying credits on the Credits page', () => {
     ])
   })
 
-  it('[@no-uc:money] says when the packs cannot be read, and reads them again on request', async () => {
+  it('[@no-uc:money] says when the packs cannot be read, and reads them again when the page opens again', async () => {
     const { browser, user } = await openPanel()
     // Buying is not set up on the worker for a moment.
     const packs = browser.env.CREDIT_PACKS
@@ -145,8 +145,11 @@ describe('buying credits on the Credits page', () => {
 
     browser.env.CREDIT_PACKS = packs
     browser.env.CREDIT_PRICE = 'price_credits'
-    await user.click(buy.getByRole('button', { name: 'Try again' }))
-    expect(await buy.findByRole('button', { name: 'Buy 5,000 credits for US$5' })).toBeVisible()
+    await user.keyboard('{Escape}')
+    await openCredits(user)
+    expect(
+      await within(section('Buy credits')).findByRole('button', { name: 'Buy 5,000 credits for US$5' }),
+    ).toBeVisible()
   })
 
   it('[@no-uc:money] says when Checkout cannot be opened, and opens no tab', async () => {

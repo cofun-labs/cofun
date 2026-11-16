@@ -1869,17 +1869,6 @@ button.secondary:focus-visible,
   color: var(--error);
 }
 
-/* While a read is under way the button stays, so the focus stays on it, but quiet. */
-.history button[aria-disabled='true'] {
-  opacity: 0.5;
-  cursor: default;
-}
-
-/* The status line is always there for screen readers; empty, it takes no room between the rows and what follows. */
-.history-status:empty {
-  margin: -3px 0;
-}
-
 @media (prefers-reduced-motion: reduce) {
   .note.working,
   .tool.running .tool-mark,
