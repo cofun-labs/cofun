@@ -41,14 +41,54 @@ function productOf(header: string | undefined): string {
 }
 
 /**
- * The usage record of a request on `model`, and how to write it once, with how the request ended.
- * Filled with sizes, token counts, and what was charged only: never the request's content.
+ * The headers in which an extension says which chat (`X-Cofun-Chat-Id`, the session's own id) and
+ * which question of it (`X-Cofun-Turn-Id`, one per question, the same across all its requests) a
+ * request is for. Random ids, recorded with what the request spent; they say nothing about the content.
  */
-export function startUsage(c: Ctx, model: string): { usage: UsageRecord; record: (outcome: string) => void } {
+export const CHAT_HEADER = 'x-cofun-chat-id'
+export const TURN_HEADER = 'x-cofun-turn-id'
+
+/** Which chat and question a request is for: null where it names none. */
+export interface Turn {
+  chatId: string | null
+  turnId: string | null
+}
+
+const Id = z.uuid()
+
+/**
+ * The chat and question a request names in its headers. A header left out is null: Notico builds
+ * released before #466 send neither, and their requests go ahead as before (the fallback can go
+ * once every build on the store sends both). A header that is there but not a UUID is a client's
+ * bug, refused with 400 so it shows.
+ */
+function turnOf(c: Ctx): Turn {
+  const read = (name: string) => {
+    const value = c.req.header(name)
+    if (value === undefined) return null
+    const id = Id.safeParse(value)
+    if (!id.success) throw new HttpError(400, 'bad_request', `${name} must be a UUID`)
+    return id.data
+  }
+  return { chatId: read(CHAT_HEADER), turnId: read(TURN_HEADER) }
+}
+
+/**
+ * The usage record of a request on `model`, and how to write it once, with how the request ended.
+ * Filled with sizes, token counts, and what was charged only: never the request's content. `turn`
+ * reads the chat and question the request names, into the record too; it throws on a header that is
+ * not a UUID, so it is read where a refusal is recorded.
+ */
+export function startUsage(
+  c: Ctx,
+  model: string,
+): { usage: UsageRecord; record: (outcome: string) => void; turn: () => Turn } {
   const started = Date.now()
   const usage: UsageRecord = {
     userId: c.get('userId'),
     product: productOf(c.req.header(CLIENT_HEADER)),
+    chatId: '',
+    turnId: '',
     model,
     stream: false,
     outcome: '',
@@ -63,6 +103,12 @@ export function startUsage(c: Ctx, model: string): { usage: UsageRecord; record:
   }
   return {
     usage,
+    turn: () => {
+      const turn = turnOf(c)
+      usage.chatId = turn.chatId ?? ''
+      usage.turnId = turn.turnId ?? ''
+      return turn
+    },
     record: (outcome) => {
       usage.outcome = outcome
       usage.durationMs = Date.now() - started
@@ -103,10 +149,14 @@ export async function openLedger(c: Ctx, now: number, logError: (line: string) =
   return ledger
 }
 
-/** What charging a call needs besides the call: who pays, the clock, and the log. `what` names the call in the log. */
+/**
+ * What charging a call needs besides the call: who pays, the chat and question it was for, the
+ * clock, and the log. `what` names the call in the log.
+ */
 export interface Charging {
   ledger: Ledger
   usage: UsageRecord
+  turn: Turn
   now: () => number
   logError: (line: string) => void
   what: string
@@ -119,13 +169,13 @@ export interface Charging {
  * ended, so what it gave still goes to the client, uncharged.
  */
 export async function charge(
-  { ledger, usage, now, logError, what }: Charging,
+  { ledger, usage, turn, now, logError, what }: Charging,
   cost: number,
   detail: SpendDetail,
   at = now(),
 ): Promise<number> {
   try {
-    await ledger.spend({ product: usage.product, cost, at }, detail)
+    await ledger.spend({ product: usage.product, ...turn, cost, at }, detail)
   } catch (err) {
     logError(`${what} record failed: ${errorSummary(err)}`)
     return 0

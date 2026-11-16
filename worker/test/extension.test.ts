@@ -339,7 +339,7 @@ describe('tokens per question', () => {
     ai.script = [{ reply: 'Roadmap page' }]
     await agent.title(agent.history())
     const saved = structuredClone(agent.history())
-    expect(saved[0]).toEqual({ role: 'user', text: 'Which page am I on?', ...details })
+    expect(saved[0]).toEqual({ role: 'user', text: 'Which page am I on?', turn: expect.any(String), ...details })
     const resumed = makeAgent()
     await resumed.reset(saved)
     expect(resumed.history()).toEqual(saved)
@@ -435,5 +435,51 @@ describe('web reads and searches', () => {
     } finally {
       globalThis.fetch = worker
     }
+  })
+})
+
+// Standalone test for what a question's requests tell the worker about the chat and the question.
+describe('chat and question of what a question spends', () => {
+  it('[@no-uc:contract] every request a question makes carries the chat and the question, and the question keeps its id', async () => {
+    env.BROWSER = new FakeBrowserRun().render('https://tea.example/', '# Tea')
+    env.AI_GATEWAY_ID = 'gw-test'
+    ai.found.set('tea', [{ url: 'https://tea.example/', title: 'Tea', description: 'All about tea.' }])
+    const research: ToolSpec = {
+      name: 'research',
+      description: 'Renders a page and searches the web.',
+      parameters: { type: 'object', properties: {}, additionalProperties: false },
+      run: async (_args, signal, context) => {
+        await context?.readWeb('https://tea.example/', 1000, true, signal)
+        await context?.searchWeb('tea', 3, signal)
+        return 'done'
+      },
+    }
+    const agent = makeAgent({ tools: [research] })
+    const chat = crypto.randomUUID()
+    ai.script = [{ toolCalls: [{ name: 'research', arguments: '{}' }] }, { reply: 'Tea is a drink.' }]
+    expect((await ask(agent, 'What is tea?', undefined, { chat })).result).toEqual({ status: 'done' })
+    // The title is part of what the first question cost.
+    ai.script = [{ reply: 'About tea' }]
+    expect(await agent.title(agent.history(), chat)).toBe('About tea')
+    ai.script = [{ reply: 'Green tea.' }]
+    await ask(agent, 'And green tea?', undefined, { chat })
+
+    const turns = agent.history().flatMap((m) => (m.role === 'user' ? [m.turn] : []))
+    const [first, second] = turns
+    expect(turns).toEqual([expect.stringMatching(/^[0-9a-f-]{36}$/), expect.stringMatching(/^[0-9a-f-]{36}$/)])
+    expect(first).not.toBe(second)
+    const db = env.DB as FakeD1Database
+    expect(db.rows('spends').map(({ kind, chat_id, turn_id }) => ({ kind, chat_id, turn_id }))).toEqual([
+      { kind: 'model_call', chat_id: chat, turn_id: first },
+      { kind: 'web_render', chat_id: chat, turn_id: first },
+      { kind: 'web_search', chat_id: chat, turn_id: first },
+      { kind: 'model_call', chat_id: chat, turn_id: first },
+      { kind: 'model_call', chat_id: chat, turn_id: first },
+      { kind: 'model_call', chat_id: chat, turn_id: second },
+    ])
+    // A session saved and opened again keeps each question's id.
+    const resumed = makeAgent()
+    await resumed.reset(structuredClone(agent.history()))
+    expect(resumed.history().flatMap((m) => (m.role === 'user' ? [m.turn] : []))).toEqual(turns)
   })
 })

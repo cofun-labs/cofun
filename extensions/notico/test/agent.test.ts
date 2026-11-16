@@ -199,9 +199,10 @@ describe('extension agent against the worker', () => {
         text: 'Summarize this',
         context: roadmap,
         pages: [{ title: 'Q4 Roadmap', url: 'https://www.notion.so/Q4-Roadmap-abc123' }],
+        turn: expect.any(String),
         ...usedOnHosted(1),
       },
-      { role: 'user', text: 'And now?', context: none, ...usedOnHosted(1) },
+      { role: 'user', text: 'And now?', context: none, turn: expect.any(String), ...usedOnHosted(1) },
     ])
 
     // A reopened session tells the model the same as before.
@@ -882,7 +883,7 @@ describe('extension agent against the worker', () => {
     // What the panel saves; stored sessions go through structured cloning, so keep only plain data.
     const saved = structuredClone(first.history())
     expect(saved).toEqual<HistoryMessage[]>([
-      { role: 'user', text: 'Which page am I on?', ...usedOnHosted(2) },
+      { role: 'user', text: 'Which page am I on?', turn: expect.any(String), ...usedOnHosted(2) },
       {
         role: 'assistant',
         parts: [{ type: 'tool_call', id: 'chatcmpl-tool-0', name: 'lookup_page', args: {} }],
@@ -911,7 +912,7 @@ describe('extension agent against the worker', () => {
     ])
     expect(resumed.history()).toEqual([
       ...saved,
-      { role: 'user', text: 'And its URL?', ...usedOnHosted(1) },
+      { role: 'user', text: 'And its URL?', turn: expect.any(String), ...usedOnHosted(1) },
       { role: 'assistant', parts: [{ type: 'text', text: '你好 来自 worker ' }] },
     ])
   })
@@ -1049,8 +1050,8 @@ describe('Notion requests per question', () => {
 
     const saved = structuredClone(agent.history())
     expect(saved.filter((m) => m.role === 'user')).toEqual([
-      { role: 'user', text: 'Summarize this page', requests: 2, ...usedOnHosted(2) },
-      { role: 'user', text: 'Thanks', requests: 0, ...usedOnHosted(1) },
+      { role: 'user', text: 'Summarize this page', requests: 2, turn: expect.any(String), ...usedOnHosted(2) },
+      { role: 'user', text: 'Thanks', requests: 0, turn: expect.any(String), ...usedOnHosted(1) },
     ])
     const resumed = makeAgent({ tools: [readPage], meter: countNotionRequests })
     await resumed.reset(saved)

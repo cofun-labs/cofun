@@ -3,9 +3,14 @@
 import { CheckoutPage } from '../credits'
 import { z } from '../zod'
 import { HOSTED_HISTORY, looseText, parseError, type CallCost, type ModelProvider } from './provider'
-import { WebError, WebPage, WebSearchResult, type AgentConfig } from './types'
+import { WebError, WebPage, WebSearchResult, type AgentConfig, type Turn } from './types'
 
 const SIGN_IN = 'Please sign in first.'
+
+/** The headers that tell the worker which chat and question a request is for (see Turn); none it doesn't know. */
+function turnHeaders({ chat, turn }: Turn = {}): Record<string, string> {
+  return { ...(chat && { 'x-cofun-chat-id': chat }), ...(turn && { 'x-cofun-turn-id': turn }) }
+}
 
 /**
  * Our worker. It fixes the model, so the agent asks it which one; each request carries a fresh Clerk
@@ -60,6 +65,7 @@ export function hostedProvider({
     // The worker's model changed since the panel looked it up (a deploy).
     modelChanged: (failure) => failure.code === 'unsupported_model',
     callCost,
+    turnHeaders,
   }
 }
 
@@ -209,6 +215,9 @@ function stopsSearching(code: string, message: string): string | undefined {
   return undefined
 }
 
+/** What a request to the worker's web routes needs: where the worker is, the session, and the question it is for. */
+type WebConfig = Pick<AgentConfig, 'apiUrl' | 'getToken' | 'client'> & { turn?: Turn }
+
 /**
  * Asks the worker's web route `path` (/web/read, /web/render, /web/search) with `payload`, and
  * gives its answer when it succeeded, with whether it was or may have been charged. Throws a WebError coded `failed` when the worker could not be
@@ -218,7 +227,7 @@ function stopsSearching(code: string, message: string): string | undefined {
  * stopped by the user throws what `fetch` or reading the answer threw.
  */
 async function askWeb(
-  { apiUrl, getToken, client }: Pick<AgentConfig, 'apiUrl' | 'getToken' | 'client'>,
+  { apiUrl, getToken, client, turn }: WebConfig,
   path: string,
   payload: unknown,
   {
@@ -235,7 +244,12 @@ async function askWeb(
   try {
     res = await fetch(`${apiUrl.replace(/\/+$/, '')}/${path}`, {
       method: 'POST',
-      headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json', 'x-cofun-client': client },
+      headers: {
+        authorization: `Bearer ${token}`,
+        'content-type': 'application/json',
+        'x-cofun-client': client,
+        ...turnHeaders(turn),
+      },
       body: JSON.stringify(payload),
       signal,
     })
@@ -272,7 +286,7 @@ async function askWeb(
  * threw.
  */
 export async function readWebPage(
-  config: Pick<AgentConfig, 'apiUrl' | 'getToken' | 'client'>,
+  config: WebConfig,
   url: string,
   maxChars: number,
   render: boolean,
@@ -298,7 +312,7 @@ const WebSearch = z.object({ results: z.array(WebSearchResult) })
  * not tried again. A question stopped by the user throws what `fetch` threw.
  */
 export async function searchWebFor(
-  config: Pick<AgentConfig, 'apiUrl' | 'getToken' | 'client'>,
+  config: WebConfig,
   query: string,
   limit: number,
   signal?: AbortSignal,

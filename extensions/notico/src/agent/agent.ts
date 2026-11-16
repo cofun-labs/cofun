@@ -31,6 +31,7 @@ import type {
   ToolCallRequest,
   ToolSpec,
   ToolStatus,
+  Turn,
 } from './types'
 import { ToolDetails } from './types'
 import { checkout, hostedProvider, readOwn, readWebPage, searchWebFor } from './worker'
@@ -97,6 +98,8 @@ export class CopilotAgent {
   private readonly pages = new WeakMap<AgentMessage, QuestionPage[]>()
   private readonly selections = new WeakMap<AgentMessage, QuestionSelection[]>()
   private readonly readOnly = new WeakSet<AgentMessage>()
+  /** The id each question's requests to the worker carried (see Turn), by its user message. */
+  private readonly turns = new WeakMap<AgentMessage, string>()
   /** What each question used, by its user message; see QuestionDetails. */
   private readonly details = new WeakMap<AgentMessage, QuestionDetails>()
   /** Set by a tool whose error stops the question (see `stopsQuestion` in calls.ts): what the user is told. */
@@ -113,6 +116,8 @@ export class CopilotAgent {
   private onChunk?: (chunk: unknown) => void
   /** Adds what a render cost to the question running, in micro-credits; undefined when it could not be read. */
   private onCost?: (microCredits: number | undefined) => void
+  /** Which chat and question the requests of the question running are for. */
+  private turn?: Turn
 
   constructor(private readonly config: AgentConfig) {
     this.provider = hostedProvider(config)
@@ -158,13 +163,15 @@ export class CopilotAgent {
     extras: QuestionExtras,
   ): Promise<AskResult> {
     const epoch = this.epoch
+    // One id for the question, a retry below included: it is the same question.
+    const turn: Turn = { turn: crypto.randomUUID(), ...(extras.chat && { chat: extras.chat }) }
     // Once per question: a retry below goes to the same model, whatever the user chose meanwhile.
     try {
       await this.chooseProvider()
     } catch (err) {
       return { status: 'error', message: (err as Error).message, rounds: 0 }
     }
-    const { result, kept, failure } = await this.askOnce(text, onUpdate, epoch, confirm, extras)
+    const { result, kept, failure } = await this.askOnce(text, onUpdate, epoch, confirm, extras, turn)
     // The provider's model changed since this panel looked it up (for the hosted one, a deploy, which
     // refuses the request before any credits are spent), so look the model up again. Retry once if
     // the question left nothing behind; a retry runs the whole question again, so after it used a
@@ -185,7 +192,7 @@ export class CopilotAgent {
       // The question stays in the conversation with the tools it used, so the model can pick up
       // where it left off; asking the same question again could run those tools twice.
       if (kept) return { status: 'error', message: 'Notico was just updated. Ask it to continue.', ...counted }
-      return (await this.askOnce(text, onUpdate, epoch, confirm, extras)).result
+      return (await this.askOnce(text, onUpdate, epoch, confirm, extras, turn)).result
     }
     return result
   }
@@ -197,6 +204,7 @@ export class CopilotAgent {
     epoch: number,
     confirm: ConfirmTool | undefined,
     { context, pages, selections, readOnly }: QuestionExtras,
+    turn: Turn,
   ): Promise<{ result: AskResult; kept: boolean; failure?: Failure }> {
     let agent: Agent
     try {
@@ -249,6 +257,7 @@ export class CopilotAgent {
     }
     this.onChunk = onChunk
     this.onCost = addCost
+    this.turn = turn
     const refused = new Set<string>()
     const declined = new Set<string>()
     // How the latest call with each id ended, kept with its result message when that arrives.
@@ -383,6 +392,7 @@ export class CopilotAgent {
       if (pages?.length) this.pages.set(question, pages)
       if (selections?.length) this.selections.set(question, selections)
       if (readOnly) this.readOnly.add(question)
+      if (turn.turn) this.turns.set(question, turn.turn)
       await agent.prompt(question)
     } catch (err) {
       failure ??= provider.parseError((err as Error).message)
@@ -392,6 +402,7 @@ export class CopilotAgent {
       agent.finishTurn = undefined
       if (this.onChunk === onChunk) this.onChunk = undefined
       if (this.onCost === addCost) this.onCost = undefined
+      if (this.turn === turn) this.turn = undefined
     }
     // Also stopped when the abort landed after a model reply that asked for tools, e.g. while a tool
     // finished. A stop after the final answer keeps it: the user has already read it.
@@ -472,10 +483,12 @@ export class CopilotAgent {
         const context = this.contexts.get(message)
         const pages = this.pages.get(message)
         const selections = this.selections.get(message)
+        const turn = this.turns.get(message)
         return [
           {
             role: 'user',
             text: textOf(message.content),
+            ...(turn && { turn }),
             ...(context && { context }),
             ...(pages && { pages }),
             ...(selections && { selections }),
@@ -521,6 +534,7 @@ export class CopilotAgent {
         if (m.pages?.length) this.pages.set(question, m.pages)
         if (m.selections?.length) this.selections.set(question, m.selections)
         if (m.readOnly) this.readOnly.add(question)
+        if (m.turn) this.turns.set(question, m.turn)
         const details = detailsOf(m)
         if (Object.keys(details).length) this.details.set(question, details)
         return question
@@ -563,6 +577,8 @@ export class CopilotAgent {
    */
   private reporter(): Reporter {
     const epoch = this.epoch
+    // The question the tool runs for: its requests to the worker say so.
+    const turn = this.turn
     return {
       stop: (reason, code) => {
         if (epoch !== this.epoch || this.stopReason !== undefined) return
@@ -580,11 +596,11 @@ export class CopilotAgent {
         // Always through the worker, whichever model answers: the page is read by the worker either way.
         // A render or a search costs credits, and the question it was for counts them; a plain read is free.
         readWeb: (url, maxChars, render, signal) =>
-          readWebPage(this.config, url, maxChars, render, signal, (cost) => {
+          readWebPage({ ...this.config, turn }, url, maxChars, render, signal, (cost) => {
             if (epoch === this.epoch) this.onCost?.(cost)
           }),
         searchWeb: (query, limit, signal) =>
-          searchWebFor(this.config, query, limit, signal, (cost) => {
+          searchWebFor({ ...this.config, turn }, query, limit, signal, (cost) => {
             if (epoch === this.epoch) this.onCost?.(cost)
           }),
         keep: async (result) => {
@@ -660,8 +676,11 @@ export class CopilotAgent {
       streamFn: (m, context, options) => {
         // The question asking now: its request reports to it, even if another starts meanwhile.
         const onChunk = this.onChunk
+        // Only the hosted provider is told which chat and question the request is for.
+        const turn = this.turn && this.provider.turnHeaders?.(this.turn)
         return streamSimple(m as Model<'openai-completions'>, context, {
           ...options,
+          ...(turn && { headers: { ...options?.headers, ...turn } }),
           onProviderStreamEvent: (chunk) => onChunk?.(chunk),
         })
       },
@@ -697,13 +716,14 @@ export class CopilotAgent {
    * the reply to it. Call it once that reply has come in: it asks the model that answered, so it goes
    * only where the conversation already went, and on the hosted model it spends credits like any
    * request. Resolves undefined, never rejects, when there is no title to use: the request failed,
-   * or the model's answer is not a title (see `ModelTitle` in title.ts).
+   * or the model's answer is not a title (see `ModelTitle` in title.ts). `chat` is the session's id:
+   * on the hosted model, the request counts toward the chat's first question (see Turn).
    */
-  async title(history: HistoryMessage[]): Promise<string | undefined> {
+  async title(history: HistoryMessage[], chat?: string): Promise<string | undefined> {
     // Read now: the next question may change the provider while this request is out.
     const { provider, model } = this
     if (!model) return undefined
-    return writeTitle(provider, model, history)
+    return writeTitle(provider, model, history, chat)
   }
 
   /**

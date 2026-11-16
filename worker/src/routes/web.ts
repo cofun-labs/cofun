@@ -71,8 +71,10 @@ export function webRoutes({ now, logError }: Pick<Deps, 'now' | 'logError'>): Ap
   const refused = (err: PageError) => new HttpError(422, err.code, err.message)
 
   routes.post('/read', async (c) => {
-    const { usage, record } = startUsage(c, 'web/fetch')
+    const { usage, record, turn } = startUsage(c, 'web/fetch')
     try {
+      // A plain read spends nothing, so only its usage record has them.
+      turn()
       const body = parse(ReadBody, await c.req.json().catch(() => undefined))
       await limit(c)
       const page = await fetchPage(
@@ -90,8 +92,9 @@ export function webRoutes({ now, logError }: Pick<Deps, 'now' | 'logError'>): Ap
   })
 
   routes.post('/render', async (c) => {
-    const { usage, record } = startUsage(c, 'web/render')
+    const { usage, record, turn } = startUsage(c, 'web/render')
     try {
+      const ids = turn()
       const body = parse(ReadBody, await c.req.json().catch(() => undefined))
       const url = checkAddress(body.url)
       const browser = c.env.BROWSER
@@ -103,7 +106,7 @@ export function webRoutes({ now, logError }: Pick<Deps, 'now' | 'logError'>): Ap
       if (!success)
         throw new HttpError(429, 'rate_limited', 'Too many pages rendered at once. Wait a minute, then try again.')
       const ledger = await openLedger(c, now().getTime(), logError)
-      const charging = { ledger, usage, now: () => now().getTime(), logError, what: 'web render' }
+      const charging = { ledger, usage, turn: ids, now: () => now().getTime(), logError, what: 'web render' }
       const { result, charged } = await chargeAfterUse<WebPage | PageError>(c, charging, async () => {
         const render = await renderPage(browser, url, body.max_chars)
         const { outcome, browserMs } = render
@@ -132,8 +135,9 @@ export function webRoutes({ now, logError }: Pick<Deps, 'now' | 'logError'>): Ap
   })
 
   routes.post('/search', async (c) => {
-    const { usage, record } = startUsage(c, 'web/search')
+    const { usage, record, turn } = startUsage(c, 'web/search')
     try {
+      const ids = turn()
       const body = parse(SearchBody, await c.req.json().catch(() => undefined))
       const gateway = c.env.AI_GATEWAY_ID
       if (!gateway) throw new HttpError(503, 'not_configured', 'web search is not set up')
@@ -143,7 +147,7 @@ export function webRoutes({ now, logError }: Pick<Deps, 'now' | 'logError'>): Ap
       if (!success)
         throw new HttpError(429, 'rate_limited', 'Too many web searches at once. Wait a minute, then try again.')
       const ledger = await openLedger(c, now().getTime(), logError)
-      const charging = { ledger, usage, now: () => now().getTime(), logError, what: 'web search' }
+      const charging = { ledger, usage, turn: ids, now: () => now().getTime(), logError, what: 'web search' }
       const { result, charged } = await chargeAfterUse<SearchResult[] | SearchError>(c, charging, async () => {
         let results: SearchResult[]
         try {

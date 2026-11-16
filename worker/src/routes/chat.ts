@@ -1,7 +1,7 @@
 // OpenAI-compatible chat completions (/v1/chat/completions) on the model the worker fixes, charged
 // to the user's credits and metered in a usage record.
 import { Hono } from 'hono'
-import { charge, openLedger, startUsage, type Charging } from '../charge'
+import { charge, openLedger, startUsage, type Charging, type Turn } from '../charge'
 import { costOf, estimateCachedTokens, estimateTokens, type Tokens } from '../pricing'
 import { finishReason, meterStream, replyInfo, tokensOf, type StreamSummary, type UsageRecord } from '../usage'
 import { HttpError, errorSummary, parse, type App, type Ctx, type Deps } from '../http'
@@ -33,9 +33,9 @@ export function chatRoutes({ now, priceOf: priceFor, logError }: Deps): App {
   // OpenAI-compatible chat completions. The model is fixed by the server.
   // Every request that passed auth leaves one usage record, however it ends.
   routes.post('/completions', async (c) => {
-    const { usage, record } = startUsage(c, c.env.MODEL)
+    const { usage, record, turn } = startUsage(c, c.env.MODEL)
     try {
-      return await chatCompletion(c, usage, record)
+      return await chatCompletion(c, usage, record, turn)
     } catch (err) {
       record(err instanceof HttpError ? err.code : 'internal')
       throw err
@@ -46,8 +46,14 @@ export function chatRoutes({ now, priceOf: priceFor, logError }: Deps): App {
    * Fills `usage` with sizes and token counts only, and calls `record` once the reply is complete.
    * Throws HttpError for refusals; the caller records those.
    */
-  async function chatCompletion(c: Ctx, usage: UsageRecord, record: (outcome: string) => void): Promise<Response> {
+  async function chatCompletion(
+    c: Ctx,
+    usage: UsageRecord,
+    record: (outcome: string) => void,
+    readTurn: () => Turn,
+  ): Promise<Response> {
     const product = usage.product
+    const turn = readTurn()
     const body = parse(Body, await c.req.json().catch(() => undefined))
     usage.stream = body.stream === true
     const { inputs: modelInputs, chars } = parseModelInputs(body)
@@ -79,6 +85,7 @@ export function chatRoutes({ now, priceOf: priceFor, logError }: Deps): App {
     const charging: Charging = {
       ledger: await openLedger(c, now().getTime(), logError),
       usage,
+      turn,
       now: () => now().getTime(),
       logError,
       what: 'model call',

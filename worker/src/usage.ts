@@ -14,6 +14,9 @@ export interface UsageRecord {
   userId: string
   /** The product the request came from: see `productOf` in charge.ts. */
   product: string
+  /** The chat and question the request was for (see `turnOf` in charge.ts), or empty when it named none. */
+  chatId: string
+  turnId: string
   model: string
   stream: boolean
   /** `ok`, `incomplete`, `cancelled`, `stream_error`, or the error code returned to the client. */
@@ -121,7 +124,8 @@ function deltaChars(value: unknown): number {
  *
  * - index1: user id
  * - blob1: model, blob2: outcome, blob3: finish reason, blob4: `stream` or `sync`,
- *   blob5: product (`notico`, another extension's name, or `unknown`)
+ *   blob5: product (`notico`, another extension's name, or `unknown`), blob6: chat id, blob7: turn
+ *   id (each empty when the request named none)
  * - double1: messages, double2: input characters, double3: prompt tokens,
  *   double4: completion tokens, double5: duration in ms, double6: cached prompt tokens,
  *   double7: micro-credits charged
@@ -132,7 +136,7 @@ export function recordUsage(dataset: UsageDataset, r: UsageRecord): void {
   try {
     dataset.writeDataPoint({
       indexes: [r.userId],
-      blobs: [r.model, r.outcome, r.finishReason, r.stream ? 'stream' : 'sync', r.product],
+      blobs: [r.model, r.outcome, r.finishReason, r.stream ? 'stream' : 'sync', r.product, r.chatId, r.turnId],
       doubles: [
         r.messages,
         r.inputChars,
