@@ -102,7 +102,8 @@ turndown.addRule('table cell', {
   replacement: (content, node) => {
     if (!gridTable(node)) return block(content)
     // A pipe would end the cell. Only pipes get a backslash: one in the text before it is escaped
-    // already (Turndown writes it `\\`), and in a code span GFM still reads `\|` as the pipe.
+    // already (Turndown writes it `\\`), and in a code span GFM reads `\|` as the pipe. A code span
+    // with a backslash right before a pipe can't be written in a GFM cell at all: the cell ends there.
     const cell = content
       .replace(/\s*\n+\s*/g, ' ')
       .split('|')
