@@ -533,7 +533,7 @@ describe('UC-NOTICO-CHAT-004 add pages to a question', () => {
       .flatMap((call) =>
         (call.inputs.messages as { role: string; content?: string }[]).filter((m) => m.role === 'user'),
       )
-    expect(questions.some((m) => m.content?.endsWith('Go'))).toBe(false)
+    expect(questions.some((m) => m.content?.endsWith('Go @road'))).toBe(false)
   })
 
   it('[UC-NOTICO-CHAT-004-S08] the open page taken off and picked again goes with the question, also once the tab moves on', async () => {
