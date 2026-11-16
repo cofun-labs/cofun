@@ -297,11 +297,11 @@ export function Chat({ userId }: { userId: string }) {
   const [selections, setSelections] = useState<Selection[]>([])
   useEffect(() => {
     let stop: (() => void) | undefined
-    let gone = false
+    let closed = false
     chrome.windows
       .getCurrent()
       .then((window) => {
-        if (gone || window.id === undefined) return
+        if (closed || window.id === undefined) return
         stop = watchSelections(window.id, (sent) => {
           setSelections((list) => [...list, ...sent])
           inputRef.current?.focus()
@@ -309,7 +309,7 @@ export function Chat({ userId }: { userId: string }) {
       })
       .catch((err: unknown) => console.error('Could not tell which window the side panel is in', err))
     return () => {
-      gone = true
+      closed = true
       stop?.()
     }
   }, [])
@@ -498,7 +498,8 @@ export function Chat({ userId }: { userId: string }) {
     if (settings.openRouter && settings.openRouter.key !== before.openRouter?.key)
       track({ event: 'own_key_saved', provider: 'openrouter' })
     modelRef.current = settings
-    setModel(settings)
+    // A question the unmount stopped may still mark a key rejected: saved, but not shown.
+    if (!gone.current) setModel(settings)
     saveModelSettings(userId, settings).catch((err: unknown) => console.error('Could not save the model settings', err))
   }
 
@@ -762,7 +763,7 @@ export function Chat({ userId }: { userId: string }) {
         return
       }
       const readOnly = (sentMode ?? (await modeLoad)) === 'read_only'
-      if (readOnly && !sentMode)
+      if (readOnly && !sentMode && !gone.current)
         setMessages((ms) =>
           chatId.current !== id
             ? ms
