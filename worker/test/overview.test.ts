@@ -121,6 +121,7 @@ const lookUp = async (userId: string) => json(await req('GET', `/v1/admin/accoun
 const NOTHING = {
   granted: { free: 0, manual: 0, purchase: 0 },
   spent: 0,
+  forgiven: 0,
   calls: 0,
   failedCalls: 0,
   cancelledCalls: 0,
@@ -190,6 +191,7 @@ describe('UC-COFUN-ADMIN-002 See granted and spent credits as a whole', () => {
       totals: {
         granted: { free: 600 * CREDIT, manual: 100 * CREDIT, purchase: 0 },
         spent: 3 * FAKE_COST + CACHED_COST,
+        forgiven: 0,
         calls: 5,
         failedCalls: 1,
         cancelledCalls: 0,
@@ -338,6 +340,28 @@ describe('UC-COFUN-ADMIN-002 See granted and spent credits as a whole', () => {
     ])
   })
 
+  it('[UC-COFUN-ADMIN-002-S14] an operator sees what was spent beyond the balance, and so forgiven', async () => {
+    // Alice's first reply leaves her 50 of her 200 free credits; the second costs 150 and takes the
+    // 50, so 100 are forgiven. Bob's reply is covered in full.
+    repliesCost(150)
+    await asks('alice')
+    await asks('alice')
+    repliesCost(10)
+    await asks('bob')
+    later(DAY_MS)
+
+    const { totals, days } = await overview('2026-11-08', '2026-11-09')
+    expect(totals).toMatchObject({ forgiven: 100 * CREDIT })
+    expect(days).toMatchObject([
+      { day: '2026-11-08', forgiven: 100 * CREDIT },
+      { day: '2026-11-09', forgiven: 0 },
+    ])
+    expect((await accounts('2026-11-08', '2026-11-09')).accounts).toMatchObject([
+      { userId: 'user_alice', spent: 300 * CREDIT, forgiven: 100 * CREDIT, balance: 0 },
+      { userId: 'user_bob', forgiven: 0 },
+    ])
+  })
+
   it('[UC-COFUN-ADMIN-002-S09] a call the user stopped counts as a failed call, and as a cancelled one', async () => {
     await asks('alice')
     // Bob stops reading his reply partway.
@@ -375,6 +399,7 @@ describe('UC-COFUN-ADMIN-002 See granted and spent credits as a whole', () => {
           userId: 'user_bob',
           granted: 200 * CREDIT,
           spent: 240 * CREDIT + 2 * FAKE_COST,
+          forgiven: 40 * CREDIT + 2 * FAKE_COST,
           calls: 3,
           ...NO_RENDERS,
           balance: 0,
@@ -383,6 +408,7 @@ describe('UC-COFUN-ADMIN-002 See granted and spent credits as a whole', () => {
           userId: 'user_carol',
           granted: 300 * CREDIT,
           spent: CACHED_COST,
+          forgiven: 0,
           calls: 1,
           ...NO_RENDERS,
           balance: 300 * CREDIT - CACHED_COST,
@@ -392,11 +418,20 @@ describe('UC-COFUN-ADMIN-002 See granted and spent credits as a whole', () => {
           userId: 'user_alice',
           granted: 200 * CREDIT,
           spent: FAKE_COST,
+          forgiven: 0,
           calls: 2,
           ...NO_RENDERS,
           balance: 200 * CREDIT - FAKE_COST,
         },
-        { userId: 'user_dave', granted: 20 * CREDIT, spent: 0, calls: 0, ...NO_RENDERS, balance: 20 * CREDIT },
+        {
+          userId: 'user_dave',
+          granted: 20 * CREDIT,
+          spent: 0,
+          forgiven: 0,
+          calls: 0,
+          ...NO_RENDERS,
+          balance: 20 * CREDIT,
+        },
       ],
     })
 
@@ -414,11 +449,20 @@ describe('UC-COFUN-ADMIN-002 See granted and spent credits as a whole', () => {
         userId: 'user_carol',
         granted: 300 * CREDIT,
         spent: CACHED_COST,
+        forgiven: 0,
         calls: 1,
         ...NO_RENDERS,
         balance: 300 * CREDIT - CACHED_COST,
       },
-      { userId: 'user_alice', granted: 0, spent: 0, calls: 1, ...NO_RENDERS, balance: 200 * CREDIT - FAKE_COST },
+      {
+        userId: 'user_alice',
+        granted: 0,
+        spent: 0,
+        forgiven: 0,
+        calls: 1,
+        ...NO_RENDERS,
+        balance: 200 * CREDIT - FAKE_COST,
+      },
     ])
 
     // Once the free weeks have expired the period reads the same, and the balances are the new ones.
@@ -612,8 +656,24 @@ describe('UC-COFUN-ADMIN-002 See granted and spent credits as a whole', () => {
 
     await overview('2026-11-08', '2026-11-16')
     expect((await accounts('2026-11-08', '2026-11-16')).accounts).toEqual([
-      { userId: 'user_alice', granted: 200 * CREDIT, spent: FAKE_COST, calls: 1, ...NO_RENDERS, balance: 0 },
-      { userId: 'user_carol', granted: 50 * CREDIT, spent: 0, calls: 0, ...NO_RENDERS, balance: 50 * CREDIT },
+      {
+        userId: 'user_alice',
+        granted: 200 * CREDIT,
+        spent: FAKE_COST,
+        forgiven: 0,
+        calls: 1,
+        ...NO_RENDERS,
+        balance: 0,
+      },
+      {
+        userId: 'user_carol',
+        granted: 50 * CREDIT,
+        spent: 0,
+        forgiven: 0,
+        calls: 0,
+        ...NO_RENDERS,
+        balance: 50 * CREDIT,
+      },
     ])
     expect(JSON.stringify([db.rows('grants'), db.rows('model_calls')])).toBe(before)
 
@@ -687,10 +747,17 @@ describe('admin overview API', () => {
     // Every other read of the tables is one account's balance: its grants through an index that starts
     // with the user, and what was spent from each grant or whether it was taken back, by the grant.
     const others = listed.filter(
-      (step) => /^SEARCH \w+ USING/.test(step) && !step.includes('_by_time') && !callOfSpend.test(step),
+      (step) =>
+        /^SEARCH \w+ USING/.test(step) &&
+        !step.includes('_by_time') &&
+        !callOfSpend.test(step) &&
+        !step.includes('sqlite_autoindex_spend_grants_'),
     )
     expect(others.length).toBeGreaterThan(0)
     for (const step of others) expect(step).toMatch(/USING (COVERING )?INDEX \w+ \((user_id|grant_id)=\?/)
+    // What a spend took from the grants, for what was forgiven, is found by the spend.
+    for (const plan of [spent, listed])
+      expect(plan).toContain('SEARCH sg USING INDEX sqlite_autoindex_spend_grants_1 (spend_id=?)')
   })
 
   it('[@no-uc:privacy] looking at the overview logs nothing', async () => {
