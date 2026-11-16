@@ -34,7 +34,7 @@ HOW IT WORKS
 Notico works inside your own Notion tab, with the session you're already signed in with, so it can reach what you can reach and nothing else. Sign in to Notico once with Google or your email; nothing else to configure.
 
 CREDITS
-Asking Cofun's AI model costs credits. Every account gets free credits each week, and the panel shows how many you have left and when they renew. When you need more, buy a pack in the panel: it opens Stripe's checkout, nothing renews, and bought credits last a year. Answering with your own model on OpenRouter spends no credits, except on web pages rendered in a browser and web searches made for a question.
+Asking Cofun's AI model costs credits. Every account gets free credits each week, and the panel shows how many you have left and when they renew. When you need more, buy a pack in the panel: it opens Stripe's checkout, nothing renews, and bought credits last a year. Answering with your own model on OpenRouter spends no credits.
 
 PRIVACY
 Your questions, and the Notion content Notico reads to answer them, go to our server and on to an AI model running on Cloudflare Workers AI, or, if you set up your own model, straight to OpenRouter with your key. The server does not store that content: it keeps only usage numbers and your purchases, never the text of a question or an answer. Chats are saved only in Chrome on your device. Notico also reports which features are used and whether they worked, never the text of a question, an answer, or a page; you can turn that off in the settings. No ads.
@@ -70,9 +70,12 @@ The screenshots show the real side panel, answering with Cofun's model (Auto), n
 
 ## For the next version
 
-The text above describes version 0.2.0. The version after it also reads the page the user is on when it is another site, so the description says Notico works around Notion, not only inside it:
+The text above describes version 0.2.0. The version after it also works beyond Notion: it reads the page the user is on when it is another site, several tabs added to a question, and web pages by their address, searches the web, and takes text sent from the "Ask Notico" context menu. Renders and searches cost credits, whichever model answers. So the description says Notico works around Notion, not only inside it:
 
-- The first paragraph reads: "Ask Notion anything, right next to the page. Notico is an AI copilot that reads, writes, and organizes your Notion pages from Chrome's side panel, and shows you every change it makes. It can also read the page you're on elsewhere, so you can ask about an article or save it to Notion."
-- WHAT YOU CAN ASK adds: "• Bring in the web: ask about the page you're on, or save it to Notion. Notico reads a site only after you allow it."
+- The first paragraph reads: "Ask Notion anything, right next to the page. Notico is an AI copilot that reads, writes, and organizes your Notion pages from Chrome's side panel, and shows you every change it makes. It can also read the page you're on elsewhere, other web pages, and the web, so you can ask about an article or save it to Notion."
+- WHAT YOU CAN ASK adds:
+  - "• Bring in the web: ask about the page you're on, or save it to Notion; add several tabs to compare them; give it a web page's address; or let it search the web, with the sources it used. Notico reads a site in your tabs only after you allow it."
+  - "• Ask about a selection: select text on any page, right-click it, and pick "Ask Notico"."
 - THINGS TO TRY adds: "• On an article: "Save the key points of this page to my Reading notes.""
-- PRIVACY reads "Your questions, and what Notico reads to answer them (Notion content, and a web page you asked about), go to our server…".
+- CREDITS reads "…Answering with your own model on OpenRouter spends no credits, except on web pages rendered in a browser and web searches made for a question."
+- PRIVACY reads "Your questions, and what Notico reads to answer them (Notion content, web pages you asked about, and web searches, whose queries may hold text from your Notion pages), go to our server…".
