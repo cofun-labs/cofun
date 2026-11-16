@@ -230,7 +230,8 @@ function BuyCredits({ buying }: { buying: Buying }) {
           </ul>
           <p className="fine">
             One-time purchase, not a subscription, valid for a year, spent after your free credits. Questions answered
-            with your own key (OpenRouter) spend credits only on pages rendered for them. Tax may be added at checkout.
+            with your own key (OpenRouter) spend credits only on pages rendered and web searches made for them. Tax may
+            be added at checkout.
           </p>
           {checkout === 'opened' && (
             <p role="status" className="account-detail">

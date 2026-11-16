@@ -131,10 +131,15 @@ const NOTHING = {
   failedRenders: 0,
   renderMs: 0,
   renderSpent: 0,
+  searches: 0,
+  failedSearches: 0,
+  searchSpent: 0,
 }
 
-/** What a product or an account spent on no render. */
-const NO_RENDERS = { renders: 0, renderSpent: 0 }
+/** What a product or an account spent on no search. */
+const NO_SEARCHES = { searches: 0, searchSpent: 0 }
+/** What a product or an account spent on no render and no search. */
+const NO_RENDERS = { renders: 0, renderSpent: 0, ...NO_SEARCHES }
 
 /**
  * Three days of the service. Nov 8: alice asks once and bob twice, each starting a free week. Nov 9:
@@ -195,6 +200,9 @@ describe('UC-COFUN-ADMIN-002 See granted and spent credits as a whole', () => {
         failedRenders: 0,
         renderMs: 0,
         renderSpent: 0,
+        searches: 0,
+        failedSearches: 0,
+        searchSpent: 0,
       },
       products: [{ product: 'notico', spent: 3 * FAKE_COST + CACHED_COST, calls: 5, ...NO_RENDERS }],
       days: [
@@ -273,12 +281,60 @@ describe('UC-COFUN-ADMIN-002 See granted and spent credits as a whole', () => {
     expect(days[0]).toMatchObject({ day: '2026-11-08', ...renders })
     expect(days[1]).toEqual({ day: '2026-11-09', ...NOTHING })
     expect(products).toEqual([
-      { product: 'notico', spent: ok + failed + FAKE_COST, calls: 1, renders: 2, renderSpent: ok + failed },
-      { product: 'confluco', spent: ok, calls: 0, renders: 1, renderSpent: ok },
+      {
+        product: 'notico',
+        spent: ok + failed + FAKE_COST,
+        calls: 1,
+        renders: 2,
+        renderSpent: ok + failed,
+        ...NO_SEARCHES,
+      },
+      { product: 'confluco', spent: ok, calls: 0, renders: 1, renderSpent: ok, ...NO_SEARCHES },
     ])
     expect((await accounts('2026-11-08', '2026-11-09')).accounts).toMatchObject([
       { userId: 'user_alice', spent: ok + failed, calls: 0, renders: 2, renderSpent: ok + failed },
       { userId: 'user_bob', spent: ok + FAKE_COST, calls: 1, renders: 1, renderSpent: ok },
+    ])
+  })
+
+  it('[UC-COFUN-ADMIN-002-S13] an operator sees the web searches, the failed ones, and what they cost', async () => {
+    env.AI_GATEWAY_ID = 'gw-test'
+    ai.found.set('tea', [{ url: 'https://tea.example/', title: 'Tea', description: 'About tea.' }])
+    const searchAs = async (name: string, product: Record<string, string> = NOTICO) => {
+      const bearer = await clerk.sessionToken({ userId: `user_${name}`, azp: EXT })
+      return req('POST', '/v1/web/search', bearer, { query: 'tea', limit: 5 }, product)
+    }
+    // Alice searches twice, and once more when the gateway turns the search away: that one costs
+    // nothing. Bob asks the AI and searches from another product.
+    expect((await searchAs('alice')).status).toBe(200)
+    expect((await searchAs('alice')).status).toBe(200)
+    ai.searchReply = () => Response.json({ ok: false, error: { code: 'rate_limited' } }, { status: 429 })
+    expect((await searchAs('alice')).status).toBe(503)
+    ai.searchReply = undefined
+    await asks('bob')
+    expect((await searchAs('bob', { 'x-cofun-client': 'confluco/1.0.0' })).status).toBe(200)
+    later(DAY_MS)
+
+    const one = 250_000
+    const { totals, days, products } = await overview('2026-11-08', '2026-11-09')
+    const searches = { searches: 4, failedSearches: 1, searchSpent: 3 * one }
+    expect(totals).toMatchObject({ spent: 3 * one + FAKE_COST, calls: 1, renders: 0, ...searches })
+    expect(days[0]).toMatchObject({ day: '2026-11-08', ...searches })
+    expect(products).toEqual([
+      {
+        product: 'notico',
+        spent: 2 * one + FAKE_COST,
+        calls: 1,
+        renders: 0,
+        renderSpent: 0,
+        searches: 3,
+        searchSpent: 2 * one,
+      },
+      { product: 'confluco', spent: one, calls: 0, renders: 0, renderSpent: 0, searches: 1, searchSpent: one },
+    ])
+    expect((await accounts('2026-11-08', '2026-11-09')).accounts).toMatchObject([
+      { userId: 'user_alice', spent: 2 * one, calls: 0, searches: 3, searchSpent: 2 * one },
+      { userId: 'user_bob', spent: one + FAKE_COST, calls: 1, searches: 1, searchSpent: one },
     ])
   })
 
@@ -612,15 +668,15 @@ describe('admin overview API', () => {
       // A scan of a CTE's own result is fine; a scan of a table is not.
       expect(
         plan.filter((step) =>
-          /^SCAN (grants|spends|spend_grants|model_calls|web_renders|grant_revocations)\b/.test(step),
+          /^SCAN (grants|spends|spend_grants|model_calls|web_renders|web_searches|grant_revocations)\b/.test(step),
         ),
       ).toEqual([])
     }
     const [granted, spent, byProduct, listed] = plans
     const bySpendTime = 'SEARCH s USING INDEX spends_by_time (created_at>? AND created_at<?)'
-    // A spend's model call is found by the spend, through the index of its unique spend_id.
+    // A spend's detail row is found by the spend, through the index of its unique spend_id.
     const callOfSpend =
-      /^SEARCH [mr] USING (COVERING )?INDEX sqlite_autoindex_(model_calls|web_renders)_\d \(spend_id=\?\)/
+      /^SEARCH [mrw] USING (COVERING )?INDEX sqlite_autoindex_(model_calls|web_renders|web_searches)_\d \(spend_id=\?\)/
     expect(granted).toContain('SEARCH grants USING INDEX grants_by_time (granted_at>? AND granted_at<?)')
     expect(spent).toContain(bySpendTime)
     expect(spent.some((step) => callOfSpend.test(step))).toBe(true)

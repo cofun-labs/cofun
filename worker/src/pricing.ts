@@ -74,3 +74,10 @@ const RENDER_PER_MS = 25
 export function renderCostOf(browserMs: number): number {
   return browserMs * RENDER_PER_MS
 }
+
+/**
+ * What a web search costs, in micro-credits: its list price on Ceramic, the search provider, US$0.25
+ * per 1,000 searches (https://ceramic.ai/pricing), paid through AI Gateway with nothing added: 0.25
+ * credit a search.
+ */
+export const SEARCH_COST = 250_000

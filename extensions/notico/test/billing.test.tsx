@@ -65,7 +65,7 @@ describe('buying credits on the Credits page', () => {
     expect(browser.stripe.sessions).toMatchObject([{ userId: 'user_alice', quantity: 5, price: 'price_credits' }])
   })
 
-  it('[UC-NOTICO-BILLING-001-S15] the packs on offer say bought credits last one year, nothing renews, and questions answered with the user’s own key spend credits only on rendered pages', async () => {
+  it('[UC-NOTICO-BILLING-001-S15] the packs on offer say bought credits last one year, nothing renews, and questions answered with the user’s own key spend credits only on renders and searches', async () => {
     const { user } = await openPanel()
     await openCredits(user)
 
@@ -73,7 +73,7 @@ describe('buying credits on the Credits page', () => {
     await buy.findByRole('list', { name: 'Packs of credits' })
     expect(
       buy.getByText(
-        'One-time purchase, not a subscription, valid for a year, spent after your free credits. Questions answered with your own key (OpenRouter) spend credits only on pages rendered for them. Tax may be added at checkout.',
+        'One-time purchase, not a subscription, valid for a year, spent after your free credits. Questions answered with your own key (OpenRouter) spend credits only on pages rendered and web searches made for them. Tax may be added at checkout.',
       ),
     ).toBeVisible()
   })

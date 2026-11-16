@@ -578,12 +578,15 @@ export class CopilotAgent {
       context: {
         ask: async (question) => (epoch === this.epoch && this.askOnCard ? this.askOnCard(question) : false),
         // Always through the worker, whichever model answers: the page is read by the worker either way.
-        // A render costs credits, and the question it was for counts them; a plain read is free.
+        // A render or a search costs credits, and the question it was for counts them; a plain read is free.
         readWeb: (url, maxChars, render, signal) =>
           readWebPage(this.config, url, maxChars, render, signal, (cost) => {
             if (epoch === this.epoch) this.onCost?.(cost)
           }),
-        searchWeb: (query, limit, signal) => searchWebFor(this.config, query, limit, signal),
+        searchWeb: (query, limit, signal) =>
+          searchWebFor(this.config, query, limit, signal, (cost) => {
+            if (epoch === this.epoch) this.onCost?.(cost)
+          }),
       },
     }
   }
