@@ -91,13 +91,13 @@ This is an open-source repository. **Never commit account identifiers or secrets
 
 ## Privacy
 
-An extension's Chrome Web Store privacy policy is written in two parts: [PRIVACY.md](PRIVACY.md) for what is the same for every extension (the sign-in, and what the worker receives, stores, and logs), and `extensions/<name>/PRIVACY.md` ([Notico's](extensions/notico/PRIVACY.md)) for what that extension reads in the browser, which hosts it sends data to, and what it keeps on the device.
+An extension's Chrome Web Store privacy policy is written in two parts: [PRIVACY.md](PRIVACY.md) for what is the same for every extension (who receives data from the sign-in and the worker, and what the worker stores and logs), and `extensions/<name>/PRIVACY.md` ([Notico's](extensions/notico/PRIVACY.md)) for what that extension reads in the browser, which hosts it sends data to, and what it keeps on the device. Both are written by kind of data and by recipient, not by feature.
 
-**A change to what data leaves the browser, or to where it goes, updates the privacy page it concerns in the same PR:**
+**A PR updates the privacy page it concerns when it adds a kind of data that leaves the browser, a recipient or host, or something stored or logged.** A feature that sends a kind of data already listed to a recipient already listed changes nothing there.
 
-- New data sent to a host, or a new host, updates the extension's `PRIVACY.md`. Its table of hosts is the list of hosts the extension may contact.
+- A new kind of data, a new host, or something new the extension keeps on the device updates the extension's `PRIVACY.md`. Its table of hosts is the list of hosts the extension may contact.
 - A new host also changes the content security policy (`extensions/notico/manifest.ts`), which enforces that list for the extension's pages, and `extensions/notico/test/manifest.test.ts`, which pins the policy and the host permissions.
-- A change to what the worker stores or logs updates `PRIVACY.md`.
+- A new recipient of what the worker receives, or a change to what the worker stores or logs, updates `PRIVACY.md`.
 - What the Chrome Web Store asks about the same things (permission justifications, data usage) is in `extensions/<name>/store/privacy.md`, which changes with them.
 
 ## Architecture
