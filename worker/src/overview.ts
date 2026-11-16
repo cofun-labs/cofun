@@ -34,7 +34,8 @@ interface Totals {
   spent: number
   /**
    * The part of `spent` no grant covered, so it was forgiven: what a spend cost beyond what was left
-   * when it was charged, as when requests sent at once together cost more than the balance.
+   * when it was charged: the last call before the balance runs out, or requests sent at once that
+   * together cost more than it.
    */
   forgiven: number
   /** Calls made to the model, however they ended. */

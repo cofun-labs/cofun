@@ -302,7 +302,8 @@ export function adminPage(publishableKey: string): string {
     el('granted-manual').textContent = credits(totals.granted.manual)
     el('granted-purchase').textContent = credits(totals.granted.purchase)
     el('spent').textContent = credits(totals.spent)
-    // What no grant covered: spends beyond the balance, as when requests sent at once together cost more.
+    // What no grant covered: a spend beyond what was left, from the last call before the balance ran
+    // out, or requests sent at once.
     el('forgiven').textContent = credits(totals.forgiven)
     // A call the user stopped is a failed call, of the kind cancelled.
     el('calls').textContent =
