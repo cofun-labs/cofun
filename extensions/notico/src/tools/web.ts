@@ -144,7 +144,12 @@ export const renderWebPage = defineTool({
 })
 
 const SearchArgs = z.strictObject({
-  query: z.string().describe('What to search for, as you would type it into a search engine.'),
+  query: z
+    .string()
+    .describe(
+      'A few keywords: the names, terms, and dates a page that answers would hold (say, "Node.js LTS release ' +
+        '2026"), not a question or instructions.',
+    ),
 })
 
 export const searchWeb = defineTool({
@@ -153,7 +158,9 @@ export const searchWeb = defineTool({
     'Searches the web, for current information or sources beyond Notion and the pages the user gave. Gives up to ' +
     `${SEARCH_RESULTS} results, each with its page's URL, title, and a description of the page. To read a result's ` +
     'page in full, use read_web_page with its URL. Each search costs the user credits: search only when the question ' +
-    'needs it.',
+    'needs it. The search matches the words of the query as they are and reads no instructions: write a few ' +
+    'keywords, not the question (say, "Node.js LTS release 2026", not "what is the latest stable Node.js ' +
+    'version?"). When the results do not fit, search again with other keywords, not the same ones.',
   describe: (args, details) => {
     const query = details?.name ?? args?.query.trim()
     return query ? { verb: SEARCH, what: 'the web for', name: query } : { verb: SEARCH, what: 'the web' }

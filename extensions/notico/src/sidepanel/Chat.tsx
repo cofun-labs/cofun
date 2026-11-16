@@ -96,7 +96,8 @@ const SYSTEM_PROMPT =
   'and give its URL. ' +
   'When a question needs current information or sources beyond Notion and the pages the user gave, search the ' +
   "web with search_web, and read a result's page with read_web_page when its description is not enough. A " +
-  'search query goes to a search provider: put in it only what the search needs. When an answer uses search ' +
+  'search query goes to a search provider: put in it only what the search needs, as a few keywords, not a ' +
+  'question. When an answer uses search ' +
   'results, give the URL of each result it uses. ' +
   'A long page read from a tab or the web comes as its first part, with a note "Kept as result r_…" and an ' +
   'outline of its headings: when the question needs what the rest says, find it with search_result or read ' +

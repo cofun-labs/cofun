@@ -2,11 +2,10 @@
 // (https://developers.cloudflare.com/web-search/), through the AI binding. The provider is fixed
 // here: Linkup, which keeps no data of the requests it serves (zero data retention), so a query,
 // which may hold text from the user's Notion, is not kept by whoever answers it. The worker keeps
-// and logs neither the query nor the results. Nor does
-// the gateway, only because its log collection is off for the whole gateway (docs/development.md,
-// "Worker"): unlike a model call, a search can't turn it off by itself: the binding documents no
-// such option, and the REST API stores the query even with `collectLog: false` in its gateway
-// options.
+// and logs neither the query nor the results. Nor does the gateway, only because its log collection
+// is off for the whole gateway (docs/development.md, "Worker"): unlike a model call, a search can't
+// turn it off by itself: the binding documents no such option, and the REST API stores the query
+// even with `collectLog: false` in its gateway options.
 import * as z from './zod'
 
 /** The search provider. One, fixed: the privacy page names it. */
@@ -16,7 +15,7 @@ const PROVIDER = 'linkup'
 export const MAX_QUERY_CHARS = 1024
 /** The most results the API gives for one search. */
 export const MAX_RESULTS = 10
-/** Characters of a result's title and description kept, so a long description can't fill the model's context. */
+/** Characters of a result's title and description kept: a description can run long. */
 const TITLE_CHARS = 300
 const DESCRIPTION_CHARS = 1000
 /** The longest result address kept: what the extension shows its model of one, uncut. */
