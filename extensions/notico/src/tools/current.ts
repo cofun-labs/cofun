@@ -7,8 +7,9 @@ import { NOTION_HOSTS, isNotion, pageIdFromUrl, showsDatabase } from '../notion/
 import { clip } from '../notion/comments'
 import type { Selection } from '../selection'
 import { mayRead, readPage, readableSite, type TabPage, type TabWhere } from '../web/tab'
-import type { AskOnCard } from '../agent'
-import { LOOK, READ, asData, asPageMarkdown, asPageText, count, on } from './shared'
+import type { AskOnCard, ToolContext } from '../agent'
+import { KEPT_CHARS, withText } from './results'
+import { LOOK, READ, asData, asPageText, count, on } from './shared'
 
 /** The title and URL of the current tab: the active tab of the side panel's window, on any site. */
 async function currentTab(): Promise<{ title: string; url: string } | undefined> {
@@ -295,9 +296,6 @@ export const getCurrentTab = defineTool({
   },
 })
 
-/** How much of a page read_current_tab returns. */
-const TAB_TEXT_CHARS = 20_000
-
 export const readCurrentTab = defineTool({
   name: 'read_current_tab',
   description:
@@ -307,7 +305,8 @@ export const readCurrentTab = defineTool({
     'user sees, pages they are signed in to included, but not what is inside frames, its navigation, or its ' +
     'footer. The first time a site is read, ' +
     'the user is asked to allow Notico to read it. Use it when a question is about the page the user is on, such ' +
-    'as summarizing it or saving it to Notion; never for a Notion page (use read_page). A long page is clipped.',
+    'as summarizing it or saving it to Notion; never for a Notion page (use read_page). A long page is kept ' +
+    'on the device and given in parts: its first part comes with an id that read_result and search_result take.',
   describe: (_args, details) => on(READ, details?.name, 'the current tab'),
   args: z.strictObject({}),
   run: async (_args, _signal, context) => {
@@ -327,9 +326,9 @@ export const readCurrentTab = defineTool({
         'The current tab changed while Notico waited (the user switched tabs or went to another page), so ' +
           'nothing was read. Ask them to go back to the page and ask again.',
       )
-    const page = await readPage(tab.id, site.origin, TAB_TEXT_CHARS)
+    const page = await readPage(tab.id, site.origin, KEPT_CHARS)
     if ('reason' in page) throw new Error(page.reason)
-    return pageRead(page, `Page in the current tab, on ${host}`, host)
+    return pageRead(page, `Page in the current tab, on ${host}`, host, context, 'read_current_tab')
   },
 })
 
@@ -351,24 +350,27 @@ async function mayReadOrAsk(origin: string, ask: AskOnCard | undefined): Promise
 
 /**
  * A page read from a tab, as the model gets it: `header` says which tab and site it came from, then
- * the page's title and URL, `notes` about it, whether it was clipped, and its content as Markdown.
+ * the page's title and URL, `notes` about it, and its content as Markdown; a long page's first part,
+ * with the rest kept on the device (see withText).
  */
-function pageRead(page: TabPage, header: string, host: string, notes: string[] = []) {
-  const shown = page.text.length < page.chars || page.longer
+async function pageRead(
+  page: TabPage,
+  header: string,
+  host: string,
+  context: ToolContext | undefined,
+  tool: string,
+  notes: string[] = [],
+) {
   const lines = [
     // As JSON, so the title and URL stay inside their quotes and on their line.
     `${header}: ${JSON.stringify({ title: clip(page.title, TITLE_CHARS), url: clip(page.url, TAB_URL_CHARS) })}`,
     ...notes,
-    ...(shown
-      ? [
-          `[Clipped: this shows the first ${page.text.length.toLocaleString('en-US')} of the page's ` +
-            `${page.longer ? 'more than ' : ''}${page.chars.toLocaleString('en-US')} characters.]`,
-        ]
-      : []),
     ...(page.frames ? [`[The page holds ${count(page.frames, 'frame')}, whose content is not read.]`] : []),
-    ...(page.text ? ['Content, as Markdown:', asPageMarkdown(page.text)] : ['[The page shows no text.]']),
   ]
-  return { text: asData(lines), details: { name: page.title.trim() || host } }
+  const name = page.title.trim() || host
+  if (!page.text) return { text: asData([...lines, '[The page shows no text.]']), details: { name } }
+  const { title, url, text, chars, longer } = page
+  return withText(lines, { tool, title, url, markdown: true, text, chars, longer }, name, context)
 }
 
 const WHERE: TabWhere = 'the tab'
@@ -380,7 +382,8 @@ export const readTab = defineTool({
     'note with a question gave it ("(tab 123)"): the main content the tab shows now, as Markdown, with its title ' +
     'and URL, as read_current_tab does. The tab may have gone to another page since it was added: the result ' +
     'then says so. Only those tabs can be read, never another tab. Use it when a question needs ' +
-    'what such a tab says, such as comparing the tabs the user added. A long page is clipped.',
+    'what such a tab says, such as comparing the tabs the user added. A long page is kept on the device and ' +
+    'given in parts, as read_current_tab does.',
   describe: (_args, details) => on(READ, details?.name, 'a tab'),
   args: z.strictObject({
     tab: z.number().int().describe('The number of the tab, as the note gave it.'),
@@ -402,7 +405,7 @@ export const readTab = defineTool({
     const site = readableSite(now.url, WHERE)
     if ('reason' in site) throw new Error(site.reason)
     await mayReadOrAsk(site.origin, context?.ask)
-    const page = await readPage(tab, site.origin, TAB_TEXT_CHARS, WHERE)
+    const page = await readPage(tab, site.origin, KEPT_CHARS, WHERE)
     if ('reason' in page) throw new Error(page.reason)
     const host = new URL(site.origin).host
     // The model reads the tab, not the address: it is told when the tab went to another page.
@@ -412,6 +415,6 @@ export const readTab = defineTool({
         : [
             `[The tab went to another page since the user added it, when it showed ${JSON.stringify(clip(added.url, TAB_URL_CHARS))}.]`,
           ]
-    return pageRead(page, `Page in tab ${tab}, which the user added, on ${host}`, host, moved)
+    return pageRead(page, `Page in tab ${tab}, which the user added, on ${host}`, host, context, 'read_tab', moved)
   },
 })

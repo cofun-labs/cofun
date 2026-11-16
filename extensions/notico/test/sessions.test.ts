@@ -1,6 +1,6 @@
 // The side panel's saved sessions (extensions/notico/src/sessions.ts), on an in-memory IndexedDB.
 import 'fake-indexeddb/auto'
-import { beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { HistoryMessage } from '../src/agent'
 import {
   filterSessions,
@@ -227,11 +227,11 @@ describe('saved sessions', () => {
     const store = new SessionStore('user_upgrade')
     await store.save(session('a', 'Summarize this page', 1000))
     const upgrade = await new Promise<IDBDatabase>((resolve, reject) => {
-      const req = indexedDB.open('notico-sessions-user_upgrade', 2)
+      const req = indexedDB.open('notico-sessions-user_upgrade', 3)
       req.onblocked = () => reject(new Error('blocked'))
       req.onsuccess = () => resolve(req.result)
     })
-    expect(upgrade.version).toBe(2)
+    expect(upgrade.version).toBe(3)
     upgrade.close()
   })
 
@@ -287,5 +287,105 @@ describe('saved sessions', () => {
       updatedAt: 1000,
       messages: conversation('Summarize this page'),
     })
+  })
+})
+
+/** A long page as read_web_page keeps it. */
+const PAGE = {
+  tool: 'read_web_page',
+  title: 'Guide',
+  url: 'https://docs.example/guide',
+  markdown: false,
+  chars: 30_000,
+}
+const page = (text = 'x'.repeat(30_000)) => ({ ...PAGE, text })
+
+/** A session whose conversation names the kept result `result`, as read_web_page's details do. */
+function naming(id: string, result: string, updatedAt = 1000): Session {
+  const messages: HistoryMessage[] = [
+    { role: 'user', text: 'Read the guide' },
+    { role: 'assistant', parts: [{ type: 'tool_call', id: 'call-1', name: 'read_web_page', args: {} }] },
+    {
+      role: 'tool',
+      id: 'call-1',
+      name: 'read_web_page',
+      status: 'done',
+      result: `[Kept as result ${result}: …]`,
+      details: { name: 'Guide', result },
+    },
+  ]
+  return { id, title: 'Read the guide', createdAt: 0, updatedAt, messages }
+}
+
+describe('kept results', () => {
+  afterEach(() => void vi.useRealTimers())
+
+  it('[UC-NOTICO-PANEL-005-S05] a kept result is deleted with the session that names it', async () => {
+    const id = await store.keep(page())
+    await store.save(naming('a', id))
+    expect(await store.result(id)).toMatchObject({ ...page(), id, chats: ['a'] })
+
+    await store.delete('a')
+
+    expect(await store.result(id)).toBeUndefined()
+  })
+
+  it('[UC-NOTICO-PANEL-005-S05] a kept result stays while a copy another panel saved still names it', async () => {
+    const id = await store.keep(page())
+    const loaded = await store.save(naming('a', id, 1000))
+    // Another panel saved the session since: this one is saved as a copy, under a new id.
+    await store.save(naming('a', id, 2000), loaded.updatedAt)
+    const copy = await store.save(naming('a', id, 3000), loaded.updatedAt)
+    expect(copy.id).not.toBe('a')
+    expect((await store.result(id))?.chats).toEqual(['a', copy.id])
+
+    await store.delete('a')
+    expect((await store.result(id))?.chats).toEqual([copy.id])
+    await store.delete(copy.id)
+    expect(await store.result(id)).toBeUndefined()
+  })
+
+  it('[@no-uc:privacy] a kept result no saved session names is swept a day after it was kept', async () => {
+    vi.useFakeTimers({ toFake: ['Date'], now: new Date('2026-11-08T12:00:00Z') })
+    const unnamed = await store.keep(page())
+    const named = await store.keep(page())
+    await store.save(naming('a', named))
+    vi.setSystemTime(new Date('2026-11-09T11:59:00Z'))
+    const recent = await store.keep(page())
+
+    await store.sweep()
+    expect(await store.result(unnamed)).toBeDefined()
+
+    vi.setSystemTime(new Date('2026-11-09T12:00:01Z'))
+    await store.sweep()
+    expect(await store.result(unnamed)).toBeUndefined()
+    expect(await store.result(named)).toBeDefined()
+    expect(await store.result(recent)).toBeDefined()
+  })
+
+  it('[@no-uc:data] a database the first version made gets the results store, and its sessions stay', async () => {
+    const user = 'user_v1'
+    await new Promise<void>((resolve, reject) => {
+      const req = indexedDB.open(`notico-sessions-${user}`, 1)
+      req.onupgradeneeded = () => {
+        req.result.createObjectStore('sessions', { keyPath: 'id' })
+        req.result.createObjectStore('messages', { keyPath: 'id' })
+      }
+      req.onsuccess = () => {
+        const tx = req.result.transaction(['sessions', 'messages'], 'readwrite')
+        tx.objectStore('sessions').put({ id: 'a', title: 'Old', createdAt: 0, updatedAt: 1000 })
+        tx.objectStore('messages').put({ id: 'a', messages: conversation('Old') })
+        tx.oncomplete = () => {
+          req.result.close()
+          resolve()
+        }
+      }
+      req.onerror = () => reject(req.error)
+    })
+    const v1 = new SessionStore(user)
+
+    expect(await v1.get('a')).toMatchObject({ title: 'Old', messages: conversation('Old') })
+    const id = await v1.keep(page())
+    expect(await v1.result(id)).toMatchObject({ chats: [] })
   })
 })
