@@ -146,6 +146,29 @@ describe('answering with the own model', () => {
     expect(browser.sentToWorker.slice(before).some((sent) => sent.includes('/chat/completions'))).toBe(false)
   })
 
+  it('[@no-uc:privacy] OpenRouter is never told which chat or question a request is for, nor which extension asks', async () => {
+    const { browser, user } = await openPanel()
+    await setUpOpenRouter(browser, user)
+    browser.openRouter.titles.failWith = undefined
+    browser.openRouter.titles.script.push({ reply: 'Fixture page summary' })
+    browser.openRouter.ai.script.push(
+      { toolCalls: [{ name: 'read_page', arguments: JSON.stringify({ part: 1 }) }] },
+      { reply: 'It is a fixture.' },
+    )
+
+    await ask(user, 'What does this page say?')
+    await screen.findByText('It is a fixture.')
+    await answered()
+    await user.click(screen.getByRole('button', { name: 'Chats' }))
+    expect(
+      await within(await screen.findByRole('dialog', { name: 'Chats' })).findByText('Fixture page summary'),
+    ).toBeVisible()
+
+    // Both model calls and the title went to OpenRouter, with none of the headers meant for our worker.
+    expect(browser.openRouter.requests.filter((r) => r.path === '/api/v1/chat/completions')).toHaveLength(3)
+    expect(browser.openRouter.cofunHeaders).toEqual([])
+  })
+
   it("[@no-uc:money] a reply's details name the own model and the tokens OpenRouter reported", async () => {
     const { browser, user } = await openPanel()
     await setUpOpenRouter(browser, user)
