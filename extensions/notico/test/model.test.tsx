@@ -233,6 +233,19 @@ describe('answering with the own model', () => {
     expect(provider('OpenRouter').queryByText('Key stopped working')).not.toBeInTheDocument()
   })
 
+  it("[UC-NOTICO-AGENT-002-S27] a question flagged by the model's moderation is said in OpenRouter's words, and Settings still counts the key as working", async () => {
+    const { browser, user } = await openPanel()
+    await setUpOpenRouter(browser, user)
+    browser.openRouter.refuses = 'moderated'
+
+    await ask(user, 'Hello?')
+    expect(await screen.findByText(/Your input was flagged for "violence"/)).toBeVisible()
+    expect(screen.queryByText(/OpenRouter turned your key away/)).not.toBeInTheDocument()
+    await answered()
+    await openSettings(user)
+    expect(provider('OpenRouter').queryByText('Key stopped working')).not.toBeInTheDocument()
+  })
+
   it('[UC-NOTICO-AGENT-002-S22] checking a key that stopped working again clears the mark, and removing it deletes it', async () => {
     const { browser, user } = await openPanel()
     await setUpOpenRouter(browser, user)

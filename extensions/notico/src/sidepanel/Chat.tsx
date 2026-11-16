@@ -1263,7 +1263,6 @@ export function Chat({ userId }: { userId: string }) {
       {view === 'credits' && (
         <CreditsPage
           credits={credits}
-          onRetry={() => void readCredits()}
           grants={() => agent.creditGrants()}
           buying={{ packs: () => agent.creditPacks(), buy: buyCredits }}
           onClose={closePage}

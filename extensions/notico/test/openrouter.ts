@@ -55,8 +55,11 @@ export class FakeOpenRouter {
   limitRemaining: number | null = null
   /** Whether OpenRouter can't be reached: every request fails as a fetch to a host that is down does. */
   unreachable = false
-  /** Turns model calls away, as OpenRouter does: for too many requests (429), or for an account out of credits (402). */
-  refuses?: 'rate_limited' | 'no_credits'
+  /**
+   * Turns model calls away, as OpenRouter does: for too many requests (429), for an account out of
+   * credits (402), or for input the model's moderation flagged (403, with the reasons in `metadata`).
+   */
+  refuses?: 'rate_limited' | 'no_credits' | 'moderated'
   /** Holds the key endpoint's answers until it resolves, when set. */
   checks?: Promise<void>
   /** Every request, model list included, in order: its path and the key it carried. */
@@ -104,6 +107,22 @@ export class FakeOpenRouter {
           },
         },
         { status: 402 },
+      )
+    if (this.refuses === 'moderated')
+      return Response.json(
+        {
+          error: {
+            message: 'openai/gpt-6.1-sol requires moderation on OpenRouter. Your input was flagged for "violence".',
+            code: 403,
+            metadata: {
+              reasons: ['violence'],
+              flagged_input: 'Hello?',
+              provider_name: 'OpenAI',
+              model_slug: 'openai/gpt-6.1-sol',
+            },
+          },
+        },
+        { status: 403 },
       )
     const body = (await request.json()) as Record<string, unknown>
     if (titleRequests(this, body) === this.titles) return answerTitle(this.titles, body)
