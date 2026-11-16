@@ -592,6 +592,34 @@ describe('extension agent against the worker', () => {
     expect(sentMessages(3).at(-2)).toMatchObject({ role: 'tool', content: expect.stringContaining('limit of 3 steps') })
   })
 
+  it('[UC-NOTICO-AGENT-001-S31] a model that keeps calling failing tools is stopped after 10 failed calls', async () => {
+    const runs: unknown[] = []
+    const failing: ToolSpec = {
+      ...pageTool().tool,
+      run: async (args) => (runs.push(args), Promise.reject(new Error('Page not found.'))),
+    }
+    // Each step, a call that fails and one the user declines: only the failures count.
+    ai.toolCalls = [{ name: 'lookup_page', arguments: '{}' }, RENAME_CALL]
+    const agent = makeAgent({ tools: [failing, renameTool().tool] })
+    const { result, updates } = await ask(agent, 'Which page am I on?', async () => false)
+    expect(result).toEqual({
+      status: 'error',
+      message: 'Stopped: 10 actions in this question failed. Ask again, perhaps in other words.',
+    })
+    expect(ai.calls).toHaveLength(10)
+    expect(runs).toHaveLength(10)
+    // The call after the 10th failure, in the same step, is refused and the user is not asked.
+    expect(toolStatuses(updates).slice(-3)).toEqual(['declined', 'failed', 'skipped'])
+
+    // The next question starts counting again, and the model knows why the call was not run.
+    ai.toolCalls = undefined
+    expect((await ask(agent, 'Thanks')).result).toEqual({ status: 'done' })
+    expect(sentMessages(10).at(-2)).toMatchObject({
+      role: 'tool',
+      content: 'Not run: 10 tool calls of this question failed, so it stopped.',
+    })
+  })
+
   it('[UC-NOTICO-SESSION-001-S19] the conversation carries over to the next question', async () => {
     const agent = makeAgent()
     await ask(agent, 'first')

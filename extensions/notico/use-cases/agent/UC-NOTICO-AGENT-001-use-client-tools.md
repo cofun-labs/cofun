@@ -21,6 +21,7 @@ Key constraints:
 | --- | --- | --- | --- |
 | UC-NOTICO-AGENT-001-S04 | P0 | ✅ | Given a question that needs a tool; when the user asks it in the side panel; then the tool runs in the extension and the answer uses its result. |
 | UC-NOTICO-AGENT-001-S05 | P1 | ✅ | Given a model that keeps calling tools; when the question reaches its step limit; then the agent stops without running more tools and tells the user, and the next question still works. |
+| UC-NOTICO-AGENT-001-S31 | P2 | ✅ | Given a model that keeps calling a tool that fails; when 10 of the question's tool calls have failed; then the question stops without running more tools and tells the user why, a call the user declined does not count, and the next question works. |
 | UC-NOTICO-AGENT-001-S09 | P0 | ✅ | Given a tool that needs confirmation; when the user declines it; then it does not run, and the agent continues without it. |
 | UC-NOTICO-AGENT-001-S10 | P0 | ✅ | Given a tool that needs confirmation; when the user agrees; then it runs and the answer uses its result. |
 | UC-NOTICO-AGENT-001-S12 | P1 | ✅ | Given the agent working on a question; when the user stops it; then the model call and any running tool stop, and the conversation keeps the tools the agent used so far and how each ended, including one stopped while it waited for the user's confirmation, but not the unfinished reply or tools it had not reached yet. |

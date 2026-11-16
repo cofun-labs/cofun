@@ -37,6 +37,16 @@ import { ToolDetails } from './types'
 import { checkout, hostedProvider, readOwn, readWebPage, searchWebFor } from './worker'
 
 const DEFAULT_MAX_STEPS = 20
+/**
+ * Tool calls of one question that may fail before it stops: a model that keeps retrying failing
+ * tools wastes model calls, the user's time, and, for renders and searches, which cost the user
+ * nothing when they fail, the operator's money. Calls the user declined or stopped don't count.
+ */
+const MAX_FAILED_CALLS = 10
+/** What the user is told when a question stops at MAX_FAILED_CALLS. */
+const TOO_MANY_FAILED = `Stopped: ${MAX_FAILED_CALLS} actions in this question failed. Ask again, perhaps in other words.`
+/** For the model, for a call refused once the question stopped at MAX_FAILED_CALLS. */
+const NOT_RUN_FAILED = `Not run: ${MAX_FAILED_CALLS} tool calls of this question failed, so it stopped.`
 
 /**
  * How far the user's clock is ahead of UTC, in minutes: the worker totals usage per day, and a day
@@ -225,6 +235,8 @@ export class CopilotAgent {
     this.failedWith = undefined
     let steps = 0
     let hitLimit = false
+    // Tool calls of this question that failed on their own (see MAX_FAILED_CALLS).
+    let failedCalls = 0
     let failure: Failure | undefined
     let stopped = false
     // The model gave its final answer; a Stop after this point is too late to drop it.
@@ -287,7 +299,12 @@ export class CopilotAgent {
       // A tool's error, or an earlier call's preview, stopped the question: nothing more runs.
       if (this.stopReason) {
         refused.add(toolCall.id)
-        const reason = previewStop === undefined ? STOPPED_BY_ERROR : stoppedInPreview(previewStop, true)
+        const reason =
+          previewStop !== undefined
+            ? stoppedInPreview(previewStop, true)
+            : this.stopReason === TOO_MANY_FAILED
+              ? NOT_RUN_FAILED
+              : STOPPED_BY_ERROR
         return { block: true, reason, terminate: true }
       }
       if (steps >= this.maxSteps) {
@@ -364,6 +381,8 @@ export class CopilotAgent {
           // error too: it may have failed on its own just as Stop landed.
           update.result = started.has(update.id) ? `${STOPPED_DURING}\n${update.result}` : STOPPED_BEFORE
         }
+        // Counted after the status is settled: a call refused, declined, or stopped did not fail on its own.
+        if (update.status === 'failed' && ++failedCalls >= MAX_FAILED_CALLS) this.stopReason ??= TOO_MANY_FAILED
         started.delete(update.id)
         if (running?.id === update.id) running = undefined
         ended.set(update.id, { status: update.status, result: update.result })
