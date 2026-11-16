@@ -16,7 +16,7 @@ Each extension is installed on its own, from the Chrome Web Store, and has its o
 
 | Extension | Works with | |
 |---|---|---|
-| <img src="extensions/notico/icons/icon.svg" alt="" width="20" height="20" /> **[Notico](extensions/notico/README.md)** | Notion | Reads and edits your Notion pages with you: pages, databases, comments, search. It can also read the page you are on elsewhere. [Install from the Chrome Web Store](https://chromewebstore.google.com/detail/notico-ai-copilot-for-not/moblfnjjebknafkgoifncombfnbfghom) |
+| <img src="extension/products/notico/icons/icon.svg" alt="" width="20" height="20" /> **[Notico](extension/products/notico/README.md)** | Notion | Reads and edits your Notion pages with you: pages, databases, comments, search. It can also read the page you are on elsewhere. [Install from the Chrome Web Store](https://chromewebstore.google.com/detail/notico-ai-copilot-for-not/moblfnjjebknafkgoifncombfnbfghom) |
 
 Confluco, for Confluence, is next.
 
@@ -28,17 +28,17 @@ Confluco, for Confluence, is next.
 - **More when you need them.** You can buy a pack of credits at a thousand credits a US dollar (US$1, US$5, US$20, or US$100), once: nothing renews, and there is no subscription. Bought credits last a year and are spent after your free ones. Payment is on Stripe's page, and Stripe sells the credits as the merchant of record, so tax may be added at checkout. Purchases are final, except for a billing error, where the law requires a refund, or a refund Stripe makes as the seller.
 - **One server, which never acts as you.** The extensions share one server. It checks who you are, keeps your credits, passes the conversation to the AI model, which runs on Cloudflare Workers AI, and reads public web pages and searches the web for the assistant. It never uses your sign-in on any site: the work on your pages happens in your browser, in your own tab.
 
-**Privacy.** The server never keeps what you asked or what the AI answered. [PRIVACY.md](PRIVACY.md) says what the server and sign-in do with your data, for every extension; each extension's own privacy page says what it reads in your browser and which hosts it talks to ([Notico's](extensions/notico/PRIVACY.md)).
+**Privacy.** The server never keeps what you asked or what the AI answered. [PRIVACY.md](PRIVACY.md) says what the server and sign-in do with your data, for every extension; each extension's own privacy page says what it reads in your browser and which hosts it talks to ([Notico's](extension/products/notico/PRIVACY.md)).
 
 ## For developers
 
-This repository holds every extension, one folder each in [`extensions/`](extensions), and the backend they share in [`worker/`](worker): a Cloudflare Worker for sign-in, the model, and credits.
+This repository holds every extension, all built from one package in [`extension/`](extension) with each one's own files in [`extension/products/`](extension/products), and the backend they share in [`worker/`](worker): a Cloudflare Worker for sign-in, the model, and credits.
 
 - [Architecture](docs/architecture.md): how it is built, the technical choices and why, the sign-in flow, and the code layout.
 - [Development](docs/development.md): build and load an extension, run the checks, and deploy your own worker.
 - [Security model](docs/security.md): what is protected and from whom, how each part does it, and the trade-offs accepted.
 - [AGENTS.md](AGENTS.md): the issue → PR → review → merge workflow and coding rules.
-- [BDD](docs/bdd.md) and the use cases ([Notico's](extensions/notico/use-cases), [the worker's](worker/use-cases)): the product behavior contract, per extension, and how it is tested.
+- [BDD](docs/bdd.md) and the use cases ([Notico's](extension/products/notico/use-cases), [the worker's](worker/use-cases)): the product behavior contract, per extension, and how it is tested.
 
 ## License
 

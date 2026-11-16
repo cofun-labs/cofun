@@ -1,6 +1,6 @@
 # Development
 
-Requires Node.js 24 and pnpm. The repository is one pnpm workspace: the [worker](#worker), shared by every extension, and one folder per extension in `extensions/` ([Notico](#notico) is the first). The commands below cover all of them.
+Requires Node.js 24 and pnpm. The repository is one pnpm workspace: the [worker](#worker), shared by every extension, and the extension package in `extension/`, which every extension is built from, with each product's own files in `extension/products/<name>/` ([Notico](#notico) is the first). The commands below cover all of them.
 
 ```bash
 pnpm install
@@ -9,9 +9,9 @@ pnpm knip         # unused files, exports, and dependencies (knip.jsonc lists wh
 pnpm use-cases    # every ✅ api-test scenario has a test; warns about other mismatches (docs/bdd.md)
 pnpm format:fix   # format all files
 pnpm test         # extension and worker tests, and the unit tests of scripts/
-pnpm build        # build every extension into extensions/<name>/dist
-pnpm test:browser # build the extensions and run their browser tests in Chromium (first: pnpm --filter notico-extension exec playwright install chromium)
-pnpm icons        # export extensions/notico/icons/icon.svg into extensions/notico/public/icons (needs the same Chromium); commit the PNGs
+pnpm build        # build the extension (Notico) into extension/dist
+pnpm test:browser # build the extension and run its browser tests in Chromium (first: pnpm --filter cofun-extension exec playwright install chromium)
+pnpm icons        # export extension/products/notico/icons/icon.svg into extension/products/notico/public/icons (needs the same Chromium); commit the PNGs
 pnpm media 367 demo.gif   # upload a PR's demo GIF or screenshots and print their URLs (maintainer's machine only; see PR media)
 pnpm e2e --help   # drive the shared Chrome Canary for ai-e2e runs (maintainer's machine only)
 ```
@@ -49,10 +49,10 @@ Only the maintainer's machine can upload: the script runs the `cf` CLI with the 
 The rules for tests are in [AGENTS.md](../AGENTS.md#testing) and [docs/bdd.md](bdd.md#what-gets-a-test); this is how the pieces fit.
 
 - **Fakes, injected through `env`:** `FakeAiBinding` (`worker/test/fakes.ts`) stands in for the Workers AI binding. `FakeClerk` (`worker/test/clerk.ts`) signs real RS256 session tokens with a local key pair, which the worker verifies like real Clerk tokens.
-- **Clerk's React SDK** is the one module replaced whole: the side panel imports its components directly, so the extension's vitest config resolves `@clerk/chrome-extension` to `extensions/notico/test/clerk.tsx`, for the UI tests only.
-- **Notion:** `extensions/notico/test/` tests Notico's client code against a fake Notion tab (`extensions/notico/test/notion-tab.ts`) that answers with sanitized fixtures (`extensions/notico/test/fixtures/notion/`).
-- **Client and worker together:** Notico's client tests run its real agent against the real worker app (`createApp()` behind `fetch`), so the two cannot drift: the side panel's tests through `extensions/notico/test/panel.ts`, and the agent loop's rules in `extensions/notico/test/agent.test.ts`. `worker/test/extension.test.ts` keeps only what the two sides must agree on: the streamed reply, the tool-call round trip, sessions, credits, a question's cost, and a model change.
-- **Browser tests** (`extensions/<name>/browser-test/`, `pnpm test:browser`, also in CI and before a release): Playwright loads the built extension into Chromium and checks, in Notico's (`extensions/notico/browser-test/`), that the service worker starts, the side panel is enabled on every tab, the side panel page renders signed out, and, with a signed-in Clerk session answered from fixtures, shows the chat, renders the model's streamed reply, and runs a Notion read and a trash that asks first through `chrome.scripting` in a real Notion tab. It catches builds that compile but break in Chrome, such as dependency bumps. Nothing leaves the machine: Notion pages and its API, Clerk's Frontend API, and the worker and its model are answered from `browser-test/fixtures/` and `browser-test/fakes.ts`. Its tests are standalone (no scenario IDs); what needs real Chrome or real accounts (the panel opening from the toolbar icon and staying open across tabs, Google sign-in, real Notion pages) stays `ai-e2e`.
+- **Clerk's React SDK** is the one module replaced whole: the side panel imports its components directly, so the extension's vitest config resolves `@clerk/chrome-extension` to `extension/test/clerk.tsx`, for the UI tests only.
+- **Notion:** `extension/test/` tests Notico's client code against a fake Notion tab (`extension/test/notion-tab.ts`) that answers with sanitized fixtures (`extension/test/fixtures/notion/`).
+- **Client and worker together:** Notico's client tests run its real agent against the real worker app (`createApp()` behind `fetch`), so the two cannot drift: the side panel's tests through `extension/test/panel.ts`, and the agent loop's rules in `extension/test/agent.test.ts`. `worker/test/extension.test.ts` keeps only what the two sides must agree on: the streamed reply, the tool-call round trip, sessions, credits, a question's cost, and a model change.
+- **Browser tests** (`extension/browser-test/`, `pnpm test:browser`, also in CI and before a release): Playwright loads the built extension into Chromium and checks, for Notico, that the service worker starts, the side panel is enabled on every tab, the side panel page renders signed out, and, with a signed-in Clerk session answered from fixtures, shows the chat, renders the model's streamed reply, and runs a Notion read and a trash that asks first through `chrome.scripting` in a real Notion tab. It catches builds that compile but break in Chrome, such as dependency bumps. Nothing leaves the machine: Notion pages and its API, Clerk's Frontend API, and the worker and its model are answered from `browser-test/fixtures/` and `browser-test/fakes.ts`. Its tests are standalone (no scenario IDs); what needs real Chrome or real accounts (the panel opening from the toolbar icon and staying open across tabs, Google sign-in, real Notion pages) stays `ai-e2e`.
 
 ## Merging
 
@@ -94,21 +94,21 @@ Per-request usage records go to the Analytics Engine dataset `cofun_api_usage` (
 ## Notico
 
 ```bash
-pnpm build        # builds every extension; Notico's goes to extensions/notico/dist
+pnpm build        # builds the extension; Notico's build goes to extension/dist
 ```
 
 In `chrome://extensions`, turn on Developer mode, click "Load unpacked", and pick `extensions/notico/dist`.
 
-`extensions/notico/.env` holds the public build config, each value explained by its comment; override values in `extensions/notico/.env.local`. A development build sends no usage events to PostHog; to try them from a local build, build it with `POSTHOG_IN_DEV=1`. The PostHog project keeps **Discard client IP data** on, which the privacy pages rely on. Don't run PostHog's setup wizard on this repository: it adds the SDK with defaults that send page titles and URLs.
+`extension/products/notico/.env` holds the public build config, each value explained by its comment; override values in `extension/products/notico/.env.local`. A development build sends no usage events to PostHog; to try them from a local build, build it with `POSTHOG_IN_DEV=1`. The PostHog project keeps **Discard client IP data** on, which the privacy pages rely on. Don't run PostHog's setup wizard on this repository: it adds the SDK with defaults that send page titles and URLs.
 
 To run the extension against your own deployment under an ID of your own, generate a signing key and set its public half as `CRX_PUBLIC_KEY`, then allow its origin (`chrome-extension://<extension id>`) in the worker's `CLERK_AUTHORIZED_PARTIES` and in the Clerk instance's `allowed_origins`:
 
 ```bash
-mkdir -p extensions/notico/keys
-openssl genrsa -out extensions/notico/keys/crx-private.pem 2048
-openssl rsa -in extensions/notico/keys/crx-private.pem -pubout -outform DER > extensions/notico/keys/pub.der
-base64 -i extensions/notico/keys/pub.der | tr -d '\n'                          # CRX_PUBLIC_KEY
-shasum -a 256 extensions/notico/keys/pub.der | cut -c1-32 | tr '0-9a-f' 'a-p'  # extension ID
+mkdir -p extension/products/notico/keys
+openssl genrsa -out extension/products/notico/keys/crx-private.pem 2048
+openssl rsa -in extension/products/notico/keys/crx-private.pem -pubout -outform DER > extension/products/notico/keys/pub.der
+base64 -i extension/products/notico/keys/pub.der | tr -d '\n'                          # CRX_PUBLIC_KEY
+shasum -a 256 extension/products/notico/keys/pub.der | cut -c1-32 | tr '0-9a-f' 'a-p'  # extension ID
 ```
 
 The Clerk instance needs the Native API on; a production one also needs its DNS records, its own OAuth credentials, and its JWT public key as the worker's `CLERK_JWT_KEY` ([Clerk's Sync Host guide](https://clerk.com/docs/guides/sessions/sync-host)). When the sign-in page's registrable domain has more than two labels (such as `example.co.uk`), set it as `CLERK_COOKIE_DOMAIN` in `.env.local` (`manifest.ts`).

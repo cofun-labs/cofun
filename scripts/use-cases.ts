@@ -1,9 +1,10 @@
 // Checks that the use case scenarios and the tests named after them agree (docs/bdd.md).
 //
-// Each product keeps its use cases next to its code: an extension's in extensions/<name>/use-cases/,
-// the worker's (behavior of the backend alone) in worker/use-cases/. A scenario is matched only
-// against the tests that can verify it: an extension's scenarios against its own tests and the
-// worker's, the worker's scenarios against the worker's tests.
+// Each product keeps its use cases next to its code: an extension product's in
+// extension/products/<name>/use-cases/, the worker's (behavior of the backend alone) in
+// worker/use-cases/. A scenario is matched only against the tests that can verify it: an extension
+// product's scenarios against the extension's tests (extension/test/, which every product shares) and
+// the worker's, the worker's scenarios against the worker's tests.
 //
 // Two rules fail: an api-test scenario marked ✅ must have such a test that names its ID, and every test
 // names a scenario ID or says which harm it guards with [@no-uc:<kind>] (docs/bdd.md#what-gets-a-test).
@@ -26,21 +27,23 @@ type Strategy = 'api-test' | 'ai-e2e'
 
 /** The worker, whose tests may verify any product's scenarios. */
 const WORKER = 'worker'
+/** The extension every product is built from, whose tests may verify any of those products' scenarios. */
+const EXTENSION = 'extension'
 
 interface Row {
   id: string
   strategy: Strategy
   verified: boolean
   priority: string
-  /** The product whose folder holds the row: an extension's folder name, or `worker`. */
+  /** The product whose folder holds the row: its folder name in extension/products/, or `worker`. */
   product: string
-  /** Where the row is: `extensions/notico/use-cases/….md:12`. */
+  /** Where the row is: `extension/products/notico/use-cases/….md:12`. */
   at: string
 }
 
 interface TestId {
-  /** The product whose folder holds the test: an extension's folder name, or `worker`. */
-  product: string
+  /** Whose tests name it: `extension` (every extension product's) or `worker`. */
+  tester: string
   at: string
 }
 
@@ -53,18 +56,25 @@ const TEST_ID = new RegExp(`\\[(${SCENARIO_ID})\\]`, 'g')
 /** A scenario ID without a product (`UC-{DOMAIN}-{NNN}-S{NN}`), as IDs were before each product got its prefix. */
 const OLD_TEST_ID = /\[(UC-[A-Z]+-\d+-S\d+)\]/g
 
-/** The product a use case or test file belongs to, from its folder. */
+/** The product a use case belongs to, from its folder. */
 function productOf(file: string): string {
   if (file.startsWith(`${WORKER}/`)) return WORKER
-  const extension = /^extensions\/([^/]+)\//.exec(file)
-  if (!extension) throw new Error(`${file} is not in an extension's folder or the worker's`)
+  const product = /^extension\/products\/([^/]+)\//.exec(file)
+  if (!product) throw new Error(`${file} is not in a product's folder (extension/products/<name>/) or the worker's`)
   // The folder name, in capitals, is the product's ID prefix, which may hold letters only.
-  if (!/^[a-z]+$/.test(extension[1])) {
+  if (!/^[a-z]+$/.test(product[1])) {
     throw new Error(
-      `extensions/${extension[1]}: an extension's folder name is lowercase letters only (docs/bdd.md#ids)`,
+      `extension/products/${product[1]}: a product's folder name is lowercase letters only (docs/bdd.md#ids)`,
     )
   }
-  return extension[1]
+  return product[1]
+}
+
+/** Whose tests a test file holds, from its folder. */
+function testerOf(file: string): string {
+  if (file.startsWith(`${WORKER}/`)) return WORKER
+  if (file.startsWith(`${EXTENSION}/`)) return EXTENSION
+  throw new Error(`${file} is not in the extension's folder or the worker's`)
 }
 
 /** What a product's IDs start with: its name, or COFUN for the worker (the platform every extension shares). */
@@ -256,12 +266,12 @@ const NOT_A_TEST = /^\s*(\/\/|\/?\*)|\.(skip|todo)\b/
 /** Every scenario ID a test file names in brackets, with where it is. */
 function readTestIds(file: SourceFile, report: Report): Map<string, TestId[]> {
   const ids = new Map<string, TestId[]>()
-  const product = productOf(file.path)
+  const tester = testerOf(file.path)
   file.text.split('\n').forEach((line, index) => {
     if (NOT_A_TEST.test(line)) return
     const at = `${file.path}:${index + 1}`
     for (const match of line.matchAll(TEST_ID)) {
-      ids.set(match[1], [...(ids.get(match[1]) ?? []), { product, at }])
+      ids.set(match[1], [...(ids.get(match[1]) ?? []), { tester, at }])
     }
     for (const match of line.matchAll(OLD_TEST_ID)) {
       report.warnings.push(
@@ -272,9 +282,9 @@ function readTestIds(file: SourceFile, report: Report): Map<string, TestId[]> {
   return ids
 }
 
-/** Whether a test in one product's folder may verify a scenario of another's: its own, or any from the worker's tests. */
+/** Whether a test may verify a scenario: the worker's tests verify any, the extension's any extension product's. */
 function verifies(test: TestId, row: Row): boolean {
-  return test.product === row.product || test.product === WORKER
+  return test.tester === WORKER || (test.tester === EXTENSION && row.product !== WORKER)
 }
 
 /** Words past which a Behavior section is likely a list of rules, not a few sentences (docs/bdd.md#structure). */
@@ -327,7 +337,7 @@ export function checkUseCases(useCases: SourceFile[], tests: SourceFile[]): Repo
   for (const [id, found] of tested) {
     for (const test of found) {
       if (!(byId.get(id) ?? []).some((row) => verifies(test, row))) {
-        const where = test.product === WORKER ? 'no use case' : `no use case of ${test.product}`
+        const where = test.tester === WORKER ? 'no use case' : 'no use case of an extension product'
         report.warnings.push(`${test.at}: names ${id}, which ${where} has`)
         break
       }

@@ -1,5 +1,5 @@
 // Product analytics, as the worker sends it: one event, when a payment adds credits. The extensions
-// send their own usage events to PostHog themselves (extensions/notico/src/analytics.ts); a purchase
+// send their own usage events to PostHog themselves (extension/src/analytics.ts); a purchase
 // is the one thing they never see happen, since the buyer pays on Stripe's page.
 import { errorSummary } from './http'
 
