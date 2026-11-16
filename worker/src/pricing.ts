@@ -76,8 +76,8 @@ export function renderCostOf(browserMs: number): number {
 }
 
 /**
- * What a web search costs, in micro-credits: its list price on Ceramic, the search provider, US$0.25
- * per 1,000 searches (https://ceramic.ai/pricing), paid through AI Gateway with nothing added: 0.25
- * credit a search.
+ * What a web search costs, in micro-credits: its list price on Exa, the search provider, US$7 per
+ * 1,000 searches (https://developers.cloudflare.com/web-search/providers/), paid through AI Gateway
+ * with nothing added: 7 credits a search.
  */
-export const SEARCH_COST = 250_000
+export const SEARCH_COST = 7_000_000
