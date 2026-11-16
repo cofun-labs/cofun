@@ -39,8 +39,11 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      # VITEST_MAX_WORKERS caps how many test files each package's vitest runs at once.
       - name: Run checks
         run: pnpm check
+        env:
+          VITEST_MAX_WORKERS: 3
 
       # Each extension's browser tests load the build that "Run checks" just made into Playwright's Chromium.
       # No --with-deps: the runner image already has the libraries Chromium needs, and the only
