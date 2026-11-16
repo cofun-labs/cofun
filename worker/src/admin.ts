@@ -73,6 +73,7 @@ export function adminPage(publishableKey: string): string {
       <dt>Granted, by hand</dt><dd id="granted-manual"></dd>
       <dt>Granted, bought</dt><dd id="granted-purchase"></dd>
       <dt>Spent</dt><dd id="spent"></dd>
+      <dt>Forgiven</dt><dd id="forgiven"></dd>
       <dt>Model calls</dt><dd id="calls"></dd>
       <dt>Tokens</dt><dd id="tokens"></dd>
       <dt>Pages rendered</dt><dd id="renders"></dd>
@@ -89,7 +90,7 @@ export function adminPage(publishableKey: string): string {
     <h2>Per day</h2>
     <div class="scroll">
       <table id="per-day">
-        <thead><tr><th>Day</th><th>Granted, free</th><th>Granted, by hand</th><th>Bought</th><th>Spent</th><th>Calls</th><th>Failed</th><th>Cancelled</th><th>Prompt tokens</th><th>Cached</th><th>Completion tokens</th><th>Renders</th><th>Failed renders</th><th>Browser time</th><th>Spent on renders</th><th>Searches</th><th>Failed searches</th><th>Spent on searches</th></tr></thead>
+        <thead><tr><th>Day</th><th>Granted, free</th><th>Granted, by hand</th><th>Bought</th><th>Spent</th><th>Forgiven</th><th>Calls</th><th>Failed</th><th>Cancelled</th><th>Prompt tokens</th><th>Cached</th><th>Completion tokens</th><th>Renders</th><th>Failed renders</th><th>Browser time</th><th>Spent on renders</th><th>Searches</th><th>Failed searches</th><th>Spent on searches</th></tr></thead>
         <tbody></tbody>
       </table>
     </div>
@@ -97,7 +98,7 @@ export function adminPage(publishableKey: string): string {
     <p id="no-accounts" class="muted">No account was granted or spent credits in this period.</p>
     <div class="scroll">
       <table id="accounts">
-        <thead><tr><th>Clerk user id</th><th>Granted</th><th>Spent</th><th>Calls</th><th>Renders</th><th>Spent on renders</th><th>Searches</th><th>Spent on searches</th><th>Balance now</th></tr></thead>
+        <thead><tr><th>Clerk user id</th><th>Granted</th><th>Spent</th><th>Forgiven</th><th>Calls</th><th>Renders</th><th>Spent on renders</th><th>Searches</th><th>Spent on searches</th><th>Balance now</th></tr></thead>
         <tbody></tbody>
       </table>
     </div>
@@ -301,6 +302,8 @@ export function adminPage(publishableKey: string): string {
     el('granted-manual').textContent = credits(totals.granted.manual)
     el('granted-purchase').textContent = credits(totals.granted.purchase)
     el('spent').textContent = credits(totals.spent)
+    // What no grant covered: spends beyond the balance, as when requests sent at once together cost more.
+    el('forgiven').textContent = credits(totals.forgiven)
     // A call the user stopped is a failed call, of the kind cancelled.
     el('calls').textContent =
       count(totals.calls) + ', ' + count(totals.failedCalls) + ' failed (' + count(totals.cancelledCalls) + ' of them cancelled)'
@@ -341,6 +344,7 @@ export function adminPage(publishableKey: string): string {
         credits(each.granted.manual),
         credits(each.granted.purchase),
         credits(each.spent),
+        credits(each.forgiven),
         count(each.calls),
         count(each.failedCalls),
         count(each.cancelledCalls),
@@ -380,6 +384,7 @@ export function adminPage(publishableKey: string): string {
       const cells = [
         credits(account.granted),
         credits(account.spent),
+        credits(account.forgiven),
         count(account.calls),
         count(account.renders),
         credits(account.renderSpent),

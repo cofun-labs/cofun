@@ -1,7 +1,8 @@
 /**
  * Credits as a whole, for the admin page: what was granted and spent over a period across every
  * account, per day, and the accounts of the period. Read-only, and worked out from the `grants`,
- * `spends`, `model_calls`, `web_renders`, and `web_searches` rows each time: no totals are stored.
+ * `spends`, `spend_grants`, `model_calls`, `web_renders`, and `web_searches` rows each time: no
+ * totals are stored.
  *
  * D1 runs one query at a time, so a slow query here would hold up charging. Every query is
  * therefore bounded by the period and reads only the period's rows, through the tables' time
@@ -31,6 +32,11 @@ interface Totals {
   granted: Record<z.output<typeof GrantSource>, number>
   /** What was spent, on anything. A spend, with all it cost, counts when it was charged. */
   spent: number
+  /**
+   * The part of `spent` no grant covered, so it was forgiven: what a spend cost beyond what was left
+   * when it was charged, as when requests sent at once together cost more than the balance.
+   */
+  forgiven: number
   /** Calls made to the model, however they ended. */
   calls: number
   /** The calls that did not end well, whatever the reason: every outcome but `ok`. */
@@ -84,6 +90,8 @@ interface AccountSummary {
   userId: string
   granted: number
   spent: number
+  /** The part of `spent` no grant covered, so it was forgiven. */
+  forgiven: number
   calls: number
   renders: number
   /** What the account's renders cost, a part of `spent`. */
@@ -109,6 +117,12 @@ export interface Accounts {
 const renderSpent = 'coalesce(sum(CASE WHEN r.id IS NOT NULL THEN s.micro_credits END), 0)'
 /** What the searches among a group of spends `s`, joined to their `web_searches` rows `w`, cost (SQL). */
 const searchSpent = 'coalesce(sum(CASE WHEN w.id IS NOT NULL THEN s.micro_credits END), 0)'
+/**
+ * What no grant covered of a group of spends `s` (SQL): each spend's cost less what it took from
+ * the grants, read through `spend_grants`' index of its unique (spend_id, grant_id).
+ */
+const forgiven =
+  'coalesce(sum(s.micro_credits - coalesce((SELECT sum(g.micro_credits) FROM spend_grants g WHERE g.spend_id = s.id), 0)), 0)'
 
 const GRANTED_PER_DAY = `SELECT (granted_at + CAST(?3 AS INTEGER)) / ${DAY_MS} AS day, source, sum(amount) AS amount
 FROM grants INDEXED BY grants_by_time
@@ -121,7 +135,7 @@ GROUP BY day, source`
  * charged, as what it cost does.
  */
 const SPENT_PER_DAY = `SELECT (s.created_at + CAST(?3 AS INTEGER)) / ${DAY_MS} AS day, sum(s.micro_credits) AS spent,
-  count(m.id) AS calls,
+  ${forgiven} AS forgiven, count(m.id) AS calls,
   coalesce(sum(m.outcome <> 'ok'), 0) AS failed_calls, coalesce(sum(m.outcome = 'cancelled'), 0) AS cancelled_calls,
   coalesce(sum(m.prompt_tokens), 0) AS prompt_tokens, coalesce(sum(m.cached_tokens), 0) AS cached_tokens,
   coalesce(sum(m.completion_tokens), 0) AS completion_tokens,
@@ -155,7 +169,7 @@ granted AS (
   WHERE granted_at >= ?1 AND granted_at < ?2 GROUP BY user_id
 ),
 spent AS (
-  SELECT s.user_id, sum(s.micro_credits) AS spent, count(m.id) AS calls, count(r.id) AS renders,
+  SELECT s.user_id, sum(s.micro_credits) AS spent, ${forgiven} AS forgiven, count(m.id) AS calls, count(r.id) AS renders,
     ${renderSpent} AS render_spent, count(w.id) AS searches, ${searchSpent} AS search_spent
   FROM spends s INDEXED BY spends_by_time
   LEFT JOIN model_calls m ON m.spend_id = s.id
@@ -164,19 +178,20 @@ spent AS (
   WHERE s.created_at >= ?1 AND s.created_at < ?2 GROUP BY s.user_id
 ),
 top AS (
-  SELECT user_id, sum(granted) AS granted, sum(spent) AS spent, sum(calls) AS calls, sum(renders) AS renders,
+  SELECT user_id, sum(granted) AS granted, sum(spent) AS spent, sum(forgiven) AS forgiven, sum(calls) AS calls,
+    sum(renders) AS renders,
     sum(render_spent) AS render_spent, sum(searches) AS searches, sum(search_spent) AS search_spent
   FROM (
-    SELECT user_id, granted, 0 AS spent, 0 AS calls, 0 AS renders, 0 AS render_spent, 0 AS searches,
+    SELECT user_id, granted, 0 AS spent, 0 AS forgiven, 0 AS calls, 0 AS renders, 0 AS render_spent, 0 AS searches,
       0 AS search_spent FROM granted
     UNION ALL
-    SELECT user_id, 0, spent, calls, renders, render_spent, searches, search_spent FROM spent
+    SELECT user_id, 0, spent, forgiven, calls, renders, render_spent, searches, search_spent FROM spent
   )
   GROUP BY user_id
   ORDER BY spent DESC, granted DESC, user_id
   LIMIT ?4
 )
-SELECT user_id, granted, spent, calls, renders, render_spent, searches, search_spent, ${balanceOf('top.user_id', '?3')} AS balance
+SELECT user_id, granted, spent, forgiven, calls, renders, render_spent, searches, search_spent, ${balanceOf('top.user_id', '?3')} AS balance
 FROM top
 ORDER BY spent DESC, granted DESC, user_id`
 
@@ -188,6 +203,7 @@ const SpentRow = z.object({
   failed_calls: count,
   cancelled_calls: count,
   spent: count,
+  forgiven: count,
   prompt_tokens: count,
   cached_tokens: count,
   completion_tokens: count,
@@ -223,6 +239,7 @@ const AccountRow = z
     user_id: z.string(),
     granted: count,
     spent: count,
+    forgiven: count,
     calls: count,
     renders: count,
     render_spent: count,
@@ -234,6 +251,7 @@ const AccountRow = z
     userId: row.user_id,
     granted: row.granted,
     spent: row.spent,
+    forgiven: row.forgiven,
     calls: row.calls,
     renders: row.renders,
     renderSpent: row.render_spent,
@@ -245,6 +263,7 @@ const AccountRow = z
 const nothing = (): Totals => ({
   granted: { free: 0, manual: 0, purchase: 0 },
   spent: 0,
+  forgiven: 0,
   calls: 0,
   failedCalls: 0,
   cancelledCalls: 0,
@@ -264,6 +283,7 @@ const nothing = (): Totals => ({
 function add(totals: Totals, more: Totals): void {
   for (const source of GrantSource.options) totals.granted[source] += more.granted[source]
   totals.spent += more.spent
+  totals.forgiven += more.forgiven
   totals.calls += more.calls
   totals.failedCalls += more.failedCalls
   totals.cancelledCalls += more.cancelledCalls
@@ -300,6 +320,7 @@ export async function readOverview(db: Database, { from, to, utcOffset }: Period
   for (const row of z.array(SpentRow).parse(callsRows?.results ?? [])) {
     const totals = at(row.day)
     totals.spent = row.spent
+    totals.forgiven = row.forgiven
     totals.calls = row.calls
     totals.failedCalls = row.failed_calls
     totals.cancelledCalls = row.cancelled_calls
