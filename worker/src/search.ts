@@ -2,7 +2,10 @@
 // (https://developers.cloudflare.com/web-search/), through the AI binding. The provider is fixed
 // here: Ceramic, which keeps no data of the requests it serves (zero data retention), so a query,
 // which may hold text from the user's Notion, is not kept by whoever answers it. The worker keeps
-// and logs neither the query nor the results.
+// and logs neither the query nor the results. Nor does the gateway, only because its log collection
+// is off for the whole gateway (docs/development.md, "Worker"): unlike a model call, a search can't
+// turn it off by itself: the binding documents no such option, and the REST API stores the query
+// even with `collectLog: false` in its gateway options.
 import * as z from './zod'
 
 /** The search provider. One, fixed: the privacy page names it. */
@@ -15,8 +18,8 @@ export const MAX_RESULTS = 10
 /** Characters of a result's title and description kept: Ceramic describes a page in up to 8,000. */
 const TITLE_CHARS = 300
 const DESCRIPTION_CHARS = 1000
-/** A result's address, as long as the extension's tools read one. */
-const URL_CHARS = 2048
+/** The longest result address kept: what the extension shows its model of one, uncut. */
+const URL_CHARS = 2000
 
 /** What the AI binding takes for a search (`env.AI.websearch`). */
 export interface SearchOptions {
@@ -50,7 +53,7 @@ export class SearchError extends Error {
 
 /** The answer of a search, as the docs give it; fields beyond these are not read. */
 const Answer = z.object({
-  items: z.array(z.object({ url: z.string().max(URL_CHARS), title: z.string(), description: z.string() })),
+  items: z.array(z.object({ url: z.string(), title: z.string(), description: z.string() })),
 })
 
 /** A refusal from AI Gateway: `{ ok: false, error: { code, … } }`. Only a code that is an identifier is read. */
@@ -89,7 +92,9 @@ export async function searchWeb(
   const answer = Answer.safeParse(body)
   if (!answer.success)
     throw new SearchError('search_failed', 'the search gave an answer the worker does not understand', 'bad answer')
-  return answer.data.items.slice(0, limit).map((item) => ({
+  // A result with a longer address is left out, rather than handed on cut short or failing the rest.
+  const kept = answer.data.items.filter((item) => item.url.length <= URL_CHARS)
+  return kept.slice(0, limit).map((item) => ({
     url: item.url,
     title: clip(item.title.trim(), TITLE_CHARS),
     description: clip(item.description.trim(), DESCRIPTION_CHARS),

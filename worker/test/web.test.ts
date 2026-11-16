@@ -274,6 +274,15 @@ describe('searching the web', () => {
     expect(db.rows('grants')).toEqual([])
   })
 
+  it('[UC-COFUN-WEB-002-S01] a result whose address is too long to hand on uncut is left out', async () => {
+    ai.found.set('tea', [
+      { url: `https://tea.example/${'a'.repeat(2000)}`, title: 'Long', description: '' },
+      TEA_RESULTS[0],
+    ])
+    const { results }: { results: { url: string }[] } = await (await search('tea')).json()
+    expect(results.map((r) => r.url)).toEqual(['https://tea.example/history'])
+  })
+
   it('[UC-COFUN-WEB-002-S01] a search that finds nothing gives no results', async () => {
     const res = await search('nothing at all')
     expect(await res.json()).toEqual({ results: [] })
