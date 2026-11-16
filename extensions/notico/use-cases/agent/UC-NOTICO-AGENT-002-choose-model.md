@@ -14,7 +14,7 @@ Two places do two jobs. **Settings decides where models come from**: which provi
 
 **The composer's model menu** lists Auto first, on its own, then each provider that is on, under its name, with its switched-on models by name only: who pays and the state of the key are not shown there. "Manage models" opens Settings at the providers. The user can switch at any time, without leaving the chat. The next question goes to the model chosen then, and the conversation goes on: it gets everything said and done so far. A question already running ends with the model it started with. When the model chosen in the composer is no longer offered (switched off in Settings, its provider switched off, or its key removed), questions go to Auto, and the composer says so in one line instead of switching silently.
 
-**A key that stops working.** A provider that refuses a question says why: a key it turns away, a balance that ran out, or too many requests, which ends the question without trying again. When a question is turned away for its key, Settings also marks the provider "Key stopped working", with "Check again" and "Remove key".
+**A key that stops working.** A provider that refuses a question says why: a key it turns away, a balance that ran out, too many requests, which ends the question without trying again, or a question the model's moderation flagged, said in the provider's own words. When a question is turned away for its key, and only then, Settings also marks the provider "Key stopped working", with "Check again" and "Remove key".
 
 Settings are kept on this device for the account that set them up: another account signed in on the same browser does not see or use them, and they are still there the next time the user opens the side panel. Switching a provider off keeps its key, so switching it back on needs no paste. "Remove key" deletes it.
 
@@ -35,6 +35,7 @@ Key constraints:
 | UC-NOTICO-AGENT-002-S03 | P1 | ✅ | Given a user whose saved key OpenRouter now turns away; when they ask something; then they are told the key was turned away, and Settings marks OpenRouter "Key stopped working", with "Check again" and "Remove key". |
 | UC-NOTICO-AGENT-002-S25 | P1 | ✅ | Given a user whose OpenRouter account is getting too many requests; when they ask something; then the question stops, they are told why, and nothing is sent again. |
 | UC-NOTICO-AGENT-002-S26 | P1 | ✅ | Given a user whose OpenRouter account has no credits left; when they ask something; then they are told so and where to add credits, and Settings still counts the key as working. |
+| UC-NOTICO-AGENT-002-S27 | P2 | ✅ | Given a user whose question the model's moderation on OpenRouter flags; when they ask it; then they are told so in OpenRouter's words, and Settings still counts the key as working. |
 | UC-NOTICO-AGENT-002-S04 | P1 | ✅ | Given a user who set up their own model; when they remove their key and ask something; then the hosted model answers. |
 | UC-NOTICO-AGENT-002-S05 | P1 | ✅ | Given a conversation with the hosted model; when the user switches to their own model and asks a follow-up; then their model answers it with the conversation so far, and the follow-up spends no credits on the model. |
 | UC-NOTICO-AGENT-002-S06 | P1 | ✅ | Given a user who set up their own model; when they open the side panel again later; then their own model still answers. |
