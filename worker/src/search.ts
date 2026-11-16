@@ -41,7 +41,8 @@ export type SearchOutcome = 'ok' | SearchError['code']
 
 /**
  * Why a search did not give results, as a code the extension tells the user about. The codes are a
- * contract with the extension (`src/agent/worker.ts`), which stops the question on every one.
+ * contract with the extension (`src/agent/worker.ts`): `search_unavailable` and `search_busy` stop the
+ * question, and `search_failed` goes to the model as a search that gave nothing.
  */
 export class SearchError extends Error {
   constructor(
