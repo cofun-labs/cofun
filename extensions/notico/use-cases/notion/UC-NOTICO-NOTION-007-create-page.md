@@ -2,7 +2,7 @@
 
 ## Behavior
 
-A signed-in user asks the AI to make a new Notion page: draft a document from their notes, file meeting notes, or turn a section into a page of its own. The AI chooses the page's title and content, and where it goes: at the end of the open page, or of another page it names. (A new row in a database is UC-NOTICO-NOTION-008.) The page is created right away, with all its content at once, and the side panel shows its title, where it went, and its content. The AI is told the new page's id and link, so it can read or edit it next.
+A signed-in user asks the AI to make a new Notion page: draft a document from their notes, file meeting notes, or turn a section into a page of its own. The AI chooses the title, the content, and where it goes: at the end of the open page, or of another page it names (a new row in a database is UC-NOTICO-NOTION-008). The page is created right away, with all its content, and the AI can read or edit it next.
 
 ## Scenarios
 

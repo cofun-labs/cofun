@@ -14,6 +14,7 @@ Use cases are a structural aid: they make clear what is covered by tests and kee
 - Describe what the user or client gets, not how: prefer behavior over HTTP status codes, API fields, error codes, headers, endpoints, functions, libraries, or config.
 - Leave out bug reproduction steps and fix history, UI layout and wording, and implementation risks such as retries, timeouts, caching, and races.
 - Don't list every combination of parameters, roles, or inputs; one representative example per branch is enough.
+- Keep a Behavior to a few sentences. Each sentence either says the goal or states a rule that a scenario or a Key constraint holds; a sentence that is neither is removed. The scenarios carry the detail, so a Behavior does not repeat them.
 
 What is left out can still be worth testing. Write it as a **standalone test**: same integration-test style, named with `[@no-uc:<kind>]` instead of a scenario ID.
 
@@ -47,7 +48,7 @@ One rule, one test: a table when its cases share a shape. Tests are grouped and 
 | Part | Contents |
 |---|---|
 | **Use case** | One user goal, e.g. "ask the AI from the side panel". One file per goal. Split by goal, not by UI area, endpoint, or mechanism. |
-| **Behavior** | Who needs it, what they get, and the few boundaries needed to understand it. Not a list of rules. |
+| **Behavior** | Who needs it, what they get, and the few boundaries needed to understand it, in a few sentences (about 100 words). Not a list of rules. |
 | **Key constraint** | Optional. Only a prohibition or invariant that holds across several scenarios and changes what the capability is. Each needs at least one scenario. |
 | **Scenario** | One representative example, as one line: `Given …; when …; then …`. Only branches with their own product meaning: the main success path, rejections that matter, and real boundaries. |
 
@@ -126,7 +127,7 @@ A guard or rejection branch should not rank above its use case's success path un
 
 ## Coverage check
 
-`pnpm check` runs `pnpm use-cases` (`scripts/check-use-cases.ts`), which reads every scenario row in `extensions/*/use-cases/` and `worker/use-cases/`, and every scenario ID named in brackets in a test under `worker/test/` or `extensions/*/test/`. A scenario counts as tested only by a test that can verify it: an extension's by a test in its own `extensions/<name>/test/` or in `worker/test/`, the worker's by a test in `worker/test/`. It fails on two things: an `api-test` scenario marked ✅ that no test names, and a test whose name has neither a scenario ID nor a `[@no-uc:<kind>]` of one of the kinds above (and on a scenario row it can't read, so a typo can't hide one, and on a use case left in the old `docs/use-cases/`). It only warns about the rest, to tidy when convenient: a 🚧 `api-test` scenario that already has a test (mark it ✅), a P0 🚧 `api-test` scenario with no test yet (P0 is verified before merge), a test naming an ID no use case it can verify has, or an ID without its product, an ID in more than one row, an ID whose prefix doesn't match the product whose folder holds it, and a test naming an `ai-e2e` scenario. A P1 or P2 🚧 `api-test` scenario with no test and an `ai-e2e` scenario with none pass quietly.
+`pnpm check` runs `pnpm use-cases` (`scripts/check-use-cases.ts`), which reads every scenario row in `extensions/*/use-cases/` and `worker/use-cases/`, and every scenario ID named in brackets in a test under `worker/test/` or `extensions/*/test/`. A scenario counts as tested only by a test that can verify it: an extension's by a test in its own `extensions/<name>/test/` or in `worker/test/`, the worker's by a test in `worker/test/`. It fails on two things: an `api-test` scenario marked ✅ that no test names, and a test whose name has neither a scenario ID nor a `[@no-uc:<kind>]` of one of the kinds above (and on a scenario row it can't read, so a typo can't hide one, and on a use case left in the old `docs/use-cases/`). It only warns about the rest, to tidy when convenient: a Behavior over 150 words, a 🚧 `api-test` scenario that already has a test (mark it ✅), a P0 🚧 `api-test` scenario with no test yet (P0 is verified before merge), a test naming an ID no use case it can verify has, or an ID without its product, an ID in more than one row, an ID whose prefix doesn't match the product whose folder holds it, and a test naming an `ai-e2e` scenario. A P1 or P2 🚧 `api-test` scenario with no test and an `ai-e2e` scenario with none pass quietly.
 
 ## Coverage audit
 

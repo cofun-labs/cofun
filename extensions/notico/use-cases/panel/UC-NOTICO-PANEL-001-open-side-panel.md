@@ -2,11 +2,9 @@
 
 ## Behavior
 
-A user opens the AI side panel from the extension's toolbar icon on any tab, and can chat there. The panel stays open, with its conversation, as the user switches tabs, to a Notion page or away from one.
+A user opens the AI side panel from the extension's toolbar icon on any tab, and it stays open, with its conversation, as they switch tabs. Reading and changing Notion works only while the current tab is a Notion page; on another tab the AI is told just that, and tells the user to switch when a request needs Notion.
 
-Reading and changing Notion works only while the current tab is a Notion page. On any other tab the AI is told just that: that the current tab is not a Notion page. It still answers what it can, and when a request needs Notion it tells the user to switch to a Notion page. When a question needs to know where the user is, the AI can look up the current tab's address and title, on Notion or any other site.
-
-On another site, the AI can also read the page in the current tab when a question is about it, such as summarizing an article or saving it to Notion. It reads the page's main content as the tab shows it, so pages the user is signed in to and pages drawn by scripts read as they look, and gets it as Markdown, which keeps its headings, lists, links, and tables, so a page saved to Notion keeps its structure. What the page hides, and its navigation and footer, are left out, and images are only their alt text. The first time it reads a site, the tool's card asks the user to allow Notico to read that site, and Chrome asks once more; the page is read only once both said yes, and a site allowed once is not asked about again. A page Notico can't read (a browser page, the Chrome Web Store, a PDF in Chrome's viewer, a page whose content is all in frames) gives the AI the reason instead, and on a Notion page the AI reads with the Notion tools. A long page is read in parts (UC-NOTICO-PANEL-005), and the reply names the page it used.
+On another site, the AI can read the page in the current tab as Markdown when a question is about it, once the user has allowed Notico to read that site; a long page is read in parts (UC-NOTICO-PANEL-005).
 
 Key constraints:
 

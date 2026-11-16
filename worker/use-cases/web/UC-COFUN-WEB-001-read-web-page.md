@@ -2,7 +2,7 @@
 
 ## Behavior
 
-A signed-in user's client can have the service read a web page for them by its address: the page's title and main text, as anyone who opens the address without signing in would see it, clipped to as much as the client asks for. Reading a page this way is free. A page drawn by scripts shows no text this way; the client can then ask for it to be rendered in a browser, which shows what it draws. A render that gives a page costs credits: what the browser time it used costs the service, at its provider's list price with nothing added; one that gives no page, because the page shows no text, it failed, or the browser turned it away, costs nothing. The client is told what each render cost. When the browser that renders pages turns renders away for coming too often, the client is told it is busy. A user can have a page rendered only while they have credits left, and only a few a minute. The service never keeps or logs the address or the page; it keeps a record of each render (when, from which product, how it ended, the browser time, and what it cost).
+A signed-in user's client can have the service read a public web page by its address: its title and main text, as anyone who opens the address without signing in would see it. Reading a page this way is free. A page drawn by scripts can be rendered in a browser instead, only while the user has credits left; a render costs what its browser time cost the service, at its provider's list price with nothing added. The service never keeps or logs the address or the page, only a record of each render.
 
 Which addresses to read is the client's choice (UC-NOTICO-PANEL-003); the service only refuses those that are never read.
 

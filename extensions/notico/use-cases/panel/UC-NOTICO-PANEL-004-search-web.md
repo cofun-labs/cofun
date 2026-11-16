@@ -2,9 +2,9 @@
 
 ## Behavior
 
-A user asks something that needs current information or sources beyond their Notion and the pages they gave ("what changed in the latest release of X?", "find articles about Y"), and the AI searches the web. The service makes the search (UC-COFUN-WEB-002), and the AI gets each result's address, title, and a description of its page; it can read a result's page in full by its address (UC-NOTICO-PANEL-003). The AI chooses what to search for, and the tool's card shows the query. A reply that uses search results names the URL of each result it uses. This works whichever model answers: the search is made by the service either way. Each search that gives results costs credits (none included; one that fails costs nothing), and what the searches for a question cost is part of what its reply cost, whichever model answers. A user with no credits left can't search: the question stops, and they are told when free credits arrive and that they can buy some.
+A user asks something that needs current information or sources beyond their Notion and the pages they gave, and the AI searches the web, whichever model answers. The service makes the search (UC-COFUN-WEB-002); the AI gets each result's address, title, and description, can read a result's page in full (UC-NOTICO-PANEL-003), and names the URL of each result it uses. Searches cost credits, as part of what the reply cost.
 
-When the service or the search provider turns searches away for coming too often, or web search is not available, the question stops and the user is told why. A search that fails otherwise (the service can't be reached, or the search or its answer fails) gives the AI the error and the question goes on: it answers without the results, and is told not to search for the same again for the question when the search may have cost credits.
+When searches are turned away for coming too often, web search is unavailable, or credits run out, the question stops; any other failure goes to the AI, and the question goes on.
 
 Key constraint:
 

@@ -2,7 +2,7 @@
 
 ## Behavior
 
-A signed-in user's client can have the service search the web for them: it gets the results, each with its page's address, title, and a short description of the page, up to as many as it asks for. A search costs the user credits: the search provider's list price, 0.25 credit a search, with nothing added. A search goes ahead while the user has credits left; with none left it is refused, and nothing is searched. A user can make only a few searches a minute. The search goes to one fixed search provider, which keeps no data of it; the service never keeps or logs the query or the results.
+A signed-in user's client can have the service search the web for them, and gets each result's address, title, and a short description of its page. A search costs the search provider's list price, 0.25 credit, with nothing added, and goes ahead only while the user has credits left, a few a minute. The search goes to one fixed search provider, which keeps no data of it; the service never keeps or logs the query or the results.
 
 What to search for is the client's choice (UC-NOTICO-PANEL-004).
 

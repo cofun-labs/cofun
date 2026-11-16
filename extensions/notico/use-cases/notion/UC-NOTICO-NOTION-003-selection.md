@@ -2,7 +2,7 @@
 
 ## Behavior
 
-A signed-in user selects something in their Notion page, text across one or more blocks or whole blocks, and asks the AI about it: "rewrite this", "translate the highlighted paragraph", "explain this". The AI gets what is selected, the selected text and the pieces of the page it covers, each with the reference an edit uses (UC-NOTICO-NOTION-002), so it can work on exactly that part without reading the whole page. Nothing selected is a normal answer, not an error. A text selection may start in the page title or run into a side peek; the AI gets the open page's blocks it covers. When blocks selected on a long page may go on past the part Notion has drawn in the browser, the AI is told some may be missing.
+A signed-in user selects something in their Notion page, text or whole blocks, and asks the AI about it: "rewrite this", "translate the highlighted paragraph". The AI gets what is selected, the text and the pieces of the page it covers, each with the reference an edit uses (UC-NOTICO-NOTION-002), so it can work on exactly that part without reading the whole page. Nothing selected is a normal answer, not an error.
 
 Key constraint:
 

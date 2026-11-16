@@ -2,9 +2,9 @@
 
 ## Behavior
 
-A signed-in user asks the AI something in the side panel and reads the reply as it streams in, formatted the way the AI wrote it: headings, emphasis, lists, tables, code, quotes, and links. The user's own question is shown as typed. Each finished reply can be copied with one press, as the Markdown the AI wrote, to paste elsewhere. A session with no question yet shows Notico's icon and a few suggestions that fit where the user is: the page open in the tab, named by its title; a database, with questions about its entries; or, with no Notion page going with the question (another site, or the open page taken off it), questions about the whole workspace. In Read only, suggestions that would change something are left out. The suggestions are fixed sets chosen from what the message box already knows, so showing them asks neither the AI nor Notion anything. Picking one puts it in the message box, where the user can change it before sending; one that ends in "…" leaves the cursor there, for the user to finish it.
+A signed-in user asks the AI something in the side panel and reads the reply as it streams in, formatted the way the AI wrote it, and can copy a finished reply as its Markdown. A chat with no question yet offers a few suggestions that fit the open page or database, or the whole workspace, without asking the AI or Notion anything.
 
-Using Cofun's hosted AI costs credits. How they are charged, and the free credits every user gets each week, are the service's rules, the same in every product: UC-COFUN-CREDITS-001. The hosted model, and who may ask it, are the service's too: UC-COFUN-CHAT-001. A question answered by the user's own model spends none, except for the web pages rendered and the web searches made for it (see UC-NOTICO-AGENT-002, UC-NOTICO-PANEL-003, UC-NOTICO-PANEL-004). A question the AI answers with tools (see UC-NOTICO-AGENT-001) makes one model call for each round trip, and costs the sum of them.
+Using Cofun's hosted AI costs credits, one model call for each round trip of a question. How credits are charged, and who may ask the hosted model, are the service's rules: UC-COFUN-CREDITS-001 and UC-COFUN-CHAT-001. A question answered by the user's own model spends none on the model (UC-NOTICO-AGENT-002).
 
 Key constraints:
 

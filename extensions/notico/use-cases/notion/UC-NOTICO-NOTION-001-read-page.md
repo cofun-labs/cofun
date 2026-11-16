@@ -2,11 +2,9 @@
 
 ## Behavior
 
-A signed-in user asks the AI about a Notion page: the one open next to the side panel, or another page the user or the AI names. The AI reads the page's content in order, with its structure (headings, lists, to-dos, toggles, tables, code, and so on), and answers from it: a summary, an answer to a question, a translation, a list of action items. A database row comes with its properties.
+A signed-in user asks the AI about a Notion page: the one open next to the side panel, or another page the user or the AI names. The AI reads the page's content in order, with its structure, as the user's own Notion account, and answers from it; child pages and databases appear by name, and a long page is read in parts.
 
-Child pages and databases on the page appear by name, and the AI can open them in turn, but their content is not part of the page. Each piece of the page is marked, so the AI can refer to it exactly.
-
-The AI reads as the user's own Notion account: it can read only what that account can open. A long page is read in parts, so one read never crowds out the conversation. Each part is read from the page as it is then, on its own. When Notion turns the AI's requests away (it is limiting requests, or too busy), nothing is tried again: the question stops there, nothing more is sent to Notion, and the user is told to wait before asking again, so the account isn't pushed further. When Notion says how long to wait (in seconds), this side panel sends nothing to Notion until that wait is over, even when the user asks again sooner. The same holds when Notion fails in a way that isn't understood: an error it doesn't explain, an answer that isn't what Notion sends, or no answer at all. Nothing is tried again, the question stops, and the user is told what went wrong. Failures the AI can act on, such as a page the account can't open or one in the trash, are told to the AI instead, and it goes on. All of this holds for everything the AI does in Notion, such as finding, listing, creating, commenting, and editing (UC-NOTICO-NOTION-002).
+When Notion turns a request away, or fails in a way that isn't understood, nothing is tried again: the question stops and the user is told why. Failures the AI can act on, such as a page the account can't open, are told to the AI instead. This holds for everything the AI does in Notion.
 
 Key constraints:
 

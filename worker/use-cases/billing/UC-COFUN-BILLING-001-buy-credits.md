@@ -2,9 +2,9 @@
 
 ## Behavior
 
-A user who wants more than the free credits of each week (UC-COFUN-CREDITS-001) buys a pack of credits, once: nothing renews, and there is no subscription. Their product asks the service for one of the packs on offer, priced in US dollars at a thousand credits a dollar, and gets the payment provider's own page for it, where the user pays. Once the payment goes through, the pack's credits are added to their account. What each product shows, and how, is in its own use cases (Notico's UC-NOTICO-BILLING-001).
+A user who wants more than the free credits of each week (UC-COFUN-CREDITS-001) buys a pack of credits, once: nothing renews, and there is no subscription. Their product asks the service for one of the packs on offer, priced in US dollars at a thousand credits a dollar, and gets the payment provider's own page for it; once the payment goes through, the pack's credits are added to their account. What each product shows is in its own use cases (Notico's UC-NOTICO-BILLING-001).
 
-Purchased credits last one year from the purchase. They sit beside the weekly free credits, which every user keeps getting, buyers included, and follow the same rules as any credits: the ones that expire first are spent first (so free credits go before purchased ones). A purchase that is refunded or disputed loses what is left of its credits; what was already spent stays spent. A refund or dispute reported before its payment has added credits takes nothing back: an operator handles that rare case by hand.
+Purchased credits last one year and are spent after free credits that expire sooner. A refund or dispute takes back what is left of them; one reported before its payment added credits takes nothing back, and an operator handles it by hand.
 
 Key constraints:
 

@@ -2,9 +2,9 @@
 
 ## Behavior
 
-A user who wants more than the free credits of each week buys a pack of credits, once: nothing renews, and there is no subscription. Credits pay for questions the hosted model answers and for web pages rendered in a browser and web searches made for a question; a question answered by the user's own model spends none on the model (UC-NOTICO-AGENT-002). From the Credits page in the side panel they pick one of the packs on offer, priced in US dollars at a thousand credits a dollar, and pay on the payment provider's own page, which opens in a new tab. Once the payment goes through, the pack's credits are added to their account; the side panel shows them when the user comes back to it, without signing in again. The Credits page tells them that bought credits last one year from the purchase, that nothing renews, and that questions answered with their own key spend credits only on pages rendered and web searches made for them; their credits and history show what they bought, what they paid for it, and what a refund took back; and a question refused for lack of credits offers to buy more.
+A user who wants more than each week's free credits buys a pack of credits, once, from the Credits page in the side panel: nothing renews, and there is no subscription. They pay on the payment provider's own page, in a new tab, and the side panel shows the new credits when they come back. Their credits and history show what they bought and what a refund took back, and a question refused for lack of credits offers to buy more.
 
-What a payment adds, when, how bought credits are spent, and what a refund or dispute takes back are the service's rules, the same in every product: UC-COFUN-BILLING-001.
+What a payment adds, how bought credits are spent, and what a refund or dispute takes back are the service's rules, the same in every product: UC-COFUN-BILLING-001.
 
 Key constraint:
 

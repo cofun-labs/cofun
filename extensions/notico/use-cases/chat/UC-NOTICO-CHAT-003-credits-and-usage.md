@@ -2,15 +2,7 @@
 
 ## Behavior
 
-A signed-in user needs to know how much of the AI they can still use (see UC-COFUN-CREDITS-001 for what credits are and how they are spent). Their account menu in the side panel shows the account they are signed in to, then Credits, with how many credits are left, and Settings, each opening its own page, and Sign out. The Credits page is about the present: the credits left, split by where they came from (this week's free credits with when new ones can arrive, bought credits with when they expire, and any added by Cofun), the packs to buy (UC-NOTICO-BILLING-001), and the credits used on each of the last 30 days, by the days of their own clock, with the total and today's. The Settings page holds the rest: the model providers and their models (UC-NOTICO-AGENT-002) and the account, with Sign out. They see only their own credits (UC-COFUN-CREDITS-002).
-
-Free credits arrive only when the user asks the AI. Until then, a user with no current week of free credits (a new user, or one whose week has ended) is shown the credits their next question starts with, as not started yet: the free credits, in full.
-
-From the Credits page they can open the history of their credits, which lists only where credits came from, all at once: every lot of credits they were given (free, added by Cofun, or bought; see UC-NOTICO-BILLING-001), newest first, the expired ones included, each with how many it was, the day it was given, the day it expires or expired, and what is left, what went unspent when it expired, or what was taken back. Usage is shown only on the Credits page, for the last 30 days; nothing older is shown anywhere.
-
-Under each reply, next to its Copy button, the user sees what the question cost in credits: every model call behind the reply on the hosted model, every web page rendered for it (UC-NOTICO-PANEL-003), and every web search made for it (UC-NOTICO-PANEL-004), added up, as the service charged them (UC-COFUN-CREDITS-001). Only a reply that ended normally shows its cost, and that cost is exact: a reply the user stopped, or one that ended in an error, shows no cost, since a call cut short never hears what it was charged. The credits shown in the account menu and on the Credits page still include what such a reply was charged. A reply from the user's own model spends no credits on its model calls: it shows a cost only for the pages rendered and the searches made for it. A reopened chat shows each reply's cost as it was.
-
-The credits shown are current after every question. When a question is refused for lack of credits, the refusal says when credits arrive and leads to the Credits page.
+A signed-in user needs to know how much of the AI they can still use (UC-COFUN-CREDITS-001 says what credits are and how they are spent). The account menu shows the credits left; the Credits page shows them by source, the packs to buy, the credits used on each of the last 30 days, and the history of every lot of credits they were given. Each reply that ended normally shows what it cost, and the credits shown are current after every question. They see only their own credits (UC-COFUN-CREDITS-002).
 
 Key constraints:
 

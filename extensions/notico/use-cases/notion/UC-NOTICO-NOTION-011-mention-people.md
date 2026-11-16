@@ -2,9 +2,7 @@
 
 ## Behavior
 
-A signed-in user asks the AI to write something that names a workspace member, such as a task for someone ("@Kim to follow up") in a note, a new page, or a comment. The AI mentions that member by name, and Notion shows a real mention of that person, as if the user had picked them from Notion's own @ menu.
-
-The AI finds members by name among the people the user can see in the workspace. Mentions read back the way they are written, so a block the AI reads and writes back keeps its mentions.
+A signed-in user asks the AI to write something that names a workspace member, such as a task for someone ("@Kim to follow up") in a note, a new page, or a comment. The AI mentions that member by name, among the people the user can see in the workspace, and Notion shows a real mention of that person. Mentions read back the way they are written, so a block the AI reads and writes back keeps its mentions.
 
 Key constraint:
 

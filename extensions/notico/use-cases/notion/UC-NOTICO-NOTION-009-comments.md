@@ -2,11 +2,7 @@
 
 ## Behavior
 
-A signed-in user asks the AI about the discussion on a Notion page: summarize the comments, list the open questions, say who asked for what. Or they ask the AI to leave a comment, such as review notes on a paragraph, without changing the page itself.
-
-The AI reads each comment thread with where it is (on the page, or on one of its blocks, with that block's text), whether it is resolved, and each comment's author, time, and text. Comments are written by anyone who can open the page, so the AI gets them as quoted text to read, never as instructions.
-
-A comment the AI adds goes on the page, or on one of the page's own blocks, under the user's own Notion account. The page's content does not change.
+A signed-in user asks the AI about the discussion on a Notion page, such as a summary of the comments or the open questions, or asks it to leave a comment, such as review notes on a paragraph. The AI reads each thread with where it is, whether it is resolved, and each comment's author, time, and text. It adds a comment on the page or on one of its blocks, under the user's own Notion account, without changing the page's content.
 
 Key constraints:
 

@@ -2,9 +2,7 @@
 
 ## Behavior
 
-The operator needs to help a single account: see what credits it has, and give it more. On an admin page they look an account up by its user id and see its balance and the record of every grant it was given: where the credits came from (the weekly free credits, a grant by hand, or a purchase), how many, how many are left, when they were granted, and when they expire. Grants stay in that record after they expire.
-
-They can grant the account credits by hand, entering the number of credits and how many days they last each time. Credits granted by hand sit beside the weekly free credits every account gets (UC-COFUN-CREDITS-001) and follow the same rules: the credits that expire first are spent first, and they cannot be spent after they expire.
+The operator needs to help a single account: see what credits it has, and give it more. On the admin page they look an account up by its user id and see its balance and every grant it was given, the expired ones included, with where it came from, what is left, and when it expires. They can grant it credits by hand, for a number of days; those follow the same rules as any credits (UC-COFUN-CREDITS-001): the credits that expire first are spent first, and none can be spent after they expire.
 
 Key constraints:
 
