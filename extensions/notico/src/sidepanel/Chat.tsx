@@ -178,8 +178,8 @@ interface Current {
 export function Chat({ userId }: { userId: string }) {
   const { getToken } = useAuth()
   const [store] = useState(() => new SessionStore(userId))
-  // Long results kept for a chat that was never saved go after a day; also opens the database, which
-  // the first time adds the results store to it.
+  // Long results go 7 days after they were kept; also opens the database, which the first time
+  // makes the results store in it.
   useEffect(() => {
     store.sweep().catch((err: unknown) => console.error('Could not sweep the kept results', err))
   }, [store])

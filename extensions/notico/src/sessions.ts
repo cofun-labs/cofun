@@ -41,29 +41,23 @@ export type ListedSession = SessionInfo | UnreadableSession
 
 // One database per account, so another account signed in on this browser never sees these sessions.
 const DB_PREFIX = 'notico-sessions-'
-/** Version 2 added the results store; the sessions and messages stores are as version 1 made them. */
-const DB_VERSION = 2
+/**
+ * Version 2 added the results store, and version 3 made it anew, without the sessions that name each
+ * result; the sessions and messages stores are as version 1 made them.
+ */
+const DB_VERSION = 3
 // Two stores, so the list never loads conversations: they grow with every tool result.
 const INFO = 'sessions'
 const MESSAGES = 'messages'
 /**
- * The full text of long tool results (see KeptResult). `chats` lists the saved sessions whose
- * messages name a result, indexed one entry per session; `unnamedAt` is set while none does yet.
+ * The full text of long tool results (see KeptResult), by id. Sessions name them, but a result does
+ * not know which: it is kept for KEPT_MS whatever happens to them, and swept by when it was kept.
  */
 const RESULTS = 'results'
-const BY_CHAT = 'chats'
-const UNNAMED = 'unnamedAt'
-/**
- * How long a result no saved session names is kept: one kept for a question whose session was never
- * saved (the save failed, or the session was deleted while the question ran) is swept after this.
- */
-const UNNAMED_MS = 24 * 60 * 60 * 1000
+const KEPT_AT = 'keptAt'
+/** How long a kept result stays: a session continued later than this reads the page again. */
+const KEPT_MS = 7 * 24 * 60 * 60 * 1000
 const TITLE_LENGTH = 100
-
-/** The ids of the kept results a conversation's tool results name (see ToolDetails.result). */
-function resultsIn(messages: HistoryMessage[]): string[] {
-  return [...new Set(messages.flatMap((m) => (m.role === 'tool' && m.details?.result ? [m.details.result] : [])))]
-}
 
 /** The saved sessions of one signed-in user. */
 export class SessionStore {
@@ -80,15 +74,12 @@ export class SessionStore {
    * are one transaction, so of two panels saving at once only one keeps the id.
    *
    * A title the model wrote (see `retitle`) is kept, whatever title the caller gives.
-   *
-   * The kept results the conversation names are marked as named by the session it is saved as, in
-   * the same transaction, so they stay as long as one session names them (see `delete`).
    */
   async save({ messages, ...info }: Session, loaded?: number): Promise<SessionInfo> {
     let saved = info
     let failure: unknown
     try {
-      await this.run('readwrite', (infos, all, results) => {
+      await this.run('readwrite', (infos, all) => {
         const stored: IDBRequest<unknown> = infos.get(info.id)
         stored.onsuccess = () => {
           try {
@@ -100,7 +91,6 @@ export class SessionStore {
             if (prior?.titledByModel) saved = { ...saved, title: prior.title, titledByModel: true }
             infos.put(saved)
             all.put({ id: saved.id, messages })
-            linkResults(results, saved.id, resultsIn(messages))
           } catch (err) {
             // A write that throws (e.g. data that can't be cloned) must not leave the other one committed.
             failure = err
@@ -152,33 +142,19 @@ export class SessionStore {
     return done
   }
 
-  /** Deletes a session, and the kept results no other session names. */
+  /** Deletes a session. The results it kept stay until they are swept (see `sweep`). */
   async delete(id: string): Promise<void> {
-    await this.run('readwrite', (infos, all, results) => {
+    await this.run('readwrite', (infos, all) => {
       infos.delete(id)
       all.delete(id)
-      const named: IDBRequest<unknown[]> = results.index(BY_CHAT).getAll(id)
-      named.onsuccess = () => {
-        for (const record of named.result) {
-          const kept = KeptResult.safeParse(record).data
-          // One that can't be read can't be told apart from another session's either: it is left.
-          if (!kept) continue
-          const chats = kept.chats.filter((chat) => chat !== id)
-          if (chats.length) results.put({ ...kept, chats })
-          else results.delete(kept.id)
-        }
-      }
       return () => undefined
     })
   }
 
-  /**
-   * Keeps the full text of a long tool result, and resolves with its id. No saved session names it
-   * yet: the save after the question does (see `save`), and until then it is swept after UNNAMED_MS.
-   */
+  /** Keeps the full text of a long tool result for KEPT_MS, and resolves with its id. */
   async keep(result: ResultToKeep): Promise<string> {
     const id = `r_${crypto.randomUUID().replace(/-/g, '').slice(0, 16)}`
-    const record: KeptResult = { ...result, id, chats: [], unnamedAt: Date.now() }
+    const record: KeptResult = { ...result, id, keptAt: Date.now() }
     await this.run('readwrite', (_infos, _all, results) => {
       results.add(record)
       return () => undefined
@@ -187,12 +163,12 @@ export class SessionStore {
   }
 
   /**
-   * Deletes the kept results that no saved session named within UNNAMED_MS of being kept. By the
-   * index, so their texts are never loaded. The side panel calls it as it starts.
+   * Deletes the results kept more than KEPT_MS ago. By the index, so their texts are never loaded.
+   * The side panel calls it as it starts.
    */
   async sweep(): Promise<void> {
     await this.run('readwrite', (_infos, _all, results) => {
-      const old = results.index(UNNAMED).openKeyCursor(IDBKeyRange.upperBound(Date.now() - UNNAMED_MS))
+      const old = results.index(KEPT_AT).openKeyCursor(IDBKeyRange.upperBound(Date.now() - KEPT_MS))
       old.onsuccess = () => {
         const cursor = old.result
         if (!cursor) return
@@ -241,10 +217,11 @@ export class SessionStore {
           db.createObjectStore(INFO, { keyPath: 'id' })
           db.createObjectStore(MESSAGES, { keyPath: 'id' })
         }
-        if (oldVersion < 2) {
-          const results = db.createObjectStore(RESULTS, { keyPath: 'id' })
-          results.createIndex(BY_CHAT, 'chats', { multiEntry: true })
-          results.createIndex(UNNAMED, UNNAMED)
+        if (oldVersion < 3) {
+          // Version 2's results, which were never in a released version, are dropped; a session that
+          // names one has the page read again.
+          if (oldVersion === 2) db.deleteObjectStore(RESULTS)
+          db.createObjectStore(RESULTS, { keyPath: 'id' }).createIndex(KEPT_AT, KEPT_AT)
         }
       }
       req.onsuccess = () => {
@@ -288,30 +265,6 @@ export class SessionStore {
       tx.onerror = () => reject(tx.error)
       tx.onabort = () => reject(tx.error)
     })
-  }
-}
-
-/**
- * Marks the kept results `ids` as named by the session `chat`, within the transaction `results`
- * belongs to. Only those it does not name yet are read: a session saved again after each question
- * names most of them already. A result that is gone (site data cleared) stays gone.
- */
-function linkResults(results: IDBObjectStore, chat: string, ids: string[]): void {
-  if (!ids.length) return
-  const named: IDBRequest<IDBValidKey[]> = results.index(BY_CHAT).getAllKeys(chat)
-  named.onsuccess = () => {
-    const linked = new Set(named.result)
-    for (const id of ids) {
-      if (linked.has(id)) continue
-      const stored: IDBRequest<unknown> = results.get(id)
-      stored.onsuccess = () => {
-        const kept = KeptResult.safeParse(stored.result).data
-        if (!kept) return
-        // Without `unnamedAt`, the sweep no longer finds it.
-        const { unnamedAt: _, ...rest } = kept
-        results.put({ ...rest, chats: [...rest.chats, chat] })
-      }
-    }
   }
 }
 
