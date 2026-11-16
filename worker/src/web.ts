@@ -91,7 +91,10 @@ export function checkAddress(raw: string): URL {
     throw new PageError('not_allowed', 'only http and https addresses can be read')
   if (url.username || url.password) throw new PageError('not_allowed', 'an address with a user name is not read')
   if (url.port) throw new PageError('not_allowed', 'only addresses on the default port are read')
+  // A host is checked in its usual form: one trailing dot (the fully qualified form) is dropped,
+  // and a host with an empty label anywhere is not read, so each name has one form to match.
   const host = url.hostname.toLowerCase().replace(/\.$/, '')
+  if (host.split('.').includes('')) throw new PageError('not_allowed', 'this host is not read')
   // The URL parser writes every IPv4 form (decimal, hex, short) as dotted digits, and IPv6 in brackets.
   if (/^[\d.]+$/.test(host) || host.startsWith('['))
     throw new PageError('not_allowed', 'an address given as an IP address is not read')
