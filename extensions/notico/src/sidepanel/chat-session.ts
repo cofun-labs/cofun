@@ -84,6 +84,20 @@ export interface ChatPanel {
   saveFailed: (message: string) => void
 }
 
+/**
+ * The session a chat is saved as. One object for as long as the chat lives: a save updates `id` and
+ * `updatedAt` in place, so the next save, which may already be waiting, starts from what the last
+ * one stored.
+ */
+interface SavedAs {
+  /** Changes if a save finds that another window continued the session: this one is saved as a new session. */
+  id: string
+  createdAt: number
+  page: Promise<Session['page']>
+  /** As this panel loaded or last saved it; not set until the first save. */
+  updatedAt?: number
+}
+
 /** A question as the composer sends it. */
 export interface Question {
   text: string
@@ -117,15 +131,13 @@ export class ChatSession {
   private question?: AbortController
   /** Answers for tool calls waiting for the user's OK, by call id. */
   private readonly answers = new Map<string, (allow: boolean) => void>()
-  private createdAt = 0
-  private page: Promise<Session['page']> = Promise.resolve(undefined)
-  /** As this panel loaded or last saved the session; not set until the first save. */
-  private updatedAt?: number
+  /** The session the chat is saved as: a saved one's, or a new one made by the first question. */
+  private session?: SavedAs
   /** The model was asked for a title already, by this panel or the one that saved it (see `title`). */
   private titled: boolean
   /** Settles once the question being answered has ended and its save, if it has one, is in `saving`. */
   private ending = Promise.resolve()
-  /** The save in progress, if any; the next one waits for it, and starts from the `updatedAt` it stored. */
+  /** The save in progress, if any; the next one waits for it. */
   private saving = Promise.resolve()
   /** Saves to Notion that are running, by key: one click creates at most one page. */
   private readonly notionSaves = new Set<string>()
@@ -144,11 +156,13 @@ export class ChatSession {
       title: saved?.titledByModel ? saved.title : undefined,
       saves: {},
     }
-    if (saved) {
-      this.createdAt = saved.createdAt
-      this.page = Promise.resolve(saved.page)
-      this.updatedAt = saved.updatedAt
-    }
+    if (saved)
+      this.session = {
+        id: saved.id,
+        createdAt: saved.createdAt,
+        page: Promise.resolve(saved.page),
+        updatedAt: saved.updatedAt,
+      }
   }
 
   subscribe = (listener: () => void): (() => void) => {
@@ -185,11 +199,12 @@ export class ChatSession {
    */
   async ask(q: Question): Promise<void> {
     if (this.snapshot.status !== 'ready' || this.left) return
-    if (this.snapshot.id === undefined) {
-      this.createdAt = Date.now()
-      this.page = currentNotionPage().catch(() => undefined)
-      this.update({ id: crypto.randomUUID() })
-    }
+    const session = (this.session ??= {
+      id: crypto.randomUUID(),
+      createdAt: Date.now(),
+      page: currentNotionPage().catch(() => undefined),
+    })
+    if (this.snapshot.id !== session.id) this.update({ id: session.id })
     // Where this question's reply goes in the list.
     const reply = this.snapshot.messages.length + 1
     this.update({
@@ -328,7 +343,7 @@ export class ChatSession {
         q.text,
         onUpdate,
         confirm,
-        { context: q.context, pages: q.pages, selections: q.selections, readOnly, chat: this.snapshot.id },
+        { context: q.context, pages: q.pages, selections: q.selections, readOnly, chat: session.id },
         { signal },
       )
       track({
@@ -374,11 +389,11 @@ export class ChatSession {
       // done again when the session is continued.
       if (conversation) {
         const messages = conversation
-        this.saving = this.saving.then(() => this.save(messages, reply))
+        this.saving = this.saving.then(() => this.save(session, messages, reply))
         // Once, after the first question answered; not for a chat the user left meanwhile.
         if (answered && !this.titled && !this.left) {
           this.titled = true
-          void this.title(messages)
+          void this.title(session, messages)
         }
       }
       ended()
@@ -467,16 +482,15 @@ export class ChatSession {
   }
 
   /** Saves the session after a question; `reply` is the place of the question's reply in the list. Never rejects. */
-  private async save(messages: HistoryMessage[], reply: number) {
+  private async save(session: SavedAs, messages: HistoryMessage[], reply: number) {
     try {
-      const page = await this.page
-      const id = this.snapshot.id!
-      const loaded = this.updatedAt
+      const page = await session.page
+      const { id, createdAt, updatedAt: loaded } = session
       if (this.panel.deleted.has(id)) return
       const saved = await this.panel.store.save(
         {
           id,
-          createdAt: this.createdAt,
+          createdAt,
           page,
           title: titleFor(messages),
           // Always a new value, so another panel that loaded this session can tell it changed.
@@ -485,7 +499,8 @@ export class ChatSession {
         },
         loaded,
       )
-      this.updatedAt = saved.updatedAt
+      session.id = saved.id
+      session.updatedAt = saved.updatedAt
       if (saved.id !== id)
         this.update({
           id: saved.id,
@@ -506,18 +521,17 @@ export class ChatSession {
    * session when one comes. Until then, or if none comes, the session keeps its first question as its
    * title; nothing is shown either way. Never rejects.
    */
-  private async title(messages: HistoryMessage[]) {
+  private async title(session: SavedAs, messages: HistoryMessage[]) {
     // Not cut short by leaving the chat, which still gets the title; only by the panel unmounting.
-    const written = await this.agent.title(messages, { chat: this.snapshot.id, signal: this.panel.closed })
+    const written = await this.agent.title(messages, { chat: session.id, signal: this.panel.closed })
     // On the hosted model the request spent credits; the read after the question was too early for it.
     this.panel.spent()
     if (!written) return
     // After the save of the reply, which may give the session another id.
     this.saving = this.saving.then(async () => {
       try {
-        const id = this.snapshot.id!
-        if (this.panel.deleted.has(id)) return
-        if (await this.panel.store.retitle(id, written)) {
+        if (this.panel.deleted.has(session.id)) return
+        if (await this.panel.store.retitle(session.id, written)) {
           this.update({ title: written })
           this.panel.saved()
         }

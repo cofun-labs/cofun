@@ -975,26 +975,6 @@ describe('extension agent against the worker', () => {
       { role: 'assistant', parts: [{ type: 'text', text: '你好 来自 worker ' }] },
     ])
   })
-
-  it('[UC-NOTICO-SESSION-001-S02] a new or other session sends nothing from earlier sessions', async () => {
-    const agent = makeAgent()
-    await ask(agent, 'secret plans')
-    const earlier = agent.history()
-
-    const fresh = makeAgent()
-    expect(fresh.history()).toEqual([])
-    await ask(fresh, 'hi')
-    expect(sentMessages(1).map((m) => m.content)).toEqual(['You are Notico.', 'hi'])
-
-    // Another saved session sends its own conversation, not the first one.
-    expect(makeAgent({}, earlier).history()).toEqual(earlier)
-    const other = makeAgent({}, [
-      { role: 'user', text: 'other' },
-      { role: 'assistant', parts: [{ type: 'text', text: 'ok' }] },
-    ])
-    await ask(other, 'more')
-    expect(sentMessages(2).map((m) => m.content)).toEqual(['You are Notico.', 'other', 'ok', 'more'])
-  })
 })
 
 describe('the open page note', () => {

@@ -198,12 +198,14 @@ export function Chat({ userId }: { userId: string }) {
   // read or a save still out) sets no state: in the tests, it could land after the DOM is gone.
   const panel = useRef(new AbortController())
   const gone = () => panel.current.signal.aborted
+  // Which model answers, once its settings are read: a question sent before waits for them.
+  const readModel = async () => modelRef.current ?? (await modelLoad)
   // What every chat's agent is made with.
   const [agentConfig] = useState((): AgentConfig => ({
     apiUrl: API_URL,
     getToken: () => tokenRef.current(),
     client: `notico/${chrome.runtime.getManifest().version}`,
-    model: async () => modelRef.current ?? (await modelLoad),
+    model: readModel,
     systemPrompt: SYSTEM_PROMPT,
     tools: TOOLS,
     meter: countNotionRequests,
@@ -220,7 +222,7 @@ export function Chat({ userId }: { userId: string }) {
         agent: agentConfig,
         closed: panel.current.signal,
         deleted: deleted.current,
-        model: agentConfig.model!,
+        model: readModel,
         mode: () => modeLoad,
         spent: () => void readCredits(),
         saved: () => {
