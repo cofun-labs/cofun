@@ -85,6 +85,9 @@ turndown.addRule('code block', {
   // Every pre, with or without a code element in it, fenced longer than any run of backticks it holds.
   filter: 'pre',
   replacement: (_content, node) => {
+    // Some pages break a code block's lines with `br` (Medium, some highlighters). The node is the
+    // side panel's own parsed copy, so it can be changed.
+    for (const br of node.querySelectorAll('br')) br.replaceWith('\n')
     const code = (node.textContent ?? '').replace(/\n$/, '')
     const longest = Math.max(0, ...[...code.matchAll(/`+/g)].map((run) => run[0].length))
     const fence = '`'.repeat(Math.max(3, longest + 1))
@@ -118,9 +121,11 @@ turndown.addRule('table row', {
   replacement: (content, node) => {
     const table = gridTable(node)
     if (!table) return block(content)
-    const first = table.querySelector('tr') === node
-    const columns = node.querySelectorAll('th, td').length
-    return `\n${content}${first ? `\n|${' --- |'.repeat(columns)}` : ''}`
+    if (table.querySelector('tr') !== node) return `\n${content}`
+    // The header sets the columns: one as wide as the widest row, so no row's last cells are lost.
+    const widest = Math.max(...[...table.querySelectorAll('tr')].map((row) => row.querySelectorAll('th, td').length))
+    const short = widest - node.querySelectorAll('th, td').length
+    return `\n${content}${' |'.repeat(short)}\n|${' --- |'.repeat(widest)}`
   },
 })
 

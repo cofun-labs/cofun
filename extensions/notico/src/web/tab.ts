@@ -196,6 +196,9 @@ function pageHtml(maxHtml: number): z.input<typeof PageResult> | null {
   // What the user would not see. Chrome finds that from the layout, element by element, without
   // computing every node's style; an element shown as its children only (display: contents) has no
   // box of its own but is shown. Where the browser can't tell (no checkVisibility), it is shown.
+  // Left out with what hides it, as rare as they are: a part shown again inside a part hidden by
+  // `visibility` (a whole branch goes at once), and the page under an open modal dialog that marked
+  // it aria-hidden (only the dialog is read then, as only the dialog can be used).
   const unseen = (el: Element) =>
     typeof el.checkVisibility === 'function' &&
     !el.checkVisibility({ visibilityProperty: true }) &&
@@ -221,7 +224,13 @@ function pageHtml(maxHtml: number): z.input<typeof PageResult> | null {
         if (!KEPT.includes(name) && !(name === 'class' && (el.localName === 'pre' || el.localName === 'code')))
           el.removeAttribute(name)
     for (const link of copy.querySelectorAll('a')) {
-      const href = link.getAttribute('href') ?? ''
+      // An anchor with no address (a named target, a script's button) links nowhere; an empty one
+      // would be the page itself.
+      const href = link.getAttribute('href')
+      if (!href) {
+        link.removeAttribute('href')
+        continue
+      }
       let url: URL | undefined
       try {
         // A link to a place on the same page leads nowhere new.
