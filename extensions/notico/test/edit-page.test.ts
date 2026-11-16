@@ -22,7 +22,7 @@ import {
   resultText,
 } from './notion-tab'
 
-/** The chat the tools run in; a new one for each test. */
+/** The chat the tools run in; a test that needs another conversation starts a new one. */
 let chat = new ToolChat()
 
 afterEach(restoreGlobals)

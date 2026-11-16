@@ -8,7 +8,7 @@ import { readPage } from '../src/tools/read'
 import { FakeNotionTab, PAGE, PAGE_URL, SPACE, notionError, restoreGlobals, resultText } from './notion-tab'
 import { DATA_LINE } from '../src/tools/shared'
 
-/** The chat the tools run in; a new one for each test. */
+/** The chat the tools run in; a test that needs another conversation starts a new one. */
 let chat = new ToolChat()
 
 afterEach(restoreGlobals)
