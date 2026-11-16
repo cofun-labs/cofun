@@ -77,7 +77,14 @@ export function useComposer({
   // Set once the workspace is not searched again for the next question (see usePagePicker).
   const [searchStop, setSearchStop] = useState<SearchStop>()
   // Which question the composer is for: a search that fails after its question was sent stops none.
-  const composing = useRef(0)
+  // State, so a reset during render writes no ref; `roundNow` follows it once a render is committed.
+  const [round, setRound] = useState(0)
+  const roundNow = useRef(round)
+  useLayoutEffect(() => {
+    roundNow.current = round
+    // The next question's `@`s are its own: none was closed yet.
+    dismissed.current = undefined
+  }, [round])
   // Where the caret goes once the message box shows the text a pick changed.
   const caret = useRef<number>(undefined)
 
@@ -89,7 +96,6 @@ export function useComposer({
     setRemoved(undefined)
     resetPicker()
   }
-  const round = composing.current
 
   const chips: Chip[] = [
     // The open page is the panel's until the user adds it by hand.
@@ -113,7 +119,7 @@ export function useComposer({
     stop: searchStop,
     paused: busy,
     onStop: (stop) => {
-      if (round !== composing.current) return false
+      if (round !== roundNow.current) return false
       setSearchStop(stop)
       return true
     },
@@ -226,8 +232,7 @@ export function useComposer({
     setChosen([])
     setPicker(undefined)
     setSearchStop(undefined)
-    composing.current++
-    dismissed.current = undefined
+    setRound((n) => n + 1)
   }
 
   function onSubmit(e: FormEvent) {
