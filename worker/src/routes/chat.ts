@@ -1,85 +1,11 @@
 // OpenAI-compatible chat completions (/v1/chat/completions) on the model the worker fixes, charged
 // to the user's credits and metered in a usage record.
 import { Hono } from 'hono'
-import * as z from '../zod'
-import { FREE_CREDITS, Ledger, type Balance } from '../credits'
+import { charge, openLedger, startUsage, type Charging, type Turn } from '../charge'
 import { costOf, estimateCachedTokens, estimateTokens, type Tokens } from '../pricing'
-import {
-  finishReason,
-  meterStream,
-  recordUsage,
-  replyInfo,
-  tokensOf,
-  type StreamSummary,
-  type UsageRecord,
-} from '../usage'
+import { finishReason, meterStream, replyInfo, tokensOf, type StreamSummary, type UsageRecord } from '../usage'
 import { HttpError, errorSummary, parse, type App, type Ctx, type Deps } from '../http'
 import { Body, MAX_CONTENT_CHARS, MAX_TOKENS, MaxTokens, Stream, parseModelInputs } from './chat-request'
-
-/** A time as the out-of-credits message gives it: to the minute, in UTC, since the worker does not know the user's time zone. */
-function utcMinute(ms: number): string {
-  // Rounded up, so the time named is never before the credits arrive.
-  const iso = new Date(Math.ceil(ms / 60_000) * 60_000).toISOString()
-  return `${iso.slice(0, 10)} at ${iso.slice(11, 16)} UTC`
-}
-
-/** The product of a model call that names none, or a name that is not one. */
-const UNKNOWN_PRODUCT = 'unknown'
-
-/**
- * The header in which an extension says who it is: its product and version, `X-Cofun-Client:
- * notico/0.3.0`. Only the product is read; the version is not kept.
- */
-export const CLIENT_HEADER = 'x-cofun-client'
-
-/** A product name: lowercase letters, never `unknown`. */
-const ProductName = z
-  .string()
-  .regex(/^[a-z]{1,32}$/)
-  .refine((name) => name !== UNKNOWN_PRODUCT)
-
-/**
- * The product a model call comes from, as the extension names it in CLIENT_HEADER, or `unknown`
- * when it names none (store builds up to Notico 0.2.0 send no header) or a name that is not one.
- * The client's own word: the product only sorts what was spent, and credits are one balance across
- * products, so a wrong name costs no one anything, and a call is never refused over it.
- */
-export function productOf(header: string | undefined): string {
-  return ProductName.safeParse(header?.split('/')[0]).data ?? UNKNOWN_PRODUCT
-}
-
-/**
- * The headers in which an extension says which chat (`X-Cofun-Chat-Id`, the session's own id) and
- * which question of it (`X-Cofun-Turn-Id`, one per question, the same across all its requests) a
- * request is for. Random ids, recorded with what the request spent; they say nothing about the content.
- */
-export const CHAT_HEADER = 'x-cofun-chat-id'
-export const TURN_HEADER = 'x-cofun-turn-id'
-
-/** Which chat and question a request is for: null where it names none. */
-export interface Turn {
-  chatId: string | null
-  turnId: string | null
-}
-
-const Id = z.uuid()
-
-/**
- * The chat and question a request names in its headers. A header left out is null: Notico builds
- * released before #466 send neither, and their requests go ahead as before (the fallback can go
- * once every build on the store sends both). A header that is there but not a UUID is a client's
- * bug, refused with 400 so it shows.
- */
-export function turnOf(c: Ctx): Turn {
-  const read = (name: string) => {
-    const value = c.req.header(name)
-    if (value === undefined) return null
-    const id = Id.safeParse(value)
-    if (!id.success) throw new HttpError(400, 'bad_request', `${name} must be a UUID`)
-    return id.data
-  }
-  return { chatId: read(CHAT_HEADER), turnId: read(TURN_HEADER) }
-}
 
 /**
  * Whether a value can be read as a stream. Judged by the method the worker calls, not by class: the
@@ -101,62 +27,15 @@ function callCost(microCredits: number, estimated: boolean) {
   return { micro_credits: microCredits, estimated }
 }
 
-/**
- * The user's ledger, opened before something that spends credits (a model call, a render): it gives
- * the weekly free grant if they have none, and lets the spend go ahead while the balance is above
- * zero. Refuses with `out_of_credits` when nothing is left, and with `credits_unavailable` when the
- * credits can't be read, so nothing is spent that can't be charged.
- */
-export async function openLedger(c: Ctx, now: number, logError: (line: string) => void): Promise<Ledger> {
-  const ledger = new Ledger(c.env.DB, c.get('userId'))
-  let balance: Balance
-  try {
-    balance = await ledger.open(now)
-  } catch (err) {
-    logError(`credit check failed: ${errorSummary(err)}`)
-    throw new HttpError(503, 'credits_unavailable', 'Credits are unavailable, try again in a moment.')
-  }
-  if (balance.balance <= 0) {
-    throw new HttpError(
-      402,
-      'out_of_credits',
-      `You have no credits left. Your next ${FREE_CREDITS} free credits arrive on ${utcMinute(balance.nextGrantAt)}, or you can buy credits.`,
-    )
-  }
-  return ledger
-}
-
 /** Chat completions, mounted at /v1/chat. */
 export function chatRoutes({ now, priceOf: priceFor, logError }: Deps): App {
   const routes: App = new Hono()
   // OpenAI-compatible chat completions. The model is fixed by the server.
   // Every request that passed auth leaves one usage record, however it ends.
   routes.post('/completions', async (c) => {
-    const started = Date.now()
-    const usage: UsageRecord = {
-      userId: c.get('userId'),
-      product: UNKNOWN_PRODUCT,
-      chatId: '',
-      turnId: '',
-      model: c.env.MODEL,
-      stream: false,
-      outcome: '',
-      messages: 0,
-      inputChars: 0,
-      promptTokens: 0,
-      cachedTokens: 0,
-      completionTokens: 0,
-      microCredits: 0,
-      finishReason: '',
-      durationMs: 0,
-    }
-    const record = (outcome: string) => {
-      usage.outcome = outcome
-      usage.durationMs = Date.now() - started
-      recordUsage(c.env.USAGE, usage)
-    }
+    const { usage, record, turn } = startUsage(c, c.env.MODEL)
     try {
-      return await chatCompletion(c, usage, record)
+      return await chatCompletion(c, usage, record, turn)
     } catch (err) {
       record(err instanceof HttpError ? err.code : 'internal')
       throw err
@@ -167,12 +46,14 @@ export function chatRoutes({ now, priceOf: priceFor, logError }: Deps): App {
    * Fills `usage` with sizes and token counts only, and calls `record` once the reply is complete.
    * Throws HttpError for refusals; the caller records those.
    */
-  async function chatCompletion(c: Ctx, usage: UsageRecord, record: (outcome: string) => void): Promise<Response> {
-    const product = productOf(c.req.header(CLIENT_HEADER))
-    usage.product = product
-    const turn = turnOf(c)
-    usage.chatId = turn.chatId ?? ''
-    usage.turnId = turn.turnId ?? ''
+  async function chatCompletion(
+    c: Ctx,
+    usage: UsageRecord,
+    record: (outcome: string) => void,
+    readTurn: () => Turn,
+  ): Promise<Response> {
+    const product = usage.product
+    const turn = readTurn()
     const body = parse(Body, await c.req.json().catch(() => undefined))
     usage.stream = body.stream === true
     const { inputs: modelInputs, chars } = parseModelInputs(body)
@@ -198,49 +79,39 @@ export function chatRoutes({ now, priceOf: priceFor, logError }: Deps): App {
     const { success } = await c.env.CHAT_LIMIT.limit({ key: c.get('userId') })
     if (!success) throw new HttpError(429, 'rate_limited', 'Too many requests at once. Wait a minute, then ask again.')
 
-    // Charged after use: a call goes ahead while the user has credits, and its cost is taken when
-    // the reply ends. The last call may cost more than what is left: it takes what is left, and the
-    // rest is forgiven, so the balance never goes below zero. Calls sent at once all start on the
-    // same balance, so together they can cost more than one call beyond it: accepted, since one call
-    // costs little, and CHAT_LIMIT and MAX_TOKENS bound how many there can be and what each costs.
+    // Charged when the reply ends (charge.ts); CHAT_LIMIT and MAX_TOKENS bound what calls at once cost.
     const maxTokens = max_tokens ?? MAX_TOKENS
-    const ledger = await openLedger(c, now().getTime(), logError)
+    const charging: Charging = {
+      ledger: await openLedger(c, now().getTime(), logError),
+      usage,
+      turn,
+      now: () => now().getTime(),
+      logError,
+      what: 'model call',
+    }
 
-    /**
-     * Ends the call, once: records it in the database as a spend, with how it ended and its tokens,
-     * takes what it cost from the user's credits, and puts the cost in the usage record. Every call that
-     * reached the model is recorded, failed ones too; one that failed costs nothing. A record that
-     * fails is logged and the reply still goes out: the model has already answered.
-     */
+    /** Ends the call, once: records it as a spend of `cost`, with how it ended and its tokens. */
     const startedAt = now().getTime()
     let ended = false
-    const endCall = async (outcome: string, tokens: Tokens, finish: string, estimated: boolean) => {
+    const endCall = async (outcome: string, tokens: Tokens, finish: string, estimated: boolean, cost: number) => {
       if (ended) return
       ended = true
-      const cost = costOf(price, tokens)
-      try {
-        await ledger.spend(
-          { product, ...turn, cost, at: Math.max(startedAt, now().getTime()) },
-          {
-            kind: 'model_call',
-            model: c.env.MODEL,
-            startedAt,
-            stream: stream === true,
-            outcome,
-            finishReason: finish,
-            ...tokens,
-            estimated,
-          },
-        )
-        usage.microCredits = cost
-      } catch (err) {
-        logError(`model call record failed: ${errorSummary(err)}`)
-      }
+      const detail = {
+        kind: 'model_call',
+        model: c.env.MODEL,
+        startedAt,
+        stream: stream === true,
+        outcome,
+        finishReason: finish,
+        ...tokens,
+        estimated,
+      } as const
+      await charge(charging, cost, detail, Math.max(startedAt, now().getTime()))
     }
     const nothing: Tokens = { promptTokens: 0, cachedTokens: 0, completionTokens: 0 }
 
     const call = callModel().catch(async (err: unknown) => {
-      await endCall(err instanceof HttpError ? err.code : 'internal', nothing, '', false)
+      await endCall(err instanceof HttpError ? err.code : 'internal', nothing, '', false, 0)
       throw err
     })
     // The model is called and the call charged even if the client goes away meanwhile: a request
@@ -290,32 +161,28 @@ export function chatRoutes({ now, priceOf: priceFor, logError }: Deps): App {
         const charged = (outcome: string, summary: StreamSummary) => {
           const { promptTokens, cachedTokens, completionTokens } = summary
           const tokens: Tokens = { promptTokens, cachedTokens, completionTokens }
-          // A reply the user stopped, or a stream that broke off, costs what it used. Its totals come
-          // in the stream's last chunks, which never arrived, so they are estimated: the prompt from
-          // the size of the input when no chunk gave it, the reply from the characters that were
-          // streamed (never below what the stream did report), and the part of the prompt read from
-          // the cache as a fixed share of it, since nothing says how much it was.
-          // Two cases cost what the stream reported and no more. One that ran to its end has its
-          // totals, even when the client stopped reading right there. And one that broke off before
-          // it reported or carried anything is a call that failed without usage: it costs nothing.
-          // (A reply the user stopped that early is still charged its prompt: the model was reading it.)
-          const cutShort = outcome === 'cancelled' || outcome === 'incomplete' || outcome === 'stream_error'
-          const empty = outcome !== 'cancelled' && !promptTokens && !completionTokens && !summary.replyChars
-          const estimated = cutShort && !summary.ended && !empty
+          // A model error, or a stream that broke off before [DONE] unless the user stopped it, failed:
+          // it costs nothing, whatever it streamed first.
+          const failed = outcome === 'provider_error' || (outcome !== 'ok' && outcome !== 'cancelled' && !summary.ended)
+          if (failed) return { tokens, estimated: false, cost: 0 }
+          // One that reached [DONE] costs its totals. One the user stopped before costs an estimate,
+          // since its totals never came: the prompt from the input's size when no chunk gave it, the
+          // reply from the characters streamed, and a fixed share of the prompt as cached.
+          const estimated = outcome === 'cancelled' && !summary.ended
           if (estimated) {
             tokens.promptTokens ||= estimateTokens(chars)
             tokens.cachedTokens = estimateCachedTokens(tokens.promptTokens)
             tokens.completionTokens = Math.max(tokens.completionTokens, estimateTokens(summary.replyChars))
           }
-          return { tokens, estimated }
+          return { tokens, estimated, cost: costOf(price, tokens) }
         }
         const settle = async (outcome: string, summary: StreamSummary) => {
-          const { tokens, estimated } = charged(outcome, summary)
+          const { tokens, estimated, cost } = charged(outcome, summary)
           usage.promptTokens = tokens.promptTokens
           usage.cachedTokens = tokens.cachedTokens
           usage.completionTokens = tokens.completionTokens
           usage.finishReason = summary.finishReason
-          await endCall(outcome, tokens, summary.finishReason, estimated)
+          await endCall(outcome, tokens, summary.finishReason, estimated, cost)
           record(outcome)
         }
         const metered = meterStream(
@@ -329,8 +196,8 @@ export function chatRoutes({ now, priceOf: priceFor, logError }: Deps): App {
           // The cost goes to the client in a chunk of its own, as the last before [DONE]: it is known
           // only once the stream's totals are in, and Workers AI reports usage on many chunks.
           (outcome, summary) => {
-            const { tokens, estimated } = charged(outcome, summary)
-            return { choices: [], cost: callCost(costOf(price, tokens), estimated) }
+            const { estimated, cost } = charged(outcome, summary)
+            return { choices: [], cost: callCost(cost, estimated) }
           },
           (err) => logError(`model stream failed: ${errorSummary(err)}`),
         )
@@ -344,9 +211,10 @@ export function chatRoutes({ now, priceOf: priceFor, logError }: Deps): App {
       usage.finishReason = finishReason(reply?.finish_reason)
       // The reply as the model gave it. Build the response first: if that throws, the request is
       // recorded once, as internal, and nothing is charged.
-      const body = isRecord(out) ? { ...out, cost: callCost(costOf(price, tokens), false) } : out
+      const cost = costOf(price, tokens)
+      const body = isRecord(out) ? { ...out, cost: callCost(cost, false) } : out
       const res = c.newResponse(JSON.stringify(body), 200, { 'content-type': 'application/json' })
-      await endCall('ok', tokens, usage.finishReason, false)
+      await endCall('ok', tokens, usage.finishReason, false, cost)
       record('ok')
       return res
     }

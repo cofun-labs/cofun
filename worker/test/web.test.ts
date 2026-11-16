@@ -279,33 +279,49 @@ describe('reading a web page', () => {
     expect((await read('https://tea.example/history')).status).toBe(200)
   })
 
-  it('[UC-COFUN-WEB-001-S08] a render that gives no page still costs the browser time it used', async () => {
+  it('[UC-COFUN-WEB-001-S08] a render that gives no page costs nothing, and says so', async () => {
     browser.render('https://app.example/blank', '  \n ', 2000)
     browser.failedMs = 1500
-    expect(await refusal(await render('https://app.example/blank'))).toEqual({ status: 422, code: 'no_text' })
-    const broken = await render('https://app.example/broken')
+    const blank = await render('https://app.example/blank')
     // The refusal says what the render cost, as a page's answer does.
-    expect(await broken.clone().json()).toMatchObject({ cost: { micro_credits: 1500 * 25 } })
+    expect(await blank.clone().json()).toMatchObject({ cost: { micro_credits: 0 } })
+    expect(await refusal(blank)).toEqual({ status: 422, code: 'no_text' })
+    const broken = await render('https://app.example/broken')
+    expect(await broken.clone().json()).toMatchObject({ cost: { micro_credits: 0 } })
     expect(await refusal(broken)).toEqual({ status: 422, code: 'render_failed' })
+    // The browser time Browser Run billed is kept, for the operator.
     expect(db.renders()).toMatchObject([
-      { kind: 'web_render', outcome: 'no_text', browser_ms: 2000, micro_credits: 2000 * 25 },
-      { kind: 'web_render', outcome: 'render_failed', browser_ms: 1500, micro_credits: 1500 * 25 },
+      { kind: 'web_render', outcome: 'no_text', browser_ms: 2000, micro_credits: 0 },
+      { kind: 'web_render', outcome: 'render_failed', browser_ms: 1500, micro_credits: 0 },
     ])
+    expect(db.grants()).toMatchObject([{ source: 'free', left: 200 * CREDIT }])
   })
 
-  it('[@no-uc:money] a render Browser Run reports no time for costs the time it took, and one with no response costs nothing', async () => {
+  it('[UC-COFUN-WEB-001-S09] a render Browser Run turns away for coming too often is busy, and costs nothing', async () => {
+    browser.render('https://app.example/board', '# Board')
+    browser.reply = () =>
+      Response.json({ success: false, errors: [{ code: 429, message: 'Rate limit exceeded' }] }, { status: 429 })
+    const res = await render('https://app.example/board')
+    expect(await res.clone().json()).toMatchObject({ cost: { micro_credits: 0 } })
+    expect(await refusal(res)).toEqual({ status: 503, code: 'render_busy' })
+    expect(browser.calls).toHaveLength(1)
+    expect(db.renders()).toMatchObject([{ outcome: 'render_busy', browser_ms: 0, micro_credits: 0 }])
+  })
+
+  it('[@no-uc:money] a render Browser Run reports no time for costs nothing, and so does one with no response', async () => {
     browser.render('https://app.example/board', '# Board')
     browser.during = () => {
       clock = new Date(clock.getTime() + 3000)
     }
     browser.reportsTime = false
-    expect((await render('https://app.example/board')).status).toBe(200)
-    // No response at all: what Browser Run billed is not known, so the user is not charged a guess.
+    // What Browser Run billed is not known, so the user is not charged a guess: not the time it took.
+    const page = await render('https://app.example/board')
+    expect(await page.json()).toMatchObject({ title: 'Board', cost: { micro_credits: 0 } })
     browser.failWith = new Error('binding failed')
     expect(await refusal(await render('https://app.example/board'))).toEqual({ status: 422, code: 'render_failed' })
     expect(db.renders()).toMatchObject([
-      { outcome: 'ok', browser_ms: 3000, micro_credits: 3000 * 25 },
-      { outcome: 'render_failed', browser_ms: 3000, micro_credits: 0 },
+      { outcome: 'ok', browser_ms: 0, micro_credits: 0 },
+      { outcome: 'render_failed', browser_ms: 0, micro_credits: 0 },
     ])
   })
 
@@ -321,10 +337,8 @@ describe('reading a web page', () => {
     db.failOn = { sql: 'INSERT INTO web_renders', error: new Error('D1 write failed') }
     const res = await render('https://app.example/board')
     expect(res.status).toBe(200)
-    // Nothing was charged, so the answer says no cost.
-    const page: Record<string, unknown> = await res.json()
-    expect(page).toMatchObject({ title: 'Board' })
-    expect(page).not.toHaveProperty('cost')
+    // Nothing was charged, so the answer says it cost nothing.
+    expect(await res.json()).toMatchObject({ title: 'Board', cost: { micro_credits: 0 } })
     expect(db.rows('spends')).toEqual([])
     expect(logged.some((line) => line.startsWith('web render record failed'))).toBe(true)
   })
@@ -448,10 +462,10 @@ describe('searching the web', () => {
     db.failOn = { sql: 'INSERT INTO web_searches', error: new Error('D1 write failed') }
     const res = await search('tea')
     expect(res.status).toBe(200)
-    // Nothing was charged, so the answer says no cost.
-    const answer: Record<string, unknown> = await res.json()
+    // Nothing was charged, so the answer says it cost nothing.
+    const answer: { results: unknown[]; cost: unknown } = await res.json()
     expect(answer.results).toHaveLength(3)
-    expect(answer).not.toHaveProperty('cost')
+    expect(answer.cost).toEqual({ micro_credits: 0 })
     expect(db.rows('spends')).toEqual([])
     expect(logged.some((line) => line.startsWith('web search record failed'))).toBe(true)
   })
@@ -482,14 +496,14 @@ describe('searching the web', () => {
     ],
     ['the provider is busy', gatewayRefusal(429, 'rate_limited'), 503, 'search_busy', 0],
     ['the gateway fails', gatewayRefusal(500, 'internal_error'), 502, 'search_failed', 0],
-    ['the answer is not JSON', () => new Response('<html>oops</html>'), 502, 'search_failed', SEARCH_COST],
-    ['the answer has another shape', () => Response.json({ results: [] }), 502, 'search_failed', SEARCH_COST],
+    ['the answer is not JSON', () => new Response('<html>oops</html>'), 502, 'search_failed', 0],
+    ['the answer has another shape', () => Response.json({ results: [] }), 502, 'search_failed', 0],
     [
       'no item of the answer is a result',
       () => Response.json({ items: [{ url: 'https://tea.example/', title: 'Tea', snippet: 'About tea.' }] }),
       502,
       'search_failed',
-      SEARCH_COST,
+      0,
     ],
     [
       'the binding throws',
@@ -501,7 +515,7 @@ describe('searching the web', () => {
       0,
     ],
   ])(
-    '[UC-COFUN-WEB-002-S03] [UC-COFUN-WEB-002-S05] a search is refused when %s, not tried again, and costs what the provider bills',
+    '[UC-COFUN-WEB-002-S03] [UC-COFUN-WEB-002-S05] a search is refused when %s, not tried again, and costs nothing',
     async (_, reply, status, code, cost) => {
       ai.searchReply = reply
       const res = await search('tea')

@@ -41,7 +41,8 @@ export type SearchOutcome = 'ok' | SearchError['code']
 
 /**
  * Why a search did not give results, as a code the extension tells the user about. The codes are a
- * contract with the extension (`src/agent/worker.ts`), which stops the question on every one.
+ * contract with the extension (`src/agent/worker.ts`), which stops the question on the first two, a
+ * search turned away. A search that failed costs the user nothing (`charge.ts`).
  */
 export class SearchError extends Error {
   constructor(
@@ -49,12 +50,6 @@ export class SearchError extends Error {
     message: string,
     /** What the logs keep of the cause: a status and the API's own code, never the query. */
     readonly logged: string,
-    /**
-     * Whether the provider billed the search: it answered, but not with what the worker understands.
-     * A search the gateway turned away, or one that brought no response, was not billed, as far as
-     * the worker can tell: neither the gateway nor Ceramic documents which failures are billed.
-     */
-    readonly billed = false,
   ) {
     super(message)
   }
@@ -102,22 +97,12 @@ export async function searchWeb(
   }
   const answer = Answer.safeParse(body)
   if (!answer.success)
-    throw new SearchError(
-      'search_failed',
-      'the search gave an answer the worker does not understand',
-      'bad answer',
-      true,
-    )
+    throw new SearchError('search_failed', 'the search gave an answer the worker does not understand', 'bad answer')
   // An item that is not a result is left out, rather than failing the rest; but when none is one,
   // the answer is not what the worker understands (say, a field the provider renamed).
   const items = answer.data.items.flatMap((value) => Item.safeParse(value).data ?? [])
   if (items.length === 0 && answer.data.items.length > 0)
-    throw new SearchError(
-      'search_failed',
-      'the search gave an answer the worker does not understand',
-      'bad items',
-      true,
-    )
+    throw new SearchError('search_failed', 'the search gave an answer the worker does not understand', 'bad items')
   // A result with a longer address is left out, rather than handed on cut short.
   const kept = items.filter((item) => item.url.length <= URL_CHARS)
   return kept.slice(0, limit).map((item) => ({

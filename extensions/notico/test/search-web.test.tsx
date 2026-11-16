@@ -150,7 +150,7 @@ describe('searching the web', () => {
     ['the search fails', 'Could not search the web: the search failed.'],
     [
       'the provider answers what the worker cannot read',
-      `Could not search the web: the search gave an answer the worker does not understand.${COST}`,
+      'Could not search the web: the search gave an answer the worker does not understand.',
     ],
     ['the request to the worker fails', `Could not search the web: Notico's service could not be reached.${COST}`],
     [

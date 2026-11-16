@@ -2,7 +2,7 @@
 
 ## Behavior
 
-Using the hosted AI (UC-COFUN-CHAT-001) costs credits, so what an account uses of the model is paid for out of the credits it has. A credit is a thousandth of a US dollar, and each call to the model costs what its tokens cost the service, with nothing added. Input the model reads from its cache costs less than new input, and is charged at that lower price. A question a product answers with several model calls, such as one for each round trip of a tool, costs the sum of them. A request the service refuses, and a model call that fails, cost nothing; a reply the user stops partway is charged an estimate of what it used. Each user has their own credits: what one spends is never taken from another.
+Using the hosted AI (UC-COFUN-CHAT-001) costs credits, so what an account uses of the model is paid for out of the credits it has. A credit is a thousandth of a US dollar, and each call to the model costs what its tokens cost the service, with nothing added. Input the model reads from its cache costs less than new input, and is charged at that lower price. A question a product answers with several model calls, such as one for each round trip of a tool, costs the sum of them. A request the service refuses, and a model call that fails, cost nothing: a reply that breaks off or ends in the model's error fails too, whatever it streamed first. A reply the user stops partway is charged an estimate of what it used. Each user has their own credits: what one spends is never taken from another.
 
 Every signed-in user gets 200 free credits a week. They arrive when the user asks and has no current week of credits, and they expire 7 days later; a new week starts the next time the user asks after that, so unused credits never add up, and a user back after weeks away gets one week of credits, not one for each week missed. Credits can also be bought (UC-COFUN-BILLING-001) or granted by an operator (UC-COFUN-ADMIN-001).
 
@@ -12,7 +12,7 @@ Key constraints:
 - A model call that starts with credits left is answered in full, even when it costs more than what was left. It takes only what was left: credits never go below zero, and what it cost beyond them is forgiven, never owed or taken out of later credits.
 - Calls sent at once all start from the same balance, so each of them is answered in full, and together they can cost more than one call beyond it. That is forgiven too; how many calls one user can start in a minute, and how long a reply may be, are capped, which bounds it.
 - Credits that have expired cannot be spent.
-- Only the service prices a call. Each reply tells the client what its call cost, so a product can show it; a call that was cut short is charged from estimated tokens, and says so.
+- Only the service prices a call. Each reply tells the client what its call cost, so a product can show it; a reply the user stopped before the model reported its totals is charged from estimated tokens, and says so.
 
 ## Scenarios
 
@@ -32,7 +32,7 @@ Key constraints:
 | UC-COFUN-CREDITS-001-S10 | P1 | ✅ | Given a user who spent all their credits; when another user asks the AI; then the other user's credits are untouched and they get a reply. |
 | UC-COFUN-CREDITS-001-S11 | P1 | ✅ | Given a user with a few credits left; when several calls are sent at once, each costing more than that; then every one is answered in full, their credits end at zero, and their next free credits arrive in full. |
 | UC-COFUN-CREDITS-001-S12 | P1 | ✅ | Given a model call that ran to its end; when its reply reaches the client, streamed or not; then the reply says what the call cost, the same amount the user was charged. |
-| UC-COFUN-CREDITS-001-S13 | P1 | ✅ | Given a streamed reply that breaks off before the model reported its totals; when the stream ends; then the client is told what the call was charged, marked as an estimate. |
+| UC-COFUN-CREDITS-001-S13 | P1 | ✅ | Given a streamed reply that breaks off, or ends in the model's error, after it streamed part of the reply; when the stream ends; then the call costs nothing, and the client is told so. |
 | UC-COFUN-CREDITS-001-S14 | P1 | ✅ | Given a user who has started many calls within the last minute; when they ask the AI again; then the request is refused with a message to wait a minute, costs nothing, and no model is called, while other users still get replies. |
 
 ### ai-e2e

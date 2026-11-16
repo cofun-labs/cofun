@@ -12,9 +12,9 @@ export interface UsageDataset {
 export interface UsageRecord {
   /** Clerk user id (pseudonymous). */
   userId: string
-  /** The product the request came from: see `productOf` in routes/chat.ts. */
+  /** The product the request came from: see `productOf` in charge.ts. */
   product: string
-  /** The chat and question the request was for (see `turnOf` in routes/chat.ts), or empty when it named none. */
+  /** The chat and question the request was for (see `turnOf` in charge.ts), or empty when it named none. */
   chatId: string
   turnId: string
   model: string

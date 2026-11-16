@@ -376,15 +376,25 @@ describe('UC-COFUN-CREDITS-001 Spend credits on the hosted model', () => {
     expect(db.calls().map((r) => r.micro_credits)).toEqual([cost.micro_credits, cost.micro_credits])
   })
 
-  it('[UC-COFUN-CREDITS-001-S13] a stream that breaks off says what it was charged, as an estimate', async () => {
-    // The reply's first piece, "abcdef": 2 tokens; no chunk gave the prompt: 1 token, from the input.
-    ai.rawSse = 'data: {"choices":[{"delta":{"content":"abcdef"}}]}\n\n'
-    const sse = await (await chat(token, { messages: hi, stream: true })).text()
-    const cost = { micro_credits: 300 + 2 * 1200, estimated: true }
-    expect(sse.split('\n\n').filter(Boolean).at(-1)).toBe(`data: ${JSON.stringify({ choices: [], cost })}`)
-    expect(db.calls()).toEqual([
-      expect.objectContaining({ outcome: 'incomplete', estimated: 1, micro_credits: cost.micro_credits }),
+  it("[UC-COFUN-CREDITS-001-S13] a stream that breaks off, or ends in the model's error, after part of the reply costs nothing, and says so", async () => {
+    const cost = { micro_credits: 0, estimated: false }
+    // The reply's first piece, then the stream ends without its totals or [DONE].
+    ai.rawSse =
+      'data: {"choices":[{"delta":{"content":"abcdef"}}],"usage":{"prompt_tokens":1000,"completion_tokens":2}}\n\n'
+    const broken = await (await chat(token, { messages: hi, stream: true })).text()
+    expect(broken.split('\n\n').filter(Boolean).at(-1)).toBe(`data: ${JSON.stringify({ choices: [], cost })}`)
+    // The reply's first piece, then the model's error.
+    ai.rawSse =
+      'data: {"choices":[{"delta":{"content":"abcdef"}}],"usage":{"prompt_tokens":1000,"completion_tokens":2}}\n\n' +
+      'data: {"error":{"message":"model overloaded"}}\n\ndata: [DONE]\n\n'
+    const failed = await (await chat(token, { messages: hi, stream: true })).text()
+    expect(failed).toContain(`"cost":${JSON.stringify(cost)}`)
+    // Their tokens are kept, for the operator; the user is charged nothing.
+    expect(db.calls().map((r) => [r.outcome, r.prompt_tokens, r.estimated, r.micro_credits])).toEqual([
+      ['incomplete', 1000, 0, 0],
+      ['provider_error', 1000, 0, 0],
     ])
+    expect(db.grants()[0]).toMatchObject({ left: 200_000_000 })
   })
 
   it('[@no-uc:money] a stream whose read fails says what it was charged before it errors', async () => {
@@ -649,20 +659,49 @@ describe('UC-COFUN-CREDITS-001 Spend credits on the hosted model', () => {
     ])
   })
 
-  it('[@no-uc:money] a stream cut short is charged the prompt it reported, 90% of it as cached, and the reply by its size', async () => {
+  it('[@no-uc:money] a stream the user stops is charged the prompt it reported, 90% of it as cached, and the reply by its size', async () => {
     // Workers AI gives the prompt in its first chunk; how much of it was cached only comes at the end.
     ai.rawSse =
       'data: {"choices":[{"delta":{"content":""}}],"usage":{"prompt_tokens":1000,"completion_tokens":0}}\n\n' +
       'data: {"choices":[{"delta":{"content":"abcdef","reasoning_content":"ghi"}}],"usage":{"prompt_tokens":0,"completion_tokens":2}}\n\n' +
       'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"name":"abc","arguments":"{}x"}}]}}]}\n\n'
-    await (await chat(token, { messages: hi, stream: true })).text()
+    // The model is still writing when the user stops it.
+    ai.pause = { after: ai.rawSse.length, until: new Promise(() => {}) }
+    const reader = (await chat(token, { messages: hi, stream: true })).body!.getReader()
+    const decoder = new TextDecoder()
+    let text = ''
+    while (!text.includes('tool_calls')) text += decoder.decode((await reader.read()).value, { stream: true })
+    await reader.cancel()
     expect(calls()[0]).toMatchObject({
-      outcome: 'incomplete',
+      outcome: 'cancelled',
       prompt_tokens: 1000,
       cached_tokens: 900,
       completion_tokens: 5,
       micro_credits: 100 * 300 + 900 * 6 + 5 * 1200,
     })
+  })
+
+  it('[@no-uc:money] a stream whose read fails after its end is charged its totals, as its last chunk says', async () => {
+    ai.rawSse =
+      'data: {"choices":[{"delta":{"content":"Hi"},"finish_reason":"stop"}]}\n\n' +
+      'data: {"choices":[],"usage":{"prompt_tokens":1000,"completion_tokens":5}}\n\n' +
+      'data: [DONE]\n\n'
+    ai.failAfterRawSse = new Error('connection reset')
+    const reader = (await chat(token, { messages: hi, stream: true })).body!.getReader()
+    const decoder = new TextDecoder()
+    let text = ''
+    await expect(
+      (async () => {
+        for (;;) {
+          const { done, value } = await reader.read()
+          if (done) return
+          text += decoder.decode(value, { stream: true })
+        }
+      })(),
+    ).rejects.toThrow('the model stream failed')
+    const cost = { micro_credits: 1000 * 300 + 5 * 1200, estimated: false }
+    expect(calls()).toEqual([expect.objectContaining({ outcome: 'stream_error', micro_credits: cost.micro_credits })])
+    expect(text).toContain(`"cost":${JSON.stringify(cost)}`)
   })
 
   it('[@no-uc:money] a stream that carries a model error and no usage costs nothing', async () => {

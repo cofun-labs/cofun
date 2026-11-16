@@ -266,7 +266,8 @@ describe('UC-COFUN-ADMIN-002 See granted and spent credits as a whole', () => {
       const bearer = await clerk.sessionToken({ userId: `user_${name}`, azp: EXT })
       return req('POST', '/v1/web/render', bearer, { url, max_chars: 1000 }, product)
     }
-    // Alice renders a page, and one that fails; bob asks the AI and renders from another product.
+    // Alice renders a page, and one that fails: it used the browser, and costs nothing. Bob asks the
+    // AI and renders from another product.
     expect((await renderAs('alice', 'https://app.example/board')).status).toBe(200)
     expect((await renderAs('alice', 'https://app.example/broken')).status).toBe(422)
     await asks('bob')
@@ -276,26 +277,25 @@ describe('UC-COFUN-ADMIN-002 See granted and spent credits as a whole', () => {
     later(DAY_MS)
 
     const ok = 4000 * 25
-    const failed = 2000 * 25
     const { totals, days, products } = await overview('2026-11-08', '2026-11-09')
-    const renders = { renders: 3, failedRenders: 1, renderMs: 10_000, renderSpent: 2 * ok + failed }
-    expect(totals).toMatchObject({ spent: 2 * ok + failed + FAKE_COST, calls: 1, ...renders })
+    const renders = { renders: 3, failedRenders: 1, renderMs: 10_000, renderSpent: 2 * ok }
+    expect(totals).toMatchObject({ spent: 2 * ok + FAKE_COST, calls: 1, ...renders })
     expect(days[0]).toMatchObject({ day: '2026-11-08', ...renders })
     expect(days[1]).toEqual({ day: '2026-11-09', ...NOTHING })
     expect(products).toEqual([
       {
         product: 'notico',
-        spent: ok + failed + FAKE_COST,
+        spent: ok + FAKE_COST,
         calls: 1,
         renders: 2,
-        renderSpent: ok + failed,
+        renderSpent: ok,
         ...NO_SEARCHES,
       },
       { product: 'confluco', spent: ok, calls: 0, renders: 1, renderSpent: ok, ...NO_SEARCHES },
     ])
     expect((await accounts('2026-11-08', '2026-11-09')).accounts).toMatchObject([
-      { userId: 'user_alice', spent: ok + failed, calls: 0, renders: 2, renderSpent: ok + failed },
       { userId: 'user_bob', spent: ok + FAKE_COST, calls: 1, renders: 1, renderSpent: ok },
+      { userId: 'user_alice', spent: ok, calls: 0, renders: 2, renderSpent: ok },
     ])
   })
 
