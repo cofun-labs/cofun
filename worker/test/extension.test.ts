@@ -232,9 +232,9 @@ describe('extension agent against the worker', () => {
     const { tool, runs } = pageTool()
     const changing: ToolSpec = {
       ...tool,
-      run: async (args) => {
+      run: async (args, signal, context) => {
         env.MODEL = NEXT_MODEL
-        return tool.run(args)
+        return tool.run(args, signal, context)
       },
     }
     ai.script = [{ toolCalls: [{ name: 'lookup_page', arguments: '{}' }] }, { reply: 'Q4 Roadmap' }]

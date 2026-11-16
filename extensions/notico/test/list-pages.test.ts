@@ -2,8 +2,8 @@
 // block lookups (syncRecordValuesMain) the way Notion does, and getSpaces and getTeamsV2 answer
 // with queued responses in Notion's shapes.
 import { afterEach, describe, expect, it } from 'vitest'
+import { ToolChat } from './tool-chat'
 import { LIST_LIMIT, LIST_LOOKUPS, SECTION_LIMIT, listPages } from '../src/tools/find'
-import { forgetReads } from '../src/tools/memory'
 import { readPage } from '../src/tools/read'
 import { updatePages } from '../src/tools/write'
 import {
@@ -20,10 +20,13 @@ import {
 import { LIMITED_STOP, NO_USER_MAP, UNEXPECTED_STOP } from '../src/notion/api'
 import { DATA_LINE } from '../src/tools/shared'
 
+/** The chat the tools run in; a new one for each test. */
+let chat = new ToolChat()
+
 afterEach(() => {
   restoreGlobals()
   // The open page's workspace is remembered across calls.
-  forgetReads()
+  chat = new ToolChat()
 })
 
 const hex = (id: string) => id.replace(/-/g, '')
@@ -67,7 +70,7 @@ function notion(blocks: Rec[], { collections = [] as Rec[], cookie = undefined a
   return tab
 }
 
-const run = async (args: Rec = {}) => resultText(await listPages.run(args))
+const run = async (args: Rec = {}) => resultText(await chat.run(listPages, args))
 const listed = (result: string) => result.split('\n').filter((l) => l.trimStart().startsWith('- '))
 
 const VIEW = 'b0b0b0b0-0000-4000-8000-000000000001'
@@ -640,9 +643,9 @@ describe('titles as Markdown', () => {
     const listedTitle = listed(await run({ page: hex(PAGE) }))[0]
     expect(listedTitle).toBe(`- 📄 ${shown} ^${hex(id(11))}`)
     // read_page's line for a child page shows it the same way.
-    expect(resultText(await readPage.run({}))).toContain(`📄 ${shown} ^${hex(id(11))}`)
+    expect(resultText(await chat.run(readPage, {}))).toContain(`📄 ${shown} ^${hex(id(11))}`)
 
-    await updatePages.run({ pages: [{ page: hex(id(11)), title: shown }] })
+    await chat.run(updatePages, { pages: [{ page: hex(id(11)), title: shown }] })
     expect(tab.workspace!.records.get(id(11))!.properties).toEqual({ title: [[title]] })
   })
 })

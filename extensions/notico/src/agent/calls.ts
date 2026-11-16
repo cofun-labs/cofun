@@ -20,10 +20,11 @@ const OUT_OF_CREDITS = 'out_of_credits'
 export async function previewCall(
   tool: ToolSpec | undefined,
   args: unknown,
+  context: ToolContext,
   signal?: AbortSignal,
 ): Promise<{ preview?: string; stop?: string }> {
   try {
-    const preview = tool?.preview?.(args)
+    const preview = tool?.preview?.(args, context)
     if (typeof preview === 'string' || preview === undefined) return { preview }
     // Stop must not wait for a preview that looks things up.
     return {

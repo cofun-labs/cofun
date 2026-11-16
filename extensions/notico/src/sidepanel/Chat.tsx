@@ -39,7 +39,6 @@ import {
   carryPages,
   currentNotionPage,
   DATA_LINE,
-  forgetReads,
   OPEN_A_PAGE,
   pagesIn,
   chatTitle,
@@ -337,6 +336,7 @@ export function Chat({ userId }: { userId: string }) {
     thisPage: tabPage,
     added: new Set(chips.map((c) => pageKey(c.page))),
     recent: recentPages,
+    memory: chat.memory,
     stop: searchStop,
     paused: busy,
     onStop: (stop) => {
@@ -596,7 +596,7 @@ export function Chat({ userId }: { userId: string }) {
     // A page is off while the composer shows none for it: also on another site, until another page shows.
     // The tabs the chat's earlier questions carried stay readable for this one.
     const earlier = messages.flatMap((m) => (m.role === 'user' ? (m.pages ?? []) : []))
-    const context = carryPages(tabPage, removed !== undefined && !openPage, chosen, selections, earlier)
+    const context = carryPages(chat.memory, tabPage, removed !== undefined && !openPage, chosen, selections, earlier)
     setSelections([])
     setInput('')
     resetPicker()
@@ -623,8 +623,6 @@ export function Chat({ userId }: { userId: string }) {
     void was.settled().then(() => leaving.current.delete(was))
     // A failed save's message belongs to the chat it was for.
     setSaveFailure(undefined)
-    // Another conversation: the agent must read pages again before it edits them.
-    forgetReads()
     const next = newChat(session)
     chatNow.current = next
     setChat(next)

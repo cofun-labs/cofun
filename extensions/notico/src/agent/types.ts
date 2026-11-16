@@ -1,6 +1,7 @@
 // The agent's types, as the rest of the extension uses them: its configuration, the tools it runs,
 // what it reports while it works, and the conversation as saved sessions keep it.
 import type { ModelSettings, OwnSetup } from '../models'
+import type { ToolMemory } from '../tools/memory'
 import { z } from '../zod'
 
 export interface AgentConfig {
@@ -131,7 +132,7 @@ export interface ToolSpec {
    * The arguments come from the model: a tool parses them before it uses them. Text alone is a
    * result with no details. `context` is what the agent gives a running call (see ToolContext).
    */
-  run: (args: unknown, signal?: AbortSignal, context?: ToolContext) => Promise<string | ToolResult>
+  run: (args: unknown, signal: AbortSignal | undefined, context: ToolContext) => Promise<string | ToolResult>
   /** The tool does what is hard to undo, such as deleting a page, so the user must agree each time before it runs. */
   needsConfirmation?: boolean
   /**
@@ -143,9 +144,10 @@ export interface ToolSpec {
   changesData?: boolean
   /**
    * What a call does, in words, from the state before it runs: shown on the call's card, and to the
-   * user before agreeing when the tool needs confirmation. It may look things up first.
+   * user before agreeing when the tool needs confirmation. It may look things up first. `context` is
+   * the one the call will run with.
    */
-  preview?: (args: unknown) => string | undefined | Promise<string | undefined>
+  preview?: (args: unknown, context: ToolContext) => string | undefined | Promise<string | undefined>
 }
 
 /**
@@ -192,6 +194,11 @@ export interface ToolContext {
   kept: (id: string) => Promise<KeptResult | 'unknown' | 'gone'>
   /** How many characters the question being answered holds in tool results so far. */
   questionChars: () => number
+  /**
+   * What the tools remember of the conversation (src/tools/memory.ts): the agent's own, the same for
+   * every call it runs, so the pages one chat read never count as read in another.
+   */
+  memory: ToolMemory
 }
 
 /**

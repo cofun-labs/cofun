@@ -8,6 +8,7 @@ import type { AssistantMessage, Model } from '@earendil-works/pi-ai'
 import { streamSimple } from '@earendil-works/pi-ai/api/openai-completions'
 import { Credits, Grants, Packs, type PastGrant } from '../credits'
 import { answering, HOSTED_ONLY, type OwnSetup } from '../models'
+import { ToolMemory } from '../tools/memory'
 import { askUser, previewCall, toAgentTool, type Reporter } from './calls'
 import { addUsage, detailsOf, recent, textOf, usedTools } from './history'
 import { ownProvider } from './own'
@@ -126,6 +127,12 @@ export class CopilotAgent {
   private onCost?: (microCredits: number | undefined) => void
   /** Which chat and question the requests of the question running are for. */
   private turn?: Turn
+  /**
+   * What the tools remember of this conversation, given to every call (see ToolContext.memory): an
+   * agent of its own, so a memory of its own, for each chat. The side panel sets in it what each
+   * question carries (carryPages).
+   */
+  readonly memory = new ToolMemory()
 
   /**
    * One agent holds one conversation: a new one, or `initial` to continue a saved one (see
@@ -335,7 +342,7 @@ export class CopilotAgent {
       // they ask the user on this call's card.
       running = { id: toolCall.id, name: toolCall.name, args }
       // From the arguments the tool runs with, and before it runs: the run may change what the preview reads.
-      const { preview, stop } = await previewCall(this.tools.get(toolCall.name), args, signal)
+      const { preview, stop } = await previewCall(this.tools.get(toolCall.name), args, this.reporter().context, signal)
       // Stopped while the preview looked things up: the tool must not start.
       if (signal?.aborted || epoch !== this.epoch) {
         running = undefined
@@ -637,6 +644,7 @@ export class CopilotAgent {
             .slice(question + 1)
             .reduce((n, m) => n + (m.role === 'toolResult' ? textOf(m.content).length : 0), 0)
         },
+        memory: this.memory,
       },
     }
   }

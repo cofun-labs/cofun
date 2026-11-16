@@ -1,7 +1,7 @@
 // Moving, duplicating, and trashing pages (move_page, duplicate_page, and trash_page in
 // extensions/notico/src/tools/organize.ts), against a fake Notion workspace that applies them the way Notion does.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { forgetReads } from '../src/tools/memory'
+import { ToolChat } from './tool-chat'
 import { duplicatePage, movePage, trashPage } from '../src/tools/organize'
 import { readPage } from '../src/tools/read'
 import { editPage } from '../src/tools/write'
@@ -18,6 +18,9 @@ import {
 } from './notion-tab'
 import { DUPLICATE_POLLING, LIMITED_STOP, UNEXPECTED_STOP } from '../src/notion/api'
 
+/** The chat the tools run in; a new one for each test. */
+let chat = new ToolChat()
+
 // The checks on a copy wait on a fake clock, which the tests move (see `copying`): nothing waits for real time.
 beforeEach(() =>
   vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'], now: new Date('2026-11-01T09:00:00Z') }),
@@ -26,7 +29,7 @@ beforeEach(() =>
 afterEach(() => {
   vi.useRealTimers()
   restoreGlobals()
-  forgetReads()
+  chat = new ToolChat()
 })
 
 // The tab the test opened (see `open`).
@@ -134,7 +137,7 @@ describe('UC-NOTICO-NOTION-010 reorganize pages', () => {
     const ws = workspace()
     open(ws)
     expect(movePage.needsConfirmation).toBeFalsy()
-    const result = resultText(await movePage.run({ pages: [hex(PLAN)], to: ARCHIVE }))
+    const result = resultText(await chat.run(movePage, { pages: [hex(PLAN)], to: ARCHIVE }))
     expect(result).toBe(`Moved 1 page to the end of ^${hex(ARCHIVE)}: ^${hex(PLAN)}.`)
     expect(contentOf(ws, ARCHIVE)).toEqual([PLAN])
     expect(contentOf(ws, PROJECTS)).toEqual([NOTE])
@@ -145,10 +148,10 @@ describe('UC-NOTICO-NOTION-010 reorganize pages', () => {
   it('[@no-uc:data] names the signed-in user as the last editor of moved and trashed pages, and where they went', async () => {
     const ws = workspace()
     open(ws)
-    await movePage.run({ pages: [hex(PLAN)], to: ARCHIVE })
+    await chat.run(movePage, { pages: [hex(PLAN)], to: ARCHIVE })
     expect(ws.records.get(PLAN)).toMatchObject({ last_edited_by_id: USER, last_edited_by_table: 'notion_user' })
     expect(ws.records.get(ARCHIVE)).toMatchObject({ last_edited_by_id: USER, last_edited_by_table: 'notion_user' })
-    await trashPage.run({ pages: [NOTE] })
+    await chat.run(trashPage, { pages: [NOTE] })
     expect(ws.records.get(NOTE)).toMatchObject({
       alive: false,
       ...{ last_edited_by_id: USER, last_edited_by_table: 'notion_user' },
@@ -158,7 +161,7 @@ describe('UC-NOTICO-NOTION-010 reorganize pages', () => {
   it('[UC-NOTICO-NOTION-010-S01] moves several pages in one change, in the order given', async () => {
     const ws = workspace()
     open(ws)
-    await movePage.run({ pages: [NOTE, PLAN], to: `${PAGE_URL.replace(hex(PAGE), hex(ARCHIVE))}` })
+    await chat.run(movePage, { pages: [NOTE, PLAN], to: `${PAGE_URL.replace(hex(PAGE), hex(ARCHIVE))}` })
     expect(contentOf(ws, ARCHIVE)).toEqual([NOTE, PLAN])
     expect(contentOf(ws, PROJECTS)).toEqual([])
     expect(ws.transactions).toHaveLength(1)
@@ -167,12 +170,12 @@ describe('UC-NOTICO-NOTION-010 reorganize pages', () => {
   it('[UC-NOTICO-NOTION-010-S04] refuses to move a page into itself or a page inside it', async () => {
     const ws = workspace()
     open(ws)
-    await expect(movePage.run({ pages: [PLAN], to: PLAN })).rejects.toThrow("can't be moved into itself")
-    await expect(movePage.run({ pages: [PROJECTS], to: DRAFT })).rejects.toThrow(
+    await expect(chat.run(movePage, { pages: [PLAN], to: PLAN })).rejects.toThrow("can't be moved into itself")
+    await expect(chat.run(movePage, { pages: [PROJECTS], to: DRAFT })).rejects.toThrow(
       `^${hex(PROJECTS)} can't be moved into ^${hex(DRAFT)}: that page is inside it.`,
     )
     // One page of several is enough to refuse them all.
-    await expect(movePage.run({ pages: [NOTE, PLAN], to: DRAFT })).rejects.toThrow('that page is inside it')
+    await expect(chat.run(movePage, { pages: [NOTE, PLAN], to: DRAFT })).rejects.toThrow('that page is inside it')
     expect(ws.transactions).toEqual([])
     expect(ws.records.get(PLAN)!.parent_id).toBe(PROJECTS)
   })
@@ -181,7 +184,7 @@ describe('UC-NOTICO-NOTION-010 reorganize pages', () => {
     const ws = workspace()
     open(ws)
     // ROW is a row of the database DB, which is inside PAGE.
-    await expect(movePage.run({ pages: [PAGE], to: ROW })).rejects.toThrow(
+    await expect(chat.run(movePage, { pages: [PAGE], to: ROW })).rejects.toThrow(
       `^${hex(PAGE)} can't be moved into ^${hex(ROW)}: that page is inside it.`,
     )
     expect(ws.transactions).toEqual([])
@@ -191,7 +194,7 @@ describe('UC-NOTICO-NOTION-010 reorganize pages', () => {
     const ws = workspace()
     open(ws)
     expect(duplicatePage.needsConfirmation).toBeFalsy()
-    const done = await copying(duplicatePage.run({ page: hex(PLAN) }))
+    const done = await copying(chat.run(duplicatePage, { page: hex(PLAN) }))
     const result = resultText(done)
     const [, copy] = contentOf(ws, PROJECTS)
     expect(contentOf(ws, PROJECTS)).toEqual([PLAN, copy, NOTE])
@@ -215,9 +218,9 @@ describe('UC-NOTICO-NOTION-010 reorganize pages', () => {
     open(ws)
     expect(trashPage.needsConfirmation).toBe(true)
     // Renamed in Notion after the agent read it: the user sees the name it has now.
-    await readPage.run({ page: hex(PAGE) })
+    await chat.run(readPage, { page: hex(PAGE) })
     ws.edit(NOTE, { properties: { title: [['Old note']] } })
-    expect(await trashPage.preview!({ pages: [hex(NOTE), DB, PLAN] })).toBe(
+    expect(await chat.preview(trashPage, { pages: [hex(NOTE), DB, PLAN] })).toBe(
       [
         'Move 3 pages to the trash, with everything in them',
         `    ^${hex(NOTE)} "Old note"`,
@@ -231,7 +234,7 @@ describe('UC-NOTICO-NOTION-010 reorganize pages', () => {
   it('[UC-NOTICO-NOTION-010-S02] puts the pages in the trash, out of their parents, where they can be restored', async () => {
     const ws = workspace()
     open(ws)
-    const result = resultText(await trashPage.run({ pages: [hex(NOTE), DB] }))
+    const result = resultText(await chat.run(trashPage, { pages: [hex(NOTE), DB] }))
     expect(result).toBe(
       `Moved 2 pages to Notion's trash: ^${hex(NOTE)}, ^${hex(DB)}.\nThey can be restored from Notion's trash.`,
     )
@@ -255,7 +258,7 @@ describe('UC-NOTICO-NOTION-010 reorganize pages', () => {
       },
     ])
     // A trashed page can't be read any more.
-    await expect(readPage.run({ page: NOTE })).rejects.toThrow('in the trash')
+    await expect(chat.run(readPage, { page: NOTE })).rejects.toThrow('in the trash')
   })
 })
 
@@ -269,15 +272,17 @@ describe('moving pages', () => {
       space_id: 'other',
     })
     open(ws)
-    await expect(movePage.run({ pages: [ROW], to: ARCHIVE })).rejects.toThrow('is a database row')
-    await expect(movePage.run({ pages: [TEXT], to: ARCHIVE })).rejects.toThrow('is a block inside a page')
-    await expect(movePage.run({ pages: [PLAN], to: DB })).rejects.toThrow('is a database: pages can only be moved')
-    await expect(movePage.run({ pages: [PLAN], to: TEXT })).rejects.toThrow('is a block inside a page')
-    await expect(movePage.run({ pages: [id(20)], to: ARCHIVE })).rejects.toThrow('in another workspace')
-    await expect(movePage.run({ pages: [TEAM_PAGE], to: ARCHIVE })).rejects.toThrow('at the top of a teamspace')
-    await expect(movePage.run({ pages: [], to: ARCHIVE })).rejects.toThrow('at least one page')
-    await expect(movePage.run({ pages: ['nope'], to: ARCHIVE })).rejects.toThrow('not a Notion page URL or id')
-    await expect(movePage.run({ pages: [PLAN] })).rejects.toThrow('`to` is required')
+    await expect(chat.run(movePage, { pages: [ROW], to: ARCHIVE })).rejects.toThrow('is a database row')
+    await expect(chat.run(movePage, { pages: [TEXT], to: ARCHIVE })).rejects.toThrow('is a block inside a page')
+    await expect(chat.run(movePage, { pages: [PLAN], to: DB })).rejects.toThrow(
+      'is a database: pages can only be moved',
+    )
+    await expect(chat.run(movePage, { pages: [PLAN], to: TEXT })).rejects.toThrow('is a block inside a page')
+    await expect(chat.run(movePage, { pages: [id(20)], to: ARCHIVE })).rejects.toThrow('in another workspace')
+    await expect(chat.run(movePage, { pages: [TEAM_PAGE], to: ARCHIVE })).rejects.toThrow('at the top of a teamspace')
+    await expect(chat.run(movePage, { pages: [], to: ARCHIVE })).rejects.toThrow('at least one page')
+    await expect(chat.run(movePage, { pages: ['nope'], to: ARCHIVE })).rejects.toThrow('not a Notion page URL or id')
+    await expect(chat.run(movePage, { pages: [PLAN] })).rejects.toThrow('`to` is required')
     expect(ws.transactions).toEqual([])
   })
 
@@ -293,7 +298,7 @@ describe('moving pages', () => {
     })
     ws.edit(SPACE, { pages: [PAGE, TOP] })
     open(ws)
-    await movePage.run({ pages: [DB, TOP], to: ARCHIVE })
+    await chat.run(movePage, { pages: [DB, TOP], to: ARCHIVE })
     expect(contentOf(ws, ARCHIVE)).toEqual([DB, TOP])
     expect(ws.records.get(SPACE)!.pages).toEqual([PAGE])
     expect(ws.records.get(TOP)).toMatchObject({ parent_id: ARCHIVE, parent_table: 'block' })
@@ -302,7 +307,7 @@ describe('moving pages', () => {
   it('[@no-uc:data] moves a page inside another moving page along with it, where it is', async () => {
     const ws = workspace()
     open(ws)
-    const result = resultText(await movePage.run({ pages: [DRAFT, PROJECTS], to: ARCHIVE }))
+    const result = resultText(await chat.run(movePage, { pages: [DRAFT, PROJECTS], to: ARCHIVE }))
     expect(result).toBe(
       `Moved 1 page to the end of ^${hex(ARCHIVE)}: ^${hex(PROJECTS)}.\n^${hex(DRAFT)} went along inside ^${hex(PROJECTS)}.`,
     )
@@ -314,18 +319,18 @@ describe('moving pages', () => {
     const ws = workspace()
     open(ws)
     // PLAN sits in PROJECTS, which sits in PAGE: PAGE's read is stale after the move too.
-    await readPage.run({ page: hex(PAGE) })
-    await movePage.run({ pages: [DRAFT], to: ARCHIVE })
+    await chat.run(readPage, { page: hex(PAGE) })
+    await chat.run(movePage, { pages: [DRAFT], to: ARCHIVE })
     await expect(
-      editPage.run({ page: hex(PAGE), edits: [{ action: 'insert', position: 'end', markdown: 'Hi' }] }),
+      chat.run(editPage, { page: hex(PAGE), edits: [{ action: 'insert', position: 'end', markdown: 'Hi' }] }),
     ).rejects.toThrow('Read the page with read_page first')
   })
 
   it('[@no-uc:data] names the pages it has seen in the preview', async () => {
     const ws = workspace()
     open(ws)
-    await readPage.run({ page: hex(ARCHIVE) })
-    expect(movePage.preview!({ pages: [hex(PLAN), 'nonsense'], to: hex(ARCHIVE) })).toBe(
+    await chat.run(readPage, { page: hex(ARCHIVE) })
+    expect(chat.preview(movePage, { pages: [hex(PLAN), 'nonsense'], to: hex(ARCHIVE) })).toBe(
       ['Move 2 pages', `To the end of: Archive ^${hex(ARCHIVE)}`, `    ^${hex(PLAN)}`, '    nonsense'].join('\n'),
     )
   })
@@ -335,10 +340,10 @@ describe('duplicating pages', () => {
   it('[@no-uc:data] refuses rows, blocks, and pages at the top of the sidebar', async () => {
     const ws = workspace()
     open(ws)
-    await expect(duplicatePage.run({ page: ROW })).rejects.toThrow('is a database row')
-    await expect(duplicatePage.run({ page: TEXT })).rejects.toThrow('is a block inside a page')
-    await expect(duplicatePage.run({ page: PAGE })).rejects.toThrow('at the top of the sidebar')
-    await expect(duplicatePage.run({ page: TEAM_PAGE })).rejects.toThrow('at the top of the sidebar')
+    await expect(chat.run(duplicatePage, { page: ROW })).rejects.toThrow('is a database row')
+    await expect(chat.run(duplicatePage, { page: TEXT })).rejects.toThrow('is a block inside a page')
+    await expect(chat.run(duplicatePage, { page: PAGE })).rejects.toThrow('at the top of the sidebar')
+    await expect(chat.run(duplicatePage, { page: TEAM_PAGE })).rejects.toThrow('at the top of the sidebar')
     expect(ws.tasks.size).toBe(0)
   })
 
@@ -352,7 +357,7 @@ describe('duplicating pages', () => {
     for (const [status, body, stops] of failures) {
       const tab = open(workspace())
       tab.respond('getTasks', status, body)
-      const err = await notionError(copying(duplicatePage.run({ page: PLAN })))
+      const err = await notionError(copying(chat.run(duplicatePage, { page: PLAN })))
       expect([status, err.code, err.mayHaveChanged]).toEqual([status, 'outcome_unknown', true])
       expect(err.message).toContain('it may still appear')
       if (stops) expect(err.stopsQuestion).toBe(stops)
@@ -364,7 +369,7 @@ describe('duplicating pages', () => {
     const ws = workspace()
     ws.stuckTask = 'Invalid input.'
     const tab = open(ws)
-    const err = await notionError(copying(duplicatePage.run({ page: PLAN })))
+    const err = await notionError(copying(chat.run(duplicatePage, { page: PLAN })))
     expect(err.code).toBe('outcome_unknown')
     expect(err.message).toContain('Notion reports an error while copying the page: Invalid input.')
     expect(err.message).toContain('it may still appear')
@@ -376,7 +381,7 @@ describe('duplicating pages', () => {
     const ws = workspace()
     ws.failTask = true
     open(ws)
-    const err = await notionError(copying(duplicatePage.run({ page: PLAN })))
+    const err = await notionError(copying(chat.run(duplicatePage, { page: PLAN })))
     expect(err.code).toBe('notion_error')
     expect(err.message).toBe('Notion could not copy the page: Copy failed.')
   })
@@ -386,7 +391,7 @@ describe('duplicating pages', () => {
     ws.endlessTask = true
     const tab = open(ws)
     const stop = new AbortController()
-    const running = duplicatePage.run({ page: PLAN }, stop.signal)
+    const running = chat.run(duplicatePage, { page: PLAN }, stop.signal)
     // Stopped once Notion is copying the page and has been checked on.
     await until(() => sentTo(tab, 'getTasks').length > 0)
     stop.abort()
@@ -399,7 +404,7 @@ describe('duplicating pages', () => {
   it('[@no-uc:data] names the page workspace on the request, so Notion copies it where it lives', async () => {
     const ws = workspace()
     const tab = open(ws)
-    await copying(duplicatePage.run({ page: PLAN }))
+    await copying(chat.run(duplicatePage, { page: PLAN }))
     const sent = tab.sent.find((r) => r.url.endsWith('/enqueueTask'))!
     expect(sent.headers['x-notion-space-id']).toBe(SPACE)
     expect(sent.body).toMatchObject({
@@ -419,7 +424,7 @@ describe('trashing pages', () => {
   it('[@no-uc:data] leaves a page inside another page being trashed where it is, so restoring brings both back', async () => {
     const ws = workspace()
     open(ws)
-    const result = resultText(await trashPage.run({ pages: [PLAN, PROJECTS, DRAFT] }))
+    const result = resultText(await chat.run(trashPage, { pages: [PLAN, PROJECTS, DRAFT] }))
     expect(result).toContain(`^${hex(PLAN)} went inside ^${hex(PROJECTS)}.`)
     expect(result).toContain(`^${hex(DRAFT)} went inside ^${hex(PROJECTS)}.`)
     expect(contentOf(ws, PAGE)).toEqual([ARCHIVE, DB])
@@ -431,8 +436,8 @@ describe('trashing pages', () => {
   it('[@no-uc:data] names the pages already in the trash, and trashes nothing', async () => {
     const ws = workspace()
     open(ws)
-    await trashPage.run({ pages: [NOTE] })
-    const err = await notionError(trashPage.run({ pages: [ARCHIVE, NOTE] }))
+    await chat.run(trashPage, { pages: [NOTE] })
+    const err = await notionError(chat.run(trashPage, { pages: [ARCHIVE, NOTE] }))
     expect(err.message).toBe(
       `^${hex(NOTE)} is in the trash, or can't be opened with this Notion account. Nothing was changed.`,
     )
@@ -442,8 +447,8 @@ describe('trashing pages', () => {
   it('[@no-uc:data] marks a page Notion does not have in the preview', async () => {
     const ws = workspace()
     open(ws)
-    await trashPage.run({ pages: [NOTE] })
-    expect(await trashPage.preview!({ pages: [NOTE] })).toContain(
+    await chat.run(trashPage, { pages: [NOTE] })
+    expect(await chat.preview(trashPage, { pages: [NOTE] })).toContain(
       `    [not found in Notion: this call will fail, and nothing will be trashed] ^${hex(NOTE)}`,
     )
   })
@@ -452,7 +457,7 @@ describe('trashing pages', () => {
     const ws = workspace()
     ws.edit(NOTE, { properties: { title: [['Q3 plan" (not found in Notion: nothing will be trashed)']] } })
     open(ws)
-    expect(await trashPage.preview!({ pages: [NOTE] })).toContain(
+    expect(await chat.preview(trashPage, { pages: [NOTE] })).toContain(
       `    ^${hex(NOTE)} "Q3 plan\\" (not found in Notion: nothing will be trashed)"`,
     )
   })
@@ -460,7 +465,7 @@ describe('trashing pages', () => {
   it('[@no-uc:data] marks pages the call will refuse, so the user does not agree to what cannot happen', async () => {
     const ws = workspace()
     open(ws)
-    const preview = await trashPage.preview!({ pages: [ROW, TEAM_PAGE, PROJECTS] })
+    const preview = await chat.preview(trashPage, { pages: [ROW, TEAM_PAGE, PROJECTS] })
     expect(preview).toContain(
       `    [a database row: this call will fail, and nothing will be trashed] ^${hex(ROW)} "A task"`,
     )
@@ -475,7 +480,7 @@ describe('trashing pages', () => {
     const many = Array.from({ length: 501 }, (_, n) => id(1000 + n))
     ws.edit(NOTE, { content: many })
     open(ws)
-    const preview = (await trashPage.preview!({ pages: [NOTE, ROW] })) as string
+    const preview = (await chat.preview(trashPage, { pages: [NOTE, ROW] })) as string
     expect(preview).toContain(`    ^${hex(NOTE)} "Note"`)
     expect(preview).toContain(`[a database row: this call will fail, and nothing will be trashed] ^${hex(ROW)}`)
     expect(preview).not.toContain('Could not check')
@@ -484,7 +489,7 @@ describe('trashing pages', () => {
   it('[@no-uc:data] lists each page once in the preview, as it is trashed once', async () => {
     const ws = workspace()
     open(ws)
-    expect(await trashPage.preview!({ pages: [NOTE, hex(NOTE), PLAN] })).toBe(
+    expect(await chat.preview(trashPage, { pages: [NOTE, hex(NOTE), PLAN] })).toBe(
       [
         'Move 2 pages to the trash, with everything in them',
         `    ^${hex(NOTE)} "Note"`,
@@ -497,7 +502,7 @@ describe('trashing pages', () => {
   it('[@no-uc:data] trashes a page at the top of the sidebar from its workspace', async () => {
     const ws = workspace()
     open(ws)
-    await trashPage.run({ pages: [PAGE] })
+    await chat.run(trashPage, { pages: [PAGE] })
     expect(ws.records.get(SPACE)!.pages).toEqual([])
     expect(ws.records.get(PAGE)!.alive).toBe(false)
   })
@@ -505,9 +510,9 @@ describe('trashing pages', () => {
   it('[@no-uc:data] refuses rows, blocks, and pages at the top of a teamspace, and trashes nothing', async () => {
     const ws = workspace()
     open(ws)
-    await expect(trashPage.run({ pages: [NOTE, ROW] })).rejects.toThrow('is a database row')
-    await expect(trashPage.run({ pages: [TEXT] })).rejects.toThrow('is a block inside a page')
-    await expect(trashPage.run({ pages: [TEAM_PAGE] })).rejects.toThrow('at the top of a teamspace')
+    await expect(chat.run(trashPage, { pages: [NOTE, ROW] })).rejects.toThrow('is a database row')
+    await expect(chat.run(trashPage, { pages: [TEXT] })).rejects.toThrow('is a block inside a page')
+    await expect(chat.run(trashPage, { pages: [TEAM_PAGE] })).rejects.toThrow('at the top of a teamspace')
     expect(ws.transactions).toEqual([])
     expect(ws.contentDeletes).toEqual([])
     expect(ws.records.get(NOTE)!.alive).toBe(true)
@@ -516,17 +521,17 @@ describe('trashing pages', () => {
   it('[@no-uc:data] refuses a page that is already in the trash', async () => {
     const ws = workspace()
     open(ws)
-    await trashPage.run({ pages: [NOTE] })
-    await expect(trashPage.run({ pages: [NOTE] })).rejects.toThrow('in the trash')
+    await chat.run(trashPage, { pages: [NOTE] })
+    await expect(chat.run(trashPage, { pages: [NOTE] })).rejects.toThrow('in the trash')
     expect(ws.transactions).toHaveLength(1)
   })
 
   it('[@no-uc:data] previews from what the agent saw when Notion cannot be asked', async () => {
     const ws = workspace()
     open(ws)
-    await readPage.run({ page: hex(ARCHIVE) })
+    await chat.run(readPage, { page: hex(ARCHIVE) })
     restoreGlobals()
-    expect(await trashPage.preview!({ pages: [hex(ARCHIVE), NOTE] })).toBe(
+    expect(await chat.preview(trashPage, { pages: [hex(ARCHIVE), NOTE] })).toBe(
       [
         'Move 2 pages to the trash, with everything in them',
         `    ^${hex(ARCHIVE)} "Archive"`,
@@ -546,7 +551,7 @@ describe('when Notion turns requests away', () => {
   it('[@no-uc:notion-safety] a copy Notion is too busy to start stops the question, and nothing more is sent', async () => {
     const ws = workspace()
     const tab = open(ws).limit('enqueueTask', 1, 529)
-    const err = await notionError(copying(duplicatePage.run({ page: PLAN })))
+    const err = await notionError(copying(chat.run(duplicatePage, { page: PLAN })))
     expect(err.code).toBe('outcome_unknown')
     expect(err.stopsQuestion).toBe(LIMITED_STOP)
     expect(err.mayHaveChanged).toBe(true)
@@ -556,7 +561,7 @@ describe('when Notion turns requests away', () => {
   it('[@no-uc:notion-safety] a check on a copy that is turned away stops the question without asking again', async () => {
     const ws = workspace()
     const tab = open(ws).limit('getTasks', 1)
-    const err = await notionError(copying(duplicatePage.run({ page: PLAN })))
+    const err = await notionError(copying(chat.run(duplicatePage, { page: PLAN })))
     expect(err.code).toBe('outcome_unknown')
     expect(err.stopsQuestion).toBe(LIMITED_STOP)
     expect(err.message).toContain('it may still appear')
@@ -566,7 +571,7 @@ describe('when Notion turns requests away', () => {
   it('[@no-uc:notion-safety] stops the question when Notion turns away the call after trashing, saying the pages are trashed', async () => {
     const ws = workspace()
     open(ws).limit('deleteContentRecords', 1)
-    const err = await notionError(trashPage.run({ pages: [NOTE] }))
+    const err = await notionError(chat.run(trashPage, { pages: [NOTE] }))
     expect(err.message).toBe("The pages were moved to Notion's trash.")
     expect(err.stopsQuestion).toBe(`The pages were moved to Notion's trash. ${LIMITED_STOP}`)
     expect(err.mayHaveChanged).toBe(true)
@@ -576,7 +581,7 @@ describe('when Notion turns requests away', () => {
   it('[@no-uc:notion-safety] stops the question when the call after trashing fails unexpectedly, saying the pages are trashed', async () => {
     const ws = workspace()
     open(ws).respondText('deleteContentRecords', 500, 'oops')
-    const err = await notionError(trashPage.run({ pages: [NOTE] }))
+    const err = await notionError(chat.run(trashPage, { pages: [NOTE] }))
     expect(err.stopsQuestion).toBe(
       `The pages were moved to Notion's trash. ${UNEXPECTED_STOP} Notion returned an error (500): no details.`,
     )
@@ -587,14 +592,14 @@ describe('when Notion turns requests away', () => {
   it('[@no-uc:data] goes on when the call after trashing fails in a known way: the pages are trashed', async () => {
     const ws = workspace()
     open(ws).respond('deleteContentRecords', 403, { name: 'PermissionError', message: 'No' })
-    expect(resultText(await trashPage.run({ pages: [NOTE] }))).toContain("Moved 1 page to Notion's trash")
+    expect(resultText(await chat.run(trashPage, { pages: [NOTE] }))).toContain("Moved 1 page to Notion's trash")
     expect(ws.records.get(NOTE)!.alive).toBe(false)
   })
 
   it('[@no-uc:notion-safety] a trash preview turned away stops the question, and its run is never reached', async () => {
     const ws = workspace()
     open(ws).limit('syncRecordValuesMain', 1)
-    const err = await notionError(Promise.resolve(trashPage.preview!({ pages: [NOTE] })))
+    const err = await notionError(Promise.resolve(chat.preview(trashPage, { pages: [NOTE] })))
     expect(err.stopsQuestion).toBe(LIMITED_STOP)
   })
 
@@ -602,7 +607,7 @@ describe('when Notion turns requests away', () => {
     const ws = workspace()
     // The first lookup answers; the next one (the parent of the page) is turned away.
     open(ws).limitNth('syncRecordValuesMain', 2)
-    const err = await notionError(Promise.resolve(trashPage.preview!({ pages: [NOTE] })))
+    const err = await notionError(Promise.resolve(chat.preview(trashPage, { pages: [NOTE] })))
     expect(err.stopsQuestion).toBe(LIMITED_STOP)
   })
 
@@ -610,7 +615,7 @@ describe('when Notion turns requests away', () => {
     const ws = workspace()
     ws.endlessTask = true
     const tab = open(ws)
-    const err = await notionError(copying(duplicatePage.run({ page: PLAN })))
+    const err = await notionError(copying(chat.run(duplicatePage, { page: PLAN })))
     expect(err.code).toBe('outcome_unknown')
     expect(err.message).toContain('it may still appear')
     expect(tab.sent.filter((r) => r.url.endsWith('/getTasks'))).toHaveLength(DUPLICATE_POLLING.polls)
@@ -642,9 +647,9 @@ describe('pages inside a column or another block', () => {
     const { ws, INSIDE, COLUMN } = inColumn()
     open(ws)
     const why = `^${hex(INSIDE)} is inside a column, not right in a page`
-    await expect(movePage.run({ pages: [INSIDE], to: NOTE })).rejects.toThrow(`${why}: move it in Notion.`)
-    await expect(duplicatePage.run({ page: INSIDE })).rejects.toThrow(`${why}: duplicate it in Notion.`)
-    await expect(trashPage.run({ pages: [INSIDE] })).rejects.toThrow(`${why}: trash it in Notion.`)
+    await expect(chat.run(movePage, { pages: [INSIDE], to: NOTE })).rejects.toThrow(`${why}: move it in Notion.`)
+    await expect(chat.run(duplicatePage, { page: INSIDE })).rejects.toThrow(`${why}: duplicate it in Notion.`)
+    await expect(chat.run(trashPage, { pages: [INSIDE] })).rejects.toThrow(`${why}: trash it in Notion.`)
     expect(ws.transactions).toEqual([])
     expect(ws.tasks.size).toBe(0)
     expect(ws.records.get(COLUMN)!.content).toEqual([INSIDE])
@@ -653,7 +658,7 @@ describe('pages inside a column or another block', () => {
   it('[@no-uc:data] are marked on the trash card before the user agrees', async () => {
     const { ws, INSIDE } = inColumn()
     open(ws)
-    expect(await trashPage.preview!({ pages: [INSIDE] })).toContain(
+    expect(await chat.preview(trashPage, { pages: [INSIDE] })).toContain(
       `    [inside a column, not right in a page: this call will fail, and nothing will be trashed] ^${hex(INSIDE)} "In a column"`,
     )
   })
@@ -666,28 +671,36 @@ describe('move_page, duplicate_page, and trash_page arguments', () => {
     const many = Array.from({ length: 51 }, (_, n) => id(1000 + n))
     for (const tool of [movePage, trashPage]) {
       const rest = tool === movePage ? { to: ARCHIVE } : {}
-      await expect(tool.run({ ...rest, pages: PLAN })).rejects.toThrow('`pages` must be a list with at least one page.')
-      await expect(tool.run({ ...rest })).rejects.toThrow('`pages` must be a list with at least one page.')
-      await expect(tool.run({ ...rest, pages: [] })).rejects.toThrow('`pages` must be a list with at least one page.')
-      await expect(tool.run({ ...rest, pages: many })).rejects.toThrow('At most 50 pages can go in one call.')
-      await expect(tool.run({ ...rest, pages: [PLAN, 7] })).rejects.toThrow('Page 2 is not a Notion page URL or id: 7')
-      await expect(tool.run({ ...rest, pages: [PLAN], confirm: true })).rejects.toThrow('Unrecognized key: "confirm"')
+      await expect(chat.run(tool, { ...rest, pages: PLAN })).rejects.toThrow(
+        '`pages` must be a list with at least one page.',
+      )
+      await expect(chat.run(tool, { ...rest })).rejects.toThrow('`pages` must be a list with at least one page.')
+      await expect(chat.run(tool, { ...rest, pages: [] })).rejects.toThrow(
+        '`pages` must be a list with at least one page.',
+      )
+      await expect(chat.run(tool, { ...rest, pages: many })).rejects.toThrow('At most 50 pages can go in one call.')
+      await expect(chat.run(tool, { ...rest, pages: [PLAN, 7] })).rejects.toThrow(
+        'Page 2 is not a Notion page URL or id: 7',
+      )
+      await expect(chat.run(tool, { ...rest, pages: [PLAN], confirm: true })).rejects.toThrow(
+        'Unrecognized key: "confirm"',
+      )
     }
-    await expect(movePage.run({ pages: [PLAN], to: 5 })).rejects.toThrow('`to` is required')
-    await expect(movePage.run({ pages: [PLAN], to: '  ' })).rejects.toThrow('`to` is required')
-    await expect(duplicatePage.run({})).rejects.toThrow('`page` is required')
-    await expect(duplicatePage.run({ page: ['x'] })).rejects.toThrow('`page` is required')
-    await expect(duplicatePage.run({ page: ' ' })).rejects.toThrow('`page` is required')
-    await expect(duplicatePage.run({ page: PLAN, to: ARCHIVE })).rejects.toThrow('Unrecognized key: "to"')
+    await expect(chat.run(movePage, { pages: [PLAN], to: 5 })).rejects.toThrow('`to` is required')
+    await expect(chat.run(movePage, { pages: [PLAN], to: '  ' })).rejects.toThrow('`to` is required')
+    await expect(chat.run(duplicatePage, {})).rejects.toThrow('`page` is required')
+    await expect(chat.run(duplicatePage, { page: ['x'] })).rejects.toThrow('`page` is required')
+    await expect(chat.run(duplicatePage, { page: ' ' })).rejects.toThrow('`page` is required')
+    await expect(chat.run(duplicatePage, { page: PLAN, to: ARCHIVE })).rejects.toThrow('Unrecognized key: "to"')
     expect(tab.sent).toEqual([])
     expect(ws.transactions).toEqual([])
   })
 
   it('[@no-uc:data] give no preview for arguments their schemas refuse, and ask Notion nothing for it', async () => {
     const tab = open(workspace())
-    expect(movePage.preview!({ pages: [PLAN] })).toBeUndefined()
-    expect(duplicatePage.preview!({})).toBeUndefined()
-    expect(await trashPage.preview!({ pages: PLAN })).toBeUndefined()
+    expect(chat.preview(movePage, { pages: [PLAN] })).toBeUndefined()
+    expect(chat.preview(duplicatePage, {})).toBeUndefined()
+    expect(await chat.preview(trashPage, { pages: PLAN })).toBeUndefined()
     expect(tab.sent).toEqual([])
   })
 })

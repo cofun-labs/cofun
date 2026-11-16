@@ -2,15 +2,18 @@
 // extensions/notico/src/tools/database.ts), against a fake Notion workspace that applies transactions the way
 // Notion's web client was seen to make them.
 import { afterEach, describe, expect, it } from 'vitest'
+import { ToolChat } from './tool-chat'
 import { QUERY_LOAD, createDatabase, queryDatabase, updateDatabaseSchema } from '../src/tools/database'
-import { forgetReads } from '../src/tools/memory'
 import { createPage } from '../src/tools/write'
 import { newSchema } from '../src/notion/schema'
 import { FakeNotionTab, FakeWorkspace, PAGE, PAGE_URL, SPACE, USER, restoreGlobals, resultText } from './notion-tab'
 
+/** The chat the tools run in; a new one for each test. */
+let chat = new ToolChat()
+
 afterEach(() => {
   restoreGlobals()
-  forgetReads()
+  chat = new ToolChat()
 })
 
 const hex = (s: string) => s.replace(/-/g, '')
@@ -119,13 +122,13 @@ const named = (schema: Record<string, Def>, name: string) =>
   Object.entries(schema).find(([, d]) => d.name === name) ?? []
 const values = (ws: FakeWorkspace, n: number) => ws.records.get(row(n))!.properties
 const change = async (changes: unknown, database: string | undefined = hex(DB)) =>
-  resultText(await updateDatabaseSchema.run({ ...(database ? { database } : {}), changes }))
+  resultText(await chat.run(updateDatabaseSchema, { ...(database ? { database } : {}), changes }))
 
 describe('UC-NOTICO-NOTION-012 create and change databases', () => {
   it('[UC-NOTICO-NOTION-012-S01] creates a database with its properties and options at the end of the page', async () => {
     const ws = workspace()
     open(ws)
-    const created = await createDatabase.run({
+    const created = await chat.run(createDatabase, {
       parent: PAGE_URL,
       title: 'Content calendar',
       title_property: 'Post',
@@ -170,7 +173,7 @@ describe('UC-NOTICO-NOTION-012 create and change databases', () => {
     expect(created).toMatchObject({ details: { changed: [hex(dbId)] } })
 
     // It is a database the other tools can use: a row goes in with its options.
-    await createPage.run({ parent: hex(dbId), title: 'Launch post', properties: { Stage: 'Draft' } })
+    await chat.run(createPage, { parent: hex(dbId), title: 'Launch post', properties: { Stage: 'Draft' } })
     const added = [...ws.records.values()].find((r) => r.parent_id === db.collection_id)!
     expect(added.properties).toMatchObject({ [named(schema, 'Stage')[0]!]: [['Draft']] })
   })
@@ -180,7 +183,7 @@ describe('UC-NOTICO-NOTION-012 create and change databases', () => {
     open(ws)
     const args = { parent: hex(OTHER), title: 'Reading list', properties: [{ name: 'Done', type: 'checkbox' }] }
     expect(createDatabase.needsConfirmation).toBeUndefined()
-    expect(await createDatabase.preview!(args)).toBe(
+    expect(await chat.preview(createDatabase, args)).toBe(
       [
         'Create a database',
         'Title: Reading list',
@@ -190,7 +193,7 @@ describe('UC-NOTICO-NOTION-012 create and change databases', () => {
         '    Done (checkbox)',
       ].join('\n'),
     )
-    await createDatabase.run(args)
+    await chat.run(createDatabase, args)
     const [dbId] = ws.records.get(OTHER)!.content as string[]
     const collection = ws.records.get(ws.records.get(dbId)!.collection_id as string)!
     expect(Object.values(collection.schema as object).map((d: Def) => d.name)).toEqual(['Name', 'Done'])
@@ -200,7 +203,7 @@ describe('UC-NOTICO-NOTION-012 create and change databases', () => {
   it('[@no-uc:data] names the signed-in user as the creator of a new database, and last editor of a changed one', async () => {
     const ws = workspace()
     open(ws)
-    await createDatabase.run({ parent: PAGE_URL, title: 'Content calendar' })
+    await chat.run(createDatabase, { parent: PAGE_URL, title: 'Content calendar' })
     const db = ws.records.get((ws.records.get(PAGE)!.content as string[]).at(-1)!)!
     expect(db).toMatchObject({
       created_by_id: USER,
@@ -226,7 +229,7 @@ describe('UC-NOTICO-NOTION-012 create and change databases', () => {
     const ws = workspace()
     open(ws)
     const before = [1, 2, 3].map((n) => structuredClone(values(ws, n)))
-    const changed = await updateDatabaseSchema.run({
+    const changed = await chat.run(updateDatabaseSchema, {
       database: hex(DB),
       changes: [
         { action: 'rename_property', property: 'stage', to: 'Phase' },
@@ -299,7 +302,7 @@ describe('UC-NOTICO-NOTION-012 create and change databases', () => {
     expect(result).toContain('Rows renamed with their options: 3.')
 
     // query_database shows the new names.
-    const table = resultText(await queryDatabase.run({ database: hex(DB) }))
+    const table = resultText(await chat.run(queryDatabase, { database: hex(DB) }))
     expect(table).toContain('| Write post | Writing |')
   })
 
@@ -397,7 +400,7 @@ describe('UC-NOTICO-NOTION-012 create and change databases', () => {
       { action: 'remove_property', property: 'Notes' },
       { action: 'remove_option', property: 'Tags', option: 'Bug' },
     ]
-    expect(await updateDatabaseSchema.preview!({ database: hex(DB), changes })).toBe(
+    expect(await chat.preview(updateDatabaseSchema, { database: hex(DB), changes })).toBe(
       [
         `Change the properties of ^${hex(DB)}`,
         '    Remove the property “Notes”: its values in every row are lost',
@@ -438,8 +441,10 @@ describe('create_database and update_database_schema', () => {
   it('[@no-uc:data] refuses a database or a block as the parent, and bad properties, before writing', async () => {
     const ws = workspace()
     open(ws)
-    await expect(createDatabase.run({ parent: hex(DB), title: 'Nested' })).rejects.toThrow('That parent is a database')
-    await expect(createDatabase.run({ parent: hex(TEXT), title: 'X' })).rejects.toThrow('a block inside a page')
+    await expect(chat.run(createDatabase, { parent: hex(DB), title: 'Nested' })).rejects.toThrow(
+      'That parent is a database',
+    )
+    await expect(chat.run(createDatabase, { parent: hex(TEXT), title: 'X' })).rejects.toThrow('a block inside a page')
     const bad: [unknown, string][] = [
       [
         [
@@ -455,7 +460,9 @@ describe('create_database and update_database_schema', () => {
       [[{ name: ' ', type: 'text' }], 'A property name must not be empty.'],
     ]
     for (const [properties, message] of bad)
-      await expect(createDatabase.run({ parent: PAGE_URL, title: 'Tracker', properties })).rejects.toThrow(message)
+      await expect(chat.run(createDatabase, { parent: PAGE_URL, title: 'Tracker', properties })).rejects.toThrow(
+        message,
+      )
     expect(ws.transactions).toHaveLength(0)
   })
 
@@ -463,7 +470,7 @@ describe('create_database and update_database_schema', () => {
     const ws = workspace()
     open(ws)
     ws.failAfterApply = true
-    await expect(createDatabase.run({ parent: PAGE_URL, title: 'Tracker' })).rejects.toMatchObject({
+    await expect(chat.run(createDatabase, { parent: PAGE_URL, title: 'Tracker' })).rejects.toMatchObject({
       code: 'outcome_unknown',
       message: expect.stringContaining(`Read ^${hex(PAGE)} and check for “Tracker” before trying again.`),
     })
@@ -492,7 +499,7 @@ describe('create_database and update_database_schema arguments', () => {
   it('[@no-uc:data] create_database refuses arguments that are not what its schema says, without asking Notion', async () => {
     const tab = open(workspace())
     const create = (args: Record<string, unknown>) =>
-      createDatabase.run({ parent: PAGE_URL, title: 'Tracker', ...args })
+      chat.run(createDatabase, { parent: PAGE_URL, title: 'Tracker', ...args })
     const many = Array.from({ length: 31 }, (_, n) => ({ name: `P${n}`, type: 'text' }))
     const refused: [Record<string, unknown>, string][] = [
       [{ parent: undefined }, '`parent` is required: the URL or id of the page to create it in.'],
@@ -516,7 +523,7 @@ describe('create_database and update_database_schema arguments', () => {
       [{ icon: '📋' }, 'Unrecognized key: "icon"'],
     ]
     for (const [args, message] of refused) await expect(create(args)).rejects.toThrow(message)
-    expect(createDatabase.preview!({ title: 'Tracker' })).toBeUndefined()
+    expect(chat.preview(createDatabase, { title: 'Tracker' })).toBeUndefined()
     expect(tab.sent).toEqual([])
   })
 
@@ -545,7 +552,7 @@ describe('create_database and update_database_schema arguments', () => {
       [[{ action: 'remove_property', property: 'Notes', force: true }], '`changes[0]`: Unrecognized key: "force"'],
     ]
     for (const [changes, message] of refused) await expect(change(changes)).rejects.toThrow(message)
-    expect(updateDatabaseSchema.preview!({ changes: [{ action: 'drop', property: 'Notes' }] })).toBeUndefined()
+    expect(chat.preview(updateDatabaseSchema, { changes: [{ action: 'drop', property: 'Notes' }] })).toBeUndefined()
     expect(tab.sent).toEqual([])
   })
 })

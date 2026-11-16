@@ -1,6 +1,7 @@
 // The read_comments and add_comment tools (extensions/notico/src/tools/comments.ts) against a fake Notion workspace
 // that holds discussions and comments the way Notion does.
 import { afterEach, describe, expect, it } from 'vitest'
+import { ToolChat } from './tool-chat'
 import { NotionError } from '../src/notion/api'
 import { EditError } from '../src/notion/edit'
 import { COMMENT_CHARS } from '../src/notion/comments'
@@ -18,6 +19,9 @@ import {
   restoreGlobals,
   resultText,
 } from './notion-tab'
+
+/** The chat the tools run in. */
+const chat = new ToolChat()
 
 afterEach(restoreGlobals)
 
@@ -86,8 +90,8 @@ function open(ws: FakeWorkspace, url = PAGE_URL): FakeNotionTab {
   return tab.install()
 }
 
-const read = async (args: Rec = {}) => resultText(await readComments.run(args))
-const add = async (args: Rec) => resultText(await addComment.run({ page: hex(PAGE), ...args }))
+const read = async (args: Rec = {}) => resultText(await chat.run(readComments, args))
+const add = async (args: Rec) => resultText(await chat.run(addComment, { page: hex(PAGE), ...args }))
 
 async function failure(promise: Promise<unknown>): Promise<Error> {
   const err = await promise.then(
@@ -192,7 +196,7 @@ describe('UC-NOTICO-NOTION-009 read and add comments', () => {
   it('[UC-NOTICO-NOTION-009-S04] adds a comment on the page itself, without reading it first', async () => {
     const ws = workspace()
     open(ws)
-    const added = await addComment.run({ page: hex(PAGE), text: 'Nice page' })
+    const added = await chat.run(addComment, { page: hex(PAGE), text: 'Nice page' })
     expect(resultText(added)).toBe(`Added a comment on the page of "Fixture page" ^${hex(PAGE)}.`)
     // The side panel names the page and counts it as changed.
     expect(added).toMatchObject({ details: { name: 'Fixture page', changed: [hex(PAGE)] } })
@@ -257,7 +261,7 @@ describe('read_comments', () => {
     const ws = workspace([{ on: id(3), n: 100 }])
     comment(ws, 100, 200, [['On the child']])
     open(ws)
-    const read = await readComments.run({})
+    const read = await chat.run(readComments, {})
     expect(resultText(read)).toBe(`${DATA_LINE}\nComments on the page "Fixture page" ^${hex(PAGE)}: none.`)
     // The side panel counts the page as read.
     expect(read).toMatchObject({ details: { read: [hex(PAGE)] } })
@@ -317,7 +321,7 @@ describe('read_page and comments', () => {
     comment(ws, 100, 200, [['One']])
     comment(ws, 101, 201, [['Two']])
     open(ws)
-    expect(resultText(await readPage.run({}))).toContain(
+    expect(resultText(await chat.run(readPage, {}))).toContain(
       'This page has 2 comment threads: read them with read_comments.',
     )
   })
@@ -330,14 +334,16 @@ describe('read_page and comments', () => {
     comment(ws, 100, 200, [['Gone']], { alive: false })
     comment(ws, 101, 201, [['Kept']])
     open(ws)
-    expect(resultText(await readPage.run({}))).toContain('This page has 1 comment thread: read it with read_comments.')
+    expect(resultText(await chat.run(readPage, {}))).toContain(
+      'This page has 1 comment thread: read it with read_comments.',
+    )
   })
 })
 
 describe('add_comment', () => {
   it('[@no-uc:data] refuses arguments that are not what its schema says, without asking Notion', async () => {
     const tab = open(workspace())
-    const run = (args: Rec) => addComment.run(args)
+    const run = (args: Rec) => chat.run(addComment, args)
     await expect(run({ text: 'Hi' })).rejects.toThrow('Give `page`: the id read_page shows after "Page:".')
     await expect(run({ page: ' ', text: 'Hi' })).rejects.toThrow('Give `page`')
     await expect(run({ page: hex(PAGE) })).rejects.toThrow('`text` must not be empty.')
@@ -346,7 +352,7 @@ describe('add_comment', () => {
       '`block`: Invalid input: expected string, received number',
     )
     await expect(run({ page: hex(PAGE), text: 'Hi', resolve: true })).rejects.toThrow('Unrecognized key: "resolve"')
-    expect(addComment.preview!({ page: hex(PAGE) })).toBeUndefined()
+    expect(chat.preview(addComment, { page: hex(PAGE) })).toBeUndefined()
     expect(tab.sent).toEqual([])
   })
 
@@ -419,9 +425,9 @@ describe('add_comment', () => {
   it('[@no-uc:data] runs without asking, and its preview names where the comment goes', async () => {
     const ws = workspace()
     open(ws)
-    await readPage.run({})
+    await chat.run(readPage, {})
     expect(addComment.needsConfirmation).toBeUndefined()
-    expect(addComment.preview!({ page: hex(PAGE), block: '^00000002', text: 'Line one\nLine two' })).toBe(
+    expect(chat.preview(addComment, { page: hex(PAGE), block: '^00000002', text: 'Line one\nLine two' })).toBe(
       [
         'Add a comment',
         'On the block: ^00000002 The plan',

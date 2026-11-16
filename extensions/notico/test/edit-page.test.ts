@@ -3,10 +3,10 @@
 // rule: edits only change what the AI read as it still is, never remove or rewrite what they can't
 // write back, and write back what read_page shows as it was stored.
 import { afterEach, describe, expect, it } from 'vitest'
+import { ToolChat } from './tool-chat'
 import { inline, parseMarkdown } from '../src/notion/blocks'
 import { mergeReads, type PageRead } from '../src/notion/edit'
 import { splitSections } from '../src/notion/markdown'
-import { forgetReads } from '../src/tools/memory'
 import { readPage } from '../src/tools/read'
 import { editPage } from '../src/tools/write'
 import { LIMITED_STOP, UNEXPECTED_STOP } from '../src/notion/api'
@@ -21,6 +21,9 @@ import {
   restoreGlobals,
   resultText,
 } from './notion-tab'
+
+/** The chat the tools run in; a new one for each test. */
+let chat = new ToolChat()
 
 afterEach(restoreGlobals)
 
@@ -59,8 +62,9 @@ function open(ws: FakeWorkspace, url = PAGE_URL): FakeNotionTab {
   return tab.install()
 }
 
-const read = async (args: Rec = {}) => resultText(await readPage.run(args))
-const edit = async (edits: Rec[], args: Rec = {}) => resultText(await editPage.run({ page: hex(PAGE), edits, ...args }))
+const read = async (args: Rec = {}) => resultText(await chat.run(readPage, args))
+const edit = async (edits: Rec[], args: Rec = {}) =>
+  resultText(await chat.run(editPage, { page: hex(PAGE), edits, ...args }))
 const body = (result: string) => result.slice(result.indexOf('\n\n') + 2)
 const withoutRefs = (text: string) => text.replace(/ \^[0-9a-f]{8,32}$/gm, '')
 
@@ -371,7 +375,7 @@ describe('edits only change the page as the AI read it, and as it still is', () 
     const ws = workspace([1], [block(1, 'text', 'Intro')])
     open(ws)
     await read()
-    forgetReads()
+    chat = new ToolChat()
     await expect(edit([{ action: 'delete', block: '^00000001' }])).rejects.toThrow('Read the page with read_page first')
   })
 
@@ -379,7 +383,7 @@ describe('edits only change the page as the AI read it, and as it still is', () 
     const ws = workspace([1], [block(1, 'text', 'Intro')])
     open(ws)
     const reading = read()
-    forgetReads()
+    chat = new ToolChat()
     await reading
     await expect(edit([{ action: 'delete', block: '^00000001' }])).rejects.toThrow('Read the page with read_page first')
   })
@@ -455,7 +459,11 @@ describe('edits only change the page as the AI read it, and as it still is', () 
     const stop = new AbortController()
     stop.abort()
     await expect(
-      editPage.run({ page: hex(PAGE), edits: [{ action: 'insert', position: 'end', markdown: 'x' }] }, stop.signal),
+      chat.run(
+        editPage,
+        { page: hex(PAGE), edits: [{ action: 'insert', position: 'end', markdown: 'x' }] },
+        stop.signal,
+      ),
     ).rejects.toThrow()
     expect(ws.transactions).toEqual([])
   })
@@ -508,7 +516,7 @@ describe('what edit_page refuses to remove or rewrite', () => {
     )
     open(ws)
     await read()
-    expect(editPage.preview!({ page: hex(PAGE), edits: [{ action: 'delete', block: '^00000001' }] })).toContain(
+    expect(chat.preview(editPage, { page: hex(PAGE), edits: [{ action: 'delete', block: '^00000001' }] })).toContain(
       'Delete ^00000001 “▸ T” and the 2 blocks nested under it',
     )
     for (const inside of [
@@ -921,7 +929,7 @@ describe('round trips of what read_page shows', () => {
     open(ws)
     const shown = body(await read())
     expect(
-      editPage.preview!({
+      chat.preview(editPage, {
         page: hex(PAGE),
         edits: [
           { action: 'delete', block: '^00000001' },
@@ -1197,7 +1205,10 @@ describe('warnings about what read_page doesn’t show exactly', () => {
     open(ws)
     await read()
     expect(
-      editPage.preview!({ page: hex(PAGE), edits: [{ action: 'replace', block: '^00000001', markdown: 'Ask them' }] }),
+      chat.preview(editPage, {
+        page: hex(PAGE),
+        edits: [{ action: 'replace', block: '^00000001', markdown: 'Ask them' }],
+      }),
     ).toContain("If its text changes, what read_page didn't show exactly, such as comments on it, is lost.")
   })
 
@@ -1209,7 +1220,7 @@ describe('warnings about what read_page doesn’t show exactly', () => {
     const shown = body(await read())
     expect(shown).toBe('@2026-11-12 10:00 meeting ^00000001')
     const edits = [{ action: 'replace', block: '^00000001', markdown: '@2026-11-12 10:00 call' }]
-    expect(editPage.preview!({ page: hex(PAGE), edits })).toContain("what read_page didn't show exactly")
+    expect(chat.preview(editPage, { page: hex(PAGE), edits })).toContain("what read_page didn't show exactly")
     expect(await edit(edits)).toContain("In its old text, what read_page didn't show exactly")
   })
 })
@@ -1480,7 +1491,7 @@ describe('tables written by edit_page', () => {
     open(ws)
     await read()
     expect(
-      editPage.preview!({ page: hex(PAGE), edits: [{ action: 'replace', block: '^00000001', markdown: '- x' }] }),
+      chat.preview(editPage, { page: hex(PAGE), edits: [{ action: 'replace', block: '^00000001', markdown: '- x' }] }),
     ).toContain("what read_page didn't show exactly")
   })
 })
@@ -1492,7 +1503,7 @@ describe('edit_page details', () => {
     open(ws)
     await read()
     expect(
-      editPage.preview!({
+      chat.preview(editPage, {
         page: hex(PAGE),
         edits: [
           { action: 'insert', block: '^00000001', markdown: '- New item' },
@@ -1611,7 +1622,7 @@ describe('edit_page details', () => {
       [[{ action: 'insert', markdown: '```\nunclosed' }], 'A code block is missing its closing fence.'],
     ] as const
     for (const [edits, message] of refused) {
-      await expect(editPage.run({ page: hex(PAGE), edits: edits as unknown as Rec[] })).rejects.toThrow(message)
+      await expect(chat.run(editPage, { page: hex(PAGE), edits: edits as unknown as Rec[] })).rejects.toThrow(message)
     }
     // Only the read went to Notion.
     expect(tab.sent).toHaveLength(sent)
@@ -1691,7 +1702,7 @@ describe('edit_page details', () => {
 
   it('[@no-uc:data] refuses arguments that are not what its schema says, before the page is read or Notion asked', async () => {
     const tab = open(workspace([1], [block(1, 'text', 'A')]))
-    const run = (args: Rec) => editPage.run(args)
+    const run = (args: Rec) => chat.run(editPage, args)
     const insert = { action: 'insert', markdown: 'x' }
     const refused: [Rec, string][] = [
       [{ edits: [insert] }, 'Give `page`: the id read_page shows after "Page:".'],
@@ -1722,7 +1733,7 @@ describe('edit_page details', () => {
       [{ page: hex(PAGE), edits: ['delete ^1'] }, '`edits[0]`: Invalid input: expected object, received string'],
     ]
     for (const [args, message] of refused) await expect(run(args)).rejects.toThrow(message)
-    expect(editPage.preview!({ page: hex(PAGE), edits: [{ action: 'move' }] })).toBeUndefined()
+    expect(chat.preview(editPage, { page: hex(PAGE), edits: [{ action: 'move' }] })).toBeUndefined()
     expect(tab.sent).toEqual([])
   })
 
@@ -1730,7 +1741,7 @@ describe('edit_page details', () => {
     const ws = workspace([1], [block(1, 'text', 'Intro')])
     open(ws)
     const shown = body(await read())
-    const unchanged = await editPage.run({
+    const unchanged = await chat.run(editPage, {
       page: hex(PAGE),
       edits: [{ action: 'replace', block: '^00000001', markdown: shown }],
     })
@@ -1741,7 +1752,7 @@ describe('edit_page details', () => {
     // The side panel counts no page as changed for it.
     expect(unchanged).toHaveProperty('details', { name: 'Fixture page' })
     // Still as read, so it can be edited right away.
-    const edited = await editPage.run({
+    const edited = await chat.run(editPage, {
       page: hex(PAGE),
       edits: [{ action: 'replace', block: '^00000001', markdown: 'Intro, edited' }],
     })
