@@ -1,8 +1,6 @@
 import { useEffect, useId, useRef } from 'react'
+import type { SaveState } from './chat-session'
 import { Icon } from './icons'
-
-/** How saving a reply or a chat to Notion is going: running, or done with a link to the page. */
-export type SaveState = { status: 'saving' } | { status: 'saved'; url: string }
 
 /**
  * The icon that saves a reply or the chat to Notion, with a tooltip saying what it does; once the

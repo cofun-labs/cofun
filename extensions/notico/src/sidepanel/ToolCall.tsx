@@ -1,28 +1,9 @@
 import { memo, useState } from 'react'
-import type { ToolDetails, ToolStatus } from '../agent'
 import type { Action } from '../tool'
 import { describeCall } from '../tools'
 import { allowSite } from '../web/tab'
+import type { ShownTool } from './chat-session'
 import { Icon, type IconName } from './icons'
-
-/** A tool call as the panel shows it. */
-export interface ShownTool {
-  id: string
-  name: string
-  args: unknown
-  /** `confirm`: waiting for the user to allow or deny it. */
-  status: 'running' | 'confirm' | ToolStatus
-  /** What the model got back, or the error. Empty while running. */
-  result: string
-  /** What the tool said about the call for the panel, once it ended (see ToolDetails). */
-  details?: ToolDetails
-  /** What the call changes, in words, as the tool saw things before it ran. */
-  preview?: string
-  /** Set while `confirm` when the call is already running and asks this instead of whether to run. */
-  question?: string
-  /** With `question`: the origin the call asks to read, which the user's yes allows (see CardQuestion). */
-  access?: string
-}
 
 const MARK: Record<ShownTool['status'], IconName> = {
   running: 'dots',
