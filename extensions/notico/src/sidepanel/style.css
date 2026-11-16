@@ -898,7 +898,7 @@ a.icon-button {
 /* Composer */
 
 #composer {
-  /* The model menu opens from the box, so it can use the box's width at the narrowest panel. */
+  /* The page picker opens from the box, as wide as it. */
   position: relative;
   display: flex;
   flex-direction: column;
@@ -1050,11 +1050,15 @@ a.icon-button {
   height: 13px;
 }
 
-/* The "+" menu opens upward from the box, flush with its left edge. */
+/* The "+" menu opens just above its button, flush with the button's left edge. */
+.add-menu {
+  position: relative;
+}
+
 .add-popover {
   position: absolute;
   bottom: calc(100% + 6px);
-  left: -1px;
+  left: 0;
   z-index: 2;
   min-width: 180px;
   display: flex;
@@ -2239,6 +2243,7 @@ button.secondary:focus-visible,
    name is cut, and the chip gives way to tools on the toolbar's left before the send button does. */
 
 .model-menu {
+  position: relative;
   flex: 0 1 auto;
   min-width: 0;
   max-width: 150px;
@@ -2256,12 +2261,6 @@ button.secondary:focus-visible,
   white-space: nowrap;
 }
 
-.model-button .icon {
-  flex: none;
-  width: 10px;
-  height: 10px;
-}
-
 .model-button:hover,
 .model-button[aria-expanded='true'] {
   background: var(--tint);
@@ -2270,12 +2269,15 @@ button.secondary:focus-visible,
 
 .model-popover {
   position: absolute;
-  /* Opens upward from the box, flush with its right edge, and never wider than the box. */
+  /* Opens just above the model button, flush with its right edge, and grows to the left. It stays
+     inside the panel: the button's right edge is 57px from the panel's (the box's 12px margin, 1px
+     border, and 8px padding, the 32px send button, and the toolbar's 4px gap), and the box's left
+     edge is 13px from the panel's. */
   bottom: calc(100% + 6px);
-  right: -1px;
+  right: 0;
   z-index: 2;
   width: 260px;
-  max-width: calc(100% + 2px);
+  max-width: calc(100vw - 70px);
   display: flex;
   flex-direction: column;
   padding: 5px;
@@ -2342,9 +2344,4 @@ button.secondary:focus-visible,
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
-}
-
-/* Up while closed, toward where the menu opens; down while it is open. */
-.model-button[aria-expanded='true'] .icon {
-  transform: rotate(180deg);
 }
