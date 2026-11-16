@@ -142,6 +142,12 @@ const Charged = z.object({ cost: z.object({ micro_credits: z.number().int().nonn
 /** What the user is told when the worker's limit on pages read stops a question. */
 const TOO_MANY_PAGES = 'Notico read too many web pages in a minute. Wait a minute, then ask again.'
 
+/**
+ * What the user is told when a 429 without a code of the worker's turns a read or a search away:
+ * one sent before the worker (by Cloudflare, say), for coming too often.
+ */
+const TURNED_AWAY = "Notico's service turned away its requests for coming too often. Wait a minute, then ask again."
+
 /** What the model is told when the worker could not be reached, or its answer could not be read. */
 const UNREACHABLE = "Notico's service could not be reached"
 const UNREADABLE = "Notico's service gave an answer Notico could not read"
@@ -177,6 +183,7 @@ function refusalOf(res: Response, body: unknown): { code: string; message: strin
  */
 function stopsReading(code: string, message: string): string | undefined {
   if (code === 'rate_limited') return TOO_MANY_PAGES
+  if (code === 'http_429') return TURNED_AWAY
   // The worker's own words: they say when the next free credits arrive.
   if (code === 'out_of_credits') return message
   if (code === 'site_busy')
@@ -239,6 +246,7 @@ const WebSearch = z.object({ results: z.array(WebSearchResult) })
 function stopsSearching(code: string, message: string): string | undefined {
   if (code === 'rate_limited')
     return 'Notico searched the web too many times in a minute. Wait a minute, then ask again.'
+  if (code === 'http_429') return TURNED_AWAY
   // The worker's own words: they say when the next free credits arrive.
   if (code === 'out_of_credits') return message
   // The provider is busy, or the account's credits for it ran out: another search would be turned away too.

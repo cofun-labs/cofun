@@ -172,10 +172,15 @@ describe('reading a web page the user gives', () => {
   it.each([
     ['the worker turns reads away for coming too often', /Notico read too many web pages in a minute/],
     ['the site turns requests away for coming too often', /turned away Notico's requests for coming too often/],
+    ['a 429 without a code turns reads away', /^Notico's service turned away its requests for coming too often\./],
   ])('[UC-NOTICO-PANEL-003-S06] the question stops when %s, and nothing more is sent', async (what, told) => {
     const { browser, user } = await open()
     if (what.startsWith('the worker turns')) browser.env.WEB_LIMIT = { limit: async () => ({ success: false }) }
-    else browser.web.serve(ARTICLE, { status: 429 })
+    else if (what.startsWith('a 429')) {
+      const worker = browser.worker
+      browser.worker = async (request) =>
+        /\/v1\/web\//.test(request.url) ? new Response('Too Many Requests', { status: 429 }) : worker(request)
+    } else browser.web.serve(ARTICLE, { status: 429 })
     browser.ai.script.push(readCall(ARTICLE), readCall(ARTICLE), { reply: 'Never sent.' })
 
     await ask(user, `Read ${ARTICLE}`)

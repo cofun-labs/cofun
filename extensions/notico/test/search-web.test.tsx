@@ -122,9 +122,14 @@ describe('searching the web', () => {
     ['the worker turns searches away for coming too often', /Notico searched the web too many times in a minute/],
     ['the provider is busy', /^Notico could not search the web: the search provider is busy\.$/],
     ['web search is not available', /^Notico could not search the web: web search is not available right now\.$/],
+    ['a 429 without a code turns searches away', /^Notico's service turned away its requests for coming too often\./],
   ])('[UC-NOTICO-PANEL-004-S03] the question stops when %s, and nothing more is searched', async (what, told) => {
     const { browser, user } = await open()
-    if (what.includes('too often')) browser.env.SEARCH_LIMIT = { limit: async () => ({ success: false }) }
+    if (what.startsWith('a 429')) {
+      const worker = browser.worker
+      browser.worker = async (request) =>
+        request.url.endsWith('/v1/web/search') ? new Response('Too Many Requests', { status: 429 }) : worker(request)
+    } else if (what.includes('too often')) browser.env.SEARCH_LIMIT = { limit: async () => ({ success: false }) }
     else if (what.includes('busy'))
       browser.ai.searchReply = () => Response.json({ ok: false, error: { code: 'rate_limited' } }, { status: 429 })
     else
