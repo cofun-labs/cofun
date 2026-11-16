@@ -120,26 +120,16 @@ describe('searching the web', () => {
 
   it.each([
     ['the worker turns searches away for coming too often', /Notico searched the web too many times in a minute/],
-    ['the search fails', /^Notico could not search the web: web search is not available right now\.$/],
-    ['the request to the worker fails', /^Notico could not search the web: the search failed, or its answer/],
-    [
-      'the worker answers what the panel cannot read',
-      /^Notico could not search the web: the search failed, or its answer/,
-    ],
+    ['the provider is busy', /^Notico could not search the web: the search provider is busy\.$/],
+    ['web search is not available', /^Notico could not search the web: web search is not available right now\.$/],
   ])('[UC-NOTICO-PANEL-004-S03] the question stops when %s, and nothing more is searched', async (what, told) => {
     const { browser, user } = await open()
     if (what.includes('too often')) browser.env.SEARCH_LIMIT = { limit: async () => ({ success: false }) }
-    else if (what.includes('search fails'))
+    else if (what.includes('busy'))
+      browser.ai.searchReply = () => Response.json({ ok: false, error: { code: 'rate_limited' } }, { status: 429 })
+    else
       browser.ai.searchReply = () =>
         Response.json({ ok: false, error: { code: 'web_search_payment_required' } }, { status: 402 })
-    else {
-      const worker = browser.worker
-      browser.worker = async (request) => {
-        if (!request.url.endsWith('/v1/web/search')) return worker(request)
-        if (what.includes('fails')) throw new TypeError('Failed to fetch')
-        return Response.json({ items: [] })
-      }
-    }
     browser.ai.script.push(searchCall(QUERY), searchCall(QUERY), { reply: 'Never sent.' })
 
     await ask(user, 'Where does oolong tea come from?')
@@ -149,4 +139,39 @@ describe('searching the web', () => {
     // The second search the model asked for is never sent.
     expect(browser.sentToWorker.filter((r) => r.split('\n')[0].endsWith('/v1/web/search'))).toHaveLength(1)
   })
+
+  const COST = " It may have cost the user credits: don't search for the same query again in this question."
+  it.each([
+    ['the search fails', 'Could not search the web: the search failed.'],
+    [
+      'the provider answers what the worker cannot read',
+      `Could not search the web: the search gave an answer the worker does not understand.${COST}`,
+    ],
+    ['the request to the worker fails', `Could not search the web: Notico's service could not be reached.${COST}`],
+    [
+      'the worker answers what the panel cannot read',
+      `Could not search the web: Notico's service gave an answer Notico could not read.${COST}`,
+    ],
+  ])(
+    '[UC-NOTICO-PANEL-004-S07] the model is told the search failed when %s, and the question goes on',
+    async (what, told) => {
+      const { browser, user } = await open()
+      if (what === 'the search fails') browser.ai.searchReply = () => Response.json({ ok: false }, { status: 500 })
+      else if (what.startsWith('the provider')) browser.ai.searchReply = () => Response.json({ items: 'none' })
+      else {
+        const worker = browser.worker
+        browser.worker = async (request) => {
+          if (!request.url.endsWith('/v1/web/search')) return worker(request)
+          if (what.includes('fails')) throw new TypeError('Failed to fetch')
+          return Response.json({ items: [] })
+        }
+      }
+      browser.ai.script.push(searchCall(QUERY), { reply: 'Answered without the search.' })
+
+      await ask(user, 'Where does oolong tea come from?')
+
+      expect(await screen.findByText('Answered without the search.')).toBeVisible()
+      expect(toolResults(browser)).toEqual([told])
+    },
+  )
 })

@@ -60,8 +60,17 @@ function refusal(err: WebError, render: boolean): string {
     case 'unsupported_type':
       return `Notico reads only web pages and plain text, and ${err.message}.`
     default:
-      return `Could not read the page: ${err.message}.`
+      // A reason the extension doesn't know, or a worker it could not reach or read: the page was not read.
+      return `Could not ${render ? 'render' : 'read'} the page: ${err.message}.`
   }
+}
+
+/**
+ * What the model is told when the worker could not read a page or search: the reason, and, when it
+ * may have cost the user credits, not to `repeat` the call (CLAUDE.md, "Calling outside services").
+ */
+function failed(reason: string, err: WebError, repeat: string): string {
+  return err.charged ? `${reason} It may have cost the user credits: don't ${repeat} again in this question.` : reason
 }
 
 /** Reads the page for a tool: checks the address, the question's limit, and turns what was read into the result. */
@@ -79,8 +88,9 @@ async function readPageAt(
   try {
     page = await context.readWeb(url.href, PAGE_CHARS, render, signal)
   } catch (err) {
-    // The worker's limit stops the question: thrown as it is, with what the user is told.
-    if (err instanceof WebError && !err.stopsQuestion) throw new Error(refusal(err, render), { cause: err })
+    // A request turned away stops the question: thrown as it is, with what the user is told.
+    if (err instanceof WebError && !err.stopsQuestion)
+      throw new Error(failed(refusal(err, render), err, 'render this page'), { cause: err })
     throw err
   }
   const host = new URL(page.url).host
@@ -160,7 +170,17 @@ export const searchWeb = defineTool({
         `Not searched: \`query\` is ${asked.length} characters long; at most ${QUERY_CHARS} are searched.`,
       )
     if (!context) throw new Error('Could not search the web: there is no worker to search with.')
-    const results = await context.searchWeb(asked, SEARCH_RESULTS, signal)
+    let results
+    try {
+      results = await context.searchWeb(asked, SEARCH_RESULTS, signal)
+    } catch (err) {
+      // A search turned away stops the question: thrown as it is, with what the user is told.
+      if (err instanceof WebError && !err.stopsQuestion)
+        throw new Error(failed(`Could not search the web: ${err.message}.`, err, 'search for the same query'), {
+          cause: err,
+        })
+      throw err
+    }
     const lines = [
       // As JSON, so the query, titles, and URLs stay inside their quotes and on their line.
       `Web search for ${JSON.stringify(clip(asked, QUERY_CHARS))}: ${results.length ? count(results.length, 'result') : 'no results'}.`,

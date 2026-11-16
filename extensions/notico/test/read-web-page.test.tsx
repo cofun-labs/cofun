@@ -172,14 +172,11 @@ describe('reading a web page the user gives', () => {
   it.each([
     ['the worker turns reads away for coming too often', /Notico read too many web pages in a minute/],
     ['the site turns requests away for coming too often', /turned away Notico's requests for coming too often/],
-    ['the worker answers with a reason the extension does not know', /^Notico could not read a web page: /],
   ])('[UC-NOTICO-PANEL-003-S06] the question stops when %s, and nothing more is sent', async (what, told) => {
     const { browser, user } = await open()
     if (what.startsWith('the worker turns')) browser.env.WEB_LIMIT = { limit: async () => ({ success: false }) }
-    else if (what.startsWith('the site')) browser.web.serve(ARTICLE, { status: 429 })
-    else browser.env.BROWSER = undefined
-    const call = what.includes('does not know') ? renderCall : readCall
-    browser.ai.script.push(call(ARTICLE), call(ARTICLE), { reply: 'Never sent.' })
+    else browser.web.serve(ARTICLE, { status: 429 })
+    browser.ai.script.push(readCall(ARTICLE), readCall(ARTICLE), { reply: 'Never sent.' })
 
     await ask(user, `Read ${ARTICLE}`)
 
@@ -187,4 +184,44 @@ describe('reading a web page the user gives', () => {
     expect(screen.queryByText('Never sent.')).toBeNull()
     expect(worked(browser)).toEqual([ARTICLE])
   })
+
+  const COST = " It may have cost the user credits: don't render this page again in this question."
+  it.each([
+    [
+      'the worker refuses a render for a reason the extension does not know',
+      renderCall,
+      'Could not render the page: rendering pages is not set up.',
+    ],
+    ['the request to the worker fails', readCall, "Could not read the page: Notico's service could not be reached."],
+    [
+      'the request to render fails',
+      renderCall,
+      `Could not render the page: Notico's service could not be reached.${COST}`,
+    ],
+    [
+      'the worker answers a render with what the panel cannot read',
+      renderCall,
+      `Could not render the page: Notico's service gave an answer Notico could not read.${COST}`,
+    ],
+  ])(
+    '[UC-NOTICO-PANEL-003-S11] the model is told the page was not read when %s, and the question goes on',
+    async (what, call, told) => {
+      const { browser, user } = await open()
+      if (what.includes('does not know')) browser.env.BROWSER = undefined
+      else {
+        const worker = browser.worker
+        browser.worker = async (request) => {
+          if (!/\/v1\/web\//.test(request.url)) return worker(request)
+          if (what.includes('fails')) throw new TypeError('Failed to fetch')
+          return Response.json({ markdown: '# Tea' })
+        }
+      }
+      browser.ai.script.push(call(ARTICLE), { reply: 'Answered without the page.' })
+
+      await ask(user, `Read ${ARTICLE}`)
+
+      expect(await screen.findByText('Answered without the page.')).toBeVisible()
+      expect(toolResults(browser)).toEqual([told])
+    },
+  )
 })

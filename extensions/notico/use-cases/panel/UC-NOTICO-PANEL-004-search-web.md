@@ -4,7 +4,7 @@
 
 A user asks something that needs current information or sources beyond their Notion and the pages they gave ("what changed in the latest release of X?", "find articles about Y"), and the AI searches the web. The service makes the search (UC-COFUN-WEB-002), and the AI gets each result's address, title, and a description of its page; it can read a result's page in full by its address (UC-NOTICO-PANEL-003). The AI chooses what to search for, and the tool's card shows the query. A reply that uses search results names the URL of each result it uses. This works whichever model answers: the search is made by the service either way. Each search costs credits (a search that fails too, when the service charged it), and what the searches for a question cost is part of what its reply cost, whichever model answers. A user with no credits left can't search: the question stops, and they are told when free credits arrive and that they can buy some.
 
-When the service turns searches away for coming too often, or a search fails, the question stops and the user is told why.
+When the service or the search provider turns searches away for coming too often, or web search is not available, the question stops and the user is told why. A search that fails otherwise (the service can't be reached, or the search or its answer fails) gives the AI the error and the question goes on: it answers without the results, and is told not to search for the same again for the question when the search may have cost credits.
 
 Key constraint:
 
@@ -20,7 +20,8 @@ Key constraint:
 | UC-NOTICO-PANEL-004-S02 | P1 | ✅ | Given results of a search; when the AI reads a result's page by its address; then it gets the page's text. |
 | UC-NOTICO-PANEL-004-S05 | P1 | ✅ | Given a question for which the AI searches the web, one search finding nothing; when the reply ends; then what it cost includes what each search cost. |
 | UC-NOTICO-PANEL-004-S06 | P0 | ✅ | Given a user whose credits run out as the AI asks for a search; when it searches; then nothing is searched, the question stops, and the user is told they have no credits, when free ones arrive, and can buy some. |
-| UC-NOTICO-PANEL-004-S03 | P1 | ✅ | Given the service turning searches away for coming too often, or a search that fails; when the AI searches; then the question stops, the user is told why, and nothing more is searched for it. |
+| UC-NOTICO-PANEL-004-S03 | P1 | ✅ | Given the service or the provider turning searches away for coming too often, or web search not available; when the AI searches; then the question stops, the user is told why, and nothing more is searched for it. |
+| UC-NOTICO-PANEL-004-S07 | P1 | ✅ | Given a search that fails, or a service that can't be reached or answers what the extension can't read; when the AI searches; then it is told the search failed, and, when it may have cost credits, not to search for the same again; and the question goes on. |
 
 ### ai-e2e
 
