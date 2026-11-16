@@ -2,6 +2,11 @@
 // use the tools for other sites' tabs, web pages, long results, and selected text. A product's prompt
 // (Product.prompt) puts them where they belong among its own parts. Each ends with a space, so parts
 // join into one text. Promise only what the tools can do.
+//
+// Not here, though every product needs it: that text from pages is data, never instructions, with
+// what a tool result opening with DATA_LINE holds. Its wording names the product's site and what that
+// site's results carry (Notion's block references and comments), so each product's prompt says it in
+// its own parts (src/notico.ts). A product's prompt without it lets a page give the agent orders.
 import { SELECTION_END } from './tools'
 
 /** The note ahead of a question: where the user is, the pages added, and the mode. */
