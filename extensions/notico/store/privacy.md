@@ -70,26 +70,56 @@ All three certifications are checked: no selling or transfer of user data to thi
 
 ## For the next version
 
-This page describes version 0.2.0. The version after it adds optional host permissions for web sites, which the user grants one site at a time (none at install), and reads web pages whose address the user gives (through the worker, with no new permission), so before it is submitted:
+This page describes version 0.2.0, as it was submitted. The version after it adds optional host permissions for web sites, which the user grants one site at a time (none at install), reads web pages by their address and searches the web (through the worker, with no new permission), and adds the `contextMenus` and `activeTab` permissions, neither of which adds an install warning, for the "Ask Notico" item on selected text. Before it is submitted, these fields read as follows; the others stay as above.
 
-- The **single purpose** reads: "Notico is an AI assistant in Chrome's side panel that reads and edits the user's Notion pages at the user's request, and reads the page the user is on, on a site they allowed, or a web page by its address, when a question needs it."
-- The **scripting** justification adds: "On another site, and only on one the user allowed, it reads the text of the page in the current tab, inside that tab, when the user's question is about that page."
-- The **Host permission** justification adds: "Optional host permissions for http and https sites: none is granted at install. When the user asks about the page they are on, the side panel asks them to allow that one site, and Chrome asks them again; only then is the page's text read, in the tab."
-- **Website content** also names the text of a page on another site that the assistant reads, and of a web page the assistant read by its address, which goes to the worker and the model (or to OpenRouter; a page read by its address is read through the worker either way). **Web history** stays Yes, as it is: that page's URL and title go with it, and the address of a web page the assistant reads goes to the worker, which reads it.
-- The **tabs** justification adds: "When the user opens the page picker, it also reads the URLs and titles of the tabs in the side panel's window that show other sites, to offer them; one is sent only when the user adds it to a conversation, and its page's text is read, in the tab, only on a site the user allowed."
-- The **scripting** justification's addition also names "a tab the user added to the conversation", besides the current tab.
-- The **Host permission** justification's addition also says: "When the user adds a tab on a site not allowed yet to a conversation, Chrome asks them to allow that one site."
-- **Web history** also names the URL and title of a tab on another site that the user adds to a conversation.
-- The **single purpose** also says the assistant "searches the web": "…or a web page by its address, and searches the web, when a question needs it."
-- **Website content** also names the queries of web searches the assistant makes, which may hold Notion content, and their results (each one's address, title, and description), which go to the worker, on to Cloudflare's Web Search and its provider for the query, and to the model (or to OpenRouter; a search is made through the worker either way).
+**Single purpose**
 
-It also adds the `contextMenus` and `activeTab` permissions, neither of which adds an install warning, for the "Ask Notico" item on selected text:
+```text
+Notico is an AI assistant in Chrome's side panel that reads and edits the user's Notion pages at the user's request, and reads the page the user is on, on a site they allowed, or a web page by its address, and searches the web, when a question needs it.
+```
 
-- **contextMenus**: "Adds an "Ask Notico" item to the menu Chrome shows when the user right-clicks selected text. Picking it opens the side panel with that text added to the user's next question; nothing is sent until the user sends the question."
-- **activeTab**: "When the user picks the "Ask Notico" menu item, reads the text they selected in that tab, with its line breaks, so it can be added to their question. No site needs to be allowed for it, and nothing else of the page is read."
-- The **scripting** justification also adds: "When the user picks "Ask Notico" on selected text, it reads that selection in the tab."
-- **Website content** also names text the user selected on a page and sent with "Ask Notico", which goes with their question to the worker and the model (or to OpenRouter).
-- The **storage** justification adds: "Whether the "Ask Notico" menu item shows, which the user can turn off in the settings; it is kept in Chrome's synced storage, so it follows their Chrome profile."
+**storage**
+
+```text
+Keeps the user signed in (the sign-in client token); the user's own OpenRouter key, if they set one up, with the models they switched on and the model chosen in the message box; and small settings: whether the assistant may change the user's pages (Edit or Read only), and whether usage data is shared. Whether the "Ask Notico" menu item shows, which the user can turn off in the settings; it is kept in Chrome's synced storage, so it follows their Chrome profile.
+```
+
+**tabs**
+
+```text
+Reads the current tab's URL and title to tell whether it is a Notion page, and to find the Notion tab the assistant works in. A non-Notion tab's URL and title are sent only when the user's question needs them. When the user opens the page picker in the message box, it also reads the URLs and titles of the other tabs that show Notion pages, to offer them; one is sent only when the user adds it to a question. When the user opens the page picker, it also reads the URLs and titles of the tabs in the side panel's window that show other sites, to offer them; one is sent only when the user adds it to a conversation, and its page's text is read, in the tab, only on a site the user allowed.
+```
+
+**scripting**
+
+```text
+Runs the requests that read and edit Notion pages inside the user's own Notion tab, with that tab's session, so no Notion credentials leave the tab. On another site, and only on one the user allowed, it reads the text of the page in the current tab, or of a tab the user added to the conversation, inside that tab, when the user's question is about that page. When the user picks "Ask Notico" on selected text, it reads that selection in the tab.
+```
+
+**contextMenus**
+
+```text
+Adds an "Ask Notico" item to the menu Chrome shows when the user right-clicks selected text. Picking it opens the side panel with that text added to the user's next question; nothing is sent until the user sends the question.
+```
+
+**activeTab**
+
+```text
+When the user picks the "Ask Notico" menu item, reads the text they selected in that tab, with its line breaks, so it can be added to their question. No site needs to be allowed for it, and nothing else of the page is read.
+```
+
+**Host permission**
+
+```text
+www.notion.so and app.notion.com: to read and edit the user's pages in their Notion tab. api.cofun.cc: our server and sign-in page. clerk.cofun.cc: our sign-in service, whose session cookie the extension reads to sign the user in. *.cofun.cc: only to read the sign-in cookie that the sign-in service sets on the parent domain. Optional host permissions for http and https sites: none is granted at install. When the user asks about the page they are on, the side panel asks them to allow that one site, and Chrome asks them again; only then is the page's text read, in the tab. When the user adds a tab on a site not allowed yet to a conversation, Chrome asks them to allow that one site.
+```
+
+**Data usage**, the rows that change:
+
+| Category | Collected | Why |
+|---|---|---|
+| Web history | Yes | A tab's URL and title, when a question needs them; the URL and title of a Notion page open in another tab, or of a tab on another site, that the user adds to a question; and the address of a web page the assistant reads, which goes to the worker, which reads it |
+| Website content | Yes | The Notion content the assistant reads; the text of a page on another site it reads (the current tab or a tab the user added, on a site they allowed); text the user selected on a page and sent with "Ask Notico"; the text of a web page it read by its address; and the queries of web searches it makes, which may hold Notion content, with their results (each one's address, title, and description). All go to the worker and the model, or to OpenRouter when the user answers with their own model; a page read by its address and a search go through the worker either way, and a search's query on to Cloudflare's Web Search and its provider |
 
 ## Privacy policy URL
 
