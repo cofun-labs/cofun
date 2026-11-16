@@ -68,8 +68,8 @@ export class FakeBrowser {
   /** Every request the panel sent the worker, as text: its URL, headers, and body. */
   readonly sentToWorker: string[] = []
 
-  /** Asks the worker something outside the panel; set when the browser starts. */
-  private worker!: (request: Request) => Response | Promise<Response>
+  /** Answers the panel's requests to the worker: the worker app. A test may wrap it, to fail a request on the way. */
+  worker!: (request: Request) => Response | Promise<Response>
   /** The worker's configuration; a test may change it, such as taking buying credits away. */
   env!: Env
   private issuer!: FakeClerk
@@ -125,13 +125,17 @@ export class FakeBrowser {
     const browser = new FakeBrowser(tab, session || undefined)
 
     const env: Env = {
-      AI: { run: (model, inputs, options) => titleRequests(browser, inputs).run(model, inputs, options) },
+      AI: {
+        run: (model, inputs, options) => titleRequests(browser, inputs).run(model, inputs, options),
+        websearch: (options) => browser.ai.websearch(options),
+      },
       DB: browser.db,
       USAGE: new FakeUsageDataset(),
       CHAT_LIMIT: new FakeRateLimiter(),
       API_LIMIT: new FakeRateLimiter(),
       WEB_LIMIT: new FakeRateLimiter(),
       RENDER_LIMIT: new FakeRateLimiter(),
+      SEARCH_LIMIT: new FakeRateLimiter(),
       WEB: browser.web,
       BROWSER: browser.browserRun,
       MODEL,

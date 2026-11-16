@@ -152,6 +152,11 @@ export interface ToolContext {
    * when the worker could not read it.
    */
   readWeb: (url: string, maxChars: number, render: boolean, signal?: AbortSignal) => Promise<WebPage>
+  /**
+   * Searches the web for `query` through the worker, for at most `limit` results. Throws a WebError
+   * that stops the question when the search failed.
+   */
+  searchWeb: (query: string, limit: number, signal?: AbortSignal) => Promise<WebSearchResult[]>
 }
 
 /** A web page the worker read (see ToolContext.readWeb). `scripted`: it showed little text and runs scripts. */
@@ -164,15 +169,20 @@ export const WebPage = z.object({
 })
 export type WebPage = z.infer<typeof WebPage>
 
+/** A result of a web search the worker made (see ToolContext.searchWeb): a page's address, title, and description. */
+export const WebSearchResult = z.object({ url: z.string(), title: z.string(), description: z.string() })
+export type WebSearchResult = z.infer<typeof WebSearchResult>
+
 /** Why the worker could not read a web page: its code (`no_access`, `no_text`, …) and message. */
 export class WebError extends Error {
   constructor(
     readonly code: string,
     message: string,
-    /** Set when the question must stop (the worker's rate limit): what the user is told. */
+    /** Set when the question must stop (the worker's rate limit, a failed search): what the user is told. */
     readonly stopsQuestion?: string,
+    options?: ErrorOptions,
   ) {
-    super(message)
+    super(message, options)
   }
 }
 

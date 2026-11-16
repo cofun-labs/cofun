@@ -1,13 +1,15 @@
 // Web pages read by their address: read_web_page has the worker fetch a page plainly, and
 // render_web_page has it render one drawn by scripts in a browser, which is slower and limited to a
-// few a minute. The model chooses the address: one the user gave, a link it found, or one it
-// thinks of (docs/security.md, "Accepted: web pages at any address").
+// few a minute. The model chooses the address: one the user gave, a link it found, one a search
+// found, or one it thinks of (docs/security.md, "Accepted: web pages at any address"). search_web
+// has the worker search the web, with a query the model writes (docs/security.md, "Accepted: web
+// searches").
 import { WebError, type ToolContext } from '../agent'
 import { isNotion } from '../notion/hosts'
 import { clip } from '../notion/comments'
 import { defineTool } from '../tool'
 import { z } from '../zod'
-import { READ, asData, asPageText, on, verb } from './shared'
+import { READ, SEARCH, asData, asPageText, count, on, verb } from './shared'
 
 /** How much of a page one read returns. */
 const PAGE_CHARS = 20_000
@@ -15,6 +17,11 @@ const TITLE_CHARS = 200
 const URL_CHARS = 2000
 
 const RENDER = verb('render', 'rendering', 'rendered')
+
+/** Results one search asks for: the most the worker gives. */
+const SEARCH_RESULTS = 10
+/** The longest query the worker takes. */
+const QUERY_CHARS = 1024
 
 /** The address the model gave, as the worker would read it, or undefined when it is not a web address. */
 function addressOf(given: string): URL | undefined {
@@ -126,4 +133,40 @@ export const renderWebPage = defineTool({
   describe: (_args, details) => on(RENDER, details?.name, 'a web page'),
   args: Args,
   run: ({ url }, signal, context) => readPageAt(url, true, signal, context),
+})
+
+const SearchArgs = z.strictObject({
+  query: z.string().describe('What to search for, as you would type it into a search engine.'),
+})
+
+export const searchWeb = defineTool({
+  name: 'search_web',
+  description:
+    'Searches the web, for current information or sources beyond Notion and the pages the user gave. Gives up to ' +
+    `${SEARCH_RESULTS} results, each with its page's URL, title, and a description of the page. To read a result's ` +
+    'page in full, use read_web_page with its URL. Each search is a request: search only when the question needs it.',
+  describe: (args, details) => {
+    const query = details?.name ?? args?.query.trim()
+    return query ? { verb: SEARCH, what: 'the web for', name: query } : { verb: SEARCH, what: 'the web' }
+  },
+  args: SearchArgs,
+  run: async ({ query }, signal, context) => {
+    const asked = query.trim()
+    if (!asked) throw new Error('Not searched: `query` is empty.')
+    if (asked.length > QUERY_CHARS)
+      throw new Error(
+        `Not searched: \`query\` is ${asked.length} characters long; at most ${QUERY_CHARS} are searched.`,
+      )
+    if (!context) throw new Error('Could not search the web: there is no worker to search with.')
+    const results = await context.searchWeb(asked, SEARCH_RESULTS, signal)
+    const lines = [
+      // As JSON, so the query, titles, and URLs stay inside their quotes and on their line.
+      `Web search for ${JSON.stringify(clip(asked, QUERY_CHARS))}: ${results.length ? count(results.length, 'result') : 'no results'}.`,
+      ...results.flatMap((r, n) => [
+        `${n + 1}. ${JSON.stringify({ title: clip(r.title, TITLE_CHARS), url: clip(r.url, URL_CHARS) })}`,
+        asPageText(r.description),
+      ]),
+    ]
+    return { text: asData(lines), details: { name: asked } }
+  },
 })
