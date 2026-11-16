@@ -46,7 +46,7 @@ The web tools read whatever address the model gives: one the user wrote, a link 
 
 ### Accepted: web searches
 
-The search tool sends the query the model writes, which may hold anything the conversation holds. This is an exception to rule 4 below: an instruction in text the user did not write can have the model put what the user can see into a query. What limits it: the query goes only to one provider fixed in the worker, never to a host the model or a page chooses, so whoever planted the instruction can't receive it. The provider may keep the query and use it to improve its services, training its models included, as the privacy page says: accepted, for results that answer the question. The worker keeps and logs neither the query nor the results, each query is shown on its card, and searches are rate limited per user.
+The search tool sends the query the model writes, which may hold anything the conversation holds. This is an exception to rule 4 below: an instruction in text the user did not write can have the model put what the user can see into a query. What limits it: the query goes only to one provider fixed in the worker, never to a host the model or a page chooses, and the provider keeps no data of what it serves, so whoever planted the instruction can't read it there. The worker keeps and logs neither the query nor the results, each query is shown on its card, and searches are rate limited per user.
 
 ## The extension
 

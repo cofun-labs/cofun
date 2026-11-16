@@ -317,7 +317,7 @@ describe('UC-COFUN-ADMIN-002 See granted and spent credits as a whole', () => {
     expect((await searchAs('bob', { 'x-cofun-client': 'confluco/1.0.0' })).status).toBe(200)
     later(DAY_MS)
 
-    const one = 7_000_000
+    const one = 5_000_000
     const { totals, days, products } = await overview('2026-11-08', '2026-11-09')
     const searches = { searches: 4, failedSearches: 1, searchSpent: 3 * one }
     expect(totals).toMatchObject({ spent: 3 * one + FAKE_COST, calls: 1, renders: 0, ...searches })

@@ -2,7 +2,7 @@
 
 ## Behavior
 
-A signed-in user's client can have the service search the web for them, and gets each result's address, title, and a short description of its page. A search costs the search provider's list price, 7 credits, with nothing added, and goes ahead only while the user has credits left, a few a minute. The search goes to one fixed search provider, which may keep the query and use it to improve its services; the service never keeps or logs the query or the results.
+A signed-in user's client can have the service search the web for them, and gets each result's address, title, and a short description of its page. A search costs the search provider's list price, 5 credits, with nothing added, and goes ahead only while the user has credits left, a few a minute. The search goes to one fixed search provider, which keeps no data of it; the service never keeps or logs the query or the results.
 
 What to search for is the client's choice (UC-NOTICO-PANEL-004).
 
@@ -17,7 +17,7 @@ Key constraint:
 
 | ID | Priority | Status | Scenario |
 | --- | --- | --- | --- |
-| UC-COFUN-WEB-002-S01 | P0 | ✅ | Given a signed-in user; when their client searches the web; then it gets each result's address, title, and description, no more results than it asked for, and the search is charged 7 credits, as the answer says. |
+| UC-COFUN-WEB-002-S01 | P0 | ✅ | Given a signed-in user; when their client searches the web; then it gets each result's address, title, and description, no more results than it asked for, and the search is charged 5 credits, as the answer says. |
 | UC-COFUN-WEB-002-S02 | P1 | ✅ | Given a user who has made as many searches as they may in a minute; when their client searches again; then they are told to wait, and nothing is searched. |
 | UC-COFUN-WEB-002-S03 | P1 | ✅ | Given a search the provider turns away or answers in a way the service does not understand; when a client searches; then it is told the search failed, and it is not tried again. |
 | UC-COFUN-WEB-002-S04 | P0 | ✅ | Given a user with no credits left; when their client searches the web; then it is told they have no credits and when free ones arrive, and nothing is searched. |
