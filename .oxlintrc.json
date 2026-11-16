@@ -197,6 +197,65 @@
       }
     },
     {
+      // The side panel's state outside React: one ChatSession per chat, and the Panel that holds the
+      // open one. React subscribes to them, so they import no React, nor anything that renders. Their
+      // other restrictions (the extensions/*/src block) still hold.
+      "files": ["extensions/*/src/sidepanel/chat-session.ts", "extensions/*/src/sidepanel/panel.ts"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": [
+                  "react",
+                  "react/**",
+                  "react-dom",
+                  "react-dom/**",
+                  "@clerk/chrome-extension",
+                  "@clerk/chrome-extension/**"
+                ],
+                "message": "The side panel's ChatSession and Panel import no React: React subscribes to them (subscribe, getSnapshot). Keep what renders in the components."
+              },
+              {
+                "regex": "^\\./[A-Z]",
+                "message": "The side panel's ChatSession and Panel import no component (the side panel's modules named with a capital): a type both use goes in chat-session.ts or panel.ts."
+              },
+              {
+                "group": ["./icons", "./menu", "./main"],
+                "message": "The side panel's ChatSession and Panel import no React: these side-panel modules render or are hooks. A type both use goes in chat-session.ts or panel.ts."
+              },
+              {
+                "group": [
+                  "@earendil-works/pi-agent-core",
+                  "@earendil-works/pi-agent-core/**",
+                  "@earendil-works/pi-ai",
+                  "@earendil-works/pi-ai/**"
+                ],
+                "message": "Only an extension's src/agent/ imports pi. Import what you need from src/agent/ (its index.ts), or add it there."
+              },
+              {
+                "group": ["posthog-js", "posthog-js/**"],
+                "message": "Only an extension's src/analytics.ts imports the PostHog SDK. Call its track(), whose events are the only ones that can be sent."
+              },
+              {
+                "regex": "^zod(/|$)",
+                "message": "Import z from the extension's src/zod.ts: it sets zod up for the extension's content security policy before any schema is built."
+              },
+              {
+                "regex": "^(\\.\\./)+[^./][^/]*/(src|test)(/|$)",
+                "message": "An extension never imports another extension: each one in extensions/<name>/ keeps its own copy of what it needs."
+              },
+              {
+                "regex": "^(\\.\\./)+extensions/",
+                "message": "An extension never imports another extension: each one in extensions/<name>/ keeps its own copy of what it needs."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
       // The site layer knows nothing about the agent, the tools, sessions, or the UI. One directory
       // per site: src/sidepanel/ sits next to them and is not one, so each site is named here
       // (Notico's are Notion, and src/web/ for the page of a tab on any other site).
