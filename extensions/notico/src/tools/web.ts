@@ -6,7 +6,7 @@
 // searches").
 import { WebError, type ToolContext } from '../agent'
 import { isNotion } from '../notion/hosts'
-import { clip } from '../notion/comments'
+import { clip, quote } from '../notion/comments'
 import { defineTool } from '../tool'
 import { z } from '../zod'
 import { KEPT_CHARS, withText } from './results'
@@ -184,7 +184,7 @@ export const searchWeb = defineTool({
       // The description too: on a line of its own, it could start with a result's number and fake one.
       ...results.map(
         (r, n) =>
-          `${n + 1}. ${JSON.stringify({ title: clip(r.title, TITLE_CHARS), url: clip(r.url, URL_CHARS), description: r.description })}`,
+          `${n + 1}. ${quote({ title: clip(r.title, TITLE_CHARS), url: clip(r.url, URL_CHARS), description: r.description })}`,
       ),
     ]
     return { text: asData(lines), details: { name: asked } }
