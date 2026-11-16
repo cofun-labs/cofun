@@ -46,7 +46,7 @@ The worker does not store or log your conversation, the address or text of a web
 
 Cloudflare keeps the worker's logs: the request logs Cloudflare records for every Worker (such as the time, URL, and status of a request) and the errors the worker prints when a request fails. The worker does not write the conversation to them.
 
-- When a model call fails, before or partway through a reply, the credit ledger fails, or a request fails in a way the worker did not expect, it logs only the first 60 characters of the error's name and the first 200 characters of its message, never the whole error: if the model provider's error quoted part of a request, no more than that could reach the logs.
+- Of a failure, it logs only the first 60 characters of the error's name and the first 200 characters of its message, never the whole error: if the model provider's error quoted part of a request, no more than that could reach the logs. That holds for every failure it logs but the two below: a model call that fails before or partway through a reply, a record of a model call or a render that fails, the credits that cannot be checked or read, a checkout or a Stripe event that fails, the purchase event that cannot be sent to PostHog, an operator's read or grant that fails, and a request that fails in a way the worker did not expect.
 - When a web search fails, it logs only the HTTP status and the error code AI Gateway answered with, or the name of the error, never the query.
 - When the usage record fails, it logs that error whole; it is never given the conversation.
 - When an operator grants credits by hand, it logs the operator's Clerk user id, the account's Clerk user id, the number of credits, and when they expire.
