@@ -426,6 +426,23 @@ describe('searching the web', () => {
     expect(results.map((r) => r.url)).toEqual(['https://tea.example/history'])
   })
 
+  it("[UC-COFUN-WEB-002-S01] a description keeps its page's text: whitespace collapsed, a leading skip link dropped", async () => {
+    ai.found.set('eiffel tower', [
+      {
+        url: 'https://en.wikipedia.org/wiki/Eiffel_Tower',
+        title: 'Eiffel  Tower\n',
+        description:
+          'Jump to content\n\n  Skip to navigation Coordinates:\t48°51′N\n\nThe Eiffel Tower is a tower. Jump to content',
+      },
+    ])
+    const { results }: { results: { title: string; description: string }[] } = await (
+      await search('eiffel tower')
+    ).json()
+    expect(results).toMatchObject([
+      { title: 'Eiffel Tower', description: 'Coordinates: 48°51′N The Eiffel Tower is a tower. Jump to content' },
+    ])
+  })
+
   it('[UC-COFUN-WEB-002-S01] an item that is not a result is left out, and the others still go back', async () => {
     ai.searchReply = () =>
       Response.json({ items: [{ url: 'https://tea.example/broken', title: null }, 'oops', TEA_RESULTS[0]] })

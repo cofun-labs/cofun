@@ -60,9 +60,10 @@ describe('searching the web', () => {
         DATA_LINE,
         `Web search for "${QUERY}": 2 results.`,
         `1. ${JSON.stringify({ title: 'Oolong', url: 'https://tea.example/oolong', description: RESULTS[0].description })}`,
-        // Each result is one line: its description stays inside its quotes, on its line.
-        // Unicode's own line separators too, which JSON would leave as they are.
-        `2. ${JSON.stringify({ title: 'Tea notes', url: 'https://leaves.example/notes', description: RESULTS[1].description }).replace('\u2028\u0085', '\\u2028\\u0085')}`,
+        // Each result is one line: its description stays inside its quotes, on its line. The worker
+        // turns line breaks into spaces; Unicode's own line separators, which JSON would leave as they
+        // are, are escaped here.
+        `2. ${JSON.stringify({ title: 'Tea notes', url: 'https://leaves.example/notes', description: RESULTS[1].description.replaceAll('\n', ' ') }).replace('\u2028\u0085', '\\u2028\\u0085')}`,
       ].join('\n'),
     ])
     expect(browser.ai.searches.map((s) => s.query)).toEqual([QUERY])

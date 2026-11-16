@@ -144,7 +144,12 @@ export const renderWebPage = defineTool({
 })
 
 const SearchArgs = z.strictObject({
-  query: z.string().describe('What to search for, as you would type it into a search engine.'),
+  query: z
+    .string()
+    .describe(
+      'Two to four English keywords that a page answering the question surely holds: names and terms, not ' +
+        'a question or a sentence.',
+    ),
 })
 
 export const searchWeb = defineTool({
@@ -153,7 +158,13 @@ export const searchWeb = defineTool({
     'Searches the web, for current information or sources beyond Notion and the pages the user gave. Gives up to ' +
     `${SEARCH_RESULTS} results, each with its page's URL, title, and a description of the page. To read a result's ` +
     'page in full, use read_web_page with its URL. Each search costs the user credits: search only when the question ' +
-    'needs it.',
+    'needs it. The search matches the words of the query, not its meaning, and finds English pages only. A page ' +
+    'is found only when it holds every word of the query, so write two to four English keywords that a page ' +
+    'answering the question surely holds: names and terms (say, "Node.js releases", not "what is the latest ' +
+    'stable Node.js version"). Leave out words a page need not hold, such as latest, current, best, or a year, ' +
+    'unless the question is about that year. Synonyms are not matched: (A OR B) matches either. ' +
+    '`site:example.com` keeps results to one site, and "quoted words" match a phrase. When a search finds ' +
+    'nothing or nothing that fits, search once more with fewer or other keywords, not the same ones.',
   describe: (args, details) => {
     const query = details?.name ?? args?.query.trim()
     return query ? { verb: SEARCH, what: 'the web for', name: query } : { verb: SEARCH, what: 'the web' }

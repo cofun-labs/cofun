@@ -67,6 +67,22 @@ const Refusal = z.object({ error: z.object({ code: z.string().regex(/^[a-z_]{1,6
 const clip = (text: string, max: number) => (text.length > max ? `${text.slice(0, max - 1)}…` : text)
 
 /**
+ * A skip link at the start of a description: Ceramic describes a page from its text, which often
+ * starts with one ("Jump to content" on Wikipedia). Only these exact links, only at the start, so no
+ * text of the page itself is dropped.
+ */
+const SKIP_LINK = /^(?:(?:jump|skip) to (?:main )?(?:content|navigation|search)\s*)+/i
+
+/**
+ * Runs of ASCII whitespace, as a page's layout leaves them. Unicode's own separators are left to the
+ * extension, which keeps each result on its line whatever the worker sends.
+ */
+const SPACES = /[ \t\n\r\f\v]+/g
+
+/** Text as the model gets it: whitespace collapsed and a leading skip link dropped, so the clip holds text. */
+const tidy = (text: string) => text.replace(SPACES, ' ').trim().replace(SKIP_LINK, '')
+
+/**
  * Searches the web for `query`, for at most `limit` results, through the gateway `gatewayId`.
  * Throws a SearchError when the search gave none: the gateway refused it, or answered what the
  * worker does not understand. Nothing is retried: a search the provider ran was billed. A search
@@ -107,7 +123,7 @@ export async function searchWeb(
   const kept = items.filter((item) => item.url.length <= URL_CHARS)
   return kept.slice(0, limit).map((item) => ({
     url: item.url,
-    title: clip(item.title.trim(), TITLE_CHARS),
-    description: clip(item.description.trim(), DESCRIPTION_CHARS),
+    title: clip(item.title.replace(SPACES, ' ').trim(), TITLE_CHARS),
+    description: clip(tidy(item.description), DESCRIPTION_CHARS),
   }))
 }
