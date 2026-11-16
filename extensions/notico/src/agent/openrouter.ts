@@ -26,11 +26,32 @@ export function openRouterProvider({ key, model }: { key: string; model: OwnMode
   }
 }
 
-/** OpenRouter's error, with a refused key said plainly: its own words for it ("User not found.") are not. */
+/**
+ * A question a model's moderation flagged: OpenRouter answers it with 403, as it does a refused key,
+ * but says the flagged reasons in `metadata`. The body is the error itself, or wrapped in `error`.
+ */
+const Flagged = z.object({ metadata: z.object({ reasons: z.array(z.string()) }) })
+const FlaggedBody = z.union([Flagged, z.object({ error: Flagged })])
+
+/**
+ * OpenRouter's error, with a refused key said plainly: its own words for it ("User not found.") are
+ * not. A question moderation flagged is said in OpenRouter's words, and is no fault of the key.
+ */
 function openRouterError(message: string | undefined): Failure {
-  if (message && /^40[13]\b/.test(message))
+  if (message && /^40[13]\b/.test(message)) {
+    if (message.startsWith('403') && FlaggedBody.safeParse(json(message.replace(/^403:?\s+/, ''))).success)
+      return parseError(message)
     return { text: 'OpenRouter turned your key away. Check it in Settings.', code: KEY_REJECTED }
+  }
   return parseError(message)
+}
+
+function json(text: string): unknown {
+  try {
+    return JSON.parse(text)
+  } catch {
+    return undefined
+  }
 }
 
 /** What OpenRouter's key endpoint answers, as far as the check reads it. */
