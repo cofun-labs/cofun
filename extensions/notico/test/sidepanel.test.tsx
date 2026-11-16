@@ -106,7 +106,7 @@ describe('asking the AI', () => {
     expect(await screen.findByText('Hello.')).toBeVisible()
     await answered()
     // The reply, and the chat's title if the panel has asked for it yet: each under Notico.
-    const products = browser.db.rows('model_calls').map((call) => call.product)
+    const products = browser.db.calls().map((call) => call.product)
     expect(products.length).toBeGreaterThan(0)
     expect(products.every((product) => product === 'notico')).toBe(true)
   })

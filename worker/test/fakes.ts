@@ -243,8 +243,31 @@ export class FakeD1Database implements Database {
   }
 
   /** Every row of `table`, for tests that look at what was written. */
-  rows(table: 'grants' | 'model_calls'): Record<string, unknown>[] {
+  rows(
+    table: 'grants' | 'manual_grants' | 'purchases' | 'grant_revocations' | 'spends' | 'spend_grants' | 'model_calls',
+  ): Record<string, unknown>[] {
     return this.sqlite.prepare(`SELECT * FROM ${table} ORDER BY id`).all()
+  }
+
+  /** Every model call with its spend, as one row each: what a test looks at for a call and what it cost. */
+  calls(): Record<string, unknown>[] {
+    return this.sqlite
+      .prepare(
+        `SELECT m.id, s.user_id, s.product, s.kind, s.micro_credits, s.created_at, m.model, m.started_at, m.stream,
+          m.outcome, m.finish_reason, m.prompt_tokens, m.cached_tokens, m.completion_tokens, m.estimated
+        FROM model_calls m JOIN spends s ON s.id = m.spend_id ORDER BY m.id`,
+      )
+      .all()
+  }
+
+  /** Every grant, with what is left of it: its amount less what was spent from it. */
+  grants(): Record<string, unknown>[] {
+    return this.sqlite
+      .prepare(
+        `SELECT g.*, g.amount - coalesce((SELECT sum(micro_credits) FROM spend_grants WHERE grant_id = g.id), 0) AS left
+        FROM grants g ORDER BY g.id`,
+      )
+      .all()
   }
 
   failure(query: string): Error | undefined {

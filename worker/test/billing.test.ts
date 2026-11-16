@@ -509,12 +509,12 @@ describe('UC-COFUN-BILLING-001 Buy credits: the webhook', () => {
     ])
   })
 
-  it('[@no-uc:money] a purchase taken back the moment it was granted ends the millisecond after it began', async () => {
+  it('[@no-uc:money] a purchase taken back the moment it was granted counts for nothing from that moment', async () => {
     await buy(alice, 5000)
     await answer(deliver(refunded('pi_for_cs_test_1')))
-    // A grant must end after it begins.
-    expect(db.rows('grants')).toMatchObject([{ granted_at: START, expires_at: START + 1, revoked: 'refund' }])
-    clock = new Date(START + 1)
+    // The grant keeps when it would have expired; the taking back is a row of its own.
+    expect(db.rows('grants')).toMatchObject([{ granted_at: START, expires_at: Date.parse('2027-11-08T12:00:00Z') }])
+    expect(db.rows('grant_revocations')).toEqual([{ id: 1, grant_id: 1, reason: 'refund', created_at: START }])
     expect((await credits(alice)).grants).toEqual([])
   })
 

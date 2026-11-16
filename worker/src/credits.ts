@@ -43,6 +43,7 @@ interface Grant {
   amount: number
   left: number
   grantedAt: number
+  /** When the grant stops counting: when it expires, or when its purchase was taken back if that came first. */
   expiresAt: number
   /** For a grant made by hand: the Clerk user id of the admin who made it. */
   by?: string
@@ -55,7 +56,7 @@ interface Grant {
 /** Where a grant's credits came from, as `grants.source` holds it. */
 export const GrantSource = z.enum(['free', 'manual', 'purchase'])
 
-/** Why a purchase was taken back, as `grants.revoked` holds it. */
+/** Why a purchase was taken back, as `grant_revocations.reason` holds it. */
 export const Revoked = z.enum(['refund', 'dispute'])
 
 /** A row of `grants` as the ledger reads it. */
@@ -80,9 +81,6 @@ const GrantRow = z
     ...(row.payment === null ? {} : { payment: row.payment }),
     ...(row.revoked === null ? {} : { revoked: row.revoked }),
   }))
-
-/** The columns a grant is read with. */
-const GRANT_COLUMNS = 'source, amount, left, granted_at, expires_at, granted_by, payment, revoked'
 
 const BalanceRow = z.object({ balance: z.int(), free_until: z.int().nullable() })
 const UsageRow = z
@@ -109,7 +107,7 @@ export interface UsagePeriod {
   offsetMs: number
 }
 
-/** What a user's model calls cost on one day. `day` counts days since 1970-01-01 on the period's clock. */
+/** What a user spent on one day. `day` counts days since 1970-01-01 on the period's clock. */
 interface DayUsage {
   day: number
   microCredits: number
@@ -146,7 +144,7 @@ export interface Standing {
   free: { started: true; until: number } | { started: false; toCome: number }
   /** The grants that still count, in the order they are spent. */
   grants: Grant[]
-  /** What the user's model calls cost per day, newest first; days that cost nothing are left out. */
+  /** What the user spent per day, newest first; days that cost nothing are left out. */
   usage: DayUsage[]
 }
 
@@ -173,16 +171,23 @@ export interface ManualGrant {
 }
 
 /**
- * A model call that ended, to record with what it cost: when it started and ended, how it ended,
- * its tokens (`estimated` when the call was cut short before the model reported them), and its cost
- * in micro-credits, 0 when it cost nothing.
+ * A spend of credits, to record with what it cost: the product it came from (see `productOf` in
+ * routes/chat.ts), its cost in micro-credits (0 when it cost nothing), and when it was charged.
  */
-export interface ModelCall {
-  /** The product the call came from: see `productOf` in routes/chat.ts. */
+export interface Spend {
   product: string
+  cost: number
+  at: number
+}
+
+/**
+ * A model call that ended: when it started (it ended when its spend was charged), how it ended, and
+ * its tokens (`estimated` when the call was cut short before the model reported them).
+ */
+interface ModelCall {
+  kind: 'model_call'
   model: string
   startedAt: number
-  endedAt: number
   stream: boolean
   outcome: string
   finishReason: string
@@ -190,15 +195,27 @@ export interface ModelCall {
   cachedTokens: number
   completionTokens: number
   estimated: boolean
-  cost: number
 }
 
-// How the tables hold a ledger (worker/migrations/): `grants` has one row per grant with what is
-// left of it, and `model_calls` one row per model call with what it cost. A user never owes
-// anything: a call takes what it costs from what is left, and no more, so the balance never goes
-// below zero. The columns for debt (`grants.repaid`, `model_calls.owed`) and the `revoked_payments`
-// table are from when it did, and are left in place, unused: new rows hold 0 in both columns. In
-// every statement below, ?1 is the user id and ?2 the time.
+/** What is particular to a spend, by its kind: the row of the kind's own table. */
+export type SpendDetail = ModelCall
+
+// How the tables hold a ledger (worker/migrations/0005_spends.sql): a grant is written once, and
+// every spend is a row of `spends`, with what it took from each grant in `spend_grants`. What is
+// left of a grant and a balance are worked out from those rows each time: nothing is stored twice.
+// A user never owes anything: a spend takes what it costs from what is left, and no more, so the
+// balance never goes below zero. In every statement below, ?1 is the user id and ?2 the time.
+
+/** What was spent from the grant `grant` (SQL: a column of an outer query), read from `spend_grants_by_grant` alone. */
+const spentFrom = (grant: string) =>
+  `coalesce((SELECT sum(micro_credits) FROM spend_grants WHERE grant_id = ${grant}), 0)`
+
+/**
+ * Whether the grant `g` of the user `user` counts at the time `now`, as SQL: it has not expired,
+ * and its purchase was not taken back by then. The one definition of a grant that counts.
+ */
+const counts = (user: string, now: string) => `g.user_id = ${user} AND g.expires_at > ${now}
+  AND NOT EXISTS (SELECT 1 FROM grant_revocations WHERE grant_id = g.id AND created_at <= ${now})`
 
 /**
  * What a user can spend at the time `now`, as SQL: what is left of the grants that still count.
@@ -206,7 +223,21 @@ export interface ModelCall {
  * (overview.ts). `user` and `now` are SQL: parameters, or columns of an outer query.
  */
 export const balanceOf = (user: string, now: string) =>
-  `(SELECT coalesce(sum(left), 0) FROM grants WHERE user_id = ${user} AND expires_at > ${now})`
+  `(SELECT coalesce(sum(g.amount - ${spentFrom('g.id')}), 0) FROM grants g WHERE ${counts(user, now)})`
+
+/**
+ * A grant as the ledger reads it, with what its own tables add: what is left of it, the admin who
+ * made it by hand, the payment it was bought with, and why it was taken back. A purchase taken back
+ * ends when it was taken back, if that came before it expired; what was left of it then is what was
+ * taken back, and nothing is spent from it after.
+ */
+const READ_GRANT = `SELECT g.source, g.amount, g.amount - ${spentFrom('g.id')} AS left, g.granted_at,
+  CASE WHEN r.created_at < g.expires_at THEN r.created_at ELSE g.expires_at END AS expires_at,
+  m.granted_by, p.payment, r.reason AS revoked
+FROM grants g
+LEFT JOIN manual_grants m ON m.grant_id = g.id
+LEFT JOIN purchases p ON p.grant_id = g.id
+LEFT JOIN grant_revocations r ON r.grant_id = g.id`
 
 /**
  * The weekly free grant, given lazily when a user shows up and has no free grant that still counts:
@@ -216,43 +247,53 @@ export const balanceOf = (user: string, now: string) =>
  * one statement, so two requests arriving together cannot both grant the week. ?3 is the amount, ?4
  * how long it lasts.
  */
-const GIVE_FREE_GRANT = `INSERT INTO grants (user_id, source, amount, repaid, left, granted_at, expires_at)
-SELECT ?1, 'free', ?3, 0, ?3, ?2, ?2 + ?4
+const GIVE_FREE_GRANT = `INSERT INTO grants (user_id, source, amount, granted_at, expires_at)
+SELECT ?1, 'free', ?3, ?2, ?2 + ?4
 WHERE NOT EXISTS (SELECT 1 FROM grants WHERE user_id = ?1 AND source = 'free' AND expires_at > ?2)`
 
-/** A grant by hand. ?3 is the amount, ?4 when it expires, ?5 the admin's user id. */
-const GIVE_MANUAL_GRANT = `INSERT INTO grants (user_id, source, amount, repaid, left, granted_at, expires_at, granted_by)
-VALUES (?1, 'manual', ?3, 0, ?3, ?2, ?4, ?5)`
+/** A grant by hand. ?3 is the amount, ?4 when it expires. */
+const GIVE_MANUAL_GRANT = `INSERT INTO grants (user_id, source, amount, granted_at, expires_at)
+VALUES (?1, 'manual', ?3, ?2, ?4)`
 
 /**
- * Credits bought. ?3 is the amount, ?4 when it expires, ?5 the payment. A payment grants once: the
- * unique index on `payment` makes the insert of a payment already granted do nothing, so a payment
- * Stripe reports twice, or two reports handled at once, add one grant.
+ * Who made the grant just written, in the same batch: the newest grant, ?1 the admin's user id.
+ * Batches run one at a time, so no other grant is written in between.
  */
-const GIVE_PURCHASE = `INSERT INTO grants (user_id, source, amount, repaid, left, granted_at, expires_at, payment)
-VALUES (?1, 'purchase', ?3, 0, ?3, ?2, ?4, ?5)
-ON CONFLICT (payment) DO NOTHING`
+const RECORD_MANUAL_GRANT = `INSERT INTO manual_grants (grant_id, granted_by)
+VALUES ((SELECT max(id) FROM grants), ?1)`
 
 /**
- * Takes back what is left of the purchase made with the payment ?1, for the reason ?3. It ends at
- * the time ?2 (never at or before the moment it was granted, which the table does not allow), and
- * `left` stays as the record of what was taken back. One that expired already only records why.
- * A purchase taken back once is not taken back again, so a second report changes nothing and the
- * first reason stays.
+ * Credits bought. ?3 is the amount, ?4 when it expires, ?5 the payment. A payment grants once: a
+ * payment that has a purchase already writes nothing, so a payment Stripe reports twice, or two
+ * reports handled at once, add one grant.
  */
-const TAKE_BACK = `UPDATE grants SET revoked = ?3,
-  expires_at = CASE WHEN expires_at > ?2 THEN max(?2, granted_at + 1) ELSE expires_at END
-WHERE payment = ?1 AND revoked IS NULL`
+const GIVE_PURCHASE = `INSERT INTO grants (user_id, source, amount, granted_at, expires_at)
+SELECT ?1, 'purchase', ?3, ?2, ?4
+WHERE NOT EXISTS (SELECT 1 FROM purchases WHERE payment = ?5)`
+
+/** The payment ?1 of the grant GIVE_PURCHASE just wrote, the newest one; nothing when it wrote none. */
+const RECORD_PURCHASE = `INSERT INTO purchases (grant_id, payment)
+SELECT (SELECT max(id) FROM grants), ?1
+WHERE NOT EXISTS (SELECT 1 FROM purchases WHERE payment = ?1)`
+
+/**
+ * Takes back the purchase made with the payment ?1, for the reason ?3, at the time ?2: from then on
+ * its grant counts for nothing. A purchase taken back once is not taken back again, so a second
+ * report changes nothing and the first reason stays.
+ */
+const TAKE_BACK = `INSERT INTO grant_revocations (grant_id, reason, created_at)
+SELECT grant_id, ?3, ?2 FROM purchases WHERE payment = ?1
+ON CONFLICT (grant_id) DO NOTHING`
 
 /** How many grants the payment ?1 made: one, or none when it was not granted (yet). */
-const COUNT_PAYMENT = `SELECT count(*) AS n FROM grants WHERE payment = ?1`
+const COUNT_PAYMENT = `SELECT count(*) AS n FROM purchases WHERE payment = ?1`
 
 /**
  * What the user's next call starts with, and until when their free week runs (null when no free
- * grant still counts). With a free grant that counts, the balance is what is stored: what is left
- * of the grants that still count. With none, it is that plus the free grant ?3 the next call
- * brings. `open` reads this right after giving the grant and `look` reads it without, so what a
- * user is shown and what their next call gets are one definition.
+ * grant still counts). With a free grant that counts, the balance is what is left of the grants
+ * that still count. With none, it is that plus the free grant ?3 the next call brings. `open` reads
+ * this right after giving the grant and `look` reads it without, so what a user is shown and what
+ * their next call gets are one definition.
  */
 const READ_BALANCE = `SELECT stored + CASE WHEN free_until IS NULL THEN ?3 ELSE 0 END AS balance, free_until
 FROM (SELECT
@@ -260,57 +301,59 @@ FROM (SELECT
   (SELECT max(expires_at) FROM grants WHERE user_id = ?1 AND source = 'free' AND expires_at > ?2) AS free_until)`
 
 /** The grants that still count, in the order they are spent. */
-const READ_CURRENT_GRANTS = `SELECT ${GRANT_COLUMNS}
-FROM grants WHERE user_id = ?1 AND expires_at > ?2 ORDER BY expires_at, id`
+const READ_CURRENT_GRANTS = `${READ_GRANT}
+WHERE ${counts('?1', '?2')} ORDER BY g.expires_at, g.id`
 
 /**
- * What the user's model calls cost per day from ?2 up to ?3, newest first. A call belongs to the
- * day it started on, on a clock ?4 ms ahead of UTC. Totalled from the calls themselves each time
- * (the `model_calls_by_user` index bounds it to the period): no totals are stored. The cast keeps
- * the day a whole number however the database binds ?4.
+ * What the user spent per day from ?2 up to ?3, newest first. A spend belongs to the day it was
+ * charged on, on a clock ?4 ms ahead of UTC. Totalled from the spends themselves each time (the
+ * `spends_by_user` index bounds it to the period): no totals are stored. The cast keeps the day a
+ * whole number however the database binds ?4.
  */
-const READ_USAGE = `SELECT CAST((started_at + ?4) / ${DAY_MS} AS INTEGER) AS day, sum(micro_credits) AS micro_credits
-FROM model_calls WHERE user_id = ?1 AND started_at >= ?2 AND started_at < ?3
+const READ_USAGE = `SELECT CAST((created_at + ?4) / ${DAY_MS} AS INTEGER) AS day, sum(micro_credits) AS micro_credits
+FROM spends WHERE user_id = ?1 AND created_at >= ?2 AND created_at < ?3
 GROUP BY day HAVING sum(micro_credits) > 0 ORDER BY day DESC`
 
 /**
  * The user's grants, newest first, up to HISTORY_LIMIT of them. The `grants_by_user_granted` index
  * gives them in this order, so the read stops at the limit.
  */
-const READ_HISTORY = `SELECT ${GRANT_COLUMNS}
-FROM grants WHERE user_id = ?1 ORDER BY granted_at DESC, id DESC LIMIT ${HISTORY_LIMIT}`
+const READ_HISTORY = `${READ_GRANT}
+WHERE g.user_id = ?1 ORDER BY g.granted_at DESC, g.id DESC LIMIT ${HISTORY_LIMIT}`
 
-const READ_GRANTS = `SELECT ${GRANT_COLUMNS}
-FROM grants WHERE user_id = ?1 ORDER BY granted_at, id`
+const READ_GRANTS = `${READ_GRANT}
+WHERE g.user_id = ?1 ORDER BY g.granted_at, g.id`
 
-/**
- * The record of a model call, with its full cost: what the grants that still count do not cover
- * of it is not taken (see SPEND), and not owed, so `owed` is 0. ?2 is when the call ended, ?3 the
- * model, ?4 when it started, ?5 whether it streamed, ?6 its outcome, ?7 its finish reason,
- * ?8 to ?10 the prompt, cached, and completion tokens, ?11 whether they are estimated, ?12 the
- * cost, ?13 the product it came from.
- */
-const RECORD_CALL = `INSERT INTO model_calls (user_id, ended_at, model, started_at, stream, outcome, finish_reason,
-  prompt_tokens, cached_tokens, completion_tokens, estimated, micro_credits, owed, product)
-VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, 0, ?13)`
+/** The record of a spend, with its full cost. ?3 is the product, ?4 the kind, ?5 the cost. */
+const RECORD_SPEND = `INSERT INTO spends (user_id, created_at, product, kind, micro_credits)
+VALUES (?1, ?2, ?3, ?4, ?5)`
 
 /**
- * Takes the cost ?3 from the grants that still count, from the one that expires first: each takes
- * what the grants before it did not cover, up to what it has left. What they all have left does not
- * cover is forgiven: nothing goes below zero. A relative update, so calls that end together each
- * take their own cost and none is lost.
+ * The model call of the spend just written, in the same batch: the newest spend. Batches run one at
+ * a time, so no other spend is written in between. ?1 is the model, ?2 when the call started, ?3
+ * whether it streamed, ?4 its outcome, ?5 its finish reason, ?6 to ?8 the prompt, cached, and
+ * completion tokens, ?9 whether they are estimated.
  */
-const SPEND = `UPDATE grants SET left = grants.left - spend.take
+const RECORD_MODEL_CALL = `INSERT INTO model_calls (spend_id, model, started_at, stream, outcome, finish_reason,
+  prompt_tokens, cached_tokens, completion_tokens, estimated)
+VALUES ((SELECT max(id) FROM spends), ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)`
+
+/**
+ * Takes the cost ?3 of the spend just written (the newest) from the grants that still count, from
+ * the one that expires first: each gives what the grants before it did not cover, up to what it has
+ * left, as a row of `spend_grants`. What they all have left does not cover is forgiven: nothing goes
+ * below zero. What is left is read in the same batch, so spends that end together each take their
+ * own cost and none is lost.
+ */
+const SPEND = `INSERT INTO spend_grants (spend_id, grant_id, micro_credits)
+SELECT (SELECT max(id) FROM spends), id, min(left, ?3 - before)
 FROM (
-  SELECT id, min(left, ?3 - before) AS take
-  FROM (
-    SELECT id, left,
-      coalesce(sum(left) OVER (ORDER BY expires_at, id ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING), 0) AS before
-    FROM grants WHERE user_id = ?1 AND expires_at > ?2 AND left > 0
-  )
-  WHERE before < ?3
-) AS spend
-WHERE grants.id = spend.id`
+  SELECT id, left,
+    coalesce(sum(left) OVER (ORDER BY expires_at, id ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING), 0) AS before
+  FROM (SELECT g.id, g.expires_at, g.amount - ${spentFrom('g.id')} AS left FROM grants g WHERE ${counts('?1', '?2')})
+  WHERE left > 0
+)
+WHERE before < ?3`
 
 /** One user's credits, over the database. Callers pass the time, in ms, so every decision uses the request's own clock. */
 export class Ledger {
@@ -369,31 +412,33 @@ export class Ledger {
   }
 
   /**
-   * Records a model call that ended, and takes what it cost from the user, from the grant that
-   * expires first, in one batch: both are written, or neither. What the grants don't cover is
-   * forgiven. The time is when the call ended.
+   * Records a spend and what is particular to it, and takes what it cost from the user, from the
+   * grant that expires first, in one batch: all of it is written, or none. What the grants don't
+   * cover is forgiven. The one way credits are spent.
    */
-  async endCall(call: ModelCall): Promise<void> {
-    const { promptTokens, cachedTokens, completionTokens, cost, startedAt, endedAt } = call
-    for (const n of [promptTokens, cachedTokens, completionTokens, cost, startedAt, endedAt]) {
-      if (!Number.isSafeInteger(n) || n < 0) throw new Error('a model call needs non-negative integers')
+  async spend({ product, cost, at }: Spend, detail: SpendDetail): Promise<void> {
+    const { promptTokens, cachedTokens, completionTokens, startedAt } = detail
+    for (const n of [promptTokens, cachedTokens, completionTokens, cost, startedAt, at]) {
+      if (!Number.isSafeInteger(n) || n < 0) throw new Error('a spend needs non-negative integers')
     }
-    const record = this.statement(
-      RECORD_CALL,
-      endedAt,
-      call.model,
-      startedAt,
-      call.stream ? 1 : 0,
-      call.outcome,
-      call.finishReason,
-      promptTokens,
-      cachedTokens,
-      completionTokens,
-      call.estimated ? 1 : 0,
-      cost,
-      call.product,
-    )
-    await this.db.batch(cost === 0 ? [record] : [record, this.statement(SPEND, endedAt, cost)])
+    if (startedAt > at) throw new Error('a model call must start before it is charged')
+    const statements = [
+      this.statement(RECORD_SPEND, at, product, detail.kind, cost),
+      this.db
+        .prepare(RECORD_MODEL_CALL)
+        .bind(
+          detail.model,
+          startedAt,
+          detail.stream ? 1 : 0,
+          detail.outcome,
+          detail.finishReason,
+          promptTokens,
+          cachedTokens,
+          completionTokens,
+          detail.estimated ? 1 : 0,
+        ),
+    ]
+    await this.db.batch(cost === 0 ? statements : [...statements, this.statement(SPEND, at, cost)])
   }
 
   /**
@@ -412,8 +457,9 @@ export class Ledger {
   async grant(now: number, { amount, expiresAt, by }: ManualGrant): Promise<Account> {
     if (!Number.isSafeInteger(amount) || amount <= 0) throw new Error('a grant must be a positive integer')
     if (!Number.isSafeInteger(expiresAt) || expiresAt <= now) throw new Error('a grant must expire after it is made')
-    const [, ...reads] = await this.db.batch([
-      this.statement(GIVE_MANUAL_GRANT, now, amount, expiresAt, by),
+    const [, , ...reads] = await this.db.batch([
+      this.statement(GIVE_MANUAL_GRANT, now, amount, expiresAt),
+      this.db.prepare(RECORD_MANUAL_GRANT).bind(by),
       ...this.reads(),
     ])
     return this.account(now, reads)
@@ -429,6 +475,7 @@ export class Ledger {
     const [before] = await this.db.batch([
       this.db.prepare(COUNT_PAYMENT).bind(payment),
       this.statement(GIVE_PURCHASE, now, amount, expiresAt, payment),
+      this.db.prepare(RECORD_PURCHASE).bind(payment),
     ])
     return only(CountRow, before).n === 0 ? 'granted' : 'granted already'
   }
@@ -449,8 +496,9 @@ export class Ledger {
   }
 }
 
-/** How many of the payment ?1's grants have not been taken back. */
-const COUNT_KEPT = `SELECT count(*) AS n FROM grants WHERE payment = ?1 AND revoked IS NULL`
+/** How many of the payment ?1's purchases have not been taken back. */
+const COUNT_KEPT = `SELECT count(*) AS n FROM purchases p
+WHERE p.payment = ?1 AND NOT EXISTS (SELECT 1 FROM grant_revocations WHERE grant_id = p.grant_id)`
 
 /**
  * Takes back what is left of the purchase made with `payment`, after a refund or a dispute: see

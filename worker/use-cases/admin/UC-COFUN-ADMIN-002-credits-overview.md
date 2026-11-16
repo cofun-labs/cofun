@@ -8,7 +8,7 @@ For the period they also see what was spent through each product (Notico, and ea
 
 For the same period they see the accounts that were granted or spent credits in it: what each was granted and spent in the period, and its balance now, with the account that spent the most first. From there they open an account's own record (UC-COFUN-ADMIN-001). An account is shown by its user id only.
 
-A day is a calendar day on the operator's own clock. A grant belongs to the day it was made, and a model call, with what it cost, to the day it started.
+A day is a calendar day on the operator's own clock. A grant belongs to the day it was made, and a model call, with what it cost, to the day it ended, when it was charged.
 
 Key constraints:
 

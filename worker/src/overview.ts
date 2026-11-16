@@ -1,7 +1,7 @@
 /**
  * Credits as a whole, for the admin page: what was granted and spent over a period across every
- * account, per day, and the accounts of the period. Read-only, and worked out from the `grants` and
- * `model_calls` rows each time: no totals are stored.
+ * account, per day, and the accounts of the period. Read-only, and worked out from the `grants`,
+ * `spends`, and `model_calls` rows each time: no totals are stored.
  *
  * D1 runs one query at a time, so a slow query here would hold up charging. Every query is
  * therefore bounded by the period and reads only the period's rows, through the tables' time
@@ -25,11 +25,11 @@ export interface Period {
   utcOffset: number
 }
 
-/** Grants and model calls over some time. Amounts are in micro-credits. */
+/** Grants, spends, and model calls over some time. Amounts are in micro-credits. */
 interface Totals {
   /** Credits granted, by where they came from. A grant counts when it was made. */
   granted: Record<z.output<typeof GrantSource>, number>
-  /** What model calls cost. A call, with all it cost, counts when it started. */
+  /** What was spent, on anything. A spend, with all it cost, counts when it was charged. */
   spent: number
   /** Calls made to the model, however they ended. */
   calls: number
@@ -43,7 +43,7 @@ interface Totals {
   completionTokens: number
 }
 
-/** What one product's model calls cost in a period. Amounts are in micro-credits. */
+/** What one product spent in a period, and the model calls it made. Amounts are in micro-credits. */
 interface ProductSpending {
   /** `notico`, another extension's name, or `unknown` for a caller that is no listed extension. */
   product: string
@@ -84,23 +84,29 @@ FROM grants INDEXED BY grants_by_time
 WHERE granted_at >= ?1 AND granted_at < ?2
 GROUP BY day, source`
 
-const CALLS_PER_DAY = `SELECT (started_at + CAST(?3 AS INTEGER)) / ${DAY_MS} AS day, count(*) AS calls,
-  sum(outcome <> 'ok') AS failed_calls, sum(outcome = 'cancelled') AS cancelled_calls,
-  sum(micro_credits) AS spent,
-  sum(prompt_tokens) AS prompt_tokens, sum(cached_tokens) AS cached_tokens,
-  sum(completion_tokens) AS completion_tokens
-FROM model_calls INDEXED BY model_calls_by_time
-WHERE started_at >= ?1 AND started_at < ?2
+/**
+ * What was spent per day, and the model calls among the spends, each joined through its spend: a
+ * call counts on the day it was charged, as what it cost does.
+ */
+const SPENT_PER_DAY = `SELECT (s.created_at + CAST(?3 AS INTEGER)) / ${DAY_MS} AS day, sum(s.micro_credits) AS spent,
+  count(m.id) AS calls,
+  coalesce(sum(m.outcome <> 'ok'), 0) AS failed_calls, coalesce(sum(m.outcome = 'cancelled'), 0) AS cancelled_calls,
+  coalesce(sum(m.prompt_tokens), 0) AS prompt_tokens, coalesce(sum(m.cached_tokens), 0) AS cached_tokens,
+  coalesce(sum(m.completion_tokens), 0) AS completion_tokens
+FROM spends s INDEXED BY spends_by_time
+LEFT JOIN model_calls m ON m.spend_id = s.id
+WHERE s.created_at >= ?1 AND s.created_at < ?2
 GROUP BY day`
 
-const SPENT_PER_PRODUCT = `SELECT product, sum(micro_credits) AS spent, count(*) AS calls
-FROM model_calls INDEXED BY model_calls_by_time
-WHERE started_at >= ?1 AND started_at < ?2
-GROUP BY product
-ORDER BY spent DESC, calls DESC, product`
+const SPENT_PER_PRODUCT = `SELECT s.product, sum(s.micro_credits) AS spent, count(m.id) AS calls
+FROM spends s INDEXED BY spends_by_time
+LEFT JOIN model_calls m ON m.spend_id = s.id
+WHERE s.created_at >= ?1 AND s.created_at < ?2
+GROUP BY s.product
+ORDER BY spent DESC, calls DESC, s.product`
 
 /**
- * The accounts with a grant or a model call in the period, the biggest spenders first, at most ?4
+ * The accounts with a grant or a spend in the period, the biggest spenders first, at most ?4
  * of them. The balance is read only for those, each through the indexes by user. ?3 is now.
  */
 const ACCOUNTS = `WITH
@@ -109,8 +115,9 @@ granted AS (
   WHERE granted_at >= ?1 AND granted_at < ?2 GROUP BY user_id
 ),
 spent AS (
-  SELECT user_id, sum(micro_credits) AS spent, count(*) AS calls FROM model_calls INDEXED BY model_calls_by_time
-  WHERE started_at >= ?1 AND started_at < ?2 GROUP BY user_id
+  SELECT s.user_id, sum(s.micro_credits) AS spent, count(m.id) AS calls FROM spends s INDEXED BY spends_by_time
+  LEFT JOIN model_calls m ON m.spend_id = s.id
+  WHERE s.created_at >= ?1 AND s.created_at < ?2 GROUP BY s.user_id
 ),
 top AS (
   SELECT user_id, sum(granted) AS granted, sum(spent) AS spent, sum(calls) AS calls
@@ -173,12 +180,12 @@ function add(totals: Totals, more: Totals): void {
   totals.completionTokens += more.completionTokens
 }
 
-/** What was granted and spent in the period, for each of its days, by product, and in all. Both tables are read at one moment. */
+/** What was granted and spent in the period, for each of its days, by product, and in all. Every table is read at one moment. */
 export async function readOverview(db: Database, { from, to, utcOffset }: Period): Promise<Overview> {
   const offsetMs = utcOffset * 60_000
   const [grantedRows, callsRows, productRows] = await db.batch([
     db.prepare(GRANTED_PER_DAY).bind(from, to, offsetMs),
-    db.prepare(CALLS_PER_DAY).bind(from, to, offsetMs),
+    db.prepare(SPENT_PER_DAY).bind(from, to, offsetMs),
     db.prepare(SPENT_PER_PRODUCT).bind(from, to),
   ])
   // The period's days, by their number on the period's clock: `from` is a midnight on it.

@@ -67,7 +67,7 @@ export interface Env {
   CLERK_JWT_KEY?: string
   /** Comma-separated origins allowed to call, e.g. chrome-extension://<id>. Checked against the token's azp claim. */
   CLERK_AUTHORIZED_PARTIES?: string
-  /** Every user's credits: their grants, and their model calls with what each cost (D1 database, schema in migrations/). */
+  /** Every user's credits: their grants, and their spends with what each cost (D1 database, schema in migrations/). */
   DB: Database
   /** Per-request usage records (Workers Analytics Engine dataset). Never holds message content. */
   USAGE: UsageDataset

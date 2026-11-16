@@ -81,7 +81,7 @@ const NOTICO = { 'x-cofun-client': 'notico/0.3.0' }
 const chat = (bearer: string | undefined, body: unknown = { messages: hi }, more: Record<string, string> = NOTICO) =>
   req('POST', '/v1/chat/completions', bearer, body, more)
 /** The record of each model call, with its tokens and what it was charged. */
-const calls = () => db.rows('model_calls')
+const calls = () => db.calls()
 
 describe('UC-COFUN-CHAT-001 Ask the hosted model: only with a valid session', () => {
   it('[UC-COFUN-CHAT-001-S03] request without a session is refused', async () => {
@@ -321,10 +321,12 @@ describe('UC-COFUN-CREDITS-001 Spend credits on the hosted model', () => {
     await chat(token)
     // 50 credits are left: the call costs 150, takes the 50, and the 100 beyond them are forgiven.
     await chat(token)
-    expect(db.rows('grants').map((r) => [r.left, r.repaid])).toEqual([[0, 0]])
-    expect(db.rows('model_calls').map((r) => [r.micro_credits, r.owed])).toEqual([
-      [150_000_000, 0],
-      [150_000_000, 0],
+    expect(db.grants().map((r) => r.left)).toEqual([0])
+    expect(db.calls().map((r) => r.micro_credits)).toEqual([150_000_000, 150_000_000])
+    // What a spend took from the grant: the 50 left of it, and nothing for the second.
+    expect(db.rows('spend_grants').map((r) => [r.spend_id, r.grant_id, r.micro_credits])).toEqual([
+      [1, 1, 150_000_000],
+      [2, 1, 50_000_000],
     ])
     await refused(await chat(token))
     // The new week has all of its 200 credits to spend.
@@ -368,7 +370,7 @@ describe('UC-COFUN-CREDITS-001 Spend credits on the hosted model', () => {
     // The last chunk before [DONE] says what the call cost; the chunk with the usage comes before it.
     expect(events.slice(-2)).toEqual([`data: ${JSON.stringify({ choices: [], cost })}`, 'data: [DONE]'])
     expect(events.at(-3)).toContain('"usage"')
-    expect(db.rows('model_calls').map((r) => r.micro_credits)).toEqual([cost.micro_credits, cost.micro_credits])
+    expect(db.calls().map((r) => r.micro_credits)).toEqual([cost.micro_credits, cost.micro_credits])
   })
 
   it('[UC-COFUN-CREDITS-001-S13] a stream that breaks off says what it was charged, as an estimate', async () => {
@@ -377,7 +379,7 @@ describe('UC-COFUN-CREDITS-001 Spend credits on the hosted model', () => {
     const sse = await (await chat(token, { messages: hi, stream: true })).text()
     const cost = { micro_credits: 300 + 2 * 1200, estimated: true }
     expect(sse.split('\n\n').filter(Boolean).at(-1)).toBe(`data: ${JSON.stringify({ choices: [], cost })}`)
-    expect(db.rows('model_calls')).toEqual([
+    expect(db.calls()).toEqual([
       expect.objectContaining({ outcome: 'incomplete', estimated: 1, micro_credits: cost.micro_credits }),
     ])
   })
@@ -398,7 +400,7 @@ describe('UC-COFUN-CREDITS-001 Spend credits on the hosted model', () => {
         }
       })(),
     ).rejects.toThrow('the model stream failed')
-    const [call] = db.rows('model_calls')
+    const [call] = db.calls()
     expect(call).toMatchObject({ outcome: 'stream_error' })
     expect(text).toContain(
       `"cost":${JSON.stringify({ micro_credits: call.micro_credits, estimated: call.estimated === 1 })}`,
@@ -416,7 +418,7 @@ describe('UC-COFUN-CREDITS-001 Spend credits on the hosted model', () => {
     expect(replies.map((res) => res.status)).toEqual([200, 200])
     for (const res of replies) await res.text()
     // They took the 10 credits that were left, and nothing below zero.
-    expect(db.rows('grants').map((r) => r.left)).toEqual([0])
+    expect(db.grants().map((r) => r.left)).toEqual([0])
     await refused(await chat(token))
     // The next week's 200 credits are all there to spend.
     later(WEEK_MS)
@@ -430,9 +432,9 @@ describe('UC-COFUN-CREDITS-001 Spend credits on the hosted model', () => {
     const replies = await Promise.all(Array.from({ length: 8 }, () => chat(token)))
     expect(replies.map((res) => res.status)).toEqual(Array(8).fill(200))
     await Promise.all(replies.map((res) => res.text()))
-    expect(db.rows('grants')).toHaveLength(1)
-    expect(db.rows('model_calls').map((r) => r.micro_credits)).toEqual(Array(8).fill(FAKE_COST))
-    expect(db.rows('grants')[0]).toMatchObject({ amount: 200_000_000, left: 200_000_000 - 8 * FAKE_COST })
+    expect(db.grants()).toHaveLength(1)
+    expect(db.calls().map((r) => r.micro_credits)).toEqual(Array(8).fill(FAKE_COST))
+    expect(db.grants()[0]).toMatchObject({ amount: 200_000_000, left: 200_000_000 - 8 * FAKE_COST })
   })
 
   it('[@no-uc:money] each model call leaves a record of how it ended, its tokens, and what it cost', async () => {
@@ -450,13 +452,13 @@ describe('UC-COFUN-CREDITS-001 Spend credits on the hosted model', () => {
       completion_tokens: 5,
       estimated: 0,
       micro_credits: 100 * 300 + 900 * 6 + 5 * 1200,
-      owed: 0,
       product: 'notico',
+      kind: 'model_call',
     }
     const start = Date.parse('2026-11-08T12:00:00Z')
-    expect(db.rows('model_calls')).toEqual([
-      { id: 1, ...call, started_at: start, ended_at: start, stream: 0 },
-      { id: 2, ...call, started_at: start + 1000, ended_at: start + 1000, stream: 1 },
+    expect(db.calls()).toEqual([
+      { id: 1, ...call, started_at: start, created_at: start, stream: 0 },
+      { id: 2, ...call, started_at: start + 1000, created_at: start + 1000, stream: 1 },
     ])
   })
 
@@ -469,15 +471,15 @@ describe('UC-COFUN-CREDITS-001 Spend credits on the hosted model', () => {
     ai.rawSse = undefined
     ai.streamFailWith = new Error('connection reset')
     await (await chat(token, { messages: hi, stream: true })).text().catch(() => {})
-    expect(db.rows('model_calls').map((r) => [r.outcome, r.stream, r.prompt_tokens, r.micro_credits])).toEqual([
+    expect(db.calls().map((r) => [r.outcome, r.stream, r.prompt_tokens, r.micro_credits])).toEqual([
       ['provider_error', 0, 0, 0],
       ['incomplete', 1, 0, 0],
       ['stream_error', 1, 0, 0],
     ])
-    expect(db.rows('grants')[0]).toMatchObject({ left: 200_000_000 })
+    expect(db.grants()[0]).toMatchObject({ left: 200_000_000 })
     // A request refused before the model was called is no model call.
     await chat(token, { messages: [] })
-    expect(db.rows('model_calls')).toHaveLength(3)
+    expect(db.calls()).toHaveLength(3)
   })
 
   it('[@no-uc:money] a stream cut short is recorded with the estimate it was charged by', async () => {
@@ -486,7 +488,7 @@ describe('UC-COFUN-CREDITS-001 Spend credits on the hosted model', () => {
     // The first line: the first piece of the reply, "Hello ".
     await reader.read()
     await reader.cancel()
-    expect(db.rows('model_calls')).toEqual([
+    expect(db.calls()).toEqual([
       expect.objectContaining({ outcome: 'cancelled', estimated: 1, prompt_tokens: 1, completion_tokens: 2 }),
     ])
   })
@@ -498,11 +500,11 @@ describe('UC-COFUN-CREDITS-001 Spend credits on the hosted model', () => {
     await chat(token)
     repliesCost(30)
     await chat(bob)
-    expect(db.rows('grants').map((r) => [r.user_id, r.left])).toEqual([
+    expect(db.grants().map((r) => [r.user_id, r.left])).toEqual([
       ['user_alice', 0],
       ['user_bob', 170_000_000],
     ])
-    expect(db.rows('model_calls').map((r) => r.user_id)).toEqual(['user_alice', 'user_alice', 'user_bob'])
+    expect(db.calls().map((r) => r.user_id)).toEqual(['user_alice', 'user_alice', 'user_bob'])
     // Alice is out of credits, not Bob: he can still ask, and she cannot.
     await refused(await chat(token))
     expect((await chat(bob)).status).toBe(200)
@@ -519,9 +521,15 @@ describe('UC-COFUN-CREDITS-001 Spend credits on the hosted model', () => {
     )
     repliesCost(60)
     await chat(token)
-    expect(db.rows('grants').map((r) => [r.source, r.left])).toEqual([
+    expect(db.grants().map((r) => [r.source, r.left])).toEqual([
       ['free', 0],
       ['manual', 90_000_000],
+    ])
+    // The second call's 60 credits came from both grants: the 50 left of the week, then 10.
+    expect(db.rows('spend_grants').map((r) => [r.spend_id, r.grant_id, r.micro_credits])).toEqual([
+      [1, 1, 150_000_000],
+      [2, 1, 50_000_000],
+      [2, 2, 10_000_000],
     ])
   })
 
@@ -581,7 +589,7 @@ describe('UC-COFUN-CREDITS-001 Spend credits on the hosted model', () => {
       message: 'Too many requests at once. Wait a minute, then ask again.',
     })
     expect(ai.calls).toHaveLength(2)
-    expect(db.rows('model_calls')).toHaveLength(2)
+    expect(db.calls()).toHaveLength(2)
     const bob = await clerk.sessionToken({ userId: 'user_bob', azp: EXT })
     expect((await chat(bob)).status).toBe(200)
   })
@@ -675,7 +683,7 @@ describe('UC-COFUN-CREDITS-001 Spend credits on the hosted model', () => {
     db.failOn = { sql: 'INSERT INTO model_calls', error: new Error('D1_ERROR: Network connection lost.') }
     expect((await chat(token)).status).toBe(200)
     expect(await (await chat(token, { messages: hi, stream: true })).text()).toContain('[DONE]')
-    expect(db.rows('grants')[0]).toMatchObject({ left: 200_000_000 })
+    expect(db.grants()[0]).toMatchObject({ left: 200_000_000 })
     expect(logged).toEqual(Array(2).fill('model call record failed: Error: D1_ERROR: Network connection lost.'))
   })
 
@@ -762,7 +770,7 @@ describe('error logs', () => {
 
 // Standalone tests for the product a model call is recorded under.
 describe('product of a model call', () => {
-  const products = () => db.rows('model_calls').map((r) => r.product)
+  const products = () => db.calls().map((r) => r.product)
 
   it('[@no-uc:money] is the product the extension names in its header, whatever its version', async () => {
     await chat(token)

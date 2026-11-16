@@ -552,18 +552,28 @@ describe('admin overview API', () => {
     )
     for (const plan of plans) {
       // A scan of a CTE's own result is fine; a scan of a table is not.
-      expect(plan.filter((step) => /^SCAN (grants|model_calls)\b/.test(step))).toEqual([])
+      expect(
+        plan.filter((step) => /^SCAN (grants|spends|spend_grants|model_calls|grant_revocations)\b/.test(step)),
+      ).toEqual([])
     }
-    const [granted, calls, byProduct, listed] = plans
+    const [granted, spent, byProduct, listed] = plans
+    const bySpendTime = 'SEARCH s USING INDEX spends_by_time (created_at>? AND created_at<?)'
+    // A spend's model call is found by the spend, through the index of its unique spend_id.
+    const callOfSpend = /^SEARCH m USING (COVERING )?INDEX sqlite_autoindex_model_calls_\d \(spend_id=\?\)/
     expect(granted).toContain('SEARCH grants USING INDEX grants_by_time (granted_at>? AND granted_at<?)')
-    expect(calls).toContain('SEARCH model_calls USING INDEX model_calls_by_time (started_at>? AND started_at<?)')
-    expect(byProduct).toContain('SEARCH model_calls USING INDEX model_calls_by_time (started_at>? AND started_at<?)')
+    expect(spent).toContain(bySpendTime)
+    expect(spent.some((step) => callOfSpend.test(step))).toBe(true)
+    expect(byProduct).toContain(bySpendTime)
+    expect(byProduct.some((step) => callOfSpend.test(step))).toBe(true)
     expect(listed).toContain('SEARCH grants USING INDEX grants_by_time (granted_at>? AND granted_at<?)')
-    expect(listed).toContain('SEARCH model_calls USING INDEX model_calls_by_time (started_at>? AND started_at<?)')
-    // Every other read of the tables is one account's balance, through an index that starts with the user.
-    const others = listed.filter((step) => /^SEARCH (grants|model_calls)\b/.test(step) && !step.includes('_by_time'))
+    expect(listed).toContain(bySpendTime)
+    // Every other read of the tables is one account's balance: its grants through an index that starts
+    // with the user, and what was spent from each grant or whether it was taken back, by the grant.
+    const others = listed.filter(
+      (step) => /^SEARCH \w+ USING/.test(step) && !step.includes('_by_time') && !callOfSpend.test(step),
+    )
     expect(others.length).toBeGreaterThan(0)
-    for (const step of others) expect(step).toMatch(/USING (COVERING )?INDEX \w+ \(user_id=\?/)
+    for (const step of others) expect(step).toMatch(/USING (COVERING )?INDEX \w+ \((user_id|grant_id)=\?/)
   })
 
   it('[@no-uc:privacy] looking at the overview logs nothing', async () => {
