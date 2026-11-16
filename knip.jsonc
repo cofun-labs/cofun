@@ -2,11 +2,11 @@
 //
 // No entry points are listed here: knip's plugins read each package's own config, so the entries
 // cannot drift from what is really built and run.
-//   extensions/*  vite.config.ts (build.rollupOptions.input: sidepanel.html and src/background.ts),
+//   extension     vite.config.ts (build.rollupOptions.input: sidepanel.html and src/background.ts),
 //                 the tests vitest.config.ts includes, playwright.config.ts (testDir: browser-test),
-//                 and the "icons" script in package.json (node icons/export.ts)
+//                 and the "icons" and "browser-driver" scripts in package.json (node
+//                 icons/export.ts, tsx browser-driver/cli.ts)
 //   worker        wrangler.jsonc (main: src/index.ts), and vitest's default test files
-//   e2e           the "e2e" script in package.json (tsx src/cli.ts)
 //   scripts       the "use-cases", "release-notes", and "media" scripts in package.json (node
 //                 check-use-cases.ts, node release-notes.ts, node upload-media.ts), and vitest's
 //                 default test files
@@ -18,11 +18,6 @@
 {
   "$schema": "https://unpkg.com/knip@6/schema-jsonc.json",
   "workspaces": {
-    "e2e": {
-      // src/extension.ts runs `pnpm exec vite build` with extensions/notico as its working
-      // directory, so the binary is the extension's vite, not a dependency of this package.
-      "ignoreBinaries": ["vite"]
-    },
     "scripts": {
       // upload-media.ts runs the Cloudflare CLI installed on the maintainer's machine, where its
       // login is; it is not a dependency, and CI never runs it.

@@ -12,7 +12,7 @@ Bugs that aren't security problems go to the [issues](https://github.com/cofun-l
 
 In scope:
 
-- The extensions in this repository ([`extensions/`](extensions)), as built from it or installed from the Chrome Web Store.
+- The extensions in this repository ([`extension/`](extension)), as built from it or installed from the Chrome Web Store.
 - The worker they share ([`worker/`](worker)), served at `api.cofun.cc`, its sign-in page included.
 
 Out of scope: the services Cofun relies on (Notion, Clerk, Cloudflare, Stripe, OpenRouter, PostHog), unless the problem is in how Cofun uses them; report the rest to them. [docs/security.md](docs/security.md) describes what Cofun protects and the trade-offs it accepts on purpose.

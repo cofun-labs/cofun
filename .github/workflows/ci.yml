@@ -45,11 +45,11 @@ jobs:
         env:
           VITEST_MAX_WORKERS: 3
 
-      # Each extension's browser tests load the build that "Run checks" just made into Playwright's Chromium.
+      # The extension's browser tests load the build that "Run checks" just made into Playwright's Chromium.
       # No --with-deps: the runner image already has the libraries Chromium needs, and the only
       # packages it would add are fonts, which took most of a minute and the test doesn't need.
       - name: Install Chromium
-        run: pnpm --filter notico-extension exec playwright install --no-shell chromium
+        run: pnpm --filter cofun-extension exec playwright install --no-shell chromium
 
-      - name: Run the extensions' browser tests
-        run: pnpm -r --filter './extensions/*' test:browser
+      - name: Run the extension's browser tests
+        run: pnpm --filter cofun-extension test:browser

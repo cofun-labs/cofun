@@ -1,6 +1,6 @@
-// Runs Notico's real agent (extensions/notico/src/agent/) against the worker, for what the two must
+// Runs Notico's real agent (extension/src/agent/) against the worker, for what the two must
 // agree on: the streamed reply, the tool-call round trip, sessions, credits, the cost of a question,
-// and a model change. The agent's own rules are tested in extensions/notico/test/agent.test.ts.
+// and a model change. The agent's own rules are tested in extension/test/agent.test.ts.
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import {
   CopilotAgent,
@@ -10,9 +10,9 @@ import {
   type ConfirmTool,
   type HistoryMessage,
   type ToolSpec,
-} from '../../extensions/notico/src/agent'
-import { WebError } from '../../extensions/notico/src/agent/types'
-import { readWebPage, searchWebFor } from '../../extensions/notico/src/agent/worker'
+} from '../../extension/src/agent'
+import { WebError } from '../../extension/src/agent/types'
+import { readWebPage, searchWebFor } from '../../extension/src/agent/worker'
 import { createApp, type Env } from '../src/app'
 import { priceOf } from '../src/pricing'
 import { FakeClerk } from './clerk'

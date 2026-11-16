@@ -1,6 +1,6 @@
 ---
 name: bdd-audit
-description: Audit how well the use cases (extensions/*/use-cases and worker/use-cases) and the tests cover the product's business rules, and list the gaps for the maintainer to pick from. Run before a release or after a large feature. Reports only; edits nothing.
+description: Audit how well the use cases (extension/products/*/use-cases and worker/use-cases) and the tests cover the product's business rules, and list the gaps for the maintainer to pick from. Run before a release or after a large feature. Reports only; edits nothing.
 ---
 
 # BDD coverage audit
@@ -13,9 +13,9 @@ Read `docs/bdd.md` first for what a use case, a scenario, and the two strategies
 
 1. **Run the coverage check.** `pnpm use-cases`. Note every error (a ✅ `api-test` scenario no test names) and warning (a 🚧 scenario that already has a test, a test naming an ID no use case it can verify has or an ID without its product, an ID in more than one row, an ID whose prefix doesn't match the product whose folder holds it, a test naming an `ai-e2e` scenario).
 
-2. **Promises with no scenario.** For each use case in `extensions/*/use-cases/**/UC-*.md` and `worker/use-cases/**/UC-*.md`, read its Behavior and Key constraints and list each promise a user or client relies on that no scenario expresses. Each Key constraint needs at least one scenario. Also look for promises the code no longer keeps (a constraint the implementation dropped): those are gaps too, in the use case or in the code.
+2. **Promises with no scenario.** For each use case in `extension/products/*/use-cases/**/UC-*.md` and `worker/use-cases/**/UC-*.md`, read its Behavior and Key constraints and list each promise a user or client relies on that no scenario expresses. Each Key constraint needs at least one scenario. Also look for promises the code no longer keeps (a constraint the implementation dropped): those are gaps too, in the use case or in the code.
 
-3. **`@no-uc` tests that guard a business rule, or nothing.** Read the tests named `[@no-uc:<kind>]` in `worker/test/` and `extensions/*/test/` (docs/bdd.md#what-gets-a-test). Most are implementation risks and should stay so. List those that guard a rule a user would notice if it broke, such as how something is charged, what is refused, or what is kept between questions (a scenario is missing), and those whose break would do none of the harms their kind names (the test may go).
+3. **`@no-uc` tests that guard a business rule, or nothing.** Read the tests named `[@no-uc:<kind>]` in `worker/test/` and `extension/test/` (docs/bdd.md#what-gets-a-test). Most are implementation risks and should stay so. List those that guard a rule a user would notice if it broke, such as how something is charged, what is refused, or what is kept between questions (a scenario is missing), and those whose break would do none of the harms their kind names (the test may go).
 
 4. **Tests that don't match their scenario.** For each tagged test, compare its name and what it asserts with the scenario line it names. List tests that check something else, or only part of the scenario's "then".
 
@@ -28,7 +28,7 @@ Use subagents to read use cases or test folders in parallel when there are many;
 A short list grouped by use case, most important first, every item naming the file (and the test or scenario ID) it is about. Keep each item to a line or two. For example:
 
 ```markdown
-### UC-NOTICO-CHAT-001 (extensions/notico/use-cases/chat/UC-NOTICO-CHAT-001-side-panel-chat.md)
+### UC-NOTICO-CHAT-001 (extension/products/notico/use-cases/chat/UC-NOTICO-CHAT-001-side-panel-chat.md)
 
 - Behavior: "each call to the model costs what its tokens cost" is guarded only by a `@no-uc` test
   (worker/test/api.test.ts, "a call is charged what its tokens cost").
@@ -37,7 +37,7 @@ A short list grouped by use case, most important first, every item naming the fi
   (worker/test/api.test.ts, "calls sent at once all start on the same balance, and what they cost beyond it is forgiven").
   Suggest: decide whether the constraint or the code changes, then a P1 scenario for the bound.
 
-### UC-NOTICO-NOTION-002 (extensions/notico/use-cases/notion/UC-NOTICO-NOTION-002-edit-page.md)
+### UC-NOTICO-NOTION-002 (extension/products/notico/use-cases/notion/UC-NOTICO-NOTION-002-edit-page.md)
 
 - Behavior promises an edit applies whole or not at all; no scenario says so.
   Suggest: api-test P0 "Given an edit Notion refuses partway; when the agent makes it; then the page is left as it was."
