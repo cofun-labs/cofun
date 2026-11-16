@@ -1,6 +1,6 @@
 # Development
 
-Requires Node.js 24 and pnpm. The repository is one pnpm workspace: the [worker](#worker), shared by every extension, and one folder per extension in `extensions/` ([Notico](#notico) is the first). The commands below cover all of them.
+Requires Node.js 24 and pnpm. The repository is one pnpm workspace with the [worker](#worker), one folder per extension in `extensions/` ([Notico](#notico) is the first), and the internal extension package in `packages/base/`. The commands below cover all of them.
 
 ```bash
 pnpm install

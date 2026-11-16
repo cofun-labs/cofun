@@ -1,5 +1,3 @@
-import { useEffect, useRef, useState, type KeyboardEvent } from 'react'
-import { track } from '../analytics'
 import {
   dayText,
   daysText,
@@ -13,7 +11,9 @@ import {
   type CreditsState,
   type Pack,
   type Packs,
-} from '../credits'
+} from '@cofun/base/credits'
+import { useEffect, useRef, useState, type KeyboardEvent } from 'react'
+import { track } from '../analytics'
 import { Page } from './Header'
 import { History, type ReadGrants } from './History'
 import { Icon } from './icons'

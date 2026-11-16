@@ -1,8 +1,17 @@
-// Where the agent's model requests go (see ModelProvider), and what is the same for every service:
-// how much of a conversation to send, and how a failed request's error reads.
+// Model provider contract and helpers for reading failures reported by the OpenAI-compatible SDK.
 import type { ClientIdentity, Model } from '@earendil-works/pi-ai'
 import { z } from '../zod'
-import type { Turn } from './types'
+
+/**
+ * Which chat (the session's id) and which question of it (an id made for the question) a request to
+ * the worker is for, sent as X-Cofun-Chat-Id and X-Cofun-Turn-Id, so the worker records what the
+ * request spent with them. Random ids: they say nothing about the content. Never sent to a user's own
+ * model's service.
+ */
+export interface Turn {
+  chat?: string
+  turn?: string
+}
 
 /**
  * Where the agent's model requests go, and what is particular to the service behind them: which
@@ -45,17 +54,6 @@ export interface CallCost {
 // The worker allows 200 messages and 200,000 characters, tools included.
 export const HOSTED_HISTORY = { messages: 100, chars: 150_000 }
 
-/**
- * How much of a long conversation to send to a model the user pays for: what the hosted provider
- * sends, at most. Every round trip resends the history, so a model with a huge context must not make
- * each question cost dollars. A smaller context lowers it (a token is about four characters: half the
- * context, which leaves room for the reply).
- */
-export const ownHistory = (contextLength: number) => ({
-  messages: 100,
-  chars: Math.min(contextLength * 2, HOSTED_HISTORY.chars),
-})
-
 // What the worker answers, as far as the agent reads it. Each field is read loosely: one that is not
 // text counts as missing, so a reply the agent can't read ends in the fallback, never in a wrong value.
 export const looseText = z.string().optional().catch(undefined)
@@ -83,9 +81,6 @@ export function parseError(message: string | undefined): Failure {
   const inner = body?.error === undefined || body.error === null ? body : ErrorFields.safeParse(body.error).data
   return inner?.message ? { text: inner.message, code: inner.code } : { text: rest }
 }
-
-/** The code of a failure for a key the user's own provider turned away (HTTP 401 or 403). */
-export const KEY_REJECTED = 'key_rejected'
 
 export interface Failure {
   text: string

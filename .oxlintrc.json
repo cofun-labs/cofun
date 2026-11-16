@@ -18,8 +18,8 @@
 {
   "$schema": "./node_modules/oxlint/configuration_schema.json",
   "rules": {
-    // Everywhere in the repository, tests included. extensions/*/src/agent/ is exempted below for pi,
-    // and extensions/*/src/analytics.ts for the PostHog SDK.
+    // Restricted to the agent folders for pi and the shared Worker client. Only the extension's
+    // analytics module imports the PostHog SDK.
     "no-restricted-imports": [
       "error",
       {
@@ -29,9 +29,10 @@
               "@earendil-works/pi-agent-core",
               "@earendil-works/pi-agent-core/**",
               "@earendil-works/pi-ai",
-              "@earendil-works/pi-ai/**"
+              "@earendil-works/pi-ai/**",
+              "@cofun/base/agent"
             ],
-            "message": "Only an extension's src/agent/ imports pi. Import what you need from src/agent/ (its index.ts), or add it there."
+            "message": "Only the agent folders import pi or the shared Worker client (@cofun/base/agent)."
           },
           {
             "group": ["posthog-js", "posthog-js/**"],
@@ -69,9 +70,10 @@
                   "@earendil-works/pi-agent-core",
                   "@earendil-works/pi-agent-core/**",
                   "@earendil-works/pi-ai",
-                  "@earendil-works/pi-ai/**"
+                  "@earendil-works/pi-ai/**",
+                  "@cofun/base/agent"
                 ],
-                "message": "Only an extension's src/agent/ imports pi. Import what you need from src/agent/ (its index.ts), or add it there."
+                "message": "Only the agent folders import pi or the shared Worker client (@cofun/base/agent)."
               },
               {
                 "group": ["posthog-js", "posthog-js/**"],
@@ -79,11 +81,11 @@
               },
               {
                 "regex": "^\\.\\./[^./]",
-                "message": "An extension never imports another extension: each one in extensions/<name>/ keeps its own copy of what it needs."
+                "message": "Extensions and their shared base do not import another extension."
               },
               {
                 "regex": "^(\\.\\./)+extensions/",
-                "message": "An extension never imports another extension: each one in extensions/<name>/ keeps its own copy of what it needs."
+                "message": "Extensions and their shared base do not import another extension."
               }
             ]
           }
@@ -103,9 +105,10 @@
                   "@earendil-works/pi-agent-core",
                   "@earendil-works/pi-agent-core/**",
                   "@earendil-works/pi-ai",
-                  "@earendil-works/pi-ai/**"
+                  "@earendil-works/pi-ai/**",
+                  "@cofun/base/agent"
                 ],
-                "message": "Only an extension's src/agent/ imports pi. Import what you need from src/agent/ (its index.ts), or add it there."
+                "message": "Only the agent folders import pi or the shared Worker client (@cofun/base/agent)."
               },
               {
                 "group": ["posthog-js", "posthog-js/**"],
@@ -113,11 +116,11 @@
               },
               {
                 "regex": "^\\.\\./\\.\\./[^./]",
-                "message": "An extension never imports another extension: each one in extensions/<name>/ keeps its own copy of what it needs."
+                "message": "Extensions and their shared base do not import another extension."
               },
               {
                 "regex": "^(\\.\\./)+extensions/",
-                "message": "An extension never imports another extension: each one in extensions/<name>/ keeps its own copy of what it needs."
+                "message": "Extensions and their shared base do not import another extension."
               }
             ]
           }
@@ -125,7 +128,7 @@
       }
     },
     {
-      "files": ["extensions/*/src/**"],
+      "files": ["extensions/*/src/**", "packages/base/src/**"],
       "rules": {
         "no-restricted-imports": [
           "error",
@@ -136,9 +139,10 @@
                   "@earendil-works/pi-agent-core",
                   "@earendil-works/pi-agent-core/**",
                   "@earendil-works/pi-ai",
-                  "@earendil-works/pi-ai/**"
+                  "@earendil-works/pi-ai/**",
+                  "@cofun/base/agent"
                 ],
-                "message": "Only an extension's src/agent/ imports pi. Import what you need from src/agent/ (its index.ts), or add it there."
+                "message": "Only the agent folders import pi or the shared Worker client (@cofun/base/agent)."
               },
               {
                 "group": ["posthog-js", "posthog-js/**"],
@@ -146,15 +150,15 @@
               },
               {
                 "regex": "^zod(/|$)",
-                "message": "Import z from the extension's src/zod.ts: it sets zod up for the extension's content security policy before any schema is built."
+                "message": "Use the wrapper in @cofun/base/zod so object parsers comply with the extension's content security policy."
               },
               {
                 "regex": "^(\\.\\./)+[^./][^/]*/(src|test)(/|$)",
-                "message": "An extension never imports another extension: each one in extensions/<name>/ keeps its own copy of what it needs."
+                "message": "Extensions and their shared base do not import another extension."
               },
               {
                 "regex": "^(\\.\\./)+extensions/",
-                "message": "An extension never imports another extension: each one in extensions/<name>/ keeps its own copy of what it needs."
+                "message": "Extensions and their shared base do not import another extension."
               }
             ]
           }
@@ -211,9 +215,10 @@
                   "@earendil-works/pi-agent-core",
                   "@earendil-works/pi-agent-core/**",
                   "@earendil-works/pi-ai",
-                  "@earendil-works/pi-ai/**"
+                  "@earendil-works/pi-ai/**",
+                  "@cofun/base/agent"
                 ],
-                "message": "Only an extension's src/agent/ imports pi. Import what you need from src/agent/ (its index.ts), or add it there."
+                "message": "Only the agent folders import pi or the shared Worker client (@cofun/base/agent)."
               },
               {
                 "group": ["posthog-js", "posthog-js/**"],
@@ -225,15 +230,15 @@
               },
               {
                 "regex": "^zod(/|$)",
-                "message": "Import z from the extension's src/zod.ts: it sets zod up for the extension's content security policy before any schema is built."
+                "message": "Use the wrapper in @cofun/base/zod so object parsers comply with the extension's content security policy."
               },
               {
                 "regex": "^(\\.\\./)+[^./][^/]*/(src|test)(/|$)",
-                "message": "An extension never imports another extension: each one in extensions/<name>/ keeps its own copy of what it needs."
+                "message": "Extensions and their shared base do not import another extension."
               },
               {
                 "regex": "^(\\.\\./)+extensions/",
-                "message": "An extension never imports another extension: each one in extensions/<name>/ keeps its own copy of what it needs."
+                "message": "Extensions and their shared base do not import another extension."
               }
             ]
           }
@@ -241,8 +246,8 @@
       }
     },
     {
-      // The one folder that imports pi, and the one that calls the worker: the agent, src/agent/.
-      "files": ["extensions/*/src/agent/**"],
+      // The agent folders use pi and call the worker. Extensions reach the shared client from here.
+      "files": ["extensions/*/src/agent/**", "packages/base/src/agent/**"],
       "rules": {
         "no-restricted-imports": [
           "error",
@@ -254,15 +259,15 @@
               },
               {
                 "regex": "^zod(/|$)",
-                "message": "Import z from the extension's src/zod.ts: it sets zod up for the extension's content security policy before any schema is built."
+                "message": "Use the wrapper in @cofun/base/zod so object parsers comply with the extension's content security policy."
               },
               {
                 "regex": "^(\\.\\./)+[^./][^/]*/(src|test)(/|$)",
-                "message": "An extension never imports another extension: each one in extensions/<name>/ keeps its own copy of what it needs."
+                "message": "Extensions and their shared base do not import another extension."
               },
               {
                 "regex": "^(\\.\\./)+extensions/",
-                "message": "An extension never imports another extension: each one in extensions/<name>/ keeps its own copy of what it needs."
+                "message": "Extensions and their shared base do not import another extension."
               }
             ]
           }
@@ -338,8 +343,8 @@
       }
     },
     {
-      // The one module that imports zod. Its other restrictions (the extensions/*/src block) still hold.
-      "files": ["extensions/*/src/zod.ts"],
+      // The shared wrapper configures zod for the extensions before they build any schemas.
+      "files": ["packages/base/src/zod.ts"],
       "rules": {
         "no-restricted-imports": [
           "error",
@@ -350,9 +355,10 @@
                   "@earendil-works/pi-agent-core",
                   "@earendil-works/pi-agent-core/**",
                   "@earendil-works/pi-ai",
-                  "@earendil-works/pi-ai/**"
+                  "@earendil-works/pi-ai/**",
+                  "@cofun/base/agent"
                 ],
-                "message": "Only an extension's src/agent/ imports pi. Import what you need from src/agent/ (its index.ts), or add it there."
+                "message": "Only the agent folders import pi or the shared Worker client (@cofun/base/agent)."
               },
               {
                 "group": ["posthog-js", "posthog-js/**"],
@@ -360,11 +366,11 @@
               },
               {
                 "regex": "^(\\.\\./)+[^./][^/]*/(src|test)(/|$)",
-                "message": "An extension never imports another extension: each one in extensions/<name>/ keeps its own copy of what it needs."
+                "message": "Extensions and their shared base do not import another extension."
               },
               {
                 "regex": "^(\\.\\./)+extensions/",
-                "message": "An extension never imports another extension: each one in extensions/<name>/ keeps its own copy of what it needs."
+                "message": "Extensions and their shared base do not import another extension."
               }
             ]
           }
@@ -384,21 +390,22 @@
                   "@earendil-works/pi-agent-core",
                   "@earendil-works/pi-agent-core/**",
                   "@earendil-works/pi-ai",
-                  "@earendil-works/pi-ai/**"
+                  "@earendil-works/pi-ai/**",
+                  "@cofun/base/agent"
                 ],
-                "message": "Only an extension's src/agent/ imports pi. Import what you need from src/agent/ (its index.ts), or add it there."
+                "message": "Only the agent folders import pi or the shared Worker client (@cofun/base/agent)."
               },
               {
                 "regex": "^zod(/|$)",
-                "message": "Import z from the extension's src/zod.ts: it sets zod up for the extension's content security policy before any schema is built."
+                "message": "Use the wrapper in @cofun/base/zod so object parsers comply with the extension's content security policy."
               },
               {
                 "regex": "^(\\.\\./)+[^./][^/]*/(src|test)(/|$)",
-                "message": "An extension never imports another extension: each one in extensions/<name>/ keeps its own copy of what it needs."
+                "message": "Extensions and their shared base do not import another extension."
               },
               {
                 "regex": "^(\\.\\./)+extensions/",
-                "message": "An extension never imports another extension: each one in extensions/<name>/ keeps its own copy of what it needs."
+                "message": "Extensions and their shared base do not import another extension."
               }
             ]
           }
@@ -418,9 +425,10 @@
                   "@earendil-works/pi-agent-core",
                   "@earendil-works/pi-agent-core/**",
                   "@earendil-works/pi-ai",
-                  "@earendil-works/pi-ai/**"
+                  "@earendil-works/pi-ai/**",
+                  "@cofun/base/agent"
                 ],
-                "message": "Only an extension's src/agent/ imports pi. Import what you need from src/agent/ (its index.ts), or add it there."
+                "message": "Only the agent folders import pi or the shared Worker client (@cofun/base/agent)."
               },
               {
                 "group": ["posthog-js", "posthog-js/**"],
@@ -448,9 +456,10 @@
                   "@earendil-works/pi-agent-core",
                   "@earendil-works/pi-agent-core/**",
                   "@earendil-works/pi-ai",
-                  "@earendil-works/pi-ai/**"
+                  "@earendil-works/pi-ai/**",
+                  "@cofun/base/agent"
                 ],
-                "message": "Only an extension's src/agent/ imports pi. Import what you need from src/agent/ (its index.ts), or add it there."
+                "message": "Only the agent folders import pi or the shared Worker client (@cofun/base/agent)."
               },
               {
                 "group": ["posthog-js", "posthog-js/**"],

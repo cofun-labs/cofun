@@ -1,7 +1,7 @@
 // The user's own model, on the provider they chose, and the settings page's check of their key.
+import type { ModelProvider } from '@cofun/base/agent'
 import type { OwnSetup } from '../models'
 import { checkOpenRouterKey, openRouterProvider } from './openrouter'
-import type { ModelProvider } from './provider'
 
 /** The provider for the user's own model on the service they chose. */
 export const ownProvider = (setup: OwnSetup): ModelProvider => openRouterProvider(setup)

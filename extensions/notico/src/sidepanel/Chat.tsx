@@ -1,3 +1,4 @@
+import type { CreditsState } from '@cofun/base/credits'
 import { useAuth } from '@clerk/chrome-extension'
 import {
   memo,
@@ -22,7 +23,6 @@ import {
   type QuestionSelection,
 } from '../agent'
 import { track } from '../analytics'
-import type { CreditsState } from '../credits'
 import { loadMode, saveMode, watchMode, type Mode } from '../mode'
 import {
   answering,

@@ -1,7 +1,7 @@
 // What the extension reads out of Clerk's publishable key (src/clerk.ts): the Frontend API host,
 // and the host Clerk's Sync Host reads the signed-in client from.
 import { describe, expect, it } from 'vitest'
-import { clerkFrontendApi, clerkSyncHost } from '../src/clerk'
+import { clerkFrontendApi, clerkSyncHost } from '@cofun/base/clerk'
 
 const SIGN_IN_HOST = 'https://copilot.example.com'
 /** Keys as Clerk builds them: the Frontend API host and a `$`, in base64 without padding. */

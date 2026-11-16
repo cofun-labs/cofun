@@ -1,9 +1,23 @@
 // OpenRouter, with the user's own key: the provider, and the models it lists.
+import { HOSTED_HISTORY, parseError, type Failure, type ModelProvider } from '@cofun/base/agent'
 import type { Model } from '@earendil-works/pi-ai'
 import type { OwnModel } from '../models'
 import { z } from '../zod'
 import type { KeyCheck } from './own'
-import { KEY_REJECTED, ownHistory, parseError, type Failure, type ModelProvider } from './provider'
+
+/**
+ * How much of a long conversation to send to a model the user pays for: what the hosted provider
+ * sends, at most. Every round trip resends the history, so a model with a huge context must not make
+ * each question cost dollars. A smaller context lowers it (a token is about four characters: half the
+ * context, which leaves room for the reply).
+ */
+const ownHistory = (contextLength: number) => ({
+  messages: 100,
+  chars: Math.min(contextLength * 2, HOSTED_HISTORY.chars),
+})
+
+/** The code of a failure for a key the user's own provider turned away (HTTP 401 or 403). */
+export const KEY_REJECTED = 'key_rejected'
 
 /** OpenRouter's API, which answers requests from the extension's pages. */
 const OPENROUTER = 'https://openrouter.ai/api/v1'

@@ -1,17 +1,27 @@
 // The side panel's agent: asks the model, runs the tools it calls in the extension, and sends the
 // results back until the model answers. Where the model runs is a provider (see ModelProvider in
-// provider.ts): our worker (the hosted one, worker.ts), or OpenRouter with the user's own key
+// @cofun/base/agent): our Worker or OpenRouter with the user's own key
 // (own.ts). Only the modules of this folder import the agent runtime (pi); the rest of the
 // extension uses the types in types.ts, through index.ts.
+import {
+  checkout,
+  hostedProvider,
+  readCreditGrants,
+  readCreditPacks,
+  readCredits,
+  type CallCost,
+  type Failure,
+  type ModelProvider,
+  type Turn,
+} from '@cofun/base/agent'
+import type { Credits, Packs, PastGrant } from '@cofun/base/credits'
 import { Agent, type AgentEvent, type AgentMessage, type AgentTool } from '@earendil-works/pi-agent-core'
 import type { AssistantMessage, Model } from '@earendil-works/pi-ai'
 import { streamSimple } from '@earendil-works/pi-ai/api/openai-completions'
-import { Credits, Grants, Packs, type PastGrant } from '../credits'
 import { answering, HOSTED_ONLY, type OwnSetup } from '../models'
 import { askUser, previewCall, toAgentTool, type Reporter } from './calls'
 import { addUsage, detailsOf, recent, textOf, usedTools } from './history'
 import { ownProvider } from './own'
-import type { CallCost, Failure, ModelProvider } from './provider'
 import { writeTitle } from './title'
 import type {
   AgentConfig,
@@ -31,10 +41,9 @@ import type {
   ToolCallRequest,
   ToolSpec,
   ToolStatus,
-  Turn,
 } from './types'
 import { ToolDetails } from './types'
-import { checkout, hostedProvider, readOwn, readWebPage, searchWebFor } from './worker'
+import { readWebPage, searchWebFor } from './worker'
 
 const DEFAULT_MAX_STEPS = 20
 /**
@@ -48,11 +57,6 @@ const TOO_MANY_FAILED = `Stopped: ${MAX_FAILED_CALLS} actions in this question f
 /** For the model, for a call refused once the question stopped at MAX_FAILED_CALLS. */
 const NOT_RUN_FAILED = `Not run: ${MAX_FAILED_CALLS} tool calls of this question failed, so it stopped.`
 
-/**
- * How far the user's clock is ahead of UTC, in minutes: the worker totals usage per day, and a day
- * should be the user's own.
- */
-const utcOffset = () => String(-new Date().getTimezoneOffset())
 // What the model gets back for a call the user declined; it should not just try again.
 const DECLINED = 'Not run: the user declined this action. Do not retry it; ask the user how to proceed instead.'
 // The same when there was nobody to ask: the model must not claim the user said no.
@@ -767,17 +771,17 @@ export class CopilotAgent {
    * when they can't be read, when the answer is not what the panel expects, or when `signal` aborts.
    */
   async credits({ signal }: { signal?: AbortSignal } = {}): Promise<Credits> {
-    return readOwn(this.config, 'credits', { utc_offset: utcOffset() }, Credits, signal)
+    return readCredits(this.config, signal)
   }
 
   /** Every grant the user was given, newest first. Read only when the user opens the history. */
   async creditGrants(): Promise<PastGrant[]> {
-    return (await readOwn(this.config, 'credits/grants', {}, Grants)).grants
+    return readCreditGrants(this.config)
   }
 
   /** The packs of credits on offer. Read when the Credits page opens. */
   async creditPacks(): Promise<Packs> {
-    return readOwn(this.config, 'billing/packs', {}, Packs)
+    return readCreditPacks(this.config)
   }
 
   /**

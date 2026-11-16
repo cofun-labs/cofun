@@ -1,0 +1,15 @@
+{
+  "name": "@cofun/base",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./agent": "./src/agent/index.ts",
+    "./clerk": "./src/clerk.ts",
+    "./credits": "./src/credits.ts",
+    "./zod": "./src/zod.ts"
+  },
+  "dependencies": {
+    "@earendil-works/pi-ai": "1.5.2",
+    "zod": "^4.6.7"
+  }
+}

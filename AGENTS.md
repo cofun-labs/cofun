@@ -104,13 +104,13 @@ An extension's Chrome Web Store privacy policy is written in two parts: [PRIVACY
 
 [docs/architecture.md](docs/architecture.md) describes the design; these are the rules a change must keep.
 
-- **One extension per folder.** Each extension keeps its own copy of the side panel code and never imports another extension.
+- **One extension per folder.** Each extension owns its side panel and site code. Extensions can use `packages/base` through its package exports. The base package has no dependency on any extension.
 - **A site is called only through its site layer**: one module knows the site's endpoints and request shapes (Notico's `src/notion/api.ts`), and requests run inside the user's tab for that site (`src/<site>/tab.ts`, `chrome.scripting` in the ISOLATED world), so they go to that tab's host with its session. Tools never `fetch` the site's URLs themselves. Never use `chrome.debugger`: it shows a permanent "debugging this browser" banner.
 - **Every worker route under `/v1` sits behind the session check** (`src/routes/session.ts`); `worker/test/session.test.ts` checks that each refuses a request without a session.
 - **Module boundaries are lint errors** in `.oxlintrc.json`, run by `pnpm check`. In every extension:
-  - only `src/agent/` imports pi (`@earendil-works/pi-agent-core`);
-  - `fetch` is used only in `src/agent/` (the worker) and in the `tab.ts` of a site layer that sends requests to its site (Notico's `src/notion/tab.ts`); `chrome.scripting` only in `src/<site>/tab.ts`; `chrome.debugger` nowhere;
-  - `zod` is imported only through `src/zod.ts` (the worker's through `worker/src/zod.ts`);
+  - only an extension's `src/agent/` or `packages/base/src/agent/` imports pi. An extension uses `@cofun/base/agent` only from its own `src/agent/`;
+  - `fetch` is used only in the agent folders and in the `tab.ts` of a site layer that sends requests to its site (Notico's `src/notion/tab.ts`); `chrome.scripting` only in `src/<site>/tab.ts`; `chrome.debugger` nowhere;
+  - `zod` is imported only through `@cofun/base/zod` in extension code (the worker's through `worker/src/zod.ts`);
   - `posthog-js` is imported only in `src/analytics.ts`;
   - the site layer imports nothing from the agent, the tools, the sessions, or the side panel;
   - no extension imports another.

@@ -1,18 +1,10 @@
 // The agent's types, as the rest of the extension uses them: its configuration, the tools it runs,
 // what it reports while it works, and the conversation as saved sessions keep it.
+import type { WorkerConfig } from '@cofun/base/agent'
 import type { ModelSettings, OwnSetup } from '../models'
 import { z } from '../zod'
 
-export interface AgentConfig {
-  /** Base URL including /v1. */
-  apiUrl: string
-  /** Returns a fresh Clerk session token. Called before every request to the worker. */
-  getToken: () => Promise<string | null>
-  /**
-   * The extension and its version, `notico/0.3.0`: sent to the worker with each model request as
-   * X-Cofun-Client, which records the call under that product.
-   */
-  client: string
+export interface AgentConfig extends WorkerConfig {
   /**
    * Which model answers, read as each question starts, so a change applies from the next question
    * on and the conversation goes on with it. The hosted model when not given.
@@ -59,17 +51,6 @@ export interface QuestionExtras {
   selections?: QuestionSelection[]
   readOnly?: boolean
   chat?: string
-}
-
-/**
- * Which chat (the session's id) and which question of it (an id made for the question) a request to
- * the worker is for, sent as X-Cofun-Chat-Id and X-Cofun-Turn-Id, so the worker records what the
- * request spent with them. Random ids: they say nothing about the content. Never sent to a user's own
- * model's service.
- */
-export interface Turn {
-  chat?: string
-  turn?: string
 }
 
 /**

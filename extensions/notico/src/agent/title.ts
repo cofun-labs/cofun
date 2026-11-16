@@ -1,9 +1,9 @@
 // A short title for a conversation, written by the model that answered it.
+import type { ModelProvider } from '@cofun/base/agent'
 import { normalizeContext, type Model } from '@earendil-works/pi-ai'
 import { streamSimple } from '@earendil-works/pi-ai/api/openai-completions'
 import { z } from '../zod'
 import { textOf } from './history'
-import type { ModelProvider } from './provider'
 import type { HistoryMessage } from './types'
 
 // The title request (`CopilotAgent.title`): small on purpose, since every one costs the user.
