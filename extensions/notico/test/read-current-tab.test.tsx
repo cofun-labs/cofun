@@ -197,6 +197,26 @@ describe('reading the page in the current tab', () => {
     ])
   })
 
+  it('[UC-NOTICO-PANEL-001-S11] markup the Markdown has no use for does not count against what is read', async () => {
+    // Class names much longer than the text, as on pages styled by them: the first 20,000 still come.
+    const tab = articleTab(`<p class="${'c'.repeat(2_000_000)}" data-x="1">${'x'.repeat(25_000)}</p>`)
+    tab.allowed.add(SITE)
+    const { browser, user } = await openOn(tab)
+    browser.ai.script.push(readTab, { reply: 'It is long.' })
+
+    await ask(user, 'Summarize this article')
+
+    expect(await screen.findByText('It is long.')).toBeVisible()
+    expect(toolResults(browser)).toEqual([
+      pageResult(
+        'Rivers | News',
+        ARTICLE,
+        'x'.repeat(20_000),
+        "[Clipped: this shows the first 20,000 of the page's 25,000 characters.]",
+      ),
+    ])
+  })
+
   it('[UC-NOTICO-PANEL-001-S11] a page whose markup is very long is clipped in the tab, and the model is told it is longer still', async () => {
     // The tab hands over 50 characters of HTML for each character of Markdown asked for.
     const tab = articleTab(`<p>${'x'.repeat(1_100_000)}</p>`)

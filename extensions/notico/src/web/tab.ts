@@ -188,6 +188,8 @@ function selectionText(): string {
  */
 function pageHtml(maxHtml: number): z.input<typeof PageResult> | null {
   if (document.contentType === 'application/pdf') return { pdf: true }
+  // What src/web/markdown.ts reads, besides the class that names a code block's language.
+  const KEPT = ['href', 'alt', 'colspan', 'rowspan', 'start']
   const LEFT_OUT =
     'script, style, noscript, template, svg, canvas, iframe, frame, object, embed, video, audio, map, nav, ' +
     'aside, footer, input, select, textarea, dialog:not([open]), [hidden], [aria-hidden="true"]'
@@ -212,6 +214,12 @@ function pageHtml(maxHtml: number): z.input<typeof PageResult> | null {
       // Its descendants go with it.
       i += from[i].querySelectorAll('*').length
     }
+    // Only the attributes the side panel reads: on pages styled by class names, the others hold
+    // more than the text does, and would use up the HTML the tab hands over.
+    for (const el of [copy, ...copy.querySelectorAll('*')])
+      for (const name of el.getAttributeNames())
+        if (!KEPT.includes(name) && !(name === 'class' && (el.localName === 'pre' || el.localName === 'code')))
+          el.removeAttribute(name)
     for (const link of copy.querySelectorAll('a')) {
       const href = link.getAttribute('href') ?? ''
       let url: URL | undefined
