@@ -117,7 +117,6 @@ export function ModelMenu({
         onClick={() => setOpen(!open)}
       >
         <span className="model-button-name">{shown}</span>
-        <Icon name="chevron" />
       </button>
       {open && (
         <div ref={menuRef} className="model-popover" role="menu" aria-label="Model">

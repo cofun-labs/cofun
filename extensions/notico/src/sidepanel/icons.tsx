@@ -30,7 +30,6 @@ const SHAPES = {
     </>
   ),
   back: <path d="M9.5 3.5L5 8l4.5 4.5" />,
-  chevron: <path d="M4.5 10l3.5-3.5 3.5 3.5" />,
   /** Leads on to another page. */
   forward: <path d="M6 3.5L10.5 8 6 12.5" />,
   /** A stack of coins: credits. */
