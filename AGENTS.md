@@ -113,6 +113,7 @@ An extension's Chrome Web Store privacy policy is written in two parts: [PRIVACY
   - `zod` is imported only through `src/zod.ts` (the worker's through `worker/src/zod.ts`);
   - `posthog-js` is imported only in `src/analytics.ts`;
   - the site layer imports nothing from the agent, the tools, the sessions, or the side panel;
+  - the side panel's state outside React (`src/sidepanel/chat-session.ts`, one `ChatSession` per chat, and `src/sidepanel/panel.ts`, the `Panel`) imports no React and no component;
   - no extension imports another.
 
   When a boundary changes, change the rule and this list together. Never silence one with an `oxlint-disable` comment.
