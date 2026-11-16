@@ -184,7 +184,7 @@ export interface ToolContext {
  * The full text of a long tool result, kept on the device with the saved sessions that name it, so
  * the model can read the parts it was not given (read_result, search_result). `tool` is the tool
  * that read it; `title` and `url`, the page's; `markdown`, whether `text` is the extension's own
- * Markdown (src/web/markdown.ts), escaped as such (asPageMarkdown), else as text; `chars`, how
+ * Markdown (src/web/markdown.ts), as the result labels it; `chars`, how
  * long the whole text was, which is more than `text` when only the first part of it was kept.
  * `chats` are the saved sessions that name it, and `unnamedAt`, the time it was kept, is set while
  * there are none.
