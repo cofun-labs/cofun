@@ -1,6 +1,6 @@
 // Web pages read by their address: read_web_page has the worker fetch a page plainly, and
-// render_web_page has it render one drawn by scripts in a browser, which is slower and limited to a
-// few a minute. The model chooses the address: one the user gave, a link it found, one a search
+// render_web_page has it render one drawn by scripts in a browser, which is slower, costs credits,
+// and is limited to a few a minute. The model chooses the address: one the user gave, a link it found, one a search
 // found, or one it thinks of (docs/security.md, "Accepted: web pages at any address"). search_web
 // has the worker search the web, with a query the model writes (docs/security.md, "Accepted: web
 // searches").
@@ -128,7 +128,8 @@ export const renderWebPage = defineTool({
   description:
     'Renders a web page in a browser and reads its text as Markdown: what the page shows once its scripts run. ' +
     'It reads pages drawn by scripts, which read_web_page reads with no text or too little. It is slower than ' +
-    'read_web_page, and only a few pages can be rendered a minute, so read_web_page is usually the better first ' +
+    'read_web_page, costs the user credits for the browser time it uses, and only a few pages can be rendered a ' +
+    'minute, so read_web_page is usually the better first ' +
     'try; render right away when the page is likely drawn by scripts (a web app, say).',
   describe: (_args, details) => on(RENDER, details?.name, 'a web page'),
   args: Args,

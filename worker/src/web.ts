@@ -366,10 +366,39 @@ function tidy(text: string): string {
 const RenderAnswer = z.object({ success: z.literal(true), result: z.string() })
 
 /**
- * Renders the page at `url` in Browser Run, which runs its scripts, and gives its text as Markdown,
- * clipped to `maxChars`.
+ * A render, however it ended: the page, or why there is none (`no_text`, `render_failed`), and the
+ * browser time it used in ms. That is the time Browser Run reported (`X-Browser-Ms-Used`), what it
+ * bills, or the time the render took when it reported none. `answered` is false when no response
+ * came back at all, so what Browser Run billed for it is not known.
  */
-export async function renderPage(browser: BrowserBinding, url: URL, maxChars: number): Promise<WebPage> {
+export interface Render {
+  result: WebPage | PageError
+  browserMs: number
+  answered: boolean
+}
+
+/** The browser time a Browser Run response reports, or undefined when it reports none it can be read as. */
+function browserTimeOf(res: Response): number | undefined {
+  const used = res.headers.get('x-browser-ms-used')?.trim() ?? ''
+  const ms = /^\d+$/.test(used) ? Number(used) : NaN
+  return Number.isSafeInteger(ms) ? ms : undefined
+}
+
+/**
+ * Renders the page at `url` in Browser Run, which runs its scripts, and gives its text as Markdown,
+ * clipped to `maxChars`, with the browser time it used. `now` is the clock, in ms, that times a
+ * render Browser Run reports no time for. Never throws a PageError: a page that could not be
+ * rendered is the result.
+ */
+export async function renderPage(
+  browser: BrowserBinding,
+  url: URL,
+  maxChars: number,
+  now: () => number,
+): Promise<Render> {
+  const started = now()
+  const took = () => Math.max(0, now() - started)
+  const failed = new PageError('render_failed', 'the page could not be rendered')
   let res: Response
   try {
     res = await browser.quickAction('markdown', {
@@ -378,17 +407,20 @@ export async function renderPage(browser: BrowserBinding, url: URL, maxChars: nu
       gotoOptions: { waitUntil: 'networkidle2', timeout: RENDER_TIMEOUT_MS },
     })
   } catch {
-    throw new PageError('render_failed', 'the page could not be rendered')
+    return { result: failed, browserMs: took(), answered: false }
   }
   const answer = RenderAnswer.safeParse(await res.json().catch(() => undefined))
-  if (!res.ok || !answer.success) throw new PageError('render_failed', 'the page could not be rendered')
+  const browserMs = browserTimeOf(res) ?? took()
+  if (!res.ok || !answer.success) return { result: failed, browserMs, answered: true }
   const text = tidy(answer.data.result)
-  if (!text) throw new PageError('no_text', 'the page shows no text, even rendered')
-  return {
+  if (!text)
+    return { result: new PageError('no_text', 'the page shows no text, even rendered'), browserMs, answered: true }
+  const page: WebPage = {
     url: url.href,
     title: /^#\s+(.+)$/m.exec(text)?.[1].trim().slice(0, TITLE_CHARS) ?? '',
     text: text.slice(0, maxChars),
     chars: text.length,
     scripted: false,
   }
+  return { result: page, browserMs, answered: true }
 }

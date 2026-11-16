@@ -68,6 +68,31 @@ function callCost(microCredits: number, estimated: boolean) {
   return { micro_credits: microCredits, estimated }
 }
 
+/**
+ * The user's ledger, opened before something that spends credits (a model call, a render): it gives
+ * the weekly free grant if they have none, and lets the spend go ahead while the balance is above
+ * zero. Refuses with `out_of_credits` when nothing is left, and with `credits_unavailable` when the
+ * credits can't be read, so nothing is spent that can't be charged.
+ */
+export async function openLedger(c: Ctx, now: number, logError: (line: string) => void): Promise<Ledger> {
+  const ledger = new Ledger(c.env.DB, c.get('userId'))
+  let balance: Balance
+  try {
+    balance = await ledger.open(now)
+  } catch (err) {
+    logError(`credit check failed: ${errorSummary(err)}`)
+    throw new HttpError(503, 'credits_unavailable', 'Credits are unavailable, try again in a moment.')
+  }
+  if (balance.balance <= 0) {
+    throw new HttpError(
+      402,
+      'out_of_credits',
+      `You have no credits left. Your next ${FREE_CREDITS} free credits arrive on ${utcMinute(balance.nextGrantAt)}, or you can buy credits.`,
+    )
+  }
+  return ledger
+}
+
 /** Chat completions, mounted at /v1/chat. */
 export function chatRoutes({ now, priceOf: priceFor, logError }: Deps): App {
   const routes: App = new Hono()
@@ -141,21 +166,7 @@ export function chatRoutes({ now, priceOf: priceFor, logError }: Deps): App {
     // same balance, so together they can cost more than one call beyond it: accepted, since one call
     // costs little, and CHAT_LIMIT and MAX_TOKENS bound how many there can be and what each costs.
     const maxTokens = max_tokens ?? MAX_TOKENS
-    const ledger = new Ledger(c.env.DB, c.get('userId'))
-    let balance: Balance
-    try {
-      balance = await ledger.open(now().getTime())
-    } catch (err) {
-      logError(`credit check failed: ${errorSummary(err)}`)
-      throw new HttpError(503, 'credits_unavailable', 'Credits are unavailable, try again in a moment.')
-    }
-    if (balance.balance <= 0) {
-      throw new HttpError(
-        402,
-        'out_of_credits',
-        `You have no credits left. Your next ${FREE_CREDITS} free credits arrive on ${utcMinute(balance.nextGrantAt)}, or you can buy credits.`,
-      )
-    }
+    const ledger = await openLedger(c, now().getTime(), logError)
 
     /**
      * Ends the call, once: records it in the database as a spend, with how it ended and its tokens,

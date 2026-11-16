@@ -197,8 +197,18 @@ interface ModelCall {
   estimated: boolean
 }
 
+/**
+ * A page rendered in Browser Run, however it ended (`ok`, `no_text`, or `render_failed`), and the
+ * browser time it used, which is what it is charged by.
+ */
+interface WebRender {
+  kind: 'web_render'
+  outcome: string
+  browserMs: number
+}
+
 /** What is particular to a spend, by its kind: the row of the kind's own table. */
-export type SpendDetail = ModelCall
+export type SpendDetail = ModelCall | WebRender
 
 // How the tables hold a ledger (worker/migrations/0005_spends.sql): a grant is written once, and
 // every spend is a row of `spends`, with what it took from each grant in `spend_grants`. What is
@@ -338,6 +348,13 @@ const RECORD_MODEL_CALL = `INSERT INTO model_calls (spend_id, model, started_at,
   prompt_tokens, cached_tokens, completion_tokens, estimated)
 VALUES ((SELECT max(id) FROM spends), ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)`
 
+/** The render of the spend just written, in the same batch, as RECORD_MODEL_CALL. ?1 is its outcome, ?2 its browser time. */
+const RECORD_WEB_RENDER = `INSERT INTO web_renders (spend_id, outcome, browser_ms)
+VALUES ((SELECT max(id) FROM spends), ?1, ?2)`
+
+/** Whether every value is a non-negative whole number, as a spend's amounts, times, and counts must be. */
+const wholeNumbers = (...values: number[]) => values.every((n) => Number.isSafeInteger(n) && n >= 0)
+
 /**
  * Takes the cost ?3 of the spend just written (the newest) from the grants that still count, from
  * the one that expires first: each gives what the grants before it did not cover, up to what it has
@@ -417,28 +434,37 @@ export class Ledger {
    * cover is forgiven. The one way credits are spent.
    */
   async spend({ product, cost, at }: Spend, detail: SpendDetail): Promise<void> {
-    const { promptTokens, cachedTokens, completionTokens, startedAt } = detail
-    for (const n of [promptTokens, cachedTokens, completionTokens, cost, startedAt, at]) {
-      if (!Number.isSafeInteger(n) || n < 0) throw new Error('a spend needs non-negative integers')
-    }
-    if (startedAt > at) throw new Error('a model call must start before it is charged')
-    const statements = [
-      this.statement(RECORD_SPEND, at, product, detail.kind, cost),
-      this.db
-        .prepare(RECORD_MODEL_CALL)
-        .bind(
-          detail.model,
-          startedAt,
-          detail.stream ? 1 : 0,
-          detail.outcome,
-          detail.finishReason,
-          promptTokens,
-          cachedTokens,
-          completionTokens,
-          detail.estimated ? 1 : 0,
-        ),
-    ]
+    if (!wholeNumbers(cost, at)) throw new Error('a spend needs non-negative integers')
+    const statements = [this.statement(RECORD_SPEND, at, product, detail.kind, cost), this.detail(detail, at)]
     await this.db.batch(cost === 0 ? statements : [...statements, this.statement(SPEND, at, cost)])
+  }
+
+  /** The row of a spend's own kind, for the spend charged at the time `at`. */
+  private detail(detail: SpendDetail, at: number): Statement {
+    switch (detail.kind) {
+      case 'model_call': {
+        const { promptTokens, cachedTokens, completionTokens, startedAt } = detail
+        if (!wholeNumbers(promptTokens, cachedTokens, completionTokens, startedAt))
+          throw new Error('a spend needs non-negative integers')
+        if (startedAt > at) throw new Error('a model call must start before it is charged')
+        return this.db
+          .prepare(RECORD_MODEL_CALL)
+          .bind(
+            detail.model,
+            startedAt,
+            detail.stream ? 1 : 0,
+            detail.outcome,
+            detail.finishReason,
+            promptTokens,
+            cachedTokens,
+            completionTokens,
+            detail.estimated ? 1 : 0,
+          )
+      }
+      case 'web_render':
+        if (!wholeNumbers(detail.browserMs)) throw new Error('a spend needs non-negative integers')
+        return this.db.prepare(RECORD_WEB_RENDER).bind(detail.outcome, detail.browserMs)
+    }
   }
 
   /**

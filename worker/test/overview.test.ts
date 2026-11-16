@@ -6,6 +6,7 @@ import {
   FAKE_COST,
   FAKE_USAGE,
   FakeAiBinding,
+  FakeBrowserRun,
   FakeD1Database,
   FakeExecutionContext,
   FakeUsageDataset,
@@ -38,6 +39,7 @@ let clerk: FakeClerk
 let ai: FakeAiBinding
 let db: FakeD1Database
 let env: Env
+let browser: FakeBrowserRun
 /** An operator, signed in on the admin page. */
 let admin: string
 
@@ -52,6 +54,7 @@ beforeEach(async () => {
   clock = START
   env = {
     AI: ai,
+    BROWSER: (browser = new FakeBrowserRun()),
     DB: (db = new FakeD1Database()),
     USAGE: new FakeUsageDataset(),
     CHAT_LIMIT: new FakeRateLimiter(),
@@ -124,7 +127,14 @@ const NOTHING = {
   promptTokens: 0,
   cachedTokens: 0,
   completionTokens: 0,
+  renders: 0,
+  failedRenders: 0,
+  renderMs: 0,
+  renderSpent: 0,
 }
+
+/** What a product or an account spent on no render. */
+const NO_RENDERS = { renders: 0, renderSpent: 0 }
 
 /**
  * Three days of the service. Nov 8: alice asks once and bob twice, each starting a free week. Nov 9:
@@ -160,6 +170,7 @@ describe('UC-COFUN-ADMIN-002 See granted and spent credits as a whole', () => {
       completionTokens: 15,
     }
     const nov9 = {
+      ...NOTHING,
       granted: { free: 200 * CREDIT, manual: 100 * CREDIT, purchase: 0 },
       spent: CACHED_COST,
       calls: 2,
@@ -180,8 +191,12 @@ describe('UC-COFUN-ADMIN-002 See granted and spent credits as a whole', () => {
         promptTokens: 136,
         cachedTokens: 40,
         completionTokens: 25,
+        renders: 0,
+        failedRenders: 0,
+        renderMs: 0,
+        renderSpent: 0,
       },
-      products: [{ product: 'notico', spent: 3 * FAKE_COST + CACHED_COST, calls: 5 }],
+      products: [{ product: 'notico', spent: 3 * FAKE_COST + CACHED_COST, calls: 5, ...NO_RENDERS }],
       days: [
         { day: '2026-11-08', ...nov8 },
         { day: '2026-11-09', ...nov9 },
@@ -222,9 +237,9 @@ describe('UC-COFUN-ADMIN-002 See granted and spent credits as a whole', () => {
     // The one that spent the most first.
     const { totals, products } = await overview('2026-11-08', '2026-11-09')
     expect(products).toEqual([
-      { product: 'confluco', spent: 3 * FAKE_COST, calls: 3 },
-      { product: 'unknown', spent: 2 * FAKE_COST, calls: 2 },
-      { product: 'notico', spent: FAKE_COST, calls: 1 },
+      { product: 'confluco', spent: 3 * FAKE_COST, calls: 3, ...NO_RENDERS },
+      { product: 'unknown', spent: 2 * FAKE_COST, calls: 2, ...NO_RENDERS },
+      { product: 'notico', spent: FAKE_COST, calls: 1, ...NO_RENDERS },
     ])
     // Every call counts under one product, so the products add up to the totals.
     expect(products.reduce((sum: number, p: { spent: number }) => sum + p.spent, 0)).toBe(totals.spent)
@@ -232,6 +247,39 @@ describe('UC-COFUN-ADMIN-002 See granted and spent credits as a whole', () => {
 
     // A period with no calls has no products.
     expect((await overview('2026-11-01', '2026-11-07')).products).toEqual([])
+  })
+
+  it('[UC-COFUN-ADMIN-002-S12] an operator sees the pages rendered, the browser time they used, and what they cost', async () => {
+    browser.render('https://app.example/board', '# Board', 4000)
+    browser.failedMs = 2000
+    const renderAs = async (name: string, url: string, product: Record<string, string> = NOTICO) => {
+      const bearer = await clerk.sessionToken({ userId: `user_${name}`, azp: EXT })
+      return req('POST', '/v1/web/render', bearer, { url, max_chars: 1000 }, product)
+    }
+    // Alice renders a page, and one that fails; bob asks the AI and renders from another product.
+    expect((await renderAs('alice', 'https://app.example/board')).status).toBe(200)
+    expect((await renderAs('alice', 'https://app.example/broken')).status).toBe(422)
+    await asks('bob')
+    expect((await renderAs('bob', 'https://app.example/board', { 'x-cofun-client': 'confluco/1.0.0' })).status).toBe(
+      200,
+    )
+    later(DAY_MS)
+
+    const ok = 4000 * 25
+    const failed = 2000 * 25
+    const { totals, days, products } = await overview('2026-11-08', '2026-11-09')
+    const renders = { renders: 3, failedRenders: 1, renderMs: 10_000, renderSpent: 2 * ok + failed }
+    expect(totals).toMatchObject({ spent: 2 * ok + failed + FAKE_COST, calls: 1, ...renders })
+    expect(days[0]).toMatchObject({ day: '2026-11-08', ...renders })
+    expect(days[1]).toEqual({ day: '2026-11-09', ...NOTHING })
+    expect(products).toEqual([
+      { product: 'notico', spent: ok + failed + FAKE_COST, calls: 1, renders: 2, renderSpent: ok + failed },
+      { product: 'confluco', spent: ok, calls: 0, renders: 1, renderSpent: ok },
+    ])
+    expect((await accounts('2026-11-08', '2026-11-09')).accounts).toMatchObject([
+      { userId: 'user_alice', spent: ok + failed, calls: 0, renders: 2, renderSpent: ok + failed },
+      { userId: 'user_bob', spent: ok + FAKE_COST, calls: 1, renders: 1, renderSpent: ok },
+    ])
   })
 
   it('[UC-COFUN-ADMIN-002-S09] a call the user stopped counts as a failed call, and as a cancelled one', async () => {
@@ -272,6 +320,7 @@ describe('UC-COFUN-ADMIN-002 See granted and spent credits as a whole', () => {
           granted: 200 * CREDIT,
           spent: 240 * CREDIT + 2 * FAKE_COST,
           calls: 3,
+          ...NO_RENDERS,
           balance: 0,
         },
         {
@@ -279,11 +328,19 @@ describe('UC-COFUN-ADMIN-002 See granted and spent credits as a whole', () => {
           granted: 300 * CREDIT,
           spent: CACHED_COST,
           calls: 1,
+          ...NO_RENDERS,
           balance: 300 * CREDIT - CACHED_COST,
         },
         // The call that failed is a call, and cost nothing.
-        { userId: 'user_alice', granted: 200 * CREDIT, spent: FAKE_COST, calls: 2, balance: 200 * CREDIT - FAKE_COST },
-        { userId: 'user_dave', granted: 20 * CREDIT, spent: 0, calls: 0, balance: 20 * CREDIT },
+        {
+          userId: 'user_alice',
+          granted: 200 * CREDIT,
+          spent: FAKE_COST,
+          calls: 2,
+          ...NO_RENDERS,
+          balance: 200 * CREDIT - FAKE_COST,
+        },
+        { userId: 'user_dave', granted: 20 * CREDIT, spent: 0, calls: 0, ...NO_RENDERS, balance: 20 * CREDIT },
       ],
     })
 
@@ -302,9 +359,10 @@ describe('UC-COFUN-ADMIN-002 See granted and spent credits as a whole', () => {
         granted: 300 * CREDIT,
         spent: CACHED_COST,
         calls: 1,
+        ...NO_RENDERS,
         balance: 300 * CREDIT - CACHED_COST,
       },
-      { userId: 'user_alice', granted: 0, spent: 0, calls: 1, balance: 200 * CREDIT - FAKE_COST },
+      { userId: 'user_alice', granted: 0, spent: 0, calls: 1, ...NO_RENDERS, balance: 200 * CREDIT - FAKE_COST },
     ])
 
     // Once the free weeks have expired the period reads the same, and the balances are the new ones.
@@ -498,8 +556,8 @@ describe('UC-COFUN-ADMIN-002 See granted and spent credits as a whole', () => {
 
     await overview('2026-11-08', '2026-11-16')
     expect((await accounts('2026-11-08', '2026-11-16')).accounts).toEqual([
-      { userId: 'user_alice', granted: 200 * CREDIT, spent: FAKE_COST, calls: 1, balance: 0 },
-      { userId: 'user_carol', granted: 50 * CREDIT, spent: 0, calls: 0, balance: 50 * CREDIT },
+      { userId: 'user_alice', granted: 200 * CREDIT, spent: FAKE_COST, calls: 1, ...NO_RENDERS, balance: 0 },
+      { userId: 'user_carol', granted: 50 * CREDIT, spent: 0, calls: 0, ...NO_RENDERS, balance: 50 * CREDIT },
     ])
     expect(JSON.stringify([db.rows('grants'), db.rows('model_calls')])).toBe(before)
 
@@ -553,13 +611,16 @@ describe('admin overview API', () => {
     for (const plan of plans) {
       // A scan of a CTE's own result is fine; a scan of a table is not.
       expect(
-        plan.filter((step) => /^SCAN (grants|spends|spend_grants|model_calls|grant_revocations)\b/.test(step)),
+        plan.filter((step) =>
+          /^SCAN (grants|spends|spend_grants|model_calls|web_renders|grant_revocations)\b/.test(step),
+        ),
       ).toEqual([])
     }
     const [granted, spent, byProduct, listed] = plans
     const bySpendTime = 'SEARCH s USING INDEX spends_by_time (created_at>? AND created_at<?)'
     // A spend's model call is found by the spend, through the index of its unique spend_id.
-    const callOfSpend = /^SEARCH m USING (COVERING )?INDEX sqlite_autoindex_model_calls_\d \(spend_id=\?\)/
+    const callOfSpend =
+      /^SEARCH [mr] USING (COVERING )?INDEX sqlite_autoindex_(model_calls|web_renders)_\d \(spend_id=\?\)/
     expect(granted).toContain('SEARCH grants USING INDEX grants_by_time (granted_at>? AND granted_at<?)')
     expect(spent).toContain(bySpendTime)
     expect(spent.some((step) => callOfSpend.test(step))).toBe(true)

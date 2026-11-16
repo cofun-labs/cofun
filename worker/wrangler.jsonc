@@ -37,10 +37,11 @@
     // WEB_LIMIT: how many web pages one user can have the worker read or render a minute, so one
     // account cannot use it to send many requests to a site. A question reads a few at most.
     { "name": "WEB_LIMIT", "namespace_id": "1003", "simple": { "limit": 30, "period": 60 } },
-    // RENDER_LIMIT: how many of those pages one user can have rendered in Browser Run a minute. A
-    // render is free to the user and costs the operator browser time, up to 30 s each, until renders
-    // are charged in credits (#464); a question renders one or two at most.
-    { "name": "RENDER_LIMIT", "namespace_id": "1004", "simple": { "limit": 5, "period": 60 } },
+    // RENDER_LIMIT: how many of those pages one user can have rendered in Browser Run a minute.
+    // Renders are charged the browser time they use, but those sent at once all start on the same
+    // balance, so this bounds what they can cost beyond it: up to 0.75 credit each (a 30 s timeout).
+    // A question renders one or two at most.
+    { "name": "RENDER_LIMIT", "namespace_id": "1004", "simple": { "limit": 10, "period": 60 } },
     // SEARCH_LIMIT: how many web searches one user can make a minute. A search is free to the user
     // and costs the operator the provider's price (US$0.25 per 1,000 on Ceramic), so this bounds
     // what one account can cost; a question searches a few times at most.

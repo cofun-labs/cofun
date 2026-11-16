@@ -1,7 +1,7 @@
 /**
  * Credits as a whole, for the admin page: what was granted and spent over a period across every
  * account, per day, and the accounts of the period. Read-only, and worked out from the `grants`,
- * `spends`, and `model_calls` rows each time: no totals are stored.
+ * `spends`, `model_calls`, and `web_renders` rows each time: no totals are stored.
  *
  * D1 runs one query at a time, so a slow query here would hold up charging. Every query is
  * therefore bounded by the period and reads only the period's rows, through the tables' time
@@ -25,7 +25,7 @@ export interface Period {
   utcOffset: number
 }
 
-/** Grants, spends, and model calls over some time. Amounts are in micro-credits. */
+/** Grants, spends, model calls, and renders over some time. Amounts are in micro-credits. */
 interface Totals {
   /** Credits granted, by where they came from. A grant counts when it was made. */
   granted: Record<z.output<typeof GrantSource>, number>
@@ -41,19 +41,30 @@ interface Totals {
   /** The part of the prompt tokens the model read from its cache. */
   cachedTokens: number
   completionTokens: number
+  /** Pages rendered in Browser Run, however they ended. */
+  renders: number
+  /** The renders that gave no page: every outcome but `ok` (`no_text`, `render_failed`). */
+  failedRenders: number
+  /** The browser time the renders used, in ms: what Browser Run bills. */
+  renderMs: number
+  /** What the renders cost, a part of `spent`. */
+  renderSpent: number
 }
 
-/** What one product spent in a period, and the model calls it made. Amounts are in micro-credits. */
+/** What one product spent in a period, the model calls it made, and the pages it had rendered. Amounts are in micro-credits. */
 interface ProductSpending {
   /** `notico`, another extension's name, or `unknown` for a caller that is no listed extension. */
   product: string
   spent: number
   calls: number
+  renders: number
+  /** What the renders cost, a part of `spent`. */
+  renderSpent: number
 }
 
 export interface Overview {
   totals: Totals
-  /** The period's spending by the product the calls came from, the one that spent the most first. */
+  /** The period's spending by the product it came from, the one that spent the most first. */
   products: ProductSpending[]
   /** Every day of the period, oldest first, the days when nothing happened included. `day` is YYYY-MM-DD. */
   days: ({ day: string } & Totals)[]
@@ -65,6 +76,9 @@ interface AccountSummary {
   granted: number
   spent: number
   calls: number
+  renders: number
+  /** What the account's renders cost, a part of `spent`. */
+  renderSpent: number
   balance: number
 }
 
@@ -79,28 +93,37 @@ export interface Accounts {
 // of whole days since the epoch on the period's clock; ?3 is the clock's offset in ms (cast, so the
 // division is a whole number whatever type the binding gives a number).
 
+/** What the renders among a group of spends `s`, joined to their `web_renders` rows `r`, cost (SQL). */
+const renderSpent = 'coalesce(sum(CASE WHEN r.id IS NOT NULL THEN s.micro_credits END), 0)'
+
 const GRANTED_PER_DAY = `SELECT (granted_at + CAST(?3 AS INTEGER)) / ${DAY_MS} AS day, source, sum(amount) AS amount
 FROM grants INDEXED BY grants_by_time
 WHERE granted_at >= ?1 AND granted_at < ?2
 GROUP BY day, source`
 
 /**
- * What was spent per day, and the model calls among the spends, each joined through its spend: a
- * call counts on the day it was charged, as what it cost does.
+ * What was spent per day, and the model calls and the renders among the spends, each joined through
+ * its spend (a spend has one detail row, of its kind): a call or a render counts on the day it was
+ * charged, as what it cost does.
  */
 const SPENT_PER_DAY = `SELECT (s.created_at + CAST(?3 AS INTEGER)) / ${DAY_MS} AS day, sum(s.micro_credits) AS spent,
   count(m.id) AS calls,
   coalesce(sum(m.outcome <> 'ok'), 0) AS failed_calls, coalesce(sum(m.outcome = 'cancelled'), 0) AS cancelled_calls,
   coalesce(sum(m.prompt_tokens), 0) AS prompt_tokens, coalesce(sum(m.cached_tokens), 0) AS cached_tokens,
-  coalesce(sum(m.completion_tokens), 0) AS completion_tokens
+  coalesce(sum(m.completion_tokens), 0) AS completion_tokens,
+  count(r.id) AS renders, coalesce(sum(r.outcome <> 'ok'), 0) AS failed_renders,
+  coalesce(sum(r.browser_ms), 0) AS render_ms, ${renderSpent} AS render_spent
 FROM spends s INDEXED BY spends_by_time
 LEFT JOIN model_calls m ON m.spend_id = s.id
+LEFT JOIN web_renders r ON r.spend_id = s.id
 WHERE s.created_at >= ?1 AND s.created_at < ?2
 GROUP BY day`
 
-const SPENT_PER_PRODUCT = `SELECT s.product, sum(s.micro_credits) AS spent, count(m.id) AS calls
+const SPENT_PER_PRODUCT = `SELECT s.product, sum(s.micro_credits) AS spent, count(m.id) AS calls,
+  count(r.id) AS renders, ${renderSpent} AS render_spent
 FROM spends s INDEXED BY spends_by_time
 LEFT JOIN model_calls m ON m.spend_id = s.id
+LEFT JOIN web_renders r ON r.spend_id = s.id
 WHERE s.created_at >= ?1 AND s.created_at < ?2
 GROUP BY s.product
 ORDER BY spent DESC, calls DESC, s.product`
@@ -115,28 +138,32 @@ granted AS (
   WHERE granted_at >= ?1 AND granted_at < ?2 GROUP BY user_id
 ),
 spent AS (
-  SELECT s.user_id, sum(s.micro_credits) AS spent, count(m.id) AS calls FROM spends s INDEXED BY spends_by_time
+  SELECT s.user_id, sum(s.micro_credits) AS spent, count(m.id) AS calls, count(r.id) AS renders,
+    ${renderSpent} AS render_spent
+  FROM spends s INDEXED BY spends_by_time
   LEFT JOIN model_calls m ON m.spend_id = s.id
+  LEFT JOIN web_renders r ON r.spend_id = s.id
   WHERE s.created_at >= ?1 AND s.created_at < ?2 GROUP BY s.user_id
 ),
 top AS (
-  SELECT user_id, sum(granted) AS granted, sum(spent) AS spent, sum(calls) AS calls
+  SELECT user_id, sum(granted) AS granted, sum(spent) AS spent, sum(calls) AS calls, sum(renders) AS renders,
+    sum(render_spent) AS render_spent
   FROM (
-    SELECT user_id, granted, 0 AS spent, 0 AS calls FROM granted
+    SELECT user_id, granted, 0 AS spent, 0 AS calls, 0 AS renders, 0 AS render_spent FROM granted
     UNION ALL
-    SELECT user_id, 0, spent, calls FROM spent
+    SELECT user_id, 0, spent, calls, renders, render_spent FROM spent
   )
   GROUP BY user_id
   ORDER BY spent DESC, granted DESC, user_id
   LIMIT ?4
 )
-SELECT user_id, granted, spent, calls, ${balanceOf('top.user_id', '?3')} AS balance
+SELECT user_id, granted, spent, calls, renders, render_spent, ${balanceOf('top.user_id', '?3')} AS balance
 FROM top
 ORDER BY spent DESC, granted DESC, user_id`
 
 const count = z.int().min(0)
 const GrantedRow = z.object({ day: z.int(), source: GrantSource, amount: count })
-const CallsRow = z.object({
+const SpentRow = z.object({
   day: z.int(),
   calls: count,
   failed_calls: count,
@@ -145,15 +172,37 @@ const CallsRow = z.object({
   prompt_tokens: count,
   cached_tokens: count,
   completion_tokens: count,
+  renders: count,
+  failed_renders: count,
+  render_ms: count,
+  render_spent: count,
 })
-const ProductRow = z.object({ product: z.string(), spent: count, calls: count })
+const ProductRow = z
+  .object({ product: z.string(), spent: count, calls: count, renders: count, render_spent: count })
+  .transform((row): ProductSpending => ({
+    product: row.product,
+    spent: row.spent,
+    calls: row.calls,
+    renders: row.renders,
+    renderSpent: row.render_spent,
+  }))
 const AccountRow = z
-  .object({ user_id: z.string(), granted: count, spent: count, calls: count, balance: z.int() })
+  .object({
+    user_id: z.string(),
+    granted: count,
+    spent: count,
+    calls: count,
+    renders: count,
+    render_spent: count,
+    balance: z.int(),
+  })
   .transform((row): AccountSummary => ({
     userId: row.user_id,
     granted: row.granted,
     spent: row.spent,
     calls: row.calls,
+    renders: row.renders,
+    renderSpent: row.render_spent,
     balance: row.balance,
   }))
 
@@ -166,6 +215,10 @@ const nothing = (): Totals => ({
   promptTokens: 0,
   cachedTokens: 0,
   completionTokens: 0,
+  renders: 0,
+  failedRenders: 0,
+  renderMs: 0,
+  renderSpent: 0,
 })
 
 /** Adds `more` to `totals`. */
@@ -178,6 +231,10 @@ function add(totals: Totals, more: Totals): void {
   totals.promptTokens += more.promptTokens
   totals.cachedTokens += more.cachedTokens
   totals.completionTokens += more.completionTokens
+  totals.renders += more.renders
+  totals.failedRenders += more.failedRenders
+  totals.renderMs += more.renderMs
+  totals.renderSpent += more.renderSpent
 }
 
 /** What was granted and spent in the period, for each of its days, by product, and in all. Every table is read at one moment. */
@@ -198,7 +255,7 @@ export async function readOverview(db: Database, { from, to, utcOffset }: Period
     return totals
   }
   for (const row of z.array(GrantedRow).parse(grantedRows?.results ?? [])) at(row.day).granted[row.source] += row.amount
-  for (const row of z.array(CallsRow).parse(callsRows?.results ?? [])) {
+  for (const row of z.array(SpentRow).parse(callsRows?.results ?? [])) {
     const totals = at(row.day)
     totals.spent = row.spent
     totals.calls = row.calls
@@ -207,6 +264,10 @@ export async function readOverview(db: Database, { from, to, utcOffset }: Period
     totals.promptTokens = row.prompt_tokens
     totals.cachedTokens = row.cached_tokens
     totals.completionTokens = row.completion_tokens
+    totals.renders = row.renders
+    totals.failedRenders = row.failed_renders
+    totals.renderMs = row.render_ms
+    totals.renderSpent = row.render_spent
   }
   // The totals are the sum of the days, so the two cannot disagree.
   const totals = nothing()

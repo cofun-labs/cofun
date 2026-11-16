@@ -132,6 +132,12 @@ export async function readOwn<S extends z.ZodType>(
 /** A refusal from the worker, with its code. */
 const CodedError = z.object({ error: z.object({ code: looseText, message: looseText }) })
 
+/**
+ * What a render cost, as the worker says in its answer: a page, or why there is none (both were
+ * charged). A plain read is free, and a request turned away before rendering cost nothing: neither says.
+ */
+const Charged = z.object({ cost: z.object({ micro_credits: z.number().int().nonnegative() }).optional() })
+
 /** What the user is told when the worker's limit on pages read stops a question. */
 const TOO_MANY_PAGES = 'Notico read too many web pages in a minute. Wait a minute, then ask again.'
 
@@ -160,6 +166,8 @@ const PAGE_REASONS = new Set([
 function stopsFor(code: string, message: string): string | undefined {
   if (PAGE_REASONS.has(code)) return undefined
   if (code === 'rate_limited') return TOO_MANY_PAGES
+  // The worker's own words: they say when the next free credits arrive.
+  if (code === 'out_of_credits') return message
   if (code === 'site_busy')
     return "A site turned away Notico's requests for coming too often. Wait a while, then ask again."
   return `Notico could not read a web page: ${message}`
@@ -169,7 +177,9 @@ function stopsFor(code: string, message: string): string | undefined {
  * Has the worker read the web page at `url` (see ToolContext.readWeb): fetched plainly, or rendered
  * in a browser when `render` is set. Resolves with the page;
  * throws a WebError when the worker could not read it, which stops the question unless the model
- * can act on the reason (see PAGE_REASONS).
+ * can act on the reason (see PAGE_REASONS). A render that was charged calls `charged` with what it
+ * cost in micro-credits, or with undefined when its answer could not be read, so what it cost is
+ * not known.
  */
 export async function readWebPage(
   { apiUrl, getToken, client }: Pick<AgentConfig, 'apiUrl' | 'getToken' | 'client'>,
@@ -177,16 +187,31 @@ export async function readWebPage(
   maxChars: number,
   render: boolean,
   signal?: AbortSignal,
+  charged?: (microCredits: number | undefined) => void,
 ): Promise<WebPage> {
   const token = await getToken()
   if (!token) throw new Error(SIGN_IN)
-  const res = await fetch(`${apiUrl.replace(/\/+$/, '')}/web/${render ? 'render' : 'read'}`, {
-    method: 'POST',
-    headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json', 'x-cofun-client': client },
-    body: JSON.stringify({ url, max_chars: maxChars }),
-    signal,
-  })
-  const body: unknown = await res.json().catch(() => undefined)
+  let res: Response
+  let body: unknown
+  try {
+    res = await fetch(`${apiUrl.replace(/\/+$/, '')}/web/${render ? 'render' : 'read'}`, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json', 'x-cofun-client': client },
+      body: JSON.stringify({ url, max_chars: maxChars }),
+      signal,
+    })
+    body = await res.json().catch(() => undefined)
+  } catch (err) {
+    // The worker may have rendered the page and charged it.
+    if (render) charged?.(undefined)
+    throw err
+  }
+  if (render) {
+    const cost = Charged.safeParse(body)
+    // A page always says what it cost; a refusal only when the page was rendered.
+    if (!cost.success || (res.ok && !cost.data.cost)) charged?.(undefined)
+    else if (cost.data.cost) charged?.(cost.data.cost.micro_credits)
+  }
   if (!res.ok) {
     const refusal = CodedError.safeParse(body).data?.error
     const code = refusal?.code ?? `http_${res.status}`

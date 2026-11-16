@@ -4,6 +4,7 @@ import '@testing-library/jest-dom/vitest'
 import { screen } from '@testing-library/react'
 import userEvent, { type UserEvent } from '@testing-library/user-event'
 import { afterEach, describe, expect, it } from 'vitest'
+import { usageCosting } from '../../../worker/test/fakes'
 import { DATA_LINE } from '../src/tools/shared'
 import { FakeNotionTab } from './notion-tab'
 import { closeBrowser, FakeBrowser } from './panel'
@@ -128,6 +129,44 @@ describe('reading a web page the user gives', () => {
     expect(rendered).toContain(`Web page, rendered, on app.example: ${JSON.stringify({ title: 'Board', url: app })}`)
     expect(rendered).toContain('Three cards: Plan, Build, Ship.')
     expect(screen.getByText('Board')).toBeVisible()
+  })
+
+  it('[UC-NOTICO-PANEL-003-S09] what the pages rendered for a question cost, failed ones too, is part of what the reply cost', async () => {
+    const { browser, user } = await open()
+    const app = 'https://app.example/board'
+    browser.browserRun.render(app, '# Board\n\nThree cards.', 4000)
+    browser.browserRun.failedMs = 1500
+    // The model calls cost nothing here: the reply's cost is the renders'.
+    browser.ai.usage = usageCosting(0)
+    browser.ai.script.push(renderCall('https://app.example/broken'), renderCall(app), { reply: 'Three cards.' })
+
+    await ask(user, `What is on ${app}?`)
+
+    expect(await screen.findByText('Three cards.')).toBeVisible()
+    // 4 s and 1.5 s of browser time at 25 micro-credits a ms: 0.1375 credits.
+    expect(screen.getByText('0.14 credits')).toBeVisible()
+  })
+
+  it('[UC-NOTICO-PANEL-003-S10] a user with no credits left for a render is told so, the question stops, and they can buy credits', async () => {
+    const { browser, user } = await open()
+    const app = 'https://app.example/board'
+    browser.browserRun.render(app, '# Board')
+    // The model call that asks for the render spends all 200 free credits.
+    browser.ai.usage = usageCosting(200)
+    browser.ai.script.push(renderCall(app), { reply: 'Never sent.' })
+
+    await ask(user, `What is on ${app}?`)
+
+    // On the render's card, and as why the reply stopped.
+    const told = await screen.findAllByText(
+      /You have no credits left\. Your next 200 free credits arrive on .+, or you can buy credits\./,
+    )
+    expect(told).toHaveLength(2)
+    expect(screen.queryByText('Never sent.')).not.toBeInTheDocument()
+    expect(browser.ai.calls).toHaveLength(1)
+    expect(browser.browserRun.calls).toEqual([])
+    await user.click(screen.getByRole('button', { name: 'Buy credits' }))
+    expect(await screen.findByRole('heading', { name: 'Credits' })).toBeVisible()
   })
 
   it.each([

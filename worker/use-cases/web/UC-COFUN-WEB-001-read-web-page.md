@@ -2,7 +2,7 @@
 
 ## Behavior
 
-A signed-in user's client can have the service read a web page for them by its address: the page's title and main text, as anyone who opens the address without signing in would see it, clipped to as much as the client asks for. Reading a page this way is free. A page drawn by scripts shows no text this way; the client can then ask for it to be rendered in a browser, which shows what it draws. Rendering is free too, and a user can have only a few pages rendered a minute. The service never keeps or logs the address or the page.
+A signed-in user's client can have the service read a web page for them by its address: the page's title and main text, as anyone who opens the address without signing in would see it, clipped to as much as the client asks for. Reading a page this way is free. A page drawn by scripts shows no text this way; the client can then ask for it to be rendered in a browser, which shows what it draws. Rendering costs credits: what the browser time it used costs the service, at its provider's list price with nothing added, however the render ended, since the browser ran for a page with no text or one that failed too; the client is told what a render cost. A user can have a page rendered only while they have credits left, and only a few a minute. The service never keeps or logs the address or the page; it keeps a record of each render (when, from which product, how it ended, the browser time, and what it cost).
 
 Which addresses to read is the client's choice (UC-NOTICO-PANEL-003); the service only refuses those that are never read.
 
@@ -21,8 +21,10 @@ Key constraints:
 | UC-COFUN-WEB-001-S02 | P0 | ✅ | Given an address on the service's own domain, on a local network name, or written as an IP address, or a page that redirects to one; when a client asks for it; then it is refused, and that address is never reached. |
 | UC-COFUN-WEB-001-S03 | P1 | ✅ | Given a page behind a sign-in or a bot check, or one that is not HTML or text; when a client asks for it; then it is refused with the reason. |
 | UC-COFUN-WEB-001-S04 | P1 | ✅ | Given a page that shows no text until its scripts run; when a client asks for it; then it is told the page shows no text; and when it asks for the page rendered, it gets the text the page shows in a browser. |
-| UC-COFUN-WEB-001-S05 | P1 | ✅ | Given a user who has had as many pages rendered as they may in a minute; when their client asks for another rendered; then they are told to wait, nothing is rendered, and pages can still be read plainly; a render costs no credits. |
+| UC-COFUN-WEB-001-S05 | P0 | ✅ | Given a signed-in user with credits; when their client has pages rendered; then each costs the browser time it used, taken from their credits, and the client is told what it cost; and once they have had as many rendered as they may in a minute, they are told to wait, nothing more is rendered, and pages can still be read plainly. |
 | UC-COFUN-WEB-001-S06 | P1 | ✅ | Given a user who has asked for as many pages as they may in a minute; when they ask for another; then they are told to wait, and the page is not read. |
+| UC-COFUN-WEB-001-S07 | P0 | ✅ | Given a user with no credits left; when their client asks for a page rendered; then they are told they have no credits and when the next free ones arrive, nothing is rendered, and pages can still be read plainly. |
+| UC-COFUN-WEB-001-S08 | P1 | ✅ | Given a page that shows no text even rendered, or one that could not be rendered; when a client asks for it rendered; then it is told why, and the render still costs the browser time it used. |
 
 ### ai-e2e
 
