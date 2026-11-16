@@ -47,7 +47,7 @@ The worker does not store or log your conversation, the address or text of a web
 
 Cloudflare keeps the worker's logs: the request logs Cloudflare records for every Worker (such as the time, URL, and status of a request), and what the worker writes to them.
 
-- **Errors.** When something fails, the worker logs the error. One that comes from the AI model or another service is cut short, so that if it quoted part of a request, no more than a short excerpt of it reaches the logs.
+- **Errors.** When something fails, the worker logs a short part of the error, so that if it quoted part of a request, no more than a short excerpt of it reaches the logs. The one error it logs whole is from writing a usage record (above), which holds nothing you asked and nothing from a page.
 - **Credits granted by hand**: the operator's Clerk user id, the account's Clerk user id, the number of credits, and when they expire.
 - **Purchases**: your Clerk user id, the credits, and the payment's Stripe reference; for a purchase taken back, its reference and why; for a payment that grants nothing (what was paid does not match the pack, or a refund or dispute of a payment with no grant), its Stripe reference and what did not match.
 
