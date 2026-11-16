@@ -515,7 +515,7 @@ describe('searching the web', () => {
       0,
     ],
   ])(
-    '[UC-COFUN-WEB-002-S03] [UC-COFUN-WEB-002-S03] a search is refused when %s, not tried again, and costs nothing',
+    '[UC-COFUN-WEB-002-S03] a search is refused when %s, not tried again, and costs nothing',
     async (_, reply, status, code, cost) => {
       ai.searchReply = reply
       const res = await search('tea')
