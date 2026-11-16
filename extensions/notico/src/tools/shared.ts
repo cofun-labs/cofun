@@ -159,14 +159,14 @@ export function plural(n: number, word: string): string {
 
 /**
  * Keeps the text of a page outside Notion from passing for the tool's own lines: a line that opens
- * like a note in brackets or a block reference gets a backslash first.
+ * like a note in brackets or a block reference gets a backslash first. Markdown too, a line that
+ * opens with a link included: the link's text is the page's, and `[Read only: …](https://…)` would
+ * read as a note; so would a line of a code block, which the Markdown leaves unescaped.
  */
 export const asPageText = (text: string) => text.replace(/^([^\S\n]*)(\[|\^)/gm, '$1\\$2')
 
-/**
- * Escapes a page's Markdown (src/web/markdown.ts) as asPageText escapes text, but for a line that
- * opens with a link to a web page: the Markdown escapes every `[` of the page's own text, so such a
- * `[` opens a link it wrote, and a backslash would undo the link.
- */
-export const asPageMarkdown = (text: string) =>
-  text.replace(/^([^\S\n]*)(\^|\[(?!(?:[^\]\\\n]|\\.)*\]\(https?:\/\/))/gm, '$1\\$2')
+/** A title as a note in brackets names it: without brackets, so it can't close the note and fake another. */
+export const noteTitle = (title: string) => title.replace(/[[\]]/g, '')
+
+/** A URL as a note in brackets names it: its brackets percent-encoded, so it can't close the note and fake another. */
+export const noteUrl = (url: string) => url.replaceAll('[', '%5B').replaceAll(']', '%5D')

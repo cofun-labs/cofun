@@ -6,7 +6,7 @@ import type { KeptResult, ToolContext, ToolResult } from '../agent'
 import { clip } from '../notion/comments'
 import { defineTool } from '../tool'
 import { z } from '../zod'
-import { READ, SEARCH, asData, asPageMarkdown, asPageText, count, nameOf, partArg } from './shared'
+import { READ, SEARCH, asData, asPageText, count, nameOf, partArg } from './shared'
 
 /** How much of a kept result one part holds; a result no longer than this is given whole, and not kept. */
 const RESULT_PART_CHARS = 20_000
@@ -59,10 +59,6 @@ const partAt = (starts: number[], offset: number) => starts.findLastIndex((start
 
 /** The text of part `part` (from 1). */
 const partText = (text: string, starts: number[], part: number) => text.slice(starts[part - 1], starts[part])
-
-/** Escapes text from outside as the tool that read it does. */
-const escaped = (kept: Pick<KeptResult, 'markdown'>, text: string) =>
-  kept.markdown ? asPageMarkdown(text) : asPageText(text)
 
 /** What precedes the text: how a tool labels it. */
 const label = (kept: Pick<KeptResult, 'markdown'>) => (kept.markdown ? 'Content, as Markdown:' : 'Text:')
@@ -155,7 +151,7 @@ export async function withText(
   const { longer = false, ...rest } = read
   const kept = { ...rest, text: read.text.slice(0, KEPT_CHARS) }
   if (kept.text.length <= RESULT_PART_CHARS) {
-    const lines = [...header, ...clippedNote(kept, longer), label(kept), escaped(kept, kept.text)]
+    const lines = [...header, ...clippedNote(kept, longer), label(kept), asPageText(kept.text)]
     return { text: asData(lines), details: { name } }
   }
   const starts = partStarts(kept.text)
@@ -170,7 +166,7 @@ export async function withText(
     const note =
       `[Clipped: this shows the first ${en(first.length)} of the page's ${longer ? 'more than ' : ''}` +
       `${en(kept.chars)} characters. The rest could not be kept on the device, so no other part can be read.]`
-    return { text: asData([...header, note, label(kept), escaped(kept, first)]), details: { name } }
+    return { text: asData([...header, note, label(kept), asPageText(first)]), details: { name } }
   }
   const lines = [
     ...header,
@@ -179,7 +175,7 @@ export async function withText(
     ...droppedNote(kept, longer),
     ...outline(kept.text, starts),
     label(kept),
-    escaped(kept, first),
+    asPageText(first),
   ]
   return { text: asData(lines), details: { name, result: id } }
 }
@@ -247,7 +243,7 @@ export const readResult = defineTool({
       `[Part ${part} of ${starts.length}: characters ${en(from + 1)} to ${en(from + text.length)} of ` +
         `${en(kept.text.length)}.]`,
       label(kept),
-      escaped(kept, text),
+      asPageText(text),
     ]
     return { text: asData(lines), details: { name: nameOf(kept.title) } }
   },
@@ -289,7 +285,7 @@ export const searchResult = defineTool({
         found++
         if (matches.length < MATCHES)
           matches.push(
-            `Part ${partAt(starts, offset + at)}, line ${en(n + 1)}: ${escaped(kept, around(line, at, query.length))}`,
+            `Part ${partAt(starts, offset + at)}, line ${en(n + 1)}: ${asPageText(around(line, at, query.length))}`,
           )
       }
       offset += line.length + 1

@@ -184,9 +184,9 @@ export interface ToolContext {
  * The full text of a long tool result, kept on the device for a while (src/sessions.ts), so the
  * model can read the parts it was not given (read_result, search_result). `tool` is the tool that
  * read it; `title` and `url`, the page's; `markdown`, whether `text` is the extension's own
- * Markdown (src/web/markdown.ts), escaped as such (asPageMarkdown), else as text; `chars`, how
- * long the whole text was, which is more than `text` when only the first part of it was kept;
- * `keptAt`, when it was kept, which is what it is swept by.
+ * Markdown (src/web/markdown.ts), as the result labels it; `chars`, how long the whole text was,
+ * which is more than `text` when only the first part of it was kept; `keptAt`, when it was kept,
+ * which is what it is swept by.
  */
 export const KeptResult = z.object({
   id: z.string(),

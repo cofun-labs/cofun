@@ -156,6 +156,13 @@ describe('reading a web page', () => {
     ['localhost', 'http://localhost/admin'],
     ['a local network name', 'http://printer.local/'],
     ['a name with no dot', 'http://intranet/'],
+    ['our own domain, fully qualified', 'https://api.cofun.cc./'],
+    ['our own domain, with trailing dots', 'https://api.cofun.cc../'],
+    ['our own domain, with trailing dots written as escapes', 'https://api.cofun.cc%2e%2e/'],
+    ['a local network name, with trailing dots', 'https://foo.local../'],
+    ['localhost, with trailing dots', 'https://localhost../'],
+    ['a name with an empty label', 'https://a..cofun.cc/'],
+    ['a name starting with a dot', 'https://.cofun.cc/'],
     ['an IPv4 address', 'http://127.0.0.1/'],
     ['an IPv4 address in decimal', 'http://2130706433/'],
     ['an IPv6 address', 'http://[::1]/'],
@@ -175,6 +182,12 @@ describe('reading a web page', () => {
       status: 302,
       headers: { location: 'http://169.254.169.254/latest/meta-data' },
     })
+    expect(await refusal(await read('https://tea.example/go'))).toEqual({ status: 422, code: 'not_allowed' })
+    expect(web.asked).toEqual(['https://tea.example/go'])
+  })
+
+  it('[UC-COFUN-WEB-001-S02] refuses a redirect to a host it never reads, however its name is written', async () => {
+    web.serve('https://tea.example/go', { status: 302, headers: { location: 'https://api.cofun.cc../v1/me' } })
     expect(await refusal(await read('https://tea.example/go'))).toEqual({ status: 422, code: 'not_allowed' })
     expect(web.asked).toEqual(['https://tea.example/go'])
   })
