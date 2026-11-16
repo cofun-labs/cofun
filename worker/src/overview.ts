@@ -122,7 +122,7 @@ const searchSpent = 'coalesce(sum(CASE WHEN w.id IS NOT NULL THEN s.micro_credit
  * the grants, read through `spend_grants`' index of its unique (spend_id, grant_id).
  */
 const forgiven =
-  'coalesce(sum(s.micro_credits - coalesce((SELECT sum(g.micro_credits) FROM spend_grants g WHERE g.spend_id = s.id), 0)), 0)'
+  'coalesce(sum(s.micro_credits - coalesce((SELECT sum(sg.micro_credits) FROM spend_grants sg WHERE sg.spend_id = s.id), 0)), 0)'
 
 const GRANTED_PER_DAY = `SELECT (granted_at + CAST(?3 AS INTEGER)) / ${DAY_MS} AS day, source, sum(amount) AS amount
 FROM grants INDEXED BY grants_by_time

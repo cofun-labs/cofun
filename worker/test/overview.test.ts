@@ -751,13 +751,13 @@ describe('admin overview API', () => {
         /^SEARCH \w+ USING/.test(step) &&
         !step.includes('_by_time') &&
         !callOfSpend.test(step) &&
-        !step.startsWith('SEARCH g '),
+        !step.includes('sqlite_autoindex_spend_grants_'),
     )
     expect(others.length).toBeGreaterThan(0)
     for (const step of others) expect(step).toMatch(/USING (COVERING )?INDEX \w+ \((user_id|grant_id)=\?/)
     // What a spend took from the grants, for what was forgiven, is found by the spend.
     for (const plan of [spent, listed])
-      expect(plan).toContain('SEARCH g USING INDEX sqlite_autoindex_spend_grants_1 (spend_id=?)')
+      expect(plan).toContain('SEARCH sg USING INDEX sqlite_autoindex_spend_grants_1 (spend_id=?)')
   })
 
   it('[@no-uc:privacy] looking at the overview logs nothing', async () => {
