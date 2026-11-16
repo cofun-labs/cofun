@@ -139,8 +139,6 @@ export class ChatSession {
   private ending = Promise.resolve()
   /** The save in progress, if any; the next one waits for it. */
   private saving = Promise.resolve()
-  /** Saves to Notion that are running, by key: one click creates at most one page. */
-  private readonly notionSaves = new Set<string>()
 
   /** A new chat, or `saved` to continue a saved session. */
   constructor(
@@ -427,8 +425,8 @@ export class ChatSession {
    * be tried again, and the panel tells the user why.
    */
   saveToNotion(key: string, save: () => Promise<{ url: string }>): void {
-    if (this.notionSaves.has(key)) return
-    this.notionSaves.add(key)
+    // One click creates at most one page.
+    if (this.snapshot.saves[key]?.status === 'saving') return
     const set = (state?: SaveState) => {
       const saves = { ...this.snapshot.saves }
       if (state) saves[key] = state
@@ -436,15 +434,13 @@ export class ChatSession {
       this.update({ saves })
     }
     set({ status: 'saving' })
-    save()
-      .then(
-        ({ url }) => set({ status: 'saved', url }),
-        (err: unknown) => {
-          set(undefined)
-          this.panel.saveFailed(err instanceof Error ? err.message : String(err))
-        },
-      )
-      .finally(() => this.notionSaves.delete(key))
+    save().then(
+      ({ url }) => set({ status: 'saved', url }),
+      (err: unknown) => {
+        set(undefined)
+        this.panel.saveFailed(err instanceof Error ? err.message : String(err))
+      },
+    )
   }
 
   private declineAll() {
