@@ -100,7 +100,7 @@ describe('answering with the own model', () => {
     expect(await screen.findByText('It is a fixture.')).toBeVisible()
     await answered()
 
-    // [UC-NOTICO-CHAT-003-S15] The user's own model spends no credits: the reply shows no cost.
+    // [UC-NOTICO-CHAT-003-S15] The user's own model spends no credits on its calls, and no page was rendered: the reply shows no cost.
     expect(screen.queryByText(/\bcredits?$/)).not.toBeInTheDocument()
     // Both model calls went to OpenRouter, with the user's key, for the chosen model.
     const { calls } = browser.openRouter
