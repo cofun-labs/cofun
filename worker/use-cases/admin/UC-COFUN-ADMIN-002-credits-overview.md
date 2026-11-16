@@ -2,7 +2,7 @@
 
 ## Behavior
 
-The operator needs to know how the service's credits move as a whole, not one account at a time (UC-COFUN-ADMIN-001). For a period of days, and for each of its days on the operator's own clock, the admin page shows the credits granted by source and spent, what was forgiven, the model calls with their failures and tokens, and the pages rendered and web searches made, with what they cost. It also shows what was spent through each product, as the extension names it, and the accounts that were granted or spent credits, the one that spent the most first, each by its user id only.
+The operator needs to know how the service's credits move as a whole, not one account at a time (UC-COFUN-ADMIN-001). For a period of days, and for each of its days on the operator's own clock, the admin page shows the credits granted by source and spent, what was forgiven, the model calls with their failures and tokens, and the pages rendered and web searches made, with what they cost. It also shows what was spent through each product, as the extension names it, and the accounts that were granted or spent credits, the one that spent the most first, each by its user id only. Credits are one balance per account, whichever products spend them.
 
 Key constraints:
 

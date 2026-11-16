@@ -2,7 +2,7 @@
 
 ## Behavior
 
-Each conversation in the side panel is a session. Each question is sent with the conversation so far, so the user can ask a follow-up; a signed-in user can start a new session at any time, and opening the side panel starts one. Past sessions are kept in a list the user can search, reopen, and delete, each titled by the model in a few words, in the question's language, once its first reply is in. Reopening a session shows the whole conversation, tools included, and the next question continues it as if it had never been closed.
+Each conversation in the side panel is a session. Each question is sent with the conversation so far, so the user can ask a follow-up; a signed-in user can start a new session at any time, and opening the side panel starts one. Past sessions are kept in a list the user can search, reopen, and delete, each titled in a few words, in the question's language, once its first reply is in, by the model the user is asking with (the hosted one spends credits on it, their own uses their key). Reopening a session shows the whole conversation, tools included, and the next question continues it as if it had never been closed.
 
 Sessions are kept on the user's device, also after they sign out, and the service never stores them.
 

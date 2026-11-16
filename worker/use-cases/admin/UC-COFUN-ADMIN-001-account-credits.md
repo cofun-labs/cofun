@@ -2,7 +2,7 @@
 
 ## Behavior
 
-The operator needs to help a single account: see what credits it has, and give it more. On the admin page they look an account up by its user id and see its balance and every grant it was given, the expired ones included, with where it came from, what is left, and when it expires. They can grant it credits by hand, for a number of days; those follow the same rules as any credits (UC-COFUN-CREDITS-001).
+The operator needs to help a single account: see what credits it has, and give it more. On the admin page they look an account up by its user id and see its balance and every grant it was given, the expired ones included, with where it came from, what is left, and when it expires. They can grant it credits by hand, for a number of days; those follow the same rules as any credits (UC-COFUN-CREDITS-001): the credits that expire first are spent first, and none can be spent after they expire.
 
 Key constraints:
 

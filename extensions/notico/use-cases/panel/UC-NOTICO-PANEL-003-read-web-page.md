@@ -4,7 +4,7 @@
 
 A user gives the address of a web page in their message ("summarize https://example.com/article"), and the AI reads it without the page being open in a tab, whichever model answers. The service reads the page as anyone who opens the address without signing in sees it (UC-COFUN-WEB-001); the AI gets its title and main text, can follow links it finds, and names the page it used. A page drawn by scripts can be rendered in a browser instead, which costs credits as part of what the reply cost.
 
-When reads are turned away for coming too often, or credits run out, the question stops; any other failure only means the page wasn't read, and the question goes on.
+When reads are turned away for coming too often, or credits run out for a render, the question stops; any other failure only means the page wasn't read, and the question goes on.
 
 Key constraint:
 

@@ -2,7 +2,7 @@
 
 ## Behavior
 
-A signed-in user asks the AI to set up a database from a description, such as a task tracker, or to change the properties and select options of one they have. The AI creates the database at the end of a page it names, or changes its properties and options, right away (adding and changing rows is UC-NOTICO-NOTION-008). It removes a property or an option, and the values with it, only when the user asked to remove exactly that one; any other change that would lose values is refused before anything changes.
+A signed-in user asks the AI to set up a database from a description, such as a task tracker, or to change the properties and select options of one they have. The AI creates the database at the end of a page it names, or changes its properties and options, right away (adding and changing rows is UC-NOTICO-NOTION-008). It removes a property or an option, and the values with it, only when the user asked to remove exactly that one; any other change that would lose values, such as changing a property's type, is refused before anything changes.
 
 Key constraint:
 
