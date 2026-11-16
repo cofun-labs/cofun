@@ -5,9 +5,9 @@
 --
 -- Nothing is stored that can be worked out from the rest: what is left of a grant is its amount less
 -- what was spent from it (`spend_grants`), a balance is what is left of the grants that still count,
--- and what a spend's grants did not cover was forgiven. Values from a fixed list (`source`, `kind`,
--- `reason`, `outcome`) are checked by the worker's schemas (src/credits.ts), not by CHECKs here, so a
--- new value needs no rebuild.
+-- and what a spend's grants did not cover was forgiven. Columns of named values (`source`, `kind`,
+-- `reason`, `outcome`) have no CHECK here, so a new value needs no rebuild: the worker writes them
+-- (src/credits.ts), and checks `source` and `reason` with its schemas when it reads them.
 --
 -- The tables before this one held only test data, so they are dropped, not copied.
 
