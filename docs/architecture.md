@@ -126,7 +126,7 @@ extension/                the package every Chrome extension is built from (Noti
   src/zod.ts              the only module that imports zod
   test/                   the extension's client and UI tests, with fakes and sanitized fixtures
   browser-test/           pnpm test:browser: the built extension in Chromium, the network answered by fakes (runs in CI)
-  e2e/                    pnpm e2e: drives the shared Chrome Canary for ai-e2e runs
+  browser-driver/         pnpm browser-driver: drives the shared Chrome Canary for ai-e2e runs
 worker/                   the Cloudflare Worker every extension shares
   src/app.ts              the Hono app, composed from src/routes/; everything under /v1 is behind
                           the session check (src/routes/session.ts)

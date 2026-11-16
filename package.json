@@ -12,7 +12,7 @@
     "typecheck": "pnpm -r typecheck",
     "build": "pnpm --filter cofun-extension build",
     "test": "pnpm -r test",
-    "e2e": "pnpm --silent --filter cofun-extension e2e",
+    "browser-driver": "pnpm --silent --filter cofun-extension browser-driver",
     "test:browser": "pnpm build && pnpm --silent --filter cofun-extension test:browser",
     "media": "pnpm --silent --filter cofun-scripts media",
     "icons": "pnpm --silent --filter cofun-extension icons",

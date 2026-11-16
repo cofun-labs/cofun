@@ -4,8 +4,8 @@
 // cannot drift from what is really built and run.
 //   extension     vite.config.ts (build.rollupOptions.input: sidepanel.html and src/background.ts),
 //                 the tests vitest.config.ts includes, playwright.config.ts (testDir: browser-test),
-//                 and the "icons" and "e2e" scripts in package.json (node icons/export.ts, tsx
-//                 e2e/cli.ts)
+//                 and the "icons" and "browser-driver" scripts in package.json (node
+//                 icons/export.ts, tsx browser-driver/cli.ts)
 //   worker        wrangler.jsonc (main: src/index.ts), and vitest's default test files
 //   scripts       the "use-cases", "release-notes", and "media" scripts in package.json (node
 //                 check-use-cases.ts, node release-notes.ts, node upload-media.ts), and vitest's

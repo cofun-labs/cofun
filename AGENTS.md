@@ -39,7 +39,7 @@ Update `docs/architecture.md` only when a change adds, moves, or removes a modul
      ```typescript
      it('[UC-NOTICO-CHAT-001-S01] signed-in user gets a streamed reply', async () => {
      ```
-   - `ai-e2e` scenarios are verified by an agent driving a real browser with `pnpm e2e`, and the run is recorded in the PR ([Running an `ai-e2e` scenario](docs/bdd.md#running-an-ai-e2e-scenario)).
+   - `ai-e2e` scenarios are verified by an agent driving a real browser with `pnpm browser-driver`, and the run is recorded in the PR ([Running an `ai-e2e` scenario](docs/bdd.md#running-an-ai-e2e-scenario)).
    - Implementation details worth guarding get standalone tests named with `[@no-uc:<kind>]` for the harm they guard (`data`, `notion-safety`, `money`, `access`, `privacy`, or `contract`; see [What gets a test](docs/bdd.md#what-gets-a-test)).
    - `pnpm check` fails on a test that names neither a scenario ID nor a kind, on an `api-test` scenario marked ✅ with no test named with its ID, and on a scenario row it can't read ([Coverage check](docs/bdd.md#coverage-check)). When a scenario's ID changes, rename its tests; when a scenario is deleted, delete its tests or take the ID out of their names.
    - Gaps that slip past a PR are found by the `/bdd-audit` skill, run before a release or after a large feature ([Coverage audit](docs/bdd.md#coverage-audit)), not by per-PR bookkeeping.
@@ -76,7 +76,7 @@ Update `docs/architecture.md` only when a change adds, moves, or removes a modul
 ### Git rules
 
 - **Never push to `main`.** Every change goes through a branch and PR; the `main` ruleset (`.github/rulesets/main.json`) rejects direct pushes from everyone.
-- **Work in a worktree.** Develop each task in its own git worktree under `.claude/worktrees/`, branched from `origin/main`. Leave the main checkout on `main`: the maintainer reads code and runs `pnpm build` and `pnpm e2e` there.
+- **Work in a worktree.** Develop each task in its own git worktree under `.claude/worktrees/`, branched from `origin/main`. Leave the main checkout on `main`: the maintainer reads code and runs `pnpm build` and `pnpm browser-driver` there.
 - **GitHub settings are code**: the `main` ruleset in `.github/rulesets/main.json`, repository options in `scripts/sync-github-settings.sh`. Change them through a PR ([GitHub settings](docs/development.md#github-settings)).
 - **Never rewrite published history** (`git commit --amend`, `git rebase`) on pushed branches; add new commits. **Never force-push** unless explicitly asked.
 - Use [Conventional Commits](https://www.conventionalcommits.org/) for commits, PR titles, and Issue titles: `feat:`, `fix:`, `docs:`, `chore:`, `refactor:`, `test:`. The prefix is an Issue's kind: there are no type labels.
@@ -168,7 +168,7 @@ pnpm check        # lint, knip, format check, use case coverage, typecheck, exte
 pnpm format:fix   # format all files
 pnpm test         # extension and worker tests, and the unit tests of scripts/
 pnpm media 367 demo.gif   # upload a PR's demo GIF or screenshots and print their URLs (maintainer's machine only)
-pnpm e2e --help   # drive the shared Chrome Canary for ai-e2e runs (maintainer's machine only)
+pnpm browser-driver --help   # drive the shared Chrome Canary for ai-e2e runs (maintainer's machine only)
 ```
 
 ## Key decisions

@@ -1,4 +1,4 @@
-// The command line of `pnpm e2e`.
+// The command line of `pnpm browser-driver`.
 import { isNotion, toUuid } from '../src/notion/hosts'
 
 export type Answer = 'allow' | 'deny'
@@ -33,7 +33,7 @@ export class UsageError extends Error {
   }
 }
 
-export const USAGE = `Usage: pnpm e2e <command> [options]
+export const USAGE = `Usage: pnpm browser-driver <command> [options]
 
 Drives the shared Chrome Canary (CDP port 9228) for ai-e2e scenarios. See docs/bdd.md.
 
@@ -65,15 +65,15 @@ Commands:
   lock refresh|release|status
 
 Options:
-  --owner <name>               Lock owner (default: $E2E_OWNER, else the git branch)
+  --owner <name>               Lock owner (default: $BROWSER_DRIVER_OWNER, else the git branch)
 
 Environment:
-  E2E_NOTION_URL               A page in the workspace page and db create in (default: the workspace
+  BROWSER_DRIVER_NOTION_URL               A page in the workspace page and db create in (default: the workspace
                                of the page the tool's tab shows, or the account's only workspace)
-  E2E_CDP_PORT                 Canary's DevTools port (default 9228)
+  BROWSER_DRIVER_CDP_PORT                 Canary's DevTools port (default 9228)
 
 Exit codes: 0 done, 1 failed, 2 usage error, 3 Canary busy (prints the holder),
-4 a reply is waiting for approval (run "pnpm e2e ask --allow" or "--deny").`
+4 a reply is waiting for approval (run "pnpm browser-driver ask --allow" or "--deny").`
 
 const LOCK_ACTIONS = new Set<string>(['acquire', 'refresh', 'release', 'status'])
 const ASK_FLAGS = new Set(['--allow', '--deny', '--timeout', '--json'])

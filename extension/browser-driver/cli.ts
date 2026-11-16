@@ -1,4 +1,4 @@
-// pnpm e2e: runs ai-e2e scenarios in the shared Chrome Canary. See USAGE in args.ts and docs/bdd.md.
+// pnpm browser-driver: runs ai-e2e scenarios in the shared Chrome Canary. See USAGE in args.ts and docs/bdd.md.
 import { execFileSync } from 'node:child_process'
 import { resolve } from 'node:path'
 import { isNotion } from '../src/notion/hosts'
@@ -36,31 +36,32 @@ import { type State, loadState, saveState, statePath } from './state'
 const REPO_ROOT = resolve(import.meta.dirname, '..', '..')
 
 function cdpPort(): number {
-  const raw = process.env.E2E_CDP_PORT
+  const raw = process.env.BROWSER_DRIVER_CDP_PORT
   if (raw === undefined) return DEFAULT_PORT
   const port = Number(raw)
-  if (!Number.isInteger(port) || port <= 0 || port > 65535) throw new UsageError(`E2E_CDP_PORT is not a port: ${raw}`)
+  if (!Number.isInteger(port) || port <= 0 || port > 65535)
+    throw new UsageError(`BROWSER_DRIVER_CDP_PORT is not a port: ${raw}`)
   return port
 }
 const EXIT_BUSY = 3
 const EXIT_NEEDS_ANSWER = 4
 const NOT_OWN_PAGE =
-  'The side panel opens only on pages pnpm e2e created: pass the url that pnpm e2e page or db printed.'
+  'The side panel opens only on pages pnpm browser-driver created: pass the url that pnpm browser-driver page or db printed.'
 
 function defaultOwner(): string {
   try {
     const branch = execFileSync('git', ['rev-parse', '--abbrev-ref', 'HEAD'], { cwd: REPO_ROOT, encoding: 'utf8' })
     if (branch.trim() && branch.trim() !== 'HEAD') return branch.trim()
   } catch {
-    // Not a git checkout: --owner or E2E_OWNER must say.
+    // Not a git checkout: --owner or BROWSER_DRIVER_OWNER must say.
   }
-  throw new UsageError('Name the lock owner with --owner or E2E_OWNER (no git branch to use).')
+  throw new UsageError('Name the lock owner with --owner or BROWSER_DRIVER_OWNER (no git branch to use).')
 }
 
 async function lockCommand(lock: CanaryLock, owner: string, command: Extract<Command, { name: 'lock' }>) {
   switch (command.action) {
     case 'acquire': {
-      const r = await lock.acquire(owner, command.purpose ?? 'pnpm e2e')
+      const r = await lock.acquire(owner, command.purpose ?? 'pnpm browser-driver')
       if (r.status === 'busy') throw new E2eError(`busy: ${r.holder}`, EXIT_BUSY)
       if (r.status === 'acquired' && r.tookOver) console.error(`took over a stale lock: ${r.tookOver}`)
       console.log(r.status === 'held' ? `already held by ${owner}` : `acquired by ${owner}`)
@@ -164,13 +165,13 @@ async function browserCommand(
     case 'ask': {
       const panel = await ownPanel(browser, state)
       // The panel works on the active tab of its window, which may have changed since panel or
-      // elsewhere checked it (by hand, or page/db going to E2E_NOTION_URL). On Notion the agent may
+      // elsewhere checked it (by hand, or page/db going to BROWSER_DRIVER_NOTION_URL). On Notion the agent may
       // only meet a throwaway page; elsewhere its Notion tools can't run at all.
       const url = await currentTabUrl(panel)
       if (!url || (isNotion(url) ? !isOwnPage(url, state.created) : !url.startsWith(OTHER_URL))) {
         throw new E2eError(
-          'The current tab is neither on a page pnpm e2e created nor the tab pnpm e2e elsewhere opened: ' +
-            'run pnpm e2e panel <url> or pnpm e2e elsewhere again.',
+          'The current tab is neither on a page pnpm browser-driver created nor the tab pnpm browser-driver elsewhere opened: ' +
+            'run pnpm browser-driver panel <url> or pnpm browser-driver elsewhere again.',
         )
       }
       try {
@@ -178,7 +179,7 @@ async function browserCommand(
         if (command.json) console.log(JSON.stringify(result, null, 2))
         else console.log(formatReply(result.parts))
         if (result.status === 'done') return 0
-        console.error('\nWaiting for approval: run pnpm e2e ask --allow or pnpm e2e ask --deny.')
+        console.error('\nWaiting for approval: run pnpm browser-driver ask --allow or pnpm browser-driver ask --deny.')
         return EXIT_NEEDS_ANSWER
       } catch (err) {
         if (err instanceof TimeoutError) {
@@ -190,8 +191,8 @@ async function browserCommand(
     }
     case 'page':
     case 'db': {
-      // E2E_NOTION_URL, when set, picks the workspace: a page in it.
-      const tab = await notionTab(browser, state, process.env.E2E_NOTION_URL, DEFAULT_NOTION_URL)
+      // BROWSER_DRIVER_NOTION_URL, when set, picks the workspace: a page in it.
+      const tab = await notionTab(browser, state, process.env.BROWSER_DRIVER_NOTION_URL, DEFAULT_NOTION_URL)
       const notion = await tabNotion(tab)
       const { url, userId } = await tab.evaluate(() => {
         const id = /(?:^|;\s*)notion_user_id=([^;]+)/.exec(document.cookie)?.[1]
@@ -212,7 +213,7 @@ async function browserCommand(
     }
     case 'trash': {
       if (!state.created.includes(command.id)) {
-        throw new E2eError(`pnpm e2e only trashes pages it created, and ${command.id} is not one of them.`)
+        throw new E2eError(`pnpm browser-driver only trashes pages it created, and ${command.id} is not one of them.`)
       }
       const tab = await notionTab(browser, state, undefined, DEFAULT_NOTION_URL)
       const result = await trash(await tabNotion(tab), command.id)
@@ -234,7 +235,9 @@ async function browserCommand(
       for (const id of open) await browser.close(id)
       state.notionTarget = state.otherTarget = state.panelTarget = undefined
       state.tabTargets = []
-      console.log(open.length ? 'Closed the tabs pnpm e2e opened.' : 'No tab opened by pnpm e2e is open.')
+      console.log(
+        open.length ? 'Closed the tabs pnpm browser-driver opened.' : 'No tab opened by pnpm browser-driver is open.',
+      )
       return 0
     }
     default:
@@ -248,14 +251,14 @@ async function main(argv: string[]): Promise<number> {
     console.log(USAGE)
     return 0
   }
-  const owner = given ?? process.env.E2E_OWNER ?? defaultOwner()
+  const owner = given ?? process.env.BROWSER_DRIVER_OWNER ?? defaultOwner()
   checkOwner(owner)
   const lock = new CanaryLock()
   if (command.name === 'lock') {
     await lockCommand(lock, owner, command)
     return 0
   }
-  return withLock(lock, owner, `pnpm e2e ${command.name}`, async () => {
+  return withLock(lock, owner, `pnpm browser-driver ${command.name}`, async () => {
     const path = statePath(owner)
     const state = await loadState(path)
     const cdp = await Cdp.connect(cdpPort())

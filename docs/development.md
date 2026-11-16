@@ -13,7 +13,7 @@ pnpm build        # build the extension (Notico) into extension/dist
 pnpm test:browser # build the extension and run its browser tests in Chromium (first: pnpm --filter cofun-extension exec playwright install chromium)
 pnpm icons        # export extension/products/notico/icons/icon.svg into extension/products/notico/public/icons (needs the same Chromium); commit the PNGs
 pnpm media 367 demo.gif   # upload a PR's demo GIF or screenshots and print their URLs (maintainer's machine only; see PR media)
-pnpm e2e --help   # drive the shared Chrome Canary for ai-e2e runs (maintainer's machine only)
+pnpm browser-driver --help   # drive the shared Chrome Canary for ai-e2e runs (maintainer's machine only)
 ```
 
 A lefthook pre-commit hook runs `pnpm check`. GitHub Actions runs it and the browser tests on every pull request.
@@ -83,7 +83,7 @@ The AI Gateway (`AI_GATEWAY_ID`) has **log collection turned off** in the dashbo
 
 Configuration is the `vars` in [`worker/wrangler.jsonc`](../worker/wrangler.jsonc), each explained by its comment. The two secrets, `STRIPE_SECRET_KEY` and `STRIPE_WEBHOOK_SECRET`, are set with `pnpm exec wrangler secret put <name>` and never committed; without them nothing can be bought. How admins are recognized (a `role` claim in the Clerk session token) is in `worker/src/routes/admin.ts`.
 
-There is no test environment: the one worker runs with the live Stripe account. After a deploy that changes buying, the maintainer checks it once by hand: buy the US$5 pack with a real card, see the credits arrive in the side panel, refund the payment in the Stripe Dashboard, and see what was left taken back. It costs one payment's fees, so it is never part of `pnpm e2e`.
+There is no test environment: the one worker runs with the live Stripe account. After a deploy that changes buying, the maintainer checks it once by hand: buy the US$5 pack with a real card, see the credits arrive in the side panel, refund the payment in the Stripe Dashboard, and see what was left taken back. It costs one payment's fees, so it is never part of `pnpm browser-driver`.
 
 ### Database
 

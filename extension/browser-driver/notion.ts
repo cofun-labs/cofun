@@ -64,7 +64,9 @@ function findSpaceView(views: SpaceView[], spaceId?: string, tabUser?: string): 
   const found = views.filter((v) => (!tabUser || v.userId === tabUser) && (!spaceId || v.spaceId === spaceId))
   if (found.length === 1) return found[0]
   if (!found.length) throw new E2eError("Couldn't find the workspace of the Notion tab.")
-  throw new E2eError('This Notion account has several workspaces: set E2E_NOTION_URL to a page in the one to use.')
+  throw new E2eError(
+    'This Notion account has several workspaces: set BROWSER_DRIVER_NOTION_URL to a page in the one to use.',
+  )
 }
 
 /** The operations creating a private page titled `title` that holds `blocks`. */

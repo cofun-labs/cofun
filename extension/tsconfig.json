@@ -15,7 +15,7 @@
     "src",
     "test",
     "browser-test",
-    "e2e",
+    "browser-driver",
     "products",
     "playwright.config.ts",
     "vite.config.ts",

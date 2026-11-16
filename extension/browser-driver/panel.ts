@@ -11,7 +11,7 @@ const PANEL_URL = `chrome-extension://${EXTENSION_ID}/sidepanel.html`
 /** The other site `elsewhere` opens: a page that asks for nothing and holds nothing of anyone's. */
 export const OTHER_URL = 'https://example.com/'
 /** Where `page` and `db` open a Notion tab when this tool has none yet. */
-export const DEFAULT_NOTION_URL = process.env.E2E_NOTION_URL ?? 'https://app.notion.com/'
+export const DEFAULT_NOTION_URL = process.env.BROWSER_DRIVER_NOTION_URL ?? 'https://app.notion.com/'
 
 /** The Notion tab this tool opened, if it is still open. */
 export async function ownNotionTab(browser: Browser, state: State): Promise<string | undefined> {
@@ -32,8 +32,8 @@ export async function notionTab(
 ): Promise<Target> {
   let id = await ownNotionTab(browser, state)
   const target = url ?? (id ? undefined : fallback)
-  if (!id && !target) throw new E2eError('No Notion tab opened by pnpm e2e yet: pass a Notion page URL.')
-  if (target && !isNotion(target)) throw new E2eError(`Not a Notion URL: ${target} (check E2E_NOTION_URL).`)
+  if (!id && !target) throw new E2eError('No Notion tab opened by pnpm browser-driver yet: pass a Notion page URL.')
+  if (target && !isNotion(target)) throw new E2eError(`Not a Notion URL: ${target} (check BROWSER_DRIVER_NOTION_URL).`)
   if (id && target) {
     const old = await browser.attach(id)
     // Marks the old document, so the wait below doesn't take it for the new one.
@@ -116,7 +116,9 @@ export async function openPanel(
     await until(() => helper.evaluate(() => (typeof chrome?.tabs?.query === 'function' ? true : undefined), []), {
       ms: 10_000,
       onTimeout: () =>
-        new E2eError('The extension page did not load. Is the extension enabled? Run pnpm e2e reload to check.'),
+        new E2eError(
+          'The extension page did not load. Is the extension enabled? Run pnpm browser-driver reload to check.',
+        ),
     })
     // Other tabs may show the same page, so mark ours by a title of its own for a moment and find
     // it by that.
@@ -190,7 +192,8 @@ export async function openPanel(
     { ms: 20_000, onTimeout: () => new E2eError('The side panel did not finish loading.') },
   )
   if (!snap.ready) throw new E2eError('Notico is signed out in the side panel. Sign in by hand, then try again.')
-  if (snap.busy) throw new E2eError('A reply is still running in the side panel; wait for it with pnpm e2e ask.')
+  if (snap.busy)
+    throw new E2eError('A reply is still running in the side panel; wait for it with pnpm browser-driver ask.')
   if (snap.replies > 0 && !keepChat) await clickButton(panel, 'header button', 'New chat')
   return panel
 }
@@ -198,7 +201,8 @@ export async function openPanel(
 /** The side panel `panel` opened, if it is still open. */
 export async function ownPanel(browser: Browser, state: State): Promise<Target> {
   const panel = await browser.find(state.panelTarget)
-  if (!panel) throw new E2eError('No side panel opened by pnpm e2e is open: run pnpm e2e panel first.')
+  if (!panel)
+    throw new E2eError('No side panel opened by pnpm browser-driver is open: run pnpm browser-driver panel first.')
   return browser.attach(panel.targetId)
 }
 
@@ -222,7 +226,7 @@ export async function ask(
   let expected = snap.replies
   if (question !== undefined) {
     if (snap.busy) {
-      throw new E2eError('A reply is still running; run pnpm e2e ask without a question to wait for it.')
+      throw new E2eError('A reply is still running; run pnpm browser-driver ask without a question to wait for it.')
     }
     await panel.evaluate(
       (text: string) => {
@@ -299,7 +303,7 @@ export async function addTab(panel: Target, title: string): Promise<string> {
 
 export class TimeoutError extends E2eError {
   constructor(readonly snapshot: PanelSnapshot) {
-    super('Timed out waiting for the reply; run pnpm e2e ask without a question to keep waiting.')
+    super('Timed out waiting for the reply; run pnpm browser-driver ask without a question to keep waiting.')
   }
 }
 
