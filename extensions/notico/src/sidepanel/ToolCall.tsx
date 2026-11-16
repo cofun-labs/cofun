@@ -1,5 +1,5 @@
 import { memo, useState } from 'react'
-import type { ToolDetails, ToolStatus } from '../agent'
+import type { ToolDetails, ToolStatus } from '@cofun/base/agent'
 import type { Action } from '../tool'
 import { describeCall } from '../tools'
 import { allowSite } from '../web/tab'

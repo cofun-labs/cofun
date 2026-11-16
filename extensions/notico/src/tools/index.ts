@@ -3,7 +3,7 @@
 // comments (comments.ts), the current tab, on Notion or another site, and the tabs the user added
 // (current.ts), web pages by their address and web searches (web.ts), and the long results those
 // keep on the device (results.ts). This module lists them, and says for the side panel what a call did.
-import type { HistoryMessage, ToolDetails } from '../agent'
+import type { HistoryMessage, ToolDetails } from '@cofun/base/agent'
 import { pageLink } from '../notion/hosts'
 import type { Action, Tool } from '../tool'
 import { addComment, readComments } from './comments'

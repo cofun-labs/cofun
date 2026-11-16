@@ -1,4 +1,4 @@
-// Runs Notico's real agent (extensions/notico/src/agent/) against the worker, for what the two must
+// Runs the extensions' real agent (packages/base/src/agent/) against the worker, for what the two must
 // agree on: the streamed reply, the tool-call round trip, sessions, credits, the cost of a question,
 // and a model change. The agent's own rules are tested in extensions/notico/test/agent.test.ts.
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
@@ -9,9 +9,10 @@ import {
   type QuestionExtras,
   type ConfirmTool,
   type ToolSpec,
-} from '../../extensions/notico/src/agent'
-import { WebError } from '../../extensions/notico/src/agent/types'
-import { readWebPage, searchWebFor } from '../../extensions/notico/src/agent/worker'
+  readWebPage,
+  searchWebFor,
+  WebError,
+} from '@cofun/base/agent'
 import { createApp, type Env } from '../src/app'
 import { priceOf } from '../src/pricing'
 import { FakeClerk } from './clerk'
@@ -102,6 +103,7 @@ function makeAgent(
     apiUrl: 'https://nk.example.dev/v1/',
     getToken: options.getToken ?? (async () => token),
     client: 'notico/1.2.3',
+    product: { name: 'Notico', site: 'Notion' },
     systemPrompt: options.systemPrompt ?? 'You are Notico.',
     tools: options.tools ?? [pageTool().tool],
     maxSteps: options.maxSteps,
@@ -359,7 +361,12 @@ describe('tokens per question', () => {
 })
 
 describe('web reads and searches', () => {
-  const config = { apiUrl: 'https://nk.example.dev/v1/', getToken: async () => token, client: 'notico/1.2.3' }
+  const config = {
+    apiUrl: 'https://nk.example.dev/v1/',
+    getToken: async () => token,
+    client: 'notico/1.2.3',
+    product: { name: 'Notico', site: 'Notion' },
+  }
   /** What a read, a render, or a search gave the extension: its result or its WebError, and what it was told it cost. */
   async function outcome<T>(call: (charged: (microCredits: number | undefined) => void) => Promise<T>) {
     const costs: (number | undefined)[] = []

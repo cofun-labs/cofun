@@ -3,7 +3,9 @@
 //
 // Each rule is written once for every extension, with extensions/*/ globs: an extension is
 // extensions/<name>/, and it reaches its site only through src/<site>/tab.ts (src/notion/tab.ts in
-// Notico).
+// Notico). What every extension shares and is not UI (the agent and its providers, the worker's
+// client, credits, sessions, sign-in hosts, zod) is packages/base/ (@cofun/base), which knows no site
+// and no extension.
 //
 // An override replaces a rule's whole configuration, it does not merge with the one before it. So
 // each block below repeats the restrictions that still hold for its files, and a later block wins.
@@ -18,7 +20,7 @@
 {
   "$schema": "./node_modules/oxlint/configuration_schema.json",
   "rules": {
-    // Everywhere in the repository, tests included. extensions/*/src/agent/ is exempted below for pi,
+    // Everywhere in the repository, tests included. packages/base/src/agent/ is exempted below for pi,
     // and extensions/*/src/analytics.ts for the PostHog SDK.
     "no-restricted-imports": [
       "error",
@@ -31,7 +33,7 @@
               "@earendil-works/pi-ai",
               "@earendil-works/pi-ai/**"
             ],
-            "message": "Only an extension's src/agent/ imports pi. Import what you need from src/agent/ (its index.ts), or add it there."
+            "message": "Only packages/base/src/agent/ imports pi. Import what you need from @cofun/base/agent (its index.ts), or add it there."
           },
           {
             "group": ["posthog-js", "posthog-js/**"],
@@ -43,7 +45,7 @@
   },
   "overrides": [
     {
-      "files": ["extensions/**"],
+      "files": ["extensions/**", "packages/**"],
       "rules": {
         "no-restricted-properties": [
           "error",
@@ -71,7 +73,7 @@
                   "@earendil-works/pi-ai",
                   "@earendil-works/pi-ai/**"
                 ],
-                "message": "Only an extension's src/agent/ imports pi. Import what you need from src/agent/ (its index.ts), or add it there."
+                "message": "Only packages/base/src/agent/ imports pi. Import what you need from @cofun/base/agent (its index.ts), or add it there."
               },
               {
                 "group": ["posthog-js", "posthog-js/**"],
@@ -79,11 +81,11 @@
               },
               {
                 "regex": "^\\.\\./[^./]",
-                "message": "An extension never imports another extension: each one in extensions/<name>/ keeps its own copy of what it needs."
+                "message": "An extension never imports another extension: what extensions share and is not UI is in @cofun/base (packages/base/)."
               },
               {
                 "regex": "^(\\.\\./)+extensions/",
-                "message": "An extension never imports another extension: each one in extensions/<name>/ keeps its own copy of what it needs."
+                "message": "An extension never imports another extension: what extensions share and is not UI is in @cofun/base (packages/base/)."
               }
             ]
           }
@@ -105,7 +107,7 @@
                   "@earendil-works/pi-ai",
                   "@earendil-works/pi-ai/**"
                 ],
-                "message": "Only an extension's src/agent/ imports pi. Import what you need from src/agent/ (its index.ts), or add it there."
+                "message": "Only packages/base/src/agent/ imports pi. Import what you need from @cofun/base/agent (its index.ts), or add it there."
               },
               {
                 "group": ["posthog-js", "posthog-js/**"],
@@ -113,11 +115,11 @@
               },
               {
                 "regex": "^\\.\\./\\.\\./[^./]",
-                "message": "An extension never imports another extension: each one in extensions/<name>/ keeps its own copy of what it needs."
+                "message": "An extension never imports another extension: what extensions share and is not UI is in @cofun/base (packages/base/)."
               },
               {
                 "regex": "^(\\.\\./)+extensions/",
-                "message": "An extension never imports another extension: each one in extensions/<name>/ keeps its own copy of what it needs."
+                "message": "An extension never imports another extension: what extensions share and is not UI is in @cofun/base (packages/base/)."
               }
             ]
           }
@@ -138,7 +140,7 @@
                   "@earendil-works/pi-ai",
                   "@earendil-works/pi-ai/**"
                 ],
-                "message": "Only an extension's src/agent/ imports pi. Import what you need from src/agent/ (its index.ts), or add it there."
+                "message": "Only packages/base/src/agent/ imports pi. Import what you need from @cofun/base/agent (its index.ts), or add it there."
               },
               {
                 "group": ["posthog-js", "posthog-js/**"],
@@ -146,15 +148,15 @@
               },
               {
                 "regex": "^zod(/|$)",
-                "message": "Import z from the extension's src/zod.ts: it sets zod up for the extension's content security policy before any schema is built."
+                "message": "Import z from @cofun/base/zod: it sets zod up for the extension's content security policy before any schema is built."
               },
               {
                 "regex": "^(\\.\\./)+[^./][^/]*/(src|test)(/|$)",
-                "message": "An extension never imports another extension: each one in extensions/<name>/ keeps its own copy of what it needs."
+                "message": "An extension never imports another extension: what extensions share and is not UI is in @cofun/base (packages/base/)."
               },
               {
                 "regex": "^(\\.\\./)+extensions/",
-                "message": "An extension never imports another extension: each one in extensions/<name>/ keeps its own copy of what it needs."
+                "message": "An extension never imports another extension: what extensions share and is not UI is in @cofun/base (packages/base/)."
               }
             ]
           }
@@ -163,7 +165,7 @@
           "error",
           {
             "name": "fetch",
-            "message": "Only an extension's src/<site>/tab.ts sends requests to its site, and only its src/agent/ calls the worker. Tools call the typed methods of the site's client (src/notion/api.ts in Notico)."
+            "message": "Only an extension's src/<site>/tab.ts sends requests to its site, and only @cofun/base/agent calls the worker. Tools call the typed methods of the site's client (src/notion/api.ts in Notico)."
           }
         ],
         "no-restricted-properties": [
@@ -181,17 +183,17 @@
           {
             "object": "globalThis",
             "property": "fetch",
-            "message": "Only an extension's src/<site>/tab.ts sends requests to its site, and only its src/agent/ calls the worker. Tools call the typed methods of the site's client (src/notion/api.ts in Notico)."
+            "message": "Only an extension's src/<site>/tab.ts sends requests to its site, and only @cofun/base/agent calls the worker. Tools call the typed methods of the site's client (src/notion/api.ts in Notico)."
           },
           {
             "object": "window",
             "property": "fetch",
-            "message": "Only an extension's src/<site>/tab.ts sends requests to its site, and only its src/agent/ calls the worker. Tools call the typed methods of the site's client (src/notion/api.ts in Notico)."
+            "message": "Only an extension's src/<site>/tab.ts sends requests to its site, and only @cofun/base/agent calls the worker. Tools call the typed methods of the site's client (src/notion/api.ts in Notico)."
           },
           {
             "object": "self",
             "property": "fetch",
-            "message": "Only an extension's src/<site>/tab.ts sends requests to its site, and only its src/agent/ calls the worker. Tools call the typed methods of the site's client (src/notion/api.ts in Notico)."
+            "message": "Only an extension's src/<site>/tab.ts sends requests to its site, and only @cofun/base/agent calls the worker. Tools call the typed methods of the site's client (src/notion/api.ts in Notico)."
           }
         ]
       }
@@ -213,72 +215,33 @@
                   "@earendil-works/pi-ai",
                   "@earendil-works/pi-ai/**"
                 ],
-                "message": "Only an extension's src/agent/ imports pi. Import what you need from src/agent/ (its index.ts), or add it there."
+                "message": "Only packages/base/src/agent/ imports pi. Import what you need from @cofun/base/agent (its index.ts), or add it there."
               },
               {
                 "group": ["posthog-js", "posthog-js/**"],
                 "message": "Only an extension's src/analytics.ts imports the PostHog SDK. Call its track(), whose events are the only ones that can be sent."
               },
               {
-                "regex": "^(\\.\\./)+(agent|tool|tools|sessions|sidepanel)(\\.|/|$)",
-                "message": "An extension's site layer (src/notion/ and src/web/ in Notico) imports nothing from agent/, tool.ts, tools/, sessions.ts, or sidepanel/: those modules depend on the site layer, not the other way round."
+                "regex": "^(\\.\\./)+(tool|tools|sidepanel)(\\.|/|$)",
+                "message": "An extension's site layer (src/notion/ and src/web/ in Notico) imports nothing from the agent, tool.ts, tools/, sessions, or sidepanel/: those modules depend on the site layer, not the other way round."
+              },
+              {
+                "group": ["@cofun/base/agent", "@cofun/base/sessions"],
+                "message": "An extension's site layer (src/notion/ and src/web/ in Notico) imports nothing from the agent, tool.ts, tools/, sessions, or sidepanel/: those modules depend on the site layer, not the other way round."
               },
               {
                 "regex": "^zod(/|$)",
-                "message": "Import z from the extension's src/zod.ts: it sets zod up for the extension's content security policy before any schema is built."
+                "message": "Import z from @cofun/base/zod: it sets zod up for the extension's content security policy before any schema is built."
               },
               {
                 "regex": "^(\\.\\./)+[^./][^/]*/(src|test)(/|$)",
-                "message": "An extension never imports another extension: each one in extensions/<name>/ keeps its own copy of what it needs."
+                "message": "An extension never imports another extension: what extensions share and is not UI is in @cofun/base (packages/base/)."
               },
               {
                 "regex": "^(\\.\\./)+extensions/",
-                "message": "An extension never imports another extension: each one in extensions/<name>/ keeps its own copy of what it needs."
+                "message": "An extension never imports another extension: what extensions share and is not UI is in @cofun/base (packages/base/)."
               }
             ]
-          }
-        ]
-      }
-    },
-    {
-      // The one folder that imports pi, and the one that calls the worker: the agent, src/agent/.
-      "files": ["extensions/*/src/agent/**"],
-      "rules": {
-        "no-restricted-imports": [
-          "error",
-          {
-            "patterns": [
-              {
-                "group": ["posthog-js", "posthog-js/**"],
-                "message": "Only an extension's src/analytics.ts imports the PostHog SDK. Call its track(), whose events are the only ones that can be sent."
-              },
-              {
-                "regex": "^zod(/|$)",
-                "message": "Import z from the extension's src/zod.ts: it sets zod up for the extension's content security policy before any schema is built."
-              },
-              {
-                "regex": "^(\\.\\./)+[^./][^/]*/(src|test)(/|$)",
-                "message": "An extension never imports another extension: each one in extensions/<name>/ keeps its own copy of what it needs."
-              },
-              {
-                "regex": "^(\\.\\./)+extensions/",
-                "message": "An extension never imports another extension: each one in extensions/<name>/ keeps its own copy of what it needs."
-              }
-            ]
-          }
-        ],
-        "no-restricted-globals": "off",
-        "no-restricted-properties": [
-          "error",
-          {
-            "object": "chrome",
-            "property": "debugger",
-            "message": "Never use chrome.debugger: it shows a permanent \"debugging this browser\" banner. Site requests run through chrome.scripting in the extension's src/<site>/tab.ts."
-          },
-          {
-            "object": "chrome",
-            "property": "scripting",
-            "message": "Only an extension's src/<site>/tab.ts uses chrome.scripting: it is how requests run inside the user's tab. Use the helpers tab.ts exports."
           }
         ]
       }
@@ -309,7 +272,7 @@
           "error",
           {
             "name": "fetch",
-            "message": "src/web/tab.ts only reads the page a tab already shows: it sends no request to the site. A web page is read by its address through the worker (src/agent/)."
+            "message": "src/web/tab.ts only reads the page a tab already shows: it sends no request to the site. A web page is read by its address through the worker (@cofun/base/agent)."
           }
         ],
         "no-restricted-properties": [
@@ -322,51 +285,17 @@
           {
             "object": "globalThis",
             "property": "fetch",
-            "message": "src/web/tab.ts only reads the page a tab already shows: it sends no request to the site. A web page is read by its address through the worker (src/agent/)."
+            "message": "src/web/tab.ts only reads the page a tab already shows: it sends no request to the site. A web page is read by its address through the worker (@cofun/base/agent)."
           },
           {
             "object": "window",
             "property": "fetch",
-            "message": "src/web/tab.ts only reads the page a tab already shows: it sends no request to the site. A web page is read by its address through the worker (src/agent/)."
+            "message": "src/web/tab.ts only reads the page a tab already shows: it sends no request to the site. A web page is read by its address through the worker (@cofun/base/agent)."
           },
           {
             "object": "self",
             "property": "fetch",
-            "message": "src/web/tab.ts only reads the page a tab already shows: it sends no request to the site. A web page is read by its address through the worker (src/agent/)."
-          }
-        ]
-      }
-    },
-    {
-      // The one module that imports zod. Its other restrictions (the extensions/*/src block) still hold.
-      "files": ["extensions/*/src/zod.ts"],
-      "rules": {
-        "no-restricted-imports": [
-          "error",
-          {
-            "patterns": [
-              {
-                "group": [
-                  "@earendil-works/pi-agent-core",
-                  "@earendil-works/pi-agent-core/**",
-                  "@earendil-works/pi-ai",
-                  "@earendil-works/pi-ai/**"
-                ],
-                "message": "Only an extension's src/agent/ imports pi. Import what you need from src/agent/ (its index.ts), or add it there."
-              },
-              {
-                "group": ["posthog-js", "posthog-js/**"],
-                "message": "Only an extension's src/analytics.ts imports the PostHog SDK. Call its track(), whose events are the only ones that can be sent."
-              },
-              {
-                "regex": "^(\\.\\./)+[^./][^/]*/(src|test)(/|$)",
-                "message": "An extension never imports another extension: each one in extensions/<name>/ keeps its own copy of what it needs."
-              },
-              {
-                "regex": "^(\\.\\./)+extensions/",
-                "message": "An extension never imports another extension: each one in extensions/<name>/ keeps its own copy of what it needs."
-              }
-            ]
+            "message": "src/web/tab.ts only reads the page a tab already shows: it sends no request to the site. A web page is read by its address through the worker (@cofun/base/agent)."
           }
         ]
       }
@@ -386,19 +315,19 @@
                   "@earendil-works/pi-ai",
                   "@earendil-works/pi-ai/**"
                 ],
-                "message": "Only an extension's src/agent/ imports pi. Import what you need from src/agent/ (its index.ts), or add it there."
+                "message": "Only packages/base/src/agent/ imports pi. Import what you need from @cofun/base/agent (its index.ts), or add it there."
               },
               {
                 "regex": "^zod(/|$)",
-                "message": "Import z from the extension's src/zod.ts: it sets zod up for the extension's content security policy before any schema is built."
+                "message": "Import z from @cofun/base/zod: it sets zod up for the extension's content security policy before any schema is built."
               },
               {
                 "regex": "^(\\.\\./)+[^./][^/]*/(src|test)(/|$)",
-                "message": "An extension never imports another extension: each one in extensions/<name>/ keeps its own copy of what it needs."
+                "message": "An extension never imports another extension: what extensions share and is not UI is in @cofun/base (packages/base/)."
               },
               {
                 "regex": "^(\\.\\./)+extensions/",
-                "message": "An extension never imports another extension: each one in extensions/<name>/ keeps its own copy of what it needs."
+                "message": "An extension never imports another extension: what extensions share and is not UI is in @cofun/base (packages/base/)."
               }
             ]
           }
@@ -420,7 +349,7 @@
                   "@earendil-works/pi-ai",
                   "@earendil-works/pi-ai/**"
                 ],
-                "message": "Only an extension's src/agent/ imports pi. Import what you need from src/agent/ (its index.ts), or add it there."
+                "message": "Only packages/base/src/agent/ imports pi. Import what you need from @cofun/base/agent (its index.ts), or add it there."
               },
               {
                 "group": ["posthog-js", "posthog-js/**"],
@@ -450,11 +379,209 @@
                   "@earendil-works/pi-ai",
                   "@earendil-works/pi-ai/**"
                 ],
-                "message": "Only an extension's src/agent/ imports pi. Import what you need from src/agent/ (its index.ts), or add it there."
+                "message": "Only packages/base/src/agent/ imports pi. Import what you need from @cofun/base/agent (its index.ts), or add it there."
               },
               {
                 "group": ["posthog-js", "posthog-js/**"],
                 "message": "Only an extension's src/analytics.ts imports the PostHog SDK. Call its track(), whose events are the only ones that can be sent."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      // @cofun/base: what every extension shares and is not UI. It knows no extension and no site, holds
+      // no React and no sign-in UI, and only its src/agent/ sends requests.
+      "files": ["packages/base/src/**"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": [
+                  "@earendil-works/pi-agent-core",
+                  "@earendil-works/pi-agent-core/**",
+                  "@earendil-works/pi-ai",
+                  "@earendil-works/pi-ai/**"
+                ],
+                "message": "Only packages/base/src/agent/ imports pi. Import what you need from @cofun/base/agent (its index.ts), or add it there."
+              },
+              {
+                "group": ["posthog-js", "posthog-js/**"],
+                "message": "Only an extension's src/analytics.ts imports the PostHog SDK. Call its track(), whose events are the only ones that can be sent."
+              },
+              {
+                "regex": "^zod(/|$)",
+                "message": "Import z from packages/base/src/zod.ts: it sets zod up for the extensions' content security policy before any schema is built."
+              },
+              {
+                "group": ["react", "react/**", "react-dom", "react-dom/**", "@clerk/**"],
+                "message": "@cofun/base holds no UI and no sign-in UI: the side panel, and what it shows, stay in each extension."
+              },
+              {
+                "regex": "^(\\.\\./)+extensions/",
+                "message": "@cofun/base knows no extension: an extension imports the package, never the other way round."
+              },
+              {
+                "group": ["notico-extension", "notico-extension/**"],
+                "message": "@cofun/base knows no extension: an extension imports the package, never the other way round."
+              }
+            ]
+          }
+        ],
+        "no-restricted-globals": [
+          "error",
+          {
+            "name": "fetch",
+            "message": "Only packages/base/src/agent/ sends requests: to the worker, and to a model provider the user chose. Nothing else in @cofun/base calls a service."
+          }
+        ],
+        "no-restricted-properties": [
+          "error",
+          {
+            "object": "chrome",
+            "property": "debugger",
+            "message": "Never use chrome.debugger: it shows a permanent \"debugging this browser\" banner. Site requests run through chrome.scripting in the extension's src/<site>/tab.ts."
+          },
+          {
+            "object": "chrome",
+            "property": "scripting",
+            "message": "@cofun/base knows no site: requests to a site run in the extension's src/<site>/tab.ts."
+          },
+          {
+            "object": "globalThis",
+            "property": "fetch",
+            "message": "Only packages/base/src/agent/ sends requests: to the worker, and to a model provider the user chose. Nothing else in @cofun/base calls a service."
+          },
+          {
+            "object": "window",
+            "property": "fetch",
+            "message": "Only packages/base/src/agent/ sends requests: to the worker, and to a model provider the user chose. Nothing else in @cofun/base calls a service."
+          },
+          {
+            "object": "self",
+            "property": "fetch",
+            "message": "Only packages/base/src/agent/ sends requests: to the worker, and to a model provider the user chose. Nothing else in @cofun/base calls a service."
+          }
+        ]
+      }
+    },
+    {
+      // The one folder of @cofun/base that imports pi and sends requests: the agent, the worker's client,
+      // and the user's own model provider.
+      "files": ["packages/base/src/agent/**"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": ["posthog-js", "posthog-js/**"],
+                "message": "Only an extension's src/analytics.ts imports the PostHog SDK. Call its track(), whose events are the only ones that can be sent."
+              },
+              {
+                "regex": "^zod(/|$)",
+                "message": "Import z from packages/base/src/zod.ts: it sets zod up for the extensions' content security policy before any schema is built."
+              },
+              {
+                "group": ["react", "react/**", "react-dom", "react-dom/**", "@clerk/**"],
+                "message": "@cofun/base holds no UI and no sign-in UI: the side panel, and what it shows, stay in each extension."
+              },
+              {
+                "regex": "^(\\.\\./)+extensions/",
+                "message": "@cofun/base knows no extension: an extension imports the package, never the other way round."
+              },
+              {
+                "group": ["notico-extension", "notico-extension/**"],
+                "message": "@cofun/base knows no extension: an extension imports the package, never the other way round."
+              }
+            ]
+          }
+        ],
+        "no-restricted-globals": "off",
+        "no-restricted-properties": [
+          "error",
+          {
+            "object": "chrome",
+            "property": "debugger",
+            "message": "Never use chrome.debugger: it shows a permanent \"debugging this browser\" banner. Site requests run through chrome.scripting in the extension's src/<site>/tab.ts."
+          },
+          {
+            "object": "chrome",
+            "property": "scripting",
+            "message": "@cofun/base knows no site: requests to a site run in the extension's src/<site>/tab.ts."
+          }
+        ]
+      }
+    },
+    {
+      // The one module that imports zod. Its other restrictions (the packages/base/src block) still hold.
+      "files": ["packages/base/src/zod.ts"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": [
+                  "@earendil-works/pi-agent-core",
+                  "@earendil-works/pi-agent-core/**",
+                  "@earendil-works/pi-ai",
+                  "@earendil-works/pi-ai/**"
+                ],
+                "message": "Only packages/base/src/agent/ imports pi. Import what you need from @cofun/base/agent (its index.ts), or add it there."
+              },
+              {
+                "group": ["posthog-js", "posthog-js/**"],
+                "message": "Only an extension's src/analytics.ts imports the PostHog SDK. Call its track(), whose events are the only ones that can be sent."
+              },
+              {
+                "group": ["react", "react/**", "react-dom", "react-dom/**", "@clerk/**"],
+                "message": "@cofun/base holds no UI and no sign-in UI: the side panel, and what it shows, stay in each extension."
+              },
+              {
+                "regex": "^(\\.\\./)+extensions/",
+                "message": "@cofun/base knows no extension: an extension imports the package, never the other way round."
+              },
+              {
+                "group": ["notico-extension", "notico-extension/**"],
+                "message": "@cofun/base knows no extension: an extension imports the package, never the other way round."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      // The package's own tests, of what it does without an extension (an extension's tests cover the rest).
+      "files": ["packages/base/test/**"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": [
+                  "@earendil-works/pi-agent-core",
+                  "@earendil-works/pi-agent-core/**",
+                  "@earendil-works/pi-ai",
+                  "@earendil-works/pi-ai/**"
+                ],
+                "message": "Only packages/base/src/agent/ imports pi. Import what you need from @cofun/base/agent (its index.ts), or add it there."
+              },
+              {
+                "group": ["posthog-js", "posthog-js/**"],
+                "message": "Only an extension's src/analytics.ts imports the PostHog SDK. Call its track(), whose events are the only ones that can be sent."
+              },
+              {
+                "regex": "^(\\.\\./)+extensions/",
+                "message": "@cofun/base knows no extension: an extension imports the package, never the other way round."
+              },
+              {
+                "group": ["notico-extension", "notico-extension/**"],
+                "message": "@cofun/base knows no extension: an extension imports the package, never the other way round."
               }
             ]
           }

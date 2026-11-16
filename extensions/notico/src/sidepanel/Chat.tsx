@@ -20,7 +20,7 @@ import {
   type QuestionDetails,
   type QuestionPage,
   type QuestionSelection,
-} from '../agent'
+} from '@cofun/base/agent'
 import { track } from '../analytics'
 import type { CreditsState } from '../credits'
 import { loadMode, saveMode, watchMode, type Mode } from '../mode'
@@ -32,11 +32,11 @@ import {
   saveModelSettings,
   watchModelSettings,
   type ModelSettings,
-} from '../models'
+} from '@cofun/base/models'
 import { pageIdFromUrl } from '../notion/hosts'
 import { countNotionRequests } from '../notion/tab'
 import { linkTo, watchSelections, type Selection } from '../selection'
-import { SessionStore, titleFor, type Session } from '../sessions'
+import { SessionStore, titleFor, type Session } from '@cofun/base/sessions'
 import {
   carryPages,
   currentNotionPage,
@@ -178,7 +178,7 @@ interface Current {
 /** The chat of one signed-in user; mount a new one for another user. */
 export function Chat({ userId }: { userId: string }) {
   const { getToken } = useAuth()
-  const [store] = useState(() => new SessionStore(userId))
+  const [store] = useState(() => new SessionStore('notico', userId))
   // Long results go 7 days after they were kept; also opens the database, which the first time
   // makes the results store in it.
   useEffect(() => {
@@ -254,6 +254,7 @@ export function Chat({ userId }: { userId: string }) {
     apiUrl: API_URL,
     getToken: () => tokenRef.current(),
     client: `notico/${chrome.runtime.getManifest().version}`,
+    product: { name: 'Notico', site: 'Notion' },
     model: async () => modelRef.current ?? (await modelLoad),
     systemPrompt: SYSTEM_PROMPT,
     tools: TOOLS,

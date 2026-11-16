@@ -53,9 +53,15 @@ const TEST_ID = new RegExp(`\\[(${SCENARIO_ID})\\]`, 'g')
 /** A scenario ID without a product (`UC-{DOMAIN}-{NNN}-S{NN}`), as IDs were before each product got its prefix. */
 const OLD_TEST_ID = /\[(UC-[A-Z]+-\d+-S\d+)\]/g
 
-/** The product a use case or test file belongs to, from its folder. */
+/**
+ * The product a use case or test file belongs to, from its folder. A shared package
+ * (packages/<name>/) is its own: it has no use cases, so its tests verify no scenario, and each
+ * names the harm it guards.
+ */
 function productOf(file: string): string {
   if (file.startsWith(`${WORKER}/`)) return WORKER
+  const shared = /^packages\/[^/]+\//.exec(file)
+  if (shared) return shared[0].slice(0, -1)
   const extension = /^extensions\/([^/]+)\//.exec(file)
   if (!extension) throw new Error(`${file} is not in an extension's folder or the worker's`)
   // The folder name, in capitals, is the product's ID prefix, which may hold letters only.

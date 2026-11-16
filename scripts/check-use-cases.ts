@@ -1,5 +1,5 @@
 // pnpm use-cases (run by pnpm check): checks the use cases in extensions/*/use-cases and worker/use-cases
-// against the tests named after their scenarios (see use-cases.ts and docs/bdd.md). Exits 1 on an
+// against the tests named after their scenarios (and the shared packages' tests, which name a harm) (see use-cases.ts and docs/bdd.md). Exits 1 on an
 // error; warnings alone exit 0.
 import { globSync, readFileSync } from 'node:fs'
 import path from 'node:path'
@@ -15,7 +15,11 @@ function read(patterns: string[]): SourceFile[] {
 
 const report = checkUseCases(
   read(['extensions/*/use-cases/**/UC-*.md', 'worker/use-cases/**/UC-*.md']),
-  read(['worker/test/**/*.test.{ts,tsx}', 'extensions/*/test/**/*.test.{ts,tsx}']),
+  read([
+    'worker/test/**/*.test.{ts,tsx}',
+    'extensions/*/test/**/*.test.{ts,tsx}',
+    'packages/*/test/**/*.test.{ts,tsx}',
+  ]),
 )
 
 // Use cases lived in docs/use-cases/ before they moved next to their code. One still there, from a

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Icon } from './icons'
-import { filterSessions, type ListedSession, type SessionStore } from '../sessions'
+import { filterSessions, type ListedSession, type SessionStore } from '@cofun/base/sessions'
 
 /** How opening a session went: `gone` when it no longer exists, `unreadable` when it can't be read. */
 export type OpenResult = 'opened' | 'gone' | 'unreadable'

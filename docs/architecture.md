@@ -4,7 +4,7 @@ How Cofun's extensions and the backend they share are built, and why. This file 
 
 Each Cofun extension is an AI side panel for one kind of page, in its own folder under `extensions/` (Notico, for Notion, is the first), built and published by itself. All of them call one Cloudflare Worker (`worker/`), which signs users in, checks who is asking, keeps their credits, passes the conversation to the model, and reads public web pages and searches the web for an extension. It never talks to Notion or acts as the user on any site. The agent and its tools run in the extension, next to the page they act on.
 
-Each extension keeps its own copy of the side panel code (UI, agent, sign-in, settings, credits), and duplication between extensions is accepted: a fix or feature in one is applied to the others by hand, and an extension's tests run its own agent against the worker so the part that faces the worker cannot drift. One account and one balance of credits serve every extension.
+What every extension needs and is not UI is one package, `@cofun/base` (`packages/base/`): the agent loop and its model providers, the worker's client (session tokens, which product asks, credits, Checkout, web pages and searches), the shapes of what the worker answers, saved sessions, model settings, and the sign-in hosts. An extension depends on it as a workspace package, and Vite builds it into the extension, so each extension still ships by itself. The package knows no site and no extension: an extension gives the agent its name, its site's name, its tools, and its system prompt. Each extension keeps its own UI, its tools and site layer, and its usage events, and the worker's tests run the package's agent against the worker, so the part that faces the worker cannot drift. One account and one balance of credits serve every extension.
 
 ## Single source of truth
 
@@ -70,12 +70,12 @@ A question carries the pages it goes with (the open page, and pages and tabs the
 |---|---|---|
 | Extension | Chrome MV3 + [Side Panel API](https://developer.chrome.com/docs/extensions/reference/api/sidePanel) | Sits next to the page without covering Notion. One panel per window, on every tab, so the conversation stays as the user switches tabs |
 | Extension build | Vite + React + TypeScript | Clerk's extension SDK is React-based; Vite needs little config and no extension framework |
-| Agent runtime | [`@earendil-works/pi-agent-core`](https://www.npmjs.com/package/@earendil-works/pi-agent-core), wrapped in `src/agent/` | Tool loop, events, abort, and tool hooks in a small package; it runs in the side panel because tools act on the browser. Only `src/agent/` imports it, so it can be replaced |
+| Agent runtime | [`@earendil-works/pi-agent-core`](https://www.npmjs.com/package/@earendil-works/pi-agent-core), wrapped in `@cofun/base`'s `src/agent/` | Tool loop, events, abort, and tool hooks in a small package; it runs in the side panel because tools act on the browser. Only that folder imports it, so it can be replaced |
 | Notion read/write | Notion's own internal endpoints, called from inside the user's Notion tab with `chrome.scripting` | Requests are same-origin and carry the tab's own Notion session, so no Notion integration token is needed. They run in an isolated world, out of the page's reach. No `chrome.debugger` (which shows a permanent "debugging this browser" banner). The trade-off: these are not public APIs and may change |
 
 ### Sessions
 
-A saved conversation is a *session* in code and a *chat* in everything users read. Sessions are kept in the extension's IndexedDB, one database per Clerk user, and are sent to the worker only as far as the model needs them for the current question. They stay after sign-out and are not encrypted, and what is read back is parsed before it is used. The same database keeps the full text of long tool results, which the model reads in parts. Leaving a session mid-question stops the question, and the session keeps the tools it used, so continuing later does not repeat a change.
+A saved conversation is a *session* in code and a *chat* in everything users read. Sessions are kept in the extension's IndexedDB, one database per Clerk user (`@cofun/base/sessions`), and are sent to the worker only as far as the model needs them for the current question. They stay after sign-out and are not encrypted, and what is read back is parsed before it is used. The same database keeps the full text of long tool results, which the model reads in parts. Leaving a session mid-question stops the question, and the session keeps the tools it used, so continuing later does not repeat a change.
 
 The user can save a reply, or the whole chat, as a new Notion page. It is the user's own action, not a tool the agent is offered.
 
@@ -96,12 +96,20 @@ Clerk's own account management is not used: Notico needs Clerk only for who the 
 The folders, and the modules that hold a boundary; other files are found by their folder and name.
 
 ```
+packages/base/            @cofun/base: what every extension shares and is not UI; knows no site and no extension,
+                          and imports no React
+  src/agent/              the agent loop, its model providers, and the worker's client; the only folder that
+                          imports pi, and the only one besides an extension's site layer that uses fetch
+  src/credits.ts          the credits, packs, and Checkout page as the worker reports them, and how an amount reads
+  src/sessions.ts         saved sessions, in IndexedDB, one database per extension and user
+  src/models.ts           which model answers, per account, in chrome.storage.local
+  src/clerk.ts            the Clerk hosts the publishable key names, for the manifest and the panel
+  src/zod.ts              the only module that imports zod
+  test/                   the package's own tests; an extension's tests cover the rest through it
 extensions/<name>/        one Chrome extension, built and published by itself; never imports another
   manifest.ts             builds manifest.json from .env; a test pins its permissions and content security policy
   PRIVACY.md, README.md   for the extension's users
   store/                  what the Chrome Web Store Dashboard says
-  src/agent/              the agent loop and its model providers; the only folder that imports pi, and the
-                          only one besides the site layer that uses fetch (the worker, the user's own model)
   src/tools/              the tools the agent runs (index.ts lists them)
   src/notion/             the site layer for Notion: imports nothing from the agent, tools, sessions, or UI
     api.ts                the only module that knows Notion's endpoints and request shapes
@@ -110,7 +118,6 @@ extensions/<name>/        one Chrome extension, built and published by itself; n
   src/web/markdown.ts     turns the HTML a tab gives into Markdown, in the side panel, in an inert document
   src/sidepanel/          the React UI
   src/analytics.ts        usage events; the only module that imports the PostHog SDK
-  src/zod.ts              the only module that imports zod
   test/                   the extension's client and UI tests, with fakes and sanitized fixtures
   browser-test/           pnpm test:browser: the built extension in Chromium, the network answered by fakes (runs in CI)
   use-cases/              the extension's use cases (docs/bdd.md)
@@ -124,7 +131,7 @@ worker/                   the Cloudflare Worker every extension shares
   src/search.ts           searches the web through AI Gateway, with the one search provider
   src/stripe.ts           the only module that talks to Stripe
   migrations/             the D1 schema, applied on deploy
-  test/                   REST integration tests with fakes, and an extension's agent run against the worker
+  test/                   REST integration tests with fakes, and @cofun/base's agent run against the worker
   use-cases/              rules only the worker decides
 e2e/                      pnpm e2e: drives the shared Chrome Canary for ai-e2e runs
 scripts/                  repository scripts (use case coverage, GitHub settings, PR media, changelog)

@@ -2,7 +2,7 @@
 // endpoints and request shapes. Tools call the typed methods of NotionClient, never fetch.
 // The shapes come from the #64 spike (verified against Notion's web client, 2026-11).
 // The worker's tests import this file too, so it uses no chrome APIs (see tab.ts for those).
-import { z } from '../zod'
+import { z } from '@cofun/base/zod'
 import { toUuid } from './hosts'
 
 /** Why a Notion call failed, for the model and the user. */

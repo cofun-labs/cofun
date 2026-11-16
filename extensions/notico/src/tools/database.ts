@@ -1,7 +1,7 @@
 // Databases: query_database reads the rows, create_database and update_database_schema change
 // the properties.
 import { defineTool } from '../tool'
-import { z } from '../zod'
+import { z } from '@cofun/base/zod'
 import { NotionError, blockOps, type Block, type NotionRecord } from '../notion/api'
 import { pageLink, pathPageIdFromUrl, toUuid } from '../notion/hosts'
 import { EditError } from '../notion/edit'

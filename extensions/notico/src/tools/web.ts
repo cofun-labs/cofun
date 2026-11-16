@@ -4,11 +4,11 @@
 // found, or one it thinks of (docs/security.md, "Accepted: web pages at any address"). search_web
 // has the worker search the web, with a query the model writes (docs/security.md, "Accepted: web
 // searches").
-import { WebError, type ToolContext } from '../agent'
+import { WebError, type ToolContext } from '@cofun/base/agent'
 import { isNotion } from '../notion/hosts'
 import { clip, quote } from '../notion/comments'
 import { defineTool } from '../tool'
-import { z } from '../zod'
+import { z } from '@cofun/base/zod'
 import { KEPT_CHARS, withText } from './results'
 import { READ, SEARCH, asData, count, noteUrl, on, verb } from './shared'
 

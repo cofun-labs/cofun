@@ -1,19 +1,7 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react'
+import { usdText, wholeCredits, type Credits, type Pack, type Packs } from '@cofun/base/credits'
 import { track } from '../analytics'
-import {
-  dayText,
-  daysText,
-  leftFrom,
-  sourceLeftText,
-  lastDays,
-  usdText,
-  when,
-  wholeCredits,
-  type Credits,
-  type CreditsState,
-  type Pack,
-  type Packs,
-} from '../credits'
+import { dayText, daysText, leftFrom, sourceLeftText, lastDays, when, type CreditsState } from '../credits'
 import { Page } from './Header'
 import { History, type ReadGrants } from './History'
 import { Icon } from './icons'

@@ -1,7 +1,7 @@
-// The side panel's saved sessions (extensions/notico/src/sessions.ts), on an in-memory IndexedDB.
+// The side panel's saved sessions (@cofun/base's src/sessions.ts, in Notico's database), on an in-memory IndexedDB.
 import 'fake-indexeddb/auto'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { HistoryMessage } from '../src/agent'
+import type { HistoryMessage } from '@cofun/base/agent'
 import {
   filterSessions,
   SessionStore,
@@ -9,7 +9,7 @@ import {
   type ListedSession,
   type Session,
   type SessionInfo,
-} from '../src/sessions'
+} from '@cofun/base/sessions'
 
 const ROADMAP = { title: 'Q4 Roadmap', url: 'https://www.notion.so/team/Q4-Roadmap-0a1b2c3d4e5f60718293a4b5c6d7e8f9' }
 const NOTES_ID = '1111aaaa2222bbbb3333cccc4444dddd'
@@ -87,7 +87,7 @@ const users = new WeakMap<SessionStore, string>()
 beforeEach(() => {
   // A fresh account per test, so tests start with no sessions.
   const user = `user_${n++}`
-  store = new SessionStore(user)
+  store = new SessionStore('notico', user)
   users.set(store, user)
 })
 
@@ -135,8 +135,8 @@ describe('saved sessions', () => {
   })
 
   it("[UC-NOTICO-SESSION-001-S09] another account on the same browser sees none of the first account's sessions", async () => {
-    const alice = new SessionStore('user_alice_s09')
-    const bob = new SessionStore('user_bob_s09')
+    const alice = new SessionStore('notico', 'user_alice_s09')
+    const bob = new SessionStore('notico', 'user_bob_s09')
     await alice.save(session('a', 'Summarize this page', 1000, ROADMAP))
     expect(await bob.list()).toEqual([])
     expect(await bob.get('a')).toBeUndefined()
@@ -147,8 +147,8 @@ describe('saved sessions', () => {
 
   it('[UC-NOTICO-SESSION-001-S10] a session continued in two windows keeps both conversations', async () => {
     // Two side panels of one user: two stores over the same database.
-    const first = new SessionStore('user_s10')
-    const second = new SessionStore('user_s10')
+    const first = new SessionStore('notico', 'user_s10')
+    const second = new SessionStore('notico', 'user_s10')
     const original = session('a', 'Summarize this page', 1000, ROADMAP)
     await first.save(original)
     const [inFirst, inSecond] = [(await load(first, 'a'))!, (await load(second, 'a'))!]
@@ -174,7 +174,7 @@ describe('saved sessions', () => {
   })
 
   it('[@no-uc:data] of two panels saving the same session at the same moment, only one keeps it', async () => {
-    const panels = [new SessionStore('user_race'), new SessionStore('user_race')]
+    const panels = [new SessionStore('notico', 'user_race'), new SessionStore('notico', 'user_race')]
     await panels[0].save(session('a', 'Summarize this page', 1000))
     const loaded = (await load(panels[0], 'a'))!
     const turns = panels.map((_, i): HistoryMessage[] => [...loaded.messages, { role: 'user', text: `Panel ${i}` }])
@@ -206,7 +206,7 @@ describe('saved sessions', () => {
   it('[@no-uc:data] a session deleted in another panel is saved again under its own id', async () => {
     await store.save(session('a', 'Summarize this page', 1000))
     const loaded = (await load(store, 'a'))!
-    await new SessionStore(`user_${n - 1}`).delete('a')
+    await new SessionStore('notico', `user_${n - 1}`).delete('a')
     expect((await store.save({ ...loaded, updatedAt: 2000 }, loaded.updatedAt)).id).toBe('a')
     expect((await store.list()).map((s) => s.id)).toEqual(['a'])
   })
@@ -224,7 +224,7 @@ describe('saved sessions', () => {
   })
 
   it('[@no-uc:data] an open store does not block a schema upgrade', async () => {
-    const store = new SessionStore('user_upgrade')
+    const store = new SessionStore('notico', 'user_upgrade')
     await store.save(session('a', 'Summarize this page', 1000))
     const upgrade = await new Promise<IDBDatabase>((resolve, reject) => {
       const req = indexedDB.open('notico-sessions-user_upgrade', 3)
@@ -365,7 +365,7 @@ describe('kept results', () => {
 
   it('[@no-uc:data] a database the first version made gets the results store, and its sessions stay', async () => {
     await earlier('user_v1', 1, () => undefined)
-    const v1 = new SessionStore('user_v1')
+    const v1 = new SessionStore('notico', 'user_v1')
 
     expect(await v1.get('a')).toMatchObject({ title: 'Old', messages: conversation('Old') })
     const id = await v1.keep(page())
@@ -379,7 +379,7 @@ describe('kept results', () => {
       results.createIndex('unnamedAt', 'unnamedAt')
       results.put({ id: 'r_old', chats: [], unnamedAt: 0, ...page() })
     })
-    const v2 = new SessionStore('user_v2')
+    const v2 = new SessionStore('notico', 'user_v2')
 
     expect(await v2.get('a')).toMatchObject({ title: 'Old', messages: conversation('Old') })
     expect(await v2.result('r_old')).toBeUndefined()

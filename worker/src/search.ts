@@ -41,7 +41,7 @@ export type SearchOutcome = 'ok' | SearchError['code']
 
 /**
  * Why a search did not give results, as a code the extension tells the user about. The codes are a
- * contract with the extension (`src/agent/worker.ts`), which stops the question on the first two, a
+ * contract with the extension (`packages/base/src/agent/worker.ts`), which stops the question on the first two, a
  * search turned away. A search that failed costs the user nothing (`charge.ts`).
  */
 export class SearchError extends Error {

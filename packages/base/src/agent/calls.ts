@@ -35,7 +35,7 @@ export async function previewCall(
       }),
     }
   } catch (err) {
-    // A preview turned away by Notion stops the question, like a tool's error would.
+    // A preview turned away by the site stops the question, like a tool's error would.
     const stop = stopsQuestion(err)
     if (stop) return { stop }
     console.error('Could not preview the tool call', err)
@@ -139,7 +139,7 @@ export interface Reporter {
   /** The question stops: what the user is told, and the code of the error that stopped it, if it has one. */
   stop(reason: string, code?: string): void
   changed(): void
-  /** The tool failed with an error that has a code (a Notion error's, such as `no_access`). */
+  /** The tool failed with an error that has a code (a site error's, such as Notion's `no_access`). */
   failed(code: string): void
   /** What the call gets while it runs; its `ask` resolves false once the question it was asked in is over. */
   context: ToolContext

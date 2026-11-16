@@ -1,7 +1,7 @@
 // Defines a tool from one zod schema of its arguments: the JSON Schema the model is sent, the check
 // before the tool runs, and the type its code works with all come from that schema.
-import type { ToolContext, ToolDetails, ToolResult, ToolSpec } from './agent'
-import { z } from './zod'
+import type { ToolContext, ToolDetails, ToolResult, ToolSpec } from '@cofun/base/agent'
+import { z } from '@cofun/base/zod'
 
 /** A verb in the forms a tool call's description needs: "read", "reading", "read". */
 export interface Verb {
@@ -64,7 +64,7 @@ export interface ToolDefinition<S extends ArgsSchema> extends Omit<ToolSpec, 'pa
  * them first; arguments that don't parse are a plain error, which the model gets back and can correct.
  *
  * The agent runtime has already checked the model's arguments against `parameters` and converted
- * them where it could (see `toAgentTool` in agent/calls.ts), so in a question this parse refuses next to
+ * them where it could (see `toAgentTool` in @cofun/base's agent/calls.ts), so in a question this parse refuses next to
  * nothing (only what JSON Schema can't say, such as a whole number too large to be exact): it is
  * what turns the value into its type, and what a caller without the runtime gets.
  */

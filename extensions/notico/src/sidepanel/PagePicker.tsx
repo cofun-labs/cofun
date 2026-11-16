@@ -1,5 +1,5 @@
 import { useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
-import type { QuestionPage } from '../agent'
+import type { QuestionPage } from '@cofun/base/agent'
 import { LIMITED_STOP, NotionError } from '../notion/api'
 import { pageIdFromUrl } from '../notion/hosts'
 import { findPages, openNotionPages, openWebTabs, type FoundPage, type WebTab } from '../tools'

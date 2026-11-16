@@ -1,6 +1,6 @@
 // Comments: read_comments reads a page's threads, add_comment starts one.
 import { defineTool } from '../tool'
-import { z } from '../zod'
+import { z } from '@cofun/base/zod'
 import { NotionError, SIGNED_OUT, commentOps, type LoadedPage } from '../notion/api'
 import { EditError } from '../notion/edit'
 import { MarkdownError, inline, personNames, withPeople, type RichText } from '../notion/blocks'

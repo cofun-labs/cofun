@@ -192,6 +192,20 @@ describe('checkUseCases', () => {
     ])
   })
 
+  it("checks a shared package's tests, which verify no extension's scenario", () => {
+    const report = checkUseCases(
+      [useCase(['| UC-NOTICO-CHAT-001-S01 | P0 | ✅ | … |'])],
+      [
+        testIn('packages/base/test/chat.test.ts', 'UC-NOTICO-CHAT-001-S01'),
+        { path: 'packages/base/test/clerk.test.ts', text: "it('has no tag', () => {})" },
+      ],
+    )
+    expect(report.errors).toEqual([
+      expect.stringContaining('packages/base/test/clerk.test.ts:1: a test whose name starts with no scenario ID'),
+      'extensions/notico/use-cases/chat/UC-NOTICO-CHAT-001-ask.md:6: UC-NOTICO-CHAT-001-S01 is ✅ api-test, but no test names it',
+    ])
+  })
+
   it("warns when an ID's prefix does not match the product whose folder holds it", () => {
     const report = checkUseCases(
       [

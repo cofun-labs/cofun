@@ -2,10 +2,10 @@
 // on the device (KeptResult, in the saved sessions' store), and the model gets its first part, an
 // outline, and an id, with which read_result reads another part and search_result finds text in it.
 // Notion's tools read Notion live, in parts of their own, and keep nothing.
-import type { KeptResult, ToolContext, ToolResult } from '../agent'
+import type { KeptResult, ToolContext, ToolResult } from '@cofun/base/agent'
 import { clip } from '../notion/comments'
 import { defineTool } from '../tool'
-import { z } from '../zod'
+import { z } from '@cofun/base/zod'
 import { READ, SEARCH, asData, asPageText, count, nameOf, partArg } from './shared'
 
 /** How much of a kept result one part holds; a result no longer than this is given whole, and not kept. */

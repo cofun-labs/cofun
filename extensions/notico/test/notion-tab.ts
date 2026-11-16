@@ -3,7 +3,7 @@
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { expect } from 'vitest'
-import type { ToolResult } from '../src/agent'
+import type { ToolResult } from '@cofun/base/agent'
 import { NotionError } from '../src/notion/api'
 import { isNotion } from '../src/notion/hosts'
 import { notionCooldown } from '../src/notion/tab'

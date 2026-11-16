@@ -2,12 +2,12 @@
 // read_current_tab, which reads the page of a tab on another site; and the tabs on other sites the
 // user added to the conversation, which read_tab reads.
 import { defineTool } from '../tool'
-import { z } from '../zod'
+import { z } from '@cofun/base/zod'
 import { NOTION_HOSTS, isNotion, pageIdFromUrl, showsDatabase } from '../notion/hosts'
 import { clip } from '../notion/comments'
 import type { Selection } from '../selection'
 import { mayRead, readPage, readableSite, type TabPage, type TabWhere } from '../web/tab'
-import type { AskOnCard, ToolContext } from '../agent'
+import type { AskOnCard, ToolContext } from '@cofun/base/agent'
 import { KEPT_CHARS, withText } from './results'
 import { LOOK, READ, asData, asPageText, count, noteTitle, noteUrl, on } from './shared'
 

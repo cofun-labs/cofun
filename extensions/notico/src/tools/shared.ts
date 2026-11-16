@@ -1,7 +1,7 @@
 // What the tools share: their common arguments, how the side panel words a call, and reading the
 // pages a call names.
 import type { Action, Verb } from '../tool'
-import { z } from '../zod'
+import { z } from '@cofun/base/zod'
 import { isNotion, pageIdFromUrl, toUuid } from '../notion/hosts'
 import { hexId } from '../notion/markdown'
 

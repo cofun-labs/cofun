@@ -75,7 +75,7 @@ export async function checkOpenRouterKey(key: string, signal: AbortSignal): Prom
   if (res.status === 402) return { status: 'no_money' }
   if (!res.ok) return { status: 'failed', message: `OpenRouter answered the check with HTTP ${res.status}.` }
   const info = KeyInfo.safeParse(await res.json().catch(() => undefined))
-  if (!info.success) return { status: 'failed', message: "OpenRouter's answer is not in the shape Notico expects." }
+  if (!info.success) return { status: 'failed', message: "OpenRouter's answer is not in the expected shape." }
   const { limit_remaining: left, effective_budget: budget } = info.data.data
   if ((left != null && left <= 0) || (budget && budget.remaining_usd <= 0)) return { status: 'no_money' }
   return left == null ? { status: 'ok' } : { status: 'ok', balance: `US$${left.toFixed(2)} left on this key` }
@@ -119,7 +119,7 @@ const perMillion = (perToken: string) => {
   return Number.isFinite(n) && n >= 0 ? n : undefined
 }
 
-/** A model on OpenRouter's list, and whether it can use tools, which Notico needs. */
+/** A model on OpenRouter's list, and whether it can use tools, which the agent needs. */
 export type ListedModel = OwnModel & { tools: boolean }
 
 /**
@@ -131,7 +131,7 @@ export async function openRouterModels(): Promise<ListedModel[]> {
   const res = await fetch(`${OPENROUTER}/models`)
   if (!res.ok) throw new Error(`OpenRouter's model list could not be loaded (HTTP ${res.status}).`)
   const body = z.object({ data: z.array(z.unknown()) }).safeParse(await res.json().catch(() => undefined))
-  if (!body.success) throw new Error("OpenRouter's model list is not in the shape Notico expects.")
+  if (!body.success) throw new Error("OpenRouter's model list is not in the expected shape.")
   return body.data.data.flatMap((entry): ListedModel[] => {
     const listed = ListedModel.safeParse(entry)
     if (!listed.success) return []

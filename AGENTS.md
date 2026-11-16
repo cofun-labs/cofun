@@ -104,15 +104,16 @@ An extension's Chrome Web Store privacy policy is written in two parts: [PRIVACY
 
 [docs/architecture.md](docs/architecture.md) describes the design; these are the rules a change must keep.
 
-- **One extension per folder.** Each extension keeps its own copy of the side panel code and never imports another extension.
+- **One extension per folder, and one shared package.** What every extension needs and is not UI is in `@cofun/base` (`packages/base/`): the agent and its providers, the worker's client, credits, sessions, model settings, and the sign-in hosts. It knows no site and no extension, and holds no UI: each extension keeps its own side panel, tools, site layer, and usage events, and never imports another extension.
 - **A site is called only through its site layer**: one module knows the site's endpoints and request shapes (Notico's `src/notion/api.ts`), and requests run inside the user's tab for that site (`src/<site>/tab.ts`, `chrome.scripting` in the ISOLATED world), so they go to that tab's host with its session. Tools never `fetch` the site's URLs themselves. Never use `chrome.debugger`: it shows a permanent "debugging this browser" banner.
 - **Every worker route under `/v1` sits behind the session check** (`src/routes/session.ts`); `worker/test/session.test.ts` checks that each refuses a request without a session.
-- **Module boundaries are lint errors** in `.oxlintrc.json`, run by `pnpm check`. In every extension:
-  - only `src/agent/` imports pi (`@earendil-works/pi-agent-core`);
-  - `fetch` is used only in `src/agent/` (the worker) and in the `tab.ts` of a site layer that sends requests to its site (Notico's `src/notion/tab.ts`); `chrome.scripting` only in `src/<site>/tab.ts`; `chrome.debugger` nowhere;
-  - `zod` is imported only through `src/zod.ts` (the worker's through `worker/src/zod.ts`);
-  - `posthog-js` is imported only in `src/analytics.ts`;
-  - the site layer imports nothing from the agent, the tools, the sessions, or the side panel;
+- **Module boundaries are lint errors** in `.oxlintrc.json`, run by `pnpm check`:
+  - only `packages/base/src/agent/` imports pi (`@earendil-works/pi-agent-core`);
+  - `fetch` is used only in `packages/base/src/agent/` (the worker, the user's own model) and in the `tab.ts` of an extension's site layer that sends requests to its site (Notico's `src/notion/tab.ts`); `chrome.scripting` only in `src/<site>/tab.ts`; `chrome.debugger` nowhere;
+  - `zod` is imported only through `packages/base/src/zod.ts` (`@cofun/base/zod`; the worker's through `worker/src/zod.ts`);
+  - `posthog-js` is imported only in an extension's `src/analytics.ts`;
+  - an extension's site layer imports nothing from the agent, the tools, the sessions, or the side panel;
+  - `@cofun/base` imports no extension, no React, and no Clerk;
   - no extension imports another.
 
   When a boundary changes, change the rule and this list together. Never silence one with an `oxlint-disable` comment.
@@ -143,8 +144,8 @@ The extensions and the worker call outside services: the site an extension acts 
 - **What a failure we don't understand does depends on what the call can do.** Give a failure a code of its own only when its meaning is known and the model can act on it, and throw a plain error for bad input from the model.
   - **A call that acts as the user's account or changes data** (the site, Stripe): a failure we can't identify, or a response we didn't expect, stops the question and is reported to the user; don't guess a workaround. It may have landed, a retry may apply it twice, and a workaround probes the service's limits with the user's account.
   - **A read-only call that involves no account of the user's** (the worker's web reads and searches): such a failure goes to the model as a tool error that says the source wasn't read, and the code does not retry it. A paid call (a render, a search) that was or may have been charged says so, and tells the model not to make the same call again in this question.
-- **A request turned away stops the question, with no retry.** When a service turns a request away, for coming too fast or for a balance that ran out, the client sends nothing more to it, the agent ends the question, and the user is told why. A tool error does this by carrying `stopsQuestion` (read by `src/agent/calls.ts`); a tool's code that catches a service's errors must rethrow one that carries it, never swallow it.
-- **A tool that changes the user's data sets `changesData`** (see `ToolSpec` in `src/agent/types.ts`), and an error after a change that may have landed sets `mayHaveChanged`, so a question that stops tells the user to check before asking again.
+- **A request turned away stops the question, with no retry.** When a service turns a request away, for coming too fast or for a balance that ran out, the client sends nothing more to it, the agent ends the question, and the user is told why. A tool error does this by carrying `stopsQuestion` (read by `packages/base/src/agent/calls.ts`); a tool's code that catches a service's errors must rethrow one that carries it, never swallow it.
+- **A tool that changes the user's data sets `changesData`** (see `ToolSpec` in `packages/base/src/agent/types.ts`), and an error after a change that may have landed sets `mayHaveChanged`, so a question that stops tells the user to check before asking again.
 - Handle only failures whose meaning is known, such as signed out, no access, or a page that changed since it was read.
 
 ## Testing
@@ -152,7 +153,7 @@ The extensions and the worker call outside services: the site an extension acts 
 How the fakes and test helpers fit together is in [Testing](docs/development.md#testing).
 
 - **Write a test only when it earns its place.** More tests are not better: each one costs time to run, read, and change. [What gets a test](docs/bdd.md#what-gets-a-test) decides.
-- **Tests live with the package they cover**: `extensions/<name>/test/` and `worker/test/`. Backend tests are REST integration tests that call the Hono app over HTTP and assert on status codes and JSON bodies.
+- **Tests live with the package they cover**: `extensions/<name>/test/`, `packages/base/test/`, and `worker/test/`. What `@cofun/base` does as part of an extension (the agent with its tools, sessions, credits in the panel) is tested in that extension, named after its scenarios; `packages/base/test/` holds only what needs no extension. Backend tests are REST integration tests that call the Hono app over HTTP and assert on status codes and JSON bodies.
 - **No mocking.** No `vi.mock()` and no spies. Replace an external dependency with a fake that implements the same interface, injected through `env`. The one module replaced whole is Clerk's React SDK, for the UI tests only; replace no other module this way.
 - **UI tests run the whole side panel and act as a user** ([Testing the side panel's UI](docs/bdd.md#testing-the-side-panels-ui)). Never test a component on its own, and find things by role, accessible name, or visible text, never through component state, the agent, the session store, or a test id. If an element can't be found that way, improve its accessibility.
 - **Tests never wait for time to pass.** Use a fake clock with an explicit start time and move it: no sleeps, and no assertion that depends on how long something took. Waiting for the screen to change is fine.

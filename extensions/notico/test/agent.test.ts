@@ -1,5 +1,5 @@
-// Notico's agent loop (src/agent/) against the real worker, with the model behind it scripted: when
-// tools run and when they ask first, when a question stops, what a conversation carries over, and the
+// The agent loop (@cofun/base's src/agent/), with Notico's tools, against the real worker, with the
+// model behind it scripted: when tools run and when they ask first, when a question stops, what a conversation carries over, and the
 // Notion request budget. What the agent and the worker must agree on is in worker/test/extension.test.ts.
 import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import {
@@ -13,7 +13,7 @@ import {
   type QuestionDetails,
   type ToolCallRequest,
   type ToolSpec,
-} from '../src/agent'
+} from '@cofun/base/agent'
 import {
   BUDGET_STOP,
   LIMITED_STOP,
@@ -29,7 +29,7 @@ import { carryPages, currentNotionPage } from '../src/tools/current'
 import { trashPage } from '../src/tools/organize'
 import { readPage } from '../src/tools/read'
 import { editPage } from '../src/tools/write'
-import { z } from '../src/zod'
+import { z } from '@cofun/base/zod'
 import { createApp, type Env } from '../../../worker/src/app'
 import { FakeClerk } from '../../../worker/test/clerk'
 import {
@@ -106,6 +106,7 @@ function makeAgent(
     apiUrl: 'https://nk.example.dev/v1/',
     getToken: options.getToken ?? (async () => token),
     client: 'notico/1.2.3',
+    product: { name: 'Notico', site: 'Notion' },
     systemPrompt: options.systemPrompt ?? 'You are Notico.',
     tools: options.tools ?? [pageTool().tool],
     maxSteps: options.maxSteps,

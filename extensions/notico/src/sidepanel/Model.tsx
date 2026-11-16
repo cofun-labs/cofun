@@ -1,6 +1,13 @@
 import { useEffect, useId, useRef, useState, type FormEvent } from 'react'
-import { checkKey, openRouterModels, type KeyCheck, type ListedModel } from '../agent'
-import { answering, RECOMMENDED, SERVICE_NAME, type ModelSettings, type OwnModel, type Service } from '../models'
+import { checkKey, openRouterModels, type KeyCheck, type ListedModel } from '@cofun/base/agent'
+import {
+  answering,
+  RECOMMENDED,
+  SERVICE_NAME,
+  type ModelSettings,
+  type OwnModel,
+  type Service,
+} from '@cofun/base/models'
 import { Icon, Mark } from './icons'
 import { useMenu } from './menu'
 

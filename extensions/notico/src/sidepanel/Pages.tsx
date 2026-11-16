@@ -1,5 +1,5 @@
 import type { MouseEvent } from 'react'
-import type { QuestionPage, QuestionSelection } from '../agent'
+import type { QuestionPage, QuestionSelection } from '@cofun/base/agent'
 import { addedTabNow } from '../tools'
 import { Icon } from './icons'
 

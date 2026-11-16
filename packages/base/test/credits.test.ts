@@ -1,5 +1,5 @@
-// How the panel reads and words credits the worker reports, where the whole panel cannot show it:
-// the tests' worker never names a source of credits the panel does not know.
+// How the credits the worker reports are read, where an extension's whole panel cannot show it:
+// the tests' worker never names a source of credits a panel does not know.
 import { describe, expect, it } from 'vitest'
 import { Credits, Grants } from '../src/credits'
 

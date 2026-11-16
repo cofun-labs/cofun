@@ -143,17 +143,18 @@ const CodedError = z.object({ error: z.object({ code: looseText, message: looseT
 const Charged = z.object({ cost: z.object({ micro_credits: z.number().int().nonnegative() }).optional() })
 
 /** What the user is told when the worker's limit on pages read stops a question. */
-const TOO_MANY_PAGES = 'Notico read too many web pages in a minute. Wait a minute, then ask again.'
+const tooManyPages = (name: string) => `${name} read too many web pages in a minute. Wait a minute, then ask again.`
 
 /**
  * What the user is told when a 429 without a code of the worker's turns a read or a search away:
  * one sent before the worker (by Cloudflare, say), for coming too often.
  */
-const TURNED_AWAY = "Notico's service turned away its requests for coming too often. Wait a minute, then ask again."
+const turnedAway = (name: string) =>
+  `${name}'s service turned away its requests for coming too often. Wait a minute, then ask again.`
 
 /** What the model is told when the worker could not be reached, or its answer could not be read. */
-const UNREACHABLE = "Notico's service could not be reached"
-const UNREADABLE = "Notico's service gave an answer Notico could not read"
+const unreachable = (name: string) => `${name}'s service could not be reached`
+const unreadable = (name: string) => `${name}'s service gave an answer ${name} could not read`
 
 /**
  * Whether a render or a search was or may have been charged, by the worker's answer, after calling
@@ -184,15 +185,15 @@ function refusalOf(res: Response, body: unknown): { code: string; message: strin
  * out. Any other failure goes to the model: a read changes nothing and involves no account of the
  * user's (CLAUDE.md, "Calling outside services"). A stopped question sends nothing more.
  */
-function stopsReading(code: string, message: string): string | undefined {
-  if (code === 'rate_limited') return TOO_MANY_PAGES
-  if (code === 'http_429') return TURNED_AWAY
+function stopsReading(name: string, code: string, message: string): string | undefined {
+  if (code === 'rate_limited') return tooManyPages(name)
+  if (code === 'http_429') return turnedAway(name)
   // The worker's own words: they say when the next free credits arrive.
   if (code === 'out_of_credits') return message
   if (code === 'site_busy')
-    return "A site turned away Notico's requests for coming too often. Wait a while, then ask again."
+    return `A site turned away ${name}'s requests for coming too often. Wait a while, then ask again.`
   // The browser that renders pages turned the render away: another would be turned away too.
-  if (code === 'render_busy') return `Notico could not render the page: ${message}.`
+  if (code === 'render_busy') return `${name} could not render the page: ${message}.`
   return undefined
 }
 
@@ -201,19 +202,19 @@ function stopsReading(code: string, message: string): string | undefined {
  * it doesn't: as for a read (see stopsReading), only a search turned away stops it, by the worker
  * or by the provider, for coming too often or for a balance that ran out.
  */
-function stopsSearching(code: string, message: string): string | undefined {
+function stopsSearching(name: string, code: string, message: string): string | undefined {
   if (code === 'rate_limited')
-    return 'Notico searched the web too many times in a minute. Wait a minute, then ask again.'
-  if (code === 'http_429') return TURNED_AWAY
+    return `${name} searched the web too many times in a minute. Wait a minute, then ask again.`
+  if (code === 'http_429') return turnedAway(name)
   // The worker's own words: they say when the next free credits arrive.
   if (code === 'out_of_credits') return message
   // The provider is busy, or the account's credits for it ran out: another search would be turned away too.
-  if (code === 'search_busy' || code === 'search_unavailable') return `Notico could not search the web: ${message}.`
+  if (code === 'search_busy' || code === 'search_unavailable') return `${name} could not search the web: ${message}.`
   return undefined
 }
 
 /** What a request to the worker's web routes needs: where the worker is, the session, and the question it is for. */
-type WebConfig = Pick<AgentConfig, 'apiUrl' | 'getToken' | 'client'> & { turn?: Turn }
+type WebConfig = Pick<AgentConfig, 'apiUrl' | 'getToken' | 'client' | 'product'> & { turn?: Turn }
 
 /**
  * Asks the worker's web route `path`, and gives its answer, with whether it may have cost credits.
@@ -222,14 +223,14 @@ type WebConfig = Pick<AgentConfig, 'apiUrl' | 'getToken' | 'client'> & { turn?: 
  * cost, or undefined when that's unknown. A Stop throws what `fetch` or reading the answer threw.
  */
 async function askWeb(
-  { apiUrl, getToken, client, turn }: WebConfig,
+  { apiUrl, getToken, client, product, turn }: WebConfig,
   path: string,
   payload: unknown,
   {
     paid,
     failed,
     stops,
-  }: { paid: boolean; failed: string; stops: (code: string, message: string) => string | undefined },
+  }: { paid: boolean; failed: string; stops: (name: string, code: string, message: string) => string | undefined },
   signal?: AbortSignal,
   charged?: (microCredits: number | undefined) => void,
 ): Promise<{ body: unknown; mayHaveCost: boolean }> {
@@ -252,7 +253,7 @@ async function askWeb(
     // The worker may have rendered or searched, and charged it.
     if (paid) charged?.(undefined)
     if (signal?.aborted) throw err
-    throw new WebError(failed, UNREACHABLE, { charged: paid, cause: err })
+    throw new WebError(failed, unreachable(product.name), { charged: paid, cause: err })
   }
   let body: unknown
   try {
@@ -267,7 +268,7 @@ async function askWeb(
   const mayHaveCost = paid && chargedBy(res, body, charged)
   if (!res.ok) {
     const { code, message } = refusalOf(res, body)
-    throw new WebError(code, message, { stopsQuestion: stops(code, message), charged: mayHaveCost })
+    throw new WebError(code, message, { stopsQuestion: stops(product.name, code, message), charged: mayHaveCost })
   }
   return { body, mayHaveCost }
 }
@@ -285,7 +286,8 @@ export async function readWebPage(
   const path = `web/${render ? 'render' : 'read'}`
   const { body, mayHaveCost } = await askWeb(config, path, { url, max_chars: maxChars }, how, signal, charged)
   const page = WebPage.safeParse(body)
-  if (!page.success) throw new WebError('read_failed', UNREADABLE, { charged: mayHaveCost, cause: page.error })
+  if (!page.success)
+    throw new WebError('read_failed', unreadable(config.product.name), { charged: mayHaveCost, cause: page.error })
   return page.data
 }
 
@@ -303,6 +305,7 @@ export async function searchWebFor(
   const how = { paid: true, failed: 'search_failed', stops: stopsSearching }
   const { body, mayHaveCost } = await askWeb(config, 'web/search', { query, limit }, how, signal, charged)
   const answer = WebSearch.safeParse(body)
-  if (!answer.success) throw new WebError('search_failed', UNREADABLE, { charged: mayHaveCost, cause: answer.error })
+  if (!answer.success)
+    throw new WebError('search_failed', unreadable(config.product.name), { charged: mayHaveCost, cause: answer.error })
   return answer.data.results
 }

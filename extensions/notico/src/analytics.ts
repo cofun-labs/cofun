@@ -16,7 +16,7 @@
 import { PostHog, type CaptureResult } from 'posthog-js/dist/module.no-external'
 import { NOTION_ERROR_CODES } from './notion/api'
 import { TOOLS } from './tools'
-import { z } from './zod'
+import { z } from '@cofun/base/zod'
 
 /** The PostHog project events go to. Public by design; without it nothing is sent. */
 const KEY: string | undefined = import.meta.env.VITE_POSTHOG_KEY

@@ -14,7 +14,7 @@ const SessionInfo = z.object({
   title: z.string(),
   /** `title` is the model's; it is written once, and saving the session again keeps it. */
   titledByModel: z.literal(true).optional(),
-  /** The Notion page open when the session started, if there was one. */
+  /** The site's page open when the session started, if there was one. */
   page: z.object({ title: z.string(), url: z.string() }).optional(),
   createdAt: z.number(),
   updatedAt: z.number(),
@@ -39,8 +39,9 @@ interface UnreadableSession {
 
 export type ListedSession = SessionInfo | UnreadableSession
 
-// One database per account, so another account signed in on this browser never sees these sessions.
-const DB_PREFIX = 'notico-sessions-'
+// One database per extension and account, `notico-sessions-<user id>`, so another account signed in
+// on this browser never sees these sessions, and neither does another extension.
+const dbName = (extension: string, userId: string) => `${extension}-sessions-${userId}`
 /**
  * Version 2 added the results store, and version 3 made it anew, without the sessions that name each
  * result; the sessions and messages stores are as version 1 made them.
@@ -59,11 +60,14 @@ const KEPT_AT = 'keptAt'
 const KEPT_MS = 7 * 24 * 60 * 60 * 1000
 const TITLE_LENGTH = 100
 
-/** The saved sessions of one signed-in user. */
+/** The saved sessions of one signed-in user, in one extension (`notico`). */
 export class SessionStore {
   private db?: Promise<IDBDatabase>
 
-  constructor(private readonly userId: string) {}
+  constructor(
+    private readonly extension: string,
+    private readonly userId: string,
+  ) {}
 
   /**
    * Saves a session and resolves with its details as stored. `loaded` is the `updatedAt` the caller
@@ -210,7 +214,7 @@ export class SessionStore {
 
   private open(): Promise<IDBDatabase> {
     this.db ??= new Promise<IDBDatabase>((resolve, reject) => {
-      const req = indexedDB.open(DB_PREFIX + this.userId, DB_VERSION)
+      const req = indexedDB.open(dbName(this.extension, this.userId), DB_VERSION)
       req.onupgradeneeded = ({ oldVersion }) => {
         const db = req.result
         if (oldVersion < 1) {

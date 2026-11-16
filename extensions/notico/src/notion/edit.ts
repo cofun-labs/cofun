@@ -1,6 +1,6 @@
 // Planning an edit_page call: checking the edits against the page as the agent read it and as it
 // is now, and turning them into one Notion transaction. Nothing here talks to Notion.
-import { z } from '../zod'
+import { z } from '@cofun/base/zod'
 import { blockOps, textList, type Block, type LoadedPage, type NotionRecord, type Operation } from './api'
 import {
   COLOR,

@@ -1,6 +1,6 @@
 // Reading pages: read_page, and get_selection for what the user selected.
 import { defineTool } from '../tool'
-import { z } from '../zod'
+import { z } from '@cofun/base/zod'
 import { pageLink, toUuid } from '../notion/hosts'
 import { mergeReads, pageRead } from '../notion/edit'
 import { clip, quote, threadCount } from '../notion/comments'

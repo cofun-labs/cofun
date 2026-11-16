@@ -22,6 +22,7 @@ import type {
   AssistantPart,
   ConfirmTool,
   HistoryMessage,
+  Product,
   QuestionCost,
   QuestionDetails,
   QuestionExtras,
@@ -72,13 +73,14 @@ const STOPPED_BEFORE = 'Not run: the user stopped the question before this actio
 const STOPPED_DURING =
   'Stopped by the user while this action was running; it may have partly happened. Check before trying it again.'
 /** Ahead of a question asked in Read only, for the model: it has no tool that changes data for it. */
-const READ_ONLY_NOTE =
-  '[Read only: the user set Notico to Read only for this question, so you have no tools that change Notion. ' +
+const readOnlyNote = ({ name, site }: Product) =>
+  `[Read only: the user set ${name} to Read only for this question, so you have no tools that change ${site}. ` +
   "If the question asks for a change, make none and don't describe one as done: say you can't make changes in " +
   'Read only, and that the user can switch to Edit with the mode button at the bottom left of the message box ' +
   'and ask again. You can still read and answer.]'
 /** Ahead of a question asked in Edit right after one in Read only: the tools that change data are back. */
-const EDIT_NOTE = '[Edit: the user switched Notico back to Edit, so the tools that change Notion are available again.]'
+const editNote = ({ name, site }: Product) =>
+  `[Edit: the user switched ${name} back to Edit, so the tools that change ${site} are available again.]`
 
 export class CopilotAgent {
   private agent?: Agent
@@ -210,7 +212,12 @@ export class CopilotAgent {
       if (this.agent) this.agent.state.model = this.model
       // The question stays in the conversation with the tools it used, so the model can pick up
       // where it left off; asking the same question again could run those tools twice.
-      if (kept) return { status: 'error', message: 'Notico was just updated. Ask it to continue.', ...counted }
+      if (kept)
+        return {
+          status: 'error',
+          message: `${this.config.product.name} was just updated. Ask it to continue.`,
+          ...counted,
+        }
       return (await this.askOnce(text, onUpdate, epoch, confirm, extras, turn)).result
     }
     return result
@@ -336,7 +343,7 @@ export class CopilotAgent {
         running = undefined
         return { block: true, reason: STOPPED_BEFORE }
       }
-      // Notion turned the preview's lookups away, or the user stopped at the budget: the question
+      // The site turned the preview's lookups away, or the user stopped at the budget: the question
       // stops here, before anyone is asked.
       if (stop) {
         running = undefined
@@ -718,7 +725,7 @@ export class CopilotAgent {
       },
       getApiKey: () => this.provider.apiKey(),
       identity: this.provider.identity,
-      // Notion tools will change pages; run them one at a time, in the order the model asked.
+      // The site's tools will change pages; run them one at a time, in the order the model asked.
       toolExecution: 'sequential',
       transformContext: async (messages) =>
         recent(this.withNotes(messages), this.config.history ?? this.provider.history, toolChars),
@@ -736,7 +743,8 @@ export class CopilotAgent {
     return messages.map((message) => {
       if (message.role !== 'user') return message
       const readOnly = this.readOnly.has(message)
-      const mode = readOnly ? READ_ONLY_NOTE : readOnlyBefore ? EDIT_NOTE : undefined
+      const { product } = this.config
+      const mode = readOnly ? readOnlyNote(product) : readOnlyBefore ? editNote(product) : undefined
       readOnlyBefore = readOnly
       const notes = [mode, this.contexts.get(message)].filter(Boolean).join('\n')
       return notes ? { ...message, content: `${notes}\n\n${textOf(message.content)}` } : message

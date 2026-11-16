@@ -14,6 +14,11 @@ export interface AgentConfig {
    */
   client: string
   /**
+   * The extension as its users know it (`Notico`) and the site its tools act on (`Notion`), as the
+   * agent names them in what it tells the user and the model.
+   */
+  product: Product
+  /**
    * Which model answers, read as each question starts, so a change applies from the next question
    * on and the conversation goes on with it. The hosted model when not given.
    */
@@ -30,11 +35,17 @@ export interface AgentConfig {
   /** How much of a long conversation to send. Defaults stay well under the provider's limits. */
   history?: { messages: number; chars: number }
   /**
-   * Called as each question starts, to count the requests its tools make to the user's data (to
-   * Notion). `ask` puts a yes/no question to the user on the card of the tool that is running, and
+   * Called as each question starts, to count the requests its tools make to the user's data (on
+   * the site). `ask` puts a yes/no question to the user on the card of the tool that is running, and
    * resolves false when the question is stopped or nobody can be asked.
    */
   meter?: (ask: (question: string) => Promise<boolean>) => QuestionMeter
+}
+
+/** An extension, and the site it acts on, by the names its users know them by. */
+export interface Product {
+  name: string
+  site: string
 }
 
 /** What a question's tools sent, read when it ends. */
@@ -74,7 +85,7 @@ export interface Turn {
 
 /**
  * A page a question was sent with: its title and URL, and whether it is a database; or a page on
- * another site than Notion (`web`), in the tab the user added (`tab`, Chrome's id for it, in the
+ * another site than the extension's own (`web`), in the tab the user added (`tab`, Chrome's id for it, in the
  * browser's run `run`).
  */
 const QuestionPage = z.object({
@@ -297,7 +308,7 @@ export type AgentUpdate =
   | { type: 'tool_ready'; id: string; args: unknown; preview?: string }
   /**
    * `result`: what the model got back, the error message when the tool failed. `code`: the code of
-   * the error the tool failed with, when it has one (a Notion error's, such as `no_access`).
+   * the error the tool failed with, when it has one (a site error's, such as Notion's `no_access`).
    * `details`: what the tool said about the call, when it worked and said anything (see ToolDetails).
    */
   | {
