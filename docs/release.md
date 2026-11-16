@@ -31,4 +31,4 @@ gh release download notico-v0.2.0 --pattern '*.zip' --dir /tmp/notico-release
 shasum -a 256 /tmp/notico-release/notico-0.2.0.zip
 ```
 
-Then, in the Chrome Web Store Developer Dashboard, Package → Upload new package with that zip, copy into the other tabs whatever changed in `extensions/<name>/store/` since the last release, and Submit for review. A new extension's first upload is what assigns its ID: its public key (Package tab → View public key) becomes its `CRX_PUBLIC_KEY`, and the ID goes wherever the extension's origin is allowed ([development.md](development.md#notico)) and into `EXTENSION_ID` in `e2e/src/extension.ts`.
+Then, in the Chrome Web Store Developer Dashboard, Package → Upload new package with that zip, copy into the other tabs whatever changed in `extensions/<name>/store/` since the last release, and Submit for review. A new extension's first upload is what assigns its ID: its public key (Package tab → View public key) becomes its `CRX_PUBLIC_KEY`, and the ID goes wherever the extension's origin is allowed ([development.md](development.md#extensions)) and into `EXTENSION_ID` in `e2e/src/extension.ts`.
