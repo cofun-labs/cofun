@@ -71,8 +71,8 @@ The text above describes version 0.2.0. The next version also brings in the web 
 
 - The first paragraph adds: "It also brings in the web: ask about the page you're on, a link, or a web search, and save what matters to Notion."
 - WHAT YOU CAN ASK adds:
-  - "• Bring in the web: ask about the page you're on or a link, compare open tabs, or search the web. Notico reads a site only after you allow it."
+  - "• Bring in the web: ask about the page you're on or a link, compare open tabs, or search the web. Notico reads a site in your tabs only after you allow it."
   - "• Right-click selected text on any page and pick "Ask Notico"."
 - THINGS TO TRY adds: "• On an article: "Save the key points of this page to my Reading notes.""
 - CREDITS ends: "Answering with your own model spends no credits, except on web searches and pages rendered for you."
-- PRIVACY starts: "Your questions, and what Notico reads to answer them (Notion content, web pages, and web searches), go to our server…"
+- PRIVACY's first sentence reads: "Your questions, and what Notico reads to answer them (Notion content, web pages, and web searches, which may include text from your Notion pages), go to our server and the AI model, or straight to OpenRouter if you use your own model; links and searches go through our server either way."
