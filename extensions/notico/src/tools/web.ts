@@ -160,7 +160,7 @@ export const searchWeb = defineTool({
     'page in full, use read_web_page with its URL. Each search costs the user credits: search only when the question ' +
     'needs it. The search matches the words of the query as they are and reads no instructions: write a few ' +
     'keywords, not the question (say, "Node.js LTS release 2026", not "what is the latest stable Node.js ' +
-    'version?"). When the results do not fit, search again with other keywords, not the same ones.',
+    'version?"). When the results do not fit, search once more with other keywords, not the same ones.',
   describe: (args, details) => {
     const query = details?.name ?? args?.query.trim()
     return query ? { verb: SEARCH, what: 'the web for', name: query } : { verb: SEARCH, what: 'the web' }

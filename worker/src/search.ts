@@ -15,7 +15,7 @@ const PROVIDER = 'linkup'
 export const MAX_QUERY_CHARS = 1024
 /** The most results the API gives for one search. */
 export const MAX_RESULTS = 10
-/** Characters of a result's title and description kept: a description can run long. */
+/** Characters of a result's title and description kept: Linkup describes a page in up to 4,500. */
 const TITLE_CHARS = 300
 const DESCRIPTION_CHARS = 1000
 /** The longest result address kept: what the extension shows its model of one, uncut. */
