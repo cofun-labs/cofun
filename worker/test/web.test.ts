@@ -485,6 +485,13 @@ describe('searching the web', () => {
     ['the answer is not JSON', () => new Response('<html>oops</html>'), 502, 'search_failed', SEARCH_COST],
     ['the answer has another shape', () => Response.json({ results: [] }), 502, 'search_failed', SEARCH_COST],
     [
+      'no item of the answer is a result',
+      () => Response.json({ items: [{ url: 'https://tea.example/', title: 'Tea', snippet: 'About tea.' }] }),
+      502,
+      'search_failed',
+      SEARCH_COST,
+    ],
+    [
       'the binding throws',
       () => {
         throw new Error('boom')

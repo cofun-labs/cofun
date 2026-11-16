@@ -108,12 +108,18 @@ export async function searchWeb(
       'bad answer',
       true,
     )
-  // An item that is not a result, or whose address is longer, is left out, rather than handed on
-  // cut short or failing the rest.
-  const kept = answer.data.items.flatMap((value) => {
-    const item = Item.safeParse(value)
-    return item.success && item.data.url.length <= URL_CHARS ? [item.data] : []
-  })
+  // An item that is not a result is left out, rather than failing the rest; but when none is one,
+  // the answer is not what the worker understands (say, a field the provider renamed).
+  const items = answer.data.items.flatMap((value) => Item.safeParse(value).data ?? [])
+  if (items.length === 0 && answer.data.items.length > 0)
+    throw new SearchError(
+      'search_failed',
+      'the search gave an answer the worker does not understand',
+      'bad items',
+      true,
+    )
+  // A result with a longer address is left out, rather than handed on cut short.
+  const kept = items.filter((item) => item.url.length <= URL_CHARS)
   return kept.slice(0, limit).map((item) => ({
     url: item.url,
     title: clip(item.title.trim(), TITLE_CHARS),
