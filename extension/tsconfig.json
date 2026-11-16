@@ -17,6 +17,7 @@
     "browser-test",
     "browser-driver",
     "products",
+    "build.ts",
     "playwright.config.ts",
     "vite.config.ts",
     "vitest.config.ts",
