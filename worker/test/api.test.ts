@@ -43,6 +43,7 @@ beforeEach(async () => {
     API_LIMIT: new FakeRateLimiter(),
     WEB_LIMIT: new FakeRateLimiter(),
     RENDER_LIMIT: new FakeRateLimiter(),
+    SEARCH_LIMIT: new FakeRateLimiter(),
     MODEL,
     AI_GATEWAY_ID: 'gw-test',
     CLERK_JWT_KEY: clerk.publicKeyPem,
@@ -52,6 +53,8 @@ beforeEach(async () => {
 })
 
 const json = (res: Response): Promise<any> => res.json()
+/** For a binding written for one test, which searches nothing. */
+const noSearch = () => Promise.reject(new Error('this test searches nothing'))
 
 function req(method: string, path: string, bearer?: string, body?: unknown, more: Record<string, string> = {}) {
   const headers: Record<string, string> = { 'content-type': 'application/json', ...more }
@@ -708,6 +711,7 @@ describe('error logs', () => {
 
   it('[@no-uc:privacy] an unexpected error logs only the name and the start of the message', async () => {
     env.AI = {
+      websearch: noSearch,
       async run() {
         return {
           toJSON() {
@@ -740,6 +744,7 @@ describe('error logs', () => {
 
   it('[@no-uc:privacy] a thrown value that is not an error logs only its type', async () => {
     env.AI = {
+      websearch: noSearch,
       async run() {
         throw { message: `quoted ${SECRET}` }
       },
@@ -855,6 +860,7 @@ describe('reading a reply for its charge', () => {
     ]
     for (const [reply, recorded] of replies) {
       env.AI = {
+        websearch: noSearch,
         async run() {
           return reply
         },
@@ -870,6 +876,7 @@ describe('reading a reply for its charge', () => {
 
   it('[@no-uc:money] a non-streamed reply without usage is still recorded', async () => {
     env.AI = {
+      websearch: noSearch,
       async run() {
         return null
       },

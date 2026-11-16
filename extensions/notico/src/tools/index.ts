@@ -1,7 +1,7 @@
 // Tools the agent can run in the extension, one module per area: reading pages (read.ts), finding
 // them (find.ts), writing them (write.ts), databases (database.ts), organizing pages (organize.ts),
 // comments (comments.ts), the current tab, on Notion or another site, and the tabs the user added
-// (current.ts), and web pages by their address (web.ts). This module lists them, and says for the
+// (current.ts), and web pages by their address and web searches (web.ts). This module lists them, and says for the
 // side panel what a call did.
 import type { HistoryMessage, ToolDetails } from '../agent'
 import { pageLink } from '../notion/hosts'
@@ -14,7 +14,7 @@ import { duplicatePage, movePage, trashPage } from './organize'
 import { getSelection, readPage } from './read'
 import type { OpenPage } from './current'
 import { verb } from './shared'
-import { readWebPage, renderWebPage } from './web'
+import { readWebPage, renderWebPage, searchWeb } from './web'
 import { createPage, editPage, updatePages } from './write'
 
 export {
@@ -54,6 +54,7 @@ export const TOOLS: Tool[] = [
   readTab,
   readWebPage,
   renderWebPage,
+  searchWeb,
 ]
 
 /** A call in the user's words, also one from a saved session whose tool is gone. */

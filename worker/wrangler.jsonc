@@ -41,6 +41,10 @@
     // render is free to the user and costs the operator browser time, up to 30 s each, until renders
     // are charged in credits (#464); a question renders one or two at most.
     { "name": "RENDER_LIMIT", "namespace_id": "1004", "simple": { "limit": 5, "period": 60 } },
+    // SEARCH_LIMIT: how many web searches one user can make a minute. A search is free to the user
+    // and costs the operator the provider's price (US$0.25 per 1,000 on Ceramic), so this bounds
+    // what one account can cost; a question searches a few times at most.
+    { "name": "SEARCH_LIMIT", "namespace_id": "1005", "simple": { "limit": 10, "period": 60 } },
   ],
 
   // Browser Run: renders the pages the extension asks for that are drawn by scripts (routes/web.ts).
