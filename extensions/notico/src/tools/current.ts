@@ -354,7 +354,7 @@ async function mayReadOrAsk(origin: string, ask: AskOnCard | undefined): Promise
  * the page's title and URL, `notes` about it, whether it was clipped, and its content as Markdown.
  */
 function pageRead(page: TabPage, header: string, host: string, notes: string[] = []) {
-  const shown = page.text.length < page.chars
+  const shown = page.text.length < page.chars || page.longer
   const lines = [
     // As JSON, so the title and URL stay inside their quotes and on their line.
     `${header}: ${JSON.stringify({ title: clip(page.title, TITLE_CHARS), url: clip(page.url, TAB_URL_CHARS) })}`,
@@ -362,7 +362,7 @@ function pageRead(page: TabPage, header: string, host: string, notes: string[] =
     ...(shown
       ? [
           `[Clipped: this shows the first ${page.text.length.toLocaleString('en-US')} of the page's ` +
-            `${page.chars.toLocaleString('en-US')} characters.]`,
+            `${page.longer ? 'more than ' : ''}${page.chars.toLocaleString('en-US')} characters.]`,
         ]
       : []),
     ...(page.frames ? [`[The page holds ${count(page.frames, 'frame')}, whose content is not read.]`] : []),

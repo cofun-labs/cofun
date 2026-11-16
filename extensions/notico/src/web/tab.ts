@@ -69,24 +69,33 @@ const pdf = (where: TabWhere) => `${cap(where)} shows a PDF in Chrome's viewer, 
 /**
  * What the script in the tab returns. The page can reach the DOM it reads (a named element can
  * stand in for `document.title`), so the result is parsed, not trusted. `html`: the page's main
- * content (see pageHtml); `frames`: how many frames the page holds, which are not read.
+ * content (see pageHtml), `cut` when it was cut short; `frames`: how many frames the page holds,
+ * which are not read.
  */
 const PageResult = z.union([
   z.object({ pdf: z.literal(true) }),
-  z.object({ title: z.string(), url: z.string(), html: z.string(), frames: z.number() }),
+  z.object({ title: z.string(), url: z.string(), html: z.string(), cut: z.boolean(), frames: z.number() }),
 ])
 
 /**
  * The page a tab shows, as read from it: its main content as Markdown, up to the characters asked
- * for, and how long it all is.
+ * for, and how long it all is; `longer` when the page is longer still, as its HTML was cut in the tab.
  */
 export interface TabPage {
   title: string
   url: string
   text: string
   chars: number
+  longer: boolean
   frames: number
 }
+
+/**
+ * How much of a page's HTML the tab hands over, for each character of Markdown asked for: markup
+ * holds far more than its text, and a long thread or feed should not be carried and converted in
+ * full only for its first characters to be kept.
+ */
+const HTML_PER_CHAR = 50
 
 /**
  * Reads up to `maxChars` of the main content of the page in the tab, as Markdown; the tab must
@@ -103,7 +112,12 @@ export async function readPage(
   try {
     // ISOLATED, not MAIN: the page can't see or patch this code. The top frame only: frames from
     // other sites are other sites, which the user may not have allowed.
-    const [frame] = await chrome.scripting.executeScript({ target: { tabId }, world: 'ISOLATED', func: pageHtml })
+    const [frame] = await chrome.scripting.executeScript({
+      target: { tabId },
+      world: 'ISOLATED',
+      func: pageHtml,
+      args: [maxChars * HTML_PER_CHAR],
+    })
     raw = frame?.result
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
@@ -131,6 +145,7 @@ export async function readPage(
     url: result.url,
     text: text.slice(0, maxChars),
     chars: text.length,
+    longer: result.cut,
     frames: result.frames,
   }
 }
@@ -166,14 +181,16 @@ function selectionText(): string {
  * main landmark), else its first `article`, else the whole body: the first of them that shows any
  * text. It is given as HTML, for the side panel to turn into Markdown (src/web/markdown.ts), from a
  * copy without what the page doesn't show, what is not part of its text (scripts, styles, frames,
- * media, form controls), and its navigation, asides, and footers; its links made absolute, without
- * their fragment, and only on links to http(s) pages.
+ * media, form fields; a button's text is kept, as an accordion's questions are buttons), and its
+ * navigation, asides, and footers; its links made absolute, without
+ * their fragment, and only on links to http(s) pages. Up to `maxHtml` characters of it: a cut tag
+ * or element is mended when the side panel parses it.
  */
-function pageHtml(): z.input<typeof PageResult> | null {
+function pageHtml(maxHtml: number): z.input<typeof PageResult> | null {
   if (document.contentType === 'application/pdf') return { pdf: true }
   const LEFT_OUT =
-    'script, style, noscript, template, svg, math, canvas, iframe, frame, object, embed, video, audio, map, ' +
-    'nav, aside, footer, button, input, select, textarea, dialog:not([open]), [hidden], [aria-hidden="true"]'
+    'script, style, noscript, template, svg, canvas, iframe, frame, object, embed, video, audio, map, nav, ' +
+    'aside, footer, input, select, textarea, dialog:not([open]), [hidden], [aria-hidden="true"]'
   // What the user would not see. Chrome finds that from the layout, element by element, without
   // computing every node's style; an element shown as its children only (display: contents) has no
   // box of its own but is shown. Where the browser can't tell (no checkVisibility), it is shown.
@@ -219,5 +236,5 @@ function pageHtml(): z.input<typeof PageResult> | null {
   // A named element can stand in for the title; the tab then gives none.
   const title = typeof document.title === 'string' ? document.title : ''
   const frames = document.querySelectorAll('iframe, frame').length
-  return { title, url: location.href, html, frames }
+  return { title, url: location.href, html: html.slice(0, maxHtml), cut: html.length > maxHtml, frames }
 }

@@ -99,6 +99,8 @@ describe('reading the page in the current tab', () => {
         '<ul><li>Dams<ul><li>Old</li><li>New</li></ul></li><li>Levees</li></ul>',
         '<ol><li>Measure</li><li>Plan</li></ol>',
         '<blockquote><p>The water keeps coming.</p></blockquote>',
+        '<h3><button aria-expanded="false">How high will it go?</button></h3>',
+        '<p>Flow is <math><mi>q</mi><mo>=</mo><mi>v</mi><mi>A</mi></math>.</p>',
         '<hr>',
         '<pre><code class="language-sh">curl https://example.com\n# ```done```</code></pre>',
         '<p><img src="https://cdn.example.com/flood.jpg" alt="A flooded street"> and *stars* or 1. not a list</p>',
@@ -117,7 +119,8 @@ describe('reading the page in the current tab', () => {
     expect(await screen.findByText('Rivers are rising.')).toBeVisible()
     // Links are absolute, to http(s) pages only, without their fragment; images are their alt text;
     // a table laid out with cells is its blocks; text that would pass for Markdown is escaped; and
-    // navigation, asides, footers, form controls, scripts, and what is hidden are left out.
+    // navigation, asides, footers, form fields, scripts, and what is hidden are left out; a button's
+    // text is kept, as an accordion's questions are buttons.
     expect(toolResults(browser)).toEqual([
       pageResult(
         'Rivers | News',
@@ -142,6 +145,10 @@ describe('reading the page in the current tab', () => {
           '',
           '> The water keeps coming.',
           '',
+          '### How high will it go?',
+          '',
+          'Flow is q\\=vA.',
+          '',
           '---',
           '',
           '````sh',
@@ -164,6 +171,8 @@ describe('reading the page in the current tab', () => {
           'beside',
           '',
           'Search the news',
+          '',
+          'Go',
         ].join('\n'),
       ),
     ])
@@ -188,6 +197,25 @@ describe('reading the page in the current tab', () => {
     ])
   })
 
+  it('[UC-NOTICO-PANEL-001-S11] a page whose markup is very long is clipped in the tab, and the model is told it is longer still', async () => {
+    // The tab hands over 50 characters of HTML for each character of Markdown asked for.
+    const tab = articleTab(`<p>${'x'.repeat(1_100_000)}</p>`)
+    tab.allowed.add(SITE)
+    const { browser, user } = await openOn(tab)
+    browser.ai.script.push(readTab, { reply: 'It is very long.' })
+
+    await ask(user, 'Summarize this article')
+
+    expect(await screen.findByText('It is very long.')).toBeVisible()
+    expect(toolResults(browser)).toEqual([
+      pageResult(
+        'Rivers | News',
+        ARTICLE,
+        'x'.repeat(20_000),
+        "[Clipped: this shows the first 20,000 of the page's more than 999,997 characters.]",
+      ),
+    ])
+  })
   it('[UC-NOTICO-PANEL-001-S12] the card asks to allow the site, and the page is read once the user allows it, in Chrome too', async () => {
     const { browser, user } = await openOn()
     browser.ai.script.push(readTab, { reply: 'Rivers are rising.' }, readTab, { reply: 'Still rising.' })

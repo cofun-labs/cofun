@@ -101,9 +101,12 @@ turndown.addRule('table cell', {
   filter: ['th', 'td'],
   replacement: (content, node) => {
     if (!gridTable(node)) return block(content)
+    // A pipe would end the cell. Only pipes get a backslash: one in the text before it is escaped
+    // already (Turndown writes it `\\`), and in a code span GFM still reads `\|` as the pipe.
     const cell = content
       .replace(/\s*\n+\s*/g, ' ')
-      .replace(/\|/g, '\\|')
+      .split('|')
+      .join('\\|')
       .trim()
     return `${node.previousElementSibling ? '' : '|'} ${cell} |`
   },
