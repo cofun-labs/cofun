@@ -8,7 +8,7 @@ import { clip } from '../notion/comments'
 import type { Selection } from '../selection'
 import { mayRead, readPage, readableSite, type TabPage, type TabWhere } from '../web/tab'
 import type { AskOnCard } from '../agent'
-import { LOOK, READ, asData, asPageText, count, on } from './shared'
+import { LOOK, READ, asData, asPageMarkdown, asPageText, count, on } from './shared'
 
 /** The title and URL of the current tab: the active tab of the side panel's window, on any site. */
 async function currentTab(): Promise<{ title: string; url: string } | undefined> {
@@ -301,9 +301,11 @@ const TAB_TEXT_CHARS = 20_000
 export const readCurrentTab = defineTool({
   name: 'read_current_tab',
   description:
-    'Reads the page in the current tab when it is on another site than Notion: its main text as the tab shows ' +
-    "it (the page's main content, or else its whole text), with the page's title and URL. It reads what the user " +
-    'sees, pages they are signed in to included, but not what is inside frames. The first time a site is read, ' +
+    'Reads the page in the current tab when it is on another site than Notion: its main content as the tab ' +
+    "shows it (the page's main element, or else its whole text), as Markdown that keeps its headings, lists, " +
+    "links, and tables, with the page's title and URL. Images are given by their alt text only. It reads what the " +
+    'user sees, pages they are signed in to included, but not what is inside frames, its navigation, or its ' +
+    'footer. The first time a site is read, ' +
     'the user is asked to allow Notico to read it. Use it when a question is about the page the user is on, such ' +
     'as summarizing it or saving it to Notion; never for a Notion page (use read_page). A long page is clipped.',
   describe: (_args, details) => on(READ, details?.name, 'the current tab'),
@@ -349,10 +351,10 @@ async function mayReadOrAsk(origin: string, ask: AskOnCard | undefined): Promise
 
 /**
  * A page read from a tab, as the model gets it: `header` says which tab and site it came from, then
- * the page's title and URL, `notes` about it, whether it was clipped, and its text.
+ * the page's title and URL, `notes` about it, whether it was clipped, and its content as Markdown.
  */
 function pageRead(page: TabPage, header: string, host: string, notes: string[] = []) {
-  const shown = page.text.length < page.chars
+  const shown = page.text.length < page.chars || page.longer
   const lines = [
     // As JSON, so the title and URL stay inside their quotes and on their line.
     `${header}: ${JSON.stringify({ title: clip(page.title, TITLE_CHARS), url: clip(page.url, TAB_URL_CHARS) })}`,
@@ -360,11 +362,11 @@ function pageRead(page: TabPage, header: string, host: string, notes: string[] =
     ...(shown
       ? [
           `[Clipped: this shows the first ${page.text.length.toLocaleString('en-US')} of the page's ` +
-            `${page.chars.toLocaleString('en-US')} characters.]`,
+            `${page.longer ? 'more than ' : ''}${page.chars.toLocaleString('en-US')} characters.]`,
         ]
       : []),
     ...(page.frames ? [`[The page holds ${count(page.frames, 'frame')}, whose content is not read.]`] : []),
-    ...(page.text ? ['Text:', asPageText(page.text)] : ['[The page shows no text.]']),
+    ...(page.text ? ['Content, as Markdown:', asPageMarkdown(page.text)] : ['[The page shows no text.]']),
   ]
   return { text: asData(lines), details: { name: page.title.trim() || host } }
 }
@@ -375,9 +377,9 @@ export const readTab = defineTool({
   name: 'read_tab',
   description:
     'Reads the page in a tab on another site than Notion that the user added to this chat, by the tab number a ' +
-    'note with a question gave it ("(tab 123)"): the main text the tab shows now, with its title and URL, as ' +
-    'read_current_tab does. The tab may have gone to another page since it was added: the result then says so. ' +
-    'Only those tabs can be read, never another tab or an address a page links to. Use it when a question needs ' +
+    'note with a question gave it ("(tab 123)"): the main content the tab shows now, as Markdown, with its title ' +
+    'and URL, as read_current_tab does. The tab may have gone to another page since it was added: the result ' +
+    'then says so. Only those tabs can be read, never another tab. Use it when a question needs ' +
     'what such a tab says, such as comparing the tabs the user added. A long page is clipped.',
   describe: (_args, details) => on(READ, details?.name, 'a tab'),
   args: z.strictObject({

@@ -96,7 +96,7 @@ const tabResult = (tab: number, title: string, url: string, text: string, notes:
     DATA_LINE,
     `Page in tab ${tab}, which the user added, on news.example.com: ${JSON.stringify({ title, url })}`,
     ...notes,
-    'Text:',
+    'Content, as Markdown:',
     text,
   ].join('\n')
 
