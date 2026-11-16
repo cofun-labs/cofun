@@ -502,8 +502,17 @@ export function Chat({ userId }: { userId: string }) {
     saveModelSettings(userId, settings).catch((err: unknown) => console.error('Could not save the model settings', err))
   }
 
-  // The panel unmounts on sign-out; don't leave a question running tools in the background.
-  useEffect(() => () => agentRef.current?.stop(), [])
+  // True once the panel has unmounted. Work that ends after that (a question the unmount stopped, a
+  // read or a save still out) sets no state: in the tests, it could land after the DOM is gone.
+  const gone = useRef(false)
+  useEffect(() => {
+    gone.current = false
+    // The panel unmounts on sign-out; don't leave a question running tools in the background.
+    return () => {
+      gone.current = true
+      agentRef.current?.stop()
+    }
+  }, [])
 
   /**
    * Reads the user's credits from the worker: when the panel loads, after each question, and when
@@ -513,6 +522,7 @@ export function Chat({ userId }: { userId: string }) {
    * fails never touches the chat: the menu and the Credits page say the credits are unavailable.
    */
   async function readCredits() {
+    if (gone.current) return
     const read = ++creditReads.current
     let next: CreditsState
     try {
@@ -520,14 +530,10 @@ export function Chat({ userId }: { userId: string }) {
     } catch {
       next = { status: 'unavailable' }
     }
-    if (read === creditReads.current) setCredits(next)
+    if (read === creditReads.current && !gone.current) setCredits(next)
   }
 
-  useEffect(() => {
-    void readCredits()
-    // An unmounted panel takes no answer.
-    return () => void creditReads.current++
-  }, [])
+  useEffect(() => void readCredits(), [])
 
   // After Checkout was opened, the user pays in another tab and comes back to the panel: each time
   // the panel gets the focus again, it reads the credits, so a purchase shows without a reload. The
@@ -620,12 +626,14 @@ export function Chat({ userId }: { userId: string }) {
       },
       { role: 'assistant', parts: [] },
     ])
-    const updateReply = (fn: (m: Extract<Shown, { role: 'assistant' }>) => Shown) =>
+    const updateReply = (fn: (m: Extract<Shown, { role: 'assistant' }>) => Shown) => {
+      if (gone.current) return
       setMessages((ms) => {
         const last = ms.at(-1)
         if (chatId.current !== id || last?.role !== 'assistant') return ms
         return [...ms.slice(0, -1), fn(last)]
       })
+    }
 
     const updateTools = (fn: (t: ShownTool) => ShownTool) =>
       updateReply((m) => ({ ...m, parts: m.parts.map((p) => (p.type === 'tool' ? { ...p, tool: fn(p.tool) } : p)) }))
@@ -805,7 +813,7 @@ export function Chat({ userId }: { userId: string }) {
       void readCredits()
       // Another session that opened meanwhile already unlocked the composer, and the agent holds
       // that session now.
-      const here = chatId.current === id
+      const here = chatId.current === id && !gone.current
       if (here) setBusy(false)
       // A question that failed or was stopped before using a tool leaves the conversation as it
       // was; don't move the session to the top of the list for it. One that used tools keeps them,
@@ -849,6 +857,7 @@ export function Chat({ userId }: { userId: string }) {
       )
       session.id = saved.id
       session.updatedAt = saved.updatedAt
+      if (gone.current) return
       // Also shows the session's new id, if it got one, to the list.
       setSaved((n) => n + 1)
       if (saved.id !== id && chatId.current === chat)
@@ -874,7 +883,7 @@ export function Chat({ userId }: { userId: string }) {
     saving.current = saving.current.then(async () => {
       try {
         if (deleted.current.has(session.id)) return
-        if (await store.retitle(session.id, written)) {
+        if ((await store.retitle(session.id, written)) && !gone.current) {
           setSaved((n) => n + 1)
           if (chatId.current === chat) setModelTitle(written)
         }
