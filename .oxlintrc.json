@@ -199,9 +199,10 @@
     {
       // Code every product shares: the side panel, the agent, usage data, sessions, and the helpers
       // they use. It reads the site, its tools, and the product's name through the product
-      // (src/product.ts), which the entry points give it. Named per extension: only Notico has
-      // split its code this way. Its other restrictions (the extensions/*/src block) still hold;
-      // src/agent/, chat-session.ts and panel.ts, and src/analytics.ts repeat this one in their own blocks.
+      // (src/product.ts), which the entry points give it. Its files are named by Notico's paths, the
+      // one extension with this split; the blocks below that repeat the pattern (src/agent/,
+      // chat-session.ts and panel.ts, src/analytics.ts) match every extension's, which today is
+      // Notico alone. Its other restrictions (the extensions/*/src block) still hold.
       // The Notion tool modules are named both as tools/<name> and as ./<name>, which is how
       // src/tools/index.ts, listed here, would import them.
       "files": [

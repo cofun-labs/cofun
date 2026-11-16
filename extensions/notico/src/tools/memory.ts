@@ -27,7 +27,7 @@ export interface SeenRow {
 }
 
 /**
- * What the question being asked carries (see carryPages in current.ts): whether its tools may use
+ * What the question being asked carries (see carryPages in carry.ts): whether its tools may use
  * the page open in the current tab when a call names none, and the tabs on other sites the user
  * added to the conversation, in any of its questions, by Chrome's id, as each showed its page then.
  */
