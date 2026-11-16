@@ -12,10 +12,12 @@ import {
   FakeRateLimiter,
   FakeWeb,
   MODEL,
+  usageCosting,
 } from './fakes'
 
 const EXT = 'chrome-extension://abcdefghijklmnopabcdefghijklmnop'
-const clock = new Date('2026-11-14T12:00:00Z')
+const START = new Date('2026-11-14T12:00:00Z')
+let clock = START
 let logged: string[] = []
 const app = createApp({ now: () => clock, logError: (line) => logged.push(line) })
 
@@ -41,6 +43,7 @@ beforeAll(async () => {
 })
 
 beforeEach(async () => {
+  clock = START
   logged = []
   env = {
     AI: (ai = new FakeAiBinding()),
@@ -86,6 +89,10 @@ async function refusal(res: Response) {
   const body: { error: { code: string; message: string } } = await res.json()
   return { status: res.status, code: body.error.code }
 }
+
+const CREDIT = 1_000_000
+/** What a render of 4 s of browser time costs, in micro-credits: 25 a ms. */
+const RENDER_COST = 100_000
 
 const ARTICLE = `<!doctype html><html><head><title>Tea &amp; history</title><script>track()</script></head>
 <body><nav><a href="/">Home</a> <a href="/about">About</a></nav>
@@ -200,18 +207,102 @@ describe('reading a web page', () => {
     expect(await (await read('https://app.example/home')).json()).toMatchObject({ text: 'Loading…', scripted: true })
   })
 
-  it('[UC-COFUN-WEB-001-S05] a render is free, and a user can have only a few pages rendered a minute', async () => {
+  it('[UC-COFUN-WEB-001-S05] a render costs the browser time it used, and a user can have only a few pages rendered a minute', async () => {
     env.RENDER_LIMIT = new FakeRateLimiter(2)
-    browser.render('https://app.example/board', '# Board')
-    expect((await render('https://app.example/board')).status).toBe(200)
+    browser.render('https://app.example/board', '# Board', 4000)
+    const res = await render('https://app.example/board')
+    expect(res.status).toBe(200)
+    // 4 s of browser time at US$0.09 an hour: 0.1 credit.
+    expect(await res.json()).toMatchObject({ title: 'Board', cost: { micro_credits: RENDER_COST } })
     expect((await render('https://app.example/board')).status).toBe(200)
     expect(await refusal(await render('https://app.example/board'))).toEqual({ status: 429, code: 'rate_limited' })
     expect(browser.calls).toHaveLength(2)
-    // Reads are not held by it, and nothing was charged.
+    // Each render is a spend of its own, taken from the free grant the first one started.
+    const charged = {
+      user_id: 'user_alice',
+      product: 'notico',
+      kind: 'web_render',
+      micro_credits: RENDER_COST,
+      outcome: 'ok',
+      browser_ms: 4000,
+    }
+    expect(db.renders()).toEqual([
+      { ...charged, created_at: clock.getTime() },
+      { ...charged, created_at: clock.getTime() },
+    ])
+    expect(db.grants()).toMatchObject([{ source: 'free', left: 200 * CREDIT - 2 * RENDER_COST }])
+    expect(db.rows('model_calls')).toEqual([])
+    // Reads are not held by the limit, and cost nothing.
     web.serve('https://tea.example/history', ARTICLE)
     expect((await read('https://tea.example/history')).status).toBe(200)
-    expect(db.rows('model_calls')).toEqual([])
-    expect(db.rows('grants')).toEqual([])
+    expect(db.rows('spends')).toHaveLength(2)
+  })
+
+  it('[UC-COFUN-WEB-001-S07] a user with no credits left is refused a render, and nothing is rendered', async () => {
+    // A reply that costs all 200 free credits.
+    ai.usage = usageCosting(200)
+    expect((await post('/v1/chat/completions', { messages: [{ role: 'user', content: 'hi' }] })).status).toBe(200)
+    browser.render('https://app.example/board', '# Board')
+    const res = await render('https://app.example/board')
+    expect(res.status).toBe(402)
+    const { error }: { error: { code: string; message: string } } = await res.json()
+    expect(error.code).toBe('out_of_credits')
+    expect(error.message).toContain('free credits arrive on 2026-11-21 at 12:00 UTC')
+    expect(browser.calls).toEqual([])
+    expect(db.renders()).toEqual([])
+    // A plain read is free, so it still goes ahead.
+    web.serve('https://tea.example/history', ARTICLE)
+    expect((await read('https://tea.example/history')).status).toBe(200)
+  })
+
+  it('[UC-COFUN-WEB-001-S08] a render that gives no page still costs the browser time it used', async () => {
+    browser.render('https://app.example/blank', '  \n ', 2000)
+    browser.failedMs = 1500
+    expect(await refusal(await render('https://app.example/blank'))).toEqual({ status: 422, code: 'no_text' })
+    const broken = await render('https://app.example/broken')
+    // The refusal says what the render cost, as a page's answer does.
+    expect(await broken.clone().json()).toMatchObject({ cost: { micro_credits: 1500 * 25 } })
+    expect(await refusal(broken)).toEqual({ status: 422, code: 'render_failed' })
+    expect(db.renders()).toMatchObject([
+      { kind: 'web_render', outcome: 'no_text', browser_ms: 2000, micro_credits: 2000 * 25 },
+      { kind: 'web_render', outcome: 'render_failed', browser_ms: 1500, micro_credits: 1500 * 25 },
+    ])
+  })
+
+  it('[@no-uc:money] a render Browser Run reports no time for costs the time it took, and one with no response costs nothing', async () => {
+    browser.render('https://app.example/board', '# Board')
+    browser.during = () => {
+      clock = new Date(clock.getTime() + 3000)
+    }
+    browser.reportsTime = false
+    expect((await render('https://app.example/board')).status).toBe(200)
+    // No response at all: what Browser Run billed is not known, so the user is not charged a guess.
+    browser.failWith = new Error('binding failed')
+    expect(await refusal(await render('https://app.example/board'))).toEqual({ status: 422, code: 'render_failed' })
+    expect(db.renders()).toMatchObject([
+      { outcome: 'ok', browser_ms: 3000, micro_credits: 3000 * 25 },
+      { outcome: 'render_failed', browser_ms: 3000, micro_credits: 0 },
+    ])
+  })
+
+  it('[@no-uc:money] a render is refused when the credits cannot be read, and one whose record fails still gives the page', async () => {
+    browser.render('https://app.example/board', '# Board')
+    db.failWith = new Error('D1 is down')
+    expect(await refusal(await render('https://app.example/board'))).toEqual({
+      status: 503,
+      code: 'credits_unavailable',
+    })
+    expect(browser.calls).toEqual([])
+    db.failWith = undefined
+    db.failOn = { sql: 'INSERT INTO web_renders', error: new Error('D1 write failed') }
+    const res = await render('https://app.example/board')
+    expect(res.status).toBe(200)
+    // Nothing was charged, so the answer says no cost.
+    const page: Record<string, unknown> = await res.json()
+    expect(page).toMatchObject({ title: 'Board' })
+    expect(page).not.toHaveProperty('cost')
+    expect(db.rows('spends')).toEqual([])
+    expect(logged.some((line) => line.startsWith('web render record failed'))).toBe(true)
   })
 
   it('[UC-COFUN-WEB-001-S04] a page Browser Run could not render is refused with the reason', async () => {

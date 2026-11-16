@@ -101,6 +101,8 @@ export class CopilotAgent {
   private readonly details = new WeakMap<AgentMessage, QuestionDetails>()
   /** Set by a tool whose error stops the question (see `stopsQuestion` in calls.ts): what the user is told. */
   private stopReason?: string
+  /** The code of the error that set `stopReason`, if it had one: the worker's `out_of_credits`, say. */
+  private stopCode?: string
   /** Set by a tool that changes data and changed something, or may have (see `changesData`). */
   private changed = false
   /** Set by a tool that failed with an error that has a code, until its call is reported as ended. */
@@ -109,6 +111,8 @@ export class CopilotAgent {
   private askOnCard?: AskOnCard
   /** Takes each chunk of the model's streams while a question runs: what the calls cost is in them. */
   private onChunk?: (chunk: unknown) => void
+  /** Adds what a render cost to the question running, in micro-credits; undefined when it could not be read. */
+  private onCost?: (microCredits: number | undefined) => void
 
   constructor(private readonly config: AgentConfig) {
     this.provider = hostedProvider(config)
@@ -208,6 +212,7 @@ export class CopilotAgent {
 
     const before = agent.state.messages.length
     this.stopReason = undefined
+    this.stopCode = undefined
     this.changed = false
     this.failedWith = undefined
     let steps = 0
@@ -218,8 +223,9 @@ export class CopilotAgent {
     let answered = false
     // What the model calls of this question reported they used, if any did.
     let tokens: TokenUsage | undefined
-    // What they cost, summed as the worker reports each call (the hosted model only). A cost that
-    // could not be read, or was estimated, leaves the sum unknown: only an exact one is shown.
+    // What they cost, summed as the worker reports each call (the hosted model only), with what the
+    // pages rendered for it cost (whichever model answers). A cost that could not be read, or was
+    // estimated, leaves the sum unknown: only an exact one is shown.
     let cost: QuestionCost | undefined
     let costUnknown = false
     const provider = this.provider
@@ -235,9 +241,14 @@ export class CopilotAgent {
         costUnknown = true
       }
       if (call?.estimated) costUnknown = true
-      else if (call) cost = { microCredits: (cost?.microCredits ?? 0) + call.microCredits }
+      else if (call) addCost(call.microCredits)
+    }
+    const addCost = (microCredits: number | undefined) => {
+      if (microCredits === undefined) costUnknown = true
+      else cost = { microCredits: (cost?.microCredits ?? 0) + microCredits }
     }
     this.onChunk = onChunk
+    this.onCost = addCost
     const refused = new Set<string>()
     const declined = new Set<string>()
     // How the latest call with each id ended, kept with its result message when that arrives.
@@ -380,6 +391,7 @@ export class CopilotAgent {
       agent.beforeToolCall = undefined
       agent.finishTurn = undefined
       if (this.onChunk === onChunk) this.onChunk = undefined
+      if (this.onCost === addCost) this.onCost = undefined
     }
     // Also stopped when the abort landed after a model reply that asked for tools, e.g. while a tool
     // finished. A stop after the final answer keeps it: the user has already read it.
@@ -387,7 +399,10 @@ export class CopilotAgent {
     // A write that was sent counts even when the tool that sent it does not say it changed data.
     const changed = this.changed || meter?.wrote === true
     if (!stopped && this.stopReason)
-      failure ??= { text: changed ? `${this.stopReason} ${MAY_HAVE_CHANGED}` : this.stopReason }
+      failure ??= {
+        text: changed ? `${this.stopReason} ${MAY_HAVE_CHANGED}` : this.stopReason,
+        ...(this.stopCode ? { code: this.stopCode } : {}),
+      }
     // Kept with the question, so a saved session still has it. Only a question that ended normally has
     // a cost: one stopped or failed has none, since a call cut short never hears what it was charged
     // (the balance still shows it).
@@ -549,8 +564,10 @@ export class CopilotAgent {
   private reporter(): Reporter {
     const epoch = this.epoch
     return {
-      stop: (reason) => {
-        if (epoch === this.epoch) this.stopReason ??= reason
+      stop: (reason, code) => {
+        if (epoch !== this.epoch || this.stopReason !== undefined) return
+        this.stopReason = reason
+        this.stopCode = code
       },
       changed: () => {
         if (epoch === this.epoch) this.changed = true
@@ -561,7 +578,11 @@ export class CopilotAgent {
       context: {
         ask: async (question) => (epoch === this.epoch && this.askOnCard ? this.askOnCard(question) : false),
         // Always through the worker, whichever model answers: the page is read by the worker either way.
-        readWeb: (url, maxChars, render, signal) => readWebPage(this.config, url, maxChars, render, signal),
+        // A render costs credits, and the question it was for counts them; a plain read is free.
+        readWeb: (url, maxChars, render, signal) =>
+          readWebPage(this.config, url, maxChars, render, signal, (cost) => {
+            if (epoch === this.epoch) this.onCost?.(cost)
+          }),
         searchWeb: (query, limit, signal) => searchWebFor(this.config, query, limit, signal),
       },
     }

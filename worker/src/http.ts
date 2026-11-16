@@ -44,8 +44,8 @@ export interface Env {
   WEB_LIMIT: RateLimiter
   /**
    * Caps how many web pages one user can have rendered per period (`ratelimits` in wrangler.jsonc),
-   * keyed by user id, far below WEB_LIMIT: a render is free to the user and costs the operator
-   * browser time (#464). Renders count toward WEB_LIMIT and API_LIMIT too. Approximate, like CHAT_LIMIT.
+   * keyed by user id, below WEB_LIMIT: renders sent at once all start on the same balance, so this
+   * bounds what they can cost beyond it. Renders count toward WEB_LIMIT and API_LIMIT too. Approximate, like CHAT_LIMIT.
    */
   RENDER_LIMIT: RateLimiter
   /**

@@ -1,7 +1,17 @@
 // Tool calls as the agent runs them: each tool as pi runs it, its preview, the user's OK, and the
 // errors that stop a question.
 import type { AgentTool } from '@earendil-works/pi-agent-core'
-import type { ConfirmTool, ToolCallRequest, ToolContext, ToolResult, ToolSpec } from './types'
+import {
+  WebError,
+  type ConfirmTool,
+  type ToolCallRequest,
+  type ToolContext,
+  type ToolResult,
+  type ToolSpec,
+} from './types'
+
+/** The worker's code for a request refused because the user has no credits left. */
+const OUT_OF_CREDITS = 'out_of_credits'
 
 /**
  * What a call changes, in words; a broken preview must not stop the call, so it gives none. A
@@ -60,8 +70,12 @@ export function askUser(
  * or on one of its causes (a tool may wrap the error it got).
  */
 function stopsQuestion(err: unknown): string | undefined {
-  const reason = causes(err).find((e) => typeof e.stopsQuestion === 'string')?.stopsQuestion
-  return reason as string | undefined
+  return stopping(err)?.stopsQuestion as string | undefined
+}
+
+/** The error, or the cause of it, that stops the question, if one does. */
+function stopping(err: unknown): Record<string, unknown> | undefined {
+  return causes(err).find((e) => typeof e.stopsQuestion === 'string')
 }
 
 /** The error and its causes (a tool may wrap the error it got). */
@@ -122,7 +136,8 @@ function admitsNull(schema: unknown): boolean {
 }
 
 export interface Reporter {
-  stop(reason: string): void
+  /** The question stops: what the user is told, and the code of the error that stopped it, if it has one. */
+  stop(reason: string, code?: string): void
   changed(): void
   /** The tool failed with an error that has a code (a Notion error's, such as `no_access`). */
   failed(code: string): void
@@ -165,7 +180,10 @@ export function toAgentTool(spec: ToolSpec, reporter: () => Reporter): AgentTool
         result = await spec.run(params, signal, report.context)
       } catch (err) {
         const reason = stopsQuestion(err)
-        if (reason) report.stop(reason)
+        // A question the worker refused for lack of credits ends with that code, so the panel offers to
+        // buy some; other stops carry none.
+        const by = stopping(err)
+        if (reason) report.stop(reason, by instanceof WebError && by.code === OUT_OF_CREDITS ? by.code : undefined)
         // An error that says data may have changed counts on its own, flag or not.
         if (causes(err).some((e) => e.mayHaveChanged === true)) report.changed()
         const code = causes(err).find((e) => typeof e.code === 'string')?.code

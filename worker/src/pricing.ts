@@ -60,3 +60,17 @@ const ESTIMATED_CACHED_SHARE = 0.9
 export function estimateCachedTokens(promptTokens: number): number {
   return Math.floor(promptTokens * ESTIMATED_CACHED_SHARE)
 }
+
+/**
+ * What a page rendered in Browser Run costs, in micro-credits per ms of browser time: its list price
+ * for Quick Actions, US$0.09 per browser hour (https://developers.cloudflare.com/browser-run/pricing/),
+ * with nothing added: 90 credits an hour is exactly 25 micro-credits a ms. Like a model's tokens, the
+ * hours a month Workers Paid includes are not passed on, and neither is the rounding of a month's
+ * time to whole hours on the operator's bill.
+ */
+const RENDER_PER_MS = 25
+
+/** The cost of a render that used `browserMs` of browser time, in micro-credits. */
+export function renderCostOf(browserMs: number): number {
+  return browserMs * RENDER_PER_MS
+}

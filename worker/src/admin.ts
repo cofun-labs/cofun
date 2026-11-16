@@ -75,19 +75,20 @@ export function adminPage(publishableKey: string): string {
       <dt>Spent</dt><dd id="spent"></dd>
       <dt>Model calls</dt><dd id="calls"></dd>
       <dt>Tokens</dt><dd id="tokens"></dd>
+      <dt>Pages rendered</dt><dd id="renders"></dd>
     </dl>
     <h2>Per product</h2>
-    <p id="no-products" class="muted">No model call was made in this period.</p>
+    <p id="no-products" class="muted">Nothing was spent in this period.</p>
     <div class="scroll">
       <table id="per-product">
-        <thead><tr><th>Product</th><th>Spent</th><th>Calls</th></tr></thead>
+        <thead><tr><th>Product</th><th>Spent</th><th>Calls</th><th>Renders</th><th>Spent on renders</th></tr></thead>
         <tbody></tbody>
       </table>
     </div>
     <h2>Per day</h2>
     <div class="scroll">
       <table id="per-day">
-        <thead><tr><th>Day</th><th>Granted, free</th><th>Granted, by hand</th><th>Bought</th><th>Spent</th><th>Calls</th><th>Failed</th><th>Cancelled</th><th>Prompt tokens</th><th>Cached</th><th>Completion tokens</th></tr></thead>
+        <thead><tr><th>Day</th><th>Granted, free</th><th>Granted, by hand</th><th>Bought</th><th>Spent</th><th>Calls</th><th>Failed</th><th>Cancelled</th><th>Prompt tokens</th><th>Cached</th><th>Completion tokens</th><th>Renders</th><th>Failed renders</th><th>Browser time</th><th>Spent on renders</th></tr></thead>
         <tbody></tbody>
       </table>
     </div>
@@ -95,7 +96,7 @@ export function adminPage(publishableKey: string): string {
     <p id="no-accounts" class="muted">No account was granted or spent credits in this period.</p>
     <div class="scroll">
       <table id="accounts">
-        <thead><tr><th>Clerk user id</th><th>Granted</th><th>Spent</th><th>Calls</th><th>Balance now</th></tr></thead>
+        <thead><tr><th>Clerk user id</th><th>Granted</th><th>Spent</th><th>Calls</th><th>Renders</th><th>Spent on renders</th><th>Balance now</th></tr></thead>
         <tbody></tbody>
       </table>
     </div>
@@ -243,6 +244,11 @@ export function adminPage(publishableKey: string): string {
   /** Amounts arrive in micro-credits (1 credit = 1,000,000). */
   const credits = (micro) => (micro / 1000000).toLocaleString('en-US', { maximumFractionDigits: 2 })
   const count = (n) => n.toLocaleString('en-US')
+  // Browser time in seconds, or hours from an hour on, as Browser Run bills it.
+  const browserTime = (ms) =>
+    ms < 3600000
+      ? (ms / 1000).toLocaleString('en-US', { maximumFractionDigits: 1 }) + ' s'
+      : (ms / 3600000).toLocaleString('en-US', { maximumFractionDigits: 2 }) + ' h'
   const time = (ms) => new Date(ms).toLocaleString()
   const pad = (n) => String(n).padStart(2, '0')
   /** A date on this computer's clock, as a date input holds it. */
@@ -300,6 +306,9 @@ export function adminPage(publishableKey: string): string {
     el('tokens').textContent =
       count(totals.promptTokens) + ' prompt (' + count(totals.cachedTokens) + ' cached), ' +
       count(totals.completionTokens) + ' completion'
+    el('renders').textContent =
+      count(totals.renders) + ', ' + count(totals.failedRenders) + ' failed, ' + browserTime(totals.renderMs) +
+      ' of browser time, ' + credits(totals.renderSpent)
 
     el('no-products').style.display = overview.products.length ? 'none' : 'block'
     el('per-product').style.display = overview.products.length ? 'table' : 'none'
@@ -307,7 +316,8 @@ export function adminPage(publishableKey: string): string {
     products.replaceChildren()
     for (const each of overview.products) {
       const row = products.insertRow()
-      for (const text of [each.product, credits(each.spent), count(each.calls)]) row.insertCell().textContent = text
+      const cells = [each.product, credits(each.spent), count(each.calls), count(each.renders), credits(each.renderSpent)]
+      for (const text of cells) row.insertCell().textContent = text
     }
 
     const days = el('per-day').tBodies[0]
@@ -326,6 +336,10 @@ export function adminPage(publishableKey: string): string {
         count(each.promptTokens),
         count(each.cachedTokens),
         count(each.completionTokens),
+        count(each.renders),
+        count(each.failedRenders),
+        browserTime(each.renderMs),
+        credits(each.renderSpent),
       ]
       const row = days.insertRow()
       for (const text of cells) row.insertCell().textContent = text
@@ -349,7 +363,14 @@ export function adminPage(publishableKey: string): string {
         el('lookup').scrollIntoView({ behavior: 'smooth' })
       }
       row.insertCell().append(open)
-      const cells = [credits(account.granted), credits(account.spent), count(account.calls), credits(account.balance)]
+      const cells = [
+        credits(account.granted),
+        credits(account.spent),
+        count(account.calls),
+        count(account.renders),
+        credits(account.renderSpent),
+        credits(account.balance),
+      ]
       for (const text of cells) row.insertCell().textContent = text
     }
   }

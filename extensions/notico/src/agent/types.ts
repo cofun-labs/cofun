@@ -265,7 +265,8 @@ export type QuestionCost = z.infer<typeof QuestionCost>
  * `requests`: how many requests its tools made (see AgentConfig.meter).
  * `tokens`: what the model used for it, summed over its model calls, as the service reported them.
  * `model`: the model that was asked.
- * `cost`: what it cost in credits, on the hosted model only (a user's own model spends none), and
+ * `cost`: what it cost in credits: the hosted model's calls and the pages rendered for it (a user's own
+ * model spends none on its calls), and
  * only when it ended normally: a question stopped or failed has none (see `ask` in agent.ts).
  */
 const QuestionDetails = z.object({

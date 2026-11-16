@@ -244,7 +244,15 @@ export class FakeD1Database implements Database {
 
   /** Every row of `table`, for tests that look at what was written. */
   rows(
-    table: 'grants' | 'manual_grants' | 'purchases' | 'grant_revocations' | 'spends' | 'spend_grants' | 'model_calls',
+    table:
+      | 'grants'
+      | 'manual_grants'
+      | 'purchases'
+      | 'grant_revocations'
+      | 'spends'
+      | 'spend_grants'
+      | 'model_calls'
+      | 'web_renders',
   ): Record<string, unknown>[] {
     return this.sqlite.prepare(`SELECT * FROM ${table} ORDER BY id`).all()
   }
@@ -256,6 +264,16 @@ export class FakeD1Database implements Database {
         `SELECT m.id, s.user_id, s.product, s.kind, s.micro_credits, s.created_at, m.model, m.started_at, m.stream,
           m.outcome, m.finish_reason, m.prompt_tokens, m.cached_tokens, m.completion_tokens, m.estimated
         FROM model_calls m JOIN spends s ON s.id = m.spend_id ORDER BY m.id`,
+      )
+      .all()
+  }
+
+  /** Every render with its spend, as one row each: what a test looks at for a render and what it cost. */
+  renders(): Record<string, unknown>[] {
+    return this.sqlite
+      .prepare(
+        `SELECT s.user_id, s.product, s.kind, s.micro_credits, s.created_at, r.outcome, r.browser_ms
+        FROM web_renders r JOIN spends s ON s.id = r.spend_id ORDER BY r.id`,
       )
       .all()
   }
@@ -371,22 +389,37 @@ export class FakeWeb implements WebFetcher {
 
 /**
  * Stands in for Browser Run (env.BROWSER): renders the pages a test set as Markdown, and fails for
- * any other as Browser Run does for a page it could not load.
+ * any other as Browser Run does for a page it could not load. Every response reports the browser
+ * time it used (`X-Browser-Ms-Used`), as Browser Run's do, unless a test turns that off.
  */
 export class FakeBrowserRun implements BrowserBinding {
-  readonly pages = new Map<string, string>()
+  readonly pages = new Map<string, { markdown: string; browserMs: number }>()
   readonly calls: { action: string; options: Record<string, unknown> }[] = []
+  /** The browser time a page it could not load reports. */
+  failedMs = 1500
+  /** When false, responses report no browser time. */
+  reportsTime = true
+  /** When set, the binding throws this, and no response comes back. */
+  failWith?: Error
+  /** Runs while a page renders, for a test that moves its clock. */
+  during?: () => void
 
-  render(url: string, markdown: string): this {
-    this.pages.set(url, markdown)
+  render(url: string, markdown: string, browserMs = 4000): this {
+    this.pages.set(url, { markdown, browserMs })
     return this
   }
 
   async quickAction(action: 'markdown', options: Record<string, unknown>): Promise<Response> {
     this.calls.push({ action, options })
-    const markdown = typeof options.url === 'string' ? this.pages.get(options.url) : undefined
-    if (markdown === undefined)
-      return Response.json({ success: false, errors: [{ code: 5000, message: 'navigation failed' }] }, { status: 422 })
-    return Response.json({ success: true, result: markdown }, { headers: { 'x-browser-ms-used': '4000' } })
+    this.during?.()
+    if (this.failWith) throw this.failWith
+    const page = typeof options.url === 'string' ? this.pages.get(options.url) : undefined
+    const used = (ms: number): Record<string, string> => (this.reportsTime ? { 'x-browser-ms-used': String(ms) } : {})
+    if (page === undefined)
+      return Response.json(
+        { success: false, errors: [{ code: 5000, message: 'navigation failed' }] },
+        { status: 422, headers: used(this.failedMs) },
+      )
+    return Response.json({ success: true, result: page.markdown }, { headers: used(page.browserMs) })
   }
 }

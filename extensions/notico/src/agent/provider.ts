@@ -25,7 +25,7 @@ export interface ModelProvider {
   modelChanged(failure: Failure): boolean
   /**
    * What a model call cost in credits, when this chunk of its stream says (see `callCost` in
-   * worker.ts). Only the hosted provider has it: a user's own model spends no credits.
+   * worker.ts). Only the hosted provider has it: a user's own model spends no credits on its calls.
    */
   callCost?(chunk: unknown): CallCost | undefined
 }
