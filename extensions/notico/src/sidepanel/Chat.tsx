@@ -1,8 +1,8 @@
 import { useAuth } from '@clerk/chrome-extension'
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
 import { track } from '../analytics'
-import { pageIdFromUrl } from '../notion/hosts'
-import { currentNotionPage, OPEN_A_PAGE, type OpenPage } from '../tools'
+import type { HomeSite } from '../product'
+import type { OpenPage } from '../tools'
 import { AccountMenu } from './Account'
 import type { ChatSession } from './chat-session'
 import { Composer, useComposer } from './Composer'
@@ -41,7 +41,7 @@ export function Chat({ userId }: { userId: string }) {
   // Opened from the model menu's "Manage models": the Settings page puts the focus on Providers.
   const [settingsAt, setSettingsAt] = useState<'providers'>()
 
-  const tabPage = useTabPage()
+  const tabPage = useTabPage(product.site)
   const composer = useComposer({ panel, chat, tabPage, busy })
 
   const openCredits = useCallback(() => {
@@ -97,8 +97,8 @@ export function Chat({ userId }: { userId: string }) {
   const pageOpen = view === 'credits' || view === 'settings'
   // The chat stays on screen, or mounted, behind the session list and the pages, out of reach until they close.
   const covered = listOpen || pageOpen
-  // Saving goes under the page open in the current tab as the user saves (see savePage).
-  const saveBlocked = tabPage && pageIdFromUrl(tabPage.url) ? undefined : OPEN_A_PAGE
+  // Saving goes under the page open in the current tab as the user saves (see SaveAsPage).
+  const saveBlocked = tabPage && product.site.pageId(tabPage.url) ? undefined : product.site.save.openAPage
 
   return (
     <>
@@ -196,6 +196,7 @@ function ChatHeader({
   saveBlocked?: string
   children: ReactNode
 }) {
+  const { save } = useProduct().site
   // The header cuts the title to fit.
   const title = useSyncExternalStore(chat.subscribe, () => chatHeading(chat.getSnapshot()))
   const asked = useSyncExternalStore(chat.subscribe, () => askedIn(chat.getSnapshot()))
@@ -212,7 +213,7 @@ function ChatHeader({
           tipBelow
           state={saveState}
           blocked={saveBlocked}
-          onSave={() => saveToNotion(chat, 'chat')}
+          onSave={() => saveToNotion(chat, 'chat', save)}
         />
       )}
       {children}
@@ -221,17 +222,18 @@ function ChatHeader({
 }
 
 /**
- * The Notion page open in the current tab, if one is, as the tab says: no Notion request. Follows the
+ * The site's page open in the current tab, if one is, as the tab says: no request to the site. Follows the
  * tab: switching tabs, the tab going to another page or renaming it, or Chrome swapping in a
  * prerendered tab for it (onReplaced, which fires neither of the others).
  */
-function useTabPage(): OpenPage | undefined {
+function useTabPage(site: Pick<HomeSite, 'currentPage'>): OpenPage | undefined {
   const [tabPage, setTabPage] = useState<OpenPage>()
   useEffect(() => {
     let reads = 0
     const read = () => {
       const n = ++reads
-      void currentNotionPage()
+      void site
+        .currentPage()
         .catch(() => undefined)
         .then((page) => {
           if (n !== reads) return

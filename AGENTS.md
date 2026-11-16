@@ -113,6 +113,7 @@ An extension's Chrome Web Store privacy policy is written in two parts: [PRIVACY
   - `zod` is imported only through `src/zod.ts` (the worker's through `worker/src/zod.ts`);
   - `posthog-js` is imported only in `src/analytics.ts`;
   - the site layer imports nothing from the agent, the tools, the sessions, or the side panel;
+  - in Notico, the code every product shares (the side panel, the agent, usage data, sessions) imports nothing from `src/notion/`, the Notion tools, or the product's definition (`src/notico.ts`, `src/notico-brand.ts`): it reads them through `src/product.ts`, and only the entry points (`src/sidepanel/main.tsx`, `src/background.ts`) pick the product;
   - the side panel's state outside React (`src/sidepanel/chat-session.ts`, one `ChatSession` per chat, and `src/sidepanel/panel.ts`, the `Panel`) imports no React and no component;
   - no extension imports another.
 

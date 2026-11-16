@@ -15,7 +15,8 @@ import { track } from '../analytics'
 import type { Mode } from '../mode'
 import { answering, type ModelSettings, type OwnSetup } from '../models'
 import { titleFor, type Session, type SessionStore } from '../sessions'
-import { currentNotionPage, type ToolMemory } from '../tools'
+import type { HomeSite } from '../product'
+import type { ToolMemory } from '../tools'
 
 /** A tool call as the panel shows it. */
 export interface ShownTool {
@@ -87,6 +88,8 @@ export interface ChatSnapshot {
 /** What every chat of one side panel shares, given by the panel. */
 export interface ChatPanel {
   store: SessionStore
+  /** The site the product works on: a new session records the page of it open as it starts. */
+  site: Pick<HomeSite, 'currentPage'>
   /** Each chat asks its own agent, made with this. */
   agent: AgentConfig
   /** Aborted when the panel unmounts: it cuts a title request short, which leaving the chat does not. */
@@ -230,7 +233,7 @@ export class ChatSession {
     const session = (this.session ??= {
       id: crypto.randomUUID(),
       createdAt: Date.now(),
-      page: currentNotionPage().catch(() => undefined),
+      page: this.panel.site.currentPage().catch(() => undefined),
     })
     if (this.snapshot.id !== session.id) this.update({ id: session.id })
     // Where this question's reply goes in the list.

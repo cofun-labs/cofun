@@ -19,7 +19,7 @@ import {
   renameInRows,
 } from '../notion/schema'
 import { activeNotionTab } from '../notion/tab'
-import { needsAttachedPage } from './current'
+import { needsAttachedPage } from './notion-tabs'
 import { loadRowMentions, resolveDatabase } from './load'
 import {
   CHANGE,

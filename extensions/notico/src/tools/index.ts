@@ -2,29 +2,26 @@
 // them (find.ts), writing them (write.ts), databases (database.ts), organizing pages (organize.ts),
 // comments (comments.ts), the current tab, on Notion or another site, and the tabs the user added
 // (current.ts), web pages by their address and web searches (web.ts), and the long results those
-// keep on the device (results.ts). This module says for the side panel what a call did; the product
-// lists the tools its agent is offered (src/notico.ts).
+// keep on the device (results.ts); what a question carries is in carry.ts. This module says for the
+// side panel what a call did; the product lists the tools its agent is offered (src/notico.ts).
 import type { HistoryMessage, ToolDetails } from '../agent'
-import { pageLink } from '../notion/hosts'
+import type { HomeSite } from '../product'
 import type { Action, Tool } from '../tool'
-import type { OpenPage } from './current'
+import type { OpenPage } from './carry'
 import { verb } from './shared'
 
 export {
   carryPages,
-  currentNotionPage,
-  openNotionPages,
   openWebTabs,
   addedTabNow,
   SELECTION_END,
   selectionsCarried,
+  type FoundPage,
   type OpenPage,
   type WebTab,
-} from './current'
-export { findPages, type FoundPage } from './find'
+} from './carry'
 export type { ToolMemory } from './memory'
 export { DATA_LINE } from './shared'
-export { OPEN_A_PAGE, chatTitle, replyTitle, savePage, type SavedTurn } from './save'
 
 /** A call in the user's words, by the tool of `tools` it names; also one from a saved session whose tool is gone. */
 export function describeCall(tools: Tool[], name: string, args: unknown, details?: ToolDetails): Action {
@@ -48,27 +45,24 @@ export function touchedBy(calls: { details?: ToolDetails }[]): {
 }
 
 /**
- * The tools whose card names the very page the call read or changed. Others may name another page
- * than the one they touched (duplicate_page names the original, and touches the copy), so their
- * calls give no recent page.
- */
-const NAMES_TOUCHED_PAGE = new Set(['read_page', 'query_database', 'edit_page', 'read_comments', 'add_comment'])
-
-/**
  * The pages a saved conversation went with, newest first: the pages its questions carried, and the
- * one page each call that worked read or changed, when its card names that page (see
- * NAMES_TOUCHED_PAGE). Read from the conversation alone: no Notion request. `origin` is the Notion
- * host links are made on.
+ * one page each call that worked read or changed, when its card names that page (see the site's
+ * `namesTouchedPage`). Read from the conversation alone: no request to the site. `origin` is the
+ * site's host links are made on.
  */
-export function pagesIn(messages: HistoryMessage[], origin: string): OpenPage[] {
+export function pagesIn(
+  site: Pick<HomeSite, 'namesTouchedPage' | 'pageLink'>,
+  messages: HistoryMessage[],
+  origin: string,
+): OpenPage[] {
   const pages: OpenPage[] = []
   for (const m of messages) {
-    // A tab on another site is not a Notion page: it may be gone, and is added again from the tabs open.
+    // A tab on another site is not the site's page: it may be gone, and is added again from the tabs open.
     if (m.role === 'user') pages.push(...(m.pages ?? []).filter((p) => !p.web))
-    else if (m.role === 'tool' && m.status === 'done' && NAMES_TOUCHED_PAGE.has(m.name)) {
+    else if (m.role === 'tool' && m.status === 'done' && site.namesTouchedPage.has(m.name)) {
       const ids = [...new Set([...(m.details?.read ?? []), ...(m.details?.changed ?? [])])]
       const title = ids.length === 1 ? m.details?.name : undefined
-      if (title) pages.push({ title, url: pageLink(origin, ids[0]) })
+      if (title) pages.push({ title, url: site.pageLink(origin, ids[0]) })
     }
   }
   return pages.reverse()
