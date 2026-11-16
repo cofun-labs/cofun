@@ -7,15 +7,13 @@ import {
   useLayoutEffect,
   useRef,
   useState,
+  useSyncExternalStore,
   type FormEvent,
   type KeyboardEvent,
 } from 'react'
 import {
   CopilotAgent,
-  KEY_REJECTED,
-  type AgentUpdate,
-  type ConfirmTool,
-  type HistoryMessage,
+  type AgentConfig,
   type QuestionCost,
   type QuestionDetails,
   type QuestionPage,
@@ -36,7 +34,7 @@ import {
 import { pageIdFromUrl } from '../notion/hosts'
 import { countNotionRequests } from '../notion/tab'
 import { linkTo, watchSelections, type Selection } from '../selection'
-import { SessionStore, titleFor, type Session } from '../sessions'
+import { SessionStore, type Session } from '../sessions'
 import {
   carryPages,
   currentNotionPage,
@@ -55,6 +53,7 @@ import {
   type SavedTurn,
 } from '../tools'
 import { AccountMenu } from './Account'
+import { ChatSession, type Part, type Reply, type Shown } from './chat-session'
 import { Header } from './Header'
 import { Icon } from './icons'
 import { Markdown } from './Markdown'
@@ -62,7 +61,7 @@ import { useMenu } from './menu'
 import { HOSTED, ModelMenu, ModelNote } from './Model'
 import { AddMenu, pageKey, usePagePicker, type SearchStop } from './PagePicker'
 import { ComposerPages, SentPages, type Chip } from './Pages'
-import { SaveButton, SaveToast, useSaves, type SaveState } from './Save'
+import { SaveButton, SaveToast, type SaveState } from './Save'
 import { Sessions, type OpenResult } from './Sessions'
 import { ChatStart } from './Suggestions'
 import { CreditsPage } from './Credits'
@@ -137,43 +136,6 @@ const RECENT_SESSIONS = 5
 /** Pages links are made on when no Notion tab says which host the user's Notion is on. */
 const NOTION_ORIGIN = 'https://www.notion.so'
 
-/** A reply in the order it happened: text the model wrote and the tools it ran in between. */
-type Part = { type: 'text'; text: string } | { type: 'tool'; tool: ShownTool }
-
-// The agent keeps the conversation it sends to the model; this is only what the panel shows.
-type Shown =
-  | { role: 'user'; content: string; pages?: QuestionPage[]; selections?: QuestionSelection[]; readOnly?: true }
-  | {
-      role: 'assistant'
-      parts: Part[]
-      /** Why the question failed; shown below what the agent already did. */
-      error?: string
-      /** The question was refused for lack of credits: the error leads to the Credits page. */
-      outOfCredits?: boolean
-      stopped?: boolean
-      note?: string
-      /** Another window continued the session too, so this conversation was saved as a new session. */
-      copied?: boolean
-      /** What the question used, once it ended. */
-      details?: QuestionDetails
-    }
-
-/**
- * The open session; saved once its first question is answered. One object for as long as the
- * session is open: a save updates `id` and `updatedAt` in place, so the next save, which may
- * already be waiting, starts from what the last one stored.
- */
-interface Current {
-  /** Changes if a save finds that another window continued the session: this one is saved as a new session. */
-  id: string
-  createdAt: number
-  page: Promise<Session['page']>
-  /** As this panel loaded or last saved it; not set until the first save. */
-  updatedAt?: number
-  /** The model was asked for a title already, by this panel or the one that saved it (see `title`). */
-  titled?: boolean
-}
-
 /** The chat of one signed-in user; mount a new one for another user. */
 export function Chat({ userId }: { userId: string }) {
   const { getToken } = useAuth()
@@ -183,16 +145,10 @@ export function Chat({ userId }: { userId: string }) {
   useEffect(() => {
     store.sweep().catch((err: unknown) => console.error('Could not sweep the kept results', err))
   }, [store])
-  const [messages, setMessages] = useState<Shown[]>([])
   const [input, setInput] = useState('')
-  const [busy, setBusy] = useState(false)
-  // Stop was pressed; the question is still winding down, so nothing is pending any more.
-  const [stopping, setStopping] = useState(false)
   const listRef = useRef<HTMLElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const listButtonRef = useRef<HTMLButtonElement>(null)
-  // Answers for tool calls waiting for the user's OK, by call id.
-  const pending = useRef(new Map<string, (allow: boolean) => void>())
   const accountButtonRef = useRef<HTMLButtonElement>(null)
   const modelButtonRef = useRef<HTMLButtonElement>(null)
   const [view, setView] = useState<'chat' | 'sessions' | 'credits' | 'settings'>('chat')
@@ -202,30 +158,20 @@ export function Chat({ userId }: { userId: string }) {
   // The newest read of the credits: reads can overlap (a question ends while the Credits page loads),
   // and a newer one aborts the one before.
   const creditRead = useRef<AbortController>(undefined)
-  // Opening the panel starts a new session; it gets an id when its first question is sent.
-  const [current, setCurrent] = useState<Current>()
-  // The title the model wrote for the open session, once it has one.
-  const [modelTitle, setModelTitle] = useState<string>()
   const [saved, setSaved] = useState(0)
-  // How work still out is told it no longer counts. A signal stands for work that can be cancelled:
-  // the panel (`panel`), the question being answered (`question`), a read of the credits. An id
-  // stands for which one is newest, where a wait (on IndexedDB, say) can't be cut short: `chatId`,
-  // `opening`. After an await that took no signal, check the one that applies before setting state.
-  // Bumped when another session opens, so updates still arriving for the old one are dropped.
-  const chatId = useRef(0)
-  // Aborted by Stop, by every switch to another chat, and by the panel unmounting: the question
-  // stops, and one still waiting to be asked (see `send`) is not asked.
-  const question = useRef<AbortController>(undefined)
+  // How work still out is told it no longer counts. A chat's own work (its question, its saves) only
+  // ever updates its own ChatSession, and needs none of this. A signal stands for work that can be
+  // cancelled: the panel (`panel`), a read of the credits. An id stands for which one is newest, where
+  // a wait (on IndexedDB, say) can't be cut short: `opening`. After an await that took no signal,
+  // check the one that applies before setting state.
   // Bumped by every open() and by sending: a session still loading when either happens is not opened.
   const opening = useRef(0)
   // Sessions deleted in this panel; a save still waiting to write must not bring one back.
   const deleted = useRef(new Set<string>())
-  // The save in progress, if any; the next one waits for it.
-  const saving = useRef(Promise.resolve())
-  // The questions that have not ended, each with the session it was asked in: also one of a session
-  // the user has left, which was stopped then and ends on its own time (a Notion request already sent
-  // is not cut short). `ended` settles once its save, if it has one, is in `saving`.
-  const asking = useRef(new Set<{ session: Current; ended: Promise<void> }>())
+  // Chats the user left whose question has not ended, or has not been saved yet: a question of a chat
+  // the user left was stopped then, and ends on its own time (a Notion request already sent is not
+  // cut short). Reopening its session waits for it (see `open`).
+  const leaving = useRef(new Set<ChatSession>())
   const tokenRef = useRef(getToken)
   tokenRef.current = getToken
   // Which model answers: read once for this account, then changed on the settings page. Each
@@ -248,8 +194,12 @@ export function Chat({ userId }: { userId: string }) {
   const [mode, setMode] = useState<Mode>()
   const modeRef = useRef<Mode>(undefined)
   const modelRef = useRef<ModelSettings>(undefined)
-  const agentRef = useRef<CopilotAgent | null>(null)
-  agentRef.current ??= new CopilotAgent({
+  // Aborted once the panel has unmounted. Work that ends after that (a question the unmount stopped, a
+  // read or a save still out) sets no state: in the tests, it could land after the DOM is gone.
+  const panel = useRef(new AbortController())
+  const gone = () => panel.current.signal.aborted
+  // What every chat's agent is made with.
+  const [agentConfig] = useState((): AgentConfig => ({
     apiUrl: API_URL,
     getToken: () => tokenRef.current(),
     client: `notico/${chrome.runtime.getManifest().version}`,
@@ -258,8 +208,40 @@ export function Chat({ userId }: { userId: string }) {
     tools: TOOLS,
     meter: countNotionRequests,
     results: store,
-  })
-  const agent = agentRef.current
+  }))
+  // Reads the credits and starts a purchase; it asks nothing: each chat has an agent of its own.
+  const [account] = useState(() => new CopilotAgent(agentConfig))
+
+  /** A new chat, or `saved` to continue a saved session. */
+  function newChat(saved?: Session): ChatSession {
+    return new ChatSession(
+      {
+        store,
+        agent: agentConfig,
+        closed: panel.current.signal,
+        deleted: deleted.current,
+        model: agentConfig.model!,
+        mode: () => modeLoad,
+        spent: () => void readCredits(),
+        saved: () => {
+          if (!gone()) setSaved((n) => n + 1)
+        },
+        keyRejected: ({ service, key }) => changeModel((now) => keyRejected(now, service, key, Date.now())),
+        saveFailed: (message) => {
+          if (!gone()) setSaveFailure((was) => ({ message, key: (was?.key ?? 0) + 1 }))
+        },
+      },
+      saved,
+    )
+  }
+  // The open chat. Opening the panel starts a new one; it gets an id when its first question is sent.
+  const [chat, setChat] = useState(() => newChat())
+  // The same, as soon as another opens: open() checks whether one did while it waited.
+  const chatNow = useRef(chat)
+  const snapshot = useSyncExternalStore(chat.subscribe, chat.getSnapshot)
+  const { messages } = snapshot
+  const busy = snapshot.status !== 'ready'
+  const stopping = snapshot.status === 'stopping'
 
   // The Notion page open in the current tab, if one is, as the tab says: no Notion request.
   const [tabPage, setTabPage] = useState<OpenPage>()
@@ -414,11 +396,11 @@ export function Chat({ userId }: { userId: string }) {
     const origin = tabPage ? new URL(tabPage.url).origin : NOTION_ORIGIN
     // A session that can't be read has no pages to offer.
     const infos = (await store.list())
-      .filter((s) => s.id !== current?.id && !('unreadable' in s))
+      .filter((s) => s.id !== snapshot.id && !('unreadable' in s))
       .slice(0, RECENT_SESSIONS)
     const saved = await Promise.all(infos.map((info) => store.get(info.id).catch(() => undefined)))
     return [
-      ...pagesIn(agent.history(), origin),
+      ...pagesIn(chat.conversation(), origin),
       ...infos.flatMap((info, i) => {
         const session = saved[i]
         const messages = session && session !== 'unreadable' ? session.messages : []
@@ -508,18 +490,19 @@ export function Chat({ userId }: { userId: string }) {
     saveModelSettings(userId, settings).catch((err: unknown) => console.error('Could not save the model settings', err))
   }
 
-  // Aborted once the panel has unmounted. Work that ends after that (a question the unmount stopped, a
-  // read or a save still out) sets no state: in the tests, it could land after the DOM is gone.
-  const panel = useRef(new AbortController())
-  const gone = () => panel.current.signal.aborted
   useEffect(() => {
-    // Mounted again (StrictMode does that): the last unmount aborted the one before.
-    if (gone()) panel.current = new AbortController()
+    // Mounted again (StrictMode does that): the last unmount aborted the panel before, and left its chat.
+    if (gone()) {
+      panel.current = new AbortController()
+      const fresh = newChat()
+      chatNow.current = fresh
+      setChat(fresh)
+    }
     // The panel unmounts on sign-out; don't leave a question running tools in the background, nor
-    // let one still waiting to be asked (see `send`) start, nor a request for the credits or a title.
+    // let one still waiting to be asked start, nor a request for the credits or a title.
     return () => {
       panel.current.abort()
-      question.current?.abort()
+      chatNow.current.leave()
     }
   }, [])
 
@@ -538,7 +521,7 @@ export function Chat({ userId }: { userId: string }) {
     const signal = AbortSignal.any([read.signal, panel.current.signal])
     let next: CreditsState
     try {
-      next = { status: 'ready', credits: await agent.credits({ signal }) }
+      next = { status: 'ready', credits: await account.credits({ signal }) }
     } catch {
       next = { status: 'unavailable' }
     }
@@ -562,7 +545,7 @@ export function Chat({ userId }: { userId: string }) {
   /** Opens Stripe's Checkout for the pack of `quantity` in a new tab. */
   async function buyCredits(quantity: number) {
     track({ event: 'credits_buy_clicked', pack: quantity })
-    const url = await agent.checkout(quantity)
+    const url = await account.checkout(quantity)
     checkoutOpened.current = true
     await chrome.tabs.create({ url })
   }
@@ -598,18 +581,11 @@ export function Chat({ userId }: { userId: string }) {
     if (focusInput) inputRef.current?.focus()
   }, [focusInput])
 
-  async function send() {
+  function send() {
     const text = input.trim()
     if (!text || busy) return
 
-    const id = chatId.current
     opening.current++
-    const session = current ?? {
-      id: crypto.randomUUID(),
-      createdAt: Date.now(),
-      page: currentNotionPage().catch(() => undefined),
-    }
-    if (!current) setCurrent(session)
     // What the composer shows is what the question carries.
     const sentPages = chips.map((c) => c.page)
     // Those the question has room for: the others never reach the model, so the question doesn't show them.
@@ -619,334 +595,38 @@ export function Chat({ userId }: { userId: string }) {
     const earlier = messages.flatMap((m) => (m.role === 'user' ? (m.pages ?? []) : []))
     const context = carryPages(tabPage, removed !== undefined && !openPage, chosen, selections, earlier)
     setSelections([])
-    // The mode the composer showed; only right as the panel opens may it not be read yet.
-    const sentMode = modeRef.current
     setInput('')
     resetPicker()
-    setBusy(true)
-    setStopping(false)
-    // Where this question's reply goes in the list.
-    const reply = messages.length + 1
-    setMessages((ms) => [
-      ...ms,
-      {
-        role: 'user',
-        content: text,
-        ...(sentPages.length && { pages: sentPages }),
-        ...(sentSelections.length && { selections: sentSelections }),
-        ...(sentMode === 'read_only' && { readOnly: true }),
-      },
-      { role: 'assistant', parts: [] },
-    ])
-    const updateReply = (fn: (m: Extract<Shown, { role: 'assistant' }>) => Shown) => {
-      if (gone()) return
-      setMessages((ms) => {
-        const last = ms.at(-1)
-        if (chatId.current !== id || last?.role !== 'assistant') return ms
-        return [...ms.slice(0, -1), fn(last)]
-      })
-    }
-
-    const updateTools = (fn: (t: ShownTool) => ShownTool) =>
-      updateReply((m) => ({ ...m, parts: m.parts.map((p) => (p.type === 'tool' ? { ...p, tool: fn(p.tool) } : p)) }))
-
-    const setToolStatus = (toolId: string, status: ShownTool['status']) =>
-      updateReply((m) => {
-        const j = newestOpenCall(m.parts, toolId)
-        if (j < 0) return m
-        const part = m.parts[j] as Extract<Part, { type: 'tool' }>
-        const parts = [...m.parts]
-        parts[j] = { ...part, tool: { ...part.tool, status } }
-        return { ...m, parts }
-      })
-
-    // Calls this question asked about, so their answers can be dropped when it ends.
-    const asked = new Map<string, (allow: boolean) => void>()
-    const confirm: ConfirmTool = (call) =>
-      new Promise((resolve) => {
-        if (chatId.current !== id) return resolve(false)
-        // One answer per prompt: a double click, or Stop racing a click, must not touch a later
-        // prompt that reuses this id.
-        let answered = false
-        const answer = (allow: boolean) => {
-          if (answered) return
-          answered = true
-          pending.current.delete(call.id)
-          // Running again until the agent reports how the call ended (done, or declined).
-          setToolStatus(call.id, 'running')
-          resolve(allow)
-        }
-        asked.set(call.id, answer)
-        pending.current.set(call.id, answer)
-        // Normally the call is already shown as running. If not, show it now: the agent must never
-        // wait on a prompt nobody can see. Show the arguments the tool will run with.
-        const { preview, question, access } = call
-        updateReply((m) => {
-          const j = newestOpenCall(m.parts, call.id)
-          const parts = [...m.parts]
-          const tool: ShownTool = {
-            id: call.id,
-            name: call.name,
-            args: call.args,
-            status: 'confirm',
-            result: '',
-            preview,
-            question,
-            access,
-          }
-          if (j < 0) parts.push({ type: 'tool', tool })
-          else
-            parts[j] = {
-              type: 'tool',
-              tool: {
-                ...(parts[j] as Extract<Part, { type: 'tool' }>).tool,
-                args: call.args,
-                status: 'confirm',
-                preview,
-                question,
-                access,
-              },
-            }
-          return { ...m, parts }
-        })
-      })
-
-    // Tool calls of this question that ended, however they did.
-    let toolCalls = 0
-    const onUpdate = (u: AgentUpdate) => {
-      if (u.type === 'tool_end') {
-        toolCalls++
-        track({ event: 'tool_called', tool: u.name, ok: u.status === 'done', status: u.status, error_code: u.code })
-      }
-      if (u.type === 'text')
-        updateReply((m) => {
-          const last = m.parts.at(-1)
-          if (last?.type === 'text')
-            return { ...m, parts: [...m.parts.slice(0, -1), { ...last, text: last.text + u.delta }] }
-          return { ...m, parts: [...m.parts, { type: 'text', text: u.delta }] }
-        })
-      else if (u.type === 'tool_start')
-        updateReply((m) => {
-          // A prompt shown before the start event already stands for this call; don't show it twice.
-          const j = newestOpenCall(m.parts, u.id)
-          if (j >= 0 && (m.parts[j] as Extract<Part, { type: 'tool' }>).tool.status === 'confirm') return m
-          const tool: ShownTool = { id: u.id, name: u.name, args: u.args, status: 'running', result: '' }
-          return { ...m, parts: [...m.parts, { type: 'tool', tool }] }
-        })
-      else if (u.type === 'tool_ready')
-        updateReply((m) => {
-          const j = newestOpenCall(m.parts, u.id)
-          if (j < 0) return m
-          const part = m.parts[j] as Extract<Part, { type: 'tool' }>
-          const parts = [...m.parts]
-          parts[j] = { ...part, tool: { ...part.tool, args: u.args, preview: u.preview } }
-          return { ...m, parts }
-        })
-      else
-        updateReply((m) => {
-          const j = newestOpenCall(m.parts, u.id)
-          if (j < 0) return m
-          const part = m.parts[j] as Extract<Part, { type: 'tool' }>
-          const parts = [...m.parts]
-          parts[j] = { ...part, tool: { ...part.tool, status: u.status, result: u.result, details: u.details } }
-          return { ...m, parts }
-        })
-    }
-
-    // The conversation with this question in it, once it ended, if the question is part of it.
-    let conversation: HistoryMessage[] | undefined
-    let answered = false
-    let ended!: () => void
-    const unended = { session, ended: new Promise<void>((resolve) => (ended = resolve)) }
-    asking.current.add(unended)
-    const stop = new AbortController()
-    question.current = stop
-    try {
-      // A page search still out goes first: Notion is asked one thing at a time. If it was turned
-      // away, so is the question, which sends nothing; and so it does when the user stopped it, or
-      // went to another chat, meanwhile.
-      const turnedAway = await pages.settled()
-      if (stop.signal.aborted) {
-        updateReply((m) => ({ ...m, stopped: true }))
-        return
-      }
-      if (turnedAway) {
-        updateReply((m) => ({ ...m, error: turnedAway }))
-        return
-      }
-      const readOnly = (sentMode ?? (await modeLoad)) === 'read_only'
-      if (readOnly && !sentMode && !gone())
-        setMessages((ms) =>
-          chatId.current !== id
-            ? ms
-            : ms.map((m, i) => (i === reply - 1 && m.role === 'user' ? { ...m, readOnly: true } : m)),
-        )
-      // The key the question goes with, if it goes to the user's own model: a 401 marks that key only.
-      const askedWith = answering(modelRef.current ?? (await modelLoad))
-      // The service the question is asked of, as the agent reads it when the question starts.
-      const provider = askedWith?.service ?? 'hosted'
-      // The mode and the model may have been loading: a Stop, a switch, or the panel closing meanwhile
-      // stops the question too, before it counts as asked.
-      if (stop.signal.aborted) {
-        updateReply((m) => ({ ...m, stopped: true }))
-        return
-      }
-      track({ event: 'question_asked', provider, notion_tab: !!tabPage })
-      const result = await agent.ask(
-        text,
-        onUpdate,
-        confirm,
-        {
-          context,
-          pages: sentPages,
-          selections: sentSelections,
-          readOnly,
-          chat: session.id,
-        },
-        { signal: stop.signal },
-      )
-      track({
-        event: 'question_ended',
-        provider,
-        outcome: result.status,
-        error_code: result.status === 'error' ? result.code : undefined,
-        rounds: result.rounds,
-        tool_calls: toolCalls,
-      })
-      answered = result.status === 'done'
-      conversation = result.conversation
-      const { requests, tokens, model, cost } = result
-      updateReply((m) => ({ ...m, details: { requests, tokens, model, cost } }))
-      if (result.status === 'stopped') {
-        updateTools((t) => (t.status === 'running' || t.status === 'confirm' ? { ...t, status: 'stopped' } : t))
-        updateReply((m) => ({ ...m, stopped: true }))
-      } else if (result.status === 'error') {
-        updateReply((m) => ({ ...m, error: result.message, outOfCredits: result.code === 'out_of_credits' }))
-        // The provider turned the user's key away: Settings marks it, until a check passes or a new key is saved.
-        const by = result.model
-        if (result.code === KEY_REJECTED && by && by.service !== 'hosted' && askedWith?.service === by.service) {
-          const { key } = askedWith
-          changeModel((now) => keyRejected(now, by.service, key, Date.now()))
-        }
-      } else if (result.status === 'step_limit')
-        updateReply((m) => ({ ...m, note: `Stopped after ${result.steps} steps. Ask again to continue.` }))
-    } finally {
-      // A question can end without the panel answering, e.g. on unmount.
-      // Only this question's own answers: after a New chat, the next question may reuse an id.
-      for (const [callId, answer] of asked) if (pending.current.get(callId) === answer) pending.current.delete(callId)
-      // Whatever session is open now: the question spent this user's credits.
-      void readCredits()
-      // Another session that opened meanwhile already unlocked the composer, and the agent holds
-      // that session now.
-      const here = chatId.current === id && !gone()
-      if (here) setBusy(false)
-      // A question that failed or was stopped before using a tool leaves the conversation as it
-      // was; don't move the session to the top of the list for it. One that used tools keeps them,
-      // in the session it was asked in: leaving that session stopped the question like Stop does, and
-      // what it already did there must not be done again when the session is continued.
-      if (conversation) {
-        const messages = conversation
-        // One at a time: each save starts from the `updatedAt` the one before it stored.
-        saving.current = saving.current.then(() => save(session, messages, id, reply))
-        // Only for the open session: the agent asks the model it holds, which is that session's.
-        if (here && answered && !session.titled) {
-          session.titled = true
-          void title(session, messages)
-        }
-      }
-      asking.current.delete(unended)
-      ended()
-    }
-  }
-
-  /**
-   * Saves the session after a question; `chat` is the `chatId` it was open under and `reply` the
-   * place of the question's reply in the list. Never rejects.
-   */
-  async function save(session: Current, messages: HistoryMessage[], chat: number, reply: number) {
-    try {
-      const page = await session.page
-      const { id, createdAt, updatedAt: loaded } = session
-      if (deleted.current.has(id)) return
-      const saved = await store.save(
-        {
-          id,
-          createdAt,
-          page,
-          title: titleFor(messages),
-          // Always a new value, so another panel that loaded this session can tell it changed.
-          updatedAt: Math.max(Date.now(), (loaded ?? 0) + 1),
-          messages,
-        },
-        loaded,
-      )
-      session.id = saved.id
-      session.updatedAt = saved.updatedAt
-      if (gone()) return
-      // Also shows the session's new id, if it got one, to the list.
-      setSaved((n) => n + 1)
-      if (saved.id !== id && chatId.current === chat)
-        // On the reply that was saved; the user may have asked the next question already.
-        setMessages((ms) => ms.map((m, i) => (i === reply && m.role === 'assistant' ? { ...m, copied: true } : m)))
-    } catch (err) {
-      console.error('Could not save the session', err)
-    }
-  }
-
-  /**
-   * Asks the model for a short title once the session's first reply is in, and gives it to the
-   * session when one comes. Until then, or if none comes, the session keeps its first question as its
-   * title; nothing is shown either way. Never rejects.
-   */
-  async function title(session: Current, messages: HistoryMessage[]) {
-    const chat = chatId.current
-    // Not cut short by a switch to another chat, which still gets the title; only by the panel unmounting.
-    const written = await agent.title(messages, { chat: session.id, signal: panel.current.signal })
-    // On the hosted model the request spent credits; the read after the question was too early for it.
-    void readCredits()
-    if (!written) return
-    // After the save of the reply, which may give the session another id.
-    saving.current = saving.current.then(async () => {
-      try {
-        if (deleted.current.has(session.id)) return
-        if ((await store.retitle(session.id, written)) && !gone()) {
-          setSaved((n) => n + 1)
-          if (chatId.current === chat) setModelTitle(written)
-        }
-      } catch (err) {
-        console.error('Could not save the title', err)
-      }
+    void chat.ask({
+      text,
+      pages: sentPages,
+      selections: sentSelections,
+      context,
+      mode: modeRef.current,
+      notionTab: !!tabPage,
+      // A page search still out goes first (see ChatSession.ask).
+      searched: pages.settled(),
     })
   }
 
   /**
-   * Switches to a new session, or to a saved one. A question still being answered is stopped, as Stop
-   * stops it, and saved to the session it was asked in when it has ended (see `send`).
+   * Switches to a new session, or to a saved one. The chat left behind stops its question, as Stop
+   * stops it, and saves it to its session when it has ended (see ChatSession.leave).
    */
   function switchTo(session?: Session) {
-    chatId.current++
+    const was = chatNow.current
+    was.leave()
+    leaving.current.add(was)
+    void was.settled().then(() => leaving.current.delete(was))
     // A failed save's message belongs to the chat it was for.
     setSaveFailure(undefined)
-    question.current?.abort()
-    declineAll()
     // Another conversation: the agent must read pages again before it edits them.
     forgetReads()
-    void agent.reset(session?.messages)
+    const next = newChat(session)
+    chatNow.current = next
+    setChat(next)
     setRemoved(undefined)
     resetPicker()
-    setBusy(false)
-    setStopping(false)
-    setMessages(session ? toShown(session.messages) : [])
-    setModelTitle(session?.titledByModel ? session.title : undefined)
-    setCurrent(
-      session && {
-        id: session.id,
-        createdAt: session.createdAt,
-        page: Promise.resolve(session.page),
-        updatedAt: session.updatedAt,
-        titled: session.titledByModel,
-      },
-    )
     setView('chat')
   }
 
@@ -962,30 +642,28 @@ export function Chat({ userId }: { userId: string }) {
   /** Opens a saved session, unless it no longer exists or can't be read. */
   async function open(id: string): Promise<OpenResult> {
     // The open session is already on screen, maybe with a reply still coming in.
-    if (id === current?.id) {
+    const was = chatNow.current
+    if (id === was.id) {
       setView('chat')
       setFocusInput((n) => n + 1)
       return 'opened'
     }
-    const chat = chatId.current
     const token = ++opening.current
     // The user started a new chat, opened another session, or asked something meanwhile; that wins.
-    const overtaken = () => chatId.current !== chat || opening.current !== token
+    const overtaken = () => chatNow.current !== was || opening.current !== token
     // First see whether it can be opened at all: one that can't leaves the open chat, and a reply
-    // still coming in for it, as they are. Nothing of it reaches the chat or the agent.
+    // still coming in for it, as they are. Nothing of it reaches the chat.
     const found = await store.get(id)
     if (overtaken()) return 'opened'
     if (!found) return 'gone'
     if (found === 'unreadable') return 'unreadable'
     // Stop the reply now, not once the session has loaded again: it must not finish in the meantime.
-    declineAll()
-    question.current?.abort()
+    was.stop()
     // A question asked in this very session may still be ending (the user left it for a new chat, and
-    // comes back): it is saved to the session once it has, so wait for it. That save, like any of this
-    // panel's still waiting to write, would otherwise look like another window's later, and the
-    // session would open without the question. A question of any other session is not waited for.
-    await Promise.all([...asking.current].filter((q) => q.session.id === id).map((q) => q.ended))
-    await saving.current
+    // comes back): it is saved to the session once it has, so wait for it and its saves. They would
+    // otherwise look like another window's later, and the session would open without the question.
+    // A chat of any other session is not waited for.
+    await Promise.all([...leaving.current].filter((c) => c.id === id).map((c) => c.settled()))
     const session = await store.get(id)
     if (overtaken()) return 'opened'
     if (!session) return 'gone'
@@ -1000,15 +678,8 @@ export function Chat({ userId }: { userId: string }) {
     e.preventDefault()
     if (busy) {
       track({ event: 'reply_stopped' })
-      setStopping(true)
-      declineAll()
-      question.current?.abort()
+      chat.stop()
     } else send()
-  }
-
-  /** Stop, or switching to a new or saved session, answers every open question with no. */
-  function declineAll() {
-    for (const answer of [...pending.current.values()]) answer(false)
   }
 
   function onKeyDown(e: KeyboardEvent<HTMLTextAreaElement>) {
@@ -1033,7 +704,7 @@ export function Chat({ userId }: { userId: string }) {
   const covered = listOpen || pageOpen
   // The model's title, or until it has one the session's first question, on one line; the header cuts it to fit.
   const headerTitle =
-    modelTitle ??
+    snapshot.title ??
     messages
       .find((m) => m.role === 'user')
       ?.content.replace(/\s+/g, ' ')
@@ -1042,13 +713,8 @@ export function Chat({ userId }: { userId: string }) {
   // Saving goes under the page open in the current tab as the user saves (see savePage).
   const saveBlocked = tabPage && pageIdFromUrl(tabPage.url) ? undefined : OPEN_A_PAGE
 
-  // Saves of a reply, or of the whole chat, by the chat they were started in (`chatId`) and the
-  // reply's place in it: here, not in the reply's row, which shows the next chat's reply at the
-  // same place once the user switches. The chat's save is also by how many questions it held, so
-  // once another question is answered the chat can be saved again, with it.
   // Why the latest save failed, shown in a toast; a new failure shows anew, even with the same words.
   const [saveFailure, setSaveFailure] = useState<{ message: string; key: number }>()
-  const [saves, startSave] = useSaves((message) => setSaveFailure((was) => ({ message, key: (was?.key ?? 0) + 1 })))
   // The chat as a save takes it: without a reply still coming in.
   const ended = busy
     ? messages.slice(
@@ -1057,7 +723,10 @@ export function Chat({ userId }: { userId: string }) {
       )
     : messages
   const asked = ended.filter((m) => m.role === 'user').length
-  const saveKey = (what: number | 'chat') => `${chatId.current}:${what === 'chat' ? `chat:${asked}` : what}`
+  // Saves of a reply, or of the whole chat, to Notion are the chat's own, by the reply's place in it.
+  // The chat's save is also by how many questions it held, so once another question is answered the
+  // chat can be saved again, with it.
+  const saveKey = (what: number | 'chat') => (what === 'chat' ? `chat:${asked}` : String(what))
 
   /**
    * Saves the reply at `what` as a page titled with the chat's title and its question, or with
@@ -1067,12 +736,12 @@ export function Chat({ userId }: { userId: string }) {
   saveRef.current = (what) => {
     if (what === 'chat') {
       const turns = shownTurns(ended)
-      startSave(saveKey('chat'), () => savePage(chatTitle(headerTitle ?? ''), turns))
+      chat.saveToNotion(saveKey('chat'), () => savePage(chatTitle(headerTitle ?? ''), turns))
       return
     }
     const turn = shownTurns(messages.slice(0, what + 1)).at(-1)
     if (!turn) return
-    startSave(saveKey(what), () => savePage(replyTitle(headerTitle ?? '', turn.question), [turn]))
+    chat.saveToNotion(saveKey(what), () => savePage(replyTitle(headerTitle ?? '', turn.question), [turn]))
   }
   // One function for the panel's life, so a reply that hasn't changed is not drawn again.
   const saveToNotion = useCallback((what: number | 'chat') => saveRef.current!(what), [])
@@ -1092,7 +761,7 @@ export function Chat({ userId }: { userId: string }) {
             what="chat"
             className="icon-button"
             tipBelow
-            state={saves[saveKey('chat')]}
+            state={snapshot.saves[saveKey('chat')]}
             blocked={saveBlocked}
             onSave={() => saveToNotion('chat')}
           />
@@ -1167,7 +836,7 @@ export function Chat({ userId }: { userId: string }) {
                       <ToolCall
                         key={j}
                         tool={p.tool}
-                        onAnswer={p.tool.status === 'confirm' ? pending.current.get(p.tool.id) : undefined}
+                        onAnswer={p.tool.status === 'confirm' ? (allow) => chat.answer(p.tool.id, allow) : undefined}
                       />
                     ),
                   )}
@@ -1199,7 +868,7 @@ export function Chat({ userId }: { userId: string }) {
                     ended={!(busy && i === messages.length - 1)}
                     index={i}
                     saveBlocked={saveBlocked}
-                    replySave={saves[saveKey(i)]}
+                    replySave={snapshot.saves[saveKey(i)]}
                     onSave={saveToNotion}
                   />
                 </div>
@@ -1278,7 +947,7 @@ export function Chat({ userId }: { userId: string }) {
         {listOpen && (
           <Sessions
             store={store}
-            currentId={current?.id}
+            currentId={snapshot.id}
             saved={saved}
             onOpen={open}
             onClose={closeList}
@@ -1286,7 +955,7 @@ export function Chat({ userId }: { userId: string }) {
               track({ event: 'chat_deleted' })
               deleted.current.add(id)
               // The open session is being deleted: stop its reply. No save brings the session back.
-              if (id !== current?.id) return
+              if (id !== snapshot.id) return
               switchTo()
               setView('sessions')
             }}
@@ -1297,8 +966,8 @@ export function Chat({ userId }: { userId: string }) {
       {view === 'credits' && (
         <CreditsPage
           credits={credits}
-          grants={() => agent.creditGrants()}
-          buying={{ packs: () => agent.creditPacks(), buy: buyCredits }}
+          grants={() => account.creditGrants()}
+          buying={{ packs: () => account.creditPacks(), buy: buyCredits }}
           onClose={closePage}
         />
       )}
@@ -1343,46 +1012,6 @@ function shownSelection(selection: Selection): QuestionSelection {
   }
 }
 
-/** A saved conversation as the panel shows it: each question, then everything the agent did for it. */
-function toShown(history: HistoryMessage[]): Shown[] {
-  const shown: Shown[] = []
-  // Of the latest question, shown under its reply.
-  let details: QuestionDetails | undefined
-  for (const m of history) {
-    if (m.role === 'user') {
-      shown.push({
-        role: 'user',
-        content: m.text,
-        ...(m.pages?.length && { pages: m.pages }),
-        ...(m.selections?.length && { selections: m.selections }),
-        ...(m.readOnly && { readOnly: true }),
-      })
-      details = { requests: m.requests, tokens: m.tokens, model: m.model, cost: m.cost }
-      continue
-    }
-    let reply = shown.at(-1)
-    if (reply?.role !== 'assistant') shown.push((reply = { role: 'assistant', parts: [], details }))
-    if (m.role === 'assistant') {
-      for (const p of m.parts)
-        reply.parts.push(
-          p.type === 'text'
-            ? { type: 'text', text: p.text }
-            : { type: 'tool', tool: { id: p.id, name: p.name, args: p.args, status: 'running', result: '' } },
-        )
-    } else {
-      // Like a live reply: the result belongs to the newest call with its id that has none yet.
-      const part = reply.parts[newestOpenCall(reply.parts, m.id)]
-      if (part?.type === 'tool') part.tool = { ...part.tool, status: m.status, result: m.result, details: m.details }
-    }
-  }
-  // A call saved without its result is not running any more.
-  for (const m of shown)
-    if (m.role === 'assistant')
-      for (const p of m.parts)
-        if (p.type === 'tool' && p.tool.status === 'running') p.tool = { ...p.tool, status: 'stopped' }
-  return shown
-}
-
 /** The model is working with nothing to show yet: before its first words, or after its tools finished. */
 function waitingForModel(parts: Part[]): boolean {
   // Blank text is not shown, so it does not count as something on screen.
@@ -1393,26 +1022,10 @@ function waitingForModel(parts: Part[]): boolean {
   return !last || (last.type === 'tool' && last.tool.status !== 'running' && last.tool.status !== 'confirm')
 }
 
-/**
- * The index of the newest call with this id that has not ended, or -1. Ids are unique only within
- * one model reply, so a later step may reuse one.
- */
-function newestOpenCall(parts: Part[], id: string): number {
-  let j = parts.length - 1
-  while (j >= 0) {
-    const p = parts[j]
-    if (p.type === 'tool' && p.tool.id === id && (p.tool.status === 'running' || p.tool.status === 'confirm')) break
-    j--
-  }
-  return j
-}
-
 /** What a reply wrote, as the Markdown the model sent: its text parts, without the tools run between them. */
 function replyMarkdown(parts: Part[]): string {
   return parts.flatMap((p) => (p.type === 'text' && p.text.trim() ? [p.text.trim()] : [])).join('\n\n')
 }
-
-type Reply = Extract<Shown, { role: 'assistant' }>
 
 /**
  * The row under a reply that has ended: a button to copy what it wrote, what it touched in Notion,
@@ -1539,7 +1152,7 @@ function touched(reply: Reply): string {
 }
 
 /** The questions of `shown` with what their replies wrote and touched, as a saved page holds them. */
-function shownTurns(shown: Shown[]): SavedTurn[] {
+function shownTurns(shown: readonly Shown[]): SavedTurn[] {
   const turns: SavedTurn[] = []
   for (const m of shown) {
     if (m.role === 'user') turns.push({ question: m.content, markdown: '', read: 0, changed: [] })

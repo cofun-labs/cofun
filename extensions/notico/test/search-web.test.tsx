@@ -1,7 +1,7 @@
 // Searching the web (search_web), as a user meets it in the side panel: the worker searches through
 // the fake AI Gateway behind it.
 import '@testing-library/jest-dom/vitest'
-import { screen } from '@testing-library/react'
+import { screen, waitFor } from '@testing-library/react'
 import userEvent, { type UserEvent } from '@testing-library/user-event'
 import { afterEach, describe, expect, it } from 'vitest'
 import { usageCosting } from '../../../worker/test/fakes'
@@ -107,10 +107,13 @@ describe('searching the web', () => {
     await ask(user, 'Where does oolong tea come from?')
 
     // On the search's card, and as why the reply stopped.
-    const told = await screen.findAllByText(
-      /You have no credits left\. Your next 200 free credits arrive on .+, or you can buy credits\./,
+    await waitFor(() =>
+      expect(
+        screen.getAllByText(
+          /You have no credits left\. Your next 200 free credits arrive on .+, or you can buy credits\./,
+        ),
+      ).toHaveLength(2),
     )
-    expect(told).toHaveLength(2)
     expect(screen.queryByText('Never sent.')).not.toBeInTheDocument()
     expect(browser.ai.calls).toHaveLength(1)
     expect(browser.ai.searches).toEqual([])
