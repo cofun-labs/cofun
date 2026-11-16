@@ -22,6 +22,11 @@ const URL_CHARS = 2000
 const MATCHES = 20
 const LINE_CHARS = 300
 const QUERY_CHARS = 200
+/**
+ * How much of a question's tool results read_result adds parts to, at most: well under the 200,000
+ * characters the hosted model takes for a whole request, with the system prompt and the tools.
+ */
+const QUESTION_PART_CHARS = 120_000
 
 const en = (n: number) => n.toLocaleString('en-US')
 
@@ -35,11 +40,13 @@ function partStarts(text: string, size = RESULT_PART_CHARS): number[] {
   let at = 0
   while (text.length - at > size) {
     let end = at + size
-    const half = at + size / 2
-    const heading = text.lastIndexOf('\n#', end - 2)
-    const newline = text.lastIndexOf('\n', end - 1)
-    if (heading >= half) end = heading + 1
-    else if (newline >= half) end = newline + 1
+    const half = at + Math.ceil(size / 2)
+    // Only the second half is searched, so splitting a long text stays linear.
+    const second = text.slice(half, end)
+    const heading = second.lastIndexOf('\n#', second.length - 2)
+    const newline = second.lastIndexOf('\n')
+    if (heading >= 0) end = half + heading + 1
+    else if (newline >= 0) end = half + newline + 1
     else if (/[\uD800-\uDBFF]/.test(text[end - 1])) end--
     starts.push(end)
     at = end
@@ -62,7 +69,8 @@ const label = (kept: Pick<KeptResult, 'markdown'>) => (kept.markdown ? 'Content,
 
 /**
  * The Markdown headings of `text` with the part each starts in, as lines; the titles as JSON, so
- * they stay inside their quotes. None for plain text. Headings in code blocks are left out.
+ * they stay inside their quotes; none when the text has no headings. A plain read's text marks its
+ * headings too, and a render's is Markdown. Headings in code blocks are left out.
  */
 function outline(text: string, starts: number[]): string[] {
   const headings: string[] = []
@@ -71,12 +79,12 @@ function outline(text: string, starts: number[]): string[] {
   let offset = 0
   for (const line of text.split('\n')) {
     if (/^\s*(```|~~~)/.test(line)) fenced = !fenced
-    const heading = fenced ? null : /^(#{1,6})\s+(.+?)\s*#*\s*$/.exec(line)
+    const heading = fenced ? undefined : headingOf(line)
     if (heading) {
       total++
       if (headings.length < OUTLINE_HEADINGS)
         headings.push(
-          `- part ${partAt(starts, offset)}: ${heading[1]} ${JSON.stringify(clip(heading[2], HEADING_CHARS))}`,
+          `- part ${partAt(starts, offset)}: ${heading.marks} ${JSON.stringify(clip(heading.title, HEADING_CHARS))}`,
         )
     }
     offset += line.length + 1
@@ -87,6 +95,21 @@ function outline(text: string, starts: number[]): string[] {
     ...headings,
     ...(total > headings.length ? [`- and ${count(total - headings.length, 'more heading')}`] : []),
   ]
+}
+
+/**
+ * A Markdown heading line's marks and title, without the closing marks it may end with. Read by
+ * hand, not with one regex: a line from the page with a long run of spaces would make a regex
+ * backtrack for seconds, on the side panel's thread.
+ */
+function headingOf(line: string): { marks: string; title: string } | undefined {
+  const open = /^#{1,6}\s/.exec(line)
+  if (!open) return undefined
+  let title = line.slice(open[0].length).trim()
+  let end = title.length
+  while (end > 0 && title[end - 1] === '#') end--
+  if (end < title.length && (end === 0 || /\s/.test(title[end - 1]))) title = title.slice(0, end).trim()
+  return title ? { marks: open[0].trimEnd(), title } : undefined
 }
 
 /** The page a kept result is of, on one line: its title and URL as JSON. */
@@ -210,6 +233,15 @@ export const readResult = defineTool({
         `Result ${kept.id} has ${count(starts.length, 'part')}: give \`part\` from 1 to ${starts.length}.`,
       )
     const text = partText(kept.text, starts, part)
+    // A question's own tool results are all sent with each step, and the hosted model takes
+    // MAX_CONTENT_CHARS in all (worker/src/routes/chat-request.ts): past this, read no more parts.
+    const used = context?.questionChars() ?? 0
+    if (used + text.length > QUESTION_PART_CHARS)
+      throw new Error(
+        `Not read: this question already holds ${en(used)} characters of results, and another part would leave no ` +
+          'room for the answer. Answer from what you read, find what is missing with search_result, or tell the user ' +
+          'which part to read in a next question.',
+      )
     const from = starts[part - 1]
     const lines = [
       `Result ${kept.id}, of ${kept.tool}: ${pageOf(kept)}`,

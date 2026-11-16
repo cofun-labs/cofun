@@ -596,6 +596,13 @@ export class CopilotAgent {
           if (!this.namesResult(id)) return 'unknown'
           return (await this.config.results?.result(id)) ?? 'gone'
         },
+        questionChars: () => {
+          const messages = this.agent?.state.messages ?? []
+          const question = messages.findLastIndex((m) => m.role === 'user')
+          return messages
+            .slice(question + 1)
+            .reduce((n, m) => n + (m.role === 'toolResult' ? textOf(m.content).length : 0), 0)
+        },
       },
     }
   }

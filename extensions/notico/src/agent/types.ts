@@ -176,6 +176,8 @@ export interface ToolContext {
    * more (site data cleared).
    */
   kept: (id: string) => Promise<KeptResult | 'unknown' | 'gone'>
+  /** How many characters the question being answered holds in tool results so far. */
+  questionChars: () => number
 }
 
 /**
