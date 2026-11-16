@@ -1,14 +1,14 @@
 name: Release
 
-# Builds one extension from main for the Chrome Web Store and publishes a GitHub Release with the
-# zip, tagged <extension>-v<version>, whose body is that version's entry in the extension's
+# Builds one product's extension from main for the Chrome Web Store and publishes a GitHub Release
+# with the zip, tagged <product>-v<version>, whose body is that version's entry in the product's
 # CHANGELOG.md. Run by hand (Actions → Release → Run workflow); see
 # docs/release.md. The zip is uploaded to the store by hand.
 on:
   workflow_dispatch:
     inputs:
-      extension:
-        description: Extension to release (its folder in extension/products/)
+      product:
+        description: Product to release (its folder in extension/products/)
         type: choice
         required: true
         options:
@@ -18,13 +18,13 @@ on:
         type: string
         required: true
 
-run-name: Release ${{ inputs.extension }} ${{ inputs.version }}
+run-name: Release ${{ inputs.product }} ${{ inputs.version }}
 
 permissions: {}
 
-# One release of an extension at a time. A run is never cancelled halfway through tagging.
+# One release of a product at a time. A run is never cancelled halfway through tagging.
 concurrency:
-  group: release-${{ inputs.extension }}
+  group: release-${{ inputs.product }}
   cancel-in-progress: false
 
 jobs:
@@ -42,7 +42,7 @@ jobs:
       zip-sha256: ${{ steps.zip.outputs.sha256 }}
       notes: ${{ steps.inputs.outputs.notes }}
     env:
-      EXTENSION: ${{ inputs.extension }}
+      PRODUCT: ${{ inputs.product }}
       VERSION: ${{ inputs.version }}
 
     steps:
@@ -72,15 +72,15 @@ jobs:
             echo "::error::Version '$VERSION' is all zeros."
             exit 1
           fi
-          tag="$EXTENSION-v$VERSION"
+          tag="$PRODUCT-v$VERSION"
           if gh api "repos/$REPO/git/matching-refs/tags/$tag" --jq '.[].ref' | grep -qx "refs/tags/$tag"; then
             echo "::error::Tag $tag already exists: that version was released before."
             exit 1
           fi
           {
             echo "tag=$tag"
-            echo "zip=$EXTENSION-$VERSION.zip"
-            echo "notes=$EXTENSION-$VERSION-notes.md"
+            echo "zip=$PRODUCT-$VERSION.zip"
+            echo "notes=$PRODUCT-$VERSION-notes.md"
           } >>"$GITHUB_OUTPUT"
 
       - name: Checkout main
@@ -103,7 +103,7 @@ jobs:
           node-version: 24
           package-manager-cache: false
 
-      # The body of the GitHub Release: the version's entry in the extension's changelog, as it is
+      # The body of the GitHub Release: the version's entry in the product's changelog, as it is
       # in the commit being built, then the build line. The script fails when the changelog has no
       # entry for the version, which stops the run here, before anything is built or tagged.
       - name: Write the release notes
@@ -111,8 +111,8 @@ jobs:
           SHA: ${{ steps.commit.outputs.sha }}
           NOTES: ${{ steps.inputs.outputs.notes }}
         run: |
-          node scripts/release-notes.ts "extension/products/$EXTENSION/CHANGELOG.md" "$VERSION" >"$NOTES"
-          printf '\n---\n\nChrome Web Store build of %s %s, from %s.\n' "${EXTENSION^}" "$VERSION" "$SHA" >>"$NOTES"
+          node scripts/release-notes.ts "extension/products/$PRODUCT/CHANGELOG.md" "$VERSION" >"$NOTES"
+          printf '\n---\n\nChrome Web Store build of %s %s, from %s.\n' "${PRODUCT^}" "$VERSION" "$SHA" >>"$NOTES"
           cat "$NOTES"
 
       - name: Install dependencies
@@ -121,10 +121,10 @@ jobs:
       - name: Run checks
         run: pnpm check
 
-      # Replaces the build "Run checks" made: the version from the input, and no `key` (the store
-      # sets the ID) or `version_name` (which marks a development build) in the manifest.
-      # package.json keeps its development version. The extension package builds Notico, the one
-      # product it has an entry for so far.
+      # Replaces the product's build "Run checks" made (extension/dist/<product>/): the version from
+      # the input, and no `key` (the store sets the ID) or `version_name` (which marks a development
+      # build) in the manifest. package.json keeps its development version. PRODUCT (set for the
+      # job) builds only that product.
       - name: Build for the store
         env:
           CRX_STORE_BUILD: "1"
@@ -133,13 +133,14 @@ jobs:
 
       - name: Check the manifest
         run: |
-          manifest="extension/dist/manifest.json"
+          manifest="extension/dist/$PRODUCT/manifest.json"
           jq -e --arg v "$VERSION" '.version == $v and (has("key") | not) and (has("version_name") | not)' "$manifest" >/dev/null || {
             echo "::error::$manifest does not have version $VERSION, no key, and no version_name."
             exit 1
           }
 
-      # The extension's browser tests load extension/dist, the build just made.
+      # The browser tests are Notico's (extension/browser-test/), and load extension/dist/notico/:
+      # for Notico, the build just made.
       - name: Install Chromium
         run: pnpm --filter cofun-extension exec playwright install --no-shell chromium
 
@@ -157,7 +158,7 @@ jobs:
           ARCHIVE: ${{ steps.inputs.outputs.zip }}
           SHA: ${{ steps.commit.outputs.sha }}
         run: |
-          cd extension/dist
+          cd "extension/dist/$PRODUCT"
           zip -r -X -q "$GITHUB_WORKSPACE/$ARCHIVE" .
           ls -l "$GITHUB_WORKSPACE/$ARCHIVE"
           sha256=$(sha256sum "$GITHUB_WORKSPACE/$ARCHIVE" | cut -d' ' -f1)
@@ -196,7 +197,7 @@ jobs:
     env:
       GH_TOKEN: ${{ github.token }}
       REPO: ${{ github.repository }}
-      EXTENSION: ${{ inputs.extension }}
+      PRODUCT: ${{ inputs.product }}
       VERSION: ${{ inputs.version }}
       SHA: ${{ needs.build.outputs.sha }}
       TAG: ${{ needs.build.outputs.tag }}
@@ -234,5 +235,5 @@ jobs:
       - name: Publish the release
         run: |
           gh release create "$TAG" "$ARCHIVE" --repo "$REPO" --verify-tag \
-            --title "${EXTENSION^} $VERSION" \
+            --title "${PRODUCT^} $VERSION" \
             --notes-file "$NOTES"

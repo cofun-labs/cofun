@@ -4,7 +4,7 @@ How Cofun's extensions and the backend they share are built, and why. This file 
 
 Each Cofun extension is an AI side panel for one kind of page, published by itself and built from one package, `extension/`: the code every product shares in `extension/src/`, and each product's own files in `extension/products/<name>/` (Notico, for Notion, is the first). All of them call one Cloudflare Worker (`worker/`), which signs users in, checks who is asking, keeps their credits, passes the conversation to the model, and reads public web pages and searches the web for an extension. It never talks to Notion or acts as the user on any site. The agent and its tools run in the extension, next to the page they act on.
 
-The products share the side panel code (UI, agent, sign-in, settings, credits): what makes one the product it is (its name, its icon, its site, the tools its agent is offered, its system prompt) is a `Product` (`src/product.ts`) its folder defines, which the shared code reads and never imports. The extension's tests run its agent against the worker so the part that faces the worker cannot drift. One account and one balance of credits serve every extension.
+The products share the side panel code (UI, agent, sign-in, settings, credits): what makes one the product it is (its name, its icon, its site, the tools its agent is offered, its system prompt, the suggestions a chat starts with) is a `Product` (`src/product.ts`) its folder defines, which the shared code reads and never imports. Its site is optional: a product without one has no page of a site open in the tab, no site search in the page picker, no save, and no count of a site's requests, and a product whose tools change no data has no Read only. Each product is built on its own, from its own entries, into a build of its own (`dist/<name>/`), with a manifest made from its own config. The extension's tests run its agent against the worker so the part that faces the worker cannot drift. One account and one balance of credits serve every extension.
 
 ## Single source of truth
 
@@ -96,13 +96,20 @@ Clerk's own account management is not used: Notico needs Clerk only for who the 
 The folders, and the modules that hold a boundary; other files are found by their folder and name.
 
 ```
-extension/                the package every Chrome extension is built from (Notico's build today)
-  manifest.ts             builds manifest.json from the product's .env; a test pins its permissions and content security policy
+extension/                the package every Chrome extension is built from, one product at a time
+  vite.config.ts          builds the product PRODUCT names (Notico by default) into dist/<name>/; build.ts builds each
+  manifest.ts             builds manifest.json from the product's manifest config and .env; a test pins Notico's
+                          permissions and content security policy
   products/<name>/        one product's own files; never imports another product's
-    product.ts            the product: its name, its icon, the tools its agent is offered, its system prompt, and
-                          its site (what the panel asks of Notion, for Notico). The shared code (side panel, agent,
-                          usage data, sessions) imports nothing from products/, src/notion/, or the Notion tools:
-                          it reads them as a Product (src/product.ts), given by the entry points (a lint rule)
+    product.ts            the product: its name, its icon, the tools its agent is offered, its system prompt, the
+                          start of a chat, and its site, if it has one (what the panel asks of Notion, for Notico).
+                          The shared code (side panel, agent, usage data, sessions) imports nothing from products/,
+                          src/notion/, or the Notion tools: it reads them as a Product (src/product.ts), given by the
+                          product's entry points (a lint rule)
+    sidepanel.html, sidepanel.tsx, background.ts
+                          its entry points: the side panel's page and the script it runs (startPanel), and the
+                          service worker (startBackground)
+    manifest.ts           what its manifest says of it: name, description, toolbar title, its site's hosts
     brand.ts              who the product is, without its tools, for the service worker
     .env                  its public build config (.env.local, git-ignored, overrides it; keys/ holds a signing key)
     icons/, public/       its icon's source, and the PNGs the build publishes
@@ -111,13 +118,15 @@ extension/                the package every Chrome extension is built from (Noti
     use-cases/            the product's use cases (docs/bdd.md)
   src/agent/              the agent loop and its model providers; the only folder that imports pi, and the
                           only one besides the site layer that uses fetch (the worker, the user's own model)
-  src/tools/              the tools the agent runs; carry.ts holds what a question carries, for any product
+  src/tools/              the tools the agent runs; carry.ts holds what a question carries, for any product, and
+                          current.ts builds the tab tools for a product and its site, if it has one
   src/notion/             the site layer for Notion: imports nothing from the agent, tools, sessions, or UI
     api.ts                the only module that knows Notion's endpoints and request shapes
     tab.ts                runs requests in the user's Notion tab: the only use of site fetch, and with src/web/tab.ts of chrome.scripting
   src/web/tab.ts          the site layer for any other site: reads the page a tab shows, once the user allowed its site; sends no request
   src/web/markdown.ts     turns the HTML a tab gives into Markdown, in the side panel, in an inert document
-  src/sidepanel/          the React UI
+  src/sidepanel/          the React UI; main.tsx starts it for a product (startPanel), as src/background.ts starts
+                          the service worker (startBackground)
     panel.ts              the Panel: the open chat, the saved sessions, the credits, the model and the mode;
                           imports no React, which subscribes to it
     chat-session.ts       a ChatSession per chat: what it shows, its agent, its question, and its saves;
@@ -125,7 +134,7 @@ extension/                the package every Chrome extension is built from (Noti
   src/analytics.ts        usage events; the only module that imports the PostHog SDK
   src/zod.ts              the only module that imports zod
   test/                   the extension's client and UI tests, with fakes and sanitized fixtures
-  browser-test/           pnpm test:browser: the built extension in Chromium, the network answered by fakes (runs in CI)
+  browser-test/           pnpm test:browser: Notico's build in Chromium, the network answered by fakes (runs in CI)
   browser-driver/         pnpm browser-driver: drives the shared Chrome Canary for ai-e2e runs
 worker/                   the Cloudflare Worker every extension shares
   src/app.ts              the Hono app, composed from src/routes/; everything under /v1 is behind

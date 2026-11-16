@@ -1,7 +1,7 @@
 // What a question carries besides its words: the page open in the current tab, the pages and the
 // tabs on other sites the user added, and the text they selected, as the note the model is told with
-// the question; and the tabs on other sites the user can add. For any product: its site comes as a
-// parameter (see HomeSite in src/product.ts).
+// the question; and the tabs on other sites the user can add. For any product: its site, if it has
+// one, comes as a parameter (see HomeSite in src/product.ts).
 import { clip } from '../notion/comments'
 import type { HomeSite } from '../product'
 import type { Selection } from '../selection'
@@ -31,12 +31,18 @@ export interface OpenPage {
   run?: string
 }
 
+/**
+ * A page's title as the panel shows it; Notion shows a page without one as "Untitled". Not in a
+ * React module: a product's start of a chat (Product.start) names pages by it too.
+ */
+export const titleOf = (page: Pick<OpenPage, 'title'>) => page.title.trim() || 'Untitled'
+
 /** A page the page picker offers: one a search found also says where it sits in the workspace. */
 export interface FoundPage extends OpenPage {
   path?: string
 }
 
-/** A tab on another site the user can add to a question, and whether Notico may read its site already. */
+/** A tab on another site the user can add to a question, and whether the product may read its site already. */
 export interface WebTab {
   page: OpenPage & { web: true; tab: number; run: string }
   origin: string
@@ -44,16 +50,16 @@ export interface WebTab {
 }
 
 /**
- * The tabs of the side panel's window on other sites than the product's (`home`) that Notico could
- * read, as Chrome reports them: their titles and URLs only, which stay in the browser until the user
- * adds one to a question. A tab Notico can't read (a browser page, the Chrome Web Store, a PDF) is
- * left out, and an address open twice is listed once.
+ * The tabs of the side panel's window on other sites than the product's (`home`, when it has one)
+ * that the product named `product` could read, as Chrome reports them: their titles and URLs only,
+ * which stay in the browser until the user adds one to a question. A tab it can't read (a browser
+ * page, the Chrome Web Store, a PDF) is left out, and an address open twice is listed once.
  */
-export async function openWebTabs(home: Pick<HomeSite, 'shows'>): Promise<WebTab[]> {
+export async function openWebTabs(home: Pick<HomeSite, 'shows'> | undefined, product: string): Promise<WebTab[]> {
   const seen = new Set<string>()
   const tabs = (await chrome.tabs.query({ currentWindow: true })).flatMap((tab) => {
-    if (tab.id === undefined || !tab.url || home.shows(tab.url) || seen.has(tab.url)) return []
-    const site = readableSite(tab.url)
+    if (tab.id === undefined || !tab.url || home?.shows(tab.url) || seen.has(tab.url)) return []
+    const site = readableSite(tab.url, product)
     if ('reason' in site) return []
     seen.add(tab.url)
     return [{ title: tab.title ?? '', url: tab.url, tab: tab.id, origin: site.origin }]
@@ -102,13 +108,15 @@ export async function addedTabNow(page: Pick<OpenPage, 'tab' | 'run'>): Promise<
  * question, and the pages and tabs they added to it by hand; `earlier`, the pages the conversation's
  * earlier questions carried.
  * Returns the note the model is told with the question: which page is open, that the user left it
- * out, or that the current tab is not one of the site's pages; then the pages and the tabs added, if any.
+ * out, or that the current tab is not one of the site's pages (none of which a product without a
+ * site says); then the pages and the tabs added, if any, and the selections: empty when there is
+ * nothing to say.
  * Until the next question, its tools follow the same choice: a question sent while a page is off
  * never falls back on the open page, even one sent from another site whose user goes back to that
  * page while it runs; and read_tab reads only the tabs this question or an earlier one carried.
  */
 export function carryPages(
-  site: Pick<HomeSite, 'name' | 'pageId'>,
+  site: Pick<HomeSite, 'name' | 'pageId'> | undefined,
   memory: ToolMemory,
   page: OpenPage | undefined,
   removed: boolean,
@@ -123,9 +131,9 @@ export function carryPages(
   }
   const tabs = added.filter((p) => p.web)
   // The open page is named once, in its own note, also when the user added it by hand.
-  const open = page && !removed ? site.pageId(page.url) : undefined
-  const others = added.filter((p) => !p.web && (!open || site.pageId(p.url) !== open))
-  const notes = [openNote(site.name, page, removed, others.length + tabs.length > 0)]
+  const open = site && page && !removed ? site.pageId(page.url) : undefined
+  const others = added.filter((p) => !p.web && (!open || site?.pageId(p.url) !== open))
+  const notes = site ? [openNote(site.name, page, removed, others.length + tabs.length > 0)] : []
   if (others.length)
     notes.push(`[Pages the user added to this question: ${others.map((p) => pageNamed(p)).join('; ')}]`)
   if (tabs.length)

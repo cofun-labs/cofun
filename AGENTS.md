@@ -104,7 +104,7 @@ An extension's Chrome Web Store privacy policy is written in two parts: [PRIVACY
 
 [docs/architecture.md](docs/architecture.md) describes the design; these are the rules a change must keep.
 
-- **One extension package, one folder per product.** Every extension is built from `extension/`: the code the products share is in `extension/src/`, and each product's own files (its definition, brand, icon, build config, privacy page, store page, and use cases) in `extension/products/<name>/`. A product never imports another product.
+- **One extension package, one folder per product.** Every extension is built from `extension/`: the code the products share is in `extension/src/`, and each product's own files (its definition, brand, entries, manifest config, icon, build config, privacy page, store page, and use cases) in `extension/products/<name>/`. Each product is built on its own, into `extension/dist/<name>/`. A product never imports another product. A product may have no site of its own (`Product.site`): the shared code then offers nothing that needs one.
 - **A site is called only through its site layer**: one module knows the site's endpoints and request shapes (Notico's `src/notion/api.ts`), and requests run inside the user's tab for that site (`src/<site>/tab.ts`, `chrome.scripting` in the ISOLATED world), so they go to that tab's host with its session. Tools never `fetch` the site's URLs themselves. Never use `chrome.debugger`: it shows a permanent "debugging this browser" banner.
 - **Every worker route under `/v1` sits behind the session check** (`src/routes/session.ts`); `worker/test/session.test.ts` checks that each refuses a request without a session.
 - **Module boundaries are lint errors** in `.oxlintrc.json`, run by `pnpm check`. In the extension:
@@ -113,7 +113,7 @@ An extension's Chrome Web Store privacy policy is written in two parts: [PRIVACY
   - `zod` is imported only through `src/zod.ts` (the worker's through `worker/src/zod.ts`);
   - `posthog-js` is imported only in `src/analytics.ts`;
   - the site layer imports nothing from the agent, the tools, the sessions, or the side panel;
-  - the code every product shares (the side panel, the agent, usage data, sessions) imports nothing from `src/notion/`, the Notion tools, or a product's folder (`products/<name>/`): it reads them through `src/product.ts`, and only the entry points (`src/sidepanel/main.tsx`, `src/background.ts`) pick the product;
+  - the code every product shares (the side panel, the agent, usage data, sessions) imports nothing from `src/notion/`, the Notion tools, or a product's folder (`products/<name>/`): it reads them through `src/product.ts`, and only a product's own entry points (`products/<name>/sidepanel.tsx` and `background.ts`, which call `startPanel` and `startBackground`) pick the product;
   - the side panel's state outside React (`src/sidepanel/chat-session.ts`, one `ChatSession` per chat, and `src/sidepanel/panel.ts`, the `Panel`) imports no React and no component;
   - no product imports another product's folder.
 
@@ -164,7 +164,8 @@ How the fakes and test helpers fit together is in [Testing](docs/development.md#
 The full list is in [docs/development.md](docs/development.md).
 
 ```bash
-pnpm check        # lint, knip, format check, use case coverage, typecheck, extension build, and every package's tests
+pnpm check        # lint, knip, format check, use case coverage, typecheck, every product's build, and every package's tests
+pnpm build        # build each product into extension/dist/<name>/ (PRODUCT=notico pnpm build builds one)
 pnpm format:fix   # format all files
 pnpm test         # extension and worker tests, and the unit tests of scripts/
 pnpm media 367 demo.gif   # upload a PR's demo GIF or screenshots and print their URLs (maintainer's machine only)

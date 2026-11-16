@@ -1,11 +1,13 @@
 import { useEffect, useRef, useState } from 'react'
 import { Icon } from './icons'
+import { useProduct } from './product'
 import { filterSessions, type ListedSession, type SessionStore } from '../sessions'
 
 /** How opening a session went: `gone` when it no longer exists, `unreadable` when it can't be read. */
 export type OpenResult = 'opened' | 'gone' | 'unreadable'
 
-const UNREADABLE = "This chat was saved by an earlier version of Notico and can't be opened. You can delete it."
+const unreadable = (product: string) =>
+  `This chat was saved by an earlier version of ${product} and can't be opened. You can delete it.`
 
 /** The list of saved sessions: search by title, open, and delete. One that can't be read can only be deleted. */
 export function Sessions({
@@ -25,6 +27,7 @@ export function Sessions({
   /** Deletes the session. */
   onDelete: (id: string) => Promise<void>
 }) {
+  const { name: product } = useProduct()
   const [sessions, setSessions] = useState<ListedSession[] | null>(null)
   // Sessions whose details read fine but whose conversation didn't, found when the user opened them.
   const [unopenable, setUnopenable] = useState<ReadonlySet<string>>(new Set())
@@ -83,7 +86,7 @@ export function Sessions({
       if (result === 'opened') return
       if (result === 'unreadable') {
         setUnopenable((ids) => new Set(ids).add(id))
-        return setError(UNREADABLE)
+        return setError(unreadable(product))
       }
       await load()
       setError('This chat no longer exists.')

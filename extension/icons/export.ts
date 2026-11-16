@@ -1,11 +1,11 @@
-// pnpm icons: renders Notico's icon (extension/products/notico/icons/icon.svg) into the PNGs the manifest
-// lists (extension/products/notico/public/icons/), with Playwright's Chromium. Run it after editing the SVG and
-// commit the PNGs.
+// pnpm icons: renders a product's icon (extension/products/<name>/icons/icon.svg) into the PNGs the
+// manifest lists (extension/products/<name>/public/icons/), with Playwright's Chromium: PRODUCT's,
+// Notico's by default. Run it after editing the SVG and commit the PNGs.
 import { chromium } from '@playwright/test'
 import { mkdirSync, readFileSync } from 'node:fs'
 import path from 'node:path'
 
-const PRODUCT = path.resolve(import.meta.dirname, '../products/notico')
+const PRODUCT = path.resolve(import.meta.dirname, '../products', process.env.PRODUCT || 'notico')
 const OUT = path.join(PRODUCT, 'public/icons')
 /** The sizes extension/manifest.ts lists. */
 const SIZES = [16, 32, 48, 128]

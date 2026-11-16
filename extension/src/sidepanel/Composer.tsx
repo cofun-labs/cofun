@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState, type FormEvent, type Keyb
 import type { QuestionPage, QuestionSelection } from '../agent'
 import { track } from '../analytics'
 import type { Mode } from '../mode'
+import type { StartContext } from '../product'
 import { linkTo, watchSelections, type Selection } from '../selection'
 import { carryPages, selectionsCarried, type OpenPage } from '../tools'
 import type { ChatSession } from './chat-session'
@@ -11,7 +12,6 @@ import { AddMenu, pageKey, usePagePicker, type SearchStop } from './PagePicker'
 import { ComposerPages, type Chip } from './Pages'
 import type { Panel, PanelSnapshot } from './panel'
 import { SaveToast } from './Save'
-import type { StartContext } from './Suggestions'
 
 /** What the composer holds, made by useComposer and shown by Composer. */
 export type Composing = ReturnType<typeof useComposer>
@@ -114,7 +114,7 @@ export function useComposer({
     onQuery: picker?.from === 'menu' ? (query) => setPicker({ from: 'menu', query }) : undefined,
     thisPage: tabPage,
     added: new Set(chips.map((c) => keyOf(c.page))),
-    recent: () => panel.recentPages(tabPage ? new URL(tabPage.url).origin : site.origin),
+    recent: () => panel.recentPages(tabPage ? new URL(tabPage.url).origin : site?.origin),
     stop: searchStop,
     paused: busy,
     onStop: (stop) => {
@@ -364,7 +364,8 @@ export function Composer({
       />
       <div className="composer-tools">
         <AddMenu onAddPage={composer.openPicker} />
-        <ModeButton mode={mode ?? 'edit'} onChange={(next) => panel.changeMode(next)} />
+        {/* Without a tool that changes data, there is nothing for Read only to keep from changing. */}
+        {panel.changesData && <ModeButton mode={mode ?? 'edit'} onChange={(next) => panel.changeMode(next)} />}
         <span className="grow" />
         {/* The model chip leads the right side, next to send; the left is for what goes with the question. */}
         <ModelMenu

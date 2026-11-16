@@ -1,9 +1,10 @@
-// The extension's manifest (extension/manifest.ts). Chrome disables an installed extension on
+// Notico's manifest (extension/manifest.ts, with products/notico/manifest.ts). Chrome disables an installed extension on
 // update when the new version adds a permission warning, so the permissions are pinned here: a
 // change to them must change this file in the same pull request, where a reviewer sees it.
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import { buildManifest, type ManifestEnv } from '../manifest'
+import { MANIFEST } from '../products/notico/manifest'
 
 const NOTION = ['https://www.notion.so/*', 'https://app.notion.com/*']
 const CLERK_HOST = 'clerk.example.com'
@@ -11,7 +12,7 @@ const CLERK_HOST = 'clerk.example.com'
 const PUBLISHABLE_KEY = `pk_live_${Buffer.from(`${CLERK_HOST}$`).toString('base64').replace(/=+$/, '')}`
 
 function manifest(env: Partial<ManifestEnv> & Pick<ManifestEnv, 'VITE_CLERK_SYNC_HOST'>) {
-  return buildManifest({ VITE_CLERK_PUBLISHABLE_KEY: PUBLISHABLE_KEY, ...env }, '1.2.3')
+  return buildManifest(MANIFEST, { VITE_CLERK_PUBLISHABLE_KEY: PUBLISHABLE_KEY, ...env }, '1.2.3')
 }
 
 /** The committed build config of the hosted extension (extension/products/notico/.env), as `KEY=value` lines. */
@@ -30,7 +31,7 @@ describe('extension manifest', () => {
   // these (another Clerk instance, another sign-in host) must change this test too.
   it('[@no-uc:privacy] ships with exactly these permissions and host permissions', () => {
     const env = hostedEnv()
-    const json = buildManifest({ ...env, VITE_CLERK_SYNC_HOST: env.VITE_CLERK_SYNC_HOST! }, '1.2.3')
+    const json = buildManifest(MANIFEST, { ...env, VITE_CLERK_SYNC_HOST: env.VITE_CLERK_SYNC_HOST! }, '1.2.3')
     expect(json.permissions).toEqual([
       'sidePanel',
       'storage',
@@ -54,7 +55,7 @@ describe('extension manifest', () => {
   // adds a host must change this test and PRIVACY.md in the same pull request.
   it('[@no-uc:privacy] ships with a content security policy that allows only these hosts', () => {
     const env = hostedEnv()
-    const json = buildManifest({ ...env, VITE_CLERK_SYNC_HOST: env.VITE_CLERK_SYNC_HOST! }, '1.2.3')
+    const json = buildManifest(MANIFEST, { ...env, VITE_CLERK_SYNC_HOST: env.VITE_CLERK_SYNC_HOST! }, '1.2.3')
     expect(json.content_security_policy.extension_pages).toBe(
       "default-src 'self'; script-src 'self'; object-src 'self'; style-src 'self' 'unsafe-inline'; " +
         "connect-src 'self' https://api.cofun.cc https://clerk.cofun.cc https://openrouter.ai " +
@@ -186,8 +187,8 @@ describe('extension manifest', () => {
     const env = hostedEnv()
     const hosted = { ...env, VITE_CLERK_SYNC_HOST: env.VITE_CLERK_SYNC_HOST! }
     expect(env.CRX_PUBLIC_KEY).toBeTruthy()
-    const local = buildManifest(hosted, '1.2.3')
-    const store = buildManifest(hosted, '1.2.3', { store: true })
+    const local = buildManifest(MANIFEST, hosted, '1.2.3')
+    const store = buildManifest(MANIFEST, hosted, '1.2.3', { store: true })
     expect(local).toHaveProperty('key', env.CRX_PUBLIC_KEY)
     expect(local).toHaveProperty('version_name', '1.2.3 dev')
     expect(store).not.toHaveProperty('key')

@@ -14,8 +14,11 @@ export interface AgentConfig {
    * X-Cofun-Client, which records the call under that product.
    */
   client: string
-  /** The product's name and its site's, as the notes on the mode name them: `Notico` and `Notion`. */
-  names: { product: string; site: string }
+  /**
+   * The product's name and its site's, if it has one, as the notes on the mode and what the user is
+   * told name them: `Notico` and `Notion`.
+   */
+  names: { product: string; site?: string }
   /**
    * Which model answers, read as each question starts, so a change applies from the next question
    * on and the conversation goes on with it. The hosted model when not given.
@@ -170,6 +173,8 @@ export type AskOnCard = (question: CardQuestion) => Promise<boolean>
 
 /** What the agent gives a call while it runs. */
 export interface ToolContext {
+  /** The product's name, as what the model and the user are told name it: `Notico`. */
+  product: string
   /** Puts a question to the user on the call's card (see AskOnCard). */
   ask: AskOnCard
   /**

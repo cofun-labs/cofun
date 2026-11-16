@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite build --watch --mode development",
-    "build": "vite build",
+    "build": "node build.ts",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
     "test:browser": "playwright test",

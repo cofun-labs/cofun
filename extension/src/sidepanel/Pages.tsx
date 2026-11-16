@@ -1,10 +1,7 @@
 import type { MouseEvent } from 'react'
 import type { QuestionPage, QuestionSelection } from '../agent'
-import { addedTabNow } from '../tools'
+import { addedTabNow, titleOf } from '../tools'
 import { Icon } from './icons'
-
-/** A page's title as the panel shows it; Notion shows a page without one as "Untitled". */
-export const titleOf = (page: QuestionPage) => page.title.trim() || 'Untitled'
 
 /** A page's icon: a table for a database, a globe for a tab on another site, a page otherwise. */
 export function PageIcon({ page }: { page: QuestionPage }) {

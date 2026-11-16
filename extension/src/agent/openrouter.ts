@@ -67,15 +67,15 @@ const KeyInfo = z.object({
 /**
  * Whether OpenRouter takes `key`, from its key endpoint, which is free and asks no model. What the
  * key has left is shown when the key has a limit; OpenRouter tells the account's own balance only
- * to a management key.
+ * to a management key. `product` is the product's name, as a failure names it.
  */
-export async function checkOpenRouterKey(key: string, signal: AbortSignal): Promise<KeyCheck> {
+export async function checkOpenRouterKey(key: string, product: string, signal: AbortSignal): Promise<KeyCheck> {
   const res = await fetch(`${OPENROUTER}/key`, { headers: { authorization: `Bearer ${key}` }, signal })
   if (res.status === 401 || res.status === 403) return { status: 'rejected' }
   if (res.status === 402) return { status: 'no_money' }
   if (!res.ok) return { status: 'failed', message: `OpenRouter answered the check with HTTP ${res.status}.` }
   const info = KeyInfo.safeParse(await res.json().catch(() => undefined))
-  if (!info.success) return { status: 'failed', message: "OpenRouter's answer is not in the shape Notico expects." }
+  if (!info.success) return { status: 'failed', message: `OpenRouter's answer is not in the shape ${product} expects.` }
   const { limit_remaining: left, effective_budget: budget } = info.data.data
   if ((left != null && left <= 0) || (budget && budget.remaining_usd <= 0)) return { status: 'no_money' }
   return left == null ? { status: 'ok' } : { status: 'ok', balance: `US$${left.toFixed(2)} left on this key` }
@@ -119,19 +119,19 @@ const perMillion = (perToken: string) => {
   return Number.isFinite(n) && n >= 0 ? n : undefined
 }
 
-/** A model on OpenRouter's list, and whether it can use tools, which Notico needs. */
+/** A model on OpenRouter's list, and whether it can use tools, which the extension needs. */
 export type ListedModel = OwnModel & { tools: boolean }
 
 /**
  * The models on OpenRouter, as OpenRouter lists them now (see `leftOut` for what is left out), each
  * saying whether it can use tools. The list is public, so the key is not sent. An entry that is not
- * in the expected shape is skipped; a list that is not is an error.
+ * in the expected shape is skipped; a list that is not is an error, which names the product (`product`).
  */
-export async function openRouterModels(): Promise<ListedModel[]> {
+export async function openRouterModels(product: string): Promise<ListedModel[]> {
   const res = await fetch(`${OPENROUTER}/models`)
   if (!res.ok) throw new Error(`OpenRouter's model list could not be loaded (HTTP ${res.status}).`)
   const body = z.object({ data: z.array(z.unknown()) }).safeParse(await res.json().catch(() => undefined))
-  if (!body.success) throw new Error("OpenRouter's model list is not in the shape Notico expects.")
+  if (!body.success) throw new Error(`OpenRouter's model list is not in the shape ${product} expects.`)
   return body.data.data.flatMap((entry): ListedModel[] => {
     const listed = ListedModel.safeParse(entry)
     if (!listed.success) return []

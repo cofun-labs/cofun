@@ -128,8 +128,9 @@ export function reloadExtension(page: Target): Promise<string | undefined> {
 }
 
 /**
- * Builds this checkout's extension, with this checkout's extension/products/notico/.env, and puts it in `outDir`. It
- * is built next to `outDir` first and replaces it only if it would load as the same extension.
+ * Builds this checkout's Notico (PRODUCT=notico, with this checkout's extension/products/notico/.env)
+ * and puts it in `outDir`, the folder Chrome loads it from, wherever that is. It is built next to
+ * `outDir` first and replaces it only if it would load as the same extension.
  */
 export async function build(repoRoot: string, outDir: string): Promise<void> {
   if (!isAbsolute(outDir)) throw new Error(`Chrome reported a relative extension folder: ${outDir}`)
@@ -176,6 +177,8 @@ async function viteBuild(extension: string, outDir: string): Promise<void> {
   const code = await new Promise<number | null>((resolve, reject) => {
     const child = spawn('pnpm', ['exec', 'vite', 'build', '--outDir', outDir, '--emptyOutDir'], {
       cwd: extension,
+      // The driver drives Notico, whatever product the shell names.
+      env: { ...process.env, PRODUCT: 'notico' },
       stdio: ['ignore', 'pipe', 'pipe'],
     })
     child.stdout.on('data', (d: Buffer) => output.push(d))

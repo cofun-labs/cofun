@@ -3,6 +3,7 @@
 // the side panel, the agent, and usage data read it only as a Product (src/product.ts).
 import { NOTICO_BRAND } from './brand'
 import icon from './icons/icon.svg'
+import { start } from './start'
 import { LIMITED_STOP, NOTION_ERROR_CODES, NotionError } from '../../src/notion/api'
 import { isNotion, pageIdFromUrl, pageLink } from '../../src/notion/hosts'
 import { countNotionRequests } from '../../src/notion/tab'
@@ -10,10 +11,10 @@ import type { HomeSite, Product } from '../../src/product'
 import { LONG_RESULTS_PROMPT, NOTES_PROMPT, SELECTION_PROMPT, TABS_PROMPT, WEB_PAGES_PROMPT } from '../../src/prompt'
 import { DATA_LINE } from '../../src/tools'
 import { addComment, readComments } from '../../src/tools/comments'
-import { getCurrentTab, readCurrentTab, readTab } from '../../src/tools/current'
+import { tabTools } from '../../src/tools/current'
 import { createDatabase, queryDatabase, updateDatabaseSchema } from '../../src/tools/database'
 import { findPages, listPages, searchPages } from '../../src/tools/find'
-import { currentNotionPage, openNotionPages } from '../../src/tools/notion-tabs'
+import { currentNotionPage, needsAttachedPage, openNotionPages } from '../../src/tools/notion-tabs'
 import { duplicatePage, movePage, trashPage } from '../../src/tools/organize'
 import { getSelection, readPage } from '../../src/tools/read'
 import { readResult, searchResult } from '../../src/tools/results'
@@ -94,6 +95,15 @@ const NOTION: HomeSite = {
   save: { openAPage: OPEN_A_PAGE, replyTitle, chatTitle, page: savePage },
 }
 
+// A Notion tab is read with read_page, and get_current_tab and read_current_tab follow the open page
+// the user took off the question.
+const { getCurrentTab, readCurrentTab, readTab } = tabTools(NOTICO_BRAND.name, {
+  name: NOTION.name,
+  shows: NOTION.shows,
+  readWith: 'read_page',
+  needsAttachedPage,
+})
+
 export const notico: Product = {
   ...NOTICO_BRAND,
   icon,
@@ -125,4 +135,5 @@ export const notico: Product = {
   ],
   prompt: PROMPT,
   errorCodes: NOTION_ERROR_CODES,
+  start,
 }

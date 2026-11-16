@@ -9,9 +9,9 @@ pnpm knip         # unused files, exports, and dependencies (knip.jsonc lists wh
 pnpm use-cases    # every ✅ api-test scenario has a test; warns about other mismatches (docs/bdd.md)
 pnpm format:fix   # format all files
 pnpm test         # extension and worker tests, and the unit tests of scripts/
-pnpm build        # build the extension (Notico) into extension/dist
-pnpm test:browser # build the extension and run its browser tests in Chromium (first: pnpm --filter cofun-extension exec playwright install chromium)
-pnpm icons        # export extension/products/notico/icons/icon.svg into extension/products/notico/public/icons (needs the same Chromium); commit the PNGs
+pnpm build        # build each product into extension/dist/<name>/ (PRODUCT=notico pnpm build builds one)
+pnpm test:browser # build the products and run Notico's browser tests in Chromium (first: pnpm --filter cofun-extension exec playwright install chromium)
+pnpm icons        # export a product's icons/icon.svg into its public/icons (PRODUCT, Notico's by default; needs the same Chromium); commit the PNGs
 pnpm media 367 demo.gif   # upload a PR's demo GIF or screenshots and print their URLs (maintainer's machine only; see PR media)
 pnpm browser-driver --help   # drive the shared Chrome Canary for ai-e2e runs (maintainer's machine only)
 ```
@@ -94,10 +94,12 @@ Per-request usage records go to the Analytics Engine dataset `cofun_api_usage` (
 ## Notico
 
 ```bash
-pnpm build        # builds the extension; Notico's build goes to extension/dist
+pnpm build        # builds every product; Notico's build goes to extension/dist/notico
 ```
 
-In `chrome://extensions`, turn on Developer mode, click "Load unpacked", and pick `extension/dist`.
+In `chrome://extensions`, turn on Developer mode, click "Load unpacked", and pick `extension/dist/notico`.
+
+Each product is built on its own, from its folder in `extension/products/<name>/`: its entries (`sidepanel.html`, the `sidepanel.tsx` it runs, and `background.ts`, the service worker), its manifest config (`manifest.ts`: its name, description, toolbar title, and site hosts), its build config (`.env`), and its icons (`public/`). `vite build` builds the one product `PRODUCT` names, Notico by default, into `extension/dist/<name>/`; `pnpm build` runs it for each product. `pnpm dev` (in `extension/`) rebuilds one product as files change.
 
 `extension/products/notico/.env` holds the public build config, each value explained by its comment; override values in `extension/products/notico/.env.local`. A development build sends no usage events to PostHog; to try them from a local build, build it with `POSTHOG_IN_DEV=1`. The PostHog project keeps **Discard client IP data** on, which the privacy pages rely on. Don't run PostHog's setup wizard on this repository: it adds the SDK with defaults that send page titles and URLs.
 
@@ -113,7 +115,7 @@ shasum -a 256 extension/products/notico/keys/pub.der | cut -c1-32 | tr '0-9a-f' 
 
 The Clerk instance needs the Native API on; a production one also needs its DNS records, its own OAuth credentials, and its JWT public key as the worker's `CLERK_JWT_KEY` ([Clerk's Sync Host guide](https://clerk.com/docs/guides/sessions/sync-host)). When the sign-in page's registrable domain has more than two labels (such as `example.co.uk`), set it as `CLERK_COOKIE_DOMAIN` in `.env.local` (`manifest.ts`).
 
-Another extension goes through the same steps in its own folder. To release it, add its folder name to the `extension` choices in [`release.yml`](../.github/workflows/release.yml), once it has browser tests (`browser-test/` and a `test:browser` script).
+Another extension goes through the same steps in its own folder. To release it, add its folder name to the `product` choices in [`release.yml`](../.github/workflows/release.yml), once it has browser tests (`extension/browser-test/` holds Notico's).
 
 ## Releases
 

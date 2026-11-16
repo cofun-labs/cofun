@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useId, useState, useSyncExternalStore, type RefObject } from 'react'
+import { memo, useMemo, useEffect, useId, useState, useSyncExternalStore, type RefObject } from 'react'
 import type { QuestionCost, QuestionDetails } from '../agent'
 import { track } from '../analytics'
 import type { SaveAsPage, SavedTurn } from '../product'
@@ -11,7 +11,6 @@ import { HOSTED } from './Model'
 import { SentPages } from './Pages'
 import { SaveButton } from './Save'
 import { ToolCall } from './ToolCall'
-import { useProduct } from './product'
 
 /**
  * The open chat's questions and replies. The one part of the panel a streamed reply draws again:
@@ -19,11 +18,14 @@ import { useProduct } from './product'
  */
 export const MessageList = memo(function MessageList({
   chat,
+  save,
   saveBlocked,
   onBuyCredits,
   scrollRef,
 }: {
   chat: ChatSession
+  /** How a reply is saved: a product without a site saves none. */
+  save?: SaveAsPage
   /** Why a reply can't be saved to Notion now, if it can't. */
   saveBlocked?: string
   onBuyCredits: () => void
@@ -38,8 +40,7 @@ export const MessageList = memo(function MessageList({
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight })
   }, [messages])
   // One function for the chat's life, so a reply that hasn't changed is not drawn again.
-  const { save } = useProduct().site
-  const onSave = useCallback((what: number) => saveToNotion(chat, what, save), [chat, save])
+  const onSave = useMemo(() => save && ((what: number) => saveToNotion(chat, what, save)), [chat, save])
 
   return messages.map((m, i) =>
     m.role === 'user' ? (
@@ -196,7 +197,8 @@ const ReplyFoot = memo(function ReplyFoot({
   saveBlocked?: string
   /** How saving this reply to Notion is going. */
   replySave?: SaveState
-  onSave: (what: number) => void
+  /** Saves the reply; a product without a site saves none. */
+  onSave?: (what: number) => void
 }) {
   if (!ended) return null
   const text = replyMarkdown(reply.parts)
@@ -210,7 +212,7 @@ const ReplyFoot = memo(function ReplyFoot({
   return (
     <div className="reply-foot">
       {text && <CopyButton text={text} />}
-      {text && (
+      {text && onSave && (
         <SaveButton
           what="reply"
           className="reply-action"

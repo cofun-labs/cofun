@@ -1,8 +1,10 @@
-// What makes this extension the product it is, as the code every product could share reads it: the
-// side panel, the agent, and usage data take these from the product's definition (products/notico/product.ts)
-// instead of naming Notico, Notion, or the Notion tools themselves. A lint rule (.oxlintrc.json)
-// keeps that code from importing the site layer or the site's own tools.
+// What makes this extension the product it is, as the code every product shares reads it: the
+// side panel, the agent, and usage data take these from the product's definition
+// (products/<name>/product.ts) instead of naming a product, its site, or its site's tools
+// themselves. A lint rule (.oxlintrc.json) keeps that code from importing the site layer or the
+// site's own tools.
 import type { AgentConfig } from './agent'
+import type { Mode } from './mode'
 import type { Tool } from './tool'
 import type { FoundPage, OpenPage } from './tools/carry'
 import type { ToolMemory } from './tools/memory'
@@ -24,14 +26,58 @@ export interface Product extends ProductBrand {
    * the Cofun mark alone means Cofun.
    */
   readonly icon: string
-  /** The site it works on. */
-  readonly site: HomeSite
-  /** The tools its agent is offered. */
+  /**
+   * The site it works on, if it has one. Without one, the panel shows no page of a site open in the
+   * tab, the questions carry no note about it, the page picker offers the open tabs and recent pages
+   * only, and nothing is saved or counted.
+   */
+  readonly site?: HomeSite
+  /**
+   * The tools its agent is offered. Without one that changes data (`changesData`), the panel offers
+   * no Read only.
+   */
   readonly tools: Tool[]
   /** The system prompt, built from the parts every product shares (src/prompt.ts) and its own. */
   readonly prompt: string
   /** The codes its site's errors carry: usage data sends one for a failed tool only when it is listed here. */
   readonly errorCodes: readonly string[]
+  /**
+   * What the start of a chat says and suggests, from what the composer already knows: fixed words,
+   * with no model call and no request to the site.
+   */
+  start(context: StartContext): ChatStartSet
+}
+
+/** Where the chat starts: what the next question goes with, as the composer shows it. */
+export interface StartContext {
+  /** The site's page open in the tab, while it goes with the question. */
+  page?: OpenPage
+  /** The tab shows the site's page, which the user took off the question. */
+  removed: boolean
+  /** The user added pages to the question by hand. */
+  added: boolean
+  mode?: Mode
+}
+
+/**
+ * The icons a suggestion may show, by their names in the side panel's icons (src/sidepanel/icons.tsx),
+ * where the panel's typecheck finds each one. Listed here, not taken from there: this module is read
+ * where there is no JSX (the worker's tests).
+ */
+type SuggestionIcon = 'search' | 'list' | 'question' | 'summary' | 'clock' | 'columns' | 'plus' | 'todo' | 'pencil'
+
+/** A suggestion: its words, with a "…" where the user goes on typing if they finish it. */
+export interface Suggestion {
+  icon: SuggestionIcon
+  text: string
+}
+
+/** What the start of a chat shows: a heading, a line on what the product can do here, suggestions, and a note. */
+export interface ChatStartSet {
+  heading: string
+  line: string
+  suggestions: Suggestion[]
+  note?: string
 }
 
 /**

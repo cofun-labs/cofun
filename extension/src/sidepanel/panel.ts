@@ -54,8 +54,13 @@ export class Panel {
   private readonly listeners = new Set<() => void>()
   /** What every chat's agent is made with. */
   private readonly agent: AgentConfig
-  /** The site the product works on: its pages, links to them, and what the panel asks of it. */
-  readonly site: HomeSite
+  /** The site the product works on, if it has one: its pages, links to them, and what the panel asks of it. */
+  readonly site?: HomeSite
+  /**
+   * Whether the product's agent has a tool that changes data: only then is there a Read only to
+   * switch to, and without one every question is asked in Edit.
+   */
+  readonly changesData: boolean
   /** Reads the credits and starts a purchase; it asks nothing: each chat has an agent of its own. */
   private readonly account: CopilotAgent
   // Read once for this account, then changed here or by another window's panel. Each question reads
@@ -92,23 +97,26 @@ export class Panel {
   ) {
     this.store = new SessionStore(userId)
     this.site = product.site
+    this.changesData = product.tools.some((tool) => tool.changesData)
     this.modelLoad = loadModelSettings(userId).catch((err: unknown) => {
       console.error('Could not read the model settings', err)
       return HOSTED_ONLY
     })
-    this.modeLoad = loadMode(userId).catch((err: unknown): Mode => {
-      console.error('Could not read the mode', err)
-      return 'edit'
-    })
+    this.modeLoad = this.changesData
+      ? loadMode(userId).catch((err: unknown): Mode => {
+          console.error('Could not read the mode', err)
+          return 'edit'
+        })
+      : Promise.resolve('edit')
     this.agent = {
       apiUrl: API_URL,
       getToken,
       client: `${product.id}/${chrome.runtime.getManifest().version}`,
-      names: { product: product.name, site: product.site.name },
+      names: { product: product.name, ...(product.site && { site: product.site.name }) },
       model: this.readModel,
       systemPrompt: product.prompt,
       tools: product.tools,
-      meter: product.site.meter,
+      ...(product.site && { meter: product.site.meter }),
       results: this.store,
     }
     this.account = new CopilotAgent(this.agent)
@@ -144,7 +152,7 @@ export class Panel {
     })
     // What another window's panel saves, such as a key it removed or the mode, applies here too.
     const unwatchModel = watchModelSettings(this.userId, (model) => this.update({ model }))
-    const unwatchMode = watchMode(this.userId, (mode) => this.update({ mode }))
+    const unwatchMode = this.changesData ? watchMode(this.userId, (mode) => this.update({ mode })) : () => {}
     void this.readCredits()
     // After Checkout was opened, the user pays in another tab and comes back to the panel: each time
     // the panel gets the focus again, it reads the credits, so a purchase shows without a reload. The
@@ -222,9 +230,10 @@ export class Panel {
 
   /**
    * Pages recent chats went with, newest first, from what is saved on the device: the open chat's,
-   * then those of the latest saved sessions, each with the page it started on. Links are made on `origin`.
+   * then those of the latest saved sessions, each with the page it started on. Links are made on
+   * `origin`, the site's host the user is on (see pagesIn).
    */
-  async recentPages(origin: string): Promise<QuestionPage[]> {
+  async recentPages(origin: string | undefined): Promise<QuestionPage[]> {
     const chat = this.snapshot.chat
     // A session that can't be read has no pages to offer.
     const infos = (await this.store.list())

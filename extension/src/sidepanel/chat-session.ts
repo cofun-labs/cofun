@@ -88,8 +88,8 @@ export interface ChatSnapshot {
 /** What every chat of one side panel shares, given by the panel. */
 export interface ChatPanel {
   store: SessionStore
-  /** The site the product works on: a new session records the page of it open as it starts. */
-  site: Pick<HomeSite, 'currentPage'>
+  /** The site the product works on, if it has one: a new session records the page of it open as it starts. */
+  site?: Pick<HomeSite, 'currentPage'>
   /** Each chat asks its own agent, made with this. */
   agent: AgentConfig
   /** Aborted when the panel unmounts: it cuts a title request short, which leaving the chat does not. */
@@ -233,7 +233,7 @@ export class ChatSession {
     const session = (this.session ??= {
       id: crypto.randomUUID(),
       createdAt: Date.now(),
-      page: this.panel.site.currentPage().catch(() => undefined),
+      page: this.panel.site ? this.panel.site.currentPage().catch(() => undefined) : Promise.resolve(undefined),
     })
     if (this.snapshot.id !== session.id) this.update({ id: session.id })
     // Where this question's reply goes in the list.

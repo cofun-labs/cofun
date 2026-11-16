@@ -1,9 +1,11 @@
+// Starts the side panel of a product: its page (products/<name>/sidepanel.html) runs the product's
+// script, which calls startPanel with the product. Nothing here names a product.
 import { ClerkProvider, Show, useAuth } from '@clerk/chrome-extension'
 import { StrictMode, useEffect } from 'react'
 import { createRoot } from 'react-dom/client'
 import { configureAnalytics, identify, track } from '../analytics'
 import { clerkSyncHost } from '../clerk'
-import { notico } from '../../products/notico/product'
+import type { Product } from '../product'
 import { Chat } from './Chat'
 import { Header } from './Header'
 import { Mark } from './icons'
@@ -41,21 +43,24 @@ async function readSignedIn(name: string): Promise<boolean> {
   return cookies.some((cookie) => cookie.value !== '' && cookie.value !== '0')
 }
 
-uatCookieName()
-  .then(async (name) => {
-    let signedIn = await readSignedIn(name)
-    let reloadTimer: number | undefined
-    chrome.cookies.onChanged.addListener(({ cookie }) => {
-      if (cookie.name !== name) return
-      clearTimeout(reloadTimer)
-      reloadTimer = window.setTimeout(async () => {
-        const now = await readSignedIn(name)
-        if (now !== signedIn) location.reload()
-        signedIn = now
-      }, 500)
+/** Reloads the panel when the sign-in page signs in or out (see above). */
+function followSignIn() {
+  uatCookieName()
+    .then(async (name) => {
+      let signedIn = await readSignedIn(name)
+      let reloadTimer: number | undefined
+      chrome.cookies.onChanged.addListener(({ cookie }) => {
+        if (cookie.name !== name) return
+        clearTimeout(reloadTimer)
+        reloadTimer = window.setTimeout(async () => {
+          const now = await readSignedIn(name)
+          if (now !== signedIn) location.reload()
+          signedIn = now
+        }, 500)
+      })
     })
-  })
-  .catch(console.error)
+    .catch(console.error)
+}
 
 function openSignIn() {
   track({ event: 'sign_in_opened' })
@@ -83,7 +88,7 @@ function Identity() {
   return null
 }
 
-function App() {
+function App({ product }: { product: Product }) {
   return (
     <ClerkProvider
       publishableKey={PUBLISHABLE_KEY}
@@ -103,7 +108,7 @@ function App() {
         <Header />
         <div className="signed-out">
           <Mark className="hero-mark" />
-          <p>Sign in to use Notico.</p>
+          <p>Sign in to use {product.name}.</p>
           <button className="primary" onClick={openSignIn}>
             Sign in
           </button>
@@ -111,7 +116,7 @@ function App() {
       </Show>
 
       <Show when="signed-in">
-        <ProductContext value={notico}>
+        <ProductContext value={product}>
           <SignedInChat />
         </ProductContext>
       </Show>
@@ -119,16 +124,20 @@ function App() {
   )
 }
 
-configureAnalytics(notico)
-track({ event: 'panel_opened' })
-const root = createRoot(document.getElementById('root')!)
-root.render(
-  <StrictMode>
-    <App />
-  </StrictMode>,
-)
-// Closing the panel ends its work: a question still running stops with the chat (see Chat).
-// Not when the page is only kept for later (`persisted`): it would come back with nothing in it.
-window.addEventListener('pagehide', (event) => {
-  if (!event.persisted) root.unmount()
-})
+/** Starts the side panel of `product` in the page's #root. */
+export function startPanel(product: Product): void {
+  followSignIn()
+  configureAnalytics(product)
+  track({ event: 'panel_opened' })
+  const root = createRoot(document.getElementById('root')!)
+  root.render(
+    <StrictMode>
+      <App product={product} />
+    </StrictMode>,
+  )
+  // Closing the panel ends its work: a question still running stops with the chat (see Chat).
+  // Not when the page is only kept for later (`persisted`): it would come back with nothing in it.
+  window.addEventListener('pagehide', (event) => {
+    if (!event.persisted) root.unmount()
+  })
+}

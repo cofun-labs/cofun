@@ -1,8 +1,8 @@
-// Reads the page in one of the user's tabs on another site than Notion (the current tab, or a tab
-// the user added to the conversation): its main content, as the tab shows it, in the tab itself
-// (chrome.scripting, ISOLATED world). So it reaches what the user sees there, pages behind their
-// sign-in and content drawn by scripts included, and sends no request of its own. Notico may read a
-// site only once the user allowed it (optional host permissions, one origin at a time), which only a
+// Reads the page in one of the user's tabs on another site than the product's own (the current tab,
+// or a tab the user added to the conversation): its main content, as the tab shows it, in the tab
+// itself (chrome.scripting, ISOLATED world). So it reaches what the user sees there, pages behind
+// their sign-in and content drawn by scripts included, and sends no request of its own. The product
+// may read a site only once the user allowed it (optional host permissions, one origin at a time), which only a
 // click in the side panel can grant. It also reads the text selected in a tab, on any site, when the
 // user sends it with the context menu.
 
@@ -24,39 +24,40 @@ export type TabWhere = 'the current tab' | 'the tab'
 const cap = (where: TabWhere) => where[0].toUpperCase() + where.slice(1)
 
 /**
- * The origin of the site a tab shows, when Notico can be allowed to read it; otherwise why not, in
- * words for the model.
+ * The origin of the site a tab shows, when `product` (the product's name) can be allowed to read
+ * it; otherwise why not, in words for the model.
  */
 export function readableSite(
   url: string,
+  product: string,
   where: TabWhere = 'the current tab',
 ): { origin: string } | { reason: string } {
   let parsed: URL
   try {
     parsed = new URL(url)
   } catch {
-    return { reason: `${cap(where)}'s address is not one Notico can read.` }
+    return { reason: `${cap(where)}'s address is not one ${product} can read.` }
   }
   if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:')
     return {
       reason:
         `${cap(where)} shows a ${parsed.protocol.replace(/:$/, '')}: page (a browser or extension page, or a ` +
-        "local file), which Notico can't read: only web pages on http or https.",
+        `local file), which ${product} can't read: only web pages on http or https.`,
     }
   if (STORE.some((store) => store.test(url)))
     return { reason: `${cap(where)} is the Chrome Web Store: Chrome doesn't let extensions read it.` }
   // Told before the user is asked to allow the site; a PDF at another address shows only once read.
-  if (/\.pdf$/i.test(parsed.pathname)) return { reason: pdf(where) }
+  if (/\.pdf$/i.test(parsed.pathname)) return { reason: pdf(where, product) }
   return { origin: parsed.origin }
 }
 
-/** Whether the user allowed Notico to read the site with this origin. */
+/** Whether the user allowed the extension to read the site with this origin. */
 export async function mayRead(origin: string): Promise<boolean> {
   return chrome.permissions.contains({ origins: [pattern(origin)] })
 }
 
 /**
- * Asks Chrome to let Notico read the site with this origin, which shows the user Chrome's own
+ * Asks Chrome to let the extension read the site with this origin, which shows the user Chrome's own
  * prompt. Chrome takes the request only during a user's click or key press: call it in its handler,
  * before anything is awaited. Resolves true once Chrome granted it.
  */
@@ -64,7 +65,8 @@ export function allowSite(origin: string): Promise<boolean> {
   return chrome.permissions.request({ origins: [pattern(origin)] })
 }
 
-const pdf = (where: TabWhere) => `${cap(where)} shows a PDF in Chrome's viewer, which Notico can't read.`
+const pdf = (where: TabWhere, product: string) =>
+  `${cap(where)} shows a PDF in Chrome's viewer, which ${product} can't read.`
 
 /**
  * What the script in the tab returns. The page can reach the DOM it reads (a named element can
@@ -105,12 +107,13 @@ const MAX_HTML_CHARS = 10_000_000
 /**
  * Reads up to `maxChars` of the main content of the page in the tab, as Markdown; the tab must
  * still be on `origin`. Otherwise, or when the tab can't be read, says why, for the model, naming
- * the tab as `where`.
+ * the tab as `where` and the product as `product`.
  */
 export async function readPage(
   tabId: number,
   origin: string,
   maxChars: number,
+  product: string,
   where: TabWhere = 'the current tab',
 ): Promise<TabPage | { reason: string }> {
   let raw: unknown
@@ -127,7 +130,7 @@ export async function readPage(
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
     if (/Cannot access contents of|Missing host permission/i.test(message))
-      return { reason: `Chrome did not let Notico read the page in ${where}: it may have gone to another site.` }
+      return { reason: `Chrome did not let ${product} read the page in ${where}: it may have gone to another site.` }
     if (/error page|chrome-error/i.test(message))
       return { reason: `${cap(where)} shows an error page: there is nothing to read.` }
     return { reason: `Could not read the page in ${where}: ${message}` }
@@ -137,11 +140,11 @@ export async function readPage(
   const parsed = PageResult.safeParse(raw)
   if (!parsed.success) return { reason: `The page in ${where} could not be read: it did not give its text.` }
   const result = parsed.data
-  if ('pdf' in result) return { reason: pdf(where) }
+  if ('pdf' in result) return { reason: pdf(where, product) }
   const text = pageMarkdown(result.html)
   if (!text && result.frames)
     return {
-      reason: `The page in ${where} shows no text of its own: its content is in frames, which Notico doesn't read.`,
+      reason: `The page in ${where} shows no text of its own: its content is in frames, which ${product} doesn't read.`,
     }
   // The tab may have moved on since it was looked at, to a site the user allowed for something else.
   if (new URL(result.url).origin !== origin) return { reason: `${cap(where)} went to another site while it was read.` }

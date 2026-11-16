@@ -1,9 +1,9 @@
 # Releases
 
-An extension is released from `main` by the [Release workflow](../.github/workflows/release.yml), run by hand: Actions → Release → Run workflow, on `main`, with the extension and the version. Or:
+An extension is released from `main` by the [Release workflow](../.github/workflows/release.yml), run by hand: Actions → Release → Run workflow, on `main`, with the product (its folder in `extension/products/`) and the version. Or:
 
 ```bash
-gh workflow run release.yml --ref main -f extension=notico -f version=0.2.0
+gh workflow run release.yml --ref main -f product=notico -f version=0.2.0
 ```
 
 Before running it, add the version to the extension's `CHANGELOG.md` ([Notico's](../extension/products/notico/CHANGELOG.md)) through a PR: what changed for users since the last release (`git log <name>-v<last version>..main`), worker changes they notice included, written for them rather than copied from commit titles. The workflow uses that entry (the text under the `## <version> (<date>)` heading) as the body of the GitHub Release, and stops before it builds or tags anything if the changelog has no entry for the version.
@@ -12,7 +12,7 @@ The same PR brings the extension's store page up to date for that version: what 
 
 The version goes into the manifest and is not committed: `package.json` keeps the development version 0.0.1, below every released one, and the tags record what was released. It must be 1 to 4 dot-separated integers from 0 to 65535, without leading zeros, and higher than the version last uploaded to the store, which rejects any other.
 
-The workflow needs no secrets. Merge nothing into `main` while it runs: it tags the commit it built, and when `main` had moved on with a change to a workflow file, GitHub refused the tag (403) and the run had to start again. It checks out `main`, runs `pnpm check`, builds the extension for the store, runs its browser tests against that build, and zips `extension/dist`. Then it tags the commit `<name>-v<version>` (for example `notico-v0.2.0`) and publishes a GitHub Release with the changelog entry as its body and the zip (`<name>-<version>.zip`) attached; the zip is also kept as the run's artifact. A tag that exists already stops the run, so each version is built once. A release records that a version was built and released, whether or not the store accepts it: a version the store turns down is followed by the next one. To throw a run's result away before anyone uses it, delete the release and its tag:
+The workflow needs no secrets. Merge nothing into `main` while it runs: it tags the commit it built, and when `main` had moved on with a change to a workflow file, GitHub refused the tag (403) and the run had to start again. It checks out `main`, runs `pnpm check`, builds the product for the store, runs the browser tests against that build (Notico's, for now the only ones), and zips the product's build, `extension/dist/<name>/`. Then it tags the commit `<name>-v<version>` (for example `notico-v0.2.0`) and publishes a GitHub Release with the changelog entry as its body and the zip (`<name>-<version>.zip`) attached; the zip is also kept as the run's artifact. A tag that exists already stops the run, so each version is built once. A release records that a version was built and released, whether or not the store accepts it: a version the store turns down is followed by the next one. To throw a run's result away before anyone uses it, delete the release and its tag:
 
 ```bash
 gh release delete notico-v0.2.0 --cleanup-tag

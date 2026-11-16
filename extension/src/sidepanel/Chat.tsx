@@ -1,7 +1,7 @@
 import { useAuth } from '@clerk/chrome-extension'
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
 import { track } from '../analytics'
-import type { HomeSite } from '../product'
+import type { HomeSite, SaveAsPage } from '../product'
 import type { OpenPage } from '../tools'
 import { AccountMenu } from './Account'
 import type { ChatSession } from './chat-session'
@@ -97,12 +97,14 @@ export function Chat({ userId }: { userId: string }) {
   const pageOpen = view === 'credits' || view === 'settings'
   // The chat stays on screen, or mounted, behind the session list and the pages, out of reach until they close.
   const covered = listOpen || pageOpen
-  // Saving goes under the page open in the current tab as the user saves (see SaveAsPage).
-  const saveBlocked = tabPage && product.site.pageId(tabPage.url) ? undefined : product.site.save.openAPage
+  // Saving goes under the page open in the current tab as the user saves (see SaveAsPage); a product
+  // without a site saves nothing.
+  const save = product.site?.save
+  const saveBlocked = tabPage && product.site?.pageId(tabPage.url) ? undefined : save?.openAPage
 
   return (
     <>
-      <ChatHeader chat={chat} inert={pageOpen} canSave={!covered} saveBlocked={saveBlocked}>
+      <ChatHeader chat={chat} inert={pageOpen} save={covered ? undefined : save} saveBlocked={saveBlocked}>
         <button
           ref={listButtonRef}
           className="icon-button tip-below"
@@ -136,7 +138,13 @@ export function Chat({ userId }: { userId: string }) {
       <div className="stage">
         <main id="messages" ref={listRef} inert={covered}>
           {empty && <ChatStart context={{ ...composer.start, mode }} onPick={composer.fill} />}
-          <MessageList chat={chat} saveBlocked={saveBlocked} onBuyCredits={openCredits} scrollRef={listRef} />
+          <MessageList
+            chat={chat}
+            save={save}
+            saveBlocked={saveBlocked}
+            onBuyCredits={openCredits}
+            scrollRef={listRef}
+          />
         </main>
 
         <ModelNote settings={model} />
@@ -185,18 +193,20 @@ export function Chat({ userId }: { userId: string }) {
 function ChatHeader({
   chat,
   inert,
-  canSave,
+  save,
   saveBlocked,
   children,
 }: {
   chat: ChatSession
   inert: boolean
-  /** Not while the list or a page covers the chat: what it saves, and its toast, are behind them. */
-  canSave: boolean
+  /**
+   * How the chat is saved, when it can be: not for a product without a site, nor while the list or a
+   * page covers the chat (what it saves, and its toast, are behind them).
+   */
+  save?: SaveAsPage
   saveBlocked?: string
   children: ReactNode
 }) {
-  const { save } = useProduct().site
   // The header cuts the title to fit.
   const title = useSyncExternalStore(chat.subscribe, () => chatHeading(chat.getSnapshot()))
   const asked = useSyncExternalStore(chat.subscribe, () => askedIn(chat.getSnapshot()))
@@ -206,7 +216,7 @@ function ChatHeader({
   })
   return (
     <Header title={title || <span className="untitled">New chat</span>} inert={inert}>
-      {asked > 0 && canSave && (
+      {asked > 0 && save && (
         <SaveButton
           what="chat"
           className="icon-button"
@@ -224,11 +234,13 @@ function ChatHeader({
 /**
  * The site's page open in the current tab, if one is, as the tab says: no request to the site. Follows the
  * tab: switching tabs, the tab going to another page or renaming it, or Chrome swapping in a
- * prerendered tab for it (onReplaced, which fires neither of the others).
+ * prerendered tab for it (onReplaced, which fires neither of the others). A product without a site
+ * has no page of it open, and follows nothing.
  */
-function useTabPage(site: Pick<HomeSite, 'currentPage'>): OpenPage | undefined {
+function useTabPage(site: Pick<HomeSite, 'currentPage'> | undefined): OpenPage | undefined {
   const [tabPage, setTabPage] = useState<OpenPage>()
   useEffect(() => {
+    if (!site) return
     let reads = 0
     const read = () => {
       const n = ++reads

@@ -16,6 +16,7 @@ export {
   addedTabNow,
   SELECTION_END,
   selectionsCarried,
+  titleOf,
   type FoundPage,
   type OpenPage,
   type WebTab,
@@ -45,21 +46,21 @@ export function touchedBy(calls: { details?: ToolDetails }[]): {
 }
 
 /**
- * The pages a saved conversation went with, newest first: the pages its questions carried, and the
- * one page each call that worked read or changed, when its card names that page (see the site's
- * `namesTouchedPage`). Read from the conversation alone: no request to the site. `origin` is the
- * site's host links are made on.
+ * The pages a saved conversation went with, newest first: the pages its questions carried, and,
+ * for a product with a site, the one page each call that worked read or changed, when its card
+ * names that page (see the site's `namesTouchedPage`). Read from the conversation alone: no request
+ * to the site. `origin` is the site's host links are made on.
  */
 export function pagesIn(
-  site: Pick<HomeSite, 'namesTouchedPage' | 'pageLink'>,
+  site: Pick<HomeSite, 'namesTouchedPage' | 'pageLink'> | undefined,
   messages: HistoryMessage[],
-  origin: string,
+  origin: string | undefined,
 ): OpenPage[] {
   const pages: OpenPage[] = []
   for (const m of messages) {
     // A tab on another site is not the site's page: it may be gone, and is added again from the tabs open.
     if (m.role === 'user') pages.push(...(m.pages ?? []).filter((p) => !p.web))
-    else if (m.role === 'tool' && m.status === 'done' && site.namesTouchedPage.has(m.name)) {
+    else if (site && origin && m.role === 'tool' && m.status === 'done' && site.namesTouchedPage.has(m.name)) {
       const ids = [...new Set([...(m.details?.read ?? []), ...(m.details?.changed ?? [])])]
       const title = ids.length === 1 ? m.details?.name : undefined
       if (title) pages.push({ title, url: site.pageLink(origin, ids[0]) })

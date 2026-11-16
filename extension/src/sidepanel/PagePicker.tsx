@@ -1,19 +1,21 @@
 import { useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
 import type { QuestionPage } from '../agent'
 import type { HomeSite } from '../product'
-import { openWebTabs, type FoundPage, type ToolMemory, type WebTab } from '../tools'
+import { openWebTabs, titleOf, type FoundPage, type ToolMemory, type WebTab } from '../tools'
 import { allowSite } from '../web/tab'
 import { Icon } from './icons'
 import { useMenu } from './menu'
-import { PageIcon, titleOf } from './Pages'
+import { PageIcon } from './Pages'
 import { useProduct } from './product'
 
 /**
  * Which page a URL shows: the id of the site's page, or the URL when it has none (say, Notion's
- * home); for a tab on another site, which tab it is.
+ * home) or the product has no site; for a tab on another site, which tab it is.
  */
-export const pageKey = (site: Pick<HomeSite, 'pageId'>, page: { url: string; web?: true; tab?: number }): string =>
-  page.web ? `tab ${page.tab ?? page.url}` : (site.pageId(page.url) ?? page.url)
+export const pageKey = (
+  site: Pick<HomeSite, 'pageId'> | undefined,
+  page: { url: string; web?: true; tab?: number },
+): string => (page.web ? `tab ${page.tab ?? page.url}` : (site?.pageId(page.url) ?? page.url))
 
 /** How long typing must pause before the workspace is searched. */
 const SEARCH_DELAY_MS = 300
@@ -85,7 +87,8 @@ export interface PickerOptions {
  * The page picker the composer opens with `@` or "+": the page open in the tab, the other Notion
  * pages open in tabs, the window's tabs on other sites, and recent pages, all without a Notion
  * request; and, once at least two
- * characters are typed and typing pauses, Notion's search of the workspace. One search at a time:
+ * characters are typed and typing pauses, Notion's search of the workspace. A product without a
+ * site offers the window's tabs and recent pages only, and searches nothing. One search at a time:
  * a newer query replaces one still waiting before it is sent, and waits for one already sent, so
  * none run side by side. Nothing is retried: a search Notion turns away, or one that fails, stops
  * the search for the rest of the question, and the other groups stay usable.
@@ -121,10 +124,10 @@ export function usePagePicker({
    */
   titleMatch: boolean
 } {
-  const { site } = useProduct()
+  const { site, name: product } = useProduct()
   const id = useId()
   const [local, setLocal] = useState<{ tabs: QuestionPage[]; web: WebTab[]; recent: QuestionPage[] }>()
-  // A tab on another site whose site Chrome is asked to let Notico read, or was refused, by host.
+  // A tab on another site whose site Chrome is asked to let the product read, or was refused, by host.
   const [access, setAccess] = useState<{ host: string; asking: boolean }>()
   const onPickRef = useRef(onPick)
   onPickRef.current = onPick
@@ -147,8 +150,8 @@ export function usePagePicker({
     if (!open) return setLocal(undefined)
     let live = true
     void Promise.all([
-      site.openPages().catch(() => []),
-      openWebTabs(site).catch((err: unknown) => {
+      site?.openPages().catch(() => []) ?? [],
+      openWebTabs(site, product).catch((err: unknown) => {
         console.error('Could not read the open tabs', err)
         return []
       }),
@@ -161,7 +164,7 @@ export function usePagePicker({
   }, [open])
 
   /**
-   * Adds a page; a tab on a site Notico may not read yet only once Chrome let it, asked in the
+   * Adds a page; a tab on a site the product may not read yet only once Chrome let it, asked in the
    * click or key press that picked it (Chrome takes the request only then), so nothing is awaited
    * before. A tab whose site the user refused is not added.
    */
@@ -185,13 +188,14 @@ export function usePagePicker({
   }
 
   const words = query.trim()
-  const searchable = !!thisPage && site.pageId(thisPage.url) !== undefined
+  const searchable = !!site && !!thisPage && site.pageId(thisPage.url) !== undefined
   const longEnough = Array.from(words).length >= SEARCH_MIN
   const wantsSearch = open && !stop && !paused && longEnough
 
   async function run() {
     const sending = wanted.current
-    if (sending === undefined) return
+    // Only a product with a site searches (see `searchable`).
+    if (sending === undefined || !site) return
     // One at a time: the search running sends the newest query when it ends. Until then, this query
     // is being searched for, as far as the user is concerned.
     if (running.current) return setSearch({ status: 'searching' })
@@ -230,7 +234,8 @@ export function usePagePicker({
     timer.current = undefined
     if (!wantsSearch || !searchable) {
       wanted.current = undefined
-      setSearch({ status: wantsSearch ? 'no-page' : 'off' })
+      // Without a site there is no workspace to search, so nothing says to open one of its pages.
+      setSearch({ status: wantsSearch && site ? 'no-page' : 'off' })
       return
     }
     wanted.current = words
@@ -264,7 +269,8 @@ export function usePagePicker({
   }
   if (thisPage && searchable && matches(thisPage)) add('This page', thisPage)
   for (const page of local?.tabs ?? []) if (matches(page)) add('Open tabs', page)
-  for (const { page } of local?.web ?? []) if (matches(page)) add('Other sites', page)
+  // Without a site of the product's, every tab is on some other site: they are the open tabs.
+  for (const { page } of local?.web ?? []) if (matches(page)) add(site ? 'Other sites' : 'Open tabs', page)
   let recents = 0
   for (const page of local?.recent ?? []) {
     if (recents === RECENT_MAX || !matches(page) || seen.has(pageKey(site, page))) continue
@@ -325,9 +331,9 @@ export function usePagePicker({
   })
   const state = access
     ? access.asking
-      ? `Allow Notico to read ${access.host} in Chrome’s prompt to add its tab.`
-      : `Notico may not read ${access.host}, so its tab wasn’t added.`
-    : stateLine(search, stop, paused && longEnough, words, options.length > 0, !!local)
+      ? `Allow ${product} to read ${access.host} in Chrome’s prompt to add its tab.`
+      : `${product} may not read ${access.host}, so its tab wasn’t added.`
+    : stateLine(search, stop, paused && longEnough, words, options.length > 0, !!local, !!site)
 
   const element = (
     <div className="page-picker">
@@ -412,7 +418,10 @@ export function usePagePicker({
   }
 }
 
-/** What the picker says under its pages: how the workspace search stands, or that nothing matches. */
+/**
+ * What the picker says under its pages: how the workspace search stands, or that nothing matches.
+ * `searches`: the product has a site whose workspace the picker searches.
+ */
 function stateLine(
   search: Search,
   stop: SearchStop | undefined,
@@ -420,6 +429,7 @@ function stateLine(
   words: string,
   any: boolean,
   loaded: boolean,
+  searches: boolean,
 ): string | undefined {
   if (stop?.busy) return 'Notion is busy, so your workspace isn’t searched for this question. Try again in a moment.'
   if (stop) return `Couldn’t search your workspace: ${stop.message}`
@@ -428,7 +438,8 @@ function stateLine(
   if (search.status === 'searching') return 'Searching your workspace…'
   if (search.status === 'no-page' && !any) return 'Open a Notion page to search its workspace.'
   if (any || !loaded) return undefined
-  return words ? `No pages match “${words}”.` : 'Type to search your workspace.'
+  if (words) return `No pages match “${words}”.`
+  return searches ? 'Type to search your workspace.' : 'No open tabs to add.'
 }
 
 /** The site of a tab, as the picker shows it under its title. */

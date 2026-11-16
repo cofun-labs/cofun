@@ -41,14 +41,14 @@ const OPEN_IN_TAB =
   'Ask the user to open the page in a tab and ask again there: read_current_tab reads the page they are on.'
 
 /** What the model is told when the worker could not read the page, by the worker's code. */
-function refusal(err: WebError, render: boolean): string {
+function refusal(err: WebError, render: boolean, product: string): string {
   switch (err.code) {
     case 'not_allowed':
-      return `Notico can't read this address: ${err.message}.`
+      return `${product} can't read this address: ${err.message}.`
     case 'no_access':
-      return `The site would not show the page to Notico, which reads public pages only: it may need a sign-in. ${OPEN_IN_TAB}`
+      return `The site would not show the page to ${product}, which reads public pages only: it may need a sign-in. ${OPEN_IN_TAB}`
     case 'bot_check':
-      return `The site asked for a bot check, so Notico could not read the page. ${OPEN_IN_TAB}`
+      return `The site asked for a bot check, so ${product} could not read the page. ${OPEN_IN_TAB}`
     case 'no_text':
       return render
         ? `The page shows no text, even rendered. ${OPEN_IN_TAB}`
@@ -57,7 +57,7 @@ function refusal(err: WebError, render: boolean): string {
     case 'not_found':
       return 'The site has no page at this address. Check the address with the user.'
     case 'unsupported_type':
-      return `Notico reads only web pages and plain text, and ${err.message}.`
+      return `${product} reads only web pages and plain text, and ${err.message}.`
     default:
       // A reason the extension doesn't know, or a worker it could not reach or read: the page was not read.
       return `Could not ${render ? 'render' : 'read'} the page: ${err.message}.`
@@ -83,7 +83,7 @@ async function readPageAt(given: string, render: boolean, signal: AbortSignal | 
   } catch (err) {
     // A request turned away stops the question: thrown as it is, with what the user is told.
     if (err instanceof WebError && !err.stopsQuestion)
-      throw new Error(failed(refusal(err, render), err, 'render this page'), { cause: err })
+      throw new Error(failed(refusal(err, render, context.product), err, 'render this page'), { cause: err })
     throw err
   }
   const host = new URL(page.url).host

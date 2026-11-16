@@ -160,8 +160,9 @@
     },
     {
       // Code every product shares: the side panel, the agent, usage data, sessions, and the helpers
-      // they use. It reads the site, its tools, and the product's name through the product
-      // (src/product.ts), which the entry points give it; the blocks below that repeat the pattern
+      // they use, with the panel's and the service worker's starts (src/sidepanel/main.tsx,
+      // src/background.ts). It reads the site, its tools, and the product's name through the product
+      // (src/product.ts), which the product's entry points give it; the blocks below that repeat the pattern
       // (src/agent/, chat-session.ts and panel.ts, src/analytics.ts) hold it too. Its other
       // restrictions (the extension's code block) still hold.
       // The Notion tool modules are named both as tools/<name> and as ./<name>, which is how
@@ -170,6 +171,7 @@
         "extension/src/sidepanel/**",
         "extension/src/agent/**",
         "extension/src/analytics.ts",
+        "extension/src/background.ts",
         "extension/src/clerk.ts",
         "extension/src/credits.ts",
         "extension/src/mode.ts",
@@ -188,39 +190,8 @@
             "patterns": [
               {
                 "regex": "^\\.{1,2}/(\\.\\./)*(notion(/|$)|tools/(read|write|database|organize|comments|find|save|current|notion-tabs|load)$|products/)|^\\./(read|write|database|organize|comments|find|save|current|notion-tabs|load)$",
-                "message": "Code every product shares (the side panel, the agent, usage data, sessions) reaches the site only through the product (src/product.ts): it imports nothing from src/notion/, the Notion tools, or a product's folder (products/<name>/). Only the entry points (src/sidepanel/main.tsx, src/background.ts) pick the product."
+                "message": "Code every product shares (the side panel, the agent, usage data, sessions) reaches the site only through the product (src/product.ts): it imports nothing from src/notion/, the Notion tools, or a product's folder (products/<name>/). Only a product's entry points (products/<name>/sidepanel.tsx and background.ts) pick the product."
               },
-              {
-                "group": [
-                  "@earendil-works/pi-agent-core",
-                  "@earendil-works/pi-agent-core/**",
-                  "@earendil-works/pi-ai",
-                  "@earendil-works/pi-ai/**"
-                ],
-                "message": "Only an extension's src/agent/ imports pi. Import what you need from src/agent/ (its index.ts), or add it there."
-              },
-              {
-                "group": ["posthog-js", "posthog-js/**"],
-                "message": "Only an extension's src/analytics.ts imports the PostHog SDK. Call its track(), whose events are the only ones that can be sent."
-              },
-              {
-                "regex": "^zod(/|$)",
-                "message": "Import z from the extension's src/zod.ts: it sets zod up for the extension's content security policy before any schema is built."
-              }
-            ]
-          }
-        ]
-      }
-    },
-    {
-      // The side panel's entry point picks the product and gives it to the panel, so it may import
-      // the product's definition. Its other restrictions (the extension's code block) still hold.
-      "files": ["extension/src/sidepanel/main.tsx"],
-      "rules": {
-        "no-restricted-imports": [
-          "error",
-          {
-            "patterns": [
               {
                 "group": [
                   "@earendil-works/pi-agent-core",
@@ -255,7 +226,7 @@
             "patterns": [
               {
                 "regex": "^\\.{1,2}/(\\.\\./)*(notion(/|$)|tools/(read|write|database|organize|comments|find|save|current|notion-tabs|load)$|products/)|^\\./(read|write|database|organize|comments|find|save|current|notion-tabs|load)$",
-                "message": "Code every product shares (the side panel, the agent, usage data, sessions) reaches the site only through the product (src/product.ts): it imports nothing from src/notion/, the Notion tools, or a product's folder (products/<name>/). Only the entry points (src/sidepanel/main.tsx, src/background.ts) pick the product."
+                "message": "Code every product shares (the side panel, the agent, usage data, sessions) reaches the site only through the product (src/product.ts): it imports nothing from src/notion/, the Notion tools, or a product's folder (products/<name>/). Only a product's entry points (products/<name>/sidepanel.tsx and background.ts) pick the product."
               },
               {
                 "group": [
@@ -344,7 +315,7 @@
             "patterns": [
               {
                 "regex": "^\\.{1,2}/(\\.\\./)*(notion(/|$)|tools/(read|write|database|organize|comments|find|save|current|notion-tabs|load)$|products/)|^\\./(read|write|database|organize|comments|find|save|current|notion-tabs|load)$",
-                "message": "Code every product shares (the side panel, the agent, usage data, sessions) reaches the site only through the product (src/product.ts): it imports nothing from src/notion/, the Notion tools, or a product's folder (products/<name>/). Only the entry points (src/sidepanel/main.tsx, src/background.ts) pick the product."
+                "message": "Code every product shares (the side panel, the agent, usage data, sessions) reaches the site only through the product (src/product.ts): it imports nothing from src/notion/, the Notion tools, or a product's folder (products/<name>/). Only a product's entry points (products/<name>/sidepanel.tsx and background.ts) pick the product."
               },
               {
                 "group": ["posthog-js", "posthog-js/**"],
@@ -463,7 +434,7 @@
             "patterns": [
               {
                 "regex": "^\\.{1,2}/(\\.\\./)*(notion(/|$)|tools/(read|write|database|organize|comments|find|save|current|notion-tabs|load)$|products/)|^\\./(read|write|database|organize|comments|find|save|current|notion-tabs|load)$",
-                "message": "Code every product shares (the side panel, the agent, usage data, sessions) reaches the site only through the product (src/product.ts): it imports nothing from src/notion/, the Notion tools, or a product's folder (products/<name>/). Only the entry points (src/sidepanel/main.tsx, src/background.ts) pick the product."
+                "message": "Code every product shares (the side panel, the agent, usage data, sessions) reaches the site only through the product (src/product.ts): it imports nothing from src/notion/, the Notion tools, or a product's folder (products/<name>/). Only a product's entry points (products/<name>/sidepanel.tsx and background.ts) pick the product."
               },
               {
                 "group": [

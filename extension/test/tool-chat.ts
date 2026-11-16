@@ -9,6 +9,7 @@ import { ToolMemory } from '../src/tools/memory'
 export class ToolChat {
   readonly memory = new ToolMemory()
   readonly context: ToolContext = {
+    product: 'Notico',
     ask: async () => false,
     readWeb: async () => {
       throw new Error('There is no worker in this test.')

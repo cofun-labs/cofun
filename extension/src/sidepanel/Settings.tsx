@@ -6,6 +6,7 @@ import type { ModelSettings } from '../models'
 import { Avatar, useAccount } from './Account'
 import { Page } from './Header'
 import { ModelCard, Switch } from './Model'
+import { useProduct } from './product'
 
 /**
  * The Settings page: everything that isn't money. The model providers and their models, the account
@@ -58,6 +59,7 @@ export function Settings({
  * for their Chrome profile, on every device it syncs to.
  */
 function ContextMenu() {
+  const { name } = useProduct()
   // Not known until storage was read: no switch shows until then, so it never shows a state to take back.
   const [shown, setShown] = useState<boolean>()
 
@@ -84,13 +86,13 @@ function ContextMenu() {
       <h2 id="settings-menu">Right-click menu</h2>
       <div className="settings-account">
         <div className="grow">
-          <p>Show “Ask Notico”</p>
+          <p>Show “Ask {name}”</p>
           <p id="settings-menu-detail" className="account-detail">
             Ask about text you select on any page.
           </p>
         </div>
         {shown !== undefined && (
-          <Switch label="Show “Ask Notico”" checked={shown} describedBy="settings-menu-detail" onChange={change} />
+          <Switch label={`Show “Ask ${name}”`} checked={shown} describedBy="settings-menu-detail" onChange={change} />
         )}
       </div>
     </section>
@@ -102,6 +104,7 @@ function ContextMenu() {
  * Turned off, nothing more is sent, from this panel at once.
  */
 function UsageData() {
+  const { name } = useProduct()
   // Not known until storage was read: no switch shows until then, so it never shows a state to take back.
   const [enabled, setEnabled] = useState<boolean>()
 
@@ -126,7 +129,7 @@ function UsageData() {
         <div className="grow">
           <p>Share usage data</p>
           <p id="settings-privacy-detail" className="account-detail">
-            Which features you use and whether they worked, to help improve Notico. Never your messages, the replies, or
+            Which features you use and whether they worked, to help improve {name}. Never your messages, the replies, or
             anything from your pages.
           </p>
         </div>

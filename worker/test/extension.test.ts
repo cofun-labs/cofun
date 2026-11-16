@@ -364,7 +364,12 @@ describe('tokens per question', () => {
 })
 
 describe('web reads and searches', () => {
-  const config = { apiUrl: 'https://nk.example.dev/v1/', getToken: async () => token, client: 'notico/1.2.3' }
+  const config = {
+    apiUrl: 'https://nk.example.dev/v1/',
+    getToken: async () => token,
+    client: 'notico/1.2.3',
+    names: { product: 'Notico', site: 'Notion' },
+  }
   /** What a read, a render, or a search gave the extension: its result or its WebError, and what it was told it cost. */
   async function outcome<T>(call: (charged: (microCredits: number | undefined) => void) => Promise<T>) {
     const costs: (number | undefined)[] = []

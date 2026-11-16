@@ -20,9 +20,10 @@ export type KeyCheck =
 
 /**
  * Asks the provider whether `key` works, through its own account endpoint (OpenRouter's key
- * endpoint): a free request that asks no model anything. Gives up after CHECK_TIMEOUT_MS.
+ * endpoint): a free request that asks no model anything. Gives up after CHECK_TIMEOUT_MS. `product`
+ * is the product's name, as a failure names it.
  */
-export async function checkKey(key: string): Promise<KeyCheck> {
+export async function checkKey(key: string, product: string): Promise<KeyCheck> {
   const controller = new AbortController()
   let timer: ReturnType<typeof setTimeout> | undefined
   // Not left to the fetch alone: a provider that never answers must still end the check on time.
@@ -32,7 +33,7 @@ export async function checkKey(key: string): Promise<KeyCheck> {
       resolve({ status: 'timed_out' })
     }, CHECK_TIMEOUT_MS)
   })
-  const check = checkOpenRouterKey(key, controller.signal).catch((): KeyCheck =>
+  const check = checkOpenRouterKey(key, product, controller.signal).catch((): KeyCheck =>
     controller.signal.aborted ? { status: 'timed_out' } : { status: 'unreachable' },
   )
   try {

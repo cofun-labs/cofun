@@ -1,83 +1,161 @@
 // The current tab, on any site: get_current_tab, and read_current_tab, which reads the page of a tab
-// on another site than Notion; and read_tab, which reads the tabs on other sites the user added to
-// the conversation (see carry.ts).
+// on another site than the product's own; and read_tab, which reads the tabs on other sites the user
+// added to the conversation (see carry.ts). Built for one product and its site, if it has one: a tab
+// on the site is read with the site's own tools.
 import type { AskOnCard, ToolContext } from '../agent'
 import { clip } from '../notion/comments'
-import { isNotion } from '../notion/hosts'
-import { defineTool } from '../tool'
+import type { HomeSite } from '../product'
+import { defineTool, type Tool } from '../tool'
 import { mayRead, readPage, readableSite, type TabPage, type TabWhere } from '../web/tab'
 import { z } from '../zod'
 import { addedTabNow, clippedUrl, currentTab, TAB_URL_CHARS, TITLE_CHARS } from './carry'
-import { needsAttachedPage } from './notion-tabs'
+import type { ToolMemory } from './memory'
 import { KEPT_CHARS, withText } from './results'
 import { LOOK, READ, asData, count, on } from './shared'
 
-export const getCurrentTab = defineTool({
-  name: 'get_current_tab',
-  description:
-    'Returns the title and URL of the current tab, the browser tab the user is looking at, on any site, Notion ' +
-    "or not. It reads nothing else: not the page's content (read_current_tab reads that), and no other tab. Use " +
-    'it only when a question needs to know which page or site the user is on and the note with the question ' +
-    'does not say, such as saving a link to it.',
-  describe: () => ({ verb: LOOK, what: 'the current tab' }),
-  args: z.strictObject({}),
-  run: async (_args, _signal, { memory }) => {
-    await needsAttachedPage(memory)
-    const tab = await currentTab()
-    if (!tab) throw new Error('Could not tell which tab is the current one.')
-    // As JSON, so the title and URL stay inside their quotes and on their line.
-    return asData([JSON.stringify({ title: clip(tab.title, TITLE_CHARS), url: clip(tab.url, TAB_URL_CHARS) })])
-  },
-})
-
-export const readCurrentTab = defineTool({
-  name: 'read_current_tab',
-  description:
-    'Reads the page in the current tab when it is on another site than Notion: its main content as the tab ' +
-    "shows it (the page's main element, or else its whole text), as Markdown that keeps its headings, lists, " +
-    "links, and tables, with the page's title and URL. Images are given by their alt text only. It reads what the " +
-    'user sees, pages they are signed in to included, but not what is inside frames, its navigation, or its ' +
-    'footer. The first time a site is read, ' +
-    'the user is asked to allow Notico to read it. Use it when a question is about the page the user is on, such ' +
-    'as summarizing it or saving it to Notion; never for a Notion page (use read_page). A long page is kept ' +
-    'on the device and given in parts: its first part comes with an id that read_result and search_result take.',
-  describe: (_args, details) => on(READ, details?.name, 'the current tab'),
-  args: z.strictObject({}),
-  run: async (_args, _signal, context) => {
-    await needsAttachedPage(context.memory)
-    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true })
-    if (tab?.id === undefined || !tab.url) throw new Error('Could not tell which tab is the current one.')
-    if (isNotion(tab.url)) throw new Error('The current tab is a Notion page: read it with read_page instead.')
-    const site = readableSite(tab.url)
-    if ('reason' in site) throw new Error(site.reason)
-    const host = new URL(site.origin).host
-    await mayReadOrAsk(site.origin, context.ask)
-    // The user may have moved to another tab or page while they were asked: only the page they
-    // asked about, in the current tab, is read.
-    const [now] = await chrome.tabs.query({ active: true, currentWindow: true })
-    if (now?.id !== tab.id || now.url !== tab.url)
-      throw new Error(
-        'The current tab changed while Notico waited (the user switched tabs or went to another page), so ' +
-          'nothing was read. Ask them to go back to the page and ask again.',
-      )
-    const page = await readPage(tab.id, site.origin, KEPT_CHARS)
-    if ('reason' in page) throw new Error(page.reason)
-    return pageRead(page, `Page in the current tab, on ${host}`, host, context, 'read_current_tab')
-  },
-})
+/** The product's site, as its tab tools need it. */
+export interface TabSite extends Pick<HomeSite, 'name' | 'shows'> {
+  /** The site's tool that reads its pages, which a tab on the site is read with: `read_page`. */
+  readonly readWith: string
+  /**
+   * Refuses a call while the user took the site's page open in the current tab off the question
+   * (see needsAttachedPage in notion-tabs.ts): get_current_tab would name it, and read_current_tab read it.
+   */
+  needsAttachedPage(memory: ToolMemory): Promise<void>
+}
 
 /**
- * Throws, for the model, unless Notico may read the site with this origin: when it may not yet, the
- * call's card asks the user, whose Allow asks Chrome.
+ * get_current_tab, read_current_tab, and read_tab, for the product named `product` (as the user is
+ * asked to let it read a site) and its `site`, if it has one: a tab on it is refused, and named by
+ * its site.
  */
-async function mayReadOrAsk(origin: string, ask: AskOnCard): Promise<void> {
+export function tabTools(
+  product: string,
+  site?: TabSite,
+): { getCurrentTab: Tool; readCurrentTab: Tool; readTab: Tool } {
+  const other = site ? ` on another site than ${site.name}` : ''
+  /** Refuses a tab on the product's own site, whose pages its own tools read. */
+  const refuseSite = (url: string, which: string) => {
+    if (site?.shows(url)) throw new Error(`${which} ${site.name} page: read it with ${site.readWith} instead.`)
+  }
+  const needsAttachedPage = (memory: ToolMemory) => site?.needsAttachedPage(memory)
+
+  const getCurrentTab = defineTool({
+    name: 'get_current_tab',
+    description:
+      'Returns the title and URL of the current tab, the browser tab the user is looking at, on any site' +
+      `${site ? `, ${site.name} or not` : ''}. It reads nothing else: not the page's content (read_current_tab ` +
+      'reads that), and no other tab. Use ' +
+      'it only when a question needs to know which page or site the user is on and the note with the question ' +
+      'does not say, such as saving a link to it.',
+    describe: () => ({ verb: LOOK, what: 'the current tab' }),
+    args: z.strictObject({}),
+    run: async (_args, _signal, { memory }) => {
+      await needsAttachedPage(memory)
+      const tab = await currentTab()
+      if (!tab) throw new Error('Could not tell which tab is the current one.')
+      // As JSON, so the title and URL stay inside their quotes and on their line.
+      return asData([JSON.stringify({ title: clip(tab.title, TITLE_CHARS), url: clip(tab.url, TAB_URL_CHARS) })])
+    },
+  })
+
+  const readCurrentTab = defineTool({
+    name: 'read_current_tab',
+    description:
+      `Reads the page in the current tab${site ? ` when it is${other}` : ''}: its main content as the tab ` +
+      "shows it (the page's main element, or else its whole text), as Markdown that keeps its headings, lists, " +
+      "links, and tables, with the page's title and URL. Images are given by their alt text only. It reads what the " +
+      'user sees, pages they are signed in to included, but not what is inside frames, its navigation, or its ' +
+      'footer. The first time a site is read, ' +
+      `the user is asked to allow ${product} to read it. Use it when a question is about the page the user is on, such ` +
+      (site
+        ? `as summarizing it or saving it to ${site.name}; never for a ${site.name} page (use ${site.readWith}). A long page is kept `
+        : 'as summarizing it. A long page is kept ') +
+      'on the device and given in parts: its first part comes with an id that read_result and search_result take.',
+    describe: (_args, details) => on(READ, details?.name, 'the current tab'),
+    args: z.strictObject({}),
+    run: async (_args, _signal, context) => {
+      await needsAttachedPage(context.memory)
+      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true })
+      if (tab?.id === undefined || !tab.url) throw new Error('Could not tell which tab is the current one.')
+      refuseSite(tab.url, 'The current tab is a')
+      const readable = readableSite(tab.url, product)
+      if ('reason' in readable) throw new Error(readable.reason)
+      const host = new URL(readable.origin).host
+      await mayReadOrAsk(product, readable.origin, context.ask)
+      // The user may have moved to another tab or page while they were asked: only the page they
+      // asked about, in the current tab, is read.
+      const [now] = await chrome.tabs.query({ active: true, currentWindow: true })
+      if (now?.id !== tab.id || now.url !== tab.url)
+        throw new Error(
+          `The current tab changed while ${product} waited (the user switched tabs or went to another page), so ` +
+            'nothing was read. Ask them to go back to the page and ask again.',
+        )
+      const page = await readPage(tab.id, readable.origin, KEPT_CHARS, product)
+      if ('reason' in page) throw new Error(page.reason)
+      return pageRead(page, `Page in the current tab, on ${host}`, host, context, 'read_current_tab')
+    },
+  })
+
+  const readTab = defineTool({
+    name: 'read_tab',
+    description:
+      `Reads the page in a tab${other} that the user added to this chat, by the tab number a ` +
+      'note with a question gave it ("(tab 123)"): the main content the tab shows now, as Markdown, with its title ' +
+      'and URL, as read_current_tab does. The tab may have gone to another page since it was added: the result ' +
+      'then says so. Only those tabs can be read, never another tab. Use it when a question needs ' +
+      'what such a tab says, such as comparing the tabs the user added. A long page is kept on the device and ' +
+      'given in parts, as read_current_tab does.',
+    describe: (_args, details) => on(READ, details?.name, 'a tab'),
+    args: z.strictObject({
+      tab: z.number().int().describe('The number of the tab, as the note gave it.'),
+    }),
+    run: async ({ tab }, _signal, context) => {
+      const added = context.memory.carried.tabs.get(tab)
+      if (!added)
+        throw new Error(
+          `The user did not add tab ${tab} to this chat, so it was not read: read_tab reads only the tabs the ` +
+            'notes list as added. Ask the user to add the tab, with "+" or @ in the message box.',
+        )
+      const gone =
+        'The tab the user added is not open any more (it was closed, or the browser restarted since), so nothing ' +
+        'was read. Ask them to open the page and add its tab again.'
+      // Added in an earlier run of the browser, the id may be another tab's now.
+      const now = await addedTabNow(added)
+      if (!now?.url) throw new Error(gone)
+      refuseSite(now.url, 'The tab now shows a')
+      const readable = readableSite(now.url, product, WHERE)
+      if ('reason' in readable) throw new Error(readable.reason)
+      await mayReadOrAsk(product, readable.origin, context.ask)
+      const page = await readPage(tab, readable.origin, KEPT_CHARS, product, WHERE)
+      if ('reason' in page) throw new Error(page.reason)
+      const host = new URL(readable.origin).host
+      // The model reads the tab, not the address: it is told when the tab went to another page.
+      const moved =
+        page.url === added.url
+          ? []
+          : [
+              `[The tab went to another page since the user added it, when it showed ${JSON.stringify(clippedUrl(added.url))}.]`,
+            ]
+      return pageRead(page, `Page in tab ${tab}, which the user added, on ${host}`, host, context, 'read_tab', moved)
+    },
+  })
+
+  return { getCurrentTab, readCurrentTab, readTab }
+}
+
+/**
+ * Throws, for the model, unless `product` may read the site with this origin: when it may not yet,
+ * the call's card asks the user, whose Allow asks Chrome.
+ */
+async function mayReadOrAsk(product: string, origin: string, ask: AskOnCard): Promise<void> {
   if (await mayRead(origin)) return
   const host = new URL(origin).host
-  const allowed = await ask({ text: `Allow Notico to read ${host}?`, access: origin })
+  const allowed = await ask({ text: `Allow ${product} to read ${host}?`, access: origin })
   // Chrome granted it only if the user allowed it in its own prompt too.
   if (!allowed || !(await mayRead(origin)))
     throw new Error(
-      `Notico may not read ${host}: the user did not allow it, so nothing of the page was read. Answer ` +
+      `${product} may not read ${host}: the user did not allow it, so nothing of the page was read. Answer ` +
         "without it, and don't read this site again unless the user asks.",
     )
 }
@@ -108,47 +186,3 @@ async function pageRead(
 }
 
 const WHERE: TabWhere = 'the tab'
-
-export const readTab = defineTool({
-  name: 'read_tab',
-  description:
-    'Reads the page in a tab on another site than Notion that the user added to this chat, by the tab number a ' +
-    'note with a question gave it ("(tab 123)"): the main content the tab shows now, as Markdown, with its title ' +
-    'and URL, as read_current_tab does. The tab may have gone to another page since it was added: the result ' +
-    'then says so. Only those tabs can be read, never another tab. Use it when a question needs ' +
-    'what such a tab says, such as comparing the tabs the user added. A long page is kept on the device and ' +
-    'given in parts, as read_current_tab does.',
-  describe: (_args, details) => on(READ, details?.name, 'a tab'),
-  args: z.strictObject({
-    tab: z.number().int().describe('The number of the tab, as the note gave it.'),
-  }),
-  run: async ({ tab }, _signal, context) => {
-    const added = context.memory.carried.tabs.get(tab)
-    if (!added)
-      throw new Error(
-        `The user did not add tab ${tab} to this chat, so it was not read: read_tab reads only the tabs the ` +
-          'notes list as added. Ask the user to add the tab, with "+" or @ in the message box.',
-      )
-    const gone =
-      'The tab the user added is not open any more (it was closed, or the browser restarted since), so nothing ' +
-      'was read. Ask them to open the page and add its tab again.'
-    // Added in an earlier run of the browser, the id may be another tab's now.
-    const now = await addedTabNow(added)
-    if (!now?.url) throw new Error(gone)
-    if (isNotion(now.url)) throw new Error('The tab now shows a Notion page: read it with read_page instead.')
-    const site = readableSite(now.url, WHERE)
-    if ('reason' in site) throw new Error(site.reason)
-    await mayReadOrAsk(site.origin, context.ask)
-    const page = await readPage(tab, site.origin, KEPT_CHARS, WHERE)
-    if ('reason' in page) throw new Error(page.reason)
-    const host = new URL(site.origin).host
-    // The model reads the tab, not the address: it is told when the tab went to another page.
-    const moved =
-      page.url === added.url
-        ? []
-        : [
-            `[The tab went to another page since the user added it, when it showed ${JSON.stringify(clippedUrl(added.url))}.]`,
-          ]
-    return pageRead(page, `Page in tab ${tab}, which the user added, on ${host}`, host, context, 'read_tab', moved)
-  },
-})

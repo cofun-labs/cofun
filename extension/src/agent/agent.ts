@@ -73,13 +73,13 @@ const STOPPED_BEFORE = 'Not run: the user stopped the question before this actio
 const STOPPED_DURING =
   'Stopped by the user while this action was running; it may have partly happened. Check before trying it again.'
 /** Ahead of a question asked in Read only, for the model: it has no tool that changes data for it. */
-const readOnlyNote = ({ product, site }: AgentConfig['names']) =>
+const readOnlyNote = ({ product, site = 'data' }: AgentConfig['names']) =>
   `[Read only: the user set ${product} to Read only for this question, so you have no tools that change ${site}. ` +
   "If the question asks for a change, make none and don't describe one as done: say you can't make changes in " +
   'Read only, and that the user can switch to Edit with the mode button at the bottom left of the message box ' +
   'and ask again. You can still read and answer.]'
 /** Ahead of a question asked in Edit right after one in Read only: the tools that change data are back. */
-const editNote = ({ product, site }: AgentConfig['names']) =>
+const editNote = ({ product, site = 'data' }: AgentConfig['names']) =>
   `[Edit: the user switched ${product} back to Edit, so the tools that change ${site} are available again.]`
 
 export class CopilotAgent {
@@ -223,7 +223,12 @@ export class CopilotAgent {
       if (this.agent) this.agent.state.model = this.model
       // The question stays in the conversation with the tools it used, so the model can pick up
       // where it left off; asking the same question again could run those tools twice.
-      if (kept) return { status: 'error', message: 'Notico was just updated. Ask it to continue.', ...counted }
+      if (kept)
+        return {
+          status: 'error',
+          message: `${this.config.names.product} was just updated. Ask it to continue.`,
+          ...counted,
+        }
       return (await this.askOnce(text, onUpdate, epoch, confirm, extras, turn)).result
     }
     return result
@@ -618,6 +623,7 @@ export class CopilotAgent {
         if (epoch === this.epoch) this.failedWith = code
       },
       context: {
+        product: this.config.names.product,
         ask: async (question) => (epoch === this.epoch && this.askOnCard ? this.askOnCard(question) : false),
         // Always through the worker, whichever model answers: the page is read by the worker either way.
         // A render or a search costs credits, and the question it was for counts them; a plain read is free.

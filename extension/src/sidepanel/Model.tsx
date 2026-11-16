@@ -3,6 +3,7 @@ import { checkKey, openRouterModels, type KeyCheck, type ListedModel } from '../
 import { answering, RECOMMENDED, SERVICE_NAME, type ModelSettings, type OwnModel, type Service } from '../models'
 import { Icon, Mark } from './icons'
 import { useMenu } from './menu'
+import { useProduct } from './product'
 
 /** The hosted model, as the panel names it. */
 export const HOSTED = 'Auto'
@@ -19,11 +20,12 @@ let listed: { models: Promise<ListedModel[]>; at: number } | undefined
 
 /**
  * OpenRouter's model list, read once for the panel and again once that read is an hour old. A read
- * that failed is made again the next time it is asked for.
+ * that failed is made again the next time it is asked for. `product` is the product's name, as a
+ * failure names it.
  */
-function modelList(): Promise<ListedModel[]> {
+function modelList(product: string): Promise<ListedModel[]> {
   if (!listed || Date.now() - listed.at > LIST_FOR_MS) {
-    const read = { at: Date.now(), models: openRouterModels() }
+    const read = { at: Date.now(), models: openRouterModels(product) }
     read.models.catch(() => {
       if (listed === read) listed = undefined
     })
@@ -200,6 +202,7 @@ export function ModelCard({
   onChange: (update: (settings: ModelSettings) => ModelSettings) => void
   focus?: boolean
 }) {
+  const { name: product } = useProduct()
   const headingRef = useRef<HTMLHeadingElement>(null)
   useEffect(() => {
     if (!focus) return
@@ -254,7 +257,7 @@ export function ModelCard({
         onKey={async (key) => {
           // A first key starts with the first recommended model OpenRouter offers, so the provider
           // is usable at once; a new key keeps the models switched on.
-          const listed = openRouter ? [] : await modelList().catch((): ListedModel[] => [])
+          const listed = openRouter ? [] : await modelList(product).catch((): ListedModel[] => [])
           const first = RECOMMENDED.map((r) => listed.find((m) => m.id === r.id && m.tools)).find((m) => m)
           update((now) => ({ on: true, key, models: now?.models ?? (first ? [ownModel(first)] : []) }))
         }}
@@ -350,6 +353,7 @@ function ProviderSetup({
   children: React.ReactNode
 }) {
   const name = SERVICE_NAME[service]
+  const { name: product } = useProduct()
   // Switched on with no key saved yet: the key field is open, and nothing is saved until a key passes.
   const [opening, setOpening] = useState(false)
   const [changing, setChanging] = useState(false)
@@ -364,7 +368,7 @@ function ProviderSetup({
     setCheck({ status: 'checking' })
     let result: KeyCheck
     try {
-      result = await checkKey(key)
+      result = await checkKey(key, product)
       if (result.status === 'ok') {
         if (result.balance) balances.set(key, result.balance)
         else balances.delete(key)
@@ -558,6 +562,7 @@ const dateText = (ms: number) => new Date(ms).toLocaleDateString('en-US', { mont
 
 /** OpenRouter's models: the recommended ones and those switched on, and a search over its whole list. */
 function OpenRouterModels({ on, onSwitch }: { on: OwnModel[]; onSwitch: (model: OwnModel, on: boolean) => void }) {
+  const { name: product } = useProduct()
   const [list, setList] = useState<List>({ status: 'loading' })
   const [loads, setLoads] = useState(0)
   const [query, setQuery] = useState('')
@@ -566,7 +571,7 @@ function OpenRouterModels({ on, onSwitch }: { on: OwnModel[]; onSwitch: (model: 
   useEffect(() => {
     let live = true
     setList({ status: 'loading' })
-    modelList().then(
+    modelList(product).then(
       (models) => live && setList({ status: 'ready', models }),
       (err: unknown) => live && setList({ status: 'failed', message: errorText(err) }),
     )
@@ -586,7 +591,9 @@ function OpenRouterModels({ on, onSwitch }: { on: OwnModel[]; onSwitch: (model: 
       <ModelRow
         key={model.id}
         name={model.name}
-        detail={noTools ? "Can't use tools, which Notico needs" : [note, priceText(model)].filter(Boolean).join(' · ')}
+        detail={
+          noTools ? `Can't use tools, which ${product} needs` : [note, priceText(model)].filter(Boolean).join(' · ')
+        }
         checked={checked}
         disabled={noTools}
         last={checked && on.length === 1}

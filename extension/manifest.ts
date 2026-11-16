@@ -1,9 +1,22 @@
-// Builds the extension's manifest.json from env values. vite.config.ts writes the result into the
-// build, and test/manifest.test.ts pins its permissions: Chrome disables an installed extension
+// Builds a product's manifest.json from its own manifest config (products/<name>/manifest.ts) and its
+// env values. vite.config.ts writes the result into the product's build, and test/manifest.test.ts
+// pins Notico's permissions: Chrome disables an installed extension
 // on update when the new version adds a permission warning, so a permission must never
 // change unnoticed. It also pins the content security policy, which names the hosts
 // the extension's pages may contact (see PRIVACY.md).
 import { clerkFrontendApi } from './src/clerk.ts'
+
+/** What makes a product's manifest its own, from its folder (products/notico/manifest.ts). */
+export interface ProductManifest {
+  /** The name Chrome and the store show. */
+  name: string
+  /** The store's summary line: at most 132 characters, which the manifest test pins for Notico. */
+  description: string
+  /** The toolbar icon's tooltip: `Open Notico`. */
+  actionTitle: string
+  /** The hosts of the product's own site, which its requests run in a tab of; none for a product without one. */
+  siteHosts: string[]
+}
 
 /** The env values the manifest is built from (see products/notico/.env). */
 export interface ManifestEnv {
@@ -18,8 +31,8 @@ export interface ManifestEnv {
 }
 
 /**
- * The icon (products/notico/icons/icon.svg) at each size Chrome asks for; `pnpm icons` exports them
- * into products/notico/public/icons.
+ * The product's icon (products/<name>/icons/icon.svg) at each size Chrome asks for; `pnpm icons`
+ * exports them into products/<name>/public/icons.
  */
 const ICONS = { 16: 'icons/icon-16.png', 32: 'icons/icon-32.png', 48: 'icons/icon-48.png', 128: 'icons/icon-128.png' }
 
@@ -50,8 +63,8 @@ const OWN_MODEL_HOSTS = ['https://openrouter.ai']
  * requests, which may also go to the worker, Clerk's Frontend API, OpenRouter (only once the
  * user turns it on; a host permission would not widen this list, #46), and PostHog (usage
  * events, unless the user turned them off), and images, which may also
- * come from Clerk's image host. So the browser itself enforces the host list in PRIVACY.md. Notion calls
- * are not made from these pages (they run in the Notion tab).
+ * come from Clerk's image host. So the browser itself enforces the host list in PRIVACY.md. Calls to
+ * the product's site are not made from these pages (they run in the site's tab).
  */
 function contentSecurityPolicy(env: ManifestEnv): string {
   const clerkHost = clerkFrontendApi(env.VITE_CLERK_PUBLISHABLE_KEY ?? '')
@@ -76,34 +89,37 @@ function contentSecurityPolicy(env: ManifestEnv): string {
 }
 
 /**
- * The manifest for the given env and version. The store build (`store: true`, for the Chrome Web
+ * The manifest of the product `product` for the given env and version. The store build (`store: true`, for the Chrome Web
  * Store) leaves out `key`: the store signs the item with a key of its own, which sets its ID. It
  * also leaves out `version_name`, which marks every other build as a development one where Chrome
  * shows the version (chrome://extensions).
  */
-export function buildManifest(env: ManifestEnv, version: string, { store = false }: { store?: boolean } = {}) {
+export function buildManifest(
+  product: ProductManifest,
+  env: ManifestEnv,
+  version: string,
+  { store = false }: { store?: boolean } = {},
+) {
   const clerkHost = clerkFrontendApi(env.VITE_CLERK_PUBLISHABLE_KEY ?? '')
   return {
     manifest_version: 3,
-    name: 'Notico: AI copilot for Notion',
+    name: product.name,
     version,
     ...(store ? {} : { version_name: `${version} dev` }),
-    // The store's summary line: at most 132 characters, which the manifest test pins.
-    description:
-      'AI copilot for Notion: summarize and edit pages, update databases, search and organize your workspace. No subscription needed.',
+    description: product.description,
     ...(env.CRX_PUBLIC_KEY && !store ? { key: env.CRX_PUBLIC_KEY } : {}),
     icons: ICONS,
-    // scripting: Notion calls run in the user's Notion tab, and a page on another site is read in its tab.
-    // contextMenus and activeTab: the "Ask Notico" item, which reads the selection in the tab it was
-    // used in. Neither adds an install warning.
-    // tabs: to tell a Notion tab from others, to give the current tab's URL and title on another site,
-    // and for the page picker's open tabs. Host permissions would expose a Notion tab's URL too, but
-    // not once the user limits the extension's site access; with tabs the tools still find the tab
-    // and say which access is missing.
+    // scripting: calls to the product's site run in the user's tab on it (Notion's, for Notico), and a
+    // page on another site is read in its tab.
+    // contextMenus and activeTab: the item named for the product ("Ask Notico"), which reads the
+    // selection in the tab it was used in. Neither adds an install warning.
+    // tabs: to tell a tab on the product's site from others, to give the current tab's URL and title
+    // on another site, and for the page picker's open tabs. Host permissions would expose a site's
+    // tab's URL too, but not once the user limits the extension's site access; with tabs the tools
+    // still find the tab and say which access is missing.
     permissions: ['sidePanel', 'storage', 'tabs', 'cookies', 'scripting', 'contextMenus', 'activeTab'],
     host_permissions: [
-      'https://www.notion.so/*',
-      'https://app.notion.com/*',
+      ...product.siteHosts,
       // Clerk's Frontend API. On a production instance the cookies permission also reads Clerk's
       // client cookie from this host (Sync Host).
       ...(clerkHost ? [`https://${clerkHost}/*`] : []),
@@ -121,8 +137,8 @@ export function buildManifest(env: ManifestEnv, version: string, { store = false
     content_security_policy: { extension_pages: contentSecurityPolicy(env) },
     background: { service_worker: 'background.js', type: 'module' },
     // One panel per window, on every tab: it stays open, with its conversation, as the user
-    // switches tabs. The Notion tools work only while the current tab is on Notion.
+    // switches tabs. A site's own tools work only while the current tab is on it.
     side_panel: { default_path: 'sidepanel.html' },
-    action: { default_title: 'Open Notico', default_icon: ICONS },
+    action: { default_title: product.actionTitle, default_icon: ICONS },
   }
 }

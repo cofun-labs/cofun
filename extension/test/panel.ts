@@ -1,4 +1,4 @@
-// The side panel's UI tests run the whole panel: the page sidepanel.html loads, with the real agent,
+// The side panel's UI tests run the whole panel: the page Notico's sidepanel.html loads, with the real agent,
 // tools, and session store behind it, and the real worker answering its model calls. Only the edges
 // are fakes: chrome.* (with a Notion tab), Clerk (see clerk.tsx), IndexedDB, the model binding, the
 // services a user's own model is on (OpenRouter), and PostHog, where usage events go.
@@ -27,6 +27,8 @@ import { FakePostHog, POSTHOG } from './posthog'
 import { failingTitles, titleRequests } from './titles'
 
 const EXTENSION = 'chrome-extension://abcdefghijklmnopabcdefghijklmnop'
+/** The panel's page: Notico's, the product the UI tests run. */
+const PANEL = '../products/notico/sidepanel.html'
 /** Where the worker answers (VITE_API_URL in vitest.config.ts): the origin its admin page signs in on. */
 const WORKER = 'https://api.copilot.test'
 /** When every test starts. Tests move the clock themselves (`vi.setSystemTime`); nothing waits for real time. */
@@ -187,25 +189,24 @@ export class FakeBrowser {
   async openPanel(): Promise<void> {
     await closePanel()
     vi.resetModules()
-    const page = new DOMParser().parseFromString(
-      readFileSync(fileURLToPath(import.meta.resolve('../sidepanel.html')), 'utf8'),
-      'text/html',
-    )
+    const html = import.meta.resolve(PANEL)
+    const page = new DOMParser().parseFromString(readFileSync(fileURLToPath(html), 'utf8'), 'text/html')
     const script = page.querySelector('script[type="module"]')!
     script.remove()
     document.body.innerHTML = page.body.innerHTML
     const { fakeClerk } = await import('./clerk')
     if (this.session) fakeClerk.signIn(this.session)
-    await act(() => import(/* @vite-ignore */ script.getAttribute('src')!))
+    // The script's address is the page's own, relative to it.
+    await act(() => import(/* @vite-ignore */ new URL(script.getAttribute('src')!, html).href))
   }
 
   /**
-   * Starts the extension's service worker (src/background.ts), as Chrome does once it installed the
-   * extension: it sets up its context menu item.
+   * Starts the extension's service worker (Notico's background.ts), as Chrome does once it installed
+   * the extension: it sets up its context menu item.
    */
   async startServiceWorker(): Promise<void> {
     vi.resetModules()
-    await import('../src/background')
+    await import('../products/notico/background')
     this.tab.extensionInstalled()
     // It reads its settings before it makes its menu item.
     await vi.waitFor(() => {
