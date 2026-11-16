@@ -297,7 +297,10 @@ describe('reading a web page', () => {
     db.failOn = { sql: 'INSERT INTO web_renders', error: new Error('D1 write failed') }
     const res = await render('https://app.example/board')
     expect(res.status).toBe(200)
-    expect(await res.json()).toMatchObject({ title: 'Board' })
+    // Nothing was charged, so the answer says no cost.
+    const page: Record<string, unknown> = await res.json()
+    expect(page).toMatchObject({ title: 'Board' })
+    expect(page).not.toHaveProperty('cost')
     expect(db.rows('spends')).toEqual([])
     expect(logged.some((line) => line.startsWith('web render record failed'))).toBe(true)
   })

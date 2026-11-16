@@ -10,6 +10,9 @@ import {
   type ToolSpec,
 } from './types'
 
+/** The worker's code for a request refused because the user has no credits left. */
+const OUT_OF_CREDITS = 'out_of_credits'
+
 /**
  * What a call changes, in words; a broken preview must not stop the call, so it gives none. A
  * preview error that stops the question (see `stopsQuestion`) comes back as `stop`.
@@ -177,9 +180,10 @@ export function toAgentTool(spec: ToolSpec, reporter: () => Reporter): AgentTool
         result = await spec.run(params, signal, report.context)
       } catch (err) {
         const reason = stopsQuestion(err)
-        // The worker's refusal says why with its code (`out_of_credits`, say), which the question ends with.
+        // A question the worker refused for lack of credits ends with that code, so the panel offers to
+        // buy some; other stops carry none.
         const by = stopping(err)
-        if (reason) report.stop(reason, by instanceof WebError ? by.code : undefined)
+        if (reason) report.stop(reason, by instanceof WebError && by.code === OUT_OF_CREDITS ? by.code : undefined)
         // An error that says data may have changed counts on its own, flag or not.
         if (causes(err).some((e) => e.mayHaveChanged === true)) report.changed()
         const code = causes(err).find((e) => typeof e.code === 'string')?.code

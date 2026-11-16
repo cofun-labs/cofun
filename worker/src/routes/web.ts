@@ -125,24 +125,26 @@ export function webRoutes({ now, logError }: Pick<Deps, 'now' | 'logError'>): Ap
         try {
           await ledger.spend({ product, cost, at: now().getTime() }, { kind: 'web_render', outcome, browserMs })
           usage.microCredits = cost
+          return { result, charged: { cost: { micro_credits: cost } } }
         } catch (err) {
-          // The page is out already: it still goes to the client, uncharged.
+          // The page is out already: it still goes to the client, uncharged, and the answer says no
+          // cost, so the client does not count one the ledger never took.
           logError(`web render record failed: ${errorSummary(err)}`)
+          return { result, charged: {} }
         }
-        return { result, cost }
       })()
       // The render is charged even if the client goes away meanwhile: a request dropped right after
       // it was sent must not be a free render.
       c.executionCtx.waitUntil(work.catch(() => {}))
-      const { result, cost } = await work
+      const { result, charged } = await work
       // What it cost goes with the answer, a page or why there is none, since either was charged.
       if (result instanceof PageError) {
         record(result.code)
-        return c.json({ error: { code: result.code, message: result.message }, cost: { micro_credits: cost } }, 422)
+        return c.json({ error: { code: result.code, message: result.message }, ...charged }, 422)
       }
       usage.inputChars = result.text.length
       record('ok')
-      return c.json({ ...answer(result), cost: { micro_credits: cost } })
+      return c.json({ ...answer(result), ...charged })
     } catch (err) {
       record(err instanceof HttpError || err instanceof PageError ? err.code : 'internal')
       throw err instanceof PageError ? refused(err) : err
