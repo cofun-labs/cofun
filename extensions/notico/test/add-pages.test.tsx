@@ -509,10 +509,31 @@ describe('UC-NOTICO-CHAT-004 add pages to a question', () => {
       expect(browser.ai.calls).toHaveLength(asked)
       if (leave === 'Stop') expect(conversation().getAllByText('Stopped').at(-1)).toBeVisible()
     }
+    // Nor is one whose user signs out meanwhile, which closes the chat.
+    tab.respond('search', 200, searchAnswer())
+    const late = tab.hold('search')
+    const before = searches(tab).length
+    await user.type(composer(), 'Go @road')
+    await pause()
+    await waitFor(() => expect(searches(tab)).toHaveLength(before + 1))
+    const asked = browser.ai.calls.length
+    await user.click(screen.getByRole('button', { name: 'Send' }))
+    await user.click(screen.getByRole('button', { name: 'Account' }))
+    await user.click(screen.getByRole('menuitem', { name: 'Sign out' }))
+    expect(await screen.findByText('Sign in to use Notico.')).toBeVisible()
+    await act(async () => late())
+    await browser.signInAgain()
     // The new chat answers its own question.
     browser.ai.script.push({ reply: 'Fresh.' })
     await user.type(composer(), 'Hello{Enter}')
     expect(await screen.findByText('Fresh.')).toBeVisible()
+    // The question sent before signing out never reached the model, then or after signing back in.
+    const questions = browser.ai.calls
+      .slice(asked)
+      .flatMap((call) =>
+        (call.inputs.messages as { role: string; content?: string }[]).filter((m) => m.role === 'user'),
+      )
+    expect(questions.some((m) => m.content?.endsWith('Go @road'))).toBe(false)
   })
 
   it('[UC-NOTICO-CHAT-004-S08] the open page taken off and picked again goes with the question, also once the tab moves on', async () => {
