@@ -10,7 +10,8 @@
 //
 // Oxlint's regexes have no lookahead (a pattern with one is ignored without a warning), so the rule
 // that a product never imports another one is written for where a product's files are: directly in
-// products/<name>/, one level below products/.
+// products/<name>/, so one level up is products/; a path that climbs further and comes back down
+// through products/ names a product too (a product's own files never import through products/).
 {
   "$schema": "./node_modules/oxlint/configuration_schema.json",
   "rules": {
@@ -129,6 +130,10 @@
             "patterns": [
               {
                 "regex": "^\\.\\./[^./]",
+                "message": "A product never imports another product: each one in extension/products/<name>/ builds on the shared code in src/, and keeps its own copy of anything else it needs."
+              },
+              {
+                "regex": "^(\\.\\./)+([^/]+/)*products/",
                 "message": "A product never imports another product: each one in extension/products/<name>/ builds on the shared code in src/, and keeps its own copy of anything else it needs."
               },
               {

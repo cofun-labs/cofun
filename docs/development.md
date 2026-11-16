@@ -97,7 +97,7 @@ Per-request usage records go to the Analytics Engine dataset `cofun_api_usage` (
 pnpm build        # builds the extension; Notico's build goes to extension/dist
 ```
 
-In `chrome://extensions`, turn on Developer mode, click "Load unpacked", and pick `extensions/notico/dist`.
+In `chrome://extensions`, turn on Developer mode, click "Load unpacked", and pick `extension/dist`.
 
 `extension/products/notico/.env` holds the public build config, each value explained by its comment; override values in `extension/products/notico/.env.local`. A development build sends no usage events to PostHog; to try them from a local build, build it with `POSTHOG_IN_DEV=1`. The PostHog project keeps **Discard client IP data** on, which the privacy pages rely on. Don't run PostHog's setup wizard on this repository: it adds the SDK with defaults that send page titles and URLs.
 

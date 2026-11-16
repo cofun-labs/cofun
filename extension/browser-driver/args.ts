@@ -68,9 +68,9 @@ Options:
   --owner <name>               Lock owner (default: $BROWSER_DRIVER_OWNER, else the git branch)
 
 Environment:
-  BROWSER_DRIVER_NOTION_URL               A page in the workspace page and db create in (default: the workspace
+  BROWSER_DRIVER_NOTION_URL    A page in the workspace page and db create in (default: the workspace
                                of the page the tool's tab shows, or the account's only workspace)
-  BROWSER_DRIVER_CDP_PORT                 Canary's DevTools port (default 9228)
+  BROWSER_DRIVER_CDP_PORT      Canary's DevTools port (default 9228)
 
 Exit codes: 0 done, 1 failed, 2 usage error, 3 Canary busy (prints the holder),
 4 a reply is waiting for approval (run "pnpm browser-driver ask --allow" or "--deny").`
