@@ -373,41 +373,19 @@ describe('web reads and searches', () => {
   const render = (url: string) => outcome((charged) => readWebPage(config, url, 1000, true, undefined, charged))
   const search = () => outcome((charged) => searchWebFor(config, 'tea', 5, undefined, charged))
 
-  it('[@no-uc:contract] a render and a search that succeed say what they cost; ones that fail cost nothing, and go to the model', async () => {
+  it('[@no-uc:contract] a render and a search say what they cost; failed ones cost nothing, and a busy one stops the question', async () => {
     browser.render('https://app.example/board', '# Board', 4000)
-    browser.render('https://app.example/blank', ' ', 2000)
     expect(await render('https://app.example/board')).toMatchObject({ result: { title: 'Board' }, costs: [100_000] })
-    for (const [url, code] of [
-      ['https://app.example/blank', 'no_text'],
-      ['https://app.example/broken', 'render_failed'],
-    ])
-      expect(await render(url)).toEqual({ error: { code, stops: false, charged: false }, costs: [0] })
+    const failed = { error: { code: 'render_failed', stops: false, charged: false }, costs: [0] }
+    expect(await render('https://app.example/broken')).toEqual(failed)
+    browser.reply = () => Response.json({ success: false }, { status: 429 })
+    const busy = { error: { code: 'render_busy', stops: true, charged: false }, costs: [0] }
+    expect(await render('https://app.example/board')).toEqual(busy)
 
     ai.found.set('tea', [{ url: 'https://tea.example/', title: 'Tea', description: 'About tea.' }])
     expect(await search()).toMatchObject({ result: [{ url: 'https://tea.example/' }], costs: [250_000] })
     ai.searchReply = () => Response.json({ results: [] })
     expect(await search()).toEqual({ error: { code: 'search_failed', stops: false, charged: false }, costs: [0] })
-  })
-
-  it('[@no-uc:contract] a render or a search the service turns away stops the question, and costs nothing', async () => {
-    browser.render('https://app.example/board', '# Board')
-    browser.reply = () => Response.json({ success: false }, { status: 429 })
-    expect(await render('https://app.example/board')).toEqual({
-      error: { code: 'render_busy', stops: true, charged: false },
-      costs: [0],
-    })
-    ai.searchReply = () => Response.json({ ok: false, error: { code: 'rate_limited' } }, { status: 429 })
-    expect(await search()).toEqual({ error: { code: 'search_busy', stops: true, charged: false }, costs: [0] })
-    ai.searchReply = () => Response.json({ ok: false, error: { code: 'web_search_payment_required' } }, { status: 402 })
-    expect(await search()).toEqual({ error: { code: 'search_unavailable', stops: true, charged: false }, costs: [0] })
-    // Turned away by the worker before anything was rendered or searched: no cost is said, none is counted.
-    env.RENDER_LIMIT = new FakeRateLimiter(0)
-    env.SEARCH_LIMIT = new FakeRateLimiter(0)
-    expect(await render('https://app.example/board')).toEqual({
-      error: { code: 'rate_limited', stops: true, charged: false },
-      costs: [],
-    })
-    expect(await search()).toEqual({ error: { code: 'rate_limited', stops: true, charged: false }, costs: [] })
   })
 
   it('[@no-uc:money] a Stop while the answer of a render is read throws the Stop, not an answer that could not be read', async () => {

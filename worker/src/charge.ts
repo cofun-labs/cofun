@@ -1,15 +1,7 @@
-// Charging a signed-in user's credits after use, the same way for every paid call: a model call, a
-// render, a search. The ledger is opened before the call, which goes ahead while the user has
-// credits, and the call is charged once it ended:
-//
-// - a call that failed costs nothing (a model call that errors or whose stream breaks off, a render
-//   that fails or shows no text, a search turned away or answered in a way the worker does not
-//   understand): what the service bills for it is ours;
-// - a call that succeeded costs what it used;
-// - a streamed reply the user stopped costs an estimate of what it used so far (routes/chat.ts).
-//
-// Calls sent at once all start on the same balance, so together they can cost more than what is
-// left: what the grants don't cover is forgiven, and each route's rate limit bounds it.
+// Charging after use, for every paid call (a model call, a render, a search): it goes ahead while
+// the balance is above zero, and once it ended, one that failed costs nothing, one that succeeded
+// what it used, and a streamed reply the user stopped an estimate of it (routes/chat.ts). What the
+// grants don't cover is forgiven; each route's rate limit bounds it.
 import { FREE_CREDITS, Ledger, type Balance, type SpendDetail } from './credits'
 import { HttpError, errorSummary, type Ctx } from './http'
 import { recordUsage, type UsageRecord } from './usage'
@@ -18,10 +10,7 @@ import * as z from './zod'
 /** The product of a call that names none, or a name that is not one. */
 const UNKNOWN_PRODUCT = 'unknown'
 
-/**
- * The header in which an extension says who it is: its product and version, `X-Cofun-Client:
- * notico/0.3.0`. Only the product is read; the version is not kept.
- */
+/** The header in which an extension names itself, `notico/0.3.0`. Only the product is read. */
 export const CLIENT_HEADER = 'x-cofun-client'
 
 /** A product name: lowercase letters, never `unknown`. */
@@ -31,20 +20,14 @@ const ProductName = z
   .refine((name) => name !== UNKNOWN_PRODUCT)
 
 /**
- * The product a call comes from, as the extension names it in CLIENT_HEADER, or `unknown` when it
- * names none (store builds up to Notico 0.2.0 send no header) or a name that is not one. The
- * client's own word: the product only sorts what was spent, and credits are one balance across
- * products, so a wrong name costs no one anything, and a call is never refused over it.
+ * The product a call comes from, by CLIENT_HEADER, or `unknown` (Notico up to 0.2.0 sends none).
+ * The client's own word: it only sorts what was spent, so a call is never refused over it.
  */
 function productOf(header: string | undefined): string {
   return ProductName.safeParse(header?.split('/')[0]).data ?? UNKNOWN_PRODUCT
 }
 
-/**
- * The headers in which an extension says which chat (`X-Cofun-Chat-Id`, the session's own id) and
- * which question of it (`X-Cofun-Turn-Id`, one per question, the same across all its requests) a
- * request is for. Random ids, recorded with what the request spent; they say nothing about the content.
- */
+/** The headers naming the chat and the question a request is for: random ids, recorded with what it spent. */
 export const CHAT_HEADER = 'x-cofun-chat-id'
 export const TURN_HEADER = 'x-cofun-turn-id'
 
@@ -57,10 +40,8 @@ export interface Turn {
 const Id = z.uuid()
 
 /**
- * The chat and question a request names in its headers. A header left out is null: Notico builds
- * released before #466 send neither, and their requests go ahead as before (the fallback can go
- * once every build on the store sends both). A header that is there but not a UUID is a client's
- * bug, refused with 400 so it shows.
+ * The chat and question a request names. A header left out is null: builds before #466 send
+ * neither (this can go once every store build sends both). One that is not a UUID is refused.
  */
 function turnOf(c: Ctx): Turn {
   const read = (name: string) => {
@@ -74,10 +55,8 @@ function turnOf(c: Ctx): Turn {
 }
 
 /**
- * The usage record of a request on `model`, and how to write it once, with how the request ended.
- * Filled with sizes, token counts, and what was charged only: never the request's content. `turn`
- * reads the chat and question the request names, into the record too; it throws on a header that is
- * not a UUID, so it is read where a refusal is recorded.
+ * The usage record of a request (sizes and counts only, never content), `record` to write it once,
+ * and `turn` to read the request's chat and question into it: called where a refusal is recorded.
  */
 export function startUsage(
   c: Ctx,
@@ -125,10 +104,8 @@ function utcMinute(ms: number): string {
 }
 
 /**
- * The user's ledger, opened before a paid call: it gives the weekly free grant if they have none,
- * and lets the call go ahead while the balance is above zero. Refuses with `out_of_credits` when
- * nothing is left, and with `credits_unavailable` when the credits can't be read, so nothing is
- * spent that can't be charged.
+ * The user's ledger, opened before a paid call, which gives the weekly free grant if due. Refuses
+ * with `out_of_credits` at a zero balance, and `credits_unavailable` when it can't be read.
  */
 export async function openLedger(c: Ctx, now: number, logError: (line: string) => void): Promise<Ledger> {
   const ledger = new Ledger(c.env.DB, c.get('userId'))
@@ -149,10 +126,7 @@ export async function openLedger(c: Ctx, now: number, logError: (line: string) =
   return ledger
 }
 
-/**
- * What charging a call needs besides the call: who pays, the chat and question it was for, the
- * clock, and the log. `what` names the call in the log.
- */
+/** Who pays for a call, and for which question; `what` names the call in the log. */
 export interface Charging {
   ledger: Ledger
   usage: UsageRecord
@@ -163,10 +137,8 @@ export interface Charging {
 }
 
 /**
- * Charges a call that ended: records it as a spend, with its detail row, and takes `cost` from the
- * user's credits. Every call that reached the service is recorded, failed ones too, at no cost.
- * Gives what was charged: `cost`, or 0 when the record failed, which is logged: the call has
- * ended, so what it gave still goes to the client, uncharged.
+ * Records a call that ended as a spend of `cost`, failed ones too. Gives what was charged: 0 when
+ * the record failed, which is logged, and what the call gave still goes out.
  */
 export async function charge(
   { ledger, usage, turn, now, logError, what }: Charging,
@@ -185,9 +157,8 @@ export async function charge(
 }
 
 /**
- * Runs a paid call that gives its result at once (a render, a search), and charges it what `work`
- * says it cost. The call is charged even if the client goes away meanwhile: a request dropped right
- * after it was sent must not be a free call. Gives the result with what was charged.
+ * Runs a call that gives its result at once (a render, a search) and charges what `work` says,
+ * even if the client goes away meanwhile.
  */
 export async function chargeAfterUse<T>(
   c: Ctx,

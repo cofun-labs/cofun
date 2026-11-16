@@ -681,6 +681,29 @@ describe('UC-COFUN-CREDITS-001 Spend credits on the hosted model', () => {
     })
   })
 
+  it('[@no-uc:money] a stream whose read fails after its end is charged its totals, as its last chunk says', async () => {
+    ai.rawSse =
+      'data: {"choices":[{"delta":{"content":"Hi"},"finish_reason":"stop"}]}\n\n' +
+      'data: {"choices":[],"usage":{"prompt_tokens":1000,"completion_tokens":5}}\n\n' +
+      'data: [DONE]\n\n'
+    ai.failAfterRawSse = new Error('connection reset')
+    const reader = (await chat(token, { messages: hi, stream: true })).body!.getReader()
+    const decoder = new TextDecoder()
+    let text = ''
+    await expect(
+      (async () => {
+        for (;;) {
+          const { done, value } = await reader.read()
+          if (done) return
+          text += decoder.decode(value, { stream: true })
+        }
+      })(),
+    ).rejects.toThrow('the model stream failed')
+    const cost = { micro_credits: 1000 * 300 + 5 * 1200, estimated: false }
+    expect(calls()).toEqual([expect.objectContaining({ outcome: 'stream_error', micro_credits: cost.micro_credits })])
+    expect(text).toContain(`"cost":${JSON.stringify(cost)}`)
+  })
+
   it('[@no-uc:money] a stream that carries a model error and no usage costs nothing', async () => {
     ai.rawSse = 'data: {"error":{"message":"model overloaded"}}\n\n'
     await (await chat(token, { messages: hi, stream: true })).text()

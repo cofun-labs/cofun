@@ -1,10 +1,6 @@
-// Web pages read for a signed-in user (/v1/web): fetched plainly, or rendered in Browser Run, and
-// web searches. A plain read is free. A render that gave a page is charged in credits, the browser
-// time it used at Browser Run's price, and a search that gave results (none included) the
-// provider's price for it; one that failed costs nothing (see charge.ts). Each has a cap of its own. None
-// keeps or logs the address, the query, the page, or the results: the usage record holds the outcome
-// and sizes only, a render's record in the ledger its outcome and browser time, and a search's its
-// outcome and how many results it gave.
+// Web pages read for a signed-in user (/v1/web), plainly or rendered in Browser Run, and web
+// searches. A plain read is free; a render and a search are charged as charge.ts says, each with a
+// cap of its own. Nothing keeps or logs the address, the query, the page, or the results.
 import { Hono } from 'hono'
 import * as z from '../zod'
 import { HttpError, parse, type App, type Ctx, type Deps } from '../http'
@@ -32,17 +28,10 @@ const SearchBody = z.object({
   limit: z.number().int().min(1).max(MAX_RESULTS),
 })
 
-/**
- * What a render or a search cost, as its answer says, a page or results or why there are none: in
- * micro-credits, as charged, 0 when it failed or its record did. The client shows it with the reply.
- */
+/** What a render or a search was charged, in every answer of one: 0 when it failed or its record did. */
 const costOf = (charged: number) => ({ cost: { micro_credits: charged } })
 
-/**
- * The status of a render or a search that failed: 503 when the service turned it away, which the
- * extension reads as stopping the question (`render_busy`, `search_busy`, `search_unavailable`),
- * 422 for a page that could not be rendered, and 502 for a search that failed.
- */
+/** The status of a failed render or search: 503 for one turned away (it stops the question), else 422 or 502. */
 const statusOf = (code: string) =>
   code === 'render_busy' || code === 'search_busy' || code === 'search_unavailable'
     ? 503
@@ -100,8 +89,7 @@ export function webRoutes({ now, logError }: Pick<Deps, 'now' | 'logError'>): Ap
       const browser = c.env.BROWSER
       if (!browser) throw new HttpError(503, 'not_configured', 'rendering pages is not set up')
       await limit(c)
-      // Renders sent at once all start on the same balance, so how many one user can start a minute
-      // is capped. Checked before the credits, so a refused request reads nothing.
+      // Checked before the credits, so a refused request reads nothing.
       const { success } = await c.env.RENDER_LIMIT.limit({ key: c.get('userId') })
       if (!success)
         throw new HttpError(429, 'rate_limited', 'Too many pages rendered at once. Wait a minute, then try again.')
@@ -110,7 +98,6 @@ export function webRoutes({ now, logError }: Pick<Deps, 'now' | 'logError'>): Ap
       const { result, charged } = await chargeAfterUse<WebPage | PageError>(c, charging, async () => {
         const render = await renderPage(browser, url, body.max_chars)
         const { outcome, browserMs } = render
-        // Only a render that gave a page costs the user anything: the browser time it used.
         const cost = outcome === 'ok' ? renderCostOf(browserMs) : 0
         return {
           result: outcome === 'ok' ? render.page : render.error,
@@ -141,8 +128,7 @@ export function webRoutes({ now, logError }: Pick<Deps, 'now' | 'logError'>): Ap
       const body = parse(SearchBody, await c.req.json().catch(() => undefined))
       const gateway = c.env.AI_GATEWAY_ID
       if (!gateway) throw new HttpError(503, 'not_configured', 'web search is not set up')
-      // Searches sent at once all start on the same balance, so how many one user can make a minute
-      // is capped. Checked before the credits, so a refused request reads nothing.
+      // Checked before the credits, so a refused request reads nothing.
       const { success } = await c.env.SEARCH_LIMIT.limit({ key: c.get('userId') })
       if (!success)
         throw new HttpError(429, 'rate_limited', 'Too many web searches at once. Wait a minute, then try again.')
@@ -154,7 +140,6 @@ export function webRoutes({ now, logError }: Pick<Deps, 'now' | 'logError'>): Ap
           results = await searchWeb(c.env.AI, gateway, body.query, body.limit)
         } catch (err) {
           if (!(err instanceof SearchError)) throw err
-          // A search that failed costs the user nothing.
           return { result: err, cost: 0, detail: { kind: 'web_search', outcome: err.code, results: 0 } }
         }
         return {

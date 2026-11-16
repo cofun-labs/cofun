@@ -49,6 +49,8 @@ export class FakeAiBinding implements AiBinding {
   rawSse?: string
   /** When set, a streamed call fails with this error after sending the first slice. */
   streamFailWith?: Error
+  /** When set with `rawSse`, the stream fails with this error once all of `rawSse` was sent. */
+  failAfterRawSse?: Error
   /** When set, a streamed reply stops once `after` bytes are sent, until `until` resolves: a model still writing. */
   pause?: { after: number; until: Promise<void> }
   /** When set, the model writes the reply as a preamble and then asks the client to run these tools. */
@@ -97,6 +99,18 @@ export class FakeAiBinding implements AiBinding {
       }
     }
 
+    if (this.rawSse !== undefined && this.failAfterRawSse) {
+      const bytes = new TextEncoder().encode(this.rawSse)
+      const failWith = this.failAfterRawSse
+      let sent = false
+      return new ReadableStream<Uint8Array>({
+        pull(controller) {
+          if (sent) return controller.error(failWith)
+          sent = true
+          controller.enqueue(bytes)
+        },
+      })
+    }
     if (this.rawSse !== undefined)
       return this.pause
         ? sliced(new TextEncoder().encode(this.rawSse), undefined, this.pause)

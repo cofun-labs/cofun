@@ -138,11 +138,7 @@ export async function readOwn<S extends z.ZodType>(
 /** A refusal from the worker, with its code. */
 const CodedError = z.object({ error: z.object({ code: looseText, message: looseText }) })
 
-/**
- * What a render or a search cost, as the worker says in its answer: a page or results, or why there
- * are none (one that failed costs nothing, and says so). A plain read is free, and a request turned
- * away before rendering or searching cost nothing: neither says.
- */
+/** What a render or a search cost, as each of its answers says; a plain read, or one turned away first, says nothing. */
 const Charged = z.object({ cost: z.object({ micro_credits: z.number().int().nonnegative() }).optional() })
 
 /** What the user is told when the worker's limit on pages read stops a question. */
@@ -219,12 +215,10 @@ function stopsSearching(code: string, message: string): string | undefined {
 type WebConfig = Pick<AgentConfig, 'apiUrl' | 'getToken' | 'client'> & { turn?: Turn }
 
 /**
- * Asks the worker's web route `path` (/web/read, /web/render, /web/search) with `payload`, and
- * gives its answer when it succeeded, with whether it was or may have been charged. Throws a WebError coded `failed` when the worker could not be
- * reached, or its refusal's code, which stops the question when `stops` says so. A render and a
- * search are `paid`: `charged` is called with what one cost, as its answer says, or with undefined
- * when that is not known, and the WebError is `charged` when it was or may have been. A question
- * stopped by the user throws what `fetch` or reading the answer threw.
+ * Asks the worker's web route `path`, and gives its answer, with whether it may have cost credits.
+ * Throws a WebError: coded `failed` when the worker can't be reached, else the refusal's code,
+ * stopping the question when `stops` says so. For a `paid` route, `charged` gets what the call
+ * cost, or undefined when that's unknown. A Stop throws what `fetch` or reading the answer threw.
  */
 async function askWeb(
   { apiUrl, getToken, client, turn }: WebConfig,
@@ -237,7 +231,7 @@ async function askWeb(
   }: { paid: boolean; failed: string; stops: (code: string, message: string) => string | undefined },
   signal?: AbortSignal,
   charged?: (microCredits: number | undefined) => void,
-): Promise<{ body: unknown; paid: boolean }> {
+): Promise<{ body: unknown; mayHaveCost: boolean }> {
   const token = await getToken()
   if (!token) throw new Error(SIGN_IN)
   let res: Response
@@ -263,28 +257,21 @@ async function askWeb(
   try {
     body = await res.json()
   } catch (err) {
-    // A Stop while the answer is read is a Stop, not an answer that could not be read.
+    // A Stop while the answer is read is a Stop, not an unreadable answer.
     if (signal?.aborted) {
       if (paid) charged?.(undefined)
       throw err
     }
   }
-  const cost = paid && chargedBy(res, body, charged)
+  const mayHaveCost = paid && chargedBy(res, body, charged)
   if (!res.ok) {
     const { code, message } = refusalOf(res, body)
-    throw new WebError(code, message, { stopsQuestion: stops(code, message), charged: cost })
+    throw new WebError(code, message, { stopsQuestion: stops(code, message), charged: mayHaveCost })
   }
-  return { body, paid: cost }
+  return { body, mayHaveCost }
 }
 
-/**
- * Has the worker read the web page at `url` (see ToolContext.readWeb): fetched plainly, or rendered
- * in a browser when `render` is set. Resolves with the page; throws a WebError when the worker
- * could not read it, which stops the question only when the request was turned away (see
- * stopsReading). A render calls `charged` with what it cost in micro-credits, or with undefined
- * when what it cost is not known (see askWeb). A question stopped by the user throws what `fetch`
- * threw.
- */
+/** Has the worker read the web page at `url`, rendered when `render` is set (see ToolContext.readWeb and askWeb). */
 export async function readWebPage(
   config: WebConfig,
   url: string,
@@ -295,22 +282,16 @@ export async function readWebPage(
 ): Promise<WebPage> {
   const how = { paid: render, failed: 'read_failed', stops: stopsReading }
   const path = `web/${render ? 'render' : 'read'}`
-  const { body, paid } = await askWeb(config, path, { url, max_chars: maxChars }, how, signal, charged)
+  const { body, mayHaveCost } = await askWeb(config, path, { url, max_chars: maxChars }, how, signal, charged)
   const page = WebPage.safeParse(body)
-  if (!page.success) throw new WebError('read_failed', UNREADABLE, { charged: paid, cause: page.error })
+  if (!page.success) throw new WebError('read_failed', UNREADABLE, { charged: mayHaveCost, cause: page.error })
   return page.data
 }
 
 /** The worker's answer to a search. */
 const WebSearch = z.object({ results: z.array(WebSearchResult) })
 
-/**
- * Has the worker search the web for `query` (see ToolContext.searchWeb), for at most `limit`
- * results. Throws a WebError when the worker could not, which stops the question only when the
- * search was turned away (see stopsSearching). Calls `charged` with what the search cost in
- * micro-credits, or with undefined when what it cost is not known (see askWeb). A failed search is
- * not tried again. A question stopped by the user throws what `fetch` threw.
- */
+/** Has the worker search the web for `query`, for at most `limit` results, never retried (see ToolContext.searchWeb and askWeb). */
 export async function searchWebFor(
   config: WebConfig,
   query: string,
@@ -319,8 +300,8 @@ export async function searchWebFor(
   charged?: (microCredits: number | undefined) => void,
 ): Promise<WebSearchResult[]> {
   const how = { paid: true, failed: 'search_failed', stops: stopsSearching }
-  const { body, paid } = await askWeb(config, 'web/search', { query, limit }, how, signal, charged)
+  const { body, mayHaveCost } = await askWeb(config, 'web/search', { query, limit }, how, signal, charged)
   const answer = WebSearch.safeParse(body)
-  if (!answer.success) throw new WebError('search_failed', UNREADABLE, { charged: paid, cause: answer.error })
+  if (!answer.success) throw new WebError('search_failed', UNREADABLE, { charged: mayHaveCost, cause: answer.error })
   return answer.data.results
 }

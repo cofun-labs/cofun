@@ -79,8 +79,7 @@ export function chatRoutes({ now, priceOf: priceFor, logError }: Deps): App {
     const { success } = await c.env.CHAT_LIMIT.limit({ key: c.get('userId') })
     if (!success) throw new HttpError(429, 'rate_limited', 'Too many requests at once. Wait a minute, then ask again.')
 
-    // Charged after use (see charge.ts): its cost is taken when the reply ends. CHAT_LIMIT and
-    // MAX_TOKENS bound how many calls sent at once can start on the same balance, and what each costs.
+    // Charged when the reply ends (charge.ts); CHAT_LIMIT and MAX_TOKENS bound what calls at once cost.
     const maxTokens = max_tokens ?? MAX_TOKENS
     const charging: Charging = {
       ledger: await openLedger(c, now().getTime(), logError),
@@ -91,10 +90,7 @@ export function chatRoutes({ now, priceOf: priceFor, logError }: Deps): App {
       what: 'model call',
     }
 
-    /**
-     * Ends the call, once: records it as a spend, with how it ended and its tokens, and takes `cost`
-     * from the user's credits (see `charge`).
-     */
+    /** Ends the call, once: records it as a spend of `cost`, with how it ended and its tokens. */
     const startedAt = now().getTime()
     let ended = false
     const endCall = async (outcome: string, tokens: Tokens, finish: string, estimated: boolean, cost: number) => {
@@ -165,15 +161,13 @@ export function chatRoutes({ now, priceOf: priceFor, logError }: Deps): App {
         const charged = (outcome: string, summary: StreamSummary) => {
           const { promptTokens, cachedTokens, completionTokens } = summary
           const tokens: Tokens = { promptTokens, cachedTokens, completionTokens }
-          // Any ending but these two is a call that failed (a stream that broke off, or carried a
-          // model error): it costs nothing, whatever it streamed first.
-          if (outcome !== 'ok' && outcome !== 'cancelled') return { tokens, estimated: false, cost: 0 }
-          // A reply that ran to its end costs its totals, even when the client stopped reading right
-          // there. One the user stopped before costs what it used so far: its totals come in the
-          // stream's last chunks, which never arrived, so they are estimated: the prompt from the
-          // size of the input when no chunk gave it (the model was reading it), the reply from the
-          // characters that were streamed (never below what the stream did report), and the part of
-          // the prompt read from the cache as a fixed share of it, since nothing says how much it was.
+          // A model error, or a stream that broke off before [DONE] unless the user stopped it, failed:
+          // it costs nothing, whatever it streamed first.
+          const failed = outcome === 'provider_error' || (outcome !== 'ok' && outcome !== 'cancelled' && !summary.ended)
+          if (failed) return { tokens, estimated: false, cost: 0 }
+          // One that reached [DONE] costs its totals. One the user stopped before costs an estimate,
+          // since its totals never came: the prompt from the input's size when no chunk gave it, the
+          // reply from the characters streamed, and a fixed share of the prompt as cached.
           const estimated = outcome === 'cancelled' && !summary.ended
           if (estimated) {
             tokens.promptTokens ||= estimateTokens(chars)
