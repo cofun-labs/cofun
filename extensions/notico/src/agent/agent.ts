@@ -35,7 +35,7 @@ import type {
 import { ToolDetails } from './types'
 import { checkout, hostedProvider, readOwn, readWebPage, searchWebFor } from './worker'
 
-const DEFAULT_MAX_STEPS = 10
+const DEFAULT_MAX_STEPS = 20
 
 /**
  * How far the user's clock is ahead of UTC, in minutes: the worker totals usage per day, and a day
@@ -587,8 +587,33 @@ export class CopilotAgent {
           searchWebFor(this.config, query, limit, signal, (cost) => {
             if (epoch === this.epoch) this.onCost?.(cost)
           }),
+        keep: async (result) => {
+          const store = this.config.results
+          if (!store) throw new Error('There is no store to keep results in.')
+          return store.keep(result)
+        },
+        kept: async (id) => {
+          if (!this.namesResult(id)) return 'unknown'
+          return (await this.config.results?.result(id)) ?? 'gone'
+        },
+        questionChars: () => {
+          const messages = this.agent?.state.messages ?? []
+          const question = messages.findLastIndex((m) => m.role === 'user')
+          return messages
+            .slice(question + 1)
+            .reduce((n, m) => n + (m.role === 'toolResult' ? textOf(m.content).length : 0), 0)
+        },
       },
     }
+  }
+
+  /**
+   * Whether the conversation's tool results name the kept result `id` (see ToolDetails.result): only
+   * those can be read, so a result of another chat is never read in this one.
+   */
+  private namesResult(id: string): boolean {
+    const messages = this.agent?.state.messages ?? []
+    return messages.some((m) => m.role === 'toolResult' && ToolDetails.safeParse(m.details).data?.result === id)
   }
 
   /**

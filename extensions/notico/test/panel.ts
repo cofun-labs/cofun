@@ -5,7 +5,7 @@
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { act } from '@testing-library/react'
-import { IDBFactory } from 'fake-indexeddb'
+import { IDBFactory, IDBKeyRange } from 'fake-indexeddb'
 import { vi } from 'vitest'
 import { createApp, type Env } from '../../../worker/src/app'
 import { FakeClerk } from '../../../worker/test/clerk'
@@ -160,6 +160,7 @@ export class FakeBrowser {
     }
     // A new browser profile: no saved sessions, and nothing in the extension's localStorage.
     globals.indexedDB = new IDBFactory()
+    globals.IDBKeyRange = IDBKeyRange
     localStorage.clear()
 
     tab.install()
@@ -236,5 +237,6 @@ export async function closeBrowser(): Promise<void> {
   await closePanel()
   restoreGlobals()
   delete globals.indexedDB
+  delete globals.IDBKeyRange
   vi.useRealTimers()
 }

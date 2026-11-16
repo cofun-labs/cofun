@@ -78,6 +78,8 @@ const READING = [
   'read_web_page',
   'render_web_page',
   'search_web',
+  'read_result',
+  'search_result',
 ]
 const CHANGING = [
   'edit_page',

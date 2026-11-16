@@ -48,14 +48,26 @@ const toolResults = (browser: FakeBrowser) =>
     .map((m) => m.content)
 
 /** The result read_current_tab gives for a page, as the model gets it. */
-const pageResult = (title: string, url: string, text: string, clipped?: string) =>
+const pageResult = (title: string, url: string, text: string) =>
   [
     DATA_LINE,
     `Page in the current tab, on news.example.com: ${JSON.stringify({ title, url })}`,
-    ...(clipped ? [clipped] : []),
     'Content, as Markdown:',
     text,
   ].join('\n')
+
+/** The lines read_current_tab gives for a long page, kept on the device: `note` matches its note. */
+const keptResult = (title: string, url: string, note: RegExp, text: string) => [
+  DATA_LINE,
+  `Page in the current tab, on news.example.com: ${JSON.stringify({ title, url })}`,
+  expect.stringMatching(note),
+  'Content, as Markdown:',
+  text,
+]
+
+/** The note on a page kept on the device, whose id is random. */
+const kept = (chars: string, parts: number) =>
+  new RegExp(`^\\[Kept as result r_[0-9a-f]{16}: ${chars} characters in ${parts} parts; this is part 1\\.`)
 
 describe('reading the page in the current tab', () => {
   it('[UC-NOTICO-PANEL-001-S11] the model gets the main content of a page on a site the user allowed, marked as data from that page', async () => {
@@ -185,7 +197,7 @@ describe('reading the page in the current tab', () => {
     ])
   })
 
-  it('[UC-NOTICO-PANEL-001-S11] a long page is clipped, and the model is told how much it got', async () => {
+  it('[UC-NOTICO-PANEL-005-S01] a long page in the current tab comes as its first part, with an id to read the rest by', async () => {
     const tab = articleTab('x'.repeat(25_000))
     tab.allowed.add(SITE)
     const { browser, user } = await openOn(tab)
@@ -194,18 +206,13 @@ describe('reading the page in the current tab', () => {
     await ask(user, 'Summarize this article')
 
     expect(await screen.findByText('It is long.')).toBeVisible()
-    expect(toolResults(browser)).toEqual([
-      pageResult(
-        'Rivers | News',
-        ARTICLE,
-        'x'.repeat(20_000),
-        "[Clipped: this shows the first 20,000 of the page's 25,000 characters.]",
-      ),
-    ])
+    expect(toolResults(browser)[0]!.split('\n')).toEqual(
+      keptResult('Rivers | News', ARTICLE, kept('25,000', 2), 'x'.repeat(20_000)),
+    )
   })
 
   it('[UC-NOTICO-PANEL-001-S11] markup the Markdown has no use for does not count against what is read', async () => {
-    // Class names much longer than the text, as on pages styled by them: the first 20,000 still come.
+    // Class names much longer than the text, as on pages styled by them: the whole text still comes.
     const tab = articleTab(`<p class="${'c'.repeat(2_000_000)}" data-x="1">${'x'.repeat(25_000)}</p>`)
     tab.allowed.add(SITE)
     const { browser, user } = await openOn(tab)
@@ -214,35 +221,11 @@ describe('reading the page in the current tab', () => {
     await ask(user, 'Summarize this article')
 
     expect(await screen.findByText('It is long.')).toBeVisible()
-    expect(toolResults(browser)).toEqual([
-      pageResult(
-        'Rivers | News',
-        ARTICLE,
-        'x'.repeat(20_000),
-        "[Clipped: this shows the first 20,000 of the page's 25,000 characters.]",
-      ),
-    ])
+    expect(toolResults(browser)[0]!.split('\n')).toEqual(
+      keptResult('Rivers | News', ARTICLE, kept('25,000', 2), 'x'.repeat(20_000)),
+    )
   })
 
-  it('[UC-NOTICO-PANEL-001-S11] a page whose markup is very long is clipped in the tab, and the model is told it is longer still', async () => {
-    // The tab hands over 50 characters of HTML for each character of Markdown asked for.
-    const tab = articleTab(`<p>${'x'.repeat(1_100_000)}</p>`)
-    tab.allowed.add(SITE)
-    const { browser, user } = await openOn(tab)
-    browser.ai.script.push(readTab, { reply: 'It is very long.' })
-
-    await ask(user, 'Summarize this article')
-
-    expect(await screen.findByText('It is very long.')).toBeVisible()
-    expect(toolResults(browser)).toEqual([
-      pageResult(
-        'Rivers | News',
-        ARTICLE,
-        'x'.repeat(20_000),
-        "[Clipped: this shows the first 20,000 of the page's more than 999,997 characters.]",
-      ),
-    ])
-  })
   it('[UC-NOTICO-PANEL-001-S12] the card asks to allow the site, and the page is read once the user allows it, in Chrome too', async () => {
     const { browser, user } = await openOn()
     browser.ai.script.push(readTab, { reply: 'Rivers are rising.' }, readTab, { reply: 'Still rising.' })

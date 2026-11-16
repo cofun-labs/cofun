@@ -98,6 +98,10 @@ const SYSTEM_PROMPT =
   "web with search_web, and read a result's page with read_web_page when its description is not enough. A " +
   'search query goes to a search provider: put in it only what the search needs. When an answer uses search ' +
   'results, give the URL of each result it uses. ' +
+  'A long page read from a tab or the web comes as its first part, with a note "Kept as result r_…" and an ' +
+  'outline of its headings: when the question needs what the rest says, find it with search_result or read ' +
+  'the part the outline points to with read_result, rather than answering from the first part alone or ' +
+  'guessing. Read only the parts the question needs. ' +
   "A question may also carry text the user selected on a page and sent to you from the browser's menu: a " +
   `note naming the page, the text, then "${SELECTION_END}". The question is usually about that text; when ` +
   "an answer uses it, give the page's URL. " +
@@ -174,6 +178,11 @@ interface Current {
 export function Chat({ userId }: { userId: string }) {
   const { getToken } = useAuth()
   const [store] = useState(() => new SessionStore(userId))
+  // Long results kept for a chat that was never saved go after a day; also opens the database, which
+  // the first time adds the results store to it.
+  useEffect(() => {
+    store.sweep().catch((err: unknown) => console.error('Could not sweep the kept results', err))
+  }, [store])
   const [messages, setMessages] = useState<Shown[]>([])
   const [input, setInput] = useState('')
   const [busy, setBusy] = useState(false)
@@ -243,6 +252,7 @@ export function Chat({ userId }: { userId: string }) {
     systemPrompt: SYSTEM_PROMPT,
     tools: TOOLS,
     meter: countNotionRequests,
+    results: store,
   })
   const agent = agentRef.current
 

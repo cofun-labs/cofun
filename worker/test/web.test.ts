@@ -125,6 +125,15 @@ describe('reading a web page', () => {
     expect(body.chars).toBe(3999)
   })
 
+  it('[@no-uc:contract] gives up to 2,000,000 characters, and the 20,000 that extensions which clip pages ask for', async () => {
+    web.serve('https://tea.example/long', `<p>${'tea '.repeat(10_000)}</p>`)
+    const whole: { text: string; chars: number } = await (await read('https://tea.example/long', 2_000_000)).json()
+    expect(whole.text).toHaveLength(39_999)
+    const clipped: { text: string; chars: number } = await (await read('https://tea.example/long')).json()
+    expect(clipped).toMatchObject({ text: whole.text.slice(0, 20_000), chars: 39_999 })
+    expect((await read('https://tea.example/long', 2_000_001)).status).toBe(400)
+  })
+
   it('[UC-COFUN-WEB-001-S01] reads plain text, and follows a redirect', async () => {
     web.serve('https://tea.example/notes', { status: 301, headers: { location: '/notes.txt' } })
     web.serve('https://tea.example/notes.txt', { body: 'Oolong\n\n\n\nPu-erh  ', type: 'text/plain' })
