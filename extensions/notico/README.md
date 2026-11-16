@@ -28,7 +28,7 @@
 - **Databases:** Create databases, add rows, fill in properties, and add, rename, or remove properties and select options.
 - **Organize:** Move pages under another page, duplicate them, or move them to Notion's trash (it asks you first).
 - **Collaborate:** Add comments on a page or on a block, and mention workspace members by name.
-- **Bring in the web:** On another site, ask about the page you're on, or save it to Notion. Notico reads a site only once you allow it, and says which page it used. It can also search the web, and names the sources it used.
+- **Bring in the web:** On another site, ask about the page you're on, or save it to Notion. Notico reads a site only once you allow it, and says which page it used. Paste a link and it reads that page. It can also search the web, and names the sources it used.
 - **Ask about a selection:** Select text on any page, right-click it, and pick "Ask Notico": the side panel opens with the text added to your question.
 - **Stay in context:** It knows which page is open and what you selected in it. The panel stays open, with your chat, as you switch tabs. Past chats are saved, searchable, and can be picked up again.
 - **Keep the answer:** Save a reply, or a whole chat, as a new page under the Notion page you have open, with the save button under the reply or at the top of the panel.
@@ -60,7 +60,7 @@ There is nothing to connect on the Notion side: no integration to create, no tok
 </p>
 
 - **It works as you, in your own Notion tab.** Pages are read and changed from inside the Notion tab you already have open, with the session you're already signed in with. Notico can reach what you can reach, and nothing else. The trade-off: it uses the same internal API as Notion's own web app, which is not a public API and may change.
-- **The server never talks to Notion.** It checks who you are and passes the conversation to the model. The work on your pages happens in your browser.
+- **The server never talks to Notion.** It checks who you are, passes the conversation to the model, and reads public web pages and searches the web for the assistant. The work on your pages happens in your browser.
 - **It is careful with your Notion account.** If Notion asks it to slow down, or answers with something it doesn't understand, it stops and tells you instead of pushing on or working around it.
 
 ## Privacy and safety
@@ -73,7 +73,7 @@ There is nothing to connect on the Notion side: no integration to create, no tok
 > **It edits without asking first.** Notico edits pages, creates pages and rows, changes properties (it can remove a database property, with its values in every row), adds comments, and moves and duplicates pages as soon as it decides to. Moving pages to the trash is the one thing it asks you about, every time. Each change is shown in the side panel as it happens, and Notion's page history can undo edits. To keep it from changing anything, switch the message box to **Read only** with the pencil button at its bottom left: it then only reads and answers, until you switch back to Edit.
 
 > [!CAUTION]
-> **Be careful with pages you don't control.** Notico reads text written by other people: shared pages, guest content, search results, web pages you ask about, and web search results. An instruction hidden in that text could make it act as you without anyone being asked, for example by copying something private into a page or a comment that others can read. Comments and mentions also notify people. Page history can undo a change, but not what someone read in the meantime. [More on this trade-off](../../docs/architecture.md#writes-without-approval).
+> **Be careful with pages you don't control.** Notico reads text written by other people: shared pages, guest content, search results, web pages you ask about, and web search results. An instruction hidden in that text could make it act as you without anyone being asked, for example by copying something private into a page or a comment that others can read, or, even in Read only, into a web address or search it sends out. Comments and mentions also notify people. Page history can undo a change, but not what someone read in the meantime. [More on this trade-off](../../docs/security.md#accepted-writes-without-approval).
 
 ## For developers
 

@@ -90,15 +90,13 @@ export function buildManifest(env: ManifestEnv, version: string, { store = false
       'AI copilot for Notion: summarize and edit pages, update databases, search and organize your workspace. No subscription needed.',
     ...(env.CRX_PUBLIC_KEY && !store ? { key: env.CRX_PUBLIC_KEY } : {}),
     icons: ICONS,
-    // scripting: Notion calls run in the user's Notion tab (src/notion/tab.ts), and the page of a tab on
-    // another site is read in that tab (src/web/tab.ts).
-    // contextMenus: the "Ask Notico" item on selected text, which sends it to the side panel
-    // (src/background.ts). activeTab: a click on that item lets the extension read the selection in
-    // that tab, until it goes to another page. Neither adds an install warning.
-    // tabs: the side panel reads the current tab's URL and title, to tell a Notion tab from others
-    // (src/notion/tab.ts) and for the get_current_tab tool (src/tools/current.ts). Host permissions would
-    // expose a Notion tab's URL too, but not once the user limits the extension's site access; with
-    // tabs the tools still find the tab there and say which access is missing.
+    // scripting: Notion calls run in the user's Notion tab, and a page on another site is read in its tab.
+    // contextMenus and activeTab: the "Ask Notico" item, which reads the selection in the tab it was
+    // used in. Neither adds an install warning.
+    // tabs: to tell a Notion tab from others, to give the current tab's URL and title on another site,
+    // and for the page picker's open tabs. Host permissions would expose a Notion tab's URL too, but
+    // not once the user limits the extension's site access; with tabs the tools still find the tab
+    // and say which access is missing.
     permissions: ['sidePanel', 'storage', 'tabs', 'cookies', 'scripting', 'contextMenus', 'activeTab'],
     host_permissions: [
       'https://www.notion.so/*',
@@ -113,10 +111,9 @@ export function buildManifest(env: ManifestEnv, version: string, { store = false
       // cookies whose domain the extension has host permission for.
       clerkCookiePermission(env.VITE_CLERK_SYNC_HOST, env.CLERK_COOKIE_DOMAIN),
     ],
-    // Any web site, but only one the user allows, when the agent first reads a page on it
-    // (read_current_tab). Optional: installing or updating asks for none of them, so an update with
-    // these does not disable the extension. Granting one lets the extension read that site's pages;
-    // it sends no request there (the content security policy below doesn't name it).
+    // Any web site, granted one at a time when the user allows it. Optional, so installing or updating
+    // asks for none and disables nothing. The extension reads an allowed site's pages in their tab and
+    // sends it no request (the content security policy below doesn't name it).
     optional_host_permissions: ['https://*/*', 'http://*/*'],
     content_security_policy: { extension_pages: contentSecurityPolicy(env) },
     background: { service_worker: 'background.js', type: 'module' },
