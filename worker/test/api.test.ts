@@ -172,7 +172,7 @@ describe('worker API', () => {
     expect((await json(res)).error.code).toBe('not_configured')
   })
 
-  it('[@no-uc:access] extension origin passes CORS preflight', async () => {
+  it('[@no-uc:access] extension origin passes CORS preflight, with the headers the extension sends', async () => {
     const res = await app.request(
       '/v1/chat/completions',
       { method: 'OPTIONS', headers: { origin: EXT, 'access-control-request-method': 'POST' } },
@@ -180,6 +180,9 @@ describe('worker API', () => {
     )
     expect(res.status).toBe(204)
     expect(res.headers.get('access-control-allow-origin')).toBe('*')
+    expect(res.headers.get('access-control-allow-headers')?.split(',')).toEqual(
+      expect.arrayContaining(['authorization', 'x-cofun-client', 'x-cofun-chat-id', 'x-cofun-turn-id']),
+    )
   })
 
   it('[@no-uc:access] sign-in page loads Clerk with the publishable key', async () => {
@@ -373,15 +376,25 @@ describe('UC-COFUN-CREDITS-001 Spend credits on the hosted model', () => {
     expect(db.calls().map((r) => r.micro_credits)).toEqual([cost.micro_credits, cost.micro_credits])
   })
 
-  it('[UC-COFUN-CREDITS-001-S13] a stream that breaks off says what it was charged, as an estimate', async () => {
-    // The reply's first piece, "abcdef": 2 tokens; no chunk gave the prompt: 1 token, from the input.
-    ai.rawSse = 'data: {"choices":[{"delta":{"content":"abcdef"}}]}\n\n'
-    const sse = await (await chat(token, { messages: hi, stream: true })).text()
-    const cost = { micro_credits: 300 + 2 * 1200, estimated: true }
-    expect(sse.split('\n\n').filter(Boolean).at(-1)).toBe(`data: ${JSON.stringify({ choices: [], cost })}`)
-    expect(db.calls()).toEqual([
-      expect.objectContaining({ outcome: 'incomplete', estimated: 1, micro_credits: cost.micro_credits }),
+  it("[UC-COFUN-CREDITS-001-S13] a stream that breaks off, or ends in the model's error, after part of the reply costs nothing, and says so", async () => {
+    const cost = { micro_credits: 0, estimated: false }
+    // The reply's first piece, then the stream ends without its totals or [DONE].
+    ai.rawSse =
+      'data: {"choices":[{"delta":{"content":"abcdef"}}],"usage":{"prompt_tokens":1000,"completion_tokens":2}}\n\n'
+    const broken = await (await chat(token, { messages: hi, stream: true })).text()
+    expect(broken.split('\n\n').filter(Boolean).at(-1)).toBe(`data: ${JSON.stringify({ choices: [], cost })}`)
+    // The reply's first piece, then the model's error.
+    ai.rawSse =
+      'data: {"choices":[{"delta":{"content":"abcdef"}}],"usage":{"prompt_tokens":1000,"completion_tokens":2}}\n\n' +
+      'data: {"error":{"message":"model overloaded"}}\n\ndata: [DONE]\n\n'
+    const failed = await (await chat(token, { messages: hi, stream: true })).text()
+    expect(failed).toContain(`"cost":${JSON.stringify(cost)}`)
+    // Their tokens are kept, for the operator; the user is charged nothing.
+    expect(db.calls().map((r) => [r.outcome, r.prompt_tokens, r.estimated, r.micro_credits])).toEqual([
+      ['incomplete', 1000, 0, 0],
+      ['provider_error', 1000, 0, 0],
     ])
+    expect(db.grants()[0]).toMatchObject({ left: 200_000_000 })
   })
 
   it('[@no-uc:money] a stream whose read fails says what it was charged before it errors', async () => {
@@ -646,20 +659,49 @@ describe('UC-COFUN-CREDITS-001 Spend credits on the hosted model', () => {
     ])
   })
 
-  it('[@no-uc:money] a stream cut short is charged the prompt it reported, 90% of it as cached, and the reply by its size', async () => {
+  it('[@no-uc:money] a stream the user stops is charged the prompt it reported, 90% of it as cached, and the reply by its size', async () => {
     // Workers AI gives the prompt in its first chunk; how much of it was cached only comes at the end.
     ai.rawSse =
       'data: {"choices":[{"delta":{"content":""}}],"usage":{"prompt_tokens":1000,"completion_tokens":0}}\n\n' +
       'data: {"choices":[{"delta":{"content":"abcdef","reasoning_content":"ghi"}}],"usage":{"prompt_tokens":0,"completion_tokens":2}}\n\n' +
       'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"name":"abc","arguments":"{}x"}}]}}]}\n\n'
-    await (await chat(token, { messages: hi, stream: true })).text()
+    // The model is still writing when the user stops it.
+    ai.pause = { after: ai.rawSse.length, until: new Promise(() => {}) }
+    const reader = (await chat(token, { messages: hi, stream: true })).body!.getReader()
+    const decoder = new TextDecoder()
+    let text = ''
+    while (!text.includes('tool_calls')) text += decoder.decode((await reader.read()).value, { stream: true })
+    await reader.cancel()
     expect(calls()[0]).toMatchObject({
-      outcome: 'incomplete',
+      outcome: 'cancelled',
       prompt_tokens: 1000,
       cached_tokens: 900,
       completion_tokens: 5,
       micro_credits: 100 * 300 + 900 * 6 + 5 * 1200,
     })
+  })
+
+  it('[@no-uc:money] a stream whose read fails after its end is charged its totals, as its last chunk says', async () => {
+    ai.rawSse =
+      'data: {"choices":[{"delta":{"content":"Hi"},"finish_reason":"stop"}]}\n\n' +
+      'data: {"choices":[],"usage":{"prompt_tokens":1000,"completion_tokens":5}}\n\n' +
+      'data: [DONE]\n\n'
+    ai.failAfterRawSse = new Error('connection reset')
+    const reader = (await chat(token, { messages: hi, stream: true })).body!.getReader()
+    const decoder = new TextDecoder()
+    let text = ''
+    await expect(
+      (async () => {
+        for (;;) {
+          const { done, value } = await reader.read()
+          if (done) return
+          text += decoder.decode(value, { stream: true })
+        }
+      })(),
+    ).rejects.toThrow('the model stream failed')
+    const cost = { micro_credits: 1000 * 300 + 5 * 1200, estimated: false }
+    expect(calls()).toEqual([expect.objectContaining({ outcome: 'stream_error', micro_credits: cost.micro_credits })])
+    expect(text).toContain(`"cost":${JSON.stringify(cost)}`)
   })
 
   it('[@no-uc:money] a stream that carries a model error and no usage costs nothing', async () => {
@@ -801,6 +843,38 @@ describe('product of a model call', () => {
       expect((await chat(token, { messages: hi }, { 'x-cofun-client': bad })).status, bad).toBe(200)
     }
     expect(products()).toEqual(Array(5).fill('unknown'))
+  })
+})
+
+// Standalone tests for the chat and question a spend is recorded with.
+describe('chat and question of a spend', () => {
+  const CHAT = '7f0c1a52-3b9e-4d2f-9a61-0c5e8b7d4f21'
+  const TURN = 'c2d4e6f8-1a3b-4c5d-8e7f-90a1b2c3d4e5'
+  const ids = () => db.rows('spends').map(({ chat_id, turn_id }) => ({ chat_id, turn_id }))
+
+  it('[@no-uc:contract] are the ids the extension names in its headers', async () => {
+    const res = await chat(token, { messages: hi }, { ...NOTICO, 'x-cofun-chat-id': CHAT, 'x-cofun-turn-id': TURN })
+    expect(res.status).toBe(200)
+    expect(ids()).toEqual([{ chat_id: CHAT, turn_id: TURN }])
+  })
+
+  it('[@no-uc:contract] are none when the request names none, and the call goes ahead', async () => {
+    // Builds released before the headers existed send neither.
+    expect((await chat(token)).status).toBe(200)
+    expect(ids()).toEqual([{ chat_id: null, turn_id: null }])
+  })
+
+  it('[@no-uc:contract] a header that is not a UUID is refused, before the model is called', async () => {
+    for (const [name, bad] of [
+      ['x-cofun-chat-id', 'chat-1'],
+      ['x-cofun-turn-id', ''],
+    ]) {
+      const res = await chat(token, { messages: hi }, { ...NOTICO, [name]: bad })
+      expect(res.status, name).toBe(400)
+      expect((await json(res)).error.message).toBe(`${name} must be a UUID`)
+    }
+    expect(ai.calls).toHaveLength(0)
+    expect(ids()).toEqual([])
   })
 })
 

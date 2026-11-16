@@ -32,11 +32,22 @@ const provider = (name: 'OpenRouter') => within(screen.getByRole('group', { name
 const providerSwitch = (name: 'OpenRouter') => provider(name).getByRole('switch', { name })
 const modelSwitch = (name: 'OpenRouter', model: string | RegExp) => provider(name).getByRole('switch', { name: model })
 
-/** Switches a provider on and checks `key` with Enter, from the settings page, until it works. */
+/**
+ * Waits until the provider's model list has loaded. Until then only the models switched on are
+ * shown, so a test that reads any other model waits for this first.
+ */
+const listLoaded = (name: 'OpenRouter') =>
+  waitFor(() => {
+    expect(provider(name).getByRole('list', { name: `${name}'s models` })).toBeVisible()
+    expect(provider(name).queryByText(`Loading ${name}'s models…`)).not.toBeInTheDocument()
+  })
+
+/** Switches a provider on and checks `key` with Enter, from the settings page, until it works and its models are listed. */
 async function turnOn(user: UserEvent, name: 'OpenRouter', key: string) {
   await user.click(providerSwitch(name))
   await user.type(provider(name).getByLabelText(`${name} API key`), `${key}{Enter}`)
   expect(await provider(name).findByText(/^Key works/)).toBeVisible()
+  await listLoaded(name)
 }
 
 const chip = (name: string) => screen.getByRole('button', { name: `Model: ${name}` })
@@ -55,7 +66,7 @@ async function setUpOpenRouter(browser: FakeBrowser, user: UserEvent) {
   browser.openRouter.keys.add(KEY)
   await openSettings(user)
   await turnOn(user, 'OpenRouter', KEY)
-  await user.click(await waitFor(() => modelSwitch('OpenRouter', 'OpenAI: GPT-6.1 Sol')))
+  await user.click(modelSwitch('OpenRouter', 'OpenAI: GPT-6.1 Sol'))
   await backToChat(user)
   await pick(user, 'GPT-6.1 Sol')
   expect(chip('GPT-6.1 Sol')).toBeVisible()
@@ -144,6 +155,29 @@ describe('answering with the own model', () => {
     ])
     expect(browser.titles.calls).toEqual([])
     expect(browser.sentToWorker.slice(before).some((sent) => sent.includes('/chat/completions'))).toBe(false)
+  })
+
+  it('[@no-uc:privacy] OpenRouter is never told which chat or question a request is for, nor which extension asks', async () => {
+    const { browser, user } = await openPanel()
+    await setUpOpenRouter(browser, user)
+    browser.openRouter.titles.failWith = undefined
+    browser.openRouter.titles.script.push({ reply: 'Fixture page summary' })
+    browser.openRouter.ai.script.push(
+      { toolCalls: [{ name: 'read_page', arguments: JSON.stringify({ part: 1 }) }] },
+      { reply: 'It is a fixture.' },
+    )
+
+    await ask(user, 'What does this page say?')
+    await screen.findByText('It is a fixture.')
+    await answered()
+    await user.click(screen.getByRole('button', { name: 'Chats' }))
+    expect(
+      await within(await screen.findByRole('dialog', { name: 'Chats' })).findByText('Fixture page summary'),
+    ).toBeVisible()
+
+    // Both model calls and the title went to OpenRouter, with none of the headers meant for our worker.
+    expect(browser.openRouter.requests.filter((r) => r.path === '/api/v1/chat/completions')).toHaveLength(3)
+    expect(browser.openRouter.cofunHeaders).toEqual([])
   })
 
   it("[@no-uc:money] a reply's details name the own model and the tokens OpenRouter reported", async () => {
@@ -371,7 +405,8 @@ describe('turning a provider on and checking its key', () => {
     expect(browser.openRouter.calls).toEqual([])
     expect(savedSettings(browser).value.openRouter).toMatchObject({ on: true, key: KEY })
     // The first recommended model is on, so the provider is usable at once.
-    expect(await waitFor(() => modelSwitch('OpenRouter', 'Anthropic: Claude Sonnet 5.5'))).toBeChecked()
+    await listLoaded('OpenRouter')
+    expect(modelSwitch('OpenRouter', 'Anthropic: Claude Sonnet 5.5')).toBeChecked()
     expect(modelSwitch('OpenRouter', 'OpenAI: GPT-6.1 Sol')).not.toBeChecked()
     expect(provider('OpenRouter').getByLabelText('Saved OpenRouter key')).toHaveTextContent('sk-or-v1-••••••••-key')
 
@@ -508,7 +543,7 @@ describe("a provider's models in Settings", () => {
     browser.openRouter.keys.add(KEY)
     await openSettings(user)
     await turnOn(user, 'OpenRouter', KEY)
-    const sonnet = await waitFor(() => modelSwitch('OpenRouter', 'Anthropic: Claude Sonnet 5.5'))
+    const sonnet = modelSwitch('OpenRouter', 'Anthropic: Claude Sonnet 5.5')
     // The only model on can't be switched off.
     expect(sonnet).toBeChecked()
     expect(sonnet).toBeDisabled()

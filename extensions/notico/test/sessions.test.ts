@@ -317,75 +317,75 @@ function naming(id: string, result: string, updatedAt = 1000): Session {
   return { id, title: 'Read the guide', createdAt: 0, updatedAt, messages }
 }
 
+/** Makes the database of `user` as an earlier version of the extension did, with session 'a' in it. */
+async function earlier(user: string, version: number, upgrade: (db: IDBDatabase) => void): Promise<void> {
+  await new Promise<void>((resolve, reject) => {
+    const req = indexedDB.open(`notico-sessions-${user}`, version)
+    req.onupgradeneeded = () => {
+      req.result.createObjectStore('sessions', { keyPath: 'id' })
+      req.result.createObjectStore('messages', { keyPath: 'id' })
+      upgrade(req.result)
+    }
+    req.onsuccess = () => {
+      const tx = req.result.transaction(['sessions', 'messages'], 'readwrite')
+      tx.objectStore('sessions').put({ id: 'a', title: 'Old', createdAt: 0, updatedAt: 1000 })
+      tx.objectStore('messages').put({ id: 'a', messages: conversation('Old') })
+      tx.oncomplete = () => {
+        req.result.close()
+        resolve()
+      }
+    }
+    req.onerror = () => reject(req.error)
+  })
+}
+
 describe('kept results', () => {
   afterEach(() => void vi.useRealTimers())
 
-  it('[UC-NOTICO-PANEL-005-S05] a kept result is deleted with the session that names it', async () => {
-    const id = await store.keep(page())
-    await store.save(naming('a', id))
-    expect(await store.result(id)).toMatchObject({ ...page(), id, chats: ['a'] })
-
-    await store.delete('a')
-
-    expect(await store.result(id)).toBeUndefined()
-  })
-
-  it('[UC-NOTICO-PANEL-005-S05] a kept result stays while a copy another panel saved still names it', async () => {
-    const id = await store.keep(page())
-    const loaded = await store.save(naming('a', id, 1000))
-    // Another panel saved the session since: this one is saved as a copy, under a new id.
-    await store.save(naming('a', id, 2000), loaded.updatedAt)
-    const copy = await store.save(naming('a', id, 3000), loaded.updatedAt)
-    expect(copy.id).not.toBe('a')
-    expect((await store.result(id))?.chats).toEqual(['a', copy.id])
-
-    await store.delete('a')
-    expect((await store.result(id))?.chats).toEqual([copy.id])
-    await store.delete(copy.id)
-    expect(await store.result(id)).toBeUndefined()
-  })
-
-  it('[@no-uc:privacy] a kept result no saved session names is swept a day after it was kept', async () => {
+  it('[UC-NOTICO-PANEL-005-S05] a kept result is swept 7 days after it was kept, whether or not its session is saved', async () => {
     vi.useFakeTimers({ toFake: ['Date'], now: new Date('2026-11-08T12:00:00Z') })
     const unnamed = await store.keep(page())
     const named = await store.keep(page())
+    const deleted = await store.keep(page())
     await store.save(naming('a', named))
-    vi.setSystemTime(new Date('2026-11-09T11:59:00Z'))
+    await store.save(naming('b', deleted))
+    await store.delete('b')
+    vi.setSystemTime(new Date('2026-11-15T11:59:00Z'))
     const recent = await store.keep(page())
 
     await store.sweep()
-    expect(await store.result(unnamed)).toBeDefined()
+    for (const id of [unnamed, named, deleted]) expect(await store.result(id)).toMatchObject({ ...page(), id })
 
-    vi.setSystemTime(new Date('2026-11-09T12:00:01Z'))
+    vi.setSystemTime(new Date('2026-11-15T12:00:01Z'))
     await store.sweep()
-    expect(await store.result(unnamed)).toBeUndefined()
-    expect(await store.result(named)).toBeDefined()
+    for (const id of [unnamed, named, deleted]) expect(await store.result(id)).toBeUndefined()
     expect(await store.result(recent)).toBeDefined()
+    expect(await load(store, 'a')).toMatchObject({ id: 'a' })
   })
 
   it('[@no-uc:data] a database the first version made gets the results store, and its sessions stay', async () => {
-    const user = 'user_v1'
-    await new Promise<void>((resolve, reject) => {
-      const req = indexedDB.open(`notico-sessions-${user}`, 1)
-      req.onupgradeneeded = () => {
-        req.result.createObjectStore('sessions', { keyPath: 'id' })
-        req.result.createObjectStore('messages', { keyPath: 'id' })
-      }
-      req.onsuccess = () => {
-        const tx = req.result.transaction(['sessions', 'messages'], 'readwrite')
-        tx.objectStore('sessions').put({ id: 'a', title: 'Old', createdAt: 0, updatedAt: 1000 })
-        tx.objectStore('messages').put({ id: 'a', messages: conversation('Old') })
-        tx.oncomplete = () => {
-          req.result.close()
-          resolve()
-        }
-      }
-      req.onerror = () => reject(req.error)
-    })
-    const v1 = new SessionStore(user)
+    await earlier('user_v1', 1, () => undefined)
+    const v1 = new SessionStore('user_v1')
 
     expect(await v1.get('a')).toMatchObject({ title: 'Old', messages: conversation('Old') })
     const id = await v1.keep(page())
-    expect(await v1.result(id)).toMatchObject({ chats: [] })
+    expect(await v1.result(id)).toMatchObject({ ...page(), id })
+  })
+
+  it('[@no-uc:data] a database with version 2 results gets them dropped, and its sessions stay', async () => {
+    await earlier('user_v2', 2, (db) => {
+      const results = db.createObjectStore('results', { keyPath: 'id' })
+      results.createIndex('chats', 'chats', { multiEntry: true })
+      results.createIndex('unnamedAt', 'unnamedAt')
+      results.put({ id: 'r_old', chats: [], unnamedAt: 0, ...page() })
+    })
+    const v2 = new SessionStore('user_v2')
+
+    expect(await v2.get('a')).toMatchObject({ title: 'Old', messages: conversation('Old') })
+    expect(await v2.result('r_old')).toBeUndefined()
+    const id = await v2.keep(page())
+    expect(await v2.result(id)).toMatchObject({ ...page(), id })
+    // The index the sweep goes by is there.
+    await v2.sweep()
   })
 })

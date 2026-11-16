@@ -42,6 +42,7 @@ export type PageErrorCode =
   | 'site_error'
   | 'unsupported_type'
   | 'no_text'
+  | 'render_busy'
   | 'render_failed'
 
 /** The slice of a fetcher the worker reads pages with: the global `fetch` deployed, a fake in tests. */
@@ -91,7 +92,10 @@ export function checkAddress(raw: string): URL {
     throw new PageError('not_allowed', 'only http and https addresses can be read')
   if (url.username || url.password) throw new PageError('not_allowed', 'an address with a user name is not read')
   if (url.port) throw new PageError('not_allowed', 'only addresses on the default port are read')
+  // A host is checked in its usual form: one trailing dot (the fully qualified form) is dropped,
+  // and a host with an empty label anywhere is not read, so each name has one form to match.
   const host = url.hostname.toLowerCase().replace(/\.$/, '')
+  if (host.split('.').includes('')) throw new PageError('not_allowed', 'this host is not read')
   // The URL parser writes every IPv4 form (decimal, hex, short) as dotted digits, and IPv6 in brackets.
   if (/^[\d.]+$/.test(host) || host.startsWith('['))
     throw new PageError('not_allowed', 'an address given as an IP address is not read')
@@ -365,43 +369,41 @@ function tidy(text: string): string {
 /** What Browser Run's markdown action answers when it rendered the page, as far as the worker reads it. */
 const RenderAnswer = z.object({ success: z.literal(true), result: z.string() })
 
-/** How a render ended: it gave a page, the page showed no text, or it could not be rendered. */
-export type RenderOutcome = 'ok' | 'no_text' | 'render_failed'
+/**
+ * How a render ended: it gave a page, the page showed no text, Browser Run turned it away for
+ * coming too often (`render_busy`), or it could not be rendered.
+ */
+export type RenderOutcome = 'ok' | 'no_text' | 'render_busy' | 'render_failed'
 
 /**
- * A render, however it ended: the page, or why there is none, and the browser time it used in ms.
- * That is the time Browser Run reported (`X-Browser-Ms-Used`), what it bills, or the time the
- * render took when it reported none. `answered` is false when no response came back at all, so
- * what Browser Run billed for it is not known.
+ * A render, however it ended: the page, or why there is none, and the browser time Browser Run
+ * reported for it (`X-Browser-Ms-Used`), which is what it bills; 0 when it reported none, or no
+ * response came back.
  */
-export type Render = { browserMs: number; answered: boolean } & (
+export type Render = { browserMs: number } & (
   | { outcome: 'ok'; page: WebPage }
   | { outcome: Exclude<RenderOutcome, 'ok'>; error: PageError }
 )
 
-/** The browser time a Browser Run response reports, or undefined when it reports none it can be read as. */
-function browserTimeOf(res: Response): number | undefined {
+/** The browser time a Browser Run response reports, or 0 when it reports none it can be read as. */
+function browserTimeOf(res: Response): number {
   const used = res.headers.get('x-browser-ms-used')?.trim() ?? ''
   const ms = /^\d+$/.test(used) ? Number(used) : NaN
-  return Number.isSafeInteger(ms) ? ms : undefined
+  return Number.isSafeInteger(ms) ? ms : 0
 }
 
 /**
  * Renders the page at `url` in Browser Run, which runs its scripts, and gives its text as Markdown,
- * clipped to `maxChars`, with the browser time it used. `now` is the clock, in ms, that times a
- * render Browser Run reports no time for. Never throws a PageError: a page that could not be
- * rendered is the result.
+ * clipped to `maxChars`, with the browser time it used. Never throws a PageError: a page that could
+ * not be rendered is the result. Nothing is retried.
  */
-export async function renderPage(
-  browser: BrowserBinding,
-  url: URL,
-  maxChars: number,
-  now: () => number,
-): Promise<Render> {
-  const started = now()
-  const took = () => Math.max(0, now() - started)
-  const failed = () =>
-    ({ outcome: 'render_failed', error: new PageError('render_failed', 'the page could not be rendered') }) as const
+export async function renderPage(browser: BrowserBinding, url: URL, maxChars: number): Promise<Render> {
+  const failed = (browserMs: number) =>
+    ({
+      outcome: 'render_failed',
+      error: new PageError('render_failed', 'the page could not be rendered'),
+      browserMs,
+    }) as const
   let res: Response
   try {
     res = await browser.quickAction('markdown', {
@@ -410,15 +412,21 @@ export async function renderPage(
       gotoOptions: { waitUntil: 'networkidle2', timeout: RENDER_TIMEOUT_MS },
     })
   } catch {
-    return { ...failed(), browserMs: took(), answered: false }
+    return failed(0)
   }
   const answer = RenderAnswer.safeParse(await res.json().catch(() => undefined))
-  const browserMs = browserTimeOf(res) ?? took()
-  if (!res.ok || !answer.success) return { ...failed(), browserMs, answered: true }
+  const browserMs = browserTimeOf(res)
+  // Browser Run's limits on the account (renders at once, or a minute): another render now would be
+  // turned away too, so it is a code of its own, which stops the question.
+  if (res.status === 429) {
+    const error = new PageError('render_busy', 'the browser that renders pages is busy')
+    return { outcome: 'render_busy', error, browserMs }
+  }
+  if (!res.ok || !answer.success) return failed(browserMs)
   const text = tidy(answer.data.result)
   if (!text) {
     const error = new PageError('no_text', 'the page shows no text, even rendered')
-    return { outcome: 'no_text', error, browserMs, answered: true }
+    return { outcome: 'no_text', error, browserMs }
   }
   const page: WebPage = {
     url: url.href,
@@ -427,5 +435,5 @@ export async function renderPage(
     chars: text.length,
     scripted: false,
   }
-  return { outcome: 'ok', page, browserMs, answered: true }
+  return { outcome: 'ok', page, browserMs }
 }

@@ -10,12 +10,15 @@ import {
   type ConfirmTool,
   type ToolSpec,
 } from '../../extensions/notico/src/agent'
+import { WebError } from '../../extensions/notico/src/agent/types'
+import { readWebPage, searchWebFor } from '../../extensions/notico/src/agent/worker'
 import { createApp, type Env } from '../src/app'
 import { priceOf } from '../src/pricing'
 import { FakeClerk } from './clerk'
 import {
   FAKE_COST,
   FakeAiBinding,
+  FakeBrowserRun,
   FakeD1Database,
   FakeExecutionContext,
   FakeUsageDataset,
@@ -32,6 +35,7 @@ const app = createApp({ now: () => clock, priceOf: (model) => priceOf(model === 
 let clerk: FakeClerk
 let env: Env
 let ai: FakeAiBinding
+let browser: FakeBrowserRun
 let token: string
 
 const realFetch = globalThis.fetch
@@ -52,6 +56,8 @@ beforeEach(async () => {
   clock = new Date('2026-11-08T12:00:00Z')
   env = {
     AI: (ai = new FakeAiBinding('你好 来自 worker')),
+    BROWSER: (browser = new FakeBrowserRun()),
+    AI_GATEWAY_ID: 'gw-test',
     DB: new FakeD1Database(),
     USAGE: new FakeUsageDataset(),
     CHAT_LIMIT: new FakeRateLimiter(),
@@ -333,7 +339,7 @@ describe('tokens per question', () => {
     ai.script = [{ reply: 'Roadmap page' }]
     await agent.title(agent.history())
     const saved = structuredClone(agent.history())
-    expect(saved[0]).toEqual({ role: 'user', text: 'Which page am I on?', ...details })
+    expect(saved[0]).toEqual({ role: 'user', text: 'Which page am I on?', turn: expect.any(String), ...details })
     const resumed = makeAgent()
     await resumed.reset(saved)
     expect(resumed.history()).toEqual(saved)
@@ -343,11 +349,115 @@ describe('tokens per question', () => {
     const agent = makeAgent()
     ai.script = [{ toolCalls: [{ name: 'lookup_page', arguments: '{}' }] }, { reply: 'Hi.' }]
     expect((await ask(agent, 'Which page?')).used.cost).toEqual({ microCredits: 2 * FAKE_COST })
-    // The first call answers, the second breaks off: the worker charges it from estimated tokens.
+    // The first call answers, the second breaks off: it costs nothing, and the question has no cost.
     ai.script = [{ toolCalls: [{ name: 'lookup_page', arguments: '{}' }] }]
     ai.rawSse = 'data: {"choices":[{"delta":{"content":"abc"}}]}\n\n'
     const { result, used } = await ask(agent, 'And now?')
     expect(result.status).toBe('error')
     expect(used.cost).toBeUndefined()
+  })
+})
+
+describe('web reads and searches', () => {
+  const config = { apiUrl: 'https://nk.example.dev/v1/', getToken: async () => token, client: 'notico/1.2.3' }
+  /** What a read, a render, or a search gave the extension: its result or its WebError, and what it was told it cost. */
+  async function outcome<T>(call: (charged: (microCredits: number | undefined) => void) => Promise<T>) {
+    const costs: (number | undefined)[] = []
+    try {
+      return { result: await call((cost) => costs.push(cost)), costs }
+    } catch (err) {
+      if (!(err instanceof WebError)) throw err
+      return { error: { code: err.code, stops: !!err.stopsQuestion, charged: err.charged }, costs }
+    }
+  }
+  const render = (url: string) => outcome((charged) => readWebPage(config, url, 1000, true, undefined, charged))
+  const search = () => outcome((charged) => searchWebFor(config, 'tea', 5, undefined, charged))
+
+  it('[@no-uc:contract] a render and a search say what they cost; failed ones cost nothing, and a busy one stops the question', async () => {
+    browser.render('https://app.example/board', '# Board', 4000)
+    expect(await render('https://app.example/board')).toMatchObject({ result: { title: 'Board' }, costs: [100_000] })
+    const failed = { error: { code: 'render_failed', stops: false, charged: false }, costs: [0] }
+    expect(await render('https://app.example/broken')).toEqual(failed)
+    browser.reply = () => Response.json({ success: false }, { status: 429 })
+    const busy = { error: { code: 'render_busy', stops: true, charged: false }, costs: [0] }
+    expect(await render('https://app.example/board')).toEqual(busy)
+
+    ai.found.set('tea', [{ url: 'https://tea.example/', title: 'Tea', description: 'About tea.' }])
+    expect(await search()).toMatchObject({ result: [{ url: 'https://tea.example/' }], costs: [250_000] })
+    ai.searchReply = () => Response.json({ results: [] })
+    expect(await search()).toEqual({ error: { code: 'search_failed', stops: false, charged: false }, costs: [0] })
+  })
+
+  it('[@no-uc:money] a Stop while the answer of a render is read throws the Stop, not an answer that could not be read', async () => {
+    browser.render('https://app.example/board', '# Board')
+    const controller = new AbortController()
+    const worker = globalThis.fetch
+    // As fetch does: once the request is aborted, reading its answer's body throws the abort.
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const res = await worker(input, init)
+      const body = new ReadableStream({
+        start(stream) {
+          init?.signal?.addEventListener('abort', () => stream.error(init.signal?.reason))
+          controller.abort()
+        },
+      })
+      return new Response(body, { status: res.status, headers: res.headers })
+    }) as typeof fetch
+    try {
+      const costs: (number | undefined)[] = []
+      const read = readWebPage(config, 'https://app.example/board', 1000, true, controller.signal, (cost) =>
+        costs.push(cost),
+      )
+      await expect(read).rejects.toMatchObject({ name: 'AbortError' })
+      expect(costs).toEqual([undefined])
+    } finally {
+      globalThis.fetch = worker
+    }
+  })
+})
+
+// Standalone test for what a question's requests tell the worker about the chat and the question.
+describe('chat and question of what a question spends', () => {
+  it('[@no-uc:contract] every request a question makes carries the chat and the question, and the question keeps its id', async () => {
+    env.BROWSER = new FakeBrowserRun().render('https://tea.example/', '# Tea')
+    env.AI_GATEWAY_ID = 'gw-test'
+    ai.found.set('tea', [{ url: 'https://tea.example/', title: 'Tea', description: 'All about tea.' }])
+    const research: ToolSpec = {
+      name: 'research',
+      description: 'Renders a page and searches the web.',
+      parameters: { type: 'object', properties: {}, additionalProperties: false },
+      run: async (_args, signal, context) => {
+        await context?.readWeb('https://tea.example/', 1000, true, signal)
+        await context?.searchWeb('tea', 3, signal)
+        return 'done'
+      },
+    }
+    const agent = makeAgent({ tools: [research] })
+    const chat = crypto.randomUUID()
+    ai.script = [{ toolCalls: [{ name: 'research', arguments: '{}' }] }, { reply: 'Tea is a drink.' }]
+    expect((await ask(agent, 'What is tea?', undefined, { chat })).result).toEqual({ status: 'done' })
+    // The title is part of what the first question cost.
+    ai.script = [{ reply: 'About tea' }]
+    expect(await agent.title(agent.history(), chat)).toBe('About tea')
+    ai.script = [{ reply: 'Green tea.' }]
+    await ask(agent, 'And green tea?', undefined, { chat })
+
+    const turns = agent.history().flatMap((m) => (m.role === 'user' ? [m.turn] : []))
+    const [first, second] = turns
+    expect(turns).toEqual([expect.stringMatching(/^[0-9a-f-]{36}$/), expect.stringMatching(/^[0-9a-f-]{36}$/)])
+    expect(first).not.toBe(second)
+    const db = env.DB as FakeD1Database
+    expect(db.rows('spends').map(({ kind, chat_id, turn_id }) => ({ kind, chat_id, turn_id }))).toEqual([
+      { kind: 'model_call', chat_id: chat, turn_id: first },
+      { kind: 'web_render', chat_id: chat, turn_id: first },
+      { kind: 'web_search', chat_id: chat, turn_id: first },
+      { kind: 'model_call', chat_id: chat, turn_id: first },
+      { kind: 'model_call', chat_id: chat, turn_id: first },
+      { kind: 'model_call', chat_id: chat, turn_id: second },
+    ])
+    // A session saved and opened again keeps each question's id.
+    const resumed = makeAgent()
+    await resumed.reset(structuredClone(agent.history()))
+    expect(resumed.history().flatMap((m) => (m.role === 'user' ? [m.turn] : []))).toEqual(turns)
   })
 })

@@ -1,17 +1,13 @@
-// Web pages read for a signed-in user (/v1/web): fetched plainly, or rendered in Browser Run, and
-// web searches. A plain read is free. A render is charged in credits, the browser time it used at
-// Browser Run's price, and a search the provider's price for it; each has a cap of its own. None
-// keeps or logs the address, the query, the page, or the results: the usage record holds the outcome
-// and sizes only, a render's record in the ledger its outcome and browser time, and a search's its
-// outcome and how many results it gave.
+// Web pages read for a signed-in user (/v1/web), plainly or rendered in Browser Run, and web
+// searches. A plain read is free; a render and a search are charged as charge.ts says, each with a
+// cap of its own. Nothing keeps or logs the address, the query, the page, or the results.
 import { Hono } from 'hono'
 import * as z from '../zod'
-import { recordUsage, type UsageRecord } from '../usage'
-import { HttpError, errorSummary, parse, type App, type Ctx, type Deps } from '../http'
+import { HttpError, parse, type App, type Ctx, type Deps } from '../http'
 import { MAX_QUERY_CHARS, MAX_RESULTS, SearchError, searchWeb, type SearchResult } from '../search'
 import { PageError, checkAddress, fetchPage, renderPage, type WebPage } from '../web'
 import { SEARCH_COST, renderCostOf } from '../pricing'
-import { CLIENT_HEADER, openLedger, productOf } from './chat'
+import { chargeAfterUse, openLedger, startUsage } from '../charge'
 
 /**
  * The most characters of a page's text the worker returns: what the extension keeps of a long page
@@ -32,6 +28,17 @@ const SearchBody = z.object({
   limit: z.number().int().min(1).max(MAX_RESULTS),
 })
 
+/** What a render or a search was charged, in every answer of one: 0 when it failed or its record did. */
+const costOf = (charged: number) => ({ cost: { micro_credits: charged } })
+
+/** The status of a failed render or search: 503 for one turned away (it stops the question), else 422 or 502. */
+const statusOf = (code: string) =>
+  code === 'render_busy' || code === 'search_busy' || code === 'search_unavailable'
+    ? 503
+    : code === 'search_failed'
+      ? 502
+      : 422
+
 /** The answer: the page as read. */
 function answer(page: WebPage) {
   const { url, title, text, chars, scripted } = page
@@ -49,40 +56,14 @@ export function webRoutes({ now, logError }: Pick<Deps, 'now' | 'logError'>): Ap
       throw new HttpError(429, 'rate_limited', 'Too many pages read at once. Wait a minute, then try again.')
   }
 
-  /** A usage record for a read: the outcome, the characters returned, and what it cost. Never the address. */
-  function usageOf(c: Ctx, model: string): { usage: UsageRecord; record: (outcome: string) => void } {
-    const started = Date.now()
-    const usage: UsageRecord = {
-      userId: c.get('userId'),
-      product: productOf(c.req.header(CLIENT_HEADER)),
-      model,
-      stream: false,
-      outcome: '',
-      messages: 0,
-      inputChars: 0,
-      promptTokens: 0,
-      cachedTokens: 0,
-      completionTokens: 0,
-      microCredits: 0,
-      finishReason: '',
-      durationMs: 0,
-    }
-    return {
-      usage,
-      record: (outcome) => {
-        usage.outcome = outcome
-        usage.durationMs = Date.now() - started
-        recordUsage(c.env.USAGE, usage)
-      },
-    }
-  }
-
   /** A page that could not be read: 422 with the reason's code, which the extension explains to the model. */
   const refused = (err: PageError) => new HttpError(422, err.code, err.message)
 
   routes.post('/read', async (c) => {
-    const { usage, record } = usageOf(c, 'web/fetch')
+    const { usage, record, turn } = startUsage(c, 'web/fetch')
     try {
+      // A plain read spends nothing, so only its usage record has them.
+      turn()
       const body = parse(ReadBody, await c.req.json().catch(() => undefined))
       await limit(c)
       const page = await fetchPage(
@@ -100,55 +81,40 @@ export function webRoutes({ now, logError }: Pick<Deps, 'now' | 'logError'>): Ap
   })
 
   routes.post('/render', async (c) => {
-    const { usage, record } = usageOf(c, 'web/render')
+    const { usage, record, turn } = startUsage(c, 'web/render')
     try {
+      const ids = turn()
       const body = parse(ReadBody, await c.req.json().catch(() => undefined))
       const url = checkAddress(body.url)
       const browser = c.env.BROWSER
       if (!browser) throw new HttpError(503, 'not_configured', 'rendering pages is not set up')
       await limit(c)
-      // Renders sent at once all start on the same balance (see below), so how many one user can
-      // start a minute is capped. Checked before the credits, so a refused request reads nothing.
+      // Checked before the credits, so a refused request reads nothing.
       const { success } = await c.env.RENDER_LIMIT.limit({ key: c.get('userId') })
       if (!success)
         throw new HttpError(429, 'rate_limited', 'Too many pages rendered at once. Wait a minute, then try again.')
-      // Charged after use, as a model call is: a render goes ahead while the user has credits, and
-      // costs the browser time it used. Renders sent at once can together cost more than what is
-      // left: what the grants don't cover is forgiven, and RENDER_LIMIT and the render's timeout
-      // bound it.
       const ledger = await openLedger(c, now().getTime(), logError)
-      const product = usage.product
-      const work = (async () => {
-        const render = await renderPage(browser, url, body.max_chars, () => now().getTime())
+      const charging = { ledger, usage, turn: ids, now: () => now().getTime(), logError, what: 'web render' }
+      const { result, charged } = await chargeAfterUse<WebPage | PageError>(c, charging, async () => {
+        const render = await renderPage(browser, url, body.max_chars)
         const { outcome, browserMs } = render
-        const result = render.outcome === 'ok' ? render.page : render.error
-        // What Browser Run bills, however the render ended: a page with no text and one that failed
-        // used the browser too. When no response came back, what it billed is not known, and the
-        // user is not charged a guess.
-        const cost = render.answered ? renderCostOf(browserMs) : 0
-        try {
-          await ledger.spend({ product, cost, at: now().getTime() }, { kind: 'web_render', outcome, browserMs })
-          usage.microCredits = cost
-          return { result, charged: { cost: { micro_credits: cost } } }
-        } catch (err) {
-          // The page is out already: it still goes to the client, uncharged, and the answer says no
-          // cost, so the client does not count one the ledger never took.
-          logError(`web render record failed: ${errorSummary(err)}`)
-          return { result, charged: {} }
+        const cost = outcome === 'ok' ? renderCostOf(browserMs) : 0
+        return {
+          result: outcome === 'ok' ? render.page : render.error,
+          cost,
+          detail: { kind: 'web_render', outcome, browserMs },
         }
-      })()
-      // The render is charged even if the client goes away meanwhile: a request dropped right after
-      // it was sent must not be a free render.
-      c.executionCtx.waitUntil(work.catch(() => {}))
-      const { result, charged } = await work
-      // What it cost goes with the answer, a page or why there is none, since either was charged.
+      })
       if (result instanceof PageError) {
         record(result.code)
-        return c.json({ error: { code: result.code, message: result.message }, ...charged }, 422)
+        return c.json(
+          { error: { code: result.code, message: result.message }, ...costOf(charged) },
+          statusOf(result.code),
+        )
       }
       usage.inputChars = result.text.length
       record('ok')
-      return c.json({ ...answer(result), ...charged })
+      return c.json({ ...answer(result), ...costOf(charged) })
     } catch (err) {
       record(err instanceof HttpError || err instanceof PageError ? err.code : 'internal')
       throw err instanceof PageError ? refused(err) : err
@@ -156,61 +122,43 @@ export function webRoutes({ now, logError }: Pick<Deps, 'now' | 'logError'>): Ap
   })
 
   routes.post('/search', async (c) => {
-    const { usage, record } = usageOf(c, 'web/search')
+    const { usage, record, turn } = startUsage(c, 'web/search')
     try {
+      const ids = turn()
       const body = parse(SearchBody, await c.req.json().catch(() => undefined))
       const gateway = c.env.AI_GATEWAY_ID
       if (!gateway) throw new HttpError(503, 'not_configured', 'web search is not set up')
-      // Searches sent at once all start on the same balance (see below), so how many one user can
-      // make a minute is capped. Checked before the credits, so a refused request reads nothing.
+      // Checked before the credits, so a refused request reads nothing.
       const { success } = await c.env.SEARCH_LIMIT.limit({ key: c.get('userId') })
       if (!success)
         throw new HttpError(429, 'rate_limited', 'Too many web searches at once. Wait a minute, then try again.')
-      // Charged after use, as a render is: a search goes ahead while the user has credits. Searches
-      // sent at once can together cost more than what is left: what the grants don't cover is
-      // forgiven, and SEARCH_LIMIT bounds it.
       const ledger = await openLedger(c, now().getTime(), logError)
-      const product = usage.product
-      const work = (async () => {
-        let results: SearchResult[] = []
-        let error: SearchError | undefined
+      const charging = { ledger, usage, turn: ids, now: () => now().getTime(), logError, what: 'web search' }
+      const { result, charged } = await chargeAfterUse<SearchResult[] | SearchError>(c, charging, async () => {
+        let results: SearchResult[]
         try {
           results = await searchWeb(c.env.AI, gateway, body.query, body.limit)
         } catch (err) {
           if (!(err instanceof SearchError)) throw err
-          error = err
+          return { result: err, cost: 0, detail: { kind: 'web_search', outcome: err.code, results: 0 } }
         }
-        // What the provider bills: a search that gave results (none included), or an answer the
-        // worker does not understand. One the gateway turned away, or with no response, costs nothing.
-        const cost = error && !error.billed ? 0 : SEARCH_COST
-        const outcome = error?.code ?? 'ok'
-        try {
-          await ledger.spend(
-            { product, cost, at: now().getTime() },
-            { kind: 'web_search', outcome, results: results.length },
-          )
-          usage.microCredits = cost
-          return { results, error, charged: { cost: { micro_credits: cost } } }
-        } catch (err) {
-          // The results are out already: they still go to the client, uncharged, and the answer
-          // says no cost, so the client does not count one the ledger never took.
-          logError(`web search record failed: ${errorSummary(err)}`)
-          return { results, error, charged: {} }
+        return {
+          result: results,
+          cost: SEARCH_COST,
+          detail: { kind: 'web_search', outcome: 'ok', results: results.length },
         }
-      })()
-      // The search is charged even if the client goes away meanwhile.
-      c.executionCtx.waitUntil(work.catch(() => {}))
-      const { results, error, charged } = await work
-      // What it cost goes with the answer, results or why there are none.
-      if (error) {
-        record(error.code)
-        logError(`web search failed: ${error.logged}`)
-        const status = error.code === 'search_failed' ? 502 : 503
-        return c.json({ error: { code: error.code, message: error.message }, ...charged }, status)
+      })
+      if (result instanceof SearchError) {
+        record(result.code)
+        logError(`web search failed: ${result.logged}`)
+        return c.json(
+          { error: { code: result.code, message: result.message }, ...costOf(charged) },
+          statusOf(result.code),
+        )
       }
-      usage.inputChars = results.reduce((n, r) => n + r.title.length + r.description.length, 0)
+      usage.inputChars = result.reduce((n, r) => n + r.title.length + r.description.length, 0)
       record('ok')
-      return c.json({ results, ...charged })
+      return c.json({ results: result, ...costOf(charged) })
     } catch (err) {
       record(err instanceof HttpError ? err.code : 'internal')
       throw err

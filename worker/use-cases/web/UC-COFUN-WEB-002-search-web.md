@@ -9,7 +9,7 @@ What to search for is the client's choice (UC-NOTICO-PANEL-004).
 Key constraint:
 
 - A search that fails, for a reason the service knows or not, gives no results and is not tried again: the client is told it failed.
-- A search costs what the provider bills for it: one that gave results, none included, or an answer the service does not understand, is charged in full; one the provider turned away, or that brought no answer, costs nothing. The answer says what the search cost, results or not.
+- Only a search that gave results, none included, is charged; one that fails costs nothing, whatever the provider bills for it. The answer says what the search cost, results or not.
 
 ## Scenarios
 
@@ -21,7 +21,7 @@ Key constraint:
 | UC-COFUN-WEB-002-S02 | P1 | ✅ | Given a user who has made as many searches as they may in a minute; when their client searches again; then they are told to wait, and nothing is searched. |
 | UC-COFUN-WEB-002-S03 | P1 | ✅ | Given a search the provider turns away or answers in a way the service does not understand; when a client searches; then it is told the search failed, and it is not tried again. |
 | UC-COFUN-WEB-002-S04 | P0 | ✅ | Given a user with no credits left; when their client searches the web; then it is told they have no credits and when free ones arrive, and nothing is searched. |
-| UC-COFUN-WEB-002-S05 | P1 | ✅ | Given a search that fails; when a client searches; then it is charged in full if the provider answered, in a way the service does not understand, and nothing if the provider turned it away or no answer came, and the refusal says what it cost. |
+| UC-COFUN-WEB-002-S05 | P1 | ✅ | Given a search that fails, whether the provider turned it away, answered in a way the service does not understand, or brought no answer; when a client searches; then it costs nothing, and the refusal says so. |
 
 ### ai-e2e
 

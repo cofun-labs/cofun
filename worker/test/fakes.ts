@@ -49,6 +49,8 @@ export class FakeAiBinding implements AiBinding {
   rawSse?: string
   /** When set, a streamed call fails with this error after sending the first slice. */
   streamFailWith?: Error
+  /** When set with `rawSse`, the stream fails with this error once all of `rawSse` was sent. */
+  failAfterRawSse?: Error
   /** When set, a streamed reply stops once `after` bytes are sent, until `until` resolves: a model still writing. */
   pause?: { after: number; until: Promise<void> }
   /** When set, the model writes the reply as a preamble and then asks the client to run these tools. */
@@ -97,7 +99,22 @@ export class FakeAiBinding implements AiBinding {
       }
     }
 
-    if (this.rawSse !== undefined) return new Response(this.rawSse).body
+    if (this.rawSse !== undefined && this.failAfterRawSse) {
+      const bytes = new TextEncoder().encode(this.rawSse)
+      const failWith = this.failAfterRawSse
+      let sent = false
+      return new ReadableStream<Uint8Array>({
+        pull(controller) {
+          if (sent) return controller.error(failWith)
+          sent = true
+          controller.enqueue(bytes)
+        },
+      })
+    }
+    if (this.rawSse !== undefined)
+      return this.pause
+        ? sliced(new TextEncoder().encode(this.rawSse), undefined, this.pause)
+        : new Response(this.rawSse).body
 
     const events: unknown[] = reply.split(' ').map((w) => ({ choices: [{ index: 0, delta: { content: w + ' ' } }] }))
     events.push({ choices: [{ index: 0, delta: {}, finish_reason: 'stop' }] })
@@ -414,6 +431,8 @@ export class FakeBrowserRun implements BrowserBinding {
   failWith?: Error
   /** Runs while a page renders, for a test that moves its clock. */
   during?: () => void
+  /** When set, answers every render with this, as Browser Run does when it turns one away. */
+  reply?: () => Response
 
   render(url: string, markdown: string, browserMs = 4000): this {
     this.pages.set(url, { markdown, browserMs })
@@ -424,6 +443,7 @@ export class FakeBrowserRun implements BrowserBinding {
     this.calls.push({ action, options })
     this.during?.()
     if (this.failWith) throw this.failWith
+    if (this.reply) return this.reply()
     const page = typeof options.url === 'string' ? this.pages.get(options.url) : undefined
     const used = (ms: number): Record<string, string> => (this.reportsTime ? { 'x-browser-ms-used': String(ms) } : {})
     if (page === undefined)

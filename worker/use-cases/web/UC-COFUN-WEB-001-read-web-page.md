@@ -2,7 +2,7 @@
 
 ## Behavior
 
-A signed-in user's client can have the service read a web page for them by its address: the page's title and main text, as anyone who opens the address without signing in would see it, clipped to as much as the client asks for. Reading a page this way is free. A page drawn by scripts shows no text this way; the client can then ask for it to be rendered in a browser, which shows what it draws. Rendering costs credits: what the browser time it used costs the service, at its provider's list price with nothing added, however the render ended, since the browser ran for a page with no text or one that failed too; the client is told what a render cost. A user can have a page rendered only while they have credits left, and only a few a minute. The service never keeps or logs the address or the page; it keeps a record of each render (when, from which product, how it ended, the browser time, and what it cost).
+A signed-in user's client can have the service read a web page for them by its address: the page's title and main text, as anyone who opens the address without signing in would see it, clipped to as much as the client asks for. Reading a page this way is free. A page drawn by scripts shows no text this way; the client can then ask for it to be rendered in a browser, which shows what it draws. A render that gives a page costs credits: what the browser time it used costs the service, at its provider's list price with nothing added; one that gives no page, because the page shows no text, it failed, or the browser turned it away, costs nothing. The client is told what each render cost. When the browser that renders pages turns renders away for coming too often, the client is told it is busy. A user can have a page rendered only while they have credits left, and only a few a minute. The service never keeps or logs the address or the page; it keeps a record of each render (when, from which product, how it ended, the browser time, and what it cost).
 
 Which addresses to read is the client's choice (UC-NOTICO-PANEL-003); the service only refuses those that are never read.
 
@@ -24,7 +24,8 @@ Key constraints:
 | UC-COFUN-WEB-001-S05 | P0 | ✅ | Given a signed-in user with credits; when their client has pages rendered; then each costs the browser time it used, taken from their credits, and the client is told what it cost; and once they have had as many rendered as they may in a minute, they are told to wait, nothing more is rendered, and pages can still be read plainly. |
 | UC-COFUN-WEB-001-S06 | P1 | ✅ | Given a user who has asked for as many pages as they may in a minute; when they ask for another; then they are told to wait, and the page is not read. |
 | UC-COFUN-WEB-001-S07 | P0 | ✅ | Given a user with no credits left; when their client asks for a page rendered; then they are told they have no credits and when the next free ones arrive, nothing is rendered, and pages can still be read plainly. |
-| UC-COFUN-WEB-001-S08 | P1 | ✅ | Given a page that shows no text even rendered, or one that could not be rendered; when a client asks for it rendered; then it is told why, and the render still costs the browser time it used. |
+| UC-COFUN-WEB-001-S08 | P1 | ✅ | Given a page that shows no text even rendered, or one that could not be rendered; when a client asks for it rendered; then it is told why, and the render costs nothing, as the answer says. |
+| UC-COFUN-WEB-001-S09 | P1 | ✅ | Given the browser that renders pages turning renders away for coming too often; when a client asks for a page rendered; then it is told the browser is busy, and the render costs nothing. |
 
 ### ai-e2e
 
