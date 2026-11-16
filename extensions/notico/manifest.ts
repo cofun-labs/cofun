@@ -114,9 +114,10 @@ export function buildManifest(env: ManifestEnv, version: string, { store = false
       clerkCookiePermission(env.VITE_CLERK_SYNC_HOST, env.CLERK_COOKIE_DOMAIN),
     ],
     // Any web site, but only one the user allows: when the agent first reads a page on it
-    // (read_current_tab), or when the user adds a tab on it from the page picker. Optional: installing or updating asks for none of them, so an update with
-    // these does not disable the extension. Granting one lets the extension read that site's pages;
-    // it sends no request there (the content security policy below doesn't name it).
+    // (read_current_tab), or when the user adds a tab on it from the page picker. Optional:
+    // installing or updating asks for none of them, so an update with these does not disable the
+    // extension. Granting one lets the extension read that site's pages; it sends no request there
+    // (the content security policy below doesn't name it).
     optional_host_permissions: ['https://*/*', 'http://*/*'],
     content_security_policy: { extension_pages: contentSecurityPolicy(env) },
     background: { service_worker: 'background.js', type: 'module' },
