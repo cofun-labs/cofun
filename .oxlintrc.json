@@ -222,6 +222,10 @@
                 "message": "The side panel's ChatSession and Panel import no component (the side panel's modules named with a capital): a type both use goes in chat-session.ts or panel.ts."
               },
               {
+                "group": ["./icons", "./menu", "./main"],
+                "message": "The side panel's ChatSession and Panel import no React: these side-panel modules render or are hooks. A type both use goes in chat-session.ts or panel.ts."
+              },
+              {
                 "group": [
                   "@earendil-works/pi-agent-core",
                   "@earendil-works/pi-agent-core/**",
