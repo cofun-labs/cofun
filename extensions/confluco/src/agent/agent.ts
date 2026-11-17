@@ -266,6 +266,7 @@ export class CopilotAgent {
     if (epoch !== this.epoch) return { result: { status: 'stopped', rounds: 0 }, kept: false }
 
     const before = agent.state.messages.length
+    this.memory.nextConfluencePages = new Map()
     this.stopReason = undefined
     this.stopCode = undefined
     this.changed = false

@@ -190,24 +190,29 @@ describe('searching published Confluence pages', () => {
         results: [{ content: page, excerpt: '<b>@@@hl@@@Workshop@@@endhl@@@ plan</b>' }],
         _links: { next: '/rest/api/search?start=10' },
       }),
+      Response.json({ results: [] }),
     )
-    browser.ai.script.push(call('search_pages', { query: 'Workshop "plan"', field: 'title', spaceKey: 'TEAM' }), {
+    const filters = { query: 'Workshop "plan"', field: 'title', spaceKey: 'TEAM' }
+    browser.ai.script.push(call('search_pages', filters), call('search_pages', { ...filters, start: 10 }), {
       reply: 'Found the plan.',
     })
 
     await ask(user, 'Search for Workshop "plan" in TEAM.')
     expect(await screen.findByText('Found the plan.')).toBeVisible()
-    expect(requests).toHaveLength(1)
+    expect(requests).toHaveLength(2)
     const search = new URL(requests[0]!.url)
     expect(search.origin + search.pathname).toBe(BASE + '/rest/api/search')
     expect(search.searchParams.get('cql')).toBe(
       String.raw`type = page AND title ~ "Workshop \"plan\"" AND space = "TEAM"`,
     )
     expect(search.searchParams.get('limit')).toBe('10')
+    search.searchParams.set('start', '10')
+    expect(requests[1]?.url).toBe(search.href)
     expect(toolResults(browser)).toEqual([
       DATA_LINE +
         '\n' +
         JSON.stringify({ results: [{ title: page.title, url: ARTICLE, excerpt: page.title }], nextStart: 10 }),
+      DATA_LINE + '\n' + JSON.stringify({ results: [] }),
     ])
   })
 
@@ -250,4 +255,24 @@ describe('searching published Confluence pages', () => {
       expect(toolResults(browser)).toEqual([message])
     },
   )
+
+  it('[UC-CONFLUCO-CONFLUENCE-003-S05] refuses a model-supplied offset before sending it to Confluence', async () => {
+    const { browser, user, requests, answerWith } = await openOn()
+    await connected(user)
+    answerWith(Response.json({ results: [], _links: { next: '/rest/api/search?start=10' } }))
+    browser.ai.script.push(
+      call('search_pages', { query: 'Workshop' }),
+      call('search_pages', { query: 'Workshop', start: 370 }),
+      call('search_pages', { query: 'Workshop', field: 'title', start: 10 }),
+      { reply: 'Search finished.' },
+    )
+    await ask(user, 'Search for Workshop.')
+    expect(await screen.findByText('Search finished.')).toBeVisible()
+    expect(requests).toHaveLength(1)
+    expect(toolResults(browser)).toEqual([
+      DATA_LINE + '\n' + JSON.stringify({ results: [], nextStart: 10 }),
+      'Use the next offset returned by the same Confluence search in this question, or omit start.',
+      'Use the next offset returned by the same Confluence search in this question, or omit start.',
+    ])
+  })
 })
