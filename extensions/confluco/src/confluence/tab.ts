@@ -43,7 +43,12 @@ export async function captureConfluenceTab(accountId: string): Promise<Confluenc
 }
 
 const result = z.discriminatedUnion('kind', [
-  z.object({ kind: z.literal('ok'), pageId: z.string().regex(/^\d+$/).optional(), data: z.unknown() }),
+  z.object({
+    kind: z.literal('ok'),
+    pageId: z.string().regex(/^\d+$/).optional(),
+    status: z.int().min(200).max(299),
+    data: z.unknown(),
+  }),
   z.object({
     kind: z.enum([
       'changed',
@@ -214,6 +219,60 @@ export function getConfluence(
 ) {
   // Chrome drops null properties when serializing injected arguments.
   return sendConfluence(target, { area, resource: resource ?? 'current-page', query, method: 'GET' }, signal)
+}
+
+export function createCloudChildPage(
+  tab: ConfluenceTab,
+  input: { spaceId: string; parentId: string; title: string; text: string },
+  signal?: AbortSignal,
+) {
+  const { text, ...page } = input
+  return sendConfluence(
+    tab,
+    {
+      area: 'cloud-v2',
+      resource: 'pages',
+      method: 'POST',
+      query: {},
+      body: JSON.stringify({ ...page, status: 'current', body: { representation: 'storage', value: text } }),
+    },
+    signal,
+    'Confluence rejected the page change. Check that the title is valid and unique in the chosen space.',
+  )
+}
+
+export function renameCloudPage(tab: ConfluenceTab, pageId: string, title: string, signal?: AbortSignal) {
+  return sendConfluence(
+    tab,
+    {
+      area: 'cloud-v2',
+      resource: `pages/${pageId}/title`,
+      method: 'PUT',
+      query: {},
+      body: JSON.stringify({ status: 'current', title }),
+    },
+    signal,
+  )
+}
+
+export function createCloudFooterComment(
+  tab: ConfluenceTab,
+  target: { pageId: string } | { parentCommentId: string },
+  text: string,
+  signal?: AbortSignal,
+) {
+  return sendConfluence(
+    tab,
+    {
+      area: 'cloud-v2',
+      resource: 'footer-comments',
+      method: 'POST',
+      query: {},
+      body: JSON.stringify({ ...target, body: { representation: 'storage', value: text } }),
+    },
+    signal,
+    'Confluence rejected the comment. Check the page and reply target.',
+  )
 }
 
 type LabelWrite = { method: 'POST'; body: unknown } | { method: 'DELETE'; query: Query }
@@ -396,21 +455,35 @@ async function requestConfluence(expectedUrl: string, contextPath: string, reque
   let pageId: string | undefined
   const cloud = /(?:^|\.)atlassian\.net$/.test(actual.hostname)
   if (cloud) {
+    const jsonWrite = body !== undefined && Object.keys(query).length === 0
+    const isLabel = /^content\/\d{1,20}\/label$/.test(resource)
+    const cloudRead =
+      method === 'GET' &&
+      body === undefined &&
+      ((area === 'cloud-v2' &&
+        /^(?:current-page|spaces(?:\/\d{1,20})?|pages(?:\/\d{1,20}(?:\/(?:ancestors|direct-children|versions|operations|labels|footer-comments|inline-comments|attachments))?)?|footer-comments\/\d{1,20}|(?:footer|inline)-comments\/\d{1,20}\/children)$/.test(
+          resource,
+        )) ||
+        (area === 'api' && /^(?:search|content\/\d{1,20}\/restriction\/byOperation)$/.test(resource)))
+    const cloudWrite =
+      (area === 'cloud-v2' &&
+        jsonWrite &&
+        ((method === 'POST' && ['pages', 'footer-comments'].includes(resource)) ||
+          (method === 'PUT' && /^pages\/\d{1,20}\/title$/.test(resource)))) ||
+      (area === 'api' &&
+        isLabel &&
+        ((method === 'POST' && jsonWrite) ||
+          (method === 'DELETE' &&
+            body === undefined &&
+            Object.keys(query).length === 1 &&
+            typeof query.name === 'string')))
     if (
       actual.protocol !== 'https:' ||
       actual.port ||
       contextPath !== '/wiki' ||
       !/^\/wiki(?:\/|$)/.test(actual.pathname) ||
-      method !== 'GET' ||
-      body !== undefined ||
       file ||
-      !(
-        (area === 'cloud-v2' &&
-          /^(?:current-page|spaces|pages(?:\/\d{1,20}(?:\/(?:ancestors|direct-children|versions|operations|labels|footer-comments|inline-comments|attachments))?)?|(?:footer|inline)-comments\/\d{1,20}\/children)$/.test(
-            resource,
-          )) ||
-        (area === 'api' && /^(?:search|content\/\d{1,20}\/restriction\/byOperation)$/.test(resource))
-      )
+      (!cloudRead && !cloudWrite)
     )
       return { kind: 'invalid' }
   } else if (area === 'cloud-v2') return { kind: 'invalid' }
@@ -434,28 +507,30 @@ async function requestConfluence(expectedUrl: string, contextPath: string, reque
     resource = (cloud ? 'pages/' : 'content/') + pageId
   }
 
-  if (area === 'experimental' && (method !== 'GET' || !/^content\/\d{1,20}\/version$/.test(resource)))
-    return { kind: 'invalid' }
-  const labelResource = /^content\/\d{1,20}\/label$/.test(resource)
-  const pageResource = /^content\/\d{1,20}$/.test(resource)
-  const attachmentCreate = /^content\/\d{1,20}\/child\/attachment$/.test(resource)
-  const attachmentReplace = /^content\/\d{1,20}\/child\/attachment\/\d{1,20}\/data$/.test(resource)
-  if (file) {
-    if (
-      area !== 'api' ||
-      method !== 'POST' ||
-      body !== undefined ||
-      !(
-        (attachmentCreate && query.status === 'current' && Object.keys(query).length === 1) ||
-        (attachmentReplace && Object.keys(query).length === 0)
-      )
-    )
+  if (!cloud) {
+    if (area === 'experimental' && (method !== 'GET' || !/^content\/\d{1,20}\/version$/.test(resource)))
       return { kind: 'invalid' }
-  } else if (method === 'POST' && resource !== 'content' && !labelResource) return { kind: 'invalid' }
-  if (method === 'PUT' && !pageResource) return { kind: 'invalid' }
-  if (method === 'DELETE' && !labelResource) {
-    // Deleting content in any other status could purge it. Only a current page may enter the trash.
-    if (!pageResource || query.status !== 'current' || Object.keys(query).length !== 1) return { kind: 'invalid' }
+    const labelResource = /^content\/\d{1,20}\/label$/.test(resource)
+    const pageResource = /^content\/\d{1,20}$/.test(resource)
+    const attachmentCreate = /^content\/\d{1,20}\/child\/attachment$/.test(resource)
+    const attachmentReplace = /^content\/\d{1,20}\/child\/attachment\/\d{1,20}\/data$/.test(resource)
+    if (file) {
+      if (
+        area !== 'api' ||
+        method !== 'POST' ||
+        body !== undefined ||
+        !(
+          (attachmentCreate && query.status === 'current' && Object.keys(query).length === 1) ||
+          (attachmentReplace && Object.keys(query).length === 0)
+        )
+      )
+        return { kind: 'invalid' }
+    } else if (method === 'POST' && resource !== 'content' && !labelResource) return { kind: 'invalid' }
+    if (method === 'PUT' && !pageResource) return { kind: 'invalid' }
+    if (method === 'DELETE' && !labelResource) {
+      // Deleting content in any other status could purge it. Only a current page may enter the trash.
+      if (!pageResource || query.status !== 'current' || Object.keys(query).length !== 1) return { kind: 'invalid' }
+    }
   }
   const apiPath = area === 'cloud-v2' ? `${contextPath}/api/v2/` : `${contextPath}/rest/${area}/`
   const endpoint = new URL(actual.origin + apiPath + resource)
@@ -501,7 +576,7 @@ async function requestConfluence(expectedUrl: string, contextPath: string, reque
     if (response.status === 409) return { kind: 'conflict' }
     if (response.status === 429) return { kind: 'limited' }
     if (!response.ok) return { kind: 'network' }
-    if (response.status === 204 && method === 'DELETE') return { kind: 'ok', data: null }
+    if (response.status === 204 && method === 'DELETE') return { kind: 'ok', status: response.status, data: null }
     const contentType = response.headers.get('content-type') ?? ''
     if (/^text\/html(?:;|$)/i.test(contentType)) return { kind: 'unexpected-web-response' }
     if (!/^application\/json(?:;|$)/i.test(contentType)) return { kind: 'invalid' }
@@ -523,7 +598,7 @@ async function requestConfluence(expectedUrl: string, contextPath: string, reque
     }
     try {
       const data: unknown = JSON.parse(json + decoder.decode())
-      return { kind: 'ok', pageId, data }
+      return { kind: 'ok', pageId, status: response.status, data }
     } catch {
       return { kind: 'invalid' }
     }

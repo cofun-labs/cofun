@@ -82,7 +82,7 @@ export function ConfluenceConnection({ userId }: { userId: string }) {
       ) : instance ? (
         <>
           <p>Connected to {instance.origin + instance.path}</p>
-          {instance.cloud && <p>Open Confluence Cloud and sign in there to read and search published pages.</p>}
+          {instance.cloud && <p>Sign in to Confluence Cloud in the tab where you want to use it.</p>}
           <button type="button" className="secondary" disabled={busy} onClick={() => void disconnect()}>
             Disconnect
           </button>
