@@ -94,7 +94,7 @@ const CHANGING = [
 ]
 
 describe('Read only', () => {
-  it('[UC-NOTICO-AGENT-003-S01] the model is offered only tools that read, is told how to switch, and nothing changes even when it asks', async () => {
+  it('[UC-NOTICO-AGENT-003-S01] the model is offered the same tools as in Edit, is told how to switch, and nothing changes when it asks', async () => {
     const { tab, workspace } = workspaceTab()
     const { browser, user } = await openPanel(tab)
     await user.click(screen.getByRole('button', { name: 'Mode: Edit' }))
@@ -109,10 +109,15 @@ describe('Read only', () => {
     expect(await screen.findByText("I can't make changes in Read only.")).toBeVisible()
     await answered()
 
-    expect(offered(browser, 0).sort()).toEqual([...READING].sort())
+    // Every tool, in the order Edit offers them: the same start of every request keeps the prompt cache.
+    expect(offered(browser, 0).sort()).toEqual([...READING, ...CHANGING].sort())
     expect(lastQuestion(browser)).toMatch(/^\[Read only: .*switch to Edit with the mode button/)
-    // The call the model made anyway did not run.
-    expect(browser.sentToModel().at(-1)).toMatchObject({ role: 'tool', content: expect.stringContaining('not found') })
+    // The call the model made anyway did not run, and the model was told why.
+    expect(browser.sentToModel().at(-1)).toMatchObject({
+      role: 'tool',
+      content: expect.stringMatching(/^Not run: this question is in Read only/),
+    })
+    expect(conversation().getByRole('img', { name: 'Not run' })).toBeVisible()
     expect(workspace.transactions).toEqual([])
     expect(workspace.records.get(NOTE)).toMatchObject({ properties: { title: [['Old notes']] } })
     expect(conversation().getByText('Read only')).toBeVisible()
@@ -151,14 +156,14 @@ describe('Read only', () => {
     resume()
     await screen.findByText('Looking at it, one moment please.')
     await answered()
-    expect(offered(browser, 0).sort()).toEqual([...READING].sort())
     expect(conversation().getByText('Read only')).toBeVisible()
 
     browser.ai.pause = undefined
     await ask(user, 'Rename Old notes to Archive')
     expect(await screen.findByText('Renamed it.')).toBeVisible()
     await answered()
-    expect(offered(browser, 1)).toEqual(expect.arrayContaining(CHANGING))
+    // The same tools, in the same order, as the question in Read only was offered.
+    expect(offered(browser, 1)).toEqual(offered(browser, 0))
     // The conversation goes on, and the model is told that changes are possible again.
     expect(browser.sentToModel().some((m) => m.content?.includes('Looking at it'))).toBe(true)
     expect(lastQuestion(browser)).toMatch(/^\[Edit: /)
@@ -178,7 +183,7 @@ describe('Read only', () => {
       await ask(user, 'Hello?')
       await screen.findByText('Read only answer.')
       await answered()
-      expect(offered(browser, 0).sort()).toEqual([...READING].sort())
+      expect(lastQuestion(browser)).toMatch(/^\[Read only: /)
     }
     await closeBrowser()
 
@@ -187,7 +192,7 @@ describe('Read only', () => {
     browser.ai.script.push({ reply: 'Edit answer.' })
     await ask(user, 'Hello?')
     await screen.findByText('Edit answer.')
-    expect(offered(browser, 0)).toEqual(expect.arrayContaining(CHANGING))
+    expect(lastQuestion(browser)).not.toMatch(/Read only/)
   })
 
   it('[UC-NOTICO-AGENT-003-S04] a reopened session shows which question was asked in Read only', async () => {

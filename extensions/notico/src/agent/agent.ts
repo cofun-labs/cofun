@@ -72,14 +72,22 @@ function stoppedInPreview(reason: string, earlier: boolean): string {
 const STOPPED_BEFORE = 'Not run: the user stopped the question before this action started.'
 const STOPPED_DURING =
   'Stopped by the user while this action was running; it may have partly happened. Check before trying it again.'
-/** Ahead of a question asked in Read only, for the model: it has no tool that changes data for it. */
-const READ_ONLY_NOTE =
-  '[Read only: the user set Notico to Read only for this question, so you have no tools that change Notion. ' +
+/** What the model is told to do with a question in Read only that asks for a change. */
+const READ_ONLY_ANSWER =
   "If the question asks for a change, make none and don't describe one as done: say you can't make changes in " +
   'Read only, and that the user can switch to Edit with the mode button at the bottom left of the message box ' +
-  'and ask again. You can still read and answer.]'
-/** Ahead of a question asked in Edit right after one in Read only: the tools that change data are back. */
-const EDIT_NOTE = '[Edit: the user switched Notico back to Edit, so the tools that change Notion are available again.]'
+  'and ask again.'
+/**
+ * Ahead of a question asked in Read only, for the model: the tools that change data are still offered
+ * (the same tools in every request keep the prompt cache), and are refused when called.
+ */
+const READ_ONLY_NOTE =
+  '[Read only: the user set Notico to Read only for this question, so the tools that change Notion are refused: ' +
+  `don't call them. ${READ_ONLY_ANSWER} You can still read and answer.]`
+/** What the model gets back for a call, in Read only, of a tool that changes data. */
+const NOT_RUN_READ_ONLY = `Not run: this question is in Read only, so no tool that changes Notion runs. ${READ_ONLY_ANSWER}`
+/** Ahead of a question asked in Edit right after one in Read only: the tools that change data work again. */
+const EDIT_NOTE = '[Edit: the user switched Notico back to Edit, so the tools that change Notion work again.]'
 
 export class CopilotAgent {
   private agent?: Agent
@@ -91,9 +99,12 @@ export class CopilotAgent {
   /** Names of the tools that need the user's OK before each run. */
   private readonly confirmed: Set<string>
   private readonly tools: Map<string, ToolSpec>
-  /** The tools as the agent runtime takes them: every one in Edit, and those that change no data in Read only. */
+  /**
+   * The tools as the agent runtime takes them: every one, in every mode. Read only refuses those that
+   * change data when they are called (see beforeToolCall): a tool set that changed with the mode would
+   * change the start of the request, which the provider's prompt cache reuses.
+   */
   private readonly allTools: AgentTool[]
-  private readonly readingTools: AgentTool[]
   /** Bumped by stop(), so a question still waiting to start knows it was cancelled. */
   private epoch = 0
   /** Aborted with each epoch bump, so waits that pi doesn't cut short end too. */
@@ -147,7 +158,6 @@ export class CopilotAgent {
     this.confirmed = new Set(config.tools.filter((t) => t.needsConfirmation).map((t) => t.name))
     this.tools = new Map(config.tools.map((t) => [t.name, t]))
     this.allTools = config.tools.map((t) => toAgentTool(t, () => this.reporter()))
-    this.readingTools = this.allTools.filter((_, i) => !config.tools[i].changesData)
   }
 
   /**
@@ -245,9 +255,6 @@ export class CopilotAgent {
     }
     // Stopped while the agent was being set up.
     if (epoch !== this.epoch) return { result: { status: 'stopped', rounds: 0 }, kept: false }
-    // Offered for this question only, and taken as the question starts: a mode switched while it runs
-    // applies from the next one. pi tells the model of the change in the conversation.
-    agent.state.tools = readOnly ? this.readingTools : this.allTools
 
     const before = agent.state.messages.length
     this.stopReason = undefined
@@ -328,6 +335,12 @@ export class CopilotAgent {
               ? NOT_RUN_FAILED
               : STOPPED_BY_ERROR
         return { block: true, reason, terminate: true }
+      }
+      // Read only is taken as the question starts: a mode switched while it runs applies from the next
+      // one. Refused before the preview, which may look things up for a change that won't be made.
+      if (readOnly && this.tools.get(toolCall.name)?.changesData) {
+        refused.add(toolCall.id)
+        return { block: true, reason: NOT_RUN_READ_ONLY }
       }
       if (steps >= this.maxSteps) {
         hitLimit = true
