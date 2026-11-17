@@ -2,6 +2,29 @@
 
 What changed in each version of Notico on the Chrome Web Store, newest first.
 
+## 0.3.0 (2026-11-17)
+
+### Added
+
+- Bring in the web: on any site, ask about the page you're on. The first time on a site, Notico and then Chrome ask you to allow it.
+- A page read from a tab keeps its headings, lists, links, and tables, so saving it to Notion keeps its structure.
+- Add open tabs on other sites to a question with @ or the + button, to compare them or save them to Notion.
+- Paste a link and Notico reads the page. A page that only loads in a browser is rendered in one, which costs credits.
+- Notico can search the web and names its sources. Each search costs 5 credits, even with your own model, and a failed one costs nothing.
+- Select text on any page, right-click it, and pick "Ask Notico": the side panel opens with the text added to your question. Settings can hide the menu item.
+- Long pages are read in parts: Notico keeps the page's text on your device for a week and reads the part it needs, not just the start.
+- On another site, a new chat starts with suggestions for the page you're on.
+- A reply's details show how many web pages were read or rendered and how many searches were made, and break down what it cost.
+
+### Changed
+
+- A question stops after 10 failed tool calls and tells you why.
+- Long chats cost less: Cofun's model keeps more of the conversation and trims older questions less often.
+
+### Fixed
+
+- When a model's moderation refuses a question, Notico shows OpenRouter's reason instead of marking your key as stopped working.
+
 ## 0.2.0 (2026-11-15)
 
 ### Added

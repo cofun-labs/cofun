@@ -12,6 +12,6 @@ In Edit mode on either site type, you can ask to create a published child page, 
 
 Run `pnpm install` from the repository root, then run `pnpm --filter confluco-extension build`. In `chrome://extensions`, turn on Developer mode and load `extensions/confluco/dist` unpacked. Open the panel from the toolbar and sign in with Cofun.
 
-On a self-managed site in Edit mode, you can also ask to change page text, for example `Replace "Draft" with "Ready" on this page`. Use **Confluence** in the composer to attach editor text or select a file to upload. A verified edit or move to trash can be undone in the same chat while the page state still matches. Existing standalone Confluco chats and undo records stay in their original extension.
+On a self-managed site in Edit mode, you can also ask to change page text, for example `Replace "Draft" with "Ready" on this page`. Use **Confluence** in the composer to attach editor text or select a file to upload. A verified edit or move to trash can be undone in the same chat while the page state still matches.
 
 [Privacy policy](PRIVACY.md) · [Development guide](../../docs/development.md)

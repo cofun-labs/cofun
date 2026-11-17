@@ -72,7 +72,7 @@ function summary(pageUrl: string, value: z.output<typeof comment>) {
   return {
     id: value.id,
     url: `${pageUrl}&focusedCommentId=${value.id}#comment-${value.id}`,
-    parentId: value.ancestors[0]?.id ?? null,
+    parentId: value.ancestors.at(-1)?.id ?? null,
     location: location(value),
     author: value.history?.createdBy?.displayName,
     text: text.slice(0, textLimit),
@@ -158,7 +158,7 @@ export async function applyComment(plan: Awaited<ReturnType<typeof prepareCommen
   }
   if (
     location(verified) !== 'footer' ||
-    verified.ancestors[0]?.id !== parent?.id ||
+    verified.ancestors.at(-1)?.id !== parent?.id ||
     !matchesCommentText(verified.body.storage.value, request.text)
   )
     unverified()
