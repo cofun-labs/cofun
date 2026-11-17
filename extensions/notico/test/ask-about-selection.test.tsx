@@ -254,27 +254,40 @@ describe('asking about text selected on a page', () => {
     },
   )
 
-  it('[UC-NOTICO-CHAT-006-S05] keeps a complete character at the combined selection limit', async () => {
-    const { browser, tab, user } = await start()
-    await browser.openPanel()
-    const texts = ['a'.repeat(19_999), 'b'.repeat(20_000), 'c'.repeat(19_999), 'd😀tail']
-    for (const [index, text] of texts.entries()) {
-      tab.pickMenuItem(MENU_ITEM, text)
-      await waitFor(() => expect(toSend()).toHaveLength(index + 1))
-    }
-    browser.ai.script.push({ reply: 'Selections received.' })
-    await ask(user, 'Compare these.')
-    await screen.findByText('Selections received.')
-    expect(sentQuestions(browser)).toEqual([
-      question(
-        [
-          ...texts.slice(0, 3).map((text) => selectionNote(text)),
-          selectionNote('d', "[Clipped: this shows the first 1 of the selection's 7 characters.]"),
-        ].join('\n'),
-        'Compare these.',
-      ),
-    ])
-  })
+  it.each([
+    ['a partial selection', 19_999, 'd😀tail', 'd'],
+    ['a character that cannot fit', 20_000, '😀tail', ''],
+  ])(
+    '[UC-NOTICO-CHAT-006-S05] stops at the combined selection limit with %s',
+    async (_name, thirdLength, last, kept) => {
+      const { browser, tab, user } = await start()
+      await browser.openPanel()
+      const texts = ['a'.repeat(19_999), 'b'.repeat(20_000), 'c'.repeat(thirdLength), last, 'A later selection.']
+      for (const [index, text] of texts.entries()) {
+        tab.pickMenuItem(MENU_ITEM, text)
+        await waitFor(() => expect(toSend()).toHaveLength(index + 1))
+      }
+      browser.ai.script.push({ reply: 'Selections received.' })
+      await ask(user, 'Compare these.')
+      await screen.findByText('Selections received.')
+      expect(sentQuestions(browser)).toEqual([
+        question(
+          [
+            ...texts.slice(0, 3).map((text) => selectionNote(text)),
+            ...(kept
+              ? [selectionNote(kept, "[Clipped: this shows the first 1 of the selection's 7 characters.]")]
+              : []),
+            '[The user sent more text selected on pages with this question, which is left out: the question ' +
+              'already carries as much selected text as one may.]',
+          ].join('\n'),
+          'Compare these.',
+        ),
+      ])
+      expect(within(conversation().getByRole('list', { name: 'Pages sent' })).getAllByRole('link')).toHaveLength(
+        kept ? 4 : 3,
+      )
+    },
+  )
 
   it('[UC-NOTICO-CHAT-006-S05] once a question carries as much text from pages as one may, a further selection is left out, and the AI is told', async () => {
     const { browser, tab, user } = await start()

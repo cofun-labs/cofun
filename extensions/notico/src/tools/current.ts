@@ -206,7 +206,9 @@ export function selectionsCarried(selections: Selection[]): { selection: Selecti
   for (const selection of selections) {
     if (left <= 0) break
     const text = clipSelection(selection.text, left)
-    left -= text.length
+    if (!text) break
+    // A clipped selection is the last, even when its final character did not fit.
+    left -= selection.text.length
     carried.push({ selection, text })
   }
   return carried
