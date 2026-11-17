@@ -864,6 +864,12 @@ describe('chat and question of a spend', () => {
     expect(ids()).toEqual([{ chat_id: null, turn_id: null }])
   })
 
+  it('[@no-uc:money] the chat goes to the model as its session, so its requests reach the instance that cached it', async () => {
+    await chat(token, { messages: hi }, { ...NOTICO, 'x-cofun-chat-id': CHAT, 'x-cofun-turn-id': TURN })
+    await chat(token)
+    expect(ai.calls.map((call) => call.options?.extraHeaders)).toEqual([{ 'x-session-affinity': CHAT }, undefined])
+  })
+
   it('[@no-uc:contract] a header that is not a UUID is refused, before the model is called', async () => {
     for (const [name, bad] of [
       ['x-cofun-chat-id', 'chat-1'],

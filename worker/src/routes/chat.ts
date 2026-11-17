@@ -133,16 +133,18 @@ export function chatRoutes({ now, priceOf: priceFor, logError }: Deps): App {
       // collectLog: false keeps prompts and replies out of the gateway logs, and skipCache: true
       // keeps them out of its cache even if caching is turned on in the dashboard. The gateway's
       // analytics (requests, tokens, cost, metadata) still work.
-      const options = c.env.AI_GATEWAY_ID
-        ? {
-            gateway: {
-              id: c.env.AI_GATEWAY_ID,
-              collectLog: false,
-              skipCache: true,
-              metadata: { product, user: c.get('userId') },
-            },
-          }
-        : undefined
+      const gateway = c.env.AI_GATEWAY_ID && {
+        id: c.env.AI_GATEWAY_ID,
+        collectLog: false,
+        skipCache: true,
+        metadata: { product, user: c.get('userId') },
+      }
+      // Workers AI keeps a chat's prompt prefix cached on the model instance that answered it: this
+      // header sends the chat's next requests to that same instance, where a cached token costs a
+      // fiftieth of a new one. The chat id is the client's random one (see CHAT_HEADER).
+      const extraHeaders = turn.chatId ? { 'x-session-affinity': turn.chatId } : undefined
+      const options =
+        gateway || extraHeaders ? { ...(gateway && { gateway }), ...(extraHeaders && { extraHeaders }) } : undefined
 
       let out: unknown
       try {

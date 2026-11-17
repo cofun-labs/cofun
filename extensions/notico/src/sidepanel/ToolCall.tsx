@@ -20,7 +20,7 @@ const LABEL: Record<ShownTool['status'], string> = {
   confirm: 'Waiting for your OK',
   done: 'Done',
   failed: 'Failed',
-  skipped: 'Not run: step limit reached',
+  skipped: 'Not run',
   stopped: 'Stopped',
   declined: 'Declined',
 }
