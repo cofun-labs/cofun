@@ -23,7 +23,7 @@ const MATCHES = 20
 const LINE_CHARS = 300
 const QUERY_CHARS = 200
 /**
- * How much of a question's tool results read_result adds parts to, at most: well under the 200,000
+ * How much of a question's tool results read_result adds parts to, at most: well under the 800,000
  * characters the hosted model takes for a whole request, with the system prompt and the tools.
  */
 const QUESTION_PART_CHARS = 120_000

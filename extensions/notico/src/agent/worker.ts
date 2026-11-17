@@ -45,7 +45,8 @@ export function hostedProvider({
         cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
         // Which extension asks, so the worker records the call under its product.
         headers: { 'x-cofun-client': client },
-        contextWindow: 128_000,
+        // The model's own, on Workers AI. pi fits max_tokens into what the input leaves of it.
+        contextWindow: 1_048_576,
         maxTokens: 16_384,
         // What the worker accepts: system (not developer) messages, max_tokens, no store field.
         compat: {

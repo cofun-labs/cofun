@@ -639,23 +639,27 @@ describe('extension agent against the worker', () => {
     ])
   })
 
-  it('[@no-uc:contract] a long conversation sends only its newest part, starting at a question', async () => {
-    const agent = makeAgent({ history: { messages: 3, chars: 100_000 } })
-    await ask(agent, 'first')
-    await ask(agent, 'second')
-    await ask(agent, 'third')
-    expect(sentMessages(2).map((m) => [m.role, m.content])).toEqual([
+  it('[@no-uc:money] a long conversation is cut in large steps, starting at a question, and keeps its start between cuts', async () => {
+    // A cut changes everything after the tools, which the provider's prompt cache can't reuse: cut to
+    // 60% of the limits, and send from the same question until the conversation is over them again.
+    const agent = makeAgent({ history: { messages: 10, chars: 100_000 } })
+    for (let n = 1; n <= 9; n++) await ask(agent, `q${n}`)
+    const firstSent = ai.calls.map((_, n) => sentMessages(n).find((m) => m.role === 'user')?.content)
+    expect(firstSent).toEqual(['q1', 'q1', 'q1', 'q1', 'q1', 'q4', 'q4', 'q4', 'q7'])
+    expect(sentMessages(5).map((m) => [m.role, m.content])).toEqual([
       ['system', 'You are Notico.'],
-      ['user', 'second'],
+      ['user', 'q4'],
       ['assistant', '你好 来自 worker '],
-      ['user', 'third'],
+      ['user', 'q5'],
+      ['assistant', '你好 来自 worker '],
+      ['user', 'q6'],
     ])
   })
 
   it('[@no-uc:data] a long conversation in Read only still offers only the tools that change no data', async () => {
     const reader = pageTool().tool
     const writer: ToolSpec = { ...pageTool().tool, name: 'change_page', changesData: true }
-    const agent = makeAgent({ tools: [reader, writer], history: { messages: 3, chars: 100_000 } })
+    const agent = makeAgent({ tools: [reader, writer], history: { messages: 6, chars: 100_000 } })
     const offered = (n: number) =>
       (ai.calls[n].inputs.tools as { function: { name: string } }[]).map((t) => t.function.name)
     await ask(agent, 'first')

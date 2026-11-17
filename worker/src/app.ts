@@ -19,11 +19,11 @@ export type { AiBinding, Env } from './http'
 
 /**
  * The largest request body the worker reads, on every route. The chat's is the largest: its text is
- * capped at MAX_CONTENT_CHARS (200,000 characters), at most 800 kB in UTF-8 or 1.2 MB written as
+ * capped at MAX_CONTENT_CHARS (800,000 characters), at most 3.2 MB in UTF-8 or 4.8 MB written as
  * JSON escapes (\uXXXX), and the JSON around it adds little. Routes may refuse less (the Stripe
  * webhook does).
  */
-const MAX_BODY_BYTES = 4 * 1024 * 1024
+const MAX_BODY_BYTES = 6 * 1024 * 1024
 
 export function createApp({
   now = () => new Date(),
