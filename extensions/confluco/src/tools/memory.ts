@@ -1,6 +1,6 @@
 import type { QuestionPage } from '../agent/types'
 import type { SearchContinuation } from '../confluence/api'
-import type { CloudCommentJob } from '../confluence/cloud-inspection'
+import type { CloudDiscussionPosition } from '../confluence/cloud-inspection'
 import type { AttachmentUpload } from '../confluence/attachments'
 import type { ConfluenceTab } from '../confluence/tab'
 import type { ConfluenceUndo } from '../confluence/undo'
@@ -14,7 +14,7 @@ export interface ConfluenceQuestion {
   beforeWrite(): Promise<void>
 }
 
-export type ConfluenceContinuation = SearchContinuation | { comments: CloudCommentJob[] }
+export type ConfluenceContinuation = SearchContinuation | { comments: CloudDiscussionPosition }
 
 /** State the tools need while the agent is answering a conversation. */
 export class ToolMemory {

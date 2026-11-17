@@ -11,7 +11,7 @@ import {
   listCloudSpaces,
   listCloudVersions,
   readCloudVersion,
-  type CloudCommentJob,
+  type CloudDiscussionPosition,
 } from '../confluence/cloud-inspection'
 import { collectionNext } from '../confluence/collection'
 import { commentsArgs, listPageComments } from '../confluence/comments'
@@ -47,7 +47,7 @@ function requestKey(tab: ConfluenceTab, tool: string, filters?: object) {
 type ContinuationResult = {
   nextStart?: number
   cursor?: string
-  commentsNext?: CloudCommentJob[]
+  commentsNext?: CloudDiscussionPosition
   continuation?: ConfluenceContinuation
 }
 

@@ -99,7 +99,11 @@ export async function browseCloudTree(
 ) {
   const page = await published(tab, ref, signal)
   const resource = 'pages/' + page.id
-  const parents = await cloudCollection(tab, resource + '/ancestors', {}, undefined, item, { limit: 30, signal })
+  const ancestorLimit = 30
+  const parents = await cloudCollection(tab, resource + '/ancestors', {}, undefined, item, {
+    limit: ancestorLimit,
+    signal,
+  })
   const { items, ...next } = await cloudCollection(tab, resource + '/direct-children', {}, cursor, item, { signal })
   const ancestors = await describePages(tab, parents.items, signal)
   const children = await describePages(tab, items, signal)
@@ -107,7 +111,8 @@ export async function browseCloudTree(
     page: cloudPageLink(tab, page),
     ancestors,
     children,
-    ancestorsTruncated: !!(parents.cursor || parents.paginationNotice),
+    // Cloud continues through the first ancestor's ID, not a cursor link.
+    ancestorsTruncated: parents.items.length === ancestorLimit,
     ...next,
   }
 }
@@ -239,78 +244,86 @@ const comment = z.object({
   body: z.object({ storage: z.object({ value: z.string() }) }),
 })
 
-export interface CloudCommentJob {
+interface CloudCommentJob {
   location: 'footer' | 'inline'
   cursor?: string
   parentId?: string
   depth: number
 }
 
+export interface CloudDiscussionPosition {
+  page: ReturnType<typeof cloudPageLink>
+  queue: CloudCommentJob[]
+}
+
+function commentSummary(link: string, item: z.output<typeof comment>, job: CloudCommentJob) {
+  const text = readableText(item.body.storage.value)
+  const url = new URL(link)
+  url.searchParams.set('focusedCommentId', item.id)
+  url.hash = 'comment-' + item.id
+  return {
+    id: item.id,
+    url: url.href,
+    parentId: job.parentId ?? null,
+    location: job.location,
+    text: text.slice(0, 2000),
+    truncated: text.length > 2000,
+  }
+}
+
 export async function listCloudComments(
   tab: ConfluenceTab,
   ref: PageReference | undefined,
-  pending: CloudCommentJob[] | undefined,
+  pending: CloudDiscussionPosition | undefined,
   signal?: AbortSignal,
 ) {
-  const page = await published(tab, ref, signal)
-  const link = cloudPageLink(tab, page)
-  const [job, ...remaining] =
-    pending ??
-    ([
-      { location: 'footer', depth: 0 },
-      { location: 'inline', depth: 0 },
-    ] satisfies CloudCommentJob[])
-  if (!job) return { page: link, comments: [] }
-  const type = job.location + '-comments'
-  const resource = job.parentId ? `${type}/${job.parentId}/children` : `pages/${page.id}/${type}`
-  const { items, cursor, paginationNotice } = await cloudCollection(
-    tab,
-    resource,
-    { 'body-format': 'storage' },
-    job.cursor,
-    comment,
-    { signal },
-  )
-  if (
-    new Set(items.map((item) => item.id)).size !== items.length ||
-    items.some(
-      (item) =>
-        item.id === job.parentId ||
-        (item.pageId && item.pageId !== page.id) ||
-        (item.parentCommentId && item.parentCommentId !== job.parentId),
-    )
-  )
-    refuse('Confluence returned comments outside the requested page or discussion.')
-
-  // Cloud paginates each thread separately. Keep the pending endpoints internal to the question.
+  const page = pending?.page ?? cloudPageLink(tab, await published(tab, ref, signal))
+  const queue: CloudCommentJob[] = pending
+    ? [...pending.queue]
+    : [
+        { location: 'footer', depth: 0 },
+        { location: 'inline', depth: 0 },
+      ]
+  const comments: ReturnType<typeof commentSummary>[] = []
   const depthLimit = 8
   const queueLimit = 100
-  const children: CloudCommentJob[] =
-    job.depth < depthLimit
-      ? items.map((item) => ({ location: job.location, parentId: item.id, depth: job.depth + 1 }))
-      : []
-  const queue = [...(cursor ? [{ ...job, cursor }] : []), ...children, ...remaining]
-  return {
-    page: link,
-    comments: items.map((item) => {
-      const text = readableText(item.body.storage.value)
-      const url = new URL(link.url)
-      url.searchParams.set('focusedCommentId', item.id)
-      url.hash = 'comment-' + item.id
-      return {
-        id: item.id,
-        url: url.href,
-        parentId: job.parentId ?? null,
-        location: job.location,
-        text: text.slice(0, 2000),
-        truncated: text.length > 2000,
-      }
-    }),
-    commentsNext: queue.length ? queue.slice(0, queueLimit) : undefined,
-    paginationNotice:
-      paginationNotice ??
-      (queue.length > queueLimit || (items.length && job.depth === depthLimit)
-        ? 'The comment inspection limit was reached. Open the discussion in Confluence for more.'
-        : undefined),
+  const requestLimit = 6
+  const pageSize = 5
+  let paginationNotice: string | undefined
+
+  // Cloud stores page comments and each thread's replies in separate collections. Read a bounded
+  // batch in one tool call, with both top-level types ahead of reply fan-out.
+  for (let request = 0; request < requestLimit && comments.length <= pageSize; request++) {
+    const job = queue.shift()
+    if (!job) break
+    const type = job.location + '-comments'
+    const resource = job.parentId ? `${type}/${job.parentId}/children` : `pages/${page.ref.id}/${type}`
+    const result = await cloudCollection(tab, resource, { 'body-format': 'storage' }, job.cursor, comment, {
+      signal,
+      limit: pageSize,
+    })
+    if (
+      new Set(result.items.map((item) => item.id)).size !== result.items.length ||
+      result.items.some(
+        (item) =>
+          item.id === job.parentId ||
+          (item.pageId && item.pageId !== page.ref.id) ||
+          (item.parentCommentId && item.parentCommentId !== job.parentId),
+      )
+    )
+      refuse('Confluence returned comments outside the requested page or discussion.')
+
+    comments.push(...result.items.map((item) => commentSummary(page.url, item, job)))
+    if (result.cursor) queue.push({ ...job, cursor: result.cursor })
+    if (job.depth < depthLimit) {
+      for (const item of result.items) queue.push({ location: job.location, parentId: item.id, depth: job.depth + 1 })
+    }
+    if (queue.length > queueLimit || (result.items.length && job.depth === depthLimit)) {
+      queue.length = Math.min(queue.length, queueLimit)
+      paginationNotice ??= 'The comment inspection limit was reached. Open the discussion in Confluence for more.'
+    }
+    paginationNotice ??= result.paginationNotice
   }
+
+  return { page, comments, commentsNext: queue.length ? { page, queue } : undefined, paginationNotice }
 }

@@ -168,18 +168,12 @@ it('[UC-CONFLUCO-CONFLUENCE-006-S01] [UC-CONFLUCO-CONFLUENCE-010-S01] [UC-CONFLU
     }
     return new Response(null, { status: 404 })
   }
-  browser.ai.script.push(call('list_page_labels'), call('list_page_comments'))
-  function continueComments(remaining: number) {
-    followConfluencePage(browser, (nextPage) => {
-      browser.ai.script.push(call('list_page_comments', { nextPage }))
-      if (remaining > 1) continueComments(remaining - 1)
-      else
-        browser.ai.script.push(call('list_page_attachments', { filename: 'agenda.txt' }), {
-          reply: 'Cloud details ready.',
-        })
-    })
-  }
-  continueComments(4)
+  browser.ai.script.push(
+    call('list_page_labels'),
+    call('list_page_comments'),
+    call('list_page_attachments', { filename: 'agenda.txt' }),
+    { reply: 'Cloud details ready.' },
+  )
   await ask(user, 'Inspect labels and comments and find agenda.txt.')
   expect(await screen.findByText('Cloud details ready.')).toBeVisible()
   const output = toolText(browser)
@@ -188,5 +182,47 @@ it('[UC-CONFLUCO-CONFLUENCE-006-S01] [UC-CONFLUCO-CONFLUENCE-010-S01] [UC-CONFLU
   expect(output).toContain('Footer response')
   expect(output).toContain('"parentId":"101"')
   expect(output).toContain('Inline discussion')
+  expect(output).not.toContain('nextPage')
+  expect(browser.workspaceRequests.filter(({ url }) => new URL(url).pathname === pagePath)).toHaveLength(3)
   expect(output).toContain(cloud + '/download/attachments/42/agenda.txt?version=2&download=true')
+})
+
+it('[UC-CONFLUCO-CONFLUENCE-010-S01] batches empty reply collections and resumes without refetching the page', async () => {
+  const { browser, user } = await workspace()
+  const comments = Array.from({ length: 5 }, (_, index) => ({
+    id: String(101 + index),
+    pageId: '42',
+    body: { storage: { value: '<p>Footer comment</p>' } },
+  }))
+  browser.confluenceResponse = (url) => {
+    const path = new URL(url).pathname
+    if (path === pagePath) return Response.json(page)
+    if (path === pagePath + '/footer-comments') return Response.json({ results: comments })
+    if (path === pagePath + '/inline-comments')
+      return Response.json({
+        results: [{ ...comments[0], id: '110', body: { storage: { value: '<p>Inline comment</p>' } } }],
+      })
+    if (path === '/wiki/api/v2/footer-comments/105/children')
+      return Response.json({
+        results: [
+          { ...comments[0], id: '120', parentCommentId: '105', body: { storage: { value: '<p>Later reply</p>' } } },
+        ],
+      })
+    if (/^\/wiki\/api\/v2\/(?:footer|inline)-comments\/\d+\/children$/.test(path)) return Response.json({ results: [] })
+    return new Response(null, { status: 404 })
+  }
+  browser.ai.script.push(call('list_page_comments'))
+  followConfluencePage(browser, (nextPage) => {
+    expect(browser.workspaceRequests).toHaveLength(3)
+    browser.ai.script.push(call('list_page_comments', { nextPage }))
+    followConfluencePage(browser, (nextPage) => {
+      expect(browser.workspaceRequests).toHaveLength(9)
+      browser.ai.script.push(call('list_page_comments', { nextPage }), { reply: 'Discussion complete.' })
+    })
+  })
+  await ask(user, 'Show the full discussion.')
+  expect(await screen.findByText('Discussion complete.')).toBeVisible()
+  expect(toolText(browser)).toContain('Inline comment')
+  expect(toolText(browser)).toContain('Later reply')
+  expect(browser.workspaceRequests.filter(({ url }) => new URL(url).pathname === pagePath)).toHaveLength(1)
 })
