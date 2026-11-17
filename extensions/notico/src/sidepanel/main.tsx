@@ -1,13 +1,11 @@
 import { ClerkProvider, Show, useAuth } from '@clerk/chrome-extension'
 import { StrictMode, useEffect } from 'react'
 import { createRoot } from 'react-dom/client'
-import { configureAnalytics, identify, track } from '../analytics'
+import { identify, track } from '../analytics'
 import { clerkSyncHost } from '../clerk'
-import { notico } from '../notico'
 import { Chat } from './Chat'
 import { Header } from './Header'
 import { Mark } from './icons'
-import { ProductContext } from './product'
 import './style.css'
 
 const PUBLISHABLE_KEY = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY as string
@@ -111,15 +109,12 @@ function App() {
       </Show>
 
       <Show when="signed-in">
-        <ProductContext value={notico}>
-          <SignedInChat />
-        </ProductContext>
+        <SignedInChat />
       </Show>
     </ClerkProvider>
   )
 }
 
-configureAnalytics(notico)
 track({ event: 'panel_opened' })
 const root = createRoot(document.getElementById('root')!)
 root.render(

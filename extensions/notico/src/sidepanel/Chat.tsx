@@ -12,7 +12,6 @@ import { Icon } from './icons'
 import { askedIn, chatHeading, chatSaveKey, MessageList, saveToNotion } from './Messages'
 import { ModelNote } from './Model'
 import { Panel } from './panel'
-import { useProduct } from './product'
 import { SaveButton } from './Save'
 import { Sessions, type OpenResult } from './Sessions'
 import { Settings } from './Settings'
@@ -23,8 +22,7 @@ export function Chat({ userId }: { userId: string }) {
   const { getToken } = useAuth()
   const tokenRef = useRef(getToken)
   tokenRef.current = getToken
-  const product = useProduct()
-  const [panel] = useState(() => new Panel(userId, () => tokenRef.current(), product))
+  const [panel] = useState(() => new Panel(userId, () => tokenRef.current()))
   useEffect(() => panel.connect(), [panel])
   const snapshot = useSyncExternalStore(panel.subscribe, panel.getSnapshot)
   const { chat, credits, model, mode } = snapshot

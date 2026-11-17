@@ -4,7 +4,6 @@ import { describeCall } from '../tools'
 import { allowSite } from '../web/tab'
 import type { ShownTool } from './chat-session'
 import { Icon, type IconName } from './icons'
-import { useProduct } from './product'
 
 const MARK: Record<ShownTool['status'], IconName> = {
   running: 'dots',
@@ -87,8 +86,7 @@ export const ToolCall = memo(function ToolCall({
   onAnswer?: (allow: boolean) => void
 }) {
   // A name comes from the details only once the call worked: an error says nothing about the thing.
-  const { tools } = useProduct()
-  const action = describeCall(tools, tool.name, tool.args, tool.status === 'done' ? tool.details : undefined)
+  const action = describeCall(tool.name, tool.args, tool.status === 'done' ? tool.details : undefined)
   const args = pretty(tool.args)
   const asking = tool.status === 'confirm' && onAnswer
   return (
