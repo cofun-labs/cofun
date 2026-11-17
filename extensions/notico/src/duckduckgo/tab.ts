@@ -77,6 +77,8 @@ function loaded(tabId: number, origin: string, signal?: AbortSignal): Promise<vo
     chrome.tabs.onUpdated.addListener(onUpdated)
     chrome.tabs.onRemoved.addListener(onRemoved)
     signal?.addEventListener('abort', onAbort)
+    // A Stop while the tab was being opened fired before the listener was added.
+    if (signal?.aborted) return done(new TabError('stopped'))
     // It may have loaded before the listener was added.
     chrome.tabs.get(tabId).then(
       (tab) => on(tab) && done(),

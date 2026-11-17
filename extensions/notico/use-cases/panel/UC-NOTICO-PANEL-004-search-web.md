@@ -6,7 +6,7 @@ A user asks something that needs current information or sources beyond their Not
 
 When searches are turned away for coming too often, web search is unavailable, or credits run out, the question stops; any other failure goes to the AI, and the question goes on.
 
-In Settings, an account can search DuckDuckGo instead, free, in a background tab. When DuckDuckGo asks to confirm a person is searching, the question stops and its tab stays open for the user.
+In Settings, an account can search DuckDuckGo instead, free, in a background tab. When DuckDuckGo shows anything but results, the question stops; its check stays open for the user.
 
 Key constraint:
 
@@ -26,8 +26,8 @@ Key constraint:
 | UC-NOTICO-PANEL-004-S09 | P0 | ✅ | Given a user who switched on DuckDuckGo in Settings and let Chrome give it access; when the AI searches; then DuckDuckGo's results page opens in a background tab, which closes once read, and the results come from it, each with its page's own address, its title, and its description, without its ads, marked as data from the search; the service is not asked to search, and the search costs no credits. |
 | UC-NOTICO-PANEL-004-S10 | P1 | ✅ | Given a user who switched DuckDuckGo off again, or removed its access in Chrome, or another account that signs in on the same browser after one switched it on; when the AI searches; then the service searches, as without the setting. |
 | UC-NOTICO-PANEL-004-S11 | P1 | ✅ | Given a user switching on DuckDuckGo in Settings; when they decline Chrome's request for access to it; then the switch stays off, and searches go to the service. |
-| UC-NOTICO-PANEL-004-S12 | P0 | ✅ | Given DuckDuckGo answering a search with its check that a person is searching; when the AI searches; then the question stops, nothing more is searched for it, the tab stays open for the user to answer the check, and they are told so and that they can switch DuckDuckGo off in Settings. |
-| UC-NOTICO-PANEL-004-S13 | P1 | ✅ | Given DuckDuckGo not answering, or its tab showing a page the extension can't read; when the AI searches; then it is told the search failed, the tab is closed, and the question goes on. |
+| UC-NOTICO-PANEL-004-S12 | P0 | ✅ | Given DuckDuckGo's tab showing its check that a person is searching, or any other page that is not search results (it may be turning searches away); when the AI searches; then the question stops, nothing more is searched for it, the user is told why and that they can switch DuckDuckGo off in Settings, and the tab stays open for them to answer the check, or is closed for any other page. |
+| UC-NOTICO-PANEL-004-S13 | P1 | ✅ | Given DuckDuckGo's page not loading in its tab; when the AI searches; then it is told the search failed, the tab is closed, and the question goes on. |
 
 ### ai-e2e
 

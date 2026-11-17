@@ -367,32 +367,40 @@ describe('searching the web with DuckDuckGo', () => {
   })
 
   it.each([
-    ['DuckDuckGo cannot be reached', 'unreachable', 'Could not search the web: DuckDuckGo could not be reached.'],
-    [
-      'DuckDuckGo shows an error page',
-      'error page',
-      'Could not search the web: DuckDuckGo gave a page Notico could not read.',
-    ],
-    [
-      'DuckDuckGo answers a page that is not one of results',
-      'unknown page',
-      'Could not search the web: DuckDuckGo gave a page Notico could not read.',
-    ],
+    ['shows an error page', 'error page'],
+    ['shows a page that is not one of results', 'unknown page'],
   ] as const)(
-    '[UC-NOTICO-PANEL-004-S13] the model is told the search failed when %s, and the question goes on',
-    async (_what, answer, told) => {
+    '[UC-NOTICO-PANEL-004-S12] the question stops when DuckDuckGo %s, and its tab is closed',
+    async (_what, answer) => {
       const { browser, user } = await openWithDuckDuckGo()
       browser.duckDuckGo.answer = answer
-      browser.ai.script.push(searchCall(QUERY), { reply: 'Answered without the search.' })
+      browser.ai.script.push(searchCall(QUERY), searchCall('tea'), { reply: 'Never sent.' })
 
       await ask(user, 'Where does oolong tea come from?')
 
-      expect(await screen.findByText('Answered without the search.')).toBeVisible()
-      // Free: nothing tells the model it may have cost credits. Not tried again, nor through the worker.
-      expect(toolResults(browser)).toEqual([told])
+      // A tab gives no HTTP status: such a page may be DuckDuckGo turning searches away.
+      const told = /^DuckDuckGo showed a page that is not search results/
+      await waitFor(() => expect(screen.getAllByText(told)).toHaveLength(2))
+      expect(screen.getAllByText(told)[0]).toHaveTextContent('switch off "Search with DuckDuckGo" in Settings')
+      expect(screen.queryByText('Never sent.')).toBeNull()
       expect(browser.duckDuckGo.searches).toHaveLength(1)
       expect(browser.duckDuckGo.openTabs()).toEqual([])
       expect(workerSearched(browser)).toBe(false)
     },
   )
+
+  it("[UC-NOTICO-PANEL-004-S13] the model is told the search failed when DuckDuckGo's page does not load, and the question goes on", async () => {
+    const { browser, user } = await openWithDuckDuckGo()
+    browser.duckDuckGo.answer = 'unreachable'
+    browser.ai.script.push(searchCall(QUERY), { reply: 'Answered without the search.' })
+
+    await ask(user, 'Where does oolong tea come from?')
+
+    expect(await screen.findByText('Answered without the search.')).toBeVisible()
+    // Free: nothing tells the model it may have cost credits. Not tried again, nor through the worker.
+    expect(toolResults(browser)).toEqual(['Could not search the web: DuckDuckGo could not be reached.'])
+    expect(browser.duckDuckGo.searches).toHaveLength(1)
+    expect(browser.duckDuckGo.openTabs()).toEqual([])
+    expect(workerSearched(browser)).toBe(false)
+  })
 })

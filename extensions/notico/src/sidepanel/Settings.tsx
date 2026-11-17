@@ -142,8 +142,9 @@ function WebSearch({ userId }: { userId: string }) {
         <div className="grow">
           <p>Search with DuckDuckGo</p>
           <p id="settings-search-detail" className="account-detail">
-            Free: each search opens DuckDuckGo in a background tab and reads its results, instead of costing credits. If
-            DuckDuckGo asks you to confirm you're a person, answer it in that tab, or switch this off.
+            Free: each search opens DuckDuckGo in a background tab and reads its results, instead of costing credits.
+            Searches show in your Chrome history. If DuckDuckGo asks you to confirm you're a person, answer it in that
+            tab, or switch this off.
           </p>
         </div>
         {on !== undefined && (

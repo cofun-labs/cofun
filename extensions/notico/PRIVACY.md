@@ -69,6 +69,7 @@ Notico does not record clicks, keystrokes, or the screen, and loads no code from
 - **Your sign-in**: Clerk's token that keeps you signed in.
 - **Your own model, if you set one up**: your OpenRouter key and the models you chose, for the account that set them up. Removing the key in the settings deletes it.
 - **Settings**: whether the assistant may change your pages (Edit or Read only), whether web searches go to DuckDuckGo, whether usage data is shared, and whether the right-click menu shows "Ask Notico". That last one is synced to your other devices if you use Chrome sync.
+- **DuckDuckGo searches in your Chrome history**, once you switch on "Search with DuckDuckGo": each search opens DuckDuckGo's results page in a tab, so Chrome keeps its address, which holds the query, in your browsing history, as for any page you open, and syncs it to your other devices if you use Chrome sync. Notico doesn't remove these entries; you can, in Chrome's history. When DuckDuckGo asks you to confirm you are a person, its tab stays open with the query in its address bar.
 - **Usage ids**: the random id your events are counted under, and your Clerk user id while you are signed in (signing out clears it while usage data is on). After you turn usage data off they stay on the device, even after you sign out, and are sent nowhere.
 
 None of this is **encrypted**, and your chats and OpenRouter key **stay after you sign out**: anyone with access to your Chrome profile can read them. Removing the extension removes it all.

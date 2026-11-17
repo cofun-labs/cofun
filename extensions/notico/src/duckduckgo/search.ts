@@ -16,7 +16,11 @@ const PATTERN = `${DUCKDUCKGO}/*`
 const TITLE_CHARS = 300
 const DESCRIPTION_CHARS = 1000
 const URL_CHARS = 2000
-/** Why DuckDuckGo gave no results: it asked a person to confirm (`challenge`), or the search failed. */
+/**
+ * Why DuckDuckGo gave no results: it asked a person to confirm (`challenge`), its tab showed a page
+ * that is not one of results (`unreadable`: a tab has no HTTP status, so a page turning searches away
+ * for coming too often is one of these), or the page did not load (`unreachable`).
+ */
 export class DuckDuckGoError extends Error {
   constructor(
     readonly code: 'challenge' | 'unreachable' | 'unreadable',
