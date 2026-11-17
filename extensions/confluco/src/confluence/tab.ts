@@ -84,7 +84,7 @@ export function refuse(message: string, mayHaveChanged = false): never {
   throw Object.assign(new Error(message), { stopsQuestion: message, mayHaveChanged })
 }
 
-type Query = Record<string, string>
+type Query = Record<string, string | string[]>
 export type RestArea = 'api' | 'experimental' | 'cloud-v2'
 type RestRequest = {
   area: RestArea
@@ -197,7 +197,11 @@ function readSelection(expectedUrl: string, contextPath: string, limit: number) 
 export function restUrl(instance: Instance, resource: string, query: Query, area: RestArea): URL {
   const folder = area === 'cloud-v2' ? 'api/v2' : `rest/${area}`
   const endpoint = new URL(`${instance.origin}${instance.path}/${folder}/${resource}`)
-  endpoint.search = new URLSearchParams(query).toString()
+  endpoint.search = new URLSearchParams(
+    Object.entries(query).flatMap(([key, value]) =>
+      Array.isArray(value) ? value.map((item): [string, string] => [key, item]) : [[key, value]],
+    ),
+  ).toString()
   return endpoint
 }
 
@@ -400,7 +404,13 @@ async function requestConfluence(expectedUrl: string, contextPath: string, reque
       method !== 'GET' ||
       body !== undefined ||
       file ||
-      !((area === 'cloud-v2' && resource === 'current-page') || (area === 'api' && resource === 'search'))
+      !(
+        (area === 'cloud-v2' &&
+          /^(?:current-page|spaces|pages(?:\/\d{1,20}(?:\/(?:ancestors|direct-children|versions|operations|labels|footer-comments|inline-comments|attachments))?)?|(?:footer|inline)-comments\/\d{1,20}\/children)$/.test(
+            resource,
+          )) ||
+        (area === 'api' && /^(?:search|content\/\d{1,20}\/restriction\/byOperation)$/.test(resource))
+      )
     )
       return { kind: 'invalid' }
   } else if (area === 'cloud-v2') return { kind: 'invalid' }
@@ -451,7 +461,11 @@ async function requestConfluence(expectedUrl: string, contextPath: string, reque
   const endpoint = new URL(actual.origin + apiPath + resource)
   if (endpoint.origin !== actual.origin || !endpoint.pathname.startsWith(apiPath) || endpoint.hash || endpoint.search)
     return { kind: 'invalid' }
-  endpoint.search = new URLSearchParams(query).toString()
+  endpoint.search = new URLSearchParams(
+    Object.entries(query).flatMap(([key, value]) =>
+      Array.isArray(value) ? value.map((item): [string, string] => [key, item]) : [[key, value]],
+    ),
+  ).toString()
 
   const controller = new AbortController()
   globalThis.cofunConfluenceReads ??= new Map()

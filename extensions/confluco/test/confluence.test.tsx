@@ -3,7 +3,7 @@ import { act, screen, waitFor, within } from '@testing-library/react'
 import userEvent, { type UserEvent } from '@testing-library/user-event'
 import { afterEach, describe, expect, it } from 'vitest'
 import { DATA_LINE } from '../src/tools/shared'
-import { z } from '../src/zod'
+import { followConfluencePage } from './confluence-fixture'
 import { closeBrowser, FakeBrowser } from './panel'
 import { FakeTab, webPage } from './tab'
 
@@ -82,28 +82,6 @@ const toolResults = (browser: FakeBrowser) =>
     .sentToModel()
     .filter((message) => message.role === 'tool')
     .map((message) => message.content)
-
-const modelRequest = z.object({ messages: z.array(z.object({ role: z.string(), content: z.string().nullish() })) })
-const nextSearchPage = z.object({ nextPage: z.uuid() })
-
-/** Script the model's continuation only when it has seen the preceding search result. */
-function followSearch(browser: FakeBrowser, respond: (nextPage: string) => void) {
-  const worker = browser.worker
-  browser.worker = async (request) => {
-    if (new URL(request.url).pathname === '/v1/chat/completions') {
-      const body = modelRequest.safeParse(await request.clone().json())
-      const content = body.data?.messages.findLast((message) => message.role === 'tool')?.content
-      if (content?.startsWith(DATA_LINE + '\n')) {
-        const next = nextSearchPage.safeParse(JSON.parse(content.slice(DATA_LINE.length + 1))).data
-        if (next) {
-          browser.worker = worker
-          respond(next.nextPage)
-        }
-      }
-    }
-    return worker(request)
-  }
-}
 
 describe('connecting Confluence', () => {
   it('[UC-CONFLUCO-CONFLUENCE-001-S01] remembers a granted connection and removes it on disconnect', async () => {
@@ -305,7 +283,7 @@ describe('searching published Confluence pages', () => {
     const filters = { query: 'Workshop "plan"', field: 'title', spaceKey: 'TEAM' }
     browser.ai.script.push(call('search_pages', filters))
     let continuation: string | undefined
-    followSearch(browser, (nextPage) => {
+    followConfluencePage(browser, (nextPage) => {
       continuation = nextPage
       browser.ai.script.push(call('search_pages', { ...filters, nextPage }), { reply: 'Found the plan.' })
     })
@@ -377,7 +355,7 @@ describe('searching published Confluence pages', () => {
     await connected(user)
     answerWith(Response.json({ results: [], _links: { next: '/rest/api/search?start=10' } }))
     browser.ai.script.push(call('search_pages', { query: 'Workshop' }))
-    followSearch(browser, (nextPage) => {
+    followConfluencePage(browser, (nextPage) => {
       browser.ai.script.push(
         call('search_pages', { query: 'Workshop', nextPage: crypto.randomUUID() }),
         call('search_pages', { query: 'Workshop', field: 'title', nextPage }),
@@ -388,8 +366,8 @@ describe('searching published Confluence pages', () => {
     expect(await screen.findByText('Search finished.')).toBeVisible()
     expect(requests).toHaveLength(1)
     expect(toolResults(browser).slice(1)).toEqual([
-      'Use nextPage returned by the same Confluence search in this question, or omit it.',
-      'Use nextPage returned by the same Confluence search in this question, or omit it.',
+      'Use nextPage returned by the same Confluence request in this question, or omit it.',
+      'Use nextPage returned by the same Confluence request in this question, or omit it.',
     ])
   })
 })
@@ -409,7 +387,7 @@ describe('Confluence Cloud', () => {
     expect(tools).toContain('"name":"read_page"')
     expect(tools).toContain('"name":"search_pages"')
     expect(tools).not.toContain('"name":"edit_page"')
-    expect(tools).not.toContain('"name":"list_spaces"')
+    expect(tools).toContain('"name":"list_spaces"')
     expect(toolResults(browser).join(' ')).toContain('Cloud workshop agenda')
     expect(toolResults(browser).join(' ')).toContain(CLOUD_PAGE)
   })
@@ -450,7 +428,7 @@ describe('Confluence Cloud', () => {
     )
     const filters = { query: 'Workshop', field: 'title', spaceKey: 'TEAM' }
     browser.ai.script.push(call('search_pages', filters))
-    followSearch(browser, (nextPage) => {
+    followConfluencePage(browser, (nextPage) => {
       browser.ai.script.push(
         call('search_pages', { ...filters, field: 'text', nextPage }),
         call('search_pages', { ...filters, nextPage }),
@@ -470,7 +448,7 @@ describe('Confluence Cloud', () => {
     expect(results[0]).toContain(CLOUD_PAGE)
     expect(results[0]).toContain('nextPage')
     expect(results[0]).not.toContain('server+cursor')
-    expect(results[1]).toContain('Use nextPage returned by the same Confluence search')
+    expect(results[1]).toContain('Use nextPage returned by the same Confluence request')
   })
 
   it('[UC-CONFLUCO-CONFLUENCE-003-S02] ignores a Cloud continuation on an unconnected host', async () => {

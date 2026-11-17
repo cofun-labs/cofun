@@ -95,7 +95,7 @@ Clerk's own account management is not used: Notico needs Clerk only for who the 
 
 Confluco is built independently from `extensions/confluco/`. It runs its own copy of the side panel, agent, and local chat store. It signs in through the same Cofun Worker, sends `confluco/<version>` as its client name, and uses the account's shared credits. Its browser tools read the current tab or tabs a user added via its own web layer, with the same site grant flow as Notico. Public web reads and searches go through the Worker. On a context menu click, Confluco's extension service worker resolves the active Clerk account and leaves the selection in session storage for that account and window.
 
-A user connects one Confluence base URL per Cofun account in Settings. The Confluence site layer checks the connected origin and deployment context. Requests run in the captured Confluence tab with that tab's session. Self-managed Confluence supports published-page reads, space, history, discussion and attachment inspections, and explicit page changes. Atlassian-hosted Confluence Cloud uses its own REST page and search endpoints with the same read and search tool definitions. The question offers Confluence tools for the captured site's capabilities. An explicit composer action can attach selected editor text to a question or stage a local file for upload. The file bytes go directly to the connected Confluence site once confirmed. The session store keeps a verified edit or trash reversal with the chat on the device.
+A user connects one Confluence base URL per Cofun account in Settings. The Confluence site layer checks the connected origin and deployment context. Requests run in the captured Confluence tab with that tab's session. Self-managed Confluence supports published-page reads, space, history, discussion and attachment inspections, and explicit page changes. Atlassian-hosted Confluence Cloud uses its own REST endpoints with the same tool definitions to read and search published pages and inspect spaces, page trees, versions, access, discussions, labels and attachments. The question offers Confluence tools for the captured site's capabilities. An explicit composer action can attach selected editor text to a question or stage a local file for upload. The file bytes go directly to the connected Confluence site once confirmed. The session store keeps a verified edit or trash reversal with the chat on the device.
 
 ## Layout
 
@@ -112,8 +112,8 @@ extensions/<name>/        one Chrome extension, built and published by itself; n
   src/notion/             the site layer for Notion: imports nothing from the agent, tools, sessions, or UI
     api.ts                the only module that knows Notion's endpoints and request shapes
     tab.ts                runs same-origin requests in the user's Notion tab with chrome.scripting
-  src/confluence/         Confluco's REST and editor selection. cloud.ts parses Cloud reads. tab.ts calls the site inside the
-                          captured tab, and instance.ts saves the connection per Cofun account
+  src/confluence/         Confluco's REST and editor selection. cloud.ts and cloud-inspection.ts define the Cloud reads.
+                          tab.ts calls the site inside the captured tab, and instance.ts saves the connection per Cofun account
   src/web/tab.ts          the site layer for any other site: reads the page a tab shows, once the user allowed its site; sends no request
   src/web/markdown.ts     turns the HTML a tab gives into Markdown, in the side panel, in an inert document
   src/sidepanel/          the React UI

@@ -2,6 +2,11 @@ import { z } from '../zod'
 import type { Instance } from './instance'
 import { getConfluence, refuse, restUrl, type ConfluenceTab, type RestArea } from './tab'
 
+export const collectionNext = z
+  .uuid()
+  .optional()
+  .describe('Use the nextPage returned for this request, or omit it for the first page.')
+
 const maxStart = 990
 export const collectionStart = z
   .int()

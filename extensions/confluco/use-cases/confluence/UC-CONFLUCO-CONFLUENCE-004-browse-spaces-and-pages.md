@@ -2,7 +2,7 @@
 
 ## Behavior
 
-On a connected Confluence instance, the user can browse the spaces they can see, open a space's homepage, and find a published page's ancestors and direct children. Each page reference identifies its originating instance, so a reference from a different instance cannot select an unrelated page.
+On a connected Confluence instance, the user can browse the spaces they can see, open a space's homepage, and find a published page's ancestors and direct children. Each page reference identifies its originating instance, so a reference from a different instance cannot select an unrelated page. On Cloud the page tree reports published pages from the hierarchy.
 
 ### api-test
 

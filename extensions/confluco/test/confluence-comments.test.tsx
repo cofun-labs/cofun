@@ -1,3 +1,4 @@
+import { followConfluencePage } from './confluence-fixture'
 import '@testing-library/jest-dom/vitest'
 import { screen } from '@testing-library/react'
 import type { UserEvent } from '@testing-library/user-event'
@@ -70,17 +71,19 @@ describe('published page discussions', () => {
         _links: { next: '/rest/api/content/42/child/comment?start=2&limit=10' },
       })
     }
-    browser.ai.script.push(
-      { toolCalls: [list] },
-      { toolCalls: [{ ...list, arguments: '{"start":2}' }] },
-      { reply: 'Discussion read.' },
-    )
+    browser.ai.script.push({ toolCalls: [list] })
+    followConfluencePage(browser, (nextPage) => {
+      browser.ai.script.push(
+        { toolCalls: [{ ...list, arguments: JSON.stringify({ nextPage }) }] },
+        { reply: 'Discussion read.' },
+      )
+    })
     await ask(user, 'Show the comments.')
     expect(await screen.findByText('Discussion read.')).toBeVisible()
     expect(results(browser)).toContain(pageUrl + '&focusedCommentId=72#comment-72')
     expect(results(browser)).toContain('"parentId":"71","location":"inline"')
     expect(results(browser)).toContain('"location":"footer"')
-    expect(results(browser)).toContain('"nextStart":2')
+    expect(results(browser)).toContain('"nextPage":')
     expect(results(browser)).toContain('Older thread marker')
     expect(writes(browser)).toEqual([])
   })

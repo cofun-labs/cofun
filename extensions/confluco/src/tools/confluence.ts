@@ -1,6 +1,19 @@
 import type { ToolContext } from '../agent'
 import { normalizeSearchText, readPage, searchPages, SearchArgs } from '../confluence/api'
 import { attachmentsArgs, listPageAttachments } from '../confluence/attachments'
+import {
+  browseCloudTree,
+  cloudPageAccess,
+  getCloudSpace,
+  listCloudAttachments,
+  listCloudComments,
+  listCloudLabels,
+  listCloudSpaces,
+  listCloudVersions,
+  readCloudVersion,
+  type CloudDiscussionPosition,
+} from '../confluence/cloud-inspection'
+import { collectionNext } from '../confluence/collection'
 import { commentsArgs, listPageComments } from '../confluence/comments'
 import { accessArgs, listVersions, pageAccess, readPageVersion, versionArgs, versionsArgs } from '../confluence/history'
 import { getInstance } from '../confluence/instance'
@@ -10,7 +23,7 @@ import type { PageReference } from '../confluence/references'
 import { currentConfluenceTab, type ConfluenceTab } from '../confluence/tab'
 import { defineTool } from '../tool'
 import { z } from '../zod'
-import type { ToolMemory } from './memory'
+import type { ConfluenceContinuation, ToolMemory } from './memory'
 import { withText } from './results'
 import { asData, clip, on, quote, READ, SEARCH } from './shared'
 
@@ -31,21 +44,40 @@ function requestKey(tab: ConfluenceTab, tool: string, filters?: object) {
   return JSON.stringify([tab.instance.origin, tab.instance.path, tab.url, tool, filters])
 }
 
-/** Continuation offsets are granted only by the same collection response in this question. */
-async function paginate<T extends { nextStart?: number }>(
+type ContinuationResult = {
+  nextStart?: number
+  cursor?: string
+  commentsNext?: CloudDiscussionPosition
+  continuation?: ConfluenceContinuation
+}
+
+/** Keep the site's continuation behind a question-scoped value for the same request. */
+async function paginate<T extends ContinuationResult>(
   memory: ToolMemory,
   key: string,
-  start: number,
-  run: () => Promise<T>,
-): Promise<T> {
-  const offsets = memory.nextConfluencePages
-  if (start !== 0 && start !== offsets.get(key))
-    throw new Error('Use the next offset returned by the same Confluence search in this question, or omit start.')
-  const value = await run()
-  if (value.nextStart === undefined) offsets.delete(key)
-  else offsets.set(key, value.nextStart)
-  return value
+  nextPage: string | undefined,
+  run: (position?: ConfluenceContinuation) => Promise<T>,
+) {
+  const pages = memory.nextConfluencePages
+  const saved = pages.get(key)
+  if (nextPage && nextPage !== saved?.id)
+    throw new Error('Use nextPage returned by the same Confluence request in this question, or omit it.')
+  const { nextStart, cursor, commentsNext, continuation, ...value } = await run(
+    nextPage ? saved?.continuation : undefined,
+  )
+  const next =
+    continuation ??
+    (cursor ? { cursor } : undefined) ??
+    (nextStart !== undefined ? { offset: nextStart } : undefined) ??
+    (commentsNext ? { comments: commentsNext } : undefined)
+  const id = next && crypto.randomUUID()
+  if (id && next) pages.set(key, { id, continuation: next })
+  else pages.delete(key)
+  return { ...value, nextPage: id }
 }
+
+const offset = (position?: ConfluenceContinuation) => (position && 'offset' in position ? position.offset : 0)
+const cursor = (position?: ConfluenceContinuation) => (position && 'cursor' in position ? position.cursor : undefined)
 
 async function target({ accountId, memory }: Pick<ToolContext, 'accountId' | 'memory'>) {
   const instance = await getInstance(accountId)
@@ -93,31 +125,24 @@ export const searchConfluencePages = defineTool({
     }
     const tab = await target({ accountId, memory })
     const key = requestKey(tab, 'search_pages', { query, field: args.field, spaceKey: args.spaceKey })
-    const saved = memory.nextConfluenceSearches.get(key)
-    if (args.nextPage && args.nextPage !== saved?.id)
-      throw new Error('Use nextPage returned by the same Confluence search in this question, or omit it.')
-    const { results, continuation, paginationNotice } = await searchPages(
-      tab,
-      args,
-      args.nextPage ? saved?.continuation : undefined,
-      signal,
+    const hits = await paginate(memory, key, args.nextPage, (position) =>
+      searchPages(tab, args, position && 'comments' in position ? undefined : position, signal),
     )
-    const nextPage = continuation && crypto.randomUUID()
-    if (nextPage && continuation) memory.nextConfluenceSearches.set(key, { id: nextPage, continuation })
-    else memory.nextConfluenceSearches.delete(key)
-    remember(memory, results)
-    return { text: result({ results, nextPage, paginationNotice }), details: { name: clip(args.query, 120) } }
+    remember(memory, hits.results)
+    return { text: result(hits), details: { name: clip(args.query, 120) } }
   },
 })
 
 export const listConfluenceSpaces = defineTool({
   name: 'list_spaces',
-  args: listSpacesArgs,
+  args: listSpacesArgs.omit({ start: true }).extend({ nextPage: collectionNext }),
   description: 'List spaces visible to the user on the connected Confluence site.',
   describe: () => on(READ, undefined, 'Confluence spaces'),
-  run: async ({ start }, signal, { accountId, memory }) => {
+  run: async ({ nextPage }, signal, { accountId, memory }) => {
     const tab = await target({ accountId, memory })
-    const listed = await paginate(memory, requestKey(tab, 'list_spaces'), start, () => listSpaces(start, tab, signal))
+    const listed = await paginate(memory, requestKey(tab, 'list_spaces'), nextPage, (position) =>
+      tab.instance.cloud ? listCloudSpaces(tab, cursor(position), signal) : listSpaces(offset(position), tab, signal),
+    )
     for (const { key } of listed.spaces) memory.confluenceResources.add(requestKey(tab, 'space', { key }))
     return result(listed)
   },
@@ -132,7 +157,7 @@ export const getConfluenceSpace = defineTool({
     const tab = await target({ accountId, memory })
     if (!userText.includes(key) && !memory.confluenceResources.has(requestKey(tab, 'space', { key })))
       throw new Error('Use a space key from the user message or list_spaces.')
-    const space = await getSpace(key, tab, signal)
+    const space = tab.instance.cloud ? await getCloudSpace(tab, key, signal) : await getSpace(key, tab, signal)
     if (space.homepage) remember(memory, [space.homepage])
     return result(space)
   },
@@ -140,7 +165,7 @@ export const getConfluenceSpace = defineTool({
 
 export const browseConfluenceTree = defineTool({
   name: 'browse_page_tree',
-  args: treeArgs,
+  args: treeArgs.omit({ start: true }).extend({ nextPage: collectionNext }),
   description:
     'Read ancestors and direct children of the current page or a page reference returned by a Confluence tool.',
   describe: () => on(READ, undefined, 'the Confluence page tree'),
@@ -148,7 +173,11 @@ export const browseConfluenceTree = defineTool({
     requirePage(memory, args.page)
     const tab = await target({ accountId, memory })
     const key = requestKey(tab, 'browse_page_tree', args.page)
-    const tree = await paginate(memory, key, args.start, () => browseTree(args, tab, signal))
+    const tree = await paginate(memory, key, args.nextPage, async (position) =>
+      tab.instance.cloud
+        ? browseCloudTree(tab, args.page, cursor(position), signal)
+        : browseTree({ ...args, start: offset(position) }, tab, signal),
+    )
     remember(memory, [tree.page, ...tree.ancestors, ...tree.children])
     return result(tree)
   },
@@ -156,14 +185,18 @@ export const browseConfluenceTree = defineTool({
 
 export const listConfluenceVersions = defineTool({
   name: 'list_page_versions',
-  args: versionsArgs,
+  args: versionsArgs.omit({ start: true }).extend({ nextPage: collectionNext }),
   description: 'List versions of the current published page or a page reference returned by a Confluence tool.',
   describe: () => on(READ, undefined, 'Confluence page versions'),
   run: async (args, signal, { accountId, memory }) => {
     requirePage(memory, args.page)
     const tab = await target({ accountId, memory })
     const key = requestKey(tab, 'list_page_versions', args.page)
-    const listed = await paginate(memory, key, args.start, () => listVersions(args, tab, signal))
+    const listed = await paginate(memory, key, args.nextPage, async (position) =>
+      tab.instance.cloud
+        ? listCloudVersions(tab, args.page, cursor(position), signal)
+        : listVersions({ ...args, start: offset(position) }, tab, signal),
+    )
     remember(memory, [listed])
     for (const { number: version } of [listed.currentVersion, ...(listed.versions ?? [])]) {
       memory.confluenceResources.add(requestKey(tab, 'version', { page: args.page, version }))
@@ -186,7 +219,9 @@ export const readConfluenceVersion = defineTool({
       !memory.confluenceResources.has(requestKey(tab, 'version', args))
     )
       throw new Error('Use a version number from the user message or list_page_versions for that page.')
-    const version = await readPageVersion(args, tab, signal)
+    const version = tab.instance.cloud
+      ? await readCloudVersion(tab, args.page, args.version, signal)
+      : await readPageVersion(args, tab, signal)
     remember(memory, [version])
     return result(version)
   },
@@ -199,7 +234,8 @@ export const getConfluencePageAccess = defineTool({
   describe: () => on(READ, undefined, 'Confluence page access'),
   run: async ({ page }, signal, { accountId, memory }) => {
     requirePage(memory, page)
-    const access = await pageAccess(page, await target({ accountId, memory }), signal)
+    const tab = await target({ accountId, memory })
+    const access = tab.instance.cloud ? await cloudPageAccess(tab, page, signal) : await pageAccess(page, tab, signal)
     remember(memory, [access])
     return result(access)
   },
@@ -207,14 +243,18 @@ export const getConfluencePageAccess = defineTool({
 
 export const listConfluenceLabels = defineTool({
   name: 'list_page_labels',
-  args: labelsArgs,
+  args: labelsArgs.omit({ start: true }).extend({ nextPage: collectionNext }),
   description: 'List page labels for the current page or a page reference returned by a Confluence tool.',
   describe: () => on(READ, undefined, 'Confluence page labels'),
   run: async (args, signal, { accountId, memory }) => {
     requirePage(memory, args.page)
     const tab = await target({ accountId, memory })
     const key = requestKey(tab, 'list_page_labels', args.page)
-    const listed = await paginate(memory, key, args.start, () => listLabels(args, tab, signal))
+    const listed = await paginate(memory, key, args.nextPage, async (position) =>
+      tab.instance.cloud
+        ? listCloudLabels(tab, args.page, cursor(position), signal)
+        : listLabels({ ...args, start: offset(position) }, tab, signal),
+    )
     remember(memory, [listed.page])
     return result(listed)
   },
@@ -222,14 +262,19 @@ export const listConfluenceLabels = defineTool({
 
 export const listConfluenceComments = defineTool({
   name: 'list_page_comments',
-  args: commentsArgs,
-  description: 'Read comments and replies on the current page or a page reference returned by a Confluence tool.',
+  args: commentsArgs.omit({ start: true }).extend({ nextPage: collectionNext }),
+  description:
+    'Read comments and replies on the current page or a page reference returned by a Confluence tool. Use nextPage to see more of the discussion.',
   describe: () => on(READ, undefined, 'Confluence page comments'),
   run: async (args, signal, { accountId, memory }) => {
     requirePage(memory, args.page)
     const tab = await target({ accountId, memory })
     const key = requestKey(tab, 'list_page_comments', args.page)
-    const listed = await paginate(memory, key, args.start, () => listPageComments(args, tab, signal))
+    const listed = await paginate(memory, key, args.nextPage, async (position) =>
+      tab.instance.cloud
+        ? listCloudComments(tab, args.page, position && 'comments' in position ? position.comments : undefined, signal)
+        : listPageComments({ ...args, start: offset(position) }, tab, signal),
+    )
     remember(memory, [listed.page])
     return result(listed)
   },
@@ -237,7 +282,7 @@ export const listConfluenceComments = defineTool({
 
 export const listConfluenceAttachments = defineTool({
   name: 'list_page_attachments',
-  args: attachmentsArgs,
+  args: attachmentsArgs.omit({ start: true }).extend({ nextPage: collectionNext }),
   description:
     'List attachments and download links for the current page or a known page reference. A filename filter must come from the user.',
   describe: () => on(READ, undefined, 'Confluence page attachments'),
@@ -247,7 +292,11 @@ export const listConfluenceAttachments = defineTool({
       throw new Error('Use the exact attachment filename from the user message or omit filename.')
     const tab = await target({ accountId, memory })
     const key = requestKey(tab, 'list_page_attachments', { page: args.page, filename: args.filename })
-    const listed = await paginate(memory, key, args.start, () => listPageAttachments(args, tab, signal))
+    const listed = await paginate(memory, key, args.nextPage, async (position) =>
+      tab.instance.cloud
+        ? listCloudAttachments(tab, args.page, args.filename, cursor(position), signal)
+        : listPageAttachments({ ...args, start: offset(position) }, tab, signal),
+    )
     remember(memory, [listed.page])
     return result(listed)
   },

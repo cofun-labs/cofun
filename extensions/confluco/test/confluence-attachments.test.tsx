@@ -60,7 +60,7 @@ it('[UC-CONFLUCO-CONFLUENCE-013-S01] shows bounded attachments and only valid do
   )
   expect(screen.queryByRole('link', { name: 'Download unsafe.txt' })).not.toBeInTheDocument()
   await screen.findByText('Two attachments.')
-  expect(JSON.stringify(browser.sentToModel())).toContain('nextStart')
+  expect(JSON.stringify(browser.sentToModel())).toContain('nextPage')
   expect(writes(browser)).toHaveLength(0)
 })
 

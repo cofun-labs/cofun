@@ -2,25 +2,21 @@
 // connected tab through tab.ts, using the tab's own site session.
 import { z } from '../zod'
 import { readableText } from './readable-text'
-import { pageReference } from './references'
+import { pageReference, type PageReference } from './references'
 import { getConfluence, refuse, restUrl, type ConfluenceTab } from './tab'
 
-const page = z.object({
+export const cloudPage = z.object({
   id: pageReference.shape.id,
   status: z.literal('current'),
   title: z.string().trim().min(1).max(1000),
   _links: z.object({ webui: z.string().max(4096).optional() }).optional(),
 })
 
-const pageBody = page.extend({ body: z.object({ view: z.object({ value: z.string() }) }) })
-const searchResponse = z.object({
-  results: z
-    .array(z.object({ content: page.extend({ type: z.literal('page') }), excerpt: z.string().max(16_000).optional() }))
-    .max(10),
-  _links: z.object({ next: z.string().max(8192).optional() }).optional(),
-})
-
-function pageLink(tab: ConfluenceTab, { id, title, _links }: z.output<typeof page>) {
+const pageBody = cloudPage.extend({ body: z.object({ view: z.object({ value: z.string() }) }) })
+export function cloudPageLink(
+  tab: ConfluenceTab,
+  { id, title, _links }: Pick<z.output<typeof cloudPage>, 'id' | 'title' | '_links'>,
+) {
   const base = tab.instance.origin + tab.instance.path
   let url = `${base}/pages/viewpage.action?pageId=${id}`
   // Atlassian returns /spaces/... relative to /wiki. Accept only the same origin and page ID.
@@ -36,48 +32,71 @@ function pageLink(tab: ConfluenceTab, { id, title, _links }: z.output<typeof pag
   return { title, url, ref: { instance: base, id } }
 }
 
-export async function readCloudPage(tab: ConfluenceTab, signal?: AbortSignal) {
-  const response = await getConfluence(tab, null, { 'body-format': 'view', status: 'current' }, signal, 'cloud-v2')
-  const parsed = pageBody.safeParse(response.data)
-  if (!parsed.success || parsed.data.id !== response.pageId)
+export async function fetchCloudPage<S extends z.ZodType<{ id: string }>>(
+  tab: ConfluenceTab,
+  reference: PageReference | undefined,
+  schema: S,
+  query: Record<string, string>,
+  signal?: AbortSignal,
+): Promise<z.output<S>> {
+  if (reference && reference.instance !== tab.instance.origin + tab.instance.path)
+    refuse('This page reference belongs to a different Confluence instance.')
+  const response = await getConfluence(tab, reference ? 'pages/' + reference.id : null, query, signal, 'cloud-v2')
+  const parsed = schema.safeParse(response.data)
+  if (!parsed.success || parsed.data.id !== (reference?.id ?? response.pageId))
     refuse('Confluence did not return the expected published page.')
-  return { ...pageLink(tab, parsed.data), text: readableText(parsed.data.body.view.value) }
+  return parsed.data
 }
 
-type CloudHit = ReturnType<typeof pageLink> & { excerpt?: string }
+export async function readCloudPage(tab: ConfluenceTab, signal?: AbortSignal) {
+  const page = await fetchCloudPage(tab, undefined, pageBody, { 'body-format': 'view', status: 'current' }, signal)
+  return { ...cloudPageLink(tab, page), text: readableText(page.body.view.value) }
+}
 
-export async function searchCloudPages(
+export async function cloudCollection<S extends z.ZodType>(
   tab: ConfluenceTab,
-  cql: string,
-  cursor?: string,
-  signal?: AbortSignal,
-): Promise<{ results: CloudHit[]; cursor?: string; paginationNotice?: string }> {
-  const query = { cql, limit: '10', ...(cursor && { cursor }) }
-  const response = await getConfluence(tab, 'search', query, signal)
-  const parsed = searchResponse.safeParse(response.data)
-  if (!parsed.success) refuse('Confluence did not return the expected search results.')
-  const results = parsed.data.results.map(({ content, excerpt }) => ({ ...pageLink(tab, content), excerpt }))
+  resource: string,
+  filters: Record<string, string>,
+  cursor: string | undefined,
+  item: S,
+  { signal, area = 'cloud-v2', limit = 10 }: { signal?: AbortSignal; area?: 'api' | 'cloud-v2'; limit?: number } = {},
+): Promise<{ items: z.output<S>[]; cursor?: string; paginationNotice?: string }> {
+  const query = { ...filters, limit: String(limit), ...(cursor && { cursor }) }
+  const response = await getConfluence(tab, resource, query, signal, area)
+  const schema = z.object({
+    results: z.array(item).max(limit),
+    _links: z.object({ next: z.string().max(8192).optional() }).optional(),
+  })
+  const parsed = schema.safeParse(response.data)
+  if (!parsed.success) refuse('Confluence did not return the expected results.')
+  const items = parsed.data.results
   const next = parsed.data._links?.next
-  if (next === undefined) return { results }
-  const url = restUrl(tab.instance, 'search', query, 'api')
-  const invalid = { results, paginationNotice: 'Confluence returned an invalid next page link.' }
+  if (next === undefined) return { items }
+  const url = restUrl(tab.instance, resource, query, area)
+  const invalid = { items, paginationNotice: 'Confluence returned an invalid next page link.' }
   try {
-    const link = new URL(next.startsWith('/rest/api/search?') ? '/wiki' + next : next, url)
+    const link = new URL(/^\/(?:rest\/api|api\/v2)\//.test(next) ? '/wiki' + next : next, url)
     if (link.origin !== url.origin || link.pathname !== url.pathname || link.username || link.password || link.hash)
       return invalid
     const [value, duplicate] = link.searchParams.getAll('cursor')
-    const [linkedCql, duplicateCql] = link.searchParams.getAll('cql')
-    if (
-      !value ||
-      value.length > 2048 ||
-      value === cursor ||
-      duplicate !== undefined ||
-      duplicateCql !== undefined ||
-      (linkedCql !== undefined && linkedCql !== cql)
-    )
-      return invalid
-    return { results, cursor: value }
+    if (!value || value.length > 2048 || value === cursor || duplicate !== undefined) return invalid
+    for (const [key, value] of Object.entries(filters)) {
+      const [linked, duplicate] = link.searchParams.getAll(key)
+      if (duplicate !== undefined || (linked !== undefined && linked !== value)) return invalid
+    }
+    return { items, cursor: value }
   } catch {
     return invalid
   }
+}
+
+const searchHit = z.object({
+  content: cloudPage.extend({ type: z.literal('page') }),
+  excerpt: z.string().max(16_000).optional(),
+})
+
+export async function searchCloudPages(tab: ConfluenceTab, cql: string, cursor?: string, signal?: AbortSignal) {
+  const { items, ...next } = await cloudCollection(tab, 'search', { cql }, cursor, searchHit, { signal, area: 'api' })
+  const results = items.map(({ content, excerpt }) => ({ ...cloudPageLink(tab, content), excerpt }))
+  return { results, ...next }
 }

@@ -4,7 +4,7 @@ Confluco is an AI side panel for Chrome. It can answer questions, read the curre
 
 ## Connect to Confluence
 
-Open **Account → Settings → Confluence connection**. Enter your Cloud site URL (such as `https://team.atlassian.net/wiki`) or your self-managed base URL, including its deployment path if it has one. Allow Chrome site access, then open the connected site and sign in to Confluence. You can read the current published page and search published content on either site type. Self-managed sites also support browsing spaces and page trees and inspecting versions, access, labels, discussions, and attachments.
+Open **Account → Settings → Confluence connection**. Enter your Cloud site URL (such as `https://team.atlassian.net/wiki`) or your self-managed base URL, including its deployment path if it has one. Allow Chrome site access, then open the connected site and sign in to Confluence. On either site type, you can read the current page, search published content, browse spaces and page trees, and inspect versions, access, labels, discussions and attachments.
 
 ## Try the development build
 

@@ -265,7 +265,6 @@ export class CopilotAgent {
     const before = agent.state.messages.length
     agent.state.tools = toolNames ? this.allTools.filter((tool) => toolNames.has(tool.name)) : this.allTools
     this.memory.nextConfluencePages.clear()
-    this.memory.nextConfluenceSearches.clear()
     this.memory.confluenceResources.clear()
     this.stopReason = undefined
     this.stopCode = undefined
