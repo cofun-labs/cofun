@@ -6,31 +6,27 @@ What changed in each version of Notico on the Chrome Web Store, newest first.
 
 ### Added
 
-- Bring in the web: on another site, ask about the page you're on. The first time on a site, the side panel and then Chrome ask you to allow it, and Notico reads that site only after you do.
+- Bring in the web: on any site, ask about the page you're on. The first time on a site, Notico and then Chrome ask you to allow it.
 - A page read from a tab keeps its headings, lists, links, and tables, so saving it to Notion keeps its structure.
 - Add open tabs on other sites to a question with @ or the + button, to compare them or save them to Notion.
-- Paste a link and Notico reads that page. A page a plain read can't get is rendered in a browser, which costs credits for the browser time it used.
-- Notico can search the web, and names the sources it used. A search costs 5 credits, even when you answer with your own model.
+- Paste a link and Notico reads the page. A page that only loads in a browser is rendered in one, which costs credits.
+- Notico can search the web and names its sources. Each search costs 5 credits, even with your own model.
 - Select text on any page, right-click it, and pick "Ask Notico": the side panel opens with the text added to your question. Settings can hide the menu item.
-- Long pages are read in parts: Notico keeps the whole text with the chat on your device and reads the part it needs, instead of only the start.
+- Long pages are read in parts: Notico keeps the whole text on your device with the chat and reads the part it needs, not just the start.
 - On another site, a new chat starts with suggestions for the page you're on.
-- A reply's details count the web pages read and rendered and the searches made, and split what it cost between the model, renders, and searches.
+- A reply's details show how many web pages were read or rendered and how many searches were made, and break down what it cost.
 
 ### Changed
 
-- A question stops once 10 of its tool calls have failed, and tells you why.
-- A web page that can't be read, or a search that fails, goes back to the assistant, which can try another source, instead of stopping the question. A render or a search that fails costs nothing.
-- Long chats keep much more of the conversation for Cofun's model, and drop older questions in larger steps, so most questions in a long chat cost less.
-- In Read only, a change the assistant asks for shows as "Not run".
-- Declining a site's access shows as "Declined" rather than as a failure.
-- The model menu and the + menu open right above their buttons.
+- A question stops after 10 failed tool calls and tells you why.
+- If a web page can't be read or a search fails, the assistant can try another source instead of stopping. Failed renders and searches cost nothing.
+- Long chats cost less: Cofun's model keeps more of the conversation and trims older questions less often.
 
 ### Fixed
 
-- A long selection with an emoji where it is cut no longer breaks the message box.
-- When Chrome can't show its prompt to allow a site, Notico says so, instead of saying you declined.
-- Titles, links, and search results read from pages can't pass for Notico's own notes to the assistant.
-- One malformed web search result is left out, instead of failing the whole search.
+- Selecting a long passage that ends in the middle of an emoji no longer breaks the message box.
+- If Chrome can't ask you to allow a site, Notico now says so instead of saying you declined.
+- Text from web pages and search results is harder to pass off as instructions to the assistant.
 
 ## 0.2.0 (2026-11-15)
 
