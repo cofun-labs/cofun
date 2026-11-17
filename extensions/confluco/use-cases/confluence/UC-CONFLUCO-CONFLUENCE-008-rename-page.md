@@ -9,8 +9,9 @@ On a connected instance, the user can request a new title for a published page. 
 | ID | Priority | Status | Scenario |
 | --- | --- | --- | --- |
 | UC-CONFLUCO-CONFLUENCE-008-S01 | P0 | ✅ | Given a published page with existing content; when the user requests a new title; then the title changes and the same page retains its content and parent. |
-| UC-CONFLUCO-CONFLUENCE-008-S02 | P0 | ✅ | Given a published page changes after Confluco prepares the rename; when the rename would overwrite the newer version; then the newer version is preserved. |
+| UC-CONFLUCO-CONFLUENCE-008-S02 | P0 | ✅ | Given a self-managed published page changes after Confluco prepares the rename; when the rename would overwrite the newer version; then the newer version is preserved. |
 | UC-CONFLUCO-CONFLUENCE-008-S03 | P0 | ✅ | Given the account cannot rename the page or the outcome cannot be verified; when the user requests the rename; then Confluco explains the failure or uncertainty. |
+| UC-CONFLUCO-CONFLUENCE-008-S06 | P0 | ✅ | Given a published Cloud page changes after Confluco prepares the rename; when Confluco sees a newer revision in its last read before the write; then it leaves the page alone. |
 
 ### ai-e2e
 

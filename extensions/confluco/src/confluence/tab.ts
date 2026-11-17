@@ -43,7 +43,12 @@ export async function captureConfluenceTab(accountId: string): Promise<Confluenc
 }
 
 const result = z.discriminatedUnion('kind', [
-  z.object({ kind: z.literal('ok'), pageId: z.string().regex(/^\d+$/).optional(), data: z.unknown() }),
+  z.object({
+    kind: z.literal('ok'),
+    pageId: z.string().regex(/^\d+$/).optional(),
+    status: z.int().min(200).max(299),
+    data: z.unknown(),
+  }),
   z.object({
     kind: z.enum([
       'changed',
@@ -571,7 +576,7 @@ async function requestConfluence(expectedUrl: string, contextPath: string, reque
     if (response.status === 409) return { kind: 'conflict' }
     if (response.status === 429) return { kind: 'limited' }
     if (!response.ok) return { kind: 'network' }
-    if (response.status === 204 && method === 'DELETE') return { kind: 'ok', data: null }
+    if (response.status === 204 && method === 'DELETE') return { kind: 'ok', status: response.status, data: null }
     const contentType = response.headers.get('content-type') ?? ''
     if (/^text\/html(?:;|$)/i.test(contentType)) return { kind: 'unexpected-web-response' }
     if (!/^application\/json(?:;|$)/i.test(contentType)) return { kind: 'invalid' }
@@ -593,7 +598,7 @@ async function requestConfluence(expectedUrl: string, contextPath: string, reque
     }
     try {
       const data: unknown = JSON.parse(json + decoder.decode())
-      return { kind: 'ok', pageId, data }
+      return { kind: 'ok', pageId, status: response.status, data }
     } catch {
       return { kind: 'invalid' }
     }

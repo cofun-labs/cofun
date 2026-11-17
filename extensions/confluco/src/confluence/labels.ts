@@ -40,7 +40,7 @@ export function requestedLabelChanges(text: string): LabelRequest[] {
   return changes
 }
 
-const label = z.object({ prefix: z.string().max(40), name: z.string().min(1).max(255) })
+export const confluenceLabel = z.object({ prefix: z.string().max(40), name: z.string().min(1).max(255) })
 
 interface LabelTarget {
   tab: ConfluenceTab
@@ -55,7 +55,9 @@ export async function listLabels(
 ) {
   const tab = requireTab(target)
   const page = await fetchPublishedPage(tab, input.page, publishedPage, '', signal)
-  const { items, ...next } = await collection(tab, `content/${page.id}/label`, {}, input.start, label, { signal })
+  const { items, ...next } = await collection(tab, `content/${page.id}/label`, {}, input.start, confluenceLabel, {
+    signal,
+  })
   return { page: pageLink(tab.instance, page), labels: items, ...next }
 }
 
@@ -67,7 +69,7 @@ async function hasLabel(change: LabelTarget, signal?: AbortSignal) {
       `content/${change.page.id}/label`,
       { prefix: 'global' },
       start,
-      label,
+      confluenceLabel,
       { signal, limit: 100 },
     )
     if (items.some((item) => item.prefix === 'global' && item.name === change.name)) return true

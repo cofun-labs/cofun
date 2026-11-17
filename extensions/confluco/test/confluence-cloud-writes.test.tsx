@@ -46,7 +46,7 @@ async function ask(user: UserEvent, message: string) {
   await user.click(screen.getByRole('button', { name: 'Send' }))
 }
 
-it.each(['created', 'duplicate', 'rejected', 'denied', 'uncertain'])(
+it.each(['created', 'duplicate', 'invalid continuation', 'rejected', 'denied', 'uncertain'])(
   '[UC-CONFLUCO-CONFLUENCE-007-S01] [UC-CONFLUCO-CONFLUENCE-007-S02] [UC-CONFLUCO-CONFLUENCE-007-S03] verifies a Cloud creation or stops on %s',
   async (outcome) => {
     const { browser, user } = await workspace()
@@ -69,6 +69,11 @@ it.each(['created', 'duplicate', 'rejected', 'denied', 'uncertain'])(
       if (target.pathname === pages) {
         expect(target.searchParams.get('title')).toBe(child.title)
         expect(target.searchParams.get('space-id')).toBe(page.spaceId)
+        if (outcome === 'invalid continuation')
+          return Response.json({
+            results: [],
+            _links: { next: 'https://other.atlassian.net/wiki/api/v2/pages?cursor=other' },
+          })
         return Response.json({ results: outcome === 'duplicate' ? [child] : [] })
       }
       if (target.pathname === pages + '/99')
@@ -78,14 +83,20 @@ it.each(['created', 'duplicate', 'rejected', 'denied', 'uncertain'])(
     }
     const create = call('create_page', { title: child.title })
     browser.ai.script.push(
-      { toolCalls: ['rejected', 'denied', 'uncertain'].includes(outcome) ? [create, create] : [create] },
+      {
+        toolCalls: ['invalid continuation', 'rejected', 'denied', 'uncertain'].includes(outcome)
+          ? [create, create]
+          : [create],
+      },
       { reply: 'Finished checking creation.' },
     )
     await ask(user, 'Create page "Child fixture" under this page with text "Literal <tag> & text"')
     await screen.findByRole('button', { name: 'Send' })
-    expect(writes(browser)).toHaveLength(outcome === 'duplicate' ? 0 : 1)
+    expect(writes(browser)).toHaveLength(['duplicate', 'invalid continuation'].includes(outcome) ? 0 : 1)
     if (outcome === 'created') expect(results(browser)).toContain('"bodyVerified":true')
     if (outcome === 'duplicate') expect(results(browser)).toContain('"alreadyExists":true')
+    if (outcome === 'invalid continuation')
+      expect(screen.getAllByText(/expected duplicate-title check/).length).toBeGreaterThan(0)
     if (outcome === 'rejected') expect(screen.getAllByText(/title is valid and unique/).length).toBeGreaterThan(0)
     if (outcome === 'denied') expect(screen.queryAllByText(/does not have permission/).length).toBeGreaterThan(0)
     if (outcome === 'uncertain') expect(screen.queryAllByText(/could not be verified/).length).toBeGreaterThan(0)
@@ -93,7 +104,7 @@ it.each(['created', 'duplicate', 'rejected', 'denied', 'uncertain'])(
 )
 
 it.each([false, true])(
-  '[UC-CONFLUCO-CONFLUENCE-008-S01] [UC-CONFLUCO-CONFLUENCE-008-S02] renames only the reviewed Cloud revision (concurrent change %s)',
+  '[UC-CONFLUCO-CONFLUENCE-008-S01] [UC-CONFLUCO-CONFLUENCE-008-S06] renames only the reviewed Cloud revision (concurrent change %s)',
   async (changedBeforeWrite) => {
     const { browser, user } = await workspace()
     const renamed = { ...page, title: 'Renamed fixture', version: { number: 3 } }
@@ -129,7 +140,7 @@ it.each(['add', 'remove'])('[UC-CONFLUCO-CONFLUENCE-006-S02] verifies the Cloud 
       if (adding) expect(init.body).toBe(JSON.stringify([label]))
       else expect(target.searchParams.get('name')).toBe(label.name)
       present = adding
-      return adding ? Response.json([label]) : new Response(null, { status: 204 })
+      return adding ? Response.json({ results: [label] }) : new Response(null, { status: 204 })
     }
     if (target.pathname === pages + '/42/labels') {
       expect(target.searchParams.get('prefix')).toBe('global')
@@ -147,6 +158,31 @@ it.each(['add', 'remove'])('[UC-CONFLUCO-CONFLUENCE-006-S02] verifies the Cloud 
   expect(writes(browser)).toHaveLength(1)
   expect(results(browser)).toContain(`"present":${adding},"changed":true`)
 })
+
+it.each(['add', 'remove'])(
+  '[UC-CONFLUCO-CONFLUENCE-006-S04] stops after an unexpected Cloud label change receipt (%s)',
+  async (action) => {
+    const { browser, user } = await workspace()
+    const adding = action === 'add'
+    const label = { prefix: 'global', name: 'sample-label' }
+    browser.confluenceResponse = (url, init) => {
+      if (init?.method === 'POST' || init?.method === 'DELETE') return Response.json({ unexpected: true })
+      if (new URL(url).pathname === pages + '/42/labels') return Response.json({ results: adding ? [] : [label] })
+      return Response.json(page)
+    }
+    const change = call('change_page_label', { label: label.name, action })
+    browser.ai.script.push({ toolCalls: [change, change] })
+    await ask(user, adding ? 'Add label sample-label to this page' : 'Remove label sample-label from this page')
+    await screen.findByRole('button', { name: 'Send' })
+    expect(screen.getAllByText(/Check the page before trying again/).length).toBeGreaterThan(0)
+    expect(browser.workspaceRequests.map(({ init }) => init?.method)).toEqual([
+      'GET',
+      'GET',
+      'GET',
+      adding ? 'POST' : 'DELETE',
+    ])
+  },
+)
 
 it.each(['footer', 'reply', 'different page'])(
   '[UC-CONFLUCO-CONFLUENCE-010-S02] [UC-CONFLUCO-CONFLUENCE-010-S03] checks the Cloud discussion target %s',

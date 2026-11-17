@@ -2,7 +2,7 @@
 import { z } from '../zod'
 import { cloudCollection, cloudPage, cloudPageLink, fetchCloudPage } from './cloud'
 import { commentStorage, matchesCommentText, type CommentRequest } from './comments'
-import type { LabelRequest } from './labels'
+import { confluenceLabel, type LabelRequest } from './labels'
 import { spaceKey } from './navigation'
 import { plainTextStorage, requestedReference, unverifiedWrite, type PageWriteRequest } from './page-writes'
 import { readableText } from './readable-text'
@@ -25,7 +25,7 @@ const revision = atPage.extend({
   body: z.object({ storage: z.object({ value: z.string() }) }),
 })
 const cloudSpace = z.object({ id, key: spaceKey })
-const label = z.object({ prefix: z.string().max(40), name: z.string().min(1).max(255) })
+const addedLabels = z.object({ results: z.array(confluenceLabel) })
 const commentIdentity = z.object({ id, status: z.literal('current') })
 const footerComment = commentIdentity.extend({
   pageId: id,
@@ -46,7 +46,7 @@ function readRevision(tab: ConfluenceTab, ref: PageReference | undefined, signal
 }
 
 async function findTitle(tab: ConfluenceTab, title: string, spaceId: string, signal?: AbortSignal) {
-  const { items } = await cloudCollection(
+  const { items, cursor, paginationNotice } = await cloudCollection(
     tab,
     'pages',
     { title, 'space-id': spaceId, status: 'current' },
@@ -54,7 +54,10 @@ async function findTitle(tab: ConfluenceTab, title: string, spaceId: string, sig
     atPage,
     { signal, limit: 2 },
   )
-  if (items.some((item) => item.spaceId !== spaceId || item.title.toLowerCase() !== title.toLowerCase()))
+  if (
+    items.some((item) => item.spaceId !== spaceId || item.title.toLowerCase() !== title.toLowerCase()) ||
+    (!items.length && (cursor || paginationNotice))
+  )
     refuse('Confluence did not return the expected duplicate-title check.')
   return items[0]
 }
@@ -161,7 +164,7 @@ export async function prepareCloudPageWrite(request: PageWriteRequest, tab: Conf
 async function cloudHasLabel(tab: ConfluenceTab, page: string, name: string, signal?: AbortSignal) {
   let cursor: string | undefined
   for (let count = 0; count < 4; count++) {
-    const result = await cloudCollection(tab, `pages/${page}/labels`, { prefix: 'global' }, cursor, label, {
+    const result = await cloudCollection(tab, `pages/${page}/labels`, { prefix: 'global' }, cursor, confluenceLabel, {
       signal,
       limit: 100,
     })
@@ -182,12 +185,23 @@ export async function applyCloudLabel(request: LabelRequest, tab: ConfluenceTab,
   const current = await published(tab, undefined, signal)
   if (current.id !== page.id)
     refuse('The page changed before the label could be updated. Ask again on the intended page.')
-  await writeConfluenceLabel(
+  const receipt = await writeConfluenceLabel(
     tab,
     page.id,
     present ? { method: 'POST', body: [{ prefix: 'global', name }] } : { method: 'DELETE', query: { name } },
     signal,
   )
+  if (present) {
+    const parsed = addedLabels.safeParse(receipt.data)
+    if (
+      receipt.status !== 200 ||
+      !parsed.success ||
+      !parsed.data.results.some((item) => item.prefix === 'global' && item.name === name)
+    )
+      verificationFailed('Confluence did not confirm the label addition. Check the page before trying again.')
+  } else if (receipt.status !== 204) {
+    verificationFailed('Confluence did not confirm the label removal. Check the page before trying again.')
+  }
   try {
     if ((await cloudHasLabel(tab, page.id, name, signal)) === present) return { ...result, changed: true }
   } catch (error) {

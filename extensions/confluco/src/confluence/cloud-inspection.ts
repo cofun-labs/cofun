@@ -3,6 +3,7 @@ import { z } from '../zod'
 import { attachmentDownloadUrl } from './attachments'
 import { cloudCollection, cloudPage, cloudPageLink, fetchCloudPage } from './cloud'
 import { hasRestriction, restrictions } from './history'
+import { confluenceLabel } from './labels'
 import { spaceKey } from './navigation'
 import { readableText } from './readable-text'
 import { pageReference, type PageReference } from './references'
@@ -24,7 +25,6 @@ const historicalPage = versionedPage.extend({
 })
 const operation = z.object({ operation: z.string().min(1).max(80), targetType: z.string().max(80).optional() })
 const operations = z.object({ operations: z.array(operation).max(100) })
-const label = z.object({ prefix: z.string().max(40), name: z.string().min(1).max(255) })
 const attachment = z.object({
   id: z.string().regex(/^(?:att)?\d{1,20}$/),
   title: z.string().min(1).max(255),
@@ -203,7 +203,9 @@ export async function listCloudLabels(
   signal?: AbortSignal,
 ) {
   const page = await published(tab, ref, signal)
-  const { items, ...next } = await cloudCollection(tab, `pages/${page.id}/labels`, {}, cursor, label, { signal })
+  const { items, ...next } = await cloudCollection(tab, `pages/${page.id}/labels`, {}, cursor, confluenceLabel, {
+    signal,
+  })
   return { page: cloudPageLink(tab, page), labels: items, ...next }
 }
 
