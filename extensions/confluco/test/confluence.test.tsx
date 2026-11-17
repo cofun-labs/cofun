@@ -3,12 +3,22 @@ import { act, screen, waitFor, within } from '@testing-library/react'
 import userEvent, { type UserEvent } from '@testing-library/user-event'
 import { afterEach, describe, expect, it } from 'vitest'
 import { DATA_LINE } from '../src/tools/shared'
+import { z } from '../src/zod'
 import { closeBrowser, FakeBrowser } from './panel'
 import { FakeTab, webPage } from './tab'
 
 const BASE = 'https://wiki.example.com/confluence'
 const ARTICLE = BASE + '/pages/viewpage.action?pageId=42'
 const SITE = 'https://wiki.example.com:443/*'
+const CLOUD = 'https://team.atlassian.net/wiki'
+const CLOUD_PAGE = CLOUD + '/spaces/TEAM/pages/42/Workshop+plan'
+const CLOUD_PERMISSION = 'https://team.atlassian.net:443/*'
+const cloudPage = {
+  id: '42',
+  status: 'current',
+  title: 'Workshop plan',
+  _links: { webui: '/spaces/TEAM/pages/42/Workshop+plan' },
+}
 const page = { id: '42', type: 'page', status: 'current', title: 'Workshop plan' }
 
 afterEach(() => {
@@ -53,9 +63,9 @@ async function connect(user: UserEvent, url = BASE) {
   return settings
 }
 
-async function connected(user: UserEvent) {
-  const settings = await connect(user)
-  expect(await settings.findByText('Connected to ' + BASE)).toBeVisible()
+async function connected(user: UserEvent, base = BASE) {
+  const settings = await connect(user, base)
+  expect(await settings.findByText('Connected to ' + base)).toBeVisible()
   await user.click(screen.getByRole('button', { name: 'Back' }))
 }
 
@@ -73,7 +83,29 @@ const toolResults = (browser: FakeBrowser) =>
     .filter((message) => message.role === 'tool')
     .map((message) => message.content)
 
-describe('connecting a self-managed Confluence site', () => {
+const modelRequest = z.object({ messages: z.array(z.object({ role: z.string(), content: z.string().nullish() })) })
+const nextSearchPage = z.object({ nextPage: z.uuid() })
+
+/** Script the model's continuation only when it has seen the preceding search result. */
+function followSearch(browser: FakeBrowser, respond: (nextPage: string) => void) {
+  const worker = browser.worker
+  browser.worker = async (request) => {
+    if (new URL(request.url).pathname === '/v1/chat/completions') {
+      const body = modelRequest.safeParse(await request.clone().json())
+      const content = body.data?.messages.findLast((message) => message.role === 'tool')?.content
+      if (content?.startsWith(DATA_LINE + '\n')) {
+        const next = nextSearchPage.safeParse(JSON.parse(content.slice(DATA_LINE.length + 1))).data
+        if (next) {
+          browser.worker = worker
+          respond(next.nextPage)
+        }
+      }
+    }
+    return worker(request)
+  }
+}
+
+describe('connecting Confluence', () => {
   it('[UC-CONFLUCO-CONFLUENCE-001-S01] remembers a granted connection and removes it on disconnect', async () => {
     const { tab, browser, user, requests } = await openOn()
     await connected(user)
@@ -95,10 +127,24 @@ describe('connecting a self-managed Confluence site', () => {
     expect(tab.allowed.has(SITE)).toBe(false)
   })
 
-  it('[UC-CONFLUCO-CONFLUENCE-001-S03] rejects a Cloud URL before requesting Chrome access', async () => {
-    const { user, tab } = await openOn()
-    const settings = await connect(user, 'https://team.atlassian.net/wiki')
-    expect(await settings.findByRole('alert')).toHaveTextContent('Enter a self-managed Confluence base URL')
+  it('[UC-CONFLUCO-CONFLUENCE-001-S03] connects a Cloud origin to its wiki after the user grants Chrome access', async () => {
+    const { browser, user, tab, requests } = await openOn({ url: CLOUD_PAGE })
+    const settings = await connect(user, 'https://team.atlassian.net')
+    expect(await settings.findByText('Connected to ' + CLOUD)).toBeVisible()
+    expect(tab.accessRequests).toEqual([[CLOUD_PERMISSION]])
+    expect(requests).toEqual([])
+    await browser.openPanel()
+    const reopened = await openSettings(user)
+    expect(await reopened.findByText('Connected to ' + CLOUD)).toBeVisible()
+    await user.click(reopened.getByRole('button', { name: 'Disconnect' }))
+    expect(await reopened.findByRole('textbox', { name: 'Confluence base URL' })).toBeVisible()
+    expect(tab.allowed.has(CLOUD_PERMISSION)).toBe(false)
+  })
+
+  it('[UC-CONFLUCO-CONFLUENCE-001-S07] rejects a Cloud page URL before asking for Chrome access', async () => {
+    const { user, tab } = await openOn({ url: CLOUD_PAGE })
+    const settings = await connect(user, CLOUD_PAGE)
+    expect(await settings.findByRole('alert')).toHaveTextContent('Enter a Confluence Cloud site URL')
     expect(tab.accessRequests).toEqual([])
   })
 
@@ -246,7 +292,7 @@ describe('reading a published Confluence page', () => {
 })
 
 describe('searching published Confluence pages', () => {
-  it('[UC-CONFLUCO-CONFLUENCE-003-S01] builds bounded CQL and gives the model plain excerpts, source links, and the next offset', async () => {
+  it('[UC-CONFLUCO-CONFLUENCE-003-S01] builds bounded CQL and gives the model plain excerpts, source links, and continuation', async () => {
     const { browser, user, requests, answerWith } = await openOn()
     await connected(user)
     answerWith(
@@ -257,8 +303,11 @@ describe('searching published Confluence pages', () => {
       Response.json({ results: [] }),
     )
     const filters = { query: 'Workshop "plan"', field: 'title', spaceKey: 'TEAM' }
-    browser.ai.script.push(call('search_pages', filters), call('search_pages', { ...filters, start: 10 }), {
-      reply: 'Found the plan.',
+    browser.ai.script.push(call('search_pages', filters))
+    let continuation: string | undefined
+    followSearch(browser, (nextPage) => {
+      continuation = nextPage
+      browser.ai.script.push(call('search_pages', { ...filters, nextPage }), { reply: 'Found the plan.' })
     })
 
     await ask(user, 'Search for Workshop "plan" in TEAM.')
@@ -277,7 +326,7 @@ describe('searching published Confluence pages', () => {
         '\n' +
         JSON.stringify({
           results: [{ title: page.title, url: ARTICLE, ref: { instance: BASE, id: page.id }, excerpt: page.title }],
-          nextStart: 10,
+          nextPage: continuation,
         }),
       DATA_LINE + '\n' + JSON.stringify({ results: [] }),
     ])
@@ -323,23 +372,117 @@ describe('searching published Confluence pages', () => {
     },
   )
 
-  it('[UC-CONFLUCO-CONFLUENCE-003-S05] refuses a model-supplied offset before sending it to Confluence', async () => {
+  it('[UC-CONFLUCO-CONFLUENCE-003-S05] refuses a continuation for a different search or from the model', async () => {
     const { browser, user, requests, answerWith } = await openOn()
     await connected(user)
     answerWith(Response.json({ results: [], _links: { next: '/rest/api/search?start=10' } }))
-    browser.ai.script.push(
-      call('search_pages', { query: 'Workshop' }),
-      call('search_pages', { query: 'Workshop', start: 370 }),
-      call('search_pages', { query: 'Workshop', field: 'title', start: 10 }),
-      { reply: 'Search finished.' },
-    )
+    browser.ai.script.push(call('search_pages', { query: 'Workshop' }))
+    followSearch(browser, (nextPage) => {
+      browser.ai.script.push(
+        call('search_pages', { query: 'Workshop', nextPage: crypto.randomUUID() }),
+        call('search_pages', { query: 'Workshop', field: 'title', nextPage }),
+        { reply: 'Search finished.' },
+      )
+    })
     await ask(user, 'Search for Workshop.')
     expect(await screen.findByText('Search finished.')).toBeVisible()
     expect(requests).toHaveLength(1)
-    expect(toolResults(browser)).toEqual([
-      DATA_LINE + '\n' + JSON.stringify({ results: [], nextStart: 10 }),
-      'Use the next offset returned by the same Confluence search in this question, or omit start.',
-      'Use the next offset returned by the same Confluence search in this question, or omit start.',
+    expect(toolResults(browser).slice(1)).toEqual([
+      'Use nextPage returned by the same Confluence search in this question, or omit it.',
+      'Use nextPage returned by the same Confluence search in this question, or omit it.',
     ])
+  })
+})
+
+describe('Confluence Cloud', () => {
+  it('[UC-CONFLUCO-CONFLUENCE-002-S06] uses the same read tool and only offers supported capabilities', async () => {
+    const { browser, user, requests, answerWith } = await openOn({ url: CLOUD_PAGE })
+    await connected(user, CLOUD)
+    answerWith(Response.json({ ...cloudPage, body: { view: { value: '<p>Cloud workshop agenda</p>' } } }))
+    browser.ai.script.push(call('read_page'), { reply: 'Read Cloud page.' })
+    await ask(user)
+    expect(await screen.findByText('Read Cloud page.')).toBeVisible()
+    expect(requests.map(({ url, method, credentials }) => ({ url, method, credentials }))).toEqual([
+      { url: CLOUD + '/api/v2/pages/42?body-format=view&status=current', method: 'GET', credentials: 'same-origin' },
+    ])
+    const tools = JSON.stringify(browser.ai.calls[0]?.inputs.tools)
+    expect(tools).toContain('"name":"read_page"')
+    expect(tools).toContain('"name":"search_pages"')
+    expect(tools).not.toContain('"name":"edit_page"')
+    expect(tools).not.toContain('"name":"list_spaces"')
+    expect(toolResults(browser).join(' ')).toContain('Cloud workshop agenda')
+    expect(toolResults(browser).join(' ')).toContain(CLOUD_PAGE)
+  })
+
+  it.each([
+    {
+      url: CLOUD_PAGE.replace('team.atlassian.net', 'other.atlassian.net'),
+      message: 'Open the connected Confluence site',
+    },
+    { url: CLOUD_PAGE, message: 'Confluco needs Chrome site access', revoke: true },
+  ])(
+    '[UC-CONFLUCO-CONFLUENCE-002-S02] sends no Cloud request without the intended tab and permission ($url)',
+    async ({ url, message, revoke }) => {
+      const { browser, user, requests, tab } = await openOn({ url })
+      await connected(user, CLOUD)
+      if (revoke) tab.allowed.delete(CLOUD_PERMISSION)
+      browser.ai.script.push(call('read_page'), { reply: 'Cannot read Cloud.' })
+      await ask(user)
+      if (revoke) expect(await screen.findByText(new RegExp(message), { selector: 'div' })).toBeVisible()
+      else {
+        expect(await screen.findByText('Cannot read Cloud.')).toBeVisible()
+        expect(toolResults(browser)[0]).toContain(message)
+      }
+      expect(requests).toEqual([])
+    },
+  )
+
+  it('[UC-CONFLUCO-CONFLUENCE-003-S06] keeps the Cloud cursor within the same site and query', async () => {
+    const { browser, user, requests, answerWith } = await openOn({ url: CLOUD_PAGE })
+    await connected(user, CLOUD)
+    answerWith(
+      Response.json({
+        results: [{ content: { ...cloudPage, type: 'page' }, excerpt: '<b>Workshop</b>' }],
+        _links: { next: '/rest/api/search?next=true&cursor=server%2Bcursor&limit=10&start=10' },
+      }),
+      Response.json({ results: [] }),
+    )
+    const filters = { query: 'Workshop', field: 'title', spaceKey: 'TEAM' }
+    browser.ai.script.push(call('search_pages', filters))
+    followSearch(browser, (nextPage) => {
+      browser.ai.script.push(
+        call('search_pages', { ...filters, field: 'text', nextPage }),
+        call('search_pages', { ...filters, nextPage }),
+        { reply: 'Paged Cloud search.' },
+      )
+    })
+    await ask(user, 'Find Workshop in TEAM.')
+    expect(await screen.findByText('Paged Cloud search.')).toBeVisible()
+    expect(requests).toHaveLength(2)
+    const first = new URL(requests[0]!.url)
+    expect(first.origin + first.pathname).toBe(CLOUD + '/rest/api/search')
+    expect(first.searchParams.get('cql')).toBe('type = page AND title ~ "Workshop" AND space = "TEAM"')
+    expect(first.searchParams.has('start')).toBe(false)
+    first.searchParams.set('cursor', 'server+cursor')
+    expect(requests[1]?.url).toBe(first.href)
+    const results = toolResults(browser)
+    expect(results[0]).toContain(CLOUD_PAGE)
+    expect(results[0]).toContain('nextPage')
+    expect(results[0]).not.toContain('server+cursor')
+    expect(results[1]).toContain('Use nextPage returned by the same Confluence search')
+  })
+
+  it('[UC-CONFLUCO-CONFLUENCE-003-S02] ignores a Cloud continuation on an unconnected host', async () => {
+    const { browser, user, requests, answerWith } = await openOn({ url: CLOUD_PAGE })
+    await connected(user, CLOUD)
+    answerWith(
+      Response.json({ results: [], _links: { next: 'https://other.atlassian.net/wiki/rest/api/search?cursor=c' } }),
+    )
+    browser.ai.script.push(call('search_pages', { query: 'Workshop' }), { reply: 'Cloud search ended.' })
+    await ask(user, 'Find Workshop.')
+    expect(await screen.findByText('Cloud search ended.')).toBeVisible()
+    expect(requests).toHaveLength(1)
+    expect(toolResults(browser)[0]).toContain('invalid next page link')
+    expect(toolResults(browser)[0]).not.toContain('nextPage')
   })
 })

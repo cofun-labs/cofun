@@ -57,13 +57,13 @@ export function useComposer({
     const unwatch = watchInstance(userId, (instance) => {
       initial = false
       captureEpoch.current++
-      setConnected(!!instance)
+      setConnected(instance !== undefined && !instance.cloud)
       setEditor(undefined)
       setFile(undefined)
     })
     void getInstance(userId)
       .then((instance) => {
-        if (initial) setConnected(!!instance)
+        if (initial) setConnected(instance !== undefined && !instance.cloud)
       })
       .catch(() => {})
     return () => {

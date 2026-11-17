@@ -250,7 +250,7 @@ export class CopilotAgent {
     onUpdate: (update: AgentUpdate) => void,
     epoch: number,
     confirm: ConfirmTool | undefined,
-    { context, pages, selections, readOnly }: QuestionExtras,
+    { context, pages, selections, readOnly, toolNames }: QuestionExtras,
     turn: Turn,
   ): Promise<{ result: AskResult; kept: boolean; failure?: Failure }> {
     let agent: Agent
@@ -263,7 +263,9 @@ export class CopilotAgent {
     if (epoch !== this.epoch) return { result: { status: 'stopped', rounds: 0 }, kept: false }
 
     const before = agent.state.messages.length
+    agent.state.tools = toolNames ? this.allTools.filter((tool) => toolNames.has(tool.name)) : this.allTools
     this.memory.nextConfluencePages.clear()
+    this.memory.nextConfluenceSearches.clear()
     this.memory.confluenceResources.clear()
     this.stopReason = undefined
     this.stopCode = undefined

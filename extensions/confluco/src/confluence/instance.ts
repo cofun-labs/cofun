@@ -10,14 +10,24 @@ export function parseInstance(value: string) {
       url.search ||
       url.hash ||
       url.hostname.includes('*') ||
-      /[;]|%2f|%5c|%00/i.test(url.pathname) ||
-      /(?:^|\.)atlassian\.net$/i.test(url.hostname)
+      /[;]|%2f|%5c|%00/i.test(url.pathname)
+    )
+      return
+    const cloud = /(?:^|\.)atlassian\.net$/.test(url.hostname)
+    const path = url.pathname.replace(/\/+$/, '')
+    if (
+      cloud &&
+      (url.protocol !== 'https:' ||
+        url.port ||
+        !/^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.atlassian\.net$/.test(url.hostname) ||
+        (path !== '' && path !== '/wiki'))
     )
       return
     const port = url.port || (url.protocol === 'https:' ? '443' : '80')
     return {
       origin: url.origin,
-      path: url.pathname.replace(/\/+$/, ''),
+      path: cloud ? '/wiki' : path,
+      cloud,
       permission: `${url.protocol}//${url.hostname}:${port}/*`,
     }
   } catch {

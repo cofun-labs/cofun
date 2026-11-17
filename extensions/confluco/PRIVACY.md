@@ -21,6 +21,8 @@ It never reads the content of tabs other than the current one and those you adde
 
 For a self-managed Confluence site you connect, the assistant can read the published page, search, and browse spaces, page trees, version metadata and text, reported access, labels, comments and replies, and attachment names and links. It can carry editor text you explicitly select and send. The connection uses your browser's existing site session. The assistant can make changes on a direct request. A local file you choose for upload goes to Confluence after confirmation. File bytes are passed directly to the site and are not sent to the model. Attachment names and upload results can be part of the conversation.
 
+For a connected Confluence Cloud site, the assistant can read the current published page and search published pages in the site. Requests use the tab's existing Atlassian session.
+
 ## Where data goes
 
 The extension contacts the hosts below. Its content security policy limits connections from extension pages. Requests to a connected Confluence site run inside that site's browser tab.
@@ -33,6 +35,7 @@ The extension contacts the hosts below. Its content security policy limits conne
 | `openrouter.ai`, only once you switch it on                  | Your OpenRouter key, to check it and to ask its models; the conversation, when one of its models answers; a request for its public list of models | To answer with the model you chose, under your own account. OpenRouter passes the conversation to the model's provider ([OpenRouter's privacy policy](https://openrouter.ai/privacy)) |
 | `us.i.posthog.com` (PostHog), unless you turn usage data off | Usage events, as listed under [Usage data](#usage-data)                                                                                           | To see how Confluco is used and where it fails                                                                                                                                        |
 | `clerk.cofun.cc`, `img.clerk.com` (Clerk)                    | Your Clerk session; a request for your avatar                                                                                                     | Sign-in, and showing who is signed in                                                                                                                                                 |
+| Your connected Atlassian-hosted Confluence Cloud site | Page IDs, search terms and filters, pagination cursors, and the tab's Atlassian session cookies | To read and search published pages using your Atlassian account |
 | Your connected self-managed Confluence host | Page references, search terms and filters, requested changes, a file selected for upload, and the tab's Confluence session cookies | To read or change pages and related data using your Confluence account |
 
 The extension also holds a host permission for `*.cofun.cc`, used only to read the cookie that says whether you are signed in. For ordinary browser-tab reads, Confluco reads the page without making a request to that site.
