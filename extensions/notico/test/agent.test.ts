@@ -672,29 +672,31 @@ describe('extension agent against the worker', () => {
     ).toEqual(['q1', 'q2', 'q4'])
   })
 
-  it('[@no-uc:data] a long conversation in Read only still offers only the tools that change no data', async () => {
+  it('[@no-uc:money] every request offers the same tools, in Edit, in Read only, and in a reopened chat', async () => {
+    // The tool definitions follow the system prompt: a set that changed with the mode would make the
+    // provider compute the whole conversation again instead of reading it from its prompt cache.
     const reader = pageTool().tool
     const writer: ToolSpec = { ...pageTool().tool, name: 'change_page', changesData: true }
-    const agent = makeAgent({ tools: [reader, writer], history: { messages: 6, chars: 100_000 } })
-    const offered = (n: number) =>
-      (ai.calls[n].inputs.tools as { function: { name: string } }[]).map((t) => t.function.name)
+    const writerRuns: unknown[] = []
+    writer.run = async (args) => {
+      writerRuns.push(args)
+      return 'Changed.'
+    }
+    const agent = makeAgent({ tools: [writer, reader] })
+    const offered = (n: number) => JSON.stringify(ai.calls[n].inputs.tools)
     await ask(agent, 'first')
-    await ask(agent, 'second', undefined, { readOnly: true })
-    // "second", where Read only began, is no longer sent; the tools stay as it set them.
-    await ask(agent, 'third', undefined, { readOnly: true })
-    await ask(agent, 'fourth', undefined, { readOnly: true })
-    expect(
-      sentMessages(3)
-        .filter((m) => m.role === 'user')
-        .map((m) => m.content),
-    ).toEqual([expect.stringMatching(/third$/), expect.stringMatching(/fourth$/)])
-    expect([offered(0), offered(1), offered(3)]).toEqual([
-      ['lookup_page', 'change_page'],
-      ['lookup_page'],
-      ['lookup_page'],
-    ])
-    await ask(agent, 'fifth')
-    expect(offered(4)).toEqual(['lookup_page', 'change_page'])
+    ai.script = [{ toolCalls: [{ name: 'change_page', arguments: '{}' }] }, { reply: "Can't in Read only." }]
+    const readOnly = await ask(agent, 'second', undefined, { readOnly: true })
+    await ask(agent, 'third')
+    await ask(makeAgent({ tools: [writer, reader] }, agent.history()), 'fourth')
+    expect(ai.calls.map((_, n) => offered(n))).toEqual(Array(ai.calls.length).fill(offered(0)))
+    // The call in Read only was refused before it ran, and the model was told why.
+    expect(writerRuns).toEqual([])
+    expect(toolStatuses(readOnly.updates)).toEqual(['skipped'])
+    expect(sentMessages(2).at(-1)).toMatchObject({
+      role: 'tool',
+      content: expect.stringMatching(/^Not run: .*Read only/),
+    })
   })
 
   it('[@no-uc:contract] trimming never separates tool results from their call', async () => {

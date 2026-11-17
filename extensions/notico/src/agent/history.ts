@@ -41,16 +41,16 @@ export function usedTools(tail: AgentMessage[]): AgentMessage[] {
 const KEPT_AFTER_CUT = 0.6
 
 /**
- * The part of the conversation to send: the leading system messages, then everything from `from` (the
- * index of the user message the part sent last time started at) while that fits the limits. Once it
- * doesn't, the part is cut to the newest questions that fit KEPT_AFTER_CUT of them, and `from` moves
- * there. The character budget also pays for the tool definitions (`overhead`). The part starts at a
- * user message, so a reply or tool result is never sent without what led to it. The newest question
- * is always kept; if it alone is too long, the worker says so.
+ * The part of the conversation to send: the leading system message (pi's, with the system prompt and
+ * the tools), then everything from `from` (the index of the user message the part sent last time
+ * started at) while that fits the limits. Once it doesn't, the part is cut to the newest questions
+ * that fit KEPT_AFTER_CUT of them, and `from` moves there. The character budget also pays for the tool
+ * definitions (`overhead`). The part starts at a user message, so a reply or tool result is never sent
+ * without what led to it. The newest question is always kept; if it alone is too long, the worker
+ * says so.
  *
- * System messages in the part left out are kept too: pi records there which tools were added and
- * removed, and the tools offered now are worked out from all of them. They carry no text of their own
- * here, so they cost nothing to send.
+ * pi would record a change of the tools in a later system message, which a cut could drop; the tools
+ * never change (see `allTools` in agent.ts), so there is none.
  */
 export function recent(
   messages: AgentMessage[],
@@ -64,17 +64,18 @@ export function recent(
   // A start that is no longer a question (the conversation lost the messages after a failed one) is
   // worked out again.
   let start = from >= head && messages[from]?.role === 'user' ? from : head
-  const sent = messages.slice(start)
-  const fits = messages.length - start <= limits.messages && sent.reduce((n, m) => n + size(m), fixed) <= limits.chars
+  const fits =
+    messages.length - start <= limits.messages &&
+    messages.slice(start).reduce((n, m) => n + size(m), fixed) <= limits.chars
   if (!fits)
     start = newestThatFits(messages, head, limits.messages * KEPT_AFTER_CUT, fixed, limits.chars * KEPT_AFTER_CUT)
-  const changes = messages.slice(head, start).filter((m) => m.role === 'system')
-  return { sent: [...messages.slice(0, head), ...changes, ...messages.slice(start)], from: start }
+  return { sent: [...messages.slice(0, head), ...messages.slice(start)], from: start }
 }
 
 /**
- * Where the newest part of the conversation after `head` that fits `messages` and `chars` (with
- * `fixed` already counted) starts: at a user message, the newest one when even that doesn't fit.
+ * Where the newest part of the conversation after `head` that fits `count` messages and `chars`
+ * characters (with `fixed` already counted) starts: at a user message, the newest one when even that
+ * doesn't fit.
  */
 function newestThatFits(messages: AgentMessage[], head: number, count: number, fixed: number, chars: number): number {
   let start = -1
