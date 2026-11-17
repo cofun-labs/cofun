@@ -1,6 +1,5 @@
-// Whether the agent may change site data (UC-CONFLUCO-AGENT-003): Edit, the default, or
-// Read only. Kept in chrome.storage.local per account, on this device only, like the model settings
-// (models.ts).
+// The mode to use when Confluence write tools are available. It is kept per account on this
+// device, like the model settings.
 import { z } from './zod'
 
 const Mode = z.enum(['edit', 'read_only'])

@@ -46,7 +46,7 @@ const OWN_MODEL_HOSTS = ['https://openrouter.ai']
  * default only limits scripts; this one limits every kind of load to the extension itself, except
  * requests, which may also go to the worker, Clerk's Frontend API, OpenRouter (only once the
  * user turns it on; a host permission would not widen this list, #46), and PostHog (usage
- * events, unless the user turned them off), and images, which may also
+ * events, unless the user turned them off). Avatars may also load from Clerk’s image host.
  */
 function contentSecurityPolicy(env: ManifestEnv): string {
   const clerkHost = clerkFrontendApi(env.VITE_CLERK_PUBLISHABLE_KEY ?? '')

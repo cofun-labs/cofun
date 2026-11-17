@@ -37,7 +37,6 @@ export async function openWebTabs(): Promise<WebTab[]> {
   const seen = new Set<string>()
   const tabs = (await chrome.tabs.query({ currentWindow: true })).flatMap((tab) => {
     if (tab.id === undefined || !tab.url || seen.has(tab.url)) return []
-    if (tab.id === undefined || !tab.url || seen.has(tab.url)) return []
     const site = readableSite(tab.url)
     if ('reason' in site) return []
     seen.add(tab.url)
