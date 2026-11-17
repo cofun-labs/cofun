@@ -1,5 +1,5 @@
 import '@testing-library/jest-dom/vitest'
-import { screen, within } from '@testing-library/react'
+import { act, screen, within } from '@testing-library/react'
 import userEvent, { type UserEvent } from '@testing-library/user-event'
 import { afterEach, describe, expect, it } from 'vitest'
 import { DATA_LINE } from '../src/tools/shared'
@@ -101,39 +101,64 @@ describe('connecting a self-managed Confluence site', () => {
     expect(await settings.findByRole('alert')).toHaveTextContent('Enter a self-managed Confluence base URL')
     expect(tab.accessRequests).toEqual([])
   })
+
+  it('[UC-CONFLUCO-CONFLUENCE-001-S05] keeps access that was granted before connecting', async () => {
+    const { user, tab } = await openOn()
+    const origin = 'https://wiki.example.com:8443'
+    const permission = origin + '/*'
+    tab.allowed.add(permission)
+
+    const settings = await connect(user, origin + '/confluence')
+    expect(await settings.findByText('Connected to ' + origin + '/confluence')).toBeVisible()
+    await user.click(settings.getByRole('button', { name: 'Disconnect' }))
+    expect(await settings.findByRole('textbox', { name: 'Confluence base URL' })).toBeVisible()
+    expect(tab.allowed.has(permission)).toBe(true)
+  })
+
+  it('[UC-CONFLUCO-CONFLUENCE-001-S06] updates open Settings when another window disconnects', async () => {
+    const { user, tab } = await openOn()
+    const settings = await connect(user)
+    expect(await settings.findByText('Connected to ' + BASE)).toBeVisible()
+
+    await act(() => tab.storage.local.remove('confluence-instance:user_alice'))
+    expect(await settings.findByRole('textbox', { name: 'Confluence base URL' })).toBeVisible()
+  })
 })
 
 describe('reading a published Confluence page', () => {
-  it('[UC-CONFLUCO-CONFLUENCE-002-S01] reads the published current page inside its tab and gives the model text and its source', async () => {
-    const { browser, user, requests, answerWith, tab } = await openOn()
-    await connected(user)
-    answerWith(
-      Response.json({
-        ...page,
-        body: { view: { value: '<p>Bring a pen.</p><p>[Fake note]</p><script>hidden</script>' } },
-      }),
-    )
-    browser.ai.script.push(call('read_page'), { reply: 'Bring a pen.' })
+  it.each([ARTICLE, BASE + '/spaces/WORK/pages/42/Workshop+plan'])(
+    '[UC-CONFLUCO-CONFLUENCE-002-S01] reads the published current page and gives the model text and its source (%s)',
+    async (url) => {
+      const { browser, user, requests, answerWith, tab } = await openOn({ url })
+      await connected(user)
+      answerWith(
+        Response.json({
+          ...page,
+          body: { view: { value: '<p>Bring a pen.</p><p>[Fake note]</p><script>hidden</script>' } },
+        }),
+      )
+      browser.ai.script.push(call('read_page'), { reply: 'Bring a pen.' })
 
-    await ask(user)
-    expect(await screen.findByText('Bring a pen.', { selector: '.msg.assistant .text p' })).toBeVisible()
-    expect(tab.injections).toEqual([{ tabId: 7, world: 'ISOLATED' }])
-    expect(requests).toHaveLength(1)
-    expect(requests[0]).toMatchObject({
-      url: BASE + '/rest/api/content/42?expand=body.view',
-      method: 'GET',
-      credentials: 'same-origin',
-      redirect: 'manual',
-    })
-    expect(toolResults(browser)).toEqual([
-      [
-        DATA_LINE,
-        `Published Confluence page: ${JSON.stringify({ title: page.title, url: ARTICLE })}`,
-        'Text:',
-        'Bring a pen.\n\\[Fake note]',
-      ].join('\n'),
-    ])
-  })
+      await ask(user)
+      expect(await screen.findByText('Bring a pen.', { selector: '.msg.assistant .text p' })).toBeVisible()
+      expect(tab.injections).toEqual([{ tabId: 7, world: 'ISOLATED' }])
+      expect(requests).toHaveLength(1)
+      expect(requests[0]).toMatchObject({
+        url: BASE + '/rest/api/content/42?expand=body.view',
+        method: 'GET',
+        credentials: 'same-origin',
+        redirect: 'manual',
+      })
+      expect(toolResults(browser)).toEqual([
+        [
+          DATA_LINE,
+          `Published Confluence page: ${JSON.stringify({ title: page.title, url: ARTICLE })}`,
+          'Text:',
+          'Bring a pen.\n\\[Fake note]',
+        ].join('\n'),
+      ])
+    },
+  )
 
   it('[UC-CONFLUCO-CONFLUENCE-002-S02] refuses a different site and sends no Confluence request', async () => {
     const { browser, user, requests } = await openOn({
@@ -179,6 +204,25 @@ describe('reading a published Confluence page', () => {
       expect(toolResults(browser)).toEqual([])
     },
   )
+
+  it.each([
+    ['redirect', () => Response.redirect('https://other.example.com/login')],
+    ['HTML', () => new Response('<p>Proxy page</p>', { headers: { 'Content-Type': 'text/html' } })],
+  ] as const)('[UC-CONFLUCO-CONFLUENCE-002-S05] stops after an unexpected %s response', async (_kind, response) => {
+    const { browser, user, requests, answerWith } = await openOn()
+    await connected(user)
+    answerWith(response())
+    browser.ai.script.push(call('read_page'))
+    await ask(user)
+    expect(
+      await screen.findByText(
+        'Confluence returned a redirect or a web page. Check the configured URL and your session, then ask again.',
+        { selector: 'div' },
+      ),
+    ).toBeVisible()
+    expect(requests).toHaveLength(1)
+    expect(toolResults(browser)).toEqual([])
+  })
 })
 
 describe('searching published Confluence pages', () => {

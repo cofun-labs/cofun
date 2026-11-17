@@ -25,6 +25,7 @@ const ErrorKind = z.enum([
   'changed',
   'not-page',
   'auth',
+  'unexpected-web-response',
   'rejected',
   'forbidden',
   'missing',
@@ -37,6 +38,8 @@ const errors: Record<z.infer<typeof ErrorKind>, string> = {
   changed: 'The Confluence tab changed. Open the intended page and ask again.',
   'not-page': 'Open a published Confluence page before asking Confluco to read it.',
   auth: 'Sign in to Confluence in the page tab, then ask again.',
+  'unexpected-web-response':
+    'Confluence returned a redirect or a web page. Check the configured URL and your session, then ask again.',
   rejected: 'Confluence rejected the request. Check the search text or space key.',
   forbidden: 'Your Confluence account does not have permission for this request.',
   missing: 'The page or search endpoint is missing or is not visible to your account.',
@@ -136,6 +139,10 @@ async function readConfluence(expectedUrl: string, contextPath: string, request:
       if (id && duplicate === undefined && (!metaId || metaId === id)) pageId = id
     } else if (/^\/display\/[^/]+\/[^/]+\/?$/.test(path)) {
       pageId = metaId
+    } else {
+      // Data Center 9.1 and later put the page ID in the pretty URL.
+      const id = /^\/spaces\/[^/]+\/pages\/(\d{1,20})(?:\/[^/]+)?\/?$/.exec(path)?.[1]
+      if (id && (!metaId || metaId === id)) pageId = id
     }
     if (!pageId || !/^\d{1,20}$/.test(pageId)) return { kind: 'not-page' }
   }
@@ -164,19 +171,16 @@ async function readConfluence(expectedUrl: string, contextPath: string, request:
       headers: { Accept: 'application/json' },
       signal: AbortSignal.any([controller.signal, AbortSignal.timeout(15_000)]),
     })
-    if (
-      response.type === 'opaqueredirect' ||
-      response.status === 401 ||
-      (response.status >= 300 && response.status < 400)
-    )
-      return { kind: 'auth' }
+    if (response.type === 'opaqueredirect' || (response.status >= 300 && response.status < 400))
+      return { kind: 'unexpected-web-response' }
+    if (response.status === 401) return { kind: 'auth' }
     if (response.status === 400) return { kind: 'rejected' }
     if (response.status === 403) return { kind: 'forbidden' }
     if (response.status === 404) return { kind: 'missing' }
     if (response.status === 429) return { kind: 'limited' }
     if (!response.ok) return { kind: 'network' }
     const mediaType = response.headers.get('content-type') ?? ''
-    if (/^text\/html(?:;|$)/i.test(mediaType)) return { kind: 'auth' }
+    if (/^text\/html(?:;|$)/i.test(mediaType)) return { kind: 'unexpected-web-response' }
     if (!/^application\/json(?:;|$)/i.test(mediaType) || !response.body) return { kind: 'invalid' }
     if (Number(response.headers.get('content-length')) > cap) return { kind: 'large' }
 

@@ -4,7 +4,7 @@ Use [the extension privacy policy](../PRIVACY.md) and [Cofun's privacy policy](.
 
 ## Permissions for self-managed Confluence
 
-Confluco requests optional access to the site the user connects in Settings. Scripting executes read-only page and search requests in the current Confluence tab using its existing session. Storage keeps the connected base URL per Cofun account. Confluence credentials remain with their site.
+Confluco requests optional access to the site the user connects in Settings. Scripting executes read-only page and search requests in the current Confluence tab using its existing session. Storage keeps the connected base URL per Cofun account and tracks access granted for connections, so unused grants can be released. Confluence credentials remain with their site.
 
 ## Data usage
 

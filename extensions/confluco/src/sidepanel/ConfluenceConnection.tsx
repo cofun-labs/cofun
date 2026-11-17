@@ -1,5 +1,12 @@
 import { useEffect, useState, type FormEvent } from 'react'
-import { connectInstance, disconnectInstance, getInstance, parseInstance, type Instance } from '../confluence/instance'
+import {
+  connectInstance,
+  disconnectInstance,
+  getInstance,
+  parseInstance,
+  watchInstance,
+  type Instance,
+} from '../confluence/instance'
 
 export function ConfluenceConnection({ userId }: { userId: string }) {
   const [instance, setInstance] = useState<Instance>()
@@ -9,19 +16,25 @@ export function ConfluenceConnection({ userId }: { userId: string }) {
   const [error, setError] = useState('')
 
   useEffect(() => {
-    let mounted = true
+    let acceptInitial = true
+    const stop = watchInstance(userId, (saved) => {
+      acceptInitial = false
+      setInstance(saved)
+      setLoading(false)
+    })
     void getInstance(userId)
       .then((saved) => {
-        if (mounted) setInstance(saved)
+        if (acceptInitial) setInstance(saved)
       })
       .catch(() => {
-        if (mounted) setError('Could not load the saved Confluence connection.')
+        if (acceptInitial) setError('Could not load the saved Confluence connection.')
       })
       .finally(() => {
-        if (mounted) setLoading(false)
+        if (acceptInitial) setLoading(false)
       })
     return () => {
-      mounted = false
+      acceptInitial = false
+      stop()
     }
   }, [userId])
 
@@ -36,7 +49,6 @@ export function ConfluenceConnection({ userId }: { userId: string }) {
     setError('')
     try {
       if (await connectInstance(userId, next)) {
-        setInstance(next)
         setUrl('')
       } else {
         setError('Chrome site access was declined.')
@@ -54,10 +66,8 @@ export function ConfluenceConnection({ userId }: { userId: string }) {
     setError('')
     try {
       const current = await disconnectInstance(userId, instance)
-      setInstance(current)
       if (current) setError('The connection changed in another window. Review it before disconnecting.')
     } catch {
-      setInstance(await getInstance(userId).catch(() => undefined))
       setError('Could not remove all connection settings. Check site access in Chrome.')
     } finally {
       setBusy(false)
