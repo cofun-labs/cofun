@@ -636,6 +636,7 @@ export class CopilotAgent {
     const epoch = this.epoch
     // The question the tool runs for: its requests to the worker say so.
     const turn = this.turn
+    const userMessage = this.agent?.state.messages.findLast((message) => message.role === 'user')
     return {
       stop: (reason, code) => {
         if (epoch !== this.epoch || this.stopReason !== undefined) return
@@ -650,6 +651,7 @@ export class CopilotAgent {
       },
       context: {
         accountId: this.config.accountId,
+        userText: userMessage?.role === 'user' ? textOf(userMessage.content) : '',
         ask: async (question) => (epoch === this.epoch && this.askOnCard ? this.askOnCard(question) : false),
         // Always through the worker, whichever model answers: the page is read by the worker either way.
         // A render or a search costs credits, and the question it was for counts them; a plain read is free.

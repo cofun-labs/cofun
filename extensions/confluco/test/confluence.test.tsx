@@ -59,8 +59,8 @@ async function connected(user: UserEvent) {
   await user.click(screen.getByRole('button', { name: 'Back' }))
 }
 
-async function ask(user: UserEvent) {
-  await user.type(screen.getByRole('textbox', { name: 'Message' }), 'Use Confluence')
+async function ask(user: UserEvent, question = 'Use Confluence') {
+  await user.type(screen.getByRole('textbox', { name: 'Message' }), question)
   await user.click(screen.getByRole('button', { name: 'Send' }))
 }
 
@@ -195,7 +195,7 @@ describe('searching published Confluence pages', () => {
       reply: 'Found the plan.',
     })
 
-    await ask(user)
+    await ask(user, 'Search for Workshop "plan" in TEAM.')
     expect(await screen.findByText('Found the plan.')).toBeVisible()
     expect(requests).toHaveLength(1)
     const search = new URL(requests[0]!.url)
@@ -217,7 +217,7 @@ describe('searching published Confluence pages', () => {
     answerWith(Response.json({ results: [], _links: { next: 'https://other.example.com/rest/api/search?start=10' } }))
     browser.ai.script.push(call('search_pages', { query: 'Workshop' }), { reply: 'No results.' })
 
-    await ask(user)
+    await ask(user, 'Search for Workshop.')
     expect(await screen.findByText('No results.')).toBeVisible()
     expect(requests).toHaveLength(1)
     expect(toolResults(browser)).toEqual([
@@ -226,4 +226,28 @@ describe('searching published Confluence pages', () => {
         JSON.stringify({ results: [], paginationNotice: 'Confluence returned an invalid next page link.' }),
     ])
   })
+  it.each([
+    {
+      field: 'query',
+      args: { query: 'private text from a page' },
+      message: 'Use search terms from the current user message. Ask the user what to search for.',
+    },
+    {
+      field: 'space key',
+      args: { query: 'Workshop', spaceKey: 'TEAM' },
+      message: 'Use a space key from the current user message or leave it out.',
+    },
+  ])(
+    '[UC-CONFLUCO-CONFLUENCE-003-S04] does not send a $field not supplied in the question',
+    async ({ args, message }) => {
+      const { browser, user, requests } = await openOn()
+      await connected(user)
+      browser.ai.script.push(call('search_pages', args), { reply: 'Please confirm the search terms.' })
+
+      await ask(user, 'Find Workshop pages.')
+      expect(await screen.findByText('Please confirm the search terms.')).toBeVisible()
+      expect(requests).toEqual([])
+      expect(toolResults(browser)).toEqual([message])
+    },
+  )
 })

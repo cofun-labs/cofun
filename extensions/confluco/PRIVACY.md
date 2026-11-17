@@ -23,7 +23,7 @@ For a self-managed Confluence site you connect, the assistant can read the publi
 
 ## Where data goes
 
-The extension contacts these hosts and no others; its content security policy stops its pages from connecting anywhere else.
+The extension contacts the hosts below. Its content security policy limits connections from extension pages. Requests to a connected Confluence site run inside that site's browser tab.
 
 | Host                                                         | What is sent                                                                                                                                      | Why                                                                                                                                                                                   |
 | ------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -33,10 +33,11 @@ The extension contacts these hosts and no others; its content security policy st
 | `openrouter.ai`, only once you switch it on                  | Your OpenRouter key, to check it and to ask its models; the conversation, when one of its models answers; a request for its public list of models | To answer with the model you chose, under your own account. OpenRouter passes the conversation to the model's provider ([OpenRouter's privacy policy](https://openrouter.ai/privacy)) |
 | `us.i.posthog.com` (PostHog), unless you turn usage data off | Usage events, as listed under [Usage data](#usage-data)                                                                                           | To see how Confluco is used and where it fails                                                                                                                                        |
 | `clerk.cofun.cc`, `img.clerk.com` (Clerk)                    | Your Clerk session; a request for your avatar                                                                                                     | Sign-in, and showing who is signed in                                                                                                                                                 |
+| Your connected self-managed Confluence host | The page ID, search terms and filters for a search, and that tab's Confluence session cookies | To read a published page or search pages visible to your Confluence account |
 
 The extension also holds a host permission for `*.cofun.cc`, used only to read the cookie that says whether you are signed in. For ordinary browser-tab reads, Confluco reads the page without making a request to that site.
 
-The self-managed Confluence host you connect receives the read or search request from its own tab. Confluence session cookies stay with that host. Tool results go to the model answering the question through the channel listed above. As with any web service, Cloudflare, Clerk, and PostHog see your IP address; PostHog is told not to work out a location from it, and our project does not keep it.
+Confluence session cookies stay with the connected host. Tool results go to the model answering the question through the channel listed above. As with any web service, Cloudflare, Clerk, and PostHog see your IP address; PostHog is told not to work out a location from it, and our project does not keep it.
 
 "Sign in" and "Buy credits" open Cofun's sign-in page and Stripe's Checkout page in a normal tab. What you enter there goes to Clerk or Stripe, never to the extension or the worker; [Cofun's privacy page](../../PRIVACY.md#who-receives-your-data) says more.
 

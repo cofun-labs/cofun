@@ -111,7 +111,7 @@ extensions/<name>/        one Chrome extension, built and published by itself; n
   src/tools/              the tools the agent runs (index.ts lists them)
   src/notion/             the site layer for Notion: imports nothing from the agent, tools, sessions, or UI
     api.ts                the only module that knows Notion's endpoints and request shapes
-    tab.ts                runs requests in the user's Notion tab: the only use of site fetch, and with src/web/tab.ts of chrome.scripting
+    tab.ts                runs same-origin requests in the user's Notion tab with chrome.scripting
   src/confluence/         Confluco's self-managed site layer. api.ts owns the REST contract, tab.ts runs same-origin reads
                           in the current site tab, and instance.ts saves the connection per Cofun account
   src/web/tab.ts          the site layer for any other site: reads the page a tab shows, once the user allowed its site; sends no request

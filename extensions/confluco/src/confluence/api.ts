@@ -50,6 +50,9 @@ const SearchResponse = z.object({
   _links: z.object({ next: z.string().max(4096).optional() }).optional(),
 })
 
+/** Compare what the user wrote with the same whitespace the CQL query will use. */
+export const normalizeSearchText = (text: string) => text.trim().replace(/\s+/g, ' ')
+
 const cqlString = (value: string) => `"${value.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`
 
 export async function searchPages(
@@ -60,7 +63,7 @@ export async function searchPages(
   const tab = await currentConfluenceTab(instance)
   const path = `${tab.instance.path}/rest/api/search`
   const filter = input.spaceKey ? ` AND space = ${cqlString(input.spaceKey)}` : ''
-  const cql = `type = page AND ${input.field} ~ ${cqlString(input.query.replace(/\s+/g, ' '))}${filter}`
+  const cql = `type = page AND ${input.field} ~ ${cqlString(normalizeSearchText(input.query))}${filter}`
   const query = { cql, start: String(input.start), limit: String(SEARCH_LIMIT) }
   const response = await readInTab(tab, { kind: 'search', path, query }, signal)
   const parsed = SearchResponse.safeParse(response.data)
