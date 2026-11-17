@@ -79,6 +79,7 @@ class FakeStorage {
 export class FakeTab {
   injections: { tabId: number; world?: string }[] = []
   pageUrl?: string
+  documentId = 'fixture-document'
   closed = false
   injectionError?: string
   siteFetch?: typeof fetch
@@ -329,7 +330,13 @@ export class FakeTab {
       document,
       this.siteFetch ?? fetch,
     ) as Function
-    return [{ frameId: frame, result: await rebuilt(...(asChromeSends(args ?? []) as unknown[])) }]
+    return [
+      {
+        frameId: frame,
+        documentId: this.documentId,
+        result: await rebuilt(...(asChromeSends(args ?? []) as unknown[])),
+      },
+    ]
   }
 }
 

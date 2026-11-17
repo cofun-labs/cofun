@@ -97,8 +97,6 @@ export class CopilotAgent {
   private provider: ModelProvider
   private providerFor?: OwnSetup | 'hosted'
   private readonly maxSteps: number
-  /** Names of the tools that need the user's OK before each run. */
-  private readonly confirmed: Set<string>
   private readonly tools: Map<string, ToolSpec>
   /**
    * The tools as the agent runtime takes them: every one, in every mode. Read only refuses those that
@@ -164,7 +162,6 @@ export class CopilotAgent {
   ) {
     this.provider = hostedProvider(config)
     this.maxSteps = config.maxSteps ?? DEFAULT_MAX_STEPS
-    this.confirmed = new Set(config.tools.filter((t) => t.needsConfirmation).map((t) => t.name))
     this.tools = new Map(config.tools.map((t) => [t.name, t]))
     this.allTools = config.tools.map((t) => toAgentTool(t, () => this.reporter()))
   }
@@ -266,7 +263,8 @@ export class CopilotAgent {
     if (epoch !== this.epoch) return { result: { status: 'stopped', rounds: 0 }, kept: false }
 
     const before = agent.state.messages.length
-    this.memory.nextConfluencePages = new Map()
+    this.memory.nextConfluencePages.clear()
+    this.memory.confluenceResources.clear()
     this.stopReason = undefined
     this.stopCode = undefined
     this.changed = false
@@ -372,7 +370,9 @@ export class CopilotAgent {
       // they ask the user on this call's card.
       running = { id: toolCall.id, name: toolCall.name, args }
       // From the arguments the tool runs with, and before it runs: the run may change what the preview reads.
-      const { preview, stop } = await previewCall(this.tools.get(toolCall.name), args, this.reporter().context, signal)
+      const tool = this.tools.get(toolCall.name)
+      const context = this.reporter().context
+      const { preview, stop } = await previewCall(tool, args, context, signal)
       // Stopped while the preview looked things up: the tool must not start.
       if (signal?.aborted || epoch !== this.epoch) {
         running = undefined
@@ -390,7 +390,8 @@ export class CopilotAgent {
       onUpdate({ type: 'tool_ready', id: toolCall.id, args, preview })
       const call: ToolCallRequest = { id: toolCall.id, name: toolCall.name, args, preview }
       running = call
-      if (!this.confirmed.has(toolCall.name)) {
+      const approval = tool?.needsConfirmation
+      if (!(typeof approval === 'function' ? approval(context) : approval)) {
         started.add(toolCall.id)
         return
       }
@@ -502,7 +503,7 @@ export class CopilotAgent {
       // that index and start a part with none of the conversation before it. Worked out again instead.
       if (this.sentFrom >= before) this.sentFrom = 0
       const result: AskResult = stopped
-        ? { status: 'stopped', ...used }
+        ? { status: 'stopped', ...used, ...(changed && { warning: MAY_HAVE_CHANGED }) }
         : { status: 'error', message: failure!.text, ...(failure!.code ? { code: failure!.code } : {}), ...used }
       return {
         result: { ...result, ...(kept.length > 0 && { conversation: this.historyOf(agent) }) },
@@ -635,6 +636,7 @@ export class CopilotAgent {
    */
   private reporter(): Reporter {
     const epoch = this.epoch
+    const running = this.running
     // The question the tool runs for: its requests to the worker say so.
     const turn = this.turn
     const userMessage = this.agent?.state.messages.findLast((message) => message.role === 'user')
@@ -645,7 +647,7 @@ export class CopilotAgent {
         this.stopCode = code
       },
       changed: () => {
-        if (epoch === this.epoch) this.changed = true
+        if (running === this.running) this.changed = true
       },
       failed: (code) => {
         if (epoch === this.epoch) this.failedWith = code

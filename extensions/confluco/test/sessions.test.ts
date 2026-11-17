@@ -62,3 +62,29 @@ it('[UC-CONFLUCO-PANEL-005-S05] expires full tool results whether or not the cha
   expect(await store.result(unlinked)).toBeUndefined()
   expect(await store.get('chat')).toMatchObject({ id: 'chat' })
 })
+
+it('[@no-uc:data] never restores a retired Confluence undo when a stale panel forks its chat', async () => {
+  const first = new SessionStore('user_confluence_undo_revision')
+  const second = new SessionStore('user_confluence_undo_revision')
+  const draft = {
+    id: 'confluence-undo',
+    title: 'Synthetic chat',
+    createdAt: 10,
+    updatedAt: 11,
+    messages: [],
+    undo: {
+      page: { instance: 'https://wiki.example.test/kb', id: '42' },
+      version: 2,
+      before: 'Old',
+      after: 'New',
+    },
+  }
+  await first.save(draft)
+  const stale = await second.get(draft.id)
+  if (!stale || stale === 'unreadable') throw new Error('Expected a saved chat')
+  await first.clearUndo(draft.id, draft.updatedAt)
+  const fork = await second.save({ ...stale, updatedAt: 12 }, stale.updatedAt)
+  expect(fork.id).not.toBe(draft.id)
+  expect(await second.get(fork.id)).not.toHaveProperty('undo')
+  expect(await first.get(draft.id)).not.toHaveProperty('undo')
+})

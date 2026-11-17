@@ -1,5 +1,5 @@
 import '@testing-library/jest-dom/vitest'
-import { act, screen, within } from '@testing-library/react'
+import { act, screen, waitFor, within } from '@testing-library/react'
 import userEvent, { type UserEvent } from '@testing-library/user-event'
 import { afterEach, describe, expect, it } from 'vitest'
 import { DATA_LINE } from '../src/tools/shared'
@@ -186,6 +186,26 @@ describe('reading a published Confluence page', () => {
     expect(requests).toEqual([])
   })
 
+  it('[UC-CONFLUCO-CONFLUENCE-002-S02] never reads a later document when the model took time to choose a tool', async () => {
+    const { browser, user, requests, tab } = await openOn()
+    await connected(user)
+    let release = () => {}
+    const until = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    browser.ai.pause = { after: 1, until }
+    browser.ai.script.push(call('read_page'))
+
+    await ask(user, 'Read this page')
+    await waitFor(() => expect(browser.ai.calls).toHaveLength(1))
+    await act(() => tab.navigate(BASE + '/pages/viewpage.action?pageId=43'))
+    release()
+    expect(
+      await screen.findByText('The Confluence tab changed. Open the intended page and ask again.', { selector: 'div' }),
+    ).toBeVisible()
+    expect(requests).toEqual([])
+  })
+
   it.each([
     [401, 'Sign in to Confluence in the page tab, then ask again.'],
     [403, 'Your Confluence account does not have permission for this request.'],
@@ -255,7 +275,10 @@ describe('searching published Confluence pages', () => {
     expect(toolResults(browser)).toEqual([
       DATA_LINE +
         '\n' +
-        JSON.stringify({ results: [{ title: page.title, url: ARTICLE, excerpt: page.title }], nextStart: 10 }),
+        JSON.stringify({
+          results: [{ title: page.title, url: ARTICLE, ref: { instance: BASE, id: page.id }, excerpt: page.title }],
+          nextStart: 10,
+        }),
       DATA_LINE + '\n' + JSON.stringify({ results: [] }),
     ])
   })
