@@ -9,13 +9,12 @@ import {
   readCloudLocation,
   readCloudRevision,
 } from './cloud-writes'
-import { hasRestriction, restrictions } from './history'
-import type { OrganizationRequest } from './page-organization'
+import { requireRetainedAccess } from './history'
+import { requireCopyableStorage, type OrganizationRequest } from './page-organization'
 import { requestedReference, unverifiedWrite } from './page-writes'
 import { pageReference } from './references'
 import {
   createCloudChildPage,
-  getConfluence,
   moveCloudPage,
   refuse,
   trashCloudPage,
@@ -39,6 +38,7 @@ function sameRevision(left: Revision, right: Revision) {
 }
 
 async function lineage(tab: ConfluenceTab, page: Location, signal?: AbortSignal) {
+  // Atlassian continues a full batch through its first ancestor. Require a complete chain before a write.
   const limit = 30
   const result = await cloudCollection(tab, `pages/${page.id}/ancestors`, {}, undefined, ancestor, { limit, signal })
   const ids = result.items.map(({ id }) => id)
@@ -55,20 +55,8 @@ async function lineage(tab: ConfluenceTab, page: Location, signal?: AbortSignal)
   return [...ids, page.id]
 }
 
-async function requireRetainedAccess(tab: ConfluenceTab, source: string, omitted: string[], signal?: AbortSignal) {
-  for (const id of omitted) {
-    const reply = await getConfluence(tab, `content/${id}/restriction/byOperation`, {}, signal)
-    const parsed = restrictions.safeParse(reply.data)
-    if (!parsed.success)
-      refuse('Confluence did not report the page restrictions. Check access in Confluence before asking again.')
-    if (hasRestriction(parsed.data.read) || (id === source && hasRestriction(parsed.data.update)))
-      refuse('This change could drop an existing access restriction. Review the destination or access in Confluence.')
-  }
-}
-
 async function requireBodyOnlyCopy(tab: ConfluenceTab, page: Revision, signal?: AbortSignal) {
-  if (/<(?:ri:attachment|ac:inline-comment-marker)(?:\s|\/?>)/i.test(page.body.storage.value))
-    refuse('This page uses attachment or inline comment references. Use Confluence to copy those with the page.')
+  requireCopyableStorage(page.body.storage.value)
   const attachments = await cloudCollection(tab, `pages/${page.id}/attachments`, {}, undefined, z.unknown(), {
     limit: 1,
     signal,
@@ -91,10 +79,7 @@ async function checkOrganization(
   const to = await lineage(tab, destination, signal)
   if (action === 'move' && to.includes(source.id)) refuse('A page cannot be moved under itself or its descendants.')
   if (action === 'copy') await requireBodyOnlyCopy(tab, source, signal)
-  const omitted = from.filter((id) => id !== source.id && !to.includes(id))
-  // A copy has its own permissions, including when it is created beneath the original.
-  if (action === 'copy') omitted.push(source.id)
-  await requireRetainedAccess(tab, source.id, omitted, signal)
+  await requireRetainedAccess(tab, { id: source.id, ancestors: from.slice(0, -1) }, to, action, signal)
   return { from: from.join('/'), to: to.join('/') }
 }
 
@@ -175,7 +160,7 @@ async function requireEligibleTrash(tab: ConfluenceTab, page: Revision, signal?:
   })
   if (children.items.length || children.cursor || children.paginationNotice)
     refuse('Confluco could not confirm that this page has no children. Review its hierarchy before trashing it.')
-  await requireRetainedAccess(tab, page.id, ancestors, signal)
+  await requireRetainedAccess(tab, { id: page.id, ancestors: ancestors.slice(0, -1) }, [], 'trash', signal)
   return ancestors.join('/')
 }
 

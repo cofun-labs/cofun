@@ -130,7 +130,7 @@ it.each(['move', 'copy', 'restriction', 'changed', 'receipt', 'attachment', 'cyc
       expect(browser.workspaceRequests.at(-1)?.init?.method).toBe('PUT')
     } else {
       const messages = {
-        restriction: /could drop an existing access restriction/,
+        restriction: /could drop an existing page restriction/,
         changed: /changed after the preview/,
         attachment: /page has attachments/,
         cycle: /under itself or its descendants/,

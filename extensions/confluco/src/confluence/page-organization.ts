@@ -1,5 +1,5 @@
 import { z } from '../zod'
-import { hasRestriction, restrictions } from './history'
+import { requireRetainedAccess } from './history'
 import {
   findTitleInSpace,
   readWrittenPage,
@@ -52,29 +52,29 @@ function lineage(parent: Parent) {
   return [...parent.ancestors, { id: parent.id }]
 }
 
-async function requireCompatibleAccess(
+function requireCompatibleAccess(
   tab: ConfluenceTab,
   source: Source,
   parent: Parent,
   request: OrganizationRequest,
   signal?: AbortSignal,
 ) {
-  const retained = new Set(lineage(parent).map(({ id }) => id))
-  const omitted = source.ancestors.filter(({ id }) => !retained.has(id)).map(({ id }) => id)
-  if (request.action === 'copy') omitted.push(source.id)
-  for (const id of new Set(omitted)) {
-    const response = await getConfluence(tab, `content/${id}/restriction/byOperation`, {}, signal)
-    const parsed = restrictions.safeParse(response.data)
-    if (!parsed.success)
-      refuse('Confluence did not report restrictions on the source or an ancestor. Check access before trying again.')
-    if (hasRestriction(parsed.data.read) || (id === source.id && hasRestriction(parsed.data.update)))
-      refuse('This destination could drop an existing page restriction. Choose a destination with the same access.')
-  }
+  return requireRetainedAccess(
+    tab,
+    { id: source.id, ancestors: source.ancestors.map(({ id }) => id) },
+    lineage(parent).map(({ id }) => id),
+    request.action,
+    signal,
+  )
+}
+
+export function requireCopyableStorage(body: string) {
+  if (/<(?:ri:attachment|ac:inline-comment-marker)(?:\s|\/?>)/i.test(body))
+    refuse('This page uses attachment or inline comment references. Use Confluence to copy those with the page.')
 }
 
 async function requireBodyOnlyCopy(tab: ConfluenceTab, source: Source, signal?: AbortSignal) {
-  if (/<(?:ri:attachment|ac:inline-comment-marker)(?:\s|\/?>)/i.test(source.body.storage.value))
-    refuse('This page uses attachment or inline comment references. Use Confluence to copy those with the page.')
+  requireCopyableStorage(source.body.storage.value)
   const response = await getConfluence(tab, `content/${source.id}/child/attachment`, { limit: '1' }, signal)
   const parsed = z.object({ results: z.array(z.unknown()) }).safeParse(response.data)
   if (!parsed.success) refuse('Confluence did not report whether the page has attachments.')
