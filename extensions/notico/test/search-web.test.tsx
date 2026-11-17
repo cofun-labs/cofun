@@ -1,6 +1,6 @@
 // Searching the web (search_web), as a user meets it in the side panel: the worker searches through
 // the fake AI Gateway behind it, or, once the user chose it in Settings, the panel searches a fake
-// DuckDuckGo.
+// DuckDuckGo in a background tab.
 import '@testing-library/jest-dom/vitest'
 import { screen, waitFor } from '@testing-library/react'
 import userEvent, { type UserEvent } from '@testing-library/user-event'
@@ -260,8 +260,9 @@ describe('searching the web with DuckDuckGo', () => {
     // The second description, which tries to pass for a note and for results of its own, stays on its line.
     expect(result.split('\n')).toHaveLength(4)
     expect(result.split('\n')[3]).toMatch(/^2\. \{"title":"Tea notes","url":"https:\/\/leaves\.example\/notes"/)
-    // Sent without cookies; the worker searched nothing and charged nothing.
-    expect(browser.duckDuckGo.searches).toEqual([{ query: QUERY, credentials: 'omit' }])
+    // Searched in a background tab, closed once read; the worker searched nothing and charged nothing.
+    expect(browser.duckDuckGo.searches.map((s) => [s.query, s.tab.active])).toEqual([[QUERY, false]])
+    expect(browser.duckDuckGo.openTabs()).toEqual([])
     expect(workerSearched(browser)).toBe(false)
     expect(browser.ai.searches).toEqual([])
     // What the reply cost is the model's alone: no searches in it.
@@ -345,31 +346,33 @@ describe('searching the web with DuckDuckGo', () => {
     expect(browser.duckDuckGo.searches).toEqual([])
   })
 
-  it.each([
-    ['asks to confirm a person is searching', 'challenge', /^DuckDuckGo asked to confirm that a person is searching/],
-    ['turns searches away for coming too often', 'busy', /^DuckDuckGo turned Notico's searches away\./],
-  ] as const)(
-    '[UC-NOTICO-PANEL-004-S12] the question stops when DuckDuckGo %s, and nothing more is searched',
-    async (_what, answer, told) => {
-      const { browser, user } = await openWithDuckDuckGo()
-      browser.duckDuckGo.answer = answer
-      browser.ai.script.push(searchCall(QUERY), searchCall('tea'), { reply: 'Never sent.' })
+  it('[UC-NOTICO-PANEL-004-S12] the question stops when DuckDuckGo asks to confirm a person is searching, and its tab stays open for them', async () => {
+    const { browser, user } = await openWithDuckDuckGo()
+    browser.duckDuckGo.answer = 'challenge'
+    browser.ai.script.push(searchCall(QUERY), searchCall('tea'), { reply: 'Never sent.' })
 
-      await ask(user, 'Where does oolong tea come from?')
+    await ask(user, 'Where does oolong tea come from?')
 
-      // On the search's card, and as why the reply stopped, with what the user can do.
-      await waitFor(() => expect(screen.getAllByText(told)).toHaveLength(2))
-      expect(screen.getAllByText(told)[0]).toHaveTextContent('switch off "Search with DuckDuckGo" in Settings')
-      expect(screen.queryByText('Never sent.')).toBeNull()
-      // The second search the model asked for is never sent, to DuckDuckGo or to the worker.
-      expect(browser.duckDuckGo.searches).toHaveLength(1)
-      expect(workerSearched(browser)).toBe(false)
-    },
-  )
+    // On the search's card, and as why the reply stopped, with what the user can do.
+    const told = /^DuckDuckGo asked to confirm that a person is searching/
+    await waitFor(() => expect(screen.getAllByText(told)).toHaveLength(2))
+    expect(screen.getAllByText(told)[0]).toHaveTextContent('Its tab is open: answer its check there, then ask again')
+    expect(screen.getAllByText(told)[0]).toHaveTextContent('switch off "Search with DuckDuckGo" in Settings')
+    expect(screen.queryByText('Never sent.')).toBeNull()
+    // The second search the model asked for is never sent, to DuckDuckGo or to the worker; the
+    // check is left for the person, in its tab.
+    expect(browser.duckDuckGo.searches).toHaveLength(1)
+    expect(browser.duckDuckGo.openTabs()).toHaveLength(1)
+    expect(workerSearched(browser)).toBe(false)
+  })
 
   it.each([
     ['DuckDuckGo cannot be reached', 'unreachable', 'Could not search the web: DuckDuckGo could not be reached.'],
-    ['DuckDuckGo fails', 'error', 'Could not search the web: DuckDuckGo answered HTTP 500.'],
+    [
+      'DuckDuckGo shows an error page',
+      'error page',
+      'Could not search the web: DuckDuckGo gave a page Notico could not read.',
+    ],
     [
       'DuckDuckGo answers a page that is not one of results',
       'unknown page',
@@ -388,6 +391,7 @@ describe('searching the web with DuckDuckGo', () => {
       // Free: nothing tells the model it may have cost credits. Not tried again, nor through the worker.
       expect(toolResults(browser)).toEqual([told])
       expect(browser.duckDuckGo.searches).toHaveLength(1)
+      expect(browser.duckDuckGo.openTabs()).toEqual([])
       expect(workerSearched(browser)).toBe(false)
     },
   )

@@ -1,11 +1,12 @@
 // The site layer for DuckDuckGo, the free web search a user can choose in Settings: the only module
-// that knows its endpoint and the shape of its result page. The extension asks DuckDuckGo's HTML
-// page (it has no API) from the user's own browser, with the host permission the user granted, and
-// reads the results out of it. No tab is opened. DuckDuckGo states no limit for this page; it
-// answers a client it takes for a bot with a challenge page instead of results, which turns the
-// search away (see DuckDuckGoError). The HTML can change at any time: a page this module can't read
-// is a search that failed, never guessed at.
+// that knows its endpoint and the shape of its result page. DuckDuckGo has no API: the search opens
+// its HTML results page in a background tab of the user's own browser, as the user would, with the
+// host permission they granted, and reads the results out of it (tab.ts). Nothing pretends to be
+// anything: when DuckDuckGo asks to confirm a person is searching, the search stops and its tab
+// stays open for the person; Notico never answers the check. The HTML can change at any time: a
+// page this module can't read is a search that failed, never guessed at.
 import { z } from '../zod'
+import { closeSearchTab, openSearchPage } from './tab'
 
 /** The one origin searched, and the host permission it needs. */
 const DUCKDUCKGO = 'https://html.duckduckgo.com'
@@ -15,13 +16,10 @@ const PATTERN = `${DUCKDUCKGO}/*`
 const TITLE_CHARS = 300
 const DESCRIPTION_CHARS = 1000
 const URL_CHARS = 2000
-/** How long a search may take before it counts as failed. */
-const TIMEOUT_MS = 15_000
-
-/** Why DuckDuckGo gave no results: it turned the search away (`challenge`, `busy`), or the search failed. */
+/** Why DuckDuckGo gave no results: it asked a person to confirm (`challenge`), or the search failed. */
 export class DuckDuckGoError extends Error {
   constructor(
-    readonly code: 'challenge' | 'busy' | 'unreachable' | 'unreadable',
+    readonly code: 'challenge' | 'unreachable' | 'unreadable',
     message: string,
     options?: { cause?: unknown },
   ) {
@@ -55,41 +53,45 @@ export function allowDuckDuckGo(): Promise<boolean> {
 }
 
 /**
- * Searches DuckDuckGo for `query`, for at most `limit` results, never retried. Throws a
- * DuckDuckGoError when it gave none; a Stop throws what `fetch` threw.
+ * Searches DuckDuckGo for `query`, for at most `limit` results, never retried: opens its results
+ * page in a background tab (tab.ts), reads it, and closes the tab. Throws a DuckDuckGoError when it
+ * gave none; on its challenge the tab stays open, so the person can answer it there. A Stop
+ * closes the tab and throws the signal's reason.
  */
 export async function searchDuckDuckGo(
   query: string,
   limit: number,
   signal?: AbortSignal,
 ): Promise<DuckDuckGoResult[]> {
-  const timeout = AbortSignal.timeout(TIMEOUT_MS)
-  let html: string
-  let status: number
+  let page
   try {
-    // No cookies: the search is the same whoever's browser sends it, and DuckDuckGo needs none.
-    const res = await fetch(`${DUCKDUCKGO}/html/?${new URLSearchParams({ q: query })}`, {
-      credentials: 'omit',
-      signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
-    })
-    status = res.status
-    html = await res.text()
+    page = await openSearchPage(`${DUCKDUCKGO}/html/?${new URLSearchParams({ q: query })}`, signal)
   } catch (err) {
     if (signal?.aborted) throw err
     throw new DuckDuckGoError('unreachable', 'DuckDuckGo could not be reached', { cause: err })
   }
-  return resultsOf(status, html, limit)
+  let results
+  try {
+    results = resultsOf(page.url, page.html, limit)
+  } catch (err) {
+    // Its challenge is for a person to answer: the tab stays for them. Anything else is done with.
+    if (!(err instanceof DuckDuckGoError && err.code === 'challenge')) closeSearchTab(page.tabId)
+    throw err
+  }
+  closeSearchTab(page.tabId)
+  return results
 }
 
-/** The results of DuckDuckGo's answer, or why it gave none. */
-function resultsOf(status: number, html: string, limit: number): DuckDuckGoResult[] {
+/** The results the page lists, or why it lists none. Closes nothing: the caller does. */
+function resultsOf(url: string, html: string, limit: number): DuckDuckGoResult[] {
+  // A page elsewhere (DuckDuckGo moved the search, or the tab was taken somewhere) is not one of results.
+  if (new URL(url).origin !== DUCKDUCKGO)
+    throw new DuckDuckGoError('unreadable', 'DuckDuckGo gave a page Notico could not read')
+  // An inert document: nothing in it loads or runs.
   const page = new DOMParser().parseFromString(html, 'text/html')
-  // Its challenge ("select all squares containing a duck") comes as a 202, with a form of its own.
-  if (status === 202 || page.querySelector('#challenge-form, .anomaly-modal__modal'))
+  // Its challenge ("select all squares containing a duck") comes with a form of its own.
+  if (page.querySelector('#challenge-form, .anomaly-modal__modal'))
     throw new DuckDuckGoError('challenge', 'DuckDuckGo asked to confirm that a person is searching')
-  if (status === 429 || status === 503)
-    throw new DuckDuckGoError('busy', `DuckDuckGo turned the search away (HTTP ${status})`)
-  if (status !== 200) throw new DuckDuckGoError('unreadable', `DuckDuckGo answered HTTP ${status}`)
   // The list is there, with or without results; without it, the page is not one of results.
   const list = page.querySelector('#links')
   if (!list) throw new DuckDuckGoError('unreadable', 'DuckDuckGo gave a page Notico could not read')

@@ -1,8 +1,12 @@
-// Stands in for DuckDuckGo's HTML search page at the edge, for the side panel's UI tests: it answers
-// a search with a page of results shaped as DuckDuckGo's is (each linked through its redirect, an ad
-// among them), or with what it answers a client it takes for a bot, or with nothing at all.
+// Stands in for DuckDuckGo's HTML results page, for the side panel's UI tests, as the browser shows
+// it in a tab the extension opens: chrome.tabs opens and closes those tabs and reports when one has
+// loaded, and chrome.scripting runs the extension's script against the page, rebuilt from its source
+// as Chrome does. A results page is shaped as DuckDuckGo's is (each result linked through its
+// redirect, an ad among them); it can instead show DuckDuckGo's check that a person is searching,
+// another page, or Chrome's error page for a site that did not answer.
 
-export const DUCKDUCKGO = 'https://html.duckduckgo.com'
+const DUCKDUCKGO = 'https://html.duckduckgo.com'
+const ACCESS = `${DUCKDUCKGO}/*`
 
 interface Found {
   url: string
@@ -10,31 +14,130 @@ interface Found {
   description: string
 }
 
-/** What DuckDuckGo answers instead of results. */
-type Answer = 'challenge' | 'busy' | 'unknown page' | 'error' | 'unreachable'
+/** What the tab shows instead of results. */
+type Answer = 'challenge' | 'error page' | 'unknown page' | 'unreachable'
+
+interface FakeTab {
+  id: number
+  windowId: number
+  url: string
+  status: 'loading' | 'complete'
+  active: boolean
+  closed: boolean
+}
+
+type UpdatedListener = (tabId: number, change: { status?: string }, tab: FakeTab) => void
+type RemovedListener = (tabId: number) => void
 
 export class FakeDuckDuckGo {
   /** The results for each query; a query not here finds nothing. */
   readonly found = new Map<string, Found[]>()
-  /** Set to answer every search this way instead. */
+  /** Set to show this in every search's tab instead. */
   answer?: Answer
-  /** The searches it was sent: the query, and whether the request carried cookies. */
-  readonly searches: { query: string; credentials: RequestCredentials }[] = []
+  /** The searches it was asked for, by query, each in its tab. */
+  readonly searches: { query: string; tab: FakeTab }[] = []
+  private nextId = 100
+  private readonly updated: UpdatedListener[] = []
+  private readonly removed: RemovedListener[] = []
 
-  async handle(request: Request): Promise<Response> {
-    const url = new URL(request.url)
-    if (url.pathname !== '/html/') return new Response('Not found', { status: 404 })
-    const query = url.searchParams.get('q') ?? ''
-    this.searches.push({ query, credentials: request.credentials })
+  /** The tabs searches opened that are still open. */
+  openTabs(): FakeTab[] {
+    return this.searches.map((s) => s.tab).filter((t) => !t.closed)
+  }
+
+  /**
+   * Takes over chrome.tabs and chrome.scripting for tabs on DuckDuckGo, passing everything else to
+   * what the browser had; `allowed` are the sites the user allowed, which a script needs.
+   */
+  install(chrome: Record<string, Record<string, unknown>>, allowed: Set<string>): void {
+    const tabs = chrome.tabs as Record<string, unknown> & {
+      create: (props: { url: string }) => Promise<unknown>
+      get: (id: number) => Promise<unknown>
+      onUpdated: { addListener: (l: UpdatedListener) => void; removeListener: (l: UpdatedListener) => void }
+    }
+    const scripting = chrome.scripting as { executeScript: (injection: Injection) => Promise<unknown> }
+    const { create, get, onUpdated } = tabs
+    const executeScript = scripting.executeScript
+    tabs.create = async (props: { url: string; active?: boolean; windowId?: number }) => {
+      if (!props.url.startsWith(`${DUCKDUCKGO}/`)) return create(props)
+      const tab: FakeTab = {
+        id: this.nextId++,
+        windowId: props.windowId ?? 1,
+        url: props.url,
+        status: 'loading',
+        active: props.active ?? true,
+        closed: false,
+      }
+      this.searches.push({ query: new URL(props.url).searchParams.get('q') ?? '', tab })
+      // The page loads once the extension has its tab: Chrome reports it then.
+      setTimeout(() => {
+        if (tab.closed) return
+        tab.status = 'complete'
+        for (const listener of [...this.updated]) listener(tab.id, { status: 'complete' }, { ...tab })
+      })
+      return { ...tab }
+    }
+    tabs.get = async (id: number) => {
+      const tab = this.tab(id)
+      if (!tab) return get(id)
+      if (tab.closed) throw new Error(`No tab with id: ${id}.`)
+      return { ...tab }
+    }
+    tabs.remove = async (id: number) => {
+      const tab = this.tab(id)
+      if (!tab || tab.closed) throw new Error(`No tab with id: ${id}.`)
+      tab.closed = true
+      for (const listener of [...this.removed]) listener(id)
+    }
+    tabs.onUpdated = {
+      addListener: (listener: UpdatedListener) => {
+        onUpdated.addListener(listener)
+        this.updated.push(listener)
+      },
+      removeListener: (listener: UpdatedListener) => {
+        onUpdated.removeListener(listener)
+        const i = this.updated.indexOf(listener)
+        if (i >= 0) this.updated.splice(i, 1)
+      },
+    }
+    tabs.onRemoved = {
+      addListener: (listener: RemovedListener) => void this.removed.push(listener),
+      removeListener: (listener: RemovedListener) => {
+        const i = this.removed.indexOf(listener)
+        if (i >= 0) this.removed.splice(i, 1)
+      },
+    }
+    scripting.executeScript = async (injection: Injection) => {
+      const tab = this.tab(injection.target.tabId)
+      if (!tab) return executeScript(injection)
+      if (tab.closed) throw new Error(`No tab with id: ${tab.id}.`)
+      if (this.answer === 'unreachable') throw new Error('Frame with ID 0 is showing error page')
+      if (!allowed.has(ACCESS))
+        throw new Error(
+          'Cannot access contents of the page. Extension manifest must request permission to access the respective host.',
+        )
+      const query = new URL(tab.url).searchParams.get('q') ?? ''
+      const document = new DOMParser().parseFromString(this.page(query), 'text/html')
+      const location = new URL(tab.url)
+      const rebuilt = new Function('location', 'document', `return (${injection.func.toString()})`)(
+        location,
+        document,
+      ) as () => unknown
+      return [{ frameId: 0, result: await rebuilt() }]
+    }
+  }
+
+  private tab(id: number): FakeTab | undefined {
+    return this.searches.find((s) => s.tab.id === id)?.tab
+  }
+
+  /** The HTML the tab shows for `query`. */
+  private page(query: string): string {
     switch (this.answer) {
-      case 'unreachable':
-        throw new TypeError('Failed to fetch')
       case 'challenge':
-        return html(CHALLENGE, 202)
-      case 'busy':
-        return html('<p>Too many requests</p>', 429)
-      case 'error':
-        return html('<p>Something went wrong</p>', 500)
+        return html(CHALLENGE)
+      case 'error page':
+        return html('<p>Something went wrong. Please try again.</p>')
       case 'unknown page':
         return html('<main><p>DuckDuckGo has moved.</p></main>')
       default:
@@ -43,11 +146,13 @@ export class FakeDuckDuckGo {
   }
 }
 
-const html = (body: string, status = 200) =>
-  new Response(`<!DOCTYPE html><html><head><title>DuckDuckGo</title></head><body>${body}</body></html>`, {
-    status,
-    headers: { 'content-type': 'text/html; charset=UTF-8' },
-  })
+interface Injection {
+  target: { tabId: number }
+  world?: string
+  func: Function
+}
+
+const html = (body: string) => `<!DOCTYPE html><html><head><title>DuckDuckGo</title></head><body>${body}</body></html>`
 
 const escape = (text: string) =>
   text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
@@ -80,7 +185,7 @@ function resultsPage(found: Found[]): string {
   return `<div id="links" class="results">${found.length ? ad : ''}${results.join('')}</div>`
 }
 
-/** What DuckDuckGo answers a client it takes for a bot: a challenge to pick the squares with a duck. */
+/** What DuckDuckGo shows a browser it takes for a bot: a challenge to pick the squares with a duck. */
 const CHALLENGE = `
   <div class="anomaly-modal__modal">
     <p class="anomaly-modal__title">Unfortunately, bots use DuckDuckGo too.</p>

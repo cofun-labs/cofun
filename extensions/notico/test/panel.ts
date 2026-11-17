@@ -23,7 +23,7 @@ import {
 import { FakeStripe, signature, WEBHOOK_SECRET } from '../../../worker/test/stripe'
 import type { FakeSession } from './clerk'
 import { restoreGlobals, type FakeNotionTab } from './notion-tab'
-import { DUCKDUCKGO, FakeDuckDuckGo } from './duckduckgo'
+import { FakeDuckDuckGo } from './duckduckgo'
 import { FakeOpenRouter, OPENROUTER } from './openrouter'
 import { FakePostHog, POSTHOG } from './posthog'
 import { failingTitles, titleRequests } from './titles'
@@ -65,7 +65,7 @@ export class FakeBrowser {
   readonly stripe = new FakeStripe()
   /** OpenRouter, for a user's own model; script its model, and read what it was sent. */
   readonly openRouter = new FakeOpenRouter()
-  /** DuckDuckGo's search page, which the panel searches when the user chose it. */
+  /** DuckDuckGo's results page, which the panel opens in tabs to search when the user chose it. */
   readonly duckDuckGo = new FakeDuckDuckGo()
   /** PostHog, where the panel sends usage events; read what it was sent. */
   readonly postHog = new FakePostHog()
@@ -153,12 +153,11 @@ export class FakeBrowser {
     browser.issuer = issuer
     browser.env = env
     browser.worker = (request) => app.request(request, undefined, env, new FakeExecutionContext())
-    // The panel calls fetch(); route it into the worker app, or to OpenRouter, PostHog, or DuckDuckGo.
+    // The panel calls fetch(); route it into the worker app, or to OpenRouter or PostHog.
     globals.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
       const request = new Request(input, init)
       if (request.url.startsWith(`${OPENROUTER}/`)) return browser.openRouter.handle(request)
       if (request.url.startsWith(`${POSTHOG}/`)) return browser.postHog.handle(request)
-      if (request.url.startsWith(`${DUCKDUCKGO}/`)) return browser.duckDuckGo.handle(request)
       const headers = [...request.headers].map(([name, value]) => `${name}: ${value}`).join('\n')
       browser.sentToWorker.push(`${request.url}\n${headers}\n${await request.clone().text()}`)
       return browser.worker(request)
@@ -176,6 +175,7 @@ export class FakeBrowser {
       getManifest: () => ({ version: '1.2.3' }),
     }
     chrome.tabs.create = async ({ url }: { url: string }) => void browser.openedTabs.push(url)
+    browser.duckDuckGo.install(chrome as never, tab.allowed)
     // Clerk's cookie on the sign-in page, which the panel watches to notice a sign-in or sign-out there.
     chrome.cookies = {
       getAll: async ({ name }: { name: string }) => [{ name, value: session ? '1762603200' : '0' }],

@@ -103,7 +103,7 @@ function ContextMenu() {
 }
 
 /**
- * Whether web searches go to DuckDuckGo from the browser, free, instead of the worker (see
+ * Whether web searches open DuckDuckGo in a background tab, free, instead of going to the worker (see
  * search.ts): off until the user turns it on, for this account on this device. Turning it on asks Chrome for access
  * to DuckDuckGo, in the click itself; declined, it stays off.
  */
@@ -142,8 +142,8 @@ function WebSearch({ userId }: { userId: string }) {
         <div className="grow">
           <p>Search with DuckDuckGo</p>
           <p id="settings-search-detail" className="account-detail">
-            Free: searches go from your browser to DuckDuckGo instead of costing credits. If DuckDuckGo starts turning
-            searches away, switch this off.
+            Free: each search opens DuckDuckGo in a background tab and reads its results, instead of costing credits. If
+            DuckDuckGo asks you to confirm you're a person, answer it in that tab, or switch this off.
           </p>
         </div>
         {on !== undefined && (

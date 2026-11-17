@@ -22,17 +22,18 @@ export async function saveDuckDuckGoSearch(userId: string, on: boolean): Promise
 }
 
 /**
- * What the user is told when DuckDuckGo turns a search away: the question stops. Not "pass the check
- * on DuckDuckGo": the extension's searches carry no cookies, so a check passed in a tab does not
- * count for them.
+ * What the user is told when DuckDuckGo asks to confirm a person is searching: the question stops,
+ * and the search's tab stays open for them to answer it, which lets the next searches through.
  */
-const TURNED_AWAY =
-  'Try again later, or switch off "Search with DuckDuckGo" in Settings to search with credits instead.'
+const CHALLENGED =
+  'DuckDuckGo asked to confirm that a person is searching, so Notico could not search the web. Its tab is ' +
+  'open: answer its check there, then ask again, or switch off "Search with DuckDuckGo" in Settings to search ' +
+  'with credits instead.'
 
 /**
  * The search to use instead of the worker's, or undefined for the worker's. Its failures are
- * WebErrors as the worker's are (see ToolContext.searchWeb): one turned away stops the question; any
- * other goes to the model, costs nothing, and is never retried.
+ * WebErrors as the worker's are (see ToolContext.searchWeb): DuckDuckGo's check stops the question;
+ * any other failure goes to the model, costs nothing, and is never retried.
  */
 export async function freeSearch(
   userId: string,
@@ -43,12 +44,7 @@ export async function freeSearch(
       return await searchDuckDuckGo(query, limit, signal)
     } catch (err) {
       if (!(err instanceof DuckDuckGoError)) throw err
-      const stops =
-        err.code === 'challenge'
-          ? `DuckDuckGo asked to confirm that a person is searching, so Notico could not search the web. ${TURNED_AWAY}`
-          : err.code === 'busy'
-            ? `DuckDuckGo turned Notico's searches away. ${TURNED_AWAY}`
-            : undefined
+      const stops = err.code === 'challenge' ? CHALLENGED : undefined
       // A search turned away says the same on its card as why the question stopped.
       throw new WebError(stops ? 'search_busy' : 'search_failed', stops ?? err.message, {
         stopsQuestion: stops,
