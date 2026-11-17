@@ -148,22 +148,31 @@ describe('Read only', () => {
     // The model is still writing its first reply when the user switches.
     let resume!: () => void
     browser.ai.pause = { after: 150, until: new Promise<void>((resolve) => (resume = resolve)) }
-    browser.ai.script.push({ reply: 'Looking at it, one moment please.' }, RENAME, { reply: 'Renamed it.' })
+    // It asks for a change only after the switch, in the same question.
+    browser.ai.script.push(
+      { reply: 'Looking at it, one moment please.', toolCalls: RENAME.toolCalls },
+      { reply: "I can't rename it in Read only." },
+      RENAME,
+      { reply: 'Renamed it.' },
+    )
     await ask(user, 'What is under this page?')
     await screen.findByRole('button', { name: 'Stop' })
     await user.click(screen.getByRole('button', { name: 'Mode: Read only' }))
     expect(screen.getByRole('button', { name: 'Mode: Edit' })).toBeVisible()
     resume()
-    await screen.findByText('Looking at it, one moment please.')
+    await screen.findByText("I can't rename it in Read only.")
     await answered()
     expect(conversation().getByText('Read only')).toBeVisible()
+    // The question stayed in Read only: its call was not run, and nothing changed.
+    expect(conversation().getByRole('img', { name: 'Not run' })).toBeVisible()
+    expect(workspace.transactions).toEqual([])
 
     browser.ai.pause = undefined
     await ask(user, 'Rename Old notes to Archive')
     expect(await screen.findByText('Renamed it.')).toBeVisible()
     await answered()
     // The same tools, in the same order, as the question in Read only was offered.
-    expect(offered(browser, 1)).toEqual(offered(browser, 0))
+    expect(offered(browser, 2)).toEqual(offered(browser, 0))
     // The conversation goes on, and the model is told that changes are possible again.
     expect(browser.sentToModel().some((m) => m.content?.includes('Looking at it'))).toBe(true)
     expect(lastQuestion(browser)).toMatch(/^\[Edit: /)
