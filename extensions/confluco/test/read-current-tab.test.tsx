@@ -161,6 +161,19 @@ describe('reading the page in the current tab', () => {
     expect(toolResults(browser)[0]).toMatch(/^Confluco may not read news\.example\.com: the user did not allow it/)
   })
 
+  it('[UC-CONFLUCO-PANEL-001-S13] excludes hosts the extension uses for account access from tab reads', async () => {
+    const tab = new FakeTab('https://api.cofun.cc/login')
+    tab.allowed.add('https://api.cofun.cc/*')
+    const { browser, user } = await openOn(tab)
+    browser.ai.script.push(readTab, { reply: 'The page could not be read.' })
+
+    await ask(user, 'Summarize this page')
+    expect(await screen.findByText('The page could not be read.')).toBeVisible()
+    expect(browser.tab.injections).toEqual([])
+    expect(browser.tab.accessRequests).toEqual([])
+    expect(toolResults(browser)[0]).toContain('uses for sign-in')
+  })
+
   it('[UC-CONFLUCO-PANEL-001-S12] a tab the user leaves while asked is not read', async () => {
     const { browser, user } = await openOn()
     browser.ai.script.push(readTab, { reply: 'You moved on.' })

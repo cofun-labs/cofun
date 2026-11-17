@@ -93,7 +93,7 @@ Clerk's own account management is not used: Notico needs Clerk only for who the 
 
 ## Confluco
 
-Confluco is built independently from `extensions/confluco/`. It runs its own copy of the side panel, agent, and local chat store. It signs in through the same Cofun Worker, sends `confluco/<version>` as its client name, and uses the account's shared credits. Its browser tools read the current tab or tabs a user added via its own web layer, with the same site grant flow as Notico. Public web reads and searches go through the Worker.
+Confluco is built independently from `extensions/confluco/`. It runs its own copy of the side panel, agent, and local chat store. It signs in through the same Cofun Worker, sends `confluco/<version>` as its client name, and uses the account's shared credits. Its browser tools read the current tab or tabs a user added via its own web layer, with the same site grant flow as Notico. Public web reads and searches go through the Worker. On a context menu click, Confluco's extension service worker resolves the active Clerk account and leaves the selection in session storage for that account and window.
 
 ## Layout
 

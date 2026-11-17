@@ -23,9 +23,11 @@ export function useComposer({
   panel,
   chat,
   busy,
+  userId,
 }: {
   panel: Panel
   chat: ChatSession
+  userId: string
   /** The open chat's question has not ended yet. */
   busy: boolean
 }) {
@@ -42,7 +44,7 @@ export function useComposer({
       .getCurrent()
       .then((window) => {
         if (closed || window.id === undefined) return
-        stop = watchSelections(window.id, (sent) => {
+        stop = watchSelections(window.id, userId, (sent) => {
           setSelections((list) => [...list, ...sent])
           inputRef.current?.focus()
         })
@@ -52,7 +54,7 @@ export function useComposer({
       closed = true
       stop?.()
     }
-  }, [])
+  }, [userId])
 
   // The pages the user added to the next question by hand, in the order they added them.
   const [chosen, setChosen] = useState<QuestionPage[]>([])

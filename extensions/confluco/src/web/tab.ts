@@ -16,6 +16,20 @@ const pattern = (origin: string) => `${origin}/*`
 const STORE = [/^https:\/\/chromewebstore\.google\.com\//, /^https:\/\/chrome\.google\.com\/webstore(\/|$)/]
 
 /**
+ * Required hosts support the extension's sign-in. They never grant access to the contents of a tab.
+ * The build emits HTTP(S) host patterns, including the wildcard for the sign-in cookie's domain.
+ */
+function isAuthenticationHost(url: URL): boolean {
+  const permissions = z.array(z.string()).safeParse(chrome.runtime.getManifest().host_permissions).data ?? []
+  return permissions.some((permission) => {
+    const match = /^(https?):\/\/(\*\.)?([^/]+)\/\*$/.exec(permission)
+    if (!match || url.protocol !== `${match[1]}:`) return false
+    const host = new URL(`${url.protocol}//${match[3]}`).hostname
+    return url.hostname === host || Boolean(match[2] && url.hostname.endsWith(`.${host}`))
+  })
+}
+
+/**
  * Which tab a reason is about, as the model reads it: the current tab, or a tab the user added to
  * the conversation.
  */
@@ -43,6 +57,8 @@ export function readableSite(
         `${cap(where)} shows a ${parsed.protocol.replace(/:$/, '')}: page (a browser or extension page, or a ` +
         "local file), which Confluco can't read: only web pages on http or https.",
     }
+  if (isAuthenticationHost(parsed))
+    return { reason: `${cap(where)} is on a host Confluco uses for sign-in, which the tab tools cannot read.` }
   if (STORE.some((store) => store.test(url)))
     return { reason: `${cap(where)} is the Chrome Web Store: Chrome doesn't let extensions read it.` }
   // Told before the user is asked to allow the site; a PDF at another address shows only once read.
@@ -121,7 +137,7 @@ export async function readPage(
       target: { tabId },
       world: 'ISOLATED',
       func: pageHtml,
-      args: [Math.min(maxChars * HTML_PER_CHAR, MAX_HTML_CHARS)],
+      args: [origin, Math.min(maxChars * HTML_PER_CHAR, MAX_HTML_CHARS)],
     })
     raw = frame?.result
   } catch (err) {
@@ -191,7 +207,8 @@ function selectionText(): string {
  * their fragment, and only on links to http(s) pages. Up to `maxHtml` characters of it: a cut tag
  * or element is mended when the side panel parses it.
  */
-function pageHtml(maxHtml: number): z.input<typeof PageResult> | null {
+function pageHtml(origin: string, maxHtml: number): z.input<typeof PageResult> | null {
+  if (location.origin !== origin) return null
   if (document.contentType === 'application/pdf') return { pdf: true }
   // What src/web/markdown.ts reads, besides the class that names a code block's language.
   const KEPT = ['href', 'alt', 'colspan', 'rowspan', 'start']

@@ -39,11 +39,7 @@ export type ListedSession = SessionInfo | UnreadableSession
 
 // One database per account, so another account signed in on this browser never sees these sessions.
 const DB_PREFIX = 'confluco-chats-'
-/**
- * Version 2 added the results store, and version 3 made it anew, without the sessions that name each
- * result; the sessions and messages stores are as version 1 made them.
- */
-const DB_VERSION = 3
+const DB_VERSION = 1
 // Two stores, so the list never loads conversations: they grow with every tool result.
 const INFO = 'sessions'
 const MESSAGES = 'messages'
@@ -209,18 +205,11 @@ export class SessionStore {
   private open(): Promise<IDBDatabase> {
     this.db ??= new Promise<IDBDatabase>((resolve, reject) => {
       const req = indexedDB.open(DB_PREFIX + this.userId, DB_VERSION)
-      req.onupgradeneeded = ({ oldVersion }) => {
+      req.onupgradeneeded = () => {
         const db = req.result
-        if (oldVersion < 1) {
-          db.createObjectStore(INFO, { keyPath: 'id' })
-          db.createObjectStore(MESSAGES, { keyPath: 'id' })
-        }
-        if (oldVersion < 3) {
-          // Version 2's results, which were never in a released version, are dropped; a session that
-          // names one has the page read again.
-          if (oldVersion === 2) db.deleteObjectStore(RESULTS)
-          db.createObjectStore(RESULTS, { keyPath: 'id' }).createIndex(KEPT_AT, KEPT_AT)
-        }
+        db.createObjectStore(INFO, { keyPath: 'id' })
+        db.createObjectStore(MESSAGES, { keyPath: 'id' })
+        db.createObjectStore(RESULTS, { keyPath: 'id' }).createIndex(KEPT_AT, KEPT_AT)
       }
       req.onsuccess = () => {
         const db = req.result

@@ -168,7 +168,7 @@ export class FakeBrowser {
     chrome.runtime = {
       ...(chrome.runtime as object),
       getURL: (path: string) => `${EXTENSION}/${path}`,
-      getManifest: () => ({ version: '1.2.3' }),
+      getManifest: () => ({ version: '1.2.3', host_permissions: ['https://*.cofun.cc/*', 'https://clerk.cofun.cc/*'] }),
     }
     chrome.tabs.create = async ({ url }: { url: string }) => void browser.openedTabs.push(url)
     // Clerk's cookie on the sign-in page, which the panel watches to notice a sign-in or sign-out there.
@@ -203,9 +203,10 @@ export class FakeBrowser {
    * Starts the extension's service worker (src/background.ts), as Chrome does once it installed the
    * extension: it sets up its context menu item.
    */
-  async startServiceWorker(): Promise<void> {
+  async startServiceWorker(readAccount = async () => this.session?.userId): Promise<void> {
     vi.resetModules()
-    await import('../src/background')
+    const { setupSelectionMenu } = await import('../src/selection-menu')
+    setupSelectionMenu(readAccount)
     this.tab.extensionInstalled()
     // It reads its settings before it makes its menu item.
     await vi.waitFor(() => {

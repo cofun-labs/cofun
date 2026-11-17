@@ -38,7 +38,7 @@ export function Chat({ userId }: { userId: string }) {
   const [settingsAt, setSettingsAt] = useState<'providers'>()
 
   const readable = useTabReadable()
-  const composer = useComposer({ panel, chat, busy })
+  const composer = useComposer({ panel, chat, busy, userId })
 
   const openCredits = useCallback(() => {
     track({ event: 'credits_opened' })

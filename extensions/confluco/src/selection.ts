@@ -1,6 +1,6 @@
 // Text the user selected on a page and sent to the side panel with the context menu's "Ask Confluco"
 // item. The service worker (background.ts) reads it in the tab and leaves it in chrome.storage.session,
-// one key per selection, by window; that window's side panel takes them from there into the next
+// one key per selection, by window and account; that window's side panel takes them from there into the next
 // question, where each selection sent adds to the ones before. No
 // message listener carries it: storage.session is open only to the extension's own pages, and what
 // is read back is parsed, since the text comes from the page.
@@ -24,7 +24,7 @@ const Selection = z.object({ text: z.string(), chars: z.number(), url: z.string(
 export type Selection = z.infer<typeof Selection>
 
 /** Where the selections sent to a window's side panel are kept, each under this and its number. */
-const prefix = (windowId: number) => `selection:${windowId}:`
+const prefix = (windowId: number, userId: string) => `selection:${windowId}:${encodeURIComponent(userId)}:`
 
 /**
  * Whether the menu item shows, as the settings page's switch says: on unless the user turned it off.
@@ -59,7 +59,13 @@ let lastSent = 0
  * selection gets a key of its own, numbered in the order sent, so one sent while the panel takes
  * the others is neither lost nor taken twice.
  */
-export async function handOver(windowId: number, text: string, url: string, title: string): Promise<void> {
+export async function handOver(
+  windowId: number,
+  userId: string,
+  text: string,
+  url: string,
+  title: string,
+): Promise<void> {
   const selection: Selection = {
     text: text.slice(0, SELECTION_CHARS),
     chars: text.length,
@@ -68,7 +74,7 @@ export async function handOver(windowId: number, text: string, url: string, titl
   }
   // The time, so the order holds across starts of the service worker; one more for a second in the same millisecond.
   lastSent = Math.max(Date.now(), lastSent + 1)
-  await chrome.storage.session.set({ [`${prefix(windowId)}${lastSent}`]: selection })
+  await chrome.storage.session.set({ [`${prefix(windowId, userId)}${lastSent}`]: selection })
 }
 
 /**
@@ -76,8 +82,12 @@ export async function handOver(windowId: number, text: string, url: string, titl
  * they were sent: those sent before the panel opened, and each one sent while it is open. Each is
  * taken, so it is given once. Returns a function that stops watching.
  */
-export function watchSelections(windowId: number, onSelections: (selections: Selection[]) => void): () => void {
-  const start = prefix(windowId)
+export function watchSelections(
+  windowId: number,
+  userId: string,
+  onSelections: (selections: Selection[]) => void,
+): () => void {
+  const start = prefix(windowId, userId)
   // Keys already given: one written between watching and reading shows in both.
   const taken = new Set<string>()
   const take = (entries: [string, unknown][]) => {
