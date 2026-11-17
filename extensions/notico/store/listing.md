@@ -30,7 +30,7 @@ BRING IN THE WEB
 • Ask about the page you're on, a link, or several open tabs at once.
 • Search the web, with the sources named.
 • Right-click selected text on any page and pick "Ask Notico".
-• Notico reads a site only after you allow it.
+• Notico reads a site in your tabs only after you allow it.
 
 THINGS TO TRY
 • "Summarize this page in five bullet points."
