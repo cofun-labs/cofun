@@ -473,6 +473,9 @@ export class CopilotAgent {
     if (failure || stopped) {
       const kept = usedTools(agent.state.messages.slice(before))
       agent.state.messages = [...agent.state.messages.slice(0, before), ...kept]
+      // The part sent may have started inside what was just dropped: the next question would land on
+      // that index and start a part with none of the conversation before it. Worked out again instead.
+      if (this.sentFrom >= before) this.sentFrom = 0
       const result: AskResult = stopped
         ? { status: 'stopped', ...used }
         : { status: 'error', message: failure!.text, ...(failure!.code ? { code: failure!.code } : {}), ...used }

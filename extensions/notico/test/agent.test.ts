@@ -656,6 +656,22 @@ describe('extension agent against the worker', () => {
     ])
   })
 
+  it('[@no-uc:data] a question dropped after a cut that kept only it leaves the conversation before it to the next one', async () => {
+    const agent = makeAgent({ history: { messages: 100, chars: 1_000 } })
+    await ask(agent, 'q1')
+    await ask(agent, 'q2')
+    // Alone over the budget: the cut keeps only it, and it fails with nothing to keep.
+    ai.failWith = new Error('down')
+    expect((await ask(agent, `q3 ${'x'.repeat(900)}`)).result.status).toBe('error')
+    ai.failWith = undefined
+    await ask(agent, 'q4')
+    expect(
+      sentMessages(3)
+        .filter((m) => m.role === 'user')
+        .map((m) => m.content),
+    ).toEqual(['q1', 'q2', 'q4'])
+  })
+
   it('[@no-uc:data] a long conversation in Read only still offers only the tools that change no data', async () => {
     const reader = pageTool().tool
     const writer: ToolSpec = { ...pageTool().tool, name: 'change_page', changesData: true }
