@@ -30,12 +30,16 @@ function confluenceTab(tab: chrome.tabs.Tab | undefined, instance: Instance | un
   }
 }
 
-export async function captureConfluenceTab(accountId: string): Promise<ConfluenceTab | undefined> {
+export async function captureConfluenceConnection(accountId: string) {
   const [[tab], instance] = await Promise.all([
     chrome.tabs.query({ active: true, currentWindow: true }),
     getInstance(accountId),
   ])
-  return confluenceTab(tab, instance)
+  return { tab: confluenceTab(tab, instance), cloud: instance?.cloud ?? false }
+}
+
+export async function captureConfluenceTab(accountId: string): Promise<ConfluenceTab | undefined> {
+  return (await captureConfluenceConnection(accountId)).tab
 }
 
 const result = z.discriminatedUnion('kind', [
@@ -191,7 +195,8 @@ function readSelection(expectedUrl: string, contextPath: string, limit: number) 
 }
 
 export function restUrl(instance: Instance, resource: string, query: Query, area: RestArea): URL {
-  const endpoint = new URL(`${instance.origin}${instance.path}/rest/${area}/${resource}`)
+  const folder = area === 'cloud-v2' ? 'api/v2' : `rest/${area}`
+  const endpoint = new URL(`${instance.origin}${instance.path}/${folder}/${resource}`)
   endpoint.search = new URLSearchParams(query).toString()
   return endpoint
 }

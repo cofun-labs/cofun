@@ -14,7 +14,7 @@ import {
 } from '../agent'
 import { track } from '../analytics'
 import type { AttachmentUpload } from '../confluence/attachments'
-import { captureConfluenceTab } from '../confluence/tab'
+import { captureConfluenceConnection } from '../confluence/tab'
 import type { ConfluenceUndo } from '../confluence/undo'
 import type { Mode } from '../mode'
 import { answering, type ModelSettings, type OwnSetup } from '../models'
@@ -220,9 +220,9 @@ export class ChatSession {
     if (this.snapshot.id !== session.id) this.update({ id: session.id })
     const originalUndo = this.memory.confluenceUndo
     let undoCleared = false
-    const tab = captureConfluenceTab(this.panel.agent.accountId).catch(() => undefined)
+    const connection = captureConfluenceConnection(this.panel.agent.accountId).catch(() => undefined)
     this.memory.confluenceQuestion = {
-      tab,
+      tab: connection.then((captured) => captured?.tab),
       attachment: q.attachment,
       nextLabel: 0,
       beforeWrite: async () => {
@@ -351,7 +351,7 @@ export class ChatSession {
       const askedWith = answering(await this.panel.model())
       // The service the question is asked of, as the agent reads it when the question starts.
       const provider = askedWith?.service ?? 'hosted'
-      const toolNames = (await tab)?.instance.cloud ? CLOUD_TOOL_NAMES : undefined
+      const toolNames = (await connection)?.cloud ? CLOUD_TOOL_NAMES : undefined
       // The mode and the model may have been loading: a Stop, leaving the chat, or the panel closing
       // meanwhile stops the question too, before it counts as asked.
       if (signal.aborted) {

@@ -433,6 +433,7 @@ describe('Confluence Cloud', () => {
         expect(await screen.findByText('Cannot read Cloud.')).toBeVisible()
         expect(toolResults(browser)[0]).toContain(message)
       }
+      expect(JSON.stringify(browser.ai.calls[0]?.inputs.tools)).not.toContain('"name":"edit_page"')
       expect(requests).toEqual([])
     },
   )
