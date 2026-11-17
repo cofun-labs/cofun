@@ -49,7 +49,13 @@ export interface AttachmentUpload {
   mode: 'create' | 'replace'
 }
 
-function downloadUrl(instance: Instance, pageId: string, name: string, version: number, link?: string) {
+export function attachmentDownloadUrl(
+  instance: Instance,
+  pageId: string,
+  name: string,
+  version: number,
+  link?: string,
+) {
   if (!link) return
   try {
     const base = instance.origin + instance.path
@@ -72,7 +78,7 @@ function summary(instance: Instance, pageId: string, value: Attachment) {
     filename: value.title,
     version: value.version.number,
     bytes: value.extensions?.fileSize,
-    downloadUrl: downloadUrl(instance, pageId, value.title, value.version.number, value._links?.download),
+    downloadUrl: attachmentDownloadUrl(instance, pageId, value.title, value.version.number, value._links?.download),
   }
 }
 
@@ -98,7 +104,7 @@ export function attachmentDownloads(result: string) {
     const instance = parseInstance(base)
     if (!instance) return []
     return parsed.data.attachments.flatMap(({ filename, version, downloadUrl: link }) => {
-      const url = downloadUrl(instance, id, filename, version, link)
+      const url = attachmentDownloadUrl(instance, id, filename, version, link)
       return url ? [{ name: filename, url }] : []
     })
   } catch {

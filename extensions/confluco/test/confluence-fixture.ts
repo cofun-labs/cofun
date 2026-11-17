@@ -1,5 +1,7 @@
 import { screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { DATA_LINE } from '../src/tools/shared'
+import { z } from '../src/zod'
 import { closeBrowser, FakeBrowser } from './panel'
 import { FakeTab, webPage } from './tab'
 
@@ -15,7 +17,7 @@ interface FixturePage {
 
 type SiteResponse = (url: string, init?: RequestInit) => Response | Promise<Response>
 
-export async function openWorkspace(page: FixturePage) {
+export async function openWorkspace(page: FixturePage, connection = base) {
   Object.defineProperty(navigator, 'locks', {
     configurable: true,
     value: { request: async <T>(_name: string, action: () => Promise<T>) => action() },
@@ -70,9 +72,9 @@ export async function openWorkspace(page: FixturePage) {
   const user = userEvent.setup()
   await user.click(screen.getByRole('button', { name: 'Account' }))
   await user.click(await screen.findByRole('menuitem', { name: 'Settings' }))
-  await user.type(await screen.findByLabelText('Confluence base URL'), base)
+  await user.type(await screen.findByLabelText('Confluence base URL'), connection)
   await user.click(screen.getByRole('button', { name: 'Connect' }))
-  await screen.findByText('Connected to ' + base)
+  await screen.findByText('Connected to ' + connection)
   await user.click(screen.getByRole('button', { name: 'Back' }))
   return { browser, user, tab }
 }
@@ -82,4 +84,26 @@ export type WorkspaceBrowser = Awaited<ReturnType<typeof openWorkspace>>['browse
 export function closeWorkspace() {
   Reflect.deleteProperty(navigator, 'locks')
   return closeBrowser()
+}
+
+const modelRequest = z.object({ messages: z.array(z.object({ role: z.string(), content: z.string().nullish() })) })
+const nextSearchPage = z.object({ nextPage: z.uuid() })
+
+/** Script the model's continuation only when it has seen the preceding search result. */
+export function followConfluencePage(browser: FakeBrowser, respond: (nextPage: string) => void) {
+  const worker = browser.worker
+  browser.worker = async (request) => {
+    if (new URL(request.url).pathname === '/v1/chat/completions') {
+      const body = modelRequest.safeParse(await request.clone().json())
+      const content = body.data?.messages.findLast((message) => message.role === 'tool')?.content
+      if (content?.startsWith(DATA_LINE + '\n')) {
+        const next = nextSearchPage.safeParse(JSON.parse(content.slice(DATA_LINE.length + 1))).data
+        if (next) {
+          browser.worker = worker
+          respond(next.nextPage)
+        }
+      }
+    }
+    return worker(request)
+  }
 }

@@ -1,7 +1,7 @@
 // Published page reads and searches use the same REST and pagination rules as the other tools.
 import { z } from '../zod'
 import { readCloudPage, searchCloudPages } from './cloud'
-import { collection } from './collection'
+import { collection, collectionNext } from './collection'
 import { spaceKey } from './navigation'
 import { readableText } from './readable-text'
 import { fetchPublishedPage, pageLink, publishedPage } from './references'
@@ -19,7 +19,7 @@ export const SearchArgs = z.strictObject({
   query: z.string().trim().min(1).max(200).describe('Text to find in published pages.'),
   field: z.enum(['text', 'title']).default('text').describe('Search the full page or only the title.'),
   spaceKey: spaceKey.optional().describe('Restrict the search to a space key.'),
-  nextPage: z.uuid().optional().describe('Use the nextPage from the same search, or omit this for the first page.'),
+  nextPage: collectionNext,
 })
 
 const searchHit = z.object({ content: publishedPage, excerpt: z.string().max(16_000).optional() })

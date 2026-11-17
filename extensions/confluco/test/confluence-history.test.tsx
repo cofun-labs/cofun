@@ -1,3 +1,4 @@
+import { followConfluencePage } from './confluence-fixture'
 import '@testing-library/jest-dom/vitest'
 import { screen, waitFor } from '@testing-library/react'
 import type { UserEvent } from '@testing-library/user-event'
@@ -49,14 +50,16 @@ describe('published page history and access', () => {
       }
       return Response.json({ results: [{ number: 2, message: 'Older marker' }] })
     }
-    browser.ai.script.push(
-      { toolCalls: [tool('list_page_versions')] },
-      { toolCalls: [tool('list_page_versions', { start: 10 })] },
-      { reply: 'Found older history.' },
-    )
+    browser.ai.script.push({ toolCalls: [tool('list_page_versions')] })
+    followConfluencePage(browser, (nextPage) => {
+      browser.ai.script.push(
+        { toolCalls: [tool('list_page_versions', { nextPage })] },
+        { reply: 'Found older history.' },
+      )
+    })
     await ask(user, 'Show the version history')
     expect(await screen.findByText('Found older history.')).toBeVisible()
-    expect(toolText(browser)).toContain('"nextStart":10')
+    expect(toolText(browser)).toContain('"nextPage":')
     expect(toolText(browser)).toContain('Fixture author')
     expect(toolText(browser)).toContain('Older marker')
     expect(toolText(browser)).toContain('/pages/viewpreviousversions.action?pageId=42')
@@ -145,14 +148,13 @@ describe('published page labels', () => {
         ? Response.json({ results: [label], _links: { next: '/rest/api/content/42/label?limit=10&start=10' } })
         : Response.json({ results: [{ name: 'second-label', prefix: 'global' }] })
     }
-    browser.ai.script.push(
-      { toolCalls: [tool('list_page_labels')] },
-      { toolCalls: [tool('list_page_labels', { start: 10 })] },
-      { reply: 'More labels.' },
-    )
+    browser.ai.script.push({ toolCalls: [tool('list_page_labels')] })
+    followConfluencePage(browser, (nextPage) => {
+      browser.ai.script.push({ toolCalls: [tool('list_page_labels', { nextPage })] }, { reply: 'More labels.' })
+    })
     await ask(user, 'List the labels')
     expect(await screen.findByText('More labels.')).toBeVisible()
-    expect(toolText(browser)).toContain('"nextStart":10')
+    expect(toolText(browser)).toContain('"nextPage":')
     expect(toolText(browser)).toContain('second-label')
   })
 

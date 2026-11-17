@@ -32,7 +32,9 @@ export {
 export type { ToolMemory } from './memory'
 export { DATA_LINE } from './shared'
 
-const SELF_MANAGED_TOOLS: Tool[] = [
+const CLOUD_TOOLS: Tool[] = [
+  readConfluencePage,
+  searchConfluencePages,
   listConfluenceSpaces,
   getConfluenceSpace,
   browseConfluenceTree,
@@ -42,12 +44,6 @@ const SELF_MANAGED_TOOLS: Tool[] = [
   listConfluenceLabels,
   listConfluenceComments,
   listConfluenceAttachments,
-  ...CONFLUENCE_WRITES,
-]
-
-const CLOUD_TOOLS: Tool[] = [
-  readConfluencePage,
-  searchConfluencePages,
   getCurrentTab,
   readCurrentTab,
   readTab,
@@ -58,7 +54,7 @@ const CLOUD_TOOLS: Tool[] = [
   searchResult,
 ]
 
-export const TOOLS = [...CLOUD_TOOLS, ...SELF_MANAGED_TOOLS]
+export const TOOLS = [...CLOUD_TOOLS, ...CONFLUENCE_WRITES]
 export const CLOUD_TOOL_NAMES: ReadonlySet<string> = new Set(CLOUD_TOOLS.map(({ name }) => name))
 
 /** A call in the user's words, also one from a saved session whose tool is gone. */
