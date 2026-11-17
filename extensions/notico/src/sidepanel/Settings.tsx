@@ -28,14 +28,14 @@ export function Settings({
   at?: 'providers'
   onClose: () => void
 }) {
-  const { signOut } = useAuth()
+  const { signOut, userId } = useAuth()
   const account = useAccount()
 
   return (
     <Page id="settings" title="Settings" onBack={onClose}>
       <ModelCard settings={model} onChange={onModelChange} focus={at === 'providers'} />
 
-      <WebSearch />
+      {userId && <WebSearch userId={userId} />}
 
       <ContextMenu />
 
@@ -104,26 +104,28 @@ function ContextMenu() {
 
 /**
  * Whether web searches go to DuckDuckGo from the browser, free, instead of the worker (see
- * search.ts): off until the user turns it on, for this device. Turning it on asks Chrome for access
+ * search.ts): off until the user turns it on, for this account on this device. Turning it on asks Chrome for access
  * to DuckDuckGo, in the click itself; declined, it stays off.
  */
-function WebSearch() {
+function WebSearch({ userId }: { userId: string }) {
   // Not known until storage was read: no switch shows until then, so it never shows a state to take back.
   const [on, setOn] = useState<boolean>()
 
   useEffect(() => {
     let closed = false
-    loadDuckDuckGoSearch().then(
+    loadDuckDuckGoSearch(userId).then(
       (stored) => !closed && setOn(stored),
       (err: unknown) => console.error('Could not read the web search setting', err),
     )
     return () => void (closed = true)
-  }, [])
+  }, [userId])
 
   function change(next: boolean) {
     const save = (value: boolean) => {
       setOn(value)
-      saveDuckDuckGoSearch(value).catch((err: unknown) => console.error('Could not save the web search setting', err))
+      saveDuckDuckGoSearch(userId, value).catch((err: unknown) =>
+        console.error('Could not save the web search setting', err),
+      )
     }
     if (!next) return save(false)
     // Chrome asks only during the click: nothing is awaited before the request.

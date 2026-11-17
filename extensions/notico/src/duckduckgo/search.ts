@@ -101,8 +101,8 @@ function resultsOf(status: number, html: string, limit: number): DuckDuckGoResul
     const link = item.querySelector('a.result__a')
     const parsed = Result.safeParse({
       url: addressOf(link?.getAttribute('href') ?? ''),
-      title: text(link).slice(0, TITLE_CHARS),
-      description: text(item.querySelector('.result__snippet')).slice(0, DESCRIPTION_CHARS),
+      title: clip(text(link), TITLE_CHARS),
+      description: clip(text(item.querySelector('.result__snippet')), DESCRIPTION_CHARS),
     })
     // One result that can't be read leaves out only itself.
     if (parsed.success) results.push(parsed.data)
@@ -120,6 +120,9 @@ function addressOf(href: string): string | undefined {
     return undefined
   }
 }
+
+/** Text cut to `max` characters, ending with `…` when cut, as the worker clips (worker/src/search.ts). */
+const clip = (text: string, max: number) => (text.length > max ? `${text.slice(0, max - 1)}…` : text)
 
 /** An element's text, its runs of white space as one space. */
 const text = (element: Element | null | undefined) => (element?.textContent ?? '').replace(/\s+/g, ' ').trim()

@@ -168,7 +168,7 @@ export class Panel {
       tools: TOOLS,
       meter: countNotionRequests,
       results: this.store,
-      search: freeSearch,
+      search: () => freeSearch(userId),
     }
     this.account = new CopilotAgent(this.agent)
     this.snapshot = { chat: this.newSession(), credits: { status: 'loading' }, saved: 0 }

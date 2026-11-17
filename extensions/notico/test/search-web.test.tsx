@@ -24,8 +24,8 @@ const RESULTS = [
 ]
 
 /** A side panel on a tab that is not Notion, signed in, with a worker that can search. */
-async function open() {
-  const browser = await FakeBrowser.start(new FakeNotionTab('https://www.example.com/'), { signedInAs: 'user_alice' })
+async function open(tab = new FakeNotionTab('https://www.example.com/'), signedInAs = 'user_alice') {
+  const browser = await FakeBrowser.start(tab, { signedInAs })
   browser.env.AI_GATEWAY_ID = 'gw-test'
   await browser.openPanel()
   return { browser, user: userEvent.setup() }
@@ -302,6 +302,31 @@ describe('searching the web with DuckDuckGo', () => {
     await user.click(screen.getByRole('button', { name: 'Account' }))
     await user.click(await screen.findByRole('menuitem', { name: 'Settings' }))
     expect(await screen.findByRole('switch', { name: 'Search with DuckDuckGo' })).not.toBeChecked()
+  })
+
+  it('[UC-NOTICO-PANEL-004-S10] another account signed in on the same browser starts with it off, and the worker searches', async () => {
+    const tab = new FakeNotionTab('https://www.example.com/')
+    {
+      const { user } = await open(tab)
+      await switchDuckDuckGo(user)
+      expect(screen.getByRole('switch', { name: 'Search with DuckDuckGo' })).toBeChecked()
+    }
+    await closeBrowser()
+
+    // The same Chrome profile, its access to DuckDuckGo still granted, with another account.
+    const { browser, user } = await open(tab, 'user_bob')
+    await user.click(screen.getByRole('button', { name: 'Account' }))
+    await user.click(await screen.findByRole('menuitem', { name: 'Settings' }))
+    expect(await screen.findByRole('switch', { name: 'Search with DuckDuckGo' })).not.toBeChecked()
+    await backToChat(user)
+    browser.ai.found.set(QUERY, RESULTS)
+    browser.ai.script.push(searchCall(QUERY), { reply: 'Oolong comes from Fujian.' })
+
+    await ask(user, 'Where does oolong tea come from?')
+
+    expect(await screen.findByText('Oolong comes from Fujian.')).toBeVisible()
+    expect(browser.ai.searches.map((s) => s.query)).toEqual([QUERY])
+    expect(browser.duckDuckGo.searches).toEqual([])
   })
 
   it("[UC-NOTICO-PANEL-004-S11] declining Chrome's request leaves the switch off, and the worker searches", async () => {
