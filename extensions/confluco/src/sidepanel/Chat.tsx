@@ -165,6 +165,7 @@ export function Chat({ userId }: { userId: string }) {
       )}
       {view === 'settings' && (
         <Settings
+          userId={userId}
           model={model}
           onModelChange={(change) => panel.changeModel(change)}
           at={settingsAt}

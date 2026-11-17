@@ -649,6 +649,7 @@ export class CopilotAgent {
         if (epoch === this.epoch) this.failedWith = code
       },
       context: {
+        accountId: this.config.accountId,
         ask: async (question) => (epoch === this.epoch && this.askOnCard ? this.askOnCard(question) : false),
         // Always through the worker, whichever model answers: the page is read by the worker either way.
         // A render or a search costs credits, and the question it was for counts them; a plain read is free.

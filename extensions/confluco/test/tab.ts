@@ -81,6 +81,7 @@ export class FakeTab {
   pageUrl?: string
   closed = false
   injectionError?: string
+  siteFetch?: typeof fetch
   dom?: object
   title = 'Fixture page'
 
@@ -231,11 +232,12 @@ export class FakeTab {
       },
       permissions: {
         contains: async ({ origins }: { origins: string[] }) => origins.every((o) => this.allowed.has(o)),
+        remove: async ({ origins }: { origins: string[] }) => origins.map((o) => this.allowed.delete(o)).includes(true),
         // Like Chrome, only in a user's click or key press, while it is being handled; then the user
         // answers its prompt.
         request: async ({ origins }: { origins: string[] }) => {
           const type = (globalThis as { event?: Event }).event?.type
-          if (type !== 'click' && type !== 'keydown')
+          if (type !== 'click' && type !== 'keydown' && type !== 'submit')
             throw new Error('This function must be called during a user gesture')
           this.accessRequests.push(origins)
           await this.promptOpen
@@ -311,7 +313,9 @@ export class FakeTab {
     const at = new URL(other?.url ?? this.pageUrl ?? this.url!)
     const frame = target.frameIds?.[0] ?? 0
     const active = !other && this.activeTab
-    if (frame !== 0 || (!this.allowed.has(`${at.origin}/*`) && !active))
+    const port = at.port || (at.protocol === 'https:' ? '443' : '80')
+    const allowed = this.allowed.has(`${at.origin}/*`) || this.allowed.has(`${at.protocol}//${at.hostname}:${port}/*`)
+    if (frame !== 0 || (!allowed && !active))
       throw new Error(
         'Cannot access contents of the page. Extension manifest must request permission to access the respective host.',
       )
@@ -320,7 +324,11 @@ export class FakeTab {
     // The page's selection, unless the test gave the page a DOM of its own that has one.
     const selected = () => ({ toString: () => (other ? '' : this.selected) })
     const document = Object.assign({ getSelection: selected }, (other ? other.dom : this.dom) ?? {})
-    const rebuilt = new Function('location', 'document', `return (${func.toString()})`)(location, document) as Function
+    const rebuilt = new Function('location', 'document', 'fetch', `return (${func.toString()})`)(
+      location,
+      document,
+      this.siteFetch ?? fetch,
+    ) as Function
     return [{ frameId: frame, result: await rebuilt(...(asChromeSends(args ?? []) as unknown[])) }]
   }
 }

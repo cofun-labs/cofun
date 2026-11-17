@@ -1,6 +1,7 @@
 // Tools the agent can run and how the side panel describes them.
 import type { ToolDetails } from '../agent'
 import type { Action, Tool } from '../tool'
+import { readConfluencePage, searchConfluencePages } from './confluence'
 import { getCurrentTab, readCurrentTab, readTab } from './current'
 import { verb } from './shared'
 import { readResult, searchResult } from './results'
@@ -19,6 +20,8 @@ export type { ToolMemory } from './memory'
 export { DATA_LINE } from './shared'
 
 export const TOOLS: Tool[] = [
+  readConfluencePage,
+  searchConfluencePages,
   getCurrentTab,
   readCurrentTab,
   readTab,
