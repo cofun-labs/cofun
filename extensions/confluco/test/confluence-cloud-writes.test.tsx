@@ -46,7 +46,7 @@ async function ask(user: UserEvent, message: string) {
   await user.click(screen.getByRole('button', { name: 'Send' }))
 }
 
-it.each(['created', 'duplicate', 'denied', 'uncertain'])(
+it.each(['created', 'duplicate', 'rejected', 'denied', 'uncertain'])(
   '[UC-CONFLUCO-CONFLUENCE-007-S01] [UC-CONFLUCO-CONFLUENCE-007-S02] [UC-CONFLUCO-CONFLUENCE-007-S03] verifies a Cloud creation or stops on %s',
   async (outcome) => {
     const { browser, user } = await workspace()
@@ -62,6 +62,7 @@ it.each(['created', 'duplicate', 'denied', 'uncertain'])(
           title: child.title,
           body: child.body.storage,
         })
+        if (outcome === 'rejected') return new Response(null, { status: 400 })
         if (outcome === 'denied') return new Response(null, { status: 403 })
         return Response.json(child)
       }
@@ -77,7 +78,7 @@ it.each(['created', 'duplicate', 'denied', 'uncertain'])(
     }
     const create = call('create_page', { title: child.title })
     browser.ai.script.push(
-      { toolCalls: outcome === 'denied' || outcome === 'uncertain' ? [create, create] : [create] },
+      { toolCalls: ['rejected', 'denied', 'uncertain'].includes(outcome) ? [create, create] : [create] },
       { reply: 'Finished checking creation.' },
     )
     await ask(user, 'Create page "Child fixture" under this page with text "Literal <tag> & text"')
@@ -85,6 +86,7 @@ it.each(['created', 'duplicate', 'denied', 'uncertain'])(
     expect(writes(browser)).toHaveLength(outcome === 'duplicate' ? 0 : 1)
     if (outcome === 'created') expect(results(browser)).toContain('"bodyVerified":true')
     if (outcome === 'duplicate') expect(results(browser)).toContain('"alreadyExists":true')
+    if (outcome === 'rejected') expect(screen.getAllByText(/title is valid and unique/).length).toBeGreaterThan(0)
     if (outcome === 'denied') expect(screen.queryAllByText(/does not have permission/).length).toBeGreaterThan(0)
     if (outcome === 'uncertain') expect(screen.queryAllByText(/could not be verified/).length).toBeGreaterThan(0)
   },

@@ -232,6 +232,7 @@ export function createCloudChildPage(
       body: JSON.stringify({ ...page, status: 'current', body: { representation: 'storage', value: text } }),
     },
     signal,
+    'Confluence rejected the page change. Check that the title is valid and unique in the chosen space.',
   )
 }
 
@@ -265,6 +266,7 @@ export function createCloudFooterComment(
       body: JSON.stringify({ ...target, body: { representation: 'storage', value: text } }),
     },
     signal,
+    'Confluence rejected the comment. Check the page and reply target.',
   )
 }
 
