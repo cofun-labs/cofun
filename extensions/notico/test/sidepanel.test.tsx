@@ -805,7 +805,7 @@ describe('sessions', () => {
     expect(screen.queryByText(/Read 1 page|Notion request/)).not.toBeInTheDocument()
     // Both model calls of the question, and not the request for the session's title.
     const details = [
-      'Read 1 page',
+      'Read 1 Notion page',
       `Sent ${made} Notion request${made === 1 ? '' : 's'}`,
       'Tokens: 2.4k in (1.6k cached) · 100 out',
     ]
@@ -909,7 +909,7 @@ describe('sessions', () => {
     await screen.findByText('Read them.')
     await answered()
 
-    expect(await replyDetails(user)).toContain('Read 2 pages')
+    expect(await replyDetails(user)).toContain('Read 2 Notion pages')
   })
 
   it('[UC-NOTICO-CHAT-001-S16] copying a reply puts its Markdown on the clipboard, without its tool calls or what it read', async () => {

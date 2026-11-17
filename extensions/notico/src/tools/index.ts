@@ -21,6 +21,7 @@ import { createPage, editPage, updatePages } from './write'
 export {
   carryPages,
   currentNotionPage,
+  currentTabReadable,
   openNotionPages,
   openWebTabs,
   addedTabNow,

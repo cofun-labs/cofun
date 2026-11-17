@@ -886,6 +886,14 @@ a.icon-button {
   font-weight: 700;
 }
 
+.tool-confirm-note {
+  display: block;
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 400;
+}
+
 .tool-answers {
   display: flex;
   gap: 8px;

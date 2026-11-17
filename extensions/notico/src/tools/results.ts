@@ -10,8 +10,8 @@ import { READ, SEARCH, asData, asPageText, count, nameOf, partArg } from './shar
 
 /** How much of a kept result one part holds; a result no longer than this is given whole, and not kept. */
 const RESULT_PART_CHARS = 20_000
-/** How much of one result is kept at most (about 4 MB); the rest is dropped, and the result says so. */
-export const KEPT_CHARS = 2_000_000
+/** How much of one result is kept at most (about 2 MB); the rest is dropped, and the result says so. */
+export const KEPT_CHARS = 1_000_000
 
 /** Headings an outline lists at most; a long outline would crowd out the part it goes with. */
 const OUTLINE_HEADINGS = 80
@@ -215,8 +215,12 @@ export const readResult = defineTool({
     'whose note says "Kept as result r_…" gives only its first part. Give the part to read, from 1; the note ' +
     'and the outline say how many there are and where each heading starts. Read the parts the question needs, ' +
     'not all of them: for a fact or a passage, search_result finds it first.',
-  describe: (_args, details) =>
-    details?.name ? { verb: READ, name: details.name } : { verb: READ, what: 'more of a page' },
+  // Which part, so the reads of one page don't all look the same as its first read.
+  describe: (args, details) => {
+    const part = args && `part ${args.part ?? 1} of`
+    if (details?.name) return { verb: READ, what: part, name: details.name }
+    return { verb: READ, what: part ? `${part} a page` : 'more of a page' }
+  },
   args: z.strictObject({
     result: ResultArg,
     part: partArg('The part to read, from 1.'),

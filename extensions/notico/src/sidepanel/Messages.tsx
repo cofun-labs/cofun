@@ -197,9 +197,8 @@ const ReplyFoot = memo(function ReplyFoot({
 }) {
   if (!ended) return null
   const text = replyMarkdown(reply.parts)
-  // What it touched in Notion leads its details, in the "…", so the row stays quiet.
-  const summary = touched(reply)
-  const details = [...(summary ? [{ text: summary }] : []), ...detailRows(reply.details)]
+  // What it touched in Notion and on the web leads its details, in the "…", so the row stays quiet.
+  const details = [...touched(reply).map((text) => ({ text })), ...detailRows(reply.details)]
   const model = reply.details?.model
   const cost = reply.details?.cost
   if (!text && !details.length && !model && !cost) return null
@@ -273,13 +272,18 @@ function CopyButton({ text }: { text: string }) {
 const counted = (n: number, noun: string) => `${n} ${noun}${n === 1 ? '' : 's'}`
 
 /**
- * What a reply cost in credits, as the worker charged it: short, to two significant digits below one
- * credit ("0.48 credits") and one decimal above.
+ * Micro-credits as credits, short: to two significant digits below one credit ("0.48") and one
+ * decimal above.
  */
-function CostNote({ cost }: { cost: QuestionCost }) {
-  const credits = cost.microCredits / 1_000_000
+function creditsOf(microCredits: number): string {
+  const credits = microCredits / 1_000_000
   const digits = credits < 1 ? { maximumSignificantDigits: 2 } : { maximumFractionDigits: 1 }
-  const shown = credits.toLocaleString('en-US', digits)
+  return credits.toLocaleString('en-US', digits)
+}
+
+/** What a reply cost in credits, as the worker charged it (see creditsOf). */
+function CostNote({ cost }: { cost: QuestionCost }) {
+  const shown = creditsOf(cost.microCredits)
   return (
     <span className="note reply-cost" data-tip="What this reply cost">
       {shown} {shown === '1' ? 'credit' : 'credits'}
@@ -287,15 +291,30 @@ function CostNote({ cost }: { cost: QuestionCost }) {
   )
 }
 
+/** The tools that read a web page, from a tab or by its address, and the one that renders it. */
+const WEB_READS = new Set(['read_web_page', 'render_web_page', 'read_current_tab', 'read_tab'])
+const RENDER = 'render_web_page'
+const SEARCH = 'search_web'
+
 /**
- * What a question touched in Notion: the distinct pages and databases its tools read and changed
- * (only calls that worked). A part that is zero is left out; empty when it touched nothing.
+ * What a question touched, one row each, by its calls that worked: in Notion, the distinct pages and
+ * databases its tools read and changed; on the web, the pages it read (each read counts), how many
+ * of them were rendered, and its searches. A part that is zero is left out; none when it touched nothing.
  */
-function touched(reply: Reply): string {
-  const { read, changed } = touchedBy(doneCalls(reply))
-  return [read && `Read ${counted(read, 'page')}`, changed.length && `Changed ${counted(changed.length, 'page')}`]
-    .filter(Boolean)
-    .join(' · ')
+function touched(reply: Reply): string[] {
+  const calls = doneCalls(reply)
+  const { read, changed } = touchedBy(calls)
+  const web = calls.filter((c) => WEB_READS.has(c.name)).length
+  const rendered = calls.filter((c) => c.name === RENDER).length
+  const searches = calls.filter((c) => c.name === SEARCH).length
+  const rows = [
+    [read && `Read ${counted(read, 'Notion page')}`, changed.length && `Changed ${counted(changed.length, 'page')}`],
+    [
+      web && `Read ${counted(web, 'web page')}${rendered ? ` (${rendered} rendered)` : ''}`,
+      searches && `Searched the web ${searches === 1 ? 'once' : `${searches} times`}`,
+    ],
+  ]
+  return rows.map((row) => row.filter(Boolean).join(' · ')).filter(Boolean)
 }
 
 /** The questions of `shown` with what their replies wrote and touched, as a saved page holds them. */
@@ -324,8 +343,9 @@ function amount(n: number): string {
 
 /** A reply's details, one row each, with what is unknown (or none) left out; the model is shown in its row. */
 function detailRows(details: QuestionDetails = {}): { label?: string; text: string }[] {
-  const { requests, tokens: used } = details
+  const { requests, tokens: used, cost } = details
   return [
+    ...(cost && (cost.renders || cost.searches) ? [{ label: 'Credits', text: costSplit(cost) }] : []),
     ...(requests ? [{ text: `Sent ${counted(requests, 'Notion request')}` }] : []),
     ...(used
       ? [
@@ -339,6 +359,21 @@ function detailRows(details: QuestionDetails = {}): { label?: string; text: stri
         ]
       : []),
   ]
+}
+
+/**
+ * What a reply's credits went to, when some went to renders or searches: the model (what is left;
+ * none for a user's own model), then those, each one left out when it is zero.
+ */
+function costSplit({ microCredits, renders = 0, searches = 0 }: QuestionCost): string {
+  const model = microCredits - renders - searches
+  return [
+    model > 0 && `model ${creditsOf(model)}`,
+    renders && `renders ${creditsOf(renders)}`,
+    searches && `searches ${creditsOf(searches)}`,
+  ]
+    .filter(Boolean)
+    .join(' · ')
 }
 
 /** The "…" button at the end of a reply's row, and the popover with its details it opens and closes. */

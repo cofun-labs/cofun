@@ -74,14 +74,38 @@ describe('the start of a chat', () => {
     expect(browser.tab.sent).toEqual([])
   })
 
-  it('[UC-NOTICO-CHAT-001-S20] on another site, the suggestions are about the workspace, with a line saying to open a page', async () => {
-    await openPanel(otherSiteTab())
+  it('[UC-NOTICO-CHAT-001-S20] on another site, the suggestions are about the page in the tab and the web, with a note on how to work on the workspace', async () => {
+    const { browser } = await openPanel(otherSiteTab())
 
-    expect(await screen.findByText('What are you looking for?')).toBeVisible()
-    expect(suggestions()).toEqual(WORKSPACE_SET)
+    expect(await screen.findByText('What do you want to know about this page?')).toBeVisible()
+    expect(screen.getByText("This tab isn't a Notion page. Notico can read it and search the web.")).toBeVisible()
+    expect(suggestions()).toEqual([
+      'Summarize this page',
+      'What does this page say about …',
+      'List its key points',
+      'Search the web for …',
+    ])
     expect(
-      screen.getByText('Open a Notion page to search your workspace, or to summarize or edit a page.'),
+      screen.getByText(
+        'To search or edit your Notion workspace, open a Notion page in this tab. To save this page to Notion, ' +
+          'open the page to save it under, then add this tab with +.',
+      ),
     ).toBeVisible()
+    // Nothing of the site is read to choose them.
+    expect(browser.tab.sent).toEqual([])
+  })
+
+  it("[UC-NOTICO-CHAT-001-S20] on a tab Notico can't read, only a web search is offered", async () => {
+    const { browser, user } = await openPanel(otherSiteTab())
+    await screen.findByText('What do you want to know about this page?')
+    await user.click(screen.getByRole('button', { name: 'Mode: Edit' }))
+    // Read only can't save the page, so its note doesn't offer to.
+    expect(await screen.findByText('To search your Notion workspace, open a Notion page in this tab.')).toBeVisible()
+
+    act(() => browser.tab.navigate('chrome://settings', 'Settings'))
+
+    expect(await screen.findByText("Notico can't read this tab, but it can search the web.")).toBeVisible()
+    expect(suggestions()).toEqual(['Search the web for …'])
   })
 
   it('[UC-NOTICO-CHAT-001-S20] in Read only, no suggestion asks for a change, on a page or a database', async () => {
@@ -117,7 +141,7 @@ describe('the start of a chat', () => {
     expect(screen.getByText('What are you looking for?')).toBeVisible()
     expect(suggestions()).toEqual(WORKSPACE_SET)
     // The page is still open in the tab: nothing says to open one.
-    expect(screen.queryByText(/^Open a Notion page/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/open a Notion page in this tab/)).not.toBeInTheDocument()
 
     // A page added by hand goes with the question instead.
     await user.type(composer(), '@roadmap')
@@ -155,11 +179,11 @@ describe('the start of a chat', () => {
   it('[UC-NOTICO-CHAT-001-S08] a suggestion ending in "…" leaves the cursor where the "…" was', async () => {
     const { user } = await openPanel(otherSiteTab())
 
-    await user.click(await screen.findByRole('button', { name: 'Find the page about …' }))
-    expect(composer()).toHaveValue('Find the page about ')
+    await user.click(await screen.findByRole('button', { name: 'What does this page say about …' }))
+    expect(composer()).toHaveValue('What does this page say about ')
     expect(composer()).toHaveFocus()
     await user.keyboard('the launch')
 
-    expect(composer()).toHaveValue('Find the page about the launch')
+    expect(composer()).toHaveValue('What does this page say about the launch')
   })
 })

@@ -280,14 +280,24 @@ describe('reading the page in the current tab', () => {
 
     await ask(user, 'Summarize this article')
     const card = within(await screen.findByRole('group', { name: 'Allow Notico to read news.example.com?' }))
+    // The card says what allowing means, and the call's internals stay out of sight.
+    expect(
+      card.getByText('Notico can then read pages on news.example.com when a question needs them. Chrome asks you too.'),
+    ).toBeVisible()
+    expect(screen.getByText('read_current_tab')).not.toBeVisible()
     await user.click(card.getByRole('button', { name: 'Deny' }))
 
     expect(await screen.findByText('I could not read the page.')).toBeVisible()
     expect(browser.tab.accessRequests).toEqual([])
     expect(browser.tab.injections).toEqual([])
     expect(toolResults(browser)).toEqual([
-      "Notico may not read news.example.com: the user did not allow it, so nothing of the page was read. Answer without it, and don't read this site again unless the user asks.",
+      'Notico may not read news.example.com: the user did not allow it, so nothing of the page was read. Answer ' +
+        'without it. If the user wants the page read, they can ask again: Notico then asks them again to allow the ' +
+        "site. Don't read this site again unless the user asks.",
     ])
+    // The user's choice, not a failure.
+    expect(screen.getByText('Declined: read the current tab')).toBeVisible()
+    expect(screen.queryByText("Couldn't read the current tab")).not.toBeInTheDocument()
   })
 
   it("[UC-NOTICO-PANEL-001-S12] when the user says no in Chrome's own prompt, nothing of the page is read", async () => {
