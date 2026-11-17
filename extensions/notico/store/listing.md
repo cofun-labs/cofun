@@ -42,7 +42,8 @@ HOW IT WORKS
 Notico works in your own Notion tab, as you: it reaches what you can reach, and nothing else. Sign in once with Google or your email. The panel keeps your chat as you switch tabs, and past chats are saved on your device.
 
 CREDITS
-Cofun's AI model runs on credits. Every account gets free credits each week. Need more? Buy a one-time pack in the panel: no subscription, valid for a year. Or answer with your own model through OpenRouter and spend no credits, except on web searches and pages rendered for you.
+Each question spends credits. Every account gets free credits each week; when you need more, buy a one-time pack in the panel: no subscription, and bought credits last a year.
+Have your own API key? Bring it through OpenRouter, and the model is paid by your key instead. Web searches and pages rendered for you still spend credits.
 
 PRIVACY
 Your questions, and what Notico reads to answer them (Notion content, web pages, and web searches, which may include text from your Notion pages), go to our server and the AI model, or straight to OpenRouter if you use your own model; links and searches go through our server either way. We don't keep that content, only usage numbers and your purchases. Notico reports which features are used, never what you write or read, and you can turn that off in the settings. No ads.
