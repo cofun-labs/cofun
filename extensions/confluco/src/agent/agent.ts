@@ -10,7 +10,7 @@ import { Credits, Grants, Packs, type PastGrant } from '../credits'
 import { answering, HOSTED_ONLY, type OwnSetup } from '../models'
 import { ToolMemory } from '../tools/memory'
 import { askUser, previewCall, toAgentTool, type Reporter } from './calls'
-import { addUsage, detailsOf, recent, textOf, usedTools } from './history'
+import { addUsage, detailsOf, recent, type SentPart, textOf, usedTools } from './history'
 import { ownProvider } from './own'
 import type { CallCost, Failure, ModelProvider } from './provider'
 import { writeTitle } from './title'
@@ -147,10 +147,11 @@ export class CopilotAgent {
    */
   readonly memory = new ToolMemory()
   /**
-   * Where the part of the conversation sent to the model starts, as an index in it (see `recent`):
-   * kept between requests, so a long conversation is cut once in a while, not by one question each time.
+   * Where the part of the conversation sent to the model starts, and where its tool results are sent
+   * whole, as indexes in it (see `recent`): kept between requests, so a long conversation is cut once
+   * in a while, not by one question each time.
    */
-  private sentFrom = 0
+  private sentPart: SentPart = { from: 0, whole: 0 }
 
   /**
    * One agent holds one conversation: a new one, or `initial` to continue a saved one (see
@@ -500,9 +501,10 @@ export class CopilotAgent {
     if (failure || stopped) {
       const kept = usedTools(agent.state.messages.slice(before))
       agent.state.messages = [...agent.state.messages.slice(0, before), ...kept]
-      // The part sent may have started inside what was just dropped: the next question would land on
-      // that index and start a part with none of the conversation before it. Worked out again instead.
-      if (this.sentFrom >= before) this.sentFrom = 0
+      // The part sent, or the part of it sent whole, may have started inside what was just dropped: the
+      // next question would land on that index, and a part would start with none of the conversation
+      // before it. Worked out again instead (`whole` is never before `from`).
+      if (this.sentPart.whole >= before) this.sentPart = { from: 0, whole: 0 }
       const result: AskResult = stopped
         ? { status: 'stopped', ...used, ...(changed && { warning: MAY_HAVE_CHANGED }) }
         : { status: 'error', message: failure!.text, ...(failure!.code ? { code: failure!.code } : {}), ...used }
@@ -755,8 +757,8 @@ export class CopilotAgent {
       toolExecution: 'sequential',
       transformContext: async (messages) => {
         const limits = this.config.history ?? this.provider.history
-        const { sent, from } = recent(this.withNotes(messages), limits, toolChars, this.sentFrom)
-        this.sentFrom = from
+        const { sent, ...part } = recent(this.withNotes(messages), limits, toolChars, this.sentPart)
+        this.sentPart = part
         return sent
       },
     })

@@ -1,9 +1,9 @@
 // The conversation as the model gets it: what stays of a question that failed, what of a long
-// conversation is sent, and what a question used.
+// conversation is sent (and which of its tool results are left out), and what a question used.
 import type { AgentMessage } from '@earendil-works/pi-agent-core'
 import type { ToolResultMessage } from '@earendil-works/pi-ai'
 import { z } from '../zod'
-import type { QuestionDetails, TokenUsage } from './types'
+import { ToolDetails, type QuestionDetails, type TokenUsage } from './types'
 
 /**
  * What stays of a question that failed or was stopped (`tail`: its messages, starting with the
@@ -41,13 +41,35 @@ export function usedTools(tail: AgentMessage[]): AgentMessage[] {
 const KEPT_AFTER_CUT = 0.6
 
 /**
+ * The share of the characters the newest questions keep whole after a cut. The questions before them
+ * are sent with their tool results left out (see `leftOut`): their questions and replies are short,
+ * and the tool results are most of a long conversation, so many more questions fit than whole.
+ */
+const WHOLE_AFTER_CUT = 0.3
+
+/** A tool result this short is sent whole even where results are left out: a note would save little. */
+const SHORT_RESULT = 500
+
+/**
+ * Where the part of the conversation sent to the model starts (`from`), and where its tool results
+ * start being sent whole (`whole`): each the index of a user message, `from` <= `whole`.
+ */
+export interface SentPart {
+  from: number
+  whole: number
+}
+
+/**
  * The part of the conversation to send: the leading system message (pi's, with the system prompt and
- * the tools), then everything from `from` (the index of the user message the part sent last time
- * started at) while that fits the limits. Once it doesn't, the part is cut to the newest questions
- * that fit KEPT_AFTER_CUT of them, and `from` moves there. The character budget also pays for the tool
- * definitions (`overhead`). The part starts at a user message, so a reply or tool result is never sent
- * without what led to it. The newest question is always kept; if it alone is too long, the worker
- * says so.
+ * the tools), then everything from `part.from` (where the part sent last time started), with the tool
+ * results before `part.whole` left out, while that fits the limits. Once it doesn't, the part is cut:
+ * the newest questions that fit WHOLE_AFTER_CUT of the characters are sent whole, and before them, the
+ * newest that fit KEPT_AFTER_CUT of the limits with their tool results left out. The character budget
+ * also pays for the tool definitions (`overhead`). Both indexes are at a user message, so a reply or
+ * tool result is never sent without what led to it. The newest question is always kept whole; if it
+ * alone is too long, the worker says so.
+ *
+ * Between cuts the start of what is sent stays the same, so the prompt cache reuses it.
  *
  * pi would record a change of the tools in a later system message, which a cut could drop; the tools
  * never change (see `allTools` in agent.ts), so there is none.
@@ -56,33 +78,67 @@ export function recent(
   messages: AgentMessage[],
   limits: { messages: number; chars: number },
   overhead: number,
-  from = 0,
-): { sent: AgentMessage[]; from: number } {
+  part: SentPart = { from: 0, whole: 0 },
+): { sent: AgentMessage[] } & SentPart {
   let head = 0
   while (head < messages.length && messages[head].role === 'system') head++
   const fixed = overhead + messages.slice(0, head).reduce((n, m) => n + size(m), 0)
-  // A start that is no longer a question (the conversation lost the messages after a failed one) is
+  const isQuestion = (i: number) => i >= head && messages[i]?.role === 'user'
+  // An index that is no longer a question (the conversation lost the messages after a failed one) is
   // worked out again.
-  let start = from >= head && messages[from]?.role === 'user' ? from : head
+  let from = isQuestion(part.from) ? part.from : head
+  let whole = isQuestion(part.whole) && part.whole >= from ? part.whole : from
+  const sizes = (whole: number) => messages.map((m, i) => size(i < whole ? leftOut(m) : m))
   const fits =
-    messages.length - start <= limits.messages &&
-    messages.slice(start).reduce((n, m) => n + size(m), fixed) <= limits.chars
-  if (!fits)
-    start = newestThatFits(messages, head, limits.messages * KEPT_AFTER_CUT, fixed, limits.chars * KEPT_AFTER_CUT)
-  return { sent: [...messages.slice(0, head), ...messages.slice(start)], from: start }
+    messages.length - from <= limits.messages &&
+    sizes(whole)
+      .slice(from)
+      .reduce((n, s) => n + s, fixed) <= limits.chars
+  if (!fits) {
+    const count = limits.messages * KEPT_AFTER_CUT
+    whole = newestThatFits(sizes(head), head, count, fixed, limits.chars * WHOLE_AFTER_CUT, messages)
+    // At `whole` or before it: what comes from there is the same as above, within a smaller budget.
+    from = newestThatFits(sizes(whole), head, count, fixed, limits.chars * KEPT_AFTER_CUT, messages)
+  }
+  const kept = messages.slice(from).map((m, i) => (from + i < whole ? leftOut(m) : m))
+  return { sent: [...messages.slice(0, head), ...kept], from, whole }
+}
+
+/**
+ * A message as it is sent before the part of a cut conversation sent whole: a tool result longer
+ * than SHORT_RESULT is replaced by a note that says how to read it again; anything else is as it is.
+ * The note depends only on the result, so the same result gives the same note in every request.
+ */
+function leftOut(message: AgentMessage): AgentMessage {
+  if (message.role !== 'toolResult') return message
+  const chars = size(message)
+  if (chars <= SHORT_RESULT && message.content.every((block) => block.type === 'text')) return message
+  const id = ToolDetails.safeParse(message.details).data?.result
+  const again = id
+    ? `It is kept as result ${id}: read it with read_result, or find text in it with search_result.`
+    : 'If the question needs it, run the tool again.'
+  const text = `[Left out to keep the conversation short: this result had ${chars.toLocaleString('en-US')} characters. ${again}]`
+  return { ...message, content: [{ type: 'text', text }] }
 }
 
 /**
  * Where the newest part of the conversation after `head` that fits `count` messages and `chars`
- * characters (with `fixed` already counted) starts: at a user message, the newest one when even that
- * doesn't fit.
+ * characters (with `fixed` already counted, and each message counted at `sizes`) starts: at a user
+ * message, the newest one when even that doesn't fit.
  */
-function newestThatFits(messages: AgentMessage[], head: number, count: number, fixed: number, chars: number): number {
+function newestThatFits(
+  sizes: number[],
+  head: number,
+  count: number,
+  fixed: number,
+  chars: number,
+  messages: AgentMessage[],
+): number {
   let start = -1
   let used = fixed
-  for (let i = messages.length - 1; i >= head; i--) {
-    used += size(messages[i])
-    const over = messages.length - i > count || used > chars
+  for (let i = sizes.length - 1; i >= head; i--) {
+    used += sizes[i]
+    const over = sizes.length - i > count || used > chars
     if (messages[i].role !== 'user') continue
     if (start !== -1 && over) break
     start = i

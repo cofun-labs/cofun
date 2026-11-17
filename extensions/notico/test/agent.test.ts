@@ -656,6 +656,43 @@ describe('extension agent against the worker', () => {
     ])
   })
 
+  it('[@no-uc:money] a cut leaves out the tool results of older questions, keeps their questions, and keeps its start', async () => {
+    // The tool results are most of a long conversation: leaving out those of the older questions keeps
+    // many more questions, and a note says how to read a kept one again.
+    let reads = 0
+    const reader: ToolSpec = {
+      ...pageTool().tool,
+      run: async () => ({ text: 'x'.repeat(1_000), details: { ...(++reads === 1 && { result: 'r_first' }) } }),
+    }
+    const agent = makeAgent({ tools: [reader], history: { messages: 100, chars: 5_000 } })
+    for (let n = 1; n <= 5; n++) {
+      ai.script = [{ toolCalls: [{ name: 'lookup_page', arguments: '{}' }] }, { reply: 'Done.' }]
+      await ask(agent, `q${n}`)
+    }
+    await ask(agent, 'q6')
+    const results = (call: number) =>
+      sentMessages(call)
+        .filter((m) => m.role === 'tool')
+        .map((m) => String(m.content))
+    // Before the cut, every result is sent whole.
+    expect(results(8).map((r) => r.length)).toEqual([1_000, 1_000, 1_000, 1_000])
+    // The cut: the newest question stays whole, the older ones keep everything but their results.
+    expect(
+      sentMessages(9)
+        .filter((m) => m.role === 'user')
+        .map((m) => m.content),
+    ).toEqual(['q1', 'q2', 'q3', 'q4', 'q5'])
+    expect(results(9)).toEqual([
+      '[Left out to keep the conversation short: this result had 1,000 characters. It is kept as result r_first: read it with read_result, or find text in it with search_result.]',
+      ...Array(3).fill(
+        '[Left out to keep the conversation short: this result had 1,000 characters. If the question needs it, run the tool again.]',
+      ),
+      'x'.repeat(1_000),
+    ])
+    // The next question is sent after the same start.
+    expect(sentMessages(10).slice(0, sentMessages(9).length)).toEqual(sentMessages(9))
+  })
+
   it('[@no-uc:data] a question dropped after a cut that kept only it leaves the conversation before it to the next one', async () => {
     const agent = makeAgent({ history: { messages: 100, chars: 1_000 } })
     await ask(agent, 'q1')
