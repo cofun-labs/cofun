@@ -109,7 +109,7 @@ export function requireTab(tab: ConfluenceTab | undefined): ConfluenceTab {
 
 const selectionLimit = 4000
 const editorSelectionResult = z.discriminatedUnion('kind', [
-  z.object({ kind: z.literal('selection'), text: z.string().min(1).max(selectionLimit), truncated: z.boolean() }),
+  z.object({ kind: z.literal('selection'), text: z.string().min(1).max(selectionLimit), chars: z.int().positive() }),
   z.object({ kind: z.enum(['changed', 'not-editor', 'empty']) }),
 ])
 
@@ -130,7 +130,7 @@ export async function readEditorSelection(target: ConfluenceTab | undefined) {
   switch (parsed.data.kind) {
     case 'selection':
       if (!frame?.documentId) refuse('Confluco could not identify the editor document.')
-      return { tab, documentId: frame.documentId, text: parsed.data.text, truncated: parsed.data.truncated }
+      return { tab, documentId: frame.documentId, text: parsed.data.text, chars: parsed.data.chars }
     case 'changed':
       refuse('The active tab changed. Select text in the intended editor and try again.')
     case 'not-editor':
@@ -181,7 +181,7 @@ function readSelection(expectedUrl: string, contextPath: string, limit: number) 
     return { kind: 'empty' }
   const text = selection.toString().trim()
   if (!text) return { kind: 'empty' }
-  return { kind: 'selection', text: text.slice(0, limit), truncated: text.length > limit }
+  return { kind: 'selection', text: text.slice(0, limit), chars: text.length }
 }
 
 export function restUrl(instance: Instance, resource: string, query: Query, area: RestArea): URL {
@@ -346,7 +346,7 @@ async function sendConfluence(target: ConfluenceTab, request: RestRequest, signa
   }
   if (response.data.kind !== 'ok') {
     const { kind } = response.data
-    if (writing && ['auth', 'unexpected-web-response', 'large', 'network', 'invalid'].includes(kind)) uncertain()
+    if (writing && ['unexpected-web-response', 'large', 'network', 'invalid'].includes(kind)) uncertain()
     if (kind === 'rejected' && rejection) refuse(rejection)
     if (kind === 'rejected' && request.method === 'PUT' && request.query.status === 'trashed')
       refuse('Confluence rejected the restore. Check the page in the space trash before trying again.')

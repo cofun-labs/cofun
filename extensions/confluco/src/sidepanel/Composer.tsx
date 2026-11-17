@@ -242,7 +242,7 @@ export function useComposer({
         if (same && (await isEditorSelectionCurrent(tab, editor.documentId)) && capture === captureEpoch.current) {
           attached.push({
             text: editor.text,
-            chars: editor.text.length + Number(editor.truncated),
+            chars: editor.chars,
             title: 'Confluence editor selection',
             url: tab.instance.origin + tab.instance.path,
           })
@@ -379,7 +379,7 @@ export function Composer({
       {composer.editor && (
         <section className="confluence-selection" aria-label="Confluence editor selection">
           <pre>{composer.editor.text}</pre>
-          {composer.editor.truncated && <small>Selection limited to 4,000 characters.</small>}
+          {composer.editor.chars > composer.editor.text.length && <small>Selection limited to 4,000 characters.</small>}
           <button type="button" onClick={composer.removeEditorSelection}>
             Remove editor selection
           </button>

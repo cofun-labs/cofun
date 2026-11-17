@@ -613,6 +613,18 @@ describe('edit published page text', () => {
     },
   )
 
+  it('[UC-CONFLUCO-CONFLUENCE-009-S09] stops after an explicit sign-in refusal without issuing a verification read', async () => {
+    const { browser, user } = await openPanel()
+    browser.confluenceResponse = (_url, init) =>
+      init?.method === 'PUT' ? new Response(null, { status: 401 }) : Response.json(original)
+    browser.ai.script.push({ toolCalls: [editCall] })
+    await ask(user, edit)
+    await answered()
+    expect(screen.getAllByText(/Sign in to Confluence in the page tab/).length).toBeGreaterThan(0)
+    expect(browser.workspaceRequests.at(-1)?.init?.method).toBe('PUT')
+    expect(writes(browser)).toHaveLength(1)
+  })
+
   const undoCall = { name: 'undo_last_change', arguments: '{}' }
   const historical = { ...original, status: 'historical' }
 

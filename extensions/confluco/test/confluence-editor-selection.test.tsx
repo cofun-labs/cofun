@@ -40,6 +40,17 @@ it('[UC-CONFLUCO-CONFLUENCE-014-S01] sends only the reviewed editor selection wi
   expect(browser.workspaceRequests).toEqual([])
 })
 
+it('[UC-CONFLUCO-CONFLUENCE-014-S01] reports the actual original length when an editor selection is clipped', async () => {
+  const { browser, attach, send } = await openPanel({ ...editor, editorSelection: 'x'.repeat(5_000) })
+  await attach()
+  const selection = await screen.findByRole('region', { name: 'Confluence editor selection' })
+  expect(selection).toHaveTextContent('Selection limited to 4,000 characters.')
+  await send()
+  const messages = JSON.stringify(browser.sentToModel())
+  expect(messages).toContain("the first 4,000 of the selection's 5,000 characters")
+  expect(messages).not.toContain('x'.repeat(4_001))
+})
+
 it.each([
   [{ ...editor, editorSelection: '' }, /Select text in the Confluence editor/],
   [{ ...editor, url: base + '/pages/viewpage.action?pageId=42' }, /Open a supported Confluence editor/],
