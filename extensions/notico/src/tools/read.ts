@@ -6,7 +6,7 @@ import { mergeReads, pageRead } from '../notion/edit'
 import { clip, quote, threadCount } from '../notion/comments'
 import { PAGE_TYPES, hexId, pageToMarkdown, splitSections } from '../notion/markdown'
 import { activeNotionTab, selectionIn } from '../notion/tab'
-import { needsAttachedPage } from './notion-tabs'
+import { needsAttachedPage } from './current'
 import { loadMentioned, loadWithDatabase } from './load'
 import { PART_CHARS, READ, filled, asData, nameOf, on, pageArg, partArg, plainTitle, plural } from './shared'
 

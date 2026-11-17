@@ -5,8 +5,7 @@ import { ToolChat } from './tool-chat'
 import { NESTED_MAX } from '../src/notion/api'
 import { inline } from '../src/notion/blocks'
 import { blockRefs, codeSpan, splitIntoParts } from '../src/notion/markdown'
-import { notico } from '../src/notico'
-import { carryPages } from '../src/tools/carry'
+import { carryPages } from '../src/tools/current'
 import { readPage } from '../src/tools/read'
 import { DATA_LINE, PART_CHARS } from '../src/tools/shared'
 import { editPage } from '../src/tools/write'
@@ -993,11 +992,11 @@ describe('lookups of mentioned people and pages', () => {
 })
 
 describe('a question sent while the user took a page off it', () => {
-  afterEach(() => void carryPages(notico.site, chat.memory, undefined, false))
+  afterEach(() => void carryPages(chat.memory, undefined, false))
 
   it('[@no-uc:privacy] never reads the open page, even one the user goes back to from another site', async () => {
     // Sent from another site while the page was off; the user then goes back to it.
-    carryPages(notico.site, chat.memory, undefined, true)
+    carryPages(chat.memory, undefined, true)
     const tab = new FakeNotionTab(PAGE_URL).install()
 
     await expect(chat.run(readPage, {})).rejects.toThrow(/No page is attached to this question/)

@@ -6,7 +6,6 @@
 // it the selection (src/selection.ts). The click gives the extension the tab for a moment
 // (activeTab), which is how the selection is read there with its line breaks; where it can't be
 // (a frame from another site, say), Chrome's own copy of it, on one line, is used.
-import { NOTICO_BRAND } from './notico-brand'
 import { handOver, loadMenuShown, MENU_ITEM, watchMenuShown } from './selection'
 import { selectedText } from './web/tab'
 
@@ -25,7 +24,7 @@ chrome.runtime.onInstalled.addListener(() => {
       chrome.contextMenus.removeAll(() =>
         chrome.contextMenus.create({
           id: MENU_ITEM,
-          title: `Ask ${NOTICO_BRAND.name} about “%s”`,
+          title: 'Ask Notico about “%s”',
           contexts: ['selection'],
           documentUrlPatterns: ['https://*/*', 'http://*/*', 'file:///*'],
           visible,

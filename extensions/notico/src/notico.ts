@@ -1,23 +1,18 @@
 // Notico, the product: its name, its site, the tools its agent is offered, and its system prompt. The
-// one module that gathers the Notion tools with the others, and what the side panel asks of Notion;
-// the side panel, the agent, and usage data read it only as a Product (src/product.ts).
-import { NOTICO_BRAND } from './notico-brand'
-import { LIMITED_STOP, NOTION_ERROR_CODES, NotionError } from './notion/api'
-import { isNotion, pageIdFromUrl, pageLink } from './notion/hosts'
-import { countNotionRequests } from './notion/tab'
-import type { HomeSite, Product } from './product'
+// one module that gathers the Notion tools with the others; the side panel, the agent, and usage data
+// read it only as a Product (src/product.ts).
+import { NOTION_ERROR_CODES } from './notion/api'
+import type { Product } from './product'
 import { LONG_RESULTS_PROMPT, NOTES_PROMPT, SELECTION_PROMPT, TABS_PROMPT, WEB_PAGES_PROMPT } from './prompt'
 import { DATA_LINE } from './tools'
 import { addComment, readComments } from './tools/comments'
 import { getCurrentTab, readCurrentTab, readTab } from './tools/current'
 import { createDatabase, queryDatabase, updateDatabaseSchema } from './tools/database'
-import { findPages, listPages, searchPages } from './tools/find'
-import { currentNotionPage, openNotionPages } from './tools/notion-tabs'
+import { listPages, searchPages } from './tools/find'
 import { duplicatePage, movePage, trashPage } from './tools/organize'
 import { getSelection, readPage } from './tools/read'
 import { readResult, searchResult } from './tools/results'
 import { readWebPage, renderWebPage, searchWeb } from './tools/web'
-import { chatTitle, OPEN_A_PAGE, replyTitle, savePage } from './tools/save'
 import { createPage, editPage, updatePages } from './tools/write'
 
 // Promise only what the tools can do.
@@ -67,35 +62,10 @@ const PROMPT =
   'When the answer is likely on another page, search for it, read what you find, and say which page you used. ' +
   'Read child pages or other pages only when the question needs them. Be concise.'
 
-/** Notion, as the side panel asks it: through the site layer and the Notion tools' helpers. */
-const NOTION: HomeSite = {
-  name: 'Notion',
-  // When no Notion tab says which of Notion's hosts the user is on.
-  origin: 'https://www.notion.so',
-  shows: isNotion,
-  pageId: pageIdFromUrl,
-  pageLink,
-  currentPage: currentNotionPage,
-  openPages: openNotionPages,
-  search: findPages,
-  searchFailed(err) {
-    const limited = err instanceof NotionError && err.code === 'rate_limited'
-    // A failure that stops a question stops the one waiting for the search too: Notion turning it
-    // away, or a failure nobody understands (see NotionError.stopsQuestion).
-    const stopsQuestion =
-      err instanceof NotionError && err.stopsQuestion ? err.stopsQuestion : limited ? LIMITED_STOP : undefined
-    return { busy: limited, ...(stopsQuestion && { stopsQuestion }) }
-  },
-  meter: countNotionRequests,
-  // Others may name another page than the one they touched (duplicate_page names the original, and
-  // touches the copy), so their calls give no recent page.
-  namesTouchedPage: new Set(['read_page', 'query_database', 'edit_page', 'read_comments', 'add_comment']),
-  save: { openAPage: OPEN_A_PAGE, replyTitle, chatTitle, page: savePage },
-}
-
 export const notico: Product = {
-  ...NOTICO_BRAND,
-  site: NOTION,
+  id: 'notico',
+  name: 'Notico',
+  site: 'Notion',
   tools: [
     readPage,
     editPage,

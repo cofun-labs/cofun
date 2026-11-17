@@ -2,7 +2,6 @@
 // extensions/notico/src/tools.ts): no Notion request, so plain history is enough here.
 import { describe, expect, it } from 'vitest'
 import type { HistoryMessage } from '../src/agent'
-import { notico } from '../src/notico'
 import { pagesIn } from '../src/tools'
 
 const ORIGINAL = '1a1a1a1a000040008000000000000010'
@@ -37,6 +36,6 @@ describe('recent pages', () => {
         details: { name: 'Launch plan', changed: [COPY] },
       },
     ]
-    expect(pagesIn(notico.site, history, ORIGIN)).toEqual([{ title: 'Launch plan', url: `${ORIGIN}/p/${ORIGINAL}` }])
+    expect(pagesIn(history, ORIGIN)).toEqual([{ title: 'Launch plan', url: `${ORIGIN}/p/${ORIGINAL}` }])
   })
 })

@@ -6,7 +6,7 @@
 // them only through its methods.
 import type { PageRead } from '../notion/edit'
 import type { Schema } from '../notion/markdown'
-import type { OpenPage } from './carry'
+import type { OpenPage } from './current'
 
 /** How many rows and databases the agent saw are remembered, for previews; the oldest go first. */
 const SEEN_KEPT = 500
@@ -27,7 +27,7 @@ export interface SeenRow {
 }
 
 /**
- * What the question being asked carries (see carryPages in carry.ts): whether its tools may use
+ * What the question being asked carries (see carryPages in current.ts): whether its tools may use
  * the page open in the current tab when a call names none, and the tabs on other sites the user
  * added to the conversation, in any of its questions, by Chrome's id, as each showed its page then.
  */

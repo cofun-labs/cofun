@@ -1,19 +1,19 @@
 import { useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
 import type { QuestionPage } from '../agent'
-import type { HomeSite } from '../product'
-import { openWebTabs, type FoundPage, type ToolMemory, type WebTab } from '../tools'
+import { LIMITED_STOP, NotionError } from '../notion/api'
+import { pageIdFromUrl } from '../notion/hosts'
+import { findPages, openNotionPages, openWebTabs, type FoundPage, type ToolMemory, type WebTab } from '../tools'
 import { allowSite } from '../web/tab'
 import { Icon } from './icons'
 import { useMenu } from './menu'
 import { PageIcon, titleOf } from './Pages'
-import { useProduct } from './product'
 
 /**
- * Which page a URL shows: the id of the site's page, or the URL when it has none (say, Notion's
- * home); for a tab on another site, which tab it is.
+ * Which page a URL shows: a Notion page's id, or the URL when it has none (say, Notion's home); for
+ * a tab on another site, which tab it is.
  */
-export const pageKey = (site: Pick<HomeSite, 'pageId'>, page: { url: string; web?: true; tab?: number }): string =>
-  page.web ? `tab ${page.tab ?? page.url}` : (site.pageId(page.url) ?? page.url)
+export const pageKey = (page: { url: string; web?: true; tab?: number }): string =>
+  page.web ? `tab ${page.tab ?? page.url}` : (pageIdFromUrl(page.url) ?? page.url)
 
 /** How long typing must pause before the workspace is searched. */
 const SEARCH_DELAY_MS = 300
@@ -121,7 +121,6 @@ export function usePagePicker({
    */
   titleMatch: boolean
 } {
-  const { site } = useProduct()
   const id = useId()
   const [local, setLocal] = useState<{ tabs: QuestionPage[]; web: WebTab[]; recent: QuestionPage[] }>()
   // A tab on another site whose site Chrome is asked to let Notico read, or was refused, by host.
@@ -147,8 +146,8 @@ export function usePagePicker({
     if (!open) return setLocal(undefined)
     let live = true
     void Promise.all([
-      site.openPages().catch(() => []),
-      openWebTabs(site).catch((err: unknown) => {
+      openNotionPages().catch(() => []),
+      openWebTabs().catch((err: unknown) => {
         console.error('Could not read the open tabs', err)
         return []
       }),
@@ -185,7 +184,7 @@ export function usePagePicker({
   }
 
   const words = query.trim()
-  const searchable = !!thisPage && site.pageId(thisPage.url) !== undefined
+  const searchable = !!thisPage && pageIdFromUrl(thisPage.url) !== undefined
   const longEnough = Array.from(words).length >= SEARCH_MIN
   const wantsSearch = open && !stop && !paused && longEnough
 
@@ -203,13 +202,14 @@ export function usePagePicker({
     out.current = new Promise<string | undefined>((resolve) => (turnedAway = resolve))
     let stopsQuestion: string | undefined
     try {
-      const pages = await site.search(sending, SEARCH_LIMIT, memoryRef.current)
+      const pages = await findPages(sending, SEARCH_LIMIT, memoryRef.current)
       if (wanted.current === sending) setSearch({ status: 'done', pages })
     } catch (err) {
-      // A failure that stops a question stops the one waiting for this search too (see searchFailed).
-      const failed = site.searchFailed(err)
-      const limited = failed.busy
-      stopsQuestion = failed.stopsQuestion
+      const limited = err instanceof NotionError && err.code === 'rate_limited'
+      // A failure that stops a question stops the one waiting for this search too: Notion turning
+      // it away, or a failure nobody understands (see NotionError.stopsQuestion).
+      if (err instanceof NotionError && err.stopsQuestion) stopsQuestion = err.stopsQuestion
+      else if (limited) stopsQuestion = LIMITED_STOP
       // Never retried, nor worked around: no more searches for this question. A failure that comes
       // after its question was sent leaves the next question's query to go on.
       const stopped = stopSearch(
@@ -257,7 +257,7 @@ export function usePagePicker({
   const options: Option[] = []
   const seen = new Set<string>()
   const add = (group: Group, page: FoundPage) => {
-    const key = pageKey(site, page)
+    const key = pageKey(page)
     if (seen.has(key)) return
     seen.add(key)
     options.push({ key, group, page, added: added.has(key) })
@@ -267,7 +267,7 @@ export function usePagePicker({
   for (const { page } of local?.web ?? []) if (matches(page)) add('Other sites', page)
   let recents = 0
   for (const page of local?.recent ?? []) {
-    if (recents === RECENT_MAX || !matches(page) || seen.has(pageKey(site, page))) continue
+    if (recents === RECENT_MAX || !matches(page) || seen.has(pageKey(page))) continue
     add('Recent', page)
     recents++
   }

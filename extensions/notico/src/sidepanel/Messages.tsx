@@ -1,8 +1,7 @@
 import { memo, useCallback, useEffect, useId, useState, useSyncExternalStore, type RefObject } from 'react'
 import type { QuestionCost, QuestionDetails } from '../agent'
 import { track } from '../analytics'
-import type { SaveAsPage, SavedTurn } from '../product'
-import { touchedBy } from '../tools'
+import { chatTitle, replyTitle, savePage, touchedBy, type SavedTurn } from '../tools'
 import type { ChatSession, ChatSnapshot, Part, Reply, SaveState, Shown, ShownTool } from './chat-session'
 import { Icon } from './icons'
 import { Markdown } from './Markdown'
@@ -11,7 +10,6 @@ import { HOSTED } from './Model'
 import { SentPages } from './Pages'
 import { SaveButton } from './Save'
 import { ToolCall } from './ToolCall'
-import { useProduct } from './product'
 
 /**
  * The open chat's questions and replies. The one part of the panel a streamed reply draws again:
@@ -38,8 +36,7 @@ export const MessageList = memo(function MessageList({
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight })
   }, [messages])
   // One function for the chat's life, so a reply that hasn't changed is not drawn again.
-  const { save } = useProduct().site
-  const onSave = useCallback((what: number) => saveToNotion(chat, what, save), [chat, save])
+  const onSave = useCallback((what: number) => saveToNotion(chat, what), [chat])
 
   return messages.map((m, i) =>
     m.role === 'user' ? (
@@ -149,17 +146,17 @@ export function chatSaveKey(chat: ChatSnapshot): string {
  * Saves the reply at `what` as a page titled with the chat's title and its question, or with
  * 'chat', the chat so far as a page titled with the chat's title. A reply still coming in is left out.
  */
-export function saveToNotion(chat: ChatSession, what: number | 'chat', save: SaveAsPage) {
+export function saveToNotion(chat: ChatSession, what: number | 'chat') {
   const now = chat.getSnapshot()
   const heading = chatHeading(now) ?? ''
   if (what === 'chat') {
     const turns = shownTurns(endedMessages(now))
-    chat.saveToNotion(chatSaveKey(now), () => save.page(save.chatTitle(heading), turns))
+    chat.saveToNotion(chatSaveKey(now), () => savePage(chatTitle(heading), turns))
     return
   }
   const turn = shownTurns(now.messages.slice(0, what + 1)).at(-1)
   if (!turn) return
-  chat.saveToNotion(String(what), () => save.page(save.replyTitle(heading, turn.question), [turn]))
+  chat.saveToNotion(String(what), () => savePage(replyTitle(heading, turn.question), [turn]))
 }
 
 /** The model is working with nothing to show yet: before its first words, or after its tools finished. */

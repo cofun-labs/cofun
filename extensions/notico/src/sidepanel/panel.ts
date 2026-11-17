@@ -11,7 +11,8 @@ import {
   watchModelSettings,
   type ModelSettings,
 } from '../models'
-import type { HomeSite, Product } from '../product'
+import { countNotionRequests } from '../notion/tab'
+import type { Product } from '../product'
 import { SessionStore, type Session } from '../sessions'
 import { pagesIn } from '../tools'
 import { ChatSession, type Question } from './chat-session'
@@ -54,8 +55,6 @@ export class Panel {
   private readonly listeners = new Set<() => void>()
   /** What every chat's agent is made with. */
   private readonly agent: AgentConfig
-  /** The site the product works on: its pages, links to them, and what the panel asks of it. */
-  readonly site: HomeSite
   /** Reads the credits and starts a purchase; it asks nothing: each chat has an agent of its own. */
   private readonly account: CopilotAgent
   // Read once for this account, then changed here or by another window's panel. Each question reads
@@ -91,7 +90,6 @@ export class Panel {
     product: Product,
   ) {
     this.store = new SessionStore(userId)
-    this.site = product.site
     this.modelLoad = loadModelSettings(userId).catch((err: unknown) => {
       console.error('Could not read the model settings', err)
       return HOSTED_ONLY
@@ -104,11 +102,11 @@ export class Panel {
       apiUrl: API_URL,
       getToken,
       client: `${product.id}/${chrome.runtime.getManifest().version}`,
-      names: { product: product.name, site: product.site.name },
+      names: { product: product.name, site: product.site },
       model: this.readModel,
       systemPrompt: product.prompt,
       tools: product.tools,
-      meter: product.site.meter,
+      meter: countNotionRequests,
       results: this.store,
     }
     this.account = new CopilotAgent(this.agent)
@@ -232,11 +230,11 @@ export class Panel {
       .slice(0, RECENT_SESSIONS)
     const saved = await Promise.all(infos.map((info) => this.store.get(info.id).catch(() => undefined)))
     return [
-      ...pagesIn(this.site, chat.conversation(), origin),
+      ...pagesIn(chat.conversation(), origin),
       ...infos.flatMap((info, i) => {
         const session = saved[i]
         const messages = session && session !== 'unreadable' ? session.messages : []
-        return [...pagesIn(this.site, messages, origin), ...('page' in info && info.page ? [info.page] : [])]
+        return [...pagesIn(messages, origin), ...('page' in info && info.page ? [info.page] : [])]
       }),
     ]
   }
@@ -327,7 +325,6 @@ export class Panel {
     return new ChatSession(
       {
         store: this.store,
-        site: this.site,
         agent: this.agent,
         closed: this.lifetime.signal,
         deleted: this.deleted,
