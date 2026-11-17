@@ -4,6 +4,7 @@ import {
   type AgentConfig,
   type AgentUpdate,
   type ConfirmTool,
+  type ConfirmationAnswer,
   type HistoryMessage,
   type QuestionDetails,
   type QuestionPage,
@@ -143,7 +144,7 @@ export class ChatSession {
   /** The question being answered, if any: aborted by Stop. */
   private question?: AbortController
   /** Answers for tool calls waiting for the user's OK, by call id. */
-  private readonly answers = new Map<string, (allow: boolean) => void>()
+  private readonly answers = new Map<string, (allow: ConfirmationAnswer) => void>()
   /** The session the chat is saved as: a saved one's, or a new one made by the first question. */
   private session?: SavedAs
   /** The model was asked for a title already, by this panel or the one that saved it (see `title`). */
@@ -258,14 +259,14 @@ export class ChatSession {
     this.ending = new Promise<void>((resolve) => (ended = resolve))
 
     // Calls this question asked about, so their answers can be dropped when it ends.
-    const asked = new Map<string, (allow: boolean) => void>()
+    const asked = new Map<string, (allow: ConfirmationAnswer) => void>()
     const confirm: ConfirmTool = (call) =>
       new Promise((resolve) => {
         if (signal.aborted) return resolve(false)
         // One answer per prompt: a double click, or Stop racing a click, must not touch a later
         // prompt that reuses this id.
         let answered = false
-        const answer = (allow: boolean) => {
+        const answer = (allow: ConfirmationAnswer) => {
           if (answered) return
           answered = true
           this.answers.delete(call.id)
@@ -429,7 +430,7 @@ export class ChatSession {
   }
 
   /** Answers the prompt of the tool call `callId`, if it is still waiting for the user. */
-  answer(callId: string, allow: boolean): void {
+  answer(callId: string, allow: ConfirmationAnswer): void {
     this.answers.get(callId)?.(allow)
   }
 

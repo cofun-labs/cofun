@@ -6,6 +6,7 @@ import {
   attachmentSizeLimit,
   getConfluence,
   refuse,
+  verificationFailed,
   requireTab,
   uploadConfluenceAttachment,
   type ConfluenceTab,
@@ -175,8 +176,8 @@ export async function prepareAttachmentUpload(
   return { tab, page, link, file, existing, preview }
 }
 
-function unverified(): never {
-  refuse('Confluence may have uploaded the file. Check the page attachments before asking again.', true)
+function unverified(cause?: unknown): never {
+  verificationFailed('Confluence may have uploaded the file. Check the page attachments before asking again.', cause)
 }
 
 export async function applyAttachmentUpload(

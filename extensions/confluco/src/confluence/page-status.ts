@@ -5,6 +5,7 @@ import { pageLink, pageReference, pageResource, publishedPage, type PageReferenc
 import {
   getConfluence,
   refuse,
+  verificationFailed,
   requireTab,
   restoreConfluencePage,
   trashConfluencePage,
@@ -146,8 +147,8 @@ export async function applyPageStatus(plan: Awaited<ReturnType<typeof preparePag
     if (signal?.aborted || !(error instanceof Error) || !('mayHaveChanged' in error) || error.mayHaveChanged !== true)
       throw error
   }
-  const unverified = () =>
-    refuse('The page state may have changed. Check the page or space trash before asking again.', true)
+  const unverified = (cause?: unknown) =>
+    verificationFailed('The page state may have changed. Check the page or space trash before asking again.', cause)
   const verified = await readState(tab, ref, signal).catch(unverified)
   // Confluence 8.5 accepts the next version in the restore request, but can retain the current number.
   const verifiedVersion = verified.version.number

@@ -144,6 +144,28 @@ describe('reading the page in the current tab', () => {
     expect(screen.queryByText("Couldn't read the current tab")).not.toBeInTheDocument()
   })
 
+  it('[UC-CONFLUCO-PANEL-001-S12] reports a Chrome prompt failure without calling it a user denial', async () => {
+    const tab = articleTab()
+    let fail!: (error: Error) => void
+    tab.promptOpen = new Promise<void>((_resolve, reject) => (fail = reject))
+    const { browser, user } = await openOn(tab)
+    browser.ai.script.push(readTab, { reply: 'Chrome could not ask for access.' })
+
+    await ask(user, 'Summarize this article')
+    const card = within(await screen.findByRole('group', { name: 'Allow Confluco to read news.example.com?' }))
+    await user.click(card.getByRole('button', { name: 'Allow' }))
+    fail(new Error('Synthetic Chrome prompt failure'))
+
+    expect(await screen.findByText('Chrome could not ask for access.')).toBeVisible()
+    expect(screen.getByText("Couldn't read the current tab")).toBeVisible()
+    expect(screen.queryByText('Declined: read the current tab')).not.toBeInTheDocument()
+    expect(browser.tab.accessRequests).toEqual([[SITE]])
+    expect(browser.tab.injections).toEqual([])
+    expect(toolResults(browser)).toHaveLength(1)
+    expect(toolResults(browser)[0]).toContain('Chrome could not request access')
+    expect(toolResults(browser)[0]).not.toContain('the user did not allow')
+  })
+
   it("[UC-CONFLUCO-PANEL-001-S12] when the user says no in Chrome's own prompt, nothing of the page is read", async () => {
     const tab = articleTab()
     tab.promptAnswer = false

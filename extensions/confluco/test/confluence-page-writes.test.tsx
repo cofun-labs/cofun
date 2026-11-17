@@ -205,6 +205,37 @@ describe('trash and restore a published page', () => {
   )
 
   it.each([false, true])(
+    '[UC-CONFLUCO-CONFLUENCE-012-S04] reports a rate-limited state verification (restoring %s)',
+    async (restoring) => {
+      const { browser, user } = await openPanel()
+      let written = false
+      let verificationReads = 0
+      browser.confluenceResponse = (url, init) => {
+        if (init?.method === 'DELETE' || init?.method === 'PUT') {
+          written = true
+          return new Response(null, { status: 204 })
+        }
+        if (written) {
+          verificationReads++
+          return new Response(null, { status: 429 })
+        }
+        if (new URL(url).pathname.endsWith('/child/page')) return Response.json(empty)
+        if (new URL(url).pathname.endsWith('/restriction/byOperation'))
+          return Response.json({ read: unrestricted, update: unrestricted })
+        return Response.json(restoring ? trashed : parent)
+      }
+      const call = restoring ? restore : trash
+      browser.ai.script.push({ toolCalls: [call, call] })
+      await ask(user, restoring ? restoreCommand : 'Trash this page')
+      await user.click(await screen.findByRole('button', { name: /^Allow$/ }))
+      await answered()
+      expect(screen.getAllByText(/page state may have changed.*rate-limited/).length).toBeGreaterThan(0)
+      expect(writes(browser)).toHaveLength(1)
+      expect(verificationReads).toBe(1)
+    },
+  )
+
+  it.each([false, true])(
     '[UC-CONFLUCO-CONFLUENCE-012-S04] verifies uncertainty once (restoring %s)',
     async (restoring) => {
       const { browser, user } = await openPanel()
@@ -612,6 +643,29 @@ describe('edit published page text', () => {
       else expect(screen.getAllByText(/resulting page could not be verified/).length).toBeGreaterThan(0)
     },
   )
+
+  it('[UC-CONFLUCO-CONFLUENCE-009-S04] retains the rate limit and uncertain change warning after an edit', async () => {
+    const { browser, user } = await openPanel()
+    let written = false
+    let verificationReads = 0
+    browser.confluenceResponse = (_url, init) => {
+      if (init?.method === 'PUT') {
+        written = true
+        return Response.json(updated)
+      }
+      if (written) {
+        verificationReads++
+        return new Response(null, { status: 429 })
+      }
+      return Response.json(original)
+    }
+    browser.ai.script.push({ toolCalls: [editCall, editCall] })
+    await ask(user, edit)
+    await answered()
+    expect(screen.getAllByText(/may have applied the change.*rate-limited/).length).toBeGreaterThan(0)
+    expect(writes(browser)).toHaveLength(1)
+    expect(verificationReads).toBe(1)
+  })
 
   it('[UC-CONFLUCO-CONFLUENCE-009-S09] stops after an explicit sign-in refusal without issuing a verification read', async () => {
     const { browser, user } = await openPanel()

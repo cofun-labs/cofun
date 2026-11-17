@@ -102,6 +102,12 @@ export class ConfluenceRequestError extends Error {
   }
 }
 
+/** A failed read-back must retain both a known refusal and the uncertain write outcome. */
+export function verificationFailed(message: string, cause?: unknown): never {
+  if (cause instanceof ConfluenceRequestError && cause.kind === 'limited') message += ` ${cause.message}`
+  throw Object.assign(new Error(message, { cause }), { stopsQuestion: message, mayHaveChanged: true })
+}
+
 export function requireTab(tab: ConfluenceTab | undefined): ConfluenceTab {
   if (!tab) refuse('Connect a self-managed Confluence instance and open a page on it first.')
   return tab

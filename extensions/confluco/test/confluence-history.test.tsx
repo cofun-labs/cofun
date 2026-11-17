@@ -203,24 +203,28 @@ describe('published page labels', () => {
     expect(screen.queryByRole('img', { name: 'Done' })).not.toBeInTheDocument()
   })
 
-  it('[UC-CONFLUCO-CONFLUENCE-006-S04] stops without retrying after a successful write whose read-back fails', async () => {
-    const { browser, user } = await panel()
-    let written = false
-    browser.confluenceResponse = (url, init) => {
-      if (new URL(url).pathname !== labelPath) return Response.json(current)
-      if (init?.method === 'POST') {
-        written = true
-        return Response.json({ results: [label] })
+  it.each([500, 429])(
+    '[UC-CONFLUCO-CONFLUENCE-006-S04] stops without retrying after a successful write whose read-back fails (%s)',
+    async (status) => {
+      const { browser, user } = await panel()
+      let written = false
+      browser.confluenceResponse = (url, init) => {
+        if (new URL(url).pathname !== labelPath) return Response.json(current)
+        if (init?.method === 'POST') {
+          written = true
+          return Response.json({ results: [label] })
+        }
+        return written ? new Response(null, { status }) : Response.json({ results: [] })
       }
-      return written ? new Response(null, { status: 500 }) : Response.json({ results: [] })
-    }
-    browser.ai.script.push({ toolCalls: [tool('change_page_label', { action: 'add', label: label.name })] })
-    await ask(user, 'Add label sample-label')
-    await answered()
-    expect(screen.getAllByText(/result could not be verified/).length).toBeGreaterThan(0)
-    expect(writes(browser)).toHaveLength(1)
-    expect(browser.ai.calls).toHaveLength(1)
-  })
+      browser.ai.script.push({ toolCalls: [tool('change_page_label', { action: 'add', label: label.name })] })
+      await ask(user, 'Add label sample-label')
+      await answered()
+      expect(screen.getAllByText(/result could not be verified/).length).toBeGreaterThan(0)
+      if (status === 429) expect(screen.getAllByText(/rate-limited/).length).toBeGreaterThan(0)
+      expect(writes(browser)).toHaveLength(1)
+      expect(browser.ai.calls).toHaveLength(1)
+    },
+  )
 
   it('[@no-uc:data] does not write a label after the target tab navigates to another page', async () => {
     const { browser, user } = await panel()
