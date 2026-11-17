@@ -10,6 +10,6 @@ Open **Account → Settings → Confluence connection**. Enter your Cloud site U
 
 Run `pnpm install` from the repository root, then run `pnpm --filter confluco-extension build`. In `chrome://extensions`, turn on Developer mode and load `extensions/confluco/dist` unpacked. Open the panel from the toolbar and sign in with Cofun.
 
-On a self-managed site in Edit mode, ask for a specific change, for example `Create page "Notes" under this page` or `Replace "Draft" with "Ready" on this page`. Use **Confluence** in the composer to attach editor text or select a file to upload. A verified edit or move to trash can be undone in the same chat while the page state still matches. Existing standalone Confluco chats and undo records stay in their original extension.
+On a self-managed site in Edit mode, ask for a specific change, for example `Create page "Notes" under this page` or `Replace "Draft" with "Ready" on this page`. Use **Confluence** in the composer to attach editor text or select a file to upload. A verified edit or move to trash can be undone in the same chat while the page state still matches.
 
 [Privacy policy](PRIVACY.md) · [Development guide](../../docs/development.md)
