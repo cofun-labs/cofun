@@ -4,6 +4,7 @@ import { loadAnalyticsEnabled, saveAnalyticsEnabled } from '../analytics'
 import { loadMenuShown, saveMenuShown, watchMenuShown } from '../selection'
 import type { ModelSettings } from '../models'
 import { Avatar, useAccount } from './Account'
+import { ConfluenceConnection } from './ConfluenceConnection'
 import { Page } from './Header'
 import { ModelCard, Switch } from './Model'
 
@@ -12,11 +13,13 @@ import { ModelCard, Switch } from './Model'
  * with Sign out, whether the right-click menu has "Ask Confluco", and whether usage data is sent.
  */
 export function Settings({
+  userId,
   model,
   onModelChange,
   at,
   onClose,
 }: {
+  userId: string
   /** Which model answers; undefined while it loads. */
   model?: ModelSettings
   /** Saves what `update` makes of the model settings as they are when it is saved. */
@@ -31,6 +34,8 @@ export function Settings({
   return (
     <Page id="settings" title="Settings" onBack={onClose}>
       <ModelCard settings={model} onChange={onModelChange} focus={at === 'providers'} />
+
+      <ConfluenceConnection userId={userId} />
 
       <ContextMenu />
 

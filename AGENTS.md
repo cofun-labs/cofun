@@ -109,7 +109,7 @@ An extension's Chrome Web Store privacy policy is written in two parts: [PRIVACY
 - **Every worker route under `/v1` sits behind the session check** (`src/routes/session.ts`); `worker/test/session.test.ts` checks that each refuses a request without a session.
 - **Module boundaries are lint errors** in `.oxlintrc.json`, run by `pnpm check`. In every extension:
   - only `src/agent/` imports pi (`@earendil-works/pi-agent-core`);
-  - `fetch` is used only in `src/agent/` (the worker) and in the `tab.ts` of a site layer that sends requests to its site (Notico's `src/notion/tab.ts`); `chrome.scripting` only in `src/<site>/tab.ts`; `chrome.debugger` nowhere;
+  - `fetch` is used only in `src/agent/` (the worker) and in the `tab.ts` of a site layer that sends requests to its site (Notico's `src/notion/tab.ts` and Confluco's `src/confluence/tab.ts`); `chrome.scripting` only in `src/<site>/tab.ts`; `chrome.debugger` nowhere;
   - `zod` is imported only through `src/zod.ts` (the worker's through `worker/src/zod.ts`);
   - `posthog-js` is imported only in `src/analytics.ts`;
   - the site layer imports nothing from the agent, the tools, the sessions, or the side panel;

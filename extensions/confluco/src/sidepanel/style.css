@@ -2282,3 +2282,21 @@ button.secondary:focus-visible,
   overflow: hidden;
   text-overflow: ellipsis;
 }
+
+.confluence-connection {
+  display: grid;
+  gap: 8px;
+}
+
+.confluence-connection input {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px;
+  font: inherit;
+  color: inherit;
+  background: transparent;
+}
+
+.confluence-connection .primary {
+  justify-self: start;
+}

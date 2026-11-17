@@ -9,6 +9,8 @@ export interface AgentConfig {
   apiUrl: string
   /** Returns a fresh Clerk session token. Called before every request to the worker. */
   getToken: () => Promise<string | null>
+  /** Local account scope for tools that read account settings. */
+  accountId: string
   /**
    * The extension and its version, `confluco/0.3.0`: sent to the worker with each model request as
    * X-Cofun-Client, which records the call under that product.
@@ -166,6 +168,9 @@ export type AskOnCard = (question: CardQuestion) => Promise<boolean>
 
 /** What the agent gives a call while it runs. */
 export interface ToolContext {
+  accountId: string
+  /** The current question as the user typed it, without notes or text returned by tools. */
+  userText: string
   /** Puts a question to the user on the call's card (see AskOnCard). */
   ask: AskOnCard
   /**
