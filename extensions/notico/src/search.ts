@@ -22,10 +22,6 @@ export async function saveDuckDuckGoSearch(userId: string, on: boolean): Promise
 }
 
 /**
- * What the user is told when DuckDuckGo asks to confirm a person is searching: the question stops,
- * and the search's tab stays open for them to answer it, which lets the next searches through.
- */
-/**
  * What the user is told when DuckDuckGo's tab shows a page that is not one of results: it may be
  * turning searches away (a tab gives no HTTP status to tell), or it changed its page. Either way
  * another search would likely meet the same, so the question stops.
@@ -34,6 +30,10 @@ const NOT_RESULTS =
   'DuckDuckGo showed a page that is not search results: it may be turning searches away, or its page ' +
   'changed. Try again later, or switch off "Search with DuckDuckGo" in Settings to search with credits instead.'
 
+/**
+ * What the user is told when DuckDuckGo asks to confirm a person is searching: the question stops,
+ * and the search's tab stays open for them to answer it, which lets the next searches through.
+ */
 const CHALLENGED =
   'DuckDuckGo asked to confirm that a person is searching, so Notico could not search the web. Its tab is ' +
   'open: answer its check there, then ask again, or switch off "Search with DuckDuckGo" in Settings to search ' +

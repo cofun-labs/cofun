@@ -15,7 +15,7 @@ interface Found {
 }
 
 /** What the tab shows instead of results. */
-type Answer = 'challenge' | 'error page' | 'unknown page' | 'unreachable'
+type Answer = 'challenge' | 'error page' | 'unknown page' | 'redirect' | 'unreachable'
 
 interface FakeTab {
   id: number
@@ -72,6 +72,8 @@ export class FakeDuckDuckGo {
       // The page loads once the extension has its tab: Chrome reports it then.
       setTimeout(() => {
         if (tab.closed) return
+        // Taken to DuckDuckGo's main site, where the extension may run no script.
+        if (this.answer === 'redirect') tab.url = `https://duckduckgo.com/?q=${encodeURIComponent(query(tab))}`
         tab.status = 'complete'
         for (const listener of [...this.updated]) listener(tab.id, { status: 'complete' }, { ...tab })
       })
@@ -112,12 +114,11 @@ export class FakeDuckDuckGo {
       if (!tab) return executeScript(injection)
       if (tab.closed) throw new Error(`No tab with id: ${tab.id}.`)
       if (this.answer === 'unreachable') throw new Error('Frame with ID 0 is showing error page')
-      if (!allowed.has(ACCESS))
+      if (!tab.url.startsWith(`${DUCKDUCKGO}/`) || !allowed.has(ACCESS))
         throw new Error(
           'Cannot access contents of the page. Extension manifest must request permission to access the respective host.',
         )
-      const query = new URL(tab.url).searchParams.get('q') ?? ''
-      const document = new DOMParser().parseFromString(this.page(query), 'text/html')
+      const document = new DOMParser().parseFromString(this.page(query(tab)), 'text/html')
       const location = new URL(tab.url)
       const rebuilt = new Function('location', 'document', `return (${injection.func.toString()})`)(
         location,
@@ -151,6 +152,9 @@ interface Injection {
   world?: string
   func: Function
 }
+
+/** The query a search's tab was opened for. */
+const query = (tab: FakeTab) => new URL(tab.url).searchParams.get('q') ?? ''
 
 const html = (body: string) => `<!DOCTYPE html><html><head><title>DuckDuckGo</title></head><body>${body}</body></html>`
 

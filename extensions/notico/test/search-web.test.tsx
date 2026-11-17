@@ -369,6 +369,7 @@ describe('searching the web with DuckDuckGo', () => {
   it.each([
     ['shows an error page', 'error page'],
     ['shows a page that is not one of results', 'unknown page'],
+    ['takes the tab to another site', 'redirect'],
   ] as const)(
     '[UC-NOTICO-PANEL-004-S12] the question stops when DuckDuckGo %s, and its tab is closed',
     async (_what, answer) => {

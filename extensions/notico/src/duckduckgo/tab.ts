@@ -27,7 +27,10 @@ export async function openSearchPage(url: string, signal?: AbortSignal): Promise
   const tabId = tab.id
   if (tabId === undefined) throw new TabError('Chrome opened no tab for the search')
   try {
-    await loaded(tabId, new URL(url).origin, signal)
+    const at = await loaded(tabId, signal)
+    // Taken elsewhere (DuckDuckGo moved the search, or turns it away by a redirect): not read, since
+    // Notico may not run scripts there; the caller finds no results page.
+    if (at.origin !== new URL(url).origin) return { url: at.href, html: '', tabId }
     const [injection] = await chrome.scripting.executeScript({
       target: { tabId },
       world: 'ISOLATED',
@@ -51,21 +54,27 @@ export function closeSearchTab(tabId: number): void {
 }
 
 /**
- * Resolves once the tab finished loading a page on `origin` (a new tab may first report its blank
- * page as complete); rejects when it was closed, too slow, or stopped.
+ * Resolves with where the tab is once it finished loading a web page, wherever it was taken (a new
+ * tab may first report its blank page as complete); rejects when it was closed, too slow, or stopped.
  */
-function loaded(tabId: number, origin: string, signal?: AbortSignal): Promise<void> {
+function loaded(tabId: number, signal?: AbortSignal): Promise<URL> {
   return new Promise((resolve, reject) => {
+    let page: URL | undefined
     const done = (err?: Error) => {
       chrome.tabs.onUpdated.removeListener(onUpdated)
       chrome.tabs.onRemoved.removeListener(onRemoved)
       signal?.removeEventListener('abort', onAbort)
       clearTimeout(timer)
       if (err) reject(err)
-      else resolve()
+      else resolve(page!)
     }
-    const on = (tab: { status?: string; url?: string }) =>
-      tab.status === 'complete' && !!tab.url && URL.canParse(tab.url) && new URL(tab.url).origin === origin
+    const on = (tab: { status?: string; url?: string }) => {
+      if (tab.status !== 'complete' || !tab.url || !URL.canParse(tab.url)) return false
+      const at = new URL(tab.url)
+      if (at.protocol !== 'https:' && at.protocol !== 'http:') return false
+      page = at
+      return true
+    }
     const onUpdated = (id: number, _change: object, tab: chrome.tabs.Tab) => {
       if (id === tabId && on(tab)) done()
     }
