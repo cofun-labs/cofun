@@ -45,7 +45,9 @@ const listLoaded = (name: 'OpenRouter') =>
 /** Switches a provider on and checks `key` with Enter, from the settings page, until it works and its models are listed. */
 async function turnOn(user: UserEvent, name: 'OpenRouter', key: string) {
   await user.click(providerSwitch(name))
-  await user.type(provider(name).getByLabelText(`${name} API key`), `${key}{Enter}`)
+  await user.click(provider(name).getByLabelText(`${name} API key`))
+  await user.paste(key)
+  await user.keyboard('{Enter}')
   expect(await provider(name).findByText(/^Key works/)).toBeVisible()
   await listLoaded(name)
 }
@@ -73,7 +75,9 @@ async function setUpOpenRouter(browser: FakeBrowser, user: UserEvent) {
 }
 
 async function ask(user: UserEvent, question: string) {
-  await user.type(screen.getByRole('textbox', { name: 'Message' }), `${question}{Enter}`)
+  await user.click(screen.getByRole('textbox', { name: 'Message' }))
+  await user.paste(question)
+  await user.keyboard('{Enter}')
 }
 
 const answered = () => screen.findByRole('button', { name: 'Send' })
