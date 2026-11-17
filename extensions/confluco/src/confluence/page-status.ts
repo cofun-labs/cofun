@@ -1,5 +1,5 @@
 import { z } from '../zod'
-import { hasRestriction, restrictions } from './history'
+import { requireRetainedAccess } from './history'
 import { requestedReference } from './page-writes'
 import { pageLink, pageReference, pageResource, publishedPage, type PageReference } from './references'
 import {
@@ -71,12 +71,7 @@ async function requireEligibleTrash(tab: ConfluenceTab, page: PageState, signal?
   if (!parsed.success) refuse('Confluence did not report whether this page has children.')
   if (parsed.data.results.length || parsed.data._links?.next)
     refuse('This page has child pages. Use Confluence to review how they will be affected before trashing it.')
-  for (const { id } of [...page.ancestors, page]) {
-    const response = await getConfluence(tab, `content/${id}/restriction/byOperation`, {}, signal)
-    const access = restrictions.safeParse(response.data)
-    if (!access.success || hasRestriction(access.data.read) || (id === page.id && hasRestriction(access.data.update)))
-      refuse('This page could lose an access restriction on restore. Review its access in Confluence.')
-  }
+  await requireRetainedAccess(tab, { id: page.id, ancestors: page.ancestors.map(({ id }) => id) }, [], 'trash', signal)
 }
 
 export async function preparePageStatus(

@@ -18,3 +18,4 @@ A user can move a published page beneath a chosen parent in the same space or co
 | ID | Priority | Status | Scenario |
 | --- | --- | --- | --- |
 | UC-CONFLUCO-CONFLUENCE-011-S05 | P0 | ✅ | Given disposable pages on a real instance; when the user moves and copies a page; then the same original and the distinct copy appear beneath their chosen parent with the expected body. |
+| UC-CONFLUCO-CONFLUENCE-011-S06 | P0 | ✅ | Given disposable pages on a signed-in Confluence Cloud site; when the user moves a published page and copies its body within the space; then the original and the distinct copy are verified beneath the chosen parent with the same body. |

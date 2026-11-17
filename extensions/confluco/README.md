@@ -6,7 +6,7 @@ Confluco is an AI side panel for Chrome. It can answer questions, read the curre
 
 Open **Account → Settings → Confluence connection**. Enter your Cloud site URL (such as `https://team.atlassian.net/wiki`) or your self-managed base URL, including its deployment path if it has one. Allow Chrome site access, then open the connected site and sign in to Confluence. On either site type, you can read the current page, search published content, browse spaces and page trees, and inspect versions, access, labels, discussions and attachments.
 
-In Edit mode on either site type, you can ask to create a published child page, rename a page, add or remove a label, or post a footer comment or reply. For example, ask `Create page "Notes" under this page`.
+In Edit mode on either site type, you can ask to create a published child page, rename a page, add or remove a label, or post a footer comment or reply. For example, ask `Create page "Notes" under this page`. You can also move a page or copy its body within the space and confirm moving an eligible page to the trash. A space admin can restore Cloud pages from **Space settings → Trash**.
 
 ## Try the development build
 

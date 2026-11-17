@@ -1,5 +1,6 @@
 import type { ToolContext } from '../agent'
 import { applyAttachmentUpload, prepareAttachmentUpload } from '../confluence/attachments'
+import { prepareCloudOrganization, prepareCloudTrash } from '../confluence/cloud-organization'
 import { applyCloudLabel, prepareCloudComment, prepareCloudPageWrite } from '../confluence/cloud-writes'
 import { applyComment, prepareComment, requestedComment } from '../confluence/comments'
 import { applyLabel, changeLabelArgs, requestedLabelChanges } from '../confluence/labels'
@@ -200,6 +201,18 @@ function pageStatus(action: 'trash' | 'restore') {
       const request = requestedPageStatus(userText)
       if (request?.action !== action)
         refuse('Ask the user to specify the page to trash or provide the link of the page to restore.')
+      if (tab.instance.cloud) {
+        if (request.action !== 'trash') refuse('Restore this page from the trash in Confluence Space settings.')
+        const plan = await prepareCloudTrash(tab, request.targetUrl, signal)
+        return {
+          preview: plan.preview,
+          confirm: true,
+          async apply(signal) {
+            const data = await plan.apply(signal)
+            return { data, changed: data.changed }
+          },
+        }
+      }
       const plan = await preparePageStatus(request, tab, signal)
       return {
         preview: plan.preview,
@@ -231,6 +244,16 @@ function organizePage(action: 'move' | 'copy') {
         refuse(
           'Ask the user to specify the source page and parent link. Use Move this page under URL or Copy this page under URL as "TITLE".',
         )
+      if (tab.instance.cloud) {
+        const plan = await prepareCloudOrganization(request, tab, signal)
+        return {
+          preview: plan.preview,
+          async apply(signal) {
+            const data = await plan.apply(signal)
+            return { data, changed: data.changed }
+          },
+        }
+      }
       const plan = await prepareOrganization(request, tab, signal)
       return {
         preview: plan.preview,
@@ -342,15 +365,20 @@ const undoChange = change(
   },
 )
 
-export const CLOUD_WRITES = [pageWrite('create'), pageWrite('rename'), changeLabel, addComment]
+const commonWrites = [pageWrite('create'), pageWrite('rename'), changeLabel, addComment]
+const trashPage = pageStatus('trash')
+const movePage = organizePage('move')
+const copyPage = organizePage('copy')
+
+export const CLOUD_WRITES = [...commonWrites, trashPage, movePage, copyPage]
 
 export const CONFLUENCE_WRITES = [
-  ...CLOUD_WRITES,
+  ...commonWrites,
   editPage,
   undoChange,
-  pageStatus('trash'),
+  trashPage,
   pageStatus('restore'),
-  organizePage('move'),
-  organizePage('copy'),
+  movePage,
+  copyPage,
   uploadAttachment,
 ]

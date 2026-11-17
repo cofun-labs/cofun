@@ -241,6 +241,24 @@ export function createCloudChildPage(
   )
 }
 
+export function moveCloudPage(tab: ConfluenceTab, pageId: string, parentId: string, signal?: AbortSignal) {
+  return sendConfluence(
+    tab,
+    { area: 'api', resource: `content/${pageId}/move/append/${parentId}`, method: 'PUT', query: {} },
+    signal,
+    'Confluence rejected the move. Check that both pages are eligible and in the same space.',
+  )
+}
+
+export function trashCloudPage(tab: ConfluenceTab, pageId: string, signal?: AbortSignal) {
+  return sendConfluence(
+    tab,
+    { area: 'cloud-v2', resource: `pages/${pageId}`, method: 'DELETE', query: {} },
+    signal,
+    'Confluence rejected moving this page to the trash. Review the page in Confluence before trying again.',
+  )
+}
+
 export function renameCloudPage(tab: ConfluenceTab, pageId: string, title: string, signal?: AbortSignal) {
   return sendConfluence(
     tab,
@@ -476,7 +494,12 @@ async function requestConfluence(expectedUrl: string, contextPath: string, reque
           (method === 'DELETE' &&
             body === undefined &&
             Object.keys(query).length === 1 &&
-            typeof query.name === 'string')))
+            typeof query.name === 'string'))) ||
+      (body === undefined &&
+        Object.keys(query).length === 0 &&
+        ((area === 'api' && method === 'PUT' && /^content\/\d{1,20}\/move\/append\/\d{1,20}$/.test(resource)) ||
+          // No draft or purge flags may reach Cloud's delete endpoint.
+          (area === 'cloud-v2' && method === 'DELETE' && /^pages\/\d{1,20}$/.test(resource))))
     if (
       actual.protocol !== 'https:' ||
       actual.port ||

@@ -46,6 +46,33 @@ export function hasRestriction({ restrictions }: z.output<typeof restriction>): 
   )
 }
 
+export async function requireRetainedAccess(
+  tab: ConfluenceTab,
+  source: { id: string; ancestors: string[] },
+  destinationLineage: string[],
+  action: 'move' | 'copy' | 'trash',
+  signal?: AbortSignal,
+) {
+  const retained = new Set(destinationLineage)
+  const omitted = source.ancestors.filter((id) => !retained.has(id))
+  if (action !== 'move') omitted.push(source.id)
+  const warning =
+    action === 'trash'
+      ? 'This page could lose an access restriction on restore. Review its access in Confluence.'
+      : 'This destination could drop an existing page restriction. Choose a destination with the same access.'
+  for (const id of new Set(omitted)) {
+    const response = await getConfluence(tab, `content/${id}/restriction/byOperation`, {}, signal)
+    const parsed = restrictions.safeParse(response.data)
+    if (!parsed.success)
+      refuse(
+        action === 'trash'
+          ? warning
+          : 'Confluence did not report restrictions on the source or an ancestor. Check access before trying again.',
+      )
+    if (hasRestriction(parsed.data.read) || (id === source.id && hasRestriction(parsed.data.update))) refuse(warning)
+  }
+}
+
 function visibleVersion(value: z.output<typeof version>) {
   return {
     number: value.number,

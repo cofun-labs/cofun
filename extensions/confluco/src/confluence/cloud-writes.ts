@@ -19,8 +19,8 @@ import {
 } from './tab'
 
 const id = pageReference.shape.id
-const atPage = cloudPage.extend({ spaceId: id, parentId: id.nullish() })
-const revision = atPage.extend({
+export const cloudLocatedPage = cloudPage.extend({ spaceId: id, parentId: id.nullish() })
+export const cloudRevision = cloudLocatedPage.extend({
   version: z.object({ number: z.int().min(1).max(2_147_483_647) }),
   body: z.object({ storage: z.object({ value: z.string() }) }),
 })
@@ -33,25 +33,25 @@ const footerComment = commentIdentity.extend({
   body: z.object({ storage: z.object({ value: z.string() }) }),
 })
 
-function cloudReference(tab: ConfluenceTab, id: string): PageReference {
+export function cloudReference(tab: ConfluenceTab, id: string): PageReference {
   return { instance: tab.instance.origin + tab.instance.path, id }
 }
 
-function published(tab: ConfluenceTab, ref: PageReference | undefined, signal?: AbortSignal) {
-  return fetchCloudPage(tab, ref, atPage, { status: 'current' }, signal)
+export function readCloudLocation(tab: ConfluenceTab, ref: PageReference | undefined, signal?: AbortSignal) {
+  return fetchCloudPage(tab, ref, cloudLocatedPage, { status: 'current' }, signal)
 }
 
-function readRevision(tab: ConfluenceTab, ref: PageReference | undefined, signal?: AbortSignal) {
-  return fetchCloudPage(tab, ref, revision, { status: 'current', 'body-format': 'storage' }, signal)
+export function readCloudRevision(tab: ConfluenceTab, ref: PageReference | undefined, signal?: AbortSignal) {
+  return fetchCloudPage(tab, ref, cloudRevision, { status: 'current', 'body-format': 'storage' }, signal)
 }
 
-async function findTitle(tab: ConfluenceTab, title: string, spaceId: string, signal?: AbortSignal) {
+export async function findCloudTitle(tab: ConfluenceTab, title: string, spaceId: string, signal?: AbortSignal) {
   const { items, cursor, paginationNotice } = await cloudCollection(
     tab,
     'pages',
     { title, 'space-id': spaceId, status: 'current' },
     undefined,
-    atPage,
+    cloudLocatedPage,
     { signal, limit: 2 },
   )
   if (
@@ -65,14 +65,14 @@ async function findTitle(tab: ConfluenceTab, title: string, spaceId: string, sig
 export async function prepareCloudPageWrite(request: PageWriteRequest, tab: ConfluenceTab, signal?: AbortSignal) {
   const ref = requestedReference(tab, request.targetUrl)
   if (request.action === 'rename') {
-    const original = await readRevision(tab, ref, signal)
+    const original = await readCloudRevision(tab, ref, signal)
     const page = cloudPageLink(tab, original)
     const next = original.version.number + 1
     const preview = `Rename "${page.title}" (${page.url}) to "${request.title}".`
     return {
       preview,
       async apply(signal?: AbortSignal) {
-        const current = await readRevision(tab, ref, signal)
+        const current = await readCloudRevision(tab, ref, signal)
         if (
           current.id !== original.id ||
           current.version.number !== original.version.number ||
@@ -88,7 +88,7 @@ export async function prepareCloudPageWrite(request: PageWriteRequest, tab: Conf
         const reply = await renameCloudPage(tab, original.id, request.title, signal)
         const result = cloudPage.safeParse(reply.data)
         if (!result.success || result.data.id !== original.id || result.data.title !== request.title) unverifiedWrite()
-        const saved = await readRevision(tab, page.ref, signal).catch(unverifiedWrite)
+        const saved = await readCloudRevision(tab, page.ref, signal).catch(unverifiedWrite)
         if (
           saved.title !== request.title ||
           saved.spaceId !== original.spaceId ||
@@ -109,7 +109,7 @@ export async function prepareCloudPageWrite(request: PageWriteRequest, tab: Conf
   }
 
   if (request.text.length > 40_000) refuse('Shorten the requested page body to 40,000 characters or fewer.')
-  const parent = await published(tab, ref, signal)
+  const parent = await readCloudLocation(tab, ref, signal)
   if (request.spaceKey) {
     const found = await getConfluence(tab, 'spaces/' + parent.spaceId, {}, signal, 'cloud-v2')
     const space = cloudSpace.safeParse(found.data)
@@ -121,9 +121,9 @@ export async function prepareCloudPageWrite(request: PageWriteRequest, tab: Conf
   return {
     preview,
     async apply(signal?: AbortSignal) {
-      const duplicate = await findTitle(tab, request.title, parent.spaceId, signal)
+      const duplicate = await findCloudTitle(tab, request.title, parent.spaceId, signal)
       if (duplicate) return { page: cloudPageLink(tab, duplicate), changed: false, alreadyExists: true }
-      const current = await published(tab, ref, signal)
+      const current = await readCloudLocation(tab, ref, signal)
       if (current.id !== parent.id || current.spaceId !== parent.spaceId || current.title !== parent.title)
         refuse('The chosen parent changed. Ask again on the intended page.')
       const text = plainTextStorage(request.text)
@@ -132,7 +132,7 @@ export async function prepareCloudPageWrite(request: PageWriteRequest, tab: Conf
         { spaceId: parent.spaceId, parentId: parent.id, title: request.title, text },
         signal,
       )
-      const created = atPage.safeParse(reply.data)
+      const created = cloudLocatedPage.safeParse(reply.data)
       if (
         !created.success ||
         created.data.id === parent.id ||
@@ -141,7 +141,7 @@ export async function prepareCloudPageWrite(request: PageWriteRequest, tab: Conf
         created.data.spaceId !== parent.spaceId
       )
         unverifiedWrite()
-      const saved = await readRevision(tab, cloudReference(tab, created.data.id), signal).catch(unverifiedWrite)
+      const saved = await readCloudRevision(tab, cloudReference(tab, created.data.id), signal).catch(unverifiedWrite)
       if (
         saved.title !== request.title ||
         saved.parentId !== parent.id ||
@@ -177,12 +177,12 @@ async function cloudHasLabel(tab: ConfluenceTab, page: string, name: string, sig
 }
 
 export async function applyCloudLabel(request: LabelRequest, tab: ConfluenceTab, signal?: AbortSignal) {
-  const page = await published(tab, undefined, signal)
+  const page = await readCloudLocation(tab, undefined, signal)
   const name = request.label.toLowerCase()
   const present = request.action === 'add'
   const result = { page: cloudPageLink(tab, page), label: name, present }
   if ((await cloudHasLabel(tab, page.id, name, signal)) === present) return { ...result, changed: false }
-  const current = await published(tab, undefined, signal)
+  const current = await readCloudLocation(tab, undefined, signal)
   if (current.id !== page.id)
     refuse('The page changed before the label could be updated. Ask again on the intended page.')
   const receipt = await writeConfluenceLabel(
@@ -229,7 +229,7 @@ export async function prepareCloudComment(request: CommentRequest, tab: Confluen
   if (!request.text.trim() || request.text.length > 4000)
     refuse('Write a non-empty comment of at most 4,000 characters.')
   const ref = requestedReference(tab, request.targetUrl)
-  const page = await published(tab, ref, signal)
+  const page = await readCloudLocation(tab, ref, signal)
   const link = cloudPageLink(tab, page)
   const parent = request.parentId ? await readCloudComment(tab, request.parentId, page.id, signal) : undefined
   const destination = `"${link.title}" (${link.url})`
@@ -239,7 +239,7 @@ export async function prepareCloudComment(request: CommentRequest, tab: Confluen
   return {
     preview: heading + `Comment: ${JSON.stringify(request.text)}`,
     async apply(signal?: AbortSignal) {
-      const current = await published(tab, ref, signal)
+      const current = await readCloudLocation(tab, ref, signal)
       if (current.id !== page.id || current.title !== page.title) refuse('The target page changed after the preview.')
       if (parent) {
         const latest = await readCloudComment(tab, parent.id, page.id, signal)
