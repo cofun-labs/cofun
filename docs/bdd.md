@@ -85,7 +85,7 @@ A fake model answers what the test scripts, so these tests show what the panel d
 
 ## Running an `ai-e2e` scenario
 
-`ai-e2e` runs use the maintainer's Chrome Canary: started with `--remote-debugging-port=9228`, signed in to Notion and to Notico, with the extension loaded unpacked. `pnpm e2e` drives it over the DevTools protocol (`pnpm e2e --help` lists every command and option):
+`ai-e2e` runs use the maintainer's Chrome Canary. Start it with `--remote-debugging-port=9228` and a fixed `--user-data-dir` to keep the test profile signed in between runs. Load the extension unpacked and sign in to Cofun. For Notion scenarios, sign in to Notion in the same profile. `pnpm e2e` drives Canary over the DevTools protocol (`pnpm e2e --help` lists every command and option):
 
 ```bash
 pnpm e2e lock acquire "UC-NOTICO-NOTION-007-S04"    # hold the browser across all the steps
@@ -98,10 +98,12 @@ pnpm e2e close                                      # close the tabs the tool op
 pnpm e2e lock release
 ```
 
+For Confluco, run `pnpm e2e --extension confluco reload`, `pnpm e2e --extension confluco panel`, then `pnpm e2e --extension confluco ask "<question>"`. `panel` opens a new chat on the tool's `example.com` tab. Use `pnpm e2e --extension confluco close` to close that tab. Notico remains the default. Each extension tracks its own tabs under the same Canary lock.
+
 - **One browser, shared.** Several sessions use the same Canary, guarded by one lock (`~/.cache/cofun/canary.lock`, shared with the maintainer's `canary-lock.sh`). Hold it for the whole run with `lock acquire` and `lock release`: between commands, another session could otherwise reload the extension (closing your panel) or start a chat in it. A command run without it takes the lock just for itself. The owner is `--owner`, `$E2E_OWNER`, or the git branch; run one command at a time per owner. A busy lock exits with code 3 and the holder's name: work on something else and try later, never wait in a loop. A lock not refreshed for 30 minutes counts as abandoned.
 - **Reload first.** Canary loads one extension folder for everyone; `reload` builds this checkout over it, so start every run with it and don't assume another session's build is still there.
-- **Hands off the browser's state.** The tool never signs in or out of Notion or Notico and never changes browser settings. If Developer mode is off, the extension is disabled, or a sign-in is missing, it says so and stops; fix it by hand.
-- **Only its own tabs and pages.** It works in the tabs it opened (one on Notion, and one on another site for `elsewhere`), `panel` opens only on pages and databases it created, `ask` refuses any other current tab, and `trash` only takes those (`page` makes a private page from Markdown lines; `db` makes a private task database with Name, Status, and Due). Use throwaway pages, never the workspace's own.
+- **Hands off the browser's state.** The tool never signs in or out of Notion or Cofun and never changes browser settings. If Developer mode is off, the extension is disabled, or a sign-in is missing, it says so and stops; fix it by hand.
+- **Only its own tabs and pages.** For Notico, it works in the tabs it opened (one on Notion, and one on another site for `elsewhere`), `panel` opens only on pages and databases it created, `ask` refuses any other current tab, and `trash` only takes those (`page` makes a private page from Markdown lines; `db` makes a private task database with Name, Status, and Due). Use throwaway pages, never the workspace's own.
 - **Off Notion.** `elsewhere` brings a tab on another site (`example.com`) to the front, and says whether the side panel stayed open with its chat or had to be opened; `panel` goes back to the Notion tab, with a new chat. Use it for scenarios about the panel on a tab that is not Notion.
 - **Approvals.** `ask` answers approval prompts with `--allow` or `--deny`. `--allow` approves every prompt, whatever it changes. The agent asks for approval only before some changes (such as deleting a page) and makes the others on its own, so the tool can't keep it on the throwaway pages: word every question so it stays on them, and never ask it to change other pages. Without either it stops at the first prompt with exit code 4 and prints what the tool would change; run `pnpm e2e ask --allow` (no question) to answer and keep waiting.
 - **What `ask` prints.** The reply in order: the model's text and each tool call with its status, what the side panel says it did, its arguments, and its result. `--json` prints the same as JSON.
