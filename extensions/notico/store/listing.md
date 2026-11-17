@@ -5,7 +5,7 @@
 The text between the fences goes into the Description field as it is (plain text; the store keeps line breaks and shows no Markdown).
 
 ```text
-Ask Notion anything, right next to the page. Notico is an AI copilot in Chrome's side panel that reads, writes, and organizes your Notion pages, and shows you every change it makes.
+Ask Notion anything, right next to the page. Notico is an AI copilot in Chrome's side panel that reads, writes, and organizes your Notion pages, and shows you every change it makes. It also brings in the web: ask about the page you're on, a link, or a web search, and save what matters to Notion.
 
 ✓ Free to start: free credits every week
 ✓ Nothing to set up: no Notion integration, no API token
@@ -19,6 +19,8 @@ WHAT YOU CAN ASK
 • Find pages across your workspace and read them.
 • Move, duplicate, or trash pages (it asks before trashing).
 • Comment on pages and mention teammates.
+• Bring in the web: ask about the page you're on or a link, compare open tabs, or search the web. Notico reads a site in your tabs only after you allow it.
+• Right-click selected text on any page and pick "Ask Notico".
 
 THINGS TO TRY
 • "Summarize this page in five bullet points."
@@ -26,15 +28,16 @@ THINGS TO TRY
 • "Which tasks in this database are overdue? Add a comment on each one."
 • "Find our onboarding docs and tell me what's out of date."
 • Select some text, then: "Rewrite this to be shorter."
+• On an article: "Save the key points of this page to my Reading notes."
 
 HOW IT WORKS
 Notico works in your own Notion tab, as you, so it reaches what you can reach and nothing else. Sign in once with Google or your email. Your chat stays open as you switch tabs, and past chats are saved on your device.
 
 CREDITS
-Cofun's AI model runs on credits. Every account gets free credits each week, and you can buy more in the panel: one-time packs, no subscription, valid for a year. Answering with your own model spends no credits.
+Cofun's AI model runs on credits. Every account gets free credits each week, and you can buy more in the panel: one-time packs, no subscription, valid for a year. Answering with your own model spends no credits, except on web searches and pages rendered for you.
 
 PRIVACY
-Your questions, and the Notion content Notico reads to answer them, go to our server and the AI model, or straight to OpenRouter if you use your own model. We don't keep that content, only usage numbers and your purchases. Chats are saved only on your device. Notico reports which features are used, never what you write or read, and you can turn that off in the settings. No ads.
+Your questions, and what Notico reads to answer them (Notion content, web pages, and web searches, which may include text from your Notion pages), go to our server and the AI model, or straight to OpenRouter if you use your own model; links and searches go through our server either way. We don't keep that content, only usage numbers and your purchases. Chats are saved only on your device. Notico reports which features are used, never what you write or read, and you can turn that off in the settings. No ads.
 
 PLEASE NOTE
 • Notico edits as soon as it decides to; only trashing asks first. Every change shows in the panel, and Notion's page history can undo it. Switch to Read only to keep it from changing anything.
@@ -64,15 +67,3 @@ Notico is an independent project, not made or endorsed by Notion.
 | Marquee promo tile | [marquee-promo-tile.png](images/marquee-promo-tile.png) | 1400×560 |
 
 The screenshots show the real side panel, answering with Cofun's model (Auto), next to throwaway pages, made with `pnpm e2e`: the Notion tab at 920×800 and the side panel at 360×800 are captured separately over the DevTools protocol and set side by side, so they carry no browser frame. Nothing else of the workspace may show: trash earlier throwaway pages first, since the assistant finds them too. Nothing of another product's AI may show either: Notion AI's round button at the bottom right of the Notion tab is painted out (white, over x 850–917 and y 735–799), and Notion's selection toolbar, which offers its AI, is closed before capturing. The marquee tile is the same tile with screenshot-1 scaled into its card (760×475 at 620,62, corners rounded at 14px). The screenshots and promo tiles are PNG without transparency, as the store requires for them.
-
-## For the next version
-
-The text above describes version 0.2.0. The next version also brings in the web (the page the user is on, open tabs, links, web search, and the "Ask Notico" menu), so these parts change:
-
-- The first paragraph adds: "It also brings in the web: ask about the page you're on, a link, or a web search, and save what matters to Notion."
-- WHAT YOU CAN ASK adds:
-  - "• Bring in the web: ask about the page you're on or a link, compare open tabs, or search the web. Notico reads a site in your tabs only after you allow it."
-  - "• Right-click selected text on any page and pick "Ask Notico"."
-- THINGS TO TRY adds: "• On an article: "Save the key points of this page to my Reading notes.""
-- CREDITS ends: "Answering with your own model spends no credits, except on web searches and pages rendered for you."
-- PRIVACY's first sentence reads: "Your questions, and what Notico reads to answer them (Notion content, web pages, and web searches, which may include text from your Notion pages), go to our server and the AI model, or straight to OpenRouter if you use your own model; links and searches go through our server either way."

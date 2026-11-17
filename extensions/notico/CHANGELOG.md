@@ -2,6 +2,36 @@
 
 What changed in each version of Notico on the Chrome Web Store, newest first.
 
+## 0.3.0 (2026-11-17)
+
+### Added
+
+- Bring in the web: on another site, ask about the page you're on. The first time on a site, the side panel and then Chrome ask you to allow it, and Notico reads that site only after you do.
+- A page read from a tab keeps its headings, lists, links, and tables, so saving it to Notion keeps its structure.
+- Add open tabs on other sites to a question with @ or the + button, to compare them or save them to Notion.
+- Paste a link and Notico reads that page. A page a plain read can't get is rendered in a browser, which costs credits for the browser time it used.
+- Notico can search the web, and names the sources it used. A search costs 5 credits, even when you answer with your own model.
+- Select text on any page, right-click it, and pick "Ask Notico": the side panel opens with the text added to your question. Settings can hide the menu item.
+- Long pages are read in parts: Notico keeps the whole text with the chat on your device and reads the part it needs, instead of only the start.
+- On another site, a new chat starts with suggestions for the page you're on.
+- A reply's details count the web pages read and rendered and the searches made, and split what it cost between the model, renders, and searches.
+
+### Changed
+
+- A question stops once 10 of its tool calls have failed, and tells you why.
+- A web page that can't be read, or a search that fails, goes back to the assistant, which can try another source, instead of stopping the question. A render or a search that fails costs nothing.
+- Long chats keep much more of the conversation for Cofun's model, and drop older questions in larger steps, so most questions in a long chat cost less.
+- In Read only, a change the assistant asks for shows as "Not run".
+- Declining a site's access shows as "Declined" rather than as a failure.
+- The model menu and the + menu open right above their buttons.
+
+### Fixed
+
+- A long selection with an emoji where it is cut no longer breaks the message box.
+- When Chrome can't show its prompt to allow a site, Notico says so, instead of saying you declined.
+- Titles, links, and search results read from pages can't pass for Notico's own notes to the assistant.
+- One malformed web search result is left out, instead of failing the whole search.
+
 ## 0.2.0 (2026-11-15)
 
 ### Added
