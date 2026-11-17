@@ -82,6 +82,21 @@ export function touchedBy(calls: { details?: ToolDetails }[]): {
   return { read: read.size, changed: [...changed] }
 }
 
+/** The tools that read a web page, from a tab or by its address; the one that renders it; and the web search. */
+const WEB_READS = new Set(['read_web_page', 'render_web_page', 'read_current_tab', 'read_tab'])
+const RENDER = 'render_web_page'
+const SEARCH = 'search_web'
+
+/** What a question's calls that worked did on the web: the pages read (each read counts), how many were rendered, and the searches. */
+export function webTouchedBy(calls: { name: string }[]): { read: number; rendered: number; searches: number } {
+  const count = (test: (name: string) => boolean) => calls.filter((call) => test(call.name)).length
+  return {
+    read: count((name) => WEB_READS.has(name)),
+    rendered: count((name) => name === RENDER),
+    searches: count((name) => name === SEARCH),
+  }
+}
+
 /**
  * The tools whose card names the very page the call read or changed. Others may name another page
  * than the one they touched (duplicate_page names the original, and touches the copy), so their

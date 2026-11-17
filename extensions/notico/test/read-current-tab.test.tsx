@@ -311,6 +311,7 @@ describe('reading the page in the current tab', () => {
     await user.click(card.getByRole('button', { name: 'Allow' }))
 
     expect(await screen.findByText('I could not read the page.')).toBeVisible()
+    expect(screen.getByText('Declined: read the current tab')).toBeVisible()
     expect(browser.tab.accessRequests).toEqual([[SITE]])
     expect(browser.tab.injections).toEqual([])
     expect(toolResults(browser)[0]).toMatch(/^Notico may not read news\.example\.com: the user did not allow it/)

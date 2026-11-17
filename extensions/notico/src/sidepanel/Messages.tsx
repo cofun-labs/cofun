@@ -1,7 +1,7 @@
 import { memo, useCallback, useEffect, useId, useState, useSyncExternalStore, type RefObject } from 'react'
 import type { QuestionCost, QuestionDetails } from '../agent'
 import { track } from '../analytics'
-import { chatTitle, replyTitle, savePage, touchedBy, type SavedTurn } from '../tools'
+import { chatTitle, replyTitle, savePage, touchedBy, webTouchedBy, type SavedTurn } from '../tools'
 import type { ChatSession, ChatSnapshot, Part, Reply, SaveState, Shown, ShownTool } from './chat-session'
 import { Icon } from './icons'
 import { Markdown } from './Markdown'
@@ -278,11 +278,6 @@ function CostNote({ cost }: { cost: QuestionCost }) {
   )
 }
 
-/** The tools that read a web page, from a tab or by its address, and the one that renders it. */
-const WEB_READS = new Set(['read_web_page', 'render_web_page', 'read_current_tab', 'read_tab'])
-const RENDER = 'render_web_page'
-const SEARCH = 'search_web'
-
 /**
  * What a question touched, one row each, by its calls that worked: in Notion, the distinct pages and
  * databases its tools read and changed; on the web, the pages it read (each read counts), how many
@@ -291,9 +286,7 @@ const SEARCH = 'search_web'
 function touched(reply: Reply): string[] {
   const calls = doneCalls(reply)
   const { read, changed } = touchedBy(calls)
-  const web = calls.filter((c) => WEB_READS.has(c.name)).length
-  const rendered = calls.filter((c) => c.name === RENDER).length
-  const searches = calls.filter((c) => c.name === SEARCH).length
+  const { read: web, rendered, searches } = webTouchedBy(calls)
   const rows = [
     [read && `Read ${counted(read, 'Notion page')}`, changed.length && `Changed ${counted(changed.length, 'page')}`],
     [

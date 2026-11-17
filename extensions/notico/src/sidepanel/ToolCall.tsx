@@ -196,7 +196,9 @@ function AccessCard({
             setInChrome(true)
             allowSite(origin).then(onAnswer, (err: unknown) => {
               console.error('Could not ask Chrome for access to the site', err)
-              onAnswer(false)
+              // The user said yes and Chrome failed: not a no, so the call doesn't show as declined.
+              // The tool still finds the site not allowed, and fails.
+              onAnswer(true)
             })
           }}
         >
