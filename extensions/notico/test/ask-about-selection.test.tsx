@@ -216,22 +216,62 @@ describe('asking about text selected on a page', () => {
     expect(browser.openedTabs).toEqual([])
   })
 
-  it('[UC-NOTICO-CHAT-006-S05] a long selection is clipped, and the AI is told how much was left out', async () => {
+  it.each([
+    ['plain text', 'x'.repeat(25_000), 'x'.repeat(20_000)],
+    ['emoji crossing the limit', 'x'.repeat(19_999) + '😀tail', 'x'.repeat(19_999)],
+    ['emoji fitting the limit', 'x'.repeat(19_998) + '😀tail', 'x'.repeat(19_998) + '😀'],
+    ['emoji after the limit', 'x'.repeat(20_000) + '😀tail', 'x'.repeat(20_000)],
+    [
+      'emoji crossing the preview limit',
+      'x'.repeat(199) + '😀' + 'x'.repeat(25_000),
+      'x'.repeat(199) + '😀' + 'x'.repeat(19_799),
+    ],
+  ])(
+    '[UC-NOTICO-CHAT-006-S05] clips a long selection with %s and keeps the panel usable',
+    async (_name, original, kept) => {
+      const { browser, tab, user } = await start()
+      await browser.openPanel()
+      tab.pickMenuItem(MENU_ITEM, original)
+      const preview = kept.startsWith('x'.repeat(199) + '😀') ? 'x'.repeat(199) : 'x'.repeat(200)
+      await screen.findByText(`news.example.com: “${preview}…”`)
+
+      browser.ai.script.push({ reply: 'Selection received.' })
+      await ask(user, 'What is this?')
+      await screen.findByText('Selection received.')
+      expect(sentQuestions(browser)).toEqual([
+        question(
+          selectionNote(
+            kept,
+            `[Clipped: this shows the first ${kept.length.toLocaleString('en-US')} of the selection's ${original.length.toLocaleString('en-US')} characters.]`,
+          ),
+          'What is this?',
+        ),
+      ])
+      expect(conversation().getByRole('link', { name: `news.example.com: “${preview}…”` })).toHaveAttribute(
+        'href',
+        `${ARTICLE}#:~:text=${encodeURIComponent(kept)}`,
+      )
+    },
+  )
+
+  it('[UC-NOTICO-CHAT-006-S05] keeps a complete character at the combined selection limit', async () => {
     const { browser, tab, user } = await start()
     await browser.openPanel()
-    tab.pickMenuItem(MENU_ITEM, 'x'.repeat(25_000))
-    await screen.findByText(/^news\.example\.com: “x+…”$/)
-
-    browser.ai.script.push({ reply: 'Lots of x.' })
-    await ask(user, 'What is this?')
-    await screen.findByText('Lots of x.')
+    const texts = ['a'.repeat(19_999), 'b'.repeat(20_000), 'c'.repeat(19_999), 'd😀tail']
+    for (const [index, text] of texts.entries()) {
+      tab.pickMenuItem(MENU_ITEM, text)
+      await waitFor(() => expect(toSend()).toHaveLength(index + 1))
+    }
+    browser.ai.script.push({ reply: 'Selections received.' })
+    await ask(user, 'Compare these.')
+    await screen.findByText('Selections received.')
     expect(sentQuestions(browser)).toEqual([
       question(
-        selectionNote(
-          'x'.repeat(20_000),
-          "[Clipped: this shows the first 20,000 of the selection's 25,000 characters.]",
-        ),
-        'What is this?',
+        [
+          ...texts.slice(0, 3).map((text) => selectionNote(text)),
+          selectionNote('d', "[Clipped: this shows the first 1 of the selection's 7 characters.]"),
+        ].join('\n'),
+        'Compare these.',
       ),
     ])
   })

@@ -13,6 +13,11 @@ export const MENU_ITEM = 'ask-notico'
 /** How much of a selection goes with a question; the rest is cut, and the model is told. */
 const SELECTION_CHARS = 20_000
 
+/** Keep the UTF-16 budget without leaving half of a supplementary character at the end. */
+export function clipSelection(text: string, limit: number): string {
+  return text.slice(0, limit).replace(/[\uD800-\uDBFF]$/, '')
+}
+
 /** How much of a page's URL is kept: some (a data: URL, say) hold a whole document. */
 const URL_CHARS = 2000
 
@@ -61,7 +66,7 @@ let lastSent = 0
  */
 export async function handOver(windowId: number, text: string, url: string, title: string): Promise<void> {
   const selection: Selection = {
-    text: text.slice(0, SELECTION_CHARS),
+    text: clipSelection(text, SELECTION_CHARS),
     chars: text.length,
     url: url.slice(0, URL_CHARS),
     title,
