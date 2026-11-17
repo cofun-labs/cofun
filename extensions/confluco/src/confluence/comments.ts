@@ -25,11 +25,11 @@ const fields = 'ancestors,container,body.storage,history,extensions.inlineProper
 const textLimit = 2000
 const escaped: Record<string, string> = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }
 
-function commentStorage(text: string): string {
+export function commentStorage(text: string): string {
   return '<p>' + text.replace(/[&<>"]/g, (character) => escaped[character]).replace(/\n/g, '<br />') + '</p>'
 }
 
-function matchesCommentText(value: string, text: string): boolean {
+export function matchesCommentText(value: string, text: string): boolean {
   // Only the plain-text paragraph and line breaks we wrote can appear in a verified comment.
   if (!/^<p>(?:[^<]|<br\s*\/?>)*<\/p>$/u.test(value)) return false
   const template = document.createElement('template')

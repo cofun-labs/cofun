@@ -2,7 +2,7 @@
 
 ## Behavior
 
-On a connected instance, the user can request a new title for a published page. Confluco shows the intended page and title before writing, keeps the page's content and location, and checks the resulting page. Confluco preserves a newer version and reports when the outcome is uncertain.
+On a connected instance, the user can request a new title for a published page. Confluco shows the intended page and title before writing, keeps the page's content and location, and checks the resulting page. Confluco stops when it detects that the page advanced before writing and reports when the outcome is uncertain.
 
 ### api-test
 
@@ -17,3 +17,4 @@ On a connected instance, the user can request a new title for a published page. 
 | ID | Priority | Status | Scenario |
 | --- | --- | --- | --- |
 | UC-CONFLUCO-CONFLUENCE-008-S04 | P0 | ✅ | Given a disposable published page on a real self-managed instance; when the user requests a rename; then the same page has the new title and still has its original content and parent. |
+| UC-CONFLUCO-CONFLUENCE-008-S05 | P0 | ✅ | Given a disposable published page on a signed-in Confluence Cloud site; when the user requests a rename; then the same page has the new title and retains its body and parent. |

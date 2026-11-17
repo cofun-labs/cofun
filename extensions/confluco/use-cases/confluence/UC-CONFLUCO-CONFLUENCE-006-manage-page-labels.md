@@ -20,3 +20,4 @@ On a connected Confluence instance, the user can view labels on a published page
 | ID | Priority | Status | Scenario |
 | --- | --- | --- | --- |
 | UC-CONFLUCO-CONFLUENCE-006-S05 | P0 | ✅ | Given an editable published test page on a real self-managed instance; when the user asks to add and remove a test label; then the label appears and disappears on that page. |
+| UC-CONFLUCO-CONFLUENCE-006-S08 | P0 | ✅ | Given an editable disposable page on a signed-in Confluence Cloud site; when the user requests a label addition and removal; then Confluco verifies both states on that same page. |

@@ -387,6 +387,7 @@ describe('Confluence Cloud', () => {
     expect(tools).toContain('"name":"read_page"')
     expect(tools).toContain('"name":"search_pages"')
     expect(tools).not.toContain('"name":"edit_page"')
+    expect(tools).not.toContain('"name":"upload_page_attachment"')
     expect(tools).toContain('"name":"list_spaces"')
     expect(toolResults(browser).join(' ')).toContain('Cloud workshop agenda')
     expect(toolResults(browser).join(' ')).toContain(CLOUD_PAGE)

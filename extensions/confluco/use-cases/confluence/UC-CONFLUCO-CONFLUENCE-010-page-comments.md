@@ -18,3 +18,4 @@ A user can read a published page's comments in bounded batches and follow links 
 | ID | Priority | Status | Scenario |
 | --- | --- | --- | --- |
 | UC-CONFLUCO-CONFLUENCE-010-S05 | P0 | ✅ | Given a real disposable published page; when the user adds a footer comment and replies to it; then the page displays the exact texts in the intended thread. |
+| UC-CONFLUCO-CONFLUENCE-010-S06 | P0 | ✅ | Given a disposable page on a signed-in Confluence Cloud site; when the user posts a footer comment and replies to it; then the discussion contains the exact texts and the requested reply relationship. |

@@ -1,5 +1,6 @@
 import type { ToolContext } from '../agent'
 import { applyAttachmentUpload, prepareAttachmentUpload } from '../confluence/attachments'
+import { applyCloudLabel, prepareCloudComment, prepareCloudPageWrite } from '../confluence/cloud-writes'
 import { applyComment, prepareComment, requestedComment } from '../confluence/comments'
 import { applyLabel, changeLabelArgs, requestedLabelChanges } from '../confluence/labels'
 import { applyOrganization, prepareOrganization, requestedOrganization } from '../confluence/page-organization'
@@ -142,6 +143,16 @@ function pageWrite(action: 'create' | 'rename') {
               ? 'Ask them to say Create page "TITLE" under this page.'
               : 'Ask them to say Rename this page to "TITLE".'),
         )
+      if (tab.instance.cloud) {
+        const plan = await prepareCloudPageWrite(request, tab, signal)
+        return {
+          preview: plan.preview,
+          async apply(signal) {
+            const data = await plan.apply(signal)
+            return { data, changed: data.changed }
+          },
+        }
+      }
       const plan = await preparePageWrite(request, tab, signal)
       return {
         preview: describePageWrite(plan),
@@ -245,7 +256,9 @@ const changeLabel = change(
     return {
       preview: `${action === 'add' ? 'Add' : 'Remove'} the label "${request.label}" on the current page.`,
       async apply(signal) {
-        const data = await applyLabel(request, tab, signal)
+        const data = tab.instance.cloud
+          ? await applyCloudLabel(request, tab, signal)
+          : await applyLabel(request, tab, signal)
         return { data, changed: data.changed }
       },
     }
@@ -261,6 +274,15 @@ const addComment = change(
     const request = requestedComment(userText)
     if (!request)
       refuse('Ask the user to say Add comment "TEXT" on this page or Reply to comment ID with "TEXT" on this page.')
+    if (tab.instance.cloud) {
+      const plan = await prepareCloudComment(request, tab, signal)
+      return {
+        preview: plan.preview,
+        async apply(signal) {
+          return { data: await plan.apply(signal), changed: true }
+        },
+      }
+    }
     const plan = await prepareComment(request, tab, signal)
     return {
       preview: plan.preview,
@@ -320,16 +342,15 @@ const undoChange = change(
   },
 )
 
+export const CLOUD_WRITES = [pageWrite('create'), pageWrite('rename'), changeLabel, addComment]
+
 export const CONFLUENCE_WRITES = [
-  pageWrite('create'),
-  pageWrite('rename'),
+  ...CLOUD_WRITES,
   editPage,
   undoChange,
   pageStatus('trash'),
   pageStatus('restore'),
   organizePage('move'),
   organizePage('copy'),
-  changeLabel,
-  addComment,
   uploadAttachment,
 ]

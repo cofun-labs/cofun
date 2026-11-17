@@ -19,3 +19,4 @@ On a connected instance, the user can request a published page with a title and 
 | ID | Priority | Status | Scenario |
 | --- | --- | --- | --- |
 | UC-CONFLUCO-CONFLUENCE-007-S05 | P0 | ✅ | Given an editable parent in a real self-managed Confluence instance; when the user requests a disposable child page; then the published child has the requested title and content. |
+| UC-CONFLUCO-CONFLUENCE-007-S07 | P0 | ✅ | Given an editable parent on a signed-in Confluence Cloud site; when the user requests a disposable child page; then the published child has the requested title and content under that parent. |

@@ -158,7 +158,7 @@ export function describePageWrite(plan: PreparedCreate | PreparedRename): string
 
 const entities: Record<string, string> = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }
 
-function plainTextStorage(text: string): string {
+export function plainTextStorage(text: string): string {
   return text
     .replace(/\r\n?/g, '\n')
     .split(/\n\n+/)
