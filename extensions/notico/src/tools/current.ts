@@ -30,6 +30,16 @@ export async function currentNotionPage(): Promise<OpenPage | undefined> {
 }
 
 /**
+ * Whether the current tab is on another site than Notion that read_current_tab could read (once the
+ * user allows the site): what the start of a chat offers there. Only the answer leaves here, never
+ * the tab's address or title.
+ */
+export async function currentTabReadable(): Promise<boolean> {
+  const tab = await currentTab()
+  return !!tab && !isNotion(tab.url) && 'origin' in readableSite(tab.url)
+}
+
+/**
  * A page a question carries: its title and URL, as the tab or Notion's search showed them, and
  * whether it is a database; or, with `web`, a page on another site, in the tab the user added
  * (`tab`, Chrome's id for it), as that tab showed it then.
@@ -339,7 +349,8 @@ async function mayReadOrAsk(origin: string, ask: AskOnCard): Promise<void> {
   if (!allowed || !(await mayRead(origin)))
     throw new Error(
       `Notico may not read ${host}: the user did not allow it, so nothing of the page was read. Answer ` +
-        "without it, and don't read this site again unless the user asks.",
+        'without it. If the user wants the page read, they can ask again: Notico then asks them again to allow ' +
+        "the site. Don't read this site again unless the user asks.",
     )
 }
 

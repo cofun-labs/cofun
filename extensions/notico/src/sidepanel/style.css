@@ -522,19 +522,7 @@ header .untitled {
   margin-left: -6px;
 }
 
-/* The model that answered, in the reply's row: a long name is cut to fit (its tooltip is outside). */
-.reply-model {
-  display: flex;
-  min-width: 0;
-}
-
 .reply-cost {
-  white-space: nowrap;
-}
-
-.reply-model-name {
-  overflow: hidden;
-  text-overflow: ellipsis;
   white-space: nowrap;
 }
 
@@ -884,6 +872,14 @@ a.icon-button {
   border: 1px solid var(--border);
   border-radius: 16px;
   font-weight: 700;
+}
+
+.tool-confirm-note {
+  display: block;
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 400;
 }
 
 .tool-answers {

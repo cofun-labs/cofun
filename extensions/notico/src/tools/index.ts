@@ -21,6 +21,7 @@ import { createPage, editPage, updatePages } from './write'
 export {
   carryPages,
   currentNotionPage,
+  currentTabReadable,
   openNotionPages,
   openWebTabs,
   addedTabNow,
@@ -79,6 +80,21 @@ export function touchedBy(calls: { details?: ToolDetails }[]): {
   const read = new Set(calls.flatMap((call) => call.details?.read ?? []))
   const changed = new Set(calls.flatMap((call) => call.details?.changed ?? []))
   return { read: read.size, changed: [...changed] }
+}
+
+/** The tools that read a web page, from a tab or by its address; the one that renders it; and the web search. */
+const WEB_READS = new Set([readWebPage, renderWebPage, readCurrentTab, readTab].map((tool) => tool.name))
+const RENDER = renderWebPage.name
+const SEARCH = searchWeb.name
+
+/** What a question's calls that worked did on the web: the pages read (each read counts), how many were rendered, and the searches. */
+export function webTouchedBy(calls: { name: string }[]): { read: number; rendered: number; searches: number } {
+  const count = (test: (name: string) => boolean) => calls.filter((call) => test(call.name)).length
+  return {
+    read: count((name) => WEB_READS.has(name)),
+    rendered: count((name) => name === RENDER),
+    searches: count((name) => name === SEARCH),
+  }
 }
 
 /**

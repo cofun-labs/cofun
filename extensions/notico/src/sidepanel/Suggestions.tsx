@@ -19,6 +19,8 @@ export interface StartContext {
   removed: boolean
   /** The user added pages to the question by hand. */
   added: boolean
+  /** With no Notion page in the tab: the tab is on a site Notico could read (read_current_tab). */
+  readable?: boolean
   mode?: Mode
 }
 
@@ -36,30 +38,46 @@ const quoted = (page: OpenPage) => `“${titleOf(page)}”`
  * The suggestions at the start of a chat, chosen from what the composer already knows: the open
  * page, whether it is a database, and the mode. Fixed sets: no model call, no Notion request.
  */
-function startSet({ page, removed, added, mode }: StartContext): StartSet {
+function startSet({ page, removed, added, readable, mode }: StartContext): StartSet {
   const readOnly = mode === 'read_only'
-  if (!page) {
-    const suggestions: Suggestion[] = [
-      { icon: 'search', text: 'Find the page about …' },
-      { icon: 'list', text: "What's in my workspace?" },
-      { icon: 'question', text: 'Which of my pages mention …' },
-    ]
-    if (removed)
-      return {
-        heading: 'What are you looking for?',
-        line: added
-          ? 'The open page is off the question: Notico works from the pages you added and your workspace.'
-          : 'No page goes with the question, so Notico works from your whole workspace.',
-        suggestions,
-      }
+  if (!page && removed)
     return {
       heading: 'What are you looking for?',
-      line: "This tab isn't a Notion page.",
-      suggestions,
-      note: readOnly
-        ? 'Open a Notion page to search your workspace or ask about a page.'
-        : 'Open a Notion page to search your workspace, or to summarize or edit a page.',
+      line: added
+        ? 'The open page is off the question: Notico works from the pages you added and your workspace.'
+        : 'No page goes with the question, so Notico works from your whole workspace.',
+      suggestions: [
+        { icon: 'search', text: 'Find the page about …' },
+        { icon: 'list', text: "What's in my workspace?" },
+        { icon: 'question', text: 'Which of my pages mention …' },
+      ],
     }
+  // Another site: Notion's tools run only in a Notion tab, so only the tab and the web are offered.
+  if (!page) {
+    const web: Suggestion = { icon: 'globe', text: 'Search the web for …' }
+    // Read only changes nothing, so it can't save the page either.
+    const note = readOnly
+      ? 'To search your Notion workspace, open a Notion page in this tab.'
+      : 'To search or edit your Notion workspace, open a Notion page in this tab. To save this page to Notion, ' +
+        'open the page to save it under, then add this tab with +.'
+    return readable
+      ? {
+          heading: 'What do you want to know about this page?',
+          line: "This tab isn't a Notion page. Notico can read it and search the web.",
+          suggestions: [
+            { icon: 'summary', text: 'Summarize this page' },
+            { icon: 'question', text: 'What does this page say about …' },
+            { icon: 'list', text: 'List its key points' },
+            web,
+          ],
+          note,
+        }
+      : {
+          heading: 'What are you looking for?',
+          line: "Notico can't read this tab, but it can search the web.",
+          suggestions: [web],
+          note,
+        }
   }
   const summarize: Suggestion = { icon: 'summary', text: `Summarize "${titleOf(page)}"` }
   const related: Suggestion = { icon: 'search', text: 'Find pages related to it' }

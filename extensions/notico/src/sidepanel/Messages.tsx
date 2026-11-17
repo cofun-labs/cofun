@@ -1,7 +1,7 @@
 import { memo, useCallback, useEffect, useId, useState, useSyncExternalStore, type RefObject } from 'react'
 import type { QuestionCost, QuestionDetails } from '../agent'
 import { track } from '../analytics'
-import { chatTitle, replyTitle, savePage, touchedBy, type SavedTurn } from '../tools'
+import { chatTitle, replyTitle, savePage, touchedBy, webTouchedBy, type SavedTurn } from '../tools'
 import type { ChatSession, ChatSnapshot, Part, Reply, SaveState, Shown, ShownTool } from './chat-session'
 import { Icon } from './icons'
 import { Markdown } from './Markdown'
@@ -197,13 +197,10 @@ const ReplyFoot = memo(function ReplyFoot({
 }) {
   if (!ended) return null
   const text = replyMarkdown(reply.parts)
-  // What it touched in Notion leads its details, in the "…", so the row stays quiet.
-  const summary = touched(reply)
-  const details = [...(summary ? [{ text: summary }] : []), ...detailRows(reply.details)]
-  const model = reply.details?.model
+  // What it touched in Notion and on the web leads its details, in the "…", so the row stays quiet.
+  const details = [...touched(reply).map((text) => ({ text })), ...detailRows(reply.details)]
   const cost = reply.details?.cost
-  if (!text && !details.length && !model && !cost) return null
-  const modelName = model && (model.service === 'hosted' ? HOSTED : model.name)
+  if (!text && !details.length && !cost) return null
   return (
     <div className="reply-foot">
       {text && <CopyButton text={text} />}
@@ -217,17 +214,6 @@ const ReplyFoot = memo(function ReplyFoot({
         />
       )}
       {cost && <CostNote cost={cost} />}
-      {modelName && (
-        <span
-          className="note reply-model"
-          role="note"
-          aria-label={`Answered by ${modelName}`}
-          data-tip="The model that answered"
-        >
-          {/* Cut to fit inside: the tooltip is drawn outside the outer span, so that one can't clip. */}
-          <span className="reply-model-name">{modelName}</span>
-        </span>
-      )}
       {details.length > 0 && <ReplyDetails rows={details} />}
     </div>
   )
@@ -273,13 +259,18 @@ function CopyButton({ text }: { text: string }) {
 const counted = (n: number, noun: string) => `${n} ${noun}${n === 1 ? '' : 's'}`
 
 /**
- * What a reply cost in credits, as the worker charged it: short, to two significant digits below one
- * credit ("0.48 credits") and one decimal above.
+ * Micro-credits as credits, short: to two significant digits below one credit ("0.48") and one
+ * decimal above.
  */
-function CostNote({ cost }: { cost: QuestionCost }) {
-  const credits = cost.microCredits / 1_000_000
+function creditsOf(microCredits: number): string {
+  const credits = microCredits / 1_000_000
   const digits = credits < 1 ? { maximumSignificantDigits: 2 } : { maximumFractionDigits: 1 }
-  const shown = credits.toLocaleString('en-US', digits)
+  return credits.toLocaleString('en-US', digits)
+}
+
+/** What a reply cost in credits, as the worker charged it (see creditsOf). */
+function CostNote({ cost }: { cost: QuestionCost }) {
+  const shown = creditsOf(cost.microCredits)
   return (
     <span className="note reply-cost" data-tip="What this reply cost">
       {shown} {shown === '1' ? 'credit' : 'credits'}
@@ -288,14 +279,22 @@ function CostNote({ cost }: { cost: QuestionCost }) {
 }
 
 /**
- * What a question touched in Notion: the distinct pages and databases its tools read and changed
- * (only calls that worked). A part that is zero is left out; empty when it touched nothing.
+ * What a question touched, one row each, by its calls that worked: in Notion, the distinct pages and
+ * databases its tools read and changed; on the web, the pages it read (each read counts), how many
+ * of them were rendered, and its searches. A part that is zero is left out; none when it touched nothing.
  */
-function touched(reply: Reply): string {
-  const { read, changed } = touchedBy(doneCalls(reply))
-  return [read && `Read ${counted(read, 'page')}`, changed.length && `Changed ${counted(changed.length, 'page')}`]
-    .filter(Boolean)
-    .join(' · ')
+function touched(reply: Reply): string[] {
+  const calls = doneCalls(reply)
+  const { read, changed } = touchedBy(calls)
+  const { read: web, rendered, searches } = webTouchedBy(calls)
+  const rows = [
+    [read && `Read ${counted(read, 'Notion page')}`, changed.length && `Changed ${counted(changed.length, 'page')}`],
+    [
+      web && `Read ${counted(web, 'web page')}${rendered ? ` (${rendered} rendered)` : ''}`,
+      searches && `Searched the web ${searches === 1 ? 'once' : `${searches} times`}`,
+    ],
+  ]
+  return rows.map((row) => row.filter(Boolean).join(' · ')).filter(Boolean)
 }
 
 /** The questions of `shown` with what their replies wrote and touched, as a saved page holds them. */
@@ -322,11 +321,14 @@ function amount(n: number): string {
   return n < 1000 ? String(n) : n < 999_950 ? short(n / 1000, 'k') : short(n / 1_000_000, 'M')
 }
 
-/** A reply's details, one row each, with what is unknown (or none) left out; the model is shown in its row. */
+/** A reply's details, one row each, with what is unknown (or none) left out. */
 function detailRows(details: QuestionDetails = {}): { label?: string; text: string }[] {
-  const { requests, tokens: used } = details
+  const { requests, tokens: used, model, cost } = details
   return [
+    ...(cost && (cost.renders || cost.searches) ? [{ label: 'Credits', text: costSplit(cost) }] : []),
     ...(requests ? [{ text: `Sent ${counted(requests, 'Notion request')}` }] : []),
+    // The model that answered, next to the tokens it used.
+    ...(model ? [{ label: 'Model', text: model.service === 'hosted' ? HOSTED : model.name }] : []),
     ...(used
       ? [
           {
@@ -339,6 +341,21 @@ function detailRows(details: QuestionDetails = {}): { label?: string; text: stri
         ]
       : []),
   ]
+}
+
+/**
+ * What a reply's credits went to, when some went to renders or searches: the model (what is left;
+ * none for a user's own model), then those, each one left out when it is zero.
+ */
+function costSplit({ microCredits, renders = 0, searches = 0 }: QuestionCost): string {
+  const model = microCredits - renders - searches
+  return [
+    model > 0 && `model ${creditsOf(model)}`,
+    renders && `renders ${creditsOf(renders)}`,
+    searches && `searches ${creditsOf(searches)}`,
+  ]
+    .filter(Boolean)
+    .join(' · ')
 }
 
 /** The "…" button at the end of a reply's row, and the popover with its details it opens and closes. */

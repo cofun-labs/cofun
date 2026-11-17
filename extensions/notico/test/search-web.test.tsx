@@ -98,6 +98,33 @@ describe('searching the web', () => {
     expect(screen.getByText('10 credits')).toBeVisible()
   })
 
+  it('[UC-NOTICO-CHAT-003-S15] reply details count the web pages read, rendered, and searched, and split what the reply cost', async () => {
+    const { browser, user } = await open()
+    browser.ai.found.set(QUERY, RESULTS)
+    browser.web.serve('https://tea.example/oolong', '<main><p>Oolong comes from Fujian.</p></main>')
+    browser.browserRun.render('https://app.example/map', '# Map\n\nFujian.', 4000)
+    // Each of the four model calls costs 0.1 credits.
+    browser.ai.usage = usageCosting(0.1)
+    browser.ai.script.push(
+      searchCall(QUERY),
+      readCall('https://tea.example/oolong'),
+      { toolCalls: [{ name: 'render_web_page', arguments: JSON.stringify({ url: 'https://app.example/map' }) }] },
+      { reply: 'Oolong comes from Fujian.' },
+    )
+
+    await ask(user, 'Where does oolong tea come from?')
+    expect(await screen.findByText('Oolong comes from Fujian.')).toBeVisible()
+    // The model 0.4, 4 s of browser time at 25 micro-credits a ms 0.1, and the search 5.
+    expect(screen.getByText('5.5 credits')).toBeVisible()
+
+    await user.click(screen.getByRole('button', { name: 'Reply details' }))
+    const rows = [...screen.getByRole('dialog', { name: 'Reply details' }).querySelectorAll('p')].map(
+      (p) => p.textContent,
+    )
+    expect(rows).toContain('Read 2 web pages (1 rendered) · Searched the web once')
+    expect(rows).toContain('Credits: model 0.4 · renders 0.1 · searches 5')
+  })
+
   it('[UC-NOTICO-PANEL-004-S06] a user with no credits left for a search is told so, the question stops, and they can buy credits', async () => {
     const { browser, user } = await open()
     // The model call that asks for the search spends all 200 free credits.

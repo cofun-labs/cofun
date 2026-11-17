@@ -26,6 +26,7 @@ Key constraints:
 | UC-NOTICO-CHAT-003-S12 | P1 | ✅ | Given a signed-in user; when they open their account in the side panel; then they see which account they are signed in to, then Credits with the credits left and Settings, each opening its page, and Sign out; and Settings shows the model providers (UC-NOTICO-AGENT-002) and the account, with Sign out, and nothing about credits. |
 | UC-NOTICO-CHAT-003-S13 | P1 | ✅ | Given a question the hosted model answered in several steps; when its reply ends; then the row under the reply shows what all of its model calls cost in credits, and the reopened chat shows it too. |
 | UC-NOTICO-CHAT-003-S14 | P1 | ✅ | Given a reply on the hosted model that the user stopped, or that ended in an error, after a step, or a reply from the user's own model with no page rendered or search made for it; when it ends; then no cost is shown under it, though the credits shown still include what a stopped or failed reply was charged. |
+| UC-NOTICO-CHAT-003-S15 | P1 | ✅ | Given a reply that read web pages, rendered one, and searched the web; when the user opens its details; then they count the web pages read, how many were rendered, and the searches, apart from the Notion pages, and split what the reply cost into the model, the renders, and the searches. |
 
 ### ai-e2e
 

@@ -100,6 +100,8 @@ describe('reading a long page in parts', () => {
     await ask(user, 'And the steeping time?')
 
     expect(await screen.findByText('Four minutes.')).toBeVisible()
+    // Its card says which part it read, so it doesn't look like the first read again.
+    expect(screen.getByText('Read part 3 of')).toHaveTextContent('Read part 3 of Brewing guide')
     const part = toolResults(browser)[1]
     expect(part.split('\n').slice(0, 4)).toEqual([
       DATA_LINE,
@@ -179,7 +181,7 @@ describe('reading a long page in parts', () => {
     // The panel opens again, and the chat is opened from the list.
     await browser.openPanel()
     await user.click(await screen.findByRole('button', { name: 'Chats' }))
-    await user.click(await screen.findByRole('button', { name: /What does/ }))
+    await user.click(await screen.findByRole('button', { name: /What does .* say about steeping/ }))
     browser.ai.script.push(call('read_result', { result: id, part: 2 }), { reply: 'Part two.' })
     await ask(user, 'And the usage?')
 
@@ -190,17 +192,17 @@ describe('reading a long page in parts', () => {
   it('[UC-NOTICO-PANEL-005-S06] a page longer than what is kept says how much was kept', async () => {
     const { browser, user } = await open()
     const app = 'https://app.example/log'
-    browser.browserRun.render(app, `# Log\n\n${'entry\n'.repeat(350_000)}`)
+    browser.browserRun.render(app, `# Log\n\n${'entry\n'.repeat(175_000)}`)
     browser.ai.script.push(call('render_web_page', { url: app }), { reply: 'A long log.' })
 
     await ask(user, `What is on ${app}?`)
 
-    // Two million characters go through the worker and into IndexedDB: the reply takes a while to show.
+    // A million characters go through the worker and into IndexedDB: the reply takes a while to show.
     expect(await screen.findByText('A long log.', {}, { timeout: 4000 })).toBeVisible()
     const lines = toolResults(browser)[0].split('\n')
-    expect(lines[2]).toMatch(/^\[Kept as result r_[0-9a-f]{16}: 2,000,000 characters in \d+ parts; this is part 1\./)
+    expect(lines[2]).toMatch(/^\[Kept as result r_[0-9a-f]{16}: 1,000,000 characters in \d+ parts; this is part 1\./)
     expect(lines[3]).toBe(
-      "[Only the first 2,000,000 of the page's 2,100,006 characters were read: the rest of it is out of reach.]",
+      "[Only the first 1,000,000 of the page's 1,050,006 characters were read: the rest of it is out of reach.]",
     )
   })
 

@@ -805,20 +805,19 @@ describe('sessions', () => {
     expect(screen.queryByText(/Read 1 page|Notion request/)).not.toBeInTheDocument()
     // Both model calls of the question, and not the request for the session's title.
     const details = [
-      'Read 1 page',
+      'Read 1 Notion page',
       `Sent ${made} Notion request${made === 1 ? '' : 's'}`,
+      'Model: Auto',
       'Tokens: 2.4k in (1.6k cached) · 100 out',
     ]
+    // The model that answered is named with the tokens it used.
     expect(await replyDetails(user)).toEqual(details)
-    // The model that answered is named in the reply's row.
-    expect(screen.getByRole('note', { name: 'Answered by Auto' })).toBeVisible()
 
     await browser.openPanel()
     await openSession(user, /What does this page say\?/)
 
     await screen.findByText('It is a fixture.')
     expect(await replyDetails(user)).toEqual(details)
-    expect(screen.getByRole('note', { name: 'Answered by Auto' })).toBeVisible()
     // Showing a saved session asks nothing of Notion.
     expect(browser.tab.sent).toHaveLength(made)
   })
@@ -856,7 +855,7 @@ describe('sessions', () => {
 
     // The call that read the page reported its cost, but the one stopped never hears what it was
     // charged: no number is shown rather than one that is too low.
-    expect(screen.getByRole('note', { name: 'Answered by Auto' })).toBeVisible()
+    expect(await replyDetails(user)).toContain('Model: Auto')
     expect(conversation().queryByText(/\bcredits?$/)).not.toBeInTheDocument()
   })
 
@@ -909,7 +908,7 @@ describe('sessions', () => {
     await screen.findByText('Read them.')
     await answered()
 
-    expect(await replyDetails(user)).toContain('Read 2 pages')
+    expect(await replyDetails(user)).toContain('Read 2 Notion pages')
   })
 
   it('[UC-NOTICO-CHAT-001-S16] copying a reply puts its Markdown on the clipboard, without its tool calls or what it read', async () => {

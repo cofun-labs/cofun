@@ -2,7 +2,7 @@ import { useAuth } from '@clerk/chrome-extension'
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
 import { track } from '../analytics'
 import { pageIdFromUrl } from '../notion/hosts'
-import { currentNotionPage, OPEN_A_PAGE, type OpenPage } from '../tools'
+import { currentNotionPage, currentTabReadable, OPEN_A_PAGE, type OpenPage } from '../tools'
 import { AccountMenu } from './Account'
 import type { ChatSession } from './chat-session'
 import { Composer, useComposer } from './Composer'
@@ -39,7 +39,7 @@ export function Chat({ userId }: { userId: string }) {
   // Opened from the model menu's "Manage models": the Settings page puts the focus on Providers.
   const [settingsAt, setSettingsAt] = useState<'providers'>()
 
-  const tabPage = useTabPage()
+  const { page: tabPage, readable } = useTab()
   const composer = useComposer({ panel, chat, tabPage, busy })
 
   const openCredits = useCallback(() => {
@@ -133,7 +133,7 @@ export function Chat({ userId }: { userId: string }) {
 
       <div className="stage">
         <main id="messages" ref={listRef} inert={covered}>
-          {empty && <ChatStart context={{ ...composer.start, mode }} onPick={composer.fill} />}
+          {empty && <ChatStart context={{ ...composer.start, readable, mode }} onPick={composer.fill} />}
           <MessageList chat={chat} saveBlocked={saveBlocked} onBuyCredits={openCredits} scrollRef={listRef} />
         </main>
 
@@ -219,22 +219,25 @@ function ChatHeader({
 }
 
 /**
- * The Notion page open in the current tab, if one is, as the tab says: no Notion request. Follows the
- * tab: switching tabs, the tab going to another page or renaming it, or Chrome swapping in a
- * prerendered tab for it (onReplaced, which fires neither of the others).
+ * The Notion page open in the current tab, if one is, as the tab says (no Notion request); and
+ * otherwise whether the tab is on a site Notico could read. Follows the tab: switching tabs, the tab
+ * going to another page or renaming it, or Chrome swapping in a prerendered tab for it (onReplaced,
+ * which fires neither of the others).
  */
-function useTabPage(): OpenPage | undefined {
+function useTab(): { page?: OpenPage; readable: boolean } {
   const [tabPage, setTabPage] = useState<OpenPage>()
+  const [readable, setReadable] = useState(false)
   useEffect(() => {
     let reads = 0
     const read = () => {
       const n = ++reads
-      void currentNotionPage()
-        .catch(() => undefined)
-        .then((page) => {
+      void Promise.all([currentNotionPage().catch(() => undefined), currentTabReadable().catch(() => false)]).then(
+        ([page, web]) => {
           if (n !== reads) return
           setTabPage((was) => (was?.url === page?.url && was?.title === page?.title ? was : page))
-        })
+          setReadable(web)
+        },
+      )
     }
     const onUpdated = (_id: number, change: chrome.tabs.OnUpdatedInfo, tab: chrome.tabs.Tab) => {
       if (tab.active && (change.url !== undefined || change.title !== undefined)) read()
@@ -250,5 +253,5 @@ function useTabPage(): OpenPage | undefined {
       chrome.tabs.onReplaced.removeListener(read)
     }
   }, [])
-  return tabPage
+  return { page: tabPage, readable }
 }

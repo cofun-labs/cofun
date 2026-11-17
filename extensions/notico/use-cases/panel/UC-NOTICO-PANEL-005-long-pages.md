@@ -15,7 +15,7 @@ Key constraints:
 
 | ID | Priority | Status | Scenario |
 | --- | --- | --- | --- |
-| UC-NOTICO-PANEL-005-S01 | P1 | ✅ | Given a page longer than one part, in a tab or at an address; when the AI reads it, and then another part; then it gets the first part with an outline of its headings and the part each starts in, and an id to read the rest by, and each part marked as data from that page. |
+| UC-NOTICO-PANEL-005-S01 | P1 | ✅ | Given a page longer than one part, in a tab or at an address; when the AI reads it, and then another part; then it gets the first part with an outline of its headings and the part each starts in, and an id to read the rest by, and each part marked as data from that page; the card of each later read says which part it read. |
 | UC-NOTICO-PANEL-005-S03 | P1 | ✅ | Given a page the AI read in parts; when it searches it for some text; then it gets the lines that hold the text, ignoring case, at most 20, each with the part it is in. |
 | UC-NOTICO-PANEL-005-S04 | P1 | ✅ | Given a page read in parts in one chat; when the AI in another chat asks for it by its id; then it is refused, as an id it was never given. |
 | UC-NOTICO-PANEL-005-S05 | P1 | ✅ | Given a page the AI read in parts more than 7 days ago; when the side panel opens; then the page's full text is deleted from the device, whether the chat is still saved or was deleted. |

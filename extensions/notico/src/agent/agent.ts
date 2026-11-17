@@ -33,6 +33,7 @@ import type {
   ToolSpec,
   ToolStatus,
   Turn,
+  WebCost,
 } from './types'
 import { ToolDetails } from './types'
 import { checkout, hostedProvider, readOwn, readWebPage, searchWebFor } from './worker'
@@ -134,8 +135,11 @@ export class CopilotAgent {
   private askOnCard?: AskOnCard
   /** Takes each chunk of the model's streams while a question runs: what the calls cost is in them. */
   private onChunk?: (chunk: unknown) => void
-  /** Adds what a render cost to the question running, in micro-credits; undefined when it could not be read. */
-  private onCost?: (microCredits: number | undefined) => void
+  /**
+   * Adds what a render or a search cost to the question running, in micro-credits (undefined when it
+   * could not be read), and which of the two it was.
+   */
+  private onCost?: (microCredits: number | undefined, kind: WebCost) => void
   /** Which chat and question the requests of the question running are for. */
   private turn?: Turn
   /**
@@ -297,9 +301,13 @@ export class CopilotAgent {
       if (call?.estimated) costUnknown = true
       else if (call) addCost(call.microCredits)
     }
-    const addCost = (microCredits: number | undefined) => {
+    // A render's or a search's cost is counted apart too, so the reply's details can split the cost.
+    const addCost = (microCredits: number | undefined, kind?: WebCost) => {
       if (microCredits === undefined) costUnknown = true
-      else cost = { microCredits: (cost?.microCredits ?? 0) + microCredits }
+      else {
+        cost = { ...cost, microCredits: (cost?.microCredits ?? 0) + microCredits }
+        if (kind) cost[kind] = (cost[kind] ?? 0) + microCredits
+      }
     }
     this.onChunk = onChunk
     this.onCost = addCost
@@ -322,6 +330,9 @@ export class CopilotAgent {
       const call = running
       if (!call || epoch !== this.epoch) return false
       const answer = await askUser(confirm, { ...call, question: text, access }, this.cancel.signal)
+      // A site the user did not let Notico read is their choice, not a failure: the call shows as
+      // declined, with the tool's own error for the model.
+      if (access && answer === 'deny' && epoch === this.epoch) declined.add(call.id)
       return answer === 'allow' && epoch === this.epoch
     }
     this.askOnCard = askOnCard
@@ -643,11 +654,11 @@ export class CopilotAgent {
         // A render or a search costs credits, and the question it was for counts them; a plain read is free.
         readWeb: (url, maxChars, render, signal) =>
           readWebPage({ ...this.config, turn }, url, maxChars, render, signal, (cost) => {
-            if (epoch === this.epoch) this.onCost?.(cost)
+            if (epoch === this.epoch) this.onCost?.(cost, 'renders')
           }),
         searchWeb: (query, limit, signal) =>
           searchWebFor({ ...this.config, turn }, query, limit, signal, (cost) => {
-            if (epoch === this.epoch) this.onCost?.(cost)
+            if (epoch === this.epoch) this.onCost?.(cost, 'searches')
           }),
         keep: async (result) => {
           const store = this.config.results

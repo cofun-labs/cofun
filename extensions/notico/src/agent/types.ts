@@ -334,10 +334,19 @@ const AnsweredBy = z.union([
 export type AnsweredBy = z.infer<typeof AnsweredBy>
 
 /**
- * What a question cost on the hosted model, summed over its model calls as the worker charged them,
- * in micro-credits (a credit is 1,000,000). Exact: only a question that ended normally has one.
+ * What a question cost, in micro-credits (a credit is 1,000,000): `microCredits` in all, the hosted
+ * model's calls as the worker charged them and the renders and searches made for it; and of that,
+ * `renders` and `searches`, when there were any. Exact: only a question that ended normally has one.
+ * A question asked before the split was kept has the sum only.
  */
-const QuestionCost = z.object({ microCredits: z.number().int().nonnegative() })
+const MicroCredits = z.number().int().nonnegative()
+const QuestionCost = z.object({
+  microCredits: MicroCredits,
+  renders: MicroCredits.optional(),
+  searches: MicroCredits.optional(),
+})
+/** What a call to the worker other than the model's spent credits on (see QuestionCost). */
+export type WebCost = 'renders' | 'searches'
 export type QuestionCost = z.infer<typeof QuestionCost>
 
 /**

@@ -91,8 +91,9 @@ export const ToolCall = memo(function ToolCall({
   const asking = tool.status === 'confirm' && onAnswer
   return (
     <>
-      {/* Open while asking, so the user sees exactly what the tool would do. */}
-      <details className={`tool ${tool.status}`} open={tool.status === 'confirm'}>
+      {/* Open while asking whether to run it, so the user sees exactly what the tool would do. A
+          question the call asks as it runs (to read a site, to go on) is about something else. */}
+      <details className={`tool ${tool.status}`} open={tool.status === 'confirm' && !tool.question}>
         <summary title={LABEL[tool.status]}>
           <span className="tool-mark" role="img" aria-label={LABEL[tool.status]}>
             <Icon name={MARK[tool.status]} />
@@ -178,7 +179,12 @@ function AccessCard({
   const [inChrome, setInChrome] = useState(false)
   return (
     <div className="tool-confirm" role="group" aria-label={question} aria-busy={inChrome}>
-      <span>{inChrome ? `${question} Answer Chrome's prompt.` : question}</span>
+      <span>
+        {inChrome ? `${question} Answer Chrome's prompt.` : question}
+        <span className="tool-confirm-note">
+          Notico can then read pages on {new URL(origin).host} when a question needs them. Chrome asks you too.
+        </span>
+      </span>
       <div className="tool-answers">
         <button disabled={inChrome} onClick={() => onAnswer(false)}>
           Deny
@@ -190,7 +196,9 @@ function AccessCard({
             setInChrome(true)
             allowSite(origin).then(onAnswer, (err: unknown) => {
               console.error('Could not ask Chrome for access to the site', err)
-              onAnswer(false)
+              // The user said yes and Chrome failed: not a no, so the call doesn't show as declined.
+              // The tool still finds the site not allowed, and fails.
+              onAnswer(true)
             })
           }}
         >
