@@ -1,6 +1,6 @@
 # Cofun
 
-Cofun: Chrome extensions that each open an AI side panel next to one kind of page, backed by one Cloudflare Worker they share. The repository holds the extensions, all built from one package in `extension/`, with each product's own files in `extension/products/<name>/` (Notico, for Notion, in `extension/products/notico/`), and the worker. This file covers the development workflow and coding conventions.
+Cofun: Chrome extensions that each open an AI side panel next to one kind of page, backed by one Cloudflare Worker they share. The repository holds the extensions, one per folder in `extensions/` (Notico, for Notion, in `extensions/notico/`), and the worker. This file covers the development workflow and coding conventions.
 
 **Before starting work, read [docs/architecture.md](docs/architecture.md)** for the architecture, auth flow, and code layout. The other docs:
 
@@ -9,7 +9,7 @@ Cofun: Chrome extensions that each open an AI side panel next to one kind of pag
 - [docs/security.md](docs/security.md): the security model, which a change to the agent, the extension's surface, or the worker's routes is checked against.
 - [docs/bdd.md](docs/bdd.md): use cases, scenarios, and what gets a test.
 - [docs/review.md](docs/review.md): how a PR is reviewed, with every rule numbered.
-- [README.md](README.md) introduces Cofun; each `extension/products/<name>/README.md` is written for that extension's users, with little technical detail.
+- [README.md](README.md) introduces Cofun; each `extensions/<name>/README.md` is written for that extension's users, with little technical detail.
 
 Update `docs/architecture.md` only when a change adds, moves, or removes a module boundary or anything its Layout lists, or changes where data goes or comes from (a new host, store, or route). Limits, constants, index names, UI details, and edge-case behavior go in code comments.
 
@@ -30,21 +30,21 @@ Update `docs/architecture.md` only when a change adds, moves, or removes a modul
      ```
 
 2. **Cover business rules with scenarios.** Ask one question: does this change add or change a business rule a user can notice? If not, as with most bug fixes and refactors, no use case changes. If so:
-   - A scenario covers it, in `extension/products/<name>/use-cases/{domain}/`, or in `worker/use-cases/{domain}/` for a rule only the worker decides ([Products](docs/bdd.md#products)).
+   - A scenario covers it, in `extensions/<name>/use-cases/{domain}/`, or in `worker/use-cases/{domain}/` for a rule only the worker decides ([Products](docs/bdd.md#products)).
    - Reuse or edit a scenario that already says it, or add one with a priority (P0/P1/P2) under its strategy (`api-test` or `ai-e2e`), marked 🚧 until verified, then ✅. [docs/bdd.md](docs/bdd.md) says how to write them.
 
 3. **Implement with tests.** A test guards each such rule:
    - P0 scenarios must be verified before merge; P1 should be; P2 can wait.
-   - `api-test` scenarios are vitest integration tests named with the scenario ID: in `worker/test/` for the worker's HTTP API, and in `extension/test/` for the extension's client code (`*.test.ts`) and the side panel's UI (`*.test.tsx`).
+   - `api-test` scenarios are vitest integration tests named with the scenario ID: in `worker/test/` for the worker's HTTP API, and in `extensions/<name>/test/` for the extension's client code (`*.test.ts`) and the side panel's UI (`*.test.tsx`).
      ```typescript
      it('[UC-NOTICO-CHAT-001-S01] signed-in user gets a streamed reply', async () => {
      ```
-   - `ai-e2e` scenarios are verified by an agent driving a real browser with `pnpm browser-driver`, and the run is recorded in the PR ([Running an `ai-e2e` scenario](docs/bdd.md#running-an-ai-e2e-scenario)).
+   - `ai-e2e` scenarios are verified by an agent driving a real browser with `pnpm e2e`, and the run is recorded in the PR ([Running an `ai-e2e` scenario](docs/bdd.md#running-an-ai-e2e-scenario)).
    - Implementation details worth guarding get standalone tests named with `[@no-uc:<kind>]` for the harm they guard (`data`, `notion-safety`, `money`, `access`, `privacy`, or `contract`; see [What gets a test](docs/bdd.md#what-gets-a-test)).
    - `pnpm check` fails on a test that names neither a scenario ID nor a kind, on an `api-test` scenario marked ✅ with no test named with its ID, and on a scenario row it can't read ([Coverage check](docs/bdd.md#coverage-check)). When a scenario's ID changes, rename its tests; when a scenario is deleted, delete its tests or take the ID out of their names.
    - Gaps that slip past a PR are found by the `/bdd-audit` skill, run before a release or after a large feature ([Coverage audit](docs/bdd.md#coverage-audit)), not by per-PR bookkeeping.
 
-4. **Run pre-PR checks.** `pnpm check` runs on every commit (a lefthook pre-commit hook). Review `git diff --stat origin/main...` and `git diff origin/main... -- 'extension/products/*/use-cases/*' worker/use-cases`. Confirm the diff matches the Issue (or the PR body, when there is no Issue) and every business rule it adds or changes has a scenario and a test.
+4. **Run pre-PR checks.** `pnpm check` runs on every commit (a lefthook pre-commit hook). Review `git diff --stat origin/main...` and `git diff origin/main... -- 'extensions/*/use-cases/*' worker/use-cases`. Confirm the diff matches the Issue (or the PR body, when there is no Issue) and every business rule it adds or changes has a scenario and a test.
 
 5. **Open a PR.** Branch `issue-{ID}` from `origin/main` (or a short descriptive name when there is no Issue), commit, push, and open a PR. If there is an Issue, the PR body contains `Closes #{ID}`.
    - A branch builds on another unmerged PR only when it needs that PR's changes; its PR targets that branch as its base, so its diff and review cover only its own commits. Such a PR is never merged while its base is not `main`: once its base merges, GitHub points it at `main`, and it merges `origin/main` and goes through the queue like any other.
@@ -76,7 +76,7 @@ Update `docs/architecture.md` only when a change adds, moves, or removes a modul
 ### Git rules
 
 - **Never push to `main`.** Every change goes through a branch and PR; the `main` ruleset (`.github/rulesets/main.json`) rejects direct pushes from everyone.
-- **Work in a worktree.** Develop each task in its own git worktree under `.claude/worktrees/`, branched from `origin/main`. Leave the main checkout on `main`: the maintainer reads code and runs `pnpm build` and `pnpm browser-driver` there.
+- **Work in a worktree.** Develop each task in its own git worktree under `.claude/worktrees/`, branched from `origin/main`. Leave the main checkout on `main`: the maintainer reads code and runs `pnpm build` and `pnpm e2e` there.
 - **GitHub settings are code**: the `main` ruleset in `.github/rulesets/main.json`, repository options in `scripts/sync-github-settings.sh`. Change them through a PR ([GitHub settings](docs/development.md#github-settings)).
 - **Never rewrite published history** (`git commit --amend`, `git rebase`) on pushed branches; add new commits. **Never force-push** unless explicitly asked.
 - Use [Conventional Commits](https://www.conventionalcommits.org/) for commits, PR titles, and Issue titles: `feat:`, `fix:`, `docs:`, `chore:`, `refactor:`, `test:`. The prefix is an Issue's kind: there are no type labels.
@@ -87,35 +87,35 @@ Update `docs/architecture.md` only when a change adds, moves, or removes a modul
 
 ## Public repository
 
-This is an open-source repository. **Never commit account identifiers or secrets**: Cloudflare account IDs, API tokens, Clerk secret keys, or an extension's private signing key (`extension/products/<name>/keys/`, git-ignored). Values that are public by design are fine: the Clerk publishable key, the Clerk JWT public key, the extension's public key and ID, and domain names.
+This is an open-source repository. **Never commit account identifiers or secrets**: Cloudflare account IDs, API tokens, Clerk secret keys, or an extension's private signing key (`extensions/<name>/keys/`, git-ignored). Values that are public by design are fine: the Clerk publishable key, the Clerk JWT public key, the extension's public key and ID, and domain names.
 
 ## Privacy
 
-An extension's Chrome Web Store privacy policy is written in two parts: [PRIVACY.md](PRIVACY.md) for what is the same for every extension (who receives data from the sign-in and the worker, and what the worker stores and logs), and `extension/products/<name>/PRIVACY.md` ([Notico's](extension/products/notico/PRIVACY.md)) for what that extension reads in the browser, which hosts it sends data to, and what it keeps on the device. Both are written by kind of data and by recipient, not by feature.
+An extension's Chrome Web Store privacy policy is written in two parts: [PRIVACY.md](PRIVACY.md) for what is the same for every extension (who receives data from the sign-in and the worker, and what the worker stores and logs), and `extensions/<name>/PRIVACY.md` ([Notico's](extensions/notico/PRIVACY.md)) for what that extension reads in the browser, which hosts it sends data to, and what it keeps on the device. Both are written by kind of data and by recipient, not by feature.
 
 **A PR updates the privacy page it concerns when it adds a kind of data that leaves the browser, a recipient or host, or something stored or logged.** A feature that sends a kind of data already listed to a recipient already listed changes nothing there.
 
 - A new kind of data, a new host, or something new the extension keeps on the device updates the extension's `PRIVACY.md`. Its table of hosts is the list of hosts the extension may contact.
-- A new host also changes the content security policy (`extension/manifest.ts`), which enforces that list for the extension's pages, and `extension/test/manifest.test.ts`, which pins the policy and the host permissions.
+- A new host also changes the content security policy (`extensions/notico/manifest.ts`), which enforces that list for the extension's pages, and `extensions/notico/test/manifest.test.ts`, which pins the policy and the host permissions.
 - A new recipient of what the worker receives, or a change to what the worker stores or logs, updates `PRIVACY.md`.
-- What the Chrome Web Store asks about the same things (permission justifications, data usage) is in `extension/products/<name>/store/privacy.md`, which changes with them.
+- What the Chrome Web Store asks about the same things (permission justifications, data usage) is in `extensions/<name>/store/privacy.md`, which changes with them.
 
 ## Architecture
 
 [docs/architecture.md](docs/architecture.md) describes the design; these are the rules a change must keep.
 
-- **One extension package, one folder per product.** Every extension is built from `extension/`: the code the products share is in `extension/src/`, and each product's own files (its definition, brand, icon, build config, privacy page, store page, and use cases) in `extension/products/<name>/`. A product never imports another product.
+- **One extension per folder.** Each extension keeps its own copy of the side panel code and never imports another extension.
 - **A site is called only through its site layer**: one module knows the site's endpoints and request shapes (Notico's `src/notion/api.ts`), and requests run inside the user's tab for that site (`src/<site>/tab.ts`, `chrome.scripting` in the ISOLATED world), so they go to that tab's host with its session. Tools never `fetch` the site's URLs themselves. Never use `chrome.debugger`: it shows a permanent "debugging this browser" banner.
 - **Every worker route under `/v1` sits behind the session check** (`src/routes/session.ts`); `worker/test/session.test.ts` checks that each refuses a request without a session.
-- **Module boundaries are lint errors** in `.oxlintrc.json`, run by `pnpm check`. In the extension:
+- **Module boundaries are lint errors** in `.oxlintrc.json`, run by `pnpm check`. In every extension:
   - only `src/agent/` imports pi (`@earendil-works/pi-agent-core`);
   - `fetch` is used only in `src/agent/` (the worker) and in the `tab.ts` of a site layer that sends requests to its site (Notico's `src/notion/tab.ts`); `chrome.scripting` only in `src/<site>/tab.ts`; `chrome.debugger` nowhere;
   - `zod` is imported only through `src/zod.ts` (the worker's through `worker/src/zod.ts`);
   - `posthog-js` is imported only in `src/analytics.ts`;
   - the site layer imports nothing from the agent, the tools, the sessions, or the side panel;
-  - the code every product shares (the side panel, the agent, usage data, sessions) imports nothing from `src/notion/`, the Notion tools, or a product's folder (`products/<name>/`): it reads them through `src/product.ts`, and only the entry points (`src/sidepanel/main.tsx`, `src/background.ts`) pick the product;
+  - in Notico, the code every product shares (the side panel, the agent, usage data, sessions) imports nothing from `src/notion/`, the Notion tools, or the product's definition (`src/notico.ts`, `src/notico-brand.ts`): it reads them through `src/product.ts`, and only the entry points (`src/sidepanel/main.tsx`, `src/background.ts`) pick the product;
   - the side panel's state outside React (`src/sidepanel/chat-session.ts`, one `ChatSession` per chat, and `src/sidepanel/panel.ts`, the `Panel`) imports no React and no component;
-  - no product imports another product's folder.
+  - no extension imports another.
 
   When a boundary changes, change the rule and this list together. Never silence one with an `oxlint-disable` comment.
 
@@ -154,7 +154,7 @@ The extensions and the worker call outside services: the site an extension acts 
 How the fakes and test helpers fit together is in [Testing](docs/development.md#testing).
 
 - **Write a test only when it earns its place.** More tests are not better: each one costs time to run, read, and change. [What gets a test](docs/bdd.md#what-gets-a-test) decides.
-- **Tests live with the package they cover**: `extension/test/` and `worker/test/`. Backend tests are REST integration tests that call the Hono app over HTTP and assert on status codes and JSON bodies.
+- **Tests live with the package they cover**: `extensions/<name>/test/` and `worker/test/`. Backend tests are REST integration tests that call the Hono app over HTTP and assert on status codes and JSON bodies.
 - **No mocking.** No `vi.mock()` and no spies. Replace an external dependency with a fake that implements the same interface, injected through `env`. The one module replaced whole is Clerk's React SDK, for the UI tests only; replace no other module this way.
 - **UI tests run the whole side panel and act as a user** ([Testing the side panel's UI](docs/bdd.md#testing-the-side-panels-ui)). Never test a component on its own, and find things by role, accessible name, or visible text, never through component state, the agent, the session store, or a test id. If an element can't be found that way, improve its accessibility.
 - **Tests never wait for time to pass.** Use a fake clock with an explicit start time and move it: no sleeps, and no assertion that depends on how long something took. Waiting for the screen to change is fine.
@@ -168,7 +168,7 @@ pnpm check        # lint, knip, format check, use case coverage, typecheck, exte
 pnpm format:fix   # format all files
 pnpm test         # extension and worker tests, and the unit tests of scripts/
 pnpm media 367 demo.gif   # upload a PR's demo GIF or screenshots and print their URLs (maintainer's machine only)
-pnpm browser-driver --help   # drive the shared Chrome Canary for ai-e2e runs (maintainer's machine only)
+pnpm e2e --help   # drive the shared Chrome Canary for ai-e2e runs (maintainer's machine only)
 ```
 
 ## Key decisions

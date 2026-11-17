@@ -2,9 +2,9 @@
 
 How Cofun's extensions and the backend they share are built, and why. This file holds the core design only: the parts, the boundaries between them, and where data flows. Update it when a change adds, moves, or removes a module boundary or anything listed under [Layout](#layout), or changes where data goes or comes from (a new host, store, or route). Limits, constants, index names, UI details, and edge-case behavior belong in code comments, next to the code they describe. For setup and deployment see [development.md](development.md); for the workflow and coding rules see [AGENTS.md](../AGENTS.md); for the security model see [security.md](security.md).
 
-Each Cofun extension is an AI side panel for one kind of page, published by itself and built from one package, `extension/`: the code every product shares in `extension/src/`, and each product's own files in `extension/products/<name>/` (Notico, for Notion, is the first). All of them call one Cloudflare Worker (`worker/`), which signs users in, checks who is asking, keeps their credits, passes the conversation to the model, and reads public web pages and searches the web for an extension. It never talks to Notion or acts as the user on any site. The agent and its tools run in the extension, next to the page they act on.
+Each Cofun extension is an AI side panel for one kind of page, in its own folder under `extensions/` (Notico, for Notion, is the first), built and published by itself. All of them call one Cloudflare Worker (`worker/`), which signs users in, checks who is asking, keeps their credits, passes the conversation to the model, and reads public web pages and searches the web for an extension. It never talks to Notion or acts as the user on any site. The agent and its tools run in the extension, next to the page they act on.
 
-The products share the side panel code (UI, agent, sign-in, settings, credits): what makes one the product it is (its name, its icon, its site, the tools its agent is offered, its system prompt) is a `Product` (`src/product.ts`) its folder defines, which the shared code reads and never imports. The extension's tests run its agent against the worker so the part that faces the worker cannot drift. One account and one balance of credits serve every extension.
+Each extension keeps its own copy of the side panel code (UI, agent, sign-in, settings, credits), and duplication between extensions is accepted: a fix or feature in one is applied to the others by hand, and an extension's tests run its own agent against the worker so the part that faces the worker cannot drift. One account and one balance of credits serve every extension.
 
 ## Single source of truth
 
@@ -96,22 +96,17 @@ Clerk's own account management is not used: Notico needs Clerk only for who the 
 The folders, and the modules that hold a boundary; other files are found by their folder and name.
 
 ```
-extension/                the package every Chrome extension is built from (Notico's build today)
-  manifest.ts             builds manifest.json from the product's .env; a test pins its permissions and content security policy
-  products/<name>/        one product's own files; never imports another product's
-    product.ts            the product: its name, its icon, the tools its agent is offered, its system prompt, and
-                          its site (what the panel asks of Notion, for Notico). The shared code (side panel, agent,
-                          usage data, sessions) imports nothing from products/, src/notion/, or the Notion tools:
-                          it reads them as a Product (src/product.ts), given by the entry points (a lint rule)
-    brand.ts              who the product is, without its tools, for the service worker
-    .env                  its public build config (.env.local, git-ignored, overrides it; keys/ holds a signing key)
-    icons/, public/       its icon's source, and the PNGs the build publishes
-    PRIVACY.md, README.md for the product's users
-    store/                what the Chrome Web Store Dashboard says
-    use-cases/            the product's use cases (docs/bdd.md)
+extensions/<name>/        one Chrome extension, built and published by itself; never imports another
+  manifest.ts             builds manifest.json from .env; a test pins its permissions and content security policy
+  PRIVACY.md, README.md   for the extension's users
+  store/                  what the Chrome Web Store Dashboard says
   src/agent/              the agent loop and its model providers; the only folder that imports pi, and the
                           only one besides the site layer that uses fetch (the worker, the user's own model)
   src/tools/              the tools the agent runs; carry.ts holds what a question carries, for any product
+  src/notico.ts           the product: its name, the tools its agent is offered, its system prompt, and Notion as
+                          its site (what the panel asks of Notion). The shared code (side panel, agent, usage
+                          data, sessions) imports neither it, src/notion/, nor the Notion tools: it reads them
+                          as a Product (src/product.ts), given by the entry points (a lint rule)
   src/notion/             the site layer for Notion: imports nothing from the agent, tools, sessions, or UI
     api.ts                the only module that knows Notion's endpoints and request shapes
     tab.ts                runs requests in the user's Notion tab: the only use of site fetch, and with src/web/tab.ts of chrome.scripting
@@ -126,7 +121,7 @@ extension/                the package every Chrome extension is built from (Noti
   src/zod.ts              the only module that imports zod
   test/                   the extension's client and UI tests, with fakes and sanitized fixtures
   browser-test/           pnpm test:browser: the built extension in Chromium, the network answered by fakes (runs in CI)
-  browser-driver/         pnpm browser-driver: drives the shared Chrome Canary for ai-e2e runs
+  use-cases/              the extension's use cases (docs/bdd.md)
 worker/                   the Cloudflare Worker every extension shares
   src/app.ts              the Hono app, composed from src/routes/; everything under /v1 is behind
                           the session check (src/routes/session.ts)
@@ -139,6 +134,7 @@ worker/                   the Cloudflare Worker every extension shares
   migrations/             the D1 schema, applied on deploy
   test/                   REST integration tests with fakes, and an extension's agent run against the worker
   use-cases/              rules only the worker decides
+e2e/                      pnpm e2e: drives the shared Chrome Canary for ai-e2e runs
 scripts/                  repository scripts (use case coverage, GitHub settings, PR media, changelog)
 docs/                     this file, development, security, and BDD
 .oxlintrc.json            lint rules, including the module boundaries

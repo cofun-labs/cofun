@@ -1,5 +1,6 @@
 packages:
-  - extension
+  - e2e
+  - extensions/*
   - scripts
   - worker
 

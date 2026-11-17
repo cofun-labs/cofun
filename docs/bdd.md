@@ -20,7 +20,7 @@ What is left out can still be worth testing. Write it as a **standalone test**: 
 
 ## What gets a test
 
-Every test in `worker/test/` and `extension/test/` says what it guards, at the start of its name, and `pnpm check` fails on one that says neither:
+Every test in `worker/test/` and `extensions/*/test/` says what it guards, at the start of its name, and `pnpm check` fails on one that says neither:
 
 - **A scenario ID** when it checks a scenario's rule: `[UC-NOTICO-CHAT-001-S01]`. A test of another case of the same rule (another kind of block read, another filter) carries the same ID; a table of cases is better than a test per case.
 - **`[@no-uc:<kind>]`** when it guards what a use case leaves out on purpose: an implementation risk such as a retry, a timeout, a cache, a race, a status code, or a value from outside read loosely. Users may well feel such a break, but a product owner would not review its sentence if the implementation changed, so it is no scenario. The kind says which harm the break would do, and is one of:
@@ -37,7 +37,7 @@ Every test in `worker/test/` and `extension/test/` says what it guards, at the s
 A standalone test earns its place only if its break is one of these and nothing else would catch it (not a type, a lint rule, or another test). There is no test for:
 
 - finished work: a schema pinned after a migration, a data migration that has run;
-- a tool run by hand (the `pnpm browser-driver` driver, release scripts), or UI wording and behavior, which fail in plain sight;
+- a tool run by hand (the `pnpm e2e` driver, release scripts), or UI wording and behavior, which fail in plain sight;
 - the same check once per tool or per message, when one test of the shared code covers it;
 - a rare race or interleaving whose worst outcome is none of the above.
 
@@ -56,10 +56,10 @@ A scenario earns its place only if deleting it would let an implementation pass 
 
 ## Products
 
-Each extension is a product, and keeps its use cases in its own folder of the extension package: `extension/products/<name>/use-cases/` (`extension/products/notico/use-cases/` for Notico). The worker's are in `worker/use-cases/`. The folder tells which product a use case belongs to, and its ID's prefix says the same (see [IDs](#ids)).
+Each extension is a product, and keeps its use cases next to its code: `extensions/<name>/use-cases/` (`extensions/notico/use-cases/` for Notico). The worker's are in `worker/use-cases/`. The folder tells which product a use case belongs to, and its ID's prefix says the same (see [IDs](#ids)).
 
 - **A product's use cases are written in full for what that product does**, even where they repeat another product's: sign-in, chat, sessions, settings, and opening the side panel are each product's own, worded for its site. Use cases are not shared between products to save repeating them.
-- **A scenario a product repeats is verified by a test named with that product's scenario ID**, so a copy that drifts fails its own tests. This holds for what the extension's code makes happen for that product: its client code, its side panel, and its agent against the worker (`extension/test/agent.test.ts`, and `worker/test/extension.test.ts` for what the agent and the worker must agree on).
+- **A scenario a product repeats is verified by that product's own test**, named with that product's scenario ID, so a copy that drifts fails its own tests. This holds for what the product's own code makes happen: its client code, its side panel, and its agent against the worker (`extensions/notico/test/agent.test.ts`, and `worker/test/extension.test.ts` for what the agent and the worker must agree on).
 - **A rule only the worker decides, the same whichever extension asks, is the worker's**: who may reach the hosted model, how credits are charged, what a payment adds. It is written once, in `worker/use-cases/`, and verified in `worker/test/`. A product's use case points to it (`how credits are charged: UC-COFUN-CREDITS-001`) and keeps no copy of its scenarios; it keeps what the user sees and does, such as the refusal the side panel shows when credits run out.
 - **`worker/use-cases/`** holds those rules, and behavior that involves the backend alone and no extension's UI, such as the operators' admin page and usage records. Its use cases belong to Cofun, the platform every extension shares.
 
@@ -67,43 +67,43 @@ Each extension is a product, and keeps its use cases in its own folder of the ex
 
 | Strategy | Use for | Verified by |
 |---|---|---|
-| `api-test` | Anything observable through the worker's HTTP API, the extension's client code, or the side panel's UI | A vitest integration test whose name starts with the scenario ID, in `worker/test/` (the worker's HTTP API) or `extension/test/` (the extension's client code in `*.test.ts`, the side panel's UI in `*.test.tsx`) |
+| `api-test` | Anything observable through the worker's HTTP API, the extension's client code, or the side panel's UI | A vitest integration test whose name starts with the scenario ID, in `worker/test/` (the worker's HTTP API) or the product's `extensions/<name>/test/` (the extension's client code in `*.test.ts`, the side panel's UI in `*.test.tsx`) |
 | `ai-e2e` | Paths that need real Chrome or real accounts: the side panel opening and staying open across tabs, Clerk sign-in, real Notion pages, the real model | An agent drives Chrome with the extension loaded; the PR description or a comment records the run, with the Notion requests each tested question made (the reply's details in the side panel show the count) |
 
 Pick the cheapest strategy that observes the result directly. `ai-e2e` is not a place to park scenarios that could be `api-test`.
 
 ## Testing the side panel's UI
 
-What the user sees and does in the side panel is an `api-test` too: `extension/test/*.test.tsx` run the panel in a DOM (jsdom), without a browser.
+What the user sees and does in the side panel is an `api-test` too: `extensions/notico/test/*.test.tsx` run the panel in a DOM (jsdom), without a browser.
 
-- **The whole panel runs.** A test opens the panel the way `sidepanel.html` does (`FakeBrowser` in `extension/test/panel.ts`), with the real agent, tools, and session store behind it and the real worker answering its model calls. Don't render a component on its own.
+- **The whole panel runs.** A test opens the panel the way `sidepanel.html` does (`FakeBrowser` in `extensions/notico/test/panel.ts`), with the real agent, tools, and session store behind it and the real worker answering its model calls. Don't render a component on its own.
 - **Only what a user can do and see.** Tests type, click, and read the screen, finding things by role, accessible name, label, or visible text. They never reach into component state, the agent, or the session store. When an element has no such handle, give it one that also helps a screen reader, not a test id.
-- **Fakes only at the edges:** `chrome.*` with a Notion tab (`FakeNotionTab`), Clerk (`extension/test/clerk.tsx`), IndexedDB (`fake-indexeddb`), and the model (`FakeAiBinding`). Besides the screen, a test may look at those edges: what the model was sent, and what Notion was asked to do.
+- **Fakes only at the edges:** `chrome.*` with a Notion tab (`FakeNotionTab`), Clerk (`extensions/notico/test/clerk.tsx`), IndexedDB (`fake-indexeddb`), and the model (`FakeAiBinding`). Besides the screen, a test may look at those edges: what the model was sent, and what Notion was asked to do.
 - **No real time.** The clock is fake and starts at a fixed time; a test that needs time to pass moves it. No sleeps, and no waiting for a timeout to pass. To catch the panel midway (a reply still streaming), hold the fake at the edge and release it.
 
 A fake model answers what the test scripts, so these tests show what the panel does with a reply, not what the real model says. A scenario whose point is the real model's judgment, or real Chrome, stays `ai-e2e`.
 
 ## Running an `ai-e2e` scenario
 
-`ai-e2e` runs use the maintainer's Chrome Canary: started with `--remote-debugging-port=9228`, signed in to Notion and to Notico, with the extension loaded unpacked. `pnpm browser-driver` (`extension/browser-driver/`) drives it over the DevTools protocol (`pnpm browser-driver --help` lists every command and option):
+`ai-e2e` runs use the maintainer's Chrome Canary: started with `--remote-debugging-port=9228`, signed in to Notion and to Notico, with the extension loaded unpacked. `pnpm e2e` drives it over the DevTools protocol (`pnpm e2e --help` lists every command and option):
 
 ```bash
-pnpm browser-driver lock acquire "UC-NOTICO-NOTION-007-S04"    # hold the browser across all the steps
-pnpm browser-driver reload                                     # build this checkout into the extension Canary loads, reload it
-pnpm browser-driver page "e2e S04" "## Meeting notes" "We ship on Friday." "## Next steps" "Write the notes."
-pnpm browser-driver panel <url printed by page>                # open the side panel on that page, with a new chat
-pnpm browser-driver ask "Turn the Meeting notes section into its own child page." --allow
-pnpm browser-driver trash <id printed by page>                 # move the throwaway page to the trash
-pnpm browser-driver close                                      # close the tabs the tool opened
-pnpm browser-driver lock release
+pnpm e2e lock acquire "UC-NOTICO-NOTION-007-S04"    # hold the browser across all the steps
+pnpm e2e reload                                     # build this checkout into the extension Canary loads, reload it
+pnpm e2e page "e2e S04" "## Meeting notes" "We ship on Friday." "## Next steps" "Write the notes."
+pnpm e2e panel <url printed by page>                # open the side panel on that page, with a new chat
+pnpm e2e ask "Turn the Meeting notes section into its own child page." --allow
+pnpm e2e trash <id printed by page>                 # move the throwaway page to the trash
+pnpm e2e close                                      # close the tabs the tool opened
+pnpm e2e lock release
 ```
 
-- **One browser, shared.** Several sessions use the same Canary, guarded by one lock (`~/.cache/cofun/canary.lock`, shared with the maintainer's `canary-lock.sh`). Hold it for the whole run with `lock acquire` and `lock release`: between commands, another session could otherwise reload the extension (closing your panel) or start a chat in it. A command run without it takes the lock just for itself. The owner is `--owner`, `$BROWSER_DRIVER_OWNER`, or the git branch; run one command at a time per owner. A busy lock exits with code 3 and the holder's name: work on something else and try later, never wait in a loop. A lock not refreshed for 30 minutes counts as abandoned.
+- **One browser, shared.** Several sessions use the same Canary, guarded by one lock (`~/.cache/cofun/canary.lock`, shared with the maintainer's `canary-lock.sh`). Hold it for the whole run with `lock acquire` and `lock release`: between commands, another session could otherwise reload the extension (closing your panel) or start a chat in it. A command run without it takes the lock just for itself. The owner is `--owner`, `$E2E_OWNER`, or the git branch; run one command at a time per owner. A busy lock exits with code 3 and the holder's name: work on something else and try later, never wait in a loop. A lock not refreshed for 30 minutes counts as abandoned.
 - **Reload first.** Canary loads one extension folder for everyone; `reload` builds this checkout over it, so start every run with it and don't assume another session's build is still there.
 - **Hands off the browser's state.** The tool never signs in or out of Notion or Notico and never changes browser settings. If Developer mode is off, the extension is disabled, or a sign-in is missing, it says so and stops; fix it by hand.
 - **Only its own tabs and pages.** It works in the tabs it opened (one on Notion, and one on another site for `elsewhere`), `panel` opens only on pages and databases it created, `ask` refuses any other current tab, and `trash` only takes those (`page` makes a private page from Markdown lines; `db` makes a private task database with Name, Status, and Due). Use throwaway pages, never the workspace's own.
 - **Off Notion.** `elsewhere` brings a tab on another site (`example.com`) to the front, and says whether the side panel stayed open with its chat or had to be opened; `panel` goes back to the Notion tab, with a new chat. Use it for scenarios about the panel on a tab that is not Notion.
-- **Approvals.** `ask` answers approval prompts with `--allow` or `--deny`. `--allow` approves every prompt, whatever it changes. The agent asks for approval only before some changes (such as deleting a page) and makes the others on its own, so the tool can't keep it on the throwaway pages: word every question so it stays on them, and never ask it to change other pages. Without either it stops at the first prompt with exit code 4 and prints what the tool would change; run `pnpm browser-driver ask --allow` (no question) to answer and keep waiting.
+- **Approvals.** `ask` answers approval prompts with `--allow` or `--deny`. `--allow` approves every prompt, whatever it changes. The agent asks for approval only before some changes (such as deleting a page) and makes the others on its own, so the tool can't keep it on the throwaway pages: word every question so it stays on them, and never ask it to change other pages. Without either it stops at the first prompt with exit code 4 and prints what the tool would change; run `pnpm e2e ask --allow` (no question) to answer and keep waiting.
 - **What `ask` prints.** The reply in order: the model's text and each tool call with its status, what the side panel says it did, its arguments, and its result. `--json` prints the same as JSON.
 
 Record each run in the PR description or a comment: the scenario ID, the commit it ran on, the commands, and the reply's tool calls and results that show the scenario's "then", plus anything you checked in Notion directly. Leave out account ids, emails, and the titles or content of the workspace's own pages.
@@ -127,7 +127,7 @@ A guard or rejection branch should not rank above its use case's success path un
 
 ## Coverage check
 
-`pnpm check` runs `pnpm use-cases` (`scripts/check-use-cases.ts`), which reads every scenario row in `extension/products/*/use-cases/` and `worker/use-cases/`, and every scenario ID named in brackets in a test under `worker/test/` or `extension/test/`. A scenario counts as tested only by a test that can verify it: an extension product's by a test in `extension/test/` or in `worker/test/`, the worker's by a test in `worker/test/`. It fails on two things: an `api-test` scenario marked ✅ that no test names, and a test whose name has neither a scenario ID nor a `[@no-uc:<kind>]` of one of the kinds above (and on a scenario row it can't read, so a typo can't hide one, and on a use case left in the old `docs/use-cases/`). It only warns about the rest, to tidy when convenient: a Behavior over 150 words, a 🚧 `api-test` scenario that already has a test (mark it ✅), a P0 🚧 `api-test` scenario with no test yet (P0 is verified before merge), a test naming an ID no use case it can verify has, or an ID without its product, an ID in more than one row, an ID whose prefix doesn't match the product whose folder holds it, and a test naming an `ai-e2e` scenario. A P1 or P2 🚧 `api-test` scenario with no test and an `ai-e2e` scenario with none pass quietly.
+`pnpm check` runs `pnpm use-cases` (`scripts/check-use-cases.ts`), which reads every scenario row in `extensions/*/use-cases/` and `worker/use-cases/`, and every scenario ID named in brackets in a test under `worker/test/` or `extensions/*/test/`. A scenario counts as tested only by a test that can verify it: an extension's by a test in its own `extensions/<name>/test/` or in `worker/test/`, the worker's by a test in `worker/test/`. It fails on two things: an `api-test` scenario marked ✅ that no test names, and a test whose name has neither a scenario ID nor a `[@no-uc:<kind>]` of one of the kinds above (and on a scenario row it can't read, so a typo can't hide one, and on a use case left in the old `docs/use-cases/`). It only warns about the rest, to tidy when convenient: a Behavior over 150 words, a 🚧 `api-test` scenario that already has a test (mark it ✅), a P0 🚧 `api-test` scenario with no test yet (P0 is verified before merge), a test naming an ID no use case it can verify has, or an ID without its product, an ID in more than one row, an ID whose prefix doesn't match the product whose folder holds it, and a test naming an `ai-e2e` scenario. A P1 or P2 🚧 `api-test` scenario with no test and an `ai-e2e` scenario with none pass quietly.
 
 ## Coverage audit
 
@@ -135,7 +135,7 @@ Per-PR rules stay light; gaps are found by an audit run now and then, before a r
 
 ## File format
 
-`extension/products/<name>/use-cases/{domain}/UC-{PRODUCT}-{DOMAIN}-{NNN}-{slug}.md` for an extension, and `worker/use-cases/{domain}/UC-COFUN-{DOMAIN}-{NNN}-{slug}.md` for the worker:
+`extensions/<name>/use-cases/{domain}/UC-{PRODUCT}-{DOMAIN}-{NNN}-{slug}.md` for an extension, and `worker/use-cases/{domain}/UC-COFUN-{DOMAIN}-{NNN}-{slug}.md` for the worker:
 
 ```markdown
 # UC-NOTICO-CHAT-001: Ask the AI from the side panel

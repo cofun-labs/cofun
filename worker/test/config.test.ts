@@ -1,5 +1,5 @@
 // The deployed worker's config (wrangler.jsonc) and the hosted extension's build config
-// (extension/products/notico/.env) name the worker's address in several places. They must agree, or the extension
+// (extensions/notico/.env) name the worker's address in several places. They must agree, or the extension
 // calls a host the worker isn't on, or no session from the admin page is accepted.
 import { readFileSync } from 'node:fs'
 import { experimental_readRawConfig } from 'wrangler'
@@ -17,9 +17,9 @@ const host = typeof route === 'object' && 'custom_domain' in route ? route.patte
 const ORIGIN = `https://${host}`
 const AUTHORIZED_PARTIES = String(rawConfig.vars?.CLERK_AUTHORIZED_PARTIES)
 
-/** The committed build config of the hosted extension (extension/products/notico/.env), as `KEY=value` lines. */
+/** The committed build config of the hosted extension (extensions/notico/.env), as `KEY=value` lines. */
 function hostedEnv(): Record<string, string> {
-  const text = readFileSync(new URL('../../extension/products/notico/.env', import.meta.url), 'utf8')
+  const text = readFileSync(new URL('../../extensions/notico/.env', import.meta.url), 'utf8')
   return Object.fromEntries(
     text
       .split('\n')

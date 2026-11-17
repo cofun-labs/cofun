@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
     inputs:
       extension:
-        description: Extension to release (its folder in extension/products/)
+        description: Extension to release (its folder in extensions/)
         type: choice
         required: true
         options:
@@ -111,7 +111,7 @@ jobs:
           SHA: ${{ steps.commit.outputs.sha }}
           NOTES: ${{ steps.inputs.outputs.notes }}
         run: |
-          node scripts/release-notes.ts "extension/products/$EXTENSION/CHANGELOG.md" "$VERSION" >"$NOTES"
+          node scripts/release-notes.ts "extensions/$EXTENSION/CHANGELOG.md" "$VERSION" >"$NOTES"
           printf '\n---\n\nChrome Web Store build of %s %s, from %s.\n' "${EXTENSION^}" "$VERSION" "$SHA" >>"$NOTES"
           cat "$NOTES"
 
@@ -123,28 +123,28 @@ jobs:
 
       # Replaces the build "Run checks" made: the version from the input, and no `key` (the store
       # sets the ID) or `version_name` (which marks a development build) in the manifest.
-      # package.json keeps its development version. The extension package builds Notico, the one
-      # product it has an entry for so far.
+      # package.json keeps its development version.
       - name: Build for the store
         env:
           CRX_STORE_BUILD: "1"
           EXTENSION_VERSION: ${{ inputs.version }}
-        run: pnpm --filter cofun-extension build
+        run: pnpm --filter "./extensions/$EXTENSION" build
 
       - name: Check the manifest
         run: |
-          manifest="extension/dist/manifest.json"
+          manifest="extensions/$EXTENSION/dist/manifest.json"
           jq -e --arg v "$VERSION" '.version == $v and (has("key") | not) and (has("version_name") | not)' "$manifest" >/dev/null || {
             echo "::error::$manifest does not have version $VERSION, no key, and no version_name."
             exit 1
           }
 
-      # The extension's browser tests load extension/dist, the build just made.
+      # The extension's browser tests load extensions/<name>/dist, the build just made. An extension
+      # without a test:browser script fails here, so it needs browser tests before it is released.
       - name: Install Chromium
-        run: pnpm --filter cofun-extension exec playwright install --no-shell chromium
+        run: pnpm --filter "./extensions/$EXTENSION" exec playwright install --no-shell chromium
 
       - name: Run the extension's browser tests
-        run: pnpm --filter cofun-extension test:browser
+        run: pnpm --filter "./extensions/$EXTENSION" test:browser
 
       # The store wants manifest.json at the root of the zip. The variable is not named ZIP:
       # Info-ZIP's zip reads $ZIP as default options, so it would write the archive into dist.
@@ -157,7 +157,7 @@ jobs:
           ARCHIVE: ${{ steps.inputs.outputs.zip }}
           SHA: ${{ steps.commit.outputs.sha }}
         run: |
-          cd extension/dist
+          cd "extensions/$EXTENSION/dist"
           zip -r -X -q "$GITHUB_WORKSPACE/$ARCHIVE" .
           ls -l "$GITHUB_WORKSPACE/$ARCHIVE"
           sha256=$(sha256sum "$GITHUB_WORKSPACE/$ARCHIVE" | cut -d' ' -f1)

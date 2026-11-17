@@ -14,7 +14,7 @@ function useCase(apiTest: string[], aiE2e: string[] = []) {
     aiE2e.length > 0 ? TABLE : '(none)',
     ...aiE2e,
   ].join('\n')
-  return { path: 'extension/products/notico/use-cases/chat/UC-NOTICO-CHAT-001-ask.md', text }
+  return { path: 'extensions/notico/use-cases/chat/UC-NOTICO-CHAT-001-ask.md', text }
 }
 
 function testIn(path: string, ...ids: string[]) {
@@ -47,7 +47,7 @@ describe('checkUseCases', () => {
   it('fails when a ✅ api-test scenario has no test, naming the file, line, and ID', () => {
     const report = checkUseCases([useCase(['| UC-NOTICO-CHAT-001-S01 | P0 | ✅ | … |'])], [])
     expect(report.errors).toEqual([
-      'extension/products/notico/use-cases/chat/UC-NOTICO-CHAT-001-ask.md:6: UC-NOTICO-CHAT-001-S01 is ✅ api-test, but no test names it',
+      'extensions/notico/use-cases/chat/UC-NOTICO-CHAT-001-ask.md:6: UC-NOTICO-CHAT-001-S01 is ✅ api-test, but no test names it',
     ])
   })
 
@@ -55,14 +55,14 @@ describe('checkUseCases', () => {
     const report = checkUseCases([useCase(['| UC-NOTICO-CHAT-001-S01 | P0 | 🚧 | … |'])], [])
     expect(report.errors).toEqual([])
     expect(report.warnings).toEqual([
-      'extension/products/notico/use-cases/chat/UC-NOTICO-CHAT-001-ask.md:6: UC-NOTICO-CHAT-001-S01 is P0 and 🚧 with no test yet; P0 is verified before merge',
+      'extensions/notico/use-cases/chat/UC-NOTICO-CHAT-001-ask.md:6: UC-NOTICO-CHAT-001-S01 is P0 and 🚧 with no test yet; P0 is verified before merge',
     ])
   })
 
   it('reads a row with leading spaces, as Markdown does', () => {
     const report = checkUseCases([useCase(['  | UC-NOTICO-CHAT-001-S01 | P1 | ✅ | … |'])], [])
     expect(report.errors).toEqual([
-      'extension/products/notico/use-cases/chat/UC-NOTICO-CHAT-001-ask.md:6: UC-NOTICO-CHAT-001-S01 is ✅ api-test, but no test names it',
+      'extensions/notico/use-cases/chat/UC-NOTICO-CHAT-001-ask.md:6: UC-NOTICO-CHAT-001-S01 is ✅ api-test, but no test names it',
     ])
   })
 
@@ -77,7 +77,7 @@ describe('checkUseCases', () => {
     }
     const report = checkUseCases([useCase(['| UC-NOTICO-CHAT-001-S01 | P1 | ✅ | … |'])], [tests])
     expect(report.errors).toEqual([
-      'extension/products/notico/use-cases/chat/UC-NOTICO-CHAT-001-ask.md:6: UC-NOTICO-CHAT-001-S01 is ✅ api-test, but no test names it',
+      'extensions/notico/use-cases/chat/UC-NOTICO-CHAT-001-ask.md:6: UC-NOTICO-CHAT-001-S01 is ✅ api-test, but no test names it',
     ])
   })
 
@@ -112,7 +112,7 @@ describe('checkUseCases', () => {
     )
     expect(report.errors).toEqual([])
     expect(report.warnings).toEqual([
-      'extension/products/notico/use-cases/chat/UC-NOTICO-CHAT-001-ask.md:6: UC-NOTICO-CHAT-001-S01 is 🚧 but has a test (worker/test/api.test.ts:1): mark it ✅',
+      'extensions/notico/use-cases/chat/UC-NOTICO-CHAT-001-ask.md:6: UC-NOTICO-CHAT-001-S01 is 🚧 but has a test (worker/test/api.test.ts:1): mark it ✅',
     ])
   })
 
@@ -128,7 +128,7 @@ describe('checkUseCases', () => {
     )
     expect(report.errors).toEqual([])
     expect(report.warnings).toEqual([
-      'UC-NOTICO-CHAT-001-S01 is in more than one row: extension/products/notico/use-cases/chat/UC-NOTICO-CHAT-001-ask.md:6, extension/products/notico/use-cases/chat/UC-NOTICO-CHAT-001-ask.md:7',
+      'UC-NOTICO-CHAT-001-S01 is in more than one row: extensions/notico/use-cases/chat/UC-NOTICO-CHAT-001-ask.md:6, extensions/notico/use-cases/chat/UC-NOTICO-CHAT-001-ask.md:7',
     ])
   })
 
@@ -139,7 +139,7 @@ describe('checkUseCases', () => {
     )
     expect(report.errors).toEqual([])
     expect(report.warnings).toEqual([
-      'extension/products/notico/use-cases/chat/UC-NOTICO-CHAT-001-ask.md:9: UC-NOTICO-CHAT-001-S02 is ai-e2e, but a test names it (worker/test/api.test.ts:1)',
+      'extensions/notico/use-cases/chat/UC-NOTICO-CHAT-001-ask.md:9: UC-NOTICO-CHAT-001-S02 is ai-e2e, but a test names it (worker/test/api.test.ts:1)',
     ])
   })
 
@@ -156,9 +156,9 @@ describe('checkUseCases', () => {
       [],
     )
     expect(report.errors).toEqual([
-      'extension/products/notico/use-cases/chat/UC-NOTICO-CHAT-001-ask.md:6: UC-NOTICO-CHAT-001-S01 has status "done"; use ✅ or 🚧',
-      'extension/products/notico/use-cases/chat/UC-NOTICO-CHAT-001-ask.md:7: a row whose ID cell is not a scenario ID like UC-NOTICO-CHAT-001-S01',
-      'extension/products/notico/use-cases/chat/UC-NOTICO-CHAT-001-ask.md:8: a row whose ID cell is not a scenario ID like UC-NOTICO-CHAT-001-S01',
+      'extensions/notico/use-cases/chat/UC-NOTICO-CHAT-001-ask.md:6: UC-NOTICO-CHAT-001-S01 has status "done"; use ✅ or 🚧',
+      'extensions/notico/use-cases/chat/UC-NOTICO-CHAT-001-ask.md:7: a row whose ID cell is not a scenario ID like UC-NOTICO-CHAT-001-S01',
+      'extensions/notico/use-cases/chat/UC-NOTICO-CHAT-001-ask.md:8: a row whose ID cell is not a scenario ID like UC-NOTICO-CHAT-001-S01',
       'worker/use-cases/x.md:4: UC-COFUN-CHAT-002-S01 is not under an "### api-test" or "### ai-e2e" heading',
     ])
   })
@@ -166,39 +166,29 @@ describe('checkUseCases', () => {
   it("matches an extension's scenario with its own tests and the worker's", () => {
     const report = checkUseCases(
       [useCase(['| UC-NOTICO-CHAT-001-S01 | P0 | ✅ | … |', '| UC-NOTICO-CHAT-001-S02 | P0 | ✅ | … |'])],
-      [testIn('extension/test/chat.test.ts', 'UC-NOTICO-CHAT-001-S01'), test('UC-NOTICO-CHAT-001-S02')],
+      [testIn('extensions/notico/test/chat.test.ts', 'UC-NOTICO-CHAT-001-S01'), test('UC-NOTICO-CHAT-001-S02')],
     )
     expect(report).toEqual({ errors: [], warnings: [], scenarios: { 'api-test': 2, 'ai-e2e': 0 } })
   })
 
-  it("matches any extension product's scenario with the extension's tests", () => {
-    const webco = {
-      path: 'extension/products/webco/use-cases/chat/UC-WEBCO-CHAT-001-ask.md',
-      text: [
-        '# UC-WEBCO-CHAT-001: Ask the AI',
-        '## Scenarios',
-        '### api-test',
-        TABLE,
-        '| UC-WEBCO-CHAT-001-S01 | P0 | ✅ | … |',
-      ].join('\n'),
-    }
+  it("does not match a scenario with another product's tests", () => {
     const report = checkUseCases(
-      [useCase(['| UC-NOTICO-CHAT-001-S01 | P0 | ✅ | … |']), webco],
-      [testIn('extension/test/chat.test.ts', 'UC-NOTICO-CHAT-001-S01', 'UC-WEBCO-CHAT-001-S01')],
-    )
-    expect(report).toEqual({ errors: [], warnings: [], scenarios: { 'api-test': 2, 'ai-e2e': 0 } })
-  })
-
-  it("does not match the worker's scenario with the extension's tests", () => {
-    const report = checkUseCases(
-      [workerUseCase('| UC-COFUN-ADMIN-001-S01 | P0 | ✅ | … |')],
-      [testIn('extension/test/admin.test.ts', 'UC-COFUN-ADMIN-001-S01')],
+      [
+        useCase(['| UC-NOTICO-CHAT-001-S01 | P0 | ✅ | … |']),
+        workerUseCase('| UC-COFUN-ADMIN-001-S01 | P0 | ✅ | … |'),
+      ],
+      [
+        testIn('extensions/goodoco/test/chat.test.ts', 'UC-NOTICO-CHAT-001-S01'),
+        testIn('extensions/notico/test/admin.test.ts', 'UC-COFUN-ADMIN-001-S01'),
+      ],
     )
     expect(report.errors).toEqual([
+      'extensions/notico/use-cases/chat/UC-NOTICO-CHAT-001-ask.md:6: UC-NOTICO-CHAT-001-S01 is ✅ api-test, but no test names it',
       'worker/use-cases/admin/UC-COFUN-ADMIN-001-account.md:6: UC-COFUN-ADMIN-001-S01 is ✅ api-test, but no test names it',
     ])
     expect(report.warnings).toEqual([
-      'extension/test/admin.test.ts:1: names UC-COFUN-ADMIN-001-S01, which no use case of an extension product has',
+      'extensions/goodoco/test/chat.test.ts:1: names UC-NOTICO-CHAT-001-S01, which no use case of goodoco has',
+      'extensions/notico/test/admin.test.ts:1: names UC-COFUN-ADMIN-001-S01, which no use case of notico has',
     ])
   })
 
@@ -212,7 +202,7 @@ describe('checkUseCases', () => {
     )
     expect(report.errors).toEqual([])
     expect(report.warnings).toEqual([
-      "extension/products/notico/use-cases/chat/UC-NOTICO-CHAT-001-ask.md:6: UC-COFUN-CHAT-001-S01 is in notico's use cases, so its ID starts with UC-NOTICO-",
+      "extensions/notico/use-cases/chat/UC-NOTICO-CHAT-001-ask.md:6: UC-COFUN-CHAT-001-S01 is in notico's use cases, so its ID starts with UC-NOTICO-",
       "worker/use-cases/admin/UC-COFUN-ADMIN-001-account.md:6: UC-NOTICO-ADMIN-001-S01 is in worker's use cases, so its ID starts with UC-COFUN-",
     ])
   })
@@ -221,7 +211,7 @@ describe('checkUseCases', () => {
     const report = checkUseCases([useCase(['| UC-NOTICO-CHAT-001-S01 | P1 | ✅ | … |'])], [test('UC-PAGES-001-S01')])
     expect(report.errors).toEqual([
       expect.stringContaining('worker/test/api.test.ts:1: a test whose name starts with no scenario ID'),
-      'extension/products/notico/use-cases/chat/UC-NOTICO-CHAT-001-ask.md:6: UC-NOTICO-CHAT-001-S01 is ✅ api-test, but no test names it',
+      'extensions/notico/use-cases/chat/UC-NOTICO-CHAT-001-ask.md:6: UC-NOTICO-CHAT-001-S01 is ✅ api-test, but no test names it',
     ])
     expect(report.warnings).toEqual([
       'worker/test/api.test.ts:1: names UC-PAGES-001-S01, which has no product in it and counts for nothing (IDs are like UC-NOTICO-CHAT-001-S01)',
@@ -293,10 +283,9 @@ describe('checkUseCases', () => {
     expect(report.errors).toEqual(expected)
   })
 
-  it("refuses a product folder whose name can't be an ID prefix", () => {
-    const useCase = { path: 'extension/products/foo-bar/use-cases/chat/UC-FOOBAR-CHAT-001-ask.md', text: '' }
-    expect(() => checkUseCases([useCase], [])).toThrow(
-      "extension/products/foo-bar: a product's folder name is lowercase letters only (docs/bdd.md#ids)",
+  it("refuses an extension folder whose name can't be an ID prefix", () => {
+    expect(() => checkUseCases([], [testIn('extensions/foo-bar/test/chat.test.ts', 'UC-FOOBAR-CHAT-001-S01')])).toThrow(
+      "extensions/foo-bar: an extension's folder name is lowercase letters only (docs/bdd.md#ids)",
     )
   })
 })
