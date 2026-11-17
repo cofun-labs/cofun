@@ -50,7 +50,7 @@ async function paginate<T extends { nextStart?: number }>(
 async function target({ accountId, memory }: Pick<ToolContext, 'accountId' | 'memory'>) {
   const instance = await getInstance(accountId)
   if (!memory.confluenceQuestion) return currentConfluenceTab(instance)
-  if (!instance) throw new Error('Connect a self-managed Confluence site in Settings first.')
+  if (!instance) throw new Error('Connect a Confluence site in Settings first.')
   const tab = await memory.confluenceQuestion.tab
   if (!tab || tab.instance.origin !== instance.origin || tab.instance.path !== instance.path)
     throw new Error('Open the connected Confluence site in the current tab.')
@@ -61,7 +61,7 @@ export const readConfluencePage = defineTool({
   name: 'read_page',
   args: z.strictObject({}),
   description:
-    'Reads the published Confluence page open in the current tab on the connected self-managed site. Returns its text, title and source link.',
+    'Reads the published Confluence page open in the current tab on the connected site. Returns its text, title and source link.',
   describe: (_args, details) => on(READ, details?.name, 'the current Confluence page'),
   run: async (_args, signal, context) => {
     const page = await readPage(await target(context), signal)
@@ -79,9 +79,9 @@ export const searchConfluencePages = defineTool({
   name: 'search_pages',
   args: SearchArgs,
   description:
-    'Finds published Confluence pages by title or text on the connected self-managed site, using the current tab. ' +
+    'Finds published Confluence pages by title or text on the connected site, using the current tab. ' +
     'Use search terms and any space key from the current user message. Ask for search terms when the user did not provide them. ' +
-    'Use start only for the next page returned by this same search during this question. Returns excerpts and source links.',
+    'Use nextPage only for the next page returned by this same search during this question. Returns excerpts and source links.',
   describe: (args) => on(SEARCH, args && clip(args.query, 120), 'Confluence pages'),
   run: async (args, signal, { accountId, memory, userText }) => {
     const query = normalizeSearchText(args.query)
@@ -93,9 +93,20 @@ export const searchConfluencePages = defineTool({
     }
     const tab = await target({ accountId, memory })
     const key = requestKey(tab, 'search_pages', { query, field: args.field, spaceKey: args.spaceKey })
-    const hits = await paginate(memory, key, args.start, () => searchPages(tab, args, signal))
-    remember(memory, hits.results)
-    return { text: result(hits), details: { name: clip(args.query, 120) } }
+    const saved = memory.nextConfluenceSearches.get(key)
+    if (args.nextPage && args.nextPage !== saved?.id)
+      throw new Error('Use nextPage returned by the same Confluence search in this question, or omit it.')
+    const { results, continuation, paginationNotice } = await searchPages(
+      tab,
+      args,
+      args.nextPage ? saved?.continuation : undefined,
+      signal,
+    )
+    const nextPage = continuation && crypto.randomUUID()
+    if (nextPage && continuation) memory.nextConfluenceSearches.set(key, { id: nextPage, continuation })
+    else memory.nextConfluenceSearches.delete(key)
+    remember(memory, results)
+    return { text: result({ results, nextPage, paginationNotice }), details: { name: clip(args.query, 120) } }
   },
 })
 

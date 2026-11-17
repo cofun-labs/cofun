@@ -9,7 +9,7 @@ export interface ConfluenceTab {
 }
 
 export async function currentConfluenceTab(instance: Instance | undefined): Promise<ConfluenceTab> {
-  if (!instance) throw new Error('Connect a self-managed Confluence site in Settings first.')
+  if (!instance) throw new Error('Connect a Confluence site in Settings first.')
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true })
   if (tab?.id === undefined || !tab.url) throw new Error('Open the connected Confluence site in the current tab.')
   const url = new URL(tab.url)
@@ -30,12 +30,16 @@ function confluenceTab(tab: chrome.tabs.Tab | undefined, instance: Instance | un
   }
 }
 
-export async function captureConfluenceTab(accountId: string): Promise<ConfluenceTab | undefined> {
+export async function captureConfluenceConnection(accountId: string) {
   const [[tab], instance] = await Promise.all([
     chrome.tabs.query({ active: true, currentWindow: true }),
     getInstance(accountId),
   ])
-  return confluenceTab(tab, instance)
+  return { tab: confluenceTab(tab, instance), cloud: instance?.cloud ?? false }
+}
+
+export async function captureConfluenceTab(accountId: string): Promise<ConfluenceTab | undefined> {
+  return (await captureConfluenceConnection(accountId)).tab
 }
 
 const result = z.discriminatedUnion('kind', [
@@ -81,7 +85,7 @@ export function refuse(message: string, mayHaveChanged = false): never {
 }
 
 type Query = Record<string, string>
-export type RestArea = 'api' | 'experimental'
+export type RestArea = 'api' | 'experimental' | 'cloud-v2'
 type RestRequest = {
   area: RestArea
   resource: string
@@ -191,7 +195,8 @@ function readSelection(expectedUrl: string, contextPath: string, limit: number) 
 }
 
 export function restUrl(instance: Instance, resource: string, query: Query, area: RestArea): URL {
-  const endpoint = new URL(`${instance.origin}${instance.path}/rest/${area}/${resource}`)
+  const folder = area === 'cloud-v2' ? 'api/v2' : `rest/${area}`
+  const endpoint = new URL(`${instance.origin}${instance.path}/${folder}/${resource}`)
   endpoint.search = new URLSearchParams(query).toString()
   return endpoint
 }
@@ -385,8 +390,22 @@ async function requestConfluence(expectedUrl: string, contextPath: string, reque
   const { area, query, method, body, file } = request
   let { resource } = request
   let pageId: string | undefined
+  const cloud = /(?:^|\.)atlassian\.net$/.test(actual.hostname)
+  if (cloud) {
+    if (
+      actual.protocol !== 'https:' ||
+      actual.port ||
+      contextPath !== '/wiki' ||
+      !/^\/wiki(?:\/|$)/.test(actual.pathname) ||
+      method !== 'GET' ||
+      body !== undefined ||
+      file ||
+      !((area === 'cloud-v2' && resource === 'current-page') || (area === 'api' && resource === 'search'))
+    )
+      return { kind: 'invalid' }
+  } else if (area === 'cloud-v2') return { kind: 'invalid' }
   if (resource === 'current-page') {
-    if (area !== 'api' || method !== 'GET') return { kind: 'invalid' }
+    if ((area !== 'api' && area !== 'cloud-v2') || method !== 'GET') return { kind: 'invalid' }
     const path = actual.pathname.slice(contextPath.length).replace(/;[^/]*|%3bjsessionid(?:=|%3d)[^/]*/gi, '')
     const type = document.querySelector<HTMLMetaElement>('meta[name="ajs-content-type"]')?.content
     const metaId = document.querySelector<HTMLMetaElement>('meta[name="ajs-page-id"]')?.content
@@ -394,7 +413,7 @@ async function requestConfluence(expectedUrl: string, contextPath: string, reque
     if (path === '/pages/viewpage.action') {
       const [id, duplicate] = actual.searchParams.getAll('pageId')
       if (id && duplicate === undefined && (!metaId || metaId === id)) pageId = id
-    } else if (/^\/display\/[^/]+\/[^/]+\/?$/.test(path)) {
+    } else if (!cloud && /^\/display\/[^/]+\/[^/]+\/?$/.test(path)) {
       pageId = metaId
     } else {
       // Data Center 9.1 and later put the page ID in the pretty URL.
@@ -402,7 +421,7 @@ async function requestConfluence(expectedUrl: string, contextPath: string, reque
       if (id && (!metaId || metaId === id)) pageId = id
     }
     if (!pageId || !/^\d{1,20}$/.test(pageId)) return { kind: 'not-page' }
-    resource = 'content/' + pageId
+    resource = (cloud ? 'pages/' : 'content/') + pageId
   }
 
   if (area === 'experimental' && (method !== 'GET' || !/^content\/\d{1,20}\/version$/.test(resource)))
@@ -428,7 +447,7 @@ async function requestConfluence(expectedUrl: string, contextPath: string, reque
     // Deleting content in any other status could purge it. Only a current page may enter the trash.
     if (!pageResource || query.status !== 'current' || Object.keys(query).length !== 1) return { kind: 'invalid' }
   }
-  const apiPath = `${contextPath}/rest/${area}/`
+  const apiPath = area === 'cloud-v2' ? `${contextPath}/api/v2/` : `${contextPath}/rest/${area}/`
   const endpoint = new URL(actual.origin + apiPath + resource)
   if (endpoint.origin !== actual.origin || !endpoint.pathname.startsWith(apiPath) || endpoint.hash || endpoint.search)
     return { kind: 'invalid' }

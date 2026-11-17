@@ -42,7 +42,7 @@ export function ConfluenceConnection({ userId }: { userId: string }) {
     event.preventDefault()
     const next = parseInstance(url)
     if (!next) {
-      setError('Enter a self-managed Confluence base URL, including its context path if it has one.')
+      setError('Enter a Confluence Cloud site URL or a self-managed base URL with its context path.')
       return
     }
     setBusy(true)
@@ -82,6 +82,7 @@ export function ConfluenceConnection({ userId }: { userId: string }) {
       ) : instance ? (
         <>
           <p>Connected to {instance.origin + instance.path}</p>
+          {instance.cloud && <p>Open Confluence Cloud and sign in there to read and search published pages.</p>}
           <button type="button" className="secondary" disabled={busy} onClick={() => void disconnect()}>
             Disconnect
           </button>
@@ -98,8 +99,8 @@ export function ConfluenceConnection({ userId }: { userId: string }) {
             required
           />
           <p>
-            Chrome will ask for site access. Page text and search results the assistant reads are shared with the AI
-            model.
+            Use your existing Confluence sign-in. Chrome will ask for site access. Page text and search results the
+            assistant reads are shared with the AI model.
           </p>
           <button className="primary" type="submit" disabled={busy}>
             Connect

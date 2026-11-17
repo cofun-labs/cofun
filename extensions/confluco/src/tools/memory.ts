@@ -1,4 +1,5 @@
 import type { QuestionPage } from '../agent/types'
+import type { SearchContinuation } from '../confluence/api'
 import type { AttachmentUpload } from '../confluence/attachments'
 import type { ConfluenceTab } from '../confluence/tab'
 import type { ConfluenceUndo } from '../confluence/undo'
@@ -18,6 +19,7 @@ export class ToolMemory {
   /** References and continuation offsets granted by site results in the current question. */
   confluenceResources = new Set<string>()
   nextConfluencePages = new Map<string, number>()
+  nextConfluenceSearches = new Map<string, { id: string; continuation: SearchContinuation }>()
   confluenceQuestion?: ConfluenceQuestion
   confluenceUndo?: ConfluenceUndo
 }

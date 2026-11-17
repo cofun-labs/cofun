@@ -2,9 +2,9 @@
 
 Use [the extension privacy policy](../PRIVACY.md) and [Cofun's privacy policy](../../../PRIVACY.md) for the full disclosures.
 
-## Permissions for self-managed Confluence
+## Permissions for Confluence
 
-Confluco requests optional access to the site the user connects in Settings. Scripting runs requested Confluence reads and writes in the connected tab using its existing session, and reads editor text only when explicitly attached. A confirmed local file upload sends the bytes to Confluence. The extension keeps a verified reversal with the local chat when undo is available. Storage keeps the connected base URL per Cofun account and tracks access granted for connections, so unused grants can be released. Confluence credentials remain with their site.
+Confluco requests optional access to the site the user connects in Settings. Scripting reads and searches Cloud pages in the connected tab using its existing Atlassian session. On self-managed sites it also applies requested changes and reads editor text only when explicitly attached. A confirmed local file upload sends the bytes to Confluence. The extension keeps a verified reversal with the local chat when undo is available. Storage keeps the connected base URL per Cofun account and tracks access granted for connections, so unused grants can be released. Confluence credentials remain with their site.
 
 ## Data usage
 
