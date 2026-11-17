@@ -172,7 +172,7 @@ describe('extension manifest', () => {
     expect(manifest({ ...env, CRX_PUBLIC_KEY: 'public-key' })).toMatchObject({ key: 'public-key', version: '1.2.3' })
   })
 
-  it('[@no-uc:access] keeps the existing Confluco development origin accepted by Clerk and the worker', () => {
+  it('[@no-uc:access] keeps the existing Confluco development ID', () => {
     const { CRX_PUBLIC_KEY } = hostedEnv()
     expect(CRX_PUBLIC_KEY).toBeTruthy()
     const id = createHash('sha256')
