@@ -1,7 +1,7 @@
 // Tools for the current tab and tabs the user explicitly added to the chat.
 import { defineTool } from '../tool'
 import { z } from '../zod'
-import type { Selection } from '../selection'
+import { clipSelection, type Selection } from '../selection'
 import { mayRead, readPage, readableSite, type TabPage, type TabWhere } from '../web/tab'
 import type { AskOnCard, QuestionPage, ToolContext } from '../agent'
 import type { ToolMemory } from './memory'
@@ -116,8 +116,10 @@ export function selectionsCarried(selections: Selection[]): { selection: Selecti
   const carried = []
   for (const selection of selections) {
     if (left <= 0) break
-    const text = selection.text.slice(0, left)
-    left -= text.length
+    const text = clipSelection(selection.text, left)
+    if (!text) break
+    // A clipped selection is the last, even when its final character did not fit.
+    left -= selection.text.length
     carried.push({ selection, text })
   }
   return carried

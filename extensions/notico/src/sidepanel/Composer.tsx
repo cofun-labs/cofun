@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState, type FormEvent, type Keyb
 import type { QuestionPage, QuestionSelection } from '../agent'
 import { track } from '../analytics'
 import type { Mode } from '../mode'
-import { linkTo, watchSelections, type Selection } from '../selection'
+import { clipSelection, linkTo, watchSelections, type Selection } from '../selection'
 import { carryPages, selectionsCarried, type OpenPage } from '../tools'
 import type { ChatSession } from './chat-session'
 import { Icon } from './icons'
@@ -410,6 +410,6 @@ function shownSelection(selection: Selection): QuestionSelection {
   return {
     title: selection.title,
     url: linkTo(selection) ?? selection.url,
-    quote: text.length > QUOTE_CHARS ? `${text.slice(0, QUOTE_CHARS)}…` : text,
+    quote: text.length > QUOTE_CHARS ? `${clipSelection(text, QUOTE_CHARS)}…` : text,
   }
 }
