@@ -282,8 +282,11 @@ export interface ToolCallRequest {
   access?: string
 }
 
-/** Asks the user whether a tool may run, or what `question` asks; resolves true for yes. */
-export type ConfirmTool = (call: ToolCallRequest) => Promise<boolean>
+/** A prompt can fail locally, for example when Chrome cannot request site access. */
+export type ConfirmationAnswer = boolean | Error
+
+/** Asks whether a tool may run; resolves with the answer or a failure of the prompt. */
+export type ConfirmTool = (call: ToolCallRequest) => Promise<ConfirmationAnswer>
 
 /**
  * How a tool call ended. `skipped`: refused without running, because the question reached its step

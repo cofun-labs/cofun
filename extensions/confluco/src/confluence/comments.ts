@@ -3,7 +3,14 @@ import { collection, collectionStart } from './collection'
 import { requestedReference } from './page-writes'
 import { readableText } from './readable-text'
 import { fetchPublishedPage, pageLink, pageReference, publishedPage } from './references'
-import { createConfluenceContent, getConfluence, refuse, requireTab, type ConfluenceTab } from './tab'
+import {
+  verificationFailed,
+  createConfluenceContent,
+  getConfluence,
+  refuse,
+  requireTab,
+  type ConfluenceTab,
+} from './tab'
 
 const contentId = pageReference.shape.id
 const commentIdentity = z.object({ id: contentId, type: z.literal('comment'), status: z.literal('current') })
@@ -117,8 +124,8 @@ export async function prepareComment(request: CommentRequest, target: Confluence
   return { tab, ref, page, link, request, parent, preview: heading + `Comment: ${JSON.stringify(request.text)}` }
 }
 
-function unverified(): never {
-  refuse('The comment may have been posted. Check the page discussion before asking again.', true)
+function unverified(cause?: unknown): never {
+  verificationFailed('The comment may have been posted. Check the page discussion before asking again.', cause)
 }
 
 export async function applyComment(plan: Awaited<ReturnType<typeof prepareComment>>, signal?: AbortSignal) {
@@ -146,8 +153,8 @@ export async function applyComment(plan: Awaited<ReturnType<typeof prepareCommen
   let verified: z.output<typeof comment>
   try {
     verified = await readComment(tab, identity.data.id, page.id, signal)
-  } catch {
-    unverified()
+  } catch (error) {
+    unverified(error)
   }
   if (
     location(verified) !== 'footer' ||

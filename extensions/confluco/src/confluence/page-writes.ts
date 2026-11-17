@@ -13,6 +13,7 @@ import {
   createConfluenceContent,
   getConfluence,
   refuse,
+  verificationFailed,
   requireTab,
   updateConfluencePage,
   type ConfluenceTab,
@@ -191,16 +192,16 @@ export async function findTitleInSpace(tab: ConfluenceTab, title: string, spaceK
   return parsed.data.results[0]
 }
 
-export function unverifiedWrite(): never {
-  refuse('Confluence may have applied the change, but the resulting page could not be verified.', true)
+export function unverifiedWrite(cause?: unknown): never {
+  verificationFailed('Confluence may have applied the change, but the resulting page could not be verified.', cause)
 }
 
 export async function readWrittenPage(tab: ConfluenceTab, id: string, signal?: AbortSignal) {
   try {
     const ref = { instance: tab.instance.origin + tab.instance.path, id }
     return await fetchPublishedPage(tab, ref, storedPage, storedFields, signal)
-  } catch {
-    unverifiedWrite()
+  } catch (error) {
+    unverifiedWrite(error)
   }
 }
 

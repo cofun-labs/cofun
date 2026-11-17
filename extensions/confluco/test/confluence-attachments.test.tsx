@@ -187,3 +187,28 @@ it.each([
   expect(screen.getAllByText(reason).length).toBeGreaterThan(0)
   expect(writes(browser)).toHaveLength(1)
 })
+
+it('[UC-CONFLUCO-CONFLUENCE-013-S04] reports a rate limit verifying an upload and stops', async () => {
+  const { browser, user, selectFile } = await openPanel()
+  let written = false
+  let verificationReads = 0
+  browser.confluenceResponse = (address, init) => {
+    if (init?.method === 'POST') {
+      written = true
+      return Response.json({ results: [attachment] })
+    }
+    if (written) {
+      verificationReads++
+      return new Response(null, { status: 429 })
+    }
+    return Response.json(address.startsWith(resource) ? { results: [] } : page)
+  }
+  await selectFile()
+  browser.ai.script.push({ toolCalls: [upload, upload] })
+  await user.click(screen.getByRole('button', { name: 'Upload attachment' }))
+  await user.click(await screen.findByRole('button', { name: /^Allow$/ }))
+  await answered()
+  expect(screen.getAllByText(/may have uploaded the file.*rate-limited/).length).toBeGreaterThan(0)
+  expect(writes(browser)).toHaveLength(1)
+  expect(verificationReads).toBe(1)
+})

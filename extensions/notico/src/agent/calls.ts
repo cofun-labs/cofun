@@ -47,6 +47,7 @@ export async function previewCall(
 /**
  * The user's answer. `unasked` when there was no way to ask (no callback, or it failed) or the
  * question was stopped while waiting: the tool must not run, but the user did not say no.
+ * An explicit prompt error rejects so the tool can report the failure.
  */
 export function askUser(
   confirm: ConfirmTool | undefined,
@@ -54,12 +55,15 @@ export function askUser(
   signal?: AbortSignal,
 ): Promise<'allow' | 'deny' | 'unasked'> {
   if (!confirm || signal?.aborted) return Promise.resolve('unasked')
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
     const onAbort = () => resolve('unasked')
     signal?.addEventListener('abort', onAbort, { once: true })
     confirm(call)
       .then(
-        (allow) => resolve(allow ? 'allow' : 'deny'),
+        (answer) => {
+          if (answer instanceof Error) reject(answer)
+          else resolve(answer ? 'allow' : 'deny')
+        },
         () => resolve('unasked'),
       )
       .finally(() => signal?.removeEventListener('abort', onAbort))

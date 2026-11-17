@@ -1,3 +1,4 @@
+import type { ConfirmationAnswer } from '../agent'
 import { memo, useState } from 'react'
 import type { Action } from '../tool'
 import { describeCall } from '../tools'
@@ -83,7 +84,7 @@ export const ToolCall = memo(function ToolCall({
 }: {
   tool: ShownTool
   /** Set while the call waits for the user's OK; called with their answer. */
-  onAnswer?: (allow: boolean) => void
+  onAnswer?: (allow: ConfirmationAnswer) => void
 }) {
   // A name comes from the details only once the call worked: an error says nothing about the thing.
   const action = describeCall(tool.name, tool.args, tool.status === 'done' ? tool.details : undefined)
@@ -174,7 +175,7 @@ function AccessCard({
 }: {
   question: string
   origin: string
-  onAnswer: (allow: boolean) => void
+  onAnswer: (allow: ConfirmationAnswer) => void
 }) {
   const [inChrome, setInChrome] = useState(false)
   return (
@@ -196,9 +197,13 @@ function AccessCard({
             setInChrome(true)
             allowSite(origin).then(onAnswer, (err: unknown) => {
               console.error('Could not ask Chrome for access to the site', err)
-              // The user said yes and Chrome failed: not a no, so the call doesn't show as declined.
-              // The tool still finds the site not allowed, and fails.
-              onAnswer(true)
+              onAnswer(
+                new Error(
+                  'Chrome could not request access to the site, so nothing was read. ' +
+                    'The user can ask again. Do not request access again unless the user asks.',
+                  { cause: err },
+                ),
+              )
             })
           }}
         >

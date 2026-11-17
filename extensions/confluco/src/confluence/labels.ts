@@ -1,7 +1,7 @@
 import { z } from '../zod'
 import { collection, collectionStart } from './collection'
 import { fetchPublishedPage, pageLink, pageReference, publishedPage, type PublishedPage } from './references'
-import { refuse, requireTab, writeConfluenceLabel, type ConfluenceTab } from './tab'
+import { verificationFailed, refuse, requireTab, writeConfluenceLabel, type ConfluenceTab } from './tab'
 
 const reference = pageReference.optional().describe('Omit to use the current published page.')
 const labelName = z
@@ -99,10 +99,10 @@ export async function applyLabel(input: LabelRequest, target: ConfluenceTab | un
   )
   try {
     if ((await hasLabel(change, signal)) === expected) return { ...result, changed: true }
-  } catch {
-    refuse(
+  } catch (error) {
+    verificationFailed(
       'The label change may have been applied, but its result could not be verified. Check the page before trying again.',
-      true,
+      error,
     )
   }
   refuse('Confluence did not confirm the expected label state. Check the page before trying again.', true)

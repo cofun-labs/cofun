@@ -195,3 +195,26 @@ describe('published page discussions', () => {
     },
   )
 })
+
+it('[UC-CONFLUCO-CONFLUENCE-010-S04] reports a rate limit verifying a posted comment and stops', async () => {
+  const { browser, user } = await openPanel()
+  let written = false
+  let verificationReads = 0
+  browser.confluenceResponse = (_url, init) => {
+    if (init?.method === 'POST') {
+      written = true
+      return Response.json(root)
+    }
+    if (written) {
+      verificationReads++
+      return new Response(null, { status: 429 })
+    }
+    return Response.json(page)
+  }
+  browser.ai.script.push({ toolCalls: [add, add] })
+  await ask(user, 'Add comment "QA note" on this page')
+  await answered()
+  expect(screen.getAllByText(/comment may have been posted.*rate-limited/).length).toBeGreaterThan(0)
+  expect(writes(browser)).toHaveLength(1)
+  expect(verificationReads).toBe(1)
+})
