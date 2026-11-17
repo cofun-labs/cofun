@@ -88,6 +88,15 @@ export function Chat({ userId }: { userId: string }) {
     listButtonRef.current?.focus()
   }
 
+  const pendingChange = useSyncExternalStore(chat.subscribe, () => {
+    const reply = chat.getSnapshot().messages.at(-1)
+    if (reply?.role !== 'assistant') return undefined
+    for (const part of reply.parts) {
+      if (part.type === 'tool' && part.tool.status === 'running' && part.tool.preview) return part.tool.preview
+    }
+    return undefined
+  })
+
   const listOpen = view === 'sessions'
   // A page (Credits or Settings) covers the whole panel, the header included.
   const pageOpen = view === 'credits' || view === 'settings'
@@ -147,6 +156,7 @@ export function Chat({ userId }: { userId: string }) {
           <Sessions
             store={panel.store}
             currentId={chatId}
+            pendingChange={pendingChange}
             saved={snapshot.saved}
             onOpen={open}
             onClose={closeList}

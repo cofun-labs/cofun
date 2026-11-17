@@ -19,7 +19,7 @@ What is read for a question becomes part of **your conversation**, which goes to
 
 It never reads the content of tabs other than the current one and those you added to a chat, a site you did not allow (other than text you sent with "Ask Confluco"), your browsing history, or what you type outside the side panel.
 
-For a self-managed Confluence site you connect, the assistant can read the published page in the current tab and search for pages visible to your Confluence account. It reads page text and titles, source links, and search excerpts. The connection uses your browser's existing Confluence session.
+For a self-managed Confluence site you connect, the assistant can read the published page, search, and browse spaces, page trees, version metadata and text, reported access, labels, comments and replies, and attachment names and links. It can carry editor text you explicitly select and send. The connection uses your browser's existing site session. The assistant can make changes on a direct request. A local file you choose for upload goes to Confluence after confirmation. File bytes are passed directly to the site and are not sent to the model. Attachment names and upload results can be part of the conversation.
 
 ## Where data goes
 
@@ -33,7 +33,7 @@ The extension contacts the hosts below. Its content security policy limits conne
 | `openrouter.ai`, only once you switch it on                  | Your OpenRouter key, to check it and to ask its models; the conversation, when one of its models answers; a request for its public list of models | To answer with the model you chose, under your own account. OpenRouter passes the conversation to the model's provider ([OpenRouter's privacy policy](https://openrouter.ai/privacy)) |
 | `us.i.posthog.com` (PostHog), unless you turn usage data off | Usage events, as listed under [Usage data](#usage-data)                                                                                           | To see how Confluco is used and where it fails                                                                                                                                        |
 | `clerk.cofun.cc`, `img.clerk.com` (Clerk)                    | Your Clerk session; a request for your avatar                                                                                                     | Sign-in, and showing who is signed in                                                                                                                                                 |
-| Your connected self-managed Confluence host | The page ID, search terms and filters for a search, and that tab's Confluence session cookies | To read a published page or search pages visible to your Confluence account |
+| Your connected self-managed Confluence host | Page references, search terms and filters, requested changes, a file selected for upload, and the tab's Confluence session cookies | To read or change pages and related data using your Confluence account |
 
 The extension also holds a host permission for `*.cofun.cc`, used only to read the cookie that says whether you are signed in. For ordinary browser-tab reads, Confluco reads the page without making a request to that site.
 
@@ -67,6 +67,7 @@ Confluco does not record clicks, keystrokes, or the screen, and loads no code fr
 - **Your chats**, in your Chrome profile, separately for each signed-in account: what you asked, the replies, and what the assistant read to answer, such as tabs, web pages, and searches; of a long page, its full text. Each chat and each question has a random id, sent to our worker with its requests so that what it spent can be matched to it. Continuing a chat sends the relevant conversation to the model provider. The panel clears full results that are at least seven days old when it opens. It sends parts of a long result to the model when needed.
 - **Your sign-in**: Clerk's token that keeps you signed in.
 - **Your own model, if you set one up**: your OpenRouter key and the models you chose, for the account that set them up. Removing the key in the settings deletes it.
+- **An undo record**, in the local chat, for the latest verified text edit or trash action it can reverse. It holds the page reference, version, and the reversal details.
 - **Settings**: the connected Confluence base URL, kept separately per Cofun account and cleared when disconnected, and which Chrome grants came from a connection, so they can be released when no account uses them. Existing site access is kept. Settings also hold the assistant mode (Edit or Read only), whether usage data is shared, and whether the right-click menu shows "Ask Confluco". That last one is synced to your other devices if you use Chrome sync.
 - **A browser session id**, kept until Chrome closes, to distinguish tabs that are still open from old tabs whose ids Chrome may reuse.
 - **Usage ids**: the random id your events are counted under, and your Clerk user id while you are signed in (signing out clears it while usage data is on). After you turn usage data off they stay on the device, even after you sign out, and are sent nowhere.

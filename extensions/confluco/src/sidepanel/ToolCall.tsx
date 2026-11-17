@@ -1,6 +1,7 @@
 import { memo, useState } from 'react'
+import { attachmentDownloads } from '../confluence/attachments'
 import type { Action } from '../tool'
-import { describeCall } from '../tools'
+import { DATA_LINE, describeCall } from '../tools'
 import { allowSite } from '../web/tab'
 import type { ShownTool } from './chat-session'
 import { Icon, type IconName } from './icons'
@@ -89,11 +90,18 @@ export const ToolCall = memo(function ToolCall({
   const action = describeCall(tool.name, tool.args, tool.status === 'done' ? tool.details : undefined)
   const args = pretty(tool.args)
   const asking = tool.status === 'confirm' && onAnswer
+  const downloads =
+    tool.status === 'done' && tool.name === 'list_page_attachments'
+      ? attachmentDownloads(tool.result.startsWith(DATA_LINE + '\n') ? tool.result.slice(DATA_LINE.length + 1) : '')
+      : []
   return (
     <>
       {/* Open while asking whether to run it, so the user sees exactly what the tool would do. A
           question the call asks as it runs (to read a site, to go on) is about something else. */}
-      <details className={`tool ${tool.status}`} open={tool.status === 'confirm' && !tool.question}>
+      <details
+        className={`tool ${tool.status}`}
+        open={(tool.status === 'confirm' && !tool.question) || (tool.status === 'running' && !!tool.preview)}
+      >
         <summary title={LABEL[tool.status]}>
           <span className="tool-mark" role="img" aria-label={LABEL[tool.status]}>
             <Icon name={MARK[tool.status]} />
@@ -133,6 +141,17 @@ export const ToolCall = memo(function ToolCall({
           )}
         </div>
       </details>
+      {downloads.length > 0 && (
+        <ul aria-label="Confluence attachments">
+          {downloads.map(({ name, url }) => (
+            <li key={url}>
+              <a href={url} target="_blank" rel="noreferrer" aria-label={'Download ' + name}>
+                {name}
+              </a>
+            </li>
+          ))}
+        </ul>
+      )}
       {asking && tool.question && tool.access && (
         <AccessCard question={tool.question} origin={tool.access} onAnswer={onAnswer} />
       )}

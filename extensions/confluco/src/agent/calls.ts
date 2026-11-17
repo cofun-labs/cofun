@@ -24,7 +24,7 @@ export async function previewCall(
   signal?: AbortSignal,
 ): Promise<{ preview?: string; stop?: string }> {
   try {
-    const preview = tool?.preview?.(args, context)
+    const preview = tool?.preview?.(args, context, signal)
     if (typeof preview === 'string' || preview === undefined) return { preview }
     // Stop must not wait for a preview that looks things up.
     return {
@@ -191,7 +191,7 @@ export function toAgentTool(spec: ToolSpec, reporter: () => Reporter): AgentTool
         if (typeof code === 'string') report.failed(code)
         throw err
       }
-      if (spec.changesData) report.changed()
+      if (spec.changesData && (typeof result === 'string' || result.changed !== false)) report.changed()
       // The details go with the result message, for the side panel; the model gets the text only.
       const { text, details } = typeof result === 'string' ? { text: result, details: undefined } : result
       return { content: [{ type: 'text', text }], details }

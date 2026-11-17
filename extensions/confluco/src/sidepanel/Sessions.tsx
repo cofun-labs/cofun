@@ -11,6 +11,7 @@ const UNREADABLE = "This chat was saved by an earlier version of Confluco and ca
 export function Sessions({
   store,
   currentId,
+  pendingChange,
   saved,
   onOpen,
   onClose,
@@ -18,6 +19,7 @@ export function Sessions({
 }: {
   store: SessionStore
   currentId?: string
+  pendingChange?: string
   /** Changes whenever a session is saved, so the list stays current while it is open. */
   saved: number
   onOpen: (id: string) => Promise<OpenResult>
@@ -102,6 +104,11 @@ export function Sessions({
           <Icon name="close" />
         </button>
       </div>
+      {pendingChange && (
+        <p className="note" role="status">
+          {pendingChange}
+        </p>
+      )}
       <label className="session-search">
         <Icon name="search" />
         <input

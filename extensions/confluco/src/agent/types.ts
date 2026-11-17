@@ -114,6 +114,8 @@ export type ToolDetails = z.infer<typeof ToolDetails>
 export interface ToolResult {
   text: string
   details: ToolDetails
+  /** A change tool can verify that its successful call made no change. */
+  changed?: boolean
 }
 
 /** A tool the model can ask the extension to run. */
@@ -134,7 +136,7 @@ export interface ToolSpec {
    */
   run: (args: unknown, signal: AbortSignal | undefined, context: ToolContext) => Promise<string | ToolResult>
   /** The tool does what is hard to undo, such as deleting a page, so the user must agree each time before it runs. */
-  needsConfirmation?: boolean
+  needsConfirmation?: boolean | ((context: ToolContext) => boolean)
   /**
    * The tool changes the user's data. When a question stops after such a tool ran and changed
    * something, or may have (its error has `mayHaveChanged`), the user is told to check before
@@ -147,7 +149,11 @@ export interface ToolSpec {
    * user before agreeing when the tool needs confirmation. It may look things up first. `context` is
    * the one the call will run with.
    */
-  preview?: (args: unknown, context: ToolContext) => string | undefined | Promise<string | undefined>
+  preview?: (
+    args: unknown,
+    context: ToolContext,
+    signal?: AbortSignal,
+  ) => string | undefined | Promise<string | undefined>
 }
 
 /**
@@ -425,7 +431,7 @@ export type HistoryMessage = z.infer<typeof HistoryMessage>
 
 export type AskResult = (
   | { status: 'done' }
-  | { status: 'stopped' }
+  | { status: 'stopped'; warning?: string }
   | { status: 'step_limit'; steps: number }
   /** `code`: the worker's error code when it refused the question, e.g. `out_of_credits`. */
   | { status: 'error'; message: string; code?: string }
