@@ -6,9 +6,12 @@ import { access, readFile, rename, rm } from 'node:fs/promises'
 import { isAbsolute, join } from 'node:path'
 import { type Browser, type Target, sleep, until } from './cdp'
 
-/** The extension's id, fixed by the public key in the manifest. */
-export const EXTENSION_ID = 'moblfnjjebknafkgoifncombfnbfghom'
-export const EXTENSION_NAME = 'Notico: AI copilot for Notion'
+export const EXTENSIONS = {
+  notico: { id: 'moblfnjjebknafkgoifncombfnbfghom', name: 'Notico: AI copilot for Notion' },
+  confluco: { id: 'fccfdaiibgaiblpkkmpfgoijmokbgfng', name: 'Confluco' },
+} as const
+
+export type ExtensionSlug = keyof typeof EXTENSIONS
 
 export interface ExtensionStatus {
   developerMode: boolean
@@ -23,42 +26,36 @@ export interface ExtensionStatus {
 }
 
 /** Why the extension can't run from a build of this checkout, or undefined if it can. */
-export function problem(status: ExtensionStatus): string | undefined {
+export function problem(extension: ExtensionSlug, status: ExtensionStatus): string | undefined {
   if (!status.developerMode) {
     return (
       'Developer mode is off in chrome://extensions, so Chrome disables the unpacked extension. ' +
       'Turn it on there by hand; this tool never changes browser settings.'
     )
   }
+  const { id, name } = EXTENSIONS[extension]
   const ext = status.extension
-  if (!ext)
-    return `${EXTENSION_NAME} (${EXTENSION_ID}) is not installed in this Chrome profile. Load it unpacked by hand.`
+  if (!ext) return `${name} (${id}) is not installed in this Chrome profile. Load it unpacked by hand.`
   if (ext.location !== 'UNPACKED' || !ext.path) {
-    return `${EXTENSION_NAME} is not loaded unpacked (${ext.location}), so a build can't replace it.`
+    return `${name} is not loaded unpacked (${ext.location}), so a build can't replace it.`
   }
   if (ext.state !== 'ENABLED') {
     const why = ext.disableReasons.length ? ` (${ext.disableReasons.join(', ')})` : ''
-    return `${EXTENSION_NAME} is ${ext.state.toLowerCase()}${why}. Enable it in chrome://extensions by hand.`
+    return `${name} is ${ext.state.toLowerCase()}${why}. Enable it in chrome://extensions by hand.`
   }
   return undefined
 }
 
-/** Whether a manifest.json is this extension's build, so its folder is safe to build over. */
-function isOurManifest(text: string): boolean {
-  return manifestOf(text)?.name === EXTENSION_NAME
-}
-
 /**
  * Why a new build must not replace the loaded one, or undefined if it may. The manifest `key` fixes
- * the extension id; a build with another key (or none) would load as another extension, without the
- * shared profile's storage and Notico sign-in.
+ * the extension id, which Chrome uses for the profile's storage and sign-in.
  */
-function replaceProblem(loaded: string, built: string): string | undefined {
+function replaceProblem(extension: ExtensionSlug, loaded: string, built: string): string | undefined {
   const key = (text: string) => manifestOf(text)?.key
   if (key(built) === key(loaded)) return undefined
   return (
     "The build's manifest key differs from the loaded extension's, so reloading would change the " +
-    "extension id. Check CRX_PUBLIC_KEY in this checkout's extensions/notico/.env and .env.local."
+    `extension id. Check CRX_PUBLIC_KEY in this checkout's extensions/${extension}/.env and .env.local.`
   )
 }
 
@@ -72,8 +69,12 @@ function manifestOf(text: string): { name?: unknown; key?: unknown } | undefined
 }
 
 /** A chrome://extensions tab of our own, open for the duration of `fn`. */
-export async function withExtensionsPage<T>(browser: Browser, fn: (page: Target) => Promise<T>): Promise<T> {
-  const id = await browser.open(`chrome://extensions/?id=${EXTENSION_ID}`, { background: true })
+export async function withExtensionsPage<T>(
+  browser: Browser,
+  extension: ExtensionSlug,
+  fn: (page: Target) => Promise<T>,
+): Promise<T> {
+  const id = await browser.open(`chrome://extensions/?id=${EXTENSIONS[extension].id}`, { background: true })
   try {
     const page = await browser.attach(id)
     await until(() => page.evaluate(() => (typeof chrome?.developerPrivate === 'object' ? true : undefined), []), {
@@ -86,7 +87,7 @@ export async function withExtensionsPage<T>(browser: Browser, fn: (page: Target)
   }
 }
 
-export function readStatus(page: Target): Promise<ExtensionStatus> {
+export function readStatus(page: Target, extension: ExtensionSlug): Promise<ExtensionStatus> {
   return page.evaluate(
     (id: string) =>
       new Promise<ExtensionStatus>((resolve) => {
@@ -109,12 +110,12 @@ export function readStatus(page: Target): Promise<ExtensionStatus> {
           })
         })
       }),
-    [EXTENSION_ID],
+    [EXTENSIONS[extension].id],
   )
 }
 
 /** Reloads the extension from its folder; resolves with Chrome's load error, if any. */
-export function reloadExtension(page: Target): Promise<string | undefined> {
+export function reloadExtension(page: Target, extension: ExtensionSlug): Promise<string | undefined> {
   return page.evaluate(
     (id: string) =>
       new Promise<string | undefined>((resolve) => {
@@ -123,23 +124,24 @@ export function reloadExtension(page: Target): Promise<string | undefined> {
           resolve(err ?? (loadError ? `${loadError.error} (${loadError.path})` : undefined))
         })
       }),
-    [EXTENSION_ID],
+    [EXTENSIONS[extension].id],
   )
 }
 
 /**
- * Builds this checkout's extension, with this checkout's extensions/notico/.env, and puts it in `outDir`. It
+ * Builds this checkout's extension, using its environment files, and puts it in `outDir`. It
  * is built next to `outDir` first and replaces it only if it would load as the same extension.
  */
-export async function build(repoRoot: string, outDir: string): Promise<void> {
+export async function build(repoRoot: string, extension: ExtensionSlug, outDir: string): Promise<void> {
   if (!isAbsolute(outDir)) throw new Error(`Chrome reported a relative extension folder: ${outDir}`)
   const manifest = await readFile(join(outDir, 'manifest.json'), 'utf8').catch(() => '')
-  if (!isOurManifest(manifest)) {
-    throw new Error(`${outDir} doesn't hold a build of ${EXTENSION_NAME}; not building over it.`)
+  const { name } = EXTENSIONS[extension]
+  if (manifestOf(manifest)?.name !== name) {
+    throw new Error(`${outDir} doesn't hold a build of ${name}; not building over it.`)
   }
-  const extension = join(repoRoot, 'extensions', 'notico')
+  const source = join(repoRoot, 'extensions', extension)
   if (
-    !(await access(join(extension, 'node_modules', '.bin', 'vite')).then(
+    !(await access(join(source, 'node_modules', '.bin', 'vite')).then(
       () => true,
       () => false,
     ))
@@ -148,8 +150,8 @@ export async function build(repoRoot: string, outDir: string): Promise<void> {
   }
   const next = `${outDir}.next-${process.pid}`
   try {
-    await viteBuild(extension, next)
-    const stop = replaceProblem(manifest, await readFile(join(next, 'manifest.json'), 'utf8'))
+    await viteBuild(source, next)
+    const stop = replaceProblem(extension, manifest, await readFile(join(next, 'manifest.json'), 'utf8'))
     if (stop) throw new Error(stop)
     // Swap the folders so the shared extension folder is never left missing: the old build comes
     // back if the new one can't take its place.
@@ -187,11 +189,11 @@ async function viteBuild(extension: string, outDir: string): Promise<void> {
 }
 
 /** Waits for the reloaded extension to report enabled again, and returns its status. */
-export async function settledStatus(page: Target): Promise<ExtensionStatus> {
-  let status = await readStatus(page)
+export async function settledStatus(page: Target, extension: ExtensionSlug): Promise<ExtensionStatus> {
+  let status = await readStatus(page, extension)
   for (let i = 0; i < 20 && status.extension?.state !== 'ENABLED'; i++) {
     await sleep(250)
-    status = await readStatus(page)
+    status = await readStatus(page, extension)
   }
   return status
 }

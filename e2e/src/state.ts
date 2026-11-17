@@ -1,9 +1,10 @@
-// What this tool opened and created, per lock owner, so later commands act only on those: the
+// What this tool opened and created, per lock owner and extension, so later commands act only on those: the
 // Notion tab and its side panel, and the throwaway pages that `trash` may remove. Kept outside the
 // repository, next to the lock.
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
+import type { ExtensionSlug } from './extension'
 
 export interface State {
   /** CDP target id of the Notion tab this tool opened. */
@@ -20,10 +21,11 @@ export interface State {
 
 const STATE_DIR = join(homedir(), '.cache', 'cofun', 'e2e')
 
-/** One file per owner; other characters are escaped, so different owners never share a file. */
-export function statePath(owner: string, dir = STATE_DIR): string {
+/** One file per owner and extension; other characters are escaped, so different owners never share a file. */
+export function statePath(owner: string, extension: ExtensionSlug): string {
   // Fixed width, so the escape is one-to-one.
   const name = owner.replace(/[^\w.-]/gu, (c) => `%${c.codePointAt(0)!.toString(16).padStart(6, '0')}`)
+  const dir = extension === 'notico' ? STATE_DIR : join(STATE_DIR, extension)
   return join(dir, `${name}.json`)
 }
 

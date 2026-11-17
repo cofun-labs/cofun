@@ -91,6 +91,10 @@ Notico sends product analytics to [PostHog](https://posthog.com) straight from t
 
 Clerk's own account management is not used: Notico needs Clerk only for who the user is, and disconnecting the only sign-in method could leave a user unable to get back to their account and its credits. The panel reads the credits from the worker; a read that fails never touches the chat.
 
+## Confluco
+
+Confluco is built independently from `extensions/confluco/`. It runs its own copy of the side panel, agent, and local chat store. It signs in through the same Cofun Worker, sends `confluco/<version>` as its client name, and uses the account's shared credits. Its browser tools read the current tab or tabs a user added via its own web layer, with the same site grant flow as Notico. Public web reads and searches go through the Worker. On a context menu click, Confluco's extension service worker resolves the active Clerk account and leaves the selection in session storage for that account and window.
+
 ## Layout
 
 The folders, and the modules that hold a boundary; other files are found by their folder and name.

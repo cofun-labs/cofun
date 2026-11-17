@@ -1,5 +1,6 @@
 // The command line of `pnpm e2e`.
 import { isNotion, toUuid } from '../../extensions/notico/src/notion/hosts'
+import type { ExtensionSlug } from './extension'
 
 export type Answer = 'allow' | 'deny'
 type LockAction = 'acquire' | 'refresh' | 'release' | 'status'
@@ -20,6 +21,7 @@ export type Command =
 
 export interface Parsed {
   command: Command
+  extension: ExtensionSlug
   /** `--owner`: who takes the Canary lock. */
   owner?: string
 }
@@ -33,7 +35,7 @@ export class UsageError extends Error {
   }
 }
 
-export const USAGE = `Usage: pnpm e2e <command> [options]
+export const USAGE = `Usage: pnpm e2e [--extension <name>] <command> [options]
 
 Drives the shared Chrome Canary (CDP port 9228) for ai-e2e scenarios. See docs/bdd.md.
 
@@ -42,7 +44,8 @@ Commands:
                                and check it is enabled
   panel [url]                  Open the side panel for the Notion tab this tool opened, first going to
                                url if given (a tab is opened if there is none yet); starts a new chat.
-                               Only on a page or database this tool created
+                               Only on a page or database this tool created. For Confluco,
+                               opens the side panel on example.com with no URL argument
   elsewhere                    Bring a tab on another site (example.com) to the front, opening it if
                                there is none; the side panel stays open with its chat, or opens
                                with a new one if none was open. The Notion tools can't run there
@@ -65,6 +68,7 @@ Commands:
   lock refresh|release|status
 
 Options:
+  --extension <name>           notico (default) or confluco (reload, panel, ask, close, lock)
   --owner <name>               Lock owner (default: $E2E_OWNER, else the git branch)
 
 Environment:
@@ -91,7 +95,7 @@ export function parseArgs(argv: string[]): Parsed {
     }
     // After page or db, every argument is text (a title, or Markdown such as "---"), except --owner.
     const text = TEXT_COMMANDS.has(positional[0]) && arg !== '--owner' && !arg.startsWith('--owner=')
-    if (!text && (arg === '-h' || arg === '--help')) return { command: { name: 'help' } }
+    if (!text && (arg === '-h' || arg === '--help')) return { command: { name: 'help' }, extension: 'notico' }
     if (text || !arg.startsWith('--')) {
       positional.push(arg)
       continue
@@ -99,7 +103,7 @@ export function parseArgs(argv: string[]): Parsed {
     const eq = arg.indexOf('=')
     const name = eq < 0 ? arg : arg.slice(0, eq)
     if (flags.has(name)) throw new UsageError(`${name} is given twice.`)
-    if (name === '--owner' || name === '--timeout') {
+    if (name === '--owner' || name === '--timeout' || name === '--extension') {
       const value = eq < 0 ? argv[++i] : arg.slice(eq + 1)
       if (value === undefined || value === '') throw new UsageError(`${name} needs a value.`)
       flags.set(name, value)
@@ -113,8 +117,14 @@ export function parseArgs(argv: string[]): Parsed {
 
   const owner = flags.get('--owner') as string | undefined
   flags.delete('--owner')
+  const extension = flags.get('--extension') ?? 'notico'
+  flags.delete('--extension')
+  if (extension !== 'notico' && extension !== 'confluco') throw new UsageError(`Unknown extension: ${extension}.`)
   const [name, ...rest] = positional
-  if (!name) return { command: { name: 'help' }, owner }
+  if (!name) return { command: { name: 'help' }, owner, extension }
+  if (extension === 'confluco' && ['elsewhere', 'tab', 'add', 'page', 'db', 'trash'].includes(name)) {
+    throw new UsageError(`${name} only goes with --extension notico.`)
+  }
   if (name !== 'ask') {
     const misplaced = [...flags.keys()].find((f) => ASK_FLAGS.has(f))
     if (misplaced) throw new UsageError(`${misplaced} only goes with ask.`)
@@ -125,12 +135,12 @@ export function parseArgs(argv: string[]): Parsed {
 
   switch (name) {
     case 'help':
-      return { command: { name: 'help' }, owner }
+      return { command: { name: 'help' }, owner, extension }
     case 'reload':
     case 'elsewhere':
     case 'close':
       most(0)
-      return { command: { name }, owner }
+      return { command: { name }, owner, extension }
     case 'tab': {
       most(1)
       const [url] = rest
@@ -140,18 +150,19 @@ export function parseArgs(argv: string[]): Parsed {
       } catch {}
       if (!parsed || !/^https?:$/.test(parsed.protocol) || isNotion(url))
         throw new UsageError(url ? `Not a web page on another site than Notion: ${url}` : 'tab needs a URL.')
-      return { command: { name, url }, owner }
+      return { command: { name, url }, owner, extension }
     }
     case 'add': {
       const title = rest.join(' ').trim()
       if (!title) throw new UsageError('add needs the start of a tab title.')
-      return { command: { name, title }, owner }
+      return { command: { name, title }, owner, extension }
     }
     case 'panel': {
       most(1)
       const [url] = rest
+      if (extension === 'confluco' && url !== undefined) throw new UsageError('Confluco panel takes no URL.')
       if (url !== undefined && !isNotion(url)) throw new UsageError(`Not a Notion URL: ${url}`)
-      return { command: { name, url }, owner }
+      return { command: { name, url }, owner, extension }
     }
     case 'ask': {
       most(1)
@@ -170,23 +181,24 @@ export function parseArgs(argv: string[]): Parsed {
           json: flags.has('--json'),
         },
         owner,
+        extension,
       }
     }
     case 'page': {
       const [title, ...lines] = rest
       if (!title?.trim()) throw new UsageError('page needs a title.')
-      return { command: { name, title: title.trim(), markdown: lines.join('\n') }, owner }
+      return { command: { name, title: title.trim(), markdown: lines.join('\n') }, owner, extension }
     }
     case 'db': {
       const [title, ...rows] = rest
       if (!title?.trim()) throw new UsageError('db needs a title.')
-      return { command: { name, title: title.trim(), rows }, owner }
+      return { command: { name, title: title.trim(), rows }, owner, extension }
     }
     case 'trash': {
       most(1)
       const id = rest[0] && toUuid(rest[0])
       if (!id) throw new UsageError(rest[0] ? `Not a Notion id: ${rest[0]}` : 'trash needs the id of a page.')
-      return { command: { name, id }, owner }
+      return { command: { name, id }, owner, extension }
     }
     case 'lock': {
       const [action, ...purpose] = rest
@@ -195,6 +207,7 @@ export function parseArgs(argv: string[]): Parsed {
       return {
         command: { name, action: action as LockAction, purpose: purpose.join(' ').trim() || undefined },
         owner,
+        extension,
       }
     }
     default:

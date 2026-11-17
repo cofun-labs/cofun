@@ -5,7 +5,8 @@ import { isNotion } from '../../extensions/notico/src/notion/hosts'
 import { type Command, USAGE, UsageError, parseArgs } from './args'
 import { Browser, Cdp, DEFAULT_PORT } from './cdp'
 import {
-  EXTENSION_NAME,
+  EXTENSIONS,
+  type ExtensionSlug,
   build,
   problem,
   readStatus,
@@ -109,28 +110,34 @@ async function browserCommand(
   browser: Browser,
   state: State,
   command: Command,
+  extension: ExtensionSlug,
   save: () => Promise<void>,
 ): Promise<number> {
   switch (command.name) {
     case 'reload': {
-      const path = await withExtensionsPage(browser, async (page) => {
-        const before = await readStatus(page)
-        const stop = problem(before)
+      const path = await withExtensionsPage(browser, extension, async (page) => {
+        const before = await readStatus(page, extension)
+        const stop = problem(extension, before)
         if (stop) throw new E2eError(stop)
         const dir = before.extension!.path!
-        await build(REPO_ROOT, dir)
-        const loadError = await reloadExtension(page)
+        await build(REPO_ROOT, extension, dir)
+        const loadError = await reloadExtension(page, extension)
         if (loadError) throw new E2eError(`Chrome could not load the build: ${loadError}`)
-        const after = problem(await settledStatus(page))
+        const after = problem(extension, await settledStatus(page, extension))
         if (after) throw new E2eError(after)
         return dir
       })
       // Reloading closes the extension's side panels.
       state.panelTarget = undefined
-      console.log(`Built ${REPO_ROOT} into ${path}, reloaded ${EXTENSION_NAME}; it is enabled.`)
+      console.log(`Built ${REPO_ROOT} into ${path}, reloaded ${EXTENSIONS[extension].name}; it is enabled.`)
       return 0
     }
     case 'panel': {
+      if (extension === 'confluco') {
+        await openPanel(browser, state, await otherTab(browser, state), extension)
+        console.log(`Confluco side panel open on ${OTHER_URL} with a new chat.`)
+        return 0
+      }
       const own = (url: string) => isOwnPage(url, state.created)
       // Checked before going there, and again once loaded (Notion may redirect).
       if (command.url && !own(command.url)) throw new E2eError(NOT_OWN_PAGE)
@@ -138,13 +145,13 @@ async function browserCommand(
       if (!own(await notion.evaluate(() => location.href, []))) {
         throw new E2eError(NOT_OWN_PAGE)
       }
-      await openPanel(browser, state, notion)
+      await openPanel(browser, state, notion, extension)
       console.log('Side panel open on the Notion tab, with a new chat.')
       return 0
     }
     case 'elsewhere': {
       const before = (await browser.find(state.panelTarget))?.targetId
-      const panel = await openPanel(browser, state, await otherTab(browser, state), { keepChat: true })
+      const panel = await openPanel(browser, state, await otherTab(browser, state), extension, { keepChat: true })
       console.log(
         panel.targetId === before
           ? `The side panel stayed open, with its chat, on the tab at ${OTHER_URL}.`
@@ -167,18 +174,25 @@ async function browserCommand(
       // elsewhere checked it (by hand, or page/db going to E2E_NOTION_URL). On Notion the agent may
       // only meet a throwaway page; elsewhere its Notion tools can't run at all.
       const url = await currentTabUrl(panel)
-      if (!url || (isNotion(url) ? !isOwnPage(url, state.created) : !url.startsWith(OTHER_URL))) {
+      if (extension === 'confluco' && url !== OTHER_URL) {
+        throw new E2eError(`Confluco ask only runs on ${OTHER_URL}. Run pnpm e2e --extension confluco panel again.`)
+      }
+      if (
+        extension === 'notico' &&
+        (!url || (isNotion(url) ? !isOwnPage(url, state.created) : !url.startsWith(OTHER_URL)))
+      ) {
         throw new E2eError(
           'The current tab is neither on a page pnpm e2e created nor the tab pnpm e2e elsewhere opened: ' +
             'run pnpm e2e panel <url> or pnpm e2e elsewhere again.',
         )
       }
       try {
-        const result = await ask(panel, command.question, command.answer, command.timeoutMs)
+        const result = await ask(panel, command.question, command.answer, command.timeoutMs, extension)
         if (command.json) console.log(JSON.stringify(result, null, 2))
         else console.log(formatReply(result.parts))
         if (result.status === 'done') return 0
-        console.error('\nWaiting for approval: run pnpm e2e ask --allow or pnpm e2e ask --deny.')
+        const resume = extension === 'notico' ? 'pnpm e2e ask' : 'pnpm e2e --extension confluco ask'
+        console.error(`\nWaiting for approval: run ${resume} --allow or ${resume} --deny.`)
         return EXIT_NEEDS_ANSWER
       } catch (err) {
         if (err instanceof TimeoutError) {
@@ -243,7 +257,7 @@ async function browserCommand(
 }
 
 async function main(argv: string[]): Promise<number> {
-  const { command, owner: given } = parseArgs(argv)
+  const { command, extension, owner: given } = parseArgs(argv)
   if (command.name === 'help') {
     console.log(USAGE)
     return 0
@@ -256,11 +270,11 @@ async function main(argv: string[]): Promise<number> {
     return 0
   }
   return withLock(lock, owner, `pnpm e2e ${command.name}`, async () => {
-    const path = statePath(owner)
+    const path = statePath(owner, extension)
     const state = await loadState(path)
     const cdp = await Cdp.connect(cdpPort())
     try {
-      return await browserCommand(new Browser(cdp), state, command, () => saveState(path, state))
+      return await browserCommand(new Browser(cdp), state, command, extension, () => saveState(path, state))
     } finally {
       await saveState(path, state)
       cdp.close()

@@ -3,11 +3,10 @@ import { isNotion, pageIdFromUrl } from '../../extensions/notico/src/notion/host
 import type { Answer } from './args'
 import { type Browser, type Target, sleep, until } from './cdp'
 import { E2eError } from './errors'
-import { EXTENSION_ID } from './extension'
+import { EXTENSIONS, type ExtensionSlug } from './extension'
 import { type PanelSnapshot, type ReplyPart, nextStep, readPanel } from './reply'
 import type { State } from './state'
 
-const PANEL_URL = `chrome-extension://${EXTENSION_ID}/sidepanel.html`
 /** The other site `elsewhere` opens: a page that asks for nothing and holds nothing of anyone's. */
 export const OTHER_URL = 'https://example.com/'
 /** Where `page` and `db` open a Notion tab when this tool has none yet. */
@@ -94,22 +93,24 @@ export function isOwnPage(url: string, created: string[]): boolean {
 }
 
 /**
- * Brings `notion`, one of the tool's tabs (on Notion or not), to the front and opens the side panel
+ * Brings one of the tool's tabs to the front and opens the side panel
  * there; a panel already open in the window stays as it is. Starts a new chat unless `keepChat`.
  * Returns the panel.
  */
 export async function openPanel(
   browser: Browser,
   state: State,
-  notion: Target,
+  tab: Target,
+  extension: ExtensionSlug,
   { keepChat = false } = {},
 ): Promise<Target> {
   // The panel works on the active tab of its window.
-  await browser.activate(notion.targetId)
+  await browser.activate(tab.targetId)
+  const panelUrl = `chrome-extension://${EXTENSIONS[extension].id}/sidepanel.html`
 
   // chrome.sidePanel.open needs a user gesture in an extension page: open one of ours in a helper
   // tab, call it there as a click, and close the tab.
-  const helperId = await browser.open(PANEL_URL, { background: true })
+  const helperId = await browser.open(panelUrl, { background: true })
   let tabId: number
   try {
     const helper = await browser.attach(helperId)
@@ -120,8 +121,8 @@ export async function openPanel(
     })
     // Other tabs may show the same page, so mark ours by a title of its own for a moment and find
     // it by that.
-    const marker = `notico-e2e-${crypto.randomUUID()}`
-    const title = await notion.evaluate(
+    const marker = `cofun-e2e-${crypto.randomUUID()}`
+    const title = await tab.evaluate(
       (m: string) => {
         const before = document.title
         document.title = m
@@ -141,7 +142,7 @@ export async function openPanel(
         { ms: 5_000, onTimeout: () => new E2eError('Could not find the tab among the browser’s tabs.') },
       )
     } finally {
-      await notion.evaluate(
+      await tab.evaluate(
         (m: string, t: string) => {
           if (document.title === m) document.title = t
         },
@@ -160,7 +161,7 @@ export async function openPanel(
   const panel = await until(
     async () => {
       for (const t of await browser.targets()) {
-        if (!t.url.startsWith(PANEL_URL) || t.targetId === helperId) continue
+        if (!t.url.startsWith(panelUrl) || t.targetId === helperId) continue
         const page = await browser.attach(t.targetId)
         const active = await page.evaluate(
           () =>
@@ -189,7 +190,10 @@ export async function openPanel(
     },
     { ms: 20_000, onTimeout: () => new E2eError('The side panel did not finish loading.') },
   )
-  if (!snap.ready) throw new E2eError('Notico is signed out in the side panel. Sign in by hand, then try again.')
+  if (!snap.ready)
+    throw new E2eError(
+      `${EXTENSIONS[extension].name} is signed out in the side panel. Sign in by hand, then try again.`,
+    )
   if (snap.busy) throw new E2eError('A reply is still running in the side panel; wait for it with pnpm e2e ask.')
   if (snap.replies > 0 && !keepChat) await clickButton(panel, 'header button', 'New chat')
   return panel
@@ -216,9 +220,13 @@ export async function ask(
   question: string | undefined,
   answer: Answer | undefined,
   timeoutMs: number,
+  extension: ExtensionSlug,
 ): Promise<AskResult> {
   let snap = await panel.evaluate(readPanel, [])
-  if (!snap.ready) throw new E2eError('Notico is signed out in the side panel. Sign in by hand, then try again.')
+  if (!snap.ready)
+    throw new E2eError(
+      `${EXTENSIONS[extension].name} is signed out in the side panel. Sign in by hand, then try again.`,
+    )
   let expected = snap.replies
   if (question !== undefined) {
     if (snap.busy) {

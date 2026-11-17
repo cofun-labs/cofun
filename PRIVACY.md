@@ -3,6 +3,7 @@
 Cofun makes AI side panels for Chrome, each one an extension for a different kind of page. The extensions share one sign-in and one server (the worker). This page says what the sign-in and the worker do with your data, the same for every extension. What an extension reads in your browser, which hosts it contacts, and what it keeps on your device is on its own privacy page; the two pages together are its privacy policy:
 
 - [Notico](extensions/notico/PRIVACY.md), for Notion
+- [Confluco](extensions/confluco/PRIVACY.md)
 
 This page describes the worker deployed from `worker/` and the extensions built from this repository with their committed configuration. If you build an extension against your own deployment, the hosts are the ones you configure.
 
