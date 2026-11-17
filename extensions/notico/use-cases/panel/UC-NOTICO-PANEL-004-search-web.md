@@ -6,7 +6,7 @@ A user asks something that needs current information or sources beyond their Not
 
 When searches are turned away for coming too often, web search is unavailable, or credits run out, the question stops; any other failure goes to the AI, and the question goes on.
 
-In Settings, an account can instead search DuckDuckGo from the browser, for free, once Chrome grants access to it. When DuckDuckGo turns a search away, the question stops and the user is told they can switch it off; any other failure goes to the AI. A failed search is never sent again another way.
+In Settings, an account can search DuckDuckGo from the browser instead, for free. When DuckDuckGo turns a search away, the question stops and the user is told they can switch it off.
 
 Key constraint:
 
