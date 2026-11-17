@@ -5,39 +5,47 @@
 The text between the fences goes into the Description field as it is (plain text; the store keeps line breaks and shows no Markdown).
 
 ```text
-Ask Notion anything, right next to the page. Notico is an AI copilot in Chrome's side panel that reads, writes, and organizes your Notion pages, and shows you every change it makes. It also brings in the web: ask about the page you're on, a link, or a web search, and save what matters to Notion.
+Ask Notion anything, right next to your page. Notico is an AI copilot in Chrome's side panel that doesn't just chat: it reads, writes, and organizes your Notion pages and databases for you, and shows you every change it makes.
 
-✓ Free to start: free credits every week
-✓ Nothing to set up: no Notion integration, no API token
-✓ Or bring your own model through OpenRouter
-✓ Open source
+⚡ Nothing to set up: no integration, no API token. Open the panel and ask.
+🆓 Works on any Notion plan, Free included. Free credits every week, then pay only for what you use. No subscription.
+🌐 Brings in the web: save an article, a link, or a web search straight to Notion.
+🔓 Open source, and our server keeps nothing you ask or read.
 
-WHAT YOU CAN ASK
-• Summarize and explain the page you're on, or any other, comments included.
-• Draft pages, add sections, and rewrite what you selected.
-• Work with databases: filter, sort, add rows, and fill in properties.
-• Find pages across your workspace and read them.
-• Move, duplicate, or trash pages (it asks before trashing).
+WRITE AND EDIT
+• Draft pages, add sections, and turn rough notes into action items.
+• Select text and ask to rewrite it, shorten it, or change its tone.
+
+WORK WITH DATABASES
+• Filter, sort, add rows, and fill in properties.
+• Add, rename, or remove properties and options.
+• Ask "Which tasks are overdue? Comment on each one." and it's done.
+
+FIND AND ORGANIZE
+• Search your workspace and read what it finds, comments included.
+• Move or duplicate pages, or move them to the trash (it always asks first).
 • Comment on pages and mention teammates.
-• Bring in the web: ask about the page you're on or a link, compare open tabs, or search the web. Notico reads a site in your tabs only after you allow it.
+
+BRING IN THE WEB
+• Ask about the page you're on, a link, or several open tabs at once.
+• Search the web, with the sources named.
 • Right-click selected text on any page and pick "Ask Notico".
+• Notico reads a site only after you allow it.
 
 THINGS TO TRY
 • "Summarize this page in five bullet points."
 • "Turn the notes on this page into action items, with an owner for each."
-• "Which tasks in this database are overdue? Add a comment on each one."
 • "Find our onboarding docs and tell me what's out of date."
-• Select some text, then: "Rewrite this to be shorter."
 • On an article: "Save the key points of this page to my Reading notes."
 
 HOW IT WORKS
-Notico works in your own Notion tab, as you, so it reaches what you can reach and nothing else. Sign in once with Google or your email. Your chat stays open as you switch tabs, and past chats are saved on your device.
+Notico works in your own Notion tab, as you: it reaches what you can reach, and nothing else. Sign in once with Google or your email. The panel keeps your chat as you switch tabs, and past chats are saved on your device.
 
 CREDITS
-Cofun's AI model runs on credits. Every account gets free credits each week, and you can buy more in the panel: one-time packs, no subscription, valid for a year. Answering with your own model spends no credits, except on web searches and pages rendered for you.
+Cofun's AI model runs on credits. Every account gets free credits each week. Need more? Buy a one-time pack in the panel: no subscription, valid for a year. Or answer with your own model through OpenRouter and spend no credits, except on web searches and pages rendered for you.
 
 PRIVACY
-Your questions, and what Notico reads to answer them (Notion content, web pages, and web searches, which may include text from your Notion pages), go to our server and the AI model, or straight to OpenRouter if you use your own model; links and searches go through our server either way. We don't keep that content, only usage numbers and your purchases. Chats are saved only on your device. Notico reports which features are used, never what you write or read, and you can turn that off in the settings. No ads.
+Your questions, and what Notico reads to answer them (Notion content, web pages, and web searches, which may include text from your Notion pages), go to our server and the AI model, or straight to OpenRouter if you use your own model; links and searches go through our server either way. We don't keep that content, only usage numbers and your purchases. Notico reports which features are used, never what you write or read, and you can turn that off in the settings. No ads.
 
 PLEASE NOTE
 • Notico edits as soon as it decides to; only trashing asks first. Every change shows in the panel, and Notion's page history can undo it. Switch to Read only to keep it from changing anything.

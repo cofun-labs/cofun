@@ -27,6 +27,7 @@ What changed in each version of Notico on the Chrome Web Store, newest first.
 - Selecting a long passage that ends in the middle of an emoji no longer breaks the message box.
 - If Chrome can't ask you to allow a site, Notico now says so instead of saying you declined.
 - Text from web pages and search results is harder to pass off as instructions to the assistant.
+- When a model's moderation refuses a question, Notico shows OpenRouter's reason instead of marking your key as stopped working.
 
 ## 0.2.0 (2026-11-15)
 
