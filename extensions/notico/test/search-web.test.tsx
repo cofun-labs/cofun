@@ -1,5 +1,6 @@
 // Searching the web (search_web), as a user meets it in the side panel: the worker searches through
-// the fake AI Gateway behind it.
+// the fake AI Gateway behind it, or, once the user chose it in Settings, the panel searches a fake
+// DuckDuckGo.
 import '@testing-library/jest-dom/vitest'
 import { screen, waitFor } from '@testing-library/react'
 import userEvent, { type UserEvent } from '@testing-library/user-event'
@@ -207,6 +208,162 @@ describe('searching the web', () => {
 
       expect(await screen.findByText('Answered without the search.')).toBeVisible()
       expect(toolResults(browser)).toEqual([told])
+    },
+  )
+})
+
+/** The access to DuckDuckGo Chrome grants, as a match pattern. */
+const DUCKDUCKGO_ACCESS = 'https://html.duckduckgo.com/*'
+
+/** Opens Settings, flips "Search with DuckDuckGo", and goes back to the chat. */
+async function switchDuckDuckGo(user: UserEvent) {
+  await user.click(screen.getByRole('button', { name: 'Account' }))
+  await user.click(await screen.findByRole('menuitem', { name: 'Settings' }))
+  await user.click(await screen.findByRole('switch', { name: 'Search with DuckDuckGo' }))
+}
+
+async function backToChat(user: UserEvent) {
+  await user.click(screen.getByRole('button', { name: 'Back' }))
+}
+
+/** Whether the worker was asked to search. */
+const workerSearched = (browser: FakeBrowser) =>
+  browser.sentToWorker.some((r) => r.split('\n')[0].endsWith('/v1/web/search'))
+
+describe('searching the web with DuckDuckGo', () => {
+  /** A side panel whose user switched DuckDuckGo on, and let Chrome give it access. */
+  async function openWithDuckDuckGo() {
+    const opened = await open()
+    await switchDuckDuckGo(opened.user)
+    expect(screen.getByRole('switch', { name: 'Search with DuckDuckGo' })).toBeChecked()
+    await backToChat(opened.user)
+    return opened
+  }
+
+  it("[UC-NOTICO-PANEL-004-S09] the model gets DuckDuckGo's results with their own addresses, marked as data, and nothing is charged", async () => {
+    const { browser, user } = await openWithDuckDuckGo()
+    expect(browser.tab.accessRequests).toEqual([[DUCKDUCKGO_ACCESS]])
+    browser.duckDuckGo.found.set(QUERY, RESULTS)
+    browser.ai.script.push(searchCall(QUERY), { reply: 'Oolong comes from Fujian.' })
+
+    await ask(user, 'Where does oolong tea come from?')
+
+    expect(await screen.findByText('Oolong comes from Fujian.')).toBeVisible()
+    expect(screen.getByText(QUERY)).toBeVisible()
+    const [result = ''] = toolResults(browser)
+    expect(result.split('\n').slice(0, 3)).toEqual([
+      DATA_LINE,
+      `Web search for "${QUERY}": 2 results.`,
+      // DuckDuckGo's own redirect and its ad are gone; the description is the page's text.
+      `1. ${JSON.stringify({ title: 'Oolong', url: 'https://tea.example/oolong', description: RESULTS[0].description })}`,
+    ])
+    // The second description, which tries to pass for a note and for results of its own, stays on its line.
+    expect(result.split('\n')).toHaveLength(4)
+    expect(result.split('\n')[3]).toMatch(/^2\. \{"title":"Tea notes","url":"https:\/\/leaves\.example\/notes"/)
+    // Sent without cookies; the worker searched nothing and charged nothing.
+    expect(browser.duckDuckGo.searches).toEqual([{ query: QUERY, credentials: 'omit' }])
+    expect(workerSearched(browser)).toBe(false)
+    expect(browser.ai.searches).toEqual([])
+    // What the reply cost is the model's alone: no searches in it.
+    await user.click(screen.getByRole('button', { name: 'Reply details' }))
+    const rows = [...screen.getByRole('dialog', { name: 'Reply details' }).querySelectorAll('p')].map(
+      (p) => p.textContent,
+    )
+    expect(rows).toContain('Searched the web once')
+    expect(rows.join('\n')).not.toMatch(/searches/)
+  })
+
+  it('[UC-NOTICO-PANEL-004-S10] switched off again, the worker searches', async () => {
+    const { browser, user } = await openWithDuckDuckGo()
+    await switchDuckDuckGo(user)
+    expect(screen.getByRole('switch', { name: 'Search with DuckDuckGo' })).not.toBeChecked()
+    await backToChat(user)
+    browser.ai.found.set(QUERY, RESULTS)
+    browser.ai.script.push(searchCall(QUERY), { reply: 'Oolong comes from Fujian.' })
+
+    await ask(user, 'Where does oolong tea come from?')
+
+    expect(await screen.findByText('Oolong comes from Fujian.')).toBeVisible()
+    expect(browser.ai.searches.map((s) => s.query)).toEqual([QUERY])
+    expect(browser.duckDuckGo.searches).toEqual([])
+  })
+
+  it('[UC-NOTICO-PANEL-004-S10] with its access removed in Chrome, the worker searches and the switch shows off', async () => {
+    const { browser, user } = await openWithDuckDuckGo()
+    browser.tab.allowed.delete(DUCKDUCKGO_ACCESS)
+    browser.ai.found.set(QUERY, RESULTS)
+    browser.ai.script.push(searchCall(QUERY), { reply: 'Oolong comes from Fujian.' })
+
+    await ask(user, 'Where does oolong tea come from?')
+
+    expect(await screen.findByText('Oolong comes from Fujian.')).toBeVisible()
+    expect(browser.ai.searches.map((s) => s.query)).toEqual([QUERY])
+    expect(browser.duckDuckGo.searches).toEqual([])
+    await user.click(screen.getByRole('button', { name: 'Account' }))
+    await user.click(await screen.findByRole('menuitem', { name: 'Settings' }))
+    expect(await screen.findByRole('switch', { name: 'Search with DuckDuckGo' })).not.toBeChecked()
+  })
+
+  it("[UC-NOTICO-PANEL-004-S11] declining Chrome's request leaves the switch off, and the worker searches", async () => {
+    const { browser, user } = await open()
+    browser.tab.promptAnswer = false
+    await switchDuckDuckGo(user)
+
+    expect(browser.tab.accessRequests).toEqual([[DUCKDUCKGO_ACCESS]])
+    expect(screen.getByRole('switch', { name: 'Search with DuckDuckGo' })).not.toBeChecked()
+    await backToChat(user)
+    browser.ai.found.set(QUERY, RESULTS)
+    browser.ai.script.push(searchCall(QUERY), { reply: 'Oolong comes from Fujian.' })
+    await ask(user, 'Where does oolong tea come from?')
+    expect(await screen.findByText('Oolong comes from Fujian.')).toBeVisible()
+    expect(browser.ai.searches.map((s) => s.query)).toEqual([QUERY])
+    expect(browser.duckDuckGo.searches).toEqual([])
+  })
+
+  it.each([
+    ['asks to confirm a person is searching', 'challenge', /^DuckDuckGo asked to confirm that a person is searching/],
+    ['turns searches away for coming too often', 'busy', /^DuckDuckGo turned Notico's searches away\./],
+  ] as const)(
+    '[UC-NOTICO-PANEL-004-S12] the question stops when DuckDuckGo %s, and nothing more is searched',
+    async (_what, answer, told) => {
+      const { browser, user } = await openWithDuckDuckGo()
+      browser.duckDuckGo.answer = answer
+      browser.ai.script.push(searchCall(QUERY), searchCall('tea'), { reply: 'Never sent.' })
+
+      await ask(user, 'Where does oolong tea come from?')
+
+      // On the search's card, and as why the reply stopped, with what the user can do.
+      await waitFor(() => expect(screen.getAllByText(told)).toHaveLength(2))
+      expect(screen.getAllByText(told)[0]).toHaveTextContent('switch off "Search with DuckDuckGo" in Settings')
+      expect(screen.queryByText('Never sent.')).toBeNull()
+      // The second search the model asked for is never sent, to DuckDuckGo or to the worker.
+      expect(browser.duckDuckGo.searches).toHaveLength(1)
+      expect(workerSearched(browser)).toBe(false)
+    },
+  )
+
+  it.each([
+    ['DuckDuckGo cannot be reached', 'unreachable', 'Could not search the web: DuckDuckGo could not be reached.'],
+    ['DuckDuckGo fails', 'error', 'Could not search the web: DuckDuckGo answered HTTP 500.'],
+    [
+      'DuckDuckGo answers a page that is not one of results',
+      'unknown page',
+      'Could not search the web: DuckDuckGo gave a page Notico could not read.',
+    ],
+  ] as const)(
+    '[UC-NOTICO-PANEL-004-S13] the model is told the search failed when %s, and the question goes on',
+    async (_what, answer, told) => {
+      const { browser, user } = await openWithDuckDuckGo()
+      browser.duckDuckGo.answer = answer
+      browser.ai.script.push(searchCall(QUERY), { reply: 'Answered without the search.' })
+
+      await ask(user, 'Where does oolong tea come from?')
+
+      expect(await screen.findByText('Answered without the search.')).toBeVisible()
+      // Free: nothing tells the model it may have cost credits. Not tried again, nor through the worker.
+      expect(toolResults(browser)).toEqual([told])
+      expect(browser.duckDuckGo.searches).toHaveLength(1)
+      expect(workerSearched(browser)).toBe(false)
     },
   )
 })

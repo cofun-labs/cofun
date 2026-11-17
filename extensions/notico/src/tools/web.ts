@@ -2,8 +2,8 @@
 // render_web_page has it render one drawn by scripts in a browser, which is slower, costs credits,
 // and is limited to a few a minute. The model chooses the address: one the user gave, a link it found, one a search
 // found, or one it thinks of (docs/security.md, "Accepted: web pages at any address"). search_web
-// has the worker search the web, with a query the model writes (docs/security.md, "Accepted: web
-// searches").
+// searches the web with a query the model writes, through the worker or, when the user chose it,
+// DuckDuckGo from their browser (src/search.ts; docs/security.md, "Accepted: web searches").
 import { WebError, type ToolContext } from '../agent'
 import { isNotion } from '../notion/hosts'
 import { clip, quote } from '../notion/comments'
@@ -151,7 +151,8 @@ export const searchWeb = defineTool({
   description:
     'Searches the web, for current information or sources beyond Notion and the pages the user gave. Gives up to ' +
     `${SEARCH_RESULTS} results, each with its page's URL, title, and a description of the page. To read a result's ` +
-    'page in full, use read_web_page with its URL. Each search costs the user credits: search only when the question ' +
+    'page in full, use read_web_page with its URL. A search may cost the user credits, and searches are limited: ' +
+    'search only when the question ' +
     'needs it. The search matches the words of the query as they are and reads no instructions: write a few ' +
     'keywords, not the question (say, "Node.js LTS release 2026", not "what is the latest stable Node.js ' +
     'version?"). When the results do not fit, search once more with other keywords, not the same ones.',

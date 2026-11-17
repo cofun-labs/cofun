@@ -41,11 +41,15 @@ function clerkCookiePermission(syncHost: string, cookieDomain?: string): string 
 /** The API where a user's own model is asked (UC-NOTICO-AGENT-002): OpenRouter's. */
 const OWN_MODEL_HOSTS = ['https://openrouter.ai']
 
+/** Where web searches go when the user chose DuckDuckGo in Settings (src/duckduckgo/search.ts). */
+const FREE_SEARCH_HOSTS = ['https://html.duckduckgo.com']
+
 /**
  * The policy for the extension's own pages (the side panel and the service worker). Chrome's
  * default only limits scripts; this one limits every kind of load to the extension itself, except
  * requests, which may also go to the worker, Clerk's Frontend API, OpenRouter (only once the
- * user turns it on; a host permission would not widen this list, #46), and PostHog (usage
+ * user turns it on; a host permission would not widen this list, #46), DuckDuckGo (only once the
+ * user chooses it for web searches), and PostHog (usage
  * events, unless the user turned them off), and images, which may also
  * come from Clerk's image host. So the browser itself enforces the host list in PRIVACY.md. Notion calls
  * are not made from these pages (they run in the Notion tab).
@@ -57,6 +61,7 @@ function contentSecurityPolicy(env: ManifestEnv): string {
       ...(env.VITE_API_URL ? [new URL(env.VITE_API_URL).origin] : []),
       ...(clerkHost ? [`https://${clerkHost}`] : []),
       ...OWN_MODEL_HOSTS,
+      ...FREE_SEARCH_HOSTS,
       ...(env.VITE_POSTHOG_HOST ? [new URL(env.VITE_POSTHOG_HOST).origin] : []),
     ]),
   ]

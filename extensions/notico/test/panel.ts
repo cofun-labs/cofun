@@ -1,7 +1,8 @@
 // The side panel's UI tests run the whole panel: the page sidepanel.html loads, with the real agent,
 // tools, and session store behind it, and the real worker answering its model calls. Only the edges
 // are fakes: chrome.* (with a Notion tab), Clerk (see clerk.tsx), IndexedDB, the model binding, the
-// services a user's own model is on (OpenRouter), and PostHog, where usage events go.
+// services a user's own model is on (OpenRouter), PostHog, where usage events go, and DuckDuckGo,
+// a user's free web search.
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { act } from '@testing-library/react'
@@ -22,6 +23,7 @@ import {
 import { FakeStripe, signature, WEBHOOK_SECRET } from '../../../worker/test/stripe'
 import type { FakeSession } from './clerk'
 import { restoreGlobals, type FakeNotionTab } from './notion-tab'
+import { DUCKDUCKGO, FakeDuckDuckGo } from './duckduckgo'
 import { FakeOpenRouter, OPENROUTER } from './openrouter'
 import { FakePostHog, POSTHOG } from './posthog'
 import { failingTitles, titleRequests } from './titles'
@@ -63,6 +65,8 @@ export class FakeBrowser {
   readonly stripe = new FakeStripe()
   /** OpenRouter, for a user's own model; script its model, and read what it was sent. */
   readonly openRouter = new FakeOpenRouter()
+  /** DuckDuckGo's search page, which the panel searches when the user chose it. */
+  readonly duckDuckGo = new FakeDuckDuckGo()
   /** PostHog, where the panel sends usage events; read what it was sent. */
   readonly postHog = new FakePostHog()
   /** Every request the panel sent the worker, as text: its URL, headers, and body. */
@@ -149,11 +153,12 @@ export class FakeBrowser {
     browser.issuer = issuer
     browser.env = env
     browser.worker = (request) => app.request(request, undefined, env, new FakeExecutionContext())
-    // The panel calls fetch(); route it into the worker app, or to OpenRouter.
+    // The panel calls fetch(); route it into the worker app, or to OpenRouter, PostHog, or DuckDuckGo.
     globals.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
       const request = new Request(input, init)
       if (request.url.startsWith(`${OPENROUTER}/`)) return browser.openRouter.handle(request)
       if (request.url.startsWith(`${POSTHOG}/`)) return browser.postHog.handle(request)
+      if (request.url.startsWith(`${DUCKDUCKGO}/`)) return browser.duckDuckGo.handle(request)
       const headers = [...request.headers].map(([name, value]) => `${name}: ${value}`).join('\n')
       browser.sentToWorker.push(`${request.url}\n${headers}\n${await request.clone().text()}`)
       return browser.worker(request)

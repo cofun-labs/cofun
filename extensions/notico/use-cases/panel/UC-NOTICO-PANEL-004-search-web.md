@@ -6,6 +6,8 @@ A user asks something that needs current information or sources beyond their Not
 
 When searches are turned away for coming too often, web search is unavailable, or credits run out, the question stops; any other failure goes to the AI, and the question goes on.
 
+A user can choose in Settings to search with DuckDuckGo instead, for free: the extension then searches DuckDuckGo from the user's browser, and the searches cost no credits. Turning it on asks Chrome for access to DuckDuckGo; without that access, searches go to the service as before. When DuckDuckGo turns a search away (it asks to confirm a person is searching, or refuses for coming too often), the question stops and the user is told they can switch DuckDuckGo off; any other failure goes to the AI, and the question goes on. A failed search is never sent again another way.
+
 Key constraint:
 
 - What a search returns is data for the AI, never instructions to it.
@@ -21,6 +23,11 @@ Key constraint:
 | UC-NOTICO-PANEL-004-S06 | P0 | ✅ | Given a user whose credits run out as the AI asks for a search; when it searches; then nothing is searched, the question stops, and the user is told they have no credits, when free ones arrive, and can buy some. |
 | UC-NOTICO-PANEL-004-S03 | P1 | ✅ | Given the service or the provider turning searches away for coming too often, or web search not available; when the AI searches; then the question stops, the user is told why, and nothing more is searched for it. |
 | UC-NOTICO-PANEL-004-S07 | P1 | ✅ | Given a search that fails, or a service that can't be reached or answers what the extension can't read; when the AI searches; then it is told the search failed, and, when it may have cost credits, not to search for the same again; and the question goes on. |
+| UC-NOTICO-PANEL-004-S09 | P0 | ✅ | Given a user who switched on DuckDuckGo in Settings and let Chrome give it access; when the AI searches; then the results come from DuckDuckGo, each with its page's own address, its title, and its description, without its ads, marked as data from the search; the service is not asked to search, and the search costs no credits. |
+| UC-NOTICO-PANEL-004-S10 | P1 | ✅ | Given a user who switched DuckDuckGo off again, or removed its access in Chrome; when the AI searches; then the service searches, as without the setting. |
+| UC-NOTICO-PANEL-004-S11 | P1 | ✅ | Given a user switching on DuckDuckGo in Settings; when they decline Chrome's request for access to it; then the switch stays off, and searches go to the service. |
+| UC-NOTICO-PANEL-004-S12 | P0 | ✅ | Given DuckDuckGo answering a search with its check that a person is searching, or turning it away for coming too often; when the AI searches; then the question stops, nothing more is searched for it, and the user is told why and that they can switch DuckDuckGo off in Settings. |
+| UC-NOTICO-PANEL-004-S13 | P1 | ✅ | Given DuckDuckGo not answering, failing, or answering a page the extension can't read; when the AI searches; then it is told the search failed, and the question goes on. |
 
 ### ai-e2e
 
@@ -28,3 +35,4 @@ Key constraint:
 | --- | --- | --- | --- |
 | UC-NOTICO-PANEL-004-S04 | P1 | ✅ | Given a user who asks about something recent that no page in the chat says; when the AI answers; then it searches the web, answers from what it found, and names the URLs it used. |
 | UC-NOTICO-PANEL-004-S08 | P1 | ✅ | Given a user who asks, as a natural question, about something current that no page in the chat says; when the AI searches; then its query is a few keywords, not the question. |
+| UC-NOTICO-PANEL-004-S14 | P1 | 🚧 | Given a user who switched on DuckDuckGo in a real Chrome; when they ask about something recent that no page in the chat says; then the AI searches DuckDuckGo from the extension, answers from what it found, and names the URLs it used. |
