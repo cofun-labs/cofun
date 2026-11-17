@@ -83,9 +83,9 @@ export function touchedBy(calls: { details?: ToolDetails }[]): {
 }
 
 /** The tools that read a web page, from a tab or by its address; the one that renders it; and the web search. */
-const WEB_READS = new Set(['read_web_page', 'render_web_page', 'read_current_tab', 'read_tab'])
-const RENDER = 'render_web_page'
-const SEARCH = 'search_web'
+const WEB_READS = new Set([readWebPage, renderWebPage, readCurrentTab, readTab].map((tool) => tool.name))
+const RENDER = renderWebPage.name
+const SEARCH = searchWeb.name
 
 /** What a question's calls that worked did on the web: the pages read (each read counts), how many were rendered, and the searches. */
 export function webTouchedBy(calls: { name: string }[]): { read: number; rendered: number; searches: number } {
