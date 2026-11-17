@@ -194,8 +194,7 @@ describe('answering with the own model', () => {
     await screen.findByText('It is a fixture.')
     await answered()
 
-    expect(await replyDetails(user)).toEqual(['Tokens: 3k in (2k cached) · 40 out'])
-    expect(screen.getByRole('note', { name: 'Answered by OpenAI: GPT-6.1 Sol' })).toBeVisible()
+    expect(await replyDetails(user)).toEqual(['Model: OpenAI: GPT-6.1 Sol', 'Tokens: 3k in (2k cached) · 40 out'])
   })
 
   it('[UC-NOTICO-AGENT-002-S02] another account on the same browser gets the hosted model and cannot see the key', async () => {

@@ -199,10 +199,8 @@ const ReplyFoot = memo(function ReplyFoot({
   const text = replyMarkdown(reply.parts)
   // What it touched in Notion and on the web leads its details, in the "…", so the row stays quiet.
   const details = [...touched(reply).map((text) => ({ text })), ...detailRows(reply.details)]
-  const model = reply.details?.model
   const cost = reply.details?.cost
-  if (!text && !details.length && !model && !cost) return null
-  const modelName = model && (model.service === 'hosted' ? HOSTED : model.name)
+  if (!text && !details.length && !cost) return null
   return (
     <div className="reply-foot">
       {text && <CopyButton text={text} />}
@@ -216,17 +214,6 @@ const ReplyFoot = memo(function ReplyFoot({
         />
       )}
       {cost && <CostNote cost={cost} />}
-      {modelName && (
-        <span
-          className="note reply-model"
-          role="note"
-          aria-label={`Answered by ${modelName}`}
-          data-tip="The model that answered"
-        >
-          {/* Cut to fit inside: the tooltip is drawn outside the outer span, so that one can't clip. */}
-          <span className="reply-model-name">{modelName}</span>
-        </span>
-      )}
       {details.length > 0 && <ReplyDetails rows={details} />}
     </div>
   )
@@ -341,12 +328,14 @@ function amount(n: number): string {
   return n < 1000 ? String(n) : n < 999_950 ? short(n / 1000, 'k') : short(n / 1_000_000, 'M')
 }
 
-/** A reply's details, one row each, with what is unknown (or none) left out; the model is shown in its row. */
+/** A reply's details, one row each, with what is unknown (or none) left out. */
 function detailRows(details: QuestionDetails = {}): { label?: string; text: string }[] {
-  const { requests, tokens: used, cost } = details
+  const { requests, tokens: used, model, cost } = details
   return [
     ...(cost && (cost.renders || cost.searches) ? [{ label: 'Credits', text: costSplit(cost) }] : []),
     ...(requests ? [{ text: `Sent ${counted(requests, 'Notion request')}` }] : []),
+    // The model that answered, next to the tokens it used.
+    ...(model ? [{ label: 'Model', text: model.service === 'hosted' ? HOSTED : model.name }] : []),
     ...(used
       ? [
           {
