@@ -722,6 +722,8 @@ export class CopilotAgent {
       this.agent.identity = this.provider.identity
       return this.agent
     }
+    // The tools whose results a cut never leaves out (see `recent`).
+    const changing = new Set(this.config.tools.filter((t) => t.changesData).map((t) => t.name))
     // The tool definitions go with every request and count toward the provider's size limit.
     const toolChars = JSON.stringify(
       this.config.tools.map((t) => ({ name: t.name, description: t.description, parameters: t.parameters })),
@@ -750,7 +752,7 @@ export class CopilotAgent {
       toolExecution: 'sequential',
       transformContext: async (messages) => {
         const limits = this.config.history ?? this.provider.history
-        const { sent, ...part } = recent(this.withNotes(messages), limits, toolChars, this.sentPart)
+        const { sent, ...part } = recent(this.withNotes(messages), limits, toolChars, this.sentPart, changing)
         this.sentPart = part
         return sent
       },

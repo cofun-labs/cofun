@@ -64,9 +64,9 @@ export interface SentPart {
  * the tools), then everything from `part.from` (where the part sent last time started), with the tool
  * results before `part.whole` left out, while that fits the limits. Once it doesn't, the part is cut:
  * the newest questions that fit WHOLE_AFTER_CUT of the characters are sent whole, and before them, the
- * newest that fit KEPT_AFTER_CUT of the limits with their tool results left out. The character budget
- * also pays for the tool definitions (`overhead`). Both indexes are at a user message, so a reply or
- * tool result is never sent without what led to it. The newest question is always kept whole; if it
+ * newest that fit KEPT_AFTER_CUT of the limits with their tool results left out, but those of the tools
+ * in `changing`. The character budget also pays for the tool definitions (`overhead`). Both indexes are
+ * at a user message, so a reply or tool result is never sent without what led to it. The newest question is always kept whole; if it
  * alone is too long, the worker says so.
  *
  * Between cuts the start of what is sent stays the same, so the prompt cache reuses it.
@@ -79,6 +79,7 @@ export function recent(
   limits: { messages: number; chars: number },
   overhead: number,
   part: SentPart = { from: 0, whole: 0 },
+  changing: ReadonlySet<string> = new Set(),
 ): { sent: AgentMessage[] } & SentPart {
   let head = 0
   while (head < messages.length && messages[head].role === 'system') head++
@@ -88,7 +89,7 @@ export function recent(
   // worked out again.
   let from = isQuestion(part.from) ? part.from : head
   let whole = isQuestion(part.whole) && part.whole >= from ? part.whole : from
-  const sizes = (whole: number) => messages.map((m, i) => size(i < whole ? leftOut(m) : m))
+  const sizes = (whole: number) => messages.map((m, i) => size(i < whole ? leftOut(m, changing) : m))
   const fits =
     messages.length - from <= limits.messages &&
     sizes(whole)
@@ -100,17 +101,19 @@ export function recent(
     // At `whole` or before it: what comes from there is the same as above, within a smaller budget.
     from = newestThatFits(sizes(whole), head, count, fixed, limits.chars * KEPT_AFTER_CUT, messages)
   }
-  const kept = messages.slice(from).map((m, i) => (from + i < whole ? leftOut(m) : m))
+  const kept = messages.slice(from).map((m, i) => (from + i < whole ? leftOut(m, changing) : m))
   return { sent: [...messages.slice(0, head), ...kept], from, whole }
 }
 
 /**
  * A message as it is sent before the part of a cut conversation sent whole: a tool result longer
  * than SHORT_RESULT is replaced by a note that says how to read it again; anything else is as it is.
+ * The result of a tool in `changing` (one that changes data) is always sent whole: it is the record
+ * of what was changed, and a note telling the model to run the tool again could change it twice.
  * The note depends only on the result, so the same result gives the same note in every request.
  */
-function leftOut(message: AgentMessage): AgentMessage {
-  if (message.role !== 'toolResult') return message
+function leftOut(message: AgentMessage, changing: ReadonlySet<string>): AgentMessage {
+  if (message.role !== 'toolResult' || changing.has(message.toolName)) return message
   const chars = size(message)
   if (chars <= SHORT_RESULT && message.content.every((block) => block.type === 'text')) return message
   const id = ToolDetails.safeParse(message.details).data?.result

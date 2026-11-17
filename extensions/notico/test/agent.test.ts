@@ -656,7 +656,7 @@ describe('extension agent against the worker', () => {
     ])
   })
 
-  it('[@no-uc:money] a cut leaves out the tool results of older questions, keeps their questions, and keeps its start', async () => {
+  it('[@no-uc:money] a cut leaves out the tool results of older questions but changes, keeps their questions, and keeps its start', async () => {
     // The tool results are most of a long conversation: leaving out those of the older questions keeps
     // many more questions, and a note says how to read a kept one again.
     let reads = 0
@@ -664,9 +664,17 @@ describe('extension agent against the worker', () => {
       ...pageTool().tool,
       run: async () => ({ text: 'x'.repeat(1_000), details: { ...(++reads === 1 && { result: 'r_first' }) } }),
     }
-    const agent = makeAgent({ tools: [reader], history: { messages: 100, chars: 5_000 } })
+    // A change's result is the record of what changed: it stays whole, so the model never runs it again.
+    const writer: ToolSpec = {
+      ...pageTool().tool,
+      name: 'change_page',
+      changesData: true,
+      run: async () => 'y'.repeat(1_000),
+    }
+    const agent = makeAgent({ tools: [reader, writer], history: { messages: 100, chars: 5_000 } })
     for (let n = 1; n <= 5; n++) {
-      ai.script = [{ toolCalls: [{ name: 'lookup_page', arguments: '{}' }] }, { reply: 'Done.' }]
+      const name = n === 2 ? 'change_page' : 'lookup_page'
+      ai.script = [{ toolCalls: [{ name, arguments: '{}' }] }, { reply: 'Done.' }]
       await ask(agent, `q${n}`)
     }
     await ask(agent, 'q6')
@@ -684,7 +692,8 @@ describe('extension agent against the worker', () => {
     ).toEqual(['q1', 'q2', 'q3', 'q4', 'q5'])
     expect(results(9)).toEqual([
       '[Left out to keep the conversation short: this result had 1,000 characters. It is kept as result r_first: read it with read_result, or find text in it with search_result.]',
-      ...Array(3).fill(
+      'y'.repeat(1_000),
+      ...Array(2).fill(
         '[Left out to keep the conversation short: this result had 1,000 characters. If the question needs it, run the tool again.]',
       ),
       'x'.repeat(1_000),
