@@ -144,6 +144,11 @@ export class CopilotAgent {
    * question carries (carryPages).
    */
   readonly memory = new ToolMemory()
+  /**
+   * Where the part of the conversation sent to the model starts, as an index in it (see `recent`):
+   * kept between requests, so a long conversation is cut once in a while, not by one question each time.
+   */
+  private sentFrom = 0
 
   /**
    * One agent holds one conversation: a new one, or `initial` to continue a saved one (see
@@ -481,6 +486,9 @@ export class CopilotAgent {
     if (failure || stopped) {
       const kept = usedTools(agent.state.messages.slice(before))
       agent.state.messages = [...agent.state.messages.slice(0, before), ...kept]
+      // The part sent may have started inside what was just dropped: the next question would land on
+      // that index and start a part with none of the conversation before it. Worked out again instead.
+      if (this.sentFrom >= before) this.sentFrom = 0
       const result: AskResult = stopped
         ? { status: 'stopped', ...used }
         : { status: 'error', message: failure!.text, ...(failure!.code ? { code: failure!.code } : {}), ...used }
@@ -727,8 +735,12 @@ export class CopilotAgent {
       identity: this.provider.identity,
       // Notion tools will change pages; run them one at a time, in the order the model asked.
       toolExecution: 'sequential',
-      transformContext: async (messages) =>
-        recent(this.withNotes(messages), this.config.history ?? this.provider.history, toolChars),
+      transformContext: async (messages) => {
+        const limits = this.config.history ?? this.provider.history
+        const { sent, from } = recent(this.withNotes(messages), limits, toolChars, this.sentFrom)
+        this.sentFrom = from
+        return sent
+      },
     })
     return this.agent
   }

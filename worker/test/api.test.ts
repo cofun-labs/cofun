@@ -240,7 +240,7 @@ describe('worker API', () => {
   })
 
   it('[@no-uc:money] a chat body too large is refused with 413 before it is read whole, with or without its length', async () => {
-    const payload = JSON.stringify({ messages: [{ role: 'user', content: 'x'.repeat(5 * 1024 * 1024) }] })
+    const payload = JSON.stringify({ messages: [{ role: 'user', content: 'x'.repeat(7 * 1024 * 1024) }] })
     const send = (body: string | ReadableStream<Uint8Array>, headers: Record<string, string> = {}) => {
       // Node needs `duplex` to send a stream; the Workers types do not list it.
       const init = {
@@ -1136,7 +1136,7 @@ describe('tool calling', () => {
 
   it('[@no-uc:money] tool definitions and tool calls count toward the size limit', async () => {
     expect((await chat(token, { messages: withToolResult('{"title":"x"}'), tools: [pageTool] })).status).toBe(200)
-    const big = 'x'.repeat(200_001)
+    const big = 'x'.repeat(800_001)
     const tooBig = [
       { messages: askPage, tools: [{ type: 'function', function: { name: 'f', description: big } }] },
       {
@@ -1196,7 +1196,7 @@ describe('tool calling', () => {
       [[], 'body must be a JSON object'],
       [{}, 'messages must be a non-empty array'],
       [{ messages: [] }, 'messages must be a non-empty array'],
-      [{ messages: Array.from({ length: 201 }, () => askPage[0]) }, 'at most 200 messages'],
+      [{ messages: Array.from({ length: 1001 }, () => askPage[0]) }, 'at most 1000 messages'],
       [{ messages: ['hi'] }, 'each message must be an object'],
       [{ messages: [{ content: 'hi' }] }, 'each message needs a role: system, user, assistant, or tool'],
       [

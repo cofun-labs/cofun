@@ -639,17 +639,37 @@ describe('extension agent against the worker', () => {
     ])
   })
 
-  it('[@no-uc:contract] a long conversation sends only its newest part, starting at a question', async () => {
-    const agent = makeAgent({ history: { messages: 3, chars: 100_000 } })
-    await ask(agent, 'first')
-    await ask(agent, 'second')
-    await ask(agent, 'third')
-    expect(sentMessages(2).map((m) => [m.role, m.content])).toEqual([
+  it('[@no-uc:money] a long conversation is cut in large steps, starting at a question, and keeps its start between cuts', async () => {
+    // A cut changes everything after the tools, which the provider's prompt cache can't reuse: cut to
+    // 60% of the limits, and send from the same question until the conversation is over them again.
+    const agent = makeAgent({ history: { messages: 10, chars: 100_000 } })
+    for (let n = 1; n <= 9; n++) await ask(agent, `q${n}`)
+    const firstSent = ai.calls.map((_, n) => sentMessages(n).find((m) => m.role === 'user')?.content)
+    expect(firstSent).toEqual(['q1', 'q1', 'q1', 'q1', 'q1', 'q4', 'q4', 'q4', 'q7'])
+    expect(sentMessages(5).map((m) => [m.role, m.content])).toEqual([
       ['system', 'You are Notico.'],
-      ['user', 'second'],
+      ['user', 'q4'],
       ['assistant', '你好 来自 worker '],
-      ['user', 'third'],
+      ['user', 'q5'],
+      ['assistant', '你好 来自 worker '],
+      ['user', 'q6'],
     ])
+  })
+
+  it('[@no-uc:data] a question dropped after a cut that kept only it leaves the conversation before it to the next one', async () => {
+    const agent = makeAgent({ history: { messages: 100, chars: 1_000 } })
+    await ask(agent, 'q1')
+    await ask(agent, 'q2')
+    // Alone over the budget: the cut keeps only it, and it fails with nothing to keep.
+    ai.failWith = new Error('down')
+    expect((await ask(agent, `q3 ${'x'.repeat(900)}`)).result.status).toBe('error')
+    ai.failWith = undefined
+    await ask(agent, 'q4')
+    expect(
+      sentMessages(3)
+        .filter((m) => m.role === 'user')
+        .map((m) => m.content),
+    ).toEqual(['q1', 'q2', 'q4'])
   })
 
   it('[@no-uc:money] every request offers the same tools, in Edit, in Read only, and in a reopened chat', async () => {

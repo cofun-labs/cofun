@@ -42,18 +42,22 @@ export interface CallCost {
   estimated: boolean
 }
 
-// The worker allows 200 messages and 200,000 characters, tools included.
-export const HOSTED_HISTORY = { messages: 100, chars: 150_000 }
+// About 150k tokens (a token is about four characters), of the hosted model's 1,048,576. The worker
+// allows 1,000 messages and 800,000 characters, tools and the system prompt included.
+export const HOSTED_HISTORY = { messages: 800, chars: 600_000 }
+
+/** The most of a long conversation sent to a model the user pays for with their own key. */
+const OWN_HISTORY = { messages: 100, chars: 150_000 }
 
 /**
- * How much of a long conversation to send to a model the user pays for: what the hosted provider
- * sends, at most. Every round trip resends the history, so a model with a huge context must not make
- * each question cost dollars. A smaller context lowers it (a token is about four characters: half the
- * context, which leaves room for the reply).
+ * How much of a long conversation to send to a model the user pays for: OWN_HISTORY at most. Every
+ * round trip resends the history, so a model with a huge context must not make each question cost
+ * dollars. A smaller context lowers it (a token is about four characters: half the context, which
+ * leaves room for the reply).
  */
 export const ownHistory = (contextLength: number) => ({
-  messages: 100,
-  chars: Math.min(contextLength * 2, HOSTED_HISTORY.chars),
+  messages: OWN_HISTORY.messages,
+  chars: Math.min(contextLength * 2, OWN_HISTORY.chars),
 })
 
 // What the worker answers, as far as the agent reads it. Each field is read loosely: one that is not

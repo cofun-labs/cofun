@@ -34,35 +34,60 @@ export function usedTools(tail: AgentMessage[]): AgentMessage[] {
 }
 
 /**
- * The leading system messages plus the newest part of the conversation that fits the limits.
- * The character budget also pays for the system prompt and the tool definitions (`overhead`).
- * It starts at a user message, so a reply or tool result is never sent without what led to it.
- * The newest question is always kept; if it alone is too long, the worker says so.
+ * What a long conversation keeps when it is cut: this share of the limits. The cut leaves room to grow,
+ * so the part sent keeps the same start for many requests: the provider's prompt cache reuses the
+ * start of a request that is the same as before, and a cut changes all of it after the tools.
+ */
+const KEPT_AFTER_CUT = 0.6
+
+/**
+ * The part of the conversation to send: the leading system message (pi's, with the system prompt and
+ * the tools), then everything from `from` (the index of the user message the part sent last time
+ * started at) while that fits the limits. Once it doesn't, the part is cut to the newest questions
+ * that fit KEPT_AFTER_CUT of them, and `from` moves there. The character budget also pays for the tool
+ * definitions (`overhead`). The part starts at a user message, so a reply or tool result is never sent
+ * without what led to it. The newest question is always kept; if it alone is too long, the worker
+ * says so.
  *
- * System messages in the part left out are kept too: pi records there which tools were added and
- * removed (a question in Read only offers fewer), and the tools offered now are worked out from all
- * of them. They carry no text of their own here, so they cost nothing to send.
+ * pi would record a change of the tools in a later system message, which a cut could drop; the tools
+ * never change (see `allTools` in agent.ts), so there is none.
  */
 export function recent(
   messages: AgentMessage[],
   limits: { messages: number; chars: number },
   overhead: number,
-): AgentMessage[] {
+  from = 0,
+): { sent: AgentMessage[]; from: number } {
   let head = 0
   while (head < messages.length && messages[head].role === 'system') head++
-  const rest = messages.slice(head)
-  let start = rest.length
-  let chars = overhead + messages.slice(0, head).reduce((n, m) => n + size(m), 0)
-  for (let i = rest.length - 1; i >= 0 && rest.length - i <= limits.messages; i--) {
-    chars += size(rest[i])
-    if (chars > limits.chars) break
-    if (rest[i].role === 'user') start = i
+  const fixed = overhead + messages.slice(0, head).reduce((n, m) => n + size(m), 0)
+  // A start that is no longer a question (the conversation lost the messages after a failed one) is
+  // worked out again.
+  let start = from >= head && messages[from]?.role === 'user' ? from : head
+  const fits =
+    messages.length - start <= limits.messages &&
+    messages.slice(start).reduce((n, m) => n + size(m), fixed) <= limits.chars
+  if (!fits)
+    start = newestThatFits(messages, head, limits.messages * KEPT_AFTER_CUT, fixed, limits.chars * KEPT_AFTER_CUT)
+  return { sent: [...messages.slice(0, head), ...messages.slice(start)], from: start }
+}
+
+/**
+ * Where the newest part of the conversation after `head` that fits `count` messages and `chars`
+ * characters (with `fixed` already counted) starts: at a user message, the newest one when even that
+ * doesn't fit.
+ */
+function newestThatFits(messages: AgentMessage[], head: number, count: number, fixed: number, chars: number): number {
+  let start = -1
+  let used = fixed
+  for (let i = messages.length - 1; i >= head; i--) {
+    used += size(messages[i])
+    const over = messages.length - i > count || used > chars
+    if (messages[i].role !== 'user') continue
+    if (start !== -1 && over) break
+    start = i
   }
-  if (start === rest.length) {
-    for (start = rest.length - 1; start > 0 && rest[start].role !== 'user'; start--);
-  }
-  const changes = rest.slice(0, start).filter((m) => m.role === 'system')
-  return [...messages.slice(0, head), ...changes, ...rest.slice(start)]
+  return start === -1 ? head : start
 }
 
 /** Characters a message adds to a request: its text, tool calls, and tool results. */

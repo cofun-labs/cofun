@@ -3,9 +3,12 @@
 import * as z from '../zod'
 import { MAX_ID_CHARS, badRequest, parse, part } from '../http'
 
-const MAX_MESSAGES = 200
+// What Notico sends of a long chat (HOSTED_HISTORY in its src/agent/provider.ts: 800 messages and
+// 600,000 characters, about 150k tokens of the model's 1,048,576), with room for the system prompt,
+// which that budget doesn't count.
+const MAX_MESSAGES = 1_000
 export const MAX_TOKENS = 16_384
-export const MAX_CONTENT_CHARS = 200_000
+export const MAX_CONTENT_CHARS = 800_000
 const MAX_TOOLS = 64
 const MAX_TOOL_CALLS = 32
 
