@@ -32,6 +32,7 @@ const attachment = z.object({
   version: z.object({ number: z.int().min(1).max(2_147_483_647) }),
   fileSize: z.int().nonnegative().optional(),
   downloadLink: z.string().max(4096).optional(),
+  _links: z.object({ download: z.string().max(4096).optional() }).optional(),
 })
 
 function pageRef(tab: ConfluenceTab, id: string): PageReference {
@@ -231,7 +232,13 @@ export async function listCloudAttachments(
       filename: item.title,
       version: item.version.number,
       bytes: item.fileSize,
-      downloadUrl: attachmentDownloadUrl(tab.instance, page.id, item.title, item.version.number, item.downloadLink),
+      downloadUrl: attachmentDownloadUrl(
+        tab.instance,
+        page.id,
+        item.title,
+        item.version.number,
+        item._links?.download ?? item.downloadLink,
+      ),
     })),
     ...next,
   }

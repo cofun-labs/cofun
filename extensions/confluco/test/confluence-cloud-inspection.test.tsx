@@ -160,7 +160,7 @@ it('[UC-CONFLUCO-CONFLUENCE-006-S01] [UC-CONFLUCO-CONFLUENCE-010-S01] [UC-CONFLU
               title: 'agenda.txt',
               pageId: '42',
               version: { number: 2 },
-              downloadLink: '/download/attachments/42/agenda.txt?version=2',
+              _links: { download: '/download/attachments/42/agenda.txt?version=2' },
               fileSize: 30,
             },
           ],
