@@ -27,6 +27,8 @@ export default defineConfig({
           name: 'ui',
           include: ['test/**/*.test.tsx'],
           environment: 'jsdom',
+          // The first UI test loads the side panel while the other workspaces also run on CI.
+          ...(process.env.CI && { testTimeout: 10_000 }),
           env: { ...env, TZ: 'Asia/Kolkata' },
         },
       },

@@ -20,7 +20,7 @@ import { captureConfluenceTab, refuse, type ConfluenceTab } from '../confluence/
 import type { ConfluenceUndo } from '../confluence/undo'
 import { defineTool } from '../tool'
 import { z } from '../zod'
-import type { ConfluenceQuestion, ToolMemory } from './memory'
+import type { ConfluenceQuestion } from './memory'
 import { asData, on, verb } from './shared'
 
 interface ChangeResult {
@@ -62,27 +62,25 @@ function change<S extends z.ZodObject>(
     signal?: AbortSignal,
   ) => Promise<Plan>,
 ) {
-  const plans = new WeakMap<
-    ToolMemory,
-    { question: ConfluenceQuestion } & ({ tab: ConfluenceTab; plan: Plan } | { error: Error })
-  >()
+  const plans = new WeakMap<ConfluenceQuestion, { tab: ConfluenceTab; plan: Plan } | { error: Error }>()
   return defineTool({
     name,
     description,
     args,
     changesData: true,
     needsConfirmation: ({ memory }) => {
-      const pending = plans.get(memory)
+      const question = memory.confluenceQuestion
+      const pending = question && plans.get(question)
       return pending !== undefined && 'plan' in pending && pending.plan.confirm === true
     },
     describe: () => on(verb('change', 'changing', 'changed'), undefined, title),
     preview: async (input, context, signal) => {
       const { memory } = context
-      plans.delete(memory)
       const question = memory.confluenceQuestion
       if (!question) refuse('Ask for a Confluence change from the side panel.')
+      plans.delete(question)
       if (question.writtenTool && (question.writtenTool !== name || name !== 'change_page_label')) {
-        plans.set(memory, { question, error: new Error('The Confluence change in this question was already handled.') })
+        plans.set(question, { error: new Error('The Confluence change in this question was already handled.') })
         return undefined
       }
       const tab = await question.tab
@@ -94,20 +92,20 @@ function change<S extends z.ZodObject>(
         signal?.throwIfAborted()
         if (memory.confluenceQuestion !== question) return undefined
         question.writtenTool = name
-        plans.set(memory, { question, tab, plan })
+        plans.set(question, { tab, plan })
         return plan.preview
       } catch (error) {
         if (!(error instanceof Error) || 'stopsQuestion' in error || signal?.aborted) throw error
-        plans.set(memory, { question, error })
+        plans.set(question, { error })
         return undefined
       }
     },
     run: async (_args, signal, context) => {
       const { memory } = context
-      const prepared = plans.get(memory)
-      plans.delete(memory)
       const question = memory.confluenceQuestion
-      if (!question || prepared?.question !== question) refuse('Ask again to review the intended Confluence change.')
+      const prepared = question && plans.get(question)
+      if (!question || !prepared) refuse('Ask again to review the intended Confluence change.')
+      plans.delete(question)
       if ('error' in prepared) throw prepared.error
       const { plan, tab } = prepared
       signal?.throwIfAborted()
