@@ -264,14 +264,9 @@
     {
       // The site layer knows nothing about the agent, the tools, sessions, or the UI. One directory
       // per site: src/sidepanel/ sits next to them and is not one, so each site is named here
-      // (Notico's are Notion, src/web/ for the page of a tab on any other site, and DuckDuckGo, the
-      // free web search a user can choose).
-      "files": [
-        "extensions/*/src/notion/**",
-        "extensions/confluco/src/confluence/**",
-        "extensions/*/src/web/**",
-        "extensions/notico/src/duckduckgo/**"
-      ],
+      // (Notion in Notico, Confluence in Confluco). The site layers for a page in any tab and for
+      // DuckDuckGo are @cofun/tools's, whose own block is below.
+      "files": ["extensions/*/src/notion/**", "extensions/confluco/src/confluence/**"],
       "rules": {
         "no-restricted-imports": [
           "error",
@@ -283,8 +278,8 @@
                 "message": "Only the side panel's state (panel.ts, chat-session.ts) calls the worker: it gives the agent the client through @cofun/agent's hostedProvider and workerWeb, which turn a request the worker turned away into a stop of the question, and count what a call cost. Import its types only, or ask the agent (ToolContext.readWeb, searchWeb). Clerk sign-in is '@cofun/worker-client/clerk'."
               },
               {
-                "group": ["@cofun/agent"],
-                "message": "An extension's site layer imports nothing from the agent (@cofun/agent): the agent and the tools depend on the site layer, not the other way round."
+                "group": ["@cofun/agent", "@cofun/tools"],
+                "message": "An extension's site layer imports nothing from the agent (@cofun/agent) or the shared tools (@cofun/tools): the agent and the tools depend on the site layer, not the other way round."
               },
               {
                 "group": [
@@ -301,7 +296,7 @@
               },
               {
                 "regex": "^(\\.\\./)+(tool|tools|sessions|sidepanel)(\\.|/|$)",
-                "message": "An extension's site layer (src/notion/ and src/web/ in Notico) imports nothing from tool.ts, tools/, sessions.ts, or sidepanel/: those modules depend on the site layer, not the other way round."
+                "message": "An extension's site layer (src/notion/ in Notico, src/confluence/ in Confluco) imports nothing from tool.ts, tools/, sessions.ts, or sidepanel/: those modules depend on the site layer, not the other way round."
               },
               {
                 "regex": "^zod(/|$)",
@@ -332,45 +327,6 @@
             "object": "chrome",
             "property": "debugger",
             "message": "Never use chrome.debugger: it shows a permanent \"debugging this browser\" banner. Site requests run through chrome.scripting in the extension's src/<site>/tab.ts."
-          }
-        ]
-      }
-    },
-    {
-      // The site layers that read a page a tab shows with chrome.scripting, and send no request to
-      // the site themselves, so fetch stays off limits here: src/web/ for the page of any other site,
-      // and DuckDuckGo's, whose results page the user's browser loads in a tab it opens. Its import restrictions
-      // (the site block) still hold.
-      "files": ["extensions/*/src/web/tab.ts", "extensions/notico/src/duckduckgo/tab.ts"],
-      "rules": {
-        "no-restricted-globals": [
-          "error",
-          {
-            "name": "fetch",
-            "message": "src/web/tab.ts and src/duckduckgo/tab.ts only read the page a tab shows: they send no request to the site. A web page is read by its address through the agent (ToolContext.readWeb), which asks the worker."
-          }
-        ],
-        "no-restricted-properties": [
-          "error",
-          {
-            "object": "chrome",
-            "property": "debugger",
-            "message": "Never use chrome.debugger: it shows a permanent \"debugging this browser\" banner. Site requests run through chrome.scripting in the extension's src/<site>/tab.ts."
-          },
-          {
-            "object": "globalThis",
-            "property": "fetch",
-            "message": "src/web/tab.ts and src/duckduckgo/tab.ts only read the page a tab shows: they send no request to the site. A web page is read by its address through the agent (ToolContext.readWeb), which asks the worker."
-          },
-          {
-            "object": "window",
-            "property": "fetch",
-            "message": "src/web/tab.ts and src/duckduckgo/tab.ts only read the page a tab shows: they send no request to the site. A web page is read by its address through the agent (ToolContext.readWeb), which asks the worker."
-          },
-          {
-            "object": "self",
-            "property": "fetch",
-            "message": "src/web/tab.ts and src/duckduckgo/tab.ts only read the page a tab shows: they send no request to the site. A web page is read by its address through the agent (ToolContext.readWeb), which asks the worker."
           }
         ]
       }
@@ -494,6 +450,128 @@
             "object": "chrome",
             "property": "debugger",
             "message": "Never use chrome.debugger: it shows a permanent \"debugging this browser\" banner. Site requests run through chrome.scripting in the extension's src/<site>/tab.ts."
+          },
+          {
+            "object": "chrome",
+            "property": "scripting",
+            "message": "In a package, only @cofun/tools's tab.ts and duckduckgo/tab.ts use chrome.scripting: they read the page a tab shows. Use what they export."
+          }
+        ]
+      }
+    },
+    {
+      // @cofun/tools sends no request of its own: it reads pages in the user's tabs, and asks the agent,
+      // which asks the worker, for web pages by their address and searches. Its other restrictions
+      // (the packages/*/src block) still hold.
+      "files": ["packages/tools/src/**"],
+      "rules": {
+        "no-restricted-globals": [
+          "error",
+          {
+            "name": "fetch",
+            "message": "@cofun/tools reads the web only through the user's tabs (chrome.scripting) and the agent (ToolContext.readWeb, searchWeb), which asks the worker: it sends no request itself."
+          }
+        ],
+        "no-restricted-properties": [
+          "error",
+          {
+            "object": "chrome",
+            "property": "debugger",
+            "message": "Never use chrome.debugger: it shows a permanent \"debugging this browser\" banner. Site requests run through chrome.scripting in the extension's src/<site>/tab.ts."
+          },
+          {
+            "object": "chrome",
+            "property": "scripting",
+            "message": "In a package, only @cofun/tools's tab.ts and duckduckgo/tab.ts use chrome.scripting: they read the page a tab shows. Use what they export."
+          },
+          {
+            "object": "globalThis",
+            "property": "fetch",
+            "message": "@cofun/tools reads the web only through the user's tabs (chrome.scripting) and the agent (ToolContext.readWeb, searchWeb), which asks the worker: it sends no request itself."
+          },
+          {
+            "object": "window",
+            "property": "fetch",
+            "message": "@cofun/tools reads the web only through the user's tabs (chrome.scripting) and the agent (ToolContext.readWeb, searchWeb), which asks the worker: it sends no request itself."
+          },
+          {
+            "object": "self",
+            "property": "fetch",
+            "message": "@cofun/tools reads the web only through the user's tabs (chrome.scripting) and the agent (ToolContext.readWeb, searchWeb), which asks the worker: it sends no request itself."
+          }
+        ]
+      }
+    },
+    {
+      // @cofun/tools's site layers, which read the page a tab shows with chrome.scripting: tab.ts for a
+      // page on any site, and duckduckgo/tab.ts for DuckDuckGo's results page. Their other
+      // restrictions (the packages/tools/src block) still hold.
+      "files": ["packages/tools/src/tab.ts", "packages/tools/src/duckduckgo/tab.ts"],
+      "rules": {
+        "no-restricted-properties": [
+          "error",
+          {
+            "object": "chrome",
+            "property": "debugger",
+            "message": "Never use chrome.debugger: it shows a permanent \"debugging this browser\" banner. Site requests run through chrome.scripting in the extension's src/<site>/tab.ts."
+          },
+          {
+            "object": "globalThis",
+            "property": "fetch",
+            "message": "@cofun/tools reads the web only through the user's tabs (chrome.scripting) and the agent (ToolContext.readWeb, searchWeb), which asks the worker: it sends no request itself."
+          },
+          {
+            "object": "window",
+            "property": "fetch",
+            "message": "@cofun/tools reads the web only through the user's tabs (chrome.scripting) and the agent (ToolContext.readWeb, searchWeb), which asks the worker: it sends no request itself."
+          },
+          {
+            "object": "self",
+            "property": "fetch",
+            "message": "@cofun/tools reads the web only through the user's tabs (chrome.scripting) and the agent (ToolContext.readWeb, searchWeb), which asks the worker: it sends no request itself."
+          }
+        ]
+      }
+    },
+    {
+      // @cofun/tools's site layers know nothing about the agent or the tools: the tools depend on them,
+      // not the other way round. Their other restrictions (the packages/tools/src block) still hold.
+      "files": ["packages/tools/src/tab.ts", "packages/tools/src/markdown.ts", "packages/tools/src/duckduckgo/**"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": ["@cofun/agent"],
+                "message": "@cofun/tools's site layers (tab.ts, markdown.ts, duckduckgo/) import nothing from the agent (@cofun/agent): the tools depend on them, not the other way round."
+              },
+              {
+                "regex": "^(\\.\\.?/)+(tools|index|free-search)(/|\\.|$)",
+                "message": "@cofun/tools's site layers (tab.ts, markdown.ts, duckduckgo/) import nothing from its tools, its index, or free-search.ts: those depend on the site layers, not the other way round."
+              },
+              {
+                "group": [
+                  "@earendil-works/pi-agent-core",
+                  "@earendil-works/pi-agent-core/**",
+                  "@earendil-works/pi-ai",
+                  "@earendil-works/pi-ai/**"
+                ],
+                "message": "Only @cofun/agent (packages/agent/src/) imports pi. Use what @cofun/agent exports, or add it there."
+              },
+              {
+                "group": ["posthog-js", "posthog-js/**"],
+                "message": "Only an extension's src/analytics.ts imports the PostHog SDK. Call its track(), whose events are the only ones that can be sent."
+              },
+              {
+                "regex": "^zod(/|$)",
+                "message": "Import z from the package's src/zod.ts: it sets zod up for the extensions' content security policy before any schema is built."
+              },
+              {
+                "regex": "^\\.\\./\\.\\./",
+                "message": "A package never imports what is outside it, such as an extension: an extension calls it, and passes it what it needs as parameters."
+              }
+            ]
           }
         ]
       }

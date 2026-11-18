@@ -1,8 +1,7 @@
 import { useAuth } from '@clerk/chrome-extension'
 import { useEffect, useState } from 'react'
+import { allowDuckDuckGo, loadDuckDuckGoSearch, saveDuckDuckGoSearch } from '@cofun/tools'
 import { loadAnalyticsEnabled, saveAnalyticsEnabled } from '../analytics'
-import { allowDuckDuckGo } from '../duckduckgo/search'
-import { loadDuckDuckGoSearch, saveDuckDuckGoSearch } from '../search'
 import { loadMenuShown, saveMenuShown, watchMenuShown } from '../selection'
 import type { ModelSettings } from '../models'
 import { Avatar, useAccount } from './Account'
@@ -104,7 +103,7 @@ function ContextMenu() {
 
 /**
  * Whether web searches open DuckDuckGo in a background tab, free, instead of going to the worker (see
- * search.ts): off until the user turns it on, for this account on this device. Turning it on asks Chrome for access
+ * withDuckDuckGo in @cofun/tools): off until the user turns it on, for this account on this device. Turning it on asks Chrome for access
  * to DuckDuckGo, in the click itself; declined, it stays off.
  */
 function WebSearch({ userId }: { userId: string }) {

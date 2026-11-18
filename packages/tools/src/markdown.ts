@@ -1,6 +1,5 @@
-// Turns the HTML that the script in a tab gives (src/web/tab.ts: the page's main content, with what
-// isn't shown already left out and links made absolute) into Markdown, which the Notion write tools
-// take, so a page saved to Notion keeps its headings, lists, links, and tables. Runs in the side
+// Turns the HTML that the script in a tab gives (tab.ts: the page's main content, with what
+// isn't shown already left out and links made absolute) into Markdown, for the model. Runs in the side
 // panel, on a document DOMParser makes: an inert one, where no script runs and nothing loads.
 
 import TurndownService from 'turndown'
@@ -63,7 +62,8 @@ turndown.addRule('list item', {
 })
 
 turndown.addRule('image', {
-  // Its alt text only: an image's address written into Notion would load where the page is looked at.
+  // Its alt text only: an image's address written into a page (a Notion page, say) would load
+  // wherever that page is looked at, and tell the image's host who looked.
   filter: 'img',
   replacement: (_content, node) => turndown.escape((node.getAttribute('alt') ?? '').replace(/\s+/g, ' ').trim()),
 })

@@ -13,7 +13,8 @@ import {
   type ModelSettings,
 } from '../models'
 import { SessionStore, type Session } from '../sessions'
-import { DATA_LINE, SELECTION_END, TOOLS } from '../tools'
+import { DATA_LINE, SELECTION_END, withDuckDuckGo } from '@cofun/tools'
+import { TOOLS } from '../tools'
 import type { ToolMemory } from '../tools/memory'
 import { ChatSession, type Question } from './chat-session'
 
@@ -133,7 +134,8 @@ export class Panel {
       product: 'Confluco',
       data: 'site data',
       hosted: hostedProvider(this.worker),
-      web: workerWeb(this.worker),
+      // Searches go to DuckDuckGo instead, free, while the account has it switched on (Settings).
+      web: withDuckDuckGo(workerWeb(this.worker), userId, 'Confluco'),
       model: async () => answering(await this.readModel()),
       systemPrompt: SYSTEM_PROMPT,
       tools: TOOLS,

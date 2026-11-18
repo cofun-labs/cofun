@@ -2,6 +2,8 @@
 
 Confluco is an AI side panel for Chrome. It can answer questions, read the current tab or tabs you add, and search the web. It uses the same Cofun account and credit balance as Notico.
 
+Web searches cost credits. To search for free instead, switch on **Search with DuckDuckGo** in **Account → Settings**: each search then opens DuckDuckGo in a background tab and reads its results. Those searches show in your Chrome history, and if DuckDuckGo asks you to confirm you're a person, answer it in that tab.
+
 ## Connect to Confluence
 
 Open **Account → Settings → Confluence connection**. Enter your Cloud site URL (such as `https://team.atlassian.net/wiki`) or your self-managed base URL, including its deployment path if it has one. Allow Chrome site access, then open the connected site and sign in to Confluence. On either site type, you can read the current page, search published content, browse spaces and page trees, and inspect versions, access, labels, discussions and attachments.

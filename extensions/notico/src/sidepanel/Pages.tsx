@@ -1,6 +1,7 @@
 import type { MouseEvent } from 'react'
 import type { QuestionPage, QuestionSelection } from '@cofun/agent'
-import { addedTabNow, isDatabase } from '../tools'
+import { addedTabNow } from '@cofun/tools'
+import { isDatabase } from '../tools'
 import { Icon } from './icons'
 
 /** A page's title as the panel shows it; Notion shows a page without one as "Untitled". */

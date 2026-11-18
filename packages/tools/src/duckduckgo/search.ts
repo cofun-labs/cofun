@@ -3,7 +3,7 @@
 // its HTML results page in a background tab of the user's own browser, as the user would, with the
 // host permission they granted, and reads the results out of it (tab.ts). Nothing pretends to be
 // anything: when DuckDuckGo asks to confirm a person is searching, the search stops and its tab
-// stays open for the person; Notico never answers the check. The HTML can change at any time: a
+// stays open for the person; the extension never answers the check. The HTML can change at any time: a
 // page this module can't read is a search that failed, never guessed at.
 import { z } from '../zod'
 import { closeSearchTab, openSearchPage } from './tab'
@@ -42,13 +42,13 @@ const Result = z.object({
 })
 export type DuckDuckGoResult = z.infer<typeof Result>
 
-/** Whether the user granted Notico access to DuckDuckGo. */
+/** Whether the user granted the extension access to DuckDuckGo. */
 export function mayUseDuckDuckGo(): Promise<boolean> {
   return chrome.permissions.contains({ origins: [PATTERN] })
 }
 
 /**
- * Asks Chrome to let Notico reach DuckDuckGo, which shows the user Chrome's own prompt. Chrome takes
+ * Asks Chrome to let the extension reach DuckDuckGo, which shows the user Chrome's own prompt. Chrome takes
  * the request only during a user's click or key press: call it in its handler, before anything is
  * awaited. Resolves true once Chrome granted it.
  */
@@ -90,7 +90,7 @@ export async function searchDuckDuckGo(
 function resultsOf(url: string, html: string, limit: number): DuckDuckGoResult[] {
   // A page elsewhere (DuckDuckGo moved the search, or the tab was taken somewhere) is not one of results.
   if (new URL(url).origin !== DUCKDUCKGO)
-    throw new DuckDuckGoError('unreadable', 'DuckDuckGo gave a page Notico could not read')
+    throw new DuckDuckGoError('unreadable', 'DuckDuckGo gave a page that is not one of results')
   // An inert document: nothing in it loads or runs.
   const page = new DOMParser().parseFromString(html, 'text/html')
   // Its challenge ("select all squares containing a duck") comes with a form of its own.
@@ -98,7 +98,7 @@ function resultsOf(url: string, html: string, limit: number): DuckDuckGoResult[]
     throw new DuckDuckGoError('challenge', 'DuckDuckGo asked to confirm that a person is searching')
   // The list is there, with or without results; without it, the page is not one of results.
   const list = page.querySelector('#links')
-  if (!list) throw new DuckDuckGoError('unreadable', 'DuckDuckGo gave a page Notico could not read')
+  if (!list) throw new DuckDuckGoError('unreadable', 'DuckDuckGo gave a page that is not one of results')
   const results: DuckDuckGoResult[] = []
   for (const item of list.querySelectorAll('.result')) {
     if (results.length === limit) break

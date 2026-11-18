@@ -11,7 +11,7 @@ import { chargeAfterUse, openLedger, startUsage } from '../charge'
 
 /**
  * The most characters of a page's text the worker returns: what the extension keeps of a long page
- * (KEPT_CHARS in its src/tools/results.ts). A plain read is bounded by MAX_BYTES in web.ts too.
+ * (KEPT_CHARS in @cofun/tools, packages/tools/src/tools/results.ts). A plain read is bounded by MAX_BYTES in web.ts too.
  * Versions of the extension that clip a page themselves ask for 20,000, and get that.
  */
 const MAX_CHARS = 2_000_000

@@ -6,7 +6,7 @@ import '@testing-library/jest-dom/vitest'
 import { screen, within } from '@testing-library/react'
 import userEvent, { type UserEvent } from '@testing-library/user-event'
 import { afterEach, describe, expect, it } from 'vitest'
-import { DATA_LINE } from '../src/tools/shared'
+import { DATA_LINE } from '@cofun/tools'
 import { FakeNotionTab, webPage } from './notion-tab'
 import { closeBrowser, FakeBrowser } from './panel'
 
@@ -173,7 +173,7 @@ describe('UC-NOTICO-CHAT-005 add open tabs to a conversation', () => {
 
     expect(sentQuestions(browser)).toEqual([
       '[The current tab is not a Notion page.]\n' +
-        '[Tabs on other sites the user added to this question, read with read_tab: ' +
+        '[Tabs the user added to this question, read with read_tab: ' +
         `"Rivers | News" (tab 20), ${RIVERS}; "Lakes | News" (tab 21), ${LAKES_NOTED}]\n\n` +
         'Compare these',
     ])

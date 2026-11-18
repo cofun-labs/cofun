@@ -13,9 +13,9 @@ import {
   type ModelSettings,
 } from '../models'
 import { countNotionRequests } from '../notion/tab'
-import { freeSearch } from '../search'
 import { SessionStore, type Session } from '../sessions'
-import { DATA_LINE, pagesIn, SELECTION_END, TOOLS } from '../tools'
+import { DATA_LINE, SELECTION_END, withDuckDuckGo } from '@cofun/tools'
+import { pagesIn, TOOLS } from '../tools'
 import type { ToolMemory } from '../tools/memory'
 import { ChatSession, type Question } from './chat-session'
 
@@ -40,6 +40,8 @@ const SYSTEM_PROMPT =
   'the question: read them with read_tab and the tab number the note gives, also in a later question of the ' +
   'chat; read_tab reads no other tab. When an answer uses what read_current_tab or read_tab read, say so and ' +
   "give the page's URL; never guess what a page says. " +
+  'A Notion page, open in a tab or given by its URL, is read with read_page, never with read_current_tab, ' +
+  'read_tab, or read_web_page. ' +
   'When a question needs a web page (an address the user gives, or a link in a page you read), read it with read_web_page, or with ' +
   'render_web_page, which is slower but reads pages drawn by scripts: choose by the page. When an answer ' +
   'uses a web page, say so ' +
@@ -167,19 +169,12 @@ export class Panel {
       clientName: `notico/${chrome.runtime.getManifest().version}`,
       product: 'Notico',
     })
-    const web = workerWeb(this.worker)
     this.agent = {
       product: 'Notico',
       data: 'Notion',
       hosted: hostedProvider(this.worker),
-      web: {
-        read: web.read,
-        // The user's free search, when they chose it, costs nothing; the worker's costs credits.
-        search: async (query, limit, call) => {
-          const free = await freeSearch(userId)
-          return free ? free(query, limit, call.signal) : web.search(query, limit, call)
-        },
-      },
+      // The user's free search, when they chose it, costs nothing; the worker's costs credits.
+      web: withDuckDuckGo(workerWeb(this.worker), userId, 'Notico'),
       model: async () => answering(await this.readModel()),
       systemPrompt: SYSTEM_PROMPT,
       tools: TOOLS,

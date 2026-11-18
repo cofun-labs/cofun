@@ -4,7 +4,7 @@ import '@testing-library/jest-dom/vitest'
 import { screen } from '@testing-library/react'
 import userEvent, { type UserEvent } from '@testing-library/user-event'
 import { afterEach, describe, expect, it } from 'vitest'
-import { DATA_LINE } from '../src/tools/shared'
+import { DATA_LINE } from '@cofun/tools'
 import { FakeNotionTab } from './notion-tab'
 import { closeBrowser, FakeBrowser } from './panel'
 

@@ -32,7 +32,7 @@ export async function openSearchPage(url: string, signal?: AbortSignal): Promise
   try {
     const at = await loaded(tabId, stop)
     // Taken elsewhere (DuckDuckGo moved the search, or turns it away by a redirect): not read, since
-    // Notico may not run scripts there; the caller finds no results page.
+    // the extension may not run scripts there; the caller finds no results page.
     if (at.origin !== new URL(url).origin) return { url: at.href, html: '', tabId }
     const [injection] = await Promise.race([
       chrome.scripting.executeScript({
@@ -43,7 +43,7 @@ export async function openSearchPage(url: string, signal?: AbortSignal): Promise
       stopped(stop),
     ])
     const page = Page.safeParse(injection?.result)
-    if (!page.success) throw new TabError('the search tab gave nothing Notico could read')
+    if (!page.success) throw new TabError('the search tab gave nothing that could be read')
     return { ...page.data, tabId }
   } catch (err) {
     closeSearchTab(tabId)

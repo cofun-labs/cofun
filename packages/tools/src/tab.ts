@@ -1,12 +1,14 @@
-// Reads the page in one of the user's tabs (the current tab, or a tab
-// the user added to the conversation): its main content, as the tab shows it, in the tab itself
+// The site layer for a page in one of the user's tabs (the current tab, or a tab the user added to
+// the conversation): reads its main content, as the tab shows it, in the tab itself
 // (chrome.scripting, ISOLATED world). So it reaches what the user sees there, pages behind their
-// sign-in and content drawn by scripts included, and sends no request of its own. Confluco may read a
-// site only once the user allowed it (optional host permissions, one origin at a time), which only a
-// click in the side panel can grant. It also reads the text selected in a tab, on any site, when the
-// user sends it with the context menu.
+// sign-in and content drawn by scripts included, and sends no request of its own. The extension may
+// read a site only once the user allowed it (optional host permissions, one origin at a time), which
+// only a click in the side panel can grant. It also reads the text selected in a tab, on any site,
+// when the user sends it with the context menu. `product` is the extension's name, as the reasons
+// the model is told name it. It is the package's `@cofun/tools/tab`, which imports nothing of the
+// agent, so the extension's service worker can read a selection without loading the agent runtime.
 
-import { z } from '../zod'
+import { z } from './zod'
 import { pageMarkdown } from './markdown'
 
 /** The match pattern of a site's origin, as host permissions name it. */
@@ -16,10 +18,14 @@ const pattern = (origin: string) => `${origin}/*`
 const STORE = [/^https:\/\/chromewebstore\.google\.com\//, /^https:\/\/chrome\.google\.com\/webstore(\/|$)/]
 
 /**
- * Required hosts support the extension's sign-in. They never grant access to the contents of a tab.
- * The build emits HTTP(S) host patterns, including the wildcard for the sign-in cookie's domain.
+ * Whether the extension holds the URL's host by install (its required host permissions): the hosts
+ * its sign-in uses, and the site its own tools work on (Notion, for Notico), which those tools read
+ * and the tab tools leave to them (see `ownSite` in tools/tabs.ts). Such a host needs no grant from
+ * the user, so a tab on it is never read here: a sign-in page would hand its contents to the model
+ * without the user being asked. The build emits HTTP(S) host patterns, including the wildcard for
+ * the sign-in cookie's domain.
  */
-function isAuthenticationHost(url: URL): boolean {
+function isInstalledHost(url: URL): boolean {
   const permissions = z.array(z.string()).safeParse(chrome.runtime.getManifest().host_permissions).data ?? []
   return permissions.some((permission) => {
     const match = /^(https?):\/\/(\*\.)?([^/]+)\/\*$/.exec(permission)
@@ -38,41 +44,42 @@ export type TabWhere = 'the current tab' | 'the tab'
 const cap = (where: TabWhere) => where[0].toUpperCase() + where.slice(1)
 
 /**
- * The origin of the site a tab shows, when Confluco can be allowed to read it; otherwise why not, in
+ * The origin of the site a tab shows, when the extension can be allowed to read it; otherwise why not, in
  * words for the model.
  */
 export function readableSite(
   url: string,
+  product: string,
   where: TabWhere = 'the current tab',
 ): { origin: string } | { reason: string } {
   let parsed: URL
   try {
     parsed = new URL(url)
   } catch {
-    return { reason: `${cap(where)}'s address is not one Confluco can read.` }
+    return { reason: `${cap(where)}'s address is not one ${product} can read.` }
   }
   if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:')
     return {
       reason:
         `${cap(where)} shows a ${parsed.protocol.replace(/:$/, '')}: page (a browser or extension page, or a ` +
-        "local file), which Confluco can't read: only web pages on http or https.",
+        `local file), which ${product} can't read: only web pages on http or https.`,
     }
-  if (isAuthenticationHost(parsed))
-    return { reason: `${cap(where)} is on a host Confluco uses for sign-in, which the tab tools cannot read.` }
+  if (isInstalledHost(parsed))
+    return { reason: `${cap(where)} is on a host ${product} uses for sign-in, which the tab tools cannot read.` }
   if (STORE.some((store) => store.test(url)))
     return { reason: `${cap(where)} is the Chrome Web Store: Chrome doesn't let extensions read it.` }
   // Told before the user is asked to allow the site; a PDF at another address shows only once read.
-  if (/\.pdf$/i.test(parsed.pathname)) return { reason: pdf(where) }
+  if (/\.pdf$/i.test(parsed.pathname)) return { reason: pdf(where, product) }
   return { origin: parsed.origin }
 }
 
-/** Whether the user allowed Confluco to read the site with this origin. */
+/** Whether the user allowed the extension to read the site with this origin. */
 export async function mayRead(origin: string): Promise<boolean> {
   return chrome.permissions.contains({ origins: [pattern(origin)] })
 }
 
 /**
- * Asks Chrome to let Confluco read the site with this origin, which shows the user Chrome's own
+ * Asks Chrome to let the extension read the site with this origin, which shows the user Chrome's own
  * prompt. Chrome takes the request only during a user's click or key press: call it in its handler,
  * before anything is awaited. Resolves true once Chrome granted it.
  */
@@ -80,7 +87,8 @@ export function allowSite(origin: string): Promise<boolean> {
   return chrome.permissions.request({ origins: [pattern(origin)] })
 }
 
-const pdf = (where: TabWhere) => `${cap(where)} shows a PDF in Chrome's viewer, which Confluco can't read.`
+const pdf = (where: TabWhere, product: string) =>
+  `${cap(where)} shows a PDF in Chrome's viewer, which ${product} can't read.`
 
 /**
  * What the script in the tab returns. The page can reach the DOM it reads (a named element can
@@ -114,7 +122,7 @@ export interface TabPage {
 const HTML_PER_CHAR = 50
 /**
  * The most HTML the tab hands over, whatever is asked for: a page kept whole (see KEPT_CHARS in
- * src/tools/results.ts) would otherwise hand over a hundred million characters to be converted.
+ * tools/results.ts) would otherwise hand over a hundred million characters to be converted.
  */
 const MAX_HTML_CHARS = 10_000_000
 
@@ -127,6 +135,7 @@ export async function readPage(
   tabId: number,
   origin: string,
   maxChars: number,
+  product: string,
   where: TabWhere = 'the current tab',
 ): Promise<TabPage | { reason: string }> {
   let raw: unknown
@@ -143,7 +152,7 @@ export async function readPage(
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
     if (/Cannot access contents of|Missing host permission/i.test(message))
-      return { reason: `Chrome did not let Confluco read the page in ${where}: it may have gone to another site.` }
+      return { reason: `Chrome did not let ${product} read the page in ${where}: it may have gone to another site.` }
     if (/error page|chrome-error/i.test(message))
       return { reason: `${cap(where)} shows an error page: there is nothing to read.` }
     return { reason: `Could not read the page in ${where}: ${message}` }
@@ -153,11 +162,11 @@ export async function readPage(
   const parsed = PageResult.safeParse(raw)
   if (!parsed.success) return { reason: `The page in ${where} could not be read: it did not give its text.` }
   const result = parsed.data
-  if ('pdf' in result) return { reason: pdf(where) }
+  if ('pdf' in result) return { reason: pdf(where, product) }
   const text = pageMarkdown(result.html)
   if (!text && result.frames)
     return {
-      reason: `The page in ${where} shows no text of its own: its content is in frames, which Confluco doesn't read.`,
+      reason: `The page in ${where} shows no text of its own: its content is in frames, which ${product} doesn't read.`,
     }
   // The tab may have moved on since it was looked at, to a site the user allowed for something else.
   if (new URL(result.url).origin !== origin) return { reason: `${cap(where)} went to another site while it was read.` }
@@ -191,6 +200,11 @@ export async function selectedText(tabId: number, frameId: number): Promise<stri
   }
 }
 
+/** Keeps a UTF-16 budget without leaving half of a supplementary character at the end. */
+export function clipSelection(text: string, limit: number): string {
+  return text.slice(0, limit).replace(/[\uD800-\uDBFF]$/, '')
+}
+
 /** Runs in the tab (see pageHtml): the frame's selection as text. */
 function selectionText(): string {
   return document.getSelection()?.toString() ?? ''
@@ -200,7 +214,7 @@ function selectionText(): string {
  * Runs in the tab. Chrome serializes this function on its own, so it must not use anything from
  * outside its body, and it must not throw. The main content is the page's `main` element (or its
  * main landmark), else its first `article`, else the whole body: the first of them that shows any
- * text. It is given as HTML, for the side panel to turn into Markdown (src/web/markdown.ts), from a
+ * text. It is given as HTML, for the side panel to turn into Markdown (markdown.ts), from a
  * copy without what the page doesn't show, what is not part of its text (scripts, styles, frames,
  * media, form fields; a button's text is kept, as an accordion's questions are buttons), and its
  * navigation, asides, and footers; its links made absolute, without
@@ -210,7 +224,7 @@ function selectionText(): string {
 function pageHtml(origin: string, maxHtml: number): z.input<typeof PageResult> | null {
   if (location.origin !== origin) return null
   if (document.contentType === 'application/pdf') return { pdf: true }
-  // What src/web/markdown.ts reads, besides the class that names a code block's language.
+  // What markdown.ts reads, besides the class that names a code block's language.
   const KEPT = ['href', 'alt', 'colspan', 'rowspan', 'start']
   const LEFT_OUT =
     'script, style, noscript, template, svg, canvas, iframe, frame, object, embed, video, audio, map, nav, ' +

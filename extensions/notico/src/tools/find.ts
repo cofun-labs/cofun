@@ -9,7 +9,8 @@ import { PageLookups, contentOf, lookUpPages, pageTree, runsText, treeLines, typ
 import type { OpenPage } from './current'
 import { databaseNames, workspaceOf } from './load'
 import type { ToolMemory } from './memory'
-import { LIST, SEARCH, filled, asData, on, pageArg, wholeArg } from './shared'
+import { LIST, SEARCH, filled, on, pageArg, wholeArg } from './shared'
+import { asData } from '@cofun/tools'
 
 const LIST_MAX_DEPTH = 3
 /** How many pages one list shows, so a large workspace still fits the conversation. */
