@@ -19,7 +19,7 @@ export interface WebPage {
 
 /**
  * Why a page could not be read, as a code the extension tells the model about, and a message for
- * whoever reads the response. The codes are a contract with the extension (`src/agent/worker.ts`).
+ * whoever reads the response. The codes are a contract with the extensions' client of the worker (`packages/worker-client/src/client.ts`).
  */
 export class PageError extends Error {
   constructor(

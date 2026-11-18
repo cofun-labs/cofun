@@ -138,7 +138,7 @@ Per-PR rules stay light; gaps are found by an audit run now and then, before a r
 
 ## File format
 
-`extensions/<name>/use-cases/{domain}/UC-{PRODUCT}-{DOMAIN}-{NNN}-{slug}.md` for an extension, and `worker/use-cases/{domain}/UC-COFUN-{DOMAIN}-{NNN}-{slug}.md` for the worker:
+`extensions/<name>/use-cases/{domain}/UC-{PRODUCT}-{DOMAIN}-{NNN}-{slug}.md` for an extension, `packages/<name>/use-cases/{domain}/UC-{PRODUCT}-{DOMAIN}-{NNN}-{slug}.md` for a shared package, and `worker/use-cases/{domain}/UC-COFUN-{DOMAIN}-{NNN}-{slug}.md` for the worker:
 
 ```markdown
 # UC-NOTICO-CHAT-001: Ask the AI from the side panel
