@@ -60,7 +60,7 @@ export async function getCloudSpace(tab: ConfluenceTab, key: string, signal?: Ab
 const folder = z.object({
   id,
   type: z.literal('folder'),
-  status: z.literal('current'),
+  status: z.string().min(1).max(40),
   title: z.string().trim().min(1).max(1000),
   _links: z.object({ webui: z.string().max(4096).optional() }).optional(),
 })
@@ -84,6 +84,12 @@ async function fetchFolder(tab: ConfluenceTab, id: string, signal?: AbortSignal)
   const parsed = folder.safeParse(reply.data)
   if (!parsed.success || parsed.data.id !== id) refuse('Confluence did not return the expected folder.')
   return parsed.data
+}
+
+async function fetchCurrentFolder(tab: ConfluenceTab, id: string, signal?: AbortSignal) {
+  const found = await fetchFolder(tab, id, signal)
+  if (found.status !== 'current') refuse('This Confluence folder is not current.')
+  return found
 }
 
 async function describePages(tab: ConfluenceTab, ids: string[], signal?: AbortSignal) {
@@ -119,7 +125,9 @@ async function describeTree(tab: ConfluenceTab, items: z.output<typeof item>[], 
   for (const entry of unique) {
     if (entry.type !== 'folder') continue
     try {
-      folders.set(entry.id, folderLink(tab, await fetchFolder(tab, entry.id, signal)))
+      // A folder that is not current is left out, as a page that is not current is.
+      const found = await fetchFolder(tab, entry.id, signal)
+      if (found.status === 'current') folders.set(entry.id, folderLink(tab, found))
     } catch (error) {
       if (!(error instanceof ConfluenceRequestError) || !['forbidden', 'missing'].includes(error.kind)) throw error
     }
@@ -143,7 +151,7 @@ export async function browseCloudTree(
   if (target.folder) {
     if (target.folder.instance !== tab.instance.origin + tab.instance.path)
       refuse('This folder reference belongs to a different Confluence instance.')
-    const found = await fetchFolder(tab, target.folder.id, signal)
+    const found = await fetchCurrentFolder(tab, target.folder.id, signal)
     resource = 'folders/' + found.id
     self = { folder: folderLink(tab, found) }
   } else {

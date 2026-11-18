@@ -107,6 +107,7 @@ it('[UC-CONFLUCO-CONFLUENCE-004-S04] browses Cloud folders in the page tree', as
         return Response.json({
           results: [
             { id: '60', type: 'folder' },
+            { id: '62', type: 'folder' },
             { id: '7', type: 'whiteboard' },
             { id: '54', type: 'page' },
           ],
@@ -115,6 +116,8 @@ it('[UC-CONFLUCO-CONFLUENCE-004-S04] browses Cloud folders in the page tree', as
         return Response.json(unit)
       case '/wiki/api/v2/folders/60':
         return Response.json(handouts)
+      case '/wiki/api/v2/folders/62':
+        return Response.json({ ...folder('62', 'Archived unit'), status: 'archived' })
       case '/wiki/api/v2/folders/60/ancestors':
         return Response.json({ results: [{ id: '13', type: 'page' }] })
       case '/wiki/api/v2/folders/60/direct-children':
@@ -142,6 +145,7 @@ it('[UC-CONFLUCO-CONFLUENCE-004-S04] browses Cloud folders in the page tree', as
       '{"kind":"folder","title":"Cloud unit","url":"https://team.atlassian.net/wiki/spaces/SCHOOL/folder/14","ref":{"instance":"https://team.atlassian.net/wiki","id":"14"}}]',
   )
   expect(pageTree).toMatch(/"children":\[\{"kind":"folder","title":"Cloud handouts".*\},\{"title":"Cloud child"/)
+  expect(pageTree).not.toContain('Archived unit')
   expect(folderTree).toContain('"folder":{"kind":"folder","title":"Cloud handouts"')
   expect(folderTree).toContain('"ancestors":[{"title":"Cloud parent"')
   expect(folderTree).toContain('"children":[{"title":"Cloud handout"')
