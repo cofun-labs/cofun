@@ -9,7 +9,7 @@ Every signed-in user gets 200 free credits a week, starting when they ask and ex
 Key constraints:
 
 - A user with no credits left cannot reach the model again until they get more credits: their next free credits, or credits they buy.
-- A request whose input alone is estimated to cost more than the credits left is refused before the model is called, with a message saying about how many credits it needs and how many are left. The estimate goes by the size of the input, all of it at the price of input read from the model's cache: the least the input can cost.
+- A request whose input alone is estimated to cost more than the credits left is refused before the model is called, with a message saying about how many credits it needs and how many are left. The estimate goes by the size of the input, all of it at the price of input read from the model's cache, so a long chat the model has cached is not refused for much more than it would spend.
 - A model call that starts with credits left, enough for its input, is answered in full, even when it costs more than what was left. It takes only what was left: credits never go below zero, and what it cost beyond them is forgiven, never owed or taken out of later credits.
 - Calls sent at once all start from the same balance, so each of them is answered in full, and together they can cost more than one call beyond it. That is forgiven too; how many calls one user can start in a minute, and how long a reply may be, are capped, which bounds it.
 - Credits that have expired cannot be spent.

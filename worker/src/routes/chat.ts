@@ -78,8 +78,9 @@ export function chatRoutes({ now, modelOf, logError }: Deps): App {
     if (!success) throw new HttpError(429, 'rate_limited', 'Too many requests at once. Wait a minute, then ask again.')
 
     // Charged when the reply ends (charge.ts). A balance short of the input's cost, estimated from its
-    // size and all at the cached price, is refused first: the least the input can cost, so a long chat
-    // whose prefix the model has cached is never refused for credits it would not spend. What a call
+    // size and all at the cached price, is refused first. At the cached price, a long chat whose prefix
+    // the model has cached is not refused for much more than it would spend: the size estimate runs
+    // over for English (3 characters a token, where English runs near 4) by about 2 credits on a full window. What a call
     // costs beyond the balance is then its uncached input and its reply (MAX_TOKENS bounds that), and
     // CHAT_LIMIT bounds calls at once.
     const maxTokens = max_tokens ?? MAX_TOKENS
