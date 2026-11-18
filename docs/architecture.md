@@ -75,7 +75,7 @@ A question carries the pages it goes with (the open page, and pages and tabs the
 
 ### Sessions
 
-A saved conversation is a *session* in code and a *chat* in everything users read. Sessions are kept in the extension's IndexedDB, one database per Clerk user, and are sent to the worker only as far as the model needs them for the current question. They stay after sign-out and are not encrypted, and what is read back is parsed before it is used. The same database keeps the full text of long tool results, which the model reads in parts. Leaving a session mid-question stops the question, and the session keeps the tools it used, so continuing later does not repeat a change.
+A saved conversation is a *session* in code and a *chat* in everything users read. Sessions are kept in the extension's IndexedDB, one database per Clerk user, and are sent to the worker only as far as the model needs them for the current question. They stay after sign-out and are not encrypted, and what is read back is parsed before it is used. The same database keeps the full text of long tool results, which the model reads in parts. When a request outgrows its budget, the agent asks the selected model for a summary. The chat record keeps that summary with its cut point and the original messages. Subsequent requests use the summary and recent messages. Leaving a session mid-question stops the question, and the session keeps the tools it used, so continuing later does not repeat a change.
 
 The user can save a reply, or the whole chat, as a new Notion page. It is the user's own action, not a tool the agent is offered.
 

@@ -21,7 +21,6 @@ export class ToolChat {
       throw new Error('There is no store to keep results in.')
     },
     kept: async () => 'unknown',
-    questionChars: () => 0,
     memory: this.memory,
   }
 

@@ -5,6 +5,7 @@ import {
   type AgentUpdate,
   type ConfirmTool,
   type ConfirmationAnswer,
+  type Compaction,
   type HistoryMessage,
   type QuestionDetails,
   type QuestionPage,
@@ -161,7 +162,7 @@ export class ChatSession {
     private readonly panel: ChatPanel,
     saved?: Session,
   ) {
-    this.agent = new CopilotAgent(panel.agent, new ToolMemory(panel.accountId), saved?.messages)
+    this.agent = new CopilotAgent(panel.agent, new ToolMemory(panel.accountId), saved?.messages, saved?.compaction)
     this.memory.confluenceUndo = saved?.undo
     this.titled = saved?.titledByModel ?? false
     this.snapshot = {
@@ -339,6 +340,7 @@ export class ChatSession {
 
     // The conversation with this question in it, once it ended, if the question is part of it.
     let conversation: HistoryMessage[] | undefined
+    let compaction: Compaction | undefined
     let answered = false
     try {
       const readOnly = (q.mode ?? (await this.panel.mode())) === 'read_only'
@@ -378,6 +380,7 @@ export class ChatSession {
       })
       answered = result.status === 'done'
       conversation = result.conversation
+      compaction = result.compaction
       const { requests, tokens, model, cost } = result
       this.updateReply((m) => ({ ...m, details: { requests, tokens, model, cost } }))
       if (result.status === 'stopped') {
@@ -414,7 +417,9 @@ export class ChatSession {
       if (conversation) {
         const messages = conversation
         const undo = this.memory.confluenceUndo
-        this.saving = this.saving.then(() => this.save(session, messages, reply, undo, undo !== originalUndo))
+        this.saving = this.saving.then(() =>
+          this.save(session, messages, reply, undo, undo !== originalUndo, compaction),
+        )
         // Once, after the first question answered; not for a chat the user left meanwhile.
         if (answered && !this.titled && !this.left) {
           this.titled = true
@@ -487,6 +492,7 @@ export class ChatSession {
     reply: number,
     undo: ConfluenceUndo | undefined,
     verifiedNewUndo: boolean,
+    compaction?: Compaction,
   ) {
     try {
       const { id, createdAt, updatedAt: loaded } = session
@@ -499,6 +505,7 @@ export class ChatSession {
           // Always a new value, so another panel that loaded this session can tell it changed.
           updatedAt: Math.max(Date.now(), (loaded ?? 0) + 1),
           messages,
+          compaction,
           undo,
         },
         loaded,

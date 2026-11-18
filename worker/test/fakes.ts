@@ -35,6 +35,7 @@ export interface FakeToolCall {
 export interface FakeTurn {
   reply?: string
   toolCalls?: FakeToolCall[]
+  finishReason?: 'length'
 }
 
 /**
@@ -117,7 +118,7 @@ export class FakeAiBinding implements AiBinding {
         : new Response(this.rawSse).body
 
     const events: unknown[] = reply.split(' ').map((w) => ({ choices: [{ index: 0, delta: { content: w + ' ' } }] }))
-    events.push({ choices: [{ index: 0, delta: {}, finish_reason: 'stop' }] })
+    events.push({ choices: [{ index: 0, delta: {}, finish_reason: turn?.finishReason ?? 'stop' }] })
     // Like OpenAI, usage comes in a last chunk with no choices, only when asked for.
     const streamOptions = inputs.stream_options as { include_usage?: boolean } | undefined
     if (streamOptions?.include_usage) events.push({ choices: [], usage: this.usage })

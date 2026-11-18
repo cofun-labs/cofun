@@ -206,7 +206,7 @@ describe('reading a long page in parts', () => {
     )
   })
 
-  it('[@no-uc:contract] parts stop being read before a question holds more than the hosted model takes', async () => {
+  it('[@no-uc:contract] one question can read every part of a kept result that fits its context budget', async () => {
     const { browser, user } = await open()
     const book = 'https://docs.example/book'
     browser.web.serve(
@@ -224,10 +224,6 @@ describe('reading a long page in parts', () => {
     await ask(user, 'Read all of it')
 
     expect(await screen.findByText('Enough.')).toBeVisible()
-    // Each part is about 18,000 characters, and a question holds 120,000 at most: six parts go, and
-    // the seventh is refused. (The question before, with the first part, is no longer sent by then.)
-    const results = toolResults(browser)
-    expect(results.filter((r) => r.includes('\n[Part '))).toHaveLength(6)
-    expect(results.at(-1)).toMatch(/^Not read: this question already holds [\d,]+ characters of results/)
+    expect(toolResults(browser).filter((r) => r.includes('\n[Part '))).toHaveLength(7)
   })
 })
