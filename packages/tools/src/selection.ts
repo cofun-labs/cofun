@@ -1,9 +1,9 @@
 // Text the user selected on a page and sent to an extension's side panel with the context menu's
 // "Ask <product>" item. The service worker (setupSelectionMenu) reads it in the tab and leaves it in
 // chrome.storage.session, one key per selection, by window; that window's side panel takes them from
-// there into the next question, where each selection sent adds to the ones before. No message listener carries it: storage.session
-// is open only to the extension's own pages, and what is read back is parsed, since the text comes
-// from the page. Imported as @cofun/tools/selection, which loads no agent.
+// there into the next question, where each selection sent adds to the ones before. No message listener
+// carries it: storage.session is open only to the extension's own pages, and what is read back is
+// parsed, since the text comes from the page. Imported as @cofun/tools/selection, which loads no agent.
 import { clipSelection, selectedText } from './tab'
 import { z } from './zod'
 
@@ -70,9 +70,9 @@ async function handOver(windowId: number, text: string, url: string, title: stri
 
 /**
  * Sets up the service worker's "Ask <product>" context menu item, on text selected in any page:
- * picking it opens the side panel and hands it the selection. The click gives the extension the tab for a moment (activeTab),
- * which is how the selection is read there with its line breaks; where it can't be (a frame from
- * another site, say), Chrome's own copy of it, on one line, is used.
+ * picking it opens the side panel and hands it the selection. The click gives the extension the tab
+ * for a moment (activeTab), which is how the selection is read there with its line breaks; where it
+ * can't be (a frame from another site, say), Chrome's own copy of it, on one line, is used.
  */
 export function setupSelectionMenu({
   product,
