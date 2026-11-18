@@ -175,6 +175,8 @@ export function ClipInto({
           aria-haspopup="listbox"
           aria-expanded={open}
           aria-busy={busy || undefined}
+          // While a choice is saved: a second one could land first, then be overwritten by the first.
+          disabled={busy}
           onClick={() => (open ? close() : setOpen(true))}
         >
           <Icon name="page" />
@@ -187,7 +189,12 @@ export function ClipInto({
         </button>
       </div>
       {open && (
-        <div className="page-picker clip-picker">
+        <div
+          className="page-picker clip-picker"
+          // A press anywhere in the picker but its search field (a heading, the status line) keeps the
+          // focus there, so the picker stays open.
+          onMouseDown={(e) => e.target instanceof HTMLInputElement || e.preventDefault()}
+        >
           <input
             type="search"
             className="picker-search"

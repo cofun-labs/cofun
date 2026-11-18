@@ -86,7 +86,7 @@ async function clipped(): Promise<HTMLElement> {
 
 const transactions = (workspace: FakeWorkspace) => workspace.transactions.length
 
-describe('UC-NOTICO-SESSION-003 clip a page or a selection to Notion', () => {
+describe('UC-NOTICO-SESSION-003 clip a page to Notion', () => {
   it('[UC-NOTICO-SESSION-003-S01] a page is clipped as a new page at the end of the chosen page, and nothing goes to the AI', async () => {
     const { browser, tab, workspace } = await start()
     expect(tab.menuItems.get(CLIP_PAGE)).toEqual({
@@ -194,7 +194,7 @@ describe('UC-NOTICO-SESSION-003 clip a page or a selection to Notion', () => {
   it('[UC-NOTICO-SESSION-003-S05] turning Clip on makes "Notico Clips" in Private the page clips go to, and turning it off hides the item', async () => {
     const { tab, workspace, user } = await start({ target: null, shown: false })
     tab.respond('getSpaces', 200, spaces([PAGE]))
-    // Off until turned on: the items don't show.
+    // Off until turned on: the item doesn't show.
     expect(tab.menuItems.get(CLIP_PAGE)?.visible).toBe(false)
     await openSettings(user)
     const menu = within(screen.getByRole('region', { name: 'Right-click menu' }))

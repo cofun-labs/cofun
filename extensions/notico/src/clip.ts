@@ -1,6 +1,5 @@
-// Clipping a page, or the text selected on it, to the Notion page the user chose in Settings, from
-// the context menu's "Clip page to Notion" item. The service worker
-// (background.ts) hands each click to the window's side panel through chrome.storage.session, as
+// Clipping a page to the Notion page the user chose in Settings, from the context menu's "Clip page
+// to Notion" item. The service worker (background.ts) hands each click to the window's side panel through chrome.storage.session, as
 // "Ask Notico" does (@cofun/tools/selection); the panel reads the page and writes the clip (tools/clip.ts).
 // What is read back from storage is parsed: the settings may have synced from another version, and
 // a clip holds text from the page.
@@ -20,7 +19,7 @@ export type ClipTarget = z.infer<typeof ClipTarget>
 
 /**
  * Both kept in chrome.storage.sync, so they follow the user's Chrome profile to their other devices:
- * the target, and whether the item shows, off until the user turns them on. It shows only once a
+ * the target, and whether the item shows, off until the user turns it on. It shows only once a
  * target is chosen too.
  */
 const TARGET_SETTING = 'clipTarget'
