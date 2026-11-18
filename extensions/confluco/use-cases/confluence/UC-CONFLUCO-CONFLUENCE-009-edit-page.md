@@ -22,4 +22,4 @@ A user on a connected instance can request an exact replacement for a uniquely i
 | --- | --- | --- | --- |
 | UC-CONFLUCO-CONFLUENCE-009-S05 | P0 | ✅ | Given a disposable published page with a macro, table, and attachment on a real instance; when the user requests a targeted edit; then the published page contains the new text and retains the unrelated content and attachment. |
 | UC-CONFLUCO-CONFLUENCE-009-S08 | P0 | ✅ | Given a verified targeted edit to a real disposable page; when the user asks to undo it; then the original text is restored and surrounding content remains intact. |
-| UC-CONFLUCO-CONFLUENCE-009-S10 | P0 | 🚧 | Given a disposable published Cloud page with formatted content; when the user requests an exact text replacement and then undoes it; then the two published versions have the requested text while preserving the surrounding content. |
+| UC-CONFLUCO-CONFLUENCE-009-S10 | P0 | ✅ | Given a disposable published Cloud page with formatted content; when the user requests an exact text replacement and then undoes it; then the two published versions have the requested text while preserving the surrounding content. |
