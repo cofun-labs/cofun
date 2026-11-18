@@ -104,7 +104,7 @@ An extension's Chrome Web Store privacy policy is written in two parts: [PRIVACY
 
 [docs/architecture.md](docs/architecture.md) describes the design; these are the rules a change must keep.
 
-- **One extension per folder.** Each extension keeps its own app (side panel, agent, prompt, site layer, tools, manifest, analytics) and never imports another extension.
+- **One extension per folder.** Each extension keeps its own app (side panel, prompt, site layer, tools, manifest, analytics) and never imports another extension; the agent runtime it runs them on is the shared `@cofun/agent`.
 - **Only libraries the extensions call are shared**, as workspace packages in `packages/` (`@cofun/worker-client`, the client for the worker, and `@cofun/agent`, the agent runtime and tool framework). A package takes what is particular to an extension as explicit parameters (the product name, the client name, the extension's own memory of a chat), never a product config, and never imports an extension. Its rules are tested once, in its own `test/` (and `use-cases/`, when it owns a business rule); an extension tests only how it uses it.
 - **A site is called only through its site layer**: one module knows the site's endpoints and request shapes (Notico's `src/notion/api.ts`), and requests run inside the user's tab for that site (`src/<site>/tab.ts`, `chrome.scripting` in the ISOLATED world), so they go to that tab's host with its session. Tools never `fetch` the site's URLs themselves. Never use `chrome.debugger`: it shows a permanent "debugging this browser" banner.
 - **Every worker route under `/v1` sits behind the session check** (`src/routes/session.ts`); `worker/test/session.test.ts` checks that each refuses a request without a session.

@@ -300,8 +300,8 @@
                 "message": "Only an extension's src/analytics.ts imports the PostHog SDK. Call its track(), whose events are the only ones that can be sent."
               },
               {
-                "regex": "^(\\.\\./)+(agent|tool|tools|sessions|sidepanel)(\\.|/|$)",
-                "message": "An extension's site layer (src/notion/ and src/web/ in Notico) imports nothing from agent/, tool.ts, tools/, sessions.ts, or sidepanel/: those modules depend on the site layer, not the other way round."
+                "regex": "^(\\.\\./)+(tool|tools|sessions|sidepanel)(\\.|/|$)",
+                "message": "An extension's site layer (src/notion/ and src/web/ in Notico) imports nothing from tool.ts, tools/, sessions.ts, or sidepanel/: those modules depend on the site layer, not the other way round."
               },
               {
                 "regex": "^zod(/|$)",
