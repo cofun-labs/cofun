@@ -21,12 +21,12 @@ const MENU_ITEM = 'ask-notico'
 const ARTICLE = 'https://news.example.com/2026/rivers?ref=home'
 
 /** A browser on an article, on a site Notico was never allowed to read, with the extension running. */
-async function start(options?: { accountAtClick: string | undefined }) {
+async function start() {
   const tab = new FakeNotionTab(ARTICLE)
   tab.title = 'Rivers | News'
   tab.dom = webPage({ title: 'Rivers | News', main: 'Rivers are rising.' })
   const browser = await FakeBrowser.start(tab, { signedInAs: 'user_alice' })
-  await browser.startServiceWorker(options === undefined ? undefined : async () => options.accountAtClick)
+  await browser.startServiceWorker()
   return { browser, tab, user: userEvent.setup() }
 }
 
@@ -116,22 +116,6 @@ describe('asking about text selected on a page', () => {
     await screen.findByText('They are.')
     expect(sentQuestions(browser)).toEqual([question(selectionNote('Rivers are rising.'), 'Is it true?')])
   })
-
-  it.each([undefined, 'user_bob'])(
-    '[UC-NOTICO-CHAT-006-S08] keeps selections out of a panel opened for a different account (click account %s)',
-    async (accountAtClick) => {
-      const owner = { accountAtClick }
-      const { browser, tab } = await start(owner)
-      tab.pickMenuItem(MENU_ITEM, 'Text from the earlier account.')
-      await tab.answered()
-
-      await browser.openPanel()
-      owner.accountAtClick = 'user_alice'
-      tab.pickMenuItem(MENU_ITEM, 'Text from the active account.')
-      expect(await screen.findByText(/Text from the active account/)).toBeVisible()
-      expect(screen.queryByText(/Text from the earlier account/)).not.toBeInTheDocument()
-    },
-  )
 
   it('[UC-NOTICO-CHAT-006-S02] a selection in a frame from another site goes as Chrome gives it', async () => {
     const { browser, tab, user } = await start()

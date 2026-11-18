@@ -271,9 +271,6 @@ importers:
 
   packages/worker-client:
     dependencies:
-      '@clerk/chrome-extension':
-        specifier: ^3.1.105
-        version: 3.1.105(@types/react@19.3.0)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(typescript@7.0.2)(zod@4.6.7)
       zod:
         specifier: ^4.6.7
         version: 4.6.7

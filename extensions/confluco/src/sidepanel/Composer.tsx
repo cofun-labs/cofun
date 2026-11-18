@@ -108,7 +108,7 @@ export function useComposer({
       .getCurrent()
       .then((window) => {
         if (closed || window.id === undefined) return
-        stop = watchSelections(window.id, userId, (sent) => {
+        stop = watchSelections(window.id, (sent) => {
           setSelections((list) => [...list, ...sent])
           inputRef.current?.focus()
         })
@@ -118,7 +118,7 @@ export function useComposer({
       closed = true
       stop?.()
     }
-  }, [userId])
+  }, [])
 
   // The pages the user added to the next question by hand, in the order they added them.
   const [chosen, setChosen] = useState<QuestionPage[]>([])

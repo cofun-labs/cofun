@@ -31,12 +31,9 @@ export function useComposer({
   chat,
   tabPage,
   busy,
-  userId,
 }: {
   panel: Panel
   chat: ChatSession
-  /** The signed-in account, whose selections the composer takes. */
-  userId: string
   /** The Notion page open in the current tab, if one is. */
   tabPage?: OpenPage
   /** The open chat's question has not ended yet. */
@@ -60,7 +57,7 @@ export function useComposer({
       .getCurrent()
       .then((window) => {
         if (closed || window.id === undefined) return
-        stop = watchSelections(window.id, userId, (sent) => {
+        stop = watchSelections(window.id, (sent) => {
           setSelections((list) => [...list, ...sent])
           inputRef.current?.focus()
         })
@@ -70,7 +67,7 @@ export function useComposer({
       closed = true
       stop?.()
     }
-  }, [userId])
+  }, [])
 
   // The pages the user added to the next question by hand, in the order they added them.
   const [chosen, setChosen] = useState<QuestionPage[]>([])

@@ -215,14 +215,12 @@ export class FakeBrowser {
   }
 
   /**
-   * Starts the extension's service worker as src/background.ts sets it up, as Chrome does once it
-   * installed the extension: it sets up its context menu item. `readAccount` stands in for Clerk's
-   * lookup of the account signed in at a click (the browser's own, by default).
+   * Starts the extension's service worker (src/background.ts), as Chrome does once it installed the
+   * extension: it sets up its context menu item.
    */
-  async startServiceWorker(readAccount = async () => this.session?.userId): Promise<void> {
+  async startServiceWorker(): Promise<void> {
     vi.resetModules()
-    const { setupSelectionMenu } = await import('@cofun/tools/selection')
-    setupSelectionMenu({ product: 'Notico', readAccount })
+    await import('../src/background')
     this.tab.extensionInstalled()
     // It reads its settings before it makes its menu item.
     await vi.waitFor(() => {

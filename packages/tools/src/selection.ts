@@ -1,8 +1,7 @@
 // Text the user selected on a page and sent to an extension's side panel with the context menu's
 // "Ask <product>" item. The service worker (setupSelectionMenu) reads it in the tab and leaves it in
-// chrome.storage.session, one key per selection, by window and by the account signed in at the click;
-// that window's side panel, signed in to that account, takes them from there into the next question,
-// where each selection sent adds to the ones before. No message listener carries it: storage.session
+// chrome.storage.session, one key per selection, by window; that window's side panel takes them from
+// there into the next question, where each selection sent adds to the ones before. No message listener carries it: storage.session
 // is open only to the extension's own pages, and what is read back is parsed, since the text comes
 // from the page. Imported as @cofun/tools/selection, which loads no agent.
 import { clipSelection, selectedText } from './tab'
@@ -22,7 +21,7 @@ const Selection = z.object({ text: z.string(), chars: z.number(), url: z.string(
 export type Selection = z.infer<typeof Selection>
 
 /** Where the selections sent to a window's side panel are kept, each under this and its number. */
-const prefix = (windowId: number, userId: string) => `selection:${windowId}:${encodeURIComponent(userId)}:`
+const prefix = (windowId: number) => `selection:${windowId}:`
 
 /**
  * Whether the menu item shows, as the settings page's switch says: on unless the user turned it off.
@@ -57,7 +56,7 @@ let lastSent = 0
  * selection gets a key of its own, numbered in the order sent, so one sent while the panel takes
  * the others is neither lost nor taken twice.
  */
-async function handOver(windowId: number, userId: string, text: string, url: string, title: string): Promise<void> {
+async function handOver(windowId: number, text: string, url: string, title: string): Promise<void> {
   const selection: Selection = {
     text: clipSelection(text, SELECTION_CHARS),
     chars: text.length,
@@ -66,25 +65,20 @@ async function handOver(windowId: number, userId: string, text: string, url: str
   }
   // The time, so the order holds across starts of the service worker; one more for a second in the same millisecond.
   lastSent = Math.max(Date.now(), lastSent + 1)
-  await chrome.storage.session.set({ [`${prefix(windowId, userId)}${lastSent}`]: selection })
+  await chrome.storage.session.set({ [`${prefix(windowId)}${lastSent}`]: selection })
 }
 
 /**
  * Sets up the service worker's "Ask <product>" context menu item, on text selected in any page:
- * picking it opens the side panel and hands it the selection, for the account `readAccount` finds
- * signed in at the click. With none signed in, or none found, the selection is dropped: it never
- * waits for whoever signs in next. The click gives the extension the tab for a moment (activeTab),
+ * picking it opens the side panel and hands it the selection. The click gives the extension the tab for a moment (activeTab),
  * which is how the selection is read there with its line breaks; where it can't be (a frame from
  * another site, say), Chrome's own copy of it, on one line, is used.
  */
 export function setupSelectionMenu({
   product,
-  readAccount,
 }: {
   /** The extension's name, as the menu shows it: `Notico`. */
   product: string
-  /** The Clerk user id of the account signed in now, if any. */
-  readAccount: () => Promise<string | undefined>
 }): void {
   const menuItem = `ask-${product.toLowerCase()}`
   // Menu items stay from one start of the service worker to the next; they are made again when the
@@ -122,10 +116,9 @@ export function setupSelectionMenu({
     chrome.sidePanel.open({ windowId: tab.windowId }).catch((err) => console.error(err))
     const { id, windowId } = tab
     void (async () => {
-      const [userId, selected] = await Promise.all([readAccount(), selectedText(id, info.frameId ?? 0)])
-      const text = selected || info.selectionText || ''
-      if (!userId || !text.trim()) return
-      await handOver(windowId, userId, text, info.pageUrl || tab.url || '', tab.title ?? '')
+      const text = (await selectedText(id, info.frameId ?? 0)) || info.selectionText || ''
+      if (!text.trim()) return
+      await handOver(windowId, text, info.pageUrl || tab.url || '', tab.title ?? '')
     })().catch((err: unknown) => console.error('Could not attach the selected text', err))
   })
 }
@@ -135,12 +128,8 @@ export function setupSelectionMenu({
  * they were sent: those sent before the panel opened, and each one sent while it is open. Each is
  * taken, so it is given once. Returns a function that stops watching.
  */
-export function watchSelections(
-  windowId: number,
-  userId: string,
-  onSelections: (selections: Selection[]) => void,
-): () => void {
-  const start = prefix(windowId, userId)
+export function watchSelections(windowId: number, onSelections: (selections: Selection[]) => void): () => void {
+  const start = prefix(windowId)
   // Keys already given: one written between watching and reading shows in both.
   const taken = new Set<string>()
   const take = (entries: [string, unknown][]) => {
