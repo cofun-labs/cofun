@@ -831,6 +831,12 @@ function applyOperation(
     case 'update':
       Object.assign(at(op.path), structuredClone(args))
       return
+    case 'moveToPrivate': {
+      // A page made with no parent goes into the workspace, at the top of the user's Private section.
+      const view = args.spaceViewPointer as { id: string; spaceId: string }
+      Object.assign(record, { parent_id: view.spaceId, parent_table: 'space', private_view: view.id })
+      return
+    }
     case 'updateCollectionPropertySchema':
     case 'updateCollectionDeletedPropertySchema': {
       // A database's properties, as Notion's web client changes them (see collectionOps).

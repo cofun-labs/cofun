@@ -4,51 +4,130 @@
 // nothing of it goes to the model or the worker.
 import { readPage } from '@cofun/tools/tab'
 import { saveClipTarget, type ClipRequest, type ClipTarget } from '../clip'
-import { fieldsOf, NotionError, waitText } from '../notion/api'
+import { blockOps, fieldsOf, NotionError, waitText } from '../notion/api'
 import type { NewBlock, RichText } from '../notion/blocks'
 import { planAppend, planNewPage } from '../notion/edit'
 import { pageIdFromUrl, pageLink, showsDatabase } from '../notion/hosts'
 import { hexId } from '../notion/markdown'
-import { activeNotionTab, notionCooldown, showNotionPage } from '../notion/tab'
+import { activeNotionTab, notionCooldown, showNotionPage, type NotionTab } from '../notion/tab'
+import { runsText } from '../notion/tree'
 import { chatTitle, replyBlocks } from './save'
 
 /** How much of a page's Markdown a clip keeps: one transaction holds it all. */
 const CLIP_CHARS = 50_000
 
-/** For the user: why the current tab's page can't be chosen as the one clips go to. */
-const OPEN_A_TARGET = 'Open the Notion page to clip into in the current tab, then choose it here.'
-const NOT_A_PAGE = "Clips can't go into a database. Open a page, then choose it here."
+/** For the user: the picker searches the workspace of the Notion page in the current tab. */
+const OPEN_NOTION = 'Open a Notion page in the current tab to search its workspace.'
+
+/** The title of the private page clips go to unless the user picks another. */
+export const DEFAULT_TARGET = 'Notico Clips'
+
+/** A page the Settings picker offers: its id and title. */
+export interface PageChoice {
+  id: string
+  title: string
+}
 
 /**
- * Makes the Notion page open in the current tab the one clips go to, once it has read it there, as
- * this Notion account sees it: its title, for Settings to show, and that it is a page. Returns why
- * it can't be, for the user, if it can't.
+ * Where the Settings picker finds pages: the Notion tab in front, its workspace (by the page it
+ * shows), and that page, when it is one clips can go to.
  */
-export async function chooseTarget(): Promise<string | undefined> {
+export interface ClipPlace {
+  tab: NotionTab
+  spaceId: string
+  current?: PageChoice
+}
+
+/** The Notion page in the current tab and its workspace, or why there is none, for the user. */
+export async function clipPlace(): Promise<ClipPlace | string> {
   try {
     const tab = await activeNotionTab({ counted: false })
     const id = tab.pageId
-    if (!id) return OPEN_A_TARGET
-    if (showsDatabase(tab.url)) return NOT_A_PAGE
+    if (!id) return OPEN_NOTION
     const page = (await tab.client.getRecords([{ table: 'block', id }])).block![id]
-    if (page.type !== 'page') return page.type === 'collection_view_page' ? NOT_A_PAGE : OPEN_A_TARGET
-    // A title's runs, read by hand (AGENTS.md: "Untrusted values"): only their text is kept.
-    const runs = fieldsOf(page.properties)?.title
-    const title = (Array.isArray(runs) ? runs : [])
-      .map((run: unknown) => (Array.isArray(run) && typeof run[0] === 'string' ? run[0] : ''))
-      .join('')
-      .replace(/\s+/g, ' ')
-      .trim()
-    await saveClipTarget({ url: pageLink(tab.url, hexId(id)), title: title || 'Untitled' })
-    return undefined
+    const spaceId = page.space_id
+    if (typeof spaceId !== 'string' || !spaceId) return OPEN_NOTION
+    return {
+      tab,
+      spaceId,
+      ...(page.type === 'page' && !showsDatabase(tab.url) ? { current: { id, title: titleOf(page) } } : {}),
+    }
   } catch (err) {
-    if (!(err instanceof NotionError)) throw err
-    if (err.code === 'no_notion_tab') return OPEN_A_TARGET
-    if (err.code === 'no_access')
-      return "The Notion account signed in can't see this page. Switch to a Notion account that can, then choose it again."
-    if (err.code === 'in_trash') return 'This page is in the trash. Restore it, or open another page.'
-    return `Couldn't read the page in Notion: ${err.message}`
+    return problem(err, OPEN_NOTION)
   }
+}
+
+/** The pages of the place's workspace whose title or content holds `query`, as Notion's quick find has them. */
+export async function findTargets(place: ClipPlace, query: string): Promise<PageChoice[] | string> {
+  try {
+    const found = await place.tab.client.search(place.spaceId, query, 8)
+    return found.results.flatMap((r) => {
+      const block = found.recordMap.block?.[r.id]
+      // Only pages: clips can't go into a database.
+      return block?.type === 'page' && block.alive !== false ? [{ id: r.id, title: titleOf(block) }] : []
+    })
+  } catch (err) {
+    return problem(err, OPEN_NOTION)
+  }
+}
+
+/** Makes `page`, in the place's workspace, the one clips go to. */
+export async function chooseTarget(place: ClipPlace, page: PageChoice): Promise<void> {
+  await saveClipTarget({ url: pageLink(place.tab.url, hexId(page.id)), title: page.title })
+}
+
+/**
+ * Makes the private page "Notico Clips" of the place's workspace the one clips go to: the one the
+ * user's Private section already has, else a new one, put there. Returns it, with whether it was
+ * made, or why it couldn't be, for the user. Sent once: a failed write is not retried.
+ */
+export async function defaultTarget(place: ClipPlace): Promise<(PageChoice & { made: boolean }) | string> {
+  try {
+    const { client } = place.tab
+    const section = await client.privateSection(place.spaceId)
+    // The first hundred are enough to find it: a new private page goes at the top.
+    const pages = section.pages.slice(0, 100)
+    const listed = pages.length
+      ? (await client.findRecords(pages.map((id) => ({ table: 'block' as const, id })))).block
+      : undefined
+    const kept = pages.find(
+      (id) => listed?.[id]?.type === 'page' && listed[id].alive !== false && titleOf(listed[id]) === DEFAULT_TARGET,
+    )
+    if (kept) {
+      const page = { id: kept, title: DEFAULT_TARGET }
+      await chooseTarget(place, page)
+      return { ...page, made: false }
+    }
+    if (!section.view) return `Couldn't find your Private section in ${section.name}. Search for a page instead.`
+    const made = planNewPage(undefined, place.spaceId, [[DEFAULT_TARGET]], [], section.view.userId)
+    const operations = [
+      ...made.operations,
+      blockOps(place.spaceId, Date.now(), section.view.userId).moveToPrivate(made.pageId, section.view),
+    ]
+    await client.submitTransaction(place.spaceId, operations, 'Notico: clip page')
+    const page = { id: made.pageId, title: DEFAULT_TARGET }
+    await chooseTarget(place, page)
+    return { ...page, made: true }
+  } catch (err) {
+    if (err instanceof NotionError && err.code === 'outcome_unknown')
+      return `Notion didn't say whether “${DEFAULT_TARGET}” was created. Look in your Private section before trying again.`
+    return problem(err, OPEN_NOTION)
+  }
+}
+
+/** A page record's title as text (AGENTS.md: "Untrusted values": rich text is read by hand). */
+function titleOf(page: { properties?: unknown }): string {
+  return runsText(fieldsOf(page.properties)?.title).replace(/\s+/g, ' ').trim() || 'Untitled'
+}
+
+/** What a failed Notion read or write in Settings says to the user. */
+function problem(err: unknown, offNotion: string): string {
+  if (!(err instanceof NotionError)) throw err
+  if (err.code === 'no_notion_tab') return offNotion
+  if (err.code === 'no_access') return "The Notion account signed in can't see this page."
+  if (err.code === 'rate_limited')
+    return `Notion is turning requests away right now. Wait ${waitText(notionCooldown.left() || 60_000)}, then try again.`
+  return `Couldn't reach Notion: ${err.message}`
 }
 
 /** For the user: no page is chosen to clip to. */

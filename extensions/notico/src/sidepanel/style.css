@@ -2364,3 +2364,55 @@ button.secondary:focus-visible,
   overflow: hidden;
   text-overflow: ellipsis;
 }
+
+.clip-into {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 4px 0 8px;
+}
+
+.clip-into input {
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  outline: none;
+  background: var(--tint);
+  color: inherit;
+  font: inherit;
+}
+
+.clip-into input:focus {
+  border-color: var(--muted);
+}
+
+.clip-into-list {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  z-index: 3;
+  max-height: 240px;
+  overflow-y: auto;
+  margin: 0;
+  padding: 4px;
+  list-style: none;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg);
+  box-shadow: 0 8px 28px var(--shadow);
+}
+
+.clip-into-list li {
+  padding: 6px 8px;
+  border-radius: 6px;
+}
+
+.clip-into-list li[role='option'] {
+  cursor: pointer;
+}
+
+.clip-into-list li[aria-selected='true'] {
+  background: var(--tint);
+}

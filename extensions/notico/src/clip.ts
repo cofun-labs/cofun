@@ -22,8 +22,8 @@ export type ClipTarget = z.infer<typeof ClipTarget>
 
 /**
  * Both kept in chrome.storage.sync, so they follow the user's Chrome profile to their other devices:
- * the target, and whether the items show, on unless the user turned them off. They show only once a
- * target is chosen.
+ * the target, and whether the items show, off until the user turns them on. They show only once a
+ * target is chosen too.
  */
 const TARGET_SETTING = 'clipTarget'
 const MENU_SETTING = 'clipMenu'
@@ -35,7 +35,7 @@ export interface ClipSettings {
 
 function settingsFrom(stored: Record<string, unknown>): ClipSettings {
   const target = ClipTarget.safeParse(stored[TARGET_SETTING])
-  return { target: target.success ? target.data : undefined, shown: stored[MENU_SETTING] !== false }
+  return { target: target.success ? target.data : undefined, shown: stored[MENU_SETTING] === true }
 }
 
 export async function loadClipSettings(): Promise<ClipSettings> {

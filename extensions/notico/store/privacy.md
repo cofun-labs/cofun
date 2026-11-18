@@ -45,7 +45,7 @@ Runs the requests that read and edit Notion pages inside the user's own Notion t
 ### contextMenus
 
 ```text
-Adds an "Ask Notico" item to the menu Chrome shows when the user right-clicks selected text. Picking it opens the side panel with that text added to the user's next question; nothing is sent until the user sends the question. Once the user chooses a Notion page in the settings, it also adds "Clip page to Notion" and "Clip selection to Notion", which write the page or the selected text to the end of that Notion page.
+Adds an "Ask Notico" item to the menu Chrome shows when the user right-clicks selected text. Picking it opens the side panel with that text added to the user's next question; nothing is sent until the user sends the question. Once the user turns on "Clip to Notion" in the settings, it also adds "Clip page to Notion" and "Clip selection to Notion", which write the page or the selected text to the end of the Notion page the user chose (by default a private "Notico Clips" page, made when Clip is turned on).
 ```
 
 ### activeTab
