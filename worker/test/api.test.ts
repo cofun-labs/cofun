@@ -227,7 +227,7 @@ describe('worker API', () => {
     expect((await json(res)).choices[0].message.content).toBe('Hello from Workers AI')
     expect(ai.calls[0]).toEqual({
       model: MODEL,
-      inputs: { messages: hi, max_tokens: 50 },
+      inputs: { messages: hi, max_completion_tokens: 50 },
       options: {
         gateway: {
           id: 'gw-test',
@@ -264,7 +264,7 @@ describe('worker API', () => {
 
   it('[@no-uc:contract] passes only role and content to the model, and defaults max_tokens when unset', async () => {
     await chat(token, { messages: [{ role: 'user', content: 'hi', name: 'x', extra: 1 }], max_tokens: null })
-    expect(ai.calls[0].inputs).toEqual({ messages: [{ role: 'user', content: 'hi' }], max_tokens: 16_384 })
+    expect(ai.calls[0].inputs).toEqual({ messages: [{ role: 'user', content: 'hi' }], max_completion_tokens: 65_536 })
   })
 
   it('[@no-uc:contract] naming the server model is allowed', async () => {
@@ -1185,7 +1185,7 @@ describe('tool calling', () => {
       ],
       tools: [pageTool],
       tool_choice: { type: 'function', function: { name: 'get_current_page' } },
-      max_tokens: 16_384,
+      max_completion_tokens: 65_536,
     })
   })
 
@@ -1289,14 +1289,14 @@ describe('tool calling', () => {
         { messages: askPage, tools: [tool], tool_choice: { type: 'function', function: { name: 'g' } } },
         'tool_choice names an unknown tool: g',
       ],
-      [{ messages: askPage, max_tokens: 0 }, 'max_tokens must be an integer from 1 to 16384'],
+      [{ messages: askPage, max_tokens: 0 }, 'max_tokens must be an integer from 1 to 65536'],
       [{ messages: askPage, stream: 'yes' }, 'stream must be a boolean'],
       // The conversation is checked first, then the tools, then the settings.
       [{ messages: [], tools: [], max_tokens: 0, stream: 1 }, 'messages must be a non-empty array'],
       [{ messages: askPage, tools: [], max_tokens: 0, stream: 1 }, 'tools must be an array of 1 to 64 tools'],
       [
         { messages: askPage, max_tokens: 0, stream: 1, model: 'other' },
-        'max_tokens must be an integer from 1 to 16384',
+        'max_tokens must be an integer from 1 to 65536',
       ],
     ]
     for (const [body, message] of refused) {
