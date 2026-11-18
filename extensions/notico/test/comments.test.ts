@@ -7,7 +7,8 @@ import { EditError } from '../src/notion/edit'
 import { COMMENT_CHARS } from '../src/notion/comments'
 import { addComment, readComments } from '../src/tools/comments'
 import { readPage } from '../src/tools/read'
-import { DATA_LINE, PART_CHARS } from '../src/tools/shared'
+import { DATA_LINE } from '@cofun/tools'
+import { PART_CHARS } from '../src/tools/shared'
 import {
   FakeNotionTab,
   FakeWorkspace,

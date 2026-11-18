@@ -15,21 +15,13 @@ import {
   searchConfluencePages,
 } from './confluence'
 import { CONFLUENCE_WRITES } from './confluence-writes'
+import { readResult, searchResult, webTools } from '@cofun/tools'
 import { getCurrentTab, readCurrentTab, readTab } from './current'
 import { verb } from './shared'
-import { readResult, searchResult } from './results'
-import { readWebPage, renderWebPage, searchWeb } from './web'
 
-export {
-  carryPages,
-  currentTabReadable,
-  openWebTabs,
-  addedTabNow,
-  SELECTION_END,
-  selectionsCarried,
-  type WebTab,
-} from './current'
-export { DATA_LINE } from './shared'
+export { carryPages } from './current'
+
+const { readWebPage, renderWebPage, searchWeb } = webTools({ product: 'Confluco' })
 
 const READ_TOOLS: Tool[] = [
   readConfluencePage,

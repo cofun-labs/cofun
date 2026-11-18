@@ -4,7 +4,7 @@ import '@testing-library/jest-dom/vitest'
 import { screen, within } from '@testing-library/react'
 import userEvent, { type UserEvent } from '@testing-library/user-event'
 import { afterEach, describe, expect, it } from 'vitest'
-import { DATA_LINE } from '../src/tools/shared'
+import { DATA_LINE } from '@cofun/tools'
 import { FakeNotionTab, webPage } from './notion-tab'
 import { closeBrowser, FakeBrowser } from './panel'
 
@@ -337,6 +337,26 @@ describe('reading the page in the current tab', () => {
     expect(browser.tab.accessRequests).toEqual([[SITE]])
     expect(browser.tab.injections).toEqual([])
     expect(toolResults(browser)[0]).toMatch(/^Notico may not read news\.example\.com: the user did not allow it/)
+  })
+
+  it('[UC-NOTICO-PANEL-001-S17] a tab on a host Notico uses for sign-in is not read, even with access to it', async () => {
+    for (const url of ['https://api.cofun.cc/login', 'https://accounts.cofun.cc/sign-in']) {
+      const tab = new FakeNotionTab(url)
+      // Notico holds these hosts by install: no grant from the user is needed, so none would be asked.
+      tab.allowed.add(`${new URL(url).origin}/*`)
+      const { browser, user } = await openOn(tab)
+      browser.ai.script.push(readTab, { reply: 'The page could not be read.' })
+
+      await ask(user, 'Summarize this page')
+
+      expect(await screen.findByText('The page could not be read.')).toBeVisible()
+      expect(browser.tab.injections).toEqual([])
+      expect(browser.tab.accessRequests).toEqual([])
+      expect(toolResults(browser)[0]).toBe(
+        'The current tab is on a host Notico uses for sign-in, which the tab tools cannot read.',
+      )
+      await closeBrowser()
+    }
   })
 
   it('[UC-NOTICO-PANEL-001-S13] a page Notico cannot read gives the model the reason, without asking the user', async () => {

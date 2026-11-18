@@ -1,12 +1,9 @@
 // Long results of the tools that read outside content (the tabs, web pages): the full text is kept
 // on the device (KeptResult, in the saved sessions' store), and the model gets its first part, an
 // outline, and an id, with which read_result reads another part and search_result finds text in it.
-// Notion's tools read Notion live, in parts of their own, and keep nothing.
-import type { KeptResult, ToolContext, ToolResult } from '@cofun/agent'
-import { clip } from '../notion/comments'
-import { defineTool } from '../tool'
+import { defineTool, type KeptResult, type ToolContext, type ToolResult } from '@cofun/agent'
 import { z } from '../zod'
-import { READ, SEARCH, asData, asPageText, count, nameOf, partArg } from './shared'
+import { READ, SEARCH, asData, asPageText, clip, count, nameOf, partArg } from './shared'
 
 /** How much of a kept result one part holds; a result no longer than this is given whole, and not kept. */
 const RESULT_PART_CHARS = 20_000

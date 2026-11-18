@@ -3,7 +3,8 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { ToolChat } from './tool-chat'
 import { getSelection } from '../src/tools/read'
-import { DATA_LINE, PART_CHARS } from '../src/tools/shared'
+import { DATA_LINE } from '@cofun/tools'
+import { PART_CHARS } from '../src/tools/shared'
 import { editPage } from '../src/tools/write'
 import { FakeNotionTab, FakeWorkspace, PAGE, PAGE_URL, SPACE, restoreGlobals, resultText } from './notion-tab'
 

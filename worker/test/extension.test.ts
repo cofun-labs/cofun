@@ -18,6 +18,7 @@ import {
 import { WorkerClient } from '../../packages/worker-client/src'
 import { createApp, type Env } from '../src/app'
 import { priceOf } from '../src/pricing'
+import * as z from '../src/zod'
 import { FakeClerk } from './clerk'
 import {
   FAKE_COST,
@@ -479,9 +480,10 @@ describe('conversation compaction', () => {
     globalThis.fetch = async (input, init) => {
       const request = new Request(input, init)
       if (new URL(request.url).hostname !== 'openrouter.ai') return routed(input, init)
-      const body = (await request.json()) as Record<string, unknown>
+      const body = z.record(z.string(), z.unknown()).parse(await request.json())
       const stream = await newModel.run(small.model.id, body)
-      return new Response(stream as ReadableStream, { headers: { 'content-type': 'text/event-stream' } })
+      if (!(stream instanceof ReadableStream)) throw new Error('Expected a streamed model reply.')
+      return new Response(stream, { headers: { 'content-type': 'text/event-stream' } })
     }
     try {
       expect((await ask(agent, 'Confirm the code is kept.')).result.status).toBe('done')
@@ -494,7 +496,8 @@ describe('conversation compaction', () => {
       expect(answer.rounds).toBe(3)
       expect(answer.used.tokens?.output).toBe(15)
       expect(newModel.calls).toHaveLength(3)
-      const [first, second, reply] = newModel.calls.map((call) => call.inputs.messages as { content: string }[])
+      const messages = z.array(z.object({ content: z.string() }))
+      const [first, second, reply] = newModel.calls.map((call) => messages.parse(call.inputs.messages))
       expect(first[1].content).toContain('The launch code is OSPREY-73.')
       expect(first[1].content).not.toContain('Archive end.')
       expect(second[1].content).toContain('Archive end.')

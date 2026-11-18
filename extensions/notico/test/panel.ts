@@ -172,7 +172,17 @@ export class FakeBrowser {
     chrome.runtime = {
       ...(chrome.runtime as object),
       getURL: (path: string) => `${EXTENSION}/${path}`,
-      getManifest: () => ({ version: '1.2.3' }),
+      // The required host permissions a build has (manifest.ts): Notion, and the hosts sign-in uses.
+      getManifest: () => ({
+        version: '1.2.3',
+        host_permissions: [
+          'https://www.notion.so/*',
+          'https://app.notion.com/*',
+          'https://clerk.cofun.cc/*',
+          'https://api.cofun.cc/*',
+          'https://*.cofun.cc/*',
+        ],
+      }),
     }
     chrome.tabs.create = async ({ url }: { url: string }) => void browser.openedTabs.push(url)
     browser.duckDuckGo.install(chrome as never, tab.allowed)

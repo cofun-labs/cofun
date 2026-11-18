@@ -44,6 +44,9 @@ importers:
       '@cofun/agent':
         specifier: workspace:*
         version: link:../../packages/agent
+      '@cofun/tools':
+        specifier: workspace:*
+        version: link:../../packages/tools
       '@cofun/worker-client':
         specifier: workspace:*
         version: link:../../packages/worker-client
@@ -65,9 +68,6 @@ importers:
       remark-gfm:
         specifier: ^4.0.1
         version: 4.0.1
-      turndown:
-        specifier: 7.2.5
-        version: 7.2.5
       zod:
         specifier: ^4.6.7
         version: 4.6.7
@@ -99,9 +99,6 @@ importers:
       '@types/react-dom':
         specifier: ^19.3.0
         version: 19.3.0(@types/react@19.3.0)
-      '@types/turndown':
-        specifier: 5.0.6
-        version: 5.0.6
       '@vitejs/plugin-react':
         specifier: ^6.3.0
         version: 6.3.0(vite@8.3.8(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))
@@ -129,6 +126,9 @@ importers:
       '@cofun/agent':
         specifier: workspace:*
         version: link:../../packages/agent
+      '@cofun/tools':
+        specifier: workspace:*
+        version: link:../../packages/tools
       '@cofun/worker-client':
         specifier: workspace:*
         version: link:../../packages/worker-client
@@ -150,9 +150,6 @@ importers:
       remark-gfm:
         specifier: ^4.0.1
         version: 4.0.1
-      turndown:
-        specifier: 7.2.5
-        version: 7.2.5
       zod:
         specifier: ^4.6.7
         version: 4.6.7
@@ -184,9 +181,6 @@ importers:
       '@types/react-dom':
         specifier: ^19.3.0
         version: 19.3.0(@types/react@19.3.0)
-      '@types/turndown':
-        specifier: 5.0.6
-        version: 5.0.6
       '@vitejs/plugin-react':
         specifier: ^6.3.0
         version: 6.3.0(vite@8.3.8(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))
@@ -224,6 +218,31 @@ importers:
       '@types/node':
         specifier: ^26.6.6
         version: 26.6.6
+      typescript:
+        specifier: ^7.0.2
+        version: 7.0.2
+
+  packages/tools:
+    dependencies:
+      '@cofun/agent':
+        specifier: workspace:*
+        version: link:../agent
+      turndown:
+        specifier: 7.2.5
+        version: 7.2.5
+      zod:
+        specifier: ^4.6.7
+        version: 4.6.7
+    devDependencies:
+      '@types/chrome':
+        specifier: ^0.3.7
+        version: 0.3.7
+      '@types/node':
+        specifier: ^26.6.6
+        version: 26.6.6
+      '@types/turndown':
+        specifier: 5.0.6
+        version: 5.0.6
       typescript:
         specifier: ^7.0.2
         version: 7.0.2
