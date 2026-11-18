@@ -83,8 +83,9 @@ export function chatRoutes({ now, modelOf, logError }: Deps): App {
     // costs beyond the balance is then its uncached input and its reply (MAX_TOKENS bounds that), and
     // CHAT_LIMIT bounds calls at once.
     const maxTokens = max_tokens ?? MAX_TOKENS
-    const promptTokens = estimateTokens(chars)
-    const needs = costOf(price, { promptTokens, cachedTokens: promptTokens, completionTokens: 0 })
+    // The input's tokens as estimated from its size, never more than the model's window can hold.
+    const inputTokens = Math.min(estimateTokens(chars), contextWindow)
+    const needs = costOf(price, { promptTokens: inputTokens, cachedTokens: inputTokens, completionTokens: 0 })
     const charging: Charging = {
       ledger: await openLedger(c, now().getTime(), logError, needs),
       usage,
@@ -156,8 +157,10 @@ export function chatRoutes({ now, modelOf, logError }: Deps): App {
         out = await c.env.AI.run(c.env.MODEL, inputs, options)
       } catch (err) {
         // An input over the model's window. Workers AI answers "This model's maximum context length
-        // is 1048576 tokens. However, ..." with a 400. Said in the worker's own words, which name the
-        // window as providers do, so the agent reads it as a context overflow, compacts, and sends again.
+        // is 1048576 tokens. However, ..." with a 400, and the binding throws it as an Error whose
+        // message is the only place that says so: it carries no status or code to branch on. Said in
+        // the worker's own words, which name the window as providers do, so the agent reads it as a
+        // context overflow, compacts, and sends again.
         if (err instanceof Error && /maximum context length/i.test(err.message))
           throw new HttpError(
             400,
@@ -186,7 +189,7 @@ export function chatRoutes({ now, modelOf, logError }: Deps): App {
           // reply from the characters streamed, and a fixed share of the prompt as cached.
           const estimated = outcome === 'cancelled' && !summary.ended
           if (estimated) {
-            tokens.promptTokens ||= estimateTokens(chars)
+            tokens.promptTokens ||= inputTokens
             tokens.cachedTokens = estimateCachedTokens(tokens.promptTokens)
             tokens.completionTokens = Math.max(tokens.completionTokens, estimateTokens(summary.replyChars))
           }

@@ -644,8 +644,9 @@ describe('conversation compaction', () => {
     // 150,000 characters: past the trigger (134,464 tokens) only if each counts as about a token.
     // At 3.5 characters a token, this would go to the model unsummarized.
     const agent = makeAgent({}, [
-      { role: 'user', text: '记住发布代号 OSPREY-73。' },
-      { role: 'assistant', parts: [{ type: 'text', text: '密'.repeat(150_000) }] },
+      { role: 'user', text: 'Keep the launch code OSPREY-73.' },
+      // A CJK ideograph, written as an escape.
+      { role: 'assistant', parts: [{ type: 'text', text: '\u5bc6'.repeat(150_000) }] },
     ])
     ai.script = [{ reply: 'Launch code OSPREY-73.' }, { reply: 'OSPREY-73' }]
     expect((await ask(agent, 'What was the code?')).result.status).toBe('done')

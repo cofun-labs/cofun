@@ -675,6 +675,17 @@ describe('UC-COFUN-CREDITS-001 Spend credits on the hosted model', () => {
     ])
   })
 
+  it('[@no-uc:money] a stopped stream with a long input is charged no more input than the model window holds', async () => {
+    // 3,300,000 characters estimate 1,100,000 tokens at the worker's 3 a token. The model counted
+    // fewer and took it, so the fake's own window is set past it.
+    ai.contextWindow = 2_000_000
+    const res = await chat(token, { messages: [{ role: 'user', content: 'x'.repeat(3_300_000) }], stream: true })
+    const reader = res.body!.getReader()
+    expect(new TextDecoder().decode((await reader.read()).value)).toContain('"Hello "')
+    await reader.cancel()
+    expect(calls()).toEqual([expect.objectContaining({ outcome: 'cancelled', prompt_tokens: 1_048_576 })])
+  })
+
   it('[@no-uc:money] a stream the user stops is charged the prompt it reported, 90% of it as cached, and the reply by its size', async () => {
     // Workers AI gives the prompt in its first chunk; how much of it was cached only comes at the end.
     ai.rawSse =
