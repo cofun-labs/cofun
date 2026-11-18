@@ -202,7 +202,7 @@ async function write(windowId: number, target: ClipTarget, clip: ClipRequest): P
   const made = planNewPage(
     { id: targetId, table: 'block' },
     spaceId,
-    [[chatTitle(clip.title || clip.url)]],
+    [[chatTitle(sourceName(clip))]],
     [{ type: 'text', title: source(clip), children: [] }, ...content],
     tab.client.userId,
   )
@@ -224,13 +224,24 @@ async function pageContent(clip: ClipRequest): Promise<NewBlock[]> {
  */
 function source(clip: ClipRequest): RichText {
   const marks: [string, unknown?][] = [['h', 'gray']]
-  const web = /^https?:\/\//i.test(clip.url)
-  // Without its fragment, which can carry a token, as the tab reads keep links (@cofun/tools/tab).
-  const link = clip.url.replace(/#.*$/, '')
+  const link = webLink(clip)
   return [
     ['From ', marks],
-    [clip.title.trim() || (web ? link : 'a local file'), web ? [...marks, ['a', link]] : marks],
+    [sourceName(clip), link ? [...marks, ['a', link]] : marks],
   ]
+}
+
+/**
+ * The clip's page on the web, without its fragment, which can carry a token, as the tab reads keep
+ * links (@cofun/tools/tab); none for a local file, whose address would show a path on the computer.
+ */
+function webLink(clip: ClipRequest): string | undefined {
+  return /^https?:\/\//i.test(clip.url) ? clip.url.replace(/#.*$/, '') : undefined
+}
+
+/** What the clip's page is called: its title, else its web address, else "a local file". */
+function sourceName(clip: ClipRequest): string {
+  return clip.title.trim() || webLink(clip) || 'a local file'
 }
 
 function gray(text: string): NewBlock {
