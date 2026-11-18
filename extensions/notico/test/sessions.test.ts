@@ -92,6 +92,22 @@ beforeEach(() => {
 })
 
 describe('saved sessions', () => {
+  it('[@no-uc:data] a fork keeps the compaction for its own version of the conversation', async () => {
+    const first = session('chat', 'Summarize this page', 1000)
+    const compaction = { firstKept: 3, summary: 'The user asked about the roadmap.' }
+    await store.save({ ...first, compaction })
+    const stale = await load(store, first.id)
+    if (!stale) throw new Error('Expected a saved chat')
+    expect(stale).toEqual({ ...first, compaction })
+
+    const newer = { ...first, updatedAt: 2000, compaction: { ...compaction, summary: 'A newer summary.' } }
+    await store.save(newer, first.updatedAt)
+    const fork = await store.save({ ...stale, updatedAt: 3000 }, stale.updatedAt)
+    expect(fork.id).not.toBe(first.id)
+    expect((await load(store, fork.id))?.compaction).toEqual(compaction)
+    expect((await load(store, first.id))?.compaction).toEqual(newer.compaction)
+  })
+
   it('[UC-NOTICO-SESSION-001-S13] lists sessions most recently used first, with their titles', async () => {
     await store.save(session('a', 'Summarize this page', 1000, ROADMAP))
     await store.save(session('b', 'What changed last week?', 3000, NOTES))

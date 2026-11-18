@@ -20,12 +20,6 @@ const URL_CHARS = 2000
 const MATCHES = 20
 const LINE_CHARS = 300
 const QUERY_CHARS = 200
-/**
- * How much of a question's tool results read_result adds parts to, at most: well under the 800,000
- * characters the hosted model takes for a whole request, with the system prompt and the tools.
- */
-const QUESTION_PART_CHARS = 120_000
-
 const en = (n: number) => n.toLocaleString('en-US')
 
 /**
@@ -231,15 +225,6 @@ export const readResult = defineTool({
         `Result ${kept.id} has ${count(starts.length, 'part')}: give \`part\` from 1 to ${starts.length}.`,
       )
     const text = partText(kept.text, starts, part)
-    // A question's own tool results are all sent with each step, and the hosted model takes
-    // MAX_CONTENT_CHARS in all (worker/src/routes/chat-request.ts): past this, read no more parts.
-    const used = context.questionChars()
-    if (used + text.length > QUESTION_PART_CHARS)
-      throw new Error(
-        `Not read: this question already holds ${en(used)} characters of results, and another part would leave no ` +
-          'room for the answer. Answer from what you read, find what is missing with search_result, or tell the user ' +
-          'which part to read in a next question.',
-      )
     const from = starts[part - 1]
     const lines = [
       `Result ${kept.id}, of ${kept.tool}: ${pageOf(kept)}`,

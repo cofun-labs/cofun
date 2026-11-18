@@ -11,6 +11,7 @@ import {
   type AgentUpdate,
   type QuestionExtras,
   type ConfirmTool,
+  type Compaction,
   type HistoryMessage,
   type ToolSpec,
 } from '../../packages/agent/src'
@@ -100,6 +101,7 @@ function makeAgent(
     model?: AgentConfig['model']
   } = {},
   conversation?: HistoryMessage[],
+  compaction?: Compaction,
 ) {
   const worker = new WorkerClient({
     apiUrl: 'https://nk.example.dev/v1/',
@@ -122,6 +124,7 @@ function makeAgent(
     },
     undefined,
     conversation,
+    compaction,
   )
 }
 
@@ -132,9 +135,9 @@ function makeAgent(
 async function ask(agent: CopilotAgent, text: string, confirm?: ConfirmTool, extras?: QuestionExtras) {
   const updates: AgentUpdate[] = []
   const asked = await agent.ask(text, (u) => updates.push(u), confirm, extras)
-  const { tokens, model, cost, rounds, conversation, ...result } = asked
+  const { tokens, model, cost, rounds, conversation, compaction, ...result } = asked
   const reply = updates.map((u) => (u.type === 'text' ? u.delta : '')).join('')
-  return { result, used: { tokens, model, cost }, rounds, conversation, updates, reply }
+  return { result, used: { tokens, model, cost }, rounds, conversation, compaction, updates, reply }
 }
 
 const PAGE_JSON = JSON.stringify({ title: 'Q4 Roadmap', url: 'https://www.notion.so/Q4-Roadmap-abc123' })
@@ -331,6 +334,111 @@ describe('extension agent against the worker', () => {
     ai.rawSse = `data: ${JSON.stringify({ error: { message: 'model overloaded' } })}\n\n`
     const { result } = await ask(makeAgent(), 'hi')
     expect(result).toMatchObject({ status: 'error', message: expect.stringContaining('model overloaded') })
+  })
+})
+
+describe('conversation compaction', () => {
+  it('[UC-AGENT-CHAT-001-S01] compacts a tool-heavy question and continues with its original input', async () => {
+    const { tool, runs } = pageTool({ title: 'x'.repeat(3200), url: 'https://www.notion.so/example' })
+    const agent = makeAgent({ tools: [tool], history: { messages: 100, chars: 2000 } })
+    const name = tool.name
+    const chat = crypto.randomUUID()
+    ai.script = [
+      {
+        toolCalls: [
+          { name, arguments: '{}' },
+          { name, arguments: '{}' },
+        ],
+      },
+      { reply: 'The lookup completed twice.' },
+      { reply: 'Finished.' },
+    ]
+
+    const asked = await ask(agent, 'Look up both pages.', undefined, { chat, context: 'Use the project workspace.' })
+    expect(asked.result).toEqual({ status: 'done' })
+    expect(asked.reply).toBe('Finished. ')
+    expect(asked.rounds).toBe(3)
+    expect(runs).toHaveLength(2)
+    expect(asked.used.cost).toEqual({ microCredits: 3 * FAKE_COST })
+    expect(ai.calls[1].inputs.tools).toBeUndefined()
+    expect(sentMessages(1).at(-1)?.content).toContain('Tool result (lookup_page)')
+    expect(sentMessages(2).map((m) => m.role)).toEqual(['system', 'user', 'user'])
+    expect(sentMessages(2)[1].content).toContain('The lookup completed twice.')
+    expect(sentMessages(2)[2].content).toContain('Use the project workspace.\n\nLook up both pages.')
+    expect(agent.history().filter((message) => message.role === 'tool')).toHaveLength(2)
+    expect(asked.compaction?.firstKept).toBe(4)
+
+    const spends = (env.DB as FakeD1Database).rows('spends')
+    expect(spends).toHaveLength(3)
+    expect(spends.map(({ chat_id, turn_id }) => ({ chat_id, turn_id }))).toEqual(
+      Array(3).fill({ chat_id: chat, turn_id: expect.any(String) }),
+    )
+    expect(new Set(spends.map((row) => row.turn_id)).size).toBe(1)
+  })
+
+  it('[UC-AGENT-CHAT-001-S02] reuses a summary after reopening and keeps the original history', async () => {
+    const history: HistoryMessage[] = Array.from({ length: 5 }, (_, n): HistoryMessage[] => [
+      { role: 'user', text: `Question ${n + 1}` },
+      { role: 'assistant', parts: [{ type: 'text', text: `Answer ${n + 1}` }] },
+    ]).flat()
+    const options = { history: { messages: 9, chars: 10_000 } }
+    ai.script = [{ reply: 'Earlier decisions concern the launch.' }, { reply: 'Yes.' }]
+    const first = await ask(makeAgent(options, history), 'What did we decide?')
+    expect(first.result.status).toBe('done')
+    expect(first.compaction).toBeDefined()
+    expect(first.conversation?.slice(0, history.length)).toEqual(history)
+
+    const reopened = makeAgent(options, structuredClone(first.conversation), structuredClone(first.compaction))
+    expect((await ask(reopened, 'And the launch date?')).result.status).toBe('done')
+    expect(ai.calls).toHaveLength(3)
+    expect(sentMessages(2)[1].content).toBe(sentMessages(1)[1].content)
+    expect(sentMessages(2).at(-1)?.content).toBe('And the launch date?')
+    expect(reopened.history().slice(0, history.length)).toEqual(history)
+  })
+
+  it('[@no-uc:money] a summary refused for lack of credits stops before another model request', async () => {
+    ai.usage = usageCosting(200)
+    const { tool, runs } = pageTool({ title: 'x'.repeat(3200), url: 'https://www.notion.so/example' })
+    const agent = makeAgent({ tools: [tool], history: { messages: 100, chars: 2000 } })
+    ai.script = [{ toolCalls: [{ name: tool.name, arguments: '{}' }] }]
+    const result = await ask(agent, 'Find the page.')
+    expect(result.result).toMatchObject({ status: 'error', code: 'out_of_credits' })
+    expect(ai.calls).toHaveLength(1)
+    expect(runs).toHaveLength(1)
+    expect(result.conversation?.filter((message) => message.role === 'tool')).toHaveLength(1)
+    expect(result.compaction).toBeUndefined()
+  })
+
+  it('[@no-uc:data] stopping while the summary is requested keeps the original history', async () => {
+    const history: HistoryMessage[] = [
+      { role: 'user', text: 'Keep the launch date.' },
+      { role: 'assistant', parts: [{ type: 'text', text: 'x'.repeat(3200) }] },
+    ]
+    const agent = makeAgent({ history: { messages: 100, chars: 2000 } }, history)
+    const controller = new AbortController()
+    const routed = globalThis.fetch
+    let summarySignal: AbortSignal | undefined
+    let requests = 0
+    globalThis.fetch = (input, init) => {
+      const request = new Request(input, init)
+      if (!new URL(request.url).pathname.endsWith('/chat/completions')) return routed(input, init)
+      requests++
+      summarySignal = request.signal
+      return new Promise((_resolve, reject) => {
+        request.signal.addEventListener('abort', () => reject(request.signal.reason), { once: true })
+        controller.abort()
+      })
+    }
+    try {
+      const answer = await agent.ask('What was the date?', () => {}, undefined, {}, { signal: controller.signal })
+      expect(summarySignal?.aborted).toBe(true)
+      expect(answer.status).toBe('stopped')
+      expect(answer.compaction).toBeUndefined()
+      expect(agent.history()).toEqual(history)
+      expect(requests).toBe(1)
+    } finally {
+      globalThis.fetch = routed
+    }
   })
 })
 

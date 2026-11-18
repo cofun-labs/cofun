@@ -659,34 +659,27 @@ describe('extension agent against the worker', () => {
     ])
   })
 
-  it('[@no-uc:money] a long conversation is cut in large steps, starting at a question, and keeps its start between cuts', async () => {
-    // A cut changes everything after the tools, which the provider's prompt cache can't reuse: cut to
-    // 60% of the limits, and send from the same question until the conversation is over them again.
+  it('[@no-uc:money] a long conversation keeps the same summarized prefix between cuts', async () => {
     const agent = makeAgent({ history: { messages: 10, chars: 100_000 } })
-    for (let n = 1; n <= 9; n++) await ask(agent, `q${n}`)
-    const firstSent = ai.calls.map((_, n) => sentMessages(n).find((m) => m.role === 'user')?.content)
-    expect(firstSent).toEqual(['q1', 'q1', 'q1', 'q1', 'q1', 'q4', 'q4', 'q4', 'q7'])
-    expect(sentMessages(5).map((m) => [m.role, m.content])).toEqual([
-      ['system', 'You are Notico.'],
-      ['user', 'q4'],
-      ['assistant', '你好 来自 worker '],
-      ['user', 'q5'],
-      ['assistant', '你好 来自 worker '],
-      ['user', 'q6'],
-    ])
+    for (let n = 1; n <= 5; n++) await ask(agent, `q${n}`)
+    ai.script = [{ reply: 'Summary of the early questions.' }, { reply: 'Six.' }, { reply: 'Seven.' }]
+    await ask(agent, 'q6')
+    await ask(agent, 'q7')
+    expect(ai.calls).toHaveLength(8)
+    expect(ai.calls[5].inputs.tools).toBeUndefined()
+    expect(sentMessages(6)[1].content).toContain('Summary of the early questions.')
+    expect(sentMessages(7).slice(0, sentMessages(6).length)).toEqual(sentMessages(6))
   })
 
-  it('[@no-uc:data] a question dropped after a cut that kept only it leaves the conversation before it to the next one', async () => {
+  it('[@no-uc:data] an oversized question leaves the earlier conversation intact', async () => {
     const agent = makeAgent({ history: { messages: 100, chars: 1_000 } })
     await ask(agent, 'q1')
     await ask(agent, 'q2')
-    // Alone over the budget: the cut keeps only it, and it fails with nothing to keep.
-    ai.failWith = new Error('down')
-    expect((await ask(agent, `q3 ${'x'.repeat(900)}`)).result.status).toBe('error')
-    ai.failWith = undefined
+    expect((await ask(agent, `q3 ${'x'.repeat(1100)}`)).result.status).toBe('error')
+    expect(ai.calls).toHaveLength(2)
     await ask(agent, 'q4')
     expect(
-      sentMessages(3)
+      sentMessages(2)
         .filter((m) => m.role === 'user')
         .map((m) => m.content),
     ).toEqual(['q1', 'q2', 'q4'])
@@ -717,15 +710,6 @@ describe('extension agent against the worker', () => {
       role: 'tool',
       content: expect.stringMatching(/^Not run: .*Read only/),
     })
-  })
-
-  it('[@no-uc:contract] trimming never separates tool results from their call', async () => {
-    const agent = makeAgent({ history: { messages: 3, chars: 100_000 } })
-    ai.script = [{ toolCalls: [{ name: 'lookup_page', arguments: '{}' }] }, { reply: 'Q4 Roadmap' }]
-    await ask(agent, 'Which page am I on?')
-    // Last 3 would be [assistant tool call, tool result, assistant]; the cut moves to the next question.
-    await ask(agent, 'thanks')
-    expect(sentMessages(2).map((m) => m.role)).toEqual(['system', 'user'])
   })
 
   it('[@no-uc:notion-safety] a signal stops the question it went with, and only that one', async () => {

@@ -215,8 +215,6 @@ export interface ToolContext<M = unknown> {
    * more (site data cleared).
    */
   kept: (id: string) => Promise<KeptResult | 'unknown' | 'gone'>
-  /** How many characters the question being answered holds in tool results so far. */
-  questionChars: () => number
   /**
    * What the tools remember of the conversation (the extension's own): the agent's, the same for
    * every call it runs, so the pages one chat read never count as read in another.
@@ -436,6 +434,13 @@ export const HistoryMessage = z.discriminatedUnion('role', [
 ])
 export type HistoryMessage = z.infer<typeof HistoryMessage>
 
+/** The summary of messages before firstKept in the saved HistoryMessage array. */
+export const Compaction = z.object({
+  firstKept: z.int().positive(),
+  summary: z.string().trim().min(1).max(4000),
+})
+export type Compaction = z.infer<typeof Compaction>
+
 export type AskResult = (
   | { status: 'done' }
   | { status: 'stopped'; warning?: string }
@@ -452,4 +457,5 @@ export type AskResult = (
      * question left the conversation as it was (it failed or was stopped before it used a tool).
      */
     conversation?: HistoryMessage[]
+    compaction?: Compaction
   }

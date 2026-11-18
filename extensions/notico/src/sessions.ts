@@ -4,7 +4,7 @@
 // What is read back is parsed, never taken on trust: an earlier version may have saved a session in
 // another form. One that doesn't parse is unreadable. It is listed as such, so it can be deleted,
 // and it is never opened: nothing of it reaches the chat or the model.
-import { HistoryMessage, KeptResult, type ResultToKeep } from '@cofun/agent'
+import { Compaction, HistoryMessage, KeptResult, type ResultToKeep } from '@cofun/agent'
 import { z } from './zod'
 
 /** What the session list shows; the conversation itself is loaded only when a session opens. */
@@ -25,10 +25,14 @@ export type SessionInfo = z.infer<typeof SessionInfo>
 const StoredId = z.object({ id: z.string() })
 
 /** A session's conversation, as the second store keeps it. */
-const StoredMessages = z.object({ messages: z.array(HistoryMessage) })
+const StoredMessages = z.object({
+  messages: z.array(HistoryMessage),
+  compaction: Compaction.optional().catch(undefined),
+})
 
 export interface Session extends SessionInfo {
   messages: HistoryMessage[]
+  compaction?: Compaction
 }
 
 /** A saved session whose details don't parse: all the list can do with it is delete it. */
@@ -75,7 +79,7 @@ export class SessionStore {
    *
    * A title the model wrote (see `retitle`) is kept, whatever title the caller gives.
    */
-  async save({ messages, ...info }: Session, loaded?: number): Promise<SessionInfo> {
+  async save({ messages, compaction, ...info }: Session, loaded?: number): Promise<SessionInfo> {
     let saved = info
     let failure: unknown
     try {
@@ -90,7 +94,7 @@ export class SessionStore {
               saved = { ...info, id: crypto.randomUUID() }
             if (prior?.titledByModel) saved = { ...saved, title: prior.title, titledByModel: true }
             infos.put(saved)
-            all.put({ id: saved.id, messages })
+            all.put({ id: saved.id, messages, ...(compaction && { compaction }) })
           } catch (err) {
             // A write that throws (e.g. data that can't be cloned) must not leave the other one committed.
             failure = err
@@ -118,7 +122,7 @@ export class SessionStore {
     const conversation =
       stored === undefined ? { success: true, data: { messages: [] } } : StoredMessages.safeParse(stored)
     if (!details.success || !conversation.success) return 'unreadable'
-    return { ...details.data, messages: conversation.data.messages }
+    return { ...details.data, ...conversation.data }
   }
 
   /**
