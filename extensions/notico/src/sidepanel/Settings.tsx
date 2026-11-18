@@ -150,7 +150,7 @@ function ContextMenu() {
           />
         )}
       </div>
-      {clip?.shown && <ClipInto target={clip.target} onNote={setNote} />}
+      {clip?.shown && <ClipInto target={clip.target} making={making} onNote={setNote} />}
       {note && (
         <p className="account-detail" role={note.failed ? 'alert' : 'status'}>
           {note.text}

@@ -31,7 +31,16 @@ type Option =
  * of the Notion page in the current tab (Notion's quick find), which with nothing typed suggests
  * that page and the private page "Notico Clips" (made if the user has none).
  */
-export function ClipInto({ target, onNote }: { target?: ClipTarget; onNote: (note: ClipNote | undefined) => void }) {
+export function ClipInto({
+  target,
+  making,
+  onNote,
+}: {
+  target?: ClipTarget
+  /** "Notico Clips" is being found or made for the switch (see defaultTarget). */
+  making: boolean
+  onNote: (note: ClipNote | undefined) => void
+}) {
   const id = useId()
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
@@ -73,7 +82,11 @@ export function ClipInto({ target, onNote }: { target?: ClipTarget; onNote: (not
   const targetId = target && pageIdFromUrl(target.url)
   const options: Option[] = []
   let state: { text: string; loading?: boolean } | undefined
-  if (typeof place === 'string') state = { text: place }
+  // While "Notico Clips" is being found or made, nothing is offered: a page picked meanwhile would be
+  // saved, then replaced by it once it is done.
+  if (making || makingDefault())
+    state = { text: `Looking for “${DEFAULT_TARGET}” in your Private section…`, loading: true }
+  else if (typeof place === 'string') state = { text: place }
   else if (!place) state = { text: 'Looking for your Notion page…', loading: true }
   else if (words) {
     const result = found?.query === words ? found.pages : undefined
@@ -85,9 +98,7 @@ export function ClipInto({ target, onNote }: { target?: ClipTarget; onNote: (not
     const current = place.current
     if (current && current.id !== targetId)
       options.push({ kind: 'page', page: current, group: 'Suggested', detail: 'Current page' })
-    // Not while it is being found or made already (see defaultTarget).
-    if (target?.title !== DEFAULT_TARGET && !makingDefault())
-      options.push({ kind: 'default', group: 'Suggested', detail: 'In Private' })
+    if (target?.title !== DEFAULT_TARGET) options.push({ kind: 'default', group: 'Suggested', detail: 'In Private' })
     if (!options.length) state = { text: 'Type to search your workspace.' }
   }
 

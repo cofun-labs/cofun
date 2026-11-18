@@ -230,11 +230,12 @@ describe('UC-NOTICO-SESSION-003 clip a page or a selection to Notion', () => {
 
     await user.click(menu.getByRole('switch', { name: 'Clip to Notion' }))
     await waitFor(() => expect(tab.sent.some((r) => r.url.endsWith('/saveTransactionsFanout'))).toBe(true))
-    // While it is being made, the switch waits, and the picker doesn't offer to make it again.
+    // While it is being made, the switch waits, and the picker offers nothing: neither to make it
+    // again, nor a page that it would replace once made.
     expect(menu.getByRole('switch', { name: 'Clip to Notion' })).toBeDisabled()
     await user.click(menu.getByRole('button', { name: 'Clip into' }))
-    expect(await menu.findByRole('option', { name: /^Inbox\s*Current page/ })).toBeVisible()
-    expect(menu.queryByRole('option', { name: /^Notico Clips/ })).toBeNull()
+    expect(await menu.findAllByText('Looking for “Notico Clips” in your Private section…')).not.toHaveLength(0)
+    expect(menu.queryAllByRole('option')).toEqual([])
 
     release()
     expect(await menu.findByRole('status')).toHaveTextContent('made in your Private section')
