@@ -37,7 +37,7 @@ export async function openWorkspace(page: FixturePage, site = base) {
     tab.switchTab(next.url, next.title)
     tab.documentId = next.documentId ?? 'fixture-document'
     const meta = contextPath === undefined ? '' : `<meta name="confluence-context-path" content="${contextPath}">`
-    const dom = webPage({ title: next.title, url: next.url, html: `${meta}<main>${next.title}</main>` })
+    const dom = webPage({ title: next.title, url: next.url, head: meta, main: next.title })
     if (next.editorSelection === undefined) tab.dom = dom
     else {
       const anchor = {}

@@ -1,3 +1,6 @@
+/** Whether the host is an Atlassian Cloud tenant, where only the wiki is Confluence. */
+export const isAtlassianHost = (hostname: string) => /(?:^|\.)atlassian\.net$/.test(hostname)
+
 export function parseInstance(value: string) {
   try {
     const url = new URL(value.trim())
@@ -11,7 +14,7 @@ export function parseInstance(value: string) {
       /[;]|%2f|%5c|%00/i.test(url.pathname)
     )
       return
-    const cloud = /(?:^|\.)atlassian\.net$/.test(url.hostname)
+    const cloud = isAtlassianHost(url.hostname)
     const path = url.pathname.replace(/\/+$/, '')
     if (
       cloud &&
@@ -37,7 +40,7 @@ export type Instance = NonNullable<ReturnType<typeof parseInstance>>
 
 /** Whether the URL is on an Atlassian Cloud tenant's wiki, the only part of a tenant that is Confluence. */
 export function cloudWikiInstance(url: URL): Instance | undefined {
-  if (!/(?:^|\.)atlassian\.net$/.test(url.hostname)) return
+  if (!isAtlassianHost(url.hostname)) return
   if (url.pathname !== '/wiki' && !url.pathname.startsWith('/wiki/')) return
   return parseInstance(url.origin + '/wiki')
 }

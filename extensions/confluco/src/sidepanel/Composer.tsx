@@ -311,7 +311,7 @@ export function useComposer({
     pickerFrom: picker?.from,
     chips,
     selections,
-    connected: site !== undefined,
+    onConfluence: site !== undefined,
     editorSelectionAvailable: site !== undefined && !site.cloud,
     editor,
     file,
@@ -410,7 +410,7 @@ export function Composer({
       />
       <div className="composer-tools">
         <AddMenu onAddPage={composer.openPicker} />
-        {composer.connected && (composer.editorSelectionAvailable || mode !== 'read_only') && (
+        {composer.onConfluence && (composer.editorSelectionAvailable || mode !== 'read_only') && (
           <details className="confluence-actions">
             <summary>Confluence</summary>
             <div className="confluence-actions-list">

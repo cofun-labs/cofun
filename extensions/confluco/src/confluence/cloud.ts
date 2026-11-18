@@ -1,5 +1,5 @@
 // Confluence Cloud's responses differ from self-managed Confluence. Both are read in the
-// connected tab through tab.ts, using the tab's own site session.
+// captured Confluence tab through tab.ts, using the tab's own site session.
 import { z } from '../zod'
 import { readableText } from './readable-text'
 import { pageReference, type PageReference } from './references'

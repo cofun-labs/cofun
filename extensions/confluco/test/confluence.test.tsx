@@ -39,7 +39,7 @@ async function openOn({
   const tab = new FakeTab(url)
   tab.title = 'Workshop plan'
   const meta = contextPath === null ? '' : `<meta name="confluence-context-path" content="${contextPath}">`
-  tab.dom = webPage({ title: tab.title, url, html: `${meta}<main>Workshop plan</main>` })
+  tab.dom = webPage({ title: tab.title, url, head: meta, main: 'Workshop plan' })
   tab.promptAnswer = grant
   if (allowed) tab.allowed.add(new URL(url).origin + '/*')
   const browser = await FakeBrowser.start(tab, { signedInAs: 'user_alice' })
@@ -254,7 +254,7 @@ describe('reading a published Confluence page', () => {
     await ask(user)
     expect(
       await screen.findByText(
-        'Confluence returned a redirect or a web page. Check the configured URL and your session, then ask again.',
+        'Confluence returned a redirect or a web page. Check that the tab shows Confluence and that you are signed in, then ask again.',
         { selector: 'div' },
       ),
     ).toBeVisible()

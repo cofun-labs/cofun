@@ -1,6 +1,13 @@
-// Runs Confluence REST requests and editor reads in the connected document with its site session.
+// Runs Confluence REST requests and editor reads in the captured Confluence tab with its site session.
 import { z } from '../zod'
-import { cloudWikiInstance, looksLikeConfluence, matchesInstance, parseInstance, type Instance } from './instance'
+import {
+  cloudWikiInstance,
+  isAtlassianHost,
+  looksLikeConfluence,
+  matchesInstance,
+  parseInstance,
+  type Instance,
+} from './instance'
 
 export interface ConfluenceTab {
   tabId: number
@@ -26,11 +33,14 @@ export async function activeTab(): Promise<CapturedTab | undefined> {
   }
 }
 
-/** The site whose access Confluence tools on this tab need, when the tab could be a Confluence page. */
+/**
+ * The site whose access Confluence tools on this tab need, when the tab could be a Confluence page:
+ * a Cloud wiki, or a self-managed URL shaped like a Confluence page. Only such a tab is asked about
+ * or read.
+ */
 export function confluenceOrigin(captured: CapturedTab): string | undefined {
   const url = new URL(captured.url)
-  if (cloudWikiInstance(url) || (!/(?:^|\.)atlassian\.net$/.test(url.hostname) && looksLikeConfluence(url)))
-    return url.origin
+  if (cloudWikiInstance(url) || (!isAtlassianHost(url.hostname) && looksLikeConfluence(url))) return url.origin
 }
 
 export function mayUseSite(origin: string): Promise<boolean> {
@@ -49,10 +59,11 @@ const contextPath = z
  */
 export async function confluenceTabAt(captured: CapturedTab): Promise<ConfluenceTab | undefined> {
   const url = new URL(captured.url)
-  if (!/^https?:$/.test(url.protocol) || !(await mayUseSite(url.origin))) return
+  // Only a tab that could be Confluence is read, so no script runs on other sites the user allowed.
+  const origin = confluenceOrigin(captured)
+  if (!origin || !(await mayUseSite(origin))) return
   let instance = cloudWikiInstance(url)
-  // Only a page shaped like Confluence's is read, so no script runs on other sites the user allowed.
-  if (!instance && !/(?:^|\.)atlassian\.net$/.test(url.hostname) && looksLikeConfluence(url)) {
+  if (!instance) {
     const [frame] = await chrome.scripting
       .executeScript({
         target: { tabId: captured.tabId },
@@ -61,7 +72,10 @@ export async function confluenceTabAt(captured: CapturedTab): Promise<Confluence
           const current = new URL(location.href)
           current.hash = ''
           if (current.href !== expectedUrl) return { changed: true }
-          return { path: document.querySelector<HTMLMetaElement>('meta[name="confluence-context-path"]')?.content }
+          // Only the head's: a page's body can hold markup its editors wrote.
+          return {
+            path: document.head?.querySelector<HTMLMetaElement>('meta[name="confluence-context-path"]')?.content,
+          }
         },
         args: [captured.url],
       })
@@ -114,7 +128,7 @@ const errors = {
   'not-page': 'Open a published Confluence page before asking Confluco to read it.',
   auth: 'Sign in to Confluence in the page tab, then ask again.',
   'unexpected-web-response':
-    'Confluence returned a redirect or a web page. Check the configured URL and your session, then ask again.',
+    'Confluence returned a redirect or a web page. Check that the tab shows Confluence and that you are signed in, then ask again.',
   rejected: 'Confluence rejected the request. Check the search text, space key or page reference.',
   forbidden: 'Your Confluence account does not have permission for this request.',
   missing: 'The requested Confluence item is missing or is not visible to your account.',

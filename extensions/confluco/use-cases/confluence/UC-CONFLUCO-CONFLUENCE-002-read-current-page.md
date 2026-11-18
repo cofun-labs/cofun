@@ -11,7 +11,7 @@ A user asks about a published page in their current tab on the Confluence site i
 | UC-CONFLUCO-CONFLUENCE-002-S01 | P0 | ✅ | Given a published page on an allowed site; when the model asks to read it; then the request runs in that tab and the model receives plain text marked as page data with the page title and source link. |
 | UC-CONFLUCO-CONFLUENCE-002-S02 | P0 | ✅ | Given a tab that is not on an allowed Confluence site or a page that changes before the read starts; when the model asks to read it; then no Confluence request is sent. |
 | UC-CONFLUCO-CONFLUENCE-002-S03 | P0 | ✅ | Given a site that refuses because the session is absent, access is denied, or the user is rate-limited; when the model asks to read a page; then the question stops and the user sees the appropriate reason. |
-| UC-CONFLUCO-CONFLUENCE-002-S05 | P1 | ✅ | Given Confluence answers with a redirect or HTML; when the model asks to read a page; then the question stops and the user is asked to check the configured URL and session. |
+| UC-CONFLUCO-CONFLUENCE-002-S05 | P1 | ✅ | Given Confluence answers with a redirect or HTML; when the model asks to read a page; then the question stops and the user is asked to check that the tab shows Confluence and that they are signed in. |
 | UC-CONFLUCO-CONFLUENCE-002-S06 | P0 | ✅ | Given a Cloud published page on an allowed tab; when the model calls the same read tool; then it receives the page text and source link, and its Confluence tools are limited to the Cloud capabilities. |
 
 ### ai-e2e
