@@ -14,12 +14,11 @@ import {
 } from '@cofun/agent'
 import { track } from '../analytics'
 import type { AttachmentUpload } from '../confluence/attachments'
-import { captureConfluenceConnection } from '../confluence/tab'
+import { captureConfluenceTab } from '../confluence/tab'
 import type { ConfluenceUndo } from '../confluence/undo'
 import type { Mode } from '../mode'
 import { answering, type ModelSettings, type OwnSetup } from '../models'
 import { titleFor, type Session, type SessionStore } from '../sessions'
-import { CLOUD_TOOL_NAMES } from '../tools'
 import { ToolMemory } from '../tools/memory'
 
 /** A tool call as the panel shows it. */
@@ -223,9 +222,8 @@ export class ChatSession {
     if (this.snapshot.id !== session.id) this.update({ id: session.id })
     const originalUndo = this.memory.confluenceUndo
     let undoCleared = false
-    const connection = captureConfluenceConnection(this.panel.accountId).catch(() => undefined)
     this.memory.confluenceQuestion = {
-      tab: connection.then((captured) => captured?.tab),
+      tab: captureConfluenceTab(this.panel.accountId).catch(() => undefined),
       attachment: q.attachment,
       nextLabel: 0,
       beforeWrite: async () => {
@@ -354,7 +352,6 @@ export class ChatSession {
       const askedWith = answering(await this.panel.model())
       // The service the question is asked of, as the agent reads it when the question starts.
       const provider = askedWith?.service ?? 'hosted'
-      const toolNames = (await connection)?.cloud ? CLOUD_TOOL_NAMES : undefined
       // The mode and the model may have been loading: a Stop, leaving the chat, or the panel closing
       // meanwhile stops the question too, before it counts as asked.
       if (signal.aborted) {
@@ -368,7 +365,7 @@ export class ChatSession {
         q.text,
         onUpdate,
         confirm,
-        { context: q.context, pages: q.pages, selections: q.selections, readOnly, chat: session.id, toolNames },
+        { context: q.context, pages: q.pages, selections: q.selections, readOnly, chat: session.id },
         { signal },
       )
       track({

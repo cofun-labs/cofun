@@ -30,16 +30,12 @@ function confluenceTab(tab: chrome.tabs.Tab | undefined, instance: Instance | un
   }
 }
 
-export async function captureConfluenceConnection(accountId: string) {
+export async function captureConfluenceTab(accountId: string) {
   const [[tab], instance] = await Promise.all([
     chrome.tabs.query({ active: true, currentWindow: true }),
     getInstance(accountId),
   ])
-  return { tab: confluenceTab(tab, instance), cloud: instance?.cloud ?? false }
-}
-
-export async function captureConfluenceTab(accountId: string): Promise<ConfluenceTab | undefined> {
-  return (await captureConfluenceConnection(accountId)).tab
+  return confluenceTab(tab, instance)
 }
 
 const result = z.discriminatedUnion('kind', [
@@ -93,7 +89,7 @@ export function refuse(message: string, mayHaveChanged = false): never {
 }
 
 type Query = Record<string, string | string[]>
-export type RestArea = 'api' | 'experimental' | 'cloud-v2' | 'cloud-restore'
+export type RestArea = 'api' | 'experimental' | 'cloud-v2' | 'cloud-restore' | 'cloud-attachment'
 type RestRequest = {
   area: RestArea
   resource: string
@@ -414,15 +410,18 @@ export async function uploadConfluenceAttachment(
     reader.readAsDataURL(file)
   })
   const collection = `content/${pageId}/child/attachment`
+  const upload = { name: file.name, mediaType: file.type, base64 }
   return sendConfluence(
     target,
-    {
-      area: 'api',
-      resource: attachmentId ? `${collection}/${attachmentId.replace(/^att/, '')}/data` : collection,
-      method: 'POST',
-      query: attachmentId ? {} : { status: 'current' },
-      file: { name: file.name, mediaType: file.type, base64 },
-    },
+    target.instance.cloud
+      ? { area: 'cloud-attachment', resource: 'doattachfile.action', method: 'POST', query: { pageId }, file: upload }
+      : {
+          area: 'api',
+          resource: attachmentId ? `${collection}/${attachmentId.replace(/^att/, '')}/data` : collection,
+          method: 'POST',
+          query: attachmentId ? {} : { status: 'current' },
+          file: upload,
+        },
     signal,
     'Confluence rejected the upload. Check the file and attachment rules on the destination page.',
   )
@@ -514,6 +513,19 @@ async function requestConfluence(expectedUrl: string, contextPath: string, reque
   let { resource } = request
   let pageId: string | undefined
   const cloud = /(?:^|\.)atlassian\.net$/.test(actual.hostname)
+  const nativeUpload = area === 'cloud-attachment'
+  const nativeRestore = area === 'cloud-restore'
+  if (
+    nativeUpload &&
+    (!file ||
+      method !== 'POST' ||
+      resource !== 'doattachfile.action' ||
+      body !== undefined ||
+      Object.keys(query).length !== 1 ||
+      typeof query.pageId !== 'string' ||
+      !/^\d{1,20}$/.test(query.pageId))
+  )
+    return { kind: 'invalid' }
   if (cloud) {
     const jsonWrite = body !== undefined && Object.keys(query).length === 0
     const isLabel = /^content\/\d{1,20}\/label$/.test(resource)
@@ -547,11 +559,12 @@ async function requestConfluence(expectedUrl: string, contextPath: string, reque
       actual.port ||
       contextPath !== '/wiki' ||
       !/^\/wiki(?:\/|$)/.test(actual.pathname) ||
-      file ||
-      (!cloudRead &&
+      (file !== undefined && !nativeUpload) ||
+      (!nativeUpload &&
+        !cloudRead &&
         !cloudWrite &&
         !(
-          area === 'cloud-restore' &&
+          nativeRestore &&
           resource === 'trash' &&
           method === 'POST' &&
           body === undefined &&
@@ -564,9 +577,9 @@ async function requestConfluence(expectedUrl: string, contextPath: string, reque
         ))
     )
       return { kind: 'invalid' }
-  } else if (area === 'cloud-v2' || area === 'cloud-restore') return { kind: 'invalid' }
-  if (resource === 'current-page') {
-    if ((area !== 'api' && area !== 'cloud-v2') || method !== 'GET') return { kind: 'invalid' }
+  } else if (area === 'cloud-v2' || nativeRestore || nativeUpload) return { kind: 'invalid' }
+  if (resource === 'current-page' || nativeUpload) {
+    if (!nativeUpload && ((area !== 'api' && area !== 'cloud-v2') || method !== 'GET')) return { kind: 'invalid' }
     const path = actual.pathname.slice(contextPath.length).replace(/;[^/]*|%3bjsessionid(?:=|%3d)[^/]*/gi, '')
     const type = document.querySelector<HTMLMetaElement>('meta[name="ajs-content-type"]')?.content
     const metaId = document.querySelector<HTMLMetaElement>('meta[name="ajs-page-id"]')?.content
@@ -582,7 +595,9 @@ async function requestConfluence(expectedUrl: string, contextPath: string, reque
       if (id && (!metaId || metaId === id)) pageId = id
     }
     if (!pageId || !/^\d{1,20}$/.test(pageId)) return { kind: 'not-page' }
-    resource = (cloud ? 'pages/' : 'content/') + pageId
+    if (nativeUpload) {
+      if (pageId !== query.pageId) return { kind: 'changed' }
+    } else resource = (cloud ? 'pages/' : 'content/') + pageId
   }
 
   if (!cloud) {
@@ -610,12 +625,12 @@ async function requestConfluence(expectedUrl: string, contextPath: string, reque
       if (!pageResource || query.status !== 'current' || Object.keys(query).length !== 1) return { kind: 'invalid' }
     }
   }
-  const nativeRestore = area === 'cloud-restore'
-  const apiPath = nativeRestore
-    ? `${contextPath}/pages/`
-    : area === 'cloud-v2'
-      ? `${contextPath}/api/v2/`
-      : `${contextPath}/rest/${area}/`
+  const apiPath =
+    nativeRestore || nativeUpload
+      ? `${contextPath}/pages/`
+      : area === 'cloud-v2'
+        ? `${contextPath}/api/v2/`
+        : `${contextPath}/rest/${area}/`
   const endpoint = new URL(actual.origin + apiPath + (nativeRestore ? 'restoretrashitem.action' : resource))
   if (endpoint.origin !== actual.origin || !endpoint.pathname.startsWith(apiPath) || endpoint.hash || endpoint.search)
     return { kind: 'invalid' }
@@ -632,14 +647,19 @@ async function requestConfluence(expectedUrl: string, contextPath: string, reque
   let restoreSubmitted = false
   try {
     let payload: BodyInit | undefined = body
-    const headers: Record<string, string> = { Accept: nativeRestore ? 'text/html' : 'application/json' }
+    const headers: Record<string, string> = { Accept: nativeRestore || nativeUpload ? 'text/html' : 'application/json' }
     if (file) {
       const decoded = atob(file.base64)
       const bytes = Uint8Array.from(decoded, (character) => character.charCodeAt(0))
       const form = new FormData()
-      form.append('file', new Blob([bytes], { type: file.mediaType || 'application/octet-stream' }), file.name)
+      form.append(
+        nativeUpload ? 'file_0' : 'file',
+        new Blob([bytes], { type: file.mediaType || 'application/octet-stream' }),
+        file.name,
+      )
       payload = form
-      headers['X-Atlassian-Token'] = 'nocheck'
+      headers['X-Atlassian-Token'] = nativeUpload ? 'no-check' : 'nocheck'
+      if (nativeUpload) headers['X-Requested-With'] = 'XMLHttpRequest'
     } else if (body !== undefined) headers['Content-Type'] = 'application/json'
     const response = await fetch(endpoint.href, {
       method: nativeRestore ? 'GET' : method,
@@ -669,6 +689,12 @@ async function requestConfluence(expectedUrl: string, contextPath: string, reque
         : failed
     if (response.status === 204 && method === 'DELETE') return { kind: 'ok', status: response.status, data: null }
     const contentType = response.headers.get('content-type') ?? ''
+    if (nativeUpload) {
+      // The native action returns an HTML page. The caller verifies the exact attachment with REST.
+      void response.body?.cancel()
+      if (response.status !== 200 || !/^text\/html(?:;|$)/i.test(contentType)) return { kind: 'invalid' }
+      return { kind: 'ok', status: response.status, data: null }
+    }
     if (nativeRestore ? !/^text\/html(?:;|$)/i.test(contentType) : !/^application\/json(?:;|$)/i.test(contentType))
       return {
         kind: nativeRestore

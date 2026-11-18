@@ -60,16 +60,14 @@ interface QuestionMeter {
 }
 
 /**
- * What goes with a question besides what the user typed, all saved with it but `toolNames` and
- * `chat`. `context` is sent to the model ahead of the question (say, which page is open); `pages`
- * are the pages the user sent it with, shown with the question; `selections`, text the user selected
- * on pages and sent it with, shown with it too (what the model gets of it is in `context`);
- * `readOnly`: the question is asked in Read only, so tools marked `changesData` are refused before
- * they run. `toolNames`: the tools the question is offered, by name, when not all of them. `chat`,
- * the id of the session it is asked in, goes to the worker with the question's requests (see Turn).
+ * What goes with a question besides what the user typed, all saved with it but `chat`. `context` is
+ * sent to the model ahead of the question (say, which page is open); `pages` are the pages the user
+ * sent it with, shown with the question; `selections`, text the user selected on pages and sent it
+ * with, shown with it too (what the model gets of it is in `context`); `readOnly`: the question is
+ * asked in Read only, so tools marked `changesData` are refused before they run. `chat`, the id of
+ * the session it is asked in, goes to the worker with the question's requests (see Turn).
  */
 export interface QuestionExtras {
-  toolNames?: ReadonlySet<string>
   context?: string
   pages?: QuestionPage[]
   selections?: QuestionSelection[]
