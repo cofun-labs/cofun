@@ -523,7 +523,8 @@ function useConfluenceSite(busy: boolean): Instance | undefined {
         })
     }
     const onUpdated = (_id: number, change: chrome.tabs.OnUpdatedInfo, tab: chrome.tabs.Tab) => {
-      if (tab.active && change.url !== undefined) read()
+      // Again once the page has loaded: a self-managed page names its site in markup.
+      if (tab.active && (change.url !== undefined || change.status === 'complete')) read()
     }
     read()
     chrome.tabs.onActivated.addListener(read)
