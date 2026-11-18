@@ -1,6 +1,6 @@
 // How the side panel words the signed-in user's credits, which the worker reports (their shapes are
-// @cofun/worker-client's, which reads them).
-import type { Credits, PastGrant } from '@cofun/worker-client'
+// credits.ts's, which reads them). Imported as @cofun/worker-client/credits, which loads no client.
+import type { Credits, PastGrant } from './credits'
 
 /** The worker's amounts are micro-credits; the panel shows whole credits. */
 const MICRO_CREDITS = 1_000_000

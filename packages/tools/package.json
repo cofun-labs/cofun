@@ -6,6 +6,7 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
+    "./selection": "./src/selection.ts",
     "./tab": "./src/tab.ts"
   },
   "scripts": {

@@ -1,15 +1,12 @@
-// Text the user selected on a page and sent to the side panel with the context menu's "Ask Confluco"
-// item. The service worker (background.ts) reads it in the tab and leaves it in chrome.storage.session,
-// one key per selection, by window and account; that window's side panel takes them from there into the next
-// question, where each selection sent adds to the ones before. No
-// message listener carries it: storage.session is open only to the extension's own pages, and what
-// is read back is parsed, since the text comes from the page.
-
-import { clipSelection } from '@cofun/tools/tab'
+// Text the user selected on a page and sent to an extension's side panel with the context menu's
+// "Ask <product>" item. The service worker (setupSelectionMenu) reads it in the tab and leaves it in
+// chrome.storage.session, one key per selection, by window and by the account signed in at the click;
+// that window's side panel, signed in to that account, takes them from there into the next question,
+// where each selection sent adds to the ones before. No message listener carries it: storage.session
+// is open only to the extension's own pages, and what is read back is parsed, since the text comes
+// from the page. Imported as @cofun/tools/selection, which loads no agent.
+import { clipSelection, selectedText } from './tab'
 import { z } from './zod'
-
-/** The context menu item's id. */
-export const MENU_ITEM = 'ask-confluco'
 
 /** How much of a selection goes with a question; the rest is cut, and the model is told. */
 const SELECTION_CHARS = 20_000
@@ -60,13 +57,7 @@ let lastSent = 0
  * selection gets a key of its own, numbered in the order sent, so one sent while the panel takes
  * the others is neither lost nor taken twice.
  */
-export async function handOver(
-  windowId: number,
-  userId: string,
-  text: string,
-  url: string,
-  title: string,
-): Promise<void> {
+async function handOver(windowId: number, userId: string, text: string, url: string, title: string): Promise<void> {
   const selection: Selection = {
     text: clipSelection(text, SELECTION_CHARS),
     chars: text.length,
@@ -76,6 +67,67 @@ export async function handOver(
   // The time, so the order holds across starts of the service worker; one more for a second in the same millisecond.
   lastSent = Math.max(Date.now(), lastSent + 1)
   await chrome.storage.session.set({ [`${prefix(windowId, userId)}${lastSent}`]: selection })
+}
+
+/**
+ * Sets up the service worker's "Ask <product>" context menu item, on text selected in any page:
+ * picking it opens the side panel and hands it the selection, for the account `readAccount` finds
+ * signed in at the click. With none signed in, or none found, the selection is dropped: it never
+ * waits for whoever signs in next. The click gives the extension the tab for a moment (activeTab),
+ * which is how the selection is read there with its line breaks; where it can't be (a frame from
+ * another site, say), Chrome's own copy of it, on one line, is used.
+ */
+export function setupSelectionMenu({
+  product,
+  readAccount,
+}: {
+  /** The extension's name, as the menu shows it: `Notico`. */
+  product: string
+  /** The Clerk user id of the account signed in now, if any. */
+  readAccount: () => Promise<string | undefined>
+}): void {
+  const menuItem = `ask-${product.toLowerCase()}`
+  // Menu items stay from one start of the service worker to the next; they are made again when the
+  // extension is installed or updated, shown unless the user turned them off in Settings. Only on web
+  // pages and local files: on the extension's own pages (the side panel) there is no tab to read.
+  chrome.runtime.onInstalled.addListener(() => {
+    void loadMenuShown()
+      .catch((err: unknown) => {
+        console.error('Could not read the menu setting', err)
+        return true
+      })
+      .then((visible) =>
+        chrome.contextMenus.removeAll(() =>
+          chrome.contextMenus.create({
+            id: menuItem,
+            title: `Ask ${product} about “%s”`,
+            contexts: ['selection'],
+            documentUrlPatterns: ['https://*/*', 'http://*/*', 'file:///*'],
+            visible,
+          }),
+        ),
+      )
+  })
+
+  // The Settings switch, changed on this device or synced from another one. It is read again as the
+  // browser starts, for a change that synced while Chrome was closed.
+  const showMenu = (visible: boolean) =>
+    chrome.contextMenus.update(menuItem, { visible }).catch((err: unknown) => console.error(err))
+  watchMenuShown(showMenu)
+  chrome.runtime.onStartup.addListener(() => void loadMenuShown().then(showMenu, (err: unknown) => console.error(err)))
+
+  chrome.contextMenus.onClicked.addListener((info, tab) => {
+    if (info.menuItemId !== menuItem || tab?.id === undefined) return
+    // Before anything is awaited: Chrome opens the panel only while the click is being handled.
+    chrome.sidePanel.open({ windowId: tab.windowId }).catch((err) => console.error(err))
+    const { id, windowId } = tab
+    void (async () => {
+      const [userId, selected] = await Promise.all([readAccount(), selectedText(id, info.frameId ?? 0)])
+      const text = selected || info.selectionText || ''
+      if (!userId || !text.trim()) return
+      await handOver(windowId, userId, text, info.pageUrl || tab.url || '', tab.title ?? '')
+    })().catch(() => console.error('Could not attach the selected text'))
+  })
 }
 
 /**

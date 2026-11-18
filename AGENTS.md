@@ -104,8 +104,8 @@ An extension's Chrome Web Store privacy policy is written in two parts: [PRIVACY
 
 [docs/architecture.md](docs/architecture.md) describes the design; these are the rules a change must keep.
 
-- **One extension per folder.** Each extension keeps its own app (side panel, prompt, site layer, tools, manifest, analytics) and never imports another extension; the agent runtime it runs them on is the shared `@cofun/agent`.
-- **Only libraries the extensions call are shared**, as workspace packages in `packages/` (`@cofun/worker-client`, the client for the worker; `@cofun/agent`, the agent runtime and tool framework; and `@cofun/tools`, the generic tools built on that framework and the site layers they read the web with). A package takes what is particular to an extension as explicit parameters (the product name, the client name, the extension's own memory of a chat, its own site), never a product config, and never imports an extension. Its rules are tested once, in its own `test/` (and `use-cases/`, when it owns a business rule); an extension tests only how it uses it.
+- **One extension per folder.** Each extension keeps its own app (side panel, prompt, site layer, tools, manifest, usage events) and never imports another extension; the agent runtime it runs them on is the shared `@cofun/agent`.
+- **Only libraries the extensions call are shared**, as workspace packages in `packages/` (`@cofun/worker-client`, the client for the worker, with how the panel words the credits and the account a service worker finds signed in; `@cofun/agent`, the agent runtime and tool framework, with the model settings and the mode each account keeps; `@cofun/tools`, the generic tools built on that framework, the site layers they read the web with, and the handoff of text selected with the context menu; and `@cofun/analytics`, which sends an extension's usage events to PostHog). A package takes what is particular to an extension as explicit parameters (the product name, the client name, the extension's own memory of a chat, its own site), never a product config, and never imports an extension. Its rules are tested once, in its own `test/` (and `use-cases/`, when it owns a business rule); an extension tests only how it uses it.
 - **A site is called only through its site layer**: one module knows the site's endpoints and request shapes (Notico's `src/notion/api.ts`), and requests run inside the user's tab for that site (`src/<site>/tab.ts`, `chrome.scripting` in the ISOLATED world), so they go to that tab's host with its session. Tools never `fetch` the site's URLs themselves. Never use `chrome.debugger`: it shows a permanent "debugging this browser" banner.
 - **Every worker route under `/v1` sits behind the session check** (`src/routes/session.ts`); `worker/test/session.test.ts` checks that each refuses a request without a session.
 - **Module boundaries are lint errors** in `.oxlintrc.json`, run by `pnpm check`. In every extension:
@@ -113,12 +113,12 @@ An extension's Chrome Web Store privacy policy is written in two parts: [PRIVACY
   - the worker is called only from the side panel's state (`panel.ts`, `chat-session.ts`), which gives the client to the agent through `@cofun/agent`'s `hostedProvider` and `workerWeb`: elsewhere `@cofun/worker-client` is imported for its types only (its `/clerk` anywhere), so a request the worker turned away always stops the question;
   - `fetch` is used only in the `tab.ts` of a site layer that sends requests to its site (Notico's `src/notion/tab.ts` and Confluco's `src/confluence/tab.ts`); `chrome.scripting` only in `src/<site>/tab.ts`; `chrome.debugger` nowhere;
   - `zod` is imported only through `src/zod.ts` (the worker's through `worker/src/zod.ts`);
-  - `posthog-js` is imported only in `src/analytics.ts`;
+  - `@cofun/analytics` is imported only in `src/analytics.ts`, which lists the extension's events;
   - the site layer imports nothing from the agent (`@cofun/agent`), the tools (its own or `@cofun/tools`), the sessions, or the side panel;
   - the side panel's state outside React (`src/sidepanel/chat-session.ts`, one `ChatSession` per chat, and `src/sidepanel/panel.ts`, the `Panel`) imports no React and no component;
   - no extension imports another.
 
-  In every package, `zod` is imported only through its own `src/zod.ts`, and nothing outside the package is imported from `src/` (its tests may import the worker, never an extension). Only `@cofun/agent` (`packages/agent/src/`) imports pi, and it is where a model is called (`fetch` in a package needs no exception). `@cofun/tools` sends no request of its own (no `fetch`), uses `chrome.scripting` only in its site layers' `tab.ts` and `duckduckgo/tab.ts` (no other package uses it), and its site layers (`tab.ts`, `markdown.ts`, `duckduckgo/`) import nothing from `@cofun/agent` or its tools.
+  In every package, `zod` is imported only through its own `src/zod.ts`, and nothing outside the package is imported from `src/` (its tests may import the worker, never an extension). Only `@cofun/agent` (`packages/agent/src/`) imports pi, and it is where a model is called (`fetch` in a package needs no exception). `@cofun/tools` sends no request of its own (no `fetch`), uses `chrome.scripting` only in its site layers' `tab.ts` and `duckduckgo/tab.ts` (no other package uses it), and its site layers (`tab.ts`, `markdown.ts`, `duckduckgo/`) and `selection.ts` import nothing from `@cofun/agent` or its tools. Only `@cofun/analytics` (`packages/analytics/src/index.ts`) imports `posthog-js`.
 
   When a boundary changes, change the rule and this list together. Never silence one with an `oxlint-disable` comment.
 
@@ -133,12 +133,12 @@ A value the code does not control is `unknown` until it is validated where it ar
 
 ## Usage data: never content
 
-An extension sends product analytics to PostHog only through `src/analytics.ts`, whose `track` takes a fixed list of events ([Usage data](docs/architecture.md#usage-data)).
+An extension sends product analytics to PostHog only through `src/analytics.ts`, whose `track` takes a fixed list of events, which it gives `@cofun/analytics` ([Usage data](docs/architecture.md#usage-data)).
 
 - **An event never holds content**: nothing the user or the model wrote, nothing from a page (its content, title, or URL), and no key.
-- Every property is an enum, a number, or a boolean, checked by the event's schema before it is sent. A value from the model or a service (a tool's name, an error code) is sent only when it is on a fixed list.
-- A new event or property is added to the schema, to the list of properties the module keeps, and to the extension's `PRIVACY.md` in the same PR.
-- Never turn on autocapture, session replay, or exception capture: each would send text from the panel.
+- Every property is an enum, a number, or a boolean (`@cofun/analytics`'s `Property` type allows nothing else), checked by the event's schema before it is sent. A value from the model or a service (a tool's name, an error code) is sent only when it is on a fixed list (`oneOf`).
+- A new event or property is added to the extension's events in `src/analytics.ts` (the properties sent are the ones listed there) and to the extension's `PRIVACY.md` in the same PR.
+- Never turn on autocapture, session replay, or exception capture (`@cofun/analytics` keeps them off): each would send text from the panel.
 
 ## Calling outside services: stop, don't work around
 

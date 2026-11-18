@@ -3,7 +3,7 @@
 // selected on pages that it was sent with.
 import { addedTabsNote, selectionNotes, tabTools } from '@cofun/tools'
 import type { QuestionPage } from '@cofun/agent'
-import type { Selection } from '../selection'
+import type { Selection } from '@cofun/tools/selection'
 import type { ToolMemory } from './memory'
 
 export const { getCurrentTab, readCurrentTab, readTab } = tabTools<ToolMemory>({

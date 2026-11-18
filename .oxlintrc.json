@@ -19,7 +19,7 @@
   "$schema": "./node_modules/oxlint/configuration_schema.json",
   "rules": {
     // Everywhere in the repository, tests included. packages/agent/src/ is exempted below for pi, and
-    // extensions/*/src/analytics.ts for the PostHog SDK.
+    // packages/analytics/src/index.ts for the PostHog SDK.
     "no-restricted-imports": [
       "error",
       {
@@ -35,7 +35,7 @@
           },
           {
             "group": ["posthog-js", "posthog-js/**"],
-            "message": "Only an extension's src/analytics.ts imports the PostHog SDK. Call its track(), whose events are the only ones that can be sent."
+            "message": "Only @cofun/analytics (packages/analytics/src/index.ts) imports the PostHog SDK. Call the extension's track() (src/analytics.ts), whose events are the only ones that can be sent."
           }
         ]
       }
@@ -75,7 +75,7 @@
               },
               {
                 "group": ["posthog-js", "posthog-js/**"],
-                "message": "Only an extension's src/analytics.ts imports the PostHog SDK. Call its track(), whose events are the only ones that can be sent."
+                "message": "Only @cofun/analytics (packages/analytics/src/index.ts) imports the PostHog SDK. Call the extension's track() (src/analytics.ts), whose events are the only ones that can be sent."
               },
               {
                 "regex": "^\\.\\./[^./]",
@@ -109,7 +109,7 @@
               },
               {
                 "group": ["posthog-js", "posthog-js/**"],
-                "message": "Only an extension's src/analytics.ts imports the PostHog SDK. Call its track(), whose events are the only ones that can be sent."
+                "message": "Only @cofun/analytics (packages/analytics/src/index.ts) imports the PostHog SDK. Call the extension's track() (src/analytics.ts), whose events are the only ones that can be sent."
               },
               {
                 "regex": "^\\.\\./\\.\\./[^./]",
@@ -146,8 +146,12 @@
                 "message": "Only @cofun/agent (packages/agent/src/) imports pi. Use what @cofun/agent exports, or add it there."
               },
               {
+                "group": ["@cofun/analytics"],
+                "message": "Only an extension's src/analytics.ts uses @cofun/analytics: it lists the extension's events. Call its track()."
+              },
+              {
                 "group": ["posthog-js", "posthog-js/**"],
-                "message": "Only an extension's src/analytics.ts imports the PostHog SDK. Call its track(), whose events are the only ones that can be sent."
+                "message": "Only @cofun/analytics (packages/analytics/src/index.ts) imports the PostHog SDK. Call the extension's track() (src/analytics.ts), whose events are the only ones that can be sent."
               },
               {
                 "regex": "^zod(/|$)",
@@ -241,8 +245,12 @@
                 "message": "Only @cofun/agent (packages/agent/src/) imports pi. Use what @cofun/agent exports, or add it there."
               },
               {
+                "group": ["@cofun/analytics"],
+                "message": "Only an extension's src/analytics.ts uses @cofun/analytics: it lists the extension's events. Call its track()."
+              },
+              {
                 "group": ["posthog-js", "posthog-js/**"],
-                "message": "Only an extension's src/analytics.ts imports the PostHog SDK. Call its track(), whose events are the only ones that can be sent."
+                "message": "Only @cofun/analytics (packages/analytics/src/index.ts) imports the PostHog SDK. Call the extension's track() (src/analytics.ts), whose events are the only ones that can be sent."
               },
               {
                 "regex": "^zod(/|$)",
@@ -291,8 +299,12 @@
                 "message": "Only @cofun/agent (packages/agent/src/) imports pi. Use what @cofun/agent exports, or add it there."
               },
               {
+                "group": ["@cofun/analytics"],
+                "message": "Only an extension's src/analytics.ts uses @cofun/analytics: it lists the extension's events. Call its track()."
+              },
+              {
                 "group": ["posthog-js", "posthog-js/**"],
-                "message": "Only an extension's src/analytics.ts imports the PostHog SDK. Call its track(), whose events are the only ones that can be sent."
+                "message": "Only @cofun/analytics (packages/analytics/src/index.ts) imports the PostHog SDK. Call the extension's track() (src/analytics.ts), whose events are the only ones that can be sent."
               },
               {
                 "regex": "^(\\.\\./)+(tool|tools|sessions|sidepanel)(\\.|/|$)",
@@ -354,8 +366,12 @@
                 "message": "Only @cofun/agent (packages/agent/src/) imports pi. Use what @cofun/agent exports, or add it there."
               },
               {
+                "group": ["@cofun/analytics"],
+                "message": "Only an extension's src/analytics.ts uses @cofun/analytics: it lists the extension's events. Call its track()."
+              },
+              {
                 "group": ["posthog-js", "posthog-js/**"],
-                "message": "Only an extension's src/analytics.ts imports the PostHog SDK. Call its track(), whose events are the only ones that can be sent."
+                "message": "Only @cofun/analytics (packages/analytics/src/index.ts) imports the PostHog SDK. Call the extension's track() (src/analytics.ts), whose events are the only ones that can be sent."
               },
               {
                 "regex": "^(\\.\\./)+[^./][^/]*/(src|test)(/|$)",
@@ -371,7 +387,8 @@
       }
     },
     {
-      // The one module that imports the PostHog SDK. Its other restrictions (the extensions/*/src block) still hold.
+      // The one module of an extension that uses @cofun/analytics, with the extension's events. Its other
+      // restrictions (the extensions/*/src block) still hold.
       "files": ["extensions/*/src/analytics.ts"],
       "rules": {
         "no-restricted-imports": [
@@ -391,6 +408,10 @@
                   "@earendil-works/pi-ai/**"
                 ],
                 "message": "Only @cofun/agent (packages/agent/src/) imports pi. Use what @cofun/agent exports, or add it there."
+              },
+              {
+                "group": ["posthog-js", "posthog-js/**"],
+                "message": "Only @cofun/analytics (packages/analytics/src/index.ts) imports the PostHog SDK. Call the extension's track() (src/analytics.ts), whose events are the only ones that can be sent."
               },
               {
                 "regex": "^zod(/|$)",
@@ -431,7 +452,7 @@
               },
               {
                 "group": ["posthog-js", "posthog-js/**"],
-                "message": "Only an extension's src/analytics.ts imports the PostHog SDK. Call its track(), whose events are the only ones that can be sent."
+                "message": "Only @cofun/analytics (packages/analytics/src/index.ts) imports the PostHog SDK. Call the extension's track() (src/analytics.ts), whose events are the only ones that can be sent."
               },
               {
                 "regex": "^zod(/|$)",
@@ -455,6 +476,38 @@
             "object": "chrome",
             "property": "scripting",
             "message": "In a package, only @cofun/tools's tab.ts and duckduckgo/tab.ts use chrome.scripting: they read the page a tab shows. Use what they export."
+          }
+        ]
+      }
+    },
+    {
+      // The one module that imports the PostHog SDK: @cofun/analytics, which sends an extension's own
+      // events and nothing the SDK would add. Its other restrictions (the packages/*/src block) still
+      // hold. No other package depends on it, and pnpm resolves only declared dependencies.
+      "files": ["packages/analytics/src/index.ts"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": [
+                  "@earendil-works/pi-agent-core",
+                  "@earendil-works/pi-agent-core/**",
+                  "@earendil-works/pi-ai",
+                  "@earendil-works/pi-ai/**"
+                ],
+                "message": "Only @cofun/agent (packages/agent/src/) imports pi. Use what @cofun/agent exports, or add it there."
+              },
+              {
+                "regex": "^zod(/|$)",
+                "message": "Import z from the package's src/zod.ts: it sets zod up for the extensions' content security policy before any schema is built."
+              },
+              {
+                "regex": "^\\.\\./\\.\\./",
+                "message": "A package never imports what is outside it, such as an extension: an extension calls it, and passes it what it needs as parameters."
+              }
+            ]
           }
         ]
       }
@@ -534,9 +587,15 @@
       }
     },
     {
-      // @cofun/tools's site layers know nothing about the agent or the tools: the tools depend on them,
-      // not the other way round. Their other restrictions (the packages/tools/src block) still hold.
-      "files": ["packages/tools/src/tab.ts", "packages/tools/src/markdown.ts", "packages/tools/src/duckduckgo/**"],
+      // @cofun/tools's site layers, and the selection handoff the service worker loads, know nothing
+      // about the agent or the tools: the tools depend on them, not the other way round. Their other
+      // restrictions (the packages/tools/src block) still hold.
+      "files": [
+        "packages/tools/src/tab.ts",
+        "packages/tools/src/markdown.ts",
+        "packages/tools/src/duckduckgo/**",
+        "packages/tools/src/selection.ts"
+      ],
       "rules": {
         "no-restricted-imports": [
           "error",
@@ -544,11 +603,11 @@
             "patterns": [
               {
                 "group": ["@cofun/agent"],
-                "message": "@cofun/tools's site layers (tab.ts, markdown.ts, duckduckgo/) import nothing from the agent (@cofun/agent): the tools depend on them, not the other way round."
+                "message": "@cofun/tools's site layers (tab.ts, markdown.ts, duckduckgo/) and selection.ts import nothing from the agent (@cofun/agent): the tools depend on them, not the other way round."
               },
               {
                 "regex": "^(\\.\\.?/)+(tools|index|free-search)(/|\\.|$)",
-                "message": "@cofun/tools's site layers (tab.ts, markdown.ts, duckduckgo/) import nothing from its tools, its index, or free-search.ts: those depend on the site layers, not the other way round."
+                "message": "@cofun/tools's site layers (tab.ts, markdown.ts, duckduckgo/) and selection.ts import nothing from its tools, its index, or free-search.ts: those depend on them, not the other way round."
               },
               {
                 "group": [
@@ -561,7 +620,7 @@
               },
               {
                 "group": ["posthog-js", "posthog-js/**"],
-                "message": "Only an extension's src/analytics.ts imports the PostHog SDK. Call its track(), whose events are the only ones that can be sent."
+                "message": "Only @cofun/analytics (packages/analytics/src/index.ts) imports the PostHog SDK. Call the extension's track() (src/analytics.ts), whose events are the only ones that can be sent."
               },
               {
                 "regex": "^zod(/|$)",
@@ -587,7 +646,7 @@
             "patterns": [
               {
                 "group": ["posthog-js", "posthog-js/**"],
-                "message": "Only an extension's src/analytics.ts imports the PostHog SDK. Call its track(), whose events are the only ones that can be sent."
+                "message": "Only @cofun/analytics (packages/analytics/src/index.ts) imports the PostHog SDK. Call the extension's track() (src/analytics.ts), whose events are the only ones that can be sent."
               },
               {
                 "regex": "^zod(/|$)",
@@ -621,7 +680,7 @@
               },
               {
                 "group": ["posthog-js", "posthog-js/**"],
-                "message": "Only an extension's src/analytics.ts imports the PostHog SDK. Call its track(), whose events are the only ones that can be sent."
+                "message": "Only @cofun/analytics (packages/analytics/src/index.ts) imports the PostHog SDK. Call the extension's track() (src/analytics.ts), whose events are the only ones that can be sent."
               },
               {
                 "regex": "^\\.\\./\\.\\./",
@@ -651,7 +710,7 @@
               },
               {
                 "group": ["posthog-js", "posthog-js/**"],
-                "message": "Only an extension's src/analytics.ts imports the PostHog SDK. Call its track(), whose events are the only ones that can be sent."
+                "message": "Only @cofun/analytics (packages/analytics/src/index.ts) imports the PostHog SDK. Call the extension's track() (src/analytics.ts), whose events are the only ones that can be sent."
               },
               {
                 "regex": "^(\\.\\./)+extensions/",
@@ -681,7 +740,7 @@
               },
               {
                 "group": ["posthog-js", "posthog-js/**"],
-                "message": "Only an extension's src/analytics.ts imports the PostHog SDK. Call its track(), whose events are the only ones that can be sent."
+                "message": "Only @cofun/analytics (packages/analytics/src/index.ts) imports the PostHog SDK. Call the extension's track() (src/analytics.ts), whose events are the only ones that can be sent."
               },
               {
                 "regex": "^zod(/|$)",
@@ -711,7 +770,7 @@
               },
               {
                 "group": ["posthog-js", "posthog-js/**"],
-                "message": "Only an extension's src/analytics.ts imports the PostHog SDK. Call its track(), whose events are the only ones that can be sent."
+                "message": "Only @cofun/analytics (packages/analytics/src/index.ts) imports the PostHog SDK. Call the extension's track() (src/analytics.ts), whose events are the only ones that can be sent."
               }
             ]
           }

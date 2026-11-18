@@ -3,21 +3,22 @@ import {
   KEY_REJECTED,
   type AgentConfig,
   type AgentUpdate,
-  type ConfirmTool,
   type ConfirmationAnswer,
+  type ConfirmTool,
   type HistoryMessage,
+  type OwnSetup,
   type QuestionDetails,
   type QuestionPage,
   type QuestionSelection,
   type ToolDetails,
   type ToolStatus,
 } from '@cofun/agent'
+import { answering, type ModelSettings } from '@cofun/agent/models'
+import type { Mode } from '@cofun/agent/mode'
 import { track } from '../analytics'
 import type { AttachmentUpload } from '../confluence/attachments'
 import { captureConfluenceTab } from '../confluence/tab'
 import type { ConfluenceUndo } from '../confluence/undo'
-import type { Mode } from '../mode'
-import { answering, type ModelSettings, type OwnSetup } from '../models'
 import { titleFor, type Session, type SessionStore } from '../sessions'
 import { ToolMemory } from '../tools/memory'
 

@@ -6,13 +6,16 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./clerk": "./src/clerk.ts"
+    "./account": "./src/account.ts",
+    "./clerk": "./src/clerk.ts",
+    "./credits": "./src/credits-text.ts"
   },
   "scripts": {
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@clerk/chrome-extension": "^3.1.105",
     "zod": "^4.6.7"
   },
   "devDependencies": {

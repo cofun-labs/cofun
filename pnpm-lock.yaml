@@ -44,15 +44,15 @@ importers:
       '@cofun/agent':
         specifier: workspace:*
         version: link:../../packages/agent
+      '@cofun/analytics':
+        specifier: workspace:*
+        version: link:../../packages/analytics
       '@cofun/tools':
         specifier: workspace:*
         version: link:../../packages/tools
       '@cofun/worker-client':
         specifier: workspace:*
         version: link:../../packages/worker-client
-      posthog-js:
-        specifier: 1.448.0
-        version: 1.448.0(@types/react@19.3.0)(react@19.3.1)
       react:
         specifier: ^19.3.0
         version: 19.3.1
@@ -126,15 +126,15 @@ importers:
       '@cofun/agent':
         specifier: workspace:*
         version: link:../../packages/agent
+      '@cofun/analytics':
+        specifier: workspace:*
+        version: link:../../packages/analytics
       '@cofun/tools':
         specifier: workspace:*
         version: link:../../packages/tools
       '@cofun/worker-client':
         specifier: workspace:*
         version: link:../../packages/worker-client
-      posthog-js:
-        specifier: 1.448.0
-        version: 1.448.0(@types/react@19.3.0)(react@19.3.1)
       react:
         specifier: ^19.3.0
         version: 19.3.1
@@ -215,6 +215,28 @@ importers:
         specifier: ^4.6.7
         version: 4.6.7
     devDependencies:
+      '@types/chrome':
+        specifier: ^0.3.7
+        version: 0.3.7
+      '@types/node':
+        specifier: ^26.6.6
+        version: 26.6.6
+      typescript:
+        specifier: ^7.0.2
+        version: 7.0.2
+
+  packages/analytics:
+    dependencies:
+      posthog-js:
+        specifier: 1.448.0
+        version: 1.448.0(@types/react@19.3.0)(react@19.3.1)
+      zod:
+        specifier: ^4.6.7
+        version: 4.6.7
+    devDependencies:
+      '@types/chrome':
+        specifier: ^0.3.7
+        version: 0.3.7
       '@types/node':
         specifier: ^26.6.6
         version: 26.6.6
@@ -249,6 +271,9 @@ importers:
 
   packages/worker-client:
     dependencies:
+      '@clerk/chrome-extension':
+        specifier: ^3.1.105
+        version: 3.1.105(@types/react@19.3.0)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(typescript@7.0.2)(zod@4.6.7)
       zod:
         specifier: ^4.6.7
         version: 4.6.7
