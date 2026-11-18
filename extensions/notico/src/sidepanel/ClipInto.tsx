@@ -176,8 +176,9 @@ export function ClipInto({
           aria-expanded={open}
           aria-busy={busy || undefined}
           // While a choice is saved: a second one could land first, then be overwritten by the first.
-          disabled={busy}
-          onClick={() => (open ? close() : setOpen(true))}
+          // Not `disabled`, which would take the focus away from it.
+          aria-disabled={busy || undefined}
+          onClick={() => !busy && (open ? close() : setOpen(true))}
         >
           <Icon name="page" />
           <span className={target ? 'clip-field-name' : 'clip-field-name empty'}>
