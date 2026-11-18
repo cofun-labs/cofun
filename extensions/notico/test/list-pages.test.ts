@@ -18,7 +18,7 @@ import {
   resultText,
 } from './notion-tab'
 import { LIMITED_STOP, NO_USER_MAP, UNEXPECTED_STOP } from '../src/notion/api'
-import { DATA_LINE } from '../src/tools/shared'
+import { DATA_LINE } from '@cofun/web'
 
 /** The chat the tools run in; a new one for each test. */
 let chat = new ToolChat()

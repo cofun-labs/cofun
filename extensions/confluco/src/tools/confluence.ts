@@ -22,8 +22,8 @@ import { currentConfluenceTab, type ConfluenceTab } from '../confluence/tab'
 import { defineTool } from '../tool'
 import { z } from '../zod'
 import type { ConfluenceContinuation, ToolMemory } from './memory'
-import { withText } from './results'
-import { asData, clip, on, quote, READ, SEARCH } from './shared'
+import { asData, clip, quote, withText } from '@cofun/web'
+import { on, READ, SEARCH } from './shared'
 
 function remember(memory: ToolMemory, pages: readonly { ref: PageReference }[]) {
   for (const { ref } of pages) memory.confluenceResources.add(JSON.stringify([ref.instance, ref.id]))

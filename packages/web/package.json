@@ -1,0 +1,24 @@
+{
+  "name": "@cofun/web",
+  "version": "0.0.0",
+  "private": true,
+  "description": "The extensions' web reading and generic web tools: pages read in the user's tabs, web pages by their address, web searches (the worker's, or DuckDuckGo from the browser), and long results kept on the device",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@cofun/agent": "workspace:*",
+    "turndown": "7.2.5",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@types/chrome": "^0.3.7",
+    "@types/node": "^26.6.6",
+    "@types/turndown": "5.0.6",
+    "typescript": "^7.0.2"
+  }
+}

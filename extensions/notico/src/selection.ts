@@ -5,6 +5,7 @@
 // message listener carries it: storage.session is open only to the extension's own pages, and what
 // is read back is parsed, since the text comes from the page.
 
+import { clipSelection } from '@cofun/web'
 import { z } from './zod'
 
 /** The context menu item's id. */
@@ -12,11 +13,6 @@ export const MENU_ITEM = 'ask-notico'
 
 /** How much of a selection goes with a question; the rest is cut, and the model is told. */
 const SELECTION_CHARS = 20_000
-
-/** Keep the UTF-16 budget without leaving half of a supplementary character at the end. */
-export function clipSelection(text: string, limit: number): string {
-  return text.slice(0, limit).replace(/[\uD800-\uDBFF]$/, '')
-}
 
 /** How much of a page's URL is kept: some (a data: URL, say) hold a whole document. */
 const URL_CHARS = 2000

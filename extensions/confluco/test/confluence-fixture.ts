@@ -1,6 +1,6 @@
 import { screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { DATA_LINE } from '../src/tools/shared'
+import { DATA_LINE } from '@cofun/web'
 import { z } from '../src/zod'
 import { closeBrowser, FakeBrowser } from './panel'
 import { FakeTab, webPage } from './tab'

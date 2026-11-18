@@ -1,7 +1,7 @@
 import { useAuth } from '@clerk/chrome-extension'
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
 import { track } from '../analytics'
-import { currentTabReadable } from '../tools'
+import { currentTabReadable } from '@cofun/web'
 import { AccountMenu } from './Account'
 import type { ChatSession } from './chat-session'
 import { Composer, useComposer } from './Composer'

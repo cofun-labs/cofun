@@ -10,8 +10,9 @@ import {
   readEditorSelection,
 } from '../confluence/tab'
 import type { Mode } from '../mode'
-import { clipSelection, linkTo, watchSelections, type Selection } from '../selection'
-import { carryPages, selectionsCarried } from '../tools'
+import { clipSelection, selectionsCarried } from '@cofun/web'
+import { linkTo, watchSelections, type Selection } from '../selection'
+import { carryPages } from '../tools'
 import type { ChatSession } from './chat-session'
 import { Icon } from './icons'
 import { ModelMenu } from './Model'

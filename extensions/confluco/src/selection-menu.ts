@@ -1,5 +1,5 @@
 import { handOver, loadMenuShown, MENU_ITEM, watchMenuShown } from './selection'
-import { selectedText } from './web/tab'
+import { selectedText } from '@cofun/web'
 
 /** Registers the context menu and ties each selected excerpt to the active account. */
 export function setupSelectionMenu(readAccount: () => Promise<string | undefined>): void {

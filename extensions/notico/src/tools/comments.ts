@@ -9,7 +9,8 @@ import { COMMENT_CHARS, loadThreads, quote, threadLines } from '../notion/commen
 import { LAYOUT_TYPES, PAGE_TYPES, hexId, oneLine, pageToMarkdown } from '../notion/markdown'
 import { activeNotionTab, type NotionTab } from '../notion/tab'
 import { needsAttachedPage } from './current'
-import { ADD, GIVE_PAGE, asData, PART_CHARS, READ, filled, nameOf, on, pageArg, partArg, plural } from './shared'
+import { ADD, GIVE_PAGE, PART_CHARS, READ, filled, nameOf, on, pageArg, partArg, plural } from './shared'
+import { asData } from '@cofun/web'
 
 /** The page a call names, or the open page when it names none. */
 function commentsPage(tab: NotionTab, given: string | undefined): string {

@@ -1,7 +1,8 @@
 // The side panel's UI tests run the whole panel: the page sidepanel.html loads, with the real agent,
 // tools, and session store behind it, and the real worker answering its model calls. Only the edges
 // are fakes: chrome.* (with browser tabs), Clerk (see clerk.tsx), IndexedDB, the model binding, the
-// services a user's own model is on (OpenRouter), and PostHog, where usage events go.
+// services a user's own model is on (OpenRouter), PostHog, where usage events go, and DuckDuckGo,
+// whose results page the panel opens in a tab when the user chose it for web searches.
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { act } from '@testing-library/react'
@@ -21,6 +22,7 @@ import {
 } from '../../../worker/test/fakes'
 import { FakeStripe, signature, WEBHOOK_SECRET } from '../../../worker/test/stripe'
 import type { FakeSession } from './clerk'
+import { FakeDuckDuckGo } from './duckduckgo'
 import { restoreGlobals, type FakeTab } from './tab'
 import { FakeOpenRouter, OPENROUTER } from './openrouter'
 import { FakePostHog, POSTHOG } from './posthog'
@@ -59,6 +61,8 @@ export class FakeBrowser {
   readonly browserRun = new FakeBrowserRun()
   /** URLs the panel opened in new tabs. */
   readonly openedTabs: string[] = []
+  /** DuckDuckGo's results page, which the panel opens in tabs to search when the user chose it. */
+  readonly duckDuckGo = new FakeDuckDuckGo()
   /** Stripe behind the worker: the Checkout Sessions made, and the events it sends about them. */
   readonly stripe = new FakeStripe()
   /** OpenRouter, for a user's own model; script its model, and read what it was sent. */
@@ -171,6 +175,7 @@ export class FakeBrowser {
       getManifest: () => ({ version: '1.2.3', host_permissions: ['https://*.cofun.cc/*', 'https://clerk.cofun.cc/*'] }),
     }
     chrome.tabs.create = async ({ url }: { url: string }) => void browser.openedTabs.push(url)
+    browser.duckDuckGo.install(chrome as never, tab.allowed)
     // Clerk's cookie on the sign-in page, which the panel watches to notice a sign-in or sign-out there.
     chrome.cookies = {
       getAll: async ({ name }: { name: string }) => [{ name, value: session ? '1762603200' : '0' }],
