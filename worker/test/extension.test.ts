@@ -561,6 +561,10 @@ describe('conversation compaction', () => {
       expect(answer.rounds).toBe(3)
       expect(ai.calls).toHaveLength(2)
       expect(ai.calls[0].inputs.tools).toBeUndefined()
+      expect(sentMessages(1)[0]).toEqual({ role: 'system', content: 'You are Notico.' })
+      expect(ai.calls[1].inputs.tools).toEqual([
+        expect.objectContaining({ type: 'function', function: expect.objectContaining({ name: 'lookup_page' }) }),
+      ])
       expect(sentMessages(1)[1].content).toContain('Launch code OSPREY-73.')
     } finally {
       globalThis.fetch = routed

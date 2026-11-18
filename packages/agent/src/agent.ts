@@ -884,9 +884,7 @@ export class CopilotAgent<M = unknown> {
           ? retryOnOverflow(stream, async () => {
               options?.signal?.throwIfAborted()
               const messages = await overflow(options?.signal)
-              return (
-                messages && streamSimple(selected, normalizeContext({ messages }), { ...streamOptions, maxRetries: 0 })
-              )
+              return messages && streamSimple(selected, { ...context, messages }, { ...streamOptions, maxRetries: 0 })
             })
           : stream
       },
