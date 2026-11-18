@@ -77,7 +77,19 @@ turndown.addRule('link', {
     if (!/^https?:\/\//i.test(href)) return content
     if (!text) return ''
     // Spaces are encoded already; parentheses would end the address early.
-    return `[${text.replace(/\n+/g, ' ')}](${href.replace(/\(/g, '%28').replace(/\)/g, '%29')})`
+    const address = href.replace(/\(/g, '%28').replace(/\)/g, '%29')
+    // A link around a heading (a search result's title, say) is the heading, with the link on its
+    // text: `### [Title](url)`, not `[### Title](url)`, where the `#`s would read as text. What
+    // else the link holds (the result's address or summary) stays as it is, without the link. A
+    // heading written behind a prefix (`- ### T` in a list) isn't found, and the link is as before.
+    if (node.querySelector('h1, h2, h3, h4, h5, h6')) {
+      const linked = content.replace(
+        /^(#{1,6} )(.+)$/gm,
+        (_line, marks: string, title: string) => `${marks}[${title}](${address})`,
+      )
+      if (linked !== content) return linked
+    }
+    return `[${text.replace(/\n+/g, ' ')}](${address})`
   },
 })
 
