@@ -109,7 +109,17 @@ it.each([false, true])(
   },
 )
 
-it.each(['restore', 'redirect', 'declined', 'wrong id', 'wrong action', 'no token', 'denied', 'uncertain'] as const)(
+it.each([
+  'restore',
+  'redirect',
+  'declined',
+  'wrong id',
+  'wrong action',
+  'redirected form',
+  'no token',
+  'denied',
+  'uncertain',
+] as const)(
   '[UC-CONFLUCO-CONFLUENCE-012-S02] [UC-CONFLUCO-CONFLUENCE-012-S03] [UC-CONFLUCO-CONFLUENCE-012-S04] checks the Cloud native restore form and result (%s)',
   async (outcome) => {
     const { browser, user } = await workspace()
@@ -122,6 +132,8 @@ it.each(['restore', 'redirect', 'declined', 'wrong id', 'wrong action', 'no toke
         expect(init?.method).toBe('GET')
         expect(at.searchParams.get('contentId')).toBe(page.id)
         expect(at.searchParams.get('key')).toBe('TEST')
+        if (outcome === 'redirected form')
+          return new Response(null, { status: 302, headers: { Location: '/wiki/login.action' } })
         return new Response(
           `<form method="post" action="${outcome === 'wrong action' ? 'https://other.example.test/restore' : '/wiki/pages/dorestoretrashitem.action'}">
           <input name="key" value="TEST"><input name="contentId" value="${outcome === 'wrong id' ? '43' : page.id}">
@@ -155,6 +167,12 @@ it.each(['restore', 'redirect', 'declined', 'wrong id', 'wrong action', 'no toke
     const attempted = ['restore', 'redirect', 'denied', 'uncertain'].includes(outcome)
     expect(writes(browser)).toHaveLength(attempted ? 1 : 0)
     expect(JSON.stringify(browser.sentToModel())).not.toContain('synthetic-csrf-value')
+    if (['wrong id', 'wrong action', 'redirected form', 'no token'].includes(outcome)) {
+      expect(screen.getAllByText(/could not prepare the restore confirmation/).length).toBeGreaterThan(0)
+      expect(new URL(browser.workspaceRequests.at(-1)!.url).pathname).toBe('/wiki/pages/restoretrashitem.action')
+      expect(browser.workspaceRequests.filter(({ url }) => new URL(url).pathname === endpoint)).toHaveLength(2)
+    }
+
     if (outcome === 'restore' || outcome === 'redirect')
       expect(toolText(browser)).toContain('"changed":true,"atSpaceRoot":true')
     if (outcome === 'denied') {

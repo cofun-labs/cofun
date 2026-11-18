@@ -52,6 +52,7 @@ const result = z.discriminatedUnion('kind', [
   z.object({
     kind: z.enum([
       'changed',
+      'not-restorable',
       'not-page',
       'auth',
       'unexpected-web-response',
@@ -69,6 +70,8 @@ const result = z.discriminatedUnion('kind', [
 ])
 
 const errors = {
+  'not-restorable':
+    'Confluco could not prepare the restore confirmation. Check the page and your session in Confluence.',
   changed: 'The Confluence tab changed. Open the intended page and ask again.',
   'not-page': 'Open a published Confluence page before asking Confluco to read it.',
   auth: 'Sign in to Confluence in the page tab, then ask again.',
@@ -626,6 +629,7 @@ async function requestConfluence(expectedUrl: string, contextPath: string, reque
   globalThis.cofunConfluenceReads ??= new Map()
   globalThis.cofunConfluenceReads.set(requestId, controller)
   const cap = 1_000_000
+  let restoreSubmitted = false
   try {
     let payload: BodyInit | undefined = body
     const headers: Record<string, string> = { Accept: nativeRestore ? 'text/html' : 'application/json' }
@@ -659,12 +663,22 @@ async function requestConfluence(expectedUrl: string, contextPath: string, reque
       if (!response.ok) return { kind: 'network' }
     }
     const failed = failure(response)
-    if (failed) return failed
+    if (failed)
+      return nativeRestore && ['unexpected-web-response', 'network', 'invalid', 'large'].includes(failed.kind)
+        ? { kind: 'not-restorable' }
+        : failed
     if (response.status === 204 && method === 'DELETE') return { kind: 'ok', status: response.status, data: null }
     const contentType = response.headers.get('content-type') ?? ''
     if (nativeRestore ? !/^text\/html(?:;|$)/i.test(contentType) : !/^application\/json(?:;|$)/i.test(contentType))
-      return { kind: /^text\/html(?:;|$)/i.test(contentType) ? 'unexpected-web-response' : 'invalid' }
-    if (Number(response.headers.get('content-length')) > cap || !response.body) return { kind: 'large' }
+      return {
+        kind: nativeRestore
+          ? 'not-restorable'
+          : /^text\/html(?:;|$)/i.test(contentType)
+            ? 'unexpected-web-response'
+            : 'invalid',
+      }
+    if (Number(response.headers.get('content-length')) > cap || !response.body)
+      return { kind: nativeRestore ? 'not-restorable' : 'large' }
 
     const reader = response.body.getReader()
     const decoder = new TextDecoder()
@@ -676,7 +690,7 @@ async function requestConfluence(expectedUrl: string, contextPath: string, reque
       size += part.value.byteLength
       if (size > cap) {
         await reader.cancel()
-        return { kind: 'large' }
+        return { kind: nativeRestore ? 'not-restorable' : 'large' }
       }
       json += decoder.decode(part.value, { stream: true })
     }
@@ -689,7 +703,7 @@ async function requestConfluence(expectedUrl: string, contextPath: string, reque
           form.method.toLowerCase() === 'post' &&
           new URL(form.getAttribute('action') ?? '', endpoint).href === expected,
       )
-      if (forms.length !== 1) return { kind: 'invalid' }
+      if (forms.length !== 1) return { kind: 'not-restorable' }
       const form = forms[0]
       const field = (name: string) => {
         const inputs = [...form.querySelectorAll('input')].filter((input) => input.name === name)
@@ -709,11 +723,12 @@ async function requestConfluence(expectedUrl: string, contextPath: string, reque
         !confirm ||
         confirm.length > 255
       )
-        return { kind: 'invalid' }
+        return { kind: 'not-restorable' }
       const atPost = new URL(location.href)
       atPost.hash = ''
       if (atPost.href !== expectedUrl) return { kind: 'changed' }
       // The CSRF value stays inside this isolated tab and is never returned to the extension.
+      restoreSubmitted = true
       const posted = await fetch(expected, {
         method: 'POST',
         credentials: 'same-origin',
@@ -739,7 +754,7 @@ async function requestConfluence(expectedUrl: string, contextPath: string, reque
       return { kind: 'invalid' }
     }
   } catch {
-    return { kind: 'network' }
+    return { kind: nativeRestore && !restoreSubmitted ? 'not-restorable' : 'network' }
   } finally {
     globalThis.cofunConfluenceReads.delete(requestId)
   }
