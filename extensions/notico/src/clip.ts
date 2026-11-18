@@ -1,7 +1,7 @@
 // Clipping a page, or the text selected on it, to the Notion page the user chose in Settings, from
 // the context menu's "Clip page to Notion" and "Clip selection to Notion" items. The service worker
 // (background.ts) hands each click to the window's side panel through chrome.storage.session, as
-// "Ask Notico" does (selection.ts); the panel reads the page and writes the clip (tools/clip.ts).
+// "Ask Notico" does (@cofun/tools/selection); the panel reads the page and writes the clip (tools/clip.ts).
 // What is read back from storage is parsed: the settings may have synced from another version, and
 // a clip holds text from the page.
 

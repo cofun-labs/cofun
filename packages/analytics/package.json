@@ -1,0 +1,22 @@
+{
+  "name": "@cofun/analytics",
+  "version": "0.0.0",
+  "private": true,
+  "description": "The extensions' usage data: sends each extension's own events to PostHog, with nothing the SDK would send by itself and no content",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "posthog-js": "1.448.0",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@types/chrome": "^0.3.7",
+    "@types/node": "^26.6.6",
+    "typescript": "^7.0.2"
+  }
+}

@@ -26,7 +26,7 @@ export function listed(id: string, name: string, input = 1, output = 5): ListedM
   }
 }
 
-/** The recommended models (src/models.ts), all offered. */
+/** The recommended models (@cofun/agent's RECOMMENDED), all offered. */
 const RECOMMENDED_LISTED: ListedModel[] = [
   listed('anthropic/claude-sonnet-5.5', 'Anthropic: Claude Sonnet 5.5', 2, 10),
   listed('openai/gpt-6.1-sol', 'OpenAI: GPT-6.1 Sol', 2, 10),

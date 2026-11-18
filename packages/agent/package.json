@@ -5,7 +5,9 @@
   "description": "The extensions' agent runtime and tool framework: the agent loop, tool calls and the rules that keep them safe, the model providers, and defineTool",
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./mode": "./src/mode.ts",
+    "./models": "./src/models.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit"
@@ -17,6 +19,7 @@
     "zod": "^4.6.7"
   },
   "devDependencies": {
+    "@types/chrome": "^0.3.7",
     "@types/node": "^26.6.6",
     "typescript": "^7.0.2"
   }

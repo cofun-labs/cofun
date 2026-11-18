@@ -1,8 +1,5 @@
 import { WorkerClient } from '@cofun/worker-client'
 import { hostedProvider, workerWeb, type AgentConfig } from '@cofun/agent'
-import { track } from '../analytics'
-import type { CreditsState } from '../credits'
-import { loadMode, saveMode, watchMode, type Mode } from '../mode'
 import {
   answering,
   HOSTED_ONLY,
@@ -11,7 +8,10 @@ import {
   saveModelSettings,
   watchModelSettings,
   type ModelSettings,
-} from '../models'
+} from '@cofun/agent/models'
+import { loadMode, saveMode, watchMode, type Mode } from '@cofun/agent/mode'
+import { track } from '../analytics'
+import type { CreditsState } from '@cofun/worker-client/credits'
 import { SessionStore, type Session } from '../sessions'
 import { DATA_LINE, SELECTION_END, withDuckDuckGo } from '@cofun/tools'
 import { TOOLS } from '../tools'
