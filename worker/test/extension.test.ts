@@ -640,18 +640,35 @@ describe('conversation compaction', () => {
     expect(answer.used.cost).toEqual({ microCredits: 3 * FAKE_COST })
   })
 
-  it('[@no-uc:money] CJK text counts about a token a character toward the window', async () => {
-    // 150,000 characters: past the trigger (134,464 tokens) only if each counts as about a token.
-    // At 3.5 characters a token, this would go to the model unsummarized.
-    const agent = makeAgent({}, [
-      { role: 'user', text: 'Keep the launch code OSPREY-73.' },
-      // A CJK ideograph, written as an escape.
-      { role: 'assistant', parts: [{ type: 'text', text: '\u5bc6'.repeat(150_000) }] },
-    ])
-    ai.script = [{ reply: 'Launch code OSPREY-73.' }, { reply: 'OSPREY-73' }]
-    expect((await ask(agent, 'What was the code?')).result.status).toBe('done')
-    expect(ai.calls[0].inputs.tools).toBeUndefined()
-    expect(sentMessages(1)[1].content).toContain('Launch code OSPREY-73.')
+  it('[@no-uc:money] a hosted chat compacts at the same estimated token count in every script', async () => {
+    // Each sample is 10 estimated tokens: 35 ASCII characters at 3.5 a token, a CJK ideograph or a
+    // kana at a token each, an emoji at two. #582's Qwen3 count, the one reference at hand, gave
+    // 34,000 tokens for 56,000 Chinese characters, under this estimate's 56,000.
+    const samples: [string, string][] = [
+      ['English', 'The quick brown fox jumps over it. '],
+      ['JSON', '{"id":12345,"ok":true,"tag":"abc"},'],
+      ['Chinese', '\u5bc6'.repeat(10)],
+      ['Japanese', '\u304b\u306a'.repeat(5)],
+      ['emoji', '\u{1F600}'.repeat(5)],
+    ]
+    // The fake's own count is not what this checks: let it take every request.
+    ai.contextWindow = 10_000_000
+    // Past the trigger (134,464 tokens) and short of it, with room for the prompt, tools, and question.
+    for (const [tokens, compacts] of [
+      [140_000, true],
+      [125_000, false],
+    ] as const) {
+      for (const [script, sample] of samples) {
+        ai.calls = []
+        const agent = makeAgent({}, [
+          { role: 'user', text: 'Keep the launch code OSPREY-73.' },
+          { role: 'assistant', parts: [{ type: 'text', text: sample.repeat(tokens / 10) }] },
+        ])
+        expect((await ask(agent, 'What was the code?')).result.status, script).toBe('done')
+        // A compacting request asks for a summary first, which offers no tools.
+        expect(ai.calls[0].inputs.tools === undefined, `${script} at ${tokens}`).toBe(compacts)
+      }
+    }
   })
 
   it('[@no-uc:money] a rejected context compacts and retries that request once', async () => {

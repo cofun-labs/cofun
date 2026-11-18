@@ -52,8 +52,9 @@ export function requestBudget(model: Model<'openai-completions'>) {
   const maxSummaryTokens = Math.min(Math.floor(model.contextWindow / 5), model.maxTokens)
   const hard = model.contextWindow - model.maxTokens
   return {
-    // Never past the hard limit: a long reply limit on a small window would leave the gap between
-    // them as requests that neither compact nor fit.
+    // At 70% of the window, the rest left for the reply and for the question's later tool rounds,
+    // which add to the request before the next check. Never past the hard limit: a long reply limit
+    // on a small window would leave the gap between them as requests that neither compact nor fit.
     trigger: Math.min(Math.floor(model.contextWindow * 0.7), hard),
     hard,
     summary: model.contextWindow - maxSummaryTokens,
