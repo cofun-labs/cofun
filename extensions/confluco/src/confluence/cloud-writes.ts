@@ -19,7 +19,10 @@ import {
 } from './tab'
 
 const id = pageReference.shape.id
-export const cloudLocatedPage = cloudPage.extend({ spaceId: id, parentId: id.nullish() })
+export const cloudLocatedPage = cloudPage.extend({
+  spaceId: id,
+  parentId: id.nullish().transform((value) => (value === '0' ? null : value)),
+})
 export const cloudRevision = cloudLocatedPage.extend({
   version: z.object({ number: z.int().min(1).max(2_147_483_647) }),
   body: z.object({ storage: z.object({ value: z.string() }) }),

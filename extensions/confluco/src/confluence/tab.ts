@@ -90,7 +90,7 @@ export function refuse(message: string, mayHaveChanged = false): never {
 }
 
 type Query = Record<string, string | string[]>
-export type RestArea = 'api' | 'experimental' | 'cloud-v2'
+export type RestArea = 'api' | 'experimental' | 'cloud-v2' | 'cloud-restore'
 type RestRequest = {
   area: RestArea
   resource: string
@@ -256,6 +256,45 @@ export function trashCloudPage(tab: ConfluenceTab, pageId: string, signal?: Abor
     { area: 'cloud-v2', resource: `pages/${pageId}`, method: 'DELETE', query: {} },
     signal,
     'Confluence rejected moving this page to the trash. Review the page in Confluence before trying again.',
+  )
+}
+
+export function updateCloudPage(
+  tab: ConfluenceTab,
+  pageId: string,
+  input: { title: string; version: number; text: string },
+  signal?: AbortSignal,
+) {
+  return sendConfluence(
+    tab,
+    {
+      area: 'cloud-v2',
+      resource: `pages/${pageId}`,
+      method: 'PUT',
+      query: {},
+      body: JSON.stringify({
+        id: pageId,
+        status: 'current',
+        title: input.title,
+        version: { number: input.version },
+        body: { representation: 'storage', value: input.text },
+      }),
+    },
+    signal,
+  )
+}
+
+export function restoreCloudPage(tab: ConfluenceTab, pageId: string, key: string, signal?: AbortSignal) {
+  return sendConfluence(
+    tab,
+    {
+      area: 'cloud-restore',
+      resource: 'trash',
+      method: 'POST',
+      query: { key, contentId: pageId },
+    },
+    signal,
+    'Confluence rejected the restore. Check the page and your space administrator access.',
   )
 }
 
@@ -487,7 +526,7 @@ async function requestConfluence(expectedUrl: string, contextPath: string, reque
       (area === 'cloud-v2' &&
         jsonWrite &&
         ((method === 'POST' && ['pages', 'footer-comments'].includes(resource)) ||
-          (method === 'PUT' && /^pages\/\d{1,20}\/title$/.test(resource)))) ||
+          (method === 'PUT' && /^pages\/\d{1,20}(?:\/title)?$/.test(resource)))) ||
       (area === 'api' &&
         isLabel &&
         ((method === 'POST' && jsonWrite) ||
@@ -506,10 +545,23 @@ async function requestConfluence(expectedUrl: string, contextPath: string, reque
       contextPath !== '/wiki' ||
       !/^\/wiki(?:\/|$)/.test(actual.pathname) ||
       file ||
-      (!cloudRead && !cloudWrite)
+      (!cloudRead &&
+        !cloudWrite &&
+        !(
+          area === 'cloud-restore' &&
+          resource === 'trash' &&
+          method === 'POST' &&
+          body === undefined &&
+          Object.keys(query).length === 2 &&
+          typeof query.key === 'string' &&
+          query.key.length > 0 &&
+          query.key.length <= 255 &&
+          typeof query.contentId === 'string' &&
+          /^\d{1,20}$/.test(query.contentId)
+        ))
     )
       return { kind: 'invalid' }
-  } else if (area === 'cloud-v2') return { kind: 'invalid' }
+  } else if (area === 'cloud-v2' || area === 'cloud-restore') return { kind: 'invalid' }
   if (resource === 'current-page') {
     if ((area !== 'api' && area !== 'cloud-v2') || method !== 'GET') return { kind: 'invalid' }
     const path = actual.pathname.slice(contextPath.length).replace(/;[^/]*|%3bjsessionid(?:=|%3d)[^/]*/gi, '')
@@ -555,8 +607,13 @@ async function requestConfluence(expectedUrl: string, contextPath: string, reque
       if (!pageResource || query.status !== 'current' || Object.keys(query).length !== 1) return { kind: 'invalid' }
     }
   }
-  const apiPath = area === 'cloud-v2' ? `${contextPath}/api/v2/` : `${contextPath}/rest/${area}/`
-  const endpoint = new URL(actual.origin + apiPath + resource)
+  const nativeRestore = area === 'cloud-restore'
+  const apiPath = nativeRestore
+    ? `${contextPath}/pages/`
+    : area === 'cloud-v2'
+      ? `${contextPath}/api/v2/`
+      : `${contextPath}/rest/${area}/`
+  const endpoint = new URL(actual.origin + apiPath + (nativeRestore ? 'restoretrashitem.action' : resource))
   if (endpoint.origin !== actual.origin || !endpoint.pathname.startsWith(apiPath) || endpoint.hash || endpoint.search)
     return { kind: 'invalid' }
   endpoint.search = new URLSearchParams(
@@ -571,7 +628,7 @@ async function requestConfluence(expectedUrl: string, contextPath: string, reque
   const cap = 1_000_000
   try {
     let payload: BodyInit | undefined = body
-    const headers: Record<string, string> = { Accept: 'application/json' }
+    const headers: Record<string, string> = { Accept: nativeRestore ? 'text/html' : 'application/json' }
     if (file) {
       const decoded = atob(file.base64)
       const bytes = Uint8Array.from(decoded, (character) => character.charCodeAt(0))
@@ -581,7 +638,7 @@ async function requestConfluence(expectedUrl: string, contextPath: string, reque
       headers['X-Atlassian-Token'] = 'nocheck'
     } else if (body !== undefined) headers['Content-Type'] = 'application/json'
     const response = await fetch(endpoint.href, {
-      method,
+      method: nativeRestore ? 'GET' : method,
       credentials: 'same-origin',
       redirect: 'manual',
       referrerPolicy: 'no-referrer',
@@ -589,20 +646,24 @@ async function requestConfluence(expectedUrl: string, contextPath: string, reque
       body: payload,
       signal: AbortSignal.any([controller.signal, AbortSignal.timeout(file ? 60_000 : 15_000)]),
     })
-    if (response.type === 'opaqueredirect' || (response.status >= 300 && response.status < 400))
-      return { kind: 'unexpected-web-response' }
-    if (response.status === 401) return { kind: 'auth' }
-    if (response.status === 400 || (file && response.status === 413)) return { kind: 'rejected' }
-    if (response.status === 403) return { kind: 'forbidden' }
-    if (response.status === 404) return { kind: 'missing' }
-    if (response.status === 405 || response.status === 501) return { kind: 'unsupported' }
-    if (response.status === 409) return { kind: 'conflict' }
-    if (response.status === 429) return { kind: 'limited' }
-    if (!response.ok) return { kind: 'network' }
+    function failure(response: Response): { kind: Exclude<z.infer<typeof result>['kind'], 'ok'> } | undefined {
+      if (response.type === 'opaqueredirect' || (response.status >= 300 && response.status < 400))
+        return { kind: 'unexpected-web-response' }
+      if (response.status === 401) return { kind: 'auth' }
+      if (response.status === 400 || (file && response.status === 413)) return { kind: 'rejected' }
+      if (response.status === 403) return { kind: 'forbidden' }
+      if (response.status === 404) return { kind: 'missing' }
+      if (response.status === 405 || response.status === 501) return { kind: 'unsupported' }
+      if (response.status === 409) return { kind: 'conflict' }
+      if (response.status === 429) return { kind: 'limited' }
+      if (!response.ok) return { kind: 'network' }
+    }
+    const failed = failure(response)
+    if (failed) return failed
     if (response.status === 204 && method === 'DELETE') return { kind: 'ok', status: response.status, data: null }
     const contentType = response.headers.get('content-type') ?? ''
-    if (/^text\/html(?:;|$)/i.test(contentType)) return { kind: 'unexpected-web-response' }
-    if (!/^application\/json(?:;|$)/i.test(contentType)) return { kind: 'invalid' }
+    if (nativeRestore ? !/^text\/html(?:;|$)/i.test(contentType) : !/^application\/json(?:;|$)/i.test(contentType))
+      return { kind: /^text\/html(?:;|$)/i.test(contentType) ? 'unexpected-web-response' : 'invalid' }
     if (Number(response.headers.get('content-length')) > cap || !response.body) return { kind: 'large' }
 
     const reader = response.body.getReader()
@@ -619,8 +680,60 @@ async function requestConfluence(expectedUrl: string, contextPath: string, reque
       }
       json += decoder.decode(part.value, { stream: true })
     }
+    const text = json + decoder.decode()
+    if (nativeRestore) {
+      const html = new DOMParser().parseFromString(text, 'text/html')
+      const expected = actual.origin + contextPath + '/pages/dorestoretrashitem.action'
+      const forms = [...html.forms].filter(
+        (form) =>
+          form.method.toLowerCase() === 'post' &&
+          new URL(form.getAttribute('action') ?? '', endpoint).href === expected,
+      )
+      if (forms.length !== 1) return { kind: 'invalid' }
+      const form = forms[0]
+      const field = (name: string) => {
+        const inputs = [...form.querySelectorAll('input')].filter((input) => input.name === name)
+        return inputs.length === 1 ? inputs[0].value : undefined
+      }
+      const key = field('key')
+      const contentId = field('contentId')
+      const token = field('atl_token')
+      const confirm = field('confirm')
+      if (
+        !contentId ||
+        !key ||
+        contentId !== query.contentId ||
+        key !== query.key ||
+        !token ||
+        token.length > 8192 ||
+        !confirm ||
+        confirm.length > 255
+      )
+        return { kind: 'invalid' }
+      const atPost = new URL(location.href)
+      atPost.hash = ''
+      if (atPost.href !== expectedUrl) return { kind: 'changed' }
+      // The CSRF value stays inside this isolated tab and is never returned to the extension.
+      const posted = await fetch(expected, {
+        method: 'POST',
+        credentials: 'same-origin',
+        redirect: 'manual',
+        referrerPolicy: 'no-referrer',
+        headers: { Accept: 'text/html', 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({ atl_token: token, key, contentId, confirm }),
+        signal: AbortSignal.any([controller.signal, AbortSignal.timeout(15_000)]),
+      })
+      // The native action may redirect. Never follow it; the caller may verify the same page once.
+      const denied = failure(posted)
+      void posted.body?.cancel()
+      if (denied) return denied
+      // Native success is an HTML response. The caller verifies the page with a separate REST read.
+      if (posted.status !== 200 || !/^text\/html(?:;|$)/i.test(posted.headers.get('content-type') ?? ''))
+        return { kind: 'invalid' }
+      return { kind: 'ok', status: posted.status, data: null }
+    }
     try {
-      const data: unknown = JSON.parse(json + decoder.decode())
+      const data: unknown = JSON.parse(text)
       return { kind: 'ok', pageId, status: response.status, data }
     } catch {
       return { kind: 'invalid' }

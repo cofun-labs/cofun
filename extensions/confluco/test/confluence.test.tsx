@@ -386,10 +386,10 @@ describe('Confluence Cloud', () => {
     const tools = JSON.stringify(browser.ai.calls[0]?.inputs.tools)
     expect(tools).toContain('"name":"read_page"')
     expect(tools).toContain('"name":"search_pages"')
-    expect(tools).not.toContain('"name":"edit_page"')
+    expect(tools).toContain('"name":"edit_page"')
     expect(tools).not.toContain('"name":"upload_page_attachment"')
-    expect(tools).not.toContain('"name":"restore_page"')
-    expect(tools).not.toContain('"name":"undo_last_change"')
+    expect(tools).toContain('"name":"restore_page"')
+    expect(tools).toContain('"name":"undo_last_change"')
     expect(tools).toContain('"name":"trash_page"')
     expect(tools).toContain('"name":"list_spaces"')
     expect(toolResults(browser).join(' ')).toContain('Cloud workshop agenda')
@@ -415,7 +415,7 @@ describe('Confluence Cloud', () => {
         expect(await screen.findByText('Cannot read Cloud.')).toBeVisible()
         expect(toolResults(browser)[0]).toContain(message)
       }
-      expect(JSON.stringify(browser.ai.calls[0]?.inputs.tools)).not.toContain('"name":"edit_page"')
+      expect(JSON.stringify(browser.ai.calls[0]?.inputs.tools)).not.toContain('"name":"upload_page_attachment"')
       expect(requests).toEqual([])
     },
   )
