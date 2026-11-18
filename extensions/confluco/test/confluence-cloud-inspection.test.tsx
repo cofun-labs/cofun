@@ -79,6 +79,111 @@ it('[UC-CONFLUCO-CONFLUENCE-004-S01] [UC-CONFLUCO-CONFLUENCE-004-S02] browses Cl
   ).toBe(true)
 })
 
+it('[UC-CONFLUCO-CONFLUENCE-004-S04] browses Cloud folders in the page tree', async () => {
+  const { browser, user } = await workspace()
+  const folder = (id: string, title: string) => ({
+    id,
+    type: 'folder',
+    status: 'current',
+    title,
+    _links: { webui: `/spaces/SCHOOL/folder/${id}` },
+  })
+  const unit = folder('14', 'Cloud unit')
+  const handouts = folder('60', 'Cloud handouts')
+  const handout = { id: '61', title: 'Cloud handout', status: 'current' }
+  browser.confluenceResponse = (url) => {
+    const endpoint = new URL(url)
+    switch (endpoint.pathname) {
+      case pagePath:
+        return Response.json(page)
+      case pagePath + '/ancestors':
+        return Response.json({
+          results: [
+            { id: '13', type: 'page' },
+            { id: '14', type: 'folder' },
+          ],
+        })
+      case pagePath + '/direct-children':
+        return Response.json({
+          results: [
+            { id: '60', type: 'folder' },
+            { id: '7', type: 'whiteboard' },
+            { id: '54', type: 'page' },
+          ],
+        })
+      case '/wiki/api/v2/folders/14':
+        return Response.json(unit)
+      case '/wiki/api/v2/folders/60':
+        return Response.json(handouts)
+      case '/wiki/api/v2/folders/60/ancestors':
+        return Response.json({ results: [{ id: '13', type: 'page' }] })
+      case '/wiki/api/v2/folders/60/direct-children':
+        return Response.json({ results: [{ id: '61', type: 'page' }] })
+      case '/wiki/api/v2/pages': {
+        const ids = endpoint.searchParams.getAll('id')
+        return Response.json({ results: [parent, child, handout].filter((item) => ids.includes(item.id)) })
+      }
+    }
+    return new Response(null, { status: 404 })
+  }
+  browser.ai.script.push(
+    call('browse_page_tree'),
+    call('browse_page_tree', { folder: { instance: cloud, id: '60' } }),
+    { reply: 'Cloud folders ready.' },
+  )
+  await ask(user, 'Where does this page sit, and what is in its folder?')
+  expect(await screen.findByText('Cloud folders ready.')).toBeVisible()
+  const [pageTree, folderTree] = browser
+    .sentToModel()
+    .filter((message) => message.role === 'tool')
+    .map((message) => message.content)
+  expect(pageTree).toContain(
+    '"ancestors":[{"title":"Cloud parent","url":"https://team.atlassian.net/wiki/pages/viewpage.action?pageId=13","ref":{"instance":"https://team.atlassian.net/wiki","id":"13"}},' +
+      '{"kind":"folder","title":"Cloud unit","url":"https://team.atlassian.net/wiki/spaces/SCHOOL/folder/14","ref":{"instance":"https://team.atlassian.net/wiki","id":"14"}}]',
+  )
+  expect(pageTree).toMatch(/"children":\[\{"kind":"folder","title":"Cloud handouts".*\},\{"title":"Cloud child"/)
+  expect(folderTree).toContain('"folder":{"kind":"folder","title":"Cloud handouts"')
+  expect(folderTree).toContain('"ancestors":[{"title":"Cloud parent"')
+  expect(folderTree).toContain('"children":[{"title":"Cloud handout"')
+  expect(
+    browser.workspaceRequests.every(({ url, init }) => new URL(url).origin === origin && init?.method === 'GET'),
+  ).toBe(true)
+})
+
+it('[UC-CONFLUCO-CONFLUENCE-004-S03] [UC-CONFLUCO-CONFLUENCE-004-S04] uses a Cloud folder only as a folder it returned', async () => {
+  const { browser, user } = await workspace()
+  browser.confluenceResponse = (url) => {
+    switch (new URL(url).pathname) {
+      case pagePath:
+        return Response.json(page)
+      case pagePath + '/ancestors':
+        return Response.json({ results: [] })
+      case pagePath + '/direct-children':
+        return Response.json({ results: [{ id: '60', type: 'folder' }] })
+      case '/wiki/api/v2/folders/60':
+        return Response.json({ id: '60', type: 'folder', status: 'current', title: 'Cloud handouts' })
+    }
+    return new Response(null, { status: 404 })
+  }
+  browser.ai.script.push(
+    call('browse_page_tree', { folder: { instance: cloud, id: '60' } }),
+    call('browse_page_tree'),
+    call('list_page_labels', { page: { instance: cloud, id: '60' } }),
+    { reply: 'Folder checks done.' },
+  )
+  await ask(user, 'Check the folder.')
+  expect(await screen.findByText('Folder checks done.')).toBeVisible()
+  const output = toolText(browser)
+  expect(output).toContain('Use a folder reference returned by browse_page_tree during this question.')
+  expect(output).toContain('This reference is a folder. Pass it to browse_page_tree as folder.')
+  expect(browser.workspaceRequests.map(({ url }) => new URL(url).pathname)).toEqual([
+    pagePath,
+    pagePath + '/ancestors',
+    pagePath + '/direct-children',
+    '/wiki/api/v2/folders/60',
+  ])
+})
+
 it('[UC-CONFLUCO-CONFLUENCE-005-S01] [UC-CONFLUCO-CONFLUENCE-005-S02] [UC-CONFLUCO-CONFLUENCE-005-S04] reads Cloud versions and reported restrictions', async () => {
   const { browser, user } = await workspace()
   const version = { number: 2, createdAt: '2026-11-13T00:00:00Z', message: 'Current fixture' }

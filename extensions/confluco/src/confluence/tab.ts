@@ -533,7 +533,7 @@ async function requestConfluence(expectedUrl: string, contextPath: string, reque
       method === 'GET' &&
       body === undefined &&
       ((area === 'cloud-v2' &&
-        /^(?:current-page|spaces(?:\/\d{1,20})?|pages(?:\/\d{1,20}(?:\/(?:ancestors|direct-children|versions|operations|labels|footer-comments|inline-comments|attachments))?)?|footer-comments\/\d{1,20}|(?:footer|inline)-comments\/\d{1,20}\/children)$/.test(
+        /^(?:current-page|spaces(?:\/\d{1,20})?|pages(?:\/\d{1,20}(?:\/(?:ancestors|direct-children|versions|operations|labels|footer-comments|inline-comments|attachments))?)?|folders\/\d{1,20}(?:\/(?:ancestors|direct-children))?|footer-comments\/\d{1,20}|(?:footer|inline)-comments\/\d{1,20}\/children)$/.test(
           resource,
         )) ||
         (area === 'api' && /^(?:search|content\/\d{1,20}\/restriction\/byOperation)$/.test(resource)))

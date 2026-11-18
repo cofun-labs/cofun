@@ -17,7 +17,7 @@ import { accessArgs, listVersions, pageAccess, readPageVersion, versionArgs, ver
 import { getInstance } from '../confluence/instance'
 import { labelsArgs, listLabels } from '../confluence/labels'
 import { browseTree, getSpace, listSpaces, listSpacesArgs, spaceArgs, treeArgs } from '../confluence/navigation'
-import type { PageReference } from '../confluence/references'
+import { pageReference, type PageReference } from '../confluence/references'
 import { currentConfluenceTab, type ConfluenceTab } from '../confluence/tab'
 import { defineTool } from '../tool'
 import { z } from '../zod'
@@ -29,9 +29,20 @@ function remember(memory: ToolMemory, pages: readonly { ref: PageReference }[]) 
   for (const { ref } of pages) memory.confluenceResources.add(JSON.stringify([ref.instance, ref.id]))
 }
 
+const folderKey = (ref: PageReference) => JSON.stringify([ref.instance, ref.id, 'folder'])
+
 function requirePage(memory: ToolMemory, page?: PageReference) {
-  if (page && !memory.confluenceResources.has(JSON.stringify([page.instance, page.id])))
-    throw new Error('Use a page reference returned by a Confluence tool during this question, or omit page.')
+  if (!page || memory.confluenceResources.has(JSON.stringify([page.instance, page.id]))) return
+  if (memory.confluenceResources.has(folderKey(page)))
+    throw new Error('This reference is a folder. Pass it to browse_page_tree as folder.')
+  throw new Error('Use a page reference returned by a Confluence tool during this question, or omit page.')
+}
+
+/** Remember a tree's pages and folders apart, so a folder's ID is never used as a page's. */
+function rememberTree(memory: ToolMemory, entries: readonly { ref: PageReference; kind?: 'folder' }[]) {
+  for (const entry of entries)
+    if (entry.kind === 'folder') memory.confluenceResources.add(folderKey(entry.ref))
+    else remember(memory, [entry])
 }
 
 function result(data: object) {
@@ -163,20 +174,35 @@ export const getConfluenceSpace = defineTool({
 
 export const browseConfluenceTree = defineTool({
   name: 'browse_page_tree',
-  args: treeArgs.omit({ start: true }).extend({ nextPage: collectionNext }),
+  args: treeArgs.omit({ start: true }).extend({
+    folder: pageReference
+      .optional()
+      .describe('A folder reference from browse_page_tree on Confluence Cloud. Use instead of page to browse it.'),
+    nextPage: collectionNext,
+  }),
   description:
-    'Read ancestors and direct children of the current page or a page reference returned by a Confluence tool.',
+    'Read ancestors and direct children of the current page, a page reference returned by a Confluence tool, ' +
+    'or a Confluence Cloud folder from this tool. Entries with kind "folder" are folders: pass their ref as folder.',
   describe: () => on(READ, undefined, 'the Confluence page tree'),
   run: async (args, signal, { memory }) => {
+    if (args.page && args.folder) throw new Error('Pass page or folder, not both.')
     requirePage(memory, args.page)
+    if (args.folder && !memory.confluenceResources.has(folderKey(args.folder)))
+      throw new Error('Use a folder reference returned by browse_page_tree during this question.')
     const tab = await target(memory)
-    const key = requestKey(tab, 'browse_page_tree', args.page)
-    const tree = await paginate(memory, key, args.nextPage, async (position) =>
-      tab.instance.cloud
-        ? browseCloudTree(tab, args.page, cursor(position), signal)
-        : browseTree({ ...args, start: offset(position) }, tab, signal),
-    )
-    remember(memory, [tree.page, ...tree.ancestors, ...tree.children])
+    if (args.folder && !tab.instance.cloud) throw new Error('Folders are only on Confluence Cloud.')
+    const key = requestKey(tab, 'browse_page_tree', { page: args.page, folder: args.folder })
+    const tree = await paginate(memory, key, args.nextPage, async (position) => {
+      if (!tab.instance.cloud) {
+        const tree = await browseTree({ page: args.page, start: offset(position) }, tab, signal)
+        remember(memory, [tree.page, ...tree.ancestors, ...tree.children])
+        return tree
+      }
+      const where = args.folder ? { folder: args.folder } : { page: args.page }
+      const tree = await browseCloudTree(tab, where, cursor(position), signal)
+      rememberTree(memory, ['folder' in tree ? tree.folder : tree.page, ...tree.ancestors, ...tree.children])
+      return tree
+    })
     return result(tree)
   },
 })
