@@ -1,9 +1,9 @@
 // Checks that the use case scenarios and the tests named after them agree (docs/bdd.md).
 //
 // Each product keeps its use cases next to its code: an extension's in extensions/<name>/use-cases/,
-// the worker's (behavior of the backend alone) in worker/use-cases/. A scenario is matched only
-// against the tests that can verify it: an extension's scenarios against its own tests and the
-// worker's, the worker's scenarios against the worker's tests.
+// the worker's (behavior of the backend alone) in worker/use-cases/, and a shared package's (the rules
+// a library the extensions call owns) in packages/<name>/use-cases/. A scenario is matched only
+// against the tests that can verify it: its own product's tests and the worker's.
 //
 // Two rules fail: an api-test scenario marked ✅ must have such a test that names its ID, and every test
 // names a scenario ID or says which harm it guards with [@no-uc:<kind>] (docs/bdd.md#what-gets-a-test).
@@ -32,14 +32,14 @@ interface Row {
   strategy: Strategy
   verified: boolean
   priority: string
-  /** The product whose folder holds the row: an extension's folder name, or `worker`. */
+  /** The product whose folder holds the row: an extension's folder name, `packages/<name>`, or `worker`. */
   product: string
   /** Where the row is: `extensions/notico/use-cases/….md:12`. */
   at: string
 }
 
 interface TestId {
-  /** The product whose folder holds the test: an extension's folder name, or `worker`. */
+  /** The product whose folder holds the test: an extension's folder name, `packages/<name>`, or `worker`. */
   product: string
   at: string
 }
@@ -56,8 +56,18 @@ const OLD_TEST_ID = /\[(UC-[A-Z]+-\d+-S\d+)\]/g
 /** The product a use case or test file belongs to, from its folder. */
 function productOf(file: string): string {
   if (file.startsWith(`${WORKER}/`)) return WORKER
+  // A package's folder name is lowercase words joined by hyphens: worker-client.
+  const pkg = /^packages\/([^/]+)\//.exec(file)
+  if (pkg) {
+    if (!/^[a-z]+(-[a-z]+)*$/.test(pkg[1])) {
+      throw new Error(
+        `packages/${pkg[1]}: a package's folder name is lowercase words and hyphens only (docs/bdd.md#ids)`,
+      )
+    }
+    return `packages/${pkg[1]}`
+  }
   const extension = /^extensions\/([^/]+)\//.exec(file)
-  if (!extension) throw new Error(`${file} is not in an extension's folder or the worker's`)
+  if (!extension) throw new Error(`${file} is not in an extension's folder, a package's, or the worker's`)
   // The folder name, in capitals, is the product's ID prefix, which may hold letters only.
   if (!/^[a-z]+$/.test(extension[1])) {
     throw new Error(
@@ -67,9 +77,16 @@ function productOf(file: string): string {
   return extension[1]
 }
 
-/** What a product's IDs start with: its name, or COFUN for the worker (the platform every extension shares). */
+/**
+ * What a product's IDs start with: its name, COFUN for the worker (the platform every extension
+ * shares), or a package's folder name without its hyphens (WORKERCLIENT for packages/worker-client).
+ */
 function prefixOf(product: string): string {
-  return product === WORKER ? 'COFUN' : product.toUpperCase()
+  if (product === WORKER) return 'COFUN'
+  return product
+    .replace(/^packages\//, '')
+    .replaceAll('-', '')
+    .toUpperCase()
 }
 
 function readRows(file: SourceFile, report: Report): Row[] {

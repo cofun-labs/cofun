@@ -7,7 +7,7 @@
 // (activeTab), which is how the selection is read there with its line breaks; where it can't be
 // (a frame from another site, say), Chrome's own copy of it, on one line, is used.
 import { createClerkClient } from '@clerk/chrome-extension/client'
-import { clerkSyncHost } from './clerk'
+import { clerkSyncHost } from '@cofun/worker-client/clerk'
 import { setupSelectionMenu } from './selection-menu'
 
 chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch((err) => console.error(err))

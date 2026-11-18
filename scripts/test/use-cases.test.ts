@@ -171,6 +171,29 @@ describe('checkUseCases', () => {
     expect(report).toEqual({ errors: [], warnings: [], scenarios: { 'api-test': 2, 'ai-e2e': 0 } })
   })
 
+  it("matches a package's scenario, whose prefix is its folder name without hyphens, with its own tests only", () => {
+    const text = ['# UC-WORKERCLIENT-WEB-001: Read a page', '## Scenarios', '### api-test', TABLE].join('\n')
+    const rows = ['| UC-WORKERCLIENT-WEB-001-S01 | P0 | ✅ | … |', '| UC-WORKERCLIENT-WEB-001-S02 | P0 | ✅ | … |']
+    const report = checkUseCases(
+      [
+        {
+          path: 'packages/worker-client/use-cases/web/UC-WORKERCLIENT-WEB-001-read.md',
+          text: [text, ...rows].join('\n'),
+        },
+      ],
+      [
+        testIn('packages/worker-client/test/web.test.ts', 'UC-WORKERCLIENT-WEB-001-S01'),
+        testIn('extensions/notico/test/web.test.ts', 'UC-WORKERCLIENT-WEB-001-S02'),
+      ],
+    )
+    expect(report.errors).toEqual([
+      'packages/worker-client/use-cases/web/UC-WORKERCLIENT-WEB-001-read.md:7: UC-WORKERCLIENT-WEB-001-S02 is ✅ api-test, but no test names it',
+    ])
+    expect(report.warnings).toEqual([
+      'extensions/notico/test/web.test.ts:1: names UC-WORKERCLIENT-WEB-001-S02, which no use case of notico has',
+    ])
+  })
+
   it("does not match a scenario with another product's tests", () => {
     const report = checkUseCases(
       [

@@ -1,4 +1,4 @@
-// The extensions' module boundaries (AGENTS.md: "Architecture" and "Calling outside services"), as lint errors.
+// The module boundaries of the extensions and the packages they share (AGENTS.md: "Architecture" and "Calling outside services"), as lint errors.
 // Oxlint's default rules stay on: this file only adds rules.
 //
 // Each rule is written once for every extension, with extensions/*/ globs: an extension is
@@ -163,7 +163,7 @@
           "error",
           {
             "name": "fetch",
-            "message": "Only an extension's src/<site>/tab.ts sends requests to its site, and only its src/agent/ calls the worker. Tools call the typed methods of the site's client (src/notion/api.ts in Notico)."
+            "message": "Only an extension's src/<site>/tab.ts sends requests to its site, and only its src/agent/ calls a model (the user's own); the worker is called through @cofun/worker-client. Tools call the typed methods of the site's client (src/notion/api.ts in Notico)."
           }
         ],
         "no-restricted-properties": [
@@ -181,17 +181,17 @@
           {
             "object": "globalThis",
             "property": "fetch",
-            "message": "Only an extension's src/<site>/tab.ts sends requests to its site, and only its src/agent/ calls the worker. Tools call the typed methods of the site's client (src/notion/api.ts in Notico)."
+            "message": "Only an extension's src/<site>/tab.ts sends requests to its site, and only its src/agent/ calls a model (the user's own); the worker is called through @cofun/worker-client. Tools call the typed methods of the site's client (src/notion/api.ts in Notico)."
           },
           {
             "object": "window",
             "property": "fetch",
-            "message": "Only an extension's src/<site>/tab.ts sends requests to its site, and only its src/agent/ calls the worker. Tools call the typed methods of the site's client (src/notion/api.ts in Notico)."
+            "message": "Only an extension's src/<site>/tab.ts sends requests to its site, and only its src/agent/ calls a model (the user's own); the worker is called through @cofun/worker-client. Tools call the typed methods of the site's client (src/notion/api.ts in Notico)."
           },
           {
             "object": "self",
             "property": "fetch",
-            "message": "Only an extension's src/<site>/tab.ts sends requests to its site, and only its src/agent/ calls the worker. Tools call the typed methods of the site's client (src/notion/api.ts in Notico)."
+            "message": "Only an extension's src/<site>/tab.ts sends requests to its site, and only its src/agent/ calls a model (the user's own); the worker is called through @cofun/worker-client. Tools call the typed methods of the site's client (src/notion/api.ts in Notico)."
           }
         ]
       }
@@ -306,7 +306,8 @@
       }
     },
     {
-      // The one folder that imports pi, and the one that calls the worker: the agent, src/agent/.
+      // The one folder that imports pi, and the one that calls a model itself (the user's own): the
+      // agent, src/agent/. The worker is called through @cofun/worker-client.
       "files": ["extensions/*/src/agent/**"],
       "rules": {
         "no-restricted-imports": [
@@ -465,6 +466,111 @@
               {
                 "regex": "^(\\.\\./)+extensions/",
                 "message": "An extension never imports another extension: each one in extensions/<name>/ keeps its own copy of what it needs."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      // The shared libraries in packages/ that the extensions call. A package takes what is particular
+      // to an extension as parameters and never imports one, and imports zod only through its own
+      // src/zod.ts, which sets it up for the extensions' content security policy. Its tests (test/)
+      // keep the restrictions of the first rules.
+      "files": ["packages/*/src/**"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": [
+                  "@earendil-works/pi-agent-core",
+                  "@earendil-works/pi-agent-core/**",
+                  "@earendil-works/pi-ai",
+                  "@earendil-works/pi-ai/**"
+                ],
+                "message": "Only an extension's src/agent/ imports pi. Import what you need from src/agent/ (its index.ts), or add it there."
+              },
+              {
+                "group": ["posthog-js", "posthog-js/**"],
+                "message": "Only an extension's src/analytics.ts imports the PostHog SDK. Call its track(), whose events are the only ones that can be sent."
+              },
+              {
+                "regex": "^zod(/|$)",
+                "message": "Import z from the package's src/zod.ts: it sets zod up for the extensions' content security policy before any schema is built."
+              },
+              {
+                "regex": "^\\.\\./\\.\\./",
+                "message": "A package never imports what is outside it, such as an extension: an extension calls it, and passes it what it needs as parameters."
+              }
+            ]
+          }
+        ],
+        "no-restricted-properties": [
+          "error",
+          {
+            "object": "chrome",
+            "property": "debugger",
+            "message": "Never use chrome.debugger: it shows a permanent \"debugging this browser\" banner. Site requests run through chrome.scripting in the extension's src/<site>/tab.ts."
+          }
+        ]
+      }
+    },
+    {
+      // A package's one module that imports zod. Its other restrictions (the packages/*/src block) still hold.
+      "files": ["packages/*/src/zod.ts"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": [
+                  "@earendil-works/pi-agent-core",
+                  "@earendil-works/pi-agent-core/**",
+                  "@earendil-works/pi-ai",
+                  "@earendil-works/pi-ai/**"
+                ],
+                "message": "Only an extension's src/agent/ imports pi. Import what you need from src/agent/ (its index.ts), or add it there."
+              },
+              {
+                "group": ["posthog-js", "posthog-js/**"],
+                "message": "Only an extension's src/analytics.ts imports the PostHog SDK. Call its track(), whose events are the only ones that can be sent."
+              },
+              {
+                "regex": "^\\.\\./\\.\\./",
+                "message": "A package never imports what is outside it, such as an extension: an extension calls it, and passes it what it needs as parameters."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      // A package's tests may run against the worker (worker/src/app.ts and its fakes), never an extension.
+      "files": ["packages/*/test/**"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": [
+                  "@earendil-works/pi-agent-core",
+                  "@earendil-works/pi-agent-core/**",
+                  "@earendil-works/pi-ai",
+                  "@earendil-works/pi-ai/**"
+                ],
+                "message": "Only an extension's src/agent/ imports pi. Import what you need from src/agent/ (its index.ts), or add it there."
+              },
+              {
+                "group": ["posthog-js", "posthog-js/**"],
+                "message": "Only an extension's src/analytics.ts imports the PostHog SDK. Call its track(), whose events are the only ones that can be sent."
+              },
+              {
+                "regex": "^(\\.\\./)+extensions/",
+                "message": "A package never imports an extension: an extension calls it, and passes it what it needs as parameters."
               }
             ]
           }

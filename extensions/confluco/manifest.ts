@@ -3,7 +3,7 @@
 // on update when the new version adds a permission warning, so a permission must never
 // change unnoticed. It also pins the content security policy, which names the hosts
 // the extension's pages may contact (see PRIVACY.md).
-import { clerkFrontendApi } from './src/clerk.ts'
+import { clerkFrontendApi } from '@cofun/worker-client/clerk'
 
 /** The env values the manifest is built from (see .env). */
 export interface ManifestEnv {

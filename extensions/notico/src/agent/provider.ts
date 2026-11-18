@@ -1,8 +1,8 @@
 // Where the agent's model requests go (see ModelProvider), and what is the same for every service:
 // how much of a conversation to send, and how a failed request's error reads.
 import type { ClientIdentity, Model } from '@earendil-works/pi-ai'
+import type { CallCost, Turn } from '@cofun/worker-client'
 import { z } from '../zod'
-import type { Turn } from './types'
 
 /**
  * Where the agent's model requests go, and what is particular to the service behind them: which
@@ -26,7 +26,8 @@ export interface ModelProvider {
   modelChanged(failure: Failure): boolean
   /**
    * What a model call cost in credits, when this chunk of its stream says (see `callCost` in
-   * worker.ts). Only the hosted provider has it: a user's own model spends no credits on its calls.
+   * @cofun/worker-client). Only the hosted provider has it: a user's own model spends no credits on
+   * its calls.
    */
   callCost?(chunk: unknown): CallCost | undefined
   /**
@@ -34,12 +35,6 @@ export interface ModelProvider {
    * Only the hosted provider has it: a user's own model's service is never told.
    */
   turnHeaders?(turn: Turn): Record<string, string>
-}
-
-/** What one model call cost, as the worker charged it: in micro-credits, and whether from estimated tokens. */
-export interface CallCost {
-  microCredits: number
-  estimated: boolean
 }
 
 // About 150k tokens (a token is about four characters), of the hosted model's 1,048,576. The worker
@@ -60,9 +55,9 @@ export const ownHistory = (contextLength: number) => ({
   chars: Math.min(contextLength * 2, OWN_HISTORY.chars),
 })
 
-// What the worker answers, as far as the agent reads it. Each field is read loosely: one that is not
-// text counts as missing, so a reply the agent can't read ends in the fallback, never in a wrong value.
-export const looseText = z.string().optional().catch(undefined)
+// A failed model request's error, as far as the agent reads it. Each field is read loosely: one that is
+// not text counts as missing, so an error the agent can't read ends in the fallback, never in a wrong value.
+const looseText = z.string().optional().catch(undefined)
 
 /** An error as the worker words it. */
 const ErrorFields = z.object({ code: looseText, message: looseText })

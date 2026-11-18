@@ -1,0 +1,24 @@
+{
+  "name": "@cofun/worker-client",
+  "version": "0.0.0",
+  "private": true,
+  "description": "The extensions' client for the Cofun Worker: the hosted model, web reads and searches, credits and checkout, and Clerk sign-in",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./clerk": "./src/clerk.ts"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@types/chrome": "^0.3.7",
+    "@types/node": "^26.6.6",
+    "typescript": "^7.0.2",
+    "vitest": "^5.1.0"
+  }
+}

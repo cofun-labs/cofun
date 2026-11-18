@@ -1,6 +1,6 @@
 # Development
 
-Requires Node.js 24 and pnpm. The repository is one pnpm workspace: the [worker](#worker), shared by every extension, and one folder per extension in `extensions/` ([Notico](#notico) is the first). The commands below cover all of them.
+Requires Node.js 24 and pnpm. The repository is one pnpm workspace: the [worker](#worker), shared by every extension, one folder per extension in `extensions/` ([Notico](#notico) is the first), and the libraries they share in `packages/`. The commands below cover all of them.
 
 ```bash
 pnpm install
@@ -8,7 +8,7 @@ pnpm check        # lint, unused code check (knip), format check, use case cover
 pnpm knip         # unused files, exports, and dependencies (knip.jsonc lists what is kept, and why)
 pnpm use-cases    # every ✅ api-test scenario has a test; warns about other mismatches (docs/bdd.md)
 pnpm format:fix   # format all files
-pnpm test         # extension and worker tests, and the unit tests of scripts/
+pnpm test         # extension, package, and worker tests, and the unit tests of scripts/
 pnpm build        # build every extension into extensions/<name>/dist
 pnpm test:browser # build the extensions and run their browser tests in Chromium (first: pnpm --filter notico-extension exec playwright install chromium)
 pnpm icons        # export extensions/notico/icons/icon.svg into extensions/notico/public/icons (needs the same Chromium); commit the PNGs
@@ -51,7 +51,7 @@ The rules for tests are in [AGENTS.md](../AGENTS.md#testing) and [docs/bdd.md](b
 - **Fakes, injected through `env`:** `FakeAiBinding` (`worker/test/fakes.ts`) stands in for the Workers AI binding. `FakeClerk` (`worker/test/clerk.ts`) signs real RS256 session tokens with a local key pair, which the worker verifies like real Clerk tokens.
 - **Clerk's React SDK** is the one module replaced whole: the side panel imports its components directly, so the extension's vitest config resolves `@clerk/chrome-extension` to `extensions/notico/test/clerk.tsx`, for the UI tests only.
 - **Notion:** `extensions/notico/test/` tests Notico's client code against a fake Notion tab (`extensions/notico/test/notion-tab.ts`) that answers with sanitized fixtures (`extensions/notico/test/fixtures/notion/`).
-- **Client and worker together:** Notico's client tests run its real agent against the real worker app (`createApp()` behind `fetch`), so the two cannot drift: the side panel's tests through `extensions/notico/test/panel.ts`, and the agent loop's rules in `extensions/notico/test/agent.test.ts`. `worker/test/extension.test.ts` keeps only what the two sides must agree on: the streamed reply, the tool-call round trip, sessions, credits, a question's cost, and a model change.
+- **Client and worker together:** Notico's client tests run its real agent against the real worker app (`createApp()` behind `fetch`), so the two cannot drift: the side panel's tests through `extensions/notico/test/panel.ts`, and the agent loop's rules in `extensions/notico/test/agent.test.ts`. `worker/test/extension.test.ts` keeps only what the two sides must agree on: the streamed reply, the tool-call round trip, sessions, credits, a question's cost, and a model change. The worker's client (`packages/worker-client/test/`) runs against the same app, with the worker's fakes, for its own rules: what web reads and searches cost and which refusals turn it away.
 - **Browser tests** (`extensions/<name>/browser-test/`, `pnpm test:browser`, also in CI and before a release): Playwright loads the built extension into Chromium and checks, in Notico's (`extensions/notico/browser-test/`), that the service worker starts, the side panel is enabled on every tab, the side panel page renders signed out, and, with a signed-in Clerk session answered from fixtures, shows the chat, renders the model's streamed reply, and runs a Notion read and a trash that asks first through `chrome.scripting` in a real Notion tab. It catches builds that compile but break in Chrome, such as dependency bumps. Nothing leaves the machine: Notion pages and its API, Clerk's Frontend API, and the worker and its model are answered from `browser-test/fixtures/` and `browser-test/fakes.ts`. Its tests are standalone (no scenario IDs); what needs real Chrome or real accounts (the panel opening from the toolbar icon and staying open across tabs, Google sign-in, real Notion pages) stays `ai-e2e`.
 
 ## Merging

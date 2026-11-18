@@ -1,6 +1,7 @@
 // Notico's agent loop (src/agent/) against the real worker, with the model behind it scripted: when
 // tools run and when they ask first, when a question stops, what a conversation carries over, and the
 // Notion request budget. What the agent and the worker must agree on is in worker/test/extension.test.ts.
+import { WorkerClient } from '@cofun/worker-client'
 import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import {
   CopilotAgent,
@@ -106,9 +107,12 @@ function makeAgent(
 ) {
   return new CopilotAgent(
     {
-      apiUrl: 'https://nk.example.dev/v1/',
-      getToken: options.getToken ?? (async () => token),
-      client: 'notico/1.2.3',
+      worker: new WorkerClient({
+        apiUrl: 'https://nk.example.dev/v1/',
+        getToken: options.getToken ?? (async () => token),
+        clientName: 'notico/1.2.3',
+        product: 'Notico',
+      }),
       systemPrompt: options.systemPrompt ?? 'You are Notico.',
       tools: options.tools ?? [pageTool().tool],
       maxSteps: options.maxSteps,

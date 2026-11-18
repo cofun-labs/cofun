@@ -1,4 +1,5 @@
-import { CopilotAgent, type AgentConfig } from '../agent'
+import { WorkerClient } from '@cofun/worker-client'
+import type { AgentConfig } from '../agent'
 import { track } from '../analytics'
 import type { CreditsState } from '../credits'
 import { loadMode, saveMode, watchMode, type Mode } from '../mode'
@@ -80,8 +81,8 @@ export class Panel {
   private readonly listeners = new Set<() => void>()
   /** What every chat's agent is made with. */
   private readonly agent: AgentConfig
-  /** Reads the credits and starts a purchase; it asks nothing: each chat has an agent of its own. */
-  private readonly account: CopilotAgent
+  /** The worker, which every chat's agent asks too: here it reads the credits and starts a purchase. */
+  private readonly worker: WorkerClient
   // Read once for this account, then changed here or by another window's panel. Each question reads
   // the model as it starts, and takes the mode as it is sent, so a change applies from the next one on.
   private readonly modelLoad: Promise<ModelSettings>
@@ -121,17 +122,20 @@ export class Panel {
       console.error('Could not read the mode', err)
       return 'edit'
     })
-    this.agent = {
+    this.worker = new WorkerClient({
       apiUrl: API_URL,
       getToken,
+      clientName: `confluco/${chrome.runtime.getManifest().version}`,
+      product: 'Confluco',
+    })
+    this.agent = {
+      worker: this.worker,
       accountId: userId,
-      client: `confluco/${chrome.runtime.getManifest().version}`,
       model: this.readModel,
       systemPrompt: SYSTEM_PROMPT,
       tools: TOOLS,
       results: this.store,
     }
-    this.account = new CopilotAgent(this.agent)
     this.snapshot = { chat: this.newSession(), credits: { status: 'loading' }, saved: 0 }
   }
 
@@ -255,7 +259,7 @@ export class Panel {
     const signal = AbortSignal.any([read.signal, this.lifetime.signal])
     let next: CreditsState
     try {
-      next = { status: 'ready', credits: await this.account.credits({ signal }) }
+      next = { status: 'ready', credits: await this.worker.credits({ signal }) }
     } catch {
       next = { status: 'unavailable' }
     }
@@ -264,18 +268,18 @@ export class Panel {
 
   /** Every grant the user was given, for the Credits page. */
   creditGrants() {
-    return this.account.creditGrants()
+    return this.worker.grants()
   }
 
   /** The packs of credits on sale, for the Credits page. */
   creditPacks() {
-    return this.account.creditPacks()
+    return this.worker.packs()
   }
 
   /** Opens Stripe's Checkout for the pack of `quantity` in a new tab. */
   async buyCredits(quantity: number): Promise<void> {
     track({ event: 'credits_buy_clicked', pack: quantity })
-    const url = await this.account.checkout(quantity)
+    const url = await this.worker.checkout(quantity)
     this.checkoutOpened = true
     await chrome.tabs.create({ url })
   }

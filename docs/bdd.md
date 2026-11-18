@@ -20,7 +20,7 @@ What is left out can still be worth testing. Write it as a **standalone test**: 
 
 ## What gets a test
 
-Every test in `worker/test/` and `extensions/*/test/` says what it guards, at the start of its name, and `pnpm check` fails on one that says neither:
+Every test in `worker/test/`, `extensions/*/test/`, and `packages/*/test/` says what it guards, at the start of its name, and `pnpm check` fails on one that says neither:
 
 - **A scenario ID** when it checks a scenario's rule: `[UC-NOTICO-CHAT-001-S01]`. A test of another case of the same rule (another kind of block read, another filter) carries the same ID; a table of cases is better than a test per case.
 - **`[@no-uc:<kind>]`** when it guards what a use case leaves out on purpose: an implementation risk such as a retry, a timeout, a cache, a race, a status code, or a value from outside read loosely. Users may well feel such a break, but a product owner would not review its sentence if the implementation changed, so it is no scenario. The kind says which harm the break would do, and is one of:
@@ -62,6 +62,7 @@ Each extension is a product, and keeps its use cases next to its code: `extensio
 - **A scenario a product repeats is verified by that product's own test**, named with that product's scenario ID, so a copy that drifts fails its own tests. This holds for what the product's own code makes happen: its client code, its side panel, and its agent against the worker (`extensions/notico/test/agent.test.ts`, and `worker/test/extension.test.ts` for what the agent and the worker must agree on).
 - **A rule only the worker decides, the same whichever extension asks, is the worker's**: who may reach the hosted model, how credits are charged, what a payment adds. It is written once, in `worker/use-cases/`, and verified in `worker/test/`. A product's use case points to it (`how credits are charged: UC-COFUN-CREDITS-001`) and keeps no copy of its scenarios; it keeps what the user sees and does, such as the refusal the side panel shows when credits run out.
 - **`worker/use-cases/`** holds those rules, and behavior that involves the backend alone and no extension's UI, such as the operators' admin page and usage records. Its use cases belong to Cofun, the platform every extension shares.
+- **A shared package (`packages/<name>/`) is a product too, for the rules it owns**: what every extension that calls it gets the same, whatever its UI. It keeps them in `packages/<name>/use-cases/` and verifies them once, in its own `test/`; an extension that calls it tests only how it uses it. A package with no such rule has only `[@no-uc:<kind>]` tests (`@cofun/worker-client`, today).
 
 ## Strategy
 
@@ -129,7 +130,7 @@ A guard or rejection branch should not rank above its use case's success path un
 
 ## Coverage check
 
-`pnpm check` runs `pnpm use-cases` (`scripts/check-use-cases.ts`), which reads every scenario row in `extensions/*/use-cases/` and `worker/use-cases/`, and every scenario ID named in brackets in a test under `worker/test/` or `extensions/*/test/`. A scenario counts as tested only by a test that can verify it: an extension's by a test in its own `extensions/<name>/test/` or in `worker/test/`, the worker's by a test in `worker/test/`. It fails on two things: an `api-test` scenario marked ✅ that no test names, and a test whose name has neither a scenario ID nor a `[@no-uc:<kind>]` of one of the kinds above (and on a scenario row it can't read, so a typo can't hide one, and on a use case left in the old `docs/use-cases/`). It only warns about the rest, to tidy when convenient: a Behavior over 150 words, a 🚧 `api-test` scenario that already has a test (mark it ✅), a P0 🚧 `api-test` scenario with no test yet (P0 is verified before merge), a test naming an ID no use case it can verify has, or an ID without its product, an ID in more than one row, an ID whose prefix doesn't match the product whose folder holds it, and a test naming an `ai-e2e` scenario. A P1 or P2 🚧 `api-test` scenario with no test and an `ai-e2e` scenario with none pass quietly.
+`pnpm check` runs `pnpm use-cases` (`scripts/check-use-cases.ts`), which reads every scenario row in `extensions/*/use-cases/`, `packages/*/use-cases/`, and `worker/use-cases/`, and every scenario ID named in brackets in a test under `worker/test/`, `extensions/*/test/`, or `packages/*/test/`. A scenario counts as tested only by a test that can verify it: an extension's or a package's by a test in its own `test/` or in `worker/test/`, the worker's by a test in `worker/test/`. It fails on two things: an `api-test` scenario marked ✅ that no test names, and a test whose name has neither a scenario ID nor a `[@no-uc:<kind>]` of one of the kinds above (and on a scenario row it can't read, so a typo can't hide one, and on a use case left in the old `docs/use-cases/`). It only warns about the rest, to tidy when convenient: a Behavior over 150 words, a 🚧 `api-test` scenario that already has a test (mark it ✅), a P0 🚧 `api-test` scenario with no test yet (P0 is verified before merge), a test naming an ID no use case it can verify has, or an ID without its product, an ID in more than one row, an ID whose prefix doesn't match the product whose folder holds it, and a test naming an `ai-e2e` scenario. A P1 or P2 🚧 `api-test` scenario with no test and an `ai-e2e` scenario with none pass quietly.
 
 ## Coverage audit
 
@@ -165,7 +166,7 @@ Key constraint:
 
 ## IDs
 
-- Use case: `UC-{PRODUCT}-{DOMAIN}-{NNN}`. `{PRODUCT}` is the extension's folder name, which is lowercase letters only, in capitals (`NOTICO`), or `COFUN` for the worker's use cases. Domains: `ADMIN`, `AGENT`, `AUTH`, `BILLING`, `CHAT`, `CREDITS`, `PANEL`, `SESSION`, and one for what is about a product's site (`NOTION` for Notico).
+- Use case: `UC-{PRODUCT}-{DOMAIN}-{NNN}`. `{PRODUCT}` is the extension's folder name, which is lowercase letters only, in capitals (`NOTICO`), a package's folder name in capitals without its hyphens (`WORKERCLIENT` for `packages/worker-client`), or `COFUN` for the worker's use cases. Domains: `ADMIN`, `AGENT`, `AUTH`, `BILLING`, `CHAT`, `CREDITS`, `PANEL`, `SESSION`, and one for what is about a product's site (`NOTION` for Notico).
 - Each product numbers its own use cases: a use case it repeats from another product gets its own prefix and its own number, so Confluco's sign-in would be `UC-CONFLUCO-AUTH-001`. The prefix keeps IDs unique across the repository, since tests are found by them.
 - Scenario: `{UC ID}-S{NN}`.
 - IDs are labels that link a scenario to its tests. Renumbering a scenario, or reusing a deleted one's ID, is fine as long as its tests are renamed with it. When a scenario is deleted, delete its tests or take the ID out of their names, so a later scenario that reuses the ID can't pass on a test of the old one.
