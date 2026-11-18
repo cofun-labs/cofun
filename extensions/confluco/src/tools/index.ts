@@ -15,7 +15,7 @@ import {
   searchConfluencePages,
 } from './confluence'
 import { CONFLUENCE_WRITES } from './confluence-writes'
-import { readResult, searchResult, webTools } from '@cofun/web'
+import { readResult, searchResult, webTools } from '@cofun/tools'
 import { getCurrentTab, readCurrentTab, readTab } from './current'
 import { verb } from './shared'
 

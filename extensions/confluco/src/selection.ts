@@ -5,7 +5,7 @@
 // message listener carries it: storage.session is open only to the extension's own pages, and what
 // is read back is parsed, since the text comes from the page.
 
-import { clipSelection } from '@cofun/web'
+import { clipSelection } from '@cofun/tools/tab'
 import { z } from './zod'
 
 /** The context menu item's id. */

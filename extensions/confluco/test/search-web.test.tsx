@@ -6,7 +6,7 @@ import { screen, waitFor } from '@testing-library/react'
 import userEvent, { type UserEvent } from '@testing-library/user-event'
 import { afterEach, describe, expect, it } from 'vitest'
 import { usageCosting } from '../../../worker/test/fakes'
-import { DATA_LINE } from '@cofun/web'
+import { DATA_LINE } from '@cofun/tools'
 import { FakeTab } from './tab'
 import { closeBrowser, FakeBrowser } from './panel'
 

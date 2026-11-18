@@ -9,7 +9,7 @@ import { activeNotionTab, selectionIn } from '../notion/tab'
 import { needsAttachedPage } from './current'
 import { loadMentioned, loadWithDatabase } from './load'
 import { PART_CHARS, READ, filled, nameOf, on, pageArg, partArg, plainTitle, plural } from './shared'
-import { asData } from '@cofun/web'
+import { asData } from '@cofun/tools'
 
 export const readPage = defineTool({
   name: 'read_page',

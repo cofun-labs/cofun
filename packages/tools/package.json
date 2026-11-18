@@ -1,11 +1,12 @@
 {
-  "name": "@cofun/web",
+  "name": "@cofun/tools",
   "version": "0.0.0",
   "private": true,
-  "description": "The extensions' web reading and generic web tools: pages read in the user's tabs, web pages by their address, web searches (the worker's, or DuckDuckGo from the browser), and long results kept on the device",
+  "description": "The extensions' generic tools, built on @cofun/agent's tool framework, and the site layers they read the web with: pages in the user's tabs, web pages by their address, web searches (the worker's, or DuckDuckGo from the browser), and long results kept on the device",
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./tab": "./src/tab.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit"

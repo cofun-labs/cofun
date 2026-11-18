@@ -14,7 +14,7 @@ import {
 } from '../models'
 import { countNotionRequests } from '../notion/tab'
 import { SessionStore, type Session } from '../sessions'
-import { DATA_LINE, SELECTION_END, withDuckDuckGo } from '@cofun/web'
+import { DATA_LINE, SELECTION_END, withDuckDuckGo } from '@cofun/tools'
 import { pagesIn, TOOLS } from '../tools'
 import type { ToolMemory } from '../tools/memory'
 import { ChatSession, type Question } from './chat-session'

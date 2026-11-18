@@ -44,9 +44,9 @@ importers:
       '@cofun/agent':
         specifier: workspace:*
         version: link:../../packages/agent
-      '@cofun/web':
+      '@cofun/tools':
         specifier: workspace:*
-        version: link:../../packages/web
+        version: link:../../packages/tools
       '@cofun/worker-client':
         specifier: workspace:*
         version: link:../../packages/worker-client
@@ -126,9 +126,9 @@ importers:
       '@cofun/agent':
         specifier: workspace:*
         version: link:../../packages/agent
-      '@cofun/web':
+      '@cofun/tools':
         specifier: workspace:*
-        version: link:../../packages/web
+        version: link:../../packages/tools
       '@cofun/worker-client':
         specifier: workspace:*
         version: link:../../packages/worker-client
@@ -222,7 +222,7 @@ importers:
         specifier: ^7.0.2
         version: 7.0.2
 
-  packages/web:
+  packages/tools:
     dependencies:
       '@cofun/agent':
         specifier: workspace:*

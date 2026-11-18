@@ -1,6 +1,6 @@
 import type { MouseEvent } from 'react'
 import type { QuestionPage, QuestionSelection } from '@cofun/agent'
-import { addedTabNow } from '@cofun/web'
+import { addedTabNow } from '@cofun/tools'
 import { Icon } from './icons'
 
 /** A page's title as the panel shows it. */

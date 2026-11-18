@@ -1,7 +1,7 @@
-// The current tab and the tabs the user added to the chat: @cofun/web's tab tools, bound to this
+// The current tab and the tabs the user added to the chat: @cofun/tools's tab tools, bound to this
 // extension's memory of a chat, and the note a question carries about the tabs and the text
 // selected on pages that it was sent with.
-import { addedTabsNote, selectionNotes, tabTools } from '@cofun/web'
+import { addedTabsNote, selectionNotes, tabTools } from '@cofun/tools'
 import type { QuestionPage } from '@cofun/agent'
 import type { Selection } from '../selection'
 import type { ToolMemory } from './memory'

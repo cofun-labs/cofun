@@ -5,7 +5,8 @@
 // read a site only once the user allowed it (optional host permissions, one origin at a time), which
 // only a click in the side panel can grant. It also reads the text selected in a tab, on any site,
 // when the user sends it with the context menu. `product` is the extension's name, as the reasons
-// the model is told name it.
+// the model is told name it. It is the package's `@cofun/tools/tab`, which imports nothing of the
+// agent, so the extension's service worker can read a selection without loading the agent runtime.
 
 import { z } from './zod'
 import { pageMarkdown } from './markdown'
@@ -197,6 +198,11 @@ export async function selectedText(tabId: number, frameId: number): Promise<stri
     // activeTab reaches the tab's own site only: a frame from another one, say.
     return undefined
   }
+}
+
+/** Keeps a UTF-16 budget without leaving half of a supplementary character at the end. */
+export function clipSelection(text: string, limit: number): string {
+  return text.slice(0, limit).replace(/[\uD800-\uDBFF]$/, '')
 }
 
 /** Runs in the tab (see pageHtml): the frame's selection as text. */

@@ -6,7 +6,7 @@ import { LIMITED_STOP, NO_ACCESS } from '../src/notion/api'
 import { searchPages } from '../src/tools/find'
 import { readPage } from '../src/tools/read'
 import { FakeNotionTab, PAGE, PAGE_URL, SPACE, notionError, restoreGlobals, resultText } from './notion-tab'
-import { DATA_LINE } from '@cofun/web'
+import { DATA_LINE } from '@cofun/tools'
 
 /** The chat the tools run in; a test that needs another conversation starts a new one. */
 let chat = new ToolChat()

@@ -25,7 +25,7 @@ import type { ConfluenceUndo } from '../confluence/undo'
 import { defineTool } from '../tool'
 import { z } from '../zod'
 import type { ConfluenceQuestion, ToolMemory } from './memory'
-import { asData } from '@cofun/web'
+import { asData } from '@cofun/tools'
 import { on, verb } from './shared'
 
 interface ChangeResult {

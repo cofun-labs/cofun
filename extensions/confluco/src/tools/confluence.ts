@@ -22,7 +22,7 @@ import { currentConfluenceTab, type ConfluenceTab } from '../confluence/tab'
 import { defineTool } from '../tool'
 import { z } from '../zod'
 import type { ConfluenceContinuation, ToolMemory } from './memory'
-import { asData, clip, quote, withText } from '@cofun/web'
+import { asData, clip, quote, withText } from '@cofun/tools'
 import { on, READ, SEARCH } from './shared'
 
 function remember(memory: ToolMemory, pages: readonly { ref: PageReference }[]) {

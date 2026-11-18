@@ -62,7 +62,8 @@ turndown.addRule('list item', {
 })
 
 turndown.addRule('image', {
-  // Its alt text only, which leaves image URLs out of the result.
+  // Its alt text only: an image's address written into a page (a Notion page, say) would load
+  // wherever that page is looked at, and tell the image's host who looked.
   filter: 'img',
   replacement: (_content, node) => turndown.escape((node.getAttribute('alt') ?? '').replace(/\s+/g, ' ').trim()),
 })

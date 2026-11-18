@@ -2,7 +2,7 @@ import type { ConfirmationAnswer } from '@cofun/agent'
 import { memo, useState } from 'react'
 import type { Action } from '../tool'
 import { describeCall } from '../tools'
-import { allowSite } from '@cofun/web'
+import { allowSite } from '@cofun/tools/tab'
 import type { ShownTool } from './chat-session'
 import { Icon, type IconName } from './icons'
 

@@ -1,6 +1,7 @@
 import { useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
 import type { QuestionPage } from '@cofun/agent'
-import { allowSite, openWebTabs, type WebTab } from '@cofun/web'
+import { openWebTabs, type WebTab } from '@cofun/tools'
+import { allowSite } from '@cofun/tools/tab'
 import { Icon } from './icons'
 import { useMenu } from './menu'
 import { PageIcon, titleOf } from './Pages'

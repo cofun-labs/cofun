@@ -7,7 +7,7 @@
 // (activeTab), which is how the selection is read there with its line breaks; where it can't be
 // (a frame from another site, say), Chrome's own copy of it, on one line, is used.
 import { handOver, loadMenuShown, MENU_ITEM, watchMenuShown } from './selection'
-import { selectedText } from '@cofun/web'
+import { selectedText } from '@cofun/tools/tab'
 
 chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch((err) => console.error(err))
 

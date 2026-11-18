@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ToolChat } from './tool-chat'
 import { QUERY_LOAD, QUERY_PART, localDate, queryDatabase } from '../src/tools/database'
 import { FakeNotionTab, SPACE, USER, restoreGlobals, resultText } from './notion-tab'
-import { DATA_LINE } from '@cofun/web'
+import { DATA_LINE } from '@cofun/tools'
 
 /** The chat the tools run in. */
 const chat = new ToolChat()

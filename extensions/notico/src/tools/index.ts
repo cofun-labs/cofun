@@ -1,13 +1,13 @@
 // Tools the agent can run in the extension, one module per area: reading pages (read.ts), finding
 // them (find.ts), writing them (write.ts), databases (database.ts), organizing pages (organize.ts),
 // comments (comments.ts), the current tab, on Notion or another site, and the tabs the user added
-// (current.ts), and @cofun/web's web pages by their address, web searches, and the long results
+// (current.ts), and @cofun/tools's web pages by their address, web searches, and the long results
 // those keep on the device. This module lists them, and says for the side panel what a call did.
 import type { HistoryMessage, ToolDetails } from '@cofun/agent'
 import { pageLink } from '../notion/hosts'
 import type { Action, Tool } from '../tool'
 import { addComment, readComments } from './comments'
-import { readResult, searchResult, webTools } from '@cofun/web'
+import { readResult, searchResult, webTools } from '@cofun/tools'
 import { getCurrentTab, notionSite, readCurrentTab, readTab } from './current'
 import { createDatabase, queryDatabase, updateDatabaseSchema } from './database'
 import { listPages, searchPages } from './find'

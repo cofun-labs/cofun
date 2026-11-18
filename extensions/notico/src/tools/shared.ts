@@ -1,5 +1,5 @@
 // What the tools share: their common arguments, how the side panel words a call, and reading the
-// pages a call names. How text from pages is shown (DATA_LINE, asData, the escapes) is @cofun/web's.
+// pages a call names. How text from pages is shown (DATA_LINE, asData, the escapes) is @cofun/tools's.
 import type { Action, Verb } from '../tool'
 import { z } from '../zod'
 import { isNotion, pageIdFromUrl, toUuid } from '../notion/hosts'

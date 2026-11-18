@@ -14,7 +14,7 @@
   "dependencies": {
     "@clerk/chrome-extension": "^3.1.105",
     "@cofun/agent": "workspace:*",
-    "@cofun/web": "workspace:*",
+    "@cofun/tools": "workspace:*",
     "@cofun/worker-client": "workspace:*",
     "posthog-js": "1.448.0",
     "react": "^19.3.0",

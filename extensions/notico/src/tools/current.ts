@@ -1,4 +1,4 @@
-// The current tab and the Notion page open in it: what a question carries, and @cofun/web's tab
+// The current tab and the Notion page open in it: what a question carries, and @cofun/tools's tab
 // tools (get_current_tab, read_current_tab and read_tab, which read the page of a tab on another
 // site), bound to this extension's memory and told that Notion's pages are read with read_page.
 import {
@@ -12,7 +12,7 @@ import {
   tabTools,
   type OwnSite,
   type WebTab,
-} from '@cofun/web'
+} from '@cofun/tools'
 import type { QuestionPage } from '@cofun/agent'
 import { z } from '../zod'
 import { NOTION_HOSTS, isNotion, pageIdFromUrl, showsDatabase } from '../notion/hosts'
@@ -61,7 +61,7 @@ export const { getCurrentTab, readCurrentTab, readTab } = tabTools<ToolMemory>({
  */
 export const currentTabReadable = (): Promise<boolean> => tabReadable(notionSite)
 
-/** The tabs on other sites than Notion that the user can add to a question (see openWebTabs in @cofun/web). */
+/** The tabs on other sites than Notion that the user can add to a question (see openWebTabs in @cofun/tools). */
 export const openWebTabs = (): Promise<WebTab[]> => webTabs(notionSite)
 
 /**
@@ -75,7 +75,7 @@ export interface OpenPage {
   database?: true
   web?: true
   tab?: number
-  /** The run of the browser the tab was added in (see addedTabNow in @cofun/web). */
+  /** The run of the browser the tab was added in (see addedTabNow in @cofun/tools). */
   run?: string
 }
 
@@ -174,7 +174,7 @@ function openNote(page: OpenPage | undefined, removed: boolean, others: boolean)
 /**
  * Names a Notion page a question carries, for the model. The current tab on another site is never
  * named: such a tab is only said not to be Notion. A tab on another site is named only when the user
- * added it (see addedTabsNote in @cofun/web).
+ * added it (see addedTabsNote in @cofun/tools).
  */
 function pageNamed(page: OpenPage): string {
   // The page's author picks its title, and a shared link its query: keep both from closing the note

@@ -1,5 +1,5 @@
 // How the side panel words a tool's call. What the tools share to show text from pages (DATA_LINE,
-// asData, the escapes) is @cofun/web's.
+// asData, the escapes) is @cofun/tools's.
 import type { Action, Verb } from '../tool'
 
 // How the side panel describes a call (see `Tool.describe`).

@@ -22,7 +22,7 @@ import { activeNotionTab } from '../notion/tab'
 import { needsAttachedPage } from './current'
 import { loadRowMentions, resolveDatabase } from './load'
 import { CHANGE, CREATE, READ, TITLE_EMPTY, filled, nameOf, on, pageArg, partArg, plural, shownText } from './shared'
-import { asData } from '@cofun/web'
+import { asData } from '@cofun/tools'
 
 /** How many rows one query loads, and how many one result shows. */
 export const QUERY_LOAD = 500

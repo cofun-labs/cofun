@@ -3,7 +3,7 @@
 // sent with; and the notes a question carries about the tabs and the text selected on pages that
 // it was sent with. What depends on the extension's site is a parameter (see TabToolsOptions).
 import { defineTool, type AskOnCard, type QuestionPage, type Tool, type ToolContext } from '@cofun/agent'
-import { mayRead, readPage, readableSite, type TabPage, type TabWhere } from '../tab'
+import { clipSelection, mayRead, readPage, readableSite, type TabPage, type TabWhere } from '../tab'
 import { z } from '../zod'
 import { KEPT_CHARS, withText } from './results'
 import { LOOK, READ, asData, asPageText, clip, count, noteTitle, noteUrl, on } from './shared'
@@ -104,16 +104,11 @@ export function addedTabsNote(tabs: QuestionPage[]): string | undefined {
  * Text the user selected on a page and sent to the side panel: its text (cut to what a selection
  * may carry), how long it was in all, and the page it was selected on.
  */
-export interface SelectedText {
+interface SelectedText {
   text: string
   chars: number
   url: string
   title: string
-}
-
-/** Keeps a UTF-16 budget without leaving half of a supplementary character at the end. */
-export function clipSelection(text: string, limit: number): string {
-  return text.slice(0, limit).replace(/[\uD800-\uDBFF]$/, '')
 }
 
 /**
