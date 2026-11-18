@@ -22,6 +22,7 @@ import {
 } from '../../../worker/test/fakes'
 import { FakeStripe, signature, WEBHOOK_SECRET } from '../../../worker/test/stripe'
 import type { FakeSession } from './clerk'
+import { isNotion } from '../src/notion/hosts'
 import { restoreGlobals, type FakeNotionTab } from './notion-tab'
 import { FakeDuckDuckGo } from './duckduckgo'
 import { FakeOpenRouter, OPENROUTER } from './openrouter'
@@ -184,7 +185,12 @@ export class FakeBrowser {
         ],
       }),
     }
-    chrome.tabs.create = async ({ url }: { url: string }) => void browser.openedTabs.push(url)
+    // A Notion page opens in a tab of its own, which the panel goes on to use; other tabs are only noted.
+    const create = chrome.tabs.create as (props: { url: string }) => Promise<unknown>
+    chrome.tabs.create = async (props: { url: string }) => {
+      browser.openedTabs.push(props.url)
+      return isNotion(props.url) ? create(props) : undefined
+    }
     browser.duckDuckGo.install(chrome as never, tab.allowed)
     // Clerk's cookie on the sign-in page, which the panel watches to notice a sign-in or sign-out there.
     chrome.cookies = {

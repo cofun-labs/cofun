@@ -2,16 +2,19 @@ import { useAuth } from '@clerk/chrome-extension'
 import { useEffect, useState } from 'react'
 import { allowDuckDuckGo, loadDuckDuckGoSearch, saveDuckDuckGoSearch } from '@cofun/tools'
 import { loadAnalyticsEnabled, saveAnalyticsEnabled } from '../analytics'
+import { loadClipSettings, saveClipShown, watchClipSettings, type ClipSettings } from '../clip'
+import { clipPlace, DEFAULT_TARGET, defaultTarget } from '../tools/clip'
 import { loadMenuShown, saveMenuShown, watchMenuShown } from '@cofun/tools/selection'
 import type { ModelSettings } from '@cofun/agent/models'
 import { Avatar, useAccount } from './Account'
+import { ClipInto, type ClipNote } from './ClipInto'
 import { Page } from './Header'
 import { ModelCard, Switch } from './Model'
 
 /**
  * The Settings page: everything that isn't money. The model providers and their models, the account
- * with Sign out, where web searches go, whether the right-click menu has "Ask Notico", and whether
- * usage data is sent.
+ * with Sign out, where web searches go, what the right-click menu has (and where clips go), and
+ * whether usage data is sent.
  */
 export function Settings({
   model,
@@ -58,12 +61,18 @@ export function Settings({
 }
 
 /**
- * Whether the right-click menu has "Ask Notico" (see @cofun/tools/selection): on until the user turns it off,
- * for their Chrome profile, on every device it syncs to.
+ * The right-click menu: whether it has "Ask Notico" (see @cofun/tools/selection), on until the user
+ * turns it off, and whether it has the clip item (see clip.ts), off until the user turns it on,
+ * with where clips go. All for the user's Chrome profile, on every device it syncs to. Turning Clip
+ * on with no page chosen yet makes "Notico Clips", in Private, the page, when a Notion page is open.
  */
 function ContextMenu() {
   // Not known until storage was read: no switch shows until then, so it never shows a state to take back.
   const [shown, setShown] = useState<boolean>()
+  const [clip, setClip] = useState<ClipSettings>()
+  const [note, setNote] = useState<ClipNote>()
+  // While the default page is found or made, the switch waits: turning it on again would ask twice.
+  const [making, setMaking] = useState(false)
 
   useEffect(() => {
     let closed = false
@@ -71,16 +80,39 @@ function ContextMenu() {
       (stored) => !closed && setShown(stored),
       (err: unknown) => console.error('Could not read the menu setting', err),
     )
-    const stop = watchMenuShown((next) => setShown(next))
+    loadClipSettings().then(
+      (stored) => !closed && setClip(stored),
+      (err: unknown) => console.error('Could not read the clip settings', err),
+    )
+    const stopAsk = watchMenuShown((next) => setShown(next))
+    const stopClip = watchClipSettings((next) => setClip(next))
     return () => {
       closed = true
-      stop()
+      stopAsk()
+      stopClip()
     }
   }, [])
 
   function change(next: boolean) {
     setShown(next)
     saveMenuShown(next).catch((err: unknown) => console.error('Could not save the menu setting', err))
+  }
+
+  async function changeClip(next: boolean) {
+    setClip((now) => now && { ...now, shown: next })
+    setNote(undefined)
+    await saveClipShown(next)
+    if (!next || clip?.target) return
+    const place = await clipPlace()
+    if (typeof place === 'string') return setNote({ text: `${place} Then choose where clips go.` })
+    setNote({ text: `Looking for “${DEFAULT_TARGET}” in your Private section…` })
+    setMaking(true)
+    const made = await defaultTarget(place).finally(() => setMaking(false))
+    setNote(
+      typeof made === 'string'
+        ? { text: made, failed: true }
+        : { text: `Clips go to “${made.title}”${made.made ? ', made in your Private section' : ''}.` },
+    )
   }
 
   return (
@@ -97,6 +129,33 @@ function ContextMenu() {
           <Switch label="Show “Ask Notico”" checked={shown} describedBy="settings-menu-detail" onChange={change} />
         )}
       </div>
+      <div className="settings-account">
+        <div className="grow">
+          <p>Clip to Notion</p>
+          <p id="settings-clip-detail" className="account-detail">
+            Clip the page you're on to the end of a Notion page.
+          </p>
+        </div>
+        {clip !== undefined && (
+          <Switch
+            label="Clip to Notion"
+            checked={clip.shown}
+            disabled={making}
+            describedBy="settings-clip-detail"
+            onChange={(next) =>
+              void changeClip(next).catch((err: unknown) =>
+                setNote({ text: err instanceof Error ? err.message : String(err), failed: true }),
+              )
+            }
+          />
+        )}
+      </div>
+      {clip?.shown && <ClipInto target={clip.target} making={making} onNote={setNote} />}
+      {note && (
+        <p className="account-detail" role={note.failed ? 'alert' : 'status'}>
+          {note.text}
+        </p>
+      )}
     </section>
   )
 }

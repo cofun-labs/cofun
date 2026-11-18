@@ -68,6 +68,9 @@ async function handOver(windowId: number, text: string, url: string, title: stri
   await chrome.storage.session.set({ [`${prefix(windowId)}${lastSent}`]: selection })
 }
 
+/** Where the menu items show: web pages and local files. On the extension's own pages (the side panel) there is no tab to read. */
+export const MENU_PAGES = ['https://*/*', 'http://*/*', 'file:///*']
+
 /**
  * Sets up the service worker's "Ask <product>" context menu item, on text selected in any page:
  * picking it opens the side panel and hands it the selection. The click gives the extension the tab
@@ -76,31 +79,41 @@ async function handOver(windowId: number, text: string, url: string, title: stri
  */
 export function setupSelectionMenu({
   product,
+  moreItems,
 }: {
   /** The extension's name, as the menu shows it: `Notico`. */
   product: string
+  /**
+   * The extension's other menu items, made after this one each time the menu is made again; the
+   * extension handles their clicks itself.
+   */
+  moreItems?: () => Promise<chrome.contextMenus.CreateProperties[]>
 }): void {
   const menuItem = `ask-${product.toLowerCase()}`
   // Menu items stay from one start of the service worker to the next; they are made again when the
   // extension is installed or updated, shown unless the user turned them off in Settings. Only on web
   // pages and local files: on the extension's own pages (the side panel) there is no tab to read.
   chrome.runtime.onInstalled.addListener(() => {
-    void loadMenuShown()
-      .catch((err: unknown) => {
-        console.error('Could not read the menu setting', err)
-        return true
-      })
-      .then((visible) =>
-        chrome.contextMenus.removeAll(() =>
-          chrome.contextMenus.create({
-            id: menuItem,
-            title: `Ask ${product} about “%s”`,
-            contexts: ['selection'],
-            documentUrlPatterns: ['https://*/*', 'http://*/*', 'file:///*'],
-            visible,
-          }),
-        ),
-      )
+    const shown = loadMenuShown().catch((err: unknown) => {
+      console.error('Could not read the menu setting', err)
+      return true
+    })
+    const more = (moreItems?.() ?? Promise.resolve([])).catch((err: unknown) => {
+      console.error('Could not make the menu items', err)
+      return []
+    })
+    void Promise.all([shown, more]).then(([visible, items]) =>
+      chrome.contextMenus.removeAll(() => {
+        chrome.contextMenus.create({
+          id: menuItem,
+          title: `Ask ${product} about “%s”`,
+          contexts: ['selection'],
+          documentUrlPatterns: MENU_PAGES,
+          visible,
+        })
+        for (const item of items) chrome.contextMenus.create(item)
+      }),
+    )
   })
 
   // The Settings switch, changed on this device or synced from another one. It is read again as the

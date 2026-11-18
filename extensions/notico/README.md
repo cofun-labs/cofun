@@ -30,6 +30,7 @@
 - **Collaborate:** Add comments on a page or on a block, and mention workspace members by name.
 - **Bring in the web:** On another site, ask about the page you're on, or save it to Notion. Notico reads a site only once you allow it, and says which page it used. Paste a link and it reads that page. It can also search the web, and names the sources it used.
 - **Ask about a selection:** Select text on any page, right-click it, and pick "Ask Notico": the side panel opens with the text added to your question.
+- **Clip a page:** Turn on "Clip to Notion" in Settings, then right-click any page and pick "Clip page to Notion": the page is saved as a new page in "Notico Clips" in your Private section, or in a page you choose, without asking the AI.
 - **Stay in context:** It knows which page is open and what you selected in it. The panel stays open, with your chat, as you switch tabs. Past chats are saved, searchable, and can be picked up again. The model can summarize earlier messages to continue a long chat, and you can still read the original messages. OpenRouter models need a context window of at least 200,000 tokens.
 - **Keep the answer:** Save a reply, or a whole chat, as a new page under the Notion page you have open, with the save button under the reply or at the top of the panel.
 

@@ -21,7 +21,7 @@ The extension's whole interface is a side panel, where the user chats with the a
 ### storage
 
 ```text
-Keeps the user signed in (the sign-in client token); the user's own OpenRouter key, if they set one up, with the models they switched on and the model chosen in the message box; and small settings: whether the assistant may change the user's pages (Edit or Read only), whether web searches go to DuckDuckGo, and whether usage data is shared. It keeps whether the "Ask Notico" menu item shows, which the user can turn off in the settings, in Chrome's synced storage, so it follows their Chrome profile. While the browser is open, it also holds text the user selected with "Ask Notico" until they send it, and an id for the browser's current run, so a tab added to a question is not mistaken for another after a restart.
+Keeps the user signed in (the sign-in client token); the user's own OpenRouter key, if they set one up, with the models they switched on and the model chosen in the message box; and small settings: whether the assistant may change the user's pages (Edit or Read only), whether web searches go to DuckDuckGo, and whether usage data is shared. It keeps whether the "Ask Notico" and "Clip page to Notion" menu items show, which the user can switch in the settings, and the address and title of the Notion page clips go to, in Chrome's synced storage, so they follow their Chrome profile. While the browser is open, it also holds text the user selected with "Ask Notico" until they send it, and a clip the user picked until the side panel writes it, and an id for the browser's current run, so a tab added to a question is not mistaken for another after a restart.
 ```
 
 ### tabs
@@ -39,19 +39,19 @@ Reads the sign-in cookies that our own sign-in service (Clerk, on cofun.cc) sets
 ### scripting
 
 ```text
-Runs the requests that read and edit Notion pages inside the user's own Notion tab, with that tab's session, so no Notion credentials leave the tab. On another site, and only on one the user allowed, it reads the text of the page in the current tab, or of a tab the user added to the conversation, inside that tab, when the user's question is about that page. When the user picks "Ask Notico" on selected text, it reads that selection in the tab. When the user switched on "Search with DuckDuckGo", it reads the search results in the DuckDuckGo tab a search opens.
+Runs the requests that read and edit Notion pages inside the user's own Notion tab, with that tab's session, so no Notion credentials leave the tab. On another site, and only on one the user allowed, it reads the text of the page in the current tab, or of a tab the user added to the conversation, inside that tab, when the user's question is about that page. When the user picks "Ask Notico" on selected text, it reads that selection in the tab. When the user picks "Clip page to Notion", it reads the page's main content in the tab, then writes it to the Notion page the user chose, in a Notion tab showing that page, which it opens if none is open. When the user switched on "Search with DuckDuckGo", it reads the search results in the DuckDuckGo tab a search opens.
 ```
 
 ### contextMenus
 
 ```text
-Adds an "Ask Notico" item to the menu Chrome shows when the user right-clicks selected text. Picking it opens the side panel with that text added to the user's next question; nothing is sent until the user sends the question.
+Adds an "Ask Notico" item to the menu Chrome shows when the user right-clicks selected text. Picking it opens the side panel with that text added to the user's next question; nothing is sent until the user sends the question. Once the user turns on "Clip to Notion" in the settings, it also adds "Clip page to Notion" to the menu of any page, which writes the page to the end of the Notion page the user chose (by default a private "Notico Clips" page, made when Clip is turned on).
 ```
 
 ### activeTab
 
 ```text
-When the user picks the "Ask Notico" menu item, reads the text they selected in that tab, with its line breaks, so it can be added to their question. No site needs to be allowed for it, and nothing else of the page is read.
+When the user picks the "Ask Notico" menu item, reads the text they selected in that tab, with its line breaks, so it can be added to their question. When the user picks "Clip page to Notion", reads that page's main content, so it can be written to their Notion page. No site needs to be allowed for either, and nothing else of the page is read.
 ```
 
 ### Host permission
@@ -76,7 +76,7 @@ No, I am not using remote code. Everything the extension runs is in its package;
 | Location | No | The clock's offset from UTC is sent to count credits used per day; it is not a location |
 | Web history | Yes | A tab's URL and title, when a question needs them; the URL and title of a Notion page open in another tab, or of a tab on another site, that the user adds to a question; and the address of a web page the assistant reads, which goes to the worker, which reads it; and, when the user switched on "Search with DuckDuckGo", the address of each search's DuckDuckGo results page, which holds the query and which Chrome keeps in the user's browsing history as for any page opened in a tab |
 | User activity | Yes | Usage events sent to PostHog, unless the user turns them off in the settings: that the panel was opened, a question asked and how it ended, which tools ran, and which of the panel's actions were used. Names from a fixed list, counts, and yes/no values only: no text typed, no page content, title, or URL, no clicks or keystrokes recorded |
-| Website content | Yes | The Notion content the assistant reads; the text of a page on another site it reads (the current tab or a tab the user added, on a site they allowed); text the user selected on a page and sent with "Ask Notico"; the text of a web page it read by its address; and the queries of web searches it makes, which may hold Notion content, with their results (each one's address, title, and description). All go to the worker and the model, or to OpenRouter when the user answers with their own model; a page read by its address goes through the worker either way, and a search's query goes through the worker on to Cloudflare's Web Search and its provider, or, when the user switched on DuckDuckGo in the settings, to DuckDuckGo as a page the browser opens in a tab |
+| Website content | Yes | The Notion content the assistant reads; the text of a page on another site it reads (the current tab or a tab the user added, on a site they allowed); text the user selected on a page and sent with "Ask Notico" (a page the user clips goes only to their own Notion workspace, not to the worker or a model); the text of a web page it read by its address; and the queries of web searches it makes, which may hold Notion content, with their results (each one's address, title, and description). All go to the worker and the model, or to OpenRouter when the user answers with their own model; a page read by its address goes through the worker either way, and a search's query goes through the worker on to Cloudflare's Web Search and its provider, or, when the user switched on DuckDuckGo in the settings, to DuckDuckGo as a page the browser opens in a tab |
 
 All three certifications are checked: no selling or transfer of user data to third parties outside the approved use cases, no use or transfer for purposes unrelated to the single purpose, and none to determine creditworthiness or for lending.
 

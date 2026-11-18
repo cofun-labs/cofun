@@ -607,19 +607,7 @@ export class NotionClient {
    * joined, in the sidebar's order.
    */
   async getSpace(spaceId: string): Promise<WorkspaceTree> {
-    const space = notionId(spaceId)
-    const { json, userId } = await this.request('getSpaces', {}, space)
-    // One record map per signed-in user, keyed by user id; only the tab's active user's counts. No
-    // fallback to the others: another account's map would list that account's private pages, and
-    // every later request runs as the active user anyway.
-    if (!userId) throw new NotionError('signed_out', SIGNED_OUT)
-    // The cookie's id, with or without hyphens, as getSpaces may key it.
-    const key = [userId, toUuid(userId), toUuid(userId)?.replace(/-/g, '')].find((k) => k && json[k])
-    if (!key) throw new NotionError('notion_error', NO_USER_MAP)
-    const map = normalizeRecordMap(json[key])
-    if (!map.space?.[space]) throw new NotionError('no_access', NO_ACCESS)
-    const record = map.space[space]
-    const view = Object.values(map.space_view ?? {}).find((v) => v.space_id === space)
+    const { space, record, view } = await this.userSpace(spaceId)
     const settings = SpaceSettings.safeParse(record.settings).data
     let teams: WorkspaceTree['teams'] = []
     let teamsError: string | undefined
@@ -642,6 +630,38 @@ export class NotionClient {
       teams,
       ...(teamsError ? { teamsError } : {}),
     }
+  }
+
+  /**
+   * The signed-in user's Private section of a workspace: the workspace's name, their view of it
+   * (which a new private page is put in, see moveToPrivate), and its pages, in the sidebar's order.
+   */
+  async privateSection(spaceId: string): Promise<{ name: string; view?: SpaceView; pages: string[] }> {
+    const { space, record, view, userId } = await this.userSpace(spaceId)
+    return {
+      name: typeof record.name === 'string' ? record.name : 'Workspace',
+      ...(typeof view?.id === 'string' ? { view: { userId, spaceId: space, spaceViewId: view.id } } : {}),
+      pages: ids(view?.private_pages),
+    }
+  }
+
+  /** A workspace's record and the signed-in user's view of it, from getSpaces. */
+  private async userSpace(spaceId: string) {
+    const space = notionId(spaceId)
+    const { json, userId } = await this.request('getSpaces', {}, space)
+    // One record map per signed-in user, keyed by user id; only the tab's active user's counts. No
+    // fallback to the others: another account's map would list that account's private pages, and
+    // every later request runs as the active user anyway.
+    if (!userId) throw new NotionError('signed_out', SIGNED_OUT)
+    // The cookie's id, with or without hyphens, as getSpaces may key it.
+    const key = [userId, toUuid(userId), toUuid(userId)?.replace(/-/g, '')].find((k) => k && json[k])
+    if (!key) throw new NotionError('notion_error', NO_USER_MAP)
+    const map = normalizeRecordMap(json[key])
+    if (!map.space?.[space]) throw new NotionError('no_access', NO_ACCESS)
+    const record = map.space[space]
+    const view = Object.values(map.space_view ?? {}).find((v) => v.space_id === space)
+    // The user as getSpaces keys them, as spaceViews gives them.
+    return { space, record, view, userId: key }
   }
 
   /**
