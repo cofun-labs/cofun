@@ -14,6 +14,8 @@ import {
 } from './fakes'
 
 const EXT = 'chrome-extension://abcdefghijklmnopabcdefghijklmnop'
+// What /v1/me says a request to the model can hold.
+const SERVED = { context_window: 1_048_576, max_tokens: 65_536 }
 let clock = new Date('2026-11-08T12:00:00Z')
 /** Every error line the worker logged in the current test. */
 let logged: string[] = []
@@ -132,10 +134,10 @@ describe('worker API', () => {
     expect((await req('GET', '/health')).status).toBe(200)
   })
 
-  it('[@no-uc:contract] /v1/me returns the Clerk user id and model', async () => {
+  it('[@no-uc:contract] /v1/me returns the Clerk user id, the model, and what a request to it can hold', async () => {
     const res = await req('GET', '/v1/me', token)
     expect(res.status).toBe(200)
-    expect(await json(res)).toEqual({ userId: 'user_alice', model: MODEL })
+    expect(await json(res)).toEqual({ userId: 'user_alice', model: MODEL, ...SERVED })
   })
 
   it('[@no-uc:access] a session from any allowed origin is accepted', async () => {
@@ -148,7 +150,7 @@ describe('worker API', () => {
     const noOrigin = await clerk.sessionToken({ userId: 'user_alice' })
     const res = await req('GET', '/v1/me', noOrigin)
     expect(res.status).toBe(200)
-    expect(await json(res)).toEqual({ userId: 'user_alice', model: MODEL })
+    expect(await json(res)).toEqual({ userId: 'user_alice', model: MODEL, ...SERVED })
   })
 
   it('[@no-uc:access] a session whose origin is not text is refused', async () => {
@@ -1134,26 +1136,15 @@ describe('tool calling', () => {
     ])
   })
 
-  it('[@no-uc:money] tool definitions and tool calls count toward the size limit', async () => {
-    expect((await chat(token, { messages: withToolResult('{"title":"x"}'), tools: [pageTool] })).status).toBe(200)
-    const big = 'x'.repeat(800_001)
-    const tooBig = [
-      { messages: askPage, tools: [{ type: 'function', function: { name: 'f', description: big } }] },
-      {
-        messages: [
-          ...askPage,
-          {
-            role: 'assistant',
-            content: null,
-            tool_calls: [{ id: 'c', type: 'function', function: { name: 'f', arguments: big } }],
-          },
-          { role: 'tool', tool_call_id: 'c', content: '{}' },
-        ],
-      },
-      { messages: [...withToolResult(big)] },
-    ]
-    for (const body of tooBig) expect((await chat(token, body)).status).toBe(400)
+  it('[@no-uc:money] an input over the model window is refused as a context overflow, and costs nothing', async () => {
+    const res = await chat(token, { messages: [{ role: 'user', content: 'x'.repeat(3_200_000) }] })
+    expect(res.status).toBe(400)
+    expect((await json(res)).error).toEqual({
+      code: 'context_too_long',
+      message: "the input exceeds the model's context window: its maximum context length is 1048576 tokens",
+    })
     expect(ai.calls).toHaveLength(1)
+    expect(db.rows('spends').map((row) => row.micro_credits)).toEqual([0])
   })
 
   it('[@no-uc:contract] passes only the tool fields the model needs', async () => {
@@ -1196,7 +1187,6 @@ describe('tool calling', () => {
       [[], 'body must be a JSON object'],
       [{}, 'messages must be a non-empty array'],
       [{ messages: [] }, 'messages must be a non-empty array'],
-      [{ messages: Array.from({ length: 1001 }, () => askPage[0]) }, 'at most 1000 messages'],
       [{ messages: ['hi'] }, 'each message must be an object'],
       [{ messages: [{ content: 'hi' }] }, 'each message needs a role: system, user, assistant, or tool'],
       [

@@ -17,7 +17,7 @@ import {
 } from '../../packages/agent/src'
 import { WorkerClient } from '../../packages/worker-client/src'
 import { createApp, type Env } from '../src/app'
-import { priceOf } from '../src/pricing'
+import { modelOf } from '../src/pricing'
 import * as z from '../src/zod'
 import { FakeClerk } from './clerk'
 import {
@@ -36,7 +36,15 @@ const EXT = 'chrome-extension://abcdefghijklmnopabcdefghijklmnop'
 let clock = new Date('2026-11-08T12:00:00Z')
 /** The model a deploy switches to in the tests of a model change. It costs what the first one does. */
 const NEXT_MODEL = '@cf/test/next-model'
-const app = createApp({ now: () => clock, priceOf: (model) => priceOf(model === NEXT_MODEL ? MODEL : model) })
+/** The context window the worker gives for its model: the real one, or the smallest the agent takes, for compaction. */
+let hostedWindow = 1_048_576
+const app = createApp({
+  now: () => clock,
+  modelOf: (model) => {
+    const served = modelOf(model === NEXT_MODEL ? MODEL : model)
+    return served && { ...served, contextWindow: hostedWindow }
+  },
+})
 let clerk: FakeClerk
 let env: Env
 let ai: FakeAiBinding
@@ -58,6 +66,7 @@ afterAll(() => {
 
 beforeEach(async () => {
   clock = new Date('2026-11-08T12:00:00Z')
+  hostedWindow = 1_048_576
   env = {
     AI: (ai = new FakeAiBinding('你好 来自 worker')),
     BROWSER: new FakeBrowserRun(),
@@ -95,7 +104,6 @@ function makeAgent(
   options: {
     tools?: ToolSpec[]
     maxSteps?: number
-    history?: { messages: number; chars: number }
     systemPrompt?: string
     getToken?: () => Promise<string | null>
     meter?: AgentConfig['meter']
@@ -119,7 +127,6 @@ function makeAgent(
       systemPrompt: options.systemPrompt ?? 'You are Notico.',
       tools: options.tools ?? [pageTool().tool],
       maxSteps: options.maxSteps,
-      history: options.history,
       meter: options.meter,
       model: options.model,
     },
@@ -194,9 +201,13 @@ describe('extension agent against the worker', () => {
     const routed = globalThis.fetch
     const answer = (status: number, body: unknown) => new Response(JSON.stringify(body), { status })
     try {
-      // The model lookup: a model that is not text is no model.
+      // The model lookup: a model that is not text is no model, and one without its window or reply
+      // limit can't be budgeted.
       const lookups: [number, unknown, string][] = [
         [200, { model: 5 }, 'HTTP 200'],
+        [200, { model: MODEL, max_tokens: 65_536 }, 'HTTP 200'],
+        [200, { model: MODEL, context_window: '1048576', max_tokens: 65_536 }, 'HTTP 200'],
+        [200, { model: MODEL, context_window: 1_048_576, max_tokens: 0 }, 'HTTP 200'],
         [200, 'a model', 'HTTP 200'],
         [200, {}, 'HTTP 200'],
         [503, { error: { message: 'CLERK_JWT_KEY is not set' } }, 'CLERK_JWT_KEY is not set'],
@@ -339,16 +350,31 @@ describe('extension agent against the worker', () => {
 })
 
 describe('conversation compaction', () => {
+  // The smallest window the agent takes, so a conversation outgrows it with less text. With the
+  // worker's 65,536-token reply limit, a request compacts and must fit at 134,464 estimated tokens,
+  // and a summary request may hold 160,000.
+  beforeEach(() => {
+    hostedWindow = 200_000
+    ai.contextWindow = 200_000
+  })
+  /**
+   * Text past the trigger (134,464 tokens, estimated at 3.5 characters a token) that one summary
+   * request can still hold (160,000 tokens, which the summary counts at 3 letters a token).
+   */
+  const OVER_TRIGGER = 'x'.repeat(475_000)
+
   it('[UC-AGENT-CHAT-001-S01] compacts a tool-heavy question and continues with its original input', async () => {
     const { tool, runs } = pageTool({ title: 'x'.repeat(3200), url: 'https://www.notion.so/example' })
-    const agent = makeAgent({ tools: [tool], history: { messages: 100, chars: 2000 } })
+    const agent = makeAgent({ tools: [tool] })
     const name = tool.name
     const chat = crypto.randomUUID()
+    // The second round reports a nearly full window, so the third request compacts.
+    const full = { prompt_tokens: 134_000, completion_tokens: 5, total_tokens: 134_005 }
     ai.script = [
       {
         toolCalls: [{ name, arguments: '{}' }],
       },
-      { toolCalls: [{ name, arguments: '{}' }] },
+      { toolCalls: [{ name, arguments: '{}' }], usage: full },
       { reply: 'The first lookup completed.' },
       { reply: 'Finished.' },
     ]
@@ -358,7 +384,7 @@ describe('conversation compaction', () => {
     expect(asked.reply).toBe('Finished. ')
     expect(asked.rounds).toBe(4)
     expect(runs).toHaveLength(2)
-    expect(asked.used.cost).toEqual({ microCredits: 4 * FAKE_COST })
+    expect(asked.used.cost).toEqual({ microCredits: 3 * FAKE_COST + 134_000 * 300 + 5 * 1200 })
     expect(ai.calls[2].inputs.tools).toBeUndefined()
     expect(sentMessages(2).at(-1)?.content).toContain('[Tool result] lookup_page')
     expect(sentMessages(3).map((m) => m.role)).toEqual(['system', 'user', 'user', 'assistant', 'tool'])
@@ -377,11 +403,12 @@ describe('conversation compaction', () => {
   })
 
   it('[UC-AGENT-CHAT-001-S02] reuses a summary after reopening and keeps the original history', async () => {
+    // The last answer stays verbatim (under 20,000 tokens); the four before it are summarized.
     const history: HistoryMessage[] = Array.from({ length: 5 }, (_, n): HistoryMessage[] => [
       { role: 'user', text: `Question ${n + 1}` },
-      { role: 'assistant', parts: [{ type: 'text', text: `Answer ${n + 1}` }] },
+      { role: 'assistant', parts: [{ type: 'text', text: `Answer ${n + 1} ${'x'.repeat(n < 4 ? 105_000 : 60_000)}` }] },
     ]).flat()
-    const options = { history: { messages: 9, chars: 10_000 } }
+    const options = {}
     ai.script = [{ reply: 'Earlier decisions concern the launch.' }, { reply: 'Yes.' }]
     const first = await ask(makeAgent(options, history), 'What did we decide?')
     expect(first.result.status).toBe('done')
@@ -399,9 +426,9 @@ describe('conversation compaction', () => {
   it('[@no-uc:data] a summary cut short by the model fails without advancing the checkpoint', async () => {
     const history: HistoryMessage[] = [
       { role: 'user', text: 'Keep the launch date.' },
-      { role: 'assistant', parts: [{ type: 'text', text: 'x'.repeat(3200) }] },
+      { role: 'assistant', parts: [{ type: 'text', text: OVER_TRIGGER }] },
     ]
-    const agent = makeAgent({ history: { messages: 100, chars: 2000 } }, history)
+    const agent = makeAgent({}, history)
     ai.script = [{ reply: 'Launch date is Friday.', finishReason: 'length' }]
 
     const asked = await ask(agent, 'What was the date?')
@@ -424,14 +451,14 @@ describe('conversation compaction', () => {
         id: 'old',
         name: 'lookup_page',
         status: 'done',
-        result: 'x'.repeat(80_000),
+        result: OVER_TRIGGER,
         details: { result: 'r_old' },
       },
       { role: 'user', text: 'Second question.' },
       { role: 'assistant', parts: [{ type: 'tool_call', id: 'read', name: 'lookup_page', args: {} }] },
       { role: 'tool', id: 'read', name: 'lookup_page', status: 'done', result: PAGE_JSON },
     ]
-    const agent = makeAgent({ history: { messages: 7, chars: 10_000 } }, history)
+    const agent = makeAgent({}, history)
     ai.script = [{ reply: 'The first lookup read r_old.' }]
 
     expect((await ask(agent, 'What was the result?')).result.status).toBe('done')
@@ -446,8 +473,8 @@ describe('conversation compaction', () => {
   it('[@no-uc:data] the summary request includes the first question even when excerpts fill its budget', async () => {
     const first = 'Keep the Friday launch deadline in mind.'
     const history = Array.from({ length: 400 }, (_, index): HistoryMessage[] => [
-      { role: 'user', text: index === 0 ? first : `Prior question ${index}. ${'x'.repeat(100)}` },
-      { role: 'assistant', parts: [{ type: 'text', text: `Prior answer ${index}. ${'x'.repeat(100)}` }] },
+      { role: 'user', text: index === 0 ? first : `Prior question ${index}. ${'x'.repeat(600)}` },
+      { role: 'assistant', parts: [{ type: 'text', text: `Prior answer ${index}. ${'x'.repeat(600)}` }] },
     ]).flat()
     ai.script = [{ reply: 'The deadline is Friday.' }]
 
@@ -474,6 +501,9 @@ describe('conversation compaction', () => {
       model: { id: 'test/small', name: 'Small model', contextLength: 200_000, price: { input: 0, output: 0 } },
     }
     let own: typeof small | undefined
+    // The hosted model's own window holds the archive; the small model's does not.
+    hostedWindow = 1_048_576
+    ai.contextWindow = 1_048_576
     const agent = makeAgent({ model: async () => own }, history)
     const routed = globalThis.fetch
     const newModel = new FakeAiBinding()
@@ -553,7 +583,7 @@ describe('conversation compaction', () => {
   it('[@no-uc:money] an explicit summary context overflow rechunks without losing the prefix', async () => {
     const agent = makeAgent({}, [
       { role: 'user', text: 'Keep the launch code OSPREY-73.' },
-      { role: 'assistant', parts: [{ type: 'text', text: 'x'.repeat(620_000) + ' End of archive.' }] },
+      { role: 'assistant', parts: [{ type: 'text', text: OVER_TRIGGER + ' End of archive.' }] },
     ])
     const routed = globalThis.fetch
     let first = true
@@ -585,6 +615,42 @@ describe('conversation compaction', () => {
     } finally {
       globalThis.fetch = routed
     }
+  })
+
+  it('[@no-uc:money] the hosted model refusing a long input compacts and resends, as a provider refusal does', async () => {
+    // The agent's estimate fits the 200,000 window, but the model counts more and refuses: the
+    // worker says so as a context overflow, and the agent summarizes and asks again.
+    ai.contextWindow = 120_000
+    const agent = makeAgent({}, [
+      { role: 'user', text: 'Keep the launch code OSPREY-73.' },
+      { role: 'assistant', parts: [{ type: 'text', text: 'x'.repeat(400_000) + ' End of archive.' }] },
+    ])
+    ai.script = [
+      { reply: 'Launch code OSPREY-73.' },
+      { reply: 'Launch code OSPREY-73. Archive summarized.' },
+      { reply: 'OSPREY-73' },
+    ]
+    const answer = await ask(agent, 'What was the code?')
+    expect(answer.result.status).toBe('done')
+    expect(answer.reply.trim()).toBe('OSPREY-73')
+    // The refused question, a summary request refused as too long, the summary in two halves, the answer.
+    expect(ai.calls).toHaveLength(5)
+    expect(ai.calls[0].inputs.tools).toBeDefined()
+    expect(sentMessages(4)[1].content).toContain('Archive summarized.')
+    expect(answer.used.cost).toEqual({ microCredits: 3 * FAKE_COST })
+  })
+
+  it('[@no-uc:money] CJK text counts about a token a character toward the window', async () => {
+    // 150,000 characters: past the trigger (134,464 tokens) only if each counts as about a token.
+    // At 3.5 characters a token, this would go to the model unsummarized.
+    const agent = makeAgent({}, [
+      { role: 'user', text: '记住发布代号 OSPREY-73。' },
+      { role: 'assistant', parts: [{ type: 'text', text: '密'.repeat(150_000) }] },
+    ])
+    ai.script = [{ reply: 'Launch code OSPREY-73.' }, { reply: 'OSPREY-73' }]
+    expect((await ask(agent, 'What was the code?')).result.status).toBe('done')
+    expect(ai.calls[0].inputs.tools).toBeUndefined()
+    expect(sentMessages(1)[1].content).toContain('Launch code OSPREY-73.')
   })
 
   it('[@no-uc:money] a rejected context compacts and retries that request once', async () => {
@@ -625,7 +691,7 @@ describe('conversation compaction', () => {
   it('[@no-uc:money] a summary refused for lack of credits stops before another model request', async () => {
     ai.usage = usageCosting(200)
     const { tool, runs } = pageTool({ title: 'x'.repeat(3200), url: 'https://www.notion.so/example' })
-    const agent = makeAgent({ tools: [tool], history: { messages: 100, chars: 2000 } }, [
+    const agent = makeAgent({ tools: [tool] }, [
       { role: 'user', text: 'An earlier question.' },
       { role: 'assistant', parts: [{ type: 'text', text: 'An earlier reply.' }] },
     ])
@@ -641,9 +707,9 @@ describe('conversation compaction', () => {
   it('[@no-uc:data] stopping while the summary is requested keeps the original history', async () => {
     const history: HistoryMessage[] = [
       { role: 'user', text: 'Keep the launch date.' },
-      { role: 'assistant', parts: [{ type: 'text', text: 'x'.repeat(3200) }] },
+      { role: 'assistant', parts: [{ type: 'text', text: OVER_TRIGGER }] },
     ]
-    const agent = makeAgent({ history: { messages: 100, chars: 2000 } }, history)
+    const agent = makeAgent({}, history)
     const controller = new AbortController()
     const routed = globalThis.fetch
     let summarySignal: AbortSignal | undefined

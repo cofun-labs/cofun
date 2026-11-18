@@ -5,7 +5,7 @@ import { charge, openLedger, startUsage, type Charging, type Turn } from '../cha
 import { costOf, estimateCachedTokens, estimateTokens, type Tokens } from '../pricing'
 import { finishReason, meterStream, replyInfo, tokensOf, type StreamSummary, type UsageRecord } from '../usage'
 import { HttpError, errorSummary, parse, type App, type Ctx, type Deps } from '../http'
-import { Body, MAX_CONTENT_CHARS, MAX_TOKENS, MaxTokens, Stream, parseModelInputs } from './chat-request'
+import { Body, MAX_TOKENS, MaxTokens, Stream, parseModelInputs } from './chat-request'
 
 /**
  * Whether a value can be read as a stream. Judged by the method the worker calls, not by class: the
@@ -28,7 +28,7 @@ function callCost(microCredits: number, estimated: boolean) {
 }
 
 /** Chat completions, mounted at /v1/chat. */
-export function chatRoutes({ now, priceOf: priceFor, logError }: Deps): App {
+export function chatRoutes({ now, modelOf, logError }: Deps): App {
   const routes: App = new Hono()
   // OpenAI-compatible chat completions. The model is fixed by the server.
   // Every request that passed auth leaves one usage record, however it ends.
@@ -59,8 +59,6 @@ export function chatRoutes({ now, priceOf: priceFor, logError }: Deps): App {
     const { inputs: modelInputs, chars } = parseModelInputs(body)
     usage.messages = modelInputs.messages.length
     usage.inputChars = chars
-    if (chars > MAX_CONTENT_CHARS)
-      throw new HttpError(400, 'bad_request', `messages and tools exceed ${MAX_CONTENT_CHARS} characters`)
     // null means not set.
     const max_tokens =
       body.max_tokens === undefined || body.max_tokens === null ? undefined : parse(MaxTokens, body.max_tokens)
@@ -70,9 +68,9 @@ export function chatRoutes({ now, priceOf: priceFor, logError }: Deps): App {
       throw new HttpError(400, 'unsupported_model', `unsupported model; use ${c.env.MODEL} or omit it`)
     }
 
-    const priced = priceFor(c.env.MODEL)
-    if (!priced) throw new HttpError(503, 'not_configured', 'MODEL has no price')
-    const price = priced
+    const served = modelOf(c.env.MODEL)
+    if (!served) throw new HttpError(503, 'not_configured', 'MODEL is not in the model table')
+    const { price, contextWindow } = served
 
     // Calls sent at once all start on the same balance (see below), so how many one user can start
     // a minute is capped. Checked before the credits, so a refused request reads nothing.
@@ -151,6 +149,15 @@ export function chatRoutes({ now, priceOf: priceFor, logError }: Deps): App {
       try {
         out = await c.env.AI.run(c.env.MODEL, inputs, options)
       } catch (err) {
+        // An input over the model's window. Workers AI answers "This model's maximum context length
+        // is 1048576 tokens. However, ..." with a 400. Said in the worker's own words, which name the
+        // window as providers do, so the agent reads it as a context overflow, compacts, and sends again.
+        if (err instanceof Error && /maximum context length/i.test(err.message))
+          throw new HttpError(
+            400,
+            'context_too_long',
+            `the input exceeds the model's context window: its maximum context length is ${contextWindow} tokens`,
+          )
         // A summary goes to Workers Logs, not to the client. Never log the error itself: nothing
         // shows that what the provider returns can't quote the request.
         logError(`model call failed: ${errorSummary(err)}`)

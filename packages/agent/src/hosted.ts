@@ -6,6 +6,7 @@ import {
   callCost,
   turnHeaders,
   WorkerError,
+  type HostedModel,
   type WebCall,
   type WebPage,
   type WebSearchResult,
@@ -19,8 +20,8 @@ export interface HostedService {
   readonly baseUrl: string
   /** The headers a hosted model request carries besides its token. */
   readonly modelHeaders: Record<string, string>
-  /** The model the worker serves. */
-  model(): Promise<string>
+  /** The model the worker serves, with its window and reply limit. */
+  model(): Promise<HostedModel>
   /** A fresh session token for one request. */
   token(): Promise<string>
 }
@@ -36,10 +37,10 @@ export function hostedProvider(worker: HostedService): ModelProvider {
   return {
     name: 'Cofun',
     async loadModel() {
-      const model = await worker.model()
+      const { id, contextWindow, maxTokens } = await worker.model()
       return {
-        id: model,
-        name: model,
+        id,
+        name: id,
         api: 'openai-completions',
         provider: 'cofun',
         baseUrl: worker.baseUrl,
@@ -48,10 +49,9 @@ export function hostedProvider(worker: HostedService): ModelProvider {
         cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
         // Which extension asks, so the worker records the call under its product.
         headers: worker.modelHeaders,
-        // The model's own, on Workers AI. pi fits max_tokens into what the input leaves of it.
-        contextWindow: 1_048_576,
-        // The worker allows up to MAX_TOKENS (worker/src/routes/chat-request.ts) per reply.
-        maxTokens: 65_536,
+        // As the worker gives them: the model's window, and the most a reply may take.
+        contextWindow,
+        maxTokens,
         // What the worker accepts: system (not developer) messages, max_tokens, no store field.
         compat: {
           supportsDeveloperRole: false,

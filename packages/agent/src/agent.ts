@@ -20,7 +20,6 @@ import {
   COMPACTION_FAILED,
   fitsRequest,
   MAX_SUMMARY_CHUNKS,
-  guardHostedPayload,
   planCompaction,
   project,
   requestBudget,
@@ -30,7 +29,8 @@ import {
 } from './compaction'
 import { addUsage, detailsOf, textOf, usedTools } from './history'
 import { ownProvider, type OwnSetup } from './own'
-import { HOSTED_TRIGGER, type Failure, type ModelProvider } from './provider'
+import type { Failure, ModelProvider } from './provider'
+import { estimateTokens } from './tokens'
 import { writeTitle } from './title'
 import type {
   AgentConfig,
@@ -169,7 +169,7 @@ export class CopilotAgent<M = unknown> {
   private readonly usagePrefix = new WeakMap<AssistantMessage, Compaction | undefined>()
   private onOverflow?: (signal?: AbortSignal) => Promise<Message[] | undefined>
   private onModelRequest?: () => void
-  private toolChars = 0
+  private toolTokens = 0
 
   /**
    * One agent holds one conversation: a new one, or `initial` to continue a saved one (see
@@ -346,9 +346,9 @@ export class CopilotAgent<M = unknown> {
     let prepared: Message[] | undefined
     let raw: Message[] = []
     const selected = agent.state.model as Model<'openai-completions'>
-    const toolChars = this.toolChars
+    const toolTokens = this.toolTokens
     const compact = async (budget: ReturnType<typeof requestBudget>, signal?: AbortSignal) => {
-      const plan = planCompaction(raw, this.compaction, budget.hard, toolChars)
+      const plan = planCompaction(raw, this.compaction, budget.hard, toolTokens)
       if (!plan) return undefined
       try {
         // Reject a prefix that cannot possibly fit in four requests before spending credits.
@@ -370,9 +370,8 @@ export class CopilotAgent<M = unknown> {
             maxTokens: budget.maxSummaryTokens,
             maxRetries: 0,
             signal,
-            onPayload: (payload) => {
+            onPayload: () => {
               signal?.throwIfAborted()
-              if (selected.provider === 'cofun') guardHostedPayload(payload)
               onModelRequest()
             },
             onProviderStreamEvent: onChunk,
@@ -396,7 +395,7 @@ export class CopilotAgent<M = unknown> {
           offset = input.end
         }
         const sent = project(raw, next)
-        if (!fitsRequest(sent, budget.hard, toolChars)) throw new Error(COMPACTION_FAILED)
+        if (!fitsRequest(sent, budget.hard, toolTokens)) throw new Error(COMPACTION_FAILED)
         this.compaction = next
         return sent
       } catch (error) {
@@ -409,10 +408,7 @@ export class CopilotAgent<M = unknown> {
     // and let the non-throwing transform deliver the prepared view only to the model.
     agent.prepareRequest = async ({ context }, signal) => {
       raw = this.withNotes(context.messages)
-      const budget = requestBudget(
-        selected,
-        this.config.history ?? (selected.provider === 'cofun' ? HOSTED_TRIGGER : undefined),
-      )
+      const budget = requestBudget(selected)
       const current = project(raw, this.compaction)
       const usageApplies = (message: AssistantMessage) =>
         message.api === selected.api &&
@@ -421,10 +417,10 @@ export class CopilotAgent<M = unknown> {
         this.usagePrefix.has(message) &&
         this.usagePrefix.get(message) === this.compaction
       this.onOverflow = (retrySignal) => compact(budget, retrySignal)
-      prepared = fitsRequest(current, budget.trigger, toolChars, usageApplies)
+      prepared = fitsRequest(current, budget.trigger, toolTokens, usageApplies)
         ? current
         : ((await compact(budget, signal)) ?? current)
-      if (!fitsRequest(prepared, budget.hard, toolChars, usageApplies)) {
+      if (!fitsRequest(prepared, budget.hard, toolTokens, usageApplies)) {
         compactionFailed = true
         throw new Error(COMPACTION_FAILED)
       }
@@ -858,13 +854,15 @@ export class CopilotAgent<M = unknown> {
       this.agent.identity = this.provider.identity
       return this.agent
     }
-    // The tool definitions go with every request and count toward the provider's size limit.
-    this.toolChars = JSON.stringify(
-      this.config.tools.map((t) => ({
-        type: 'function',
-        function: { name: t.name, description: t.description, parameters: t.parameters },
-      })),
-    ).length
+    // The tool definitions go with every request and count toward the model's window.
+    this.toolTokens = estimateTokens(
+      JSON.stringify(
+        this.config.tools.map((t) => ({
+          type: 'function',
+          function: { name: t.name, description: t.description, parameters: t.parameters },
+        })),
+      ),
+    )
     this.agent = new Agent({
       initialState: {
         systemPrompt: this.config.systemPrompt,
@@ -883,9 +881,8 @@ export class CopilotAgent<M = unknown> {
           ...options,
           ...(turn && { headers: { ...options?.headers, ...turn } }),
           onProviderStreamEvent: (chunk: unknown) => onChunk?.(chunk),
-          onPayload: (payload: unknown) => {
+          onPayload: () => {
             options?.signal?.throwIfAborted()
-            if (m.provider === 'cofun') guardHostedPayload(payload)
             onModelRequest?.()
           },
         }
