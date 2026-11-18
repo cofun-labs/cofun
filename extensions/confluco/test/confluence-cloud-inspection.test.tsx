@@ -160,7 +160,7 @@ it('[UC-CONFLUCO-CONFLUENCE-006-S01] [UC-CONFLUCO-CONFLUENCE-010-S01] [UC-CONFLU
               title: 'agenda.txt',
               pageId: '42',
               version: { number: 2 },
-              _links: { download: '/download/attachments/42/agenda.txt?version=2' },
+              _links: { download: '/rest/api/content/42/child/attachment/att55/download' },
               fileSize: 30,
             },
           ],
@@ -184,7 +184,9 @@ it('[UC-CONFLUCO-CONFLUENCE-006-S01] [UC-CONFLUCO-CONFLUENCE-010-S01] [UC-CONFLU
   expect(output).toContain('Inline discussion')
   expect(output).not.toContain('nextPage')
   expect(browser.workspaceRequests.filter(({ url }) => new URL(url).pathname === pagePath)).toHaveLength(3)
-  expect(output).toContain(cloud + '/download/attachments/42/agenda.txt?version=2&download=true')
+  const download = cloud + '/rest/api/content/42/child/attachment/att55/download?version=2'
+  expect(output).toContain(download)
+  expect(screen.getByRole('link', { name: 'Download agenda.txt' })).toHaveAttribute('href', download)
 })
 
 it('[UC-CONFLUCO-CONFLUENCE-010-S01] batches empty reply collections and resumes without refetching the page', async () => {

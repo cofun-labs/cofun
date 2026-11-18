@@ -14,7 +14,7 @@ import {
   readConfluenceVersion,
   searchConfluencePages,
 } from './confluence'
-import { CLOUD_WRITES, CONFLUENCE_WRITES } from './confluence-writes'
+import { CONFLUENCE_WRITES } from './confluence-writes'
 import { getCurrentTab, readCurrentTab, readTab } from './current'
 import { verb } from './shared'
 import { readResult, searchResult } from './results'
@@ -32,7 +32,7 @@ export {
 export type { ToolMemory } from './memory'
 export { DATA_LINE } from './shared'
 
-const CLOUD_TOOLS: Tool[] = [
+const READ_TOOLS: Tool[] = [
   readConfluencePage,
   searchConfluencePages,
   listConfluenceSpaces,
@@ -54,8 +54,7 @@ const CLOUD_TOOLS: Tool[] = [
   searchResult,
 ]
 
-export const TOOLS = [...CLOUD_TOOLS, ...CONFLUENCE_WRITES]
-export const CLOUD_TOOL_NAMES: ReadonlySet<string> = new Set([...CLOUD_TOOLS, ...CLOUD_WRITES].map(({ name }) => name))
+export const TOOLS = [...READ_TOOLS, ...CONFLUENCE_WRITES]
 
 /** A call in the user's words, also one from a saved session whose tool is gone. */
 export function describeCall(name: string, args: unknown, details?: ToolDetails): Action {

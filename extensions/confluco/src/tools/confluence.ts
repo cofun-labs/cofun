@@ -1,11 +1,10 @@
 import type { ToolContext } from '../agent'
 import { normalizeSearchText, readPage, searchPages, SearchArgs } from '../confluence/api'
-import { attachmentsArgs, listPageAttachments } from '../confluence/attachments'
+import { attachmentsArgs, listCloudAttachments, listPageAttachments } from '../confluence/attachments'
 import {
   browseCloudTree,
   cloudPageAccess,
   getCloudSpace,
-  listCloudAttachments,
   listCloudComments,
   listCloudLabels,
   listCloudSpaces,

@@ -387,7 +387,7 @@ describe('Confluence Cloud', () => {
     expect(tools).toContain('"name":"read_page"')
     expect(tools).toContain('"name":"search_pages"')
     expect(tools).toContain('"name":"edit_page"')
-    expect(tools).not.toContain('"name":"upload_page_attachment"')
+    expect(tools).toContain('"name":"upload_page_attachment"')
     expect(tools).toContain('"name":"restore_page"')
     expect(tools).toContain('"name":"undo_last_change"')
     expect(tools).toContain('"name":"trash_page"')
@@ -415,7 +415,6 @@ describe('Confluence Cloud', () => {
         expect(await screen.findByText('Cannot read Cloud.')).toBeVisible()
         expect(toolResults(browser)[0]).toContain(message)
       }
-      expect(JSON.stringify(browser.ai.calls[0]?.inputs.tools)).not.toContain('"name":"upload_page_attachment"')
       expect(requests).toEqual([])
     },
   )

@@ -8,6 +8,10 @@ afterEach(closeWorkspace)
 const page = { id: '42', title: 'Attachment fixture', type: 'page', status: 'current' }
 const pageUrl = base + '/pages/viewpage.action?pageId=42'
 const resource = base + '/rest/api/content/42/child/attachment'
+const cloud = 'https://team.atlassian.net/wiki'
+const cloudPageUrl = cloud + '/spaces/TEAM/pages/42/Attachment-fixture'
+const cloudAttachments = cloud + '/api/v2/pages/42/attachments'
+const cloudUpload = cloud + '/pages/doattachfile.action?pageId=42'
 const name = 'review notes.txt'
 const content = 'Synthetic file bytes 742'
 const attachment = {
@@ -20,12 +24,23 @@ const attachment = {
   extensions: { fileSize: content.length },
   _links: { download: '/download/attachments/42/review+notes.txt?version=1' },
 }
+const cloudAttachment = {
+  id: attachment.id,
+  title: name,
+  pageId: '42',
+  version: { number: 1 },
+  fileSize: content.length,
+  downloadLink: attachment._links.download,
+}
 const list = { name: 'list_page_attachments', arguments: '{}' }
 const upload = { name: 'upload_page_attachment', arguments: '{}' }
 const writes = (browser: WorkspaceBrowser) => browser.workspaceRequests.filter(({ init }) => init?.method === 'POST')
 
-async function openPanel() {
-  const { browser, user } = await openWorkspace({ url: pageUrl, title: page.title })
+async function openPanel(onCloud = false) {
+  const { browser, user } = await openWorkspace(
+    { url: onCloud ? cloudPageUrl : pageUrl, title: page.title },
+    onCloud ? cloud : base,
+  )
   await user.click(await screen.findByText('Confluence', { selector: 'summary' }))
   const selectFile = async (file = new File([content], name, { type: 'text/plain' })) =>
     user.upload(screen.getByLabelText('Attachment file'), file)
@@ -64,19 +79,28 @@ it('[UC-CONFLUCO-CONFLUENCE-013-S01] shows bounded attachments and only valid do
   expect(writes(browser)).toHaveLength(0)
 })
 
-it.each([false, true])(
-  '[UC-CONFLUCO-CONFLUENCE-013-S02] confirms and verifies the exact upload (replacement %s)',
-  async (replace) => {
-    const { browser, user, selectFile } = await openPanel()
-    let saved = replace ? attachment : undefined
+it.each([
+  { onCloud: false, replace: false },
+  { onCloud: false, replace: true },
+  { onCloud: true, replace: false },
+  { onCloud: true, replace: true },
+])(
+  '[UC-CONFLUCO-CONFLUENCE-013-S02] confirms and verifies an upload (Cloud $onCloud, replacement $replace)',
+  async ({ onCloud, replace }) => {
+    const { browser, user, selectFile } = await openPanel(onCloud)
+    const fixture = onCloud ? cloudAttachment : attachment
+    let saved = replace ? fixture : undefined
     browser.confluenceResponse = async (address, init) => {
-      if (!address.startsWith(resource)) return Response.json(page)
       if (init?.method === 'POST') {
-        expect(address).toBe(replace ? resource + '/72/data' : resource + '?status=current')
-        expect(new Headers(init.headers).get('X-Atlassian-Token')).toBe('nocheck')
+        expect(address).toBe(onCloud ? cloudUpload : replace ? resource + '/72/data' : resource + '?status=current')
+        expect(init.credentials).toBe('same-origin')
+        expect(init.redirect).toBe('manual')
+        const headers = new Headers(init.headers)
+        expect(headers.get('X-Atlassian-Token')).toBe(onCloud ? 'no-check' : 'nocheck')
+        if (onCloud) expect(headers.get('X-Requested-With')).toBe('XMLHttpRequest')
         expect(init.body).toBeInstanceOf(FormData)
         if (!(init.body instanceof FormData)) throw new Error('Expected a multipart body')
-        const file = init.body.get('file')
+        const file = init.body.get(onCloud ? 'file_0' : 'file')
         expect(file).toBeInstanceOf(File)
         if (!(file instanceof File)) throw new Error('Expected a file part')
         expect(file.name).toBe(name)
@@ -87,9 +111,11 @@ it.each([false, true])(
           reader.readAsText(file)
         })
         expect(uploaded).toBe(content)
-        saved = { ...attachment, version: { number: replace ? 2 : 1 } }
+        saved = { ...fixture, version: { number: replace ? 2 : 1 } }
+        if (onCloud) return new Response('<html>Attachments</html>', { headers: { 'Content-Type': 'text/html' } })
         return Response.json(replace ? saved : { results: [saved] })
       }
+      if (!address.startsWith(onCloud ? cloudAttachments : resource)) return Response.json(page)
       expect(new URL(address).searchParams.get('filename')).toBe(name)
       return Response.json({ results: saved ? [saved] : [] })
     }
@@ -100,6 +126,10 @@ it.each([false, true])(
     expect(
       screen.getByText(replace ? /Replace version 1 of attachment.*review notes/ : /Upload attachment.*review notes/),
     ).toBeVisible()
+    if (onCloud) {
+      expect(screen.getByText(/concurrent same-name upload can receive this file as a new version/)).toBeVisible()
+      expect(screen.queryByRole('button', { name: 'Attach editor selection' })).not.toBeInTheDocument()
+    }
     expect(writes(browser)).toHaveLength(0)
     await user.click(allow)
     expect(await screen.findByText('The file is verified.')).toBeVisible()
@@ -212,3 +242,53 @@ it('[UC-CONFLUCO-CONFLUENCE-013-S04] reports a rate limit verifying an upload an
   expect(writes(browser)).toHaveLength(1)
   expect(verificationReads).toBe(1)
 })
+
+it('[UC-CONFLUCO-CONFLUENCE-013-S03] declines a Cloud upload when a same-name attachment appears before submission', async () => {
+  const { browser, user, selectFile } = await openPanel(true)
+  let collision = false
+  browser.confluenceResponse = (address) =>
+    address.startsWith(cloudAttachments)
+      ? Response.json({ results: collision ? [cloudAttachment] : [] })
+      : Response.json(page)
+  await selectFile()
+  browser.ai.script.push({ toolCalls: [upload] })
+  await user.click(screen.getByRole('button', { name: 'Upload attachment' }))
+  const allow = await screen.findByRole('button', { name: /^Allow$/ })
+  collision = true
+  await user.click(allow)
+  await answered()
+  expect(screen.getAllByText(/attachment changed after the preview/).length).toBeGreaterThan(0)
+  expect(writes(browser)).toHaveLength(0)
+})
+
+it.each([
+  { status: 403, reason: /does not have permission/, readBack: false },
+  { status: 429, reason: /rate-limited/, readBack: false },
+  { status: 200, reason: /may have uploaded the file/, readBack: true },
+])(
+  '[UC-CONFLUCO-CONFLUENCE-013-S04] stops after one Cloud write for response $status',
+  async ({ status, reason, readBack }) => {
+    const { browser, user, selectFile } = await openPanel(true)
+    let written = false
+    let verificationReads = 0
+    browser.confluenceResponse = (address, init) => {
+      if (init?.method === 'POST') {
+        written = true
+        return new Response(null, { status, headers: { 'Content-Type': 'text/html' } })
+      }
+      if (!address.startsWith(cloudAttachments)) return Response.json(page)
+      if (written) verificationReads++
+      return Response.json({
+        results: written ? [{ ...cloudAttachment, version: { number: 2 } }] : [],
+      })
+    }
+    await selectFile()
+    browser.ai.script.push({ toolCalls: [upload, upload] })
+    await user.click(screen.getByRole('button', { name: 'Upload attachment' }))
+    await user.click(await screen.findByRole('button', { name: /^Allow$/ }))
+    await answered()
+    expect(screen.getAllByText(reason).length).toBeGreaterThan(0)
+    expect(writes(browser)).toHaveLength(1)
+    expect(verificationReads).toBe(readBack ? 1 : 0)
+  },
+)
