@@ -96,6 +96,8 @@ describe('UC-NOTICO-SESSION-003 clip a page to Notion', () => {
       visible: true,
     })
     const toWorker = browser.sentToWorker.length
+    // At a fragment, which the link to the article leaves out: one can carry a token.
+    tab.url = `${ARTICLE}#access_token=secret`
 
     tab.pickMenuItem(CLIP_PAGE, '')
     expect(tab.panelOpens).toEqual([1])

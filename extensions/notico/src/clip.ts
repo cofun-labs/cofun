@@ -4,6 +4,7 @@
 // What is read back from storage is parsed: the settings may have synced from another version, and
 // a clip holds text from the page.
 
+import { isNotion, pageIdFromUrl } from './notion/hosts'
 import { z } from './zod'
 
 /** The context menu item's id. */
@@ -14,7 +15,11 @@ export const CLIP_PAGE = 'clip-page'
  * its title when it was chosen, to show in Settings. A Notion page id is unique across workspaces,
  * so the workspace is read from the page itself when a clip is written.
  */
-const ClipTarget = z.object({ url: z.string(), title: z.string() })
+const ClipTarget = z.object({
+  // A Notion page's link: a value that synced from elsewhere is opened in a tab, so it must be one.
+  url: z.string().refine((url) => isNotion(url) && pageIdFromUrl(url) !== undefined, 'Not a Notion page link'),
+  title: z.string(),
+})
 export type ClipTarget = z.infer<typeof ClipTarget>
 
 /**

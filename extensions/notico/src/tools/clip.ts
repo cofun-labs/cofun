@@ -225,9 +225,11 @@ async function pageContent(clip: ClipRequest): Promise<NewBlock[]> {
 function source(clip: ClipRequest): RichText {
   const marks: [string, unknown?][] = [['h', 'gray']]
   const web = /^https?:\/\//i.test(clip.url)
+  // Without its fragment, which can carry a token, as the tab reads keep links (@cofun/tools/tab).
+  const link = clip.url.replace(/#.*$/, '')
   return [
     ['From ', marks],
-    [clip.title.trim() || (web ? clip.url : 'a local file'), web ? [...marks, ['a', clip.url]] : marks],
+    [clip.title.trim() || (web ? link : 'a local file'), web ? [...marks, ['a', link]] : marks],
   ]
 }
 
