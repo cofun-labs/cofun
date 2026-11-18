@@ -176,7 +176,10 @@ export class WorkerClient {
   private readonly product: string
 
   constructor({ apiUrl, getToken, clientName, product }: WorkerClientOptions) {
-    this.baseUrl = apiUrl.replace(/\/+$/, '')
+    // Without a regular expression, which takes polynomial time on a run of slashes not at the end.
+    let end = apiUrl.length
+    while (end > 0 && apiUrl[end - 1] === '/') end--
+    this.baseUrl = apiUrl.slice(0, end)
     this.getToken = getToken
     this.clientName = clientName
     this.product = product
