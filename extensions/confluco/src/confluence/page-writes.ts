@@ -205,15 +205,19 @@ export async function readWrittenPage(tab: ConfluenceTab, id: string, signal?: A
   }
 }
 
+export function requireEditPassages(before: string, after: string) {
+  if (!before.trim() || before.length > 2000 || after.length > 2000 || /\p{Cc}/u.test(before + after))
+    refuse('Quote a non-empty passage and a replacement of at most 2,000 characters each, on one line.')
+  if (before === after) refuse('The replacement is the same as the original text.')
+}
+
 export async function preparePageEdit(
   request: PageEditRequest,
   current: ConfluenceTab | undefined,
   signal?: AbortSignal,
 ) {
   const { before, after, targetUrl } = request
-  if (!before.trim() || before.length > 2000 || after.length > 2000 || /\p{Cc}/u.test(before + after))
-    refuse('Quote a non-empty passage and a replacement of at most 2,000 characters each, on one line.')
-  if (before === after) refuse('The replacement is the same as the original text.')
+  requireEditPassages(before, after)
   const tab = requireTab(current)
   const ref = requestedReference(tab, targetUrl)
   const original = await fetchPublishedPage(tab, ref, storedPage, storedFields, signal)
