@@ -704,6 +704,40 @@ a.icon-button {
   box-shadow: 0 8px 28px var(--shadow);
 }
 
+.clip-notice {
+  position: absolute;
+  top: 8px;
+  left: 12px;
+  right: 12px;
+  z-index: 5;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 8px 6px 8px 12px;
+  border-radius: 10px;
+  background: var(--fg);
+  color: var(--bg);
+  font-size: 13px;
+  line-height: 1.4;
+  box-shadow: 0 8px 28px var(--shadow);
+}
+
+.clip-notice .grow {
+  flex: 1;
+  padding: 5px 0;
+}
+
+.clip-notice a {
+  color: inherit;
+  text-decoration: underline;
+}
+
+.clip-notice .icon-button {
+  width: 28px;
+  height: 28px;
+  color: inherit;
+}
+
 .save-toast .grow {
   flex: 1;
   padding-top: 5px;

@@ -52,6 +52,68 @@ export async function activeNotionTab({ counted: count = true }: { counted?: boo
   return { tabId: tab.id, url: tab.url, pageId: pageIdFromUrl(tab.url), client }
 }
 
+/** How long a Notion tab may take to load before a clip gives up on it. */
+const LOAD_TIMEOUT_MS = 30_000
+
+/** For the user: the tab opened on the clip's page never showed it. */
+const TAB_NOT_LOADED = "The Notion page didn't open in its tab. Check that you're signed in to Notion, then try again."
+
+/**
+ * Shows the Notion page at `url` in window `windowId`, in a tab already showing it if there is one,
+ * else in a new one, and returns a client for that tab once it has loaded (counted toward no
+ * question). The tab is made the current one, so the user sees what is written there. A tab that
+ * ended up off Notion (on its sign-in page, say) is a `signed_out` error; nothing was sent.
+ */
+export async function showNotionPage(windowId: number, url: string): Promise<NotionTab> {
+  const pageId = pageIdFromUrl(url)
+  const host = new URL(url).hostname
+  const open = await chrome.tabs.query({ windowId, url: [`https://${host}/*`] })
+  const showing = open.find((tab) => tab.url && pageIdFromUrl(tab.url) === pageId)
+  const tab =
+    showing?.id === undefined
+      ? await chrome.tabs.create({ windowId, url, active: true })
+      : await chrome.tabs.update(showing.id, { active: true })
+  if (tab?.id === undefined) throw new NotionError('no_notion_tab', TAB_NOT_LOADED)
+  const tabId = tab.id
+  const now = tab.status === 'loading' ? await loaded(tabId) : await chrome.tabs.get(tabId)
+  if (!isNotion(now.url)) throw new NotionError('signed_out', TAB_NOT_LOADED)
+  return {
+    tabId,
+    url: now.url!,
+    pageId: pageIdFromUrl(now.url!),
+    client: new NotionClient(tabTransport(tabId), undefined, notionCooldown),
+  }
+}
+
+/** The tab `tabId` once it has loaded; a `no_notion_tab` error if it closes or takes too long. */
+function loaded(tabId: number): Promise<chrome.tabs.Tab> {
+  return new Promise((resolve, reject) => {
+    const done = (end: () => void) => {
+      clearTimeout(timer)
+      chrome.tabs.onUpdated.removeListener(onUpdated)
+      chrome.tabs.onRemoved.removeListener(onRemoved)
+      end()
+    }
+    const onUpdated = (id: number, change: { status?: string }, tab: chrome.tabs.Tab) => {
+      if (id === tabId && change.status === 'complete') done(() => resolve(tab))
+    }
+    const onRemoved = (id: number) => {
+      if (id === tabId) done(() => reject(new NotionError('no_notion_tab', TAB_NOT_LOADED)))
+    }
+    const timer = setTimeout(
+      () => done(() => reject(new NotionError('no_notion_tab', TAB_NOT_LOADED))),
+      LOAD_TIMEOUT_MS,
+    )
+    chrome.tabs.onUpdated.addListener(onUpdated)
+    chrome.tabs.onRemoved.addListener(onRemoved)
+    // Listening first, then looking: a tab that finished loading in between is not waited for.
+    chrome.tabs.get(tabId).then(
+      (tab) => tab.status === 'complete' && done(() => resolve(tab)),
+      () => done(() => reject(new NotionError('no_notion_tab', TAB_NOT_LOADED))),
+    )
+  })
+}
+
 const TAB_RELOADED = 'The Notion tab reloaded or went to another page before Notion answered this request.'
 
 const NO_SITE_ACCESS =

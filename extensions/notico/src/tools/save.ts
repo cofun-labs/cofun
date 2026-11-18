@@ -111,10 +111,11 @@ function pageBlocks(turns: SavedTurn[]): NewBlock[] {
 }
 
 /**
- * A reply's Markdown as blocks, the same way the agent's own writes parse it, with no person
- * mentioned. A reply that doesn't parse (a color Notion lacks, say) is kept as plain paragraphs.
+ * Markdown as blocks, the same way the agent's own writes parse it, with no person mentioned: a
+ * reply's, or a clipped page's. Markdown that doesn't parse (a color Notion lacks, say) is kept as
+ * plain paragraphs.
  */
-function replyBlocks(markdown: string): NewBlock[] {
+export function replyBlocks(markdown: string): NewBlock[] {
   if (!markdown.trim()) return []
   try {
     // A code block's caption can't be written yet; the code itself is kept.

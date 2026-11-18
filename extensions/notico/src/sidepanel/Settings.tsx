@@ -2,6 +2,7 @@ import { useAuth } from '@clerk/chrome-extension'
 import { useEffect, useState } from 'react'
 import { allowDuckDuckGo, loadDuckDuckGoSearch, saveDuckDuckGoSearch } from '@cofun/tools'
 import { loadAnalyticsEnabled, saveAnalyticsEnabled } from '../analytics'
+import { chooseClipTarget, loadClipSettings, saveClipShown, watchClipSettings, type ClipSettings } from '../clip'
 import { loadMenuShown, saveMenuShown, watchMenuShown } from '../selection'
 import type { ModelSettings } from '../models'
 import { Avatar, useAccount } from './Account'
@@ -10,8 +11,8 @@ import { ModelCard, Switch } from './Model'
 
 /**
  * The Settings page: everything that isn't money. The model providers and their models, the account
- * with Sign out, where web searches go, whether the right-click menu has "Ask Notico", and whether
- * usage data is sent.
+ * with Sign out, where web searches go, whether the right-click menu has "Ask Notico", where clips
+ * go and whether the menu has them, and whether usage data is sent.
  */
 export function Settings({
   model,
@@ -37,6 +38,8 @@ export function Settings({
       {userId && <WebSearch userId={userId} />}
 
       <ContextMenu />
+
+      <Clip />
 
       <UsageData />
 
@@ -97,6 +100,90 @@ function ContextMenu() {
           <Switch label="Show “Ask Notico”" checked={shown} describedBy="settings-menu-detail" onChange={change} />
         )}
       </div>
+    </section>
+  )
+}
+
+/**
+ * Where the right-click menu's clips go (see clip.ts), chosen as the page open in the current tab,
+ * and whether the menu has them: on until the user turns them off, shown once a page is chosen. Both
+ * for the user's Chrome profile, on every device it syncs to.
+ */
+function Clip() {
+  // Not known until storage was read: nothing shows until then, so it never shows a state to take back.
+  const [settings, setSettings] = useState<ClipSettings>()
+  const [problem, setProblem] = useState<string>()
+
+  useEffect(() => {
+    let closed = false
+    loadClipSettings().then(
+      (stored) => !closed && setSettings(stored),
+      (err: unknown) => console.error('Could not read the clip settings', err),
+    )
+    const stop = watchClipSettings((next) => setSettings(next))
+    return () => {
+      closed = true
+      stop()
+    }
+  }, [])
+
+  async function choose() {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true })
+    setProblem(await chooseClipTarget(tab?.url, tab?.title ?? ''))
+  }
+
+  function change(next: boolean) {
+    setSettings((now) => now && { ...now, shown: next })
+    saveClipShown(next).catch((err: unknown) => console.error('Could not save the clip setting', err))
+  }
+
+  if (!settings) return null
+  const { target } = settings
+  return (
+    <section className="page-section" aria-labelledby="settings-clip">
+      <h2 id="settings-clip">Clip to Notion</h2>
+      <div className="settings-account">
+        <div className="grow">
+          <p>Clip into</p>
+          <p id="settings-clip-target" className="account-detail">
+            {target ? (
+              <a href={target.url} target="_blank" rel="noreferrer">
+                {target.title}
+              </a>
+            ) : (
+              'No page chosen. Open a Notion page, then choose it.'
+            )}
+          </p>
+        </div>
+        <button
+          type="button"
+          className="secondary"
+          onClick={() => void choose().catch((err: unknown) => console.error('Could not choose the clip page', err))}
+        >
+          Use current page
+        </button>
+      </div>
+      {problem && (
+        <p className="account-detail" role="alert">
+          {problem}
+        </p>
+      )}
+      {target && (
+        <div className="settings-account">
+          <div className="grow">
+            <p>Show “Clip” in the right-click menu</p>
+            <p id="settings-clip-detail" className="account-detail">
+              Clip the page you're on, or the text you select, to the end of this page.
+            </p>
+          </div>
+          <Switch
+            label="Show “Clip” in the right-click menu"
+            checked={settings.shown}
+            describedBy="settings-clip-detail"
+            onChange={change}
+          />
+        </div>
+      )}
     </section>
   )
 }

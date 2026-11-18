@@ -4,6 +4,7 @@ import { track } from '../analytics'
 import { pageIdFromUrl } from '../notion/hosts'
 import { currentNotionPage, currentTabReadable, OPEN_A_PAGE, type OpenPage } from '../tools'
 import { AccountMenu } from './Account'
+import { Clips } from './Clips'
 import type { ChatSession } from './chat-session'
 import { Composer, useComposer } from './Composer'
 import { CreditsPage } from './Credits'
@@ -132,6 +133,7 @@ export function Chat({ userId }: { userId: string }) {
       </ChatHeader>
 
       <div className="stage">
+        <Clips />
         <main id="messages" ref={listRef} inert={covered}>
           {empty && <ChatStart context={{ ...composer.start, readable, mode }} onPick={composer.fill} />}
           <MessageList chat={chat} saveBlocked={saveBlocked} onBuyCredits={openCredits} scrollRef={listRef} />

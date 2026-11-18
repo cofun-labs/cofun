@@ -84,8 +84,10 @@ export class FakeStorage {
     }
     return {
       // `null` gets all of it.
-      get: async (key: string | null) =>
-        key === null ? structuredClone(values) : key in values ? { [key]: values[key] } : {},
+      get: async (keys: string | string[] | null) =>
+        keys === null
+          ? structuredClone(values)
+          : Object.fromEntries([keys].flat().flatMap((key) => (key in values ? [[key, values[key]]] : []))),
       set: async (items: Record<string, unknown>) => {
         const changes: Parameters<StorageListener>[0] = {}
         for (const [key, newValue] of Object.entries(items)) {
@@ -331,6 +333,13 @@ export class FakeNotionTab {
           const other = this.otherTabs[args[0] - 20]
           if (!other || other.closed) throw new Error(`No tab with id: ${args[0]}.`)
           this.switchTab(other.url, other.title)
+          return { id: args[0], url: other.url, status: 'complete' }
+        },
+        // A new tab, made the active one, has loaded at once.
+        create: async ({ url, windowId = 1 }: { url: string; windowId?: number }) => {
+          this.otherTabs.push({ url, title: '', windowId })
+          this.switchTab(url)
+          return { id: 20 + this.otherTabs.length - 1, url, windowId, status: 'complete' }
         },
       },
       permissions: {
@@ -427,7 +436,8 @@ export class FakeNotionTab {
     // The page's selection, unless the test gave the page a DOM of its own that has one.
     const selected = () => ({ toString: () => (other ? '' : this.selected) })
     const document = Object.assign({ getSelection: selected }, (other ? other.dom : this.dom) ?? {}, {
-      cookie: other ? '' : this.cookie,
+      // Another tab on Notion has the browser's Notion cookies too.
+      cookie: other && !isNotion(other.url) ? '' : this.cookie,
     })
     const fetch = (input: string, init: RequestInit) => this.fetch(new URL(input, location).href, init)
     // The page's globals are the function's own: its `location`, `document`, and `fetch` are
