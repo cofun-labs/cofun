@@ -206,7 +206,7 @@ describe('reading a long page in parts', () => {
     )
   })
 
-  it('[@no-uc:contract] parts can still be read after the question passes the former per-question cap', async () => {
+  it('[@no-uc:contract] one question can read every part of a kept result that fits its context budget', async () => {
     const { browser, user } = await open()
     const book = 'https://docs.example/book'
     browser.web.serve(

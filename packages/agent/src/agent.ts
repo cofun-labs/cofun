@@ -16,6 +16,7 @@ import {
   project,
   requestBudget,
   summaryRequest,
+  summaryText,
 } from './compaction'
 import { addUsage, detailsOf, textOf, usedTools } from './history'
 import { ownProvider, type OwnSetup } from './own'
@@ -363,14 +364,8 @@ export class CopilotAgent<M = unknown> {
         if (answer.stopReason === 'error') throw new Error(answer.errorMessage ?? COMPACTION_FAILED)
         // Even an unusable answer may have been charged.
         summarized = true
-        const summary = textOf(answer.content).trim()
-        if (
-          answer.stopReason !== 'stop' ||
-          answer.content.some((part) => part.type === 'toolCall') ||
-          !summary ||
-          summary.length > plan.summaryChars
-        )
-          throw new Error('The model did not return a usable conversation summary.')
+        const summary = summaryText(answer, plan.summaryChars)
+        if (!summary) throw new Error('The model did not return a usable conversation summary.')
         const next = { firstKept: plan.firstKept, summary }
         const sent = project(noted, next)
         if (!fitsRequest(sent, limits, toolChars)) throw new Error(COMPACTION_FAILED)
