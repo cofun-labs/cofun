@@ -2,6 +2,8 @@
 
 Confluco is an AI side panel for Chrome. It can answer questions, read the current tab or tabs you add, and search the web. It uses the same Cofun account and credit balance as Notico.
 
+The model can summarize earlier messages to continue a long chat. You can still read the original messages when you reopen it.
+
 ## Connect to Confluence
 
 Open **Account → Settings → Confluence connection**. Enter your Cloud site URL (such as `https://team.atlassian.net/wiki`) or your self-managed base URL, including its deployment path if it has one. Allow Chrome site access, then open the connected site and sign in to Confluence. On either site type, you can read the current page, search published content, browse spaces and page trees, and inspect versions, access, labels, discussions and attachments.

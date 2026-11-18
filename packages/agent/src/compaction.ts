@@ -25,6 +25,8 @@ const SUMMARY_PREFIX =
 const SUMMARY_INPUT_CHARS = 32_000
 // One large page part should leave room for the other messages and results.
 const SUMMARY_PART_CHARS = 2000
+// On unusually long transcripts, sample across the covered range so each excerpt can carry some text.
+const SUMMARY_MIN_ENTRY_CHARS = 32
 // Leave room for another few tool rounds before the conversation needs another paid summary.
 const RETAINED_SHARE = 0.6
 
@@ -157,13 +159,16 @@ export function summaryText(answer: AssistantMessage, maxChars: number): string 
 function describe(message: Message, limit: number): string {
   if (message.role === 'toolResult') {
     const result = ToolDetails.safeParse(message.details).data?.result
-    return `Tool result (${message.toolName}${message.isError ? ', failed or interrupted' : ''}${result ? `, result ${result}` : ''}): ${excerpt(textOf(message.content), limit)}`
+    return excerpt(
+      `Tool result (${message.toolName}${message.isError ? ', failed or interrupted' : ''}${result ? `, result ${result}` : ''}): ${textOf(message.content)}`,
+      limit,
+    )
   }
-  if (message.role !== 'assistant') return `User: ${excerpt(textOf(message.content), limit)}`
+  if (message.role !== 'assistant') return excerpt(`User: ${textOf(message.content)}`, limit)
   const calls = message.content.flatMap((part) =>
     part.type === 'toolCall' ? [`${part.name}(${excerpt(JSON.stringify(part.arguments), limit)})`] : [],
   )
-  return `Assistant: ${excerpt([textOf(message.content), ...calls].join('\n'), limit)}`
+  return excerpt(`Assistant: ${[textOf(message.content), ...calls].join('\n')}`, limit)
 }
 
 /** A bounded transcript excerpt for the summarizer. Put the previous checkpoint before the newly covered entries. */
@@ -176,16 +181,17 @@ export function summaryRequest(plan: CompactionPlan, previous: Compaction | unde
     : ''
   const header = prior + 'Conversation excerpt (older entries may be shortened):\n'
   const room = limit - prompt.length - header.length
-  const partLimit = Math.min(SUMMARY_PART_CHARS, Math.max(1, Math.floor(room / plan.source.length)))
+  const count = Math.min(plan.source.length, Math.floor(room / SUMMARY_MIN_ENTRY_CHARS))
   const parts: string[] = []
   let left = room
-  for (let i = plan.source.length - 1; i >= 0; i--) {
-    const entry = describe(plan.source[i], partLimit)
-    if (entry.length + 1 > left) break
+  for (let i = 0; i < count; i++) {
+    const index = count === 1 ? 0 : Math.round((i * (plan.source.length - 1)) / (count - 1))
+    const partLimit = Math.min(SUMMARY_PART_CHARS, Math.floor(left / (count - i)) - 1)
+    const entry = describe(plan.source[index], partLimit)
     parts.push(entry)
     left -= entry.length + 1
   }
-  const user: Message = { role: 'user', content: header + parts.reverse().join('\n'), timestamp: Date.now() }
+  const user: Message = { role: 'user', content: header + parts.join('\n'), timestamp: Date.now() }
   if (!parts.length || !fitsRequest([system, user], budget)) throw new Error(COMPACTION_FAILED)
   return [system, user]
 }

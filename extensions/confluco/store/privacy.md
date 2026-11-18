@@ -9,3 +9,5 @@ Confluco requests optional access to the site the user connects in Settings. Scr
 ## Data usage
 
 In the Chrome Web Store disclosures, declare website content for page text, titles, source links, and excerpts the user asks the assistant to read. Declare the connected site address and the browsing context used to choose the current tab. The extension keeps this information in the browser as described in its privacy policy and shares the tool result with the model answering that question. It does not sell this data, use it for advertising, or use it for creditworthiness.
+
+Declare personal communications for the user's chat with the assistant. A summary of a long chat is kept with that chat on the device and sent to the selected model when the chat continues. It may include excerpts from pages read during the chat.

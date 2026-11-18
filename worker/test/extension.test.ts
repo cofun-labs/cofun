@@ -432,6 +432,21 @@ describe('conversation compaction', () => {
     expect(agent.history().slice(0, history.length)).toEqual(history)
   })
 
+  it('[@no-uc:data] the summary request includes the first question even when excerpts fill its budget', async () => {
+    const first = 'Keep the Friday launch deadline in mind.'
+    const history = Array.from({ length: 400 }, (_, index): HistoryMessage[] => [
+      { role: 'user', text: index === 0 ? first : `Prior question ${index}. ${'x'.repeat(100)}` },
+      { role: 'assistant', parts: [{ type: 'text', text: `Prior answer ${index}. ${'x'.repeat(100)}` }] },
+    ]).flat()
+    ai.script = [{ reply: 'The deadline is Friday.' }]
+
+    const asked = await ask(makeAgent({}, history), 'When do we launch?')
+    expect(asked.result.status).toBe('done')
+    expect(ai.calls).toHaveLength(2)
+    expect(sentMessages(0)[1].content).toContain(`User: ${first}`)
+    expect(sentMessages(1)[1].content).toContain('The deadline is Friday.')
+  })
+
   it('[@no-uc:money] a summary refused for lack of credits stops before another model request', async () => {
     ai.usage = usageCosting(200)
     const { tool, runs } = pageTool({ title: 'x'.repeat(3200), url: 'https://www.notion.so/example' })
