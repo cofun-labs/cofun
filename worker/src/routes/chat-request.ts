@@ -7,7 +7,7 @@ import { MAX_ID_CHARS, badRequest, parse, part } from '../http'
 // 600,000 characters, about 150k tokens of the model's 1,048,576), with room for the system prompt,
 // which that budget doesn't count.
 const MAX_MESSAGES = 1_000
-export const MAX_TOKENS = 16_384
+export const MAX_TOKENS = 65_536
 export const MAX_CONTENT_CHARS = 800_000
 const MAX_TOOLS = 64
 const MAX_TOOL_CALLS = 32

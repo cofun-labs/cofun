@@ -123,8 +123,9 @@ export function chatRoutes({ now, priceOf: priceFor, logError }: Deps): App {
       // Pass only the fields the model needs; drop anything else a client added.
       const inputs: Record<string, unknown> = { ...modelInputs }
       // Without an explicit limit, models fall back to their own default, which can be
-      // small enough to cut replies short.
-      inputs.max_tokens = maxTokens
+      // small enough to cut replies short. Workers AI deprecates max_tokens for this name;
+      // clients still send max_tokens, which the worker reads.
+      inputs.max_completion_tokens = maxTokens
       if (stream === true) {
         inputs.stream = true
         // Ask for token usage in the final chunk, so streamed replies can be metered too.

@@ -50,7 +50,8 @@ export function hostedProvider(worker: HostedService): ModelProvider {
         headers: worker.modelHeaders,
         // The model's own, on Workers AI. pi fits max_tokens into what the input leaves of it.
         contextWindow: 1_048_576,
-        maxTokens: 16_384,
+        // The worker allows up to MAX_TOKENS (worker/src/routes/chat-request.ts) per reply.
+        maxTokens: 65_536,
         // What the worker accepts: system (not developer) messages, max_tokens, no store field.
         compat: {
           supportsDeveloperRole: false,
