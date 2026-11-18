@@ -32,8 +32,6 @@ export interface AgentConfig<M = unknown> {
    * Without it, a long result is clipped.
    */
   results?: ResultStore
-  /** How much of a long conversation to send. Defaults stay well under the provider's limits. */
-  history?: { messages: number; chars: number }
   /**
    * Called as each question starts, to count the requests its tools make to the user's data (to
    * the site). `ask` puts a yes/no question to the user on the card of the tool that is running, and

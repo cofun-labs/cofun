@@ -3,11 +3,12 @@
 import { Hono } from 'hono'
 import { bodyLimit } from 'hono/body-limit'
 import { cors } from 'hono/cors'
-import { priceOf } from './pricing'
+import { modelOf } from './pricing'
 import { HttpError, errorSummary, type App, type AppOptions, type Deps } from './http'
 import { adminRoutes } from './routes/admin'
 import { billingRoutes, stripeRoutes } from './routes/billing'
 import { chatRoutes } from './routes/chat'
+import { MAX_TOKENS } from './routes/chat-request'
 import { CHAT_HEADER, CLIENT_HEADER, TURN_HEADER } from './charge'
 import { creditsRoutes } from './routes/credits'
 import { pageRoutes } from './routes/pages'
@@ -18,21 +19,21 @@ import { webRoutes } from './routes/web'
 export type { AiBinding, Env } from './http'
 
 /**
- * The largest request body the worker reads, on every route. The chat's is the largest: its text is
- * capped at MAX_CONTENT_CHARS (800,000 characters), at most 3.2 MB in UTF-8 or 4.8 MB written as
- * JSON escapes (\uXXXX), and the JSON around it adds little. Routes may refuse less (the Stripe
- * webhook does).
+ * The largest request body the worker reads, on every route. The chat's is the largest: the model's
+ * context window bounds its text, and a full window of text (1,048,576 tokens) is about 4 MB as
+ * JSON. Pi counts a 413 as a context overflow, so the agent compacts and sends again, as it does
+ * when the model refuses a long input. Routes may refuse less (the Stripe webhook does).
  */
 const MAX_BODY_BYTES = 6 * 1024 * 1024
 
 export function createApp({
   now = () => new Date(),
-  priceOf: priceFor = priceOf,
+  modelOf: modelFor = modelOf,
   logError = (line) => console.error(line),
   logAdmin = (line) => console.log(line),
   logBilling = (line) => console.log(line),
 }: AppOptions = {}) {
-  const deps: Deps = { now, priceOf: priceFor, logError, logAdmin, logBilling }
+  const deps: Deps = { now, modelOf: modelFor, logError, logAdmin, logBilling }
   const app: App = new Hono()
 
   // The extension calls from a chrome-extension:// origin. Auth is a bearer token, not cookies.
@@ -86,7 +87,18 @@ function v1Routes(deps: Deps): App {
   v1.route('/chat', chatRoutes(deps))
   v1.use('*', defaultRateLimit)
   v1.route('/admin', adminRoutes(deps))
-  v1.get('/me', (c) => c.json({ userId: c.get('userId'), model: c.env.MODEL }))
+  // The model the worker serves, and the tokens a request to it can hold and a reply can take,
+  // which the agent budgets a conversation by.
+  v1.get('/me', (c) => {
+    const model = deps.modelOf(c.env.MODEL)
+    if (!model) throw new HttpError(503, 'not_configured', 'MODEL is not in the model table')
+    return c.json({
+      userId: c.get('userId'),
+      model: c.env.MODEL,
+      context_window: model.contextWindow,
+      max_tokens: MAX_TOKENS,
+    })
+  })
   v1.route('/billing', billingRoutes(deps))
   v1.route('/credits', creditsRoutes(deps))
   v1.route('/web', webRoutes(deps))

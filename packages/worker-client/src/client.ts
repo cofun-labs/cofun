@@ -125,8 +125,17 @@ const looseText = z.string().optional().catch(undefined)
 /** A refusal from the worker, as far as its message. */
 const ErrorReply = z.object({ error: z.object({ message: looseText }).optional().catch(undefined) })
 
-/** The worker's answer to `/me`: the model it uses, or why it refused. */
-const MeReply = ErrorReply.extend({ model: looseText })
+const looseCount = z.int().positive().optional().catch(undefined)
+
+/** The worker's answer to `/me`: the model it uses and what a request to it can hold, or why it refused. */
+const MeReply = ErrorReply.extend({ model: looseText, context_window: looseCount, max_tokens: looseCount })
+
+/** The model the worker serves: its name, its context window, and the most tokens a reply can take. */
+export interface HostedModel {
+  id: string
+  contextWindow: number
+  maxTokens: number
+}
 
 /** A refusal from the worker, with its code. */
 const CodedError = z.object({ error: z.object({ code: looseText, message: looseText }) })
@@ -194,13 +203,16 @@ export class WorkerClient {
     return value
   }
 
-  /** The model the worker serves, which it fixes: hosted model requests name it. Throws, in the worker's words when it gives them. */
-  async model(): Promise<string> {
+  /**
+   * The model the worker serves, which it fixes: hosted model requests name it, and the agent budgets
+   * a conversation by its window and reply limit. Throws, in the worker's words when it gives them.
+   */
+  async model(): Promise<HostedModel> {
     const res = await fetch(`${this.baseUrl}/me`, { headers: { authorization: `Bearer ${await this.token()}` } })
     const body = MeReply.safeParse(await res.json().catch(() => undefined)).data
-    const model = body?.model
-    if (!res.ok || !model) throw new Error(body?.error?.message ?? `HTTP ${res.status}`)
-    return model
+    const { model: id, context_window: contextWindow, max_tokens: maxTokens } = body ?? {}
+    if (!res.ok || !id || !contextWindow || !maxTokens) throw new Error(body?.error?.message ?? `HTTP ${res.status}`)
+    return { id, contextWindow, maxTokens }
   }
 
   /**
