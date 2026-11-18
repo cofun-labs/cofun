@@ -10,7 +10,7 @@ import {
   type WebPage,
   type WebSearchResult,
 } from '@cofun/worker-client'
-import { HOSTED_HISTORY, parseError, type ModelProvider } from './provider'
+import { parseError, type ModelProvider } from './provider'
 import { ToolError, type WebAccess } from './types'
 
 /** What the hosted model's provider uses of the worker's client (WorkerClient). */
@@ -62,7 +62,6 @@ export function hostedProvider(worker: HostedService): ModelProvider {
       }
     },
     apiKey: () => worker.token(),
-    history: HOSTED_HISTORY,
     // No provider attribution headers; the worker is our own.
     identity: { attribution: null },
     parseError,

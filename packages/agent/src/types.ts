@@ -434,13 +434,10 @@ export const HistoryMessage = z.discriminatedUnion('role', [
 ])
 export type HistoryMessage = z.infer<typeof HistoryMessage>
 
-// Bound the summary kept on disk and included in every following model request.
-export const MAX_SUMMARY_CHARS = 4000
-
 /** The summary of messages before firstKept in the saved HistoryMessage array. */
 export const Compaction = z.object({
   firstKept: z.int().positive(),
-  summary: z.string().trim().min(1).max(MAX_SUMMARY_CHARS),
+  summary: z.string().trim().min(1).max(128_000),
 })
 export type Compaction = z.infer<typeof Compaction>
 

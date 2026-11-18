@@ -672,10 +672,10 @@ describe('extension agent against the worker', () => {
   })
 
   it('[@no-uc:data] an oversized question leaves the earlier conversation intact', async () => {
-    const agent = makeAgent({ history: { messages: 100, chars: 1_000 } })
+    const agent = makeAgent()
     await ask(agent, 'q1')
     await ask(agent, 'q2')
-    expect((await ask(agent, `q3 ${'x'.repeat(1100)}`)).result.status).toBe('error')
+    expect((await ask(agent, `q3 ${'x'.repeat(800_000)}`)).result.status).toBe('error')
     expect(ai.calls).toHaveLength(2)
     await ask(agent, 'q4')
     expect(

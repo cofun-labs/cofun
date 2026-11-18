@@ -4,13 +4,22 @@
 // (own.ts). Only this package imports the agent runtime (pi); an extension uses the types in
 // types.ts, through index.ts.
 import { Agent, type AgentEvent, type AgentMessage, type AgentTool } from '@earendil-works/pi-agent-core'
-import { normalizeContext, type AssistantMessage, type Model } from '@earendil-works/pi-ai'
+import {
+  type AssistantMessageEventStream,
+  normalizeContext,
+  type AssistantMessage,
+  type Message,
+  type Model,
+} from '@earendil-works/pi-ai'
+import { createAssistantMessageEventStream } from '@earendil-works/pi-ai/utils/event-stream'
+import { isContextOverflow } from '@earendil-works/pi-ai/utils/overflow'
 import { streamSimple } from '@earendil-works/pi-ai/api/openai-completions'
 import type { CallCost } from '@cofun/worker-client'
 import { askUser, previewCall, toAgentTool, type Reporter } from './calls'
 import {
   COMPACTION_FAILED,
   fitsRequest,
+  MAX_SUMMARY_CHUNKS,
   guardHostedPayload,
   planCompaction,
   project,
@@ -20,7 +29,7 @@ import {
 } from './compaction'
 import { addUsage, detailsOf, textOf, usedTools } from './history'
 import { ownProvider, type OwnSetup } from './own'
-import type { Failure, ModelProvider } from './provider'
+import { HOSTED_TRIGGER, type Failure, type ModelProvider } from './provider'
 import { writeTitle } from './title'
 import type {
   AgentConfig,
@@ -155,6 +164,9 @@ export class CopilotAgent<M = unknown> {
   /** Which chat and question the requests of the question running are for. */
   private turn?: Turn
   private compaction?: Compaction
+  /** Real usage is useful only for a reply made with the same model and prefix. */
+  private readonly usagePrefix = new WeakMap<AssistantMessage, Compaction | undefined>()
+  private onOverflow?: (signal?: AbortSignal) => Promise<Message[] | undefined>
   private onModelRequest?: () => void
   private toolChars = 0
 
@@ -330,45 +342,50 @@ export class CopilotAgent<M = unknown> {
     this.onChunk = onChunk
     this.onCost = addCost
     this.turn = turn
-    // Pi uses this projection only for a request. Keep the complete transcript in agent.state.
-    agent.transformContext = async (messages, signal) => {
-      const selected = agent.state.model
-      const limits = requestBudget(this.config.history ?? provider.history, selected)
-      const noted = this.withNotes(messages)
-      const toolChars = this.toolChars
-      const projected = project(noted, this.compaction)
-      if (fitsRequest(projected, limits, toolChars)) return projected
-
+    let prepared: Message[] | undefined
+    let raw: Message[] = []
+    const selected = agent.state.model as Model<'openai-completions'>
+    const toolChars = this.toolChars
+    const compact = async (budget: ReturnType<typeof requestBudget>, signal?: AbortSignal) => {
+      const plan = planCompaction(raw, this.compaction, budget.hard, toolChars)
+      if (!plan) return undefined
       try {
-        const plan = planCompaction(noted, this.compaction, limits, toolChars)
-        if (!plan || selected.api !== 'openai-completions') throw new Error(COMPACTION_FAILED)
-        const input = summaryRequest(plan, this.compaction, requestBudget(provider.history, selected))
-        const stream = streamSimple(selected, normalizeContext({ messages: input }), {
-          apiKey: await provider.apiKey(),
-          identity: provider.identity,
-          headers: provider.turnHeaders?.(turn),
-          maxTokens: Math.max(1, Math.min(selected.maxTokens, Math.floor(plan.summaryChars / 4))),
-          maxRetries: 0,
-          signal,
-          onPayload: (payload) => {
-            signal?.throwIfAborted()
-            if (selected.provider === 'cofun') guardHostedPayload(payload)
-            onModelRequest()
-          },
-          onProviderStreamEvent: onChunk,
-        })
-        for await (const _event of stream);
-        const answer = await stream.result()
-        signal?.throwIfAborted()
-        tokens = addUsage(tokens, answer.usage)
-        if (answer.stopReason === 'error') throw new Error(answer.errorMessage ?? COMPACTION_FAILED)
-        // Even an unusable answer may have been charged.
-        summarized = true
-        const summary = summaryText(answer, plan.summaryChars)
-        if (!summary) throw new Error('The model did not return a usable conversation summary.')
-        const next = { firstKept: plan.firstKept, summary }
-        const sent = project(noted, next)
-        if (!fitsRequest(sent, limits, toolChars)) throw new Error(COMPACTION_FAILED)
+        // Reject a prefix that cannot possibly fit in four requests before spending credits.
+        const maxCharsPerChunk = Math.min(budget.summary.chars, budget.summary.tokens * 3)
+        if (plan.source.length > maxCharsPerChunk * MAX_SUMMARY_CHUNKS) throw new Error(COMPACTION_FAILED)
+        let next = this.compaction
+        let offset = 0
+        for (let part = 0; offset < plan.source.length; part++) {
+          if (part >= MAX_SUMMARY_CHUNKS) throw new Error(COMPACTION_FAILED)
+          const input = summaryRequest(plan.source, offset, next?.summary, budget.summary)
+          const key = await provider.apiKey()
+          signal?.throwIfAborted()
+          const stream = streamSimple(selected, normalizeContext({ messages: input.messages }), {
+            apiKey: key,
+            identity: provider.identity,
+            headers: provider.turnHeaders?.(turn),
+            maxTokens: budget.maxSummaryTokens,
+            maxRetries: 0,
+            signal,
+            onPayload: (payload) => {
+              signal?.throwIfAborted()
+              if (selected.provider === 'cofun') guardHostedPayload(payload)
+              onModelRequest()
+            },
+            onProviderStreamEvent: onChunk,
+          })
+          for await (const _event of stream);
+          const answer = await stream.result()
+          signal?.throwIfAborted()
+          tokens = addUsage(tokens, answer.usage)
+          if (answer.stopReason === 'error') throw new Error(answer.errorMessage ?? COMPACTION_FAILED)
+          // Even an unusable answer may have been charged.
+          summarized = true
+          next = summaryText(answer, plan.firstKept)
+          offset = input.end
+        }
+        const sent = project(raw, next)
+        if (!fitsRequest(sent, budget.hard, toolChars)) throw new Error(COMPACTION_FAILED)
         this.compaction = next
         return sent
       } catch (error) {
@@ -376,6 +393,32 @@ export class CopilotAgent<M = unknown> {
         throw error
       }
     }
+
+    // prepareRequest can stop the run on failure. Keep Pi's loop context and agent.state intact,
+    // and let the non-throwing transform deliver the prepared view only to the model.
+    agent.prepareRequest = async ({ context }, signal) => {
+      raw = this.withNotes(context.messages)
+      const budget = requestBudget(
+        selected,
+        this.config.history ?? (selected.provider === 'cofun' ? HOSTED_TRIGGER : undefined),
+      )
+      const current = project(raw, this.compaction)
+      const usageApplies = (message: AssistantMessage) =>
+        message.api === selected.api &&
+        message.provider === selected.provider &&
+        message.model === selected.id &&
+        this.usagePrefix.has(message) &&
+        this.usagePrefix.get(message) === this.compaction
+      this.onOverflow = (retrySignal) => compact(budget, retrySignal)
+      prepared = fitsRequest(current, budget.trigger, toolChars, usageApplies)
+        ? current
+        : ((await compact(budget, signal)) ?? current)
+      if (!fitsRequest(prepared, budget.hard, toolChars, usageApplies)) {
+        compactionFailed = true
+        throw new Error(COMPACTION_FAILED)
+      }
+    }
+    agent.transformContext = async (messages) => prepared ?? messages
     const refused = new Set<string>()
     const declined = new Set<string>()
     // How the latest call with each id ended, kept with its result message when that arrives.
@@ -518,6 +561,7 @@ export class CopilotAgent<M = unknown> {
       if (event.type === 'message_end' && event.message.role === 'assistant') {
         const m = event.message as AssistantMessage
         tokens = addUsage(tokens, m.usage)
+        if (m.stopReason !== 'error' && m.stopReason !== 'aborted') this.usagePrefix.set(m, this.compaction)
         if (m.stopReason === 'error') failure = provider.parseError(m.errorMessage)
         if (m.stopReason === 'aborted') stopped = true
         const final = !m.content.some((block) => block.type === 'toolCall')
@@ -540,6 +584,8 @@ export class CopilotAgent<M = unknown> {
       unsubscribe()
       agent.beforeToolCall = undefined
       agent.finishTurn = undefined
+      agent.prepareRequest = undefined
+      this.onOverflow = undefined
       agent.transformContext = undefined
       if (this.onModelRequest === onModelRequest) this.onModelRequest = undefined
       if (this.onChunk === onChunk) this.onChunk = undefined
@@ -821,16 +867,28 @@ export class CopilotAgent<M = unknown> {
         const onModelRequest = this.onModelRequest
         // Only the hosted provider is told which chat and question the request is for.
         const turn = this.turn && this.provider.turnHeaders?.(this.turn)
-        return streamSimple(m as Model<'openai-completions'>, context, {
+        const selected = m as Model<'openai-completions'>
+        const streamOptions = {
           ...options,
           ...(turn && { headers: { ...options?.headers, ...turn } }),
-          onProviderStreamEvent: (chunk) => onChunk?.(chunk),
-          onPayload: (payload) => {
+          onProviderStreamEvent: (chunk: unknown) => onChunk?.(chunk),
+          onPayload: (payload: unknown) => {
             options?.signal?.throwIfAborted()
             if (m.provider === 'cofun') guardHostedPayload(payload)
             onModelRequest?.()
           },
-        })
+        }
+        const stream = streamSimple(selected, context, streamOptions)
+        const overflow = this.onOverflow
+        return overflow
+          ? retryOnOverflow(stream, async () => {
+              options?.signal?.throwIfAborted()
+              const messages = await overflow(options?.signal)
+              return (
+                messages && streamSimple(selected, normalizeContext({ messages }), { ...streamOptions, maxRetries: 0 })
+              )
+            })
+          : stream
       },
       getApiKey: () => this.provider.apiKey(),
       identity: this.provider.identity,
@@ -913,4 +971,27 @@ function withDetails(value: unknown): { details?: ToolDetails } {
 /** The text a tool result gave the model. */
 function resultText(result: { content?: { type: string; text?: string }[] } | undefined): string {
   return (result?.content ?? []).map((block) => (block.type === 'text' ? (block.text ?? '') : '')).join('\n')
+}
+
+/** Keep a provider rejection private until we know whether it can be retried before any output appeared. */
+async function retryOnOverflow(
+  stream: AssistantMessageEventStream,
+  retry: () => Promise<AssistantMessageEventStream | undefined>,
+): Promise<AssistantMessageEventStream> {
+  const events = stream[Symbol.asyncIterator]()
+  const first = await events.next()
+  if (first.done) return stream
+  const next = first.value.type === 'start' ? await events.next() : first
+  if (!next.done && next.value.type === 'error' && isContextOverflow(next.value.error)) {
+    const retried = await retry()
+    if (retried) return retried
+  }
+  const output = createAssistantMessageEventStream()
+  output.push(first.value)
+  if (next !== first && !next.done) output.push(next.value)
+  void (async () => {
+    for (let event = await events.next(); !event.done; event = await events.next()) output.push(event.value)
+    output.end(await stream.result())
+  })()
+  return output
 }

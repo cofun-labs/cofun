@@ -1,7 +1,7 @@
 // OpenRouter, with the user's own key: the provider, and the models it lists.
 import type { Model } from '@earendil-works/pi-ai'
 import type { KeyCheck, OwnModel } from './own'
-import { KEY_REJECTED, ownHistory, parseError, type Failure, type ModelProvider } from './provider'
+import { KEY_REJECTED, parseError, type Failure, type ModelProvider } from './provider'
 import { z } from './zod'
 
 /** OpenRouter's API, which answers requests from the extension's pages. */
@@ -17,7 +17,6 @@ export function openRouterProvider({ key, model }: { key: string; model: OwnMode
     name: 'OpenRouter',
     loadModel: async () => openRouterModel(model),
     apiKey: async () => key,
-    history: ownHistory(model.contextLength),
     // OpenRouter's app attribution headers would name the extension to it; nothing needs them.
     identity: { attribution: null },
     parseError: openRouterError,

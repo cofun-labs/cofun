@@ -16,8 +16,6 @@ export interface ModelProvider {
   loadModel(): Promise<Model<'openai-completions'>>
   /** The key for one model request. Throws, with what the user should do, when there is none. */
   apiKey(): Promise<string>
-  /** How much of a long conversation to send, unless AgentConfig.history says otherwise. */
-  history: { messages: number; chars: number }
   /** What pi tells the service about the client. */
   identity: ClientIdentity
   /** A failed model request's error, in the service's own words when it gives them. */
@@ -37,23 +35,9 @@ export interface ModelProvider {
   turnHeaders?(turn: Turn): Record<string, string>
 }
 
-// About 150k tokens (a token is about four characters), of the hosted model's 1,048,576. The worker
-// allows 1,000 messages and 800,000 characters, tools and the system prompt included.
-export const HOSTED_HISTORY = { messages: 800, chars: 600_000 }
-
-/** The most of a long conversation sent to a model the user pays for with their own key. */
-const OWN_HISTORY = { messages: 100, chars: 150_000 }
-
-/**
- * How much of a long conversation to send to a model the user pays for: OWN_HISTORY at most. Every
- * round trip resends the history, so a model with a huge context must not make each question cost
- * dollars. A smaller context lowers it (a token is about four characters: half the context, which
- * leaves room for the reply).
- */
-export const ownHistory = (contextLength: number) => ({
-  messages: OWN_HISTORY.messages,
-  chars: Math.min(contextLength * 2, OWN_HISTORY.chars),
-})
+// The Worker independently validates the hard wire limits in worker/src/routes/chat-request.ts.
+export const HOSTED_LIMIT = { messages: 1000, chars: 800_000 }
+export const HOSTED_TRIGGER = { messages: 800, chars: 600_000 }
 
 // A failed model request's error, as far as the agent reads it. Each field is read loosely: one that is
 // not text counts as missing, so an error the agent can't read ends in the fallback, never in a wrong value.

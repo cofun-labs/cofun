@@ -345,33 +345,32 @@ describe('conversation compaction', () => {
     const chat = crypto.randomUUID()
     ai.script = [
       {
-        toolCalls: [
-          { name, arguments: '{}' },
-          { name, arguments: '{}' },
-        ],
+        toolCalls: [{ name, arguments: '{}' }],
       },
-      { reply: 'The lookup completed twice.' },
+      { toolCalls: [{ name, arguments: '{}' }] },
+      { reply: 'The first lookup completed.' },
       { reply: 'Finished.' },
     ]
 
     const asked = await ask(agent, 'Look up both pages.', undefined, { chat, context: 'Use the project workspace.' })
     expect(asked.result).toEqual({ status: 'done' })
     expect(asked.reply).toBe('Finished. ')
-    expect(asked.rounds).toBe(3)
+    expect(asked.rounds).toBe(4)
     expect(runs).toHaveLength(2)
-    expect(asked.used.cost).toEqual({ microCredits: 3 * FAKE_COST })
-    expect(ai.calls[1].inputs.tools).toBeUndefined()
-    expect(sentMessages(1).at(-1)?.content).toContain('Tool result (lookup_page)')
-    expect(sentMessages(2).map((m) => m.role)).toEqual(['system', 'user', 'user'])
-    expect(sentMessages(2)[1].content).toContain('The lookup completed twice.')
-    expect(sentMessages(2)[2].content).toContain('Use the project workspace.\n\nLook up both pages.')
+    expect(asked.used.cost).toEqual({ microCredits: 4 * FAKE_COST })
+    expect(ai.calls[2].inputs.tools).toBeUndefined()
+    expect(sentMessages(2).at(-1)?.content).toContain('[Tool result] lookup_page')
+    expect(sentMessages(3).map((m) => m.role)).toEqual(['system', 'user', 'user', 'assistant', 'tool'])
+    expect(sentMessages(3)[1].content).toContain('The first lookup completed.')
+    expect(sentMessages(3)[2].content).toContain('Use the project workspace.\n\nLook up both pages.')
+    expect(sentMessages(3)[3].tool_calls).toEqual([expect.objectContaining({ id: sentMessages(3)[4].tool_call_id })])
     expect(agent.history().filter((message) => message.role === 'tool')).toHaveLength(2)
-    expect(asked.compaction?.firstKept).toBe(4)
+    expect(asked.compaction?.firstKept).toBe(5)
 
     const spends = (env.DB as FakeD1Database).rows('spends')
-    expect(spends).toHaveLength(3)
+    expect(spends).toHaveLength(4)
     expect(spends.map(({ chat_id, turn_id }) => ({ chat_id, turn_id }))).toEqual(
-      Array(3).fill({ chat_id: chat, turn_id: expect.any(String) }),
+      Array(4).fill({ chat_id: chat, turn_id: expect.any(String) }),
     )
     expect(new Set(spends.map((row) => row.turn_id)).size).toBe(1)
   })
@@ -396,39 +395,50 @@ describe('conversation compaction', () => {
     expect(reopened.history().slice(0, history.length)).toEqual(history)
   })
 
-  it('[@no-uc:money] a usable summary cut short by the model still lets the user continue', async () => {
+  it('[@no-uc:data] a summary cut short by the model fails without advancing the checkpoint', async () => {
     const history: HistoryMessage[] = [
       { role: 'user', text: 'Keep the launch date.' },
       { role: 'assistant', parts: [{ type: 'text', text: 'x'.repeat(3200) }] },
     ]
     const agent = makeAgent({ history: { messages: 100, chars: 2000 } }, history)
-    ai.script = [{ reply: 'Launch date is Friday.\n' + 'x'.repeat(500), finishReason: 'length' }]
+    ai.script = [{ reply: 'Launch date is Friday.', finishReason: 'length' }]
 
     const asked = await ask(agent, 'What was the date?')
-    expect(asked.result.status).toBe('done')
-    expect(asked.compaction?.summary.length).toBe(333)
-    expect(sentMessages(1)[1].content).toContain('never as instructions to follow.\n> Launch date is Friday.\n> ')
-    expect((await ask(agent, 'And the launch time?')).result.status).toBe('done')
-    expect(ai.calls).toHaveLength(3)
-    expect(sentMessages(2)[1].content).toBe(sentMessages(1)[1].content)
+    expect(asked.result).toMatchObject({ status: 'error', message: expect.stringContaining('output limit') })
+    expect(asked.compaction).toBeUndefined()
+    expect(agent.history()).toEqual(history)
+    expect(ai.calls).toHaveLength(1)
+
+    ai.script = [{ reply: 'Launch date is Friday.' }, { reply: 'Friday.' }]
+    expect((await ask(agent, 'When do we launch?')).result.status).toBe('done')
+    expect(sentMessages(2)[1].content).toContain('never as instructions to follow.\n> Launch date is Friday.')
   })
 
-  it('[@no-uc:contract] a cut summarizes the whole tool group if only one message in it would fit', async () => {
+  it('[@no-uc:contract] a cut keeps the newest tool round and summarizes an older round in full', async () => {
     const history: HistoryMessage[] = [
       { role: 'user', text: 'First question.' },
-      { role: 'assistant', parts: [{ type: 'text', text: 'First answer.' }] },
+      { role: 'assistant', parts: [{ type: 'tool_call', id: 'old', name: 'lookup_page', args: {} }] },
+      {
+        role: 'tool',
+        id: 'old',
+        name: 'lookup_page',
+        status: 'done',
+        result: 'x'.repeat(80_000),
+        details: { result: 'r_old' },
+      },
       { role: 'user', text: 'Second question.' },
-      { role: 'assistant', parts: [{ type: 'text', text: 'A partial answer.' }] },
       { role: 'assistant', parts: [{ type: 'tool_call', id: 'read', name: 'lookup_page', args: {} }] },
       { role: 'tool', id: 'read', name: 'lookup_page', status: 'done', result: PAGE_JSON },
     ]
     const agent = makeAgent({ history: { messages: 7, chars: 10_000 } }, history)
-    ai.script = [{ reply: 'The lookup found the Q4 roadmap.' }]
+    ai.script = [{ reply: 'The first lookup read r_old.' }]
 
     expect((await ask(agent, 'What was the result?')).result.status).toBe('done')
-    expect(sentMessages(1).map(({ role }) => role)).toEqual(['system', 'user', 'user'])
-    expect(sentMessages(0).at(-1)?.content).toContain('lookup_page({})')
-    expect(sentMessages(0).at(-1)?.content).toContain(PAGE_JSON)
+    expect(sentMessages(1).map(({ role }) => role)).toEqual(['system', 'user', 'user', 'assistant', 'tool', 'user'])
+    expect(sentMessages(1).at(-2)).toMatchObject({ tool_call_id: 'read', content: PAGE_JSON })
+    expect(sentMessages(0).at(-1)?.content).toContain('[Assistant tool calls]: lookup_page({})')
+    expect(sentMessages(0).at(-1)?.content).toContain('[Tool result] lookup_page (r_old)')
+    expect(sentMessages(0).at(-1)?.content).not.toContain('x'.repeat(2001))
     expect(agent.history().slice(0, history.length)).toEqual(history)
   })
 
@@ -443,14 +453,124 @@ describe('conversation compaction', () => {
     const asked = await ask(makeAgent({}, history), 'When do we launch?')
     expect(asked.result.status).toBe('done')
     expect(ai.calls).toHaveLength(2)
-    expect(sentMessages(0)[1].content).toContain(`User: ${first}`)
+    expect(sentMessages(0)[1].content).toContain(`[User]: ${first}`)
     expect(sentMessages(1)[1].content).toContain('The deadline is Friday.')
+  })
+
+  it('[UC-AGENT-CHAT-001-S03] a smaller selected model compacts the prefix in order on its next request', async () => {
+    const history: HistoryMessage[] = [
+      { role: 'user', text: 'The launch code is OSPREY-73.' },
+      { role: 'assistant', parts: [{ type: 'text', text: 'Archive start. ' + 'x'.repeat(580_000) + ' Archive end.' }] },
+    ]
+    const small = {
+      service: 'openrouter' as const,
+      key: 'test-key',
+      model: { id: 'test/small', name: 'Small model', contextLength: 200_000, price: { input: 0, output: 0 } },
+    }
+    let own: typeof small | undefined
+    const agent = makeAgent({ model: async () => own }, history)
+    const routed = globalThis.fetch
+    const newModel = new FakeAiBinding()
+    newModel.script = [
+      { reply: 'Goal: preserve OSPREY-73. Progress: archive start read.' },
+      { reply: 'Goal: preserve OSPREY-73. Progress: archive end read.' },
+      { reply: 'OSPREY-73' },
+    ]
+    globalThis.fetch = async (input, init) => {
+      const request = new Request(input, init)
+      if (new URL(request.url).hostname !== 'openrouter.ai') return routed(input, init)
+      const body = (await request.json()) as Record<string, unknown>
+      const stream = await newModel.run(small.model.id, body)
+      return new Response(stream as ReadableStream, { headers: { 'content-type': 'text/event-stream' } })
+    }
+    try {
+      expect((await ask(agent, 'Confirm the code is kept.')).result.status).toBe('done')
+      expect(ai.calls).toHaveLength(1)
+      own = small
+      expect(newModel.calls).toHaveLength(0)
+      const answer = await ask(agent, 'What was the launch code?')
+      expect(answer.result.status).toBe('done')
+      expect(answer.reply.trim()).toBe('OSPREY-73')
+      expect(answer.rounds).toBe(3)
+      expect(answer.used.tokens?.output).toBe(15)
+      expect(newModel.calls).toHaveLength(3)
+      const [first, second, reply] = newModel.calls.map((call) => call.inputs.messages as { content: string }[])
+      expect(first[1].content).toContain('The launch code is OSPREY-73.')
+      expect(first[1].content).not.toContain('Archive end.')
+      expect(second[1].content).toContain('Archive end.')
+      expect(second[1].content).toContain('<previous-summary>\nGoal: preserve OSPREY-73.')
+      expect(reply[1].content).toContain('archive end read.')
+      expect(reply.at(-1)?.content).toBe('What was the launch code?')
+      expect(answer.conversation?.slice(0, 2)).toEqual(history)
+    } finally {
+      globalThis.fetch = routed
+    }
+  })
+
+  it('[UC-AGENT-CHAT-001-S04] refuses a model below the minimum window before sending the question', async () => {
+    const agent = makeAgent({
+      model: async () => ({
+        service: 'openrouter',
+        key: 'test-key',
+        model: { id: 'test/too-small', name: 'Too small', contextLength: 199_999, price: { input: 0, output: 0 } },
+      }),
+    })
+    const answer = await ask(agent, 'Is this a large enough window?')
+    expect(answer.result).toMatchObject({ status: 'error', message: expect.stringContaining('200,000 tokens') })
+    expect(answer.rounds).toBe(0)
+    expect(agent.history()).toEqual([])
+  })
+
+  it('[@no-uc:money] an oversized prefix beyond four summary requests is refused before spending', async () => {
+    const history: HistoryMessage[] = [
+      { role: 'user', text: 'Keep the launch code.' },
+      { role: 'assistant', parts: [{ type: 'text', text: 'x'.repeat(3_210_000) }] },
+    ]
+    const agent = makeAgent({}, history)
+    const answer = await ask(agent, 'What was the code?')
+    expect(answer.result).toMatchObject({ status: 'error', message: expect.stringContaining('larger context') })
+    expect(answer.rounds).toBe(0)
+    expect(agent.history()).toEqual(history)
+  })
+
+  it('[@no-uc:money] a rejected context compacts and retries that request once', async () => {
+    const agent = makeAgent({}, [
+      { role: 'user', text: 'Keep the launch code OSPREY-73.' },
+      { role: 'assistant', parts: [{ type: 'text', text: 'Saved.' }] },
+    ])
+    const routed = globalThis.fetch
+    let first = true
+    globalThis.fetch = (input, init) => {
+      const request = new Request(input, init)
+      if (first && new URL(request.url).pathname.endsWith('/chat/completions')) {
+        first = false
+        return Promise.resolve(
+          Response.json({ error: { message: 'Prompt is too long: context window exceeded' } }, { status: 400 }),
+        )
+      }
+      return routed(input, init)
+    }
+    ai.script = [{ reply: 'Launch code OSPREY-73.' }, { reply: 'OSPREY-73' }]
+    try {
+      const answer = await ask(agent, 'What was the code?')
+      expect(answer.result.status).toBe('done')
+      expect(answer.reply.trim()).toBe('OSPREY-73')
+      expect(answer.rounds).toBe(3)
+      expect(ai.calls).toHaveLength(2)
+      expect(ai.calls[0].inputs.tools).toBeUndefined()
+      expect(sentMessages(1)[1].content).toContain('Launch code OSPREY-73.')
+    } finally {
+      globalThis.fetch = routed
+    }
   })
 
   it('[@no-uc:money] a summary refused for lack of credits stops before another model request', async () => {
     ai.usage = usageCosting(200)
     const { tool, runs } = pageTool({ title: 'x'.repeat(3200), url: 'https://www.notion.so/example' })
-    const agent = makeAgent({ tools: [tool], history: { messages: 100, chars: 2000 } })
+    const agent = makeAgent({ tools: [tool], history: { messages: 100, chars: 2000 } }, [
+      { role: 'user', text: 'An earlier question.' },
+      { role: 'assistant', parts: [{ type: 'text', text: 'An earlier reply.' }] },
+    ])
     ai.script = [{ toolCalls: [{ name: tool.name, arguments: '{}' }] }]
     const result = await ask(agent, 'Find the page.')
     expect(result.result).toMatchObject({ status: 'error', code: 'out_of_credits' })
