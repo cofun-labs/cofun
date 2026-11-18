@@ -403,8 +403,6 @@ const movePage = organizePage('move')
 const copyPage = organizePage('copy')
 const restorePage = pageStatus('restore')
 
-export const CLOUD_WRITES = [...commonWrites, editPage, undoChange, trashPage, restorePage, movePage, copyPage]
-
 export const CONFLUENCE_WRITES = [
   ...commonWrites,
   editPage,

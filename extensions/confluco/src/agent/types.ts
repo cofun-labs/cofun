@@ -54,7 +54,6 @@ interface QuestionMeter {
  * (see Turn).
  */
 export interface QuestionExtras {
-  toolNames?: ReadonlySet<string>
   context?: string
   pages?: QuestionPage[]
   selections?: QuestionSelection[]

@@ -1,7 +1,8 @@
 import { z } from '../zod'
+import { cloudCollection, cloudPage, cloudPageLink, fetchCloudPage } from './cloud'
 import { collection, collectionStart } from './collection'
 import { parseInstance, type Instance } from './instance'
-import { fetchPublishedPage, pageLink, pageReference, publishedPage } from './references'
+import { fetchPublishedPage, pageLink, pageReference, publishedPage, type PageReference } from './references'
 import {
   attachmentSizeLimit,
   getConfluence,
@@ -21,8 +22,9 @@ const filename = z
     'Use a filename without path separators or control characters.',
   )
 const versionNumber = z.int().min(1).max(2_147_483_647)
+const attachmentId = z.string().regex(/^(?:att)?\d{1,20}$/)
 const attachmentIdentity = z.object({
-  id: z.string().regex(/^(?:att)?\d{1,20}$/),
+  id: attachmentId,
   type: z.literal('attachment'),
   status: z.literal('current'),
 })
@@ -34,6 +36,15 @@ const attachment = attachmentIdentity.extend({
   _links: z.object({ download: z.string().min(1).max(4096).optional() }).optional(),
 })
 type Attachment = z.output<typeof attachment>
+const cloudAttachment = z.object({
+  id: attachmentId,
+  title: z.string().min(1).max(255),
+  pageId: pageReference.shape.id,
+  version: z.object({ number: versionNumber }),
+  fileSize: z.int().nonnegative().optional(),
+  downloadLink: z.string().max(4096).optional(),
+  _links: z.object({ download: z.string().max(4096).optional() }).optional(),
+})
 const postedAttachment = z.union([attachmentIdentity, z.object({ results: z.tuple([attachmentIdentity]) })])
 const fields = 'version,container'
 const attachmentResource = (pageId: string) => `content/${pageId}/child/attachment`
@@ -49,18 +60,25 @@ export interface AttachmentUpload {
   mode: 'create' | 'replace'
 }
 
-export function attachmentDownloadUrl(
+function attachmentDownloadUrl(
   instance: Instance,
   pageId: string,
   name: string,
   version: number,
   link?: string,
+  id?: string,
 ) {
   if (!link) return
   try {
     const base = instance.origin + instance.path
     const url = new URL(link, base + '/')
     if (url.origin !== instance.origin || url.username || url.password || url.hash) return
+    if (instance.cloud && id) {
+      // Cloud's v2 metadata can point to its v1 download action. Bind the link to the attachment and version.
+      const endpoint = `/rest/api/content/${pageId}/child/attachment/${id}/download`
+      if (url.pathname === endpoint || url.pathname === instance.path + endpoint)
+        return `${base}${endpoint}?version=${version}`
+    }
     const suffix = `/download/attachments/${pageId}/`
     const prefix = url.pathname.startsWith(instance.path + suffix) ? instance.path + suffix : suffix
     if (!url.pathname.startsWith(prefix)) return
@@ -87,6 +105,7 @@ const listedDownloads = z.object({
   attachments: z
     .array(
       z.object({
+        id: attachmentId.optional(),
         filename,
         version: versionNumber,
         downloadUrl: z.string().max(4096).optional(),
@@ -103,8 +122,8 @@ export function attachmentDownloads(result: string) {
     const { instance: base, id } = parsed.data.page.ref
     const instance = parseInstance(base)
     if (!instance) return []
-    return parsed.data.attachments.flatMap(({ filename, version, downloadUrl: link }) => {
-      const url = attachmentDownloadUrl(instance, id, filename, version, link)
+    return parsed.data.attachments.flatMap(({ id: attachment, filename, version, downloadUrl: link }) => {
+      const url = attachmentDownloadUrl(instance, id, filename, version, link, attachment)
       return url ? [{ name: filename, url }] : []
     })
   } catch {
@@ -136,7 +155,67 @@ export async function listPageAttachments(
   }
 }
 
+function cloudPublishedPage(tab: ConfluenceTab, reference: PageReference | undefined, signal?: AbortSignal) {
+  return fetchCloudPage(tab, reference, cloudPage, { status: 'current' }, signal)
+}
+
+async function cloudAttachments(
+  tab: ConfluenceTab,
+  pageId: string,
+  name: string | undefined,
+  cursor: string | undefined,
+  { signal, limit }: { signal?: AbortSignal; limit?: number },
+) {
+  const { items, ...next } = await cloudCollection(
+    tab,
+    `pages/${pageId}/attachments`,
+    name === undefined ? {} : { filename: name },
+    cursor,
+    cloudAttachment,
+    { signal, limit },
+  )
+  if (items.some((item) => item.pageId !== pageId || (name !== undefined && item.title !== name)))
+    refuse('Confluence returned attachments outside the requested page or filename.')
+  return {
+    attachments: items.map((item) => ({
+      id: item.id,
+      filename: item.title,
+      version: item.version.number,
+      bytes: item.fileSize,
+      downloadUrl: attachmentDownloadUrl(
+        tab.instance,
+        pageId,
+        item.title,
+        item.version.number,
+        item._links?.download ?? item.downloadLink,
+        item.id,
+      ),
+    })),
+    ...next,
+  }
+}
+
+export async function listCloudAttachments(
+  tab: ConfluenceTab,
+  ref: PageReference | undefined,
+  name: string | undefined,
+  cursor?: string,
+  signal?: AbortSignal,
+) {
+  const page = await cloudPublishedPage(tab, ref, signal)
+  return { page: cloudPageLink(tab, page), ...(await cloudAttachments(tab, page.id, name, cursor, { signal })) }
+}
+
 async function findAttachment(tab: ConfluenceTab, pageId: string, name: string, signal?: AbortSignal) {
+  if (tab.instance.cloud) {
+    const { attachments, cursor, paginationNotice } = await cloudAttachments(tab, pageId, name, undefined, {
+      limit: 2,
+      signal,
+    })
+    if (attachments.length > 1 || cursor || paginationNotice)
+      refuse('Confluence did not return an unambiguous attachment match on the intended page.')
+    return attachments[0]
+  }
   const response = await getConfluence(
     tab,
     attachmentResource(pageId),
@@ -155,7 +234,13 @@ async function findAttachment(tab: ConfluenceTab, pageId: string, name: string, 
     parsed.data.results.some((item) => item.container.id !== pageId || item.title !== name)
   )
     refuse('Confluence did not return an unambiguous attachment match on the intended page.')
-  return parsed.data.results[0]
+  const [match] = parsed.data.results
+  return match && summary(tab.instance, pageId, match)
+}
+
+async function attachmentDestination(tab: ConfluenceTab, reference: PageReference | undefined, signal?: AbortSignal) {
+  if (tab.instance.cloud) return cloudPageLink(tab, await cloudPublishedPage(tab, reference, signal))
+  return pageLink(tab.instance, await fetchPublishedPage(tab, reference, publishedPage, 'version', signal))
 }
 
 export async function prepareAttachmentUpload(
@@ -167,19 +252,21 @@ export async function prepareAttachmentUpload(
   if (!filename.safeParse(file.name).success) refuse('Choose a file with a valid attachment filename.')
   if (file.size > attachmentSizeLimit) refuse('Choose an attachment of at most 10 MiB.')
   const tab = requireTab(target)
-  const page = await fetchPublishedPage(tab, undefined, publishedPage, 'version', signal)
-  const link = pageLink(tab.instance, page)
-  const existing = await findAttachment(tab, page.id, file.name, signal)
+  const link = await attachmentDestination(tab, undefined, signal)
+  const existing = await findAttachment(tab, link.ref.id, file.name, signal)
   if (existing && mode === 'create')
     refuse('An attachment with that name already exists. Choose Replace attachment to update it.')
   if (!existing && mode === 'replace')
     refuse('There is no attachment with that name to replace. Choose Upload attachment to add it.')
-  const targetName = `${JSON.stringify(page.title)} (${link.url})`
+  const targetName = `${JSON.stringify(link.title)} (${link.url})`
   const fileName = `${JSON.stringify(file.name)} (${file.size} bytes)`
   const preview = existing
-    ? `Replace version ${existing.version.number} of attachment ${fileName} on ${targetName} with the selected file.`
+    ? `Replace version ${existing.version} of attachment ${fileName} on ${targetName} with the selected file.`
     : `Upload attachment ${fileName} to ${targetName}.`
-  return { tab, page, link, file, existing, preview }
+  const cloudNotice = tab.instance.cloud
+    ? ' Confluence Cloud matches attachments by filename. A concurrent same-name upload can receive this file as a new version.'
+    : ''
+  return { tab, link, file, existing, preview: preview + cloudNotice }
 }
 
 function unverified(cause?: unknown): never {
@@ -190,26 +277,30 @@ export async function applyAttachmentUpload(
   plan: Awaited<ReturnType<typeof prepareAttachmentUpload>>,
   signal?: AbortSignal,
 ) {
-  const { tab, page, link, file, existing } = plan
-  const currentPage = await fetchPublishedPage(tab, link.ref, publishedPage, 'version', signal)
-  if (currentPage.title !== page.title) refuse('The destination page changed after the preview.')
-  const current = await findAttachment(tab, page.id, file.name, signal)
-  if (current?.id !== existing?.id || current?.version.number !== existing?.version.number)
+  const { tab, link, file, existing } = plan
+  const pageId = link.ref.id
+  const currentPage = await attachmentDestination(tab, link.ref, signal)
+  if (currentPage.title !== link.title) refuse('The destination page changed after the preview.')
+  const current = await findAttachment(tab, pageId, file.name, signal)
+  if (current?.id !== existing?.id || current?.version !== existing?.version)
     refuse('The attachment changed after the preview. Review it and choose the file again.')
-  const version = (existing?.version.number ?? 0) + 1
+  const version = (existing?.version ?? 0) + 1
   if (!versionNumber.safeParse(version).success) refuse('The attachment cannot be advanced to another version.')
-  const response = await uploadConfluenceAttachment(tab, page.id, existing?.id, file, signal)
-  const posted = postedAttachment.safeParse(response.data)
-  if (!posted.success) unverified()
-  const id = 'results' in posted.data ? posted.data.results[0].id : posted.data.id
-  const verified = await findAttachment(tab, page.id, file.name, signal).catch(unverified)
+  const response = await uploadConfluenceAttachment(tab, pageId, existing?.id, file, signal)
+  let receiptId: string | undefined
+  if (!tab.instance.cloud) {
+    const posted = postedAttachment.safeParse(response.data)
+    if (!posted.success) unverified()
+    receiptId = 'results' in posted.data ? posted.data.results[0].id : posted.data.id
+  }
+  const verified = await findAttachment(tab, pageId, file.name, signal).catch(unverified)
   if (
     !verified ||
-    verified.id !== id ||
-    (existing && id !== existing.id) ||
-    verified.version.number !== version ||
-    (verified.extensions?.fileSize !== undefined && verified.extensions.fileSize !== file.size)
+    (receiptId && receiptId !== verified.id) ||
+    (existing && existing.id !== verified.id) ||
+    verified.version !== version ||
+    ((tab.instance.cloud || verified.bytes !== undefined) && verified.bytes !== file.size)
   )
     unverified()
-  return { page: link, attachment: summary(tab.instance, page.id, verified), changed: true }
+  return { page: link, attachment: verified, changed: true }
 }

@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState, type FormEvent, type Keyb
 import type { QuestionPage, QuestionSelection } from '../agent'
 import { track } from '../analytics'
 import type { AttachmentUpload } from '../confluence/attachments'
-import { getInstance, watchInstance } from '../confluence/instance'
+import { getInstance, watchInstance, type Instance } from '../confluence/instance'
 import {
   attachmentSizeLimit,
   captureConfluenceTab,
@@ -45,7 +45,7 @@ export function useComposer({
   // order sent: each adds to the ones before. They stay as the user switches tabs or chats, until a
   // question carries them or the user takes them off.
   const [selections, setSelections] = useState<Selection[]>([])
-  const [connected, setConnected] = useState(false)
+  const [instance, setInstance] = useState<Instance>()
   const [editor, setEditor] = useState<Awaited<ReturnType<typeof readEditorSelection>>>()
   const [file, setFile] = useState<File>()
   const [confluenceStatus, setConfluenceStatus] = useState('')
@@ -57,13 +57,13 @@ export function useComposer({
     const unwatch = watchInstance(userId, (instance) => {
       initial = false
       captureEpoch.current++
-      setConnected(instance !== undefined && !instance.cloud)
+      setInstance(instance)
       setEditor(undefined)
       setFile(undefined)
     })
     void getInstance(userId)
       .then((instance) => {
-        if (initial) setConnected(instance !== undefined && !instance.cloud)
+        if (initial) setInstance(instance)
       })
       .catch(() => {})
     return () => {
@@ -316,7 +316,8 @@ export function useComposer({
     pickerFrom: picker?.from,
     chips,
     selections,
-    connected,
+    connected: instance !== undefined,
+    editorSelectionAvailable: instance !== undefined && !instance.cloud,
     editor,
     file,
     confluenceStatus,
@@ -414,13 +415,15 @@ export function Composer({
       />
       <div className="composer-tools">
         <AddMenu onAddPage={composer.openPicker} />
-        {composer.connected && (
+        {composer.connected && (composer.editorSelectionAvailable || mode !== 'read_only') && (
           <details className="confluence-actions">
             <summary>Confluence</summary>
             <div className="confluence-actions-list">
-              <button type="button" disabled={busy} onClick={() => void composer.attachEditorSelection()}>
-                Attach editor selection
-              </button>
+              {composer.editorSelectionAvailable && (
+                <button type="button" disabled={busy} onClick={() => void composer.attachEditorSelection()}>
+                  Attach editor selection
+                </button>
+              )}
               {mode !== 'read_only' && (
                 <>
                   <label>

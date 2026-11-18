@@ -1,6 +1,5 @@
 // Cloud space and page inspection. All requests use the captured site tab and the existing session.
 import { z } from '../zod'
-import { attachmentDownloadUrl } from './attachments'
 import { cloudCollection, cloudPage, cloudPageLink, fetchCloudPage } from './cloud'
 import { hasRestriction, restrictions } from './history'
 import { confluenceLabel } from './labels'
@@ -25,15 +24,6 @@ const historicalPage = versionedPage.extend({
 })
 const operation = z.object({ operation: z.string().min(1).max(80), targetType: z.string().max(80).optional() })
 const operations = z.object({ operations: z.array(operation).max(100) })
-const attachment = z.object({
-  id: z.string().regex(/^(?:att)?\d{1,20}$/),
-  title: z.string().min(1).max(255),
-  pageId: id,
-  version: z.object({ number: z.int().min(1).max(2_147_483_647) }),
-  fileSize: z.int().nonnegative().optional(),
-  downloadLink: z.string().max(4096).optional(),
-  _links: z.object({ download: z.string().max(4096).optional() }).optional(),
-})
 
 function pageRef(tab: ConfluenceTab, id: string): PageReference {
   return { instance: tab.instance.origin + tab.instance.path, id }
@@ -207,43 +197,6 @@ export async function listCloudLabels(
     signal,
   })
   return { page: cloudPageLink(tab, page), labels: items, ...next }
-}
-
-export async function listCloudAttachments(
-  tab: ConfluenceTab,
-  ref: PageReference | undefined,
-  filename: string | undefined,
-  cursor?: string,
-  signal?: AbortSignal,
-) {
-  const page = await published(tab, ref, signal)
-  const { items, ...next } = await cloudCollection(
-    tab,
-    `pages/${page.id}/attachments`,
-    filename ? { filename } : {},
-    cursor,
-    attachment,
-    { signal },
-  )
-  if (items.some((item) => item.pageId !== page.id || (filename && item.title !== filename)))
-    refuse('Confluence returned attachments outside the requested page or filename.')
-  return {
-    page: cloudPageLink(tab, page),
-    attachments: items.map((item) => ({
-      id: item.id,
-      filename: item.title,
-      version: item.version.number,
-      bytes: item.fileSize,
-      downloadUrl: attachmentDownloadUrl(
-        tab.instance,
-        page.id,
-        item.title,
-        item.version.number,
-        item._links?.download ?? item.downloadLink,
-      ),
-    })),
-    ...next,
-  }
 }
 
 const comment = z.object({
