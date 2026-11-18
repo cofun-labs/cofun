@@ -134,7 +134,7 @@
               {
                 "group": ["@cofun/worker-client"],
                 "allowTypeImports": true,
-                "message": "Only the side panel's state (panel.ts, chat-session.ts) calls the worker: it gives the agent the client through @cofun/agent's hostedProvider and workerWeb, which turn a request the worker turned away into a stop of the question, and count what a call cost. Import its types only, or ask the agent (ToolContext.readWeb, searchWeb). Clerk sign-in is '@cofun/worker-client/clerk'."
+                "message": "Only the side panel's state (panel.ts, chat-session.ts) calls the worker: it gives the agent the client through @cofun/agent's hostedProvider and workerWeb, which turn a request the worker turned away into a stop of the question, and count what a call cost. Import its types only, or ask the agent (ToolContext.readWeb, searchWeb). Clerk sign-in is '@cofun/worker-client/clerk', the account a service worker finds signed in '@cofun/worker-client/account', and the credits in words '@cofun/worker-client/credits'."
               },
               {
                 "group": [
@@ -283,7 +283,7 @@
               {
                 "group": ["@cofun/worker-client"],
                 "allowTypeImports": true,
-                "message": "Only the side panel's state (panel.ts, chat-session.ts) calls the worker: it gives the agent the client through @cofun/agent's hostedProvider and workerWeb, which turn a request the worker turned away into a stop of the question, and count what a call cost. Import its types only, or ask the agent (ToolContext.readWeb, searchWeb). Clerk sign-in is '@cofun/worker-client/clerk'."
+                "message": "Only the side panel's state (panel.ts, chat-session.ts) calls the worker: it gives the agent the client through @cofun/agent's hostedProvider and workerWeb, which turn a request the worker turned away into a stop of the question, and count what a call cost. Import its types only, or ask the agent (ToolContext.readWeb, searchWeb). Clerk sign-in is '@cofun/worker-client/clerk', the account a service worker finds signed in '@cofun/worker-client/account', and the credits in words '@cofun/worker-client/credits'."
               },
               {
                 "group": ["@cofun/agent", "@cofun/tools"],
@@ -354,7 +354,7 @@
               {
                 "group": ["@cofun/worker-client"],
                 "allowTypeImports": true,
-                "message": "Only the side panel's state (panel.ts, chat-session.ts) calls the worker: it gives the agent the client through @cofun/agent's hostedProvider and workerWeb, which turn a request the worker turned away into a stop of the question, and count what a call cost. Import its types only, or ask the agent (ToolContext.readWeb, searchWeb). Clerk sign-in is '@cofun/worker-client/clerk'."
+                "message": "Only the side panel's state (panel.ts, chat-session.ts) calls the worker: it gives the agent the client through @cofun/agent's hostedProvider and workerWeb, which turn a request the worker turned away into a stop of the question, and count what a call cost. Import its types only, or ask the agent (ToolContext.readWeb, searchWeb). Clerk sign-in is '@cofun/worker-client/clerk', the account a service worker finds signed in '@cofun/worker-client/account', and the credits in words '@cofun/worker-client/credits'."
               },
               {
                 "group": [
@@ -398,7 +398,7 @@
               {
                 "group": ["@cofun/worker-client"],
                 "allowTypeImports": true,
-                "message": "Only the side panel's state (panel.ts, chat-session.ts) calls the worker: it gives the agent the client through @cofun/agent's hostedProvider and workerWeb, which turn a request the worker turned away into a stop of the question, and count what a call cost. Import its types only, or ask the agent (ToolContext.readWeb, searchWeb). Clerk sign-in is '@cofun/worker-client/clerk'."
+                "message": "Only the side panel's state (panel.ts, chat-session.ts) calls the worker: it gives the agent the client through @cofun/agent's hostedProvider and workerWeb, which turn a request the worker turned away into a stop of the question, and count what a call cost. Import its types only, or ask the agent (ToolContext.readWeb, searchWeb). Clerk sign-in is '@cofun/worker-client/clerk', the account a service worker finds signed in '@cofun/worker-client/account', and the credits in words '@cofun/worker-client/credits'."
               },
               {
                 "group": [

@@ -126,7 +126,7 @@ export function setupSelectionMenu({
       const text = selected || info.selectionText || ''
       if (!userId || !text.trim()) return
       await handOver(windowId, userId, text, info.pageUrl || tab.url || '', tab.title ?? '')
-    })().catch(() => console.error('Could not attach the selected text'))
+    })().catch((err: unknown) => console.error('Could not attach the selected text', err))
   })
 }
 

@@ -110,7 +110,7 @@ An extension's Chrome Web Store privacy policy is written in two parts: [PRIVACY
 - **Every worker route under `/v1` sits behind the session check** (`src/routes/session.ts`); `worker/test/session.test.ts` checks that each refuses a request without a session.
 - **Module boundaries are lint errors** in `.oxlintrc.json`, run by `pnpm check`. In every extension:
   - no extension imports pi (`@earendil-works/pi-agent-core`): only `@cofun/agent` does;
-  - the worker is called only from the side panel's state (`panel.ts`, `chat-session.ts`), which gives the client to the agent through `@cofun/agent`'s `hostedProvider` and `workerWeb`: elsewhere `@cofun/worker-client` is imported for its types only (its `/clerk` anywhere), so a request the worker turned away always stops the question;
+  - the worker is called only from the side panel's state (`panel.ts`, `chat-session.ts`), which gives the client to the agent through `@cofun/agent`'s `hostedProvider` and `workerWeb`: elsewhere `@cofun/worker-client` is imported for its types only (its `/clerk`, `/account`, and `/credits` anywhere), so a request the worker turned away always stops the question;
   - `fetch` is used only in the `tab.ts` of a site layer that sends requests to its site (Notico's `src/notion/tab.ts` and Confluco's `src/confluence/tab.ts`); `chrome.scripting` only in `src/<site>/tab.ts`; `chrome.debugger` nowhere;
   - `zod` is imported only through `src/zod.ts` (the worker's through `worker/src/zod.ts`);
   - `@cofun/analytics` is imported only in `src/analytics.ts`, which lists the extension's events;

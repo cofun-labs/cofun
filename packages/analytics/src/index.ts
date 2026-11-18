@@ -18,9 +18,15 @@
 import { PostHog, type CaptureResult } from 'posthog-js/dist/module.no-external'
 import { z } from './zod'
 
-/** A value the event may carry as it is, or `other`: what is not on the list is never sent. */
+/**
+ * A value the event may carry as it is, or `other`: what is not on the list is never sent. Branded,
+ * so only a schema made here is a `Property`: another string transform could pass any text through.
+ */
 export const oneOf = (known: readonly string[]) =>
-  z.string().transform((value) => (known.includes(value) ? value : 'other'))
+  z
+    .string()
+    .transform((value) => (known.includes(value) ? value : 'other'))
+    .brand<'OneOf'>()
 
 type Value = z.ZodEnum | z.ZodLiteral | z.ZodNumber | z.ZodBoolean | ReturnType<typeof oneOf>
 /**
