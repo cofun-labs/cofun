@@ -36,7 +36,16 @@ export interface AgentConfig {
    * resolves false when the question is stopped or nobody can be asked.
    */
   meter?: (ask: (question: string) => Promise<boolean>) => QuestionMeter
+  /**
+   * The search to use instead of the worker's, read as each search starts: the user's free search
+   * (src/search.ts), or undefined for the worker's. It costs no credits, and throws a WebError as
+   * the worker's search does (see ToolContext.searchWeb).
+   */
+  search?: () => Promise<SearchWeb | undefined>
 }
+
+/** Searches the web for `query`, for at most `limit` results (see ToolContext.searchWeb). */
+type SearchWeb = (query: string, limit: number, signal?: AbortSignal) => Promise<WebSearchResult[]>
 
 /** What a question's tools sent, read when it ends. */
 interface QuestionMeter {
@@ -177,10 +186,11 @@ export interface ToolContext {
    */
   readWeb: (url: string, maxChars: number, render: boolean, signal?: AbortSignal) => Promise<WebPage>
   /**
-   * Searches the web for `query` through the worker, for at most `limit` results. Throws a WebError
-   * when the search failed, which stops the question only when it carries `stopsQuestion`.
+   * Searches the web for `query`, for at most `limit` results: through the worker, or with the
+   * user's free search when they chose it (AgentConfig.search). Throws a WebError when the search
+   * failed, which stops the question only when it carries `stopsQuestion`.
    */
-  searchWeb: (query: string, limit: number, signal?: AbortSignal) => Promise<WebSearchResult[]>
+  searchWeb: SearchWeb
   /**
    * Keeps a long result on the device and resolves with its id; rejects when there is no store or
    * it can't be written.

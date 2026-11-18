@@ -12,6 +12,7 @@ import {
   type ModelSettings,
 } from '../models'
 import { countNotionRequests } from '../notion/tab'
+import { freeSearch } from '../search'
 import { SessionStore, type Session } from '../sessions'
 import { DATA_LINE, pagesIn, SELECTION_END, TOOLS } from '../tools'
 import { ChatSession, type Question } from './chat-session'
@@ -167,6 +168,7 @@ export class Panel {
       tools: TOOLS,
       meter: countNotionRequests,
       results: this.store,
+      search: () => freeSearch(userId),
     }
     this.account = new CopilotAgent(this.agent)
     this.snapshot = { chat: this.newSession(), credits: { status: 'loading' }, saved: 0 }

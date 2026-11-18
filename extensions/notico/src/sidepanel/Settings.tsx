@@ -1,6 +1,8 @@
 import { useAuth } from '@clerk/chrome-extension'
 import { useEffect, useState } from 'react'
 import { loadAnalyticsEnabled, saveAnalyticsEnabled } from '../analytics'
+import { allowDuckDuckGo } from '../duckduckgo/search'
+import { loadDuckDuckGoSearch, saveDuckDuckGoSearch } from '../search'
 import { loadMenuShown, saveMenuShown, watchMenuShown } from '../selection'
 import type { ModelSettings } from '../models'
 import { Avatar, useAccount } from './Account'
@@ -9,7 +11,8 @@ import { ModelCard, Switch } from './Model'
 
 /**
  * The Settings page: everything that isn't money. The model providers and their models, the account
- * with Sign out, whether the right-click menu has "Ask Notico", and whether usage data is sent.
+ * with Sign out, where web searches go, whether the right-click menu has "Ask Notico", and whether
+ * usage data is sent.
  */
 export function Settings({
   model,
@@ -25,12 +28,14 @@ export function Settings({
   at?: 'providers'
   onClose: () => void
 }) {
-  const { signOut } = useAuth()
+  const { signOut, userId } = useAuth()
   const account = useAccount()
 
   return (
     <Page id="settings" title="Settings" onBack={onClose}>
       <ModelCard settings={model} onChange={onModelChange} focus={at === 'providers'} />
+
+      {userId && <WebSearch userId={userId} />}
 
       <ContextMenu />
 
@@ -91,6 +96,59 @@ function ContextMenu() {
         </div>
         {shown !== undefined && (
           <Switch label="Show “Ask Notico”" checked={shown} describedBy="settings-menu-detail" onChange={change} />
+        )}
+      </div>
+    </section>
+  )
+}
+
+/**
+ * Whether web searches open DuckDuckGo in a background tab, free, instead of going to the worker (see
+ * search.ts): off until the user turns it on, for this account on this device. Turning it on asks Chrome for access
+ * to DuckDuckGo, in the click itself; declined, it stays off.
+ */
+function WebSearch({ userId }: { userId: string }) {
+  // Not known until storage was read: no switch shows until then, so it never shows a state to take back.
+  const [on, setOn] = useState<boolean>()
+
+  useEffect(() => {
+    let closed = false
+    loadDuckDuckGoSearch(userId).then(
+      (stored) => !closed && setOn(stored),
+      (err: unknown) => console.error('Could not read the web search setting', err),
+    )
+    return () => void (closed = true)
+  }, [userId])
+
+  function change(next: boolean) {
+    const save = (value: boolean) => {
+      setOn(value)
+      saveDuckDuckGoSearch(userId, value).catch((err: unknown) =>
+        console.error('Could not save the web search setting', err),
+      )
+    }
+    if (!next) return save(false)
+    // Chrome asks only during the click: nothing is awaited before the request.
+    allowDuckDuckGo().then(
+      (granted) => granted && save(true),
+      (err: unknown) => console.error('Could not ask for access to DuckDuckGo', err),
+    )
+  }
+
+  return (
+    <section className="page-section" aria-labelledby="settings-search">
+      <h2 id="settings-search">Web search</h2>
+      <div className="settings-account">
+        <div className="grow">
+          <p>Search with DuckDuckGo</p>
+          <p id="settings-search-detail" className="account-detail">
+            Free: each search opens DuckDuckGo in a background tab and reads its results, instead of costing credits.
+            Searches show in your Chrome history. If DuckDuckGo asks you to confirm you're a person, answer it in that
+            tab, or switch this off.
+          </p>
+        </div>
+        {on !== undefined && (
+          <Switch label="Search with DuckDuckGo" checked={on} describedBy="settings-search-detail" onChange={change} />
         )}
       </div>
     </section>

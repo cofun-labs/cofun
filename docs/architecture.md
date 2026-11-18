@@ -60,9 +60,9 @@ An extension can have the worker read a public web page by its address, plainly 
                                                             Worker ──▶ web pages, Browser Run, and Web Search (through AI Gateway)
 ```
 
-The agent loop and its tools run in the side panel. Notion requests are made inside the user's own Notion tab, with that tab's session. A user may instead have their own model answer, on OpenRouter with their own key: the side panel asks it directly, behind the agent's `ModelProvider`, so those questions never reach the worker; web pages and searches still go through the worker, and renders and searches are still charged.
+The agent loop and its tools run in the side panel. Notion requests are made inside the user's own Notion tab, with that tab's session. A user may instead have their own model answer, on OpenRouter with their own key: the side panel asks it directly, behind the agent's `ModelProvider`, so those questions never reach the worker; web pages and searches still go through the worker, and renders and searches are still charged, unless the user chose DuckDuckGo for searches (below).
 
-The panel is open on every tab, but the tools act on the current tab, and on the tabs on other sites the user added to the chat. The Notion tools work only while the current tab is on Notion. On another site, the agent reads the page inside the tab, through a second site layer (`src/web/`), only on a site the user allowed: web sites are optional host permissions, asked for one at a time. No request goes to that site. The "Ask Notico" context menu item adds text selected in any page to the next question. Web pages and searches go through the worker, with addresses and queries the model chooses ([security.md](security.md#accepted-web-pages-at-any-address)).
+The panel is open on every tab, but the tools act on the current tab, and on the tabs on other sites the user added to the chat. The Notion tools work only while the current tab is on Notion. On another site, the agent reads the page inside the tab, through a second site layer (`src/web/`), only on a site the user allowed: web sites are optional host permissions, asked for one at a time. No request goes to that site. The "Ask Notico" context menu item adds text selected in any page to the next question. Web pages and searches go through the worker, with addresses and queries the model chooses ([security.md](security.md#accepted-web-pages-at-any-address)), except that a user can choose in Settings to search with DuckDuckGo: its site layer (`src/duckduckgo/`) then opens DuckDuckGo's results page in a background tab, reads it with `chrome.scripting`, with the host permission the user granted, and closes it; such searches cost no credits.
 
 A question carries the pages it goes with (the open page, and pages and tabs the user adds) as titles and URLs, not their content: the model reads them with its tools.
 
@@ -116,6 +116,8 @@ extensions/<name>/        one Chrome extension, built and published by itself; n
                           tab.ts calls the site inside the captured tab, and instance.ts saves the connection per Cofun account
   src/web/tab.ts          the site layer for any other site: reads the page a tab shows, once the user allowed its site; sends no request
   src/web/markdown.ts     turns the HTML a tab gives into Markdown, in the side panel, in an inert document
+  src/duckduckgo/         Notico's site layer for DuckDuckGo, the free web search a user can choose: search.ts
+                          knows its endpoint and result page; tab.ts opens the page in a background tab and reads it
   src/sidepanel/          the React UI
     panel.ts              the Panel: the open chat, the saved sessions, the credits, the model and the mode;
                           imports no React, which subscribes to it

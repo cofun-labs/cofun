@@ -258,8 +258,14 @@
     {
       // The site layer knows nothing about the agent, the tools, sessions, or the UI. One directory
       // per site: src/sidepanel/ sits next to them and is not one, so each site is named here
-      // (Notico's are Notion, and src/web/ for the page of a tab on any other site).
-      "files": ["extensions/*/src/notion/**", "extensions/confluco/src/confluence/**", "extensions/*/src/web/**"],
+      // (Notico's are Notion, src/web/ for the page of a tab on any other site, and DuckDuckGo, the
+      // free web search a user can choose).
+      "files": [
+        "extensions/*/src/notion/**",
+        "extensions/confluco/src/confluence/**",
+        "extensions/*/src/web/**",
+        "extensions/notico/src/duckduckgo/**"
+      ],
       "rules": {
         "no-restricted-imports": [
           "error",
@@ -359,16 +365,17 @@
       }
     },
     {
-      // The site layer for any other site reads the page in the user's tab with chrome.scripting,
-      // and sends no request to the site, so fetch stays off limits here. Its import restrictions
+      // The site layers that read a page a tab shows with chrome.scripting, and send no request to
+      // the site themselves, so fetch stays off limits here: src/web/ for the page of any other site,
+      // and DuckDuckGo's, whose results page the user's browser loads in a tab it opens. Its import restrictions
       // (the site block) still hold.
-      "files": ["extensions/*/src/web/tab.ts"],
+      "files": ["extensions/*/src/web/tab.ts", "extensions/notico/src/duckduckgo/tab.ts"],
       "rules": {
         "no-restricted-globals": [
           "error",
           {
             "name": "fetch",
-            "message": "src/web/tab.ts only reads the page a tab already shows: it sends no request to the site. A web page is read by its address through the worker (src/agent/)."
+            "message": "src/web/tab.ts and src/duckduckgo/tab.ts only read the page a tab shows: they send no request to the site. A web page is read by its address through the worker (src/agent/)."
           }
         ],
         "no-restricted-properties": [
@@ -381,17 +388,17 @@
           {
             "object": "globalThis",
             "property": "fetch",
-            "message": "src/web/tab.ts only reads the page a tab already shows: it sends no request to the site. A web page is read by its address through the worker (src/agent/)."
+            "message": "src/web/tab.ts and src/duckduckgo/tab.ts only read the page a tab shows: they send no request to the site. A web page is read by its address through the worker (src/agent/)."
           },
           {
             "object": "window",
             "property": "fetch",
-            "message": "src/web/tab.ts only reads the page a tab already shows: it sends no request to the site. A web page is read by its address through the worker (src/agent/)."
+            "message": "src/web/tab.ts and src/duckduckgo/tab.ts only read the page a tab shows: they send no request to the site. A web page is read by its address through the worker (src/agent/)."
           },
           {
             "object": "self",
             "property": "fetch",
-            "message": "src/web/tab.ts only reads the page a tab already shows: it sends no request to the site. A web page is read by its address through the worker (src/agent/)."
+            "message": "src/web/tab.ts and src/duckduckgo/tab.ts only read the page a tab shows: they send no request to the site. A web page is read by its address through the worker (src/agent/)."
           }
         ]
       }

@@ -13,7 +13,7 @@ What is read for a question becomes part of **your conversation**, which goes to
 - **Tab titles and URLs.** With each question: the open Notion page's, the pages and tabs you added to it, and the current tab's when the assistant looks it up. A URL is the whole address, which on some sites holds a sign-in or share token. The page picker reads your tabs' titles and URLs to offer them; they stay in the browser unless you add one.
 - **Pages in your tabs, on sites you allowed.** The assistant can read the page in the current tab, and in a tab you added to the chat, only on a site you allowed: Notico asks you, and Chrome asks again. Until you remove the access in Chrome's extension settings, it may read that site's pages in your tabs when a question needs them, including what the page shows you because you are signed in. It reads the page already open in the tab: no request is sent to the site.
 - **Text you send with "Ask Notico".** When you select text on any page, right-click, and pick "Ask Notico", the extension reads the selection in that tab, with the page's title and URL. It waits in the message box, in the browser's memory, and leaves the browser only with the next question you send.
-- **Web pages and web searches.** When a question needs it, the assistant has our worker read a web page by its address, one you gave, a link it found, or one it thinks of, or search the web with a query it writes, which may hold text from your pages or the conversation. The worker reads only public pages, without your cookies or sign-in, and what comes back joins the conversation. This goes through our worker whichever model answers.
+- **Web pages and web searches.** When a question needs it, the assistant has our worker read a web page by its address, one you gave, a link it found, or one it thinks of, or search the web with a query it writes, which may hold text from your pages or the conversation. The worker reads only public pages, without your cookies or sign-in, and what comes back joins the conversation. This goes through our worker whichever model answers, except searches once you switch on "Search with DuckDuckGo" in the settings: each then opens DuckDuckGo's results page in a background tab of your browser, which Notico reads and closes.
 - **Your sign-in.** The extension reads the cookies Cofun's sign-in page sets, to know who is signed in, and gets a short-lived session token from Clerk for each request to the worker.
 - **Your credits.** To show them, the extension asks the worker, with how far your clock is from UTC; to buy credits, it sends the pack you chose.
 - **Your OpenRouter key, if you set one up**, sent only to OpenRouter.
@@ -23,7 +23,7 @@ It never reads the content of tabs other than the current one and those you adde
 
 ## Where data goes
 
-The extension contacts these hosts and no others; its content security policy stops its pages from connecting anywhere else.
+The extension contacts these hosts and no others; its content security policy stops its pages from connecting anywhere else. DuckDuckGo's page loads in a tab, as any site does, not from the extension's pages.
 
 | Host | What is sent | Why |
 |---|---|---|
@@ -32,12 +32,13 @@ The extension contacts these hosts and no others; its content security policy st
 | `api.cofun.cc` (our worker) | Your session token, the chat and question ids, and the address of a web page or the query of a web search the assistant chose | To read the page or make the search, also when your own model answers |
 | `api.cofun.cc` (our worker) | Your session token, how far your clock is from UTC, and the pack you chose to buy | To show your credits and start a checkout |
 | `openrouter.ai`, only once you switch it on | Your OpenRouter key, to check it and to ask its models; the conversation, when one of its models answers; a request for its public list of models | To answer with the model you chose, under your own account. OpenRouter passes the conversation to the model's provider ([OpenRouter's privacy policy](https://openrouter.ai/privacy)) |
+| `html.duckduckgo.com` (DuckDuckGo), only once you switch on "Search with DuckDuckGo" | The query of each web search the assistant makes, which may hold text from your pages or the conversation, as the address of a page your browser opens in a background tab, with your DuckDuckGo cookies, as when you search there yourself; DuckDuckGo sees your IP address | To search the web for free, instead of through our worker. DuckDuckGo says it does not store your searches ([DuckDuckGo's privacy policy](https://duckduckgo.com/privacy)) |
 | `us.i.posthog.com` (PostHog), unless you turn usage data off | Usage events, as listed under [Usage data](#usage-data) | To see how Notico is used and where it fails |
 | `clerk.cofun.cc`, `img.clerk.com` (Clerk) | Your Clerk session; a request for your avatar | Sign-in, and showing who is signed in |
 
 The extension also holds a host permission for `*.cofun.cc`, used only to read the cookie that says whether you are signed in. A site you allow is not on this list: Notico reads its pages in your tab and sends it nothing.
 
-Your Notion session never leaves Notion, and Notion content never goes to Clerk. Your OpenRouter key goes only to OpenRouter. As with any web service, Cloudflare, Clerk, and PostHog see your IP address; PostHog is told not to work out a location from it, and our project does not keep it.
+Your Notion session never leaves Notion, and Notion content never goes to Clerk. Your OpenRouter key goes only to OpenRouter. As with any web service, Cloudflare, Clerk, PostHog, and DuckDuckGo (when you search with it) see your IP address; PostHog is told not to work out a location from it, and our project does not keep it.
 
 "Sign in" and "Buy credits" open Cofun's sign-in page and Stripe's Checkout page in a normal tab. What you enter there goes to Clerk or Stripe, never to the extension or the worker; [Cofun's privacy page](../../PRIVACY.md#who-receives-your-data) says more.
 
@@ -67,7 +68,8 @@ Notico does not record clicks, keystrokes, or the screen, and loads no code from
 - **Your chats**, in your Chrome profile, separately for each signed-in account: what you asked, the replies, and what the assistant read to answer, such as Notion pages, tabs, web pages, and searches; of a long page, its full text. Each chat and each question has a random id, sent to our worker with its requests so that what it spent can be matched to it. Chats are not sent to our servers, except that continuing a chat sends it to the worker again.
 - **Your sign-in**: Clerk's token that keeps you signed in.
 - **Your own model, if you set one up**: your OpenRouter key and the models you chose, for the account that set them up. Removing the key in the settings deletes it.
-- **Settings**: whether the assistant may change your pages (Edit or Read only), whether usage data is shared, and whether the right-click menu shows "Ask Notico". That last one is synced to your other devices if you use Chrome sync.
+- **Settings**: whether the assistant may change your pages (Edit or Read only), whether web searches go to DuckDuckGo, whether usage data is shared, and whether the right-click menu shows "Ask Notico". That last one is synced to your other devices if you use Chrome sync.
+- **DuckDuckGo searches in your Chrome history**, once you switch on "Search with DuckDuckGo": each search opens DuckDuckGo's results page in a tab, so Chrome keeps its address, which holds the query, in your browsing history, as for any page you open, and syncs it to your other devices if you use Chrome sync. Notico doesn't remove these entries; you can, in Chrome's history. When DuckDuckGo asks you to confirm you are a person, its tab stays open with the query in its address bar.
 - **Usage ids**: the random id your events are counted under, and your Clerk user id while you are signed in (signing out clears it while usage data is on). After you turn usage data off they stay on the device, even after you sign out, and are sent nowhere.
 
 None of this is **encrypted**, and your chats and OpenRouter key **stay after you sign out**: anyone with access to your Chrome profile can read them. Removing the extension removes it all.

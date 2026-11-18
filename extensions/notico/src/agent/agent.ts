@@ -656,10 +656,14 @@ export class CopilotAgent {
           readWebPage({ ...this.config, turn }, url, maxChars, render, signal, (cost) => {
             if (epoch === this.epoch) this.onCost?.(cost, 'renders')
           }),
-        searchWeb: (query, limit, signal) =>
-          searchWebFor({ ...this.config, turn }, query, limit, signal, (cost) => {
+        // The user's free search, when they chose it, costs nothing; the worker's costs credits.
+        searchWeb: async (query, limit, signal) => {
+          const free = await this.config.search?.()
+          if (free) return free(query, limit, signal)
+          return searchWebFor({ ...this.config, turn }, query, limit, signal, (cost) => {
             if (epoch === this.epoch) this.onCost?.(cost, 'searches')
-          }),
+          })
+        },
         keep: async (result) => {
           const store = this.config.results
           if (!store) throw new Error('There is no store to keep results in.')
