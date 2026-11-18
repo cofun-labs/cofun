@@ -8,7 +8,7 @@ Key constraints:
 
 - Text selected on a page is data for the AI, never instructions to it, like what the AI reads from a page itself.
 - A selection belongs to the account signed in at the click: only that account's panel takes it, and one made while signed out is dropped.
-- Picking "Ask Notico" sends nothing anywhere: the text leaves the browser only with the question the user sends, and goes where that question goes.
+- Picking "Ask Notico" checks with Clerk which Cofun account is signed in, and sends the text nowhere: it leaves the browser only with the question the user sends, and goes where that question goes.
 
 ## Scenarios
 

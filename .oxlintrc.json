@@ -74,6 +74,10 @@
                 "message": "Only @cofun/agent (packages/agent/src/) imports pi. Use what @cofun/agent exports, or add it there."
               },
               {
+                "group": ["@cofun/analytics"],
+                "message": "Only an extension's src/analytics.ts uses @cofun/analytics: it lists the extension's events. Call its track()."
+              },
+              {
                 "group": ["posthog-js", "posthog-js/**"],
                 "message": "Only @cofun/analytics (packages/analytics/src/index.ts) imports the PostHog SDK. Call the extension's track() (src/analytics.ts), whose events are the only ones that can be sent."
               },
@@ -106,6 +110,10 @@
                   "@earendil-works/pi-ai/**"
                 ],
                 "message": "Only @cofun/agent (packages/agent/src/) imports pi. Use what @cofun/agent exports, or add it there."
+              },
+              {
+                "group": ["@cofun/analytics"],
+                "message": "Only an extension's src/analytics.ts uses @cofun/analytics: it lists the extension's events. Call its track()."
               },
               {
                 "group": ["posthog-js", "posthog-js/**"],

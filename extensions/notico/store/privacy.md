@@ -45,7 +45,7 @@ Runs the requests that read and edit Notion pages inside the user's own Notion t
 ### contextMenus
 
 ```text
-Adds an "Ask Notico" item to the menu Chrome shows when the user right-clicks selected text. Picking it opens the side panel with that text added to the user's next question; nothing is sent until the user sends the question.
+Adds an "Ask Notico" item to the menu Chrome shows when the user right-clicks selected text. Picking it checks with our sign-in service which account is signed in, and opens the side panel with that text added to that account's next question; the text is sent nowhere until the user sends the question.
 ```
 
 ### activeTab
