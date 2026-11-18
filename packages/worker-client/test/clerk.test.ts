@@ -1,4 +1,4 @@
-// What the extension reads out of Clerk's publishable key (src/clerk.ts): the Frontend API host,
+// What an extension reads out of Clerk's publishable key (src/clerk.ts): the Frontend API host,
 // and the host Clerk's Sync Host reads the signed-in client from.
 import { describe, expect, it } from 'vitest'
 import { clerkFrontendApi, clerkSyncHost } from '../src/clerk'

@@ -30,7 +30,7 @@ Update `docs/architecture.md` only when a change adds, moves, or removes a modul
      ```
 
 2. **Cover business rules with scenarios.** Ask one question: does this change add or change a business rule a user can notice? If not, as with most bug fixes and refactors, no use case changes. If so:
-   - A scenario covers it, in `extensions/<name>/use-cases/{domain}/`, or in `worker/use-cases/{domain}/` for a rule only the worker decides ([Products](docs/bdd.md#products)).
+   - A scenario covers it, in `extensions/<name>/use-cases/{domain}/`, in `packages/<name>/use-cases/{domain}/` for a rule a shared package owns, or in `worker/use-cases/{domain}/` for a rule only the worker decides ([Products](docs/bdd.md#products)).
    - Reuse or edit a scenario that already says it, or add one with a priority (P0/P1/P2) under its strategy (`api-test` or `ai-e2e`), marked 🚧 until verified, then ✅. [docs/bdd.md](docs/bdd.md) says how to write them.
 
 3. **Implement with tests.** A test guards each such rule:
@@ -44,7 +44,7 @@ Update `docs/architecture.md` only when a change adds, moves, or removes a modul
    - `pnpm check` fails on a test that names neither a scenario ID nor a kind, on an `api-test` scenario marked ✅ with no test named with its ID, and on a scenario row it can't read ([Coverage check](docs/bdd.md#coverage-check)). When a scenario's ID changes, rename its tests; when a scenario is deleted, delete its tests or take the ID out of their names.
    - Gaps that slip past a PR are found by the `/bdd-audit` skill, run before a release or after a large feature ([Coverage audit](docs/bdd.md#coverage-audit)), not by per-PR bookkeeping.
 
-4. **Run pre-PR checks.** `pnpm check` runs on every commit (a lefthook pre-commit hook). Review `git diff --stat origin/main...` and `git diff origin/main... -- 'extensions/*/use-cases/*' worker/use-cases`. Confirm the diff matches the Issue (or the PR body, when there is no Issue) and every business rule it adds or changes has a scenario and a test.
+4. **Run pre-PR checks.** `pnpm check` runs on every commit (a lefthook pre-commit hook). Review `git diff --stat origin/main...` and `git diff origin/main... -- 'extensions/*/use-cases/*' 'packages/*/use-cases/*' worker/use-cases`. Confirm the diff matches the Issue (or the PR body, when there is no Issue) and every business rule it adds or changes has a scenario and a test.
 
 5. **Open a PR.** Branch `issue-{ID}` from `origin/main` (or a short descriptive name when there is no Issue), commit, push, and open a PR. If there is an Issue, the PR body contains `Closes #{ID}`.
    - A branch builds on another unmerged PR only when it needs that PR's changes; its PR targets that branch as its base, so its diff and review cover only its own commits. Such a PR is never merged while its base is not `main`: once its base merges, GitHub points it at `main`, and it merges `origin/main` and goes through the queue like any other.
@@ -104,17 +104,21 @@ An extension's Chrome Web Store privacy policy is written in two parts: [PRIVACY
 
 [docs/architecture.md](docs/architecture.md) describes the design; these are the rules a change must keep.
 
-- **One extension per folder.** Each extension keeps its own copy of the side panel code and never imports another extension.
+- **One extension per folder.** Each extension keeps its own app (side panel, agent, prompt, site layer, tools, manifest, analytics) and never imports another extension.
+- **Only libraries the extensions call are shared**, as workspace packages in `packages/` (`@cofun/worker-client`, the client for the worker). A package takes what is particular to an extension as explicit parameters (the product name, the client name), never a product config, and never imports an extension. Its rules are tested once, in its own `test/` (and `use-cases/`, when it owns a business rule); an extension tests only how it uses it.
 - **A site is called only through its site layer**: one module knows the site's endpoints and request shapes (Notico's `src/notion/api.ts`), and requests run inside the user's tab for that site (`src/<site>/tab.ts`, `chrome.scripting` in the ISOLATED world), so they go to that tab's host with its session. Tools never `fetch` the site's URLs themselves. Never use `chrome.debugger`: it shows a permanent "debugging this browser" banner.
 - **Every worker route under `/v1` sits behind the session check** (`src/routes/session.ts`); `worker/test/session.test.ts` checks that each refuses a request without a session.
 - **Module boundaries are lint errors** in `.oxlintrc.json`, run by `pnpm check`. In every extension:
   - only `src/agent/` imports pi (`@earendil-works/pi-agent-core`);
-  - `fetch` is used only in `src/agent/` (the worker) and in the `tab.ts` of a site layer that sends requests to its site (Notico's `src/notion/tab.ts` and Confluco's `src/confluence/tab.ts`); `chrome.scripting` only in `src/<site>/tab.ts`; `chrome.debugger` nowhere;
+  - the worker is called only from `src/agent/` and the side panel's state (`panel.ts`, `chat-session.ts`): elsewhere `@cofun/worker-client` is imported for its types only (its `/clerk` anywhere), so a request the worker turned away always stops the question;
+  - `fetch` is used only in `src/agent/` (the user's own model; the worker through `@cofun/worker-client`) and in the `tab.ts` of a site layer that sends requests to its site (Notico's `src/notion/tab.ts` and Confluco's `src/confluence/tab.ts`); `chrome.scripting` only in `src/<site>/tab.ts`; `chrome.debugger` nowhere;
   - `zod` is imported only through `src/zod.ts` (the worker's through `worker/src/zod.ts`);
   - `posthog-js` is imported only in `src/analytics.ts`;
   - the site layer imports nothing from the agent, the tools, the sessions, or the side panel;
   - the side panel's state outside React (`src/sidepanel/chat-session.ts`, one `ChatSession` per chat, and `src/sidepanel/panel.ts`, the `Panel`) imports no React and no component;
   - no extension imports another.
+
+  In every package, `zod` is imported only through its own `src/zod.ts`, and nothing outside the package is imported from `src/` (its tests may import the worker, never an extension).
 
   When a boundary changes, change the rule and this list together. Never silence one with an `oxlint-disable` comment.
 
@@ -154,7 +158,7 @@ The extensions and the worker call outside services: the site an extension acts 
 How the fakes and test helpers fit together is in [Testing](docs/development.md#testing).
 
 - **Write a test only when it earns its place.** More tests are not better: each one costs time to run, read, and change. [What gets a test](docs/bdd.md#what-gets-a-test) decides.
-- **Tests live with the package they cover**: `extensions/<name>/test/` and `worker/test/`. Backend tests are REST integration tests that call the Hono app over HTTP and assert on status codes and JSON bodies.
+- **Tests live with the package they cover**: `extensions/<name>/test/`, `packages/<name>/test/`, and `worker/test/`. Backend tests are REST integration tests that call the Hono app over HTTP and assert on status codes and JSON bodies.
 - **No mocking.** No `vi.mock()` and no spies. Replace an external dependency with a fake that implements the same interface, injected through `env`. The one module replaced whole is Clerk's React SDK, for the UI tests only; replace no other module this way.
 - **UI tests run the whole side panel and act as a user** ([Testing the side panel's UI](docs/bdd.md#testing-the-side-panels-ui)). Never test a component on its own, and find things by role, accessible name, or visible text, never through component state, the agent, the session store, or a test id. If an element can't be found that way, improve its accessibility.
 - **Tests never wait for time to pass.** Use a fake clock with an explicit start time and move it: no sleeps, and no assertion that depends on how long something took. Waiting for the screen to change is fine.
@@ -166,7 +170,7 @@ The full list is in [docs/development.md](docs/development.md).
 ```bash
 pnpm check        # lint, knip, format check, use case coverage, typecheck, extension build, and every package's tests
 pnpm format:fix   # format all files
-pnpm test         # extension and worker tests, and the unit tests of scripts/
+pnpm test         # extension, package, and worker tests, and the unit tests of scripts/
 pnpm media 367 demo.gif   # upload a PR's demo GIF or screenshots and print their URLs (maintainer's machine only)
 pnpm e2e --help   # drive the shared Chrome Canary for ai-e2e runs (maintainer's machine only)
 ```

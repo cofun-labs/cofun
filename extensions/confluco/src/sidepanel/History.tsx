@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
-import { grantDatesText, grantLeftText, grantTitle, wholeCredits, type PastGrant } from '../credits'
+import type { PastGrant } from '@cofun/worker-client'
+import { grantDatesText, grantLeftText, grantTitle, wholeCredits } from '../credits'
 
 /** How the history is read from the worker: every grant, at once. */
 export type ReadGrants = () => Promise<PastGrant[]>

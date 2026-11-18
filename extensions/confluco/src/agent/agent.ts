@@ -6,13 +6,13 @@
 import { Agent, type AgentEvent, type AgentMessage, type AgentTool } from '@earendil-works/pi-agent-core'
 import type { AssistantMessage, Model } from '@earendil-works/pi-ai'
 import { streamSimple } from '@earendil-works/pi-ai/api/openai-completions'
-import { Credits, Grants, Packs, type PastGrant } from '../credits'
+import type { CallCost } from '@cofun/worker-client'
 import { answering, HOSTED_ONLY, type OwnSetup } from '../models'
 import { ToolMemory } from '../tools/memory'
 import { askUser, previewCall, toAgentTool, type Reporter } from './calls'
 import { addUsage, detailsOf, recent, textOf, usedTools } from './history'
 import { ownProvider } from './own'
-import type { CallCost, Failure, ModelProvider } from './provider'
+import type { Failure, ModelProvider } from './provider'
 import { writeTitle } from './title'
 import type {
   AgentConfig,
@@ -36,7 +36,7 @@ import type {
   WebCost,
 } from './types'
 import { ToolDetails } from './types'
-import { checkout, hostedProvider, readOwn, readWebPage, searchWebFor } from './worker'
+import { hostedProvider, readWebPage, searchWebFor } from './worker'
 
 const DEFAULT_MAX_STEPS = 20
 /**
@@ -50,11 +50,6 @@ const TOO_MANY_FAILED = `Stopped: ${MAX_FAILED_CALLS} actions in this question f
 /** For the model, for a call refused once the question stopped at MAX_FAILED_CALLS. */
 const NOT_RUN_FAILED = `Not run: ${MAX_FAILED_CALLS} tool calls of this question failed, so it stopped.`
 
-/**
- * How far the user's clock is ahead of UTC, in minutes: the worker totals usage per day, and a day
- * should be the user's own.
- */
-const utcOffset = () => String(-new Date().getTimezoneOffset())
 // What the model gets back for a call the user declined; it should not just try again.
 const DECLINED = 'Not run: the user declined this action. Do not retry it; ask the user how to proceed instead.'
 // The same when there was nobody to ask: the model must not claim the user said no.
@@ -160,7 +155,7 @@ export class CopilotAgent {
     private readonly config: AgentConfig,
     private readonly initial: HistoryMessage[] = [],
   ) {
-    this.provider = hostedProvider(config)
+    this.provider = hostedProvider(config.worker)
     this.maxSteps = config.maxSteps ?? DEFAULT_MAX_STEPS
     this.tools = new Map(config.tools.map((t) => [t.name, t]))
     this.allTools = config.tools.map((t) => toAgentTool(t, () => this.reporter()))
@@ -660,12 +655,20 @@ export class CopilotAgent {
         // Always through the worker, whichever model answers: the page is read by the worker either way.
         // A render or a search costs credits, and the question it was for counts them; a plain read is free.
         readWeb: (url, maxChars, render, signal) =>
-          readWebPage({ ...this.config, turn }, url, maxChars, render, signal, (cost) => {
-            if (epoch === this.epoch) this.onCost?.(cost, 'renders')
+          readWebPage(this.config.worker, url, maxChars, render, {
+            signal,
+            turn,
+            charged: (cost) => {
+              if (epoch === this.epoch) this.onCost?.(cost, 'renders')
+            },
           }),
         searchWeb: (query, limit, signal) =>
-          searchWebFor({ ...this.config, turn }, query, limit, signal, (cost) => {
-            if (epoch === this.epoch) this.onCost?.(cost, 'searches')
+          searchWebFor(this.config.worker, query, limit, {
+            signal,
+            turn,
+            charged: (cost) => {
+              if (epoch === this.epoch) this.onCost?.(cost, 'searches')
+            },
           }),
         keep: async (result) => {
           const store = this.config.results
@@ -707,7 +710,7 @@ export class CopilotAgent {
     this.providerFor = choice
     // The agent starts on the hosted provider.
     if (before === undefined ? choice === 'hosted' : JSON.stringify(before) === JSON.stringify(choice)) return
-    this.provider = choice === 'hosted' ? hostedProvider(this.config) : ownProvider(choice)
+    this.provider = choice === 'hosted' ? hostedProvider(this.config.worker) : ownProvider(choice)
     this.model = undefined
   }
 
@@ -797,33 +800,6 @@ export class CopilotAgent {
     const { provider, model } = this
     if (!model) return undefined
     return writeTitle(provider, model, history, { chat, signal })
-  }
-
-  /**
-   * The signed-in user's credits, as the worker reports them. Reading them changes nothing. Throws
-   * when they can't be read, when the answer is not what the panel expects, or when `signal` aborts.
-   */
-  async credits({ signal }: { signal?: AbortSignal } = {}): Promise<Credits> {
-    return readOwn(this.config, 'credits', { utc_offset: utcOffset() }, Credits, signal)
-  }
-
-  /** Every grant the user was given, newest first. Read only when the user opens the history. */
-  async creditGrants(): Promise<PastGrant[]> {
-    return (await readOwn(this.config, 'credits/grants', {}, Grants)).grants
-  }
-
-  /** The packs of credits on offer. Read when the Credits page opens. */
-  async creditPacks(): Promise<Packs> {
-    return readOwn(this.config, 'billing/packs', {}, Packs)
-  }
-
-  /**
-   * Starts buying the pack of `quantity` (a pack's quantity, as `creditPacks` lists it): the worker
-   * makes a Stripe Checkout Session for it, for the signed-in user, and gives the URL of its page.
-   * Nothing is bought until the user pays there.
-   */
-  async checkout(quantity: number): Promise<string> {
-    return checkout(this.config, quantity)
   }
 }
 

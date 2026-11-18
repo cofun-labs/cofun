@@ -1,3 +1,4 @@
+import type { Credits, Pack, Packs } from '@cofun/worker-client'
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react'
 import { track } from '../analytics'
 import {
@@ -9,10 +10,7 @@ import {
   usdText,
   when,
   wholeCredits,
-  type Credits,
   type CreditsState,
-  type Pack,
-  type Packs,
 } from '../credits'
 import { Page } from './Header'
 import { History, type ReadGrants } from './History'

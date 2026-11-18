@@ -1,6 +1,7 @@
 // Notico's agent loop (src/agent/) against the real worker, with the model behind it scripted: when
 // tools run and when they ask first, when a question stops, what a conversation carries over, and the
 // Notion request budget. What the agent and the worker must agree on is in worker/test/extension.test.ts.
+import { WorkerClient, WorkerError } from '@cofun/worker-client'
 import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import {
   CopilotAgent,
@@ -106,9 +107,12 @@ function makeAgent(
 ) {
   return new CopilotAgent(
     {
-      apiUrl: 'https://nk.example.dev/v1/',
-      getToken: options.getToken ?? (async () => token),
-      client: 'notico/1.2.3',
+      worker: new WorkerClient({
+        apiUrl: 'https://nk.example.dev/v1/',
+        getToken: options.getToken ?? (async () => token),
+        clientName: 'notico/1.2.3',
+        product: 'Notico',
+      }),
       systemPrompt: options.systemPrompt ?? 'You are Notico.',
       tools: options.tools ?? [pageTool().tool],
       maxSteps: options.maxSteps,
@@ -451,16 +455,22 @@ describe('extension agent against the worker', () => {
     expect(tab.sent).toHaveLength(2)
   })
 
-  it('[@no-uc:notion-safety] a tool that wraps an error that stops the question still stops it', async () => {
+  it('[@no-uc:notion-safety] an error that stops the question stops it when a tool wraps it, and so does one the worker turned away', async () => {
     const stop = Object.assign(new Error('Turned away.'), { stopsQuestion: 'Wait a minute.' })
-    const wrapping: ToolSpec = {
-      ...pageTool().tool,
-      run: async () => Promise.reject(new Error('The page may or may not have been created.', { cause: stop })),
+    const errors = [
+      // A tool wraps the error it got.
+      new Error('The page may or may not have been created.', { cause: stop }),
+      // A request the worker turned away, as the worker's client throws it, not as the agent's WebError.
+      new WorkerError('rate_limited', 'Too many requests.', { turnedAway: 'Wait a minute.' }),
+    ]
+    for (const error of errors) {
+      const failing: ToolSpec = { ...pageTool().tool, run: async () => Promise.reject(error) }
+      ai.script = [{ toolCalls: [{ name: 'lookup_page', arguments: '{}' }] }, { reply: 'Trying again.' }]
+      const before = ai.calls.length
+      const { result } = await ask(makeAgent({ tools: [failing] }), 'Make a page')
+      expect(result, error.message).toEqual({ status: 'error', message: 'Wait a minute.' })
+      expect(ai.calls.length - before, error.message).toBe(1)
     }
-    ai.script = [{ toolCalls: [{ name: 'lookup_page', arguments: '{}' }] }, { reply: 'Trying again.' }]
-    const { result } = await ask(makeAgent({ tools: [wrapping] }), 'Make a page')
-    expect(result).toEqual({ status: 'error', message: 'Wait a minute.' })
-    expect(ai.calls).toHaveLength(1)
   })
 
   it('[UC-NOTICO-NOTION-002-S13] a question stopped after an earlier change tells the user that change was made', async () => {

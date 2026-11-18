@@ -1,19 +1,16 @@
 // The agent's types, as the rest of the extension uses them: its configuration, the tools it runs,
 // what it reports while it works, and the conversation as saved sessions keep it.
+import type { Turn, WebPage, WebSearchResult, WorkerClient } from '@cofun/worker-client'
 import type { ModelSettings, OwnSetup } from '../models'
 import type { ToolMemory } from '../tools/memory'
 import { z } from '../zod'
 
 export interface AgentConfig {
-  /** Base URL including /v1. */
-  apiUrl: string
-  /** Returns a fresh Clerk session token. Called before every request to the worker. */
-  getToken: () => Promise<string | null>
   /**
-   * The extension and its version, `notico/0.3.0`: sent to the worker with each model request as
-   * X-Cofun-Client, which records the call under that product.
+   * The worker: it answers with the hosted model, and reads web pages and searches the web
+   * whichever model answers.
    */
-  client: string
+  worker: WorkerClient
   /**
    * Which model answers, read as each question starts, so a change applies from the next question
    * on and the conversation goes on with it. The hosted model when not given.
@@ -72,15 +69,10 @@ export interface QuestionExtras {
 }
 
 /**
- * Which chat (the session's id) and which question of it (an id made for the question) a request to
- * the worker is for, sent as X-Cofun-Chat-Id and X-Cofun-Turn-Id, so the worker records what the
- * request spent with them. Random ids: they say nothing about the content. Never sent to a user's own
- * model's service.
+ * The worker's client's: which chat and question a request to the worker is for (Turn, never sent to
+ * a user's own model's service), and a web page it read and a search result it found.
  */
-export interface Turn {
-  chat?: string
-  turn?: string
-}
+export type { Turn, WebPage, WebSearchResult }
 
 /**
  * A page a question was sent with: its title and URL, and whether it is a database; or a page on
@@ -241,23 +233,9 @@ interface ResultStore {
   result(id: string): Promise<KeptResult | undefined>
 }
 
-/** A web page the worker read (see ToolContext.readWeb). `scripted`: it showed little text and runs scripts. */
-export const WebPage = z.object({
-  url: z.string(),
-  title: z.string(),
-  text: z.string(),
-  chars: z.number().int().nonnegative(),
-  scripted: z.boolean(),
-})
-export type WebPage = z.infer<typeof WebPage>
-
-/** A result of a web search the worker made (see ToolContext.searchWeb): a page's address, title, and description. */
-export const WebSearchResult = z.object({ url: z.string(), title: z.string(), description: z.string() })
-export type WebSearchResult = z.infer<typeof WebSearchResult>
-
 /**
- * Why the worker could not read a web page or search the web: its code (`no_access`, `no_text`, …)
- * and message.
+ * Why a web page could not be read or the web searched, by the worker (see asWebError in worker.ts)
+ * or the user's free search: its code (`no_access`, `no_text`, …) and message.
  */
 export class WebError extends Error {
   /** Set when the question must stop (a rate limit, no credits left): what the user is told. */
