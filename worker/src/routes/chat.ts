@@ -77,10 +77,16 @@ export function chatRoutes({ now, modelOf, logError }: Deps): App {
     const { success } = await c.env.CHAT_LIMIT.limit({ key: c.get('userId') })
     if (!success) throw new HttpError(429, 'rate_limited', 'Too many requests at once. Wait a minute, then ask again.')
 
-    // Charged when the reply ends (charge.ts); CHAT_LIMIT and MAX_TOKENS bound what calls at once cost.
+    // Charged when the reply ends (charge.ts). A balance short of the input's cost, estimated from its
+    // size and all at the cached price, is refused first: the least the input can cost, so a long chat
+    // whose prefix the model has cached is never refused for credits it would not spend. What a call
+    // costs beyond the balance is then its uncached input and its reply (MAX_TOKENS bounds that), and
+    // CHAT_LIMIT bounds calls at once.
     const maxTokens = max_tokens ?? MAX_TOKENS
+    const promptTokens = estimateTokens(chars)
+    const needs = costOf(price, { promptTokens, cachedTokens: promptTokens, completionTokens: 0 })
     const charging: Charging = {
-      ledger: await openLedger(c, now().getTime(), logError),
+      ledger: await openLedger(c, now().getTime(), logError, needs),
       usage,
       turn,
       now: () => now().getTime(),

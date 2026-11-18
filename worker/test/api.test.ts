@@ -312,6 +312,20 @@ describe('UC-COFUN-CREDITS-001 Spend credits on the hosted model', () => {
     expect(ai.calls).toHaveLength(2)
   })
 
+  it('[UC-COFUN-CREDITS-001-S15] an input estimated to cost more than the credits left is refused before the model', async () => {
+    repliesCost(199)
+    expect((await chat(token)).status).toBe(200)
+    // About a credit is left. 600,000 characters estimate 200,000 input tokens, 1.2 credits at the
+    // cached price.
+    const message = await refused(await chat(token, { messages: [{ role: 'user', content: 'x'.repeat(600_000) }] }))
+    expect(message).toBe(
+      'This request needs about 2 credits and you have 1 left. Start a new chat or shorten it, buy credits, or wait for your next 200 free credits on 2026-11-15 at 12:00 UTC.',
+    )
+    expect(ai.calls).toHaveLength(1)
+    expect((await chat(token)).status).toBe(200)
+    expect(ai.calls).toHaveLength(2)
+  })
+
   it('[UC-COFUN-CREDITS-001-S02] a new week brings new free credits', async () => {
     repliesCost(200)
     expect((await chat(token)).status).toBe(200)
