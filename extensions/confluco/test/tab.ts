@@ -377,6 +377,7 @@ export function webPage({
   title,
   main,
   html = main === undefined ? '' : `<main>${main}</main>`,
+  head = '',
   contentType = 'text/html',
   frames = 0,
   url = 'https://news.example.com/',
@@ -384,17 +385,20 @@ export function webPage({
   title: string
   main?: string
   html?: string
+  /** Markup for the page's head, such as meta tags. */
+  head?: string
   contentType?: string
   frames?: number
   url?: string
 }): object {
   const doc = new DOMParser().parseFromString(
-    `<!doctype html><head><base href="${url}"></head><body>${html}${'<iframe></iframe>'.repeat(frames)}</body>`,
+    `<!doctype html><head><base href="${url}">${head}</head><body>${html}${'<iframe></iframe>'.repeat(frames)}</body>`,
     'text/html',
   )
   return {
     title,
     contentType,
+    head: doc.head,
     body: doc.body,
     baseURI: doc.baseURI,
     querySelector: (selector: string) => doc.querySelector(selector),

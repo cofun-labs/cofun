@@ -2,7 +2,7 @@
 
 ## Behavior
 
-A user can find attachments on a published page and open download links on the connected Confluence instance. They can select one local file to upload. The assistant previews the destination and the file before asking for confirmation. Confluco requires an explicit replacement request when it finds an existing attachment with that name. Confluence Cloud matches files by filename, so a same-name attachment added concurrently after the final check can receive a new version. The Cloud confirmation explains that behavior. File contents stay between the browser and the connected instance.
+A user can find attachments on a published page and open download links on the Confluence instance in the current tab. They can select one local file to upload. The assistant previews the destination and the file before asking for confirmation. Confluco requires an explicit replacement request when it finds an existing attachment with that name. Confluence Cloud matches files by filename, so a same-name attachment added concurrently after the final check can receive a new version. The Cloud confirmation explains that behavior. File contents stay between the browser and the connected instance.
 
 ### api-test
 

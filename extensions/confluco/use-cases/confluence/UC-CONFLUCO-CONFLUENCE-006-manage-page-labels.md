@@ -2,7 +2,7 @@
 
 ## Behavior
 
-On a connected Confluence instance, the user can view labels on a published page and ask the assistant to add or remove a named ordinary label on the current page. The user's direct request authorizes that change. Confluco checks the target and resulting label state and reports when the outcome is uncertain.
+On an allowed Confluence instance, the user can view labels on a published page and ask the assistant to add or remove a named ordinary label on the current page. The user's direct request authorizes that change. Confluco checks the target and resulting label state and reports when the outcome is uncertain.
 
 ### api-test
 

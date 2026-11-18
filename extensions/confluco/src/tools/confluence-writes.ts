@@ -21,6 +21,7 @@ import {
   requestedUndo,
 } from '../confluence/page-writes'
 import { captureConfluenceTab, refuse, type ConfluenceTab } from '../confluence/tab'
+import { target } from './target'
 import type { ConfluenceUndo } from '../confluence/undo'
 import { defineTool } from '../tool'
 import { z } from '../zod'
@@ -43,14 +44,14 @@ interface Plan {
 const noArgs = z.strictObject({})
 
 async function requireSameTab(context: ToolContext<ToolMemory>, captured: ConfluenceTab): Promise<void> {
-  const now = await captureConfluenceTab(context.memory.accountId)
+  const now = await captureConfluenceTab()
   if (
     now?.tabId !== captured.tabId ||
     now.url !== captured.url ||
     now.instance.path !== captured.instance.path ||
     now.instance.origin !== captured.instance.origin
   )
-    refuse('The Confluence tab or connection changed. Open the intended page and ask again.')
+    refuse('The Confluence tab changed. Open the intended page and ask again.')
 }
 
 /** Each prepared change belongs to the active question and its recorded tab. */
@@ -88,8 +89,15 @@ function change<S extends z.ZodObject>(
         plans.set(question, { error: new Error('The Confluence change in this question was already handled.') })
         return undefined
       }
-      const tab = await question.tab
-      if (!tab) refuse('Open the connected Confluence page before asking for a change.')
+      let tab: ConfluenceTab
+      try {
+        tab = await target(context)
+      } catch (error) {
+        // Not a Confluence page, or a site the user did not allow: the run tells the model.
+        if (!(error instanceof Error) || 'stopsQuestion' in error) throw error
+        plans.set(question, { error })
+        return undefined
+      }
       await requireSameTab(context, tab)
       signal?.throwIfAborted()
       try {

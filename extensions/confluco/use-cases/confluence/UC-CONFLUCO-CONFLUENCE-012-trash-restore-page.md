@@ -2,7 +2,7 @@
 
 ## Behavior
 
-A user can move an eligible published page to recoverable trash on a connected Cloud or self-managed site. The user can restore a trashed page by its link when their account can restore it. Confluence may restore it at the space root, changing its inherited access. The assistant previews the exact page and verifies its resulting state. The user reviews the possible impact on the page hierarchy before trashing. An explicit undo request in the same conversation can restore the latest verified trash action while the page still matches that action. When the assistant cannot establish which trash action it would reverse, the user reviews access at the space root before restoring.
+A user can move an eligible published page to recoverable trash on an allowed Cloud or self-managed site. The user can restore a trashed page by its link when their account can restore it. Confluence may restore it at the space root, changing its inherited access. The assistant previews the exact page and verifies its resulting state. The user reviews the possible impact on the page hierarchy before trashing. An explicit undo request in the same conversation can restore the latest verified trash action while the page still matches that action. When the assistant cannot establish which trash action it would reverse, the user reviews access at the space root before restoring.
 
 ### api-test
 
