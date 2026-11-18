@@ -5,7 +5,6 @@
 // What is read back from storage is parsed: the settings may have synced from another version, and
 // a clip holds text from the page.
 
-import { isNotion, pageIdFromUrl, pageLink, showsDatabase } from './notion/hosts'
 import { clipSelection } from '@cofun/tools/tab'
 import { z } from './zod'
 
@@ -60,21 +59,9 @@ export async function saveClipShown(shown: boolean): Promise<void> {
   await chrome.storage.sync.set({ [MENU_SETTING]: shown })
 }
 
-/** For the user: why a tab's page can't be chosen as the target. */
-const OPEN_A_TARGET = 'Open the Notion page to clip into in the current tab, then choose it here.'
-const NOT_A_DATABASE = "Clips can't go into a database. Open a page, then choose it here."
-
-/**
- * Makes the page the tab at `url` shows the target, titled `title` as the tab names it. Returns why
- * it can't be, for the user, if it can't: not a Notion page, or a database.
- */
-export async function chooseClipTarget(url: string | undefined, title: string): Promise<string | undefined> {
-  const id = url && isNotion(url) ? pageIdFromUrl(url) : undefined
-  if (!url || !id) return OPEN_A_TARGET
-  if (showsDatabase(url)) return NOT_A_DATABASE
-  const target: ClipTarget = { url: pageLink(url, id), title: title.trim() || 'Untitled' }
+/** Makes `target` the page clips go to (see chooseTarget in tools/clip.ts, which checks it first). */
+export async function saveClipTarget(target: ClipTarget): Promise<void> {
   await chrome.storage.sync.set({ [TARGET_SETTING]: target })
-  return undefined
 }
 
 /** How much of a selection a clip keeps; Chrome's menu may hand over far more. */

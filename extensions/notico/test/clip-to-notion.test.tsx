@@ -3,7 +3,7 @@
 // panel both run, with Chrome's menu, tabs, and storage faked. The fake workspace applies what the
 // clip writes, so it is read back from there.
 import '@testing-library/jest-dom/vitest'
-import { screen, within } from '@testing-library/react'
+import { screen, waitFor, within } from '@testing-library/react'
 import userEvent, { type UserEvent } from '@testing-library/user-event'
 import { afterEach, describe, expect, it } from 'vitest'
 import { CLIP_PAGE, CLIP_SELECTION } from '../src/clip'
@@ -189,14 +189,20 @@ describe('UC-NOTICO-SESSION-003 clip a page or a selection to Notion', () => {
 
     // Off Notion, it says what to do.
     await user.click(clip.getByRole('button', { name: 'Use current page' }))
-    expect(clip.getByRole('alert')).toHaveTextContent(
+    expect(await clip.findByRole('alert')).toHaveTextContent(
       'Open the Notion page to clip into in the current tab, then choose it here.',
     )
 
-    tab.switchTab(PAGE_URL, 'Inbox')
+    // A page this Notion account can't see is not taken.
+    tab.switchTab(`https://app.notion.com/p/${hex(OTHER)}`, 'Team inbox | Notion')
+    await user.click(clip.getByRole('button', { name: 'Use current page' }))
+    expect(await clip.findByRole('alert')).toHaveTextContent("The Notion account signed in can't see this page.")
+
+    // The page is read in Notion: Settings shows its own title, not the tab's.
+    tab.switchTab(PAGE_URL, 'Inbox | Notion')
     await user.click(clip.getByRole('button', { name: 'Use current page' }))
     expect(await clip.findByRole('link', { name: 'Inbox' })).toHaveAttribute('href', TARGET_URL)
-    expect(clip.queryByRole('alert')).toBeNull()
+    await waitFor(() => expect(clip.queryByRole('alert')).toBeNull())
     expect(tab.menuItems.get(CLIP_PAGE)?.visible).toBe(true)
     expect(tab.menuItems.get(CLIP_SELECTION)?.visible).toBe(true)
 

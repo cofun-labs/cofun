@@ -2,7 +2,8 @@ import { useAuth } from '@clerk/chrome-extension'
 import { useEffect, useState } from 'react'
 import { allowDuckDuckGo, loadDuckDuckGoSearch, saveDuckDuckGoSearch } from '@cofun/tools'
 import { loadAnalyticsEnabled, saveAnalyticsEnabled } from '../analytics'
-import { chooseClipTarget, loadClipSettings, saveClipShown, watchClipSettings, type ClipSettings } from '../clip'
+import { loadClipSettings, saveClipShown, watchClipSettings, type ClipSettings } from '../clip'
+import { chooseTarget } from '../tools/clip'
 import { loadMenuShown, saveMenuShown, watchMenuShown } from '@cofun/tools/selection'
 import type { ModelSettings } from '@cofun/agent/models'
 import { Avatar, useAccount } from './Account'
@@ -128,8 +129,7 @@ function Clip() {
   }, [])
 
   async function choose() {
-    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true })
-    setProblem(await chooseClipTarget(tab?.url, tab?.title ?? ''))
+    setProblem(await chooseTarget())
   }
 
   function change(next: boolean) {

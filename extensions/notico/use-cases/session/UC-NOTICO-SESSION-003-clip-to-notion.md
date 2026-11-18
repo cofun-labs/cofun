@@ -2,7 +2,7 @@
 
 ## Behavior
 
-A signed-in user reading a page in Chrome, on any site, keeps it in Notion with one click, without asking the AI: they right-click and pick "Clip page to Notion", or select some text and pick "Clip selection to Notion". The clip goes to one Notion page the user chose beforehand in Settings, on whatever workspace it is in. A page becomes a new page at the end of it, titled with the page's title, starting with a link back, and holding the page's main content as formatted text; a selection is added at the end of it as a quote, line breaks kept, with a link to its page. The side panel opens, goes to a tab showing the chosen page (one already open, or a new one), writes the clip there, and links what it made. The items show only once a page is chosen, and can be turned off in Settings; both choices follow the user's Chrome profile to their other devices.
+A signed-in user reading a page on any site keeps it in Notion with one click, without the AI: "Clip page to Notion" adds the page as a new page, and "Clip selection to Notion" adds the selected text as a quote, each with a link back, at the end of the one Notion page they chose in Settings. The side panel shows that page in a tab, writes the clip there, and links it. The items show once a page is chosen, can be turned off, and both settings follow the Chrome profile.
 
 Key constraints:
 
@@ -19,7 +19,7 @@ Key constraints:
 | UC-NOTICO-SESSION-003-S02 | P0 | ✅ | Given a chosen Notion page already open in a tab; when the user picks "Clip selection to Notion" on text selected on another site; then that tab is shown, not a new one, and the selection is added at the end of the chosen page as a quote, line breaks kept, followed by a link to its page. |
 | UC-NOTICO-SESSION-003-S03 | P1 | ✅ | Given the Notion account signed in can't see the chosen page; when the user clips; then nothing is written, and the side panel says to switch to a Notion account that can see it, or choose another page. |
 | UC-NOTICO-SESSION-003-S04 | P1 | ✅ | Given Notion turns the clip away, or does not answer whether it was written; when the user clips; then it is not retried, and the user is told to wait, or to look at the chosen page before clipping again. |
-| UC-NOTICO-SESSION-003-S05 | P1 | ✅ | Given no page chosen; when the user opens a Notion page and chooses it in Settings; then the clip items show in the right-click menu, and turning Clip off hides them; off a Notion page, choosing says to open the page first. |
+| UC-NOTICO-SESSION-003-S05 | P1 | ✅ | Given no page chosen; when the user opens a Notion page and chooses it in Settings; then Settings shows the page's title as Notion has it, the clip items show in the right-click menu, and turning Clip off hides them; off a Notion page, choosing says to open the page first, and on a page the Notion account signed in can't see, it says so. |
 
 ### ai-e2e
 
