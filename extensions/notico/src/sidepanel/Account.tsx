@@ -1,6 +1,6 @@
 import { useAuth, useUser } from '@clerk/chrome-extension'
 import { useState, type Ref } from 'react'
-import { wholeCredits, type CreditsState } from '../credits'
+import { wholeCredits, type CreditsState } from '@cofun/worker-client/credits'
 import { Icon } from './icons'
 import { useMenu } from './menu'
 

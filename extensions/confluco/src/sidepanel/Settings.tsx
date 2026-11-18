@@ -2,8 +2,8 @@ import { useAuth } from '@clerk/chrome-extension'
 import { useEffect, useState } from 'react'
 import { allowDuckDuckGo, loadDuckDuckGoSearch, saveDuckDuckGoSearch } from '@cofun/tools'
 import { loadAnalyticsEnabled, saveAnalyticsEnabled } from '../analytics'
-import { loadMenuShown, saveMenuShown, watchMenuShown } from '../selection'
-import type { ModelSettings } from '../models'
+import { loadMenuShown, saveMenuShown, watchMenuShown } from '@cofun/tools/selection'
+import type { ModelSettings } from '@cofun/agent/models'
 import { Avatar, useAccount } from './Account'
 import { ConfluenceConnection } from './ConfluenceConnection'
 import { Page } from './Header'
@@ -116,7 +116,7 @@ function WebSearch({ userId }: { userId: string }) {
 }
 
 /**
- * Whether the right-click menu has "Ask Confluco" (see selection.ts): on until the user turns it off,
+ * Whether the right-click menu has "Ask Confluco" (see @cofun/tools/selection): on until the user turns it off,
  * for their Chrome profile, on every device it syncs to.
  */
 function ContextMenu() {

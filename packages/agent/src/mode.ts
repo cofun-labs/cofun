@@ -1,5 +1,6 @@
-// The mode to use when Confluence write tools are available. It is kept per account on this
-// device, like the model settings.
+// Whether the agent may change the user's data on the extension's site: Edit, the default, or Read
+// only, which the agent enforces for a question asked in it (QuestionExtras.readOnly). Kept in
+// chrome.storage.local per account, on this device only, like the model settings (models.ts).
 import { z } from './zod'
 
 const Mode = z.enum(['edit', 'read_only'])
