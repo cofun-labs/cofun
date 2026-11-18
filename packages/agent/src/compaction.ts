@@ -204,18 +204,51 @@ function serializeConversation(messages: readonly Message[]): string {
   return escapeTags(parts.join('\n\n'))
 }
 
-/** Fit the next exact slice of serialized history, continuing a long entry in the next chunk if necessary. */
-export function summaryRequest(source: string, offset: number, previous: string | undefined, budget: Size) {
+// Count in thirds of a token. Ordinary ASCII prose uses the Pi-style estimate. Digits and
+// symbols can tokenize individually, and UTF-8 bytes bound dense non-ASCII text and emoji.
+function summaryUnits(character: string): number {
+  const code = character.codePointAt(0)!
+  if (code <= 0x7f) return /[a-zA-Z\s]/.test(character) ? 1 : 3
+  if (code <= 0x7ff) return 6
+  return code <= 0xffff ? 9 : 12
+}
+
+function totalSummaryUnits(text: string): number {
+  let units = 0
+  for (const character of text) units += summaryUnits(character)
+  return units
+}
+
+export function summaryCouldFit(source: string, budget: Size): boolean {
+  return (
+    source.length <= budget.chars * MAX_SUMMARY_CHUNKS &&
+    totalSummaryUnits(source) <= budget.tokens * 3 * MAX_SUMMARY_CHUNKS
+  )
+}
+
+/** Fit the next exact slice, continuing a long entry in the next request if necessary. */
+export function summaryRequest(
+  source: string,
+  offset: number,
+  previous: string | undefined,
+  budget: Size,
+  maxSliceChars: number,
+) {
   const at = Date.now()
   const system: Message = { role: 'system', content: SUMMARY_SYSTEM, timestamp: at }
   const suffix = `\n</conversation>\n\n${previous ? `<previous-summary>\n${escapeTags(previous)}\n</previous-summary>\n\n${UPDATE_SUMMARY}\n` : ''}${SUMMARY_SECTIONS}`
   const prefix = '<conversation>\n'
-  const overhead = measure([system, { role: 'user', content: prefix + suffix, timestamp: at }])
-  const room = Math.floor(Math.min(budget.chars - overhead.chars, (budget.tokens - overhead.tokens) * 3))
-  const limit = safeEnd(source, Math.min(offset + room, source.length))
-  if (room <= 0 || limit <= offset) throw new Error(COMPACTION_FAILED)
-  const newline = limit < source.length ? source.lastIndexOf('\n', limit - 1) + 1 : 0
-  const end = newline > offset + room * 0.9 ? newline : limit
+  const chars = Math.min(budget.chars - SUMMARY_SYSTEM.length - prefix.length - suffix.length, maxSliceChars)
+  let units = budget.tokens * 3 - totalSummaryUnits(SUMMARY_SYSTEM + prefix + suffix)
+  let end = offset
+  for (const character of source.slice(offset)) {
+    units -= summaryUnits(character)
+    if (units < 0 || end + character.length - offset > chars) break
+    end += character.length
+  }
+  if (end === offset) throw new Error(COMPACTION_FAILED)
+  const newline = end < source.length ? source.lastIndexOf('\n', end - 1) + 1 : 0
+  if (newline > offset + (end - offset) * 0.9) end = newline
   const messages: Message[] = [
     system,
     { role: 'user', content: prefix + source.slice(offset, end) + suffix, timestamp: at },

@@ -24,6 +24,7 @@ import {
   planCompaction,
   project,
   requestBudget,
+  summaryCouldFit,
   summaryRequest,
   summaryText,
 } from './compaction'
@@ -351,13 +352,15 @@ export class CopilotAgent<M = unknown> {
       if (!plan) return undefined
       try {
         // Reject a prefix that cannot possibly fit in four requests before spending credits.
-        const maxCharsPerChunk = Math.min(budget.summary.chars, budget.summary.tokens * 3)
-        if (plan.source.length > maxCharsPerChunk * MAX_SUMMARY_CHUNKS) throw new Error(COMPACTION_FAILED)
+        if (!summaryCouldFit(plan.source, budget.summary)) throw new Error(COMPACTION_FAILED)
         let next = this.compaction
         let offset = 0
+        let maxSliceChars = Infinity
         for (let part = 0; offset < plan.source.length; part++) {
-          if (part >= MAX_SUMMARY_CHUNKS) throw new Error(COMPACTION_FAILED)
-          const input = summaryRequest(plan.source, offset, next?.summary, budget.summary)
+          const requestsLeft = MAX_SUMMARY_CHUNKS - part
+          if (requestsLeft <= 0 || plan.source.length - offset > maxSliceChars * requestsLeft)
+            throw new Error(COMPACTION_FAILED)
+          const input = summaryRequest(plan.source, offset, next?.summary, budget.summary, maxSliceChars)
           const key = await provider.apiKey()
           signal?.throwIfAborted()
           const stream = streamSimple(selected, normalizeContext({ messages: input.messages }), {
@@ -378,7 +381,15 @@ export class CopilotAgent<M = unknown> {
           const answer = await stream.result()
           signal?.throwIfAborted()
           tokens = addUsage(tokens, answer.usage)
-          if (answer.stopReason === 'error') throw new Error(answer.errorMessage ?? COMPACTION_FAILED)
+          if (answer.stopReason === 'error') {
+            // Only a confirmed context rejection is safe to resend, at a smaller size. A
+            // rejected request still counts toward the four-request limit.
+            if (maxSliceChars === Infinity && requestsLeft > 1 && isContextOverflow(answer)) {
+              maxSliceChars = Math.ceil((input.end - offset) / 2)
+              continue
+            }
+            throw new Error(answer.errorMessage ?? COMPACTION_FAILED)
+          }
           // Even an unusable answer may have been charged.
           summarized = true
           next = summaryText(answer, plan.firstKept)

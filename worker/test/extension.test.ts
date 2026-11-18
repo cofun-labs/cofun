@@ -461,7 +461,12 @@ describe('conversation compaction', () => {
   it('[UC-AGENT-CHAT-001-S03] a smaller selected model compacts the prefix in order on its next request', async () => {
     const history: HistoryMessage[] = [
       { role: 'user', text: 'The launch code is OSPREY-73.' },
-      { role: 'assistant', parts: [{ type: 'text', text: 'Archive start. ' + 'x'.repeat(580_000) + ' Archive end.' }] },
+      {
+        role: 'assistant',
+        parts: [
+          { type: 'text', text: 'Archive start. ' + '密'.repeat(52_000) + 'x'.repeat(528_000) + ' Archive end.' },
+        ],
+      },
     ]
     const small = {
       service: 'openrouter' as const,
@@ -481,6 +486,15 @@ describe('conversation compaction', () => {
       const request = new Request(input, init)
       if (new URL(request.url).hostname !== 'openrouter.ai') return routed(input, init)
       const body = z.record(z.string(), z.unknown()).parse(await request.json())
+      const messages = z.array(z.object({ content: z.string() })).parse(body.messages)
+      // The fake model rejects inputs over its effective window. CJK is much denser than
+      // the ASCII estimate, so the previous chunker would send an oversized first request.
+      const tokens = messages.reduce(
+        (total, { content }) => total + (content.length + 8 * (content.match(/密/g)?.length ?? 0)) / 3,
+        0,
+      )
+      if (tokens > 200_000 - 16_384)
+        return Response.json({ error: { message: 'Prompt is too long: context window exceeded' } }, { status: 400 })
       const stream = await newModel.run(small.model.id, body)
       if (!(stream instanceof ReadableStream)) throw new Error('Expected a streamed model reply.')
       return new Response(stream, { headers: { 'content-type': 'text/event-stream' } })
@@ -534,6 +548,43 @@ describe('conversation compaction', () => {
     expect(answer.result).toMatchObject({ status: 'error', message: expect.stringContaining('larger context') })
     expect(answer.rounds).toBe(0)
     expect(agent.history()).toEqual(history)
+  })
+
+  it('[@no-uc:money] an explicit summary context overflow rechunks without losing the prefix', async () => {
+    const agent = makeAgent({}, [
+      { role: 'user', text: 'Keep the launch code OSPREY-73.' },
+      { role: 'assistant', parts: [{ type: 'text', text: 'x'.repeat(620_000) + ' End of archive.' }] },
+    ])
+    const routed = globalThis.fetch
+    let first = true
+    globalThis.fetch = (input, init) => {
+      const request = new Request(input, init)
+      if (first && new URL(request.url).pathname.endsWith('/chat/completions')) {
+        first = false
+        return Promise.resolve(
+          Response.json({ error: { message: 'Prompt is too long: context window exceeded' } }, { status: 400 }),
+        )
+      }
+      return routed(input, init)
+    }
+    ai.script = [
+      { reply: 'Launch code OSPREY-73.' },
+      { reply: 'Launch code OSPREY-73. Archive summarized.' },
+      { reply: 'OSPREY-73' },
+    ]
+    try {
+      const answer = await ask(agent, 'What was the code?')
+      expect(answer.result.status).toBe('done')
+      expect(answer.reply.trim()).toBe('OSPREY-73')
+      expect(answer.rounds).toBe(4)
+      expect(answer.used.cost).toEqual({ microCredits: 3 * FAKE_COST })
+      expect(sentMessages(0)[1].content).toContain('Keep the launch code OSPREY-73.')
+      expect(sentMessages(0)[1].content).not.toContain('End of archive.')
+      expect(sentMessages(1)[1].content).toContain('End of archive.')
+      expect(sentMessages(1)[1].content).toContain('<previous-summary>\nLaunch code OSPREY-73.')
+    } finally {
+      globalThis.fetch = routed
+    }
   })
 
   it('[@no-uc:money] a rejected context compacts and retries that request once', async () => {
