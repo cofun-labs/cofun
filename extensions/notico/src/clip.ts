@@ -1,16 +1,14 @@
 // Clipping a page, or the text selected on it, to the Notion page the user chose in Settings, from
-// the context menu's "Clip page to Notion" and "Clip selection to Notion" items. The service worker
+// the context menu's "Clip page to Notion" item. The service worker
 // (background.ts) hands each click to the window's side panel through chrome.storage.session, as
 // "Ask Notico" does (@cofun/tools/selection); the panel reads the page and writes the clip (tools/clip.ts).
 // What is read back from storage is parsed: the settings may have synced from another version, and
 // a clip holds text from the page.
 
-import { clipSelection } from '@cofun/tools/tab'
 import { z } from './zod'
 
-/** The context menu items' ids. */
+/** The context menu item's id. */
 export const CLIP_PAGE = 'clip-page'
-export const CLIP_SELECTION = 'clip-selection'
 
 /**
  * The page clips go to: its link, on the host it was chosen on (a Notion session is per host), and
@@ -22,7 +20,7 @@ export type ClipTarget = z.infer<typeof ClipTarget>
 
 /**
  * Both kept in chrome.storage.sync, so they follow the user's Chrome profile to their other devices:
- * the target, and whether the items show, off until the user turns them on. They show only once a
+ * the target, and whether the item shows, off until the user turns them on. It shows only once a
  * target is chosen too.
  */
 const TARGET_SETTING = 'clipTarget'
@@ -42,7 +40,7 @@ export async function loadClipSettings(): Promise<ClipSettings> {
   return settingsFrom(await chrome.storage.sync.get([TARGET_SETTING, MENU_SETTING]))
 }
 
-/** Whether the clip items show in the menu, by the settings. */
+/** Whether the clip item shows in the menu, by the settings. */
 export const clipMenuVisible = (settings: ClipSettings) => settings.shown && settings.target !== undefined
 
 /** Calls `onChange` with both settings when either changes, here or on another device. Returns a function that stops watching. */
@@ -64,22 +62,17 @@ export async function saveClipTarget(target: ClipTarget): Promise<void> {
   await chrome.storage.sync.set({ [TARGET_SETTING]: target })
 }
 
-/** How much of a selection a clip keeps; Chrome's menu may hand over far more. */
-const SELECTION_CHARS = 20_000
 /** How much of a page's URL a clip keeps: some (a data: URL, say) hold a whole document. */
 const URL_CHARS = 2000
 
 /**
- * A click on a clip item, for the side panel: what to clip (a selection's text, or the page in the
- * tab `tabId`, which the click lets the extension read for now), the page's address and title, and
- * when it was clicked.
+ * A click on the clip item, for the side panel: the tab `tabId`, whose page the click lets the
+ * extension read for now, the page's address and title, and when it was clicked.
  */
 const ClipRequest = z.object({
   tabId: z.number(),
   url: z.string(),
   title: z.string(),
-  /** The selected text, for a selection; none for a page. */
-  text: z.string().optional(),
   at: z.number(),
 })
 export type ClipRequest = z.infer<typeof ClipRequest>
@@ -95,12 +88,11 @@ const prefix = (windowId: number) => `clip:${windowId}:`
 /** The order of the last clip this service worker handed over (see handOverClip). */
 let lastSent = 0
 
-/** Leaves a click on a clip item, in a tab of the window `windowId`, for that window's side panel. */
+/** Leaves a click on the clip item, in a tab of the window `windowId`, for that window's side panel. */
 export async function handOverClip(windowId: number, request: Omit<ClipRequest, 'at'>): Promise<void> {
   const clip: ClipRequest = {
     ...request,
     url: request.url.slice(0, URL_CHARS),
-    ...(request.text === undefined ? {} : { text: clipSelection(request.text, SELECTION_CHARS) }),
     at: Date.now(),
   }
   // Numbered in the order sent, so one sent while the panel takes the others is neither lost nor taken twice.
@@ -109,7 +101,7 @@ export async function handOverClip(windowId: number, request: Omit<ClipRequest, 
 }
 
 /**
- * Calls `onClip` with each click on a clip item handed to the side panel of window `windowId`, in
+ * Calls `onClip` with each click on the clip item handed to the side panel of window `windowId`, in
  * the order clicked: those from before the panel opened, then each one while it is open. Each is
  * taken, so it is given once; one older than CLIP_WAIT_MS is dropped. Returns a function that stops watching.
  */

@@ -5,7 +5,7 @@ import { Icon } from './icons'
 
 type ClipState =
   | { status: 'clipping'; target: string }
-  | { status: 'clipped'; target: string; url: string; page: boolean }
+  | { status: 'clipped'; target: string; url: string }
   | { status: 'failed'; message: string }
 
 /**
@@ -27,7 +27,7 @@ export function Clips() {
       setState({ status: 'clipping', target: target.title })
       try {
         const { url } = await writeClip(windowId, target, clip)
-        if (!closed) setState({ status: 'clipped', target: target.title, url, page: clip.text === undefined })
+        if (!closed) setState({ status: 'clipped', target: target.title, url })
       } catch (err) {
         if (!closed) setState({ status: 'failed', message: err instanceof Error ? err.message : String(err) })
       }
@@ -70,7 +70,7 @@ export function Clips() {
           <>
             Clipped to “{state.target}”.{' '}
             <a href={state.url} target="_blank" rel="noreferrer">
-              {state.page ? 'Open the clipped page' : 'Open the page'}
+              Open the clipped page
             </a>
           </>
         )}

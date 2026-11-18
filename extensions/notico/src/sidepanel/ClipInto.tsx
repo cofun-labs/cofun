@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState, type KeyboardEvent } from 'react'
+import { useEffect, useId, useRef, useState, type FocusEvent, type KeyboardEvent } from 'react'
 import type { ClipTarget } from '../clip'
 import { pageIdFromUrl } from '../notion/hosts'
 import {
@@ -11,6 +11,7 @@ import {
   type ClipPlace,
   type PageChoice,
 } from '../tools/clip'
+import { Icon } from './icons'
 
 /** How long typing pauses before the workspace is searched: one search per pause, not per key. */
 const SEARCH_DELAY_MS = 300
@@ -21,12 +22,14 @@ export interface ClipNote {
   failed?: boolean
 }
 
-type Option = { kind: 'page'; page: PageChoice; label: string } | { kind: 'default'; label: string }
+type Option =
+  | { kind: 'page'; page: PageChoice; group: string; detail?: string }
+  | { kind: 'default'; group: string; detail: string }
 
 /**
- * Where clips go, and a search box to choose another page: Notion's quick find in the workspace of
- * the Notion page in the current tab. With nothing typed it offers that page and the private page
- * "Notico Clips" (made if the user has none).
+ * Where clips go, as a field that opens a picker like the message box's: a search of the workspace
+ * of the Notion page in the current tab (Notion's quick find), which with nothing typed suggests
+ * that page and the private page "Notico Clips" (made if the user has none).
  */
 export function ClipInto({ target, onNote }: { target?: ClipTarget; onNote: (note: ClipNote | undefined) => void }) {
   const id = useId()
@@ -36,9 +39,9 @@ export function ClipInto({ target, onNote }: { target?: ClipTarget; onNote: (not
   const [found, setFound] = useState<{ query: string; pages: PageChoice[] | string }>()
   const [active, setActive] = useState(0)
   const [busy, setBusy] = useState(false)
-  const input = useRef<HTMLInputElement>(null)
+  const field = useRef<HTMLButtonElement>(null)
 
-  // The workspace is looked up as the box opens: the current tab may have changed since.
+  // The workspace is looked up as the picker opens: the current tab may have changed since.
   useEffect(() => {
     if (!open) return
     let closed = false
@@ -67,30 +70,37 @@ export function ClipInto({ target, onNote }: { target?: ClipTarget; onNote: (not
     }
   }, [open, words, place])
 
-  let options: Option[] = []
-  let message: string | undefined
-  if (typeof place === 'string') message = place
-  else if (!place) message = 'Looking for your Notion page…'
+  const targetId = target && pageIdFromUrl(target.url)
+  const options: Option[] = []
+  let state: { text: string; loading?: boolean } | undefined
+  if (typeof place === 'string') state = { text: place }
+  else if (!place) state = { text: 'Looking for your Notion page…', loading: true }
   else if (words) {
     const result = found?.query === words ? found.pages : undefined
-    if (result === undefined) message = 'Searching…'
-    else if (typeof result === 'string') message = result
-    else if (!result.length) message = `No pages found for “${words}”.`
-    else options = result.map((page) => ({ kind: 'page', page, label: page.title }))
+    if (result === undefined) state = { text: 'Searching…', loading: true }
+    else if (typeof result === 'string') state = { text: result }
+    else if (!result.length) state = { text: `No pages found for “${words}”.` }
+    else for (const page of result) options.push({ kind: 'page', page, group: 'Pages' })
   } else {
     const current = place.current
-    const isTarget = current && target && pageIdFromUrl(target.url) === current.id
-    if (current && !isTarget) options.push({ kind: 'page', page: current, label: `Current page: ${current.title}` })
+    if (current && current.id !== targetId)
+      options.push({ kind: 'page', page: current, group: 'Suggested', detail: 'Current page' })
     // Not while it is being found or made already (see defaultTarget).
     if (target?.title !== DEFAULT_TARGET && !makingDefault())
-      options.push({ kind: 'default', label: `${DEFAULT_TARGET}, in Private` })
-    if (!options.length) message = 'Type to search your workspace.'
+      options.push({ kind: 'default', group: 'Suggested', detail: 'In Private' })
+    if (!options.length) state = { text: 'Type to search your workspace.' }
+  }
+
+  function close({ focus = false } = {}) {
+    setOpen(false)
+    setQuery('')
+    setActive(0)
+    if (focus) field.current?.focus()
   }
 
   async function pick(option: Option) {
     if (typeof place !== 'object') return
-    setOpen(false)
-    setQuery('')
+    close({ focus: true })
     setBusy(true)
     onNote(undefined)
     try {
@@ -113,80 +123,117 @@ export function ClipInto({ target, onNote }: { target?: ClipTarget; onNote: (not
   }
 
   function onKeyDown(e: KeyboardEvent) {
-    if (e.key === 'Escape' && open) {
+    if (e.key === 'Escape') {
       e.preventDefault()
-      setOpen(false)
+      close({ focus: true })
     } else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
       e.preventDefault()
-      if (!open) return setOpen(true)
       const step = e.key === 'ArrowDown' ? 1 : -1
       setActive((n) => (options.length ? (n + step + options.length) % options.length : 0))
-    } else if (e.key === 'Enter' && open && options[active]) {
+    } else if (e.key === 'Enter' && options[active]) {
       e.preventDefault()
       void pick(options[active])
     }
   }
 
+  // Leaving the picker (a click or Tab outside it) closes it.
+  function onBlur(e: FocusEvent<HTMLDivElement>) {
+    if (!e.currentTarget.contains(e.relatedTarget)) close()
+  }
+
   const listId = `${id}-list`
   const optionId = (n: number) => `${id}-option-${n}`
+  const groups = [...new Set(options.map((o) => o.group))]
   return (
-    <div className="clip-into">
-      <p>
-        Clip into{' '}
-        {target ? (
-          <a href={target.url} target="_blank" rel="noreferrer">
-            {target.title}
+    <div className="clip-into" onBlur={open ? onBlur : undefined}>
+      <div className="clip-into-head">
+        <span aria-hidden="true">Clip into</span>
+        {target && (
+          <a href={target.url} target="_blank" rel="noreferrer" aria-label={`Open ${target.title}`}>
+            Open in Notion
           </a>
-        ) : (
-          <span className="account-detail">no page yet</span>
         )}
-      </p>
-      <input
-        ref={input}
-        type="text"
-        role="combobox"
-        aria-label="Clip into"
-        aria-expanded={open}
-        aria-controls={listId}
-        aria-autocomplete="list"
-        aria-activedescendant={open && options[active] ? optionId(active) : undefined}
-        aria-busy={busy || undefined}
-        placeholder={busy ? 'Saving…' : 'Search Notion pages'}
-        value={query}
-        onFocus={() => setOpen(true)}
-        // Clicked again after Escape closed it, while it still has the focus.
-        onClick={() => setOpen(true)}
-        onBlur={() => setOpen(false)}
-        onChange={(e) => {
-          setQuery(e.target.value)
-          setActive(0)
-          setOpen(true)
-        }}
-        onKeyDown={onKeyDown}
-      />
+      </div>
+      <div className="clip-into-row">
+        <button
+          ref={field}
+          type="button"
+          className="clip-field"
+          aria-label="Clip into"
+          aria-description={target?.title}
+          aria-haspopup="listbox"
+          aria-expanded={open}
+          aria-busy={busy || undefined}
+          onClick={() => (open ? close() : setOpen(true))}
+        >
+          <Icon name="page" />
+          <span className={target ? 'clip-field-name' : 'clip-field-name empty'}>
+            {busy ? 'Saving…' : (target?.title ?? 'Choose a page')}
+          </span>
+          <span className="clip-field-chevron">
+            <Icon name="forward" />
+          </span>
+        </button>
+      </div>
       {open && (
-        <ul id={listId} role="listbox" aria-label="Pages to clip into" className="clip-into-list">
-          {options.map((option, n) => (
-            <li
-              key={option.kind === 'page' ? option.page.id : 'default'}
-              id={optionId(n)}
-              role="option"
-              aria-selected={n === active}
-              // Before the box loses the focus, which closes the list.
-              onMouseDown={(e) => {
-                e.preventDefault()
-                void pick(option)
-              }}
-            >
-              {option.label}
-            </li>
-          ))}
-          {message && (
-            <li role="presentation" className="account-detail">
-              {message}
-            </li>
-          )}
-        </ul>
+        <div className="page-picker clip-picker">
+          <input
+            type="search"
+            className="picker-search"
+            aria-label="Search pages"
+            placeholder="Search pages…"
+            aria-controls={listId}
+            aria-activedescendant={options[active] ? optionId(active) : undefined}
+            value={query}
+            autoFocus
+            onChange={(e) => {
+              setQuery(e.target.value)
+              setActive(0)
+            }}
+            onKeyDown={onKeyDown}
+          />
+          <div className="picker-list">
+            {options.length > 0 && (
+              <div id={listId} role="listbox" aria-label="Pages to clip into">
+                {groups.map((group) => (
+                  <div key={group} role="group" aria-label={group}>
+                    <div className="picker-group" aria-hidden="true">
+                      {group}
+                    </div>
+                    {options.map((o, n) =>
+                      o.group !== group ? null : (
+                        <div
+                          key={o.kind === 'page' ? o.page.id : 'default'}
+                          id={optionId(n)}
+                          role="option"
+                          aria-selected={n === active}
+                          className={n === active ? 'picker-option active' : 'picker-option'}
+                          // Keeps the focus in the search field.
+                          onMouseDown={(e) => e.preventDefault()}
+                          onMouseMove={() => n !== active && setActive(n)}
+                          onClick={() => void pick(o)}
+                        >
+                          <Icon name={o.kind === 'page' ? 'page' : 'plus'} />
+                          <span className="picker-lines">
+                            <span className="picker-name">{o.kind === 'page' ? o.page.title : DEFAULT_TARGET}</span>
+                            {o.detail && <span className="picker-path">{o.detail}</span>}
+                          </span>
+                          {o.kind === 'page' && o.page.id === targetId && <span className="picker-hint">Current</span>}
+                        </div>
+                      ),
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+            {state && (
+              <p className="picker-state" role="status">
+                {state.loading && <span className="spinner" aria-hidden="true" />}
+                {state.text}
+              </p>
+            )}
+          </div>
+        </div>
       )}
     </div>
   )

@@ -1,12 +1,12 @@
-// Writing a clip (src/clip.ts) to the Notion page the user chose: a page becomes a new page at its
-// end, a selection a quote there. The user starts it from the context menu; it is not a tool the
+// Writing a clip (src/clip.ts) to the Notion page the user chose: the page clipped becomes a new
+// page at its end. The user starts it from the context menu; it is not a tool the
 // agent is offered, so Read only (which limits what the agent may change) doesn't apply to it, and
 // nothing of it goes to the model or the worker.
 import { readPage } from '@cofun/tools/tab'
 import { saveClipTarget, type ClipRequest, type ClipTarget } from '../clip'
 import { blockOps, fieldsOf, NotionError, waitText } from '../notion/api'
 import type { NewBlock, RichText } from '../notion/blocks'
-import { planAppend, planNewPage } from '../notion/edit'
+import { planNewPage } from '../notion/edit'
 import { pageIdFromUrl, pageLink, showsDatabase } from '../notion/hosts'
 import { hexId } from '../notion/markdown'
 import { activeNotionTab, notionCooldown, showNotionPage, type NotionTab } from '../notion/tab'
@@ -190,7 +190,7 @@ export async function writeClip(windowId: number, target: ClipTarget, clip: Clip
 
 async function write(windowId: number, target: ClipTarget, clip: ClipRequest): Promise<{ url: string }> {
   // Read before the target's tab is shown: the click lets the extension read the page only until it goes elsewhere.
-  const content = clip.text === undefined ? await pageContent(clip) : undefined
+  const content = await pageContent(clip)
   const targetId = pageIdFromUrl(target.url)
   if (!targetId) throw new Error(CHOOSE_A_TARGET)
   const tab = await showNotionPage(windowId, target.url)
@@ -199,24 +199,11 @@ async function write(windowId: number, target: ClipTarget, clip: ClipRequest): P
   const spaceId = page.space_id
   if (typeof spaceId !== 'string' || !spaceId)
     throw new NotionError('notion_error', 'Notion returned the page without its workspace.')
-  if (clip.text !== undefined) {
-    const blocks: NewBlock[] = [
-      // As the page shows it: its words are not read as Markdown.
-      { type: 'quote', title: [[clip.text.trim()]], children: [] },
-      { type: 'text', title: source(clip), children: [] },
-    ]
-    await tab.client.submitTransaction(
-      spaceId,
-      planAppend(targetId, spaceId, blocks, tab.client.userId),
-      'Notico: clip',
-    )
-    return { url: pageLink(tab.url, hexId(targetId)) }
-  }
   const made = planNewPage(
     { id: targetId, table: 'block' },
     spaceId,
     [[chatTitle(clip.title || clip.url)]],
-    [{ type: 'text', title: source(clip), children: [] }, ...content!],
+    [{ type: 'text', title: source(clip), children: [] }, ...content],
     tab.client.userId,
   )
   await tab.client.submitTransaction(spaceId, made.operations, 'Notico: clip')

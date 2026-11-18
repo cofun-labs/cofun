@@ -62,7 +62,7 @@ export function Settings({
 
 /**
  * The right-click menu: whether it has "Ask Notico" (see @cofun/tools/selection), on until the user
- * turns it off, and whether it has the clip items (see clip.ts), off until the user turns them on,
+ * turns it off, and whether it has the clip item (see clip.ts), off until the user turns them on,
  * with where clips go. All for the user's Chrome profile, on every device it syncs to. Turning Clip
  * on with no page chosen yet makes "Notico Clips", in Private, the page, when a Notion page is open.
  */
@@ -133,7 +133,7 @@ function ContextMenu() {
         <div className="grow">
           <p>Clip to Notion</p>
           <p id="settings-clip-detail" className="account-detail">
-            Clip the page you're on, or the text you select, to the end of a Notion page.
+            Clip the page you're on to the end of a Notion page.
           </p>
         </div>
         {clip !== undefined && (

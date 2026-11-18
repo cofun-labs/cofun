@@ -1017,21 +1017,6 @@ export function planNewPage(
   return { operations, pageId }
 }
 
-/** The operations adding `blocks` at the end of the page `pageId`, made by `userId`. */
-export function planAppend(
-  pageId: string,
-  spaceId: string,
-  blocks: NewBlock[],
-  userId: string | undefined,
-  { now = Date.now(), newId = () => crypto.randomUUID() } = {},
-): Operation[] {
-  const op = blockOps(spaceId, now, userId)
-  const operations: Operation[] = []
-  for (const block of blocks) operations.push(op.listAfter(pageId, createBlock(op, operations, block, pageId, newId)))
-  operations.push(op.touch(pageId))
-  return operations
-}
-
 /**
  * Adds the operations creating a block and its children to `ops`, and returns its id; `onCreate`
  * hears every id created, nested ones too. Each record exists before a list names it; the caller

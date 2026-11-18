@@ -2367,52 +2367,84 @@ button.secondary:focus-visible,
 
 .clip-into {
   position: relative;
+  align-self: stretch;
   display: flex;
   flex-direction: column;
   gap: 6px;
-  margin: 4px 0 8px;
+  margin: 2px 0 10px;
 }
 
-.clip-into input {
-  padding: 6px 10px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  outline: none;
-  background: var(--tint);
-  color: inherit;
-  font: inherit;
+.clip-into-head {
+  display: flex;
+  justify-content: space-between;
+  color: var(--muted);
+  font-size: 12px;
 }
 
-.clip-into input:focus {
-  border-color: var(--muted);
+.clip-into-head a {
+  color: var(--muted);
 }
 
-.clip-into-list {
-  position: absolute;
-  top: calc(100% + 4px);
-  left: 0;
-  right: 0;
-  z-index: 3;
-  max-height: 240px;
-  overflow-y: auto;
-  margin: 0;
-  padding: 4px;
-  list-style: none;
+.clip-into-head a:hover {
+  color: var(--fg);
+}
+
+.clip-into-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.clip-field {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  height: 34px;
+  padding: 0 8px 0 10px;
   border: 1px solid var(--border);
   border-radius: 10px;
   background: var(--bg);
-  box-shadow: 0 8px 28px var(--shadow);
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  transition: border-color 0.12s;
 }
 
-.clip-into-list li {
-  padding: 6px 8px;
-  border-radius: 6px;
+.clip-field:hover,
+.clip-field[aria-expanded='true'] {
+  border-color: var(--muted);
 }
 
-.clip-into-list li[role='option'] {
-  cursor: pointer;
+.clip-field .icon {
+  flex: none;
+  color: var(--muted);
 }
 
-.clip-into-list li[aria-selected='true'] {
-  background: var(--tint);
+.clip-field-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.clip-field-name.empty {
+  color: var(--muted);
+}
+
+.clip-field-chevron {
+  display: grid;
+  flex: none;
+  transform: rotate(90deg);
+}
+
+/* Below the field, not above it as the message box's picker opens. */
+.page-picker.clip-picker {
+  top: calc(100% + 4px);
+  bottom: auto;
+  left: 0;
+  right: 0;
+  max-height: 300px;
 }

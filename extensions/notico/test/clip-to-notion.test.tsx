@@ -1,4 +1,4 @@
-// Clipping a page, or the text selected on it, to a Notion page chosen in Settings
+// Clipping a page to a Notion page chosen in Settings
 // (UC-NOTICO-SESSION-003), as a user does it from the context menu: the service worker and the side
 // panel both run, with Chrome's menu, tabs, and storage faked. The fake workspace applies what the
 // clip writes, so it is read back from there.
@@ -6,7 +6,7 @@ import '@testing-library/jest-dom/vitest'
 import { screen, waitFor, within } from '@testing-library/react'
 import userEvent, { type UserEvent } from '@testing-library/user-event'
 import { afterEach, describe, expect, it } from 'vitest'
-import { CLIP_PAGE, CLIP_SELECTION } from '../src/clip'
+import { CLIP_PAGE } from '../src/clip'
 import { FakeNotionTab, FakeWorkspace, PAGE, PAGE_URL, SPACE, USER, webPage } from './notion-tab'
 import { closeBrowser, FakeBrowser } from './panel'
 
@@ -135,30 +135,18 @@ describe('UC-NOTICO-SESSION-003 clip a page or a selection to Notion', () => {
     expect(tab.accessRequests).toEqual([])
   })
 
-  it('[UC-NOTICO-SESSION-003-S02] a selection is added at the end of the chosen page as a quote, in the tab already showing it', async () => {
+  it('[UC-NOTICO-SESSION-003-S02] a clip goes through the tab already showing the chosen page, and selected text keeps one item, "Ask Notico"', async () => {
     const { browser, tab, workspace } = await start()
     tab.otherTabs = [{ url: PAGE_URL, title: 'Inbox' }]
-    expect(tab.menuItems.get(CLIP_SELECTION)).toMatchObject({ contexts: ['selection'], visible: true })
+    // On selected text the extension has one item, which Chrome keeps at the menu's top level.
+    expect([...tab.menuItems.values()].filter((item) => item.contexts?.includes('selection'))).toHaveLength(1)
 
-    tab.pickMenuItem(CLIP_SELECTION, 'Rivers are rising.\n**Not bold**\nThe city has a plan.')
+    tab.pickMenuItem(CLIP_PAGE, '')
 
     expect(await clipped()).toHaveTextContent('Clipped to “Inbox”.')
     expect(browser.openedTabs).toEqual([])
     expect(tab.url).toBe(PAGE_URL)
-    const [quote, from] = workspace.content(PAGE).slice(-2)
-    // Line breaks kept, and the page's words taken as they are, not as Markdown.
-    expect([quote.type, plain(quote)]).toEqual(['quote', 'Rivers are rising.\n**Not bold**\nThe city has a plan.'])
-    expect(runs(from)).toEqual([
-      ['From ', [['h', 'gray']]],
-      [
-        'Rivers | News',
-        [
-          ['h', 'gray'],
-          ['a', ARTICLE],
-        ],
-      ],
-    ])
-    expect(screen.getByRole('link', { name: 'Open the page' })).toHaveAttribute('href', TARGET_URL)
+    expect(workspace.content(PAGE).map((b) => [b.type, plain(b)])).toEqual([['page', 'Rivers | News']])
   })
 
   it("[UC-NOTICO-SESSION-003-S03] when the Notion account can't see the chosen page, nothing is written", async () => {
@@ -179,7 +167,7 @@ describe('UC-NOTICO-SESSION-003 clip a page or a selection to Notion', () => {
     const { tab, workspace } = await start()
     tab.limit('saveTransactionsFanout', 1, 429, '30')
 
-    tab.pickMenuItem(CLIP_SELECTION, 'Rivers are rising.')
+    tab.pickMenuItem(CLIP_PAGE, '')
 
     await clipped()
     expect(screen.getByRole('alert')).toHaveTextContent(
@@ -193,25 +181,24 @@ describe('UC-NOTICO-SESSION-003 clip a page or a selection to Notion', () => {
     const { tab, workspace } = await start()
     workspace.failAfterApply = true
 
-    tab.pickMenuItem(CLIP_SELECTION, 'Rivers are rising.')
+    tab.pickMenuItem(CLIP_PAGE, '')
 
     await clipped()
     expect(screen.getByRole('alert')).toHaveTextContent(
       "Notion didn't say whether the clip was written. Look at the end of “Inbox” before clipping again.",
     )
     expect(tab.sent.filter((r) => r.url.endsWith('/saveTransactionsFanout'))).toHaveLength(1)
-    expect(workspace.content(PAGE).map((b) => b.type)).toEqual(['quote', 'text'])
+    expect(workspace.content(PAGE).map((b) => b.type)).toEqual(['page'])
   })
 
-  it('[UC-NOTICO-SESSION-003-S05] turning Clip on makes "Notico Clips" in Private the page clips go to, and turning it off hides the items', async () => {
+  it('[UC-NOTICO-SESSION-003-S05] turning Clip on makes "Notico Clips" in Private the page clips go to, and turning it off hides the item', async () => {
     const { tab, workspace, user } = await start({ target: null, shown: false })
     tab.respond('getSpaces', 200, spaces([PAGE]))
     // Off until turned on: the items don't show.
     expect(tab.menuItems.get(CLIP_PAGE)?.visible).toBe(false)
-    expect(tab.menuItems.get(CLIP_SELECTION)?.visible).toBe(false)
     await openSettings(user)
     const menu = within(screen.getByRole('region', { name: 'Right-click menu' }))
-    expect(menu.queryByRole('combobox', { name: 'Clip into' })).toBeNull()
+    expect(menu.queryByRole('button', { name: 'Clip into' })).toBeNull()
 
     // On a Notion page, turning it on makes the page clips go to, with nothing else to do.
     tab.switchTab(PAGE_URL, 'Inbox | Notion')
@@ -221,18 +208,16 @@ describe('UC-NOTICO-SESSION-003 clip a page or a selection to Notion', () => {
     )
     const made = [...workspace.records.values()].find((r) => plain(r) === 'Notico Clips')!
     expect(made).toMatchObject({ type: 'page', parent_id: SPACE, parent_table: 'space', private_view: VIEW })
-    expect(menu.getByRole('link', { name: 'Notico Clips' })).toHaveAttribute(
+    expect(menu.getByRole('link', { name: 'Open Notico Clips' })).toHaveAttribute(
       'href',
       `https://app.notion.com/p/${hex(made.id)}`,
     )
-    expect(menu.getByRole('combobox', { name: 'Clip into' })).toBeVisible()
+    expect(menu.getByRole('button', { name: 'Clip into' })).toBeVisible()
     expect(tab.menuItems.get(CLIP_PAGE)?.visible).toBe(true)
-    expect(tab.menuItems.get(CLIP_SELECTION)?.visible).toBe(true)
 
     await user.click(menu.getByRole('switch', { name: 'Clip to Notion' }))
-    expect(menu.queryByRole('combobox', { name: 'Clip into' })).toBeNull()
+    expect(menu.queryByRole('button', { name: 'Clip into' })).toBeNull()
     expect(tab.menuItems.get(CLIP_PAGE)?.visible).toBe(false)
-    expect(tab.menuItems.get(CLIP_SELECTION)?.visible).toBe(false)
   })
 
   it('[@no-uc:notion-safety] "Notico Clips" is made once, however often it is asked for while it is being made', async () => {
@@ -247,9 +232,9 @@ describe('UC-NOTICO-SESSION-003 clip a page or a selection to Notion', () => {
     await waitFor(() => expect(tab.sent.some((r) => r.url.endsWith('/saveTransactionsFanout'))).toBe(true))
     // While it is being made, the switch waits, and the picker doesn't offer to make it again.
     expect(menu.getByRole('switch', { name: 'Clip to Notion' })).toBeDisabled()
-    await user.click(menu.getByRole('combobox', { name: 'Clip into' }))
-    expect(await menu.findByRole('option', { name: 'Current page: Inbox' })).toBeVisible()
-    expect(menu.queryByRole('option', { name: 'Notico Clips, in Private' })).toBeNull()
+    await user.click(menu.getByRole('button', { name: 'Clip into' }))
+    expect(await menu.findByRole('option', { name: /^Inbox\s*Current page/ })).toBeVisible()
+    expect(menu.queryByRole('option', { name: /^Notico Clips/ })).toBeNull()
 
     release()
     expect(await menu.findByRole('status')).toHaveTextContent('made in your Private section')
@@ -271,7 +256,7 @@ describe('UC-NOTICO-SESSION-003 clip a page or a selection to Notion', () => {
     await user.click(menu.getByRole('switch', { name: 'Clip to Notion' }))
 
     expect(await menu.findByRole('status')).toHaveTextContent('Clips go to “Notico Clips”.')
-    expect(menu.getByRole('link', { name: 'Notico Clips' })).toHaveAttribute(
+    expect(menu.getByRole('link', { name: 'Open Notico Clips' })).toHaveAttribute(
       'href',
       `https://app.notion.com/p/${hex(CLIPS)}`,
     )
@@ -285,7 +270,7 @@ describe('UC-NOTICO-SESSION-003 clip a page or a selection to Notion', () => {
     })
     await openSettings(user)
     const menu = within(screen.getByRole('region', { name: 'Right-click menu' }))
-    const box = menu.getByRole('combobox', { name: 'Clip into' })
+    const box = menu.getByRole('button', { name: 'Clip into' })
 
     // Off Notion: there is no workspace to search.
     await user.click(box)
@@ -294,13 +279,16 @@ describe('UC-NOTICO-SESSION-003 clip a page or a selection to Notion', () => {
 
     tab.switchTab(PAGE_URL, 'Inbox | Notion')
     await user.click(box)
-    expect(await menu.findByRole('option', { name: 'Current page: Inbox' })).toBeVisible()
+    expect(await menu.findByRole('option', { name: /^Inbox\s*Current page/ })).toBeVisible()
 
     tab.respond('search', 200, found(OTHER, 'Reading list'))
-    await user.type(box, 'reading')
+    await user.type(menu.getByRole('searchbox', { name: 'Search pages' }), 'reading')
     await user.click(await menu.findByRole('option', { name: 'Reading list' }))
+    // The picker closes, and the field shows the page chosen.
+    expect(menu.queryByRole('listbox')).toBeNull()
+    expect(box).toHaveTextContent('Reading list')
     expect(await menu.findByRole('status')).toHaveTextContent('Clips go to “Reading list”.')
-    expect(menu.getByRole('link', { name: 'Reading list' })).toHaveAttribute(
+    expect(menu.getByRole('link', { name: 'Open Reading list' })).toHaveAttribute(
       'href',
       `https://app.notion.com/p/${hex(OTHER)}`,
     )
