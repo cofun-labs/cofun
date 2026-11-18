@@ -4,7 +4,7 @@
 // What is read back is parsed, never taken on trust: an earlier version may have saved a session in
 // another form. One that doesn't parse is unreadable. It is listed as such, so it can be deleted,
 // and it is never opened: nothing of it reaches the chat or the model.
-import { HistoryMessage, KeptResult, type ResultToKeep } from '@cofun/agent'
+import { Compaction, HistoryMessage, KeptResult, type ResultToKeep } from '@cofun/agent'
 import { ConfluenceUndo } from './confluence/undo'
 import { z } from './zod'
 
@@ -24,10 +24,15 @@ export type SessionInfo = z.infer<typeof SessionInfo>
 const StoredId = z.object({ id: z.string() })
 
 /** A session's conversation, as the second store keeps it. */
-const StoredMessages = z.object({ messages: z.array(HistoryMessage), undo: ConfluenceUndo.optional() })
+const StoredMessages = z.object({
+  messages: z.array(HistoryMessage),
+  compaction: Compaction.optional().catch(undefined),
+  undo: ConfluenceUndo.optional(),
+})
 
 export interface Session extends SessionInfo {
   messages: HistoryMessage[]
+  compaction?: Compaction
   undo?: ConfluenceUndo
 }
 
@@ -71,7 +76,11 @@ export class SessionStore {
    *
    * A title the model wrote (see `retitle`) is kept, whatever title the caller gives.
    */
-  async save({ messages, undo, ...info }: Session, loaded?: number, verifiedNewUndo = false): Promise<SessionInfo> {
+  async save(
+    { messages, compaction, undo, ...info }: Session,
+    loaded?: number,
+    verifiedNewUndo = false,
+  ): Promise<SessionInfo> {
     let saved = info
     let failure: unknown
     try {
@@ -86,7 +95,12 @@ export class SessionStore {
               saved = { ...info, id: crypto.randomUUID() }
             if (prior?.titledByModel) saved = { ...saved, title: prior.title, titledByModel: true }
             infos.put(saved)
-            all.put({ id: saved.id, messages, ...(undo && (saved.id === info.id || verifiedNewUndo) && { undo }) })
+            all.put({
+              id: saved.id,
+              messages,
+              ...(compaction && { compaction }),
+              ...(undo && (saved.id === info.id || verifiedNewUndo) && { undo }),
+            })
           } catch (err) {
             // A write that throws (e.g. data that can't be cloned) must not leave the other one committed.
             failure = err
@@ -129,7 +143,7 @@ export class SessionStore {
         stored.onsuccess = () => {
           const prior = StoredMessages.safeParse(stored.result).data
           if (!prior?.undo) return
-          all.put({ id, messages: prior.messages })
+          all.put({ id, messages: prior.messages, ...(prior.compaction && { compaction: prior.compaction }) })
           revision = Math.max(Date.now(), loaded + 1)
           infos.put({ ...details, updatedAt: revision })
         }

@@ -4,13 +4,33 @@
 // (own.ts). Only this package imports the agent runtime (pi); an extension uses the types in
 // types.ts, through index.ts.
 import { Agent, type AgentEvent, type AgentMessage, type AgentTool } from '@earendil-works/pi-agent-core'
-import type { AssistantMessage, Model } from '@earendil-works/pi-ai'
+import {
+  type AssistantMessageEventStream,
+  normalizeContext,
+  type AssistantMessage,
+  type Message,
+  type Model,
+} from '@earendil-works/pi-ai'
+import { createAssistantMessageEventStream } from '@earendil-works/pi-ai/utils/event-stream'
+import { isContextOverflow } from '@earendil-works/pi-ai/utils/overflow'
 import { streamSimple } from '@earendil-works/pi-ai/api/openai-completions'
 import type { CallCost } from '@cofun/worker-client'
 import { askUser, previewCall, toAgentTool, type Reporter } from './calls'
-import { addUsage, detailsOf, recent, textOf, usedTools } from './history'
+import {
+  COMPACTION_FAILED,
+  fitsRequest,
+  MAX_SUMMARY_CHUNKS,
+  guardHostedPayload,
+  planCompaction,
+  project,
+  requestBudget,
+  summaryCouldFit,
+  summaryRequest,
+  summaryText,
+} from './compaction'
+import { addUsage, detailsOf, textOf, usedTools } from './history'
 import { ownProvider, type OwnSetup } from './own'
-import type { Failure, ModelProvider } from './provider'
+import { HOSTED_TRIGGER, type Failure, type ModelProvider } from './provider'
 import { writeTitle } from './title'
 import type {
   AgentConfig,
@@ -19,6 +39,7 @@ import type {
   AskOnCard,
   AskResult,
   AssistantPart,
+  Compaction,
   ConfirmTool,
   HistoryMessage,
   QuestionCost,
@@ -143,11 +164,12 @@ export class CopilotAgent<M = unknown> {
   private onCost?: (microCredits: number | undefined, kind: WebCost) => void
   /** Which chat and question the requests of the question running are for. */
   private turn?: Turn
-  /**
-   * Where the part of the conversation sent to the model starts, as an index in it (see `recent`):
-   * kept between requests, so a long conversation is cut once in a while, not by one question each time.
-   */
-  private sentFrom = 0
+  private compaction?: Compaction
+  /** Real usage is useful only for a reply made with the same model and prefix. */
+  private readonly usagePrefix = new WeakMap<AssistantMessage, Compaction | undefined>()
+  private onOverflow?: (signal?: AbortSignal) => Promise<Message[] | undefined>
+  private onModelRequest?: () => void
+  private toolChars = 0
 
   /**
    * One agent holds one conversation: a new one, or `initial` to continue a saved one (see
@@ -159,7 +181,11 @@ export class CopilotAgent<M = unknown> {
     private readonly config: AgentConfig<M>,
     readonly memory: M,
     private readonly initial: HistoryMessage[] = [],
+    compaction?: Compaction,
   ) {
+    if (compaction && compaction.firstKept <= initial.length && initial[compaction.firstKept]?.role !== 'tool') {
+      this.compaction = compaction
+    }
     this.provider = config.hosted
     this.notes = modeNotes(config.product, config.data)
     this.maxSteps = config.maxSteps ?? DEFAULT_MAX_STEPS
@@ -219,7 +245,7 @@ export class CopilotAgent<M = unknown> {
     } catch (err) {
       return { status: 'error', message: (err as Error).message, rounds: 0 }
     }
-    const { result, kept, failure } = await this.askOnce(text, onUpdate, epoch, confirm, extras, turn)
+    const { result, kept, failure, summarized } = await this.askOnce(text, onUpdate, epoch, confirm, extras, turn)
     // The provider's model changed since this panel looked it up (for the hosted one, a deploy, which
     // refuses the request before any credits are spent), so look the model up again. Retry once if
     // the question left nothing behind; a retry runs the whole question again, so after it used a
@@ -229,7 +255,7 @@ export class CopilotAgent<M = unknown> {
       const counted = {
         ...detailsOf(result),
         rounds: result.rounds,
-        ...(result.conversation && { conversation: result.conversation }),
+        ...(result.conversation && { conversation: result.conversation, compaction: result.compaction }),
       }
       try {
         this.model = await this.provider.loadModel()
@@ -239,7 +265,7 @@ export class CopilotAgent<M = unknown> {
       if (this.agent) this.agent.state.model = this.model
       // The question stays in the conversation with the tools it used, so the model can pick up
       // where it left off; asking the same question again could run those tools twice.
-      if (kept)
+      if (kept || summarized)
         return { status: 'error', message: `${this.config.product} was just updated. Ask it to continue.`, ...counted }
       return (await this.askOnce(text, onUpdate, epoch, confirm, extras, turn)).result
     }
@@ -254,7 +280,7 @@ export class CopilotAgent<M = unknown> {
     confirm: ConfirmTool | undefined,
     { context, pages, selections, readOnly }: QuestionExtras,
     turn: Turn,
-  ): Promise<{ result: AskResult; kept: boolean; failure?: Failure }> {
+  ): Promise<{ result: AskResult; kept: boolean; failure?: Failure; summarized?: boolean }> {
     let agent: Agent
     try {
       agent = await this.getAgent()
@@ -265,11 +291,15 @@ export class CopilotAgent<M = unknown> {
     if (epoch !== this.epoch) return { result: { status: 'stopped', rounds: 0 }, kept: false }
 
     const before = agent.state.messages.length
+    const previous = this.compaction
     this.stopReason = undefined
     this.stopCode = undefined
     this.changed = false
     this.failedWith = undefined
     let steps = 0
+    let rounds = 0
+    let summarized = false
+    let compactionFailed = false
     let hitLimit = false
     // Tool calls of this question that failed on their own, and whether that stopped it (see MAX_FAILED_CALLS).
     let failedCalls = 0
@@ -308,9 +338,98 @@ export class CopilotAgent<M = unknown> {
         if (kind) cost[kind] = (cost[kind] ?? 0) + microCredits
       }
     }
+    const onModelRequest = () => rounds++
+    this.onModelRequest = onModelRequest
     this.onChunk = onChunk
     this.onCost = addCost
     this.turn = turn
+    let prepared: Message[] | undefined
+    let raw: Message[] = []
+    const selected = agent.state.model as Model<'openai-completions'>
+    const toolChars = this.toolChars
+    const compact = async (budget: ReturnType<typeof requestBudget>, signal?: AbortSignal) => {
+      const plan = planCompaction(raw, this.compaction, budget.hard, toolChars)
+      if (!plan) return undefined
+      try {
+        // Reject a prefix that cannot possibly fit in four requests before spending credits.
+        if (!summaryCouldFit(plan.source, budget.summary)) throw new Error(COMPACTION_FAILED)
+        let next = this.compaction
+        let offset = 0
+        let maxSliceChars = Infinity
+        for (let part = 0; offset < plan.source.length; part++) {
+          const requestsLeft = MAX_SUMMARY_CHUNKS - part
+          if (requestsLeft <= 0 || plan.source.length - offset > maxSliceChars * requestsLeft)
+            throw new Error(COMPACTION_FAILED)
+          const input = summaryRequest(plan.source, offset, next?.summary, budget.summary, maxSliceChars)
+          const key = await provider.apiKey()
+          signal?.throwIfAborted()
+          const stream = streamSimple(selected, normalizeContext({ messages: input.messages }), {
+            apiKey: key,
+            identity: provider.identity,
+            headers: provider.turnHeaders?.(turn),
+            maxTokens: budget.maxSummaryTokens,
+            maxRetries: 0,
+            signal,
+            onPayload: (payload) => {
+              signal?.throwIfAborted()
+              if (selected.provider === 'cofun') guardHostedPayload(payload)
+              onModelRequest()
+            },
+            onProviderStreamEvent: onChunk,
+          })
+          for await (const _event of stream);
+          const answer = await stream.result()
+          signal?.throwIfAborted()
+          tokens = addUsage(tokens, answer.usage)
+          if (answer.stopReason === 'error') {
+            // Only a confirmed context rejection is safe to resend, at a smaller size. A
+            // rejected request still counts toward the four-request limit.
+            if (maxSliceChars === Infinity && requestsLeft > 1 && isContextOverflow(answer)) {
+              maxSliceChars = Math.ceil((input.end - offset) / 2)
+              continue
+            }
+            throw new Error(answer.errorMessage ?? COMPACTION_FAILED)
+          }
+          // Even an unusable answer may have been charged.
+          summarized = true
+          next = summaryText(answer, plan.firstKept)
+          offset = input.end
+        }
+        const sent = project(raw, next)
+        if (!fitsRequest(sent, budget.hard, toolChars)) throw new Error(COMPACTION_FAILED)
+        this.compaction = next
+        return sent
+      } catch (error) {
+        compactionFailed = true
+        throw error
+      }
+    }
+
+    // prepareRequest can stop the run on failure. Keep Pi's loop context and agent.state intact,
+    // and let the non-throwing transform deliver the prepared view only to the model.
+    agent.prepareRequest = async ({ context }, signal) => {
+      raw = this.withNotes(context.messages)
+      const budget = requestBudget(
+        selected,
+        this.config.history ?? (selected.provider === 'cofun' ? HOSTED_TRIGGER : undefined),
+      )
+      const current = project(raw, this.compaction)
+      const usageApplies = (message: AssistantMessage) =>
+        message.api === selected.api &&
+        message.provider === selected.provider &&
+        message.model === selected.id &&
+        this.usagePrefix.has(message) &&
+        this.usagePrefix.get(message) === this.compaction
+      this.onOverflow = (retrySignal) => compact(budget, retrySignal)
+      prepared = fitsRequest(current, budget.trigger, toolChars, usageApplies)
+        ? current
+        : ((await compact(budget, signal)) ?? current)
+      if (!fitsRequest(prepared, budget.hard, toolChars, usageApplies)) {
+        compactionFailed = true
+        throw new Error(COMPACTION_FAILED)
+      }
+    }
+    agent.transformContext = async (messages) => prepared ?? messages
     const refused = new Set<string>()
     const declined = new Set<string>()
     // How the latest call with each id ended, kept with its result message when that arrives.
@@ -453,6 +572,7 @@ export class CopilotAgent<M = unknown> {
       if (event.type === 'message_end' && event.message.role === 'assistant') {
         const m = event.message as AssistantMessage
         tokens = addUsage(tokens, m.usage)
+        if (m.stopReason !== 'error' && m.stopReason !== 'aborted') this.usagePrefix.set(m, this.compaction)
         if (m.stopReason === 'error') failure = provider.parseError(m.errorMessage)
         if (m.stopReason === 'aborted') stopped = true
         const final = !m.content.some((block) => block.type === 'toolCall')
@@ -475,6 +595,10 @@ export class CopilotAgent<M = unknown> {
       unsubscribe()
       agent.beforeToolCall = undefined
       agent.finishTurn = undefined
+      agent.prepareRequest = undefined
+      this.onOverflow = undefined
+      agent.transformContext = undefined
+      if (this.onModelRequest === onModelRequest) this.onModelRequest = undefined
       if (this.onChunk === onChunk) this.onChunk = undefined
       if (this.onCost === addCost) this.onCost = undefined
       if (this.turn === turn) this.turn = undefined
@@ -495,24 +619,32 @@ export class CopilotAgent<M = unknown> {
     const spent = costUnknown || stopped || failure ? undefined : cost
     const counted = detailsOf({ requests: meter?.requests, tokens, model, cost: spent })
     this.details.set(question, counted)
-    const used = { ...counted, rounds: steps }
+    const used = { ...counted, rounds }
     if (failure || stopped) {
       const kept = usedTools(agent.state.messages.slice(before))
       agent.state.messages = [...agent.state.messages.slice(0, before), ...kept]
-      // The part sent may have started inside what was just dropped: the next question would land on
-      // that index and start a part with none of the conversation before it. Worked out again instead.
-      if (this.sentFrom >= before) this.sentFrom = 0
+      // The new summary may cover messages usedTools dropped. Restore the checkpoint for the old prefix.
+      this.compaction = previous
       const result: AskResult = stopped
         ? { status: 'stopped', ...used, ...(changed && { warning: MAY_HAVE_CHANGED }) }
-        : { status: 'error', message: failure!.text, ...(failure!.code ? { code: failure!.code } : {}), ...used }
+        : {
+            status: 'error',
+            message: compactionFailed && changed ? `${failure!.text} ${MAY_HAVE_CHANGED}` : failure!.text,
+            ...(failure!.code ? { code: failure!.code } : {}),
+            ...used,
+          }
       return {
-        result: { ...result, ...(kept.length > 0 && { conversation: this.historyOf(agent) }) },
+        result: {
+          ...result,
+          ...(kept.length > 0 && { conversation: this.historyOf(agent), compaction: this.compaction }),
+        },
+        summarized,
         kept: kept.length > 0,
         failure: stopped ? undefined : failure,
       }
     }
     const result: AskResult = hitLimit ? { status: 'step_limit', steps, ...used } : { status: 'done', ...used }
-    return { result: { ...result, conversation: this.historyOf(agent) }, kept: true }
+    return { result: { ...result, conversation: this.historyOf(agent), compaction: this.compaction }, kept: true }
   }
 
   /** Stops the current model call and any running tool. */
@@ -682,13 +814,6 @@ export class CopilotAgent<M = unknown> {
           if (!this.namesResult(id)) return 'unknown'
           return (await this.config.results?.result(id)) ?? 'gone'
         },
-        questionChars: () => {
-          const messages = this.agent?.state.messages ?? []
-          const question = messages.findLastIndex((m) => m.role === 'user')
-          return messages
-            .slice(question + 1)
-            .reduce((n, m) => n + (m.role === 'toolResult' ? textOf(m.content).length : 0), 0)
-        },
         memory: this.memory,
       },
     }
@@ -734,8 +859,11 @@ export class CopilotAgent<M = unknown> {
       return this.agent
     }
     // The tool definitions go with every request and count toward the provider's size limit.
-    const toolChars = JSON.stringify(
-      this.config.tools.map((t) => ({ name: t.name, description: t.description, parameters: t.parameters })),
+    this.toolChars = JSON.stringify(
+      this.config.tools.map((t) => ({
+        type: 'function',
+        function: { name: t.name, description: t.description, parameters: t.parameters },
+      })),
     ).length
     this.agent = new Agent({
       initialState: {
@@ -747,24 +875,34 @@ export class CopilotAgent<M = unknown> {
       streamFn: (m, context, options) => {
         // The question asking now: its request reports to it, even if another starts meanwhile.
         const onChunk = this.onChunk
+        const onModelRequest = this.onModelRequest
         // Only the hosted provider is told which chat and question the request is for.
         const turn = this.turn && this.provider.turnHeaders?.(this.turn)
-        return streamSimple(m as Model<'openai-completions'>, context, {
+        const selected = m as Model<'openai-completions'>
+        const streamOptions = {
           ...options,
           ...(turn && { headers: { ...options?.headers, ...turn } }),
-          onProviderStreamEvent: (chunk) => onChunk?.(chunk),
-        })
+          onProviderStreamEvent: (chunk: unknown) => onChunk?.(chunk),
+          onPayload: (payload: unknown) => {
+            options?.signal?.throwIfAborted()
+            if (m.provider === 'cofun') guardHostedPayload(payload)
+            onModelRequest?.()
+          },
+        }
+        const stream = streamSimple(selected, context, streamOptions)
+        const overflow = this.onOverflow
+        return overflow
+          ? retryOnOverflow(stream, async () => {
+              options?.signal?.throwIfAborted()
+              const messages = await overflow(options?.signal)
+              return messages && streamSimple(selected, { ...context, messages }, { ...streamOptions, maxRetries: 0 })
+            })
+          : stream
       },
       getApiKey: () => this.provider.apiKey(),
       identity: this.provider.identity,
       // Tools can change pages; run them one at a time, in the order the model asked.
       toolExecution: 'sequential',
-      transformContext: async (messages) => {
-        const limits = this.config.history ?? this.provider.history
-        const { sent, from } = recent(this.withNotes(messages), limits, toolChars, this.sentFrom)
-        this.sentFrom = from
-        return sent
-      },
     })
     return this.agent
   }
@@ -842,4 +980,27 @@ function withDetails(value: unknown): { details?: ToolDetails } {
 /** The text a tool result gave the model. */
 function resultText(result: { content?: { type: string; text?: string }[] } | undefined): string {
   return (result?.content ?? []).map((block) => (block.type === 'text' ? (block.text ?? '') : '')).join('\n')
+}
+
+/** Keep a provider rejection private until we know whether it can be retried before any output appeared. */
+async function retryOnOverflow(
+  stream: AssistantMessageEventStream,
+  retry: () => Promise<AssistantMessageEventStream | undefined>,
+): Promise<AssistantMessageEventStream> {
+  const events = stream[Symbol.asyncIterator]()
+  const first = await events.next()
+  if (first.done) return stream
+  const next = first.value.type === 'start' ? await events.next() : first
+  if (!next.done && next.value.type === 'error' && isContextOverflow(next.value.error)) {
+    const retried = await retry()
+    if (retried) return retried
+  }
+  const output = createAssistantMessageEventStream()
+  output.push(first.value)
+  if (next !== first && !next.done) output.push(next.value)
+  void (async () => {
+    for (let event = await events.next(); !event.done; event = await events.next()) output.push(event.value)
+    output.end(await stream.result())
+  })()
+  return output
 }

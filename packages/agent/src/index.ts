@@ -11,4 +11,4 @@ export { checkKey, OwnModel, OwnService, type KeyCheck, type OwnSetup } from './
 export { KEY_REJECTED, type ModelProvider } from './provider'
 export { defineTool, type Action, type Tool, type ToolDefinition, type Verb } from './tool'
 export type * from './types'
-export { HistoryMessage, KeptResult, QuestionPage, ToolDetails, ToolError } from './types'
+export { Compaction, HistoryMessage, KeptResult, QuestionPage, ToolDetails, ToolError } from './types'

@@ -1,3 +1,4 @@
+import type { HistoryMessage } from '@cofun/agent'
 import 'fake-indexeddb/auto'
 import { afterEach, expect, it, vi } from 'vitest'
 import { SessionStore } from '../src/sessions'
@@ -71,7 +72,8 @@ it('[@no-uc:data] never restores a retired Confluence undo when a stale panel fo
     title: 'Synthetic chat',
     createdAt: 10,
     updatedAt: 11,
-    messages: [],
+    messages: [{ role: 'user', text: 'Edit a page.' }] satisfies HistoryMessage[],
+    compaction: { firstKept: 1, summary: 'The user asked to edit a page.' },
     undo: {
       page: { instance: 'https://wiki.example.test/kb', id: '42' },
       version: 2,
@@ -87,4 +89,6 @@ it('[@no-uc:data] never restores a retired Confluence undo when a stale panel fo
   expect(fork.id).not.toBe(draft.id)
   expect(await second.get(fork.id)).not.toHaveProperty('undo')
   expect(await first.get(draft.id)).not.toHaveProperty('undo')
+  expect(await first.get(draft.id)).toMatchObject({ compaction: draft.compaction })
+  expect(await second.get(fork.id)).toMatchObject({ compaction: draft.compaction })
 })

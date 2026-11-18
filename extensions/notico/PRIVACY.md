@@ -65,7 +65,7 @@ Notico does not record clicks, keystrokes, or the screen, and loads no code from
 
 ## What stays on your device
 
-- **Your chats**, in your Chrome profile, separately for each signed-in account: what you asked, the replies, and what the assistant read to answer, such as Notion pages, tabs, web pages, and searches; of a long page, its full text. Each chat and each question has a random id, sent to our worker with its requests so that what it spent can be matched to it. Chats are not sent to our servers, except that continuing a chat sends it to the worker again.
+- **Your chats**, in your Chrome profile, separately for each signed-in account: what you asked, the replies, and what the assistant read to answer, such as Notion pages, tabs, web pages, and searches; of a long page, its full text. Each chat and each question has a random id, sent to our worker with its requests so that what it spent can be matched to it. Chats are not sent to our servers, except that continuing a chat sends it to the worker again. When a conversation grows too long, the selected model summarizes older context. The summary is stored on this device with the original messages and used in later requests.
 - **Your sign-in**: Clerk's token that keeps you signed in.
 - **Your own model, if you set one up**: your OpenRouter key and the models you chose, for the account that set them up. Removing the key in the settings deletes it.
 - **Settings**: whether the assistant may change your pages (Edit or Read only), whether web searches go to DuckDuckGo, whether usage data is shared, and whether the right-click menu shows "Ask Notico". That last one is synced to your other devices if you use Chrome sync.

@@ -351,6 +351,57 @@ test.describe('signed in', () => {
     expect(blocked).toEqual([])
   })
 
+  test('a long chat reuses its saved summary after the panel reloads', async ({
+    context,
+    background,
+    blocked,
+    replies,
+  }) => {
+    const errors: string[] = []
+    const requests: Request[] = []
+    context.on('request', (request) => {
+      if (new URL(request.url()).pathname === '/v1/chat/completions') requests.push(request)
+    })
+    const title = 'Launch plan smoke test'
+    // A large synthetic response makes the next question exceed the hosted history budget.
+    replies.push({ text: '## Archive notes\n\n' + 'Archived log entry. '.repeat(32_000) }, { text: title })
+    const panel = await openPanel(context, background, errors)
+    await ask(panel, 'Remember the launch code ORBIT-42.')
+    await expect(panel.getByRole('banner')).toContainText(title)
+
+    replies.push({ text: 'The launch code is ORBIT-42.' }, { text: 'The code is ORBIT-42.' })
+    await ask(panel, 'What is the launch code?')
+    await expect(panel.getByText('The code is ORBIT-42.', { exact: true })).toBeVisible()
+    expect(requests[2].postDataJSON()).not.toHaveProperty('tools')
+    expect(requests[3].postDataJSON()).toMatchObject({
+      messages: expect.arrayContaining([
+        expect.objectContaining({ content: expect.stringContaining('Summary of earlier conversation') }),
+        expect.objectContaining({ content: expect.stringContaining('What is the launch code?') }),
+      ]),
+    })
+
+    await panel.reload()
+    await panel.getByRole('button', { name: 'Chats' }).click()
+    await panel
+      .getByRole('dialog', { name: 'Chats' })
+      .getByRole('button', { name: new RegExp(title) })
+      .click()
+    await expect(panel.getByText('Remember the launch code ORBIT-42.', { exact: true })).toBeVisible()
+    await expect(panel.getByText('The code is ORBIT-42.', { exact: true })).toBeVisible()
+    replies.push({ text: 'ORBIT-42 is the launch code.' })
+    await ask(panel, 'Repeat the code once more.')
+    await expect(panel.getByText('ORBIT-42 is the launch code.', { exact: true })).toBeVisible()
+    expect(requests).toHaveLength(5)
+    expect(requests[4].postDataJSON()).toMatchObject({
+      messages: expect.arrayContaining([
+        expect.objectContaining({ content: expect.stringContaining('The launch code is ORBIT-42.') }),
+      ]),
+    })
+    expect(replies).toEqual([])
+    expect(errors).toEqual([])
+    expect(blocked).toEqual([])
+  })
+
   // The Notion tools' requests run inside the Notion tab, through chrome.scripting: no other test
   // runs that path in Chrome. One question reads the tab's page, then trashes it, which asks first.
   test("tools read and change the Notion tab's page, asking first where they must", async ({
