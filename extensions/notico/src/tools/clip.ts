@@ -44,13 +44,14 @@ export async function clipPlace(): Promise<ClipPlace | string> {
     const tab = await activeNotionTab({ counted: false })
     const id = tab.pageId
     if (!id) return OPEN_NOTION
-    const page = (await tab.client.getRecords([{ table: 'block', id }])).block![id]
-    const spaceId = page.space_id
+    // findRecords, not getRecords: a page in the trash is left out, and its workspace can't be told then.
+    const page = (await tab.client.findRecords([{ table: 'block', id }])).block?.[id]
+    const spaceId = page?.space_id
     if (typeof spaceId !== 'string' || !spaceId) return OPEN_NOTION
     return {
       tab,
       spaceId,
-      ...(page.type === 'page' && !showsDatabase(tab.url) ? { current: { id, title: titleOf(page) } } : {}),
+      ...(page?.type === 'page' && !showsDatabase(tab.url) ? { current: { id, title: titleOf(page) } } : {}),
     }
   } catch (err) {
     return problem(err, OPEN_NOTION)
@@ -81,7 +82,20 @@ export async function chooseTarget(place: ClipPlace, page: PageChoice): Promise<
  * user's Private section already has, else a new one, put there. Returns it, with whether it was
  * made, or why it couldn't be, for the user. Sent once: a failed write is not retried.
  */
-export async function defaultTarget(place: ClipPlace): Promise<(PageChoice & { made: boolean }) | string> {
+export function defaultTarget(place: ClipPlace): Promise<(PageChoice & { made: boolean }) | string> {
+  // One at a time, whoever asks (the switch, or the picker's option): two at once would each find no
+  // page in Private, and each make one.
+  making ??= makeDefault(place).finally(() => (making = undefined))
+  return making
+}
+
+/** The default page being found or made, while it is. */
+let making: Promise<(PageChoice & { made: boolean }) | string> | undefined
+
+/** Whether the default page is being found or made now. */
+export const makingDefault = () => making !== undefined
+
+async function makeDefault(place: ClipPlace): Promise<(PageChoice & { made: boolean }) | string> {
   try {
     const { client } = place.tab
     const section = await client.privateSection(place.spaceId)

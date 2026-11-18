@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react'
 import { allowDuckDuckGo, loadDuckDuckGoSearch, saveDuckDuckGoSearch } from '@cofun/tools'
 import { loadAnalyticsEnabled, saveAnalyticsEnabled } from '../analytics'
 import { loadClipSettings, saveClipShown, watchClipSettings, type ClipSettings } from '../clip'
-import { clipPlace, defaultTarget } from '../tools/clip'
+import { clipPlace, DEFAULT_TARGET, defaultTarget } from '../tools/clip'
 import { loadMenuShown, saveMenuShown, watchMenuShown } from '@cofun/tools/selection'
 import type { ModelSettings } from '@cofun/agent/models'
 import { Avatar, useAccount } from './Account'
@@ -71,6 +71,8 @@ function ContextMenu() {
   const [shown, setShown] = useState<boolean>()
   const [clip, setClip] = useState<ClipSettings>()
   const [note, setNote] = useState<ClipNote>()
+  // While the default page is found or made, the switch waits: turning it on again would ask twice.
+  const [making, setMaking] = useState(false)
 
   useEffect(() => {
     let closed = false
@@ -103,7 +105,9 @@ function ContextMenu() {
     if (!next || clip?.target) return
     const place = await clipPlace()
     if (typeof place === 'string') return setNote({ text: `${place} Then choose where clips go.` })
-    const made = await defaultTarget(place)
+    setNote({ text: `Looking for “${DEFAULT_TARGET}” in your Private section…` })
+    setMaking(true)
+    const made = await defaultTarget(place).finally(() => setMaking(false))
     setNote(
       typeof made === 'string'
         ? { text: made, failed: true }
@@ -136,6 +140,7 @@ function ContextMenu() {
           <Switch
             label="Clip to Notion"
             checked={clip.shown}
+            disabled={making}
             describedBy="settings-clip-detail"
             onChange={(next) =>
               void changeClip(next).catch((err: unknown) =>

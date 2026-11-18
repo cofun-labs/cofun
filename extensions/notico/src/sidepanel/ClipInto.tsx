@@ -1,11 +1,13 @@
 import { useEffect, useId, useRef, useState, type KeyboardEvent } from 'react'
 import type { ClipTarget } from '../clip'
+import { pageIdFromUrl } from '../notion/hosts'
 import {
   chooseTarget,
   clipPlace,
   DEFAULT_TARGET,
   defaultTarget,
   findTargets,
+  makingDefault,
   type ClipPlace,
   type PageChoice,
 } from '../tools/clip'
@@ -77,8 +79,11 @@ export function ClipInto({ target, onNote }: { target?: ClipTarget; onNote: (not
     else options = result.map((page) => ({ kind: 'page', page, label: page.title }))
   } else {
     const current = place.current
-    if (current) options.push({ kind: 'page', page: current, label: `Current page: ${current.title}` })
-    if (target?.title !== DEFAULT_TARGET) options.push({ kind: 'default', label: `${DEFAULT_TARGET}, in Private` })
+    const isTarget = current && target && pageIdFromUrl(target.url) === current.id
+    if (current && !isTarget) options.push({ kind: 'page', page: current, label: `Current page: ${current.title}` })
+    // Not while it is being found or made already (see defaultTarget).
+    if (target?.title !== DEFAULT_TARGET && !makingDefault())
+      options.push({ kind: 'default', label: `${DEFAULT_TARGET}, in Private` })
     if (!options.length) message = 'Type to search your workspace.'
   }
 

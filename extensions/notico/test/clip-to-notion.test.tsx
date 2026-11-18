@@ -3,7 +3,7 @@
 // panel both run, with Chrome's menu, tabs, and storage faked. The fake workspace applies what the
 // clip writes, so it is read back from there.
 import '@testing-library/jest-dom/vitest'
-import { screen, within } from '@testing-library/react'
+import { screen, waitFor, within } from '@testing-library/react'
 import userEvent, { type UserEvent } from '@testing-library/user-event'
 import { afterEach, describe, expect, it } from 'vitest'
 import { CLIP_PAGE, CLIP_SELECTION } from '../src/clip'
@@ -233,6 +233,27 @@ describe('UC-NOTICO-SESSION-003 clip a page or a selection to Notion', () => {
     expect(menu.queryByRole('combobox', { name: 'Clip into' })).toBeNull()
     expect(tab.menuItems.get(CLIP_PAGE)?.visible).toBe(false)
     expect(tab.menuItems.get(CLIP_SELECTION)?.visible).toBe(false)
+  })
+
+  it('[@no-uc:notion-safety] "Notico Clips" is made once, however often it is asked for while it is being made', async () => {
+    const { tab, workspace, user } = await start({ target: null, shown: false })
+    tab.respond('getSpaces', 200, spaces([PAGE]))
+    const release = tab.hold('saveTransactionsFanout')
+    await openSettings(user)
+    tab.switchTab(PAGE_URL, 'Inbox | Notion')
+    const menu = within(screen.getByRole('region', { name: 'Right-click menu' }))
+
+    await user.click(menu.getByRole('switch', { name: 'Clip to Notion' }))
+    await waitFor(() => expect(tab.sent.some((r) => r.url.endsWith('/saveTransactionsFanout'))).toBe(true))
+    // While it is being made, the switch waits, and the picker doesn't offer to make it again.
+    expect(menu.getByRole('switch', { name: 'Clip to Notion' })).toBeDisabled()
+    await user.click(menu.getByRole('combobox', { name: 'Clip into' }))
+    expect(await menu.findByRole('option', { name: 'Current page: Inbox' })).toBeVisible()
+    expect(menu.queryByRole('option', { name: 'Notico Clips, in Private' })).toBeNull()
+
+    release()
+    expect(await menu.findByRole('status')).toHaveTextContent('made in your Private section')
+    expect(workspace.transactions).toHaveLength(1)
   })
 
   it('[UC-NOTICO-SESSION-003-S07] a "Notico Clips" already in Private is used, not made again', async () => {
