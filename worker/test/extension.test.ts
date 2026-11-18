@@ -1,17 +1,19 @@
-// Runs Notico's real agent (extensions/notico/src/agent/) against the worker, for what the two must
+// Runs the extensions' real agent (@cofun/agent, in packages/agent/) against the worker, for what the two must
 // agree on: the streamed reply, the tool-call round trip, sessions, credits, the cost of a question,
 // and a model change. The agent's own rules are tested in extensions/notico/test/agent.test.ts, and
 // the worker client's (its web reads and searches) in packages/worker-client/test/.
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import {
   CopilotAgent,
+  hostedProvider,
+  workerWeb,
   type AgentConfig,
   type AgentUpdate,
   type QuestionExtras,
   type ConfirmTool,
   type HistoryMessage,
   type ToolSpec,
-} from '../../extensions/notico/src/agent'
+} from '../../packages/agent/src'
 import { WorkerClient } from '../../packages/worker-client/src'
 import { createApp, type Env } from '../src/app'
 import { priceOf } from '../src/pricing'
@@ -99,14 +101,18 @@ function makeAgent(
   } = {},
   conversation?: HistoryMessage[],
 ) {
-  return new CopilotAgent(
+  const worker = new WorkerClient({
+    apiUrl: 'https://nk.example.dev/v1/',
+    getToken: options.getToken ?? (async () => token),
+    clientName: 'notico/1.2.3',
+    product: 'Notico',
+  })
+  return new CopilotAgent<unknown>(
     {
-      worker: new WorkerClient({
-        apiUrl: 'https://nk.example.dev/v1/',
-        getToken: options.getToken ?? (async () => token),
-        clientName: 'notico/1.2.3',
-        product: 'Notico',
-      }),
+      product: 'Notico',
+      data: 'Notion',
+      hosted: hostedProvider(worker),
+      web: workerWeb(worker),
       systemPrompt: options.systemPrompt ?? 'You are Notico.',
       tools: options.tools ?? [pageTool().tool],
       maxSteps: options.maxSteps,
@@ -114,6 +120,7 @@ function makeAgent(
       meter: options.meter,
       model: options.model,
     },
+    undefined,
     conversation,
   )
 }

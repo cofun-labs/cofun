@@ -2,7 +2,7 @@
 // conversation is sent, and what a question used.
 import type { AgentMessage } from '@earendil-works/pi-agent-core'
 import type { ToolResultMessage } from '@earendil-works/pi-ai'
-import { z } from '../zod'
+import { z } from './zod'
 import type { QuestionDetails, TokenUsage } from './types'
 
 /**

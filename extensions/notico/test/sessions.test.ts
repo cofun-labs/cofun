@@ -1,7 +1,7 @@
 // The side panel's saved sessions (extensions/notico/src/sessions.ts), on an in-memory IndexedDB.
 import 'fake-indexeddb/auto'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { HistoryMessage } from '../src/agent'
+import type { HistoryMessage } from '@cofun/agent'
 import {
   filterSessions,
   SessionStore,

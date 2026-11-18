@@ -1,5 +1,5 @@
 // Tools the agent can run and how the side panel describes them.
-import type { ToolDetails } from '../agent'
+import type { ToolDetails } from '@cofun/agent'
 import type { Action, Tool } from '../tool'
 import {
   browseConfluenceTree,
@@ -29,7 +29,6 @@ export {
   selectionsCarried,
   type WebTab,
 } from './current'
-export type { ToolMemory } from './memory'
 export { DATA_LINE } from './shared'
 
 const CLOUD_TOOLS: Tool[] = [

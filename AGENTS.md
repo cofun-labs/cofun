@@ -105,20 +105,20 @@ An extension's Chrome Web Store privacy policy is written in two parts: [PRIVACY
 [docs/architecture.md](docs/architecture.md) describes the design; these are the rules a change must keep.
 
 - **One extension per folder.** Each extension keeps its own app (side panel, agent, prompt, site layer, tools, manifest, analytics) and never imports another extension.
-- **Only libraries the extensions call are shared**, as workspace packages in `packages/` (`@cofun/worker-client`, the client for the worker). A package takes what is particular to an extension as explicit parameters (the product name, the client name), never a product config, and never imports an extension. Its rules are tested once, in its own `test/` (and `use-cases/`, when it owns a business rule); an extension tests only how it uses it.
+- **Only libraries the extensions call are shared**, as workspace packages in `packages/` (`@cofun/worker-client`, the client for the worker, and `@cofun/agent`, the agent runtime and tool framework). A package takes what is particular to an extension as explicit parameters (the product name, the client name, the extension's own memory of a chat), never a product config, and never imports an extension. Its rules are tested once, in its own `test/` (and `use-cases/`, when it owns a business rule); an extension tests only how it uses it.
 - **A site is called only through its site layer**: one module knows the site's endpoints and request shapes (Notico's `src/notion/api.ts`), and requests run inside the user's tab for that site (`src/<site>/tab.ts`, `chrome.scripting` in the ISOLATED world), so they go to that tab's host with its session. Tools never `fetch` the site's URLs themselves. Never use `chrome.debugger`: it shows a permanent "debugging this browser" banner.
 - **Every worker route under `/v1` sits behind the session check** (`src/routes/session.ts`); `worker/test/session.test.ts` checks that each refuses a request without a session.
 - **Module boundaries are lint errors** in `.oxlintrc.json`, run by `pnpm check`. In every extension:
-  - only `src/agent/` imports pi (`@earendil-works/pi-agent-core`);
-  - the worker is called only from `src/agent/` and the side panel's state (`panel.ts`, `chat-session.ts`): elsewhere `@cofun/worker-client` is imported for its types only (its `/clerk` anywhere), so a request the worker turned away always stops the question;
-  - `fetch` is used only in `src/agent/` (the user's own model; the worker through `@cofun/worker-client`) and in the `tab.ts` of a site layer that sends requests to its site (Notico's `src/notion/tab.ts` and Confluco's `src/confluence/tab.ts`); `chrome.scripting` only in `src/<site>/tab.ts`; `chrome.debugger` nowhere;
+  - no extension imports pi (`@earendil-works/pi-agent-core`): only `@cofun/agent` does;
+  - the worker is called only from the side panel's state (`panel.ts`, `chat-session.ts`), which gives the client to the agent through `@cofun/agent`'s `hostedProvider` and `workerWeb`: elsewhere `@cofun/worker-client` is imported for its types only (its `/clerk` anywhere), so a request the worker turned away always stops the question;
+  - `fetch` is used only in the `tab.ts` of a site layer that sends requests to its site (Notico's `src/notion/tab.ts` and Confluco's `src/confluence/tab.ts`); `chrome.scripting` only in `src/<site>/tab.ts`; `chrome.debugger` nowhere;
   - `zod` is imported only through `src/zod.ts` (the worker's through `worker/src/zod.ts`);
   - `posthog-js` is imported only in `src/analytics.ts`;
-  - the site layer imports nothing from the agent, the tools, the sessions, or the side panel;
+  - the site layer imports nothing from the agent (`@cofun/agent`), the tools, the sessions, or the side panel;
   - the side panel's state outside React (`src/sidepanel/chat-session.ts`, one `ChatSession` per chat, and `src/sidepanel/panel.ts`, the `Panel`) imports no React and no component;
   - no extension imports another.
 
-  In every package, `zod` is imported only through its own `src/zod.ts`, and nothing outside the package is imported from `src/` (its tests may import the worker, never an extension).
+  In every package, `zod` is imported only through its own `src/zod.ts`, and nothing outside the package is imported from `src/` (its tests may import the worker, never an extension). Only `@cofun/agent` (`packages/agent/src/`) imports pi, and it is where a model is called (`fetch` in a package needs no exception).
 
   When a boundary changes, change the rule and this list together. Never silence one with an `oxlint-disable` comment.
 
@@ -149,8 +149,8 @@ The extensions and the worker call outside services: the site an extension acts 
   - **A call that acts as the user's account or changes data** (the site, Stripe): a failure we can't identify, or a response we didn't expect, stops the question and is reported to the user; don't guess a workaround. It may have landed, a retry may apply it twice, and a workaround probes the service's limits with the user's account.
   - **Confluence write verification** may make one read of the same page after an edit, trash, or restore whose outcome is uncertain, including when undo uses one of those operations. The question stops with a warning if that read cannot verify the expected result. This verification does not repeat the write. See [Confluence writes](docs/security.md).
   - **A read-only call that involves no account of the user's** (the worker's web reads and searches): such a failure goes to the model as a tool error that says the source wasn't read, and the code does not retry it. A paid call (a render, a search) that was or may have been charged says so, and tells the model not to make the same call again in this question.
-- **A request turned away stops the question, with no retry.** When a service turns a request away, for coming too fast or for a balance that ran out, the client sends nothing more to it, the agent ends the question, and the user is told why. A tool error does this by carrying `stopsQuestion` (read by `src/agent/calls.ts`); a tool's code that catches a service's errors must rethrow one that carries it, never swallow it.
-- **A tool that changes the user's data sets `changesData`** (see `ToolSpec` in `src/agent/types.ts`), and an error after a change that may have landed sets `mayHaveChanged`, so a question that stops tells the user to check before asking again.
+- **A request turned away stops the question, with no retry.** When a service turns a request away, for coming too fast or for a balance that ran out, the client sends nothing more to it, the agent ends the question, and the user is told why. A tool error does this by carrying `stopsQuestion` (read by `calls.ts` in `@cofun/agent`); a tool's code that catches a service's errors must rethrow one that carries it, never swallow it.
+- **A tool that changes the user's data sets `changesData`** (see `ToolSpec` in `@cofun/agent`'s `types.ts`), a successful run that verified it changed nothing returns `changed: false`,, and an error after a change that may have landed sets `mayHaveChanged`, so a question that stops tells the user to check before asking again.
 - Handle only failures whose meaning is known, such as signed out, no access, or a page that changed since it was read.
 
 ## Testing

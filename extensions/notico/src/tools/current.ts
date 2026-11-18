@@ -7,7 +7,7 @@ import { NOTION_HOSTS, isNotion, pageIdFromUrl, showsDatabase } from '../notion/
 import { clip } from '../notion/comments'
 import { clipSelection, type Selection } from '../selection'
 import { mayRead, readPage, readableSite, type TabPage, type TabWhere } from '../web/tab'
-import type { AskOnCard, ToolContext } from '../agent'
+import type { AskOnCard, QuestionPage, ToolContext } from '@cofun/agent'
 import type { ToolMemory } from './memory'
 import { KEPT_CHARS, withText } from './results'
 import { LOOK, READ, asData, asPageText, count, noteTitle, noteUrl, on } from './shared'
@@ -53,6 +53,15 @@ export interface OpenPage {
   /** The run of the browser the tab was added in (see browserRun). */
   run?: string
 }
+
+/** The flag of a page that is a database, as a question's pages keep it (see OpenPage). */
+const DatabaseFlag = z.object({ database: z.literal(true) })
+
+/**
+ * Whether a page a question carries is a database. The agent keeps the flag with a question's pages
+ * without reading it, so a page read back from a saved session is checked here.
+ */
+export const isDatabase = (page: QuestionPage): boolean => DatabaseFlag.safeParse(page).success
 
 /** The title Chrome reports for a Notion tab, without the " | Notion" a tab title may end with. */
 const tabTitle = (title: string) => title.replace(/\s+\|\s+Notion$/, '')

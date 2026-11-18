@@ -1,17 +1,15 @@
 // The side panel's agent: asks the model, runs the tools it calls in the extension, and sends the
 // results back until the model answers. Where the model runs is a provider (see ModelProvider in
-// provider.ts): our worker (the hosted one, worker.ts), or OpenRouter with the user's own key
-// (own.ts). Only the modules of this folder import the agent runtime (pi); the rest of the
-// extension uses the types in types.ts, through index.ts.
+// provider.ts): our worker (the hosted one, hosted.ts), or OpenRouter with the user's own key
+// (own.ts). Only this package imports the agent runtime (pi); an extension uses the types in
+// types.ts, through index.ts.
 import { Agent, type AgentEvent, type AgentMessage, type AgentTool } from '@earendil-works/pi-agent-core'
 import type { AssistantMessage, Model } from '@earendil-works/pi-ai'
 import { streamSimple } from '@earendil-works/pi-ai/api/openai-completions'
 import type { CallCost } from '@cofun/worker-client'
-import { answering, HOSTED_ONLY, type OwnSetup } from '../models'
-import { ToolMemory } from '../tools/memory'
 import { askUser, previewCall, toAgentTool, type Reporter } from './calls'
 import { addUsage, detailsOf, recent, textOf, usedTools } from './history'
-import { ownProvider } from './own'
+import { ownProvider, type OwnSetup } from './own'
 import type { Failure, ModelProvider } from './provider'
 import { writeTitle } from './title'
 import type {
@@ -36,7 +34,6 @@ import type {
   WebCost,
 } from './types'
 import { ToolDetails } from './types'
-import { hostedProvider, readWebPage, searchWebFor } from './worker'
 
 const DEFAULT_MAX_STEPS = 20
 /**
@@ -73,28 +70,37 @@ const READ_ONLY_ANSWER =
   "If the question asks for a change, make none and don't describe one as done: say you can't make changes in " +
   'Read only, and that the user can switch to Edit with the mode button at the bottom left of the message box ' +
   'and ask again.'
-/**
- * Ahead of a question asked in Read only, for the model: the tools that change data are still offered
- * (the same tools in every request keep the prompt cache), and are refused when called.
- */
-const READ_ONLY_NOTE =
-  '[Read only: the user set Notico to Read only for this question, so the tools that change Notion are refused: ' +
-  `don't call them. ${READ_ONLY_ANSWER} You can still read and answer.]`
-/** What the model gets back for a call, in Read only, of a tool that changes data. */
-const NOT_RUN_READ_ONLY = `Not run: this question is in Read only, so no tool that changes Notion runs. ${READ_ONLY_ANSWER}`
-/** Ahead of a question asked in Edit right after one in Read only: the tools that change data work again. */
-const EDIT_NOTE = '[Edit: the user switched Notico back to Edit, so the tools that change Notion work again.]'
+/** What the model is told of the mode of a question, in the words of the extension it runs in (see AgentConfig). */
+function modeNotes(product: string, data: string) {
+  return {
+    /**
+     * Ahead of a question asked in Read only: the tools that change data are still offered (the
+     * same tools in every request keep the prompt cache), and are refused when called.
+     */
+    readOnly:
+      `[Read only: the user set ${product} to Read only for this question, so the tools that change ${data} are refused: ` +
+      `don't call them. ${READ_ONLY_ANSWER} You can still read and answer.]`,
+    /** For a call, in Read only, of a tool that changes data. */
+    notRun: `Not run: this question is in Read only, so no tool that changes ${data} runs. ${READ_ONLY_ANSWER}`,
+    /** Ahead of a question asked in Edit right after one in Read only: the tools that change data work again. */
+    edit: `[Edit: the user switched ${product} back to Edit, so the tools that change ${data} work again.]`,
+  }
+}
 
-export class CopilotAgent {
+/**
+ * The agent of one conversation. `M` is the extension's memory of it, which every tool call gets
+ * (see ToolContext.memory).
+ */
+export class CopilotAgent<M = unknown> {
   private agent?: Agent
   private model?: Model<'openai-completions'>
   /** Where model requests go, and the settings it was made from. */
   private provider: ModelProvider
   private providerFor?: OwnSetup | 'hosted'
   private readonly maxSteps: number
-  /** Names of the tools that need the user's OK before each run. */
-  private readonly confirmed: Set<string>
-  private readonly tools: Map<string, ToolSpec>
+  private readonly tools: Map<string, ToolSpec<M>>
+  /** The notes and refusals of the modes, in the extension's words. */
+  private readonly notes: ReturnType<typeof modeNotes>
   /**
    * The tools as the agent runtime takes them: every one, in every mode. Read only refuses those that
    * change data when they are called (see beforeToolCall): a tool set that changed with the mode would
@@ -138,12 +144,6 @@ export class CopilotAgent {
   /** Which chat and question the requests of the question running are for. */
   private turn?: Turn
   /**
-   * What the tools remember of this conversation, given to every call (see ToolContext.memory): an
-   * agent of its own, so a memory of its own, for each chat. The side panel sets in it what each
-   * question carries (carryPages).
-   */
-  readonly memory = new ToolMemory()
-  /**
    * Where the part of the conversation sent to the model starts, as an index in it (see `recent`):
    * kept between requests, so a long conversation is cut once in a while, not by one question each time.
    */
@@ -151,15 +151,18 @@ export class CopilotAgent {
 
   /**
    * One agent holds one conversation: a new one, or `initial` to continue a saved one (see
-   * history()). Another conversation gets another agent.
+   * history()). Another conversation gets another agent. `memory` is what the tools remember of
+   * this conversation, given to every call (see ToolContext.memory): one of its own for each chat,
+   * which the extension makes, and may set things in between questions (what each one carries).
    */
   constructor(
-    private readonly config: AgentConfig,
+    private readonly config: AgentConfig<M>,
+    readonly memory: M,
     private readonly initial: HistoryMessage[] = [],
   ) {
-    this.provider = hostedProvider(config.worker)
+    this.provider = config.hosted
+    this.notes = modeNotes(config.product, config.data)
     this.maxSteps = config.maxSteps ?? DEFAULT_MAX_STEPS
-    this.confirmed = new Set(config.tools.filter((t) => t.needsConfirmation).map((t) => t.name))
     this.tools = new Map(config.tools.map((t) => [t.name, t]))
     this.allTools = config.tools.map((t) => toAgentTool(t, () => this.reporter()))
   }
@@ -236,7 +239,8 @@ export class CopilotAgent {
       if (this.agent) this.agent.state.model = this.model
       // The question stays in the conversation with the tools it used, so the model can pick up
       // where it left off; asking the same question again could run those tools twice.
-      if (kept) return { status: 'error', message: 'Notico was just updated. Ask it to continue.', ...counted }
+      if (kept)
+        return { status: 'error', message: `${this.config.product} was just updated. Ask it to continue.`, ...counted }
       return (await this.askOnce(text, onUpdate, epoch, confirm, extras, turn)).result
     }
     return result
@@ -248,7 +252,7 @@ export class CopilotAgent {
     onUpdate: (update: AgentUpdate) => void,
     epoch: number,
     confirm: ConfirmTool | undefined,
-    { context, pages, selections, readOnly }: QuestionExtras,
+    { context, pages, selections, readOnly, toolNames }: QuestionExtras,
     turn: Turn,
   ): Promise<{ result: AskResult; kept: boolean; failure?: Failure }> {
     let agent: Agent
@@ -261,6 +265,7 @@ export class CopilotAgent {
     if (epoch !== this.epoch) return { result: { status: 'stopped', rounds: 0 }, kept: false }
 
     const before = agent.state.messages.length
+    agent.state.tools = toolNames ? this.allTools.filter((tool) => toolNames.has(tool.name)) : this.allTools
     this.stopReason = undefined
     this.stopCode = undefined
     this.changed = false
@@ -325,7 +330,7 @@ export class CopilotAgent {
       const call = running
       if (!call || epoch !== this.epoch) return false
       const answer = await askUser(confirm, { ...call, question: text, access }, this.cancel.signal)
-      // A site the user did not let Notico read is their choice, not a failure: the call shows as
+      // A site the user did not let the extension read is their choice, not a failure: the call shows as
       // declined, with the tool's own error for the model.
       if (access && answer === 'deny' && epoch === this.epoch) declined.add(call.id)
       return answer === 'allow' && epoch === this.epoch
@@ -351,7 +356,7 @@ export class CopilotAgent {
       // one. Refused before the preview, which may look things up for a change that won't be made.
       if (readOnly && this.tools.get(toolCall.name)?.changesData) {
         refused.add(toolCall.id)
-        return { block: true, reason: NOT_RUN_READ_ONLY }
+        return { block: true, reason: this.notes.notRun }
       }
       if (steps >= this.maxSteps) {
         hitLimit = true
@@ -366,13 +371,15 @@ export class CopilotAgent {
       // they ask the user on this call's card.
       running = { id: toolCall.id, name: toolCall.name, args }
       // From the arguments the tool runs with, and before it runs: the run may change what the preview reads.
-      const { preview, stop } = await previewCall(this.tools.get(toolCall.name), args, this.reporter().context, signal)
+      const tool = this.tools.get(toolCall.name)
+      const context = this.reporter().context
+      const { preview, stop } = await previewCall(tool, args, context, signal)
       // Stopped while the preview looked things up: the tool must not start.
       if (signal?.aborted || epoch !== this.epoch) {
         running = undefined
         return { block: true, reason: STOPPED_BEFORE }
       }
-      // Notion turned the preview's lookups away, or the user stopped at the budget: the question
+      // A site turned the preview's lookups away, or the user stopped at the budget: the question
       // stops here, before anyone is asked.
       if (stop) {
         running = undefined
@@ -384,7 +391,8 @@ export class CopilotAgent {
       onUpdate({ type: 'tool_ready', id: toolCall.id, args, preview })
       const call: ToolCallRequest = { id: toolCall.id, name: toolCall.name, args, preview }
       running = call
-      if (!this.confirmed.has(toolCall.name)) {
+      const approval = tool?.needsConfirmation
+      if (!(typeof approval === 'function' ? approval(context) : approval)) {
         started.add(toolCall.id)
         return
       }
@@ -496,7 +504,7 @@ export class CopilotAgent {
       // that index and start a part with none of the conversation before it. Worked out again instead.
       if (this.sentFrom >= before) this.sentFrom = 0
       const result: AskResult = stopped
-        ? { status: 'stopped', ...used }
+        ? { status: 'stopped', ...used, ...(changed && { warning: MAY_HAVE_CHANGED }) }
         : { status: 'error', message: failure!.text, ...(failure!.code ? { code: failure!.code } : {}), ...used }
       return {
         result: { ...result, ...(kept.length > 0 && { conversation: this.historyOf(agent) }) },
@@ -627,10 +635,12 @@ export class CopilotAgent {
    * reason for the user) or changed data. A tool still running from a question that was stopped
    * reports nothing to the next one.
    */
-  private reporter(): Reporter {
+  private reporter(): Reporter<M> {
     const epoch = this.epoch
+    const running = this.running
     // The question the tool runs for: its requests to the worker say so.
     const turn = this.turn
+    const userMessage = this.agent?.state.messages.findLast((message) => message.role === 'user')
     return {
       stop: (reason, code) => {
         if (epoch !== this.epoch || this.stopReason !== undefined) return
@@ -638,35 +648,32 @@ export class CopilotAgent {
         this.stopCode = code
       },
       changed: () => {
-        if (epoch === this.epoch) this.changed = true
+        if (running === this.running) this.changed = true
       },
       failed: (code) => {
         if (epoch === this.epoch) this.failedWith = code
       },
       context: {
+        userText: userMessage?.role === 'user' ? textOf(userMessage.content) : '',
         ask: async (question) => (epoch === this.epoch && this.askOnCard ? this.askOnCard(question) : false),
-        // Always through the worker, whichever model answers: the page is read by the worker either way.
-        // A render or a search costs credits, and the question it was for counts them; a plain read is free.
+        // The same whichever model answers. A render or a search may cost credits, and the question it
+        // was for counts them; a plain read is free.
         readWeb: (url, maxChars, render, signal) =>
-          readWebPage(this.config.worker, url, maxChars, render, {
+          this.config.web.read(url, maxChars, render, {
             signal,
             turn,
             charged: (cost) => {
               if (epoch === this.epoch) this.onCost?.(cost, 'renders')
             },
           }),
-        // The user's free search, when they chose it, costs nothing; the worker's costs credits.
-        searchWeb: async (query, limit, signal) => {
-          const free = await this.config.search?.()
-          if (free) return free(query, limit, signal)
-          return searchWebFor(this.config.worker, query, limit, {
+        searchWeb: (query, limit, signal) =>
+          this.config.web.search(query, limit, {
             signal,
             turn,
             charged: (cost) => {
               if (epoch === this.epoch) this.onCost?.(cost, 'searches')
             },
-          })
-        },
+          }),
         keep: async (result) => {
           const store = this.config.results
           if (!store) throw new Error('There is no store to keep results in.')
@@ -702,12 +709,12 @@ export class CopilotAgent {
    * request looks it up from the new provider; the conversation stays.
    */
   private async chooseProvider(): Promise<void> {
-    const choice = answering((await this.config.model?.()) ?? HOSTED_ONLY) ?? 'hosted'
+    const choice = (await this.config.model?.()) ?? 'hosted'
     const before = this.providerFor
     this.providerFor = choice
     // The agent starts on the hosted provider.
     if (before === undefined ? choice === 'hosted' : JSON.stringify(before) === JSON.stringify(choice)) return
-    this.provider = choice === 'hosted' ? hostedProvider(this.config.worker) : ownProvider(choice)
+    this.provider = choice === 'hosted' ? this.config.hosted : ownProvider(choice)
     this.model = undefined
   }
 
@@ -751,7 +758,7 @@ export class CopilotAgent {
       },
       getApiKey: () => this.provider.apiKey(),
       identity: this.provider.identity,
-      // Notion tools will change pages; run them one at a time, in the order the model asked.
+      // Tools can change pages; run them one at a time, in the order the model asked.
       toolExecution: 'sequential',
       transformContext: async (messages) => {
         const limits = this.config.history ?? this.provider.history
@@ -773,7 +780,7 @@ export class CopilotAgent {
     return messages.map((message) => {
       if (message.role !== 'user') return message
       const readOnly = this.readOnly.has(message)
-      const mode = readOnly ? READ_ONLY_NOTE : readOnlyBefore ? EDIT_NOTE : undefined
+      const mode = readOnly ? this.notes.readOnly : readOnlyBefore ? this.notes.edit : undefined
       readOnlyBefore = readOnly
       const notes = [mode, this.contexts.get(message)].filter(Boolean).join('\n')
       return notes ? { ...message, content: `${notes}\n\n${textOf(message.content)}` } : message

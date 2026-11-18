@@ -1,23 +1,30 @@
-// The agent's types, as the rest of the extension uses them: its configuration, the tools it runs,
-// what it reports while it works, and the conversation as saved sessions keep it.
-import type { Turn, WebPage, WebSearchResult, WorkerClient } from '@cofun/worker-client'
-import type { ModelSettings, OwnSetup } from '../models'
-import type { ToolMemory } from '../tools/memory'
-import { z } from '../zod'
+// The agent's types, as an extension uses them: its configuration, the tools it runs, what it
+// reports while it works, and the conversation as saved sessions keep it.
+import type { Turn, WebCall, WebPage, WebSearchResult } from '@cofun/worker-client'
+import { OwnService, type OwnSetup } from './own'
+import type { ModelProvider } from './provider'
+import { z } from './zod'
 
-export interface AgentConfig {
+/**
+ * What an agent is made with. `M` is the extension's own memory of a conversation, which its tools
+ * get as `ToolContext.memory` (see CopilotAgent).
+ */
+export interface AgentConfig<M = unknown> {
+  /** The extension's name as its users know it, `Notico`: in the notes to the model and in what the user is told. */
+  product: string
+  /** What the tools that change data change, as the notes to the model name it: `Notion`, `site data`. */
+  data: string
+  /** The hosted model (see hostedProvider): it answers unless `model` names the user's own. */
+  hosted: ModelProvider
   /**
-   * The worker: it answers with the hosted model, and reads web pages and searches the web
-   * whichever model answers.
+   * The user's own model that answers, read as each question starts, so a change applies from the
+   * next question on and the conversation goes on with it; undefined for the hosted model.
    */
-  worker: WorkerClient
-  /**
-   * Which model answers, read as each question starts, so a change applies from the next question
-   * on and the conversation goes on with it. The hosted model when not given.
-   */
-  model?: () => Promise<ModelSettings>
+  model?: () => Promise<OwnSetup | undefined>
+  /** Where the tools read web pages and search the web, whichever model answers (see workerWeb). */
+  web: WebAccess
   systemPrompt: string
-  tools: ToolSpec[]
+  tools: ToolSpec<M>[]
   /** Model calls allowed per question. */
   maxSteps?: number
   /**
@@ -29,20 +36,21 @@ export interface AgentConfig {
   history?: { messages: number; chars: number }
   /**
    * Called as each question starts, to count the requests its tools make to the user's data (to
-   * Notion). `ask` puts a yes/no question to the user on the card of the tool that is running, and
+   * the site). `ask` puts a yes/no question to the user on the card of the tool that is running, and
    * resolves false when the question is stopped or nobody can be asked.
    */
   meter?: (ask: (question: string) => Promise<boolean>) => QuestionMeter
-  /**
-   * The search to use instead of the worker's, read as each search starts: the user's free search
-   * (src/search.ts), or undefined for the worker's. It costs no credits, and throws a WebError as
-   * the worker's search does (see ToolContext.searchWeb).
-   */
-  search?: () => Promise<SearchWeb | undefined>
 }
 
-/** Searches the web for `query`, for at most `limit` results (see ToolContext.searchWeb). */
-type SearchWeb = (query: string, limit: number, signal?: AbortSignal) => Promise<WebSearchResult[]>
+/**
+ * Reads web pages and searches the web for the tools (see ToolContext.readWeb and searchWeb), for
+ * the question `call` names. Throws a ToolError when it could not, which stops the question only
+ * when it carries `stopsQuestion`.
+ */
+export interface WebAccess {
+  read(url: string, maxChars: number, render: boolean, call: WebCall): Promise<WebPage>
+  search(query: string, limit: number, call: WebCall): Promise<WebSearchResult[]>
+}
 
 /** What a question's tools sent, read when it ends. */
 interface QuestionMeter {
@@ -52,15 +60,16 @@ interface QuestionMeter {
 }
 
 /**
- * What goes with a question besides what the user typed, all saved with it. `context` is sent to the
- * model ahead of the question (say, which page is open); `pages` are the pages the user sent it with,
- * shown with the question; `selections`, text the user selected on pages and sent it with, shown with
- * it too (what the model gets of it is in `context`); `readOnly`: the question is asked in Read only,
- * so the model is offered no tool that changes data (`changesData`) for it. `chat`, the id of the
- * session it is asked in, is not saved with it: it goes to the worker with the question's requests
- * (see Turn).
+ * What goes with a question besides what the user typed, all saved with it but `toolNames` and
+ * `chat`. `context` is sent to the model ahead of the question (say, which page is open); `pages`
+ * are the pages the user sent it with, shown with the question; `selections`, text the user selected
+ * on pages and sent it with, shown with it too (what the model gets of it is in `context`);
+ * `readOnly`: the question is asked in Read only, so tools marked `changesData` are refused before
+ * they run. `toolNames`: the tools the question is offered, by name, when not all of them. `chat`,
+ * the id of the session it is asked in, goes to the worker with the question's requests (see Turn).
  */
 export interface QuestionExtras {
+  toolNames?: ReadonlySet<string>
   context?: string
   pages?: QuestionPage[]
   selections?: QuestionSelection[]
@@ -70,24 +79,27 @@ export interface QuestionExtras {
 
 /**
  * The worker's client's: which chat and question a request to the worker is for (Turn, never sent to
- * a user's own model's service), and a web page it read and a search result it found.
+ * a user's own model's service), a web read or search as WebAccess gets it, and a web page it read
+ * and a search result it found.
  */
-export type { Turn, WebPage, WebSearchResult }
+export type { Turn, WebCall, WebPage, WebSearchResult }
 
 /**
- * A page a question was sent with: its title and URL, and whether it is a database; or a page on
- * another site than Notion (`web`), in the tab the user added (`tab`, Chrome's id for it, in the
- * browser's run `run`).
+ * A page a question was sent with: its title and URL; for a page on another site than the
+ * extension's own (`web`), the tab the user added (`tab`, Chrome's id for it, in the browser's run
+ * `run`). Other fields an extension gives a page (Notico's `database`) are kept as they are, for the
+ * extension to read with a schema of its own.
  */
-const QuestionPage = z.object({
+const QuestionPageFields = z.object({
   title: z.string(),
   url: z.string(),
-  database: z.literal(true).optional(),
   web: z.literal(true).optional(),
   tab: z.number().int().optional(),
   run: z.string().optional(),
 })
-export type QuestionPage = z.infer<typeof QuestionPage>
+export const QuestionPage = QuestionPageFields.loose()
+/** The fields the agent reads; other fields, kept as they are, are the extension's to read. */
+export type QuestionPage = z.infer<typeof QuestionPageFields>
 
 /**
  * Text a question was sent with, selected on a page, as the question shows it: the page's title, its
@@ -98,8 +110,8 @@ export type QuestionSelection = z.infer<typeof QuestionSelection>
 
 /**
  * What a call that worked says about itself for the side panel, apart from the text the model gets:
- * `name`, the name of the thing its card names (a page's title, say), and the pages and databases it
- * `read` and `changed`, by id (32 hex digits, no dashes); and `result`, the id of the result it kept
+ * `name`, the name of the thing its card names (a page's title, say), and the pages it
+ * `read` and `changed`, by id; and `result`, the id of the result it kept
  * on the device when it was long (see KeptResult), which the conversation names it by. Saved with
  * the call's result.
  */
@@ -115,16 +127,18 @@ export type ToolDetails = z.infer<typeof ToolDetails>
 export interface ToolResult {
   text: string
   details: ToolDetails
+  /** A change tool can verify that its successful call made no change. */
+  changed?: boolean
 }
 
-/** A tool the model can ask the extension to run. */
-export interface ToolSpec {
+/** A tool the model can ask the extension to run; `M` is the extension's memory (see ToolContext). */
+export interface ToolSpec<M = unknown> {
   name: string
   description: string
   /**
    * JSON Schema of the arguments object. The model is sent it, and the agent runtime checks each
    * call against it before the tool runs (see `toAgentTool` in calls.ts). Define a tool with
-   * `defineTool` (src/tool.ts), which derives this from the schema it parses the arguments with.
+   * `defineTool` (tool.ts), which derives this from the schema it parses the arguments with.
    */
   parameters: object
   /**
@@ -133,22 +147,30 @@ export interface ToolSpec {
    * The arguments come from the model: a tool parses them before it uses them. Text alone is a
    * result with no details. `context` is what the agent gives a running call (see ToolContext).
    */
-  run: (args: unknown, signal: AbortSignal | undefined, context: ToolContext) => Promise<string | ToolResult>
-  /** The tool does what is hard to undo, such as deleting a page, so the user must agree each time before it runs. */
-  needsConfirmation?: boolean
+  run: (args: unknown, signal: AbortSignal | undefined, context: ToolContext<M>) => Promise<string | ToolResult>
+  /**
+   * The tool does what is hard to undo, such as deleting a page, so the user must agree each time
+   * before it runs; a function says so for the call about to run, from its context.
+   */
+  needsConfirmation?: boolean | ((context: ToolContext<M>) => boolean)
   /**
    * The tool changes the user's data. When a question stops after such a tool ran and changed
    * something, or may have (its error has `mayHaveChanged`), the user is told to check before
    * asking again, so they don't ask for a change twice. Every successful run counts, even one
-   * that changed nothing (an edit of no-ops): over-warning is the safe side.
+   * that changed nothing (an edit of no-ops), unless its result says `changed: false`: over-warning
+   * is the safe side.
    */
   changesData?: boolean
   /**
    * What a call does, in words, from the state before it runs: shown on the call's card, and to the
    * user before agreeing when the tool needs confirmation. It may look things up first. `context` is
-   * the one the call will run with.
+   * the one the call will run with; `signal` aborts its lookups when the question stops.
    */
-  preview?: (args: unknown, context: ToolContext) => string | undefined | Promise<string | undefined>
+  preview?: (
+    args: unknown,
+    context: ToolContext<M>,
+    signal?: AbortSignal,
+  ) => string | undefined | Promise<string | undefined>
 }
 
 /**
@@ -167,22 +189,23 @@ interface CardQuestion {
  */
 export type AskOnCard = (question: CardQuestion) => Promise<boolean>
 
-/** What the agent gives a call while it runs. */
-export interface ToolContext {
+/** What the agent gives a call while it runs; `memory` is the extension's own (`M`). */
+export interface ToolContext<M = unknown> {
+  /** The current question as the user typed it, without notes or text returned by tools. */
+  userText: string
   /** Puts a question to the user on the call's card (see AskOnCard). */
   ask: AskOnCard
   /**
-   * Reads the web page at `url` through the worker, up to `maxChars` of its text; `render` renders
-   * it in a browser first, for a page drawn by scripts. Throws a WebError
-   * when the worker could not read it, which stops the question only when it carries `stopsQuestion`.
+   * Reads the web page at `url` (see AgentConfig.web), up to `maxChars` of its text; `render`
+   * renders it in a browser first, for a page drawn by scripts. Throws a ToolError when it could not
+   * be read, which stops the question only when it carries `stopsQuestion`.
    */
   readWeb: (url: string, maxChars: number, render: boolean, signal?: AbortSignal) => Promise<WebPage>
   /**
-   * Searches the web for `query`, for at most `limit` results: through the worker, or with the
-   * user's free search when they chose it (AgentConfig.search). Throws a WebError when the search
-   * failed, which stops the question only when it carries `stopsQuestion`.
+   * Searches the web for `query` (see AgentConfig.web), for at most `limit` results. Throws a
+   * ToolError when the search failed, which stops the question only when it carries `stopsQuestion`.
    */
-  searchWeb: SearchWeb
+  searchWeb: (query: string, limit: number, signal?: AbortSignal) => Promise<WebSearchResult[]>
   /**
    * Keeps a long result on the device and resolves with its id; rejects when there is no store or
    * it can't be written.
@@ -197,17 +220,17 @@ export interface ToolContext {
   /** How many characters the question being answered holds in tool results so far. */
   questionChars: () => number
   /**
-   * What the tools remember of the conversation (src/tools/memory.ts): the agent's own, the same for
+   * What the tools remember of the conversation (the extension's own): the agent's, the same for
    * every call it runs, so the pages one chat read never count as read in another.
    */
-  memory: ToolMemory
+  memory: M
 }
 
 /**
- * The full text of a long tool result, kept on the device for a while (src/sessions.ts), so the
- * model can read the parts it was not given (read_result, search_result). `tool` is the tool that
- * read it; `title` and `url`, the page's; `markdown`, whether `text` is the extension's own
- * Markdown (src/web/markdown.ts), as the result labels it; `chars`, how long the whole text was,
+ * The full text of a long tool result, kept on the device for a while (the extension's session
+ * store), so the model can read the parts it was not given (read_result, search_result). `tool` is
+ * the tool that read it; `title` and `url`, the page's; `markdown`, whether `text` is the
+ * extension's own Markdown, as the result labels it; `chars`, how long the whole text was,
  * which is more than `text` when only the first part of it was kept; `keptAt`, when it was kept,
  * which is what it is swept by.
  */
@@ -226,7 +249,7 @@ export type KeptResult = z.infer<typeof KeptResult>
 /** What a tool gives to keep (see KeptResult). */
 export type ResultToKeep = Pick<KeptResult, 'tool' | 'title' | 'url' | 'markdown' | 'text' | 'chars'>
 
-/** Where long results are kept: the saved sessions' store (src/sessions.ts). */
+/** Where long results are kept: the saved sessions' store. */
 interface ResultStore {
   keep(result: ResultToKeep): Promise<string>
   /** `undefined` when it is gone or can't be read. */
@@ -234,22 +257,31 @@ interface ResultStore {
 }
 
 /**
- * Why a web page could not be read or the web searched, by the worker (see asWebError in worker.ts)
- * or the user's free search: its code (`no_access`, `no_text`, …) and message.
+ * A tool's error that the agent reads (see `toAgentTool` in calls.ts): its code (`no_access`,
+ * `rate_limited`, …) and message, which the model gets. Any error may carry these fields, on it or
+ * on a cause; this class is the one way to make one with them.
  */
-export class WebError extends Error {
+export class ToolError extends Error {
   /** Set when the question must stop (a rate limit, no credits left): what the user is told. */
   readonly stopsQuestion?: string
+  /** Set when the call may have changed the user's data although it failed: the user is told to check. */
+  readonly mayHaveChanged?: true
   /** Set when the call was or may have been charged (a render, a search), so the model is told not to repeat it. */
   readonly charged: boolean
 
   constructor(
     readonly code: string,
     message: string,
-    { stopsQuestion, charged = false, cause }: { stopsQuestion?: string; charged?: boolean; cause?: unknown } = {},
+    {
+      stopsQuestion,
+      mayHaveChanged,
+      charged = false,
+      cause,
+    }: { stopsQuestion?: string; mayHaveChanged?: boolean; charged?: boolean; cause?: unknown } = {},
   ) {
     super(message, { cause })
     if (stopsQuestion) this.stopsQuestion = stopsQuestion
+    if (mayHaveChanged) this.mayHaveChanged = true
     this.charged = charged
   }
 }
@@ -295,7 +327,7 @@ export type AgentUpdate =
   | { type: 'tool_ready'; id: string; args: unknown; preview?: string }
   /**
    * `result`: what the model got back, the error message when the tool failed. `code`: the code of
-   * the error the tool failed with, when it has one (a Notion error's, such as `no_access`).
+   * the error the tool failed with, when it has one (such as `no_access`).
    * `details`: what the tool said about the call, when it worked and said anything (see ToolDetails).
    */
   | {
@@ -313,11 +345,6 @@ const TokenUsage = z.object({ input: z.number(), output: z.number(), cached: z.n
 export type TokenUsage = z.infer<typeof TokenUsage>
 
 /** Which model a question was asked of: the hosted one, or a user's own one on its service, by its name. */
-const OwnService = z.enum(['openrouter'])
-/** True when A and B are the same set of values. */
-type Same<A, B> = [A, B] extends [B, A] ? true : false
-// The same services as OwnSetup, both ways: one missing here would make every session it answered unreadable.
-true satisfies Same<z.infer<typeof OwnService>, OwnSetup['service']>
 const AnsweredBy = z.union([
   z.object({ service: z.literal('hosted') }),
   z.object({ service: OwnService, name: z.string() }),
@@ -413,7 +440,7 @@ export type HistoryMessage = z.infer<typeof HistoryMessage>
 
 export type AskResult = (
   | { status: 'done' }
-  | { status: 'stopped' }
+  | { status: 'stopped'; warning?: string }
   | { status: 'step_limit'; steps: number }
   /** `code`: the worker's error code when it refused the question, e.g. `out_of_credits`. */
   | { status: 'error'; message: string; code?: string }

@@ -1,6 +1,6 @@
 import { prepareCloudPageEdit, prepareCloudUndoEdit } from '../confluence/cloud-edits'
 import { prepareCloudRestore } from '../confluence/cloud-status'
-import type { ToolContext } from '../agent'
+import type { ToolContext } from '@cofun/agent'
 import { applyAttachmentUpload, prepareAttachmentUpload } from '../confluence/attachments'
 import { prepareCloudOrganization, prepareCloudTrash } from '../confluence/cloud-organization'
 import { applyCloudLabel, prepareCloudComment, prepareCloudPageWrite } from '../confluence/cloud-writes'
@@ -24,7 +24,7 @@ import { captureConfluenceTab, refuse, type ConfluenceTab } from '../confluence/
 import type { ConfluenceUndo } from '../confluence/undo'
 import { defineTool } from '../tool'
 import { z } from '../zod'
-import type { ConfluenceQuestion } from './memory'
+import type { ConfluenceQuestion, ToolMemory } from './memory'
 import { asData, on, verb } from './shared'
 
 interface ChangeResult {
@@ -41,8 +41,8 @@ interface Plan {
 
 const noArgs = z.strictObject({})
 
-async function requireSameTab(context: ToolContext, captured: ConfluenceTab): Promise<void> {
-  const now = await captureConfluenceTab(context.accountId)
+async function requireSameTab(context: ToolContext<ToolMemory>, captured: ConfluenceTab): Promise<void> {
+  const now = await captureConfluenceTab(context.memory.accountId)
   if (
     now?.tabId !== captured.tabId ||
     now.url !== captured.url ||
@@ -60,7 +60,7 @@ function change<S extends z.ZodObject>(
   args: S,
   prepare: (
     input: z.output<S>,
-    context: ToolContext,
+    context: ToolContext<ToolMemory>,
     question: ConfluenceQuestion,
     tab: ConfluenceTab,
     signal?: AbortSignal,

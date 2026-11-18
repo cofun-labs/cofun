@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState, type FormEvent, type KeyboardEvent, type Ref } from 'react'
-import type { QuestionPage, QuestionSelection } from '../agent'
+import type { QuestionPage, QuestionSelection } from '@cofun/agent'
 import { track } from '../analytics'
 import type { AttachmentUpload } from '../confluence/attachments'
 import { getInstance, watchInstance } from '../confluence/instance'

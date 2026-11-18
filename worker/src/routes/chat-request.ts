@@ -3,7 +3,7 @@
 import * as z from '../zod'
 import { MAX_ID_CHARS, badRequest, parse, part } from '../http'
 
-// What Notico sends of a long chat (HOSTED_HISTORY in its src/agent/provider.ts: 800 messages and
+// What Notico sends of a long chat (HOSTED_HISTORY in @cofun/agent's provider.ts: 800 messages and
 // 600,000 characters, about 150k tokens of the model's 1,048,576), with room for the system prompt,
 // which that budget doesn't count.
 const MAX_MESSAGES = 1_000

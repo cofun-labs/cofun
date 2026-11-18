@@ -1,5 +1,5 @@
 import { WorkerClient } from '@cofun/worker-client'
-import type { AgentConfig, QuestionPage } from '../agent'
+import { hostedProvider, workerWeb, type AgentConfig, type QuestionPage } from '@cofun/agent'
 import { track } from '../analytics'
 import type { CreditsState } from '../credits'
 import { loadMode, saveMode, watchMode, type Mode } from '../mode'
@@ -16,6 +16,7 @@ import { countNotionRequests } from '../notion/tab'
 import { freeSearch } from '../search'
 import { SessionStore, type Session } from '../sessions'
 import { DATA_LINE, pagesIn, SELECTION_END, TOOLS } from '../tools'
+import type { ToolMemory } from '../tools/memory'
 import { ChatSession, type Question } from './chat-session'
 
 const API_URL = import.meta.env.VITE_API_URL as string
@@ -117,7 +118,7 @@ export class Panel {
   private snapshot: PanelSnapshot
   private readonly listeners = new Set<() => void>()
   /** What every chat's agent is made with. */
-  private readonly agent: AgentConfig
+  private readonly agent: AgentConfig<ToolMemory>
   /** The worker, which every chat's agent asks too: here it reads the credits and starts a purchase. */
   private readonly worker: WorkerClient
   // Read once for this account, then changed here or by another window's panel. Each question reads
@@ -166,14 +167,24 @@ export class Panel {
       clientName: `notico/${chrome.runtime.getManifest().version}`,
       product: 'Notico',
     })
+    const web = workerWeb(this.worker)
     this.agent = {
-      worker: this.worker,
-      model: this.readModel,
+      product: 'Notico',
+      data: 'Notion',
+      hosted: hostedProvider(this.worker),
+      web: {
+        read: web.read,
+        // The user's free search, when they chose it, costs nothing; the worker's costs credits.
+        search: async (query, limit, call) => {
+          const free = await freeSearch(userId)
+          return free ? free(query, limit, call.signal) : web.search(query, limit, call)
+        },
+      },
+      model: async () => answering(await this.readModel()),
       systemPrompt: SYSTEM_PROMPT,
       tools: TOOLS,
       meter: countNotionRequests,
       results: this.store,
-      search: () => freeSearch(userId),
     }
     this.snapshot = { chat: this.newSession(), credits: { status: 'loading' }, saved: 0 }
   }

@@ -4,7 +4,7 @@ How Cofun's extensions and the backend they share are built, and why. This file 
 
 Each Cofun extension is an AI side panel for one kind of page, in its own folder under `extensions/` (Notico, for Notion, is the first), built and published by itself. All of them call one Cloudflare Worker (`worker/`), which signs users in, checks who is asking, keeps their credits, passes the conversation to the model, and reads public web pages and searches the web for an extension. It never talks to Notion or acts as the user on any site. The agent and its tools run in the extension, next to the page they act on.
 
-Each extension keeps its own app: the side panel, its sessions, the prompt, the site layer and its tools, the manifest, and the usage events. Only libraries the extensions call are shared, as workspace packages in `packages/`: `@cofun/worker-client` is the client of the worker (the hosted model's lookup, the cost its replies carry, web reads and searches, credits and checkout) and of Clerk sign-in, so most of the worker's API, which must stay compatible with the extension versions on the Chrome Web Store, is read in one place. The hosted model's requests themselves still go through each extension's agent, whose provider (`src/agent/worker.ts`, `provider.ts`) keeps what the worker accepts of them: the model's limits, the request format, and how much history to send. They move with the agent runtime. A package takes what is particular to an extension as parameters and never imports one; the rest of the side panel is still a copy per extension, and a fix in one is applied to the others by hand. One account and one balance of credits serve every extension.
+Each extension keeps its own app: the side panel, its sessions, the prompt, the site layer and its tools, the manifest, and the usage events. Only libraries the extensions call are shared, as workspace packages in `packages/`: `@cofun/worker-client` is the client of the worker (the hosted model's lookup, the cost its replies carry, web reads and searches, credits and checkout) and of Clerk sign-in, so most of the worker's API, which must stay compatible with the extension versions on the Chrome Web Store, is read in one place. `@cofun/agent` is the agent runtime and tool framework: the agent loop on pi and the rules for calling outside services that its tool calls keep, the model providers (the hosted one, which keeps what the worker accepts of its requests: the model's limits, the request format, and how much history to send; and OpenRouter), and `defineTool`. An extension gives it its prompt, its tools, its memory of a chat, and the worker's client; its tools and which of them a question is offered stay the extension's. A package takes what is particular to an extension as parameters and never imports one; the rest of the side panel is still a copy per extension, and a fix in one is applied to the others by hand. One account and one balance of credits serve every extension.
 
 ## Single source of truth
 
@@ -70,7 +70,7 @@ A question carries the pages it goes with (the open page, and pages and tabs the
 |---|---|---|
 | Extension | Chrome MV3 + [Side Panel API](https://developer.chrome.com/docs/extensions/reference/api/sidePanel) | Sits next to the page without covering Notion. One panel per window, on every tab, so the conversation stays as the user switches tabs |
 | Extension build | Vite + React + TypeScript | Clerk's extension SDK is React-based; Vite needs little config and no extension framework |
-| Agent runtime | [`@earendil-works/pi-agent-core`](https://www.npmjs.com/package/@earendil-works/pi-agent-core), wrapped in `src/agent/` | Tool loop, events, abort, and tool hooks in a small package; it runs in the side panel because tools act on the browser. Only `src/agent/` imports it, so it can be replaced |
+| Agent runtime | [`@earendil-works/pi-agent-core`](https://www.npmjs.com/package/@earendil-works/pi-agent-core), wrapped in `@cofun/agent` (`packages/agent/`) | Tool loop, events, abort, and tool hooks in a small package; it runs in the side panel because tools act on the browser. Only `@cofun/agent` imports it, so it can be replaced |
 | Notion read/write | Notion's own internal endpoints, called from inside the user's Notion tab with `chrome.scripting` | Requests are same-origin and carry the tab's own Notion session, so no Notion integration token is needed. They run in an isolated world, out of the page's reach. No `chrome.debugger` (which shows a permanent "debugging this browser" banner). The trade-off: these are not public APIs and may change |
 
 ### Sessions
@@ -93,7 +93,7 @@ Clerk's own account management is not used: Notico needs Clerk only for who the 
 
 ## Confluco
 
-Confluco is built independently from `extensions/confluco/`. It runs its own copy of the side panel, agent, and local chat store. It signs in through the same Cofun Worker, sends `confluco/<version>` as its client name, and uses the account's shared credits. Its browser tools read the current tab or tabs a user added via its own web layer, with the same site grant flow as Notico. Public web reads and searches go through the Worker. On a context menu click, Confluco's extension service worker resolves the active Clerk account and leaves the selection in session storage for that account and window.
+Confluco is built independently from `extensions/confluco/`. It runs its own copy of the side panel and local chat store, and the agent of `@cofun/agent`. It signs in through the same Cofun Worker, sends `confluco/<version>` as its client name, and uses the account's shared credits. Its browser tools read the current tab or tabs a user added via its own web layer, with the same site grant flow as Notico. Public web reads and searches go through the Worker. On a context menu click, Confluco's extension service worker resolves the active Clerk account and leaves the selection in session storage for that account and window.
 
 A user connects one Confluence base URL per Cofun account in Settings. The Confluence site layer checks the connected origin and deployment context. Requests run in the captured Confluence tab with that tab's session. Self-managed Confluence supports published-page reads, space, history, discussion and attachment inspections, and explicit page changes. Atlassian-hosted Confluence Cloud uses its own REST endpoints with the same tool definitions to read and search published pages and inspect spaces, page trees, versions, access, discussions, labels and attachments. It also creates child pages, renames pages, adds or removes ordinary labels, posts footer comments and replies, moves or copies pages within a space, moves eligible pages to recoverable trash, edits published text, and restores trashed pages through the native confirmation form. A verified text edit or trash action can be undone in the chat. The restore form and its CSRF value are read and submitted inside the captured site tab. The question offers Confluence tools for the captured site's capabilities. An explicit composer action can attach selected editor text to a question or stage a local file for upload. The file bytes go directly to the connected Confluence site once confirmed. The session store keeps a verified edit or trash reversal with the chat on the device.
 
@@ -106,9 +106,7 @@ extensions/<name>/        one Chrome extension, built and published by itself; n
   manifest.ts             builds manifest.json from .env; a test pins its permissions and content security policy
   PRIVACY.md, README.md   for the extension's users
   store/                  what the Chrome Web Store Dashboard says
-  src/agent/              the agent loop and its model providers; the only folder that imports pi, and the
-                          only one besides the site layer that uses fetch (the user's own model); the
-                          hosted model's provider calls the worker through @cofun/worker-client
+  src/tool.ts             @cofun/agent's defineTool, bound to the extension's memory of a chat
   src/tools/              the tools the agent runs (index.ts lists them)
   src/notion/             the site layer for Notion: imports nothing from the agent, tools, sessions, or UI
     api.ts                the only module that knows Notion's endpoints and request shapes
@@ -132,6 +130,8 @@ extensions/<name>/        one Chrome extension, built and published by itself; n
 packages/<name>/          a library the extensions call (workspace package); never imports an extension
   src/zod.ts              the package's only module that imports zod
   test/                   tests of the rules the package owns
+packages/agent/           @cofun/agent: the agent loop and its tool calls, the model providers (the hosted
+                          one and OpenRouter), and defineTool; the only package that imports pi
 packages/worker-client/   @cofun/worker-client: the client of the worker's API (the hosted model's own requests
                           go through the agent), and Clerk sign-in
                           (/clerk, which a build loads in Node)

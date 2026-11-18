@@ -1,6 +1,6 @@
 import type { MouseEvent } from 'react'
-import type { QuestionPage, QuestionSelection } from '../agent'
-import { addedTabNow } from '../tools'
+import type { QuestionPage, QuestionSelection } from '@cofun/agent'
+import { addedTabNow, isDatabase } from '../tools'
 import { Icon } from './icons'
 
 /** A page's title as the panel shows it; Notion shows a page without one as "Untitled". */
@@ -8,7 +8,7 @@ export const titleOf = (page: QuestionPage) => page.title.trim() || 'Untitled'
 
 /** A page's icon: a table for a database, a globe for a tab on another site, a page otherwise. */
 export function PageIcon({ page }: { page: QuestionPage }) {
-  return <Icon name={page.database ? 'database' : page.web ? 'globe' : 'page'} />
+  return <Icon name={isDatabase(page) ? 'database' : page.web ? 'globe' : 'page'} />
 }
 
 /** A page the next question goes with; `auto` when the panel added it (the page open in the tab). */

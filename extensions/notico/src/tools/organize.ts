@@ -385,7 +385,7 @@ export const trashPage = defineTool({
     let checked = false
     try {
       // Waited for in full, Stop aside, so nothing it asks of Notion goes unheard: Notion turning a
-      // lookup away stops the question before the user is asked (see previewCall in agent/calls.ts).
+      // lookup away stops the question before the user is asked (see previewCall in @cofun/agent's calls.ts).
       const tab = await activeNotionTab()
       found = (await tab.client.findRecords(ids.map((id) => ({ table: 'block' as const, id })))).block ?? {}
       parents = await blockParents(tab, found, Object.values(found))

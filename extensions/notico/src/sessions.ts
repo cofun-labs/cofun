@@ -4,7 +4,7 @@
 // What is read back is parsed, never taken on trust: an earlier version may have saved a session in
 // another form. One that doesn't parse is unreadable. It is listed as such, so it can be deleted,
 // and it is never opened: nothing of it reaches the chat or the model.
-import { HistoryMessage, KeptResult, type ResultToKeep } from './agent'
+import { HistoryMessage, KeptResult, type ResultToKeep } from '@cofun/agent'
 import { z } from './zod'
 
 /** What the session list shows; the conversation itself is loaded only when a session opens. */

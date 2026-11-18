@@ -1,7 +1,7 @@
 // Long results of the tools that read outside content (the tabs, web pages): the full text is kept
 // on the device (KeptResult, in the saved sessions' store), and the model gets its first part, an
 // outline, and an id, with which read_result reads another part and search_result finds text in it.
-import type { KeptResult, ToolContext, ToolResult } from '../agent'
+import type { KeptResult, ToolContext, ToolResult } from '@cofun/agent'
 import { defineTool } from '../tool'
 import { z } from '../zod'
 import { READ, SEARCH, asData, asPageText, clip, count, nameOf, partArg } from './shared'

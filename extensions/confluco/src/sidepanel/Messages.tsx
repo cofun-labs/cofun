@@ -1,5 +1,5 @@
 import { memo, useEffect, useId, useState, useSyncExternalStore, type RefObject } from 'react'
-import type { QuestionCost, QuestionDetails } from '../agent'
+import type { QuestionCost, QuestionDetails } from '@cofun/agent'
 import { track } from '../analytics'
 import { webTouchedBy } from '../tools'
 import type { ChatSession, ChatSnapshot, Part, Reply, ShownTool } from './chat-session'

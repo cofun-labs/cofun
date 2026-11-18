@@ -11,7 +11,7 @@ import {
   type QuestionSelection,
   type ToolDetails,
   type ToolStatus,
-} from '../agent'
+} from '@cofun/agent'
 import { track } from '../analytics'
 import type { AttachmentUpload } from '../confluence/attachments'
 import { captureConfluenceConnection } from '../confluence/tab'
@@ -19,7 +19,8 @@ import type { ConfluenceUndo } from '../confluence/undo'
 import type { Mode } from '../mode'
 import { answering, type ModelSettings, type OwnSetup } from '../models'
 import { titleFor, type Session, type SessionStore } from '../sessions'
-import { CLOUD_TOOL_NAMES, type ToolMemory } from '../tools'
+import { CLOUD_TOOL_NAMES } from '../tools'
+import { ToolMemory } from '../tools/memory'
 
 /** A tool call as the panel shows it. */
 export interface ShownTool {
@@ -86,7 +87,9 @@ export interface ChatSnapshot {
 export interface ChatPanel {
   store: SessionStore
   /** Each chat asks its own agent, made with this. */
-  agent: AgentConfig
+  agent: AgentConfig<ToolMemory>
+  /** The Cofun account signed in, whose connected Confluence site the chats use. */
+  accountId: string
   /** Aborted when the panel unmounts: it cuts a title request short, which leaving the chat does not. */
   closed: AbortSignal
   /** Sessions deleted in this panel: a save still waiting to write must not bring one back. */
@@ -138,7 +141,7 @@ export interface Question {
 export class ChatSession {
   private snapshot: ChatSnapshot
   private readonly listeners = new Set<() => void>()
-  private readonly agent: CopilotAgent
+  private readonly agent: CopilotAgent<ToolMemory>
   /** Aborted by leave(): the question stops, and one still waiting to be asked is not asked. */
   private readonly lifetime = new AbortController()
   /** The question being answered, if any: aborted by Stop. */
@@ -159,7 +162,7 @@ export class ChatSession {
     private readonly panel: ChatPanel,
     saved?: Session,
   ) {
-    this.agent = new CopilotAgent(panel.agent, saved?.messages)
+    this.agent = new CopilotAgent(panel.agent, new ToolMemory(panel.accountId), saved?.messages)
     this.memory.confluenceUndo = saved?.undo
     this.titled = saved?.titledByModel ?? false
     this.snapshot = {
@@ -220,7 +223,7 @@ export class ChatSession {
     if (this.snapshot.id !== session.id) this.update({ id: session.id })
     const originalUndo = this.memory.confluenceUndo
     let undoCleared = false
-    const connection = captureConfluenceConnection(this.panel.agent.accountId).catch(() => undefined)
+    const connection = captureConfluenceConnection(this.panel.accountId).catch(() => undefined)
     this.memory.confluenceQuestion = {
       tab: connection.then((captured) => captured?.tab),
       attachment: q.attachment,
@@ -360,6 +363,7 @@ export class ChatSession {
       }
       this.update({ status: 'asking' })
       track({ event: 'question_asked', provider })
+      this.memory.startQuestion()
       const result = await this.agent.ask(
         q.text,
         onUpdate,

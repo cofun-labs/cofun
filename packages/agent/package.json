@@ -1,0 +1,23 @@
+{
+  "name": "@cofun/agent",
+  "version": "0.0.0",
+  "private": true,
+  "description": "The extensions' agent runtime and tool framework: the agent loop, tool calls and the rules that keep them safe, the model providers, and defineTool",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@cofun/worker-client": "workspace:*",
+    "@earendil-works/pi-agent-core": "1.5.2",
+    "@earendil-works/pi-ai": "1.5.2",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.6",
+    "typescript": "^7.0.2"
+  }
+}
