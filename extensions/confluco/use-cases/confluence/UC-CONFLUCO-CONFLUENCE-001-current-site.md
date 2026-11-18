@@ -17,5 +17,5 @@ Confluco works on the Confluence site open in the current tab, with nothing to s
 
 | ID | Priority | Status | Scenario |
 |---|---|---|---|
-| UC-CONFLUCO-CONFLUENCE-001-S05 | P0 | 🚧 | Given a real Chrome profile signed in to a Cloud site that Confluco may not use yet; when the user asks about the page and allows the site on the card and in Chrome; then the read tools use the tab's session. |
+| UC-CONFLUCO-CONFLUENCE-001-S05 | P0 | ✅ | Given a real Chrome profile signed in to a Cloud site that Confluco may not use yet; when the user asks about the page and allows the site on the card and in Chrome; then the read tools use the tab's session. |
 | UC-CONFLUCO-CONFLUENCE-001-S06 | P1 | 🚧 | Given a real Chrome profile on a self-managed Confluence page with a deployment path; when the user asks about the page and allows the site; then the read tools use that path. |
