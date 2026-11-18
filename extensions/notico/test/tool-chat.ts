@@ -2,13 +2,14 @@
 // same context and so the same memory (src/tools/memory.ts), and what one call read the next one
 // knows. A new ToolChat is another chat, which has read nothing. Nobody can be asked, and there is
 // no worker and no store to keep long results in.
-import type { ToolContext } from '../src/agent'
+import type { ToolContext } from '@cofun/agent'
 import type { Tool } from '../src/tool'
 import { ToolMemory } from '../src/tools/memory'
 
 export class ToolChat {
   readonly memory = new ToolMemory()
-  readonly context: ToolContext = {
+  readonly context: ToolContext<ToolMemory> = {
+    userText: '',
     ask: async () => false,
     readWeb: async () => {
       throw new Error('There is no worker in this test.')

@@ -4,9 +4,9 @@
 // one account's choice to send its queries to DuckDuckGo never carries over to another signed in on
 // the same profile. It counts only while Chrome still grants the access to DuckDuckGo it needs, which
 // is the profile's. Read as each search starts, so switching it applies at once.
-import { WebError } from './agent'
+import { ToolError } from '@cofun/agent'
 import { DuckDuckGoError, mayUseDuckDuckGo, searchDuckDuckGo } from './duckduckgo/search'
-import type { WebSearchResult } from './agent'
+import type { WebSearchResult } from '@cofun/agent'
 
 const storageKey = (userId: string) => `duckDuckGoSearch:${userId}`
 
@@ -41,7 +41,7 @@ const CHALLENGED =
 
 /**
  * The search to use instead of the worker's, or undefined for the worker's. Its failures are
- * WebErrors as the worker's are (see ToolContext.searchWeb): DuckDuckGo's check, or any page of its
+ * ToolErrors as the worker's are (see ToolContext.searchWeb): DuckDuckGo's check, or any page of its
  * that is not results, stops the question; a page that did not load goes to the model, costs nothing,
  * and is never retried.
  */
@@ -56,7 +56,7 @@ export async function freeSearch(
       if (!(err instanceof DuckDuckGoError)) throw err
       const stops = err.code === 'challenge' ? CHALLENGED : err.code === 'unreadable' ? NOT_RESULTS : undefined
       // A search turned away says the same on its card as why the question stopped.
-      throw new WebError(stops ? 'search_busy' : 'search_failed', stops ?? err.message, {
+      throw new ToolError(stops ? 'search_busy' : 'search_failed', stops ?? err.message, {
         stopsQuestion: stops,
         cause: err,
       })

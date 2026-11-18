@@ -140,6 +140,24 @@ describe('Read only', () => {
     expect(conversation().queryByText('Read only')).not.toBeInTheDocument()
   })
 
+  it('[UC-NOTICO-AGENT-001-S32] a reply stopped after a change says that changes may already have been made', async () => {
+    const { tab, workspace } = workspaceTab()
+    const { browser, user } = await openPanel(tab)
+    // The page is renamed; the answer after it stops partway, until the user stops it.
+    const words = Array.from({ length: 100 }, (_, n) => `word${n}`).join(' ')
+    browser.ai.pause = { after: 4000, until: new Promise<void>(() => {}) }
+    browser.ai.script.push(RENAME, { reply: words })
+
+    await ask(user, 'Rename Old notes to Archive')
+    await screen.findByText(/^word0/)
+    expect(workspace.records.get(NOTE)).toMatchObject({ properties: { title: [['Archive']] } })
+    await user.click(screen.getByRole('button', { name: 'Stop' }))
+    await answered()
+    expect(
+      conversation().getByText('Some changes in this question may already have been made: check before asking again.'),
+    ).toBeVisible()
+  })
+
   it('[UC-NOTICO-AGENT-003-S03] a question running in Read only stays so after a switch to Edit, and the next one can change pages', async () => {
     const { tab, workspace } = workspaceTab()
     const { browser, user } = await openPanel(tab)

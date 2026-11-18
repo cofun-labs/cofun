@@ -1,4 +1,4 @@
-import type { QuestionPage } from '../agent/types'
+import type { QuestionPage } from '@cofun/agent'
 import type { SearchContinuation } from '../confluence/api'
 import type { CloudDiscussionPosition } from '../confluence/cloud-inspection'
 import type { AttachmentUpload } from '../confluence/attachments'
@@ -16,12 +16,23 @@ export interface ConfluenceQuestion {
 
 export type ConfluenceContinuation = SearchContinuation | { comments: CloudDiscussionPosition }
 
-/** State the tools need while the agent is answering a conversation. */
+/**
+ * State the tools need while the agent is answering a conversation. `accountId`: the Cofun account
+ * the chat is in, whose connected Confluence site the tools use.
+ */
 export class ToolMemory {
+  constructor(readonly accountId: string) {}
+
   tabs: ReadonlyMap<number, QuestionPage> = new Map()
   /** References and continuations granted by site results in the current question. */
   confluenceResources = new Set<string>()
   nextConfluencePages = new Map<string, { id: string; continuation: ConfluenceContinuation }>()
   confluenceQuestion?: ConfluenceQuestion
   confluenceUndo?: ConfluenceUndo
+
+  /** A question starts: what the last one's results granted is forgotten. */
+  startQuestion(): void {
+    this.nextConfluencePages.clear()
+    this.confluenceResources.clear()
+  }
 }

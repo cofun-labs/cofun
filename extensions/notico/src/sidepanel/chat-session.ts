@@ -11,12 +11,13 @@ import {
   type QuestionSelection,
   type ToolDetails,
   type ToolStatus,
-} from '../agent'
+} from '@cofun/agent'
 import { track } from '../analytics'
 import type { Mode } from '../mode'
 import { answering, type ModelSettings, type OwnSetup } from '../models'
 import { titleFor, type Session, type SessionStore } from '../sessions'
-import { currentNotionPage, type ToolMemory } from '../tools'
+import { currentNotionPage } from '../tools'
+import { ToolMemory } from '../tools/memory'
 
 /** A tool call as the panel shows it. */
 export interface ShownTool {
@@ -89,7 +90,7 @@ export interface ChatSnapshot {
 export interface ChatPanel {
   store: SessionStore
   /** Each chat asks its own agent, made with this. */
-  agent: AgentConfig
+  agent: AgentConfig<ToolMemory>
   /** Aborted when the panel unmounts: it cuts a title request short, which leaving the chat does not. */
   closed: AbortSignal
   /** Sessions deleted in this panel: a save still waiting to write must not bring one back. */
@@ -147,7 +148,7 @@ export interface Question {
 export class ChatSession {
   private snapshot: ChatSnapshot
   private readonly listeners = new Set<() => void>()
-  private readonly agent: CopilotAgent
+  private readonly agent: CopilotAgent<ToolMemory>
   /** Aborted by leave(): the question stops, and one still waiting to be asked is not asked. */
   private readonly lifetime = new AbortController()
   /** The question being answered, if any: aborted by Stop. */
@@ -168,7 +169,7 @@ export class ChatSession {
     private readonly panel: ChatPanel,
     saved?: Session,
   ) {
-    this.agent = new CopilotAgent(panel.agent, saved?.messages)
+    this.agent = new CopilotAgent(panel.agent, new ToolMemory(), saved?.messages)
     this.titled = saved?.titledByModel ?? false
     this.snapshot = {
       id: saved?.id,
@@ -396,6 +397,7 @@ export class ChatSession {
               : p,
           ),
           stopped: true,
+          note: result.warning,
         }))
       } else if (result.status === 'error') {
         this.updateReply((m) => ({ ...m, error: result.message, outOfCredits: result.code === 'out_of_credits' }))

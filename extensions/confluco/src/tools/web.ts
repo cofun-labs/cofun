@@ -4,7 +4,7 @@
 // found, or one it thinks of (docs/security.md, "Accepted: web pages at any address"). search_web
 // has the worker search the web, with a query the model writes (docs/security.md, "Accepted: web
 // searches").
-import { WebError, type ToolContext } from '../agent'
+import { ToolError, type ToolContext } from '@cofun/agent'
 import { defineTool } from '../tool'
 import { z } from '../zod'
 import { KEPT_CHARS, withText } from './results'
@@ -39,7 +39,7 @@ const OPEN_IN_TAB =
   'Ask the user to open the page in a tab and ask again there: read_current_tab reads the page they are on.'
 
 /** What the model is told when the worker could not read the page, by the worker's code. */
-function refusal(err: WebError, render: boolean): string {
+function refusal(err: ToolError, render: boolean): string {
   switch (err.code) {
     case 'not_allowed':
       return `Confluco can't read this address: ${err.message}.`
@@ -66,7 +66,7 @@ function refusal(err: WebError, render: boolean): string {
  * What the model is told when the worker could not read a page or search: the reason, and, when it
  * may have cost the user credits, not to `repeat` the call (CLAUDE.md, "Calling outside services").
  */
-function failed(reason: string, err: WebError, repeat: string): string {
+function failed(reason: string, err: ToolError, repeat: string): string {
   return err.charged ? `${reason} It may have cost the user credits: don't ${repeat} again in this question.` : reason
 }
 
@@ -79,7 +79,7 @@ async function readPageAt(given: string, render: boolean, signal: AbortSignal | 
     page = await context.readWeb(url.href, KEPT_CHARS, render, signal)
   } catch (err) {
     // A request turned away stops the question: thrown as it is, with what the user is told.
-    if (err instanceof WebError && !err.stopsQuestion)
+    if (err instanceof ToolError && !err.stopsQuestion)
       throw new Error(failed(refusal(err, render), err, 'render this page'), { cause: err })
     throw err
   }
@@ -168,7 +168,7 @@ export const searchWeb = defineTool({
       results = await context.searchWeb(asked, SEARCH_RESULTS, signal)
     } catch (err) {
       // A search turned away stops the question: thrown as it is, with what the user is told.
-      if (err instanceof WebError && !err.stopsQuestion)
+      if (err instanceof ToolError && !err.stopsQuestion)
         throw new Error(failed(`Could not search the web: ${err.message}.`, err, 'search for the same query'), {
           cause: err,
         })

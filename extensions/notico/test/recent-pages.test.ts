@@ -1,7 +1,7 @@
 // The recent pages the page picker offers, worked out from a saved conversation (pagesIn in
 // extensions/notico/src/tools.ts): no Notion request, so plain history is enough here.
 import { describe, expect, it } from 'vitest'
-import type { HistoryMessage } from '../src/agent'
+import type { HistoryMessage } from '@cofun/agent'
 import { pagesIn } from '../src/tools'
 
 const ORIGINAL = '1a1a1a1a000040008000000000000010'

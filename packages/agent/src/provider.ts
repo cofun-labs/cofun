@@ -2,7 +2,7 @@
 // how much of a conversation to send, and how a failed request's error reads.
 import type { ClientIdentity, Model } from '@earendil-works/pi-ai'
 import type { CallCost, Turn } from '@cofun/worker-client'
-import { z } from '../zod'
+import { z } from './zod'
 
 /**
  * Where the agent's model requests go, and what is particular to the service behind them: which

@@ -1,4 +1,3 @@
-import type { ToolContext } from '../agent'
 import { normalizeSearchText, readPage, searchPages, SearchArgs } from '../confluence/api'
 import { attachmentsArgs, listCloudAttachments, listPageAttachments } from '../confluence/attachments'
 import {
@@ -78,8 +77,8 @@ async function paginate<T extends ContinuationResult>(
 const offset = (position?: ConfluenceContinuation) => (position && 'offset' in position ? position.offset : 0)
 const cursor = (position?: ConfluenceContinuation) => (position && 'cursor' in position ? position.cursor : undefined)
 
-async function target({ accountId, memory }: Pick<ToolContext, 'accountId' | 'memory'>) {
-  const instance = await getInstance(accountId)
+async function target(memory: ToolMemory) {
+  const instance = await getInstance(memory.accountId)
   if (!memory.confluenceQuestion) return currentConfluenceTab(instance)
   if (!instance) throw new Error('Connect a Confluence site in Settings first.')
   const tab = await memory.confluenceQuestion.tab
@@ -95,7 +94,7 @@ export const readConfluencePage = defineTool({
     'Reads the published Confluence page open in the current tab on the connected site. Returns its text, title and source link.',
   describe: (_args, details) => on(READ, details?.name, 'the current Confluence page'),
   run: async (_args, signal, context) => {
-    const page = await readPage(await target(context), signal)
+    const page = await readPage(await target(context.memory), signal)
     remember(context.memory, [page])
     return withText(
       [`Published Confluence page: ${quote({ title: page.title, url: page.url })}`],
@@ -114,7 +113,7 @@ export const searchConfluencePages = defineTool({
     'Use search terms and any space key from the current user message. Ask for search terms when the user did not provide them. ' +
     'Use nextPage only for the next page returned by this same search during this question. Returns excerpts and source links.',
   describe: (args) => on(SEARCH, args && clip(args.query, 120), 'Confluence pages'),
-  run: async (args, signal, { accountId, memory, userText }) => {
+  run: async (args, signal, { memory, userText }) => {
     const query = normalizeSearchText(args.query)
     if (!normalizeSearchText(userText).includes(query)) {
       throw new Error('Use search terms from the current user message. Ask the user what to search for.')
@@ -122,7 +121,7 @@ export const searchConfluencePages = defineTool({
     if (args.spaceKey && !userText.includes(args.spaceKey)) {
       throw new Error('Use a space key from the current user message or leave it out.')
     }
-    const tab = await target({ accountId, memory })
+    const tab = await target(memory)
     const key = requestKey(tab, 'search_pages', { query, field: args.field, spaceKey: args.spaceKey })
     const hits = await paginate(memory, key, args.nextPage, (position) =>
       searchPages(tab, args, position && 'comments' in position ? undefined : position, signal),
@@ -137,8 +136,8 @@ export const listConfluenceSpaces = defineTool({
   args: listSpacesArgs.omit({ start: true }).extend({ nextPage: collectionNext }),
   description: 'List spaces visible to the user on the connected Confluence site.',
   describe: () => on(READ, undefined, 'Confluence spaces'),
-  run: async ({ nextPage }, signal, { accountId, memory }) => {
-    const tab = await target({ accountId, memory })
+  run: async ({ nextPage }, signal, { memory }) => {
+    const tab = await target(memory)
     const listed = await paginate(memory, requestKey(tab, 'list_spaces'), nextPage, (position) =>
       tab.instance.cloud ? listCloudSpaces(tab, cursor(position), signal) : listSpaces(offset(position), tab, signal),
     )
@@ -152,8 +151,8 @@ export const getConfluenceSpace = defineTool({
   args: spaceArgs,
   description: 'Read a space and its homepage. Use a space key supplied by the user or returned by list_spaces.',
   describe: (args) => on(READ, args?.key, 'a Confluence space'),
-  run: async ({ key }, signal, { accountId, memory, userText }) => {
-    const tab = await target({ accountId, memory })
+  run: async ({ key }, signal, { memory, userText }) => {
+    const tab = await target(memory)
     if (!userText.includes(key) && !memory.confluenceResources.has(requestKey(tab, 'space', { key })))
       throw new Error('Use a space key from the user message or list_spaces.')
     const space = tab.instance.cloud ? await getCloudSpace(tab, key, signal) : await getSpace(key, tab, signal)
@@ -168,9 +167,9 @@ export const browseConfluenceTree = defineTool({
   description:
     'Read ancestors and direct children of the current page or a page reference returned by a Confluence tool.',
   describe: () => on(READ, undefined, 'the Confluence page tree'),
-  run: async (args, signal, { accountId, memory }) => {
+  run: async (args, signal, { memory }) => {
     requirePage(memory, args.page)
-    const tab = await target({ accountId, memory })
+    const tab = await target(memory)
     const key = requestKey(tab, 'browse_page_tree', args.page)
     const tree = await paginate(memory, key, args.nextPage, async (position) =>
       tab.instance.cloud
@@ -187,9 +186,9 @@ export const listConfluenceVersions = defineTool({
   args: versionsArgs.omit({ start: true }).extend({ nextPage: collectionNext }),
   description: 'List versions of the current published page or a page reference returned by a Confluence tool.',
   describe: () => on(READ, undefined, 'Confluence page versions'),
-  run: async (args, signal, { accountId, memory }) => {
+  run: async (args, signal, { memory }) => {
     requirePage(memory, args.page)
-    const tab = await target({ accountId, memory })
+    const tab = await target(memory)
     const key = requestKey(tab, 'list_page_versions', args.page)
     const listed = await paginate(memory, key, args.nextPage, async (position) =>
       tab.instance.cloud
@@ -210,9 +209,9 @@ export const readConfluenceVersion = defineTool({
   args: versionArgs,
   description: 'Read one published version from the user request or list_page_versions for that page.',
   describe: (args) => on(READ, args && String(args.version), 'a Confluence page version'),
-  run: async (args, signal, { accountId, memory, userText }) => {
+  run: async (args, signal, { memory, userText }) => {
     requirePage(memory, args.page)
-    const tab = await target({ accountId, memory })
+    const tab = await target(memory)
     if (
       !userText.match(/\d+/g)?.includes(String(args.version)) &&
       !memory.confluenceResources.has(requestKey(tab, 'version', args))
@@ -231,9 +230,9 @@ export const getConfluencePageAccess = defineTool({
   args: accessArgs,
   description: 'Read the reported operations and restrictions on the current page or a known page reference.',
   describe: () => on(READ, undefined, 'Confluence page access'),
-  run: async ({ page }, signal, { accountId, memory }) => {
+  run: async ({ page }, signal, { memory }) => {
     requirePage(memory, page)
-    const tab = await target({ accountId, memory })
+    const tab = await target(memory)
     const access = tab.instance.cloud ? await cloudPageAccess(tab, page, signal) : await pageAccess(page, tab, signal)
     remember(memory, [access])
     return result(access)
@@ -245,9 +244,9 @@ export const listConfluenceLabels = defineTool({
   args: labelsArgs.omit({ start: true }).extend({ nextPage: collectionNext }),
   description: 'List page labels for the current page or a page reference returned by a Confluence tool.',
   describe: () => on(READ, undefined, 'Confluence page labels'),
-  run: async (args, signal, { accountId, memory }) => {
+  run: async (args, signal, { memory }) => {
     requirePage(memory, args.page)
-    const tab = await target({ accountId, memory })
+    const tab = await target(memory)
     const key = requestKey(tab, 'list_page_labels', args.page)
     const listed = await paginate(memory, key, args.nextPage, async (position) =>
       tab.instance.cloud
@@ -265,9 +264,9 @@ export const listConfluenceComments = defineTool({
   description:
     'Read comments and replies on the current page or a page reference returned by a Confluence tool. Use nextPage to see more of the discussion.',
   describe: () => on(READ, undefined, 'Confluence page comments'),
-  run: async (args, signal, { accountId, memory }) => {
+  run: async (args, signal, { memory }) => {
     requirePage(memory, args.page)
-    const tab = await target({ accountId, memory })
+    const tab = await target(memory)
     const key = requestKey(tab, 'list_page_comments', args.page)
     const listed = await paginate(memory, key, args.nextPage, async (position) =>
       tab.instance.cloud
@@ -285,11 +284,11 @@ export const listConfluenceAttachments = defineTool({
   description:
     'List attachments and download links for the current page or a known page reference. A filename filter must come from the user.',
   describe: () => on(READ, undefined, 'Confluence page attachments'),
-  run: async (args, signal, { accountId, memory, userText }) => {
+  run: async (args, signal, { memory, userText }) => {
     requirePage(memory, args.page)
     if (args.filename && !userText.includes(args.filename))
       throw new Error('Use the exact attachment filename from the user message or omit filename.')
-    const tab = await target({ accountId, memory })
+    const tab = await target(memory)
     const key = requestKey(tab, 'list_page_attachments', { page: args.page, filename: args.filename })
     const listed = await paginate(memory, key, args.nextPage, async (position) =>
       tab.instance.cloud

@@ -1,4 +1,4 @@
-import type { ConfirmationAnswer } from '../agent'
+import type { ConfirmationAnswer } from '@cofun/agent'
 import { memo, useState } from 'react'
 import type { Action } from '../tool'
 import { describeCall } from '../tools'

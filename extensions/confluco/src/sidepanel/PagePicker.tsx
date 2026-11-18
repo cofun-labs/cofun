@@ -1,5 +1,5 @@
 import { useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
-import type { QuestionPage } from '../agent'
+import type { QuestionPage } from '@cofun/agent'
 import { openWebTabs, type WebTab } from '../tools'
 import { allowSite } from '../web/tab'
 import { Icon } from './icons'

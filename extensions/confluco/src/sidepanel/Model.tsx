@@ -1,5 +1,5 @@
 import { useEffect, useId, useRef, useState, type FormEvent } from 'react'
-import { checkKey, openRouterModels, type KeyCheck, type ListedModel } from '../agent'
+import { checkKey, openRouterModels, type KeyCheck, type ListedModel } from '@cofun/agent'
 import { answering, RECOMMENDED, SERVICE_NAME, type ModelSettings, type OwnModel, type Service } from '../models'
 import { Icon, Mark } from './icons'
 import { useMenu } from './menu'
@@ -23,7 +23,7 @@ let listed: { models: Promise<ListedModel[]>; at: number } | undefined
  */
 function modelList(): Promise<ListedModel[]> {
   if (!listed || Date.now() - listed.at > LIST_FOR_MS) {
-    const read = { at: Date.now(), models: openRouterModels() }
+    const read = { at: Date.now(), models: openRouterModels('Confluco') }
     read.models.catch(() => {
       if (listed === read) listed = undefined
     })
@@ -364,7 +364,7 @@ function ProviderSetup({
     setCheck({ status: 'checking' })
     let result: KeyCheck
     try {
-      result = await checkKey(key)
+      result = await checkKey(key, 'Confluco')
       if (result.status === 'ok') {
         if (result.balance) balances.set(key, result.balance)
         else balances.delete(key)

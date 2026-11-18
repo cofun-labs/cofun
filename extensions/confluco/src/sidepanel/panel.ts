@@ -1,5 +1,5 @@
 import { WorkerClient } from '@cofun/worker-client'
-import type { AgentConfig } from '../agent'
+import { hostedProvider, workerWeb, type AgentConfig } from '@cofun/agent'
 import { track } from '../analytics'
 import type { CreditsState } from '../credits'
 import { loadMode, saveMode, watchMode, type Mode } from '../mode'
@@ -14,6 +14,7 @@ import {
 } from '../models'
 import { SessionStore, type Session } from '../sessions'
 import { DATA_LINE, SELECTION_END, TOOLS } from '../tools'
+import type { ToolMemory } from '../tools/memory'
 import { ChatSession, type Question } from './chat-session'
 
 const API_URL = import.meta.env.VITE_API_URL as string
@@ -80,7 +81,7 @@ export class Panel {
   private snapshot: PanelSnapshot
   private readonly listeners = new Set<() => void>()
   /** What every chat's agent is made with. */
-  private readonly agent: AgentConfig
+  private readonly agent: AgentConfig<ToolMemory>
   /** The worker, which every chat's agent asks too: here it reads the credits and starts a purchase. */
   private readonly worker: WorkerClient
   // Read once for this account, then changed here or by another window's panel. Each question reads
@@ -129,9 +130,11 @@ export class Panel {
       product: 'Confluco',
     })
     this.agent = {
-      worker: this.worker,
-      accountId: userId,
-      model: this.readModel,
+      product: 'Confluco',
+      data: 'site data',
+      hosted: hostedProvider(this.worker),
+      web: workerWeb(this.worker),
+      model: async () => answering(await this.readModel()),
       systemPrompt: SYSTEM_PROMPT,
       tools: TOOLS,
       results: this.store,
@@ -325,6 +328,7 @@ export class Panel {
       {
         store: this.store,
         agent: this.agent,
+        accountId: this.userId,
         closed: this.lifetime.signal,
         deleted: this.deleted,
         model: this.readModel,

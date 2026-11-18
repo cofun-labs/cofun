@@ -18,8 +18,8 @@
 {
   "$schema": "./node_modules/oxlint/configuration_schema.json",
   "rules": {
-    // Everywhere in the repository, tests included. extensions/*/src/agent/ is exempted below for pi,
-    // and extensions/*/src/analytics.ts for the PostHog SDK.
+    // Everywhere in the repository, tests included. packages/agent/src/ is exempted below for pi, and
+    // extensions/*/src/analytics.ts for the PostHog SDK.
     "no-restricted-imports": [
       "error",
       {
@@ -31,7 +31,7 @@
               "@earendil-works/pi-ai",
               "@earendil-works/pi-ai/**"
             ],
-            "message": "Only an extension's src/agent/ imports pi. Import what you need from src/agent/ (its index.ts), or add it there."
+            "message": "Only @cofun/agent (packages/agent/src/) imports pi. Use what @cofun/agent exports, or add it there."
           },
           {
             "group": ["posthog-js", "posthog-js/**"],
@@ -71,7 +71,7 @@
                   "@earendil-works/pi-ai",
                   "@earendil-works/pi-ai/**"
                 ],
-                "message": "Only an extension's src/agent/ imports pi. Import what you need from src/agent/ (its index.ts), or add it there."
+                "message": "Only @cofun/agent (packages/agent/src/) imports pi. Use what @cofun/agent exports, or add it there."
               },
               {
                 "group": ["posthog-js", "posthog-js/**"],
@@ -105,7 +105,7 @@
                   "@earendil-works/pi-ai",
                   "@earendil-works/pi-ai/**"
                 ],
-                "message": "Only an extension's src/agent/ imports pi. Import what you need from src/agent/ (its index.ts), or add it there."
+                "message": "Only @cofun/agent (packages/agent/src/) imports pi. Use what @cofun/agent exports, or add it there."
               },
               {
                 "group": ["posthog-js", "posthog-js/**"],
@@ -134,7 +134,7 @@
               {
                 "group": ["@cofun/worker-client"],
                 "allowTypeImports": true,
-                "message": "Only an extension's src/agent/ and the side panel's state (panel.ts, chat-session.ts) call the worker: the agent turns a request the worker turned away into a stop of the question, and counts what a call cost. Import its types only, or ask the agent (ToolContext.readWeb, searchWeb). Clerk sign-in is '@cofun/worker-client/clerk'."
+                "message": "Only the side panel's state (panel.ts, chat-session.ts) calls the worker: it gives the agent the client through @cofun/agent's hostedProvider and workerWeb, which turn a request the worker turned away into a stop of the question, and count what a call cost. Import its types only, or ask the agent (ToolContext.readWeb, searchWeb). Clerk sign-in is '@cofun/worker-client/clerk'."
               },
               {
                 "group": [
@@ -143,7 +143,7 @@
                   "@earendil-works/pi-ai",
                   "@earendil-works/pi-ai/**"
                 ],
-                "message": "Only an extension's src/agent/ imports pi. Import what you need from src/agent/ (its index.ts), or add it there."
+                "message": "Only @cofun/agent (packages/agent/src/) imports pi. Use what @cofun/agent exports, or add it there."
               },
               {
                 "group": ["posthog-js", "posthog-js/**"],
@@ -168,7 +168,7 @@
           "error",
           {
             "name": "fetch",
-            "message": "Only an extension's src/<site>/tab.ts sends requests to its site, and only its src/agent/ calls a model (the user's own); the worker is called through @cofun/worker-client. Tools call the typed methods of the site's client (src/notion/api.ts in Notico)."
+            "message": "Only an extension's src/<site>/tab.ts sends requests to its site; a model is called through @cofun/agent, and the worker through @cofun/worker-client. Tools call the typed methods of the site's client (src/notion/api.ts in Notico)."
           }
         ],
         "no-restricted-properties": [
@@ -186,26 +186,26 @@
           {
             "object": "globalThis",
             "property": "fetch",
-            "message": "Only an extension's src/<site>/tab.ts sends requests to its site, and only its src/agent/ calls a model (the user's own); the worker is called through @cofun/worker-client. Tools call the typed methods of the site's client (src/notion/api.ts in Notico)."
+            "message": "Only an extension's src/<site>/tab.ts sends requests to its site; a model is called through @cofun/agent, and the worker through @cofun/worker-client. Tools call the typed methods of the site's client (src/notion/api.ts in Notico)."
           },
           {
             "object": "window",
             "property": "fetch",
-            "message": "Only an extension's src/<site>/tab.ts sends requests to its site, and only its src/agent/ calls a model (the user's own); the worker is called through @cofun/worker-client. Tools call the typed methods of the site's client (src/notion/api.ts in Notico)."
+            "message": "Only an extension's src/<site>/tab.ts sends requests to its site; a model is called through @cofun/agent, and the worker through @cofun/worker-client. Tools call the typed methods of the site's client (src/notion/api.ts in Notico)."
           },
           {
             "object": "self",
             "property": "fetch",
-            "message": "Only an extension's src/<site>/tab.ts sends requests to its site, and only its src/agent/ calls a model (the user's own); the worker is called through @cofun/worker-client. Tools call the typed methods of the site's client (src/notion/api.ts in Notico)."
+            "message": "Only an extension's src/<site>/tab.ts sends requests to its site; a model is called through @cofun/agent, and the worker through @cofun/worker-client. Tools call the typed methods of the site's client (src/notion/api.ts in Notico)."
           }
         ]
       }
     },
     {
       // The side panel's state outside React: one ChatSession per chat, and the Panel that holds the
-      // open one. React subscribes to them, so they import no React, nor anything that renders. Like
-      // src/agent/, they may call the worker (the Panel reads the credits and opens Checkout). Their
-      // other restrictions (the extensions/*/src block) still hold.
+      // open one. React subscribes to them, so they import no React, nor anything that renders. They
+      // are the modules that call the worker: the Panel reads the credits and opens Checkout, and both
+      // give the client to the agent. Their other restrictions (the extensions/*/src block) still hold.
       "files": ["extensions/*/src/sidepanel/chat-session.ts", "extensions/*/src/sidepanel/panel.ts"],
       "rules": {
         "no-restricted-imports": [
@@ -238,7 +238,7 @@
                   "@earendil-works/pi-ai",
                   "@earendil-works/pi-ai/**"
                 ],
-                "message": "Only an extension's src/agent/ imports pi. Import what you need from src/agent/ (its index.ts), or add it there."
+                "message": "Only @cofun/agent (packages/agent/src/) imports pi. Use what @cofun/agent exports, or add it there."
               },
               {
                 "group": ["posthog-js", "posthog-js/**"],
@@ -280,7 +280,11 @@
               {
                 "group": ["@cofun/worker-client"],
                 "allowTypeImports": true,
-                "message": "Only an extension's src/agent/ and the side panel's state (panel.ts, chat-session.ts) call the worker: the agent turns a request the worker turned away into a stop of the question, and counts what a call cost. Import its types only, or ask the agent (ToolContext.readWeb, searchWeb). Clerk sign-in is '@cofun/worker-client/clerk'."
+                "message": "Only the side panel's state (panel.ts, chat-session.ts) calls the worker: it gives the agent the client through @cofun/agent's hostedProvider and workerWeb, which turn a request the worker turned away into a stop of the question, and count what a call cost. Import its types only, or ask the agent (ToolContext.readWeb, searchWeb). Clerk sign-in is '@cofun/worker-client/clerk'."
+              },
+              {
+                "group": ["@cofun/agent"],
+                "message": "An extension's site layer imports nothing from the agent (@cofun/agent): the agent and the tools depend on the site layer, not the other way round."
               },
               {
                 "group": [
@@ -289,15 +293,15 @@
                   "@earendil-works/pi-ai",
                   "@earendil-works/pi-ai/**"
                 ],
-                "message": "Only an extension's src/agent/ imports pi. Import what you need from src/agent/ (its index.ts), or add it there."
+                "message": "Only @cofun/agent (packages/agent/src/) imports pi. Use what @cofun/agent exports, or add it there."
               },
               {
                 "group": ["posthog-js", "posthog-js/**"],
                 "message": "Only an extension's src/analytics.ts imports the PostHog SDK. Call its track(), whose events are the only ones that can be sent."
               },
               {
-                "regex": "^(\\.\\./)+(agent|tool|tools|sessions|sidepanel)(\\.|/|$)",
-                "message": "An extension's site layer (src/notion/ and src/web/ in Notico) imports nothing from agent/, tool.ts, tools/, sessions.ts, or sidepanel/: those modules depend on the site layer, not the other way round."
+                "regex": "^(\\.\\./)+(tool|tools|sessions|sidepanel)(\\.|/|$)",
+                "message": "An extension's site layer (src/notion/ and src/web/ in Notico) imports nothing from tool.ts, tools/, sessions.ts, or sidepanel/: those modules depend on the site layer, not the other way round."
               },
               {
                 "regex": "^zod(/|$)",
@@ -312,51 +316,6 @@
                 "message": "An extension never imports another extension: each one in extensions/<name>/ keeps its own copy of what it needs."
               }
             ]
-          }
-        ]
-      }
-    },
-    {
-      // The one folder that imports pi, and the one that calls a model itself (the user's own): the
-      // agent, src/agent/. It calls the worker through @cofun/worker-client, as the side panel's state
-      // may.
-      "files": ["extensions/*/src/agent/**"],
-      "rules": {
-        "no-restricted-imports": [
-          "error",
-          {
-            "patterns": [
-              {
-                "group": ["posthog-js", "posthog-js/**"],
-                "message": "Only an extension's src/analytics.ts imports the PostHog SDK. Call its track(), whose events are the only ones that can be sent."
-              },
-              {
-                "regex": "^zod(/|$)",
-                "message": "Import z from the extension's src/zod.ts: it sets zod up for the extension's content security policy before any schema is built."
-              },
-              {
-                "regex": "^(\\.\\./)+[^./][^/]*/(src|test)(/|$)",
-                "message": "An extension never imports another extension: each one in extensions/<name>/ keeps its own copy of what it needs."
-              },
-              {
-                "regex": "^(\\.\\./)+extensions/",
-                "message": "An extension never imports another extension: each one in extensions/<name>/ keeps its own copy of what it needs."
-              }
-            ]
-          }
-        ],
-        "no-restricted-globals": "off",
-        "no-restricted-properties": [
-          "error",
-          {
-            "object": "chrome",
-            "property": "debugger",
-            "message": "Never use chrome.debugger: it shows a permanent \"debugging this browser\" banner. Site requests run through chrome.scripting in the extension's src/<site>/tab.ts."
-          },
-          {
-            "object": "chrome",
-            "property": "scripting",
-            "message": "Only an extension's src/<site>/tab.ts uses chrome.scripting: it is how requests run inside the user's tab. Use the helpers tab.ts exports."
           }
         ]
       }
@@ -388,7 +347,7 @@
           "error",
           {
             "name": "fetch",
-            "message": "src/web/tab.ts and src/duckduckgo/tab.ts only read the page a tab shows: they send no request to the site. A web page is read by its address through the worker (src/agent/)."
+            "message": "src/web/tab.ts and src/duckduckgo/tab.ts only read the page a tab shows: they send no request to the site. A web page is read by its address through the agent (ToolContext.readWeb), which asks the worker."
           }
         ],
         "no-restricted-properties": [
@@ -401,17 +360,17 @@
           {
             "object": "globalThis",
             "property": "fetch",
-            "message": "src/web/tab.ts and src/duckduckgo/tab.ts only read the page a tab shows: they send no request to the site. A web page is read by its address through the worker (src/agent/)."
+            "message": "src/web/tab.ts and src/duckduckgo/tab.ts only read the page a tab shows: they send no request to the site. A web page is read by its address through the agent (ToolContext.readWeb), which asks the worker."
           },
           {
             "object": "window",
             "property": "fetch",
-            "message": "src/web/tab.ts and src/duckduckgo/tab.ts only read the page a tab shows: they send no request to the site. A web page is read by its address through the worker (src/agent/)."
+            "message": "src/web/tab.ts and src/duckduckgo/tab.ts only read the page a tab shows: they send no request to the site. A web page is read by its address through the agent (ToolContext.readWeb), which asks the worker."
           },
           {
             "object": "self",
             "property": "fetch",
-            "message": "src/web/tab.ts and src/duckduckgo/tab.ts only read the page a tab shows: they send no request to the site. A web page is read by its address through the worker (src/agent/)."
+            "message": "src/web/tab.ts and src/duckduckgo/tab.ts only read the page a tab shows: they send no request to the site. A web page is read by its address through the agent (ToolContext.readWeb), which asks the worker."
           }
         ]
       }
@@ -427,7 +386,7 @@
               {
                 "group": ["@cofun/worker-client"],
                 "allowTypeImports": true,
-                "message": "Only an extension's src/agent/ and the side panel's state (panel.ts, chat-session.ts) call the worker: the agent turns a request the worker turned away into a stop of the question, and counts what a call cost. Import its types only, or ask the agent (ToolContext.readWeb, searchWeb). Clerk sign-in is '@cofun/worker-client/clerk'."
+                "message": "Only the side panel's state (panel.ts, chat-session.ts) calls the worker: it gives the agent the client through @cofun/agent's hostedProvider and workerWeb, which turn a request the worker turned away into a stop of the question, and count what a call cost. Import its types only, or ask the agent (ToolContext.readWeb, searchWeb). Clerk sign-in is '@cofun/worker-client/clerk'."
               },
               {
                 "group": [
@@ -436,7 +395,7 @@
                   "@earendil-works/pi-ai",
                   "@earendil-works/pi-ai/**"
                 ],
-                "message": "Only an extension's src/agent/ imports pi. Import what you need from src/agent/ (its index.ts), or add it there."
+                "message": "Only @cofun/agent (packages/agent/src/) imports pi. Use what @cofun/agent exports, or add it there."
               },
               {
                 "group": ["posthog-js", "posthog-js/**"],
@@ -466,7 +425,7 @@
               {
                 "group": ["@cofun/worker-client"],
                 "allowTypeImports": true,
-                "message": "Only an extension's src/agent/ and the side panel's state (panel.ts, chat-session.ts) call the worker: the agent turns a request the worker turned away into a stop of the question, and counts what a call cost. Import its types only, or ask the agent (ToolContext.readWeb, searchWeb). Clerk sign-in is '@cofun/worker-client/clerk'."
+                "message": "Only the side panel's state (panel.ts, chat-session.ts) calls the worker: it gives the agent the client through @cofun/agent's hostedProvider and workerWeb, which turn a request the worker turned away into a stop of the question, and count what a call cost. Import its types only, or ask the agent (ToolContext.readWeb, searchWeb). Clerk sign-in is '@cofun/worker-client/clerk'."
               },
               {
                 "group": [
@@ -475,7 +434,7 @@
                   "@earendil-works/pi-ai",
                   "@earendil-works/pi-ai/**"
                 ],
-                "message": "Only an extension's src/agent/ imports pi. Import what you need from src/agent/ (its index.ts), or add it there."
+                "message": "Only @cofun/agent (packages/agent/src/) imports pi. Use what @cofun/agent exports, or add it there."
               },
               {
                 "regex": "^zod(/|$)",
@@ -512,7 +471,7 @@
                   "@earendil-works/pi-ai",
                   "@earendil-works/pi-ai/**"
                 ],
-                "message": "Only an extension's src/agent/ imports pi. Import what you need from src/agent/ (its index.ts), or add it there."
+                "message": "Only @cofun/agent (packages/agent/src/) imports pi. Use what @cofun/agent exports, or add it there."
               },
               {
                 "group": ["posthog-js", "posthog-js/**"],
@@ -540,6 +499,32 @@
       }
     },
     {
+      // The one package that imports pi: the agent runtime, @cofun/agent. Its other restrictions (the
+      // packages/*/src block) still hold.
+      "files": ["packages/agent/src/**"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": ["posthog-js", "posthog-js/**"],
+                "message": "Only an extension's src/analytics.ts imports the PostHog SDK. Call its track(), whose events are the only ones that can be sent."
+              },
+              {
+                "regex": "^zod(/|$)",
+                "message": "Import z from the package's src/zod.ts: it sets zod up for the extensions' content security policy before any schema is built."
+              },
+              {
+                "regex": "^\\.\\./\\.\\./",
+                "message": "A package never imports what is outside it, such as an extension: an extension calls it, and passes it what it needs as parameters."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
       // A package's one module that imports zod. Its other restrictions (the packages/*/src block) still hold.
       "files": ["packages/*/src/zod.ts"],
       "rules": {
@@ -554,7 +539,7 @@
                   "@earendil-works/pi-ai",
                   "@earendil-works/pi-ai/**"
                 ],
-                "message": "Only an extension's src/agent/ imports pi. Import what you need from src/agent/ (its index.ts), or add it there."
+                "message": "Only @cofun/agent (packages/agent/src/) imports pi. Use what @cofun/agent exports, or add it there."
               },
               {
                 "group": ["posthog-js", "posthog-js/**"],
@@ -584,7 +569,7 @@
                   "@earendil-works/pi-ai",
                   "@earendil-works/pi-ai/**"
                 ],
-                "message": "Only an extension's src/agent/ imports pi. Import what you need from src/agent/ (its index.ts), or add it there."
+                "message": "Only @cofun/agent (packages/agent/src/) imports pi. Use what @cofun/agent exports, or add it there."
               },
               {
                 "group": ["posthog-js", "posthog-js/**"],
@@ -614,7 +599,7 @@
                   "@earendil-works/pi-ai",
                   "@earendil-works/pi-ai/**"
                 ],
-                "message": "Only an extension's src/agent/ imports pi. Import what you need from src/agent/ (its index.ts), or add it there."
+                "message": "Only @cofun/agent (packages/agent/src/) imports pi. Use what @cofun/agent exports, or add it there."
               },
               {
                 "group": ["posthog-js", "posthog-js/**"],
@@ -644,7 +629,7 @@
                   "@earendil-works/pi-ai",
                   "@earendil-works/pi-ai/**"
                 ],
-                "message": "Only an extension's src/agent/ imports pi. Import what you need from src/agent/ (its index.ts), or add it there."
+                "message": "Only @cofun/agent (packages/agent/src/) imports pi. Use what @cofun/agent exports, or add it there."
               },
               {
                 "group": ["posthog-js", "posthog-js/**"],

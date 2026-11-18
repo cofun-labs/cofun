@@ -2,24 +2,14 @@
 // on, each with the user's own key and the models it offers; the composer picks one of those, or Auto,
 // the hosted model. Kept in chrome.storage.local per account: on this device only, never synced, and
 // not encrypted, like the Clerk client token.
-// The worker's tests import this file too, through the agent, and their tsconfig has no chrome types.
-/// <reference types="chrome" />
+import { OwnModel, OwnService, type OwnSetup } from '@cofun/agent'
 import { z } from './zod'
 
-/** A model the user asks with their own key (on OpenRouter), as the panel offers it. */
-export const OwnModel = z.object({
-  id: z.string().min(1),
-  name: z.string(),
-  /** Tokens the model takes in one request. */
-  contextLength: z.number().int().positive(),
-  /** US dollars per million tokens. */
-  price: z.object({ input: z.number().nonnegative(), output: z.number().nonnegative() }),
-})
-export type OwnModel = z.infer<typeof OwnModel>
+export { OwnModel, type OwnSetup }
 
 /** The providers a user's own key works with. */
-export const Service = z.enum(['openrouter'])
-export type Service = z.infer<typeof Service>
+export const Service = OwnService
+export type Service = OwnService
 
 /** Each provider as the panel names it. */
 export const SERVICE_NAME: Record<Service, string> = { openrouter: 'OpenRouter' }
@@ -103,9 +93,6 @@ export function watchModelSettings(userId: string, onChange: (settings: ModelSet
 export async function saveModelSettings(userId: string, settings: ModelSettings): Promise<void> {
   await chrome.storage.local.set({ [storageKey(userId)]: settings })
 }
-
-/** The user's own model that answers: the service, their key for it, and the model there. */
-export type OwnSetup = { service: 'openrouter'; key: string; model: OwnModel }
 
 /**
  * The own model the composer chose, if it is still offered: its provider on, with a key, and the

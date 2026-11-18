@@ -1,11 +1,13 @@
-// Notico's agent loop (src/agent/) against the real worker, with the model behind it scripted: when
+// Notico's use of the agent loop (@cofun/agent) against the real worker, with the model behind it scripted: when
 // tools run and when they ask first, when a question stops, what a conversation carries over, and the
 // Notion request budget. What the agent and the worker must agree on is in worker/test/extension.test.ts.
 import { WorkerClient, WorkerError } from '@cofun/worker-client'
 import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import {
   CopilotAgent,
+  hostedProvider,
   MAY_HAVE_CHANGED,
+  workerWeb,
   type AgentConfig,
   type AgentUpdate,
   type QuestionExtras,
@@ -13,8 +15,8 @@ import {
   type HistoryMessage,
   type QuestionDetails,
   type ToolCallRequest,
-  type ToolSpec,
-} from '../src/agent'
+  type ToolSpec as SpecOf,
+} from '@cofun/agent'
 import {
   BUDGET_STOP,
   LIMITED_STOP,
@@ -44,6 +46,9 @@ import {
   MODEL,
 } from '../../../worker/test/fakes'
 import { FakeNotionTab, FakeStorage, FakeWorkspace, PAGE, PAGE_URL, SPACE, fixture, restoreGlobals } from './notion-tab'
+
+/** A tool as Notico's agent runs it, with Notico's memory. */
+type ToolSpec = SpecOf<ToolMemory>
 
 const EXT = 'chrome-extension://abcdefghijklmnopabcdefghijklmnop'
 const app = createApp()
@@ -105,14 +110,18 @@ function makeAgent(
   } = {},
   conversation?: HistoryMessage[],
 ) {
+  const worker = new WorkerClient({
+    apiUrl: 'https://nk.example.dev/v1/',
+    getToken: options.getToken ?? (async () => token),
+    clientName: 'notico/1.2.3',
+    product: 'Notico',
+  })
   return new CopilotAgent(
     {
-      worker: new WorkerClient({
-        apiUrl: 'https://nk.example.dev/v1/',
-        getToken: options.getToken ?? (async () => token),
-        clientName: 'notico/1.2.3',
-        product: 'Notico',
-      }),
+      product: 'Notico',
+      data: 'Notion',
+      hosted: hostedProvider(worker),
+      web: workerWeb(worker),
       systemPrompt: options.systemPrompt ?? 'You are Notico.',
       tools: options.tools ?? [pageTool().tool],
       maxSteps: options.maxSteps,
@@ -120,6 +129,7 @@ function makeAgent(
       meter: options.meter,
       model: options.model,
     },
+    new ToolMemory(),
     conversation,
   )
 }
@@ -135,7 +145,7 @@ const usedOnHosted = (calls: number): QuestionDetails => ({
  * Asks one question and collects what the side panel would show. The tokens it used, what it cost,
  * and the model that answered are kept apart from how it ended, for the tests about them.
  */
-async function ask(agent: CopilotAgent, text: string, confirm?: ConfirmTool, extras?: QuestionExtras) {
+async function ask(agent: CopilotAgent<ToolMemory>, text: string, confirm?: ConfirmTool, extras?: QuestionExtras) {
   const updates: AgentUpdate[] = []
   const asked = await agent.ask(text, (u) => updates.push(u), confirm, extras)
   const { tokens, model, cost, rounds, conversation, ...result } = asked
@@ -460,7 +470,7 @@ describe('extension agent against the worker', () => {
     const errors = [
       // A tool wraps the error it got.
       new Error('The page may or may not have been created.', { cause: stop }),
-      // A request the worker turned away, as the worker's client throws it, not as the agent's WebError.
+      // A request the worker turned away, as the worker's client throws it, not as the agent's ToolError.
       new WorkerError('rate_limited', 'Too many requests.', { turnedAway: 'Wait a minute.' }),
     ]
     for (const error of errors) {
@@ -747,8 +757,29 @@ describe('extension agent against the worker', () => {
     expect(runs).toHaveLength(1)
   })
 
+  it('[UC-NOTICO-AGENT-001-S32] a question stopped after a change tells the user it may have been made', async () => {
+    let agent: CopilotAgent<ToolMemory>
+    const rename: ToolSpec = { ...renameTool().tool, needsConfirmation: false, changesData: true }
+    const slow: ToolSpec = {
+      ...pageTool().tool,
+      run: (_args, signal) =>
+        new Promise((_resolve, reject) => {
+          signal?.addEventListener('abort', () => reject(new Error('aborted')))
+          agent.stop()
+        }),
+    }
+    agent = makeAgent({ tools: [rename, slow] })
+    ai.script = [{ toolCalls: [RENAME_CALL] }, { toolCalls: [{ name: 'lookup_page', arguments: '{}' }] }]
+    const { result } = await ask(agent, 'Rename this page to Q4 Plan')
+    expect(result).toEqual({ status: 'stopped', warning: MAY_HAVE_CHANGED })
+
+    // A question stopped before any change says nothing of one.
+    ai.script = [{ toolCalls: [{ name: 'lookup_page', arguments: '{}' }] }]
+    expect((await ask(agent, 'And now?')).result).toEqual({ status: 'stopped' })
+  })
+
   it('[UC-NOTICO-AGENT-001-S12] stopping during a tool keeps the tools used so far, and drops what had not started', async () => {
-    let agent: CopilotAgent
+    let agent: CopilotAgent<ToolMemory>
     const { tool: rename, runs } = renameTool()
     const slow: ToolSpec = {
       ...pageTool().tool,
@@ -904,7 +935,7 @@ describe('extension agent against the worker', () => {
   })
 
   it('[@no-uc:data] a tool that runs without asking does not start when Stop lands during its preview', async () => {
-    let agent: CopilotAgent
+    let agent: CopilotAgent<ToolMemory>
     const { tool, runs } = pageTool()
     const slow: ToolSpec = {
       ...tool,
