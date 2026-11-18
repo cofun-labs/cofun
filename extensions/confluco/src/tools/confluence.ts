@@ -17,7 +17,7 @@ import { accessArgs, listVersions, pageAccess, readPageVersion, versionArgs, ver
 import { getInstance } from '../confluence/instance'
 import { labelsArgs, listLabels } from '../confluence/labels'
 import { browseTree, getSpace, listSpaces, listSpacesArgs, spaceArgs, treeArgs } from '../confluence/navigation'
-import { pageReference, type PageReference } from '../confluence/references'
+import { folderReference, type PageReference } from '../confluence/references'
 import { currentConfluenceTab, type ConfluenceTab } from '../confluence/tab'
 import { defineTool } from '../tool'
 import { z } from '../zod'
@@ -175,7 +175,7 @@ export const getConfluenceSpace = defineTool({
 export const browseConfluenceTree = defineTool({
   name: 'browse_page_tree',
   args: treeArgs.omit({ start: true }).extend({
-    folder: pageReference
+    folder: folderReference
       .optional()
       .describe('A folder reference from browse_page_tree on Confluence Cloud. Use instead of page to browse it.'),
     nextPage: collectionNext,
