@@ -9,7 +9,7 @@ import type { ConfluenceUndo } from '../confluence/undo'
 export interface ConfluenceQuestion {
   /** The active tab when the question was sent. */
   captured: Promise<CapturedTab | undefined>
-  /** That tab as a Confluence site, once Confluco may use the site (see target in confluence.ts). */
+  /** That tab as a Confluence site, once Confluco may use the site (see target in target.ts). */
   tab: Promise<ConfluenceTab | undefined>
   attachment?: AttachmentUpload
   writtenTool?: string

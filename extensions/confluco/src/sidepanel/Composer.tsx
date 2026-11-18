@@ -3,6 +3,7 @@ import type { QuestionPage, QuestionSelection } from '@cofun/agent'
 import type { Mode } from '@cofun/agent/mode'
 import { track } from '../analytics'
 import type { AttachmentUpload } from '../confluence/attachments'
+import type { Instance } from '../confluence/instance'
 import {
   attachmentSizeLimit,
   captureConfluenceTab,
@@ -53,11 +54,19 @@ export function useComposer({
   // The Confluence site the current tab shows, once Confluco may use it: checked again as the user
   // switches or loads tabs, and after each question, which may have allowed the site.
   const site = useConfluenceSite(busy)
+  const siteKey = site && site.origin + site.path
+  // What was staged belongs to its site: cleared when another Confluence site comes up, kept while
+  // the user looks at a tab that is not Confluence. Send checks the editor selection again.
+  const stagedFor = useRef<string>(undefined)
   useEffect(() => {
-    captureEpoch.current++
-    setEditor(undefined)
-    setFile(undefined)
-  }, [site])
+    if (!siteKey) return
+    if (stagedFor.current !== undefined && stagedFor.current !== siteKey) {
+      captureEpoch.current++
+      setEditor(undefined)
+      setFile(undefined)
+    }
+    stagedFor.current = siteKey
+  }, [siteKey])
 
   async function attachEditorSelection() {
     const capture = ++captureEpoch.current
@@ -303,7 +312,7 @@ export function useComposer({
     chips,
     selections,
     connected: site !== undefined,
-    editorSelectionAvailable: site !== undefined && !site.startsWith('cloud:'),
+    editorSelectionAvailable: site !== undefined && !site.cloud,
     editor,
     file,
     confluenceStatus,
@@ -499,12 +508,9 @@ function shownSelection(selection: Selection): QuestionSelection {
   }
 }
 
-/**
- * Follows which Confluence site the current tab shows, once Confluco may use it, as `cloud:` or
- * `self:` and the site's base URL; undefined on any other tab.
- */
-function useConfluenceSite(busy: boolean): string | undefined {
-  const [site, setSite] = useState<string>()
+/** Follows which Confluence site the current tab shows, once Confluco may use it; undefined on any other tab. */
+function useConfluenceSite(busy: boolean): Instance | undefined {
+  const [site, setSite] = useState<Instance>()
   useEffect(() => {
     if (busy) return
     let reads = 0
@@ -513,8 +519,7 @@ function useConfluenceSite(busy: boolean): string | undefined {
       void captureConfluenceTab()
         .catch(() => undefined)
         .then((tab) => {
-          if (n === reads)
-            setSite(tab && (tab.instance.cloud ? 'cloud:' : 'self:') + tab.instance.origin + tab.instance.path)
+          if (n === reads) setSite(tab?.instance)
         })
     }
     const onUpdated = (_id: number, change: chrome.tabs.OnUpdatedInfo, tab: chrome.tabs.Tab) => {
