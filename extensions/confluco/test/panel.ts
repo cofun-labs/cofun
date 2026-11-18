@@ -208,10 +208,9 @@ export class FakeBrowser {
    * Starts the extension's service worker (src/background.ts), as Chrome does once it installed the
    * extension: it sets up its context menu item.
    */
-  async startServiceWorker(readAccount = async () => this.session?.userId): Promise<void> {
+  async startServiceWorker(): Promise<void> {
     vi.resetModules()
-    const { setupSelectionMenu } = await import('../src/selection-menu')
-    setupSelectionMenu(readAccount)
+    await import('../src/background')
     this.tab.extensionInstalled()
     // It reads its settings before it makes its menu item.
     await vi.waitFor(() => {

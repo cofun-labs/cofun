@@ -1,4 +1,4 @@
-import type { Mode } from '../mode'
+import type { Mode } from '@cofun/agent/mode'
 import type { OpenPage } from '../tools'
 // Notico's own icon, the one in the toolbar and the store; the Cofun mark alone means Cofun.
 import noticoIcon from '../../icons/icon.svg'

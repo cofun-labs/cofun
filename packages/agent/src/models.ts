@@ -1,18 +1,13 @@
-// Where the models come from and which one answers (UC-CONFLUCO-AGENT-002). Settings switches providers
-// on, each with the user's own key and the models it offers; the composer picks one of those, or Auto,
+// Where the models come from and which one answers: an extension's settings switch providers on,
+// each with the user's own key and the models it offers; the composer picks one of those, or Auto,
 // the hosted model. Kept in chrome.storage.local per account: on this device only, never synced, and
-// not encrypted, like the Clerk client token.
-import { OwnModel, OwnService, type OwnSetup } from '@cofun/agent'
+// not encrypted, like the Clerk client token. The key goes only to its provider (own.ts), never to
+// the worker.
+import { OwnModel, OwnService, type OwnSetup } from './own'
 import { z } from './zod'
 
-export { OwnModel, type OwnSetup }
-
-/** The providers a user's own key works with. */
-export const Service = OwnService
-export type Service = OwnService
-
 /** Each provider as the panel names it. */
-export const SERVICE_NAME: Record<Service, string> = { openrouter: 'OpenRouter' }
+export const SERVICE_NAME: Record<OwnService, string> = { openrouter: 'OpenRouter' }
 
 /** What is the same for every provider with a key. */
 const Provider = {
@@ -34,7 +29,7 @@ const ModelSettings = z.object({
    * The model the composer chose, by its provider and id; none is Auto. `name` says which model it
    * was once it is no longer offered.
    */
-  chosen: z.object({ service: Service, model: z.string().min(1), name: z.string() }).optional(),
+  chosen: z.object({ service: OwnService, model: z.string().min(1), name: z.string() }).optional(),
 })
 export type ModelSettings = z.infer<typeof ModelSettings>
 
@@ -108,7 +103,7 @@ export function answering({ chosen, openRouter }: ModelSettings): OwnSetup | und
  * The settings with `service` marked as having turned a question away for `key`, `at` (ms). Only
  * while that key is the one saved: a key saved since, while the question ran, is not marked.
  */
-export function keyRejected(settings: ModelSettings, service: Service, key: string, at: number): ModelSettings {
+export function keyRejected(settings: ModelSettings, service: OwnService, key: string, at: number): ModelSettings {
   const { openRouter } = settings
   return service === 'openrouter' && openRouter?.key === key
     ? { ...settings, openRouter: { ...openRouter, rejectedAt: at } }

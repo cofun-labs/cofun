@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState, type FormEvent, type KeyboardEvent, type Ref } from 'react'
 import type { QuestionPage, QuestionSelection } from '@cofun/agent'
+import type { Mode } from '@cofun/agent/mode'
 import { track } from '../analytics'
 import type { AttachmentUpload } from '../confluence/attachments'
 import { getInstance, watchInstance, type Instance } from '../confluence/instance'
@@ -9,10 +10,9 @@ import {
   isEditorSelectionCurrent,
   readEditorSelection,
 } from '../confluence/tab'
-import type { Mode } from '../mode'
 import { selectionsCarried } from '@cofun/tools'
 import { clipSelection } from '@cofun/tools/tab'
-import { linkTo, watchSelections, type Selection } from '../selection'
+import { linkTo, watchSelections, type Selection } from '@cofun/tools/selection'
 import { carryPages } from '../tools'
 import type { ChatSession } from './chat-session'
 import { Icon } from './icons'
@@ -108,7 +108,7 @@ export function useComposer({
       .getCurrent()
       .then((window) => {
         if (closed || window.id === undefined) return
-        stop = watchSelections(window.id, userId, (sent) => {
+        stop = watchSelections(window.id, (sent) => {
           setSelections((list) => [...list, ...sent])
           inputRef.current?.focus()
         })
@@ -118,7 +118,7 @@ export function useComposer({
       closed = true
       stop?.()
     }
-  }, [userId])
+  }, [])
 
   // The pages the user added to the next question by hand, in the order they added them.
   const [chosen, setChosen] = useState<QuestionPage[]>([])

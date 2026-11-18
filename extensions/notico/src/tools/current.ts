@@ -16,7 +16,7 @@ import {
 import type { QuestionPage } from '@cofun/agent'
 import { z } from '../zod'
 import { NOTION_HOSTS, isNotion, pageIdFromUrl, showsDatabase } from '../notion/hosts'
-import type { Selection } from '../selection'
+import type { Selection } from '@cofun/tools/selection'
 import type { ToolMemory } from './memory'
 
 /** The title and URL of the current tab: the active tab of the side panel's window, on any site. */

@@ -6,7 +6,8 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./clerk": "./src/clerk.ts"
+    "./clerk": "./src/clerk.ts",
+    "./credits": "./src/credits-text.ts"
   },
   "scripts": {
     "test": "vitest run",

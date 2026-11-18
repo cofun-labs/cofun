@@ -2,16 +2,16 @@ import type { Credits, Pack, Packs } from '@cofun/worker-client'
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react'
 import { track } from '../analytics'
 import {
-  dayText,
   daysText,
+  dayText,
+  lastDays,
   leftFrom,
   sourceLeftText,
-  lastDays,
   usdText,
   when,
   wholeCredits,
   type CreditsState,
-} from '../credits'
+} from '@cofun/worker-client/credits'
 import { Page } from './Header'
 import { History, type ReadGrants } from './History'
 import { Icon } from './icons'
