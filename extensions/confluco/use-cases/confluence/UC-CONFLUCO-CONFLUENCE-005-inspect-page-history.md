@@ -2,7 +2,7 @@
 
 ## Behavior
 
-On a connected Confluence instance, the user can ask for a published page's versions, read a specific historical version, and inspect the operations and page-level restrictions Confluence reports. Confluence decides whether the user's account can perform each operation.
+On an allowed Confluence instance, the user can ask for a published page's versions, read a specific historical version, and inspect the operations and page-level restrictions Confluence reports. Confluence decides whether the user's account can perform each operation.
 
 ### api-test
 

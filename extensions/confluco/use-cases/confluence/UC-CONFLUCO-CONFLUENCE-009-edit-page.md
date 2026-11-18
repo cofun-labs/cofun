@@ -2,7 +2,7 @@
 
 ## Behavior
 
-A user on a connected instance can request an exact replacement for a uniquely identified passage on a published page. Confluco shows the target and replacement before applying the edit. A verified edit preserves the page's identity, location, and unrelated published content and formatting. On Cloud, publishing the edit or its reversal can merge into or overwrite an unpublished draft.
+A user on an allowed instance can request an exact replacement for a uniquely identified passage on a published page. Confluco shows the target and replacement before applying the edit. A verified edit preserves the page's identity, location, and unrelated published content and formatting. On Cloud, publishing the edit or its reversal can merge into or overwrite an unpublished draft.
 
 ### api-test
 

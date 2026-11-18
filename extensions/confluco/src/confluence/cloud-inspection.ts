@@ -57,9 +57,43 @@ export async function getCloudSpace(tab: ConfluenceTab, key: string, signal?: Ab
   return { ...spaceLink(tab, space), homepage: homepage ? cloudPageLink(tab, homepage) : null }
 }
 
-async function describePages(tab: ConfluenceTab, items: z.output<typeof item>[], signal?: AbortSignal) {
-  const ids = [...new Set(items.filter((item) => item.type === 'page').map((item) => item.id))]
-  if (!ids.length) return []
+const folder = z.object({
+  id,
+  type: z.literal('folder'),
+  status: z.string().min(1).max(40),
+  title: z.string().trim().min(1).max(1000),
+  _links: z.object({ webui: z.string().max(4096).optional() }).optional(),
+})
+
+function folderLink(tab: ConfluenceTab, { id, title, _links }: z.output<typeof folder>) {
+  const base = tab.instance.origin + tab.instance.path
+  // Atlassian returns /spaces/KEY/folder/ID relative to /wiki. A folder has no ID-only URL.
+  const web = _links?.webui ?? ''
+  const linked = /^\/(?:wiki\/)?spaces\/[^/?#]+\/folder\/(\d{1,20})\/?$/.exec(web)?.[1] === id
+  const url = linked ? new URL(web.startsWith('/wiki/') ? web : '/wiki' + web, tab.instance.origin) : undefined
+  return {
+    kind: 'folder' as const,
+    title,
+    url: url?.origin === tab.instance.origin ? url.href : undefined,
+    ref: { instance: base, id },
+  }
+}
+
+async function fetchFolder(tab: ConfluenceTab, id: string, signal?: AbortSignal) {
+  const reply = await getConfluence(tab, 'folders/' + id, {}, signal, 'cloud-v2')
+  const parsed = folder.safeParse(reply.data)
+  if (!parsed.success || parsed.data.id !== id) refuse('Confluence did not return the expected folder.')
+  return parsed.data
+}
+
+async function fetchCurrentFolder(tab: ConfluenceTab, id: string, signal?: AbortSignal) {
+  const found = await fetchFolder(tab, id, signal)
+  if (found.status !== 'current') refuse('This Confluence folder is not current.')
+  return found
+}
+
+async function describePages(tab: ConfluenceTab, ids: string[], signal?: AbortSignal) {
+  if (!ids.length) return new Map<string, ReturnType<typeof cloudPageLink>>()
   const reply = await getConfluence(
     tab,
     'pages',
@@ -75,31 +109,66 @@ async function describePages(tab: ConfluenceTab, items: z.output<typeof item>[],
   ) {
     refuse('Confluence did not return the expected pages.')
   }
-  const pages = new Map(parsed.data.results.map((page) => [page.id, cloudPageLink(tab, page)]))
-  return ids.flatMap((id) => {
-    const page = pages.get(id)
-    return page ? [page] : []
+  return new Map(parsed.data.results.map((page) => [page.id, cloudPageLink(tab, page)]))
+}
+
+/** Describe published pages and folders in hierarchy order, leaving out other content types. */
+async function describeTree(tab: ConfluenceTab, items: z.output<typeof item>[], signal?: AbortSignal) {
+  const unique = [...new Map(items.map((entry) => [entry.id, entry])).values()]
+  const pages = await describePages(
+    tab,
+    unique.filter((entry) => entry.type === 'page').map((entry) => entry.id),
+    signal,
+  )
+  const folders = new Map<string, ReturnType<typeof folderLink>>()
+  // There is no bulk folder read. Folders are read one at a time to keep the request rate low.
+  for (const entry of unique) {
+    if (entry.type !== 'folder') continue
+    try {
+      // A folder that is not current is left out, as a page that is not current is.
+      const found = await fetchFolder(tab, entry.id, signal)
+      if (found.status === 'current') folders.set(entry.id, folderLink(tab, found))
+    } catch (error) {
+      if (!(error instanceof ConfluenceRequestError) || !['forbidden', 'missing'].includes(error.kind)) throw error
+    }
+  }
+  return unique.flatMap((entry) => {
+    const found = entry.type === 'page' ? pages.get(entry.id) : folders.get(entry.id)
+    return found ? [found] : []
   })
 }
 
+export type CloudTreeTarget = { page?: PageReference; folder?: never } | { page?: never; folder: PageReference }
+
 export async function browseCloudTree(
   tab: ConfluenceTab,
-  ref: PageReference | undefined,
+  target: CloudTreeTarget,
   cursor?: string,
   signal?: AbortSignal,
 ) {
-  const page = await published(tab, ref, signal)
-  const resource = 'pages/' + page.id
+  let resource: string
+  let self: { page: ReturnType<typeof cloudPageLink> } | { folder: ReturnType<typeof folderLink> }
+  if (target.folder) {
+    if (target.folder.instance !== tab.instance.origin + tab.instance.path)
+      refuse('This folder reference belongs to a different Confluence instance.')
+    const found = await fetchCurrentFolder(tab, target.folder.id, signal)
+    resource = 'folders/' + found.id
+    self = { folder: folderLink(tab, found) }
+  } else {
+    const page = await published(tab, target.page, signal)
+    resource = 'pages/' + page.id
+    self = { page: cloudPageLink(tab, page) }
+  }
   const ancestorLimit = 30
   const parents = await cloudCollection(tab, resource + '/ancestors', {}, undefined, item, {
     limit: ancestorLimit,
     signal,
   })
   const { items, ...next } = await cloudCollection(tab, resource + '/direct-children', {}, cursor, item, { signal })
-  const ancestors = await describePages(tab, parents.items, signal)
-  const children = await describePages(tab, items, signal)
+  const ancestors = await describeTree(tab, parents.items, signal)
+  const children = await describeTree(tab, items, signal)
   return {
-    page: cloudPageLink(tab, page),
+    ...self,
     ancestors,
     children,
     // Cloud continues through the first ancestor's ID, not a cursor link.

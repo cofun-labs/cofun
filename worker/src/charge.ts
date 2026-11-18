@@ -2,7 +2,7 @@
 // the balance is above zero, and once it ended, one that failed costs nothing, one that succeeded
 // what it used, and a streamed reply the user stopped an estimate of it (routes/chat.ts). What the
 // grants don't cover is forgiven; each route's rate limit bounds it.
-import { FREE_CREDITS, Ledger, type Balance, type SpendDetail } from './credits'
+import { FREE_CREDITS, Ledger, MICRO_CREDITS, type Balance, type SpendDetail } from './credits'
 import { HttpError, errorSummary, type Ctx } from './http'
 import { recordUsage, type UsageRecord } from './usage'
 import * as z from './zod'
@@ -105,9 +105,10 @@ function utcMinute(ms: number): string {
 
 /**
  * The user's ledger, opened before a paid call, which gives the weekly free grant if due. Refuses
- * with `out_of_credits` at a zero balance, and `credits_unavailable` when it can't be read.
+ * with `out_of_credits` at a zero balance or one below `needs` (micro-credits, what the call is
+ * estimated to cost before it is made), and `credits_unavailable` when it can't be read.
  */
-export async function openLedger(c: Ctx, now: number, logError: (line: string) => void): Promise<Ledger> {
+export async function openLedger(c: Ctx, now: number, logError: (line: string) => void, needs = 0): Promise<Ledger> {
   const ledger = new Ledger(c.env.DB, c.get('userId'))
   let balance: Balance
   try {
@@ -121,6 +122,16 @@ export async function openLedger(c: Ctx, now: number, logError: (line: string) =
       402,
       'out_of_credits',
       `You have no credits left. Your next ${FREE_CREDITS} free credits arrive on ${utcMinute(balance.nextGrantAt)}, or you can buy credits.`,
+    )
+  }
+  if (balance.balance < needs) {
+    // Rounded apart, so a balance just short never reads as enough.
+    const needed = Math.ceil(needs / MICRO_CREDITS)
+    const left = Math.floor(balance.balance / MICRO_CREDITS)
+    throw new HttpError(
+      402,
+      'out_of_credits',
+      `This request needs about ${needed} credits and you have ${left} left. Start a new chat or shorten it, buy credits, or wait for your next ${FREE_CREDITS} free credits on ${utcMinute(balance.nextGrantAt)}.`,
     )
   }
   return ledger

@@ -1,1 +1,1 @@
-{ "model": "smoke-model" }
+{ "model": "smoke-model", "context_window": 1048576, "max_tokens": 65536 }

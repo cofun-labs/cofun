@@ -1,4 +1,5 @@
-import { z } from '../zod'
+/** Whether the host is an Atlassian Cloud tenant, where only the wiki is Confluence. */
+export const isAtlassianHost = (hostname: string) => /(?:^|\.)atlassian\.net$/.test(hostname)
 
 export function parseInstance(value: string) {
   try {
@@ -13,7 +14,7 @@ export function parseInstance(value: string) {
       /[;]|%2f|%5c|%00/i.test(url.pathname)
     )
       return
-    const cloud = /(?:^|\.)atlassian\.net$/.test(url.hostname)
+    const cloud = isAtlassianHost(url.hostname)
     const path = url.pathname.replace(/\/+$/, '')
     if (
       cloud &&
@@ -23,12 +24,12 @@ export function parseInstance(value: string) {
         (path !== '' && path !== '/wiki'))
     )
       return
-    const port = url.port || (url.protocol === 'https:' ? '443' : '80')
     return {
       origin: url.origin,
       path: cloud ? '/wiki' : path,
       cloud,
-      permission: `${url.protocol}//${url.hostname}:${port}/*`,
+      // The pattern a tool card's Allow asks Chrome for (see allowSite in @cofun/tools).
+      permission: `${url.origin}/*`,
     }
   } catch {
     return undefined
@@ -37,79 +38,24 @@ export function parseInstance(value: string) {
 
 export type Instance = NonNullable<ReturnType<typeof parseInstance>>
 
-const instanceKey = (userId: string) => `confluence-instance:${userId}`
-const grantKey = (permission: string) => `confluence-grant:${permission}`
-const connectionLock = 'confluence-connections'
-
-export async function getInstance(userId: string): Promise<Instance | undefined> {
-  const key = instanceKey(userId)
-  const saved = await chrome.storage.local.get(key)
-  return parseSavedInstance(saved[key])
+/** Whether the URL is on an Atlassian Cloud tenant's wiki, the only part of a tenant that is Confluence. */
+export function cloudWikiInstance(url: URL): Instance | undefined {
+  if (!isAtlassianHost(url.hostname)) return
+  if (url.pathname !== '/wiki' && !url.pathname.startsWith('/wiki/')) return
+  return parseInstance(url.origin + '/wiki')
 }
 
-export function watchInstance(userId: string, onChange: (instance: Instance | undefined) => void): () => void {
-  const key = instanceKey(userId)
-  const listener = (changes: Record<string, { newValue?: unknown }>, area: string) => {
-    if (area === 'local' && key in changes) onChange(parseSavedInstance(changes[key].newValue))
-  }
-  chrome.storage.onChanged.addListener(listener)
-  return () => chrome.storage.onChanged.removeListener(listener)
-}
-
-function parseSavedInstance(value: unknown): Instance | undefined {
-  const url = z.string().safeParse(value)
-  if (url.success) return parseInstance(url.data)
-}
-
-/** Call directly from a user gesture so Chrome can ask for the site permission. */
-export async function connectInstance(userId: string, instance: Instance): Promise<boolean> {
-  const origins = [instance.permission]
-  // Start the permission check first without yielding the user gesture needed for the request.
-  const [alreadyGranted, allowed] = await Promise.all([
-    chrome.permissions.contains({ origins }),
-    chrome.permissions.request({ origins }),
-  ])
-  if (!allowed) return false
-  return navigator.locks.request(connectionLock, async () => {
-    if (!(await chrome.permissions.contains({ origins }))) return false
-    const previous = await getInstance(userId)
-    try {
-      await chrome.storage.local.set({
-        [instanceKey(userId)]: instance.origin + instance.path,
-        ...(!alreadyGranted && { [grantKey(instance.permission)]: true }),
-      })
-    } catch (error) {
-      if (!alreadyGranted) await releaseUnusedPermission(instance.permission, true)
-      throw error
-    }
-    if (previous && previous.permission !== instance.permission) await releaseUnusedPermission(previous.permission)
-    return true
-  })
-}
-
-export function disconnectInstance(userId: string, instance: Instance): Promise<Instance | undefined> {
-  return navigator.locks.request(connectionLock, async () => {
-    const current = await getInstance(userId)
-    if (current?.origin !== instance.origin || current.path !== instance.path) return current
-    await chrome.storage.local.remove(instanceKey(userId))
-    await releaseUnusedPermission(instance.permission)
-  })
-}
-
-async function releaseUnusedPermission(permission: string, justGranted = false): Promise<void> {
-  const all = await chrome.storage.local.get(null)
-  const key = grantKey(permission)
-  if (!justGranted && all[key] !== true) return
-  // Chrome host grants are shared by all extension panels. Keep one another connection still uses.
-  const stillUsed = Object.entries(all).some(
-    ([key, value]) =>
-      key.startsWith('confluence-instance:') &&
-      typeof value === 'string' &&
-      parseInstance(value)?.permission === permission,
+/**
+ * Whether a self-managed URL has the shape of a Confluence page, so asking the user to allow its site
+ * for Confluence makes sense. Only the page's own metadata, read once the site is allowed, decides.
+ */
+export function looksLikeConfluence(url: URL): boolean {
+  return (
+    /^https?:$/.test(url.protocol) &&
+    /\/(?:display\/[^/]+|spaces\/[^/]+|pages\/[a-z]+\.action|dashboard\.action|index\.action)(?:\/|$)/.test(
+      url.pathname,
+    )
   )
-  if (stillUsed) return
-  await chrome.permissions.remove({ origins: [permission] })
-  await chrome.storage.local.remove(key)
 }
 
 export function matchesInstance(url: URL, instance: Instance): boolean {

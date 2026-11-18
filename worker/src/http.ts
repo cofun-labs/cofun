@@ -4,7 +4,7 @@ import type { Context, Hono } from 'hono'
 import type { ContentfulStatusCode } from 'hono/utils/http-status'
 import * as z from './zod'
 import type { Database } from './credits'
-import type { priceOf } from './pricing'
+import type { modelOf } from './pricing'
 import type { StripeApi } from './stripe'
 import type { UsageDataset } from './usage'
 import type { SearchOptions } from './search'
@@ -90,8 +90,8 @@ export interface Env {
 export interface AppOptions {
   /** Clock used for credits: when they are granted and when they expire. Tests pass their own to move through the weeks. */
   now?: () => Date
-  /** What a model's tokens cost: the price table by default. Tests pass their own to price a model it does not list. */
-  priceOf?: typeof priceOf
+  /** What the worker knows of a model: the model table by default. Tests pass their own to serve a model it does not list. */
+  modelOf?: typeof modelOf
   /** Where error lines go: Workers Logs by default. Tests pass their own to read what was logged. */
   logError?: (line: string) => void
   /** Where the record of what admins did goes: Workers Logs by default. Tests pass their own to read it. */

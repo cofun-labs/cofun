@@ -3,12 +3,11 @@
 import * as z from '../zod'
 import { MAX_ID_CHARS, badRequest, parse, part } from '../http'
 
-// What Notico sends of a long chat (HOSTED_HISTORY in @cofun/agent's provider.ts: 800 messages and
-// 600,000 characters, about 150k tokens of the model's 1,048,576), with room for the system prompt,
-// which that budget doesn't count.
-const MAX_MESSAGES = 1_000
-export const MAX_TOKENS = 16_384
-export const MAX_CONTENT_CHARS = 800_000
+// How long a request may be is the model's to say: one over its context window is refused by Workers
+// AI, and the 6 MiB body limit (app.ts) bounds what the worker reads. The agent budgets a chat by the
+// window and this reply limit, both of which /v1/me gives it. MAX_TOKENS also bounds what a call's
+// reply can cost.
+export const MAX_TOKENS = 65_536
 const MAX_TOOLS = 64
 const MAX_TOOL_CALLS = 32
 
@@ -110,9 +109,7 @@ const Message = part(z.looseObject({}), 'each message must be an object').pipe(
   ),
 )
 
-const Messages = part(z.array(z.unknown()).min(1), 'messages must be a non-empty array')
-  .refine((messages) => messages.length <= MAX_MESSAGES, { error: `at most ${MAX_MESSAGES} messages`, abort: true })
-  .pipe(z.array(Message))
+const Messages = part(z.array(z.unknown()).min(1), 'messages must be a non-empty array').pipe(z.array(Message))
 
 const TOOL = 'each tool needs type "function" and a function definition'
 const TOOL_NAMES = 'tool names are 1 to 64 letters, digits, underscores, or dashes'
@@ -204,8 +201,8 @@ function parseToolChoice(value: unknown, tools: Tools | undefined): z.output<typ
 
 /**
  * Validates the conversation and tools, and returns only what the model needs.
- * `chars` counts message text, tool calls and results, and tool definitions, so tools can't get around
- * the size limit.
+ * `chars` counts message text, tool calls and results, and tool definitions: the input's size, for the
+ * usage record and for estimating the tokens of a call that was stopped before it reported them.
  */
 export function parseModelInputs(body: z.output<typeof Body>): { inputs: ModelInputs; chars: number } {
   const inputs: ModelInputs = { messages: parse(Messages, body.messages) }

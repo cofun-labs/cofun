@@ -2,7 +2,7 @@
 
 ## Behavior
 
-On a connected instance, the user can request a published page with a title and optional plain text, under a parent they choose. Confluco shows the intended site, parent and title before writing. It checks the result, avoids duplicate creation, and reports when the outcome cannot be confirmed.
+On an allowed instance, the user can request a published page with a title and optional plain text, under a parent they choose. Confluco shows the intended site, parent and title before writing. It checks the result, avoids duplicate creation, and reports when the outcome cannot be confirmed.
 
 ### api-test
 

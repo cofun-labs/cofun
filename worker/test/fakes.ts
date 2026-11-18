@@ -36,6 +36,8 @@ export interface FakeTurn {
   reply?: string
   toolCalls?: FakeToolCall[]
   finishReason?: 'length'
+  /** The token counts this reply reports, in place of `usage`: how full the model says its window was. */
+  usage?: Record<string, unknown>
 }
 
 /**
@@ -63,6 +65,13 @@ export class FakeAiBinding implements AiBinding {
   script: FakeTurn[] = []
   /** The token counts every reply reports. */
   usage: Record<string, unknown> = FAKE_USAGE
+  /** What the reply being written reports: its turn's usage, or `usage`. */
+  private replyUsage: Record<string, unknown> = FAKE_USAGE
+  /**
+   * The tokens a request may hold, counted roughly as a token per 3 characters of its messages and
+   * tools. A request over it is refused as Workers AI refuses one, with the same words.
+   */
+  contextWindow = 1_048_576
   private nextToolCallId = 0
 
   /** Every web search asked for (`websearch`), with its options. */
@@ -85,8 +94,14 @@ export class FakeAiBinding implements AiBinding {
   async run(model: string, inputs: Record<string, unknown>, options?: Record<string, unknown>): Promise<unknown> {
     this.calls.push({ model, inputs, options })
     if (this.failWith) throw this.failWith
+    const tokens = JSON.stringify([inputs.messages, inputs.tools ?? []]).length / 3
+    if (tokens > this.contextWindow)
+      throw new Error(
+        `AiError: {"error":{"message":"This model's maximum context length is ${this.contextWindow} tokens. However, your prompt contains at least ${Math.ceil(tokens)} input tokens.","code":400}}`,
+      )
 
     const turn = this.script.shift()
+    this.replyUsage = turn?.usage ?? this.usage
     const reply = turn ? (turn.reply ?? '') : this.reply
     const toolCalls = turn ? turn.toolCalls : this.toolCalls
     if (toolCalls) return this.toolCallReply(model, toolCalls, inputs, reply)
@@ -96,7 +111,7 @@ export class FakeAiBinding implements AiBinding {
         object: 'chat.completion',
         model,
         choices: [{ index: 0, message: { role: 'assistant', content: reply }, finish_reason: 'stop' }],
-        usage: this.usage,
+        usage: this.replyUsage,
       }
     }
 
@@ -121,7 +136,7 @@ export class FakeAiBinding implements AiBinding {
     events.push({ choices: [{ index: 0, delta: {}, finish_reason: turn?.finishReason ?? 'stop' }] })
     // Like OpenAI, usage comes in a last chunk with no choices, only when asked for.
     const streamOptions = inputs.stream_options as { include_usage?: boolean } | undefined
-    if (streamOptions?.include_usage) events.push({ choices: [], usage: this.usage })
+    if (streamOptions?.include_usage) events.push({ choices: [], usage: this.replyUsage })
     return sliced(new TextEncoder().encode(toSse(events)), this.streamFailWith, this.pause)
   }
 
@@ -152,7 +167,7 @@ export class FakeAiBinding implements AiBinding {
             finish_reason: 'tool_calls',
           },
         ],
-        usage: this.usage,
+        usage: this.replyUsage,
       }
     }
 
@@ -164,9 +179,9 @@ export class FakeAiBinding implements AiBinding {
       {
         choices: [{ index: 0, delta: { role: 'assistant', content: '' }, finish_reason: null }],
         usage: {
-          prompt_tokens: this.usage.prompt_tokens,
+          prompt_tokens: this.replyUsage.prompt_tokens,
           completion_tokens: 0,
-          total_tokens: this.usage.prompt_tokens,
+          total_tokens: this.replyUsage.prompt_tokens,
         },
       },
       ...(reply ? reply.split(' ').map((w) => chunk({ content: w + ' ' })) : []),
@@ -193,7 +208,7 @@ export class FakeAiBinding implements AiBinding {
     const streamOptions = inputs.stream_options as { include_usage?: boolean } | undefined
     if (streamOptions?.include_usage) {
       events.push({ choices: [], usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 } })
-      events.push({ response: '', usage: this.usage })
+      events.push({ response: '', usage: this.replyUsage })
     }
     return sliced(new TextEncoder().encode(toSse(events)), this.streamFailWith, this.pause)
   }

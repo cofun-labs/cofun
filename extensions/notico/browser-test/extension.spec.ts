@@ -46,6 +46,7 @@ const SESSION_TOKEN = (
 // What the signed-in panel asks the worker for while loading.
 const WORKER_FIXTURES: Record<string, string> = {
   '/v1/credits': 'worker-credits.json',
+  // The smallest context window the agent takes, so a long chat outgrows it with less text.
   '/v1/me': 'worker-me.json',
 }
 
@@ -363,8 +364,17 @@ test.describe('signed in', () => {
       if (new URL(request.url()).pathname === '/v1/chat/completions') requests.push(request)
     })
     const title = 'Launch plan smoke test'
-    // A large synthetic response makes the next question exceed the hosted history budget.
-    replies.push({ text: '## Archive notes\n\n' + 'Archived log entry. '.repeat(32_000) }, { text: title })
+    // A large synthetic response makes the next question pass the trigger of the 200,000-token window
+    // (134,464 tokens, at 3.5 characters a token), while one summary request still holds it (160,000
+    // tokens, at 3 letters a token).
+    // Its usage says what it took, as a model reports it.
+    replies.push(
+      {
+        text: '## Archive notes\n\n' + 'Archived log entry '.repeat(25_000),
+        usage: { prompt_tokens: 20, completion_tokens: 136_000, total_tokens: 136_020 },
+      },
+      { text: title },
+    )
     const panel = await openPanel(context, background, errors)
     await ask(panel, 'Remember the launch code ORBIT-42.')
     await expect(panel.getByRole('banner')).toContainText(title)

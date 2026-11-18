@@ -17,18 +17,29 @@ export interface Tokens {
   completionTokens: number
 }
 
+/** What the worker knows of a model it may be set to: its prices, and the tokens one request to it can hold. */
+export interface ModelSpec {
+  price: Price
+  /** The model's context window, input and reply together, as its model page gives it. */
+  contextWindow: number
+}
+
 /**
- * One entry per model the worker may be set to (`MODEL`), from
- * https://developers.cloudflare.com/workers-ai/platform/pricing/. A model that is not listed is a
- * configuration error, never a free call: add its prices here in the change that switches to it.
+ * One entry per model the worker may be set to (`MODEL`), with prices from
+ * https://developers.cloudflare.com/workers-ai/platform/pricing/ and the window from the model's
+ * page. A model that is not listed is a configuration error, never a free call: add it here in the
+ * change that switches to it.
  */
-const PRICES = new Map<string, Price>([
+const MODELS = new Map<string, ModelSpec>([
   // US$0.30 input, US$0.006 cached input, US$1.20 output per million tokens.
-  ['@cf/deepseek-ai/deepseek-v4.1-flash-1017', { input: 300, cachedInput: 6, output: 1200 }],
+  [
+    '@cf/deepseek-ai/deepseek-v4.1-flash-1017',
+    { price: { input: 300, cachedInput: 6, output: 1200 }, contextWindow: 1_048_576 },
+  ],
 ])
 
-export function priceOf(model: string): Price | undefined {
-  return PRICES.get(model)
+export function modelOf(model: string): ModelSpec | undefined {
+  return MODELS.get(model)
 }
 
 /** The cost of one model call in micro-credits: cached input at its own price, the rest of the input at the full one. */

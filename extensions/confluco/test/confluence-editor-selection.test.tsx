@@ -1,5 +1,5 @@
 import '@testing-library/jest-dom/vitest'
-import { screen } from '@testing-library/react'
+import { act, screen } from '@testing-library/react'
 import { afterEach, expect, it } from 'vitest'
 import { base, closeWorkspace, openWorkspace } from './confluence-fixture'
 
@@ -40,6 +40,17 @@ it('[UC-CONFLUCO-CONFLUENCE-014-S01] sends only the reviewed editor selection wi
   expect(browser.workspaceRequests).toEqual([])
 })
 
+it('[UC-CONFLUCO-CONFLUENCE-014-S01] keeps the reviewed selection while the user looks at another tab', async () => {
+  const { browser, attach, send } = await openPanel()
+  await attach()
+  await screen.findByRole('region', { name: 'Confluence editor selection' })
+  await act(() => browser.selectTab({ ...editor, url: 'https://news.example.com/', title: 'News' }))
+  await act(() => browser.selectTab(editor))
+  expect(screen.getByRole('region', { name: 'Confluence editor selection' })).toHaveTextContent(selected)
+  await send()
+  expect(JSON.stringify(browser.sentToModel())).toContain(selected)
+})
+
 it('[UC-CONFLUCO-CONFLUENCE-014-S01] reports the actual original length when an editor selection is clipped', async () => {
   const { browser, attach, send } = await openPanel({ ...editor, editorSelection: 'x'.repeat(5_000) })
   await attach()
@@ -54,13 +65,22 @@ it('[UC-CONFLUCO-CONFLUENCE-014-S01] reports the actual original length when an 
 it.each([
   [{ ...editor, editorSelection: '' }, /Select text in the Confluence editor/],
   [{ ...editor, url: base + '/pages/viewpage.action?pageId=42' }, /Open a supported Confluence editor/],
-  [{ ...editor, url: 'https://other.example.test/pages/editpage.action?pageId=42' }, /Connect a self-managed/],
 ])('[UC-CONFLUCO-CONFLUENCE-014-S02] omits text outside a selected supported editor (%j)', async (tab, message) => {
   const { browser, attach, send } = await openPanel(tab)
   await attach()
   expect(await screen.findByText(message)).toBeVisible()
   await send()
   expect(JSON.stringify(browser.sentToModel())).not.toContain(selected)
+  expect(browser.workspaceRequests).toEqual([])
+})
+
+it('[UC-CONFLUCO-CONFLUENCE-014-S02] offers no editor selection on a site Confluco may not use', async () => {
+  const { browser } = await openWorkspace({
+    ...editor,
+    url: 'https://other.example.test/pages/editpage.action?pageId=42',
+  })
+  await screen.findByRole('textbox', { name: 'Message' })
+  expect(screen.queryByText('Confluence', { selector: 'summary' })).toBeNull()
   expect(browser.workspaceRequests).toEqual([])
 })
 

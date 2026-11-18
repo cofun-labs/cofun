@@ -5,7 +5,7 @@ import { charge, openLedger, startUsage, type Charging, type Turn } from '../cha
 import { costOf, estimateCachedTokens, estimateTokens, type Tokens } from '../pricing'
 import { finishReason, meterStream, replyInfo, tokensOf, type StreamSummary, type UsageRecord } from '../usage'
 import { HttpError, errorSummary, parse, type App, type Ctx, type Deps } from '../http'
-import { Body, MAX_CONTENT_CHARS, MAX_TOKENS, MaxTokens, Stream, parseModelInputs } from './chat-request'
+import { Body, MAX_TOKENS, MaxTokens, Stream, parseModelInputs } from './chat-request'
 
 /**
  * Whether a value can be read as a stream. Judged by the method the worker calls, not by class: the
@@ -28,7 +28,7 @@ function callCost(microCredits: number, estimated: boolean) {
 }
 
 /** Chat completions, mounted at /v1/chat. */
-export function chatRoutes({ now, priceOf: priceFor, logError }: Deps): App {
+export function chatRoutes({ now, modelOf, logError }: Deps): App {
   const routes: App = new Hono()
   // OpenAI-compatible chat completions. The model is fixed by the server.
   // Every request that passed auth leaves one usage record, however it ends.
@@ -59,8 +59,6 @@ export function chatRoutes({ now, priceOf: priceFor, logError }: Deps): App {
     const { inputs: modelInputs, chars } = parseModelInputs(body)
     usage.messages = modelInputs.messages.length
     usage.inputChars = chars
-    if (chars > MAX_CONTENT_CHARS)
-      throw new HttpError(400, 'bad_request', `messages and tools exceed ${MAX_CONTENT_CHARS} characters`)
     // null means not set.
     const max_tokens =
       body.max_tokens === undefined || body.max_tokens === null ? undefined : parse(MaxTokens, body.max_tokens)
@@ -70,19 +68,27 @@ export function chatRoutes({ now, priceOf: priceFor, logError }: Deps): App {
       throw new HttpError(400, 'unsupported_model', `unsupported model; use ${c.env.MODEL} or omit it`)
     }
 
-    const priced = priceFor(c.env.MODEL)
-    if (!priced) throw new HttpError(503, 'not_configured', 'MODEL has no price')
-    const price = priced
+    const served = modelOf(c.env.MODEL)
+    if (!served) throw new HttpError(503, 'not_configured', 'MODEL is not in the model table')
+    const { price, contextWindow } = served
 
     // Calls sent at once all start on the same balance (see below), so how many one user can start
     // a minute is capped. Checked before the credits, so a refused request reads nothing.
     const { success } = await c.env.CHAT_LIMIT.limit({ key: c.get('userId') })
     if (!success) throw new HttpError(429, 'rate_limited', 'Too many requests at once. Wait a minute, then ask again.')
 
-    // Charged when the reply ends (charge.ts); CHAT_LIMIT and MAX_TOKENS bound what calls at once cost.
+    // Charged when the reply ends (charge.ts). A balance short of the input's cost, estimated from its
+    // size and all at the cached price, is refused first. At the cached price, a long chat whose prefix
+    // the model has cached is not refused for much more than it would spend: the size estimate runs
+    // over for English (3 characters a token, where English runs near 4) by about 2 credits on a full window. What a call
+    // costs beyond the balance is then its uncached input and its reply (MAX_TOKENS bounds that), and
+    // CHAT_LIMIT bounds calls at once.
     const maxTokens = max_tokens ?? MAX_TOKENS
+    // The input's tokens as estimated from its size, never more than the model's window can hold.
+    const inputTokens = Math.min(estimateTokens(chars), contextWindow)
+    const needs = costOf(price, { promptTokens: inputTokens, cachedTokens: inputTokens, completionTokens: 0 })
     const charging: Charging = {
-      ledger: await openLedger(c, now().getTime(), logError),
+      ledger: await openLedger(c, now().getTime(), logError, needs),
       usage,
       turn,
       now: () => now().getTime(),
@@ -123,8 +129,9 @@ export function chatRoutes({ now, priceOf: priceFor, logError }: Deps): App {
       // Pass only the fields the model needs; drop anything else a client added.
       const inputs: Record<string, unknown> = { ...modelInputs }
       // Without an explicit limit, models fall back to their own default, which can be
-      // small enough to cut replies short.
-      inputs.max_tokens = maxTokens
+      // small enough to cut replies short. Workers AI deprecates max_tokens for this name;
+      // clients still send max_tokens, which the worker reads.
+      inputs.max_completion_tokens = maxTokens
       if (stream === true) {
         inputs.stream = true
         // Ask for token usage in the final chunk, so streamed replies can be metered too.
@@ -150,6 +157,17 @@ export function chatRoutes({ now, priceOf: priceFor, logError }: Deps): App {
       try {
         out = await c.env.AI.run(c.env.MODEL, inputs, options)
       } catch (err) {
+        // An input over the model's window. Workers AI answers "This model's maximum context length
+        // is 1048576 tokens. However, ..." with a 400, and the binding throws it as an Error whose
+        // message is the only place that says so: it carries no status or code to branch on. Said in
+        // the worker's own words, which name the window as providers do, so the agent reads it as a
+        // context overflow, compacts, and sends again.
+        if (err instanceof Error && /maximum context length/i.test(err.message))
+          throw new HttpError(
+            400,
+            'context_too_long',
+            `the input exceeds the model's context window: its maximum context length is ${contextWindow} tokens`,
+          )
         // A summary goes to Workers Logs, not to the client. Never log the error itself: nothing
         // shows that what the provider returns can't quote the request.
         logError(`model call failed: ${errorSummary(err)}`)
@@ -172,7 +190,7 @@ export function chatRoutes({ now, priceOf: priceFor, logError }: Deps): App {
           // reply from the characters streamed, and a fixed share of the prompt as cached.
           const estimated = outcome === 'cancelled' && !summary.ended
           if (estimated) {
-            tokens.promptTokens ||= estimateTokens(chars)
+            tokens.promptTokens ||= inputTokens
             tokens.cachedTokens = estimateCachedTokens(tokens.promptTokens)
             tokens.completionTokens = Math.max(tokens.completionTokens, estimateTokens(summary.replyChars))
           }

@@ -10,6 +10,12 @@ export const pageReference = z.strictObject({
 })
 export type PageReference = z.output<typeof pageReference>
 
+/** A Cloud folder in the page tree, with the same site binding as a page reference. */
+export const folderReference = z.strictObject({
+  instance: z.string().min(1).max(2048).describe('The instance base URL from the folder reference.'),
+  id: pageId.describe('The folder ID from the same reference.'),
+})
+
 export const publishedPage = z.object({
   id: pageId,
   type: z.literal('page'),

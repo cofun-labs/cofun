@@ -6,9 +6,9 @@ The model can summarize earlier messages to continue a long chat. You can still 
 
 Web searches cost credits. To search for free instead, switch on **Search with DuckDuckGo** in **Account → Settings**: each search then opens DuckDuckGo in a background tab and reads its results. Those searches show in your Chrome history, and if DuckDuckGo asks you to confirm you're a person, answer it in that tab.
 
-## Connect to Confluence
+## Use it on Confluence
 
-Open **Account → Settings → Confluence connection**. Enter your Cloud site URL (such as `https://team.atlassian.net/wiki`) or your self-managed base URL, including its deployment path if it has one. Allow Chrome site access, then open the connected site and sign in to Confluence. On either site type, you can read the current page, search published content, browse spaces and page trees, and inspect versions, access, labels, discussions and attachments.
+Open a page on your Confluence site, signed in as usual, and ask. The first time Confluco needs the site, it asks you to allow it, and Chrome asks too. This works on Confluence Cloud (`https://team.atlassian.net/wiki`) and on self-managed Confluence. On either site type, you can read the current page, search published content, browse spaces and page trees, and inspect versions, access, labels, discussions and attachments.
 
 In Edit mode on either site type, you can ask to create a published child page, rename a page, add or remove a label, or post a footer comment or reply. For example, ask `Create page "Notes" under this page`. You can also move a page or copy its body within the space and confirm moving an eligible page to the trash. You can also replace exact published text, restore a page by its link with space administrator access, and undo the last verified edit or trash action in the chat. On Cloud, publishing an edit or undo can merge into or overwrite an unpublished draft.
 

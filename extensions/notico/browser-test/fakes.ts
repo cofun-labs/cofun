@@ -93,8 +93,13 @@ export function notionAnswer({ endpoint, body }: NotionRequest): unknown {
   return undefined
 }
 
+/** The token counts a reply reports, when not the default: how full the model says its window was. */
+type Usage = { prompt_tokens: number; completion_tokens: number; total_tokens: number }
+
 /** What the hosted model says, as the worker streams it: OpenAI's chunks, the cost, then `[DONE]`. */
-export function completionStream(reply: { text: string } | { call: string; args: unknown }): string {
+export function completionStream(
+  reply: ({ text: string } | { call: string; args: unknown }) & { usage?: Usage },
+): string {
   const delta =
     'text' in reply
       ? { role: 'assistant', content: reply.text }
@@ -115,7 +120,7 @@ export function completionStream(reply: { text: string } | { call: string; args:
       id: 'chatcmpl-smoke',
       object: 'chat.completion.chunk',
       choices: [{ index: 0, delta: {}, finish_reason: 'text' in reply ? 'stop' : 'tool_calls' }],
-      usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 },
+      usage: reply.usage ?? { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 },
     },
     { cost: { micro_credits: 1000, estimated: false } },
   ]

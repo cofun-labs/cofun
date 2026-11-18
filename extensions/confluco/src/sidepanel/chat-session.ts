@@ -18,7 +18,7 @@ import { answering, type ModelSettings } from '@cofun/agent/models'
 import type { Mode } from '@cofun/agent/mode'
 import { track } from '../analytics'
 import type { AttachmentUpload } from '../confluence/attachments'
-import { captureConfluenceTab } from '../confluence/tab'
+import { activeTab, confluenceTabAt } from '../confluence/tab'
 import type { ConfluenceUndo } from '../confluence/undo'
 import { titleFor, type Session, type SessionStore } from '../sessions'
 import { ToolMemory } from '../tools/memory'
@@ -89,7 +89,7 @@ export interface ChatPanel {
   store: SessionStore
   /** Each chat asks its own agent, made with this. */
   agent: AgentConfig<ToolMemory>
-  /** The Cofun account signed in, whose connected Confluence site the chats use. */
+  /** The Cofun account signed in. */
   accountId: string
   /** Aborted when the panel unmounts: it cuts a title request short, which leaving the chat does not. */
   closed: AbortSignal
@@ -163,7 +163,7 @@ export class ChatSession {
     private readonly panel: ChatPanel,
     saved?: Session,
   ) {
-    this.agent = new CopilotAgent(panel.agent, new ToolMemory(panel.accountId), saved?.messages, saved?.compaction)
+    this.agent = new CopilotAgent(panel.agent, new ToolMemory(), saved?.messages, saved?.compaction)
     this.memory.confluenceUndo = saved?.undo
     this.titled = saved?.titledByModel ?? false
     this.snapshot = {
@@ -224,8 +224,10 @@ export class ChatSession {
     if (this.snapshot.id !== session.id) this.update({ id: session.id })
     const originalUndo = this.memory.confluenceUndo
     let undoCleared = false
+    const captured = activeTab().catch(() => undefined)
     this.memory.confluenceQuestion = {
-      tab: captureConfluenceTab(this.panel.accountId).catch(() => undefined),
+      captured,
+      tab: captured.then((tab) => tab && confluenceTabAt(tab)).catch(() => undefined),
       attachment: q.attachment,
       nextLabel: 0,
       beforeWrite: async () => {

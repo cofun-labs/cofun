@@ -6,6 +6,7 @@ export {
   WorkerClient,
   WorkerError,
   type CallCost,
+  type HostedModel,
   type Turn,
   type WebCall,
   type WebPage,

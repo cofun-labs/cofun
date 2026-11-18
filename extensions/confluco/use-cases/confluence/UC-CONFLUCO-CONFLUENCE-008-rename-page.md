@@ -2,7 +2,7 @@
 
 ## Behavior
 
-On a connected instance, the user can request a new title for a published page. Confluco shows the intended page and title before writing, keeps the page's content and location, and checks the resulting page. Confluco stops when it detects that the page advanced before writing and reports when the outcome is uncertain.
+On an allowed instance, the user can request a new title for a published page. Confluco shows the intended page and title before writing, keeps the page's content and location, and checks the resulting page. Confluco stops when it detects that the page advanced before writing and reports when the outcome is uncertain.
 
 ### api-test
 

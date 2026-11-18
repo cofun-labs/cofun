@@ -35,10 +35,6 @@ export interface ModelProvider {
   turnHeaders?(turn: Turn): Record<string, string>
 }
 
-// The Worker independently validates the hard wire limits in worker/src/routes/chat-request.ts.
-export const HOSTED_LIMIT = { messages: 1000, chars: 800_000 }
-export const HOSTED_TRIGGER = { messages: 800, chars: 600_000 }
-
 // A failed model request's error, as far as the agent reads it. Each field is read loosely: one that is
 // not text counts as missing, so an error the agent can't read ends in the fallback, never in a wrong value.
 const looseText = z.string().optional().catch(undefined)

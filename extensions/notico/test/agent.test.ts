@@ -35,6 +35,7 @@ import { readPage } from '../src/tools/read'
 import { editPage } from '../src/tools/write'
 import { z } from '../src/zod'
 import { createApp, type Env } from '../../../worker/src/app'
+import { modelOf } from '../../../worker/src/pricing'
 import { FakeClerk } from '../../../worker/test/clerk'
 import {
   FAKE_COST,
@@ -51,7 +52,14 @@ import { FakeNotionTab, FakeStorage, FakeWorkspace, PAGE, PAGE_URL, SPACE, fixtu
 type ToolSpec = SpecOf<ToolMemory>
 
 const EXT = 'chrome-extension://abcdefghijklmnopabcdefghijklmnop'
-const app = createApp()
+/** The context window the worker gives for its model: the real one, or the smallest the agent takes, so a chat outgrows it sooner. */
+let hostedWindow = 1_048_576
+const app = createApp({
+  modelOf: (model) => {
+    const served = modelOf(model)
+    return served && { ...served, contextWindow: hostedWindow }
+  },
+})
 let clerk: FakeClerk
 let env: Env
 let ai: FakeAiBinding
@@ -64,6 +72,7 @@ beforeAll(async () => {
 afterEach(restoreGlobals)
 
 beforeEach(async () => {
+  hostedWindow = 1_048_576
   // The agent calls fetch(); route it into the worker app.
   globalThis.fetch = ((input: RequestInfo | URL, init?: RequestInit) =>
     app.request(new Request(input, init), undefined, env, new FakeExecutionContext())) as typeof fetch
@@ -102,7 +111,6 @@ function makeAgent(
   options: {
     tools?: ToolSpec[]
     maxSteps?: number
-    history?: { messages: number; chars: number }
     systemPrompt?: string
     getToken?: () => Promise<string | null>
     meter?: AgentConfig['meter']
@@ -125,7 +133,6 @@ function makeAgent(
       systemPrompt: options.systemPrompt ?? 'You are Notico.',
       tools: options.tools ?? [pageTool().tool],
       maxSteps: options.maxSteps,
-      history: options.history,
       meter: options.meter,
       model: options.model,
     },
@@ -660,8 +667,12 @@ describe('extension agent against the worker', () => {
   })
 
   it('[@no-uc:money] a long conversation keeps the same summarized prefix between cuts', async () => {
-    const agent = makeAgent({ history: { messages: 10, chars: 100_000 } })
-    for (let n = 1; n <= 5; n++) await ask(agent, `q${n}`)
+    hostedWindow = 200_000
+    const agent = makeAgent()
+    for (let n = 1; n <= 4; n++) await ask(agent, `q${n}`)
+    // The reply to q5 reports a window past the trigger (134,464 tokens), so q6 compacts.
+    ai.script = [{ reply: 'Five.', usage: { prompt_tokens: 135_000, completion_tokens: 5, total_tokens: 135_005 } }]
+    await ask(agent, 'q5')
     ai.script = [{ reply: 'Summary of the early questions.' }, { reply: 'Six.' }, { reply: 'Seven.' }]
     await ask(agent, 'q6')
     await ask(agent, 'q7')
@@ -672,10 +683,12 @@ describe('extension agent against the worker', () => {
   })
 
   it('[@no-uc:data] an oversized question leaves the earlier conversation intact', async () => {
+    // A question past the hard limit (134,464 tokens of a 200,000 window), which no summary can make fit.
+    hostedWindow = 200_000
     const agent = makeAgent()
     await ask(agent, 'q1')
     await ask(agent, 'q2')
-    expect((await ask(agent, `q3 ${'x'.repeat(800_000)}`)).result.status).toBe('error')
+    expect((await ask(agent, `q3 ${'x'.repeat(500_000)}`)).result.status).toBe('error')
     expect(ai.calls).toHaveLength(2)
     await ask(agent, 'q4')
     expect(
