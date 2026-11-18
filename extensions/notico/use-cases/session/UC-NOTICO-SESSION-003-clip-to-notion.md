@@ -27,4 +27,4 @@ Key constraints:
 
 | ID | Priority | Status | Scenario |
 | --- | --- | --- | --- |
-| UC-NOTICO-SESSION-003-S06 | P1 | 🚧 | Given a Notion page chosen in Settings and an article open in Chrome; when the user picks "Clip page to Notion" from the context menu; then the chosen page opens in Notion with a new page at its end that holds the article's headings and paragraphs, and the side panel links it. |
+| UC-NOTICO-SESSION-003-S06 | P1 | ✅ | Given a Notion page chosen in Settings and an article open in Chrome; when the user picks "Clip page to Notion" from the context menu; then the chosen page opens in Notion with a new page at its end that holds the article's headings and paragraphs, and the side panel links it. |
