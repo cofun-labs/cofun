@@ -1,6 +1,6 @@
 // Runs Confluence REST requests and editor reads in the connected document with its site session.
 import { z } from '../zod'
-import { getInstance, matchesInstance, type Instance } from './instance'
+import { cloudWikiInstance, looksLikeConfluence, matchesInstance, parseInstance, type Instance } from './instance'
 
 export interface ConfluenceTab {
   tabId: number
@@ -8,34 +8,76 @@ export interface ConfluenceTab {
   instance: Instance
 }
 
-export async function currentConfluenceTab(instance: Instance | undefined): Promise<ConfluenceTab> {
-  if (!instance) throw new Error('Connect a Confluence site in Settings first.')
-  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true })
-  if (tab?.id === undefined || !tab.url) throw new Error('Open the connected Confluence site in the current tab.')
-  const url = new URL(tab.url)
-  if (!matchesInstance(url, instance)) throw new Error('Open the connected Confluence site in the current tab.')
-  url.hash = ''
-  return { tabId: tab.id, url: url.href, instance }
+/** The tab a question was asked on: the active tab of the side panel's window, without its hash. */
+export interface CapturedTab {
+  tabId: number
+  url: string
 }
 
-function confluenceTab(tab: chrome.tabs.Tab | undefined, instance: Instance | undefined): ConfluenceTab | undefined {
-  if (!instance || tab?.id === undefined || !tab.url) return
+export async function activeTab(): Promise<CapturedTab | undefined> {
+  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true })
+  if (tab?.id === undefined || !tab.url) return
   try {
     const url = new URL(tab.url)
-    if (!matchesInstance(url, instance)) return
     url.hash = ''
-    return { tabId: tab.id, url: url.href, instance }
+    return { tabId: tab.id, url: url.href }
   } catch {
     return undefined
   }
 }
 
-export async function captureConfluenceTab(accountId: string) {
-  const [[tab], instance] = await Promise.all([
-    chrome.tabs.query({ active: true, currentWindow: true }),
-    getInstance(accountId),
-  ])
-  return confluenceTab(tab, instance)
+/** The site whose access Confluence tools on this tab need, when the tab could be a Confluence page. */
+export function confluenceOrigin(captured: CapturedTab): string | undefined {
+  const url = new URL(captured.url)
+  if (cloudWikiInstance(url) || (!/(?:^|\.)atlassian\.net$/.test(url.hostname) && looksLikeConfluence(url)))
+    return url.origin
+}
+
+export function mayUseSite(origin: string): Promise<boolean> {
+  return chrome.permissions.contains({ origins: [origin + '/*'] })
+}
+
+const contextPath = z
+  .string()
+  .max(1000)
+  .regex(/^(?:\/[^/?#]+)*$/)
+
+/**
+ * The Confluence site the tab shows, once Confluco may use the tab's site. A Cloud wiki is known by its
+ * address. A self-managed page names its deployment path in Confluence's own metadata, which must
+ * contain the page: a page can claim to be Confluence, but requests only go back to its own origin.
+ */
+export async function confluenceTabAt(captured: CapturedTab): Promise<ConfluenceTab | undefined> {
+  const url = new URL(captured.url)
+  if (!/^https?:$/.test(url.protocol) || !(await mayUseSite(url.origin))) return
+  let instance = cloudWikiInstance(url)
+  // Only a page shaped like Confluence's is read, so no script runs on other sites the user allowed.
+  if (!instance && !/(?:^|\.)atlassian\.net$/.test(url.hostname) && looksLikeConfluence(url)) {
+    const [frame] = await chrome.scripting
+      .executeScript({
+        target: { tabId: captured.tabId },
+        world: 'ISOLATED',
+        func: (expectedUrl: string) => {
+          const current = new URL(location.href)
+          current.hash = ''
+          if (current.href !== expectedUrl) return { changed: true }
+          return { path: document.querySelector<HTMLMetaElement>('meta[name="confluence-context-path"]')?.content }
+        },
+        args: [captured.url],
+      })
+      .catch(() => [])
+    const result = z.object({ changed: z.literal(true) }).safeParse(frame?.result)
+    if (result.success) refuse('The Confluence tab changed. Open the intended page and ask again.')
+    const path = contextPath.safeParse(z.object({ path: z.unknown() }).safeParse(frame?.result).data?.path)
+    if (path.success) instance = parseInstance(url.origin + path.data)
+  }
+  if (!instance || !matchesInstance(url, instance)) return
+  return { ...captured, instance }
+}
+
+export async function captureConfluenceTab(): Promise<ConfluenceTab | undefined> {
+  const captured = await activeTab()
+  return captured && confluenceTabAt(captured)
 }
 
 const result = z.discriminatedUnion('kind', [
@@ -117,7 +159,7 @@ export function verificationFailed(message: string, cause?: unknown): never {
 }
 
 export function requireTab(tab: ConfluenceTab | undefined): ConfluenceTab {
-  if (!tab) refuse('Connect a self-managed Confluence instance and open a page on it first.')
+  if (!tab) refuse('Open a Confluence page in the current tab first.')
   return tab
 }
 
@@ -130,7 +172,7 @@ const editorSelectionResult = z.discriminatedUnion('kind', [
 export async function readEditorSelection(target: ConfluenceTab | undefined) {
   const tab = requireTab(target)
   if (!(await chrome.permissions.contains({ origins: [tab.instance.permission] })))
-    refuse('Confluco needs Chrome site access. Reconnect this Confluence instance and try again.')
+    refuse('Confluco needs Chrome site access to this Confluence site. Ask again and allow it.')
   const [frame] = await chrome.scripting
     .executeScript({
       target: { tabId: tab.tabId },
@@ -430,7 +472,7 @@ export async function uploadConfluenceAttachment(
 async function sendConfluence(target: ConfluenceTab, request: RestRequest, signal?: AbortSignal, rejection?: string) {
   signal?.throwIfAborted()
   if (!(await chrome.permissions.contains({ origins: [target.instance.permission] }))) {
-    refuse('Confluco needs Chrome site access. Reconnect this Confluence instance and try again.')
+    refuse('Confluco needs Chrome site access to this Confluence site. Ask again and allow it.')
   }
   signal?.throwIfAborted()
 

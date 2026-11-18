@@ -3,7 +3,6 @@ import type { QuestionPage, QuestionSelection } from '@cofun/agent'
 import type { Mode } from '@cofun/agent/mode'
 import { track } from '../analytics'
 import type { AttachmentUpload } from '../confluence/attachments'
-import { getInstance, watchInstance, type Instance } from '../confluence/instance'
 import {
   attachmentSizeLimit,
   captureConfluenceTab,
@@ -33,11 +32,9 @@ export function useComposer({
   panel,
   chat,
   busy,
-  userId,
 }: {
   panel: Panel
   chat: ChatSession
-  userId: string
   /** The open chat's question has not ended yet. */
   busy: boolean
 }) {
@@ -47,40 +44,27 @@ export function useComposer({
   // order sent: each adds to the ones before. They stay as the user switches tabs or chats, until a
   // question carries them or the user takes them off.
   const [selections, setSelections] = useState<Selection[]>([])
-  const [instance, setInstance] = useState<Instance>()
   const [editor, setEditor] = useState<Awaited<ReturnType<typeof readEditorSelection>>>()
   const [file, setFile] = useState<File>()
   const [confluenceStatus, setConfluenceStatus] = useState('')
   const captureEpoch = useRef(0)
   const submitting = useRef(false)
 
+  // The Confluence site the current tab shows, once Confluco may use it: checked again as the user
+  // switches or loads tabs, and after each question, which may have allowed the site.
+  const site = useConfluenceSite(busy)
   useEffect(() => {
-    let initial = true
-    const unwatch = watchInstance(userId, (instance) => {
-      initial = false
-      captureEpoch.current++
-      setInstance(instance)
-      setEditor(undefined)
-      setFile(undefined)
-    })
-    void getInstance(userId)
-      .then((instance) => {
-        if (initial) setInstance(instance)
-      })
-      .catch(() => {})
-    return () => {
-      initial = false
-      captureEpoch.current++
-      unwatch()
-    }
-  }, [userId])
+    captureEpoch.current++
+    setEditor(undefined)
+    setFile(undefined)
+  }, [site])
 
   async function attachEditorSelection() {
     const capture = ++captureEpoch.current
     setEditor(undefined)
     setConfluenceStatus('Reading editor selection…')
     try {
-      const captured = await readEditorSelection(await captureConfluenceTab(userId))
+      const captured = await readEditorSelection(await captureConfluenceTab())
       if (captureEpoch.current !== capture) return
       setEditor(captured)
       setConfluenceStatus('')
@@ -235,7 +219,7 @@ export function useComposer({
     let status = ''
     try {
       if (editor && !attachment) {
-        const tab = await captureConfluenceTab(userId).catch(() => undefined)
+        const tab = await captureConfluenceTab().catch(() => undefined)
         const same =
           tab?.tabId === editor.tab.tabId &&
           tab.url === editor.tab.url &&
@@ -318,8 +302,8 @@ export function useComposer({
     pickerFrom: picker?.from,
     chips,
     selections,
-    connected: instance !== undefined,
-    editorSelectionAvailable: instance !== undefined && !instance.cloud,
+    connected: site !== undefined,
+    editorSelectionAvailable: site !== undefined && !site.startsWith('cloud:'),
     editor,
     file,
     confluenceStatus,
@@ -513,4 +497,39 @@ function shownSelection(selection: Selection): QuestionSelection {
     url: linkTo(selection) ?? selection.url,
     quote: text.length > QUOTE_CHARS ? `${clipSelection(text, QUOTE_CHARS)}…` : text,
   }
+}
+
+/**
+ * Follows which Confluence site the current tab shows, once Confluco may use it, as `cloud:` or
+ * `self:` and the site's base URL; undefined on any other tab.
+ */
+function useConfluenceSite(busy: boolean): string | undefined {
+  const [site, setSite] = useState<string>()
+  useEffect(() => {
+    if (busy) return
+    let reads = 0
+    const read = () => {
+      const n = ++reads
+      void captureConfluenceTab()
+        .catch(() => undefined)
+        .then((tab) => {
+          if (n === reads)
+            setSite(tab && (tab.instance.cloud ? 'cloud:' : 'self:') + tab.instance.origin + tab.instance.path)
+        })
+    }
+    const onUpdated = (_id: number, change: chrome.tabs.OnUpdatedInfo, tab: chrome.tabs.Tab) => {
+      if (tab.active && change.url !== undefined) read()
+    }
+    read()
+    chrome.tabs.onActivated.addListener(read)
+    chrome.tabs.onUpdated.addListener(onUpdated)
+    chrome.tabs.onReplaced.addListener(read)
+    return () => {
+      reads++
+      chrome.tabs.onActivated.removeListener(read)
+      chrome.tabs.onUpdated.removeListener(onUpdated)
+      chrome.tabs.onReplaced.removeListener(read)
+    }
+  }, [busy])
+  return site
 }

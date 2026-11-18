@@ -17,7 +17,16 @@ interface FixturePage {
 
 type SiteResponse = (url: string, init?: RequestInit) => Response | Promise<Response>
 
-export async function openWorkspace(page: FixturePage, connection = base) {
+/**
+ * The side panel on a Confluence page whose site the user already allowed. `site` is the Confluence
+ * base URL: a self-managed page names its deployment path in its metadata, a Cloud wiki is known by
+ * its address.
+ */
+export async function openWorkspace(page: FixturePage, site = base) {
+  const siteUrl = new URL(site)
+  const contextPath = /(?:^|\.)atlassian\.net$/.test(siteUrl.hostname)
+    ? undefined
+    : siteUrl.pathname.replace(/\/+$/, '')
   Object.defineProperty(navigator, 'locks', {
     configurable: true,
     value: { request: async <T>(_name: string, action: () => Promise<T>) => action() },
@@ -27,7 +36,8 @@ export async function openWorkspace(page: FixturePage, connection = base) {
   function selectTab(next: FixturePage) {
     tab.switchTab(next.url, next.title)
     tab.documentId = next.documentId ?? 'fixture-document'
-    const dom = webPage({ title: next.title, url: next.url, main: next.title })
+    const meta = contextPath === undefined ? '' : `<meta name="confluence-context-path" content="${contextPath}">`
+    const dom = webPage({ title: next.title, url: next.url, html: `${meta}<main>${next.title}</main>` })
     if (next.editorSelection === undefined) tab.dom = dom
     else {
       const anchor = {}
@@ -49,7 +59,9 @@ export async function openWorkspace(page: FixturePage, connection = base) {
       tab.dom = {
         ...dom,
         querySelector: (selector: string) =>
-          selector === 'iframe#wysiwygTextarea_ifr' ? { contentDocument: { body: editor } } : null,
+          selector === 'iframe#wysiwygTextarea_ifr'
+            ? { contentDocument: { body: editor } }
+            : (dom as { querySelector(selector: string): unknown }).querySelector(selector),
       }
     }
   }
@@ -68,15 +80,10 @@ export async function openWorkspace(page: FixturePage, connection = base) {
     return browser.confluenceResponse(url, init)
   }
 
+  tab.allowed.add(siteUrl.origin + '/*')
   await browser.openPanel()
-  const user = userEvent.setup()
-  await user.click(screen.getByRole('button', { name: 'Account' }))
-  await user.click(await screen.findByRole('menuitem', { name: 'Settings' }))
-  await user.type(await screen.findByLabelText('Confluence base URL'), connection)
-  await user.click(screen.getByRole('button', { name: 'Connect' }))
-  await screen.findByText('Connected to ' + connection)
-  await user.click(screen.getByRole('button', { name: 'Back' }))
-  return { browser, user, tab }
+  await screen.findByRole('textbox', { name: 'Message' })
+  return { browser, user: userEvent.setup(), tab }
 }
 
 export type WorkspaceBrowser = Awaited<ReturnType<typeof openWorkspace>>['browser']

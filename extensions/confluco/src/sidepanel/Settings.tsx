@@ -5,7 +5,6 @@ import { loadAnalyticsEnabled, saveAnalyticsEnabled } from '../analytics'
 import { loadMenuShown, saveMenuShown, watchMenuShown } from '@cofun/tools/selection'
 import type { ModelSettings } from '@cofun/agent/models'
 import { Avatar, useAccount } from './Account'
-import { ConfluenceConnection } from './ConfluenceConnection'
 import { Page } from './Header'
 import { ModelCard, Switch } from './Model'
 
@@ -36,8 +35,6 @@ export function Settings({
   return (
     <Page id="settings" title="Settings" onBack={onClose}>
       <ModelCard settings={model} onChange={onModelChange} focus={at === 'providers'} />
-
-      <ConfluenceConnection userId={userId} />
 
       <WebSearch userId={userId} />
 

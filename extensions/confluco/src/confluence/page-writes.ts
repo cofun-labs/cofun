@@ -98,7 +98,7 @@ export function requestedPageWrite(message: string): PageWriteRequest | undefine
 export function requestedReference(tab: ConfluenceTab, target: string | undefined): PageReference | undefined {
   if (!target) return undefined
   const url = URL.parse(target)
-  if (!url) refuse('Use a published page link from the connected Confluence instance.')
+  if (!url) refuse('Use a published page link from the same Confluence instance as the current tab.')
   const { origin, path } = tab.instance
   const at = url.pathname.slice(path.length)
   const ids = url.searchParams.getAll('pageId')
@@ -108,7 +108,7 @@ export function requestedReference(tab: ConfluenceTab, target: string | undefine
       : /^\/spaces\/[^/]+\/pages\/(\d{1,20})(?:\/[^/]+)?\/?$/.exec(at)?.[1]
   const ref = pageReference.safeParse({ instance: origin + path, id })
   if (!ref.success || url.origin !== origin || url.username || url.password || !url.pathname.startsWith(path + '/'))
-    refuse('Use a published page link from the connected Confluence instance.')
+    refuse('Use a published page link from the same Confluence instance as the current tab.')
   return ref.data
 }
 
