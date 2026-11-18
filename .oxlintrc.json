@@ -132,6 +132,11 @@
           {
             "patterns": [
               {
+                "group": ["@cofun/worker-client"],
+                "allowTypeImports": true,
+                "message": "Only an extension's src/agent/ and the side panel's state (panel.ts, chat-session.ts) call the worker: the agent turns a request the worker turned away into a stop of the question, and counts what a call cost. Import its types only, or ask the agent (ToolContext.readWeb, searchWeb). Clerk sign-in is '@cofun/worker-client/clerk'."
+              },
+              {
                 "group": [
                   "@earendil-works/pi-agent-core",
                   "@earendil-works/pi-agent-core/**",
@@ -198,7 +203,8 @@
     },
     {
       // The side panel's state outside React: one ChatSession per chat, and the Panel that holds the
-      // open one. React subscribes to them, so they import no React, nor anything that renders. Their
+      // open one. React subscribes to them, so they import no React, nor anything that renders. Like
+      // src/agent/, they may call the worker (the Panel reads the credits and opens Checkout). Their
       // other restrictions (the extensions/*/src block) still hold.
       "files": ["extensions/*/src/sidepanel/chat-session.ts", "extensions/*/src/sidepanel/panel.ts"],
       "rules": {
@@ -272,6 +278,11 @@
           {
             "patterns": [
               {
+                "group": ["@cofun/worker-client"],
+                "allowTypeImports": true,
+                "message": "Only an extension's src/agent/ and the side panel's state (panel.ts, chat-session.ts) call the worker: the agent turns a request the worker turned away into a stop of the question, and counts what a call cost. Import its types only, or ask the agent (ToolContext.readWeb, searchWeb). Clerk sign-in is '@cofun/worker-client/clerk'."
+              },
+              {
                 "group": [
                   "@earendil-works/pi-agent-core",
                   "@earendil-works/pi-agent-core/**",
@@ -307,7 +318,8 @@
     },
     {
       // The one folder that imports pi, and the one that calls a model itself (the user's own): the
-      // agent, src/agent/. The worker is called through @cofun/worker-client.
+      // agent, src/agent/. It calls the worker through @cofun/worker-client, as the side panel's state
+      // may.
       "files": ["extensions/*/src/agent/**"],
       "rules": {
         "no-restricted-imports": [
@@ -413,6 +425,11 @@
           {
             "patterns": [
               {
+                "group": ["@cofun/worker-client"],
+                "allowTypeImports": true,
+                "message": "Only an extension's src/agent/ and the side panel's state (panel.ts, chat-session.ts) call the worker: the agent turns a request the worker turned away into a stop of the question, and counts what a call cost. Import its types only, or ask the agent (ToolContext.readWeb, searchWeb). Clerk sign-in is '@cofun/worker-client/clerk'."
+              },
+              {
                 "group": [
                   "@earendil-works/pi-agent-core",
                   "@earendil-works/pi-agent-core/**",
@@ -446,6 +463,11 @@
           "error",
           {
             "patterns": [
+              {
+                "group": ["@cofun/worker-client"],
+                "allowTypeImports": true,
+                "message": "Only an extension's src/agent/ and the side panel's state (panel.ts, chat-session.ts) call the worker: the agent turns a request the worker turned away into a stop of the question, and counts what a call cost. Import its types only, or ask the agent (ToolContext.readWeb, searchWeb). Clerk sign-in is '@cofun/worker-client/clerk'."
+              },
               {
                 "group": [
                   "@earendil-works/pi-agent-core",

@@ -1,6 +1,7 @@
 // Tool calls as the agent runs them: each tool as pi runs it, its preview, the user's OK, and the
 // errors that stop a question.
 import type { AgentTool } from '@earendil-works/pi-agent-core'
+import { WorkerError } from '@cofun/worker-client'
 import {
   WebError,
   type ConfirmTool,
@@ -72,15 +73,19 @@ export function askUser(
 
 /**
  * The reason a tool's error stops the question, if it does: a `stopsQuestion` string on the error
- * or on one of its causes (a tool may wrap the error it got).
+ * or on one of its causes (a tool may wrap the error it got). A request the worker turned away
+ * (WorkerError's `turnedAway`) stops it too, even when it reached the tool as it is, not as the
+ * WebError the agent makes of it (worker.ts): a request turned away stops the question, whoever sent it.
  */
 function stopsQuestion(err: unknown): string | undefined {
-  return stopping(err)?.stopsQuestion as string | undefined
+  const by = stopping(err)
+  if (typeof by?.stopsQuestion === 'string') return by.stopsQuestion
+  return typeof by?.turnedAway === 'string' ? by.turnedAway : undefined
 }
 
 /** The error, or the cause of it, that stops the question, if one does. */
 function stopping(err: unknown): Record<string, unknown> | undefined {
-  return causes(err).find((e) => typeof e.stopsQuestion === 'string')
+  return causes(err).find((e) => typeof e.stopsQuestion === 'string' || typeof e.turnedAway === 'string')
 }
 
 /** The error and its causes (a tool may wrap the error it got). */
@@ -188,7 +193,11 @@ export function toAgentTool(spec: ToolSpec, reporter: () => Reporter): AgentTool
         // A question the worker refused for lack of credits ends with that code, so the panel offers to
         // buy some; other stops carry none.
         const by = stopping(err)
-        if (reason) report.stop(reason, by instanceof WebError && by.code === OUT_OF_CREDITS ? by.code : undefined)
+        if (reason)
+          report.stop(
+            reason,
+            (by instanceof WebError || by instanceof WorkerError) && by.code === OUT_OF_CREDITS ? by.code : undefined,
+          )
         // An error that says data may have changed counts on its own, flag or not.
         if (causes(err).some((e) => e.mayHaveChanged === true)) report.changed()
         const code = causes(err).find((e) => typeof e.code === 'string')?.code

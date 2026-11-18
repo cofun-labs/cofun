@@ -4,8 +4,9 @@
 // hosted model's own requests are made by the extension's agent, with what `token`, `modelHeaders`,
 // `turnHeaders`, and `callCost` give it.
 //
-// The worker's answers are what this module parses: it must keep reading what the worker sends to
-// the extension versions on the Chrome Web Store, and nothing else in the extension reads them.
+// This module parses the worker's answers, but for the hosted model's stream, which the agent's
+// runtime reads (and `callCost` the cost it carries): it must keep reading what the worker sends to
+// the extension versions on the Chrome Web Store.
 import { CheckoutPage, Credits, Grants, Packs, type PastGrant } from './credits'
 import { z } from './zod'
 

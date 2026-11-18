@@ -4,7 +4,7 @@ How Cofun's extensions and the backend they share are built, and why. This file 
 
 Each Cofun extension is an AI side panel for one kind of page, in its own folder under `extensions/` (Notico, for Notion, is the first), built and published by itself. All of them call one Cloudflare Worker (`worker/`), which signs users in, checks who is asking, keeps their credits, passes the conversation to the model, and reads public web pages and searches the web for an extension. It never talks to Notion or acts as the user on any site. The agent and its tools run in the extension, next to the page they act on.
 
-Each extension keeps its own app: the side panel, its sessions, the prompt, the site layer and its tools, the manifest, and the usage events. Only libraries the extensions call are shared, as workspace packages in `packages/`: `@cofun/worker-client` is the one client of the worker (the hosted model's lookup, web reads and searches, credits and checkout) and of Clerk sign-in, so the worker's API, which must stay compatible with the extension versions on the Chrome Web Store, is read in one place. A package takes what is particular to an extension as parameters and never imports one; the rest of the side panel is still a copy per extension, and a fix in one is applied to the others by hand. One account and one balance of credits serve every extension.
+Each extension keeps its own app: the side panel, its sessions, the prompt, the site layer and its tools, the manifest, and the usage events. Only libraries the extensions call are shared, as workspace packages in `packages/`: `@cofun/worker-client` is the client of the worker (the hosted model's lookup, the cost its replies carry, web reads and searches, credits and checkout) and of Clerk sign-in, so most of the worker's API, which must stay compatible with the extension versions on the Chrome Web Store, is read in one place. The hosted model's requests themselves still go through each extension's agent, whose provider (`src/agent/worker.ts`, `provider.ts`) keeps what the worker accepts of them: the model's limits, the request format, and how much history to send. They move with the agent runtime. A package takes what is particular to an extension as parameters and never imports one; the rest of the side panel is still a copy per extension, and a fix in one is applied to the others by hand. One account and one balance of credits serve every extension.
 
 ## Single source of truth
 
@@ -132,7 +132,8 @@ extensions/<name>/        one Chrome extension, built and published by itself; n
 packages/<name>/          a library the extensions call (workspace package); never imports an extension
   src/zod.ts              the package's only module that imports zod
   test/                   tests of the rules the package owns
-packages/worker-client/   @cofun/worker-client: the only client of the worker's API, and Clerk sign-in
+packages/worker-client/   @cofun/worker-client: the client of the worker's API (the hosted model's own requests
+                          go through the agent), and Clerk sign-in
                           (/clerk, which a build loads in Node)
 worker/                   the Cloudflare Worker every extension shares
   src/app.ts              the Hono app, composed from src/routes/; everything under /v1 is behind
