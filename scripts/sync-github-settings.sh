@@ -57,10 +57,13 @@ done
 
 repo_json="$(gh api "$api")"
 
-# Squash merge only, with the PR title and body as the commit message, and
-# delete head branches once merged. Auto-merge is allowed because `gh pr merge`
-# needs it to add a PR to the merge queue.
+# The About box: what the repository holds, and the website. Squash merge only,
+# with the PR title and body as the commit message, and delete head branches once
+# merged. Auto-merge is allowed because `gh pr merge` needs it to add a PR to the
+# merge queue.
 want_options='{
+  "description": "AI side panels for Chrome: Notico for Notion, Confluco for Confluence. Chrome extensions and the Cloudflare Worker they share.",
+  "homepage": "https://cofun.cc",
   "allow_squash_merge": true,
   "allow_merge_commit": false,
   "allow_rebase_merge": false,
@@ -77,7 +80,7 @@ if jq -e 'has("squash_merge_commit_title") or has("squash_merge_commit_message")
     '. + {squash_merge_commit_title: $want.squash_merge_commit_title, squash_merge_commit_message: $want.squash_merge_commit_message}' <<<"$options_diff")"
 fi
 if [ "$options_diff" = "{}" ]; then
-  unchanged "merge options"
+  unchanged "repository options"
 else
   gh api -X PATCH "$api" --input - <<<"$options_diff" >/dev/null
   jq -r 'to_entries[] | "changed:   \(.key) = \(.value)"' <<<"$options_diff"

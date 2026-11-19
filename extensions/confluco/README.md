@@ -1,10 +1,10 @@
 # Confluco
 
-Confluco is an AI side panel for Chrome. It can answer questions, read the current tab or tabs you add, and search the web. It uses the same Cofun account and credit balance as Notico.
+Confluco is an AI side panel for Chrome that works with Confluence: ask about the page you're on, search your site, and update pages when you ask. It can also read the current tab or tabs you add on other sites, and search the web. It uses the same Cofun account and credit balance as Notico.
 
 The model can summarize earlier messages to continue a long chat. You can still read the original messages when you reopen it. OpenRouter models need a context window of at least 200,000 tokens.
 
-Web searches cost credits. To search for free instead, switch on **Search with DuckDuckGo** in **Account → Settings**: each search then opens DuckDuckGo in a background tab and reads its results. Those searches show in your Chrome history, and if DuckDuckGo asks you to confirm you're a person, answer it in that tab.
+Web searches and pages rendered in a browser cost credits, also when your own model answers. To search for free instead, switch on **Search with DuckDuckGo** in **Account → Settings**: each search then opens DuckDuckGo in a background tab and reads its results. Those searches show in your Chrome history, and if DuckDuckGo asks you to confirm you're a person, answer it in that tab.
 
 ## Use it on Confluence
 
