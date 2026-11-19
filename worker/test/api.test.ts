@@ -1,4 +1,4 @@
-import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
+import { beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import { createApp, type Env } from '../src/app'
 import { MAX_QUEUED_BYTES, STREAM_DEADLINE_MS } from '../src/usage'
 import { FakeClerk } from './clerk'
@@ -45,6 +45,7 @@ beforeEach(async () => {
   logged = []
   clock = new Date('2026-11-08T12:00:00Z')
   timers = new FakeTimers()
+  contexts = []
   env = {
     AI: ai,
     DB: (db = new FakeD1Database()),
@@ -70,7 +71,15 @@ function req(method: string, path: string, bearer?: string, body?: unknown, more
   const headers: Record<string, string> = { 'content-type': 'application/json', ...more }
   if (bearer) headers.authorization = `Bearer ${bearer}`
   const init = { method, headers, body: body === undefined ? undefined : JSON.stringify(body) }
-  return app.request(path, init, env, new FakeExecutionContext())
+  const ctx = new FakeExecutionContext()
+  contexts.push(ctx)
+  return app.request(path, init, env, ctx)
+}
+/** The execution context of each request of the current test. */
+let contexts: FakeExecutionContext[] = []
+/** Waits until the work every request handed its execution context has ended: its calls are charged. */
+const charged = async () => {
+  await Promise.allSettled(contexts.flatMap((ctx) => ctx.waiting))
 }
 
 const hi = [{ role: 'user', content: 'hi' }]
@@ -842,7 +851,8 @@ describe('UC-COFUN-CREDITS-001 Calls going at once, and replies the client does 
   it('[@no-uc:money] a reply the client does not read is charged as soon as the model is done', async () => {
     const res = await chat(token, streamed)
     // Nothing of the reply was read, and the call is charged its totals already.
-    await vi.waitFor(() => expect(calls()).toHaveLength(1))
+    await charged()
+    expect(calls()).toHaveLength(1)
     expect(calls()[0]).toMatchObject({ outcome: 'ok', estimated: 0, micro_credits: FAKE_COST })
     // The client reads it all later, with what it cost.
     const text = await res.text()
@@ -856,7 +866,7 @@ describe('UC-COFUN-CREDITS-001 Calls going at once, and replies the client does 
       'data: {"choices":[{"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":1000,"completion_tokens":5}}\n\n' +
       'data: [DONE]\n\n'
     const res = await chat(token, streamed)
-    await vi.waitFor(() => expect(calls()).toHaveLength(1))
+    await charged()
     expect(calls()[0]).toMatchObject({
       outcome: 'abandoned',
       estimated: 0,

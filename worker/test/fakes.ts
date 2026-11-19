@@ -363,11 +363,15 @@ class FakeStatement implements Statement {
 
 /**
  * Stands in for a request's execution context: the worker hands it the work that must finish even
- * when the client has gone. The work runs either way; nothing here waits for it.
+ * when the client has gone. The work runs either way; `waiting` keeps it, for a test that waits for
+ * it to end.
  */
 export class FakeExecutionContext {
   props = {}
-  waitUntil(_promise: Promise<unknown>): void {}
+  readonly waiting: Promise<unknown>[] = []
+  waitUntil(promise: Promise<unknown>): void {
+    this.waiting.push(promise)
+  }
   passThroughOnException(): void {}
 }
 

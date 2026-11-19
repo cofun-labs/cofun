@@ -233,12 +233,15 @@ export function chatRoutes({ now, modelOf, logError, after }: Deps): App {
           await endCall(outcome, tokens, summary.finishReason, estimated, cost)
           record(outcome)
         }
+        // Held from the start until the call is settled, however it ends: a client that went away
+        // must not take the charge with it.
+        let callCharged = () => {}
+        c.executionCtx.waitUntil(new Promise<void>((resolve) => (callCharged = resolve)))
         const metered = meterStream(
           out,
           (outcome, summary) => {
             const settled = settle(outcome, summary)
-            // A client that went away must not take the charge with it.
-            c.executionCtx.waitUntil(settled)
+            void settled.finally(callCharged)
             return settled
           },
           // The cost goes to the client in a chunk of its own, as the last before [DONE]: it is known
