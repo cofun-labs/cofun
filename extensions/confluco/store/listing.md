@@ -35,10 +35,10 @@ THINGS TO TRY
 
 CREDITS
 Each question spends credits. Every account gets free credits each week; when you need more, buy a one-time pack in the panel: no subscription, and bought credits last a year. The same account and credits work in Notico, Cofun's copilot for Notion.
-Have your own API key? Bring it through OpenRouter, and the model is paid by your key instead. Web searches still spend credits, unless you switch on "Search with DuckDuckGo".
+Have your own API key? Bring it through OpenRouter, and the model is paid by your key instead. Web searches and pages rendered for you still spend credits; switch on "Search with DuckDuckGo" to search for free.
 
 PRIVACY
-Your questions, and what Confluco reads to answer them (Confluence content, web pages, and web searches), go to our server and the AI model, or straight to OpenRouter if you use your own model. Requests to Confluence run in your own tab, with your session. We don't keep that content, only usage numbers and your purchases. Chats are saved only on your device. Confluco reports which features are used, never what you write or read, and you can turn that off in the settings. No ads.
+Your questions, and what Confluco reads to answer them (Confluence content, web pages, and web searches), go to our server and the AI model, or straight to OpenRouter if you use your own model; links and searches go through our server either way, unless DuckDuckGo searches for you. Requests to Confluence run in your own tab, with your session. We don't keep that content, only usage numbers and your purchases. Chats are saved only on your device. Confluco reports which features are used, never what you write or read, and you can turn that off in the settings. No ads.
 
 Confluco changes a page only when you ask for that change in so many words, and every change shows in the panel. AI can make mistakes, so check what matters.
 
