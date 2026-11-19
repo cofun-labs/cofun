@@ -172,14 +172,15 @@ export interface StreamSummary {
  * How much of a streamed reply the worker holds for a client that has not read it yet. The model's
  * stream is read as fast as the model writes it, whether or not the client reads, so the call is
  * charged when the model is done, not when the client is. A reader keeping up holds a few chunks at
- * most; this is several thousand tokens of the model's stream (it repeats its usage on each chunk),
- * minutes of its writing. A client that falls this far behind has stopped reading: nothing more is
- * queued for it, the model's stream is read on to the end, so the call is charged by the totals the
- * model reports, and the client's stream then ends in an error, since what it got has a gap. Its
- * stream stays open until then: a request whose client is gone has only moments left to run. Well under a full reply (MAX_TOKENS), and three per user at most
- * (CALL_SLOTS), so a client that stops reading holds little of the worker's memory.
+ * most; this is a couple of thousand tokens of the model's stream (it repeats its usage on each
+ * chunk), tens of seconds of its writing. A client that falls this far behind has stopped reading:
+ * nothing more is queued for it, the model's stream is read on to the end, so the call is charged by
+ * the totals the model reports, and the client's stream then ends in an error, since what it got has
+ * a gap. Its stream stays open until then: a request whose client is gone has only moments left to
+ * run. What is held lives in the isolate's memory, which the requests of many users share (128 MB),
+ * so it is kept small: two dozen clients that stopped reading in one isolate hold a tenth of it.
  */
-export const MAX_QUEUED_BYTES = 2 * 1024 * 1024
+export const MAX_QUEUED_BYTES = 512 * 1024
 
 /**
  * Passes an OpenAI-style SSE stream through, line by line, while reading the token usage and finish

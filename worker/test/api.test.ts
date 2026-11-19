@@ -796,7 +796,6 @@ describe('UC-COFUN-CREDITS-001 Spend credits on the hosted model', () => {
   })
 })
 
-// Standalone tests for what the worker writes to its logs when a request fails.
 describe('UC-COFUN-CREDITS-001 Calls going at once, and replies the client does not read', () => {
   const streamed = { messages: hi, stream: true }
   const later = (ms: number) => {
@@ -883,6 +882,7 @@ describe('UC-COFUN-CREDITS-001 Calls going at once, and replies the client does 
   })
 })
 
+// Standalone tests for what the worker writes to its logs when a request fails.
 describe('error logs', () => {
   const SECRET = 'zebra-7f3a-confidential'
   const messages = [{ role: 'user', content: `page ${SECRET}` }]

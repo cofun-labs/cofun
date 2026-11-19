@@ -30,8 +30,8 @@ function callCost(microCredits: number, estimated: boolean) {
 /**
  * How long a model call's slot (CALL_SLOTS in credits.ts) counts at most. A call frees its slot when
  * it is charged, which the worker does when the model is done, whatever the client does; this only
- * gives back the slot of a call that was never charged (a worker that went away mid-call, or a model
- * that never ends its stream). Long enough for the longest reply the model may write (MAX_TOKENS) at
+ * gives back the slot of a call that was never charged (a worker that went away mid-call, a model
+ * that never ends its stream, or a call whose record failed, which is not charged either). Long enough for the longest reply the model may write (MAX_TOKENS) at
  * about 36 tokens a second; a call slower still lets its user start one more call before it ends.
  */
 const SLOT_MS = 30 * 60 * 1000
@@ -85,8 +85,8 @@ export function chatRoutes({ now, modelOf, logError }: Deps): App {
     const { price, contextWindow } = served
 
     // Calls sent at once all start on the same balance (see below), so how many one user can start
-    // a minute is capped, and how many they can have going at once (CALL_SLOTS). Checked before the
-    // credits, so a refused request reads nothing.
+    // a minute is capped. Checked before the credits, so a refused request reads nothing. How many
+    // they can have going at once (CALL_SLOTS) is checked with the credits, in openCall.
     const { success } = await c.env.CHAT_LIMIT.limit({ key: c.get('userId') })
     if (!success) throw new HttpError(429, 'rate_limited', 'Too many requests at once. Wait a minute, then ask again.')
 
