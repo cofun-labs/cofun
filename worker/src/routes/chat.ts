@@ -1,9 +1,17 @@
 // OpenAI-compatible chat completions (/v1/chat/completions) on the model the worker fixes, charged
 // to the user's credits and metered in a usage record.
 import { Hono } from 'hono'
-import { charge, openLedger, startUsage, type Charging, type Turn } from '../charge'
+import { charge, openCall, startUsage, type Charging, type Turn } from '../charge'
 import { costOf, estimateCachedTokens, estimateTokens, type Tokens } from '../pricing'
-import { finishReason, meterStream, replyInfo, tokensOf, type StreamSummary, type UsageRecord } from '../usage'
+import {
+  STREAM_DEADLINE_MS,
+  finishReason,
+  meterStream,
+  replyInfo,
+  tokensOf,
+  type StreamSummary,
+  type UsageRecord,
+} from '../usage'
 import { HttpError, errorSummary, parse, type App, type Ctx, type Deps } from '../http'
 import { Body, MAX_TOKENS, MaxTokens, Stream, parseModelInputs } from './chat-request'
 
@@ -27,8 +35,23 @@ function callCost(microCredits: number, estimated: boolean) {
   return { micro_credits: microCredits, estimated }
 }
 
+/**
+ * How long a model call's slot (CALL_SLOTS in credits.ts) counts at most: past the stream's deadline,
+ * so a call that runs is always charged, which frees its slot, before the slot would stop counting.
+ * Only a call the worker never charged (one that went away mid-call) gives its slot back this way.
+ */
+const SLOT_MS = STREAM_DEADLINE_MS + 5 * 60 * 1000
+
+/**
+ * How a stream that ended without the model's totals is charged, by how it ended: one the user
+ * stopped, or the worker did at its deadline, an estimate of what it used.
+ */
+const ESTIMATED = new Set(['cancelled', 'timeout'])
+/** The outcomes a stream that broke off before [DONE] is still charged for: see ESTIMATED. */
+const CHARGED = new Set(['ok', 'abandoned', ...ESTIMATED])
+
 /** Chat completions, mounted at /v1/chat. */
-export function chatRoutes({ now, modelOf, logError }: Deps): App {
+export function chatRoutes({ now, modelOf, logError, after }: Deps): App {
   const routes: App = new Hono()
   // OpenAI-compatible chat completions. The model is fixed by the server.
   // Every request that passed auth leaves one usage record, however it ends.
@@ -73,7 +96,8 @@ export function chatRoutes({ now, modelOf, logError }: Deps): App {
     const { price, contextWindow } = served
 
     // Calls sent at once all start on the same balance (see below), so how many one user can start
-    // a minute is capped. Checked before the credits, so a refused request reads nothing.
+    // a minute is capped, and how many they can have going at once (CALL_SLOTS). Checked before the
+    // credits, so a refused request reads nothing.
     const { success } = await c.env.CHAT_LIMIT.limit({ key: c.get('userId') })
     if (!success) throw new HttpError(429, 'rate_limited', 'Too many requests at once. Wait a minute, then ask again.')
 
@@ -82,13 +106,15 @@ export function chatRoutes({ now, modelOf, logError }: Deps): App {
     // the model has cached is not refused for much more than it would spend: the size estimate runs
     // over for English (3 characters a token, where English runs near 4) by about 2 credits on a full window. What a call
     // costs beyond the balance is then its uncached input and its reply (MAX_TOKENS bounds that), and
-    // CHAT_LIMIT bounds calls at once.
+    // the slots it takes bound calls at once.
     const maxTokens = max_tokens ?? MAX_TOKENS
     // The input's tokens as estimated from its size, never more than the model's window can hold.
     const inputTokens = Math.min(estimateTokens(chars), contextWindow)
     const needs = costOf(price, { promptTokens: inputTokens, cachedTokens: inputTokens, completionTokens: 0 })
+    const opensAt = now().getTime()
+    const { ledger, slot } = await openCall(c, opensAt, logError, needs, opensAt + SLOT_MS)
     const charging: Charging = {
-      ledger: await openLedger(c, now().getTime(), logError, needs),
+      ledger,
       usage,
       turn,
       now: () => now().getTime(),
@@ -111,6 +137,8 @@ export function chatRoutes({ now, modelOf, logError }: Deps): App {
         finishReason: finish,
         ...tokens,
         estimated,
+        // Written with the call, which frees its slot.
+        slotId: slot,
       } as const
       await charge(charging, cost, detail, Math.max(startedAt, now().getTime()))
     }
@@ -181,14 +209,14 @@ export function chatRoutes({ now, modelOf, logError }: Deps): App {
         const charged = (outcome: string, summary: StreamSummary) => {
           const { promptTokens, cachedTokens, completionTokens } = summary
           const tokens: Tokens = { promptTokens, cachedTokens, completionTokens }
-          // A model error, or a stream that broke off before [DONE] unless the user stopped it, failed:
-          // it costs nothing, whatever it streamed first.
-          const failed = outcome === 'provider_error' || (outcome !== 'ok' && outcome !== 'cancelled' && !summary.ended)
+          // A model error, or a stream that broke off before [DONE] unless the user or the worker
+          // stopped it, failed: it costs nothing, whatever it streamed first.
+          const failed = outcome === 'provider_error' || (!CHARGED.has(outcome) && !summary.ended)
           if (failed) return { tokens, estimated: false, cost: 0 }
-          // One that reached [DONE] costs its totals. One the user stopped before costs an estimate,
-          // since its totals never came: the prompt from the input's size when no chunk gave it, the
-          // reply from the characters streamed, and a fixed share of the prompt as cached.
-          const estimated = outcome === 'cancelled' && !summary.ended
+          // One that reached [DONE] costs its totals. One stopped before costs an estimate, since its
+          // totals never came: the prompt from the input's size when no chunk gave it, the reply from
+          // the characters the model wrote, and a fixed share of the prompt as cached.
+          const estimated = ESTIMATED.has(outcome) && !summary.ended
           if (estimated) {
             tokens.promptTokens ||= inputTokens
             tokens.cachedTokens = estimateCachedTokens(tokens.promptTokens)
@@ -220,6 +248,7 @@ export function chatRoutes({ now, modelOf, logError }: Deps): App {
             return { choices: [], cost: callCost(cost, estimated) }
           },
           (err) => logError(`model stream failed: ${errorSummary(err)}`),
+          after,
         )
         return new Response(metered, {
           headers: { 'content-type': 'text/event-stream', 'cache-control': 'no-cache' },

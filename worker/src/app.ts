@@ -32,8 +32,12 @@ export function createApp({
   logError = (line) => console.error(line),
   logAdmin = (line) => console.log(line),
   logBilling = (line) => console.log(line),
+  after = (ms, fire) => {
+    const timer = setTimeout(fire, ms)
+    return () => clearTimeout(timer)
+  },
 }: AppOptions = {}) {
-  const deps: Deps = { now, modelOf: modelFor, logError, logAdmin, logBilling }
+  const deps: Deps = { now, modelOf: modelFor, logError, logAdmin, logBilling, after }
   const app: App = new Hono()
 
   // The extension calls from a chrome-extension:// origin. Auth is a bearer token, not cookies.

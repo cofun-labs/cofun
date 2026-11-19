@@ -1,5 +1,6 @@
-import { beforeAll, beforeEach, describe, expect, it } from 'vitest'
+import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createApp, type Env } from '../src/app'
+import { MAX_QUEUED_BYTES, STREAM_DEADLINE_MS } from '../src/usage'
 import { FakeClerk } from './clerk'
 import {
   FAKE_COST,
@@ -9,6 +10,7 @@ import {
   FakeExecutionContext,
   FakeUsageDataset,
   FakeRateLimiter,
+  FakeTimers,
   MODEL,
   usageCosting,
 } from './fakes'
@@ -19,7 +21,12 @@ const SERVED = { context_window: 1_048_576, max_tokens: 65_536 }
 let clock = new Date('2026-11-08T12:00:00Z')
 /** Every error line the worker logged in the current test. */
 let logged: string[] = []
-const app = createApp({ now: () => clock, logError: (line) => logged.push(line) })
+let timers = new FakeTimers()
+const app = createApp({
+  now: () => clock,
+  logError: (line) => logged.push(line),
+  after: (ms, fire) => timers.after(ms, fire),
+})
 
 let clerk: FakeClerk
 let otherClerk: FakeClerk
@@ -37,6 +44,7 @@ beforeEach(async () => {
   ai = new FakeAiBinding()
   logged = []
   clock = new Date('2026-11-08T12:00:00Z')
+  timers = new FakeTimers()
   env = {
     AI: ai,
     DB: (db = new FakeD1Database()),
@@ -439,12 +447,17 @@ describe('UC-COFUN-CREDITS-001 Spend credits on the hosted model', () => {
   it('[UC-COFUN-CREDITS-001-S11] calls sent at once all start on the same balance, and what they cost beyond it is forgiven', async () => {
     repliesCost(190)
     await chat(token)
-    // 10 credits are left, and two replies that cost 190 each are written at once.
+    // 10 credits are left, and two replies that cost 190 each are written at once: the model is
+    // still writing the first when the second starts.
+    let write!: () => void
+    ai.pause = { after: 0, until: new Promise((resolve) => (write = resolve)) }
     const replies = [
       await chat(token, { messages: hi, stream: true }),
       await chat(token, { messages: hi, stream: true }),
     ]
     expect(replies.map((res) => res.status)).toEqual([200, 200])
+    write()
+    ai.pause = undefined
     for (const res of replies) await res.text()
     // They took the 10 credits that were left, and nothing below zero.
     expect(db.grants().map((r) => r.left)).toEqual([0])
@@ -766,6 +779,108 @@ describe('UC-COFUN-CREDITS-001 Spend credits on the hosted model', () => {
 })
 
 // Standalone tests for what the worker writes to its logs when a request fails.
+describe('UC-COFUN-CREDITS-001 Calls going at once, and replies the client does not read', () => {
+  const streamed = { messages: hi, stream: true }
+  const later = (ms: number) => {
+    clock = new Date(clock.getTime() + ms)
+  }
+  /** The model writes nothing more until the function given back is called: calls stay going. */
+  const stillWriting = () => {
+    let write!: () => void
+    ai.pause = { after: 0, until: new Promise((resolve) => (write = resolve)) }
+    return () => {
+      ai.pause = undefined
+      write()
+    }
+  }
+
+  it('[UC-COFUN-CREDITS-001-S16] a user with 3 answers being written is told to wait before a fourth, which costs nothing', async () => {
+    const write = stillWriting()
+    const going = [await chat(token, streamed), await chat(token, streamed), await chat(token, streamed)]
+    expect(going.map((res) => res.status)).toEqual([200, 200, 200])
+    const res = await chat(token, streamed)
+    expect(res.status).toBe(429)
+    const { error } = await json(res)
+    expect(error.code).toBe('rate_limited')
+    expect(error.message).toBe('3 answers are already being written. Wait for one to finish, then ask again.')
+    expect(ai.calls).toHaveLength(3)
+    // Another user is not held up by them.
+    const bob = await clerk.sessionToken({ userId: 'user_bob', azp: EXT })
+    expect((await chat(bob)).status).toBe(200)
+    // Once they are written, the user can ask again, and the request refused cost nothing.
+    write()
+    for (const reply of going) await reply.text()
+    expect(calls().filter((call) => call.user_id === 'user_alice')).toHaveLength(3)
+    expect((await chat(token, streamed)).status).toBe(200)
+  })
+
+  it('[@no-uc:money] calls that start together never take more than 3 slots', async () => {
+    const write = stillWriting()
+    const replies = await Promise.all(Array.from({ length: 6 }, () => chat(token, streamed)))
+    expect(replies.map((res) => res.status).toSorted()).toEqual([200, 200, 200, 429, 429, 429])
+    expect(ai.calls).toHaveLength(3)
+    write()
+    await Promise.all(replies.map((res) => res.text()))
+  })
+
+  it('[@no-uc:money] a reply the client does not read is charged as soon as the model is done', async () => {
+    const res = await chat(token, streamed)
+    // Nothing of the reply was read, and the call is charged its totals already.
+    await vi.waitFor(() => expect(calls()).toHaveLength(1))
+    expect(calls()[0]).toMatchObject({ outcome: 'ok', estimated: 0, micro_credits: FAKE_COST })
+    // The client reads it all later, with what it cost.
+    const text = await res.text()
+    expect(text).toContain(`"cost":${JSON.stringify({ micro_credits: FAKE_COST, estimated: false })}`)
+    expect(text).toContain('data: [DONE]')
+  })
+
+  it('[@no-uc:money] a client that falls far behind is sent nothing more, and the call is charged the totals the model reports', async () => {
+    ai.rawSse =
+      `data: ${JSON.stringify({ choices: [{ delta: { content: 'x'.repeat(MAX_QUEUED_BYTES + 1024 * 1024) } }] })}\n\n` +
+      'data: {"choices":[{"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":1000,"completion_tokens":5}}\n\n' +
+      'data: [DONE]\n\n'
+    const res = await chat(token, streamed)
+    await vi.waitFor(() => expect(calls()).toHaveLength(1))
+    expect(calls()[0]).toMatchObject({
+      outcome: 'abandoned',
+      estimated: 0,
+      prompt_tokens: 1000,
+      completion_tokens: 5,
+      micro_credits: 1000 * 300 + 5 * 1200,
+    })
+    // What was held for the client is dropped: its stream ends in an error, since the reply has a gap.
+    await expect(res.text()).rejects.toThrow('the client fell too far behind the reply')
+  })
+
+  it('[@no-uc:money] a stream still going at its deadline is ended, charged an estimate, and frees its slot', async () => {
+    // The model writes the start of the reply, then nothing more.
+    ai.pause = { after: 64, until: new Promise(() => {}) }
+    const going = [await chat(token, streamed), await chat(token, streamed), await chat(token, streamed)]
+    expect((await chat(token, streamed)).status).toBe(429)
+    later(STREAM_DEADLINE_MS)
+    timers.advance(STREAM_DEADLINE_MS)
+    const texts = await Promise.all(going.map((res) => res.text()))
+    expect(calls()).toEqual(Array(3).fill(expect.objectContaining({ outcome: 'timeout', estimated: 1 })))
+    for (const text of texts) {
+      expect(text).toContain('"estimated":true')
+      expect(text).not.toContain('data: [DONE]')
+    }
+    ai.pause = undefined
+    expect((await chat(token, streamed)).status).toBe(200)
+  })
+
+  it('[@no-uc:money] a slot whose call was never charged stops counting once it expires', async () => {
+    // The calls are answered, but their record fails: their slots stay taken.
+    db.failOn = { sql: 'INSERT INTO spends', error: new Error('D1 is down') }
+    for (let i = 0; i < 3; i++) expect((await chat(token)).status).toBe(200)
+    db.failOn = undefined
+    expect((await chat(token)).status).toBe(429)
+    // A slot lasts past the stream's deadline, so a call that runs is charged before it expires.
+    later(STREAM_DEADLINE_MS + 5 * 60 * 1000)
+    expect((await chat(token)).status).toBe(200)
+  })
+})
+
 describe('error logs', () => {
   const SECRET = 'zebra-7f3a-confidential'
   const messages = [{ role: 'user', content: `page ${SECRET}` }]

@@ -31,6 +31,7 @@ The worker never stores or logs your conversation, the address or text of a web 
 - **Your credits**, in a database on Cloudflare, under your Clerk user id:
   - each grant of credits: how many, how many are left, when it was given and expires, and where it came from: the free weekly grant, an operator (with their Clerk user id), or a purchase (with its Stripe reference, and whether it was taken back);
   - each paid call (a call to the AI model, a page rendered, a web search), whether it succeeded or failed: when, which extension, how it ended, what it used (such as the model and its tokens, or browser time), and what it cost, with the random ids of the chat and the question it was for. These ids say nothing about what you asked.
+  - for each call to the AI model, from the moment it starts: when it started, so the worker can count how many calls you have going at once.
 
   They are kept with no end date, as the account's record. Operators can see and total them, per account or across accounts, and grant credits. Showing you your credits stores nothing new: the worker works them out from these records.
 - **Usage records**, one for each model request, web page, and web search, in Cloudflare Workers Analytics Engine, which deletes them after 90 days: figures such as your Clerk user id, which extension, the model, the outcome, sizes and counts (characters, tokens, results), the credits, the duration, and the chat and question ids. Never text.

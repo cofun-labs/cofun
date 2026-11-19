@@ -1,8 +1,9 @@
 // Charging after use, for every paid call (a model call, a render, a search): it goes ahead while
 // the balance is above zero, and once it ended, one that failed costs nothing, one that succeeded
-// what it used, and a streamed reply the user stopped an estimate of it (routes/chat.ts). What the
-// grants don't cover is forgiven; each route's rate limit bounds it.
-import { FREE_CREDITS, Ledger, MICRO_CREDITS, type Balance, type SpendDetail } from './credits'
+// what it used, and a streamed reply cut short an estimate of it (routes/chat.ts). What the grants
+// don't cover is forgiven: each route's rate limit bounds it, and for model calls, which can run for
+// minutes, so does how many one user can have going at once (CALL_SLOTS).
+import { CALL_SLOTS, FREE_CREDITS, Ledger, MICRO_CREDITS, type Balance, type SpendDetail } from './credits'
 import { HttpError, errorSummary, type Ctx } from './http'
 import { recordUsage, type UsageRecord } from './usage'
 import * as z from './zod'
@@ -103,38 +104,77 @@ function utcMinute(ms: number): string {
   return `${iso.slice(0, 10)} at ${iso.slice(11, 16)} UTC`
 }
 
-/**
- * The user's ledger, opened before a paid call, which gives the weekly free grant if due. Refuses
- * with `out_of_credits` at a zero balance or one below `needs` (micro-credits, what the call is
- * estimated to cost before it is made), and `credits_unavailable` when it can't be read.
- */
-export async function openLedger(c: Ctx, now: number, logError: (line: string) => void, needs = 0): Promise<Ledger> {
-  const ledger = new Ledger(c.env.DB, c.get('userId'))
-  let balance: Balance
+/** Opens the ledger, or refuses with `credits_unavailable` when it can't be read. */
+async function opened<T>(open: () => Promise<T>, logError: (line: string) => void): Promise<T> {
   try {
-    balance = await ledger.open(now)
+    return await open()
   } catch (err) {
     logError(`credit check failed: ${errorSummary(err)}`)
     throw new HttpError(503, 'credits_unavailable', 'Credits are unavailable, try again in a moment.')
   }
-  if (balance.balance <= 0) {
+}
+
+/**
+ * Refuses with `out_of_credits` at a zero balance or one below `needs` (micro-credits, what the call
+ * is estimated to cost before it is made).
+ */
+function refuseShortBalance({ balance, nextGrantAt }: Balance, needs: number): void {
+  if (balance <= 0) {
     throw new HttpError(
       402,
       'out_of_credits',
-      `You have no credits left. Your next ${FREE_CREDITS} free credits arrive on ${utcMinute(balance.nextGrantAt)}, or you can buy credits.`,
+      `You have no credits left. Your next ${FREE_CREDITS} free credits arrive on ${utcMinute(nextGrantAt)}, or you can buy credits.`,
     )
   }
-  if (balance.balance < needs) {
+  if (balance < needs) {
     // Rounded apart, so a balance just short never reads as enough.
     const needed = Math.ceil(needs / MICRO_CREDITS)
-    const left = Math.floor(balance.balance / MICRO_CREDITS)
+    const left = Math.floor(balance / MICRO_CREDITS)
     throw new HttpError(
       402,
       'out_of_credits',
-      `This request needs about ${needed} credits and you have ${left} left. Start a new chat or shorten it, buy credits, or wait for your next ${FREE_CREDITS} free credits on ${utcMinute(balance.nextGrantAt)}.`,
+      `This request needs about ${needed} credits and you have ${left} left. Start a new chat or shorten it, buy credits, or wait for your next ${FREE_CREDITS} free credits on ${utcMinute(nextGrantAt)}.`,
     )
   }
+}
+
+/**
+ * The user's ledger, opened before a paid call that ends within the request (a render, a search),
+ * which gives the weekly free grant if due. Refuses as `refuseShortBalance` says, and with
+ * `credits_unavailable` when the ledger can't be read.
+ */
+export async function openLedger(c: Ctx, now: number, logError: (line: string) => void): Promise<Ledger> {
+  const ledger = new Ledger(c.env.DB, c.get('userId'))
+  refuseShortBalance(await opened(() => ledger.open(now), logError), 0)
   return ledger
+}
+
+/**
+ * The user's ledger, opened before a model call, with the slot the call takes (see `openCall` in
+ * credits.ts) until `until` at the latest. Refuses as `openLedger` does, and with `rate_limited`
+ * when every slot is taken: the code a 429 for too many calls has always had, so every extension
+ * version on the store stops the question and shows the message.
+ */
+export async function openCall(
+  c: Ctx,
+  now: number,
+  logError: (line: string) => void,
+  needs: number,
+  until: number,
+): Promise<{ ledger: Ledger; slot: number }> {
+  const ledger = new Ledger(c.env.DB, c.get('userId'))
+  const opening = await opened(() => ledger.openCall(now, needs, until), logError)
+  if (opening.slot !== null) return { ledger, slot: opening.slot }
+  refuseShortBalance(opening, needs)
+  if (opening.taken >= CALL_SLOTS) {
+    throw new HttpError(
+      429,
+      'rate_limited',
+      `${CALL_SLOTS} answers are already being written. Wait for one to finish, then ask again.`,
+    )
+  }
+  // The balance and the slots allowed the call, read in the batch that took none: not possible.
+  throw new Error('no slot taken, for no reason the ledger gave')
 }
 
 /** Who pays for a call, and for which question; `what` names the call in the log. */

@@ -85,6 +85,8 @@ const GrantRow = z
   }))
 
 const BalanceRow = z.object({ balance: z.int(), free_until: z.int().nullable() })
+const SlotsRow = z.object({ taken: z.int().min(0) })
+const SlotRow = z.object({ id: z.int() })
 const UsageRow = z
   .object({ day: z.int(), micro_credits: z.int().min(0) })
   .transform((row) => ({ day: row.day, microCredits: row.micro_credits }))
@@ -101,6 +103,22 @@ function only<S extends z.ZodType>(schema: S, result: { results: unknown[] } | u
 export interface Balance {
   balance: number
   nextGrantAt: number
+}
+
+/**
+ * How many model calls one user can have going at once. Calls that start together all see the same
+ * balance, and what they cost beyond it is forgiven, so this bounds that: at most this many calls
+ * run on a balance that is about to run out.
+ */
+export const CALL_SLOTS = 3
+
+/**
+ * What `openCall` gives: the balance, as `open` does, how many slots were taken before this call,
+ * and the slot this call took, or null when it was let in to none (see `openCall`).
+ */
+export interface CallOpening extends Balance {
+  taken: number
+  slot: number | null
 }
 
 /** Which days to total a user's spending over: the last `days` days, today included, of a clock `offsetMs` ahead of UTC. */
@@ -200,6 +218,8 @@ interface ModelCall {
   cachedTokens: number
   completionTokens: number
   estimated: boolean
+  /** The slot the call took (see `openCall`): written with it, which frees the slot. */
+  slotId: number | null
 }
 
 /**
@@ -324,6 +344,26 @@ FROM (SELECT
   ${balanceOf('?1', '?2')} AS stored,
   (SELECT max(expires_at) FROM grants WHERE user_id = ?1 AND source = 'free' AND expires_at > ?2) AS free_until)`
 
+/**
+ * How many of the user's slots are taken at the time ?2: those that have not expired and whose call
+ * was not charged yet. The one definition of a slot that is taken.
+ */
+const takenSlots = `(SELECT count(*) FROM call_slots s WHERE s.user_id = ?1 AND s.expires_at > ?2
+  AND NOT EXISTS (SELECT 1 FROM model_calls m WHERE m.slot_id = s.id))`
+
+const READ_TAKEN_SLOTS = `SELECT ${takenSlots} AS taken`
+
+/**
+ * Takes a slot for a model call starting at ?2, until ?3 at the latest, if the call may start: the
+ * balance is above zero and at least ?4 (what the call is estimated to cost before it is made), and
+ * fewer than ?5 slots are taken. Gives the slot's id, or no row when it took none. One statement,
+ * in the batch that reads the balance, so calls that start together cannot all take the last slot.
+ */
+const TAKE_SLOT = `INSERT INTO call_slots (user_id, started_at, expires_at)
+SELECT ?1, ?2, ?3
+WHERE ${balanceOf('?1', '?2')} > 0 AND ${balanceOf('?1', '?2')} >= ?4 AND ${takenSlots} < ?5
+RETURNING id`
+
 /** The grants that still count, in the order they are spent. */
 const READ_CURRENT_GRANTS = `${READ_GRANT}
 WHERE ${counts('?1', '?2')} ORDER BY g.expires_at, g.id`
@@ -359,11 +399,11 @@ VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)`
  * The model call of the spend just written, in the same batch: the newest spend. Batches run one at
  * a time, so no other spend is written in between. ?1 is the model, ?2 when the call started, ?3
  * whether it streamed, ?4 its outcome, ?5 its finish reason, ?6 to ?8 the prompt, cached, and
- * completion tokens, ?9 whether they are estimated.
+ * completion tokens, ?9 whether they are estimated, ?10 the slot it took.
  */
 const RECORD_MODEL_CALL = `INSERT INTO model_calls (spend_id, model, started_at, stream, outcome, finish_reason,
-  prompt_tokens, cached_tokens, completion_tokens, estimated)
-VALUES ((SELECT max(id) FROM spends), ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)`
+  prompt_tokens, cached_tokens, completion_tokens, estimated, slot_id)
+VALUES ((SELECT max(id) FROM spends), ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)`
 
 /** The render of the spend just written, in the same batch, as RECORD_MODEL_CALL. ?1 is its outcome, ?2 its browser time. */
 const RECORD_WEB_RENDER = `INSERT INTO web_renders (spend_id, outcome, browser_ms)
@@ -401,9 +441,10 @@ export class Ledger {
   ) {}
 
   /**
-   * What the user can spend before a model call, after giving them the weekly free grant if they
-   * have none. A call may go ahead while the balance is above zero; calls that start together all
-   * see the same balance, and what they cost beyond it is forgiven.
+   * What the user can spend before a paid call that is charged as soon as it ends (a render, a
+   * search), after giving them the weekly free grant if they have none. A call may go ahead while the
+   * balance is above zero; calls that start together all see the same balance, and what they cost
+   * beyond it is forgiven. A model call opens with `openCall`, which also takes a slot.
    */
   async open(now: number): Promise<Balance> {
     const [, balance] = await this.db.batch([
@@ -414,6 +455,31 @@ export class Ledger {
     // The batch has just made sure there is a free grant.
     if (row.free_until === null) throw new Error('no free grant after granting one')
     return { balance: row.balance, nextGrantAt: row.free_until }
+  }
+
+  /**
+   * What the user can spend before a model call, as `open` gives it, and a slot for the call
+   * (CALL_SLOTS), taken when the call may start: the balance is above zero and at least `needs`, and
+   * a slot is free. The slot counts as taken until the call's spend names it, or until `until` if
+   * none ever does. When `slot` is null, nothing was taken, and the balance and `taken` say why.
+   */
+  async openCall(now: number, needs: number, until: number): Promise<CallOpening> {
+    if (!wholeNumbers(needs, now) || until <= now) throw new Error('a slot needs a time to expire after it starts')
+    const [, balance, taken, slot] = await this.db.batch([
+      this.statement(GIVE_FREE_GRANT, now, FREE_GRANT, FREE_PERIOD_MS),
+      this.statement(READ_BALANCE, now, FREE_GRANT),
+      this.statement(READ_TAKEN_SLOTS, now),
+      this.statement(TAKE_SLOT, now, until, needs, CALL_SLOTS),
+    ])
+    const row = only(BalanceRow, balance)
+    if (row.free_until === null) throw new Error('no free grant after granting one')
+    const slots = z.array(SlotRow).parse(slot?.results ?? [])
+    return {
+      balance: row.balance,
+      nextGrantAt: row.free_until,
+      taken: only(SlotsRow, taken).taken,
+      slot: slots[0]?.id ?? null,
+    }
   }
 
   /**
@@ -483,6 +549,7 @@ export class Ledger {
             cachedTokens,
             completionTokens,
             detail.estimated ? 1 : 0,
+            detail.slotId,
           )
       }
       case 'web_render':
