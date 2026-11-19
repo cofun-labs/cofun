@@ -230,7 +230,7 @@ export function chatRoutes({ now, modelOf, logError }: Deps): App {
           out,
           (outcome, summary) => {
             const settled = settle(outcome, summary)
-            void settled.finally(callCharged)
+            void settled.then(callCharged, callCharged)
             return settled
           },
           // The cost goes to the client in a chunk of its own, as the last before [DONE]: it is known
