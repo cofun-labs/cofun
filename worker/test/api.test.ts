@@ -300,6 +300,14 @@ describe('UC-COFUN-CREDITS-001 Spend credits on the hosted model', () => {
   const later = (ms: number) => {
     clock = new Date(clock.getTime() + ms)
   }
+  /**
+   * The model writes the first piece of its reply, "Hello ", and is still writing when the user
+   * stops it: the worker reads the model as it writes, so what it read is what the model wrote.
+   */
+  const modelWritesFirstPiece = () => {
+    const first = `data: ${JSON.stringify({ choices: [{ index: 0, delta: { content: 'Hello ' } }] })}\n\n`
+    ai.pause = { after: first.length, until: new Promise(() => {}) }
+  }
   const refused = async (res: Response) => {
     expect(res.status).toBe(402)
     const { error } = await json(res)
@@ -525,6 +533,7 @@ describe('UC-COFUN-CREDITS-001 Spend credits on the hosted model', () => {
   })
 
   it('[@no-uc:money] a stream cut short is recorded with the estimate it was charged by', async () => {
+    modelWritesFirstPiece()
     const res = await chat(token, { messages: hi, stream: true })
     const reader = res.body!.getReader()
     // The first line: the first piece of the reply, "Hello ".
@@ -576,7 +585,12 @@ describe('UC-COFUN-CREDITS-001 Spend credits on the hosted model', () => {
   })
 
   it('[@no-uc:money] a stream that ended before the client stopped reading is charged its totals, not an estimate', async () => {
-    ai.usage = { prompt_tokens: 1000, completion_tokens: 5, prompt_tokens_details: { cached_tokens: 900 } }
+    ai.rawSse =
+      'data: {"choices":[{"index":0,"delta":{"content":"Hi"},"finish_reason":"stop"}]}\n\n' +
+      'data: {"choices":[],"usage":{"prompt_tokens":1000,"completion_tokens":5,"prompt_tokens_details":{"cached_tokens":900}}}\n\n' +
+      'data: [DONE]\n\n'
+    // The model said it was done, and its stream has not closed yet when the user stops it.
+    ai.pause = { after: ai.rawSse.length, until: new Promise(() => {}) }
     const res = await chat(token, { messages: hi, stream: true })
     const reader = res.body!.getReader()
     const decoder = new TextDecoder()
@@ -669,6 +683,7 @@ describe('UC-COFUN-CREDITS-001 Spend credits on the hosted model', () => {
   })
 
   it('[UC-COFUN-CREDITS-001-S08] a reply the user stops is charged an estimate of what it used', async () => {
+    modelWritesFirstPiece()
     const res = await chat(token, { messages: hi, stream: true })
     const reader = res.body!.getReader()
     // The stream goes out a line at a time: this is the first piece of the reply, "Hello ".
@@ -692,6 +707,7 @@ describe('UC-COFUN-CREDITS-001 Spend credits on the hosted model', () => {
     // 3,300,000 characters estimate 1,100,000 tokens at the worker's 3 a token. The model counted
     // fewer and took it, so the fake's own window is set past it.
     ai.contextWindow = 2_000_000
+    modelWritesFirstPiece()
     const res = await chat(token, { messages: [{ role: 'user', content: 'x'.repeat(3_300_000) }], stream: true })
     const reader = res.body!.getReader()
     expect(new TextDecoder().decode((await reader.read()).value)).toContain('"Hello "')

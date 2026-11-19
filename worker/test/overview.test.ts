@@ -364,7 +364,9 @@ describe('UC-COFUN-ADMIN-002 See granted and spent credits as a whole', () => {
 
   it('[UC-COFUN-ADMIN-002-S09] a call the user stopped counts as a failed call, and as a cancelled one', async () => {
     await asks('alice')
-    // Bob stops reading his reply partway.
+    // Bob stops his reply partway, while the model is still writing it.
+    const first = `data: ${JSON.stringify({ choices: [{ index: 0, delta: { content: 'Hello ' } }] })}\n\n`
+    ai.pause = { after: first.length, until: new Promise(() => {}) }
     const bearer = await clerk.sessionToken({ userId: 'user_bob', azp: EXT })
     const res = await req('POST', '/v1/chat/completions', bearer, {
       messages: [{ role: 'user', content: 'hi' }],
@@ -373,6 +375,7 @@ describe('UC-COFUN-ADMIN-002 See granted and spent credits as a whole', () => {
     const reader = res.body!.getReader()
     await reader.read()
     await reader.cancel()
+    ai.pause = undefined
     // And a call of carol's fails at the model.
     ai.failWith = new Error('the model is down')
     expect((await ask('carol')).status).toBe(502)
