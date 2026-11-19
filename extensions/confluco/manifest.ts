@@ -80,11 +80,12 @@ export function buildManifest(env: ManifestEnv, version: string, { store = false
   const clerkHost = clerkFrontendApi(env.VITE_CLERK_PUBLISHABLE_KEY ?? '')
   return {
     manifest_version: 3,
-    name: 'Confluco',
+    name: 'Confluco: AI copilot for Confluence',
     version,
     ...(store ? {} : { version_name: `${version} dev` }),
     // The store's summary line: at most 132 characters, which the manifest test pins.
-    description: 'An AI side panel to ask questions, read browser tabs, and search the web.',
+    description:
+      "AI copilot for Confluence: ask about your pages, find what's out of date, and update them. No subscription needed.",
     ...(env.CRX_PUBLIC_KEY && !store ? { key: env.CRX_PUBLIC_KEY } : {}),
     icons: ICONS,
     // contextMenus and activeTab: the "Ask Confluco" item, which reads the selection in the tab it was

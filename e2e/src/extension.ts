@@ -8,7 +8,7 @@ import { type Browser, type Target, sleep, until } from './cdp'
 
 export const EXTENSIONS = {
   notico: { id: 'moblfnjjebknafkgoifncombfnbfghom', name: 'Notico: AI copilot for Notion' },
-  confluco: { id: 'fccfdaiibgaiblpkkmpfgoijmokbgfng', name: 'Confluco' },
+  confluco: { id: 'fccfdaiibgaiblpkkmpfgoijmokbgfng', name: 'Confluco: AI copilot for Confluence' },
 } as const
 
 export type ExtensionSlug = keyof typeof EXTENSIONS
@@ -136,7 +136,10 @@ export async function build(repoRoot: string, extension: ExtensionSlug, outDir: 
   if (!isAbsolute(outDir)) throw new Error(`Chrome reported a relative extension folder: ${outDir}`)
   const manifest = await readFile(join(outDir, 'manifest.json'), 'utf8').catch(() => '')
   const { name } = EXTENSIONS[extension]
-  if (manifestOf(manifest)?.name !== name) {
+  // A build from before the extension's name took its descriptor ("Confluco" before 0.1.0) is
+  // still that extension's build. This can go once every shared Canary has a build with the new name.
+  const loaded = manifestOf(manifest)?.name
+  if (loaded !== name && loaded !== name.split(':')[0]) {
     throw new Error(`${outDir} doesn't hold a build of ${name}; not building over it.`)
   }
   const source = join(repoRoot, 'extensions', extension)

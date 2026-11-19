@@ -17,7 +17,7 @@ Each extension is installed on its own and has its own setup guide.
 | Extension | Works with | |
 |---|---|---|
 | <img src="extensions/notico/icons/icon.svg" alt="" width="20" height="20" /> **[Notico](extensions/notico/README.md)** | Notion | Reads and edits your Notion pages with you: pages, databases, comments, search. It can also read the page you are on elsewhere. [Install from the Chrome Web Store](https://chromewebstore.google.com/detail/notico-ai-copilot-for-not/moblfnjjebknafkgoifncombfnbfghom) |
-| <img src="extensions/confluco/icons/icon.svg" alt="" width="20" height="20" /> **[Confluco](extensions/confluco/README.md)** | Confluence | Development build. Reads and searches Confluence Cloud and self-managed sites. On self-managed sites, it also edits pages and works with comments and attachments. |
+| <img src="extensions/confluco/icons/icon.svg" alt="" width="20" height="20" /> **[Confluco](extensions/confluco/README.md)** | Confluence | Reads, searches, and updates your Confluence pages, on Cloud and self-managed sites. It can also read the page you are on elsewhere. Coming to the Chrome Web Store. |
 
 ## One account for all of them
 
