@@ -21,7 +21,7 @@ export interface UsageRecord {
   stream: boolean
   /**
    * `ok`, `incomplete`, `cancelled`, `abandoned` (the client fell behind, see MAX_QUEUED_BYTES),
-   * `timeout` (see STREAM_DEADLINE_MS), `stream_error`, or the error code returned to the client.
+   * `stream_error`, or the error code returned to the client.
    */
   outcome: string
   messages: number
@@ -169,14 +169,6 @@ export interface StreamSummary {
 }
 
 /**
- * How long a streamed model call may run before the worker ends it, as if the user had stopped it:
- * far longer than the model takes to write the longest reply it may (MAX_TOKENS), so a call that
- * reaches it is one the model or the client stalled. Shorter than a call's slot lasts
- * (routes/chat.ts), so every call that runs is charged while its slot still counts.
- */
-export const STREAM_DEADLINE_MS = 10 * 60 * 1000
-
-/**
  * How much of a streamed reply the worker holds for a client that has not read it yet. The model's
  * stream is read as fast as the model writes it, whether or not the client reads, so the call is
  * charged when the model is done, not when the client is. A reader keeping up holds a few chunks at
@@ -189,22 +181,19 @@ export const STREAM_DEADLINE_MS = 10 * 60 * 1000
  */
 export const MAX_QUEUED_BYTES = 2 * 1024 * 1024
 
-/** Runs `fire` once after `ms`, unless the function it gives back is called first. */
-export type After = (ms: number, fire: () => void) => () => void
-
 /**
  * Passes an OpenAI-style SSE stream through, line by line, while reading the token usage and finish
  * reason from it. The source is read as fast as it comes, not as fast as the client reads: what the
  * client has not read yet waits in the returned stream's queue, up to MAX_QUEUED_BYTES. So the
  * client can never put off when the call ends, and when it is charged.
  *
- * Calls `done` once, when the stream ends, fails, or is cancelled, or when the worker ends it, and
- * waits for it before the returned stream ends, so a reader that saw the end knows it has run. A
- * stream that ends without `data: [DONE]` was cut short and is reported as `incomplete`; one that
- * carried an error event is reported as `provider_error`, like a failed non-streamed call. The
- * worker ends a call that runs past STREAM_DEADLINE_MS (`timeout`), stopping the model as a client's
- * cancel does. A client that falls more than MAX_QUEUED_BYTES behind is sent nothing more, and the
- * source read on to its end: the call ends as the source does, `abandoned` when it reached `[DONE]`.
+ * Calls `done` once, when the stream ends, fails, or is cancelled, and waits for it before the
+ * returned stream ends, so a reader that saw the end knows it has run. A stream that ends without
+ * `data: [DONE]` was cut short and is reported as `incomplete`; one that carried an error event is
+ * reported as `provider_error`, like a failed non-streamed call. A client that falls more than
+ * MAX_QUEUED_BYTES behind is sent nothing more, and the source read on to its end: the call ends as
+ * the source does, `abandoned` when it reached `[DONE]`. The worker sets no deadline of its own: a
+ * stream ends when the model ends it, or when the client cancels.
  *
  * `last` gives the fields of one more chunk, written for the client as the last before
  * `data: [DONE]`, or before the end of a stream that ends without it: what the call cost. The
@@ -220,7 +209,6 @@ export function meterStream(
   done: (outcome: string, summary: StreamSummary) => void | Promise<void>,
   last: (outcome: string, summary: StreamSummary) => Record<string, unknown>,
   failed: (err: unknown) => void,
-  after: After,
 ): ReadableStream<Uint8Array> {
   const reader = source.getReader()
   const decoder = new TextDecoder()
@@ -240,9 +228,6 @@ export function meterStream(
   // Set once the client has cancelled: the returned stream is closed then and must not be touched,
   // also not by a read that was waiting on `done` when the cancel came.
   let cancelled = false
-  // Set once the worker has ended the call itself (`stop`): the source is cancelled, and the
-  // returned stream is ended there.
-  let stopped = false
   // Set once the client fell too far behind (MAX_QUEUED_BYTES): nothing more is queued for it, the
   // source is still read for its totals, and the returned stream errors once the call is settled.
   let dropped = false
@@ -250,11 +235,9 @@ export function meterStream(
   // Set when reading the source failed: the stream errors once the client has read what is queued
   // (erroring a stream drops what it has not handed out yet).
   let broke = false
-  let clearDeadline = () => {}
   const finish = async (outcome: string) => {
     if (finished) return
     finished = true
-    clearDeadline()
     await done(outcome, summary)
   }
   const lastChunk = (outcome: string) => `data: ${JSON.stringify(last(outcome, summary))}\n\n`
@@ -337,34 +320,14 @@ export function meterStream(
     if (text && !dropped) controller.enqueue(encoder.encode(text))
   }
 
-  /**
-   * Ends a call that ran past STREAM_DEADLINE_MS, as the client's cancel would: the model is
-   * stopped, the call settled, and the client gets the last chunk after what is queued. A stream
-   * that reached `[DONE]` already sent it, and is charged by its totals.
-   */
-  const stop = async () => {
-    if (finished || stopped || cancelled) return
-    stopped = true
-    const ended = sawError ? 'provider_error' : sawDone ? (dropped ? 'abandoned' : 'ok') : 'timeout'
-    const settled = finish(ended)
-    await reader.cancel().catch(() => {})
-    await settled
-    if (cancelled) return
-    if (dropped) return endDropped()
-    // The line held back is dropped: the reply was cut there.
-    partial = ''
-    push(sawDone ? '' : lastChunk(ended))
-    controller.close()
-  }
-
   const pump = async () => {
     for (;;) {
       let result: ReadableStreamReadResult<Uint8Array>
       try {
         result = await reader.read()
       } catch (err) {
-        // Once the client has cancelled, or the worker stopped the source, it is all handled there.
-        if (cancelled || stopped) return
+        // Once the client has cancelled, it is all handled there.
+        if (cancelled) return
         failed(err)
         const tail = rest()
         const outcome = sawError ? 'provider_error' : 'stream_error'
@@ -378,7 +341,7 @@ export function meterStream(
         if (controller.desiredSize === 0) controller.error(new Error('the model stream failed'))
         return
       }
-      if (cancelled || stopped) return
+      if (cancelled) return
       if (result.done) {
         const tail = rest()
         const outcome = sawError ? 'provider_error' : sawDone ? (dropped ? 'abandoned' : 'ok') : 'incomplete'
@@ -397,12 +360,11 @@ export function meterStream(
     }
   }
 
-  clearDeadline = after(STREAM_DEADLINE_MS, () => void stop())
   pump().catch((err: unknown) => {
     // Nothing in the pump is meant to throw (`done` handles its own failures): end the stream
     // rather than leave the client waiting.
     failed(err)
-    if (!cancelled && !stopped) controller.error(new Error('the model stream failed'))
+    if (!cancelled) controller.error(new Error('the model stream failed'))
   })
   return out
 }

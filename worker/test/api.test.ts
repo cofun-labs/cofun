@@ -1,6 +1,6 @@
 import { beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import { createApp, type Env } from '../src/app'
-import { MAX_QUEUED_BYTES, STREAM_DEADLINE_MS } from '../src/usage'
+import { MAX_QUEUED_BYTES } from '../src/usage'
 import { FakeClerk } from './clerk'
 import {
   FAKE_COST,
@@ -10,7 +10,6 @@ import {
   FakeExecutionContext,
   FakeUsageDataset,
   FakeRateLimiter,
-  FakeTimers,
   MODEL,
   usageCosting,
 } from './fakes'
@@ -21,12 +20,7 @@ const SERVED = { context_window: 1_048_576, max_tokens: 65_536 }
 let clock = new Date('2026-11-08T12:00:00Z')
 /** Every error line the worker logged in the current test. */
 let logged: string[] = []
-let timers = new FakeTimers()
-const app = createApp({
-  now: () => clock,
-  logError: (line) => logged.push(line),
-  after: (ms, fire) => timers.after(ms, fire),
-})
+const app = createApp({ now: () => clock, logError: (line) => logged.push(line) })
 
 let clerk: FakeClerk
 let otherClerk: FakeClerk
@@ -44,7 +38,6 @@ beforeEach(async () => {
   ai = new FakeAiBinding()
   logged = []
   clock = new Date('2026-11-08T12:00:00Z')
-  timers = new FakeTimers()
   contexts = []
   env = {
     AI: ai,
@@ -878,31 +871,14 @@ describe('UC-COFUN-CREDITS-001 Calls going at once, and replies the client does 
     await expect(res.text()).rejects.toThrow('the client fell too far behind the reply')
   })
 
-  it('[@no-uc:money] a stream still going at its deadline is ended, charged an estimate, and frees its slot', async () => {
-    // The model writes the start of the reply, then nothing more.
-    ai.pause = { after: 64, until: new Promise(() => {}) }
-    const going = [await chat(token, streamed), await chat(token, streamed), await chat(token, streamed)]
-    expect((await chat(token, streamed)).status).toBe(429)
-    later(STREAM_DEADLINE_MS)
-    timers.advance(STREAM_DEADLINE_MS)
-    const texts = await Promise.all(going.map((res) => res.text()))
-    expect(calls()).toEqual(Array(3).fill(expect.objectContaining({ outcome: 'timeout', estimated: 1 })))
-    for (const text of texts) {
-      expect(text).toContain('"estimated":true')
-      expect(text).not.toContain('data: [DONE]')
-    }
-    ai.pause = undefined
-    expect((await chat(token, streamed)).status).toBe(200)
-  })
-
   it('[@no-uc:money] a slot whose call was never charged stops counting once it expires', async () => {
     // The calls are answered, but their record fails: their slots stay taken.
     db.failOn = { sql: 'INSERT INTO spends', error: new Error('D1 is down') }
     for (let i = 0; i < 3; i++) expect((await chat(token)).status).toBe(200)
     db.failOn = undefined
     expect((await chat(token)).status).toBe(429)
-    // A slot lasts past the stream's deadline, so a call that runs is charged before it expires.
-    later(STREAM_DEADLINE_MS + 5 * 60 * 1000)
+    // A slot lasts half an hour.
+    later(30 * 60 * 1000)
     expect((await chat(token)).status).toBe(200)
   })
 })

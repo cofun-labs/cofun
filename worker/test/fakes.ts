@@ -375,30 +375,6 @@ export class FakeExecutionContext {
   passThroughOnException(): void {}
 }
 
-/**
- * Stands in for the worker's timer (AppOptions.after): nothing fires until a test moves it on with
- * `advance`, which fires every timer due by then, in the order they are due.
- */
-export class FakeTimers {
-  private elapsed = 0
-  private pending: { at: number; fire: () => void }[] = []
-
-  after = (ms: number, fire: () => void): (() => void) => {
-    const timer = { at: this.elapsed + ms, fire }
-    this.pending.push(timer)
-    return () => {
-      this.pending = this.pending.filter((t) => t !== timer)
-    }
-  }
-
-  advance(ms: number): void {
-    this.elapsed += ms
-    const due = this.pending.filter((t) => t.at <= this.elapsed).toSorted((a, b) => a.at - b.at)
-    this.pending = this.pending.filter((t) => t.at > this.elapsed)
-    for (const timer of due) timer.fire()
-  }
-}
-
 /** Stands in for the Analytics Engine dataset (env.USAGE): drops every data point written. */
 export class FakeUsageDataset implements UsageDataset {
   writeDataPoint(): void {}

@@ -20,5 +20,5 @@ ALTER TABLE model_calls ADD COLUMN slot_id INTEGER REFERENCES call_slots (id);
 -- Whether a slot's call was charged.
 CREATE INDEX model_calls_by_slot ON model_calls (slot_id) WHERE slot_id IS NOT NULL;
 
--- `model_calls.outcome` has two more values from here on: `timeout` (the worker ended a stream still
--- going at its deadline) and `abandoned` (the client fell too far behind a stream the model finished).
+-- `model_calls.outcome` has one more value from here on: `abandoned` (the client fell too far behind
+-- a stream the model finished, which is charged its totals).

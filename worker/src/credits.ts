@@ -355,13 +355,15 @@ const READ_TAKEN_SLOTS = `SELECT ${takenSlots} AS taken`
 
 /**
  * Takes a slot for a model call starting at ?2, until ?3 at the latest, if the call may start: the
- * balance is above zero and at least ?4 (what the call is estimated to cost before it is made), and
- * fewer than ?5 slots are taken. Gives the slot's id, or no row when it took none. One statement,
- * in the batch that reads the balance, so calls that start together cannot all take the last slot.
+ * balance is above zero and at least ?4 (what the call is estimated to cost before it is made; amounts
+ * are whole micro-credits, so `max(?4, 1)` says both), and fewer than ?5 slots are taken. Gives the
+ * slot's id, or no row when it took none. One statement, in the batch that reads the balance, so calls
+ * that start together cannot all take the last slot. The same rule as `refuseShortBalance` in
+ * charge.ts, which says why a call was refused: the two change together.
  */
 const TAKE_SLOT = `INSERT INTO call_slots (user_id, started_at, expires_at)
 SELECT ?1, ?2, ?3
-WHERE ${balanceOf('?1', '?2')} > 0 AND ${balanceOf('?1', '?2')} >= ?4 AND ${takenSlots} < ?5
+WHERE ${balanceOf('?1', '?2')} >= max(?4, 1) AND ${takenSlots} < ?5
 RETURNING id`
 
 /** The grants that still count, in the order they are spent. */

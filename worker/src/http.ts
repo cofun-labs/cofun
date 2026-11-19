@@ -6,7 +6,7 @@ import * as z from './zod'
 import type { Database } from './credits'
 import type { modelOf } from './pricing'
 import type { StripeApi } from './stripe'
-import type { After, UsageDataset } from './usage'
+import type { UsageDataset } from './usage'
 import type { SearchOptions } from './search'
 import type { BrowserBinding, WebFetcher } from './web'
 
@@ -98,11 +98,6 @@ export interface AppOptions {
   logAdmin?: (line: string) => void
   /** Where the record of purchases granted and taken back goes: Workers Logs by default. Tests pass their own. */
   logBilling?: (line: string) => void
-  /**
-   * Runs a function once, later, unless it is called off: a timer. Tests pass their own, moved with
-   * their clock, to reach a stream's deadline.
-   */
-  after?: After
 }
 
 /**

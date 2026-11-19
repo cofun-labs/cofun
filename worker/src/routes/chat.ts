@@ -3,15 +3,7 @@
 import { Hono } from 'hono'
 import { charge, openCall, startUsage, type Charging, type Turn } from '../charge'
 import { costOf, estimateCachedTokens, estimateTokens, type Tokens } from '../pricing'
-import {
-  STREAM_DEADLINE_MS,
-  finishReason,
-  meterStream,
-  replyInfo,
-  tokensOf,
-  type StreamSummary,
-  type UsageRecord,
-} from '../usage'
+import { finishReason, meterStream, replyInfo, tokensOf, type StreamSummary, type UsageRecord } from '../usage'
 import { HttpError, errorSummary, parse, type App, type Ctx, type Deps } from '../http'
 import { Body, MAX_TOKENS, MaxTokens, Stream, parseModelInputs } from './chat-request'
 
@@ -36,22 +28,19 @@ function callCost(microCredits: number, estimated: boolean) {
 }
 
 /**
- * How long a model call's slot (CALL_SLOTS in credits.ts) counts at most: past the stream's deadline,
- * so a call that runs is always charged, which frees its slot, before the slot would stop counting.
- * Only a call the worker never charged (one that went away mid-call) gives its slot back this way.
+ * How long a model call's slot (CALL_SLOTS in credits.ts) counts at most. A call frees its slot when
+ * it is charged, which the worker does when the model is done, whatever the client does; this only
+ * gives back the slot of a call that was never charged (a worker that went away mid-call, or a model
+ * that never ends its stream). Long enough for the longest reply the model may write (MAX_TOKENS) at
+ * about 36 tokens a second; a call slower still lets its user start one more call before it ends.
  */
-const SLOT_MS = STREAM_DEADLINE_MS + 5 * 60 * 1000
+const SLOT_MS = 30 * 60 * 1000
 
-/**
- * How a stream that ended without the model's totals is charged, by how it ended: one the user
- * stopped, or the worker did at its deadline, an estimate of what it used.
- */
-const ESTIMATED = new Set(['cancelled', 'timeout'])
-/** The outcomes a stream that broke off before [DONE] is still charged for: see ESTIMATED. */
-const CHARGED = new Set(['ok', 'abandoned', ...ESTIMATED])
+/** The outcomes a stream that broke off before [DONE] is still charged for: by the model's totals or an estimate. */
+const CHARGED = new Set(['ok', 'abandoned', 'cancelled'])
 
 /** Chat completions, mounted at /v1/chat. */
-export function chatRoutes({ now, modelOf, logError, after }: Deps): App {
+export function chatRoutes({ now, modelOf, logError }: Deps): App {
   const routes: App = new Hono()
   // OpenAI-compatible chat completions. The model is fixed by the server.
   // Every request that passed auth leaves one usage record, however it ends.
@@ -209,14 +198,14 @@ export function chatRoutes({ now, modelOf, logError, after }: Deps): App {
         const charged = (outcome: string, summary: StreamSummary) => {
           const { promptTokens, cachedTokens, completionTokens } = summary
           const tokens: Tokens = { promptTokens, cachedTokens, completionTokens }
-          // A model error, or a stream that broke off before [DONE] unless the user or the worker
-          // stopped it, failed: it costs nothing, whatever it streamed first.
+          // A model error, or a stream that broke off before [DONE] unless the user stopped it,
+          // failed: it costs nothing, whatever it streamed first.
           const failed = outcome === 'provider_error' || (!CHARGED.has(outcome) && !summary.ended)
           if (failed) return { tokens, estimated: false, cost: 0 }
-          // One that reached [DONE] costs its totals. One stopped before costs an estimate, since its
-          // totals never came: the prompt from the input's size when no chunk gave it, the reply from
-          // the characters the model wrote, and a fixed share of the prompt as cached.
-          const estimated = ESTIMATED.has(outcome) && !summary.ended
+          // One that reached [DONE] costs its totals. One the user stopped before costs an estimate,
+          // since its totals never came: the prompt from the input's size when no chunk gave it, the
+          // reply from the characters the model wrote, and a fixed share of the prompt as cached.
+          const estimated = outcome === 'cancelled' && !summary.ended
           if (estimated) {
             tokens.promptTokens ||= inputTokens
             tokens.cachedTokens = estimateCachedTokens(tokens.promptTokens)
@@ -251,7 +240,6 @@ export function chatRoutes({ now, modelOf, logError, after }: Deps): App {
             return { choices: [], cost: callCost(cost, estimated) }
           },
           (err) => logError(`model stream failed: ${errorSummary(err)}`),
-          after,
         )
         return new Response(metered, {
           headers: { 'content-type': 'text/event-stream', 'cache-control': 'no-cache' },
