@@ -85,7 +85,7 @@ export function buildManifest(env: ManifestEnv, version: string, { store = false
     ...(store ? {} : { version_name: `${version} dev` }),
     // The store's summary line: at most 132 characters, which the manifest test pins.
     description:
-      "AI copilot for Confluence: ask about your pages, find what's out of date, and update them. No setup, no subscription.",
+      "AI copilot for Confluence: ask about your pages, find what's out of date, and update them. No subscription needed.",
     ...(env.CRX_PUBLIC_KEY && !store ? { key: env.CRX_PUBLIC_KEY } : {}),
     icons: ICONS,
     // contextMenus and activeTab: the "Ask Confluco" item, which reads the selection in the tab it was
