@@ -1,7 +1,7 @@
 // OpenAI-compatible chat completions (/v1/chat/completions) on the model the worker fixes, charged
 // to the user's credits and metered in a usage record.
 import { Hono } from 'hono'
-import { charge, openLedger, startUsage, type Charging, type Turn } from '../charge'
+import { charge, openCall, startUsage, type Charging, type Turn } from '../charge'
 import { costOf, estimateCachedTokens, estimateTokens, type Tokens } from '../pricing'
 import { finishReason, meterStream, replyInfo, tokensOf, type StreamSummary, type UsageRecord } from '../usage'
 import { HttpError, errorSummary, parse, type App, type Ctx, type Deps } from '../http'
@@ -26,6 +26,18 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
 function callCost(microCredits: number, estimated: boolean) {
   return { micro_credits: microCredits, estimated }
 }
+
+/**
+ * How long a model call's slot (CALL_SLOTS in credits.ts) counts at most. A call frees its slot when
+ * it is charged, which the worker does when the model is done, whatever the client does; this only
+ * gives back the slot of a call that was never charged (a worker that went away mid-call, a model
+ * that never ends its stream, or a call whose record failed, which is not charged either). Long enough for the longest reply the model may write (MAX_TOKENS) at
+ * about 36 tokens a second; a call slower still lets its user start one more call before it ends.
+ */
+const SLOT_MS = 30 * 60 * 1000
+
+/** The outcomes a stream that broke off before [DONE] is still charged for: by the model's totals or an estimate. */
+const CHARGED = new Set(['ok', 'abandoned', 'cancelled'])
 
 /** Chat completions, mounted at /v1/chat. */
 export function chatRoutes({ now, modelOf, logError }: Deps): App {
@@ -73,7 +85,8 @@ export function chatRoutes({ now, modelOf, logError }: Deps): App {
     const { price, contextWindow } = served
 
     // Calls sent at once all start on the same balance (see below), so how many one user can start
-    // a minute is capped. Checked before the credits, so a refused request reads nothing.
+    // a minute is capped. Checked before the credits, so a refused request reads nothing. How many
+    // they can have going at once (CALL_SLOTS) is checked with the credits, in openCall.
     const { success } = await c.env.CHAT_LIMIT.limit({ key: c.get('userId') })
     if (!success) throw new HttpError(429, 'rate_limited', 'Too many requests at once. Wait a minute, then ask again.')
 
@@ -82,13 +95,15 @@ export function chatRoutes({ now, modelOf, logError }: Deps): App {
     // the model has cached is not refused for much more than it would spend: the size estimate runs
     // over for English (3 characters a token, where English runs near 4) by about 2 credits on a full window. What a call
     // costs beyond the balance is then its uncached input and its reply (MAX_TOKENS bounds that), and
-    // CHAT_LIMIT bounds calls at once.
+    // the slots it takes bound calls at once.
     const maxTokens = max_tokens ?? MAX_TOKENS
     // The input's tokens as estimated from its size, never more than the model's window can hold.
     const inputTokens = Math.min(estimateTokens(chars), contextWindow)
     const needs = costOf(price, { promptTokens: inputTokens, cachedTokens: inputTokens, completionTokens: 0 })
+    const opensAt = now().getTime()
+    const { ledger, slot } = await openCall(c, opensAt, logError, needs, opensAt + SLOT_MS)
     const charging: Charging = {
-      ledger: await openLedger(c, now().getTime(), logError, needs),
+      ledger,
       usage,
       turn,
       now: () => now().getTime(),
@@ -111,6 +126,8 @@ export function chatRoutes({ now, modelOf, logError }: Deps): App {
         finishReason: finish,
         ...tokens,
         estimated,
+        // Written with the call, which frees its slot.
+        slotId: slot,
       } as const
       await charge(charging, cost, detail, Math.max(startedAt, now().getTime()))
     }
@@ -181,13 +198,13 @@ export function chatRoutes({ now, modelOf, logError }: Deps): App {
         const charged = (outcome: string, summary: StreamSummary) => {
           const { promptTokens, cachedTokens, completionTokens } = summary
           const tokens: Tokens = { promptTokens, cachedTokens, completionTokens }
-          // A model error, or a stream that broke off before [DONE] unless the user stopped it, failed:
-          // it costs nothing, whatever it streamed first.
-          const failed = outcome === 'provider_error' || (outcome !== 'ok' && outcome !== 'cancelled' && !summary.ended)
+          // A model error, or a stream that broke off before [DONE] unless the user stopped it,
+          // failed: it costs nothing, whatever it streamed first.
+          const failed = outcome === 'provider_error' || (!CHARGED.has(outcome) && !summary.ended)
           if (failed) return { tokens, estimated: false, cost: 0 }
           // One that reached [DONE] costs its totals. One the user stopped before costs an estimate,
           // since its totals never came: the prompt from the input's size when no chunk gave it, the
-          // reply from the characters streamed, and a fixed share of the prompt as cached.
+          // reply from the characters the model wrote, and a fixed share of the prompt as cached.
           const estimated = outcome === 'cancelled' && !summary.ended
           if (estimated) {
             tokens.promptTokens ||= inputTokens
@@ -205,12 +222,15 @@ export function chatRoutes({ now, modelOf, logError }: Deps): App {
           await endCall(outcome, tokens, summary.finishReason, estimated, cost)
           record(outcome)
         }
+        // Held from the start until the call is settled, however it ends: a client that went away
+        // must not take the charge with it.
+        let callCharged = () => {}
+        c.executionCtx.waitUntil(new Promise<void>((resolve) => (callCharged = resolve)))
         const metered = meterStream(
           out,
           (outcome, summary) => {
             const settled = settle(outcome, summary)
-            // A client that went away must not take the charge with it.
-            c.executionCtx.waitUntil(settled)
+            void settled.then(callCharged, callCharged)
             return settled
           },
           // The cost goes to the client in a chunk of its own, as the last before [DONE]: it is known
