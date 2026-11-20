@@ -48,6 +48,7 @@ export function loginPage(publishableKey: string, requestedApp: unknown): string
 <body>
 <h1>${esc(name)}</h1>
 <div id="sign-in"></div>
+<button id="restart-sign-up" type="button" hidden>Start registration again</button>
 <div id="signed-in">
   <p>You're signed in. Go back to the side panel.</p>
   <button id="sign-out">Sign out</button>
@@ -74,11 +75,35 @@ export function loginPage(publishableKey: string, requestedApp: unknown): string
       signUpUrl: returnUrl,
       localization: { signIn: { start: { titleCombined: ${JSON.stringify(`Continue to ${name}`)} } } },
     })
+    const restart = document.getElementById('restart-sign-up')
+    let expiryTimer
+    const renderRestart = () => {
+      clearTimeout(expiryTimer)
+      const route = location.hash.split('?')[0]
+      const onSignUpCheck = route === '#/create/protect-check' || route === '#/create/continue/protect-check'
+      const check = window.Clerk.client?.signUp.protectCheck
+      restart.hidden = true
+      if (window.Clerk.user || !onSignUpCheck || check?.status !== 'pending' || !check.expiresAt) return
+      const remaining = check.expiresAt - Date.now()
+      restart.hidden = remaining >= 0
+      if (restart.hidden) expiryTimer = setTimeout(renderRestart, remaining + 1)
+    }
+    restart.onclick = () => {
+      renderRestart()
+      if (restart.hidden) return
+      // Reset the local attempt and enter the combined component's sign-up form.
+      // Its Google button creates a new SignUp before redirecting to Google.
+      window.Clerk.client.resetSignUp()
+      location.replace('#/create')
+      restart.hidden = true
+    }
+    window.addEventListener('hashchange', renderRestart)
     // Clerk calls listeners on every resource change, including mid-flow steps
     // like the Protect check. Remounting SignIn on each call restarts the flow,
     // so only mount or unmount when the signed-in state actually changes.
     let shown = null
     const render = () => {
+      renderRestart()
       const signedIn = !!window.Clerk.user
       if (signedIn === shown) return
       shown = signedIn
