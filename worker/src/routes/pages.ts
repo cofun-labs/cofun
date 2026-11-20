@@ -15,7 +15,7 @@ export function pageRoutes(): App {
     // This page holds the Clerk session the extension syncs from, so no other site may frame it.
     c.header('content-security-policy', "frame-ancestors 'none'")
     c.header('x-frame-options', 'DENY')
-    return c.html(loginPage(c.env.CLERK_PUBLISHABLE_KEY))
+    return c.html(loginPage(c.env.CLERK_PUBLISHABLE_KEY, c.req.query('app')))
   })
 
   // Admin page: look up an account's credits and grant credits by hand. The page holds no data;

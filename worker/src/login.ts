@@ -5,6 +5,14 @@
  * Social logins (Google etc.) work here because this is a normal web page.
  */
 
+import * as z from './zod'
+
+const LoginApp = z.enum(['notico', 'confluco']).optional().catch(undefined)
+const appNames = {
+  notico: 'Notico by Cofun',
+  confluco: 'Confluco by Cofun',
+}
+
 /**
  * Clerk's Frontend API host is encoded in the publishable key: pk_test_ (a development instance)
  * or pk_live_ (a production instance), then base64 of the host and a "$", without padding.
@@ -15,14 +23,17 @@ export function clerkFrontendApi(publishableKey: string): string {
 
 export const esc = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`)
 
-export function loginPage(publishableKey: string): string {
+export function loginPage(publishableKey: string, requestedApp: unknown): string {
   const fapi = clerkFrontendApi(publishableKey)
+  const app = LoginApp.parse(requestedApp)
+  const name = app ? appNames[app] : 'Cofun'
+  const returnUrl = app ? `/login?app=${app}` : '/login'
   return `<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Sign in · Cofun</title>
+<title>Sign in · ${esc(name)}</title>
 <style>
   :root { --bg: #f7f7f5; --fg: #1f1f1f; --muted: #6b6b6b; }
   @media (prefers-color-scheme: dark) { :root { --bg: #191919; --fg: #e6e6e6; --muted: #9b9b9b; } }
@@ -35,7 +46,7 @@ export function loginPage(publishableKey: string): string {
 </style>
 </head>
 <body>
-<h1>Cofun</h1>
+<h1>${esc(name)}</h1>
 <div id="sign-in"></div>
 <div id="signed-in">
   <p>You're signed in. Go back to the side panel.</p>
@@ -48,6 +59,8 @@ export function loginPage(publishableKey: string): string {
 <script>
   window.addEventListener('load', start)
   async function start() {
+    // Preserve the chosen brand when Clerk returns here from an OAuth step.
+    const returnUrl = ${JSON.stringify(returnUrl)}
     // Keep the whole flow on this page. Without signInUrl/signUpUrl, Clerk sends
     // steps it can't finish here (OAuth sign-up continuation, Protect checks) to
     // its hosted Account Portal, which can't redirect back to this domain.
@@ -57,8 +70,9 @@ export function loginPage(publishableKey: string): string {
     await window.Clerk.load({
       telemetry: false,
       ui: { ClerkUI: window.__internal_ClerkUICtor },
-      signInUrl: location.pathname,
-      signUpUrl: location.pathname,
+      signInUrl: returnUrl,
+      signUpUrl: returnUrl,
+      localization: { signIn: { start: { titleCombined: ${JSON.stringify(`Continue to ${name}`)} } } },
     })
     // Clerk calls listeners on every resource change, including mid-flow steps
     // like the Protect check. Remounting SignIn on each call restarts the flow,
@@ -74,8 +88,8 @@ export function loginPage(publishableKey: string): string {
       else window.Clerk.mountSignIn(box, {
           routing: 'hash',
           withSignUp: true,
-          fallbackRedirectUrl: location.pathname,
-          signUpFallbackRedirectUrl: location.pathname,
+          fallbackRedirectUrl: returnUrl,
+          signUpFallbackRedirectUrl: returnUrl,
         })
     }
     window.Clerk.addListener(render)

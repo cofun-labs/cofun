@@ -19,7 +19,7 @@ watchSignIn(PUBLISHABLE_KEY, SIGN_IN_HOST, () => location.reload()).catch(consol
 
 function openSignIn() {
   track({ event: 'sign_in_opened' })
-  chrome.tabs.create({ url: `${SIGN_IN_HOST}/login` })
+  chrome.tabs.create({ url: `${SIGN_IN_HOST}/login?app=confluco` })
 }
 
 // Each account gets its own chat and sessions; keyed so a change of account starts over.

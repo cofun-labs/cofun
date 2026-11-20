@@ -222,6 +222,25 @@ describe('worker API', () => {
     expect(html).toContain('src="https://clerk.sample.cc/npm/@clerk/ui@1/dist/ui.browser.js"')
   })
 
+  it.each([
+    ['/login?app=notico', 'Notico by Cofun', '/login?app=notico'],
+    ['/login?app=confluco', 'Confluco by Cofun', '/login?app=confluco'],
+    ['/login', 'Cofun', '/login'],
+    ['/login?app=unknown', 'Cofun', '/login'],
+  ])(
+    '[UC-COFUN-AUTH-001-S01] %s shows the chosen brand and configures Clerk to return to it',
+    async (url, name, returnUrl) => {
+      env.CLERK_PUBLISHABLE_KEY = 'pk_test_ZXhhbXBsZS5jbGVyay5hY2NvdW50cy5kZXYk'
+      const res = await req('GET', url)
+      expect(res.status).toBe(200)
+      const html = await res.text()
+      expect(html).toContain(`<title>Sign in · ${name}</title>`)
+      expect(html).toContain(`<h1>${name}</h1>`)
+      expect(html).toContain(`titleCombined: "Continue to ${name}"`)
+      expect(html).toContain(`const returnUrl = "${returnUrl}"`)
+    },
+  )
+
   it('[@no-uc:privacy] sign-in page turns Clerk SDK telemetry off', async () => {
     env.CLERK_PUBLISHABLE_KEY = 'pk_test_ZXhhbXBsZS5jbGVyay5hY2NvdW50cy5kZXYk'
     const html = await (await req('GET', '/login')).text()
