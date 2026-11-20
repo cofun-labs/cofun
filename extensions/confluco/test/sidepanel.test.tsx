@@ -155,7 +155,7 @@ describe('signing in and out', () => {
 
     await user.click(screen.getByRole('button', { name: 'Sign in' }))
 
-    expect(browser.openedTabs).toEqual(['https://copilot.test/login'])
+    expect(browser.openedTabs).toEqual(['https://copilot.test/login?app=confluco'])
     expect(browser.ai.calls).toEqual([])
   })
 })
