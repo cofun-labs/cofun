@@ -1,4 +1,6 @@
-import { beforeAll, beforeEach, describe, expect, it } from 'vitest'
+import { runInNewContext } from 'node:vm'
+import { DomUtils, parseDocument } from 'htmlparser2'
+import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createApp, type Env } from '../src/app'
 import { MAX_QUEUED_BYTES } from '../src/usage'
 import { FakeClerk } from './clerk'
@@ -246,6 +248,70 @@ describe('worker API', () => {
     const html = await (await req('GET', '/login')).text()
     const options = /window\.Clerk\.load\(\{([^]*?)\}\)/.exec(html)?.[1]
     expect(options).toMatch(/^\s*telemetry: false,$/m)
+  })
+
+  it('[UC-COFUN-AUTH-002-S01] lets an expired registration start again', async () => {
+    env.CLERK_PUBLISHABLE_KEY = 'pk_test_ZXhhbXBsZS5jbGVyay5hY2NvdW50cy5kZXYk'
+    const html = await (await req('GET', '/login')).text()
+    const page = parseDocument(html)
+    const action = DomUtils.getElementById('restart-sign-up', page)
+    expect(action?.name).toBe('button')
+    expect(action?.attribs.hidden).toBeDefined()
+    const script = DomUtils.getElementsByTagName('script', page).find((tag) => !tag.attribs.src)
+    if (!script) throw new Error('The login page has no inline script')
+
+    vi.useFakeTimers({ now: clock })
+    try {
+      const elements = new Map(
+        ['restart-sign-up', 'sign-in', 'signed-in', 'sign-out'].map((id) => [
+          id,
+          { hidden: true, style: { display: '' }, onclick: () => {} },
+        ]),
+      )
+      const signUp: { protectCheck?: { status: string; expiresAt: number } } = {
+        protectCheck: { status: 'pending', expiresAt: Date.now() + 1000 },
+      }
+      const client = {
+        signUp,
+        resetSignUp() {
+          delete this.signUp.protectCheck
+        },
+      }
+      const sdk = { client, load: async () => {}, addListener() {}, mountSignIn() {} }
+      const listeners = new Map<string, () => Promise<void>>()
+      const location = {
+        pathname: '/login',
+        hash: '#/create/protect-check',
+        replace(hash: string) {
+          this.hash = hash
+        },
+      }
+      runInNewContext(DomUtils.textContent(script), {
+        window: { Clerk: sdk, addEventListener: listeners.set.bind(listeners) },
+        document: { getElementById: elements.get.bind(elements) },
+        location,
+        Date,
+        setTimeout,
+        clearTimeout,
+      })
+      await listeners.get('load')?.()
+      const restart = elements.get('restart-sign-up')
+      if (!restart) throw new Error('The login page did not bind the restart button')
+      expect(restart.hidden).toBe(true)
+      await vi.advanceTimersByTimeAsync(1001)
+      expect(restart.hidden).toBe(false)
+      location.hash = '#/protect-check'
+      await listeners.get('hashchange')?.()
+      expect(restart.hidden).toBe(true)
+      location.hash = '#/create/protect-check'
+      await listeners.get('hashchange')?.()
+      restart.onclick()
+      expect(client.signUp.protectCheck).toBeUndefined()
+      expect(location.hash).toBe('#/create')
+      expect(restart.hidden).toBe(true)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('[@no-uc:access] sign-in page is off without a publishable key', async () => {
