@@ -1,4 +1,5 @@
 import { runInNewContext } from 'node:vm'
+import { DomUtils, parseDocument } from 'htmlparser2'
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createApp, type Env } from '../src/app'
 import { MAX_QUEUED_BYTES } from '../src/usage'
@@ -252,8 +253,11 @@ describe('worker API', () => {
   it('[UC-COFUN-AUTH-002-S01] lets an expired registration start again', async () => {
     env.CLERK_PUBLISHABLE_KEY = 'pk_test_ZXhhbXBsZS5jbGVyay5hY2NvdW50cy5kZXYk'
     const html = await (await req('GET', '/login')).text()
-    expect(html).toMatch(/<button id="restart-sign-up"[^>]*hidden>/)
-    const script = /<script>([^]*?)<\/script>/.exec(html)?.[1]
+    const page = parseDocument(html)
+    const action = DomUtils.getElementById('restart-sign-up', page)
+    expect(action?.name).toBe('button')
+    expect(action?.attribs.hidden).toBeDefined()
+    const script = DomUtils.getElementsByTagName('script', page).find((tag) => !tag.attribs.src)
     if (!script) throw new Error('The login page has no inline script')
 
     vi.useFakeTimers({ now: clock })
@@ -282,7 +286,7 @@ describe('worker API', () => {
           this.hash = hash
         },
       }
-      runInNewContext(script, {
+      runInNewContext(DomUtils.textContent(script), {
         window: { Clerk: sdk, addEventListener: listeners.set.bind(listeners) },
         document: { getElementById: elements.get.bind(elements) },
         location,
