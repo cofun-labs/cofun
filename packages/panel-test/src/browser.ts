@@ -49,7 +49,7 @@ let clerk: Promise<FakeClerk> | undefined
  * The extension's tab fake: what stands in for chrome.* (tabs, scripting, storage, permissions, the
  * context menu) around the tab the browser starts on.
  */
-export interface FakeTab {
+export interface TabFake {
   /** Puts its chrome.* in place of the global one. */
   install(): unknown
   /** The sites the user allowed the extension to read (optional host permissions), as match patterns. */
@@ -79,7 +79,7 @@ export interface TestedExtension {
  * A browser with the extension installed and one tab: its chrome.* APIs, its IndexedDB, who is
  * signed in to the extension, and the worker the panel talks to. Lives for one test.
  */
-export class FakeBrowser<Tab extends FakeTab = FakeTab> {
+export class FakeBrowser<Tab extends TabFake = TabFake> {
   /** The model behind the worker; script its replies, and read what it was sent. Title requests go to `titles`. */
   readonly ai = new FakeAiBinding()
   /**
@@ -151,7 +151,7 @@ export class FakeBrowser<Tab extends FakeTab = FakeTab> {
   }
 
   /** Starts a browser with `extension` installed on `tab`, signed in to it as `signedInAs` or signed out. */
-  static async start<Tab extends FakeTab>(
+  static async start<Tab extends TabFake>(
     extension: TestedExtension,
     tab: Tab,
     options: { signedInAs?: string } = {},
