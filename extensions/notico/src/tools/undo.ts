@@ -193,7 +193,7 @@ export async function undoQuestion(q: QuestionChanges): Promise<string> {
 
 /** The latest question of the chat whose changes can be undone, with its id; none when there is none. */
 function latestUndoable(memory: ToolMemory): [string, QuestionChanges] | undefined {
-  return [...memory.undos].reverse().find(([, q]) => undoable(q) || q.cannot.length > 0)
+  return [...memory.undos].reverse().find(([, q]) => !q.undone && (undoable(q) || q.cannot.length > 0))
 }
 
 /** Forgets what the agent saw of the pages an undo changed, which are not as it saw them now. */

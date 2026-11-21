@@ -261,6 +261,23 @@ describe('UC-NOTICO-NOTION-013 undo what a question changed', () => {
     expect(ws.table('comment')).toHaveLength(1)
   })
 
+  it('[UC-NOTICO-NOTION-013-S04] asked again, undoes the question before the one it undid, even one with a comment', async () => {
+    const ws = workspace()
+    open(ws)
+    await chat.run(updatePages, { pages: [{ page: hex(PAGE), title: 'First' }] })
+    endQuestion('q1')
+    await chat.run(updatePages, { pages: [{ page: hex(PAGE), icon: '🚀' }] })
+    await chat.run(addComment, { page: hex(PAGE), text: 'Looks good' })
+    endQuestion('q2')
+    await undo()
+    expect(chat.preview(undoChangesTool, {})).toContain('set back 1 value')
+    await undo()
+    expect(ws.records.get(PAGE)).toMatchObject({
+      properties: { title: [['Fixture page']] },
+      format: { page_icon: '📄' },
+    })
+  })
+
   it('[UC-NOTICO-NOTION-013-S06] an undo Notion doesn’t confirm is not tried again, and may have changed the pages', async () => {
     const ws = workspace()
     open(ws)

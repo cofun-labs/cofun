@@ -26,9 +26,7 @@ type Fields = z.output<typeof Fields>
 const Change = z.strictObject({
   id: z.string(),
   page: z.string(),
-  created: z
-    .strictObject({ parent: z.string(), table: z.enum(['block', 'collection', 'space']), page: z.boolean() })
-    .optional(),
+  created: z.strictObject({ parent: z.string(), table: z.enum(['block', 'collection']), page: z.boolean() }).optional(),
   removed: z
     .strictObject({ parent: z.string(), after: z.string().optional(), before: z.string().optional() })
     .optional(),
@@ -165,9 +163,12 @@ export function changesOf(operations: Operation[], before: RecordMap, page?: str
   return [...changes.values()]
 }
 
-/** A value as it is kept: JSON, with `null` for one not there. */
+/** A value Notion stored, as it is kept: JSON, with `null` for one not there; anything else can't be undone. */
 function json(value: unknown): z.output<typeof Fields>[string] {
-  return value === undefined ? null : (structuredClone(value) as z.output<typeof Fields>[string])
+  if (value === undefined) return null
+  const parsed = z.json().safeParse(value)
+  if (!parsed.success) throw new UndoError('Notion stored a value that is not JSON.')
+  return parsed.data
 }
 
 /** The blocks next to `child` in `parent`'s list, as read: where it goes back. */
@@ -292,7 +293,7 @@ function same(a: unknown, b: unknown): boolean {
 const sameFields = (values: Record<string, unknown> | undefined, expected: Fields) =>
   Object.entries(expected).every(([key, value]) => same(values?.[key], value))
 
-/** What undoing a question sends: the operations, the pages among them that go to the trash, and what each kind does. */
+/** What undoing a question sends: the operations, and the pages among them that go to the trash. */
 export interface UndoPlan {
   operations: Operation[]
   trashed: string[]
@@ -319,7 +320,7 @@ export function planUndo(q: QuestionChanges, current: RecordMap, userId: string 
       if (block.alive === false || !c.now) return false
       if (c.created)
         return (
-          (c.created.table === 'space' || block.parent_id === c.created.parent) &&
+          block.parent_id === c.created.parent &&
           sameFields(block.properties, c.now.props) &&
           Object.keys(block.properties ?? {}).every((key) => key in c.now!.props) &&
           same(block.content ?? [], c.now.content)
