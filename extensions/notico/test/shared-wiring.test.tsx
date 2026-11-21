@@ -57,7 +57,7 @@ it('[@no-uc:wiring] the shared tools are offered and run, and "Ask Notico" hands
     ]),
   )
   const sent = browser.sentToModel()
-  // The selection went with the question, and every shared tool ran and gave the model its result.
+  // The selection went with the question, and the shared tools the model called ran and gave it their results.
   expect(sent.find((m) => m.role === 'user')!.content).toContain('Rivers are rising.')
   const results = sent.filter((m) => m.role === 'tool').map((m) => m.content)
   expect(results).toHaveLength(4)
