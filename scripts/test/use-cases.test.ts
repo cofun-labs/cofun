@@ -299,7 +299,7 @@ describe('checkUseCases', () => {
       const at = `worker/test/api.test.ts:${index + 1}`
       return [
         error === 'speed'
-          ? `${at}: [@no-uc:speed] is not a kind of harm; use one of data, notion-safety, money, access, privacy, contract`
+          ? `${at}: [@no-uc:speed] is not a kind of harm; use one of data, notion-safety, money, access, privacy, contract, wiring`
           : expect.stringMatching(new RegExp(`^${at}: a test whose name starts with no scenario ID`)),
       ]
     })

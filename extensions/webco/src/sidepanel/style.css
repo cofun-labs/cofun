@@ -1,0 +1,2284 @@
+/* The Cofun look: blue has one meaning, the brand and the one action to take now (the mark, the
+   primary action, the selected session); the user's question sits on the same light tint as the
+   selected session, and everything else is neutral grey on a white page (near-black in dark
+   mode). System fonts only: the extension contacts no host for fonts (see PRIVACY.md). */
+:root {
+  --bg: #ffffff;
+  --fg: #1d2330;
+  --muted: #5f6b7f;
+  --border: #e4e7ec;
+  /* Quiet surfaces: secondary buttons, hover, the search field. */
+  --tint: #f2f4f7;
+  /* The tinted surface: the selected row, and the user's question. */
+  --selected: #eaf3fd;
+  /* The mark, icons, and outlines. */
+  --accent: #2383e2;
+  /* Text on the selected tint: the accent is too light to read there. */
+  --accent-text: #1766bd;
+  /* Behind white text: a little darker than the accent, so the text stays readable. */
+  --accent-fill: #1d74cf;
+  --on-accent: #ffffff;
+  --ok: #1f8a5b;
+  --error: #c4352f;
+  --error-bg: #fdecea;
+  --shadow: rgb(16 24 40 / 0.08);
+  color-scheme: light dark;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #16181d;
+    --fg: #e8eaee;
+    --muted: #98a0ad;
+    --border: #2b2f36;
+    --tint: #20232a;
+    --selected: #17283f;
+    --accent: #4a9eea;
+    --accent-text: #4a9eea;
+    --accent-fill: #2573c9;
+    --ok: #4cc38a;
+    --error: #f0766b;
+    --error-bg: #3a1d1f;
+    --shadow: rgb(0 0 0 / 0.32);
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font:
+    14px/1.5 -apple-system,
+    BlinkMacSystemFont,
+    'Segoe UI',
+    sans-serif;
+}
+
+#root {
+  display: flex;
+  flex-direction: column;
+}
+
+[hidden] {
+  display: none !important;
+}
+
+p,
+h2,
+h3 {
+  margin: 0;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+  border: none;
+  background: transparent;
+  padding: 0;
+  cursor: pointer;
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.icon {
+  display: block;
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* A pill button: the grey one is the quiet choice, `.primary` the one to press. */
+button.primary,
+.signed-out button,
+.tool-answers button {
+  padding: 7px 18px;
+  border-radius: 999px;
+  font-weight: 600;
+  background: var(--tint);
+  color: var(--fg);
+}
+
+button.primary {
+  background: var(--accent-fill);
+  color: var(--on-accent);
+}
+
+.icon-button {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  flex: none;
+  border-radius: 50%;
+  color: var(--muted);
+  transition:
+    background-color 0.12s,
+    color 0.12s;
+}
+
+.icon-button:hover,
+.icon-button:focus-visible,
+.icon-button[aria-expanded='true'] {
+  background: var(--tint);
+  color: var(--fg);
+}
+
+/* Header */
+
+header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 0 8px 0 14px;
+  border-bottom: 1px solid var(--border);
+}
+
+/* The open session's title, cut to one line */
+header .title {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: inherit;
+  font-weight: 400;
+}
+
+header .untitled {
+  color: var(--muted);
+}
+
+/* Signed out, and the start of a session */
+
+.signed-out {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 12px;
+  text-align: center;
+  color: var(--muted);
+}
+
+.signed-out button {
+  margin-top: 8px;
+}
+
+.hero-mark {
+  width: 64px;
+  height: 64px;
+  margin-bottom: 6px;
+  color: var(--accent);
+}
+
+/* Just above the composer, aligned left. */
+.empty {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  gap: 4px;
+  padding: 0 2px 4px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.empty-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 2px;
+}
+
+.product-icon {
+  width: 34px;
+  height: 34px;
+  flex: none;
+}
+
+.empty-title {
+  color: var(--fg);
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.suggestions {
+  display: grid;
+  gap: 2px;
+  margin: 6px -6px 0;
+  padding: 0;
+  list-style: none;
+}
+
+.suggestions button {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 7px 8px;
+  border-radius: 8px;
+  color: var(--fg);
+  font-size: 13.5px;
+  text-align: left;
+}
+
+.suggestions button:hover,
+.suggestions button:focus-visible {
+  background: var(--tint);
+}
+
+.suggestions .icon,
+.empty-note .icon {
+  flex: none;
+  color: var(--muted);
+}
+
+.empty-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-top: 10px;
+  font-size: 12.5px;
+}
+
+.empty-note .icon {
+  margin-top: 2px;
+}
+
+/* The chat, with the session list over it when open */
+
+.stage {
+  flex: 1;
+  min-height: 0;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+}
+
+#messages {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.msg {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* More room before each new question than between a question and its reply, so turns read apart. */
+.msg.assistant + .msg.user {
+  margin-top: 14px;
+}
+
+.msg.user {
+  align-self: flex-end;
+  max-width: 84%;
+  padding: 8px 12px;
+  border-radius: 16px 16px 4px 16px;
+  background: var(--selected);
+  color: var(--fg);
+}
+
+/* The pages the question went with, under what the user typed. */
+.sent-pages {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 10px;
+  margin: 4px 0 0;
+  padding: 0;
+  list-style: none;
+  color: var(--accent-text);
+  font-size: 13px;
+  font-weight: 500;
+  white-space: normal;
+}
+
+.sent-pages li {
+  display: inline-flex;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.sent-pages a,
+.sent-pages .sent-quote {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  max-width: 100%;
+  color: inherit;
+  text-decoration: none;
+}
+
+.sent-pages a:hover .page-title,
+.sent-pages a:focus-visible .page-title {
+  text-decoration: underline;
+}
+
+.sent-pages .icon {
+  flex: none;
+  width: 13px;
+  height: 13px;
+}
+
+.reply {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 0 2px;
+}
+
+/* The reply is plain text across the panel; only the question is in a bubble. */
+.reply .text {
+  align-self: stretch;
+}
+
+/* The reply's Markdown, formatted to fit the panel: compact headings, and wide tables and code
+   blocks scroll sideways inside the reply instead of widening it. */
+.reply .text {
+  min-width: 0;
+  white-space: normal;
+}
+
+.text > :first-child {
+  margin-top: 0;
+}
+
+.text > :last-child {
+  margin-bottom: 0;
+}
+
+.text p,
+.text ul,
+.text ol,
+.text blockquote,
+.text pre {
+  margin: 0 0 8px;
+}
+
+.text .table-scroll {
+  margin: 0 0 8px;
+  overflow-x: auto;
+}
+
+.text .footnotes {
+  font-size: 12.5px;
+  color: var(--muted);
+}
+
+.text h1,
+.text h2,
+.text h3,
+.text h4,
+.text h5,
+.text h6 {
+  margin: 14px 0 6px;
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.35;
+}
+
+.text h1 {
+  font-size: 17px;
+}
+
+.text h2 {
+  font-size: 15.5px;
+}
+
+.text ul,
+.text ol {
+  padding-left: 22px;
+}
+
+.text li + li,
+.text li > ul,
+.text li > ol {
+  margin-top: 2px;
+}
+
+.text li > ul,
+.text li > ol {
+  margin-bottom: 0;
+}
+
+/* A task list: the checkbox stands in for the bullet. */
+.text li:has(> input[type='checkbox']) {
+  list-style: none;
+}
+
+.text li > input[type='checkbox'] {
+  margin: 0 6px 0 -18px;
+  vertical-align: -1px;
+}
+
+.text blockquote {
+  padding-left: 12px;
+  border-left: 3px solid var(--border);
+  color: var(--muted);
+}
+
+.text hr {
+  margin: 12px 0;
+  border: none;
+  border-top: 1px solid var(--border);
+}
+
+.text a {
+  color: var(--accent-text);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.text code {
+  padding: 1px 4px;
+  border-radius: 4px;
+  background: var(--tint);
+  font:
+    12.5px/1.5 ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    monospace;
+}
+
+.text pre {
+  overflow-x: auto;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--tint);
+}
+
+.text pre code {
+  padding: 0;
+  background: none;
+  white-space: pre;
+}
+
+.text table {
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.text th,
+.text td {
+  padding: 4px 8px;
+  border: 1px solid var(--border);
+  text-align: left;
+  vertical-align: top;
+}
+
+.text th {
+  background: var(--tint);
+  font-weight: 600;
+}
+
+.reply .error {
+  align-self: stretch;
+  padding: 8px 12px;
+  border-radius: 12px;
+  background: var(--error-bg);
+  color: var(--error);
+}
+
+.note {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+/* Under a reply that has ended: Copy, Save, what it cost, the model that answered, and its details. */
+.reply-foot {
+  position: relative;
+  /* Across the reply, so the details popover anchored to it has the panel's width to fit in. */
+  align-self: stretch;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: -6px;
+}
+
+.reply-cost {
+  white-space: nowrap;
+}
+
+/* Without Copy, the line starts where the reply's text does. */
+.reply-foot > .note:first-child {
+  margin-left: 6px;
+}
+
+/* What the reply cost, then the model: one line, kept apart. */
+.reply-foot > .note + .note::before {
+  content: '·';
+  margin-right: 6px;
+}
+
+.reply-action[aria-expanded='true'] {
+  background: var(--tint);
+  color: var(--fg);
+}
+
+/* A reply's details: opens upward from its row, where the chat has room, like the model menu. */
+.reply-popover {
+  position: absolute;
+  bottom: calc(100% + 4px);
+  left: 6px;
+  z-index: 2;
+  width: max-content;
+  max-width: calc(100% - 6px);
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--bg);
+  box-shadow: 0 8px 28px var(--shadow);
+}
+
+.reply-popover p {
+  margin: 0;
+}
+
+/* What the reply read, sent, and used: small and quiet. */
+.reply-facts {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+/* A saved page's link, where its save button was. */
+a.reply-action,
+a.icon-button {
+  color: var(--accent-text);
+}
+
+/*
+ * A tooltip: the element's `data-tip`, shown on hover after a short rest (so moving across the
+ * panel doesn't flash tips) and at once on keyboard focus. Above and from the element's left edge,
+ * so it stays inside the panel from the row's start; `.tip-below` opens it below and from the right
+ * edge, as in the header.
+ */
+[data-tip] {
+  position: relative;
+}
+
+[data-tip]:hover::after,
+[data-tip]:focus-visible::after {
+  content: attr(data-tip);
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 0;
+  z-index: 4;
+  width: max-content;
+  max-width: 240px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  background: var(--fg);
+  color: var(--bg);
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.35;
+  white-space: normal;
+  pointer-events: none;
+  animation: tip-in 0.1s 500ms both;
+}
+
+[data-tip]:focus-visible::after {
+  animation: none;
+}
+
+@keyframes tip-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.tip-below[data-tip]:hover::after,
+.tip-below[data-tip]:focus-visible::after {
+  top: calc(100% + 6px);
+  bottom: auto;
+  left: auto;
+  right: 0;
+}
+
+/* From the right edge, for a control at the end of its row (send, the model chip). */
+.tip-end[data-tip]:hover::after,
+.tip-end[data-tip]:focus-visible::after {
+  left: auto;
+  right: 0;
+}
+
+/* From the left edge, for a control at the start of the header (Back). */
+.tip-start[data-tip]:hover::after,
+.tip-start[data-tip]:focus-visible::after {
+  left: 0;
+  right: auto;
+}
+
+/*
+ * In the chat list, which scrolls and so would clip a tip drawn inside it: drawn over the panel
+ * instead, anchored to its element, and turned below or toward the left when there's no room.
+ */
+#messages [data-tip] {
+  anchor-name: --tip;
+  anchor-scope: --tip;
+}
+
+#messages [data-tip]:hover::after,
+#messages [data-tip]:focus-visible::after {
+  position: fixed;
+  position-anchor: --tip;
+  inset: auto;
+  bottom: anchor(top);
+  left: anchor(left);
+  margin-bottom: 6px;
+  z-index: 10;
+  position-try-fallbacks:
+    flip-block,
+    flip-inline,
+    flip-block flip-inline;
+}
+
+/* Not over an open popover of its own. */
+[data-tip][aria-expanded='true']::after {
+  display: none;
+}
+
+.reply-action {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  flex: none;
+  border-radius: 8px;
+  color: var(--muted);
+  transition:
+    background-color 0.12s,
+    color 0.12s;
+}
+
+.reply-action:hover,
+.reply-action:focus-visible {
+  background: var(--tint);
+  color: var(--fg);
+}
+
+.reply-action .icon {
+  width: 15px;
+  height: 15px;
+}
+
+/* Read out, not shown: such as the heading Markdown gives a reply's footnotes, and the copy button's result. */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.note.working {
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.15em;
+  animation: working 1.2s ease-in-out infinite;
+}
+
+@keyframes working {
+  50% {
+    opacity: 0.45;
+  }
+}
+
+/* A tool call: a chip saying what it did, which opens to what it changed, the tool, and what it was given and returned */
+
+.tool {
+  max-width: 100%;
+  color: var(--muted);
+  font-size: 12.5px;
+}
+
+.tool[open] {
+  align-self: stretch;
+}
+
+.tool summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 100%;
+  padding: 2px 10px 2px 7px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  cursor: pointer;
+  list-style: none;
+  white-space: nowrap;
+}
+
+.tool summary::-webkit-details-marker {
+  display: none;
+}
+
+.tool summary:hover,
+.tool[open] summary {
+  color: var(--fg);
+}
+
+.tool-mark {
+  flex: none;
+  color: var(--ok);
+}
+
+.tool-mark .icon {
+  width: 13px;
+  height: 13px;
+}
+
+/* Only the status icon carries color: green when done, red when failed. */
+.tool.running .tool-mark {
+  color: var(--muted);
+  animation: working 1.2s ease-in-out infinite;
+}
+
+.tool.confirm .tool-mark,
+.tool.skipped .tool-mark,
+.tool.stopped .tool-mark,
+.tool.declined .tool-mark {
+  color: var(--muted);
+}
+
+.tool.failed .tool-mark {
+  color: var(--error);
+}
+
+/* What the call did, in words, on one line. */
+.tool-phrase {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tool-phrase em {
+  color: var(--fg);
+}
+
+.tool-body {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 6px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+
+.tool pre {
+  margin: 0;
+  max-height: 12em;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: var(--fg);
+  font:
+    12px/1.5 ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    monospace;
+}
+
+.tool-confirm {
+  align-self: stretch;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  font-weight: 700;
+}
+
+.tool-confirm-note {
+  display: block;
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 400;
+}
+
+.tool-answers {
+  display: flex;
+  gap: 8px;
+}
+
+.tool-answers button {
+  flex: 1;
+}
+
+/* Composer */
+
+#composer {
+  /* The page picker opens from the box, as wide as it. */
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 8px 12px 14px;
+  padding: 12px 8px 8px 14px;
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  background: var(--bg);
+  box-shadow: 0 2px 10px var(--shadow);
+}
+
+#composer:has(textarea:focus) {
+  border-color: var(--muted);
+}
+
+#composer textarea {
+  /* Room for two lines while empty, so the box doesn't look cramped. */
+  min-height: 3em;
+  max-height: 9em;
+  padding: 0 6px 0 0;
+  border: none;
+  outline: none;
+  resize: none;
+  /* Grows with what is typed, up to the height above, then scrolls. */
+  field-sizing: content;
+  overflow-y: auto;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+}
+
+#composer textarea::placeholder {
+  color: var(--muted);
+}
+
+/* The pages the question goes with, at the top of the box. The one the panel added is dashed. */
+.page-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0 0 0 -4px;
+  padding: 0;
+  list-style: none;
+}
+
+.page-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 100%;
+  height: 26px;
+  padding: 0 4px 0 8px;
+  border-radius: 8px;
+  background: var(--tint);
+  font-size: 13px;
+}
+
+.page-chip.added {
+  border: 1px dashed var(--border);
+  background: transparent;
+  color: var(--muted);
+}
+
+.page-chip .icon {
+  flex: none;
+  width: 14px;
+  height: 14px;
+}
+
+.page-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.page-remove {
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  flex: none;
+  border-radius: 5px;
+  color: var(--muted);
+}
+
+.page-remove:hover {
+  background: var(--border);
+  color: var(--fg);
+}
+
+.page-remove .icon {
+  width: 12px;
+  height: 12px;
+}
+
+/* The toolbar inside the box: "+" on the left, then the model chip and send on the right. */
+.composer-tools {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+  margin-left: -6px;
+}
+
+.composer-tools .grow {
+  flex: 1;
+}
+
+.tool-button {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  flex: none;
+  border-radius: 8px;
+  color: var(--muted);
+}
+
+.tool-button:hover,
+.tool-button[aria-expanded='true'] {
+  background: var(--tint);
+  color: var(--fg);
+}
+
+/* Read only is not the default, so it stays visible: a grey ground, a shade darker on hover. */
+.tool-button.read-only {
+  background: var(--tint);
+  color: var(--fg);
+}
+
+.tool-button.read-only:hover {
+  background: var(--border);
+}
+
+/* Under a question asked in Read only. */
+.question-mode {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.question-mode .icon {
+  width: 13px;
+  height: 13px;
+}
+
+/* The "+" menu opens just above its button, flush with the button's left edge. */
+.add-menu {
+  position: relative;
+}
+
+.add-popover {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 0;
+  z-index: 2;
+  min-width: 180px;
+  display: flex;
+  flex-direction: column;
+  padding: 5px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--bg);
+  box-shadow: 0 8px 28px var(--shadow);
+}
+
+.add-popover [role='menuitem'] {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 8px;
+  border-radius: 8px;
+  text-align: left;
+}
+
+.add-popover [role='menuitem']:hover,
+.add-popover [role='menuitem']:focus-visible {
+  outline: none;
+  background: var(--tint);
+}
+
+.add-popover .icon {
+  color: var(--muted);
+}
+
+/* The page picker: opens upward from the box, as wide as it. */
+.page-picker {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: -1px;
+  right: -1px;
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  max-height: 360px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--bg);
+  box-shadow: 0 8px 28px var(--shadow);
+}
+
+.picker-search {
+  flex: none;
+  margin: 6px 6px 0;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  outline: none;
+  background: var(--tint);
+  color: inherit;
+  font: inherit;
+}
+
+.picker-search:focus {
+  border-color: var(--muted);
+}
+
+.picker-list {
+  min-height: 0;
+  overflow-y: auto;
+  padding: 4px 5px;
+}
+
+.picker-group {
+  padding: 8px 8px 3px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.picker-option {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.picker-option.active {
+  background: var(--tint);
+}
+
+.picker-option .icon {
+  flex: none;
+  color: var(--muted);
+}
+
+.picker-lines {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.picker-name,
+.picker-path {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.picker-name mark {
+  background: transparent;
+  color: inherit;
+  font-weight: 600;
+}
+
+.picker-path {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.picker-hint {
+  flex: none;
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.picker-state {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  padding: 8px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.spinner {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  border: 1.5px solid var(--border);
+  border-top-color: var(--muted);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.picker-foot {
+  flex: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  padding: 7px 13px;
+  border-top: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.picker-foot kbd {
+  padding: 0 4px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font: inherit;
+}
+
+#composer .send {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--tint);
+  color: var(--muted);
+  transition:
+    background-color 0.12s,
+    color 0.12s;
+}
+
+#composer .send.ready {
+  background: var(--accent-fill);
+  color: var(--on-accent);
+}
+
+#composer .send .icon {
+  stroke-width: 1.8;
+}
+
+/* The session list: covers the chat below the header */
+
+#sessions {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px 12px 12px;
+  background: var(--bg);
+  animation: sheet-up 0.15s ease-out;
+}
+
+@keyframes sheet-up {
+  from {
+    transform: translateY(8px);
+    opacity: 0;
+  }
+}
+
+.sheet-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.sheet-head h2 {
+  font-size: 16px;
+  font-weight: 700;
+}
+
+/* The search field: quiet until focused, then outlined like the composer. */
+.session-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: var(--tint);
+  color: var(--muted);
+  transition:
+    border-color 0.12s,
+    background-color 0.12s;
+}
+
+.session-search:focus-within {
+  border-color: var(--muted);
+  background: var(--bg);
+}
+
+.session-search input {
+  flex: 1;
+  min-width: 0;
+  padding: 7px 0;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: var(--fg);
+  font: inherit;
+  font-size: 13px;
+}
+
+.session-search input::placeholder {
+  color: var(--muted);
+}
+
+#sessions .error {
+  padding: 8px 12px;
+  border-radius: 12px;
+  background: var(--error-bg);
+  color: var(--error);
+}
+
+#sessions .empty {
+  flex: none;
+  padding: 32px 12px;
+}
+
+.session-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  margin: 0 -4px;
+  padding: 0;
+  list-style: none;
+}
+
+/* Rows are flat until hovered; the open session is the one tinted row. */
+.session-list li {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding-right: 6px;
+  border-radius: 12px;
+  transition: background-color 0.12s;
+}
+
+.session-list li:hover {
+  background: var(--tint);
+}
+
+.session-list li.current {
+  background: var(--selected);
+}
+
+/* A hairline between rows, dropped next to a row that has its own background. */
+.session-list li + li::after {
+  content: '';
+  position: absolute;
+  top: -1px;
+  left: 14px;
+  right: 14px;
+  height: 1px;
+  background: var(--border);
+}
+
+.session-list li:hover::after,
+.session-list li.current::after,
+.session-list li:hover + li::after,
+.session-list li.current + li::after {
+  display: none;
+}
+
+.session-list li.current::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 10px;
+  bottom: 10px;
+  width: 3px;
+  border-radius: 0 3px 3px 0;
+  background: var(--accent);
+}
+
+.session-open {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 9px 4px 9px 14px;
+  border-radius: 12px;
+  text-align: left;
+}
+
+.session-title,
+.session-meta {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.session-title {
+  font-weight: 500;
+  line-height: 1.35;
+}
+
+.session-list li.current .session-title {
+  color: var(--accent-text);
+  font-weight: 600;
+}
+
+.session-meta {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.3;
+}
+
+/* A trash can, shown on the row the pointer or focus is on; a second click confirms. */
+.session-delete {
+  display: grid;
+  place-items: center;
+  min-width: 28px;
+  height: 28px;
+  flex: none;
+  border-radius: 999px;
+  color: var(--muted);
+  opacity: 0;
+  transition:
+    opacity 0.12s,
+    color 0.12s,
+    background-color 0.12s;
+}
+
+.session-list li:hover .session-delete,
+.session-list li:focus-within .session-delete,
+.session-delete.confirming {
+  opacity: 1;
+}
+
+@media (hover: none) {
+  .session-delete {
+    opacity: 1;
+  }
+}
+
+/* A session that can't be read is not a button: it only offers its trash can, always shown. */
+.session-open.unreadable .session-title {
+  color: var(--muted);
+  font-style: italic;
+}
+
+.session-open.unreadable + .session-delete {
+  opacity: 1;
+}
+
+.session-delete:hover {
+  background: var(--error-bg);
+  color: var(--error);
+}
+
+.session-delete.confirming {
+  padding: 0 10px;
+  background: var(--error);
+  color: var(--bg);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+/* The account: the avatar in the header, and the menu under it */
+
+.account {
+  position: relative;
+  flex: none;
+}
+
+.account-button {
+  display: block;
+  border-radius: 50%;
+}
+
+.account-avatar {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  flex: none;
+  overflow: hidden;
+  border-radius: 50%;
+  background: var(--tint);
+  color: var(--fg);
+  font-weight: 700;
+}
+
+.account-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.account-popover {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 2;
+  width: 248px;
+  display: flex;
+  flex-direction: column;
+  padding: 6px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: var(--bg);
+  box-shadow: 0 8px 28px var(--shadow);
+}
+
+.account-who {
+  padding: 8px 10px 10px;
+  overflow-wrap: anywhere;
+}
+
+.account-name {
+  font-weight: 600;
+}
+
+.account-popover hr {
+  height: 1px;
+  margin: 4px 6px;
+  border: none;
+  background: var(--border);
+}
+
+.account-detail {
+  color: var(--muted);
+  font-size: 12.5px;
+}
+
+.account-popover [role='menuitem'] {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 10px;
+  border-radius: 10px;
+  text-align: left;
+}
+
+.account-popover [role='menuitem'] .icon,
+.account-popover [role='menuitem'].quiet {
+  color: var(--muted);
+}
+
+.menu-value {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.account-popover [role='menuitem']:hover,
+.account-popover [role='menuitem']:focus-visible {
+  background: var(--tint);
+}
+
+/* A button that reads as a link, inside a sentence. */
+button.link {
+  color: inherit;
+  font-weight: 600;
+  text-decoration: underline;
+}
+
+/* The Credits and Settings pages: over the whole panel, the chat's header included, which stays as
+   it is underneath. Flat sections split by one line, with no cards. */
+
+.page-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 3;
+  overflow-y: auto;
+  background: var(--bg);
+}
+
+.page header {
+  padding-left: 8px;
+  gap: 4px;
+}
+
+.page header .title {
+  font-weight: 600;
+}
+
+.page-body {
+  display: flex;
+  flex-direction: column;
+}
+
+/* A section of a page. The Model section (Model.tsx) is a .card, drawn the same way. */
+.page-section,
+.card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 14px 16px;
+  border-top: 1px solid var(--border);
+}
+
+.page-section:first-child,
+.card:first-child {
+  border-top: none;
+}
+
+.page-section h2,
+.card h3 {
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.page-section [role='alert'],
+.card [role='alert'],
+.history [role='alert'] {
+  color: var(--error);
+}
+
+.page-section button.primary,
+.card button.primary {
+  margin-top: 4px;
+}
+
+.grow {
+  flex: 1;
+  min-width: 0;
+}
+
+/* A quiet button beside text: Sign out on the Settings page, Buy on a pack. */
+button.secondary,
+.pack-buy {
+  flex: none;
+  padding: 4px 12px;
+  border-radius: 8px;
+  background: var(--tint);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+button.secondary:hover,
+.pack-buy:hover:not(:disabled),
+button.secondary:focus-visible,
+.pack-buy:focus-visible {
+  background: var(--selected);
+  color: var(--accent-text);
+}
+
+.pack-buy:disabled {
+  opacity: 0.6;
+}
+
+.settings-account {
+  align-self: stretch;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  overflow-wrap: anywhere;
+}
+
+.settings-value {
+  font-size: 19px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.balance-value {
+  font-size: 26px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+}
+
+.balance-lines {
+  align-self: stretch;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 13px;
+}
+
+.balance-lines li {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.balance-lines .account-detail {
+  font-size: inherit;
+  text-align: right;
+}
+
+/* A row that leads to another page: Credit history ›. */
+.row-link {
+  align-self: stretch;
+  display: flex;
+  align-items: center;
+  margin-top: 4px;
+  padding: 6px 0 0;
+  text-align: left;
+}
+
+.row-link .icon {
+  color: var(--muted);
+}
+
+.row-link:hover .grow,
+.row-link:focus-visible .grow {
+  color: var(--accent-text);
+}
+
+.packs {
+  align-self: stretch;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.packs li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 0;
+  border-top: 1px solid var(--border);
+  font-variant-numeric: tabular-nums;
+}
+
+.packs li:first-child {
+  border-top: none;
+}
+
+.packs li .grow {
+  font-weight: 500;
+}
+
+.packs li .account-detail {
+  width: 56px;
+  text-align: right;
+  font-size: inherit;
+}
+
+.fine {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+/* The usage chart: one bar a day, the latest on the right. */
+.usage-chart {
+  align-self: stretch;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.usage-sum,
+.usage-axis {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 13px;
+}
+
+.usage-axis {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.usage-bars {
+  height: 56px;
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  border-bottom: 1px solid var(--border);
+  border-radius: 2px;
+}
+
+.usage-bars:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
+.usage-bar {
+  flex: 1;
+  min-height: 2px;
+  border-radius: 2px 2px 0 0;
+  background: var(--selected);
+}
+
+.usage-bar.used {
+  background: var(--accent);
+}
+
+.usage-bar.picked {
+  min-height: 4px;
+  background: var(--accent-text);
+}
+
+/* The credit history, in place of the Credits page */
+
+.history {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 4px 16px 14px;
+}
+
+.history-list {
+  align-self: stretch;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.history-list li {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 0;
+  border-top: 1px solid var(--border);
+}
+
+.history-list li:first-child {
+  border-top: none;
+}
+
+.history-list .grow,
+.history-amount {
+  display: flex;
+  flex-direction: column;
+}
+
+.history-title {
+  font-size: 13.5px;
+  font-weight: 500;
+}
+
+.history-amount {
+  align-items: flex-end;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.history-plus {
+  font-weight: 600;
+}
+
+.history-plus.muted {
+  color: var(--muted);
+}
+
+.taken {
+  color: var(--error);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .note.working,
+  .tool.running .tool-mark,
+  .spinner,
+  #sessions {
+    animation: none;
+  }
+}
+
+/* The Settings page's Providers section: each provider with its switch, its key, and its models */
+
+.providers {
+  align-items: stretch;
+  gap: 0;
+}
+
+.providers h3:focus {
+  outline: none;
+}
+
+.provider {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 0;
+  border-top: 1px solid var(--border);
+}
+
+.providers h3 + .provider {
+  padding-top: 6px;
+  border-top: none;
+}
+
+.provider:last-child {
+  padding-bottom: 0;
+}
+
+.provider-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.provider-mark {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  background: var(--accent-fill);
+  color: var(--on-accent);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+/* Cofun's mark, white on its coral, as the brand draws it. */
+.provider-mark-cofun {
+  background: #f25c54;
+}
+
+.provider-mark-cofun svg {
+  width: 16px;
+  height: 16px;
+}
+
+.provider-mark-o {
+  background: #6b5bd6;
+}
+
+.provider-name {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.provider-name .model-name {
+  font-weight: 500;
+}
+
+.provider-name .account-detail,
+.provider-status {
+  font-size: 12px;
+}
+
+.provider-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.provider-status .icon {
+  width: 13px;
+  height: 13px;
+}
+
+.provider-status.ok {
+  color: var(--ok);
+}
+
+.provider-status.bad {
+  color: var(--error);
+}
+
+/* What opens under a provider that is on: in line with its name, past the mark. */
+.provider-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-left: 34px;
+}
+
+.switch {
+  position: relative;
+  flex: none;
+  width: 30px;
+  height: 18px;
+  border-radius: 999px;
+  background: var(--border);
+  transition: background-color 0.12s;
+}
+
+.switch::before {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #ffffff;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.2);
+  transition: left 0.12s;
+}
+
+.switch[aria-checked='true'] {
+  background: var(--accent-fill);
+}
+
+.switch[aria-checked='true']::before {
+  left: 14px;
+}
+
+.switch.small {
+  width: 26px;
+  height: 16px;
+}
+
+.switch.small::before {
+  width: 12px;
+  height: 12px;
+}
+
+.switch.small[aria-checked='true']::before {
+  left: 12px;
+}
+
+.switch:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.key-form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.key-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.key-row input,
+.key-saved {
+  flex: 1;
+  min-width: 0;
+  padding: 5px 9px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  color: inherit;
+  font:
+    13px ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    monospace;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.key-row input::placeholder {
+  color: var(--muted);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+}
+
+.key-row input:read-only {
+  color: var(--muted);
+}
+
+.key-row input[aria-invalid='true'] {
+  border-color: var(--error);
+}
+
+.key-row button {
+  flex: none;
+  padding: 4px 11px;
+  border-radius: 8px;
+  background: var(--tint);
+  font-size: 13px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.key-row button.primary {
+  background: var(--accent-fill);
+  color: var(--on-accent);
+}
+
+.key-row button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.key-message {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 6px 9px;
+  border-radius: 8px;
+  font-size: 12.5px;
+}
+
+.key-message .icon,
+.key-message .spinner {
+  flex: none;
+  width: 13px;
+  height: 13px;
+  margin-top: 2px;
+}
+
+.key-message.info {
+  background: var(--tint);
+  color: var(--muted);
+}
+
+.card .key-message.bad {
+  background: var(--error-bg);
+  color: var(--error);
+}
+
+.key-actions {
+  display: flex;
+  gap: 14px;
+}
+
+.key-actions button.link,
+.key-form button.link {
+  align-self: flex-start;
+  color: var(--muted);
+  font-size: 12.5px;
+  font-weight: 400;
+}
+
+.model-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.model-list-head {
+  display: flex;
+  justify-content: space-between;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.provider-models {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.provider-models > li + li {
+  border-top: 1px solid var(--border);
+}
+
+.provider-models > li.account-detail {
+  padding: 6px 0;
+  font-size: 12px;
+}
+
+.model-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 0;
+}
+
+.model-row-name {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  font-size: 13.5px;
+}
+
+.model-row-name .account-detail {
+  font-size: 11.5px;
+}
+
+.model-row.off .model-row-name > :first-child {
+  color: var(--muted);
+}
+
+.model-search {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--muted);
+}
+
+.model-search:focus-within {
+  border-color: var(--accent);
+}
+
+.model-search input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: var(--fg);
+  font: inherit;
+  font-size: 13px;
+}
+
+/* Over the composer: the model the composer chose is no longer offered, so Auto answers. */
+.model-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin: 0 14px;
+  color: var(--muted);
+  font-size: 12.5px;
+}
+
+.model-note .icon {
+  flex: none;
+  margin-top: 2px;
+}
+
+/* The model chip in the composer's toolbar: no outline of its own, the box is the outline. A long
+   name is cut, and the chip gives way to tools on the toolbar's left before the send button does. */
+
+.model-menu {
+  position: relative;
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 150px;
+}
+
+.model-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 100%;
+  padding: 4px 8px;
+  border-radius: 8px;
+  color: var(--muted);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.model-button:hover,
+.model-button[aria-expanded='true'] {
+  background: var(--tint);
+  color: inherit;
+}
+
+.model-popover {
+  position: absolute;
+  /* Opens just above the model button, flush with its right edge, and grows to the left. It stays
+     inside the panel: the button's right edge is 57px from the panel's (the box's 12px margin, 1px
+     border, and 8px padding, the 32px send button, and the toolbar's 4px gap), and the box's left
+     edge is 13px from the panel's. */
+  bottom: calc(100% + 6px);
+  right: 0;
+  z-index: 2;
+  width: 260px;
+  max-width: calc(100vw - 70px);
+  display: flex;
+  flex-direction: column;
+  padding: 5px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--bg);
+  box-shadow: 0 8px 28px var(--shadow);
+}
+
+.model-popover [role^='menuitem'] {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 8px;
+  border-radius: 8px;
+  text-align: left;
+}
+
+/* Keyboard focus: a thin grey ring inside the item, quieter than the page's accent outline but
+   clear on the tint of the chosen or hovered item (--muted is over 3:1 on both themes' backgrounds). */
+.model-popover [role^='menuitem']:focus-visible {
+  outline: none;
+  box-shadow: inset 0 0 0 1.5px var(--muted);
+}
+
+.model-popover [role^='menuitem']:hover,
+.model-popover [aria-checked='true'] {
+  background: var(--tint);
+}
+
+/* One line per model, in the composer's type (not the settings page's bold): a long name is cut, not wrapped. */
+.model-popover .model-name {
+  min-width: 0;
+  font-weight: 400;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.model-popover .model-more {
+  justify-content: flex-start;
+  margin-top: 2px;
+  border-top: 1px solid var(--border);
+  border-radius: 0 0 8px 8px;
+  color: var(--muted);
+}
+
+.model-popover .model-group {
+  padding: 6px 8px 2px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.model-popover .model-state {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+/* The name is cut to fit, not the button: the button's tip is drawn outside it. */
+.model-button-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}

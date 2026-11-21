@@ -7,10 +7,11 @@
 
 import * as z from './zod'
 
-const LoginApp = z.enum(['notico', 'confluco']).optional().catch(undefined)
+const LoginApp = z.enum(['notico', 'confluco', 'webco']).optional().catch(undefined)
 const appNames = {
   notico: 'Notico by Cofun',
   confluco: 'Confluco by Cofun',
+  webco: 'Webco by Cofun',
 }
 
 /**

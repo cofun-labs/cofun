@@ -279,7 +279,10 @@ export async function addTab(panel: Target, title: string): Promise<string> {
       panel.evaluate(
         (t: string) => {
           const option = [
-            ...document.querySelectorAll<HTMLElement>('[role=group][aria-label="Other sites"] [role=option]'),
+            // Notico groups the tabs on other sites; Webco lists only tabs.
+            ...document.querySelectorAll<HTMLElement>(
+              '[role=group][aria-label="Other sites"] [role=option], [role=listbox][aria-label="Pages"] > [role=option]',
+            ),
           ].find((o) => (o.querySelector('.picker-name')?.textContent ?? '').startsWith(t))
           option?.click()
           return option ? true : undefined

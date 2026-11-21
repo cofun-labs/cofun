@@ -133,9 +133,9 @@ async function browserCommand(
       return 0
     }
     case 'panel': {
-      if (extension === 'confluco') {
+      if (extension !== 'notico') {
         await openPanel(browser, state, await otherTab(browser, state), extension)
-        console.log(`Confluco side panel open on ${OTHER_URL} with a new chat.`)
+        console.log(`${EXTENSIONS[extension].name} side panel open on ${OTHER_URL} with a new chat.`)
         return 0
       }
       const own = (url: string) => isOwnPage(url, state.created)
@@ -174,8 +174,8 @@ async function browserCommand(
       // elsewhere checked it (by hand, or page/db going to E2E_NOTION_URL). On Notion the agent may
       // only meet a throwaway page; elsewhere its Notion tools can't run at all.
       const url = await currentTabUrl(panel)
-      if (extension === 'confluco' && url !== OTHER_URL) {
-        throw new E2eError(`Confluco ask only runs on ${OTHER_URL}. Run pnpm e2e --extension confluco panel again.`)
+      if (extension !== 'notico' && url !== OTHER_URL) {
+        throw new E2eError(`ask only runs on ${OTHER_URL}. Run pnpm e2e --extension ${extension} panel again.`)
       }
       if (
         extension === 'notico' &&
@@ -191,7 +191,7 @@ async function browserCommand(
         if (command.json) console.log(JSON.stringify(result, null, 2))
         else console.log(formatReply(result.parts))
         if (result.status === 'done') return 0
-        const resume = extension === 'notico' ? 'pnpm e2e ask' : 'pnpm e2e --extension confluco ask'
+        const resume = extension === 'notico' ? 'pnpm e2e ask' : `pnpm e2e --extension ${extension} ask`
         console.error(`\nWaiting for approval: run ${resume} --allow or ${resume} --deny.`)
         return EXIT_NEEDS_ANSWER
       } catch (err) {
