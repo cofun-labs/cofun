@@ -144,6 +144,39 @@ describe('using the Confluence site in the current tab', () => {
       expect(requests).toEqual([])
     },
   )
+
+  it.each([
+    ['an allowed Cloud wiki page', { url: CLOUD_PAGE }, 'is a Confluence page'],
+    ['an allowed self-managed page', {}, 'is a Confluence page'],
+    ['a news site', { url: 'https://news.example.com/2026/workshop' }, 'is not a Confluence page'],
+    [
+      'a Jira page on an Atlassian tenant',
+      { url: 'https://team.atlassian.net/browse/TEAM-1' },
+      'is not a Confluence page',
+    ],
+    ['an allowed page that names no deployment path', { contextPath: null }, 'is not a Confluence page'],
+    [
+      'a Cloud wiki page on a site not allowed yet',
+      { url: CLOUD_PAGE, allowed: false },
+      'may be a Confluence page, on a site Confluco may not use yet',
+    ],
+  ])(
+    '[UC-CONFLUCO-CONFLUENCE-001-S07] a question asked on %s tells the model so, and nothing else of the tab',
+    async (_case, on, says) => {
+      const { tab, browser, user, requests } = await openOn(on)
+      browser.ai.script.push({ reply: 'Noted.' })
+      await ask(user, 'What can you do here?')
+      expect(await screen.findByText('Noted.')).toBeVisible()
+      const questions = browser
+        .sentToModel()
+        .filter((message) => message.role === 'user')
+        .map((message) => message.content)
+      // The fact only: not the tab's address or title.
+      expect(questions).toEqual([`[The current tab ${says}.]\n\nWhat can you do here?`])
+      expect(tab.accessRequests).toEqual([])
+      expect(requests).toEqual([])
+    },
+  )
 })
 
 describe('reading a published Confluence page', () => {

@@ -2,7 +2,7 @@
 
 ## Behavior
 
-Confluco works on the Confluence site open in the current tab, with nothing to set up first. An Atlassian Cloud site is recognized by its wiki address. A self-managed page names its deployment path in Confluence's page metadata, and the page must sit under that path. The first time a Confluence tool needs a site Confluco may not use yet, the tool's card asks the user to allow it, and Chrome asks too. A site the user allowed stays allowed for later questions. A question stays on the site it was asked on. A tab that is not a Confluence page is refused without asking for access.
+Confluco works on the Confluence site open in the current tab, with nothing to set up first. An Atlassian Cloud site is recognized by its wiki address. A self-managed page names its deployment path in Confluence's page metadata, and the page must sit under that path. The first time a Confluence tool needs a site Confluco may not use yet, the tool's card asks the user to allow it, and Chrome asks too. A site allowed stays allowed, and a question stays on the site it was asked on. A tab that is not a Confluence page is refused without asking for access. Each question tells the AI only whether the tab is (or may be) a Confluence page, so on another site it reads the tab without trying a Confluence tool first.
 
 ### api-test
 
@@ -12,6 +12,7 @@ Confluco works on the Confluence site open in the current tab, with nothing to s
 | UC-CONFLUCO-CONFLUENCE-001-S02 | P0 | ✅ | Given a Cloud wiki page whose site Confluco may not use yet; when the user denies access on the card or in Chrome's prompt; then nothing is sent to the site and the model is told the user did not allow it. |
 | UC-CONFLUCO-CONFLUENCE-001-S03 | P0 | ✅ | Given an allowed self-managed page; when a Confluence tool runs; then requests go under the deployment path the page names, and a page that names no path or a path that does not contain it is refused with no request. |
 | UC-CONFLUCO-CONFLUENCE-001-S04 | P1 | ✅ | Given a tab that is not a Confluence page, such as a news site or a Jira page on an Atlassian tenant; when a Confluence tool runs; then it is refused without asking to allow the site. |
+| UC-CONFLUCO-CONFLUENCE-001-S07 | P1 | ✅ | Given the current tab is an allowed Confluence page, a page on another site (or a Jira page), or a Cloud wiki page whose site Confluco may not use yet; when the user asks a question; then the question carries a note that the tab is a Confluence page, is not one, or may be one, without the tab's address or title, and asking it sends nothing to the site and asks for no access. |
 
 ### ai-e2e
 
