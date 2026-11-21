@@ -96,6 +96,7 @@ An extension's Chrome Web Store privacy policy is written in two parts: [PRIVACY
 **A PR updates the privacy page it concerns when it adds a kind of data that leaves the browser, a recipient or host, or something stored or logged.** A feature that sends a kind of data already listed to a recipient already listed changes nothing there.
 
 - A new kind of data, a new host, or something new the extension keeps on the device updates the extension's `PRIVACY.md`. Its table of hosts is the list of hosts the extension may contact.
+- A read request to a site the user allowed, sent from that site's tab with its session for what the page shows, is already covered there ("a site you allow"), and the privacy pages name no site for it. It is allowed only for the sites `docs/security.md` lists as exceptions to "nothing is sent to the site", and a new one updates that list and the lint rules in `.oxlintrc.json` together.
 - A new host also changes the content security policy (`extensions/notico/manifest.ts`), which enforces that list for the extension's pages, and `extensions/notico/test/manifest.test.ts`, which pins the policy and the host permissions.
 - A new recipient of what the worker receives, or a change to what the worker stores or logs, updates `PRIVACY.md`.
 - What the Chrome Web Store asks about the same things (permission justifications, data usage) is in `extensions/<name>/store/privacy.md`, which changes with them.
