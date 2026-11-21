@@ -61,5 +61,5 @@ it('[@no-uc:wiring] the shared tools are offered and run, and "Ask Notico" hands
   expect(sent.find((m) => m.role === 'user')!.content).toContain('Rivers are rising.')
   const results = sent.filter((m) => m.role === 'tool').map((m) => m.content)
   expect(results).toHaveLength(4)
-  for (const result of results) expect(result).toMatch(new RegExp(`^${DATA_LINE.replace(/[[\]]/g, '\\$&')}\n`))
+  for (const result of results) expect(result.startsWith(DATA_LINE + '\n')).toBe(true)
 })
