@@ -26,4 +26,4 @@ Key constraint:
 
 | ID | Priority | Status | Scenario |
 | --- | --- | --- | --- |
-| UC-TOOLS-TABS-001-S08 | P1 | 🚧 | Given a real YouTube video with chapters and captions, in a tab the user added to a question; when they ask to summarize it with the moments it covers; then the reply follows the video's transcript and cites times from it. |
+| UC-TOOLS-TABS-001-S08 | P1 | ✅ | Given a real YouTube video with chapters and captions, in a tab the user added to a question; when they ask to summarize it with the moments it covers; then the reply follows the video's transcript and cites times from it. |
