@@ -57,20 +57,20 @@ Notico is an independent project, not made or endorsed by Notion.
 
 ## Details
 
-| Field        | Value                                      |
-| ------------ | ------------------------------------------ |
-| Category     | Productivity → Workflow & Planning         |
-| Language     | English                                    |
-| Homepage URL | https://cofun.cc                           |
-| Support URL  | https://github.com/cofun-labs/cofun/issues |
+| Field | Value |
+|---|---|
+| Category | Productivity → Workflow & Planning |
+| Language | English |
+| Homepage URL | https://cofun.cc |
+| Support URL | https://github.com/cofun-labs/cofun/issues |
 
 ## Images
 
-| Field                      | File                                                                                                                                                                                                                                                                                                                                                                                                                                    | Size     |
-| -------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------- |
-| Store icon                 | [`../public/icons/icon-128.png`](../public/icons/icon-128.png)                                                                                                                                                                                                                                                                                                                                                                          | 128×128  |
+| Field | File | Size |
+|---|---|---|
+| Store icon | [`../public/icons/icon-128.png`](../public/icons/icon-128.png) | 128×128 |
 | Screenshots, in this order | [screenshot-1.png](images/screenshot-1.png) (action items added to a page), [screenshot-2.png](images/screenshot-2.png) (overdue tasks in a database, with comments), [screenshot-3.png](images/screenshot-3.png) (next week's meeting page made from this one), [screenshot-4.png](images/screenshot-4.png) (selected text rewritten shorter), [screenshot-5.png](images/screenshot-5.png) (an article in an open tab saved to a page) | 1280×800 |
-| Small promo tile           | [small-promo-tile.png](images/small-promo-tile.png)                                                                                                                                                                                                                                                                                                                                                                                     | 440×280  |
-| Marquee promo tile         | [marquee-promo-tile.png](images/marquee-promo-tile.png)                                                                                                                                                                                                                                                                                                                                                                                 | 1400×560 |
+| Small promo tile | [small-promo-tile.png](images/small-promo-tile.png) | 440×280 |
+| Marquee promo tile | [marquee-promo-tile.png](images/marquee-promo-tile.png) | 1400×560 |
 
 The screenshots show the real side panel, answering with Cofun's model (Auto), next to throwaway pages, made with `pnpm e2e`: the Notion tab at 920×800 and the side panel at 360×800 are captured separately over the DevTools protocol and set side by side, so they carry no browser frame. Nothing else of the workspace may show: trash earlier throwaway pages first, since the assistant finds them too. Nothing of another product's AI may show either: Notion AI's round button at the bottom right of the Notion tab is painted out (white, over x 850–917 and y 735–799), and Notion's selection toolbar, which offers its AI, is closed before capturing. Screenshot-5's article is a Wikipedia tab added to the question with "+"; the tab itself is not shown. The marquee tile is the same tile with screenshot-1 scaled into its card (760×475 at 620,62, corners rounded at 14px). The screenshots and promo tiles are PNG without transparency, as the store requires for them.
