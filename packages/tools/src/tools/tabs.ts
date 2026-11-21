@@ -23,14 +23,19 @@ async function currentTab(): Promise<{ title: string; url: string } | undefined>
   return tab?.url ? { title: tab.title ?? '', url: tab.url } : undefined
 }
 
+/** What read_current_tab would read in a tab: a YouTube video (see youtube/), or a page. */
+export type TabKind = 'video' | 'page'
+
 /**
- * Whether the current tab is one read_current_tab could read (once the user allows the site): what
- * the start of a chat offers there. Only the answer leaves here, never the tab's address or title.
+ * What read_current_tab could read in the current tab (once the user allows the site), or undefined
+ * when it can't read it: what the start of a chat offers there. Only the answer leaves here, never
+ * the tab's address or title.
  */
-export async function currentTabReadable(ownSite?: OwnSite): Promise<boolean> {
+export async function currentTabKind(ownSite?: OwnSite): Promise<TabKind | undefined> {
   const tab = await currentTab()
   // Only whether it can: the reason, which names the product, is not wanted here.
-  return !!tab && !ownSite?.(tab.url, 'the current tab') && 'origin' in readableSite(tab.url, '')
+  if (!tab || ownSite?.(tab.url, 'the current tab') || !('origin' in readableSite(tab.url, ''))) return undefined
+  return videoIdOf(tab.url) ? 'video' : 'page'
 }
 
 /** A tab the user can add to a question, and whether the extension may read its site already. */

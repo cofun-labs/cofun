@@ -20,7 +20,7 @@ import { createPage, editPage, updatePages } from './write'
 export {
   carryPages,
   currentNotionPage,
-  currentTabReadable,
+  currentTabKind,
   openNotionPages,
   openWebTabs,
   isDatabase,

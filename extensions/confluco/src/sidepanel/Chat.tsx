@@ -1,7 +1,7 @@
 import { useAuth } from '@clerk/chrome-extension'
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
 import { track } from '../analytics'
-import { currentTabReadable } from '@cofun/tools'
+import { currentTabKind, type TabKind } from '@cofun/tools'
 import { AccountMenu } from './Account'
 import type { ChatSession } from './chat-session'
 import { Composer, useComposer } from './Composer'
@@ -196,17 +196,17 @@ function ChatHeader({ chat, inert, children }: { chat: ChatSession; inert: boole
   )
 }
 
-/** Follows whether the current tab can be read with a site grant. */
-function useTabReadable(): boolean {
-  const [readable, setReadable] = useState(false)
+/** Follows what the current tab would be read as with a site grant (a video or a page), if it can be read. */
+function useTabReadable(): TabKind | undefined {
+  const [readable, setReadable] = useState<TabKind>()
   useEffect(() => {
     let reads = 0
     const read = () => {
       const n = ++reads
-      void currentTabReadable()
-        .catch(() => false)
-        .then((canRead) => {
-          if (n === reads) setReadable(canRead)
+      void currentTabKind()
+        .catch(() => undefined)
+        .then((kind) => {
+          if (n === reads) setReadable(kind)
         })
     }
     const onUpdated = (_id: number, change: chrome.tabs.OnUpdatedInfo, tab: chrome.tabs.Tab) => {

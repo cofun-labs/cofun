@@ -95,6 +95,32 @@ describe('the start of a chat', () => {
     expect(browser.tab.sent).toEqual([])
   })
 
+  it('[UC-NOTICO-CHAT-001-S20] on a YouTube video, the suggestions are about the video and its moments, with a note on saving notes on it', async () => {
+    const tab = new FakeNotionTab('https://www.youtube.com/watch?v=aBcDeFgHiJk')
+    tab.title = 'How rivers carve valleys - YouTube'
+    const { browser } = await openPanel(tab)
+
+    expect(await screen.findByText('What do you want to know about this video?')).toBeVisible()
+    expect(
+      screen.getByText("This tab isn't a Notion page. Notico can read this video's transcript and search the web."),
+    ).toBeVisible()
+    expect(suggestions()).toEqual([
+      'Summarize this video',
+      'List its key moments with their times',
+      'What does the video say about …',
+      'Search the web for …',
+    ])
+    expect(
+      screen.getByText(
+        'To search or edit your Notion workspace, open a Notion page in this tab. To save notes on this video to ' +
+          'Notion, open the page to save them under, then add this tab with +.',
+      ),
+    ).toBeVisible()
+    // Told from the tab's address alone: nothing is asked of YouTube or the AI.
+    expect(browser.tab.sent).toEqual([])
+    expect(browser.ai.calls).toEqual([])
+  })
+
   it("[UC-NOTICO-CHAT-001-S20] on a tab Notico can't read, only a web search is offered", async () => {
     const { browser, user } = await openPanel(otherSiteTab())
     await screen.findByText('What do you want to know about this page?')

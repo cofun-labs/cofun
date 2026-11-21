@@ -15,12 +15,13 @@ export {
   SELECTION_END,
   addedTabNow,
   addedTabsNote,
-  currentTabReadable,
+  currentTabKind,
   openWebTabs,
   selectionNotes,
   selectionsCarried,
   tabTools,
   type OwnSite,
+  type TabKind,
   type WebTab,
 } from './tools/tabs'
 export { webTools } from './tools/web'
