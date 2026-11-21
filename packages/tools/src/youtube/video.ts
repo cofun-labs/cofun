@@ -115,11 +115,8 @@ export interface VideoPage {
   length: number
   description: string
   chapters: Chapter[]
-  /** Why the video has no transcript to read; undefined when it has one (see `track`). */
-  noTranscript?: string
-  /** The caption track to read, and the request to read it with. */
-  track?: Track
-  request?: { params: string; context: unknown }
+  /** The caption track to read and the request to read it with, or why the video has no transcript. */
+  transcript: { track: Track; request: { params: string; context: unknown } } | { none: string }
 }
 
 /**
@@ -137,7 +134,7 @@ export function videoPage(
   if (!details) return { unplayable: playable?.reason ?? 'YouTube does not play it here.' }
   if (details.videoId !== id) return { reason: "YouTube's page described another video." }
   const published = microformat?.playerMicroformatRenderer?.publishDate?.match(/^\d{4}-\d{2}-\d{2}/)?.[0]
-  const video: VideoPage = {
+  const video: Omit<VideoPage, 'transcript'> = {
     id,
     title: details.title,
     channel: details.author,
@@ -149,17 +146,23 @@ export function videoPage(
   const list = captions?.playerCaptionsTracklistRenderer
   const tracks = list?.captionTracks ?? []
   if (playable && playable.status !== 'OK')
-    return { ...video, noTranscript: `YouTube does not play the video here (${playable.reason ?? playable.status}).` }
-  if (details.isLive) return { ...video, noTranscript: 'It is live: YouTube gives no transcript of a live stream.' }
-  if (!tracks.length) return { ...video, noTranscript: 'It has no captions, so YouTube gives no transcript of it.' }
+    return {
+      ...video,
+      transcript: { none: `YouTube does not play the video here (${playable.reason ?? playable.status}).` },
+    }
+  if (details.isLive)
+    return { ...video, transcript: { none: 'It is live: YouTube gives no transcript of a live stream.' } }
+  if (!tracks.length)
+    return { ...video, transcript: { none: 'It has no captions, so YouTube gives no transcript of it.' } }
   const context = RequestContext.safeParse(raw.context)
   const params = z.string().min(1).safeParse(raw.params)
   if (!context.success || !params.success)
     return { reason: "YouTube's page lists captions for the video but did not offer its transcript as expected." }
   const track = chosenTrack(tracks, list?.audioTracks?.[0]?.defaultCaptionTrackIndex)
-  // The panel gives the track of the language the request asks in, when the video has one.
+  // The request can only name a language (hl): the panel gives a track in it, and its answer does not
+  // say which, so the model is told which captions were asked for (see videoRead in tools/tabs.ts).
   const asked = { ...context.data, client: { ...context.data.client, hl: track.language } }
-  return { ...video, track, request: { params: params.data, context: asked } }
+  return { ...video, transcript: { track, request: { params: params.data, context: asked } } }
 }
 
 function chaptersOf(markers: unknown): Chapter[] {

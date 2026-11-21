@@ -350,7 +350,7 @@ async function mayReadOrAsk(origin: string, ask: AskOnCard, product: string): Pr
 /**
  * What a tab shows, read: a YouTube video on its watch page (see youtube/), else the page; a page
  * with `note` when it is a video read as a page. Throws, for the model, when it can't be read, and
- * stops the question when YouTube turned a request away.
+ * stops the question when YouTube turned a request away or answered in a way that isn't understood.
  */
 async function readTabContent(
   tabId: number,
@@ -364,7 +364,7 @@ async function readTabContent(
   if (id) {
     const read = await readVideo(tabId, origin, id, product, where)
     if ('reason' in read) {
-      if (read.turnedAway) throw new ToolError('rate_limited', read.reason, { stopsQuestion: read.turnedAway })
+      if (read.stops) throw new ToolError(read.stops.code, read.reason, { stopsQuestion: read.stops.message })
       throw new Error(read.reason)
     }
     if ('video' in read) return read
@@ -403,14 +403,17 @@ async function videoRead(
   notes: string[],
 ) {
   const link = `${YOUTUBE}/watch?v=${video.id}`
-  const transcript = video.track
-    ? `[Transcript: YouTube's ${JSON.stringify(noteTitle(video.track.name))} captions, ` +
-      (video.track.auto
-        ? 'made by YouTube from the speech, so a word may be misheard. '
-        : "written for the video by its channel or YouTube's community. ") +
-      'Each paragraph starts with the time it is said, [mm:ss]. A link to a moment of the video adds its time ' +
-      `in seconds to the video's address: ${link}&t=754s for [12:34].]`
-    : `[No transcript: ${video.noTranscript ?? 'YouTube gives none.'} This is what the video's page says about it.]`
+  // YouTube's answer doesn't say which captions it gave: only which were asked for.
+  const transcript =
+    'track' in video.transcript
+      ? `[Transcript: as YouTube's transcript panel gives it, asked for YouTube's ` +
+        `${JSON.stringify(noteTitle(video.transcript.track.name))} captions, ` +
+        (video.transcript.track.auto
+          ? 'made by YouTube from the speech, so a word may be misheard. '
+          : "written for the video by its channel or YouTube's community. ") +
+        'Each paragraph starts with the time it is said, [mm:ss]. A link to a moment of the video adds its time ' +
+        `in seconds to the video's address: ${link}&t=754s for [12:34].]`
+      : `[No transcript: ${video.transcript.none} This is what the video's page says about it.]`
   const head = [
     // As JSON, so the title and URL stay inside their quotes and on their line.
     `${header}: ${JSON.stringify({ title: clip(video.title, TITLE_CHARS), url: clip(url, TAB_URL_CHARS) })}`,

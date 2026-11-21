@@ -57,7 +57,7 @@ const HEAD = `Video in the current tab, on www.youtube.com: ${JSON.stringify({ t
 
 /** The note that says which captions were read. */
 const written = (name: string) =>
-  `[Transcript: YouTube's ${JSON.stringify(name)} captions, written for the video by its channel or YouTube's ` +
+  `[Transcript: as YouTube's transcript panel gives it, asked for YouTube's ${JSON.stringify(name)} captions, written for the video by its channel or YouTube's ` +
   'community. Each paragraph starts with the time it is said, [mm:ss]. A link to a moment of the video adds its ' +
   `time in seconds to the video's address: https://www.youtube.com/watch?v=${VIDEO_ID}&t=754s for [12:34].]`
 
@@ -173,11 +173,11 @@ describe('reading a YouTube video', () => {
       tracks: [track('en', 'English'), track('ja', 'Japanese (auto-generated)', 'asr')],
       asked: 'ja',
       note:
-        `[Transcript: YouTube's "Japanese (auto-generated)" captions, made by YouTube from the speech, so a word may ` +
+        `[Transcript: as YouTube's transcript panel gives it, asked for YouTube's "Japanese (auto-generated)" captions, made by YouTube from the speech, so a word may ` +
         'be misheard. Each paragraph starts with the time it is said, [mm:ss]. A link to a moment of the video adds ' +
         `its time in seconds to the video's address: https://www.youtube.com/watch?v=${VIDEO_ID}&t=754s for [12:34].]`,
     },
-  ])('[UC-TOOLS-TABS-001-S02] the transcript read is of $case', async ({ tracks, asked, note }) => {
+  ])('[UC-TOOLS-TABS-001-S02] the transcript asked for is of $case', async ({ tracks, asked, note }) => {
     const tab = videoTab({ page: watchPage({ player: playerResponse({ tracks }) }) })
 
     const text = await read()
@@ -261,23 +261,23 @@ describe('reading a YouTube video', () => {
       panel: [],
       why: "The video in the current tab was not read: YouTube's page did not describe the video in a way that could be read.",
     },
-  ])(
-    '[UC-TOOLS-TABS-001-S04] when YouTube $case, the transcript is not read and nothing is sent again',
-    async (test) => {
-      const tab = new FakeYouTubeTab().install()
-      tab.answers.watch.push(test.watch ?? ok(test.page ?? watchPage()))
-      tab.answers.panel.push(...test.panel)
-      const sentBefore = test.panel.length ? 2 : 1
+  ])('[UC-TOOLS-TABS-001-S04] when YouTube $case, the transcript is not read and the question stops', async (test) => {
+    const tab = new FakeYouTubeTab().install()
+    tab.answers.watch.push(test.watch ?? ok(test.page ?? watchPage()))
+    tab.answers.panel.push(...test.panel)
+    const sentBefore = test.panel.length ? 2 : 1
 
-      const err = await failure()
+    const err = await failure()
 
-      expect(err.message).toBe(test.why)
-      expect(err.stopsQuestion).toBeUndefined()
-      // Each request was sent once: no retry, and no other way of getting the transcript.
-      expect(tab.sent).toHaveLength(sentBefore)
-      expect(tab.answers).toEqual({ watch: [], panel: [] })
-    },
-  )
+    expect(err.message).toBe(test.why)
+    // The requests carry the user's YouTube session: the model can't send them again.
+    expect(err.stopsQuestion).toBe(
+      `${test.why} Notico stopped rather than ask YouTube again. Try again later; if it keeps happening, YouTube may have changed its pages.`,
+    )
+    // Each request was sent once: no retry, and no other way of getting the transcript.
+    expect(tab.sent).toHaveLength(sentBefore)
+    expect(tab.answers).toEqual({ watch: [], panel: [] })
+  })
 
   it.each([
     { case: 'its watch page', watch: { status: 429, body: '' }, panel: [], sent: 1 },

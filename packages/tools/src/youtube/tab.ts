@@ -17,12 +17,16 @@ export interface TabVideo {
 }
 
 /**
- * Why the video was not read, in words for the model; `turnedAway` when YouTube turned the request
- * away for coming too often, which stops the question (what the user is told).
+ * Why the video was not read, in words for the model. `stops` when the question stops, with what
+ * the user is told, and `code` for the model: YouTube turned a request away for coming too often
+ * (`rate_limited`), or answered in a way that isn't understood (`unexpected`). The requests carry the
+ * user's YouTube session, so an answer that isn't understood is not left for the model to ask again
+ * (AGENTS.md, "Calling outside services"). A tab that moved, or that Chrome kept the extension out
+ * of, has a known meaning, and goes to the model alone.
  */
 export interface NotRead {
   reason: string
-  turnedAway?: string
+  stops?: { code: 'rate_limited' | 'unexpected'; message: string }
 }
 
 /** What the scripts in the tab return; null when the tab is no longer on the video. Parsed, not trusted. */
@@ -54,15 +58,14 @@ export async function readVideo(
 ): Promise<TabVideo | { unplayable: string } | NotRead> {
   const page = await inTab(tabId, watchPage, [origin, id], PageResult, product, where)
   if ('reason' in page) return page
-  if ('failed' in page) return { reason: `The video in ${where} was not read: its page did not load (${page.failed}).` }
-  if (page.status !== 200) return refused(page.status, `The video in ${where} was not read`)
+  const videoNotRead = `The video in ${where} was not read`
+  if ('failed' in page) return unexpected(`${videoNotRead}: its page did not load (${page.failed}).`, product)
+  if (page.status !== 200) return refused(page.status, videoNotRead, product)
   const video = videoPage(id, page)
-  if ('unplayable' in video || 'reason' in video) {
-    if ('reason' in video) return { reason: `The video in ${where} was not read: ${video.reason}` }
-    return video
-  }
-  if (!video.request) return { url: page.url, video, lines: [] }
-  const { params, context } = video.request
+  if ('reason' in video) return unexpected(`${videoNotRead}: ${video.reason}`, product)
+  if ('unplayable' in video) return video
+  if ('none' in video.transcript) return { url: page.url, video, lines: [] }
+  const { params, context } = video.transcript.request
   const panel = await inTab(
     tabId,
     transcriptPanel,
@@ -73,22 +76,36 @@ export async function readVideo(
   )
   const notRead = `The transcript of the video in ${where} was not read`
   if ('reason' in panel) return panel
-  if ('failed' in panel) return { reason: `${notRead}: YouTube did not answer (${panel.failed}).` }
-  if (panel.status !== 200) return refused(panel.status, notRead)
+  if ('failed' in panel) return unexpected(`${notRead}: YouTube did not answer (${panel.failed}).`, product)
+  if (panel.status !== 200) return refused(panel.status, notRead, product)
   const lines = transcriptLines(panel.body)
-  if (!lines) return { reason: `${notRead}: YouTube's answer was not a transcript that could be read.` }
-  if (!lines.length) return { reason: `${notRead}: YouTube gave it with no lines.` }
+  if (!lines) return unexpected(`${notRead}: YouTube's answer was not a transcript that could be read.`, product)
+  if (!lines.length) return unexpected(`${notRead}: YouTube gave it with no lines.`, product)
   return { url: page.url, video, lines }
 }
 
 /** A request YouTube answered with an error: turned away when it came too often, else not understood. */
-function refused(status: number, notRead: string): NotRead {
+function refused(status: number, notRead: string, product: string): NotRead {
   if (status === 429)
     return {
       reason: `${notRead}: YouTube turned the request away for coming too often.`,
-      turnedAway: 'YouTube turned away a request for coming too often. Wait a while before asking about a video again.',
+      stops: {
+        code: 'rate_limited',
+        message: 'YouTube turned away a request for coming too often. Wait a while before asking about a video again.',
+      },
     }
-  return { reason: `${notRead}: YouTube answered with an error (HTTP ${status}).` }
+  return unexpected(`${notRead}: YouTube answered with an error (HTTP ${status}).`, product)
+}
+
+/** An answer from YouTube that isn't understood: the question stops, and the user is told why. */
+function unexpected(reason: string, product: string): NotRead {
+  return {
+    reason,
+    stops: {
+      code: 'unexpected',
+      message: `${reason} ${product} stopped rather than ask YouTube again. Try again later; if it keeps happening, YouTube may have changed its pages.`,
+    },
+  }
 }
 
 /** Runs `func` in the tab and parses what it returns; or why it could not run there. */
