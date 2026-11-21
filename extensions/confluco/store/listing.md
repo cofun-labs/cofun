@@ -53,9 +53,9 @@ Confluco is an independent project, not made or endorsed by Atlassian.
 |---|---|
 | Category | Productivity → Workflow & Planning |
 | Language | English |
-| Homepage URL | https://cofun.cc |
+| Homepage URL | https://cofun.cc/confluco |
 | Support URL | https://github.com/cofun-labs/cofun/issues |
-| Global promo video | Not set yet: the demo video is uploaded to YouTube by hand, and its link goes here |
+| Global promo video | https://www.youtube.com/watch?v=64VvWEK7KE8 (uploaded to YouTube by hand) |
 
 ## Images
 
